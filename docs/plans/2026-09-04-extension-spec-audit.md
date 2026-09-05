@@ -122,8 +122,9 @@ is; scope records original source, so written things have scopes and synthesized
 things do not; `TableCell.content` is `[Markup]` with no `Paragraph`
 normalization; there are no profiles and no umbrella switch, every extension
 syntax is its own option, and an option off is the inherited behavior byte for
-byte; fenced-code info, language, and attributes are stored as written; there is
-no emoji support; the reference expansion bound is an invariant.
+byte; every comment is a `Comment` node and nothing strips it; fenced-code info,
+language, and attributes are stored as written; there is no emoji support; the
+reference expansion bound is an invariant.
 
 ## The closed extension set
 
@@ -145,7 +146,6 @@ by another.
 | -------------------------- | ------- | --------- | ------------------------------------------- | ---------------------------------------------------------------------------------------- | ---------------------------- |
 | `smartPunctuation`         | `true`  | inherited | `canonical-ast.md`                          | no quote, dash, or ellipsis replacement                                                  | CA-22                        |
 | `footnotes`                | `true`  | inherited | `canonical-ast.md`, `obsidian/footnotes.md` | `[^x]` and `[^x]:` are text                                                              | CA-14, S-1, OF-1             |
-| `stripHTMLComments`        | `true`  | inherited | `canonical-ast.md`                          | HTML comments retained as `HTML` or `HTMLBlock`                                          | CA-22, S-10                  |
 | `tables`                   | `true`  | inherited | `canonical-ast.md`, `pandoc/tables.md`      | no pipe tables                                                                           | CA-11, S-5                   |
 | `strikethrough`            | `true`  | inherited | `canonical-ast.md`                          | `~` runs are text                                                                        | S-7 (single tilde)           |
 | `autolinks`                | `true`  | inherited | `canonical-ast.md`                          | no bare autolinks                                                                        | PA-7, ON-5                   |
@@ -155,7 +155,6 @@ by another.
 | `crossLinks`               | `false` | Obsidian  | `obsidian/wikilinks-and-embeds.md`          | `[[` follows inherited bracket rules                                                     | OW-5                         |
 | `marks`                    | `false` | Obsidian  | `obsidian/highlights.md`                    | `=` runs are text                                                                        | OH-4                         |
 | `comments`                 | `false` | Obsidian  | `obsidian/comments.md`                      | `%%` is text                                                                             | OC-9                         |
-| `stripComments`            | `true`  | Obsidian  | `obsidian/comments.md`                      | `Comment` nodes retained; no effect while `comments` is off                              | OC-5, OC-9                   |
 | `inlineFootnotes`          | `false` | Obsidian  | `obsidian/footnotes.md`                     | `^[` follows inherited bracket rules; requires `footnotes`                               | OF-9, S-1                    |
 | `taskMarkers`              | `false` | Obsidian  | `obsidian/tasks.md`                         | inherited `[ xX]` markers only; requires `taskLists`                                     | OT-4, S-6                    |
 | `properties`               | `false` | Obsidian  | `obsidian/properties.md`                    | the envelope is inherited content; `metadata` is null                                    | OP-7, S-9                    |
@@ -186,7 +185,9 @@ by another.
 Not options: `compactDefinitionLists` (two source forms of `definitionLists`),
 `four_space_rule` (referenced once, defined nowhere; deleted by PD-3), Pandoc
 `yaml_metadata_block` (excluded), and the CLI-only double-tilde strikethrough
-flag (S-7 decides whether it becomes an option or is removed).
+flag (removed, decision D-8). Removed as well: `stripHTMLComments` and any
+comment-retention option, because an HTML comment is a `Comment` node under the
+inherited grammar and nothing strips comments (CA-22, OC-5).
 
 ### No profiles
 
@@ -230,7 +231,7 @@ opaque to every later class.
 | ---- | ------------------------------------------------------------ | --------------------------------- | --------------------------- | ----------------- |
 | A1   | backslash escape                                             | inherited                         | scanner                     | CommonMark        |
 | A2   | code span                                                    | inherited                         | scanner, opaque             | CommonMark        |
-| A3   | raw HTML token, `<autolink>`                                 | inherited                         | scanner, opaque token bytes | CommonMark        |
+| A3   | raw HTML token (an HTML comment is `Comment`), `<autolink>`  | inherited                         | scanner, opaque token bytes | CommonMark, CA-22 |
 | A4   | formula `$`, `$$`, `` $`...`$ ``, `\(`, `\[`                 | `formulas`                        | scanner, opaque             | CA-21, S-7        |
 | A5   | inline comment `%%...%%`                                     | `comments`                        | scanner, opaque             | OC-1, S-7         |
 | A6   | wikilink `[[...]]`, `![[...]]`                               | `crossLinks`                      | scanner, opaque             | OW-1, OW-4, S-4   |
@@ -256,24 +257,24 @@ opaque to every later class.
 
 ### Block starts
 
-| Step | Block start                                                | Option                                  | Decided by         |
-| ---- | ---------------------------------------------------------- | --------------------------------------- | ------------------ |
-| 0    | Properties envelope, first line only                       | `properties`                            | OP-1               |
-| 1    | container prefixes                                         | inherited                               | CommonMark         |
-| 2    | fenced and indented code, HTML block                       | inherited                               | CommonMark         |
-| 3    | block comment `%%` line                                    | `comments`                              | OC-2, S-8          |
-| 4    | block quote, becoming `Callout`, with metadata on line one | inherited, `callouts`                   | OK-1               |
-| 5    | list markers, including fancy and example markers          | inherited, `fancyLists`, `exampleLists` | PL-8, PL-15        |
-| 6    | container and leaf directive `:::name`, `::name`           | `directives`                            | RM-2, S-8          |
-| 7    | fenced div `::: {...}`, `::: word`                         | `fencedDivs`                            | PF-1, S-8          |
-| 8    | ATX heading, with `headerAttributes`                       | inherited                               | PA-6               |
-| 9    | Setext heading                                             | inherited                               | PT-11, S-8         |
-| 10   | tables: caption-prefixed, pipe, grid, multiline, simple    | `tables` and the Pandoc table options   | PT-5, PT-11, PT-14 |
-| 11   | thematic break                                             | inherited                               | PT-11              |
-| 12   | footnote definition, reference definition                  | `footnotes`, inherited                  | S-1, PC-14         |
-| 13   | definition list                                            | `definitionLists`                       | PD-2, PD-9, S-8    |
-| 14   | block identifier line `^id`                                | `blockIdentifiers`                      | OB-2, S-5          |
-| 15   | paragraph, with the `^id` suffix at finalization           | inherited                               | OB-1, S-7          |
+| Step | Block start                                                         | Option                                  | Decided by         |
+| ---- | ------------------------------------------------------------------- | --------------------------------------- | ------------------ |
+| 0    | Properties envelope, first line only                                | `properties`                            | OP-1               |
+| 1    | container prefixes                                                  | inherited                               | CommonMark         |
+| 2    | fenced and indented code, HTML block (a comment block is `Comment`) | inherited                               | CommonMark, CA-22  |
+| 3    | block comment `%%` line                                             | `comments`                              | OC-2, S-8          |
+| 4    | block quote, becoming `Callout`, with metadata on line one          | inherited, `callouts`                   | OK-1               |
+| 5    | list markers, including fancy and example markers                   | inherited, `fancyLists`, `exampleLists` | PL-8, PL-15        |
+| 6    | container and leaf directive `:::name`, `::name`                    | `directives`                            | RM-2, S-8          |
+| 7    | fenced div `::: {...}`, `::: word`                                  | `fencedDivs`                            | PF-1, S-8          |
+| 8    | ATX heading, with `headerAttributes`                                | inherited                               | PA-6               |
+| 9    | Setext heading                                                      | inherited                               | PT-11, S-8         |
+| 10   | tables: caption-prefixed, pipe, grid, multiline, simple             | `tables` and the Pandoc table options   | PT-5, PT-11, PT-14 |
+| 11   | thematic break                                                      | inherited                               | PT-11              |
+| 12   | footnote definition, reference definition                           | `footnotes`, inherited                  | S-1, PC-14         |
+| 13   | definition list                                                     | `definitionLists`                       | PD-2, PD-9, S-8    |
+| 14   | block identifier line `^id`                                         | `blockIdentifiers`                      | OB-2, S-5          |
+| 15   | paragraph, with the `^id` suffix at finalization                    | inherited                               | OB-1, S-7          |
 
 ## Findings by file
 
@@ -392,10 +393,12 @@ A transitional finding names the landing-plan item that resolves it.
   `stripHTMLComments` on the AST is stated nowhere. Rule: `smartPunctuation`
   replaces, in `Text` literals only, `"` and `'` by the cmark flanking rule,
   `--` by U+2013, `---` by U+2014, and `...` by U+2026, changing no node
-  boundaries; `stripHTMLComments` omits an inline `HTML` node whose literal is
-  exactly one comment and an `HTMLBlock` whose literal is exactly one comment,
-  keeps the parent even when emptied, and merges `Text` nodes separated only by
-  an omitted comment.
+  boundaries; `stripHTMLComments` is removed and nothing strips comments; an
+  inline HTML comment token is `Comment(literal)` with `literal` the bytes
+  between `<!--` and `-->` (empty for `<!-->` and `<!--->`), an HTML block that
+  opens with `<!--` and whose end line holds only whitespace after the first
+  `-->` is a block `Comment` under the same literal rule, and every other HTML
+  block stays `HTMLBlock` as written.
 - **CA-23** `:209-210` — A — "retained" leaves open whether destinations are as
   written or unescaped. Rule: `destination`, `source`, and `title` are the
   CommonMark-unescaped values with angle-bracket wrappers removed and no
@@ -724,7 +727,7 @@ A transitional finding names the landing-plan item that resolves it.
   not inherited.
 - **OI-2** `:194-196` — B — the preset's option vector is never stated and the
   combination of `obsidian` with the inherited gates is undefined (`obsidian`
-  with `tables`, `taskLists`, or `footnotes` off; `stripComments` with
+  with `tables`, `taskLists`, or `footnotes` off; the retention option with
   `obsidian` off). Rule (decision D-1, settled): there is no preset and no
   `obsidian` switch; each module is its own option, gated additionally by the
   inherited option of the syntax it extends: `crossLinks`, `marks`, `comments`,
@@ -732,8 +735,7 @@ A transitional finding names the landing-plan item that resolves it.
   alone; `inlineFootnotes` requires `footnotes`, which also gates `[^label]`
   lowering and `Document.footnotes`; `taskMarkers` requires `taskLists`; the
   `\|` rule requires `crossLinks` and whichever table option parses the cell;
-  `$` is gated by `formulas`; `stripComments` has no effect while `comments` is
-  off.
+  `$` is gated by `formulas`.
 - **OI-3** `:136` versus `obsidian/inherited-and-integration.md:66,76-77` — D/A
   — the audit row says two-hyphen delimiter cells are already present under the
   inherited grammar while the integration module makes "at least two hyphens" a
@@ -799,8 +801,8 @@ A transitional finding names the landing-plan item that resolves it.
   text; matching uses the shared process-emphasis algorithm without the rule of
   three; intraword pairs are allowed; a matched pair with an empty region is
   text; `==a==b==` is `Mark("a")` then text `b==`.
-- **OH-2** `:12` — A — `==%%c%%==` with stripping. Rule: validity is decided on
-  source; `Mark.content` may be empty after stripping.
+- **OH-2** `:12` — A — `==%%c%%==`. Rule: validity is decided on source;
+  `Mark.content` holds the `Comment` node.
 - **OH-3** `:33-35` — B — block pass and extended autolinks (`==a` then `==` as
   a Setext underline; `http://x/?a==b== c`). Rule: block structure is decided
   first, so a Setext underline is never a closer; extended autolinks run after
@@ -833,10 +835,10 @@ A transitional finding names the landing-plan item that resolves it.
   in `%%`, `# h`, `end %% x` the heading is a heading and both `%%` are text.
 - **OC-4** `:30-31` versus `canonical-ast.md:128-131` — D — `Comment` is the one
   kind valid in both inline and block content; state it in both files.
-- **OC-5** `:33-37` — B — the stripped AST is not fixed. Rule: stripping removes
-  only the `Comment` node; adjacent `Text` siblings are not merged; a container
-  whose content becomes empty is kept with `content=[]`; a removed block
-  `Comment` leaves no node; no scope changes.
+- **OC-5** `:33-37` — B — the stripped AST is not fixed. Rule: nothing is
+  stripped; every recognized comment is a `Comment` node, the same kind an
+  inherited HTML comment produces (CA-22), and a consumer drops the nodes it
+  does not want.
 - **OC-6** `:43-44` — A — "suppresses every other inline and block extension"
   excludes inherited constructs. Rule: suppresses all inline and block
   recognition, inherited and extension, until its closer.
@@ -847,7 +849,8 @@ A transitional finding names the landing-plan item that resolves it.
   table boundary scanning does not recognize comments; a `|` inside `%%...%%` in
   a table row splits the cell and the unmatched `%%` bytes are text; `\|` inside
   a comment in a table becomes `|` in the literal.
-- **OC-9** `:33-34` — B — `stripComments` with `comments` off. Rule: no effect.
+- **OC-9** `:33-34` — B — the retention option. Rule: there is none; comments
+  are never stripped (CA-22).
 
 #### `obsidian/footnotes.md`
 
@@ -963,9 +966,9 @@ A transitional finding names the landing-plan item that resolves it.
 - **OK-5** missing — B — a Setext underline after the metadata line. Rule:
   metadata is decided when the first line is consumed, before Setext resolution;
   a following underline belongs to the body.
-- **OK-6** `:57-59` — A — `> [!note] %%t%%` with stripping. Rule: `title` is
-  null iff no title bytes were authored; otherwise it is the parsed content and
-  may be empty after stripping.
+- **OK-6** `:57-59` — A — `> [!note] %%t%%`. Rule: `title` is null iff no title
+  bytes were authored; otherwise it is the parsed content, here one `Comment`
+  node.
 - **OK-7** `:15-21` — B — the fold enum is unnamed and the traversal position of
   `title` is unstated. Rule: the enum is `CalloutFold`; `title` is visited
   before `content` and is not counted in `children`.
@@ -1040,8 +1043,8 @@ A transitional finding names the landing-plan item that resolves it.
 - **ON-5** `:21-27` — B — the extended-autolink post-pass is absent from the
   precedence list (`http://x/?a==b== c`, `www.x.com/[[y]]`, `%%http://x%%`).
   Rule: extended autolinks are recognized last, over `Text` nodes only, after
-  delimiter processing and comment stripping, and never inside
-  `Comment.literal`, `CrossLink`, `Code`, or `HTML`.
+  delimiter processing, and never inside `Comment.literal`, `CrossLink`, `Code`,
+  or `HTML`.
 - **ON-6** `:136-146` — B — the five-step precedence omits Properties, block
   comments, the order of task prefix, callout metadata, and block identifier on
   one line, the choice at one `[`, and Setext or thematic-break lines against
@@ -1640,13 +1643,13 @@ A transitional finding names the landing-plan item that resolves it.
   `snake_case` (`pandoc.md:41-51` and every Pandoc module); profiles named
   although none exist (OI-4); one switch composing every Obsidian module (OI-2);
   the example-label rule stated twice in `pandoc/citations.md:111-115` and
-  `pandoc/lists.md:123-126`; `stripHTMLComments` against "pinned cmark behavior"
-  in the integration module; `headerAttributes` off never stated. Rules:
-  `canonical-ast.md` owns camelCase binding names, states that there are no
-  profiles, and lists one switch per extension syntax; the `pandoc.md` table
+  `pandoc/lists.md:123-126`; the integration module's HTML statement against the
+  `Comment` rule for HTML comments (CA-22); `headerAttributes` off never stated.
+  Rules: `canonical-ast.md` owns camelCase binding names, states that there are
+  no profiles, and lists one switch per extension syntax; the `pandoc.md` table
   gains a "ParseOptions field" column; `pandoc/lists.md` owns the example-label
-  rule and `citations.md` points to it; the integration module adds "subject to
-  `stripHTMLComments`"; `pandoc/attributes.md:94` adds the off case.
+  rule and `citations.md` points to it; the integration module states that an
+  HTML comment is a `Comment` node; `pandoc/attributes.md:94` adds the off case.
 - **S-11 Scope and the dump** — no module kind, field, enum, or value is in the
   contract or the dump grammar yet (T, every kind-adding item; X-7); synthesized
   paragraphs with scopes (OF-4, PT-1); which scoped values are `Markup`
@@ -1679,9 +1682,8 @@ resolution checklist assumes them; nothing here is open.
   profile. The product is one syntax set in which every extension syntax is its
   own switch, so each Obsidian module gets its own option, off by default and
   gated additionally by the inherited option of the syntax it extends:
-  `crossLinks`, `marks`, `comments` with `stripComments`, `inlineFootnotes`,
-  `taskMarkers`, `properties`, `blockIdentifiers`, `callouts`, and
-  `imageDimensions` (OI-2).
+  `crossLinks`, `marks`, `comments`, `inlineFootnotes`, `taskMarkers`,
+  `properties`, `blockIdentifiers`, `callouts`, and `imageDimensions` (OI-2).
 - **D-2 The own-line block identifier `text` then `^id` on the next line.**
   Settled by the Obsidian oracle: an identifier is written at the end of its
   block, and `text` followed by `^id` on the next line is one paragraph whose
@@ -1739,13 +1741,14 @@ need no item of their own.
 - [ ] **A1 — `canonical-ast.md` and `canonical-ast.json`:** the coordinate
       contract, the limits section, the recognition-order tables, the
       `ParseOptions` registry with defaults and off rules, the no-profiles
-      statement, the formulas grammar or a pointer to a new module, the
-      `smartPunctuation` and `stripHTMLComments` effects, `Text` merging,
-      `CodeBlock.info` and `closed`, table cell-count handling, destination
-      unescaping, the scoped-value rule, the walk-into-values rule, and the
-      status sentences that name which target file supersedes which section.
-      Closes CA-1 through CA-27 except the transitional ones, CJ-1, CJ-3, CJ-4,
-      CJ-5, CJ-7, S-0, X-1, and decisions D-4, D-5, D-6.
+      statement, the formulas grammar or a pointer to a new module, the the
+      `smartPunctuation` effect, the HTML comment `Comment` rule with the
+      removal of `stripHTMLComments`, `Text` merging, `CodeBlock.info` and
+      `closed`, table cell-count handling, destination unescaping, the
+      scoped-value rule, the walk-into-values rule, and the status sentences
+      that name which target file supersedes which section. Closes CA-1 through
+      CA-27 except the transitional ones, CJ-1, CJ-3, CJ-4, CJ-5, CJ-7, S-0,
+      X-1, and decisions D-4, D-5, D-6.
 - [ ] **A2 — `canonical-ast-dump.md`:** token separation, the `children` table,
       the string escaping form, enum elements in arrays, the universal-field
       line, tagged-value and nested-value encodings, double formatting, the
@@ -1776,14 +1779,14 @@ need no item of their own.
 - [ ] **B2 — `obsidian/wikilinks-and-embeds.md` and `obsidian/highlights.md`:**
       character sets, single brackets, `#` edge cases, escapes, no trimming,
       bracket precedence, option-off, the anchor projection; highlight
-      eligibility and matching, empty content after stripping, block-pass and
+      eligibility and matching, a `Comment` as sole content, block-pass and
       autolink boundaries, option-off. Closes OW-1 through OW-6, OH-1 through
       OH-4.
 - [ ] **B3 — `obsidian/comments.md`:** the opener and closer rule, the block
       start and commit procedure, block-versus-inline classification, both
-      content categories, the stripped shape, all recognition suppressed, the
-      literal, table cells, `stripComments` with `comments` off. Closes OC-1
-      through OC-9.
+      content categories, no stripping, all recognition suppressed, the literal,
+      table cells, an HTML comment beside a `%%` comment. Closes OC-1 through
+      OC-9.
 - [ ] **B4 — `obsidian/footnotes.md`:** the referenced grammar and duplicate
       rule, the bracket-stack rule for `^[`, whitespace-only bodies, no
       synthesized paragraph, the `inline-N` set, the pinned fold version,

@@ -16,7 +16,7 @@ delimiter each occupy their own line apart from optional ASCII spaces. Every
 other valid comment is placed in the current inline content, including a
 multiline comment whose opener or closer shares a line with non-space content.
 
-## Lossless AST and stripping
+## Lossless AST
 
 ```text
 Comment(
@@ -30,11 +30,10 @@ including line endings and indentation. `scope` covers delimiters and body.
 `Comment` is a contextual leaf: its parent edge records whether it occupies
 block or inline content, so the node stores no duplicate mode field.
 
-Recognition and retention are separate decisions. `stripComments` defaults to
-`true` whenever `comments` is on, so the default output omits recognized comment
-nodes. With stripping disabled, the same recognition produces the lossless
-`Comment`; delimiters are not reinterpreted as text. Stripping must not change
-how surrounding delimiters bind.
+Recognition is the only decision: every recognized comment is the lossless
+`Comment` node and nothing strips it. An HTML comment is the same kind under the
+inherited grammar, so a consumer that wants comments gone drops `Comment` nodes.
+Delimiters are never reinterpreted as text.
 
 ## Precedence and fallback
 
@@ -52,6 +51,6 @@ linear for long runs of `%` and for many unmatched candidates.
 
 Tests must cover inline, standalone, multiline inline, empty, adjacent, escaped,
 and unmatched comments; correct block/inline parent placement;
-Markdown/OFM-looking bodies; code and HTML; strip on/off; surrounding delimiter
-binding; exact literal/scope; allocation failure in retained mode; and
-size-doubling percent runs.
+Markdown/OFM-looking bodies; code and HTML; an HTML comment beside a `%%`
+comment; surrounding delimiter binding; exact literal/scope; allocation failure;
+and size-doubling percent runs.

@@ -69,7 +69,7 @@ extension syntax absent from either oracle remains required.
 | [Wikilinks and embeds](obsidian/wikilinks-and-embeds.md) | `[[...]]` and `![[...]]` source forms normalized to `CrossLink`, with `Destination.cross(path, anchor)`, labels, and raw embed parameters |
 | [Block identifiers](obsidian/block-identifiers.md) | `^id` definition placement, ownership, removal, and attachment to the universal anchor field |
 | [Footnotes](obsidian/footnotes.md) | referenced and inline source forms normalized to one-item `Cite` values with `CitationReferent.footnote` and document-owned `Footnote` values |
-| [Comments](obsidian/comments.md) | inline/standalone `%%` comments and stripping |
+| [Comments](obsidian/comments.md) | inline/standalone `%%` comments |
 | [Highlights](obsidian/highlights.md) | `==...==` recognition and the `Mark` inline node |
 | [Tasks](obsidian/tasks.md) | arbitrary task characters and `ListItem.marker` |
 | [Callouts](obsidian/callouts.md) | the universal `Callout` quote container and optional `[!type]` metadata |
@@ -196,8 +196,7 @@ never become `Citation` or a document-owned link registry.
 
 Each module in this contract is one parse option that the caller composes with
 the inherited GFM, footnote, formula, and code behavior; no switch composes
-several modules. `stripComments` defaults to `true` and acts only while
-`comments` is on. The universal reference-link/image normalization, `BlockQuote`
+several modules. The universal reference-link/image normalization, `BlockQuote`
 to `Callout`, source-shaped footnote to
 `Cite`/`Citation`/`CitationReferent`/`Footnote`, and `checked` to `marker`
 migrations are intentional canonical vNext changes and receive no duplicate
@@ -213,9 +212,8 @@ Every module has its own public option, off by default and gated additionally by
 the inherited option of the syntax it extends: `crossLinks`, `marks`,
 `comments`, `inlineFootnotes` (with `footnotes`), `taskMarkers` (with
 `taskLists`), `properties`, `blockIdentifiers`, `callouts`, and
-`imageDimensions`. Comment retention, `stripComments`, is the one option that is
-not a syntax switch, because it changes lossless output after the same
-recognition.
+`imageDimensions`. No option strips comments: a `%%` comment and an inherited
+HTML comment are both `Comment` nodes.
 
 ## Conformance obligations
 

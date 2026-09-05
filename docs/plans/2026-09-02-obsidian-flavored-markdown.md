@@ -121,9 +121,9 @@ not enable Pandoc `@key` syntax through any Obsidian option.
       one complete `Destination.cross`. Heading and block punctuation must not
       survive as a consumer discriminator. Do not rescan the completed literal
       in a binding or renderer.
-- [ ] Make comments opaque during scanning. Support retained `Comment` nodes and
-      parser-level stripping from the same recognized construct so stripping
-      cannot change where other delimiters bind.
+- [ ] Make comments opaque during scanning and emit the same `Comment` node an
+      HTML comment produces; nothing is stripped, so nothing can change where
+      other delimiters bind.
 - [ ] Parse highlight children through the normal inline engine, with source
       ownership by code, comments, and HTML tokens taking precedence. Paired
       inline HTML tags do not create a suppressing region. The inline footnote

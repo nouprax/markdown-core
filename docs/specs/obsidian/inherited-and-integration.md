@@ -120,11 +120,13 @@ block bodies remain opaque to every OFM extension.
 
 ## Inherited HTML behavior
 
-No Obsidian option changes CommonMark HTML recognition. An HTML
-block remains an opaque `HTMLBlock`, and each inline HTML token remains an
-`HTML` leaf. Paired inline opening and closing tags do not establish an element
-region in the Markdown AST, so intervening source is parsed normally. For
-example, `<span>**bold**</span>` produces `HTML`, `Strong`, and `HTML` siblings.
+No Obsidian option changes CommonMark HTML recognition. An HTML block remains an
+opaque `HTMLBlock` and each inline HTML token remains an `HTML` leaf, except
+that an HTML comment is the same `Comment` node a `%%` comment produces, under
+the inherited grammar and no option. Paired inline opening and closing tags do
+not establish an element region in the Markdown AST, so intervening source is
+parsed normally. For example, `<span>**bold**</span>` produces `HTML`, `Strong`,
+and `HTML` siblings.
 
 OFM extensions follow the same boundary: they are not recognized inside source
 bytes already owned by an `HTML` or `HTMLBlock` token, but they remain enabled

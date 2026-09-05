@@ -170,10 +170,12 @@ specification in the same pull request.
 - There are no profiles and no umbrella switch. Every extension syntax is its
   own `ParseOptions` switch, off by default, and off means the inherited
   behavior byte for byte; a module that extends inherited syntax is additionally
-  gated by that syntax's inherited option. The one option that is not a syntax
-  switch is `stripComments`, which defaults to `true` and acts only while
-  `comments` is on. The CLI `--profile` names are harness shorthands for the
-  comparison oracles and define no language.
+  gated by that syntax's inherited option. The CLI `--profile` names are harness
+  shorthands for the comparison oracles and define no language.
+- A comment is a `Comment` node and is never stripped: an HTML comment under the
+  inherited grammar, and a `%%` comment under `comments`. `stripHTMLComments` is
+  removed, no option strips anything, and a consumer that wants comments gone
+  drops the nodes.
 - The parser stores fenced-code info, language, and attributes as written. It
   does not lowercase, alias, or derive a language from a class; consumers
   interpret them.
@@ -217,7 +219,7 @@ and the manifest order.
 | `Directive`                                                                                        | `name`, `label`                                                                                                   | changed; attributes move to the inherited field  | `M7`         |
 | `CrossLink`                                                                                        | `embedded: Bool`, `dest: Destination`, `label: String?`                                                           | new                                              | `O1`         |
 | `Mark`                                                                                             | `content`                                                                                                         | new                                              | `O2`         |
-| `Comment`                                                                                          | `literal`                                                                                                         | new; block or inline by its parent edge          | `O3`         |
+| `Comment`                                                                                          | `literal`                                                                                                         | new; block or inline by its parent edge          | `M0`         |
 | `Cite`                                                                                             | `citations: [Citation]`                                                                                           | new                                              | `M4`         |
 | `Insert`                                                                                           | `content`                                                                                                         | new                                              | `I1`         |
 | `Span`                                                                                             | `content`                                                                                                         | new                                              | `P5`         |
@@ -251,17 +253,16 @@ value carries `scope` only.
 
 Binding spelling is shown; the C facade uses `snake_case`, and the CLI `-e`
 names and fixture fence tags use the extension names from the Pandoc and
-Obsidian indexes. Every new option defaults to `false` except
-`stripComments`, which defaults to `true`. There are no profiles: an
-option is public from the item in its `Public from` column, which is the item
-that lands its behavior, and no item composes options.
+Obsidian indexes. Every new option defaults to `false`. There are no profiles:
+an option is public from the item in its `Public from` column, which is the item
+that lands its behavior, and no item composes options. `stripHTMLComments` is
+removed by `M0`, and nothing strips comments.
 
 | Option                     | Behavior lands in | Public from |
 | -------------------------- | ----------------- | ----------- |
 | `crossLinks`               | `O1`              | `O1`        |
 | `marks`                    | `O2`              | `O2`        |
 | `comments`                 | `O3`              | `O3`        |
-| `stripComments`            | `O3`              | `O3`        |
 | `inlineFootnotes`          | `O4`              | `O4`        |
 | `taskMarkers`              | `O5`              | `O5`        |
 | `properties`               | `O6`              | `O6`        |
@@ -351,6 +352,18 @@ that lands its behavior, and no item composes options.
 
 ## Stage 1 — shared model, one consumer fact per pull request
 
+- [ ] **M0 — `Comment` replaces HTML comment nodes.** Add the `Comment(literal)`
+      kind on every surface as the node for an inline HTML comment token and for
+      an HTML block that opens with `<!--` and whose end line holds only
+      whitespace after the first `-->`; `literal` is the bytes between `<!--`
+      and `-->`, empty for `<!-->` and `<!--->`, and every other HTML block
+      stays `HTMLBlock` as written. Remove `stripHTMLComments`: the C option
+      bit, the CLI flag, the facade field, and every binding option, so no
+      comment is ever stripped and a consumer drops `Comment` nodes instead.
+      Regenerate every fixture containing an HTML comment, add a canonical case,
+      and amend the option table and the `HTML` and `HTMLBlock` rows of
+      `canonical-ast.md`. Manifest states: `comment.placement.block`,
+      `comment.placement.inline`. Requires `S1`.
 - [ ] **M1 — `Destination` on `Link` and `Image`.** Add the tagged `Destination`
       value with both branches and replace `Link.destination` and `Image.source`
       with `dest`; only `url` is produced until `O1`. New facade accessors
@@ -467,7 +480,7 @@ that lands its behavior, and no item composes options.
       `image.dimensions.null`. Exit: the attributes and Remark attribute
       conformance cases pass, no second attribute tokenizer remains, and
       size-doubling valid, duplicate, malformed, and unclosed containers are
-      linear. Requires `M1` through `M6`.
+      linear. Requires `M0` through `M6`.
 - **Stage 1 exit criterion**, verified in the `M7` pull request: every surface
   compiles with exhaustive handling of the inventory kinds that exist so far,
   the projection audit proves kind and field parity, no fixture or document
@@ -509,15 +522,13 @@ that lands its behavior, and no item composes options.
 - [ ] **O3 — Comments.** Under `comments`, scan `%%...%%` from the shared cursor
       with a linear closer search, classify block placement when both delimiters
       occupy their own lines and inline placement otherwise, keep the body
-      opaque, and emit `Comment(literal)` when `stripComments` is off or omit
-      the node without changing surrounding delimiter binding when it is on. Add
-      the kind, fixtures in both modes covering inline, standalone, multiline,
-      empty, adjacent, escaped, unmatched, and Markdown-looking bodies, the
-      syntax of every already merged extension inside a comment body under the
-      opacity rule, and size-doubling percent runs, and a canonical case; remove
-      the two `comment-*` gaps. The heading-text projection of `Comment` in
-      generated anchors is a cross-item case owned by whichever of `O3` and `P3`
-      merges later. Requires `O1`.
+      opaque, and emit the `Comment(literal)` kind that `M0` adds, never
+      stripped. Add fixtures covering inline, standalone, multiline, empty,
+      adjacent, escaped, unmatched, and Markdown-looking bodies, the syntax of
+      every already merged extension inside a comment body under the opacity
+      rule, an HTML comment beside a `%%` comment, and size-doubling percent
+      runs, and a canonical case; remove the two `comment-*` gaps. Requires
+      `O1`.
 - [ ] **O4 — Inline footnotes.** Under `inlineFootnotes`, which requires
       `footnotes`, recognize `^[content]` inside the shared bracket algorithm,
       ahead of superscript, producing one one-item `Cite` with a `footnote`
@@ -693,10 +704,9 @@ that lands its behavior, and no item composes options.
       heading and `M7` directive cases belong to this item. The heading-text
       projection of each kind a later item produces is a cross-item case owned
       by whichever of `P3` and that item merges later: `CrossLink` with `O1`,
-      `Mark` with `O2`, `Comment` with `O3`, `Insert` with `I1`, `Span` with
-      `P5`, `Superscript` and `Subscript` with `P6`, a bibliography `Cite` with
-      `P7`, and `ExampleReference` with `P9b` (audit finding PH-1). Requires
-      `P2b`.
+      `Mark` with `O2`, `Insert` with `I1`, `Span` with `P5`, `Superscript` and
+      `Subscript` with `P6`, a bibliography `Cite` with `P7`, and
+      `ExampleReference` with `P9b` (audit finding PH-1). Requires `P2b`.
 - [ ] **P4 — `implicit_header_references`.** Register a virtual reference
       definition for every heading with a final anchor, keyed by the authored
       label source after removing heading syntax, closing hashes, and trailing
@@ -892,16 +902,17 @@ Sizes are rough review-effort estimates, not schedules.
 | `X0`   | —                  | M    | —                                                                                                                                                                                                       | option registry serving both plans' option bullets                                                                               |
 | `P0`   | `X0`, `S3`         | M    | —                                                                                                                                                                                                       | Pandoc Phase 0; Pandoc Phase 1 gate activation                                                                                   |
 | `I0`   | —                  | S    | —                                                                                                                                                                                                       | inserted-text oracle setup                                                                                                       |
+| `M0`   | `S1`               | S    | —                                                                                                                                                                                                       | Obsidian Phase 2 comments; removes `stripHTMLComments`                                                                           |
 | `M1`   | `S1`               | M    | —                                                                                                                                                                                                       | Obsidian and Pandoc Phase 1 `Destination`                                                                                        |
 | `M2`   | `M1`               | L    | —                                                                                                                                                                                                       | Obsidian Phase 1 reference normalization; Phase 5 projections                                                                    |
 | `M3`   | `S2`               | M    | —                                                                                                                                                                                                       | Obsidian Phase 1 `Callout`                                                                                                       |
 | `M4`   | `M2`, `S2`, `S3`   | L    | —                                                                                                                                                                                                       | Obsidian Phase 1 citation model; Pandoc Phase 1 bibliography branch                                                              |
 | `M5`   | `S2`, `S3`         | M    | —                                                                                                                                                                                                       | Obsidian Phase 1 `marker`; Pandoc Phase 1 list values                                                                            |
 | `M6`   | `S3`               | L    | —                                                                                                                                                                                                       | Pandoc Phase 1 table values                                                                                                      |
-| `M7`   | `M1`–`M6`          | XL   | —                                                                                                                                                                                                       | Obsidian Phase 1 metadata, anchor, dimensions; Pandoc Phase 1 fields; Pandoc Phase 2 attribute operation and directive migration |
+| `M7`   | `M0`–`M6`          | XL   | —                                                                                                                                                                                                       | Obsidian Phase 1 metadata, anchor, dimensions; Pandoc Phase 1 fields; Pandoc Phase 2 attribute operation and directive migration |
 | `O1`   | `X0`, `M7`, `S2`   | M    | `Insert` containing `CrossLink` (`I1`); heading-text projection (`P3`); container after a complete wikilink (`P5`)                                                                                      | Obsidian Phase 2 wikilinks                                                                                                       |
 | `O2`   | `O1`               | S    | `Insert` containing `Mark` (`I1`); heading-text projection (`P3`)                                                                                                                                       | Obsidian Phase 2 highlights                                                                                                      |
-| `O3`   | `O1`               | M    | heading-text projection (`P3`)                                                                                                                                                                          | Obsidian Phase 2 comments                                                                                                        |
+| `O3`   | `O1`               | M    | —                                                                                                                                                                                                       | Obsidian Phase 2 comments                                                                                                        |
 | `O4`   | `O1`               | M    | `^[` before superscript (`P6`)                                                                                                                                                                          | Obsidian Phase 2 inline footnotes and resolution                                                                                 |
 | `O5`   | `O1`               | S    | —                                                                                                                                                                                                       | Obsidian Phase 4 task markers                                                                                                    |
 | `O6`   | `O1`               | XL   | —                                                                                                                                                                                                       | Obsidian Phase 3 Properties                                                                                                      |
@@ -914,7 +925,7 @@ Sizes are rough review-effort estimates, not schedules.
 | `P2b`  | `P0`, `M7`         | S    | —                                                                                                                                                                                                       | Pandoc Phase 2 attachment sites                                                                                                  |
 | `P2c`  | `P0`, `M7`         | M    | anchor reserved before synthesis (`P3`)                                                                                                                                                                 | Pandoc Phase 2 attachment sites                                                                                                  |
 | `P2d`  | `P0`, `M7`         | M    | link tail ahead of a span (`P5`); attributes on an implicit heading reference (`P4`); anchor reserved before synthesis (`P3`)                                                                           | Pandoc Phase 2 attachment, merge, and caller audit                                                                               |
-| `P3`   | `P2b`              | M    | anchor reserved before synthesis (`O7`, `P2a`, `P2c`, `P2d`, `P5`, `P8`); heading-text projection (`O1`, `O2`, `O3`, `I1`, `P5`, `P6`, `P7`, `P9b`)                                                     | Pandoc Phase 2 heading registry                                                                                                  |
+| `P3`   | `P2b`              | M    | anchor reserved before synthesis (`O7`, `P2a`, `P2c`, `P2d`, `P5`, `P8`); heading-text projection (`O1`, `O2`, `I1`, `P5`, `P6`, `P7`, `P9b`)                                                           | Pandoc Phase 2 heading registry                                                                                                  |
 | `P4`   | `P3`               | M    | attributes on an implicit heading reference (`P2d`); complete cite over a virtual heading reference (`P7`)                                                                                              | Pandoc Phase 3 document resolution                                                                                               |
 | `P5`   | `P0`, `M7`         | M    | link tail ahead of a span (`P2d`); anchor reserved before synthesis (`P3`); heading-text projection (`P3`); container after a complete wikilink (`O1`)                                                  | Pandoc Phase 3 spans                                                                                                             |
 | `P6`   | `P0`, `M7`         | S    | `^[` before superscript (`O4`); identifier caret before superscript (`O7`); heading-text projection (`P3`)                                                                                              | Pandoc Phase 3 superscript and subscript                                                                                         |
@@ -936,10 +947,10 @@ Sizes are rough review-effort estimates, not schedules.
   goldens that the next one rewrites again.
 - `S1`, `S2`, and `S3` are specification-only pull requests and proceed in
   parallel with `X0` and `I0`. `S1` precedes `S2` and `S3`, whose modules point
-  to the tables it creates; `S1` precedes `M1`; `S2` precedes `M3`, `M4`, `M5`,
-  and `O1`; `S3` precedes `M4`, `M5`, `M6`, and `P0`; and every feature item
-  follows all three through `M7`, so no implementation item lands before the
-  rules it implements.
+  to the tables it creates; `S1` precedes `M0` and `M1`; `S2` precedes `M3`,
+  `M4`, `M5`, and `O1`; `S3` precedes `M4`, `M5`, `M6`, and `P0`; and every
+  feature item follows all three through `M7`, so no implementation item lands
+  before the rules it implements.
 - `P0` and `I0` touch only scripts and oracle policy and may land at any point
   before the first Pandoc feature item and before `I1`; their registered digests
   are re-registered by whichever model item changes them.
