@@ -94,10 +94,10 @@ sequences; it is landed here as its own track.
   only model-only pull requests; they are the `M` items.
 - A feature pull request is one option's behavior: the C extension or scanner,
   its reviewed position in the attach-order table, the option's facade field,
-  registry row, `canonical-ast.md` row flipped from `allocated` to `active`, manifest key, and binding option, the
-  new kind if any, package fixtures for the module's required conformance cases,
-  a canonical case for each new kind or state, and the removal of every oracle
-  gap it closes.
+  registry row, `canonical-ast.md` row flipped from `allocated` to `active`,
+  manifest key, and binding option, the new kind if any, package fixtures for
+  the module's required conformance cases, a canonical case for each new kind or
+  state, and the removal of every oracle gap it closes.
 - Every option name is allocated in the inventory and registered through the
   registry that `X0` creates. A feature item publishes its option, defaulting to
   off, together with the behavior, option-off cases, oracle evidence, and

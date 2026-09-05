@@ -1746,8 +1746,8 @@ need no item of their own.
       `ParseOptions` table with defaults, off rules, and a `Status` column
       (`active` or `allocated` with the landing item; `stripHTMLComments` stays
       `active` until `M0` deletes it), the no-profiles statement, the formulas
-      grammar or a pointer to a new module, the the `smartPunctuation` effect,
-      the HTML comment `Comment` rule with the removal of `stripHTMLComments`,
+      grammar or a pointer to a new module, the `smartPunctuation` effect, the
+      HTML comment `Comment` rule with the removal of `stripHTMLComments`,
       `Text` merging, `CodeBlock.info` and `closed`, table cell-count handling,
       destination unescaping, the scoped-value rule, the walk-into-values rule,
       and the status sentences that name which target file supersedes which
