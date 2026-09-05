@@ -67,10 +67,11 @@ Outer pipes are optional. A delimiter cell contains at least two hyphens;
 leading/trailing colons select alignment. Basic inline and OFM inline syntax is
 valid in cells.
 
-A pipe belonging to a wikilink label or an embed size must be authored as
-`\|` inside a table. Table boundary scanning recognizes that escape before
-splitting cells, while the inline scanner receives the logical pipe and parses
-one `CrossLink`. There is no table-specific wikilink parser; the escape rule applies while `tables` and `wikilinks` are both on.
+A pipe belonging to a wikilink label or an embed size must be authored as `\|`
+inside a table. Table boundary scanning recognizes that escape before splitting
+cells, while the inline scanner receives the logical pipe and parses one
+`CrossLink`. There is no table-specific wikilink parser; the escape rule applies
+while `tables` and `wikilinks` are both on.
 
 Ordinary GFM tables keep the same algorithm and AST under every option set. The
 inherited delimiter-row grammar is unchanged; a two-hyphen delimiter cell is a

@@ -76,9 +76,9 @@ extension syntax absent from either oracle remains required.
 | [Inherited syntax and integration](obsidian/inherited-and-integration.md) | resolved reference links/images, tables, image sizes, math, code containers, inherited HTML behavior, and cross-feature precedence |
 
 The module owning a construct defines its grammar, AST fields, source scopes,
-fallback, and conformance cases. This index owns each module's option and the rules that apply across modules. If two modules interact, the integration
-module owns the composition rule while each feature module retains its local
-semantics.
+fallback, and conformance cases. This index owns each module's option and the
+rules that apply across modules. If two modules interact, the integration module
+owns the composition rule while each feature module retains its local semantics.
 
 The block-identifier module depends on the shared
 [anchor model](anchors.md); it contributes one source attachment rule and does
@@ -175,14 +175,16 @@ set, without an alias or compatibility node. With `callouts` off, the source
 grammar is inherited and every `>` container is a metadata-free `Callout`.
 
 Canonical vNext adds optional `Document.metadata` and the shared `Metadata`,
-`MetadataRecord`, `MetadataScalar`, and `MetadataValue` values. Only the `properties` option populates that field in this contract; with it off
-the source grammar is inherited and the document produces `metadata=null`.
-Pandoc `yaml_metadata_block` is not enabled or specified.
+`MetadataRecord`, `MetadataScalar`, and `MetadataValue` values. Only the
+`properties` option populates that field in this contract; with it off the
+source grammar is inherited and the document produces `metadata=null`. Pandoc
+`yaml_metadata_block` is not enabled or specified.
 
 Whenever `footnotes` is enabled, canonical vNext also replaces
 `FootnoteReference` and `FootnoteDefinition` with inline `Cite`, its owned
 `Citation` carrying a `CitationReferent.footnote`, document-owned `Footnote`,
-and `Document.footnotes`. This is one universal consumer model; only `inlineFootnotes` adds the `^[...]` source form.
+and `Document.footnotes`. This is one universal consumer model; only
+`inlineFootnotes` adds the `^[...]` source form.
 
 Canonical vNext resolves every successful direct, full, collapsed, shortcut,
 and autolink form to `Link(dest=Destination.url(...))`, and every successful
@@ -201,9 +203,10 @@ normalization, `BlockQuote` to `Callout`, source-shaped footnote to
 migrations are intentional canonical vNext changes and receive no duplicate
 compatibility state.
 
-Pandoc `@key` citation syntax is not part of OFM, and no Obsidian option enables it. A separate `citations` parse extension recognizes it while
-reusing the same `Cite`, `Citation`, and `CitationReferent` model; disabling
-that extension does not disable footnote syntax or its `Cite` nodes carrying
+Pandoc `@key` citation syntax is not part of OFM, and no Obsidian option enables
+it. A separate `citations` parse extension recognizes it while reusing the same
+`Cite`, `Citation`, and `CitationReferent` model; disabling that extension does
+not disable footnote syntax or its `Cite` nodes carrying
 `CitationReferent.footnote`.
 
 Every module has its own public option, off by default and gated additionally by
