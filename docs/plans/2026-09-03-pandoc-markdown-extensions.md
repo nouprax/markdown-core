@@ -137,10 +137,11 @@ selected Pandoc extension participates.
 
 ## Phase 2 — one attribute operation and heading registry
 
-- [ ] Implement the shared attribute scanner and normalization operation once.
-      The pinned Pandoc 3.11 reader supplies its exact source grammar and `Attr`
-      semantics; project its identifier into the owner anchor and its remaining
-      components into classes and records. Remark and Pandoc profile modules
+- [ ] Implement the shared attribute scanner and normalization operation once,
+      to the grammar and semantics that the shared attributes contract states;
+      the pinned Pandoc 3.11 reader is evidence for that contract, never its
+      source of rules. Project the identifier into the owner anchor and the
+      remaining components into classes and records. Remark and Pandoc modules
       contribute attachment sites only. No node owns a private parser or storage
       shape.
 - [ ] Replace the existing directive-only Remark attribute parser and pair-array

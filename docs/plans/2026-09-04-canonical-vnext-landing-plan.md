@@ -326,7 +326,8 @@ the `stripHTMLComments` row, since nothing strips comments.
       here: the inventory allocates the names, and each feature item publishes
       its own option together with its behavior. Exit: every existing fixture
       and canonical case is byte-identical, and the registry, CLI, fixture tags,
-      and checker agree on the nine `active` names.
+      and checker agree on the set of `active` rows as it stands when this item
+      merges, nine names before `M0` and eight after it.
 - [ ] **P0 — Pandoc evidence gate.** Add `oracle-pandoc` to
       `scripts/init-environment.sh`: `--install` fetches only the host archive
       named by `specs/oracles/pandoc/source.json` and verifies its SHA-256, and
