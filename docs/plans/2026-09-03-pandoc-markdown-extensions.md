@@ -158,7 +158,7 @@ selected Pandoc extension participates.
       Failed suffixes release source transactionally.
 - [ ] Finalize explicit and generated heading anchors in one document registry.
       Use the specified GFM algorithm, reserve every explicit anchor from every
-      enabled profile before synthesis, generate headings in source order,
+      enabled option before synthesis, generate headings in source order,
       resolve generated collisions deterministically, and build virtual
       implicit-reference entries from the same final values.
 - [ ] Audit every existing Link/Image, Heading, Code/CodeBlock, directive, and
