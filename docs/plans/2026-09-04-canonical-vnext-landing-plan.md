@@ -103,13 +103,13 @@ sequences; it is landed here as its own track.
   syntax. No item publishes two representations of one semantic fact, even
   between merges: the item that introduces a replacement removes what it
   replaces.
-- Parity gates are ratchets. A model item that changes an input's Markdown
-  Core digest re-registers that digest in the same pull request; a feature
-  item deletes the gaps it closes in the same pull request. A model delta that
-  survives a feature is a general projection with a canary, never a hidden
-  normalization.
-
-### Definition of done for every item
+- Oracles are evidence, not targets. A gap entry records a feature this parser
+  does not yet implement; when the item lands, the entry becomes either
+  agreement or a documented projection with a canary where the specification
+  chooses differently, and no item changes a rule to match an oracle. A model
+  item that changes an input's Markdown Core digest re-registers that digest in
+  the same pull request, and a feature item retires the gap entries it
+  implements in the same pull request.
 
 - Contract: JSON, prose, and dump grammar updated together;
   `pnpm audit:ast-projections`, `pnpm check:contracts`, and
@@ -144,6 +144,13 @@ These questions came up while sequencing and are settled. Where a module
 specification says otherwise, the item that lands the behavior amends that
 specification in the same pull request.
 
+- Upstream tools define which features exist, not how they behave here. The
+  module specifications define a common-case feature set drawn from Obsidian
+  and Pandoc that is self-consistent on its own terms, and the repository's
+  conformance fixtures are the oracle of record. Pandoc, Obsidian,
+  remark-obsidian, and markdown-it-ins are evidence: a difference from them is
+  a registered delta, never a rule change, and no gate requires byte-for-byte
+  agreement.
 - `VERSION` stays `3.0.0`. No 3.0 release exists, so every item here is part of
   the unreleased 3.0.0 line and nothing is deferred to a later major.
 - Nothing is frozen while 3.0.0 is unreleased. The C kind enum, the wire kinds,
@@ -284,22 +291,25 @@ CLI, and conformance plumbing.
       Exit: every existing fixture and canonical case is byte-identical, and
       the registry, CLI, fixture tags, and checker agree on the nine existing
       names.
-- [ ] **P0 — Pandoc oracle gate.** Add `oracle-pandoc` to
-      `scripts/init-environment.sh`: `--install` fetches only the host
-      archive named by `specs/oracles/pandoc/source.json` and verifies its
-      SHA-256, and `--check` accepts only the exact 3.11 runner. Add one
-      adapter that passes each `corpus.json` case's exact `from` string to
-      the CLI with an empty data directory and requests JSON, with canaries
-      for the version prefix, the `[1, 23, 1, 2]` API envelope, extension
-      enable and disable behavior, UTF-8 input, and user-data isolation.
-      Define one semantic projection per target concept, register all 25
-      cases as gaps in a fail-closed `specs/oracles/pandoc/deltas.json`
-      carrying both digests and the closing item, and wire
-      `check:pandoc-parity` into `check:oracle-parity`, the External parity
-      CI job, and `scripts/audit-test-topology.sh`. Normal build and test
-      commands still perform no network access. The adapter enables each
-      case's options that the registry already knows and records the rest
-      as gaps. Requires `X0`.
+- [ ] **P0 — Pandoc evidence gate.** Add `oracle-pandoc` to
+      `scripts/init-environment.sh`: `--install` fetches only the host archive
+      named by `specs/oracles/pandoc/source.json` and verifies its SHA-256, and
+      `--check` accepts only the exact 3.11 runner. Add one adapter that passes
+      each `corpus.json` case's exact `from` string to the CLI with an empty
+      data directory and requests JSON, with canaries for the version prefix,
+      the `[1, 23, 1, 2]` API envelope, extension enable and disable behavior,
+      UTF-8 input, and user-data isolation. Define one semantic projection per
+      target concept, register all 25 cases as not yet implemented in a
+      fail-closed `specs/oracles/pandoc/deltas.json` carrying both digests and
+      the implementing item, and wire `check:pandoc-parity` into
+      `check:oracle-parity`, the External parity CI job, and
+      `scripts/audit-test-topology.sh`. Normal build and test commands still
+      perform no network access. The adapter enables each case's options that
+      the registry already knows and records the rest as not yet implemented.
+      The comparison covers only the declared intersection and is evidence: a
+      case where the specification chooses differently becomes a documented
+      projection with a canary when its item lands, and no item changes a rule
+      to match Pandoc. Requires `X0`.
 - [ ] **I0 — Inserted-text oracle gate.** Pin `markdown-it@13.0.2` and
       `markdown-it-ins@4.0.0` as exact development dependencies with the
       integrity values recorded in `docs/specs/inserted-text.md`; add

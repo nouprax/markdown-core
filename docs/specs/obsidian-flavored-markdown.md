@@ -11,12 +11,15 @@ not explanatory guidance.
 
 ## Authority and source closure
 
-The extension-syntax authority is the official
+The official
 [Obsidian Flavored Markdown page](https://obsidian.md/help/obsidian-flavored-markdown),
 read at `obsidianmd/obsidian-help` commit
-[`d780d6b48a92ee6a150304b40ee888f322bf43bf`](https://github.com/obsidianmd/obsidian-help/tree/d780d6b48a92ee6a150304b40ee888f322bf43bf).
-Its linked syntax pages, plus the embedded-search link reached from the embeds
-page, complete the reviewed source closure:
+[`d780d6b48a92ee6a150304b40ee888f322bf43bf`](https://github.com/obsidianmd/obsidian-help/tree/d780d6b48a92ee6a150304b40ee888f322bf43bf),
+is the source of the feature definitions; the modules below are the normative
+statement of the common-case feature set drawn from it, and byte-for-byte
+agreement with Obsidian is not a goal. Its linked syntax pages, plus the
+embedded-search link reached from the embeds page, complete the reviewed
+source closure:
 
 - [Properties](https://obsidian.md/help/properties), including the
   beginning-of-file YAML/JSON envelope, open property names, supported values,

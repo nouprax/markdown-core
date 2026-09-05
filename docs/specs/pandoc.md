@@ -1,15 +1,20 @@
 # Pandoc Markdown extensions
 
-Status: normative target index. Authority: Pandoc 3.11, released 2026-08-29,
-at immutable tag commit `b913622e1ff87c69ab8b1a606577122e220925cd`.
-Implementation sequencing and proof obligations are defined by the
+Status: normative target index. The modules below are the sole normative
+statement of these extensions as a common-case feature set; where a module is
+silent, behavior is undefined until the module is amended and is never
+inherited from Pandoc. Pandoc 3.11, released 2026-08-29, at immutable tag
+commit `b913622e1ff87c69ab8b1a606577122e220925cd`, is the source of the
+feature definitions and of the evidence corpus, not an authority over
+behavior, and byte-for-byte agreement with it is not a goal. Implementation
+sequencing and proof obligations are defined by the
 [Pandoc Markdown extensions plan](../plans/2026-09-03-pandoc-markdown-extensions.md).
 The [Pandoc User's Guide](https://pandoc.org/MANUAL.html#pandocs-markdown)
-owns the source language; the tagged
+describes the source language these modules draw from; the tagged
 [Markdown reader](https://github.com/jgm/pandoc/tree/b913622e1ff87c69ab8b1a606577122e220925cd/src/Text/Pandoc/Readers)
-and official Pandoc 3.11 native/JSON output are grammar and executable AST
-evidence. Their immutable blobs, release artifacts, checksums, extension map,
-and runner restrictions are fixed by the
+and official Pandoc 3.11 native/JSON output are evidence. Their immutable
+blobs, release artifacts, checksums, extension map, and runner restrictions
+are fixed by the
 [Pandoc oracle policy](../../specs/oracles/pandoc/README.md).
 
 Pandoc 3.11 also owns the one shared braced-attribute grammar. Its `Attr` tuple

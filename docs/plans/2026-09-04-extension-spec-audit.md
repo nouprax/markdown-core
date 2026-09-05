@@ -7,7 +7,12 @@ recorded. The goal it measures against is a closed, well-defined extension set
 in which every input has exactly one specified output on every surface.
 Byte-for-byte agreement with Pandoc, Obsidian, or any other oracle is not a
 goal; a specification that states its own rule and registers the oracle
-difference is.
+difference is. The feature set is the common case: each module states the forms
+it supports, chooses the simplest self-consistent rule where upstream behavior
+is intricate, and treats everything outside its stated grammar as ordinary text
+rather than as a gap. The repository's own conformance fixtures are the oracle
+of record; the pinned upstream tools are sources of feature definitions and
+evidence.
 
 ## Verdict
 
@@ -25,7 +30,7 @@ end sequences them by file.
 | Pandoc modules             |    10 |     110 |
 | Seams between modules      |    32 |      13 |
 | Structural gaps            |     — |      10 |
-| Decisions to settle        |     — |       9 |
+| Decisions to settle        |     — |      10 |
 
 The structural gaps, each of which many findings reduce to:
 
@@ -89,14 +94,15 @@ The structural gaps, each of which many findings reduce to:
 Every file was read completely, in four passes: the shared contracts, the
 Obsidian modules, the Pandoc modules, and a pass over the seams between them.
 Each finding names the file and line, quotes the text, classifies the problem,
-and proposes the rule to adopt rather than asking for clarification. Engine
-facts that findings rely on were checked against the C sources: the footnote
-label set picks no winner among duplicate definitions, the three limits above
-are numeric constants, single-tilde strikethrough is accepted unless a CLI-only
-flag is set, the case-fold table records no Unicode version, the task-list
-scanner's separator class, the extended-autolink post-pass, and the single
-implemented extension attach order (strikethrough, autolink, task list, formula,
-directive, table).
+and proposes the rule to adopt rather than asking for clarification. Where a
+proposed rule cites upstream behavior, it does so as evidence for a simple rule,
+never as a requirement to match. Engine facts that findings rely on were checked
+against the C sources: the footnote label set picks no winner among duplicate
+definitions, the three limits above are numeric constants, single-tilde
+strikethrough is accepted unless a CLI-only flag is set, the case-fold table
+records no Unicode version, the task-list scanner's separator class, the
+extended-autolink post-pass, and the single implemented extension attach order
+(strikethrough, autolink, task list, formula, directive, table).
 
 Classes: **A** ambiguity (two readings, undefined terms, modal words where
 behavior must be fixed); **B** underspecification (missing start or end
@@ -186,6 +192,21 @@ implemented, which the canonical contract should state:
 | `gfm-extended`     | table, strikethrough, autolink, task list, formula, directive | `footnotes`                                           |
 | `default`          | table, strikethrough, autolink, task list, formula, directive | `footnotes`, `smartPunctuation`, `stripHTMLComments`  |
 | `obsidian`         | decision D-1                                                 | `obsidian`, `stripObsidianComments`, plus D-1         |
+
+### Common-case scope
+
+The proposed rules already take the simplest self-consistent option wherever
+upstream behavior is intricate: no emoji handling, no language lowercasing or
+aliasing, no `p.` page-number exception for capital-period markers, numbers
+limited to nine digits, one Roman-numeral grammar, captions decided in one
+lookahead, no display-width arithmetic in tables, citation locators kept as
+suffix text, example labels resolved only in the `(@label)` spelling, and a
+single tilde meaning subscript when that option is on. Five features still carry
+most of the remaining intricacy, and each could be narrowed to a smaller common
+form or dropped without affecting any other module: grid tables with row and
+column spans, multiline tables, example-list numbering resets, definition-list
+lazy continuation, and author-in-text citation tails. Decision D-10 records that
+choice.
 
 ## Recognition order
 
@@ -1673,6 +1694,14 @@ assumes.
 - **D-9 Example-label capture.** Recommended: only the `(@label)` spelling
   resolves against example labels; bare `@label` is always a citation (PC-12), a
   documented deviation from Pandoc.
+
+- **D-10 Feature scope.** Whether grid-table spans, multiline tables,
+  example-list resets, definition-list lazy continuation, and author-in-text
+  citation tails stay in the common-case set as specified, are narrowed to a
+  simpler form, or are dropped. Recommended: keep them as the modules specify,
+  since every rule above is stated, but treat any of them as the first candidate
+  to cut if its implementation item proves expensive; nothing else depends on
+  them.
 
 ## Resolution checklist
 
