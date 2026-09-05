@@ -296,17 +296,20 @@ the `stripHTMLComments` row, since nothing strips comments.
       through A5 in `docs/plans/2026-09-04-extension-spec-audit.md`: the
       coordinate contract, the limits section, the recognition-order tables, the
       `ParseOptions` registry and the no-profiles statement, the formulas
-      grammar, the dump encodings, the shared-contract rules, and the directive
-      envelope module. Specification only; no engine change. Tick when the last
-      of those five pull requests has merged.
+      grammar, the dump encodings, the shared-contract rules, the directive
+      envelope module, and source-and-evidence wording in place of any
+      oracle-as-authority sentence. Specification only; no engine change. Tick
+      when the last of those five pull requests has merged.
 - [ ] **S2 — Obsidian specification closure.** Land the audit's checklist items
-      B1 through B6: the index, every Obsidian module, and each module's pointer
-      to the recognition-order tables. Specification only. Tick when the last of
-      those six pull requests has merged. Its modules point to the
+      B1 through B6: the index, every Obsidian module, each module's pointer to
+      the recognition-order tables, and source-and-evidence wording in place of
+      each module's authority declaration. Specification only. Tick when the
+      last of those six pull requests has merged. Its modules point to the
       recognition-order tables that A1 creates. Requires `S1`.
 - [ ] **S3 — Pandoc specification closure.** Land the audit's checklist items C1
-      through C6: the index, every Pandoc module, and each module's pointer to
-      the recognition-order tables. Specification only. Tick when the last of
+      through C6: the index, every Pandoc module, each module's pointer to the
+      recognition-order tables, and source-and-evidence wording in place of each
+      module's authority declaration. Specification only. Tick when the last of
       those six pull requests has merged. Its modules point to the
       recognition-order tables that A1 creates. Requires `S1`.
 - [ ] **X0 — Option registry and harness plumbing.** Create one C-side option

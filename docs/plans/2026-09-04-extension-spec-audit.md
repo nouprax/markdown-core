@@ -1745,7 +1745,11 @@ the item here only fixes the status line. Order is by dependency: the shared
 contracts first, because every module points to them, then the modules. Every
 module item from B1 through C6 also replaces its module's precedence paragraph
 with a pointer to the recognition-order tables that A1 creates, so the seams
-need no item of their own.
+need no item of their own. Every item from A2 through C6 also replaces any
+`Authority` declaration or oracle-as-authority sentence in its files with
+source-and-evidence wording (X-3): the file is the normative statement, and the
+named upstream page, tool, or corpus is the source of its feature definitions
+and evidence.
 
 - [ ] **A1 — `canonical-ast.md` and `canonical-ast.json`:** the coordinate
       contract, the limits section, the recognition-order tables, the
