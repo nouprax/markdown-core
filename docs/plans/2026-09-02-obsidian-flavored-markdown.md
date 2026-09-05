@@ -11,29 +11,31 @@ mergeable pull requests is
 
 ## Outcome
 
-Add the Obsidian syntax extensions to the C parser and all three bindings, one parse option per module. They reuse the current CommonMark/GFM block and inline algorithms, adds the
-documented OFM syntax as composable extensions, exposes every new semantic fact
-through the immutable canonical AST, and keeps vault resolution and rendering
-out of the parser. Every `>` container becomes `Callout`; a plain quoted block
-has `variant=null`, `title=null`, and `fold=none`, while `[!type]` populates
-that same node model.
-Every successful reference link or image is resolved before the public AST is
-finalized and is indistinguishable from its direct counterpart; source
-definitions and reference forms remain parser-internal.
-One valid beginning-of-file Properties block populates optional
+Add the Obsidian syntax extensions to the C parser and all three bindings, one
+parse option per module. They reuse the current CommonMark/GFM block and inline
+algorithms, add the documented OFM syntax as composable extensions, expose every
+new semantic fact through the immutable canonical AST, and keep vault resolution
+and rendering out of the parser. Every `>` container becomes `Callout`; a plain
+quoted block has `variant=null`, `title=null`, and `fold=none`, while `[!type]`
+populates that same node model. Every successful reference link or image is
+resolved before the public AST is finalized and is indistinguishable from its
+direct counterpart; source definitions and reference forms remain
+parser-internal. One valid beginning-of-file Properties block populates optional
 `Document.metadata` as ordered, out-of-band records. Property names remain an
 open string domain; vault conventions such as `aliases` do not become parser
 keywords or link-resolution results.
 
-The modules are independent extensions, each behind its own option, not a preset and not a full Obsidian parser dialect. They preserve inherited cmark/CommonMark behavior, including Markdown recognition
-between paired inline HTML tags, and adds no HTML element-region suppression.
-Block identifiers populate the same universal `Markup.anchor` string used by other extensions; they do not introduce a block-specific target type.
-Outgoing references use the shared tagged `Destination`: ordinary Markdown
-`Link` and `Image` values own `Destination.url`, while `CrossLink` values own
-the `Destination.cross(path, anchor)` branch. Heading and block source
-spellings populate the same optional anchor field and introduce no
-discriminator. No destination populates the declaration-side anchor on its
-owning reference node.
+The modules are independent extensions, each behind its own option, not a preset
+and not a full Obsidian parser dialect. They preserve inherited cmark/CommonMark
+behavior, including Markdown recognition between paired inline HTML tags, and
+add no HTML element-region suppression. Block identifiers populate the same
+universal `Markup.anchor` string used by other extensions; they do not introduce
+a block-specific target type. Outgoing references use the shared tagged
+`Destination`: ordinary Markdown `Link` and `Image` values own
+`Destination.url`, while `CrossLink` values own the `Destination.cross(path,
+anchor)` branch. Heading and block source spellings populate the same optional
+anchor field and introduce no discriminator. No destination populates the
+declaration-side anchor on its owning reference node.
 
 The normative work items are the module specs linked from the
 [OFM contract index](../specs/obsidian-flavored-markdown.md): Properties,
