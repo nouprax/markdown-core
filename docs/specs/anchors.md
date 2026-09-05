@@ -112,6 +112,6 @@ automatic heading anchors; Obsidian block identifiers; removal of source
 punctuation; identical values produced by different source rules; last-ID and
 explicit-over-generated precedence; reference inheritance without definition
 range inheritance; explicit and generated duplicates; exact occurrence scopes;
-explicit anchors from every enabled option reserved before synthesis; unresolved incoming
-references not mutating targets; allocation failure; and size-doubling anchor
-candidates.
+explicit anchors from every enabled option reserved before synthesis; unresolved
+incoming references not mutating targets; allocation failure; and size-doubling
+anchor candidates.
