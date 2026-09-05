@@ -137,23 +137,60 @@ implementations in the same reviewed change.
 ## Encodings reserved for the target model
 
 The dialect modules add fields and values that the table above does not print
-yet. Each lands with its item and prints as follows, so that the grammar has
-one answer before the first of them arrives:
+yet, and their examples already use the encodings below. Each lands with its
+item, so that the grammar has one answer before the first of them arrives:
 
-- The universal fields print immediately after `scope` on every node, before
-  the kind-specific fields: `anchor=<string or null> classes=[...]
-  records=[["k","v"],...]`.
-- A tagged value prints its branch and named fields: `dest=url("...")`,
-  `dest=cross(path="...",anchor=null)`, `referent=bib(key="...",mode=normal)`,
-  `referent=footnote(id="...")`, `value=scalar(text("..."))`, and
+- The universal fields print immediately after `scope` on every `Markup`
+  line, before the kind-specific fields: `anchor=<string or null>` and
+  `attributes={...}`, where the braces hold the classes as `.name` and the
+  records as `name="value"` in source order, separated by single spaces, and
+  `Attributes.empty` prints as `attributes={}`.
+- A tagged value prints its branch and named fields with no spaces:
+  `dest=url("...")`, `dest=cross(path="...",anchor=null)`,
+  `referent=bib(key="...",mode=normal)`, `referent=footnote(id="...")`,
+  `value=scalar(text("..."))`, `value=scalar(null)`,
+  `value=scalar(bool(true))`, `value=scalar(number("1.50"))`, and
   `value=list([text("a"),number("1")])`.
-- A scoped owned value (`Citation`, `Footnote`, `TableCaption`, `Definition`,
-  `Metadata`, `MetadataRecord`) prints as a nested line under its owner with
-  the same connectors as a child, and `children=N` counts every directly
-  nested line, values included; `Document.metadata` lines precede the content
-  lines and `Document.footnotes` lines follow them. Each body of
-  `Definition.content: [[Markup]]` prints as a nested `DefinitionBody` line.
-- A double prints as the shortest decimal that round-trips, and a table column
-  prints as `columns=[left:0.25,none:null]`.
+- A double prints as the shortest decimal that round-trips, and a table
+  column prints as `columns=[left:0.25,none:null]`.
+- Besides its structural children, a node prints these nested lines with the
+  same connectors, in this order: `Document` prints its `Metadata` value when
+  non-null, then the content, then one `Footnote` value per element of
+  `footnotes`; `Callout` prints a `CalloutTitle` group when `title` is
+  non-null, then the content; `Table` prints its `TableCaption` when non-null,
+  then the `TableHead`, `TableBody`, and `TableFoot` groups holding the rows;
+  `Definition` prints a `DefinitionTerm` group, then one `DefinitionBody`
+  group per body; `Cite` prints one `Citation` value per item, each holding a
+  `CitationPrefix` and a `CitationSuffix` group; `Directive` and
+  `DirectiveBlock` print the `DirectiveLabel` as today.
+- A value line prints `Kind scope=L:C..L:C <fields> children=N` without the
+  universal fields: `Citation scope=... referent=... children=0`,
+  `Footnote scope=... id="..." children=N`, `Metadata scope=... children=N`,
+  and `MetadataRecord scope=... name="..." value=... children=0`. A group
+  line prints `Kind children=N` with no scope and no fields.
+- `children` keeps counting structural children: `content.count` for every
+  content-bearing kind, `items.count` for `List`, `cells.count` for
+  `TableRow`, `head.count + content.count + foot.count` for `Table`,
+  `definitions.count` for `DefinitionList`, the number of bodies for
+  `Definition`, `citations.count` for `Cite`, `records.count` for `Metadata`,
+  `content.count` for `Footnote`, and zero for every leaf, for `Directive`,
+  and for `Citation`. A group line's own `children` is the number of lines
+  nested under it. Nested title, caption, label, metadata, footnote, term,
+  prefix, suffix, and row-group lines are never counted by their owner.
 - Every scalar and enum keeps the encodings above; nothing is omitted because
-  it is null, empty, or default.
+  it is null, empty, or default, and an absent optional nested value prints
+  no line.
+
+Example, for the source `[^a]` followed by a blank line and `[^a]: note`:
+
+```text
+Document scope=1:1..3:10 anchor=null attributes={} children=1
+├── Paragraph scope=1:1..1:4 anchor=null attributes={} children=1
+│   └── Cite scope=1:1..1:4 anchor=null attributes={} children=1
+│       └── Citation scope=1:2..1:3 referent=footnote(id="a") children=0
+│           ├── CitationPrefix children=0
+│           └── CitationSuffix children=0
+└── Footnote scope=3:1..3:10 id="a" children=1
+    └── Paragraph scope=3:7..3:10 anchor=null attributes={} children=1
+        └── Text scope=3:7..3:10 anchor=null attributes={} literal="note" children=0
+```

@@ -52,9 +52,12 @@ the two implementation plans are unchanged.
   than pull requests: each is verified in the pull request of the last item of
   its stage, named beside it, and has nothing of its own to tick.
 - Tick the item when its pull request has merged. In that same pull request,
-  tick the bullets it discharges in the owning implementation plan and flip the
+  tick the bullets it discharges in the owning implementation plan, flip the
   item's row of the feature table in
-  [`docs/specs/dialect.md`](../specs/dialect.md) to `present`.
+  [`docs/specs/dialect.md`](../specs/dialect.md) to `present`, and add the
+  examples of the modules whose behavior the item lands to the package
+  fixtures byte for byte; an item that lands part of a module adds the
+  examples its behavior makes exact.
 - The written order is the default order. Any order that respects the `Requires`
   column of the dependency table is valid: that column lists every direct merge
   prerequisite, an item's full requirement is the transitive closure of that
@@ -307,14 +310,20 @@ nothing strips comments.
       and the source collisions in `docs/specs/dialect/conflicts.md`; resolve
       every finding of the audit; give the `ParseOptions` table of
       `canonical-ast.md` its `Status` column; and retarget the plans, the oracle
-      policies, and the topology audit. Specification only; no engine change.
-      This is the pull request that carries this plan: tick it, and the audit's
-      checklist with it, when it merges.
+      policies, and the topology audit. Each module states its rules with
+      examples in the CommonMark specification's format, an input, a `.` line,
+      and the expected dump in the target grammar that `canonical-ast-dump.md`
+      reserves, so the item that lands a module's behavior adds the module's
+      examples to the package fixtures byte for byte as its first fixtures.
+      Specification only; no engine change. This is the pull request that
+      carries this plan: tick it, and the audit's checklist with it, when it
+      merges.
 - [ ] **X0 — Option registry and harness plumbing.** Create one C-side option
       registry that maps a registered name to its facade field or engine
       extension bit, and route the CLI `-e` names, the `ts_ast_enable` fixture
-      tags, and the facade-to-engine mapping through it, so a feature item adds
-      exactly one row. Make `scripts/check-canonical-ast-fixtures.mjs` read the
+      tags, including the `!name` tag that turns an inherited option off as
+      the dialect examples spell it, and the facade-to-engine mapping through
+      it, so a feature item adds exactly one row. Make `scripts/check-canonical-ast-fixtures.mjs` read the
       option vocabulary from the `active` rows of the `ParseOptions` table in
       `canonical-ast.md`, which `S0` gave its `Status` column, instead of a
       second hardcoded list, failing on an `active` row the registry lacks or a

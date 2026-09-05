@@ -171,6 +171,34 @@ explicitly.
   that: kind ordinals, wire layouts, manifest order, and identifiers may change
   in any reviewed change.
 
+## Examples
+
+Every module states its rules in prose and grammar and illustrates each rule
+with examples in the CommonMark specification's format: a fence line of 32
+backticks followed by ` example` and the example's tags, the Markdown input,
+a line holding one `.`, the expected canonical AST dump, and a closing fence
+of 32 backticks. The expected dump is the module's target model in the
+grammar of [`canonical-ast-dump.md`](canonical-ast-dump.md), including the
+encodings that document reserves for kinds and fields that have not landed
+yet; where an example's syntax is present in the implementation today, its
+dump differs from the current fixtures only by the model changes of the
+landing plan's items `M0` through `M7` and by those reserved encodings.
+
+The tags name the options the example runs with, in the `snake_case`
+spelling of the fixture tags. An example runs with the product defaults, the
+eight inherited options on and every other option off, plus each listed
+option; a tag of the form `!name` turns an inherited option off for that
+example, and an example with no tags runs with the product defaults alone.
+Tags are independent of order. Examples are numbered by position within
+their module, first to last, and a harness reports an example as its module
+and number.
+
+Every example is normative. The item that lands a module's behavior adds the
+module's examples to the package fixtures byte for byte, in the same fixture
+format, and a later change to an example is a behavior change reviewed like
+any other. An example never demonstrates behavior its prose does not state;
+where the two disagree, both are wrong and the module is amended.
+
 ## Recognition order
 
 Recognition is one pass of the shared block parser followed by one pass of the
@@ -192,7 +220,7 @@ candidate's first byte and the next alternative runs from there.
 | ---- | -------------------------------------------------------------------- | ---------------------------------- | -------------------------------------------------------------------- |
 | A1   | backslash escape                                                     | inherited                          | scanner                                                              |
 | A2   | code span                                                            | inherited                          | scanner, opaque                                                      |
-| A3   | raw HTML token, HTML comment as `Comment`, angle-bracket autolink    | inherited, `autolinks` for the autolink | scanner, opaque token bytes                                     |
+| A3   | raw HTML token, HTML comment as `Comment`, angle-bracket autolink, bare URL and `www.` autolink | inherited, `autolinks` for the bare forms | scanner, opaque token or run                          |
 | A4   | formula `$`, `$$`, `` $`...`$ ``, `\\(`, `\\[`                       | `formulas`                         | scanner, opaque                                                      |
 | A5   | inline comment `%%...%%`                                             | `comments`                         | scanner, opaque                                                      |
 | A6   | cross link `[[...]]`, `![[...]]`                                     | `crossLinks`                       | scanner, opaque                                                      |
@@ -201,11 +229,12 @@ candidate's first byte and the next alternative runs from there.
 | A9   | example reference `(@label)`                                         | `exampleLists`                     | scanner, finalized document-wide                                     |
 | A10  | text directive `:name[...]{...}`                                     | `directives`                       | scanner                                                              |
 | A11  | character reference                                                  | inherited                          | scanner                                                              |
-| B0   | defined footnote call `[^label]`                                     | `footnotes`                        | bracket close, first                                                 |
-| B1   | link and image tails, then an attribute container                    | inherited, `linkAttributes`        | bracket close                                                        |
-| B2   | `[...]{attrs}` span                                                  | `bracketedSpans`                   | bracket close                                                        |
-| B3   | `[@key...; ...]` cite group                                          | `citations`                        | bracket close                                                        |
-| B4   | shortcut reference                                                   | inherited                          | bracket close, last                                                  |
+| B1   | direct link and image tail, then an attribute container              | inherited, `linkAttributes`        | bracket close, first                                                 |
+| B2   | defined footnote call `[^label]`                                     | `footnotes`                        | bracket close                                                        |
+| B3   | resolving full and collapsed reference tails, then a container       | inherited, `linkAttributes`        | bracket close                                                        |
+| B4   | `[...]{attrs}` span                                                  | `bracketedSpans`                   | bracket close                                                        |
+| B5   | `[@key...; ...]` cite group                                          | `citations`                        | bracket close                                                        |
+| B6   | resolving shortcut reference, then a container while `bracketedSpans` is off | inherited, `linkAttributes` | bracket close, last                                                |
 | C1   | `*`, `_` emphasis and strong                                         | inherited                          | delimiter stack                                                      |
 | C2   | `~~` strikethrough                                                   | `strikethrough`                    | delimiter stack                                                      |
 | C3   | `~` subscript, or single-tilde strikethrough                         | `subscript`, `strikethrough`       | delimiter stack                                                      |
@@ -213,7 +242,7 @@ candidate's first byte and the next alternative runs from there.
 | C5   | `==` mark                                                            | `marks`                            | delimiter stack                                                      |
 | C6   | `++` insert                                                          | `insertedText`                     | delimiter stack                                                      |
 | D    | attribute suffix at every attachment site                            | per option                         | immediately after its owner                                          |
-| E    | GFM bare autolink                                                    | `autolinks`                        | post-pass over `Text` only                                           |
+| E    | GFM email autolink                                                   | `autolinks`                        | post-pass over `Text` only                                           |
 | F    | smart punctuation                                                    | `smartPunctuation`                 | post-pass over `Text` only                                           |
 
 Classes B and C are the inherited bracket and delimiter algorithms of
@@ -263,8 +292,10 @@ module recognizes anything inside them.
 - an HTML token, an HTML block, and a `Comment` produced by either grammar;
 - a formula body, inline or block, under `formulas`;
 - an inline or block `%%` comment under `comments`;
-- a completed cross link under `crossLinks`; and
-- the source of an angle-bracket or bare autolink.
+- a completed cross link under `crossLinks`;
+- the source of an angle-bracket autolink; and
+- the run of a bare URL or `www.` autolink under `autolinks`, from its first
+  byte to its terminator.
 
 Opacity is by ownership, not by region: a pair of matching inline HTML tags,
 a pair of comments, or two cross links do not make the bytes between them
@@ -304,7 +335,6 @@ dialect. Changing one is a behavior change.
 | decimal list marker and example counter digits                    | 9             | a longer digit run is not a marker                                                     |
 | image dimension value                                             | 2147483647    | a larger value yields no dimensions; the whole label stays alt content                 |
 | properties alias expansion                                        | 1048576 bytes | a payload whose expanded alias occurrences exceed the budget invalidates the candidate |
-| completed pipe-table cells per table                              | 524288        | the next line ends the table                                                           |
 | completed pipe-table cells per table                              | 524288        | the next line ends the table                                                           |
 
 Block container depth is not limited: the parser, every transport, and every
@@ -350,11 +380,13 @@ of the definition it resolved through.
 
 ## Conformance obligations
 
-Every module ends with a required-cases section. A feature lands only with:
+Every module ends with a required-cases section, and its examples are its
+first required cases. A feature lands only with:
 
-- package fixtures for every required case, including the option-off case for
-  every documented form, every malformed boundary, exact scopes, allocation
-  failure at every allocation, and a size-doubling case, defined in
+- package fixtures for every example of the module, byte for byte, and for
+  every required case, including the option-off case for every documented
+  form, every malformed boundary, exact scopes, allocation failure at every
+  allocation, and a size-doubling case, defined in
   [`test-architecture.md`](test-architecture.md);
 - a canonical case in `specs/canonical-ast/` for every new kind, enum value,
   and nullable state, so that `scripts/check-canonical-ast-fixtures.mjs` sees

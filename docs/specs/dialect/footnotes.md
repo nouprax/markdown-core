@@ -7,7 +7,9 @@ extension for the referenced form; Obsidian and Pandoc for the inline form.
 Executable oracles: cmark-gfm and remark for the referenced form; the inline
 form is product fixtures. Landing: the citation model with `M4`, the inline
 form with `O4`; until `M4` the current contract's `FootnoteReference` and
-`FootnoteDefinition` stand.
+`FootnoteDefinition` stand. Each example in this module names the options it
+adds to the product defaults; the [example format](../dialect.md#examples)
+is defined by the index.
 
 ## The citation model
 
@@ -47,7 +49,37 @@ visited after `Document.content`, ordered by `Footnote.scope.start`, and
 holds referenced definitions and inline values in one sequence.
 `Footnote.content` is inline-or-block content: a referenced definition holds
 its parsed block content, and an inline footnote holds its parsed inline body
-directly, with no synthesized `Paragraph`.
+directly, with no synthesized `Paragraph`. In the dump, each `Citation` is
+nested under its `Cite` with its affixes as `CitationPrefix` and
+`CitationSuffix` groups, and each `Footnote` is nested under `Document` after
+the content lines:
+
+```````````````````````````````` example
+Text[^1] and more[^note].
+
+[^1]: The first note.
+[^note]: The second note.
+.
+Document scope=1:1..4:25 anchor=null attributes={} children=1
+├── Paragraph scope=1:1..1:25 anchor=null attributes={} children=5
+│   ├── Text scope=1:1..1:4 anchor=null attributes={} literal="Text" children=0
+│   ├── Cite scope=1:5..1:8 anchor=null attributes={} children=1
+│   │   └── Citation scope=1:6..1:7 referent=footnote(id="1") children=0
+│   │       ├── CitationPrefix children=0
+│   │       └── CitationSuffix children=0
+│   ├── Text scope=1:9..1:17 anchor=null attributes={} literal=" and more" children=0
+│   ├── Cite scope=1:18..1:24 anchor=null attributes={} children=1
+│   │   └── Citation scope=1:19..1:23 referent=footnote(id="note") children=0
+│   │       ├── CitationPrefix children=0
+│   │       └── CitationSuffix children=0
+│   └── Text scope=1:25..1:25 anchor=null attributes={} literal="." children=0
+├── Footnote scope=3:1..3:21 id="1" children=1
+│   └── Paragraph scope=3:7..3:21 anchor=null attributes={} children=1
+│       └── Text scope=3:7..3:21 anchor=null attributes={} literal="The first note." children=0
+└── Footnote scope=4:1..4:25 id="note" children=1
+    └── Paragraph scope=4:10..4:25 anchor=null attributes={} children=1
+        └── Text scope=4:10..4:25 anchor=null attributes={} literal="The second note." children=0
+````````````````````````````````
 
 ## Referenced footnotes
 
@@ -60,62 +92,348 @@ label      = 1*( any scalar except "]", "[", SP, and TAB )
 
 A definition is recognized only while `footnotes` is on, only when the label
 is at most 1000 bytes, and only at footnote container depth below 100. Its
-continuation lines are indented at least four columns, and its content is
-block content parsed by the ordinary block parser. Its key is the label under
-the inherited reference-label normalization; the stored `Footnote.id` is that
-key and never contains the caret. When two definitions share a key, the first
-in source order wins; each later one is parsed in place as ordinary blocks
-beginning with the literal `[^label]:`, produces no `Footnote`, and calls
-resolve to the winner. A `[^label]:` line is never a link reference
-definition. A valid definition that no call references is still a `Footnote`.
+key is the label under the inherited reference-label normalization; the
+stored `Footnote.id` is that key and never contains the caret. A footnote call
+is the second alternative of the bracket procedure, tested after a direct
+tail: an unescaped `[^label]` whose label is defined produces a one-item
+`Cite` whose `Citation` has referent `footnote(id)` and empty affixes.
+Repeated calls share one `Footnote`; the body is never duplicated:
 
-A footnote call is the first alternative of the bracket procedure: an
-unescaped `[^label]` whose label is defined produces a one-item `Cite` whose
-`Citation` has referent `footnote(id)` and empty affixes, whatever follows the
-`]`, so `[^a](u)` and `[^a]{.x}` are a `Cite` followed by text. Only a literal
-source caret opens a call: `[\^a]`, `[&#94;a]`, and `[&Hat;a]` are text.
-Repeated calls share one `Footnote`; the body is never duplicated. A call
-inside a footnote's own content is an id edge, not an object cycle; a consumer
-that renders bodies recursively detects semantic cycles itself.
+```````````````````````````````` example
+[^a] [^a]
+
+[^a]: once
+.
+Document scope=1:1..3:10 anchor=null attributes={} children=1
+├── Paragraph scope=1:1..1:9 anchor=null attributes={} children=3
+│   ├── Cite scope=1:1..1:4 anchor=null attributes={} children=1
+│   │   └── Citation scope=1:2..1:3 referent=footnote(id="a") children=0
+│   │       ├── CitationPrefix children=0
+│   │       └── CitationSuffix children=0
+│   ├── Text scope=1:5..1:5 anchor=null attributes={} literal=" " children=0
+│   └── Cite scope=1:6..1:9 anchor=null attributes={} children=1
+│       └── Citation scope=1:7..1:8 referent=footnote(id="a") children=0
+│           ├── CitationPrefix children=0
+│           └── CitationSuffix children=0
+└── Footnote scope=3:1..3:10 id="a" children=1
+    └── Paragraph scope=3:7..3:10 anchor=null attributes={} children=1
+        └── Text scope=3:7..3:10 anchor=null attributes={} literal="once" children=0
+````````````````````````````````
+
+Continuation lines are indented at least four columns, and the content is
+block content parsed by the ordinary block parser:
+
+```````````````````````````````` example
+[^a]
+
+[^a]: first paragraph
+    continued
+
+    second paragraph
+.
+Document scope=1:1..6:20 anchor=null attributes={} children=1
+├── Paragraph scope=1:1..1:4 anchor=null attributes={} children=1
+│   └── Cite scope=1:1..1:4 anchor=null attributes={} children=1
+│       └── Citation scope=1:2..1:3 referent=footnote(id="a") children=0
+│           ├── CitationPrefix children=0
+│           └── CitationSuffix children=0
+└── Footnote scope=3:1..6:20 id="a" children=2
+    ├── Paragraph scope=3:7..4:13 anchor=null attributes={} children=3
+    │   ├── Text scope=3:7..3:21 anchor=null attributes={} literal="first paragraph" children=0
+    │   ├── SoftBreak scope=3:22..3:22 anchor=null attributes={} children=0
+    │   └── Text scope=4:5..4:13 anchor=null attributes={} literal="continued" children=0
+    └── Paragraph scope=6:5..6:20 anchor=null attributes={} children=1
+        └── Text scope=6:5..6:20 anchor=null attributes={} literal="second paragraph" children=0
+````````````````````````````````
+
+A valid definition that no call references is still a `Footnote`:
+
+```````````````````````````````` example
+[^a]: kept
+
+text
+.
+Document scope=1:1..3:4 anchor=null attributes={} children=1
+├── Paragraph scope=3:1..3:4 anchor=null attributes={} children=1
+│   └── Text scope=3:1..3:4 anchor=null attributes={} literal="text" children=0
+└── Footnote scope=1:1..2:0 id="a" children=1
+    └── Paragraph scope=1:7..1:10 anchor=null attributes={} children=1
+        └── Text scope=1:7..1:10 anchor=null attributes={} literal="kept" children=0
+````````````````````````````````
+
+When two definitions share a key, the first in source order wins; each later
+one is parsed in place as ordinary blocks beginning with the literal
+`[^label]:`, produces no `Footnote`, and calls resolve to the winner:
+
+```````````````````````````````` example
+[^a]
+
+[^a]: first
+
+[^a]: second
+.
+Document scope=1:1..5:12 anchor=null attributes={} children=1
+├── Paragraph scope=1:1..1:4 anchor=null attributes={} children=1
+│   └── Cite scope=1:1..1:4 anchor=null attributes={} children=1
+│       └── Citation scope=1:2..1:3 referent=footnote(id="a") children=0
+│           ├── CitationPrefix children=0
+│           └── CitationSuffix children=0
+├── Footnote scope=3:1..4:0 id="a" children=1
+│   └── Paragraph scope=3:7..3:11 anchor=null attributes={} children=1
+│       └── Text scope=3:7..3:11 anchor=null attributes={} literal="first" children=0
+└── Footnote scope=5:1..5:12 id="a" children=1
+    └── Paragraph scope=5:7..5:12 anchor=null attributes={} children=1
+        └── Text scope=5:7..5:12 anchor=null attributes={} literal="second" children=0
+````````````````````````````````
 
 A call whose label no definition defines is not a call: the brackets are
-inherited bracket text, may become a shortcut reference only when a link
-definition labelled `^label` exists, and never create a `Footnote`, allocate an
-id, or affect numbering.
+inherited bracket text and never create a `Footnote`, allocate an id, or
+affect numbering. Only a literal source caret opens a call: `[\^a]`,
+`[&#94;a]`, and `[&Hat;a]` are text:
+
+```````````````````````````````` example
+[^x] and [\^a] and [&#94;a]
+
+[^a]: note
+.
+Document scope=1:1..3:10 anchor=null attributes={} children=1
+├── Paragraph scope=1:1..1:27 anchor=null attributes={} children=1
+│   └── Text scope=1:1..1:27 anchor=null attributes={} literal="[^x] and [^a] and [^a]" children=0
+└── Footnote scope=3:1..3:10 id="a" children=1
+    └── Paragraph scope=3:7..3:10 anchor=null attributes={} children=1
+        └── Text scope=3:7..3:10 anchor=null attributes={} literal="note" children=0
+````````````````````````````````
+
+The key is case-folded, so a call and a definition that differ in case share
+one footnote, whose id is the normalized form:
+
+```````````````````````````````` example
+[^Note]
+
+[^note]: x
+.
+Document scope=1:1..3:10 anchor=null attributes={} children=1
+├── Paragraph scope=1:1..1:7 anchor=null attributes={} children=1
+│   └── Cite scope=1:1..1:7 anchor=null attributes={} children=1
+│       └── Citation scope=1:2..1:6 referent=footnote(id="note") children=0
+│           ├── CitationPrefix children=0
+│           └── CitationSuffix children=0
+└── Footnote scope=3:1..3:10 id="note" children=1
+    └── Paragraph scope=3:10..3:10 anchor=null attributes={} children=1
+        └── Text scope=3:10..3:10 anchor=null attributes={} literal="x" children=0
+````````````````````````````````
+
+A valid direct tail `(...)` is tested before the call, so `[^a](u)` is an
+inherited link whose text is `^a`; every other tail and every container after
+a defined call is text, because the call is complete at its `]`:
+
+```````````````````````````````` example
+[^a](u) [^a]{.x}
+
+[^a]: note
+.
+Document scope=1:1..3:10 anchor=null attributes={} children=1
+├── Paragraph scope=1:1..1:16 anchor=null attributes={} children=4
+│   ├── Link scope=1:1..1:7 anchor=null attributes={} dest=url("u") title=null children=1
+│   │   └── Text scope=1:2..1:3 anchor=null attributes={} literal="^a" children=0
+│   ├── Text scope=1:8..1:8 anchor=null attributes={} literal=" " children=0
+│   ├── Cite scope=1:9..1:12 anchor=null attributes={} children=1
+│   │   └── Citation scope=1:10..1:11 referent=footnote(id="a") children=0
+│   │       ├── CitationPrefix children=0
+│   │       └── CitationSuffix children=0
+│   └── Text scope=1:13..1:16 anchor=null attributes={} literal="{.x}" children=0
+└── Footnote scope=3:1..3:10 id="a" children=1
+    └── Paragraph scope=3:7..3:10 anchor=null attributes={} children=1
+        └── Text scope=3:7..3:10 anchor=null attributes={} literal="note" children=0
+````````````````````````````````
+
+A call inside a footnote's own content is an id edge, not an object cycle; a
+consumer that renders bodies recursively detects semantic cycles itself. A
+`[^label]:` line is never a link reference definition.
+
+```````````````````````````````` example
+[^a]
+
+[^a]: see [^b]
+[^b]: end
+.
+Document scope=1:1..4:9 anchor=null attributes={} children=1
+├── Paragraph scope=1:1..1:4 anchor=null attributes={} children=1
+│   └── Cite scope=1:1..1:4 anchor=null attributes={} children=1
+│       └── Citation scope=1:2..1:3 referent=footnote(id="a") children=0
+│           ├── CitationPrefix children=0
+│           └── CitationSuffix children=0
+├── Footnote scope=3:1..3:14 id="a" children=1
+│   └── Paragraph scope=3:7..3:14 anchor=null attributes={} children=2
+│       ├── Text scope=3:7..3:10 anchor=null attributes={} literal="see " children=0
+│       └── Cite scope=3:11..3:14 anchor=null attributes={} children=1
+│           └── Citation scope=3:12..3:13 referent=footnote(id="b") children=0
+│               ├── CitationPrefix children=0
+│               └── CitationSuffix children=0
+└── Footnote scope=4:1..4:9 id="b" children=1
+    └── Paragraph scope=4:7..4:9 anchor=null attributes={} children=1
+        └── Text scope=4:7..4:9 anchor=null attributes={} literal="end" children=0
+````````````````````````````````
 
 ## Inline footnotes
 
 With `inlineFootnotes=true` and `footnotes=true`, an unescaped `^`
 immediately followed by `[` pushes an inline-footnote opener onto the shared
-bracket stack at inline step A7. The `]` that matches it closes the footnote
-without attempting any link, reference, span, cite, or attribute tail, so
-`^[a](b)` is a `Cite` followed by text `(b)`. Inside the body, a link opener
-is closed by its own `]` and tail, and a footnote opener inside a link label
-is closed by the first `]`. At one `^`, the inline footnote wins over a
-`[^label]` call and over superscript, so `^[^1]` is a footnote whose body is
-text `^1`. `\^[` never opens.
+bracket stack at inline step A7. Every recognized inline footnote creates one
+`Footnote` whose content is the parsed inline body and one one-item `Cite`
+with referent `footnote(id)` and empty affixes:
 
-A body that is empty or consists only of spaces and tabs is invalid; the
-opener is text. Every recognized inline footnote creates one `Footnote` whose
-content is the parsed inline body and one one-item `Cite` with referent
-`footnote(id)` and empty affixes.
+```````````````````````````````` example inline_footnotes
+text^[an inline note]
+.
+Document scope=1:1..1:21 anchor=null attributes={} children=1
+├── Paragraph scope=1:1..1:21 anchor=null attributes={} children=2
+│   ├── Text scope=1:1..1:4 anchor=null attributes={} literal="text" children=0
+│   └── Cite scope=1:5..1:21 anchor=null attributes={} children=1
+│       └── Citation scope=1:7..1:20 referent=footnote(id="inline-1") children=0
+│           ├── CitationPrefix children=0
+│           └── CitationSuffix children=0
+└── Footnote scope=1:5..1:21 id="inline-1" children=1
+    └── Text scope=1:7..1:20 anchor=null attributes={} literal="an inline note" children=0
+````````````````````````````````
 
-Ids are assigned once, during document finalization, after every authored id
-is known. Let `A` be the ids of every `Footnote` produced from a winning or
+```````````````````````````````` example inline_footnotes
+^[a *b*]
+.
+Document scope=1:1..1:8 anchor=null attributes={} children=1
+├── Paragraph scope=1:1..1:8 anchor=null attributes={} children=1
+│   └── Cite scope=1:1..1:8 anchor=null attributes={} children=1
+│       └── Citation scope=1:3..1:7 referent=footnote(id="inline-1") children=0
+│           ├── CitationPrefix children=0
+│           └── CitationSuffix children=0
+└── Footnote scope=1:1..1:8 id="inline-1" children=2
+    ├── Text scope=1:3..1:4 anchor=null attributes={} literal="a " children=0
+    └── Emphasis scope=1:5..1:7 anchor=null attributes={} children=1
+        └── Text scope=1:6..1:6 anchor=null attributes={} literal="b" children=0
+````````````````````````````````
+
+The `]` that matches the opener closes the footnote without attempting any
+link, reference, span, cite, or attribute tail, so `^[a](b)` is a `Cite`
+followed by text `(b)`. At one `^`, the inline footnote wins over a `[^label]`
+call and over superscript, so `^[^1]` is a footnote whose body is text `^1`:
+
+```````````````````````````````` example inline_footnotes
+^[a](b) ^[^1]
+.
+Document scope=1:1..1:13 anchor=null attributes={} children=1
+├── Paragraph scope=1:1..1:13 anchor=null attributes={} children=3
+│   ├── Cite scope=1:1..1:4 anchor=null attributes={} children=1
+│   │   └── Citation scope=1:3..1:3 referent=footnote(id="inline-1") children=0
+│   │       ├── CitationPrefix children=0
+│   │       └── CitationSuffix children=0
+│   ├── Text scope=1:5..1:8 anchor=null attributes={} literal="(b) " children=0
+│   └── Cite scope=1:9..1:13 anchor=null attributes={} children=1
+│       └── Citation scope=1:11..1:12 referent=footnote(id="inline-2") children=0
+│           ├── CitationPrefix children=0
+│           └── CitationSuffix children=0
+├── Footnote scope=1:1..1:4 id="inline-1" children=1
+│   └── Text scope=1:3..1:3 anchor=null attributes={} literal="a" children=0
+└── Footnote scope=1:9..1:13 id="inline-2" children=1
+    └── Text scope=1:11..1:12 anchor=null attributes={} literal="^1" children=0
+````````````````````````````````
+
+Inside the body, a link opener is closed by its own `]` and tail, and a
+footnote opener inside a link label is closed by the first `]`. Ids are
+assigned once, during document finalization, after every authored id is
+known. Let `A` be the ids of every `Footnote` produced from a winning or
 unreferenced definition. Inline footnotes are numbered in ascending order of
 the start position of their `^[`, an outer footnote before one nested in its
 body; the `N`-th receives `inline-N` when that string is not in `A` and not
 already assigned, otherwise `inline-N-K` for the smallest `K` of at least 1
 in neither set. The value carries no authored meaning; consumers compare and
-copy ids and never display them.
+copy ids and never display them:
+
+```````````````````````````````` example inline_footnotes
+^[a ^[b] c]
+.
+Document scope=1:1..1:11 anchor=null attributes={} children=1
+├── Paragraph scope=1:1..1:11 anchor=null attributes={} children=1
+│   └── Cite scope=1:1..1:11 anchor=null attributes={} children=1
+│       └── Citation scope=1:3..1:10 referent=footnote(id="inline-1") children=0
+│           ├── CitationPrefix children=0
+│           └── CitationSuffix children=0
+├── Footnote scope=1:1..1:11 id="inline-1" children=3
+│   ├── Text scope=1:3..1:4 anchor=null attributes={} literal="a " children=0
+│   ├── Cite scope=1:5..1:8 anchor=null attributes={} children=1
+│   │   └── Citation scope=1:7..1:7 referent=footnote(id="inline-2") children=0
+│   │       ├── CitationPrefix children=0
+│   │       └── CitationSuffix children=0
+│   └── Text scope=1:9..1:10 anchor=null attributes={} literal=" c" children=0
+└── Footnote scope=1:5..1:8 id="inline-2" children=1
+    └── Text scope=1:7..1:7 anchor=null attributes={} literal="b" children=0
+````````````````````````````````
+
+```````````````````````````````` example inline_footnotes
+[^inline-1] ^[b]
+
+[^inline-1]: authored
+.
+Document scope=1:1..3:21 anchor=null attributes={} children=1
+├── Paragraph scope=1:1..1:16 anchor=null attributes={} children=3
+│   ├── Cite scope=1:1..1:11 anchor=null attributes={} children=1
+│   │   └── Citation scope=1:2..1:10 referent=footnote(id="inline-1") children=0
+│   │       ├── CitationPrefix children=0
+│   │       └── CitationSuffix children=0
+│   ├── Text scope=1:12..1:12 anchor=null attributes={} literal=" " children=0
+│   └── Cite scope=1:13..1:16 anchor=null attributes={} children=1
+│       └── Citation scope=1:15..1:15 referent=footnote(id="inline-1-1") children=0
+│           ├── CitationPrefix children=0
+│           └── CitationSuffix children=0
+├── Footnote scope=1:13..1:16 id="inline-1-1" children=1
+│   └── Text scope=1:15..1:15 anchor=null attributes={} literal="b" children=0
+└── Footnote scope=3:1..3:21 id="inline-1" children=1
+    └── Paragraph scope=3:14..3:21 anchor=null attributes={} children=1
+        └── Text scope=3:14..3:21 anchor=null attributes={} literal="authored" children=0
+````````````````````````````````
+
+A body that is empty or consists only of spaces and tabs is invalid; the
+opener is text. `\^[` never opens:
+
+```````````````````````````````` example inline_footnotes
+^[] ^[ ] \^[a]
+.
+Document scope=1:1..1:14 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:14 anchor=null attributes={} children=1
+    └── Text scope=1:1..1:14 anchor=null attributes={} literal="^[] ^[ ] ^[a]" children=0
+````````````````````````````````
 
 ## Option behavior and fallback
 
-With `footnotes=false`, `[^label]`, `[^label]:`, and `^[content]` are all
-ordinary text under the inherited grammar, and `Document.footnotes` is empty.
 With `footnotes=true` and `inlineFootnotes=false`, `^[` follows inherited
-bracket handling. Failed recognition consumes nothing. Inline code, HTML
-tokens, comments, formulas, and cross links are opaque to both forms.
+bracket handling:
+
+```````````````````````````````` example
+^[a]
+.
+Document scope=1:1..1:4 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:4 anchor=null attributes={} children=1
+    └── Text scope=1:1..1:4 anchor=null attributes={} literal="^[a]" children=0
+````````````````````````````````
+
+With `footnotes=false`, `[^label]`, `[^label]:`, and `^[content]` follow the
+inherited grammar whatever `inlineFootnotes` says, and `Document.footnotes`
+is empty. Under that grammar `[^a]: note` is a link reference definition
+with the label `^a`, so `[^a]` resolves to a link:
+
+```````````````````````````````` example !footnotes inline_footnotes
+[^a] ^[b]
+
+[^a]: note
+.
+Document scope=1:1..3:10 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:9 anchor=null attributes={} children=2
+    ├── Link scope=1:1..1:4 anchor=null attributes={} dest=url("note") title=null children=1
+    │   └── Text scope=1:2..1:3 anchor=null attributes={} literal="^a" children=0
+    └── Text scope=1:5..1:9 anchor=null attributes={} literal=" ^[b]" children=0
+````````````````````````````````
+
+Failed recognition consumes nothing. Inline code, HTML tokens, comments,
+formulas, and cross links are opaque to both forms.
 
 ## Scopes
 
@@ -127,15 +445,10 @@ covers `content`; the body's descendants cover only their own bytes.
 
 ## Required conformance cases
 
-Tests cover numeric and named labels; definitions before and after calls;
-multiple calls; multiline and unreferenced definitions; duplicate definitions
-including nested ones; the label length and container depth limits; escaped
-and referenced carets; unresolved calls with and without a matching link
-definition; a defined call followed by a tail or a container; the exact
-one-item `Cite` shape and empty affixes; plain, formatted, empty, and
-whitespace-only inline bodies; `^[a](b)`, `^[^1]`, and a footnote inside a
-link label; nested inline footnotes and their id order; id collisions with
-authored ids; mixed referenced and inline source order in `Document.footnotes`;
-calls inside footnote content; code, comments, HTML, and formulas; exact
-scopes; every option combination; allocation failure; and size-doubling runs
-of `^`, `[`, and `]`.
+Every example of this module is a package fixture. Tests also cover numeric
+and named labels, definitions before and after calls, nested duplicate
+definitions, the label length and container depth limits, `&Hat;`, an
+undefined call with a matching link definition, a footnote inside a link
+label, mixed referenced and inline source order in `Document.footnotes`,
+code, comments, HTML, and formulas, exact scopes, every option combination,
+allocation failure, and size-doubling runs of `^`, `[`, and `]`.

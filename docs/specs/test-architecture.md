@@ -229,7 +229,10 @@ execution platform 独立的 required gate，也不复制 suite/case discovery�
   的 AST 形状与有界的 output/source byte ratio；各 dialect module 要求的 adversarial
   用例都按此定义编写。
 - C spec/extension fixtures 位于 `packages/markdown-core/tests/fixtures/`
-  (CommonMark 32-backtick example 格式)。自 Phase 8 起 expected block 一律是
+  (CommonMark 32-backtick example 格式)。`docs/specs/dialect/` 各模块的示例使用
+  同一格式,fence 行上的 tag 是在产品默认选项之上再打开的 `snake_case` 选项名,
+  `!name` 表示关闭某个 inherited 选项;landing item 合入时把对应模块的示例逐字
+  加入 package fixtures。自 Phase 8 起 expected block 一律是
   canonical AST dump;`spec_runner` 对每个例子解析一次、dump 两次(断言 dump
   确定性)并与 expected byte-for-byte 比较。`spec_runner --rewrite` 是显式维护
   模式,用当前 parser 重新生成 expected;生成的 fixture diff 必须经人工审查后

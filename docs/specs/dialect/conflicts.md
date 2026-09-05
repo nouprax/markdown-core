@@ -196,6 +196,16 @@ that settled it.
 - The `\\(` and `\\[` formula forms are Pandoc's `tex_math_double_backslash`
   spelling; the single-backslash spelling stays a CommonMark escape. The
   implemented engine and its fixtures.
+- A direct link tail beats a footnote call, so `[^a](u)` is a link whose
+  text is `^a`, while every other tail after a defined call is text.
+  cmark-gfm's bracket handling, the defining source of the referenced form.
+- Bare URL and `www.` autolinks are inline scanner steps whose run is opaque
+  to every later construct, and only the email form is a post-pass over
+  `Text`; a cross link, code span, formula, or mark that begins inside a URL
+  run is URL text. cmark-gfm's autolink extension, the defining source.
+- An empty superscript or subscript body is invalid: `^^` is text, and an
+  unmatched `~~` run under `subscript` is text. Pandoc's reader, the defining
+  source.
 
 ## Deliberate exclusions
 

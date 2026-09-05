@@ -9,7 +9,9 @@ Obsidian image-dimension suffix. Options: `autolinks` (default `true`) and
 reference definitions; cmark-gfm's autolink extension; Obsidian's external
 image dimensions. Executable oracles: cmark and cmark-gfm; image dimensions
 are product fixtures. Landing: `Destination` with `M1`, resolved references
-with `M2`, dimensions with `O9`.
+with `M2`, dimensions with `O9`. Each example in this module names the
+options it adds to the product defaults; the
+[example format](../dialect.md#examples) is defined by the index.
 
 ## Model
 
@@ -33,10 +35,36 @@ is the parsed label content and `Image.content` the parsed alt content.
 `url` holds the complete semantic destination produced by the inherited
 grammar: the bytes between angle brackets or the bare destination, with
 CommonMark backslash escapes and character references decoded and no
-percent-encoding, normalization, or resolution. It may be empty: `[a]()` and
-`[a](<>)` produce `url("")`. `title` is the decoded title, or `null` when none
-was written; absent and empty titles remain distinct. An email autolink's
-destination carries the inherited `mailto:` prefix.
+percent-encoding, normalization, or resolution. It may be empty. `title` is
+the decoded title, or `null` when none was written; absent and empty titles
+remain distinct:
+
+```````````````````````````````` example
+[text](/url "title") [a]() [b](<> "")
+.
+Document scope=1:1..1:37 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:37 anchor=null attributes={} children=5
+    ├── Link scope=1:1..1:20 anchor=null attributes={} dest=url("/url") title="title" children=1
+    │   └── Text scope=1:2..1:5 anchor=null attributes={} literal="text" children=0
+    ├── Text scope=1:21..1:21 anchor=null attributes={} literal=" " children=0
+    ├── Link scope=1:22..1:26 anchor=null attributes={} dest=url("") title=null children=1
+    │   └── Text scope=1:23..1:23 anchor=null attributes={} literal="a" children=0
+    ├── Text scope=1:27..1:27 anchor=null attributes={} literal=" " children=0
+    └── Link scope=1:28..1:37 anchor=null attributes={} dest=url("") title="" children=1
+        └── Text scope=1:29..1:29 anchor=null attributes={} literal="b" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+[a](</u\)x> "t&amp;") [b](/u\)x)
+.
+Document scope=1:1..1:32 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:32 anchor=null attributes={} children=3
+    ├── Link scope=1:1..1:21 anchor=null attributes={} dest=url("/u)x") title="t&" children=1
+    │   └── Text scope=1:2..1:2 anchor=null attributes={} literal="a" children=0
+    ├── Text scope=1:22..1:22 anchor=null attributes={} literal=" " children=0
+    └── Link scope=1:23..1:32 anchor=null attributes={} dest=url("/u)x") title=null children=1
+        └── Text scope=1:24..1:24 anchor=null attributes={} literal="b" children=0
+````````````````````````````````
 
 The parser does not fetch a URL, open a file, test existence, or infer a media
 type; no such result is a field or a branch.
@@ -60,16 +88,63 @@ duplicates, and the inherited definition grammar deciding what is a
 definition. The resolved occurrence takes the definition's destination and
 title, keeps the content authored at the occurrence, and keeps the scope of
 its own occurrence; the definition's range is never copied, unioned, or
-substituted. Two occurrences resolved through one definition share the
-definition's resource internally so that a long destination or title is
-stored once, and they have no shared consumer identity.
+substituted. A definition is parser state and produces no node; an
+unreferenced definition produces nothing. A reference whose label resolves to
+no definition, and bracket text that satisfies no form, is the inherited
+literal text with its brackets:
 
-A definition is parser state and produces no node; an unreferenced definition
-produces nothing. A reference whose label resolves to no definition, and
-bracket text that satisfies no form, is the inherited literal text with its
-brackets. The public AST therefore has no `LinkReference`, `ImageReference`,
-`ReferenceDefinition`, or `ReferenceForm` once `M2` lands, and no reference
-is modeled as a `Citation` or through a document link registry.
+```````````````````````````````` example
+[text][r] [r][] [r] [text][none]
+
+[r]: /url "title"
+.
+Document scope=1:1..3:17 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:32 anchor=null attributes={} children=6
+    ├── Link scope=1:1..1:9 anchor=null attributes={} dest=url("/url") title="title" children=1
+    │   └── Text scope=1:2..1:5 anchor=null attributes={} literal="text" children=0
+    ├── Text scope=1:10..1:10 anchor=null attributes={} literal=" " children=0
+    ├── Link scope=1:11..1:15 anchor=null attributes={} dest=url("/url") title="title" children=1
+    │   └── Text scope=1:12..1:12 anchor=null attributes={} literal="r" children=0
+    ├── Text scope=1:16..1:16 anchor=null attributes={} literal=" " children=0
+    ├── Link scope=1:17..1:19 anchor=null attributes={} dest=url("/url") title="title" children=1
+    │   └── Text scope=1:18..1:18 anchor=null attributes={} literal="r" children=0
+    └── Text scope=1:20..1:32 anchor=null attributes={} literal=" [text][none]" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+[r]
+
+[r]: /first
+[r]: /second
+.
+Document scope=1:1..4:12 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:3 anchor=null attributes={} children=1
+    └── Link scope=1:1..1:3 anchor=null attributes={} dest=url("/first") title=null children=1
+        └── Text scope=1:2..1:2 anchor=null attributes={} literal="r" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+![alt *em*](/i.png "t") ![alt][r]
+
+[r]: /r.png
+.
+Document scope=1:1..3:11 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:33 anchor=null attributes={} children=3
+    ├── Image scope=1:1..1:23 anchor=null attributes={} dest=url("/i.png") title="t" width=null height=null children=2
+    │   ├── Text scope=1:3..1:6 anchor=null attributes={} literal="alt " children=0
+    │   └── Emphasis scope=1:7..1:10 anchor=null attributes={} children=1
+    │       └── Text scope=1:8..1:9 anchor=null attributes={} literal="em" children=0
+    ├── Text scope=1:24..1:24 anchor=null attributes={} literal=" " children=0
+    └── Image scope=1:25..1:33 anchor=null attributes={} dest=url("/r.png") title=null width=null height=null children=1
+        └── Text scope=1:27..1:29 anchor=null attributes={} literal="alt" children=0
+````````````````````````````````
+
+Two occurrences resolved through one definition share the definition's
+resource internally so that a long destination or title is stored once, and
+they have no shared consumer identity. The public AST has no
+`LinkReference`, `ImageReference`, `ReferenceDefinition`, or `ReferenceForm`
+once `M2` lands, and no reference is modeled as a `Citation` or through a
+document link registry.
 
 ## The bracket procedure
 
@@ -78,11 +153,11 @@ parser tests these alternatives in order and takes the first success. A failed
 alternative leaves the cursor at the `]`; the container after a failed
 alternative is text.
 
-1. Under `footnotes`, a `[^label]` whose label is defined is a footnote call
-   and produces a `Cite`, whatever follows the `]`; the
-   [footnotes](footnotes.md) module states it.
-2. A valid direct tail `(...)` produces `Link` or `Image`; a following
+1. A valid direct tail `(...)` produces `Link` or `Image`; a following
    container attaches under `linkAttributes`.
+2. Under `footnotes`, a `[^label]` whose label is defined is a footnote call
+   and produces a `Cite`, whatever else follows the `]`; the
+   [footnotes](footnotes.md) module states it.
 3. A full `[label]` or collapsed `[]` tail whose label resolves, explicitly or
    through a virtual heading definition, produces `Link` or `Image`; a
    following container attaches under `linkAttributes`. A tail whose label
@@ -98,21 +173,112 @@ alternative is text.
 For an image opener `![`, alternatives 4 through 6 yield a literal `!`
 followed by the node. A `[[` under `crossLinks` is claimed by the cross-link
 scanner before this procedure runs, and a text directive's label is claimed by
-the directive scanner; neither reaches this procedure.
+the directive scanner; neither reaches this procedure. The modules named in
+each step show the examples of their alternative.
 
 ## Autolinks
 
 Angle-bracket autolinks `<https://example.com>` and `<user@example.com>` are
 inherited and always recognized, at inline step A3. With `autolinks=true`,
-GFM bare autolinks (`https://`, `http://`, `www.`, and email forms) are
-recognized last, at step E, as a post-pass over `Text` nodes only, with
-cmark-gfm's start and termination rules: a candidate never extends into a
-`Comment`, `CrossLink`, `Code`, `HTML`, `Formula`, or any other node, so a
-URL ends at a `Mark` or emphasis boundary, and `www.x.com/[[y]]` with
-`crossLinks` on is an autolink ending before the cross link. A bare autolink
-never accepts an attribute container, and its inherited termination rule
-applies to the braces. Both forms produce `Link(dest=url(...), title=null)`
-with the link text as content. With the option off, bare URLs are text.
+the three GFM bare forms of cmark-gfm's extension are recognized:
+
+- The URL form is a scanner step of class A, listed at A3: at a `:` followed
+  by `//`, the scanner rewinds over the preceding ASCII letters and accepts
+  the candidate when they spell `http`, `https`, or `ftp` in any case and a
+  valid domain follows.
+- The `www.` form is the same scanner step at a `w` that begins `www.` at the
+  start of the container or after whitespace, `*`, `_`, `~`, or `(`, with a
+  domain containing at least one dot.
+- The email form is step E, a post-pass over `Text` nodes only.
+
+A URL or `www.` candidate extends to the first whitespace or `<`; then
+trailing `?`, `!`, `.`, `,`, `:`, `*`, `_`, `~`, `'`, `"`, a trailing
+entity-shaped `&...;`, and every `)` beyond the number of `(` inside the run
+are excluded from its end. Neither form is recognized inside an open bracket.
+Every bare form produces `Link(dest=url(...), title=null)` with the link text
+as content; an email destination carries the inherited `mailto:` prefix and a
+`www.` destination the inherited `http://` prefix:
+
+```````````````````````````````` example
+<https://x.y> https://x.y/z www.x.y x@y.z <x@y.z>
+.
+Document scope=1:1..1:49 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:49 anchor=null attributes={} children=9
+    ├── Link scope=1:1..1:13 anchor=null attributes={} dest=url("https://x.y") title=null children=1
+    │   └── Text scope=1:2..1:12 anchor=null attributes={} literal="https://x.y" children=0
+    ├── Text scope=1:14..1:14 anchor=null attributes={} literal=" " children=0
+    ├── Link scope=1:15..1:27 anchor=null attributes={} dest=url("https://x.y/z") title=null children=1
+    │   └── Text scope=1:15..1:27 anchor=null attributes={} literal="https://x.y/z" children=0
+    ├── Text scope=1:28..1:28 anchor=null attributes={} literal=" " children=0
+    ├── Link scope=1:29..1:35 anchor=null attributes={} dest=url("http://www.x.y") title=null children=1
+    │   └── Text scope=1:29..1:35 anchor=null attributes={} literal="www.x.y" children=0
+    ├── Text scope=1:36..1:36 anchor=null attributes={} literal=" " children=0
+    ├── Link scope=1:37..1:41 anchor=null attributes={} dest=url("mailto:x@y.z") title=null children=1
+    │   └── Text scope=1:37..1:41 anchor=null attributes={} literal="x@y.z" children=0
+    ├── Text scope=1:42..1:42 anchor=null attributes={} literal=" " children=0
+    └── Link scope=1:43..1:49 anchor=null attributes={} dest=url("mailto:x@y.z") title=null children=1
+        └── Text scope=1:44..1:48 anchor=null attributes={} literal="x@y.z" children=0
+````````````````````````````````
+
+Because the URL and `www.` forms are scanner steps, their run is opaque from
+its first byte to its terminator: a code span, formula, emphasis delimiter,
+or cross link that begins inside the run is URL text, an `<` ends the run,
+and a bare autolink never accepts an attribute container, since the
+termination rule applies to the braces:
+
+```````````````````````````````` example link_attributes
+https://x.y/*a* www.x.y/`b`. https://x.y/<b>c</b> https://x.y{.c}
+.
+Document scope=1:1..1:65 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:65 anchor=null attributes={} children=10
+    ├── Link scope=1:1..1:14 anchor=null attributes={} dest=url("https://x.y/*a") title=null children=1
+    │   └── Text scope=1:1..1:14 anchor=null attributes={} literal="https://x.y/*a" children=0
+    ├── Text scope=1:15..1:16 anchor=null attributes={} literal="* " children=0
+    ├── Link scope=1:17..1:27 anchor=null attributes={} dest=url("http://www.x.y/`b`") title=null children=1
+    │   └── Text scope=1:17..1:27 anchor=null attributes={} literal="www.x.y/`b`" children=0
+    ├── Text scope=1:28..1:29 anchor=null attributes={} literal=". " children=0
+    ├── Link scope=1:30..1:41 anchor=null attributes={} dest=url("https://x.y/") title=null children=1
+    │   └── Text scope=1:30..1:41 anchor=null attributes={} literal="https://x.y/" children=0
+    ├── HTML scope=1:42..1:44 anchor=null attributes={} literal="<b>" children=0
+    ├── Text scope=1:45..1:45 anchor=null attributes={} literal="c" children=0
+    ├── HTML scope=1:46..1:49 anchor=null attributes={} literal="</b>" children=0
+    ├── Text scope=1:50..1:50 anchor=null attributes={} literal=" " children=0
+    └── Link scope=1:51..1:65 anchor=null attributes={} dest=url("https://x.y{.c}") title=null children=1
+        └── Text scope=1:51..1:65 anchor=null attributes={} literal="https://x.y{.c}" children=0
+````````````````````````````````
+
+The run is decided at its own position, so surrounding delimiters still match
+around it, and no bare form is recognized inside link text:
+
+```````````````````````````````` example
+*https://x.y* [https://x.y](/u) (www.x.y)
+.
+Document scope=1:1..1:41 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:41 anchor=null attributes={} children=6
+    ├── Emphasis scope=1:1..1:13 anchor=null attributes={} children=1
+    │   └── Link scope=1:2..1:12 anchor=null attributes={} dest=url("https://x.y") title=null children=1
+    │       └── Text scope=1:2..1:12 anchor=null attributes={} literal="https://x.y" children=0
+    ├── Text scope=1:14..1:14 anchor=null attributes={} literal=" " children=0
+    ├── Link scope=1:15..1:31 anchor=null attributes={} dest=url("/u") title=null children=1
+    │   └── Text scope=1:16..1:26 anchor=null attributes={} literal="https://x.y" children=0
+    ├── Text scope=1:32..1:33 anchor=null attributes={} literal=" (" children=0
+    ├── Link scope=1:34..1:40 anchor=null attributes={} dest=url("http://www.x.y") title=null children=1
+    │   └── Text scope=1:34..1:40 anchor=null attributes={} literal="www.x.y" children=0
+    └── Text scope=1:41..1:41 anchor=null attributes={} literal=")" children=0
+````````````````````````````````
+
+With the option off, bare URLs are text and angle-bracket autolinks are
+unchanged:
+
+```````````````````````````````` example !autolinks
+<https://x.y> https://x.y
+.
+Document scope=1:1..1:25 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:25 anchor=null attributes={} children=2
+    ├── Link scope=1:1..1:13 anchor=null attributes={} dest=url("https://x.y") title=null children=1
+    │   └── Text scope=1:2..1:12 anchor=null attributes={} literal="https://x.y" children=0
+    └── Text scope=1:14..1:25 anchor=null attributes={} literal=" https://x.y" children=0
+````````````````````````````````
 
 ## Image dimensions
 
@@ -127,22 +293,91 @@ alt|WxH
 ```
 
 `W` and `H` are ASCII digit strings with no leading zero and values from 1 to
-2147483647, `x` is lowercase, and no whitespace surrounds `x` or `|`. The
-suffix is matched against the raw source bytes between the last top-level
-unescaped `|` that is not inside a code span or nested brackets and the
-closing `]`; for a label with no such pipe, against the whole label. For a
+2147483647, `x` is lowercase, and no whitespace surrounds `x` or `|`. For a
 numeric-only label the alt content is empty; for a pipe form the bytes before
 the pipe are the alt content, parsed by the inline parser, and may be empty.
-`width` is `W`; `height` is `H` or `null` for a width-only form. The rule
-applies to direct and resolved reference images alike.
+`width` is `W`; `height` is `H` or `null` for a width-only form:
+
+```````````````````````````````` example image_dimensions
+![100x145](a.png)
+
+![alt|100](a.png) ![alt|100x145](a.png) ![|200](a.png)
+.
+Document scope=1:1..3:54 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:17 anchor=null attributes={} children=1
+│   └── Image scope=1:1..1:17 anchor=null attributes={} dest=url("a.png") title=null width=100 height=145 children=0
+└── Paragraph scope=3:1..3:54 anchor=null attributes={} children=5
+    ├── Image scope=3:1..3:17 anchor=null attributes={} dest=url("a.png") title=null width=100 height=null children=1
+    │   └── Text scope=3:3..3:5 anchor=null attributes={} literal="alt" children=0
+    ├── Text scope=3:18..3:18 anchor=null attributes={} literal=" " children=0
+    ├── Image scope=3:19..3:39 anchor=null attributes={} dest=url("a.png") title=null width=100 height=145 children=1
+    │   └── Text scope=3:21..3:23 anchor=null attributes={} literal="alt" children=0
+    ├── Text scope=3:40..3:40 anchor=null attributes={} literal=" " children=0
+    └── Image scope=3:41..3:54 anchor=null attributes={} dest=url("a.png") title=null width=200 height=null children=0
+````````````````````````````````
+
+The suffix is matched against the raw source bytes between the last top-level
+unescaped `|` that is not inside a code span or nested brackets and the
+closing `]`; for a label with no such pipe, against the whole label:
+
+```````````````````````````````` example image_dimensions
+![*a* `b|c`|300](a.png)
+.
+Document scope=1:1..1:23 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:23 anchor=null attributes={} children=1
+    └── Image scope=1:1..1:23 anchor=null attributes={} dest=url("a.png") title=null width=300 height=null children=3
+        ├── Emphasis scope=1:3..1:5 anchor=null attributes={} children=1
+        │   └── Text scope=1:4..1:4 anchor=null attributes={} literal="a" children=0
+        ├── Text scope=1:6..1:6 anchor=null attributes={} literal=" " children=0
+        └── Code scope=1:7..1:11 anchor=null attributes={} literal="b|c" children=0
+````````````````````````````````
 
 Zero, a leading zero, a value above the limit, signs, whitespace, missing
 components, or non-decimal components produce no dimensions, and the whole
-label is alt content. With the option off, every alt label is inherited alt
-content byte for byte. A `width` or `height` attribute record under
-`linkAttributes` is independent: it never populates the typed fields, and the
-typed fields never produce a record. Internal image embeds are `CrossLink`
-values whose `label` stays raw; this rule does not apply to them.
+label is alt content:
+
+```````````````````````````````` example image_dimensions
+![0x1](a.png)
+
+![alt| 100](a.png)
+.
+Document scope=1:1..3:18 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:13 anchor=null attributes={} children=1
+│   └── Image scope=1:1..1:13 anchor=null attributes={} dest=url("a.png") title=null width=null height=null children=1
+│       └── Text scope=1:3..1:5 anchor=null attributes={} literal="0x1" children=0
+└── Paragraph scope=3:1..3:18 anchor=null attributes={} children=1
+    └── Image scope=3:1..3:18 anchor=null attributes={} dest=url("a.png") title=null width=null height=null children=1
+        └── Text scope=3:3..3:10 anchor=null attributes={} literal="alt| 100" children=0
+````````````````````````````````
+
+The rule applies to direct and resolved reference images alike:
+
+```````````````````````````````` example image_dimensions
+![alt|100][r]
+
+[r]: /i.png
+.
+Document scope=1:1..3:11 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:13 anchor=null attributes={} children=1
+    └── Image scope=1:1..1:13 anchor=null attributes={} dest=url("/i.png") title=null width=100 height=null children=1
+        └── Text scope=1:3..1:5 anchor=null attributes={} literal="alt" children=0
+````````````````````````````````
+
+With the option off, every alt label is inherited alt content byte for byte:
+
+```````````````````````````````` example
+![alt|100](a.png)
+.
+Document scope=1:1..1:17 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:17 anchor=null attributes={} children=1
+    └── Image scope=1:1..1:17 anchor=null attributes={} dest=url("a.png") title=null width=null height=null children=1
+        └── Text scope=1:3..1:9 anchor=null attributes={} literal="alt|100" children=0
+````````````````````````````````
+
+A `width` or `height` attribute record under `linkAttributes` is independent:
+it never populates the typed fields, and the typed fields never produce a
+record. Internal image embeds are `CrossLink` values whose `label` stays raw;
+this rule does not apply to them.
 
 ## Scopes
 
@@ -153,16 +388,12 @@ suffix, and the suffix is inside the image's scope.
 
 ## Required conformance cases
 
-Tests cover empty, absolute, relative, and fragment-only destinations; angle
-brackets, escapes, and character references in destinations and titles;
-absent versus empty titles; every link and image form with and without a
-definition, unused and duplicate definitions, and the identical dump of a
-direct and a resolved occurrence apart from scope; the shared-resource bound
-for a long destination or title referenced many times, on every surface;
-`mailto:` on email autolinks; every step of the bracket procedure with each
-participating option on and off; bare autolinks ending at every node boundary
-and rejecting a container; every valid and invalid dimension form, formatted
-alt content, pipes inside code spans and brackets, reference images, the
-limit, and coexistence with dimension records; exact scopes; option-off
-output; allocation failure; and size-doubling brackets, parentheses, URLs,
-and digit runs.
+Every example of this module is a package fixture. Tests also cover
+fragment-only destinations; unused definitions; the identical dump of a direct
+and a resolved occurrence apart from scope; the shared-resource bound for a
+long destination or title referenced many times, on every surface; every step
+of the bracket procedure with each participating option on and off; bare
+autolinks ending at every node boundary; every valid and invalid dimension
+form, pipes inside brackets, the limit, and coexistence with dimension
+records; exact scopes; allocation failure; and size-doubling brackets,
+parentheses, URLs, and digit runs.

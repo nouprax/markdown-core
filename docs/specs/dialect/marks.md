@@ -3,7 +3,9 @@
 Status: normative module of the [Markdown Core dialect](../dialect.md).
 Option: `marks` (default `false`). Source: Obsidian's `==highlight==`.
 Executable oracle: `@quartz-community/remark-obsidian`, whose one-text-child
-content model is a registered projection. Landing: `O2`.
+content model is a registered projection. Landing: `O2`. Every example in
+this module runs with `marks` on unless its fence says otherwise; the
+[example format](../dialect.md#examples) is defined by the index.
 
 ## Model
 
@@ -18,27 +20,180 @@ and may contain any inline construct whose delimiters nest legally inside it.
 
 `==` is a delimiter on the shared stack at inline step C5. A candidate is a
 maximal run of unescaped `=` of length exactly two; runs of one or of three or
-more are text. A candidate can open if and only if it is left-flanking and can
-close if and only if it is right-flanking, under the CommonMark definitions
-with the same character classes as `*`, so intraword pairs are allowed.
-Matching uses the inherited process-emphasis algorithm without the rule of
-three. A matched pair with an empty region, `====`, is text. `==a==b==` is
-`Mark("a")` followed by text `b==`, and `if a == b and c == d` contains no
-mark because neither run can open.
+more are text. A candidate can open if and only if it is left-flanking and
+can close if and only if it is right-flanking, under the CommonMark
+definitions with the same character classes as `*`. Matching uses the
+inherited process-emphasis algorithm without the rule of three.
 
-Validity is decided on source; `==%%c%%==` is a `Mark` whose content is one
-`Comment`. Block structure is decided first, so a Setext underline of `=` is
-never a closer. Bare autolinks run after delimiter processing over `Text`
-only, so `http://x/?a==b== c` ends its URL at the mark boundary.
+```````````````````````````````` example marks
+This is ==important== text.
+.
+Document scope=1:1..1:27 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:27 anchor=null attributes={} children=3
+    ├── Text scope=1:1..1:8 anchor=null attributes={} literal="This is " children=0
+    ├── Mark scope=1:9..1:21 anchor=null attributes={} children=1
+    │   └── Text scope=1:11..1:19 anchor=null attributes={} literal="important" children=0
+    └── Text scope=1:22..1:27 anchor=null attributes={} literal=" text." children=0
+````````````````````````````````
+
+The content is ordinary inline content:
+
+```````````````````````````````` example marks
+==a *b* c==
+.
+Document scope=1:1..1:11 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:11 anchor=null attributes={} children=1
+    └── Mark scope=1:1..1:11 anchor=null attributes={} children=3
+        ├── Text scope=1:3..1:4 anchor=null attributes={} literal="a " children=0
+        ├── Emphasis scope=1:5..1:7 anchor=null attributes={} children=1
+        │   └── Text scope=1:6..1:6 anchor=null attributes={} literal="b" children=0
+        └── Text scope=1:8..1:9 anchor=null attributes={} literal=" c" children=0
+````````````````````````````````
+
+Intraword pairs are allowed, and adjacent marks are separate nodes:
+
+```````````````````````````````` example marks
+a==b==c ==d====e==
+.
+Document scope=1:1..1:18 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:18 anchor=null attributes={} children=5
+    ├── Text scope=1:1..1:1 anchor=null attributes={} literal="a" children=0
+    ├── Mark scope=1:2..1:6 anchor=null attributes={} children=1
+    │   └── Text scope=1:4..1:4 anchor=null attributes={} literal="b" children=0
+    ├── Text scope=1:7..1:8 anchor=null attributes={} literal="c " children=0
+    ├── Mark scope=1:9..1:13 anchor=null attributes={} children=1
+    │   └── Text scope=1:11..1:11 anchor=null attributes={} literal="d" children=0
+    └── Mark scope=1:14..1:18 anchor=null attributes={} children=1
+        └── Text scope=1:16..1:16 anchor=null attributes={} literal="e" children=0
+````````````````````````````````
+
+A run of one, three, or four or more equals signs is text, so a longer run
+inside a mark is content:
+
+```````````````````````````````` example marks
+==a====b==
+
+=a= ===a=== ====
+.
+Document scope=1:1..3:16 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:10 anchor=null attributes={} children=1
+│   └── Mark scope=1:1..1:10 anchor=null attributes={} children=1
+│       └── Text scope=1:3..1:8 anchor=null attributes={} literal="a====b" children=0
+└── Paragraph scope=3:1..3:16 anchor=null attributes={} children=1
+    └── Text scope=3:1..3:16 anchor=null attributes={} literal="=a= ===a=== ====" children=0
+````````````````````````````````
+
+A closer matches the nearest unmatched opener, and a run that finds no
+opener is text:
+
+```````````````````````````````` example marks
+==a==b==
+.
+Document scope=1:1..1:8 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:8 anchor=null attributes={} children=2
+    ├── Mark scope=1:1..1:5 anchor=null attributes={} children=1
+    │   └── Text scope=1:3..1:3 anchor=null attributes={} literal="a" children=0
+    └── Text scope=1:6..1:8 anchor=null attributes={} literal="b==" children=0
+````````````````````````````````
+
+A run with whitespace on both sides is neither left- nor right-flanking and
+cannot open, so a comparison operator contains no mark:
+
+```````````````````````````````` example marks
+if a == b and c == d
+.
+Document scope=1:1..1:20 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:20 anchor=null attributes={} children=1
+    └── Text scope=1:1..1:20 anchor=null attributes={} literal="if a == b and c == d" children=0
+````````````````````````````````
+
+An escaped `\=` never delimits, and an unmatched candidate is text:
+
+```````````````````````````````` example marks
+\==a== ==a\==
+.
+Document scope=1:1..1:13 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:13 anchor=null attributes={} children=1
+    └── Text scope=1:1..1:13 anchor=null attributes={} literal="==a== ==a==" children=0
+````````````````````````````````
+
+Validity is decided on source. A comment is an earlier class-A step, so a
+mark whose content is one `Comment` is a mark:
+
+```````````````````````````````` example marks comments
+==%%c%%==
+.
+Document scope=1:1..1:9 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:9 anchor=null attributes={} children=1
+    └── Mark scope=1:1..1:9 anchor=null attributes={} children=1
+        └── Comment scope=1:3..1:7 anchor=null attributes={} literal="c" children=0
+````````````````````````````````
+
+Block structure is decided first, so a Setext underline of `=` is never a
+closer:
+
+```````````````````````````````` example marks
+==text
+==
+.
+Document scope=1:1..2:2 anchor=null attributes={} children=1
+└── Heading scope=1:1..2:2 anchor=null attributes={} level=1 children=1
+    └── Text scope=1:1..1:6 anchor=null attributes={} literal="==text" children=0
+````````````````````````````````
+
+A bare URL autolink is an earlier scanner step whose run is opaque, so `==`
+inside a URL is URL text and delimits nothing:
+
+```````````````````````````````` example marks
+http://x/?a==b== c
+.
+Document scope=1:1..1:18 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:18 anchor=null attributes={} children=2
+    ├── Link scope=1:1..1:16 anchor=null attributes={} dest=url("http://x/?a==b==") title=null children=1
+    │   └── Text scope=1:1..1:16 anchor=null attributes={} literal="http://x/?a==b==" children=0
+    └── Text scope=1:17..1:18 anchor=null attributes={} literal=" c" children=0
+````````````````````````````````
+
+Code spans, HTML tokens, comments, formulas, and cross links are opaque:
+
+```````````````````````````````` example marks
+`==a==` $==b==$
+.
+Document scope=1:1..1:15 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:15 anchor=null attributes={} children=3
+    ├── Code scope=1:1..1:7 anchor=null attributes={} literal="==a==" children=0
+    ├── Text scope=1:8..1:8 anchor=null attributes={} literal=" " children=0
+    └── Formula scope=1:9..1:15 anchor=null attributes={} mode=embedded literal="==b==" children=0
+````````````````````````````````
+
+A mark may occur in any inline content, headings included:
+
+```````````````````````````````` example marks
+## ==a== b
+.
+Document scope=1:1..1:10 anchor=null attributes={} children=1
+└── Heading scope=1:1..1:10 anchor=null attributes={} level=2 children=2
+    ├── Mark scope=1:4..1:8 anchor=null attributes={} children=1
+    │   └── Text scope=1:6..1:6 anchor=null attributes={} literal="a" children=0
+    └── Text scope=1:9..1:10 anchor=null attributes={} literal=" b" children=0
+````````````````````````````````
 
 ## Option behavior and fallback
 
-With `marks=false`, `=` runs are text. With the option on, an escaped `\=`
-never delimits, an unmatched candidate is text, and a failed pair cannot
-consume equals signs needed by a later valid pair. Code spans, HTML tokens,
-comments, formulas, and cross links are opaque. Pandoc's `mark` extension
-delimits the same bytes with a different boundary rule; the
-[conflicts](conflicts.md) register records the difference.
+With `marks=false`, `=` runs are text:
+
+```````````````````````````````` example
+==text==
+.
+Document scope=1:1..1:8 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:8 anchor=null attributes={} children=1
+    └── Text scope=1:1..1:8 anchor=null attributes={} literal="==text==" children=0
+````````````````````````````````
+
+With the option on, a failed pair cannot consume equals signs needed by a
+later valid pair. Pandoc's `mark` extension delimits the same bytes with a
+different boundary rule; the [conflicts](conflicts.md) register records the
+difference.
 
 ## Scopes
 
@@ -46,9 +201,7 @@ delimits the same bytes with a different boundary rule; the
 
 ## Required conformance cases
 
-Tests cover plain and formatted bodies, adjacent and intraword marks, marks
-inside table cells, callout titles, and footnote content, escaped and
-unmatched runs, empty and triple-equals forms, a comment as sole content,
-Setext and autolink boundaries, code, comments, HTML, and formulas, exact
-scopes, option-off output, allocation failure, deep mixed-delimiter input, and
-size-doubling equals runs.
+Every example of this module is a package fixture. Tests also cover marks
+inside table cells, callout titles, and footnote content, HTML tokens and
+cross links as opaque contexts, exact scopes, allocation failure, deep
+mixed-delimiter input, and size-doubling equals runs.
