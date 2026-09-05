@@ -1722,8 +1722,8 @@ need no item of their own.
       `closed`, table cell-count handling, destination unescaping, the
       scoped-value rule, the walk-into-values rule, and the status sentences
       that name which target file supersedes which section. Closes CA-1 through
-      CA-27 except the transitional ones, CJ-1, CJ-3, CJ-4, CJ-7, S-0, X-1, and
-      decisions D-4, D-5, D-6.
+      CA-27 except the transitional ones, CJ-1, CJ-3, CJ-4, CJ-5, CJ-7, S-0,
+      X-1, and decisions D-4, D-5, D-6.
 - [ ] **A2 — `canonical-ast-dump.md`:** token separation, the `children` table,
       the string escaping form, enum elements in arrays, the universal-field
       line, tagged-value and nested-value encodings, double formatting, the
@@ -1740,13 +1740,13 @@ need no item of their own.
       derivation, the footnote id without caret, the two scope rules, the
       metadata key and tagged-scalar rules, record scopes, the inserted-text
       unit rules and version pins, and one status sentence per file. Closes
-      AN-1, AN-3, AN-5 through AN-8, AT-3 through AT-8, AT-11, DE-4, DE-5, DE-7,
-      CI-2 through CI-5, ME-2 through ME-10, IT-3 through IT-8.
+      AN-1, AN-3, AN-5 through AN-8, AT-3 through AT-8, AT-10, AT-11, DE-4
+      through DE-7, CI-2 through CI-5, ME-2 through ME-10, IT-3 through IT-8.
 - [ ] **A5 — `remark/directives.md` (new) and `remark/attributes.md`:** the
       directive envelope grammar, the leaf-versus-empty-container rule,
       name-label-container order, line-crossing containers, invalid containers
-      on opener lines, the option name. Closes RM-2, RM-3, RA-2 through RA-5,
-      CA-13.
+      on opener lines, the option name, the `remark.md` status sentence. Closes
+      RM-1 through RM-3, RA-2 through RA-5, CA-13.
 - [ ] **B1 — `obsidian-flavored-markdown.md`:** the footnote-grammar owner, the
       preset vector and gate matrix, the profile list, `MetadataListItem`, the
       limits pointer, extended autolinks, deletion of the per-module toggle

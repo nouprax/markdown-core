@@ -491,7 +491,10 @@ CLI, and conformance plumbing.
       remove the four `wikilink-*` gaps and keep the label-nullability and
       destination projections as general deltas with canaries. The heading-text
       projection of `CrossLink` in generated anchors is a cross-item case owned
-      by whichever of `O1` and `P3` merges later. Requires `X0`, `M7`, `S2`.
+      by whichever of `O1` and `P3` merges later. An attribute container
+      following a complete `CrossLink` staying text under `bracketedSpans`
+      (audit finding OW-4) is a cross-item case owned by whichever of `O1` and
+      `P5` merges later. Requires `X0`, `M7`, `S2`.
 - [ ] **O2 — Highlights.** Add `==` to the shared delimiter stack under
       `obsidian` with the exact-two-run and non-empty rules, local pairing, and
       opaque code, formula, comment, HTML-token, and wikilink bytes (audit seam
@@ -712,7 +715,9 @@ CLI, and conformance plumbing.
       explicit ID from this syntax reserved before heading synthesis is a
       cross-item case owned by whichever of `P5` and `P3` merges later. The
       heading-text projection of `Span` in generated anchors is a cross-item
-      case owned by whichever of `P5` and `P3` merges later. Requires `P0`,
+      case owned by whichever of `P5` and `P3` merges later. An attribute
+      container following a complete `CrossLink` staying text is a cross-item
+      case owned by whichever of `P5` and `O1` merges later. Requires `P0`,
       `M7`.
 - [ ] **P6 — `superscript` and `subscript`.** Add the single `^` and `~`
       delimiters through the delimiter engine with unescaped-whitespace
@@ -884,7 +889,7 @@ Sizes are rough review-effort estimates, not schedules.
 | `M5`   | `S2`, `S3`         | M    | —                                                                                                                                                                                                       | Obsidian Phase 1 `marker`; Pandoc Phase 1 list values                                                                            |
 | `M6`   | `S3`               | L    | —                                                                                                                                                                                                       | Pandoc Phase 1 table values                                                                                                      |
 | `M7`   | `M1`–`M6`          | XL   | —                                                                                                                                                                                                       | Obsidian Phase 1 metadata, anchor, dimensions; Pandoc Phase 1 fields; Pandoc Phase 2 attribute operation and directive migration |
-| `O1`   | `X0`, `M7`, `S2`   | M    | `Insert` containing `CrossLink` (`I1`); heading-text projection (`P3`)                                                                                                                                  | Obsidian Phase 2 wikilinks                                                                                                       |
+| `O1`   | `X0`, `M7`, `S2`   | M    | `Insert` containing `CrossLink` (`I1`); heading-text projection (`P3`); container after a complete wikilink (`P5`)                                                                                      | Obsidian Phase 2 wikilinks                                                                                                       |
 | `O2`   | `O1`               | S    | `Insert` containing `Mark` (`I1`); heading-text projection (`P3`)                                                                                                                                       | Obsidian Phase 2 highlights                                                                                                      |
 | `O3`   | `O1`               | M    | heading-text projection (`P3`)                                                                                                                                                                          | Obsidian Phase 2 comments                                                                                                        |
 | `O4`   | `O1`               | M    | `^[` before superscript (`P6`)                                                                                                                                                                          | Obsidian Phase 2 inline footnotes and resolution                                                                                 |
@@ -901,7 +906,7 @@ Sizes are rough review-effort estimates, not schedules.
 | `P2d`  | `P0`, `M7`         | M    | link tail ahead of a span (`P5`); attributes on an implicit heading reference (`P4`); anchor reserved before synthesis (`P3`)                                                                           | Pandoc Phase 2 attachment, merge, and caller audit                                                                               |
 | `P3`   | `P2b`              | M    | anchor reserved before synthesis (`O7`, `P2a`, `P2c`, `P2d`, `P5`, `P8`); heading-text projection (`O1`, `O2`, `O3`, `I1`, `P5`, `P6`, `P7`, `P9b`)                                                     | Pandoc Phase 2 heading registry                                                                                                  |
 | `P4`   | `P3`               | M    | attributes on an implicit heading reference (`P2d`); complete cite over a virtual heading reference (`P7`)                                                                                              | Pandoc Phase 3 document resolution                                                                                               |
-| `P5`   | `P0`, `M7`         | M    | link tail ahead of a span (`P2d`); anchor reserved before synthesis (`P3`); heading-text projection (`P3`)                                                                                              | Pandoc Phase 3 spans                                                                                                             |
+| `P5`   | `P0`, `M7`         | M    | link tail ahead of a span (`P2d`); anchor reserved before synthesis (`P3`); heading-text projection (`P3`); container after a complete wikilink (`O1`)                                                  | Pandoc Phase 3 spans                                                                                                             |
 | `P6`   | `P0`, `M7`         | S    | `^[` before superscript (`O4`); identifier caret before superscript (`O7`); heading-text projection (`P3`)                                                                                              | Pandoc Phase 3 superscript and subscript                                                                                         |
 | `P7`   | `P5`, `P9b`        | L    | heading-text projection (`P3`); complete cite over a virtual heading reference (`P4`)                                                                                                                   | Pandoc Phase 3 citations and resolution                                                                                          |
 | `P8`   | `P0`, `M7`         | M    | definition body ends at a div close (`P10`); anchor reserved before synthesis (`P3`)                                                                                                                    | Pandoc Phase 4 fenced divs                                                                                                       |
@@ -943,8 +948,9 @@ Sizes are rough review-effort estimates, not schedules.
   each inline kind a later item produces; a complete cite over a virtual heading
   reference; an identifier on a metadata-bearing callout; an identifier line
   after a table caption, once per table form; an escaped wikilink pipe inside a
-  grid cell; a link tail claiming a container ahead of a span; attributes on an
-  implicit heading reference; a definition body ending at a fenced-div close;
-  caption precedence over definition-term lookahead, once per table form; and
-  every comment and wikilink opacity case. Each is written by the later of its
-  two items, and no item's `Requires` grows because of it.
+  grid cell; a link tail claiming a container ahead of a span; a container after
+  a complete wikilink; attributes on an implicit heading reference; a definition
+  body ending at a fenced-div close; caption precedence over definition-term
+  lookahead, once per table form; and every comment and wikilink opacity case.
+  Each is written by the later of its two items, and no item's `Requires` grows
+  because of it.
