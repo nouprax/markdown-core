@@ -1536,9 +1536,10 @@ A transitional finding names the landing-plan item that resolves it.
 - **S-0** — no file owns cross-family precedence
   (`obsidian-flavored-markdown.md:71` covers Obsidian only, `pandoc.md:59-70`
   orders nothing, `inserted-text.md:95-96` says "same machinery as emphasis").
-  Rule: `canonical-ast.md` gains the two recognition-order tables; every
-  module's precedence paragraph becomes a pointer to them and keeps only its own
-  grammar and fallback.
+  Rule: `canonical-ast.md` gains the two recognition-order tables in checklist
+  item A1; each module's own checklist item then replaces that module's
+  precedence paragraph with a pointer to them, keeping only its grammar and
+  fallback.
 - **S-1 Footnotes and citations** — the identifier keeps the caret in the
   current contract and drops it in two target files (`canonical-ast.md:150,166`;
   `obsidian/footnotes.md:76-77`; `citation-model.md:64-65`); the "inherited GFM
@@ -1708,8 +1709,10 @@ assumes.
 One checkbox is one specification pull request. Each lists the findings it
 closes; a finding marked transitional is closed by its landing-plan item, and
 the item here only fixes the status line. Order is by dependency: the shared
-contracts first, because every module points to them, then the modules, then the
-seams that need two modules edited together.
+contracts first, because every module points to them, then the modules. Every
+module item from B1 through C6 also replaces its module's precedence paragraph
+with a pointer to the recognition-order tables that A1 creates, so the seams
+need no item of their own.
 
 - [ ] **A1 — `canonical-ast.md` and `canonical-ast.json`:** the coordinate
       contract, the limits section, the recognition-order tables, the
@@ -1719,8 +1722,8 @@ seams that need two modules edited together.
       `closed`, table cell-count handling, destination unescaping, the
       scoped-value rule, the walk-into-values rule, and the status sentences
       that name which target file supersedes which section. Closes CA-1 through
-      CA-27 except the transitional ones, CJ-1, CJ-3, CJ-4, CJ-7, and decisions
-      D-4, D-5, D-6.
+      CA-27 except the transitional ones, CJ-1, CJ-3, CJ-4, CJ-7, S-0, X-1, and
+      decisions D-4, D-5, D-6.
 - [ ] **A2 — `canonical-ast-dump.md`:** token separation, the `children` table,
       the string escaping form, enum elements in arrays, the universal-field
       line, tagged-value and nested-value encodings, double formatting, the
@@ -1821,10 +1824,6 @@ seams that need two modules edited together.
       boundaries, joining, syntax order, the boundary union, grid lines and
       spans, colons, `=` lines, cell text, rectangular scopes, fallback, the
       dump encoding, `^id` after captions. Closes PT-1 through PT-23.
-- [ ] **D1 — the seams:** land the recognition-order tables in
-      `canonical-ast.md` and replace every module's precedence paragraph with a
-      pointer, in one pull request after A1 through C6, so no module keeps a
-      private order. Closes S-0 through S-12 and X-1.
 
 When every box is ticked, the extension set above is closed: every option has a
 defining module that states its grammar, its option-off output, its malformed
