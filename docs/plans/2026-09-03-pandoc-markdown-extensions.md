@@ -54,8 +54,9 @@ define. CLI JSON is the evidence corpus for recognition, fallback, grouping,
 ordering, and Pandoc's semantic facts after a reviewed projection into the
 target model; where a module and the corpus differ, the module rule stands and
 the difference is a registered delta. Neither raw Pandoc constructor names nor
-its early rendering choices override Markdown Core's consumer contract. Current cmark and cmark-gfm continue to own inherited
-syntax and precedence where no selected Pandoc extension participates.
+its early rendering choices override Markdown Core's consumer contract. Current
+cmark and cmark-gfm continue to own inherited syntax and precedence where no
+selected Pandoc extension participates.
 
 ## Phase 0 — bootstrap the pinned oracle
 
