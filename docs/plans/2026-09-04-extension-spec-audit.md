@@ -152,10 +152,10 @@ by another.
 | `taskLists`                | `true`  | inherited | `canonical-ast.md`, `obsidian/tasks.md`     | `[ ]` prefixes are text                                                                  | S-6, OT-1                    |
 | `formulas`                 | `true`  | inherited | none                                        | every formula delimiter is text                                                          | CA-21 (grammar missing)      |
 | `directives`               | `true`  | Remark    | `remark/attributes.md`                      | `:name` is text                                                                          | RM-2 (envelope missing), S-8 |
-| `wikilinks`                | `false` | Obsidian  | `obsidian/wikilinks-and-embeds.md`          | `[[` follows inherited bracket rules                                                     | OW-5                         |
-| `highlights`               | `false` | Obsidian  | `obsidian/highlights.md`                    | `=` runs are text                                                                        | OH-4                         |
-| `obsidianComments`         | `false` | Obsidian  | `obsidian/comments.md`                      | `%%` is text                                                                             | OC-9                         |
-| `stripObsidianComments`    | `true`  | Obsidian  | `obsidian/comments.md`                      | `Comment` nodes retained; no effect while `obsidianComments` is off                      | OC-5, OC-9                   |
+| `crossLinks`               | `false` | Obsidian  | `obsidian/wikilinks-and-embeds.md`          | `[[` follows inherited bracket rules                                                     | OW-5                         |
+| `marks`                    | `false` | Obsidian  | `obsidian/highlights.md`                    | `=` runs are text                                                                        | OH-4                         |
+| `comments`                 | `false` | Obsidian  | `obsidian/comments.md`                      | `%%` is text                                                                             | OC-9                         |
+| `stripComments`            | `true`  | Obsidian  | `obsidian/comments.md`                      | `Comment` nodes retained; no effect while `comments` is off                              | OC-5, OC-9                   |
 | `inlineFootnotes`          | `false` | Obsidian  | `obsidian/footnotes.md`                     | `^[` follows inherited bracket rules; requires `footnotes`                               | OF-9, S-1                    |
 | `taskMarkers`              | `false` | Obsidian  | `obsidian/tasks.md`                         | inherited `[ xX]` markers only; requires `taskLists`                                     | OT-4, S-6                    |
 | `properties`               | `false` | Obsidian  | `obsidian/properties.md`                    | the envelope is inherited content; `metadata` is null                                    | OP-7, S-9                    |
@@ -232,8 +232,8 @@ opaque to every later class.
 | A2   | code span                                                    | inherited                         | scanner, opaque             | CommonMark        |
 | A3   | raw HTML token, `<autolink>`                                 | inherited                         | scanner, opaque token bytes | CommonMark        |
 | A4   | formula `$`, `$$`, `` $`...`$ ``, `\(`, `\[`                 | `formulas`                        | scanner, opaque             | CA-21, S-7        |
-| A5   | inline comment `%%...%%`                                     | `obsidianComments`                | scanner, opaque             | OC-1, S-7         |
-| A6   | wikilink `[[...]]`, `![[...]]`                               | `wikilinks`                       | scanner, opaque             | OW-1, OW-4, S-4   |
+| A5   | inline comment `%%...%%`                                     | `comments`                        | scanner, opaque             | OC-1, S-7         |
+| A6   | wikilink `[[...]]`, `![[...]]`                               | `crossLinks`                      | scanner, opaque             | OW-1, OW-4, S-4   |
 | A7   | inline footnote `^[...]`                                     | `inlineFootnotes` and `footnotes` | scanner, body parsed        | OF-2, S-1         |
 | A8   | citation key `@key`, `-@key`                                 | `citations`                       | scanner                     | PC-5, PC-9, PC-12 |
 | A9   | example reference `(@label)`, bare `@label` with `citations` | `exampleLists`                    | scanner, document-wide      | PL-11, PC-12      |
@@ -249,7 +249,7 @@ opaque to every later class.
 | C2   | `~~` strikethrough                                           | `strikethrough`                   | delimiter stack             | inherited         |
 | C3   | `~` subscript, or single-tilde strikethrough                 | `subscript`, `strikethrough`      | delimiter stack             | S-7               |
 | C4   | `^` superscript                                              | `superscript`                     | delimiter stack             | S-7               |
-| C5   | `==` highlight                                               | `highlights`                      | delimiter stack             | OH-1              |
+| C5   | `==` highlight                                               | `marks`                           | delimiter stack             | OH-1              |
 | C6   | `++` insert                                                  | `insertedText`                    | delimiter stack             | IT-5              |
 | D    | attribute suffix at registry sites                           | per option                        | immediately after its owner | PA-7              |
 | E    | smart punctuation                                            | `smartPunctuation`                | remaining `Text`            | CA-22             |
@@ -261,7 +261,7 @@ opaque to every later class.
 | 0    | Properties envelope, first line only                       | `properties`                            | OP-1               |
 | 1    | container prefixes                                         | inherited                               | CommonMark         |
 | 2    | fenced and indented code, HTML block                       | inherited                               | CommonMark         |
-| 3    | block comment `%%` line                                    | `obsidianComments`                      | OC-2, S-8          |
+| 3    | block comment `%%` line                                    | `comments`                              | OC-2, S-8          |
 | 4    | block quote, becoming `Callout`, with metadata on line one | inherited, `callouts`                   | OK-1               |
 | 5    | list markers, including fancy and example markers          | inherited, `fancyLists`, `exampleLists` | PL-8, PL-15        |
 | 6    | container and leaf directive `:::name`, `::name`           | `directives`                            | RM-2, S-8          |
@@ -724,16 +724,15 @@ A transitional finding names the landing-plan item that resolves it.
   not inherited.
 - **OI-2** `:194-196` — B — the preset's option vector is never stated and the
   combination of `obsidian` with the inherited gates is undefined (`obsidian`
-  with `tables`, `taskLists`, or `footnotes` off; `stripObsidianComments` with
+  with `tables`, `taskLists`, or `footnotes` off; `stripComments` with
   `obsidian` off). Rule (decision D-1, settled): there is no preset and no
   `obsidian` switch; each module is its own option, gated additionally by the
-  inherited option of the syntax it extends: `wikilinks`, `highlights`,
-  `obsidianComments`, `properties`, `blockIdentifiers`, `callouts`, and
-  `imageDimensions` stand alone; `inlineFootnotes` requires `footnotes`, which
-  also gates `[^label]` lowering and `Document.footnotes`; `taskMarkers`
-  requires `taskLists`; the `\|` rule requires `tables` and `wikilinks`; `$` is
-  gated by `formulas`; `stripObsidianComments` has no effect while
-  `obsidianComments` is off.
+  inherited option of the syntax it extends: `crossLinks`, `marks`, `comments`,
+  `properties`, `blockIdentifiers`, `callouts`, and `imageDimensions` stand
+  alone; `inlineFootnotes` requires `footnotes`, which also gates `[^label]`
+  lowering and `Document.footnotes`; `taskMarkers` requires `taskLists`; the
+  `\|` rule requires `tables` and `crossLinks`; `$` is gated by `formulas`;
+  `stripComments` has no effect while `comments` is off.
 - **OI-3** `:136` versus `obsidian/inherited-and-integration.md:66,76-77` — D/A
   — the audit row says two-hyphen delimiter cells are already present under the
   inherited grammar while the integration module makes "at least two hyphens" a
@@ -783,7 +782,7 @@ A transitional finding names the landing-plan item that resolves it.
   handling; a recognized `CrossLink` is complete at its `]]` and a following
   `(`, `[`, or `{` is text; link content and image alt content may contain a
   `CrossLink`.
-- **OW-5** `:81-87` — B — no option-off sentence. Rule: with `wikilinks` off,
+- **OW-5** `:81-87` — B — no option-off sentence. Rule: with `crossLinks` off,
   `[[`, `]]`, and `![[` follow inherited bracket handling.
 - **OW-6** `:63-64` — B — a `CrossLink` in a heading contributes nothing to an
   automatic anchor. Rule: it contributes `label` when non-null, otherwise `path`
@@ -805,8 +804,8 @@ A transitional finding names the landing-plan item that resolves it.
   a Setext underline; `http://x/?a==b== c`). Rule: block structure is decided
   first, so a Setext underline is never a closer; extended autolinks run after
   delimiter processing over `Text` only, so a URL ends at a `Mark` boundary.
-- **OH-4** `:39-42` — B — no option-off sentence. Rule: with `highlights` off,
-  `=` runs are text.
+- **OH-4** `:39-42` — B — no option-off sentence. Rule: with `marks` off, `=`
+  runs are text.
 
 #### `obsidian/comments.md`
 
@@ -847,8 +846,7 @@ A transitional finding names the landing-plan item that resolves it.
   table boundary scanning does not recognize comments; a `|` inside `%%...%%` in
   a table row splits the cell and the unmatched `%%` bytes are text; `\|` inside
   a comment in a table becomes `|` in the literal.
-- **OC-9** `:33-34` — B — `stripObsidianComments` with `obsidianComments` off.
-  Rule: no effect.
+- **OC-9** `:33-34` — B — `stripComments` with `comments` off. Rule: no effect.
 
 #### `obsidian/footnotes.md`
 
@@ -1078,7 +1076,7 @@ A transitional finding names the landing-plan item that resolves it.
   `superscript-and-subscript.md:62`, `attributes.md:180`) — A — "comments" is
   undefined outside the Obsidian comment module. Rule: in this directory
   "comment" means a `Comment` recognized by the Obsidian comment rule; with
-  `obsidianComments` off no byte is a comment; HTML comments are HTML tokens.
+  `comments` off no byte is a comment; HTML comments are HTML tokens.
 - **PX-5** `pandoc.md:66-68` — B — "without consuming a bracket ... required by
   a later construct" is not decidable. Rule: on recognition failure the cursor
   returns to the candidate's first byte and the next alternative in the module's
@@ -1680,9 +1678,9 @@ resolution checklist assumes them; nothing here is open.
   profile. The product is one syntax set in which every extension syntax is its
   own switch, so each Obsidian module gets its own option, off by default and
   gated additionally by the inherited option of the syntax it extends:
-  `wikilinks`, `highlights`, `obsidianComments` with `stripObsidianComments`,
-  `inlineFootnotes`, `taskMarkers`, `properties`, `blockIdentifiers`,
-  `callouts`, and `imageDimensions` (OI-2).
+  `crossLinks`, `marks`, `comments` with `stripComments`, `inlineFootnotes`,
+  `taskMarkers`, `properties`, `blockIdentifiers`, `callouts`, and
+  `imageDimensions` (OI-2).
 - **D-2 The own-line block identifier `text` then `^id` on the next line.**
   Settled by the Obsidian oracle: an identifier is written at the end of its
   block, and `text` followed by `^id` on the next line is one paragraph whose
@@ -1783,8 +1781,8 @@ need no item of their own.
 - [ ] **B3 — `obsidian/comments.md`:** the opener and closer rule, the block
       start and commit procedure, block-versus-inline classification, both
       content categories, the stripped shape, all recognition suppressed, the
-      literal, table cells, `stripObsidianComments` with `obsidianComments` off.
-      Closes OC-1 through OC-9.
+      literal, table cells, `stripComments` with `comments` off. Closes OC-1
+      through OC-9.
 - [ ] **B4 — `obsidian/footnotes.md`:** the referenced grammar and duplicate
       rule, the bracket-stack rule for `^[`, whitespace-only bodies, no
       synthesized paragraph, the `inline-N` set, the pinned fold version,

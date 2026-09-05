@@ -8,8 +8,10 @@ grammars or proof obligations: the two implementation plans remain normative for
 their phases and exit criteria, and every module specification remains normative
 for its behavior.
 
-- [Obsidian Flavored Markdown implementation plan](2026-09-02-obsidian-flavored-markdown.md)
-- [Pandoc Markdown extensions implementation plan](2026-09-03-pandoc-markdown-extensions.md)
+- [Obsidian Flavored Markdown implementation
+  plan](2026-09-02-obsidian-flavored-markdown.md)
+- [Pandoc Markdown extensions implementation
+  plan](2026-09-03-pandoc-markdown-extensions.md)
 - [Extension specification audit](2026-09-04-extension-spec-audit.md), whose
   resolution checklist the specification pull requests of this plan follow
 
@@ -71,44 +73,43 @@ sequences; it is landed here as its own track.
   because each regenerates shared goldens; the three feature tracks are
   independent of one another after `M7`.
 - Item identifiers are stable. A registered oracle gap names the item that
-  closes it: Pandoc and inserted-text gaps use these identifiers from the
-  start, and the existing Obsidian entries, which name plan phases, are
-  retargeted to identifiers by the item that closes them.
+  closes it: Pandoc and inserted-text gaps use these identifiers from the start,
+  and the existing Obsidian entries, which name plan phases, are retargeted to
+  identifiers by the item that closes them.
 - Each item states its scope, its proof, and its `Requires`. The module
-  specification named by the item owns the complete conformance-case list;
-  the item repeats only what decides the landing boundary.
+  specification named by the item owns the complete conformance-case list; the
+  item repeats only what decides the landing boundary.
 
 ## Landing rules
 
 - Shape before syntax. A change to the consumer model lands before the syntax
   that populates it, and each such change carries every surface at once:
   `docs/specs/canonical-ast.json`, `canonical-ast.md`, and
-  `canonical-ast-dump.md`; the C engine, facade header, export allowlists,
-  and dump; the Swift, Kotlin, and ES models, exhaustive visitors, walking
-  visitors, and dumpers; the JNI, Kotlin/Native, and Wasm transports; and the
-  shared canonical fixtures with their manifest vocabulary.
+  `canonical-ast-dump.md`; the C engine, facade header, export allowlists, and
+  dump; the Swift, Kotlin, and ES models, exhaustive visitors, walking visitors,
+  and dumpers; the JNI, Kotlin/Native, and Wasm transports; and the shared
+  canonical fixtures with their manifest vocabulary.
 - A new kind lands together with the first syntax that produces it.
   `scripts/check-canonical-ast-fixtures.mjs` requires every declared kind to
   appear in a parseable canonical case, so a kind without a producer cannot pass
   the contract check. Field and enum changes on existing kinds are therefore the
   only model-only pull requests; they are the `M` items.
-- A feature pull request is one option's behavior: the C extension or
-  scanner, its reviewed position in the attach-order table, the option's
-  facade field, registry row, `canonical-ast.md` row, manifest key, and
-  binding option, the new kind if any, package fixtures for the module's
-  required conformance cases, a canonical case for each new kind or state,
-  and the removal of every oracle gap it closes.
+- A feature pull request is one option's behavior: the C extension or scanner,
+  its reviewed position in the attach-order table, the option's facade field,
+  registry row, `canonical-ast.md` row, manifest key, and binding option, the
+  new kind if any, package fixtures for the module's required conformance cases,
+  a canonical case for each new kind or state, and the removal of every oracle
+  gap it closes.
 - Every option name is allocated in the inventory and registered through the
   registry that `X0` creates. A feature item publishes its option, defaulting to
   off, together with the behavior, option-off cases, oracle evidence, and
   product fixtures that make it public. The inherited options never change
   language.
 - Nothing here ships before `R1`. Between merges, an unproduced enum branch,
-  value type, or field is allowed only where an item says so, and the item
-  that first produces it is named; a published option always recognizes its
-  syntax. No item publishes two representations of one semantic fact, even
-  between merges: the item that introduces a replacement removes what it
-  replaces.
+  value type, or field is allowed only where an item says so, and the item that
+  first produces it is named; a published option always recognizes its syntax.
+  No item publishes two representations of one semantic fact, even between
+  merges: the item that introduces a replacement removes what it replaces.
 - Oracles are evidence, not targets. A gap entry records a feature this parser
   does not yet implement; when the item lands, the entry becomes either
   agreement or a documented projection with a canary where the specification
@@ -117,9 +118,8 @@ sequences; it is landed here as its own track.
   the same pull request, and a feature item retires the gap entries it
   implements in the same pull request.
 
-- Contract: JSON, prose, and dump grammar updated together;
-  `pnpm audit:ast-projections`, `pnpm check:contracts`, and
-  `pnpm audit:surface` pass.
+- Contract: JSON, prose, and dump grammar updated together; `pnpm
+  audit:ast-projections`, `pnpm check:contracts`, and `pnpm audit:surface` pass.
 - C: engine node type, facade accessors, `core/exports/markdown_core.map` and
   `markdown_core.exports`, the `extensions/ast.c` dump, the CLI, and the
   extension table position; `ctest --preset correctness` and `conformance`,
@@ -135,12 +135,10 @@ sequences; it is landed here as its own track.
   goldens reviewed together with the parser change; canonical cases with
   manifest option and coverage vocabulary and checker validators.
 - Ledgers and gates: `specs/positions/`, `specs/reference-resolution/`, and
-  every `specs/oracles/*/deltas.json` updated in the same change with the
-  reason in the commit message; `pnpm check:oracle-parity` and the fuzz seeds
-  pass.
-- Documentation: the CHANGELOG entry under the unreleased version, the
-  binding READMEs when a public option changes, and the Obsidian
-  support audit row.
+  every `specs/oracles/*/deltas.json` updated in the same change with the reason
+  in the commit message; `pnpm check:oracle-parity` and the fuzz seeds pass.
+- Documentation: the CHANGELOG entry under the unreleased version, the binding
+  READMEs when a public option changes, and the Obsidian support audit row.
 - Cross-item cases: every case in the item's `Cross-item cases` column whose
   partner item has already merged is part of this item's fixtures.
 
@@ -151,11 +149,11 @@ specification says otherwise, the item that lands the behavior amends that
 specification in the same pull request.
 
 - Upstream tools define which features exist, not how they behave here. The
-  module specifications define a common-case feature set drawn from Obsidian
-  and Pandoc that is self-consistent on its own terms, and the repository's
+  module specifications define a common-case feature set drawn from Obsidian and
+  Pandoc that is self-consistent on its own terms, and the repository's
   conformance fixtures are the oracle of record. Pandoc, Obsidian,
-  remark-obsidian, and markdown-it-ins are evidence: a difference from them is
-  a registered delta, never a rule change, and no gate requires byte-for-byte
+  remark-obsidian, and markdown-it-ins are evidence: a difference from them is a
+  registered delta, never a rule change, and no gate requires byte-for-byte
   agreement.
 - `VERSION` stays `3.0.0`. No 3.0 release exists, so every item here is part of
   the unreleased 3.0.0 line and nothing is deferred to a later major.
@@ -175,9 +173,9 @@ specification in the same pull request.
   own `ParseOptions` switch, off by default, and off means the inherited
   behavior byte for byte; a module that extends inherited syntax is additionally
   gated by that syntax's inherited option. The one option that is not a syntax
-  switch is `stripObsidianComments`, which defaults to `true` and acts only
-  while `obsidianComments` is on. The CLI `--profile` names are harness
-  shorthands for the comparison oracles and define no language.
+  switch is `stripComments`, which defaults to `true` and acts only while
+  `comments` is on. The CLI `--profile` names are harness shorthands for the
+  comparison oracles and define no language.
 - The parser stores fenced-code info, language, and attributes as written. It
   does not lowercase, alias, or derive a language from a class; consumers
   interpret them.
@@ -256,16 +254,16 @@ value carries `scope` only.
 Binding spelling is shown; the C facade uses `snake_case`, and the CLI `-e`
 names and fixture fence tags use the extension names from the Pandoc and
 Obsidian indexes. Every new option defaults to `false` except
-`stripObsidianComments`, which defaults to `true`. There are no profiles: an
+`stripComments`, which defaults to `true`. There are no profiles: an
 option is public from the item in its `Public from` column, which is the item
 that lands its behavior, and no item composes options.
 
 | Option                     | Behavior lands in | Public from |
 | -------------------------- | ----------------- | ----------- |
-| `wikilinks`                | `O1`              | `O1`        |
-| `highlights`               | `O2`              | `O2`        |
-| `obsidianComments`         | `O3`              | `O3`        |
-| `stripObsidianComments`    | `O3`              | `O3`        |
+| `crossLinks`               | `O1`              | `O1`        |
+| `marks`                    | `O2`              | `O2`        |
+| `comments`                 | `O3`              | `O3`        |
+| `stripComments`            | `O3`              | `O3`        |
 | `inlineFootnotes`          | `O4`              | `O4`        |
 | `taskMarkers`              | `O5`              | `O5`        |
 | `properties`               | `O6`              | `O6`        |
@@ -312,19 +310,17 @@ that lands its behavior, and no item composes options.
       recognition-order tables that A1 creates. Requires `S1`.
 - [ ] **X0 — Option registry and harness plumbing.** Create one C-side option
       registry that maps a registered name to its facade field or engine
-      extension bit, and route the CLI `-e` names, the `ts_ast_enable`
-      fixture tags, and the facade-to-engine mapping through it, so a feature
-      item adds exactly one row. Make
-      `scripts/check-canonical-ast-fixtures.mjs` read the option vocabulary
-      from the `ParseOptions` table in `canonical-ast.md` instead of a second
-      hardcoded list, and give the C, Swift, Kotlin, and ES conformance
-      runners an internal option path so a canonical case can enable a
-      registered option that its public surface has not yet published. No
-      public option is added here: the inventory allocates the names, and
-      each feature item publishes its own option together with its behavior.
-      Exit: every existing fixture and canonical case is byte-identical, and
-      the registry, CLI, fixture tags, and checker agree on the nine existing
-      names.
+      extension bit, and route the CLI `-e` names, the `ts_ast_enable` fixture
+      tags, and the facade-to-engine mapping through it, so a feature item adds
+      exactly one row. Make `scripts/check-canonical-ast-fixtures.mjs` read the
+      option vocabulary from the `ParseOptions` table in `canonical-ast.md`
+      instead of a second hardcoded list, and give the C, Swift, Kotlin, and ES
+      conformance runners an internal option path so a canonical case can enable
+      a registered option that its public surface has not yet published. No
+      public option is added here: the inventory allocates the names, and each
+      feature item publishes its own option together with its behavior. Exit:
+      every existing fixture and canonical case is byte-identical, and the
+      registry, CLI, fixture tags, and checker agree on the nine existing names.
 - [ ] **P0 — Pandoc evidence gate.** Add `oracle-pandoc` to
       `scripts/init-environment.sh`: `--install` fetches only the host archive
       named by `specs/oracles/pandoc/source.json` and verifies its SHA-256, and
@@ -348,10 +344,10 @@ that lands its behavior, and no item composes options.
       `markdown-it-ins@4.0.0` as exact development dependencies with the
       integrity values recorded in `docs/specs/inserted-text.md`; add
       `specs/oracles/markdown-it-ins/` with a README, an input-only corpus
-      replaying the pinned upstream cases plus the contract's composition
-      cases, and a fail-closed `deltas.json`; add `check:ins-parity`, which
-      compares `ins_open` and `ins_close` placement and nesting to `Insert`
-      after a canary requiring exactly one pair for `++inserted++`, to
+      replaying the pinned upstream cases plus the contract's composition cases,
+      and a fail-closed `deltas.json`; add `check:ins-parity`, which compares
+      `ins_open` and `ins_close` placement and nesting to `Insert` after a
+      canary requiring exactly one pair for `++inserted++`, to
       `check:oracle-parity`, CI, and the topology audit. Every case is a
       registered gap until `I1`.
 
@@ -486,7 +482,7 @@ that lands its behavior, and no item composes options.
 - [ ] **O1 — Wikilinks and embeds.** Create the parser-owned OFM inline
       extension, its bit, and its reviewed attach-table position (before
       `table`; the extension must see `[` and `!` before inherited bracket
-      handling), enabled by its own `wikilinks` option, registered, exposed on
+      handling), enabled by its own `crossLinks` option, registered, exposed on
       the CLI, the facade, and every binding, and public from this item. One
       scanner recognizes `[[...]]` and `![[...]]`, splits path, optional anchor,
       and label while scanning, removes the `#` and `#^` punctuation, and builds
@@ -502,29 +498,28 @@ that lands its behavior, and no item composes options.
       attribute container following a complete `CrossLink` staying text under
       `bracketedSpans` (audit finding OW-4) is a cross-item case owned by
       whichever of `O1` and `P5` merges later. Requires `X0`, `M7`, `S2`.
-- [ ] **O2 — Highlights.** Add `==` to the shared delimiter stack under
-      `highlights` with the exact-two-run and non-empty rules, local pairing,
-      and opaque code, formula, comment, HTML-token, and wikilink bytes (audit
-      seam S-7); add the `Mark(content)` kind, fixtures for formatted, adjacent,
-      escaped, unmatched, triple, table-cell, and footnote-content bodies plus
+- [ ] **O2 — Highlights.** Add `==` to the shared delimiter stack under `marks`
+      with the exact-two-run and non-empty rules, local pairing, and opaque
+      code, formula, comment, HTML-token, and wikilink bytes (audit seam S-7);
+      add the `Mark(content)` kind, fixtures for formatted, adjacent, escaped,
+      unmatched, triple, table-cell, and footnote-content bodies plus
       size-doubling equals runs, and a canonical case; remove the `highlight`
       gap and keep the content-model projection. Callout-title cases join in
       `O8`. The heading-text projection of `Mark` in generated anchors is a
       cross-item case owned by whichever of `O2` and `P3` merges later. Requires
       `O1`.
-- [ ] **O3 — Comments.** Under `obsidianComments`, scan `%%...%%` from the
-      shared cursor with a linear closer search, classify block placement when
-      both delimiters occupy their own lines and inline placement otherwise,
-      keep the body opaque, and emit `Comment(literal)` when
-      `stripObsidianComments` is off or omit the node without changing
-      surrounding delimiter binding when it is on. Add the kind, fixtures in
-      both modes covering inline, standalone, multiline, empty, adjacent,
-      escaped, unmatched, and Markdown-looking bodies, the syntax of every
-      already merged extension inside a comment body under the opacity rule, and
-      size-doubling percent runs, and a canonical case; remove the two
-      `comment-*` gaps. The heading-text projection of `Comment` in generated
-      anchors is a cross-item case owned by whichever of `O3` and `P3` merges
-      later. Requires `O1`.
+- [ ] **O3 — Comments.** Under `comments`, scan `%%...%%` from the shared cursor
+      with a linear closer search, classify block placement when both delimiters
+      occupy their own lines and inline placement otherwise, keep the body
+      opaque, and emit `Comment(literal)` when `stripComments` is off or omit
+      the node without changing surrounding delimiter binding when it is on. Add
+      the kind, fixtures in both modes covering inline, standalone, multiline,
+      empty, adjacent, escaped, unmatched, and Markdown-looking bodies, the
+      syntax of every already merged extension inside a comment body under the
+      opacity rule, and size-doubling percent runs, and a canonical case; remove
+      the two `comment-*` gaps. The heading-text projection of `Comment` in
+      generated anchors is a cross-item case owned by whichever of `O3` and `P3`
+      merges later. Requires `O1`.
 - [ ] **O4 — Inline footnotes.** Under `inlineFootnotes`, which requires
       `footnotes`, recognize `^[content]` inside the shared bracket algorithm,
       ahead of superscript, producing one one-item `Cite` with a `footnote`
@@ -601,7 +596,7 @@ that lands its behavior, and no item composes options.
       `CrossLink.label` raw. Teach the table boundary scanner the `\|` escape so
       a wikilink alias or embed size stays inside one cell while the inline
       scanner receives the logical pipe, with the escape active only while
-      `tables` and `wikilinks` are both on; the inherited delimiter-row grammar
+      `tables` and `crossLinks` are both on; the inherited delimiter-row grammar
       is unchanged (audit finding OI-3), and with every Obsidian option off
       tables and task items are byte-for-byte inherited. Fixtures cover every
       valid and invalid dimension form, escaped pipes, aligned and pipe-optional
@@ -859,14 +854,13 @@ that lands its behavior, and no item composes options.
       identifier line after a caption on this table form attaching to the
       `Table` is a cross-item case owned by whichever of `P11d` and `O7` merges
       later. Requires `P11c`.
-- [ ] **P12 — Pandoc evidence closure.** Add option-independence fixtures
-      for every extension on and off in combination, deterministic fuzz seeds
-      and size-doubling cases for brackets, attributes, `@`, braces, carets,
-      tildes, colons, numerals, and grids, and canonical cases until every
-      Pandoc kind, state, and order is covered; empty the Pandoc
-      `deltas.json` of everything except general documented projections with
-      canaries; document every option in the README and the binding READMEs.
-      Requires `P2a` through `P11d`.
+- [ ] **P12 — Pandoc evidence closure.** Add option-independence fixtures for
+      every extension on and off in combination, deterministic fuzz seeds and
+      size-doubling cases for brackets, attributes, `@`, braces, carets, tildes,
+      colons, numerals, and grids, and canonical cases until every Pandoc kind,
+      state, and order is covered; empty the Pandoc `deltas.json` of everything
+      except general documented projections with canaries; document every option
+      in the README and the binding READMEs. Requires `P2a` through `P11d`.
 - **Pandoc track exit criterion**, verified in the `P12` pull request: the Phase
   6 exit criterion of the Pandoc implementation plan holds, with every selected
   extension independently composable and no monolithic preset.
@@ -944,15 +938,15 @@ Sizes are rough review-effort estimates, not schedules.
   follows all three through `M7`, so no implementation item lands before the
   rules it implements.
 - `P0` and `I0` touch only scripts and oracle policy and may land at any point
-  before the first Pandoc feature item and before `I1`; their registered
-  digests are re-registered by whichever model item changes them.
+  before the first Pandoc feature item and before `I1`; their registered digests
+  are re-registered by whichever model item changes them.
 - After `M7`, the Obsidian, inserted-text, and Pandoc tracks are independent.
-  Inside a track, items that edit the same engine file are serialized or
-  rebased in order: `O2` through `O5` extend the extension `O1` creates; `O6`,
-  `O7`, and `O8` edit block finalization; `O9`, `P11b`, `P11c`, and `P11d`
-  edit the table path; `P2a` through `P2d` share the attribute callers; `P5`,
-  `P6`, and `P7` share the inline bracket and delimiter code; `P8` and `P10`
-  share block starts.
+  Inside a track, items that edit the same engine file are serialized or rebased
+  in order: `O2` through `O5` extend the extension `O1` creates; `O6`, `O7`, and
+  `O8` edit block finalization; `O9`, `P11b`, `P11c`, and `P11d` edit the table
+  path; `P2a` through `P2d` share the attribute callers; `P5`, `P6`, and `P7`
+  share the inline bracket and delimiter code; `P8` and `P10` share block
+  starts.
 - The `Cross-item cases` column, together with the opacity rule, is the complete
   list of fixtures that wait for a second item neither of whose items requires
   the other: `Insert` composed with `CrossLink` and `Mark`; `^[` before

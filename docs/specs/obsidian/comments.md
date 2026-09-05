@@ -30,11 +30,11 @@ including line endings and indentation. `scope` covers delimiters and body.
 `Comment` is a contextual leaf: its parent edge records whether it occupies
 block or inline content, so the node stores no duplicate mode field.
 
-Recognition and retention are separate decisions. `stripObsidianComments`
-defaults to `true` whenever `obsidianComments` is on, so the default output
-omits recognized comment nodes. With stripping disabled, the same recognition
-produces the lossless `Comment`; delimiters are not reinterpreted as text.
-Stripping must not change how surrounding delimiters bind.
+Recognition and retention are separate decisions. `stripComments` defaults to
+`true` whenever `comments` is on, so the default output omits recognized comment
+nodes. With stripping disabled, the same recognition produces the lossless
+`Comment`; delimiters are not reinterpreted as text. Stripping must not change
+how surrounding delimiters bind.
 
 ## Precedence and fallback
 

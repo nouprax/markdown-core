@@ -196,9 +196,9 @@ never become `Citation` or a document-owned link registry.
 
 Each module in this contract is one parse option that the caller composes with
 the inherited GFM, footnote, formula, and code behavior; no switch composes
-several modules. `stripObsidianComments` defaults to `true` and acts only while
-`obsidianComments` is on. The universal reference-link/image
-normalization, `BlockQuote` to `Callout`, source-shaped footnote to
+several modules. `stripComments` defaults to `true` and acts only while
+`comments` is on. The universal reference-link/image normalization, `BlockQuote`
+to `Callout`, source-shaped footnote to
 `Cite`/`Citation`/`CitationReferent`/`Footnote`, and `checked` to `marker`
 migrations are intentional canonical vNext changes and receive no duplicate
 compatibility state.
@@ -210,11 +210,11 @@ not disable footnote syntax or its `Cite` nodes carrying
 `CitationReferent.footnote`.
 
 Every module has its own public option, off by default and gated additionally by
-the inherited option of the syntax it extends: `wikilinks`, `highlights`,
-`obsidianComments`, `inlineFootnotes` (with `footnotes`), `taskMarkers` (with
+the inherited option of the syntax it extends: `crossLinks`, `marks`,
+`comments`, `inlineFootnotes` (with `footnotes`), `taskMarkers` (with
 `taskLists`), `properties`, `blockIdentifiers`, `callouts`, and
-`imageDimensions`. Comment retention, `stripObsidianComments`, is the one option
-that is not a syntax switch, because it changes lossless output after the same
+`imageDimensions`. Comment retention, `stripComments`, is the one option that is
+not a syntax switch, because it changes lossless output after the same
 recognition.
 
 ## Conformance obligations
