@@ -23,7 +23,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "test_support.h"
+#include "harness_support.h"
 
 static int failures = 0;
 

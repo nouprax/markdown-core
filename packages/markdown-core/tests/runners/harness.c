@@ -21,7 +21,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "test_support.h"
+#include "harness_support.h"
 
 #if defined(_WIN32) && !defined(__CYGWIN__)
 #include <fcntl.h>

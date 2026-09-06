@@ -10,7 +10,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "test_support.h"
+#include "harness_support.h"
 
 #include "entities.inc"
 

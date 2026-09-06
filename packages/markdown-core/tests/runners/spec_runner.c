@@ -23,7 +23,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "test_support.h"
+#include "harness_support.h"
 
 static void usage(FILE *stream) {
     fputs("usage: spec_runner --spec FILE [--feature NAME]...\n"

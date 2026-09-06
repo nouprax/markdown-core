@@ -82,32 +82,46 @@ else()
     set(MARKDOWN_CORE_TEST_LIBRARIES libmarkdown-core-extensions_static libmarkdown-core_static)
 endif()
 
-# Shared native test support: fixture loading, in-process conversion, byte
-# comparison, deterministic diffs, PRNG, and timing. It links the static
-# engine: the harness's layer selection reaches the facade's internal feature
-# registry, which the installed shared library deliberately does not export.
-# The public-API suites below (facade_test, the C++ facade test) keep linking
-# the product library so that the exported contract is still what they prove.
+# Shared native test support: fixture loading, byte comparison, deterministic
+# diffs, PRNG, and timing, in two link flavours over the same sources.
+#
+# The public flavour links the product library the consumers get, so a runner
+# on it -- the CLI dump suite, the fuzz smoke, the stress cases, and the
+# benchmark that measures the shipped shared library -- exercises exactly the
+# exported contract. The harness flavour adds layer selection, which reaches
+# the facade's internal feature registry; the installed shared library
+# deliberately does not export it, so that flavour links the static engine.
+# No executable links both.
+set(MARKDOWN_CORE_TEST_SUPPORT_INCLUDES
+    "${CMAKE_CURRENT_SOURCE_DIR}/support" "${CMAKE_CURRENT_SOURCE_DIR}/../include" "${MARKDOWN_CORE_CORE_SOURCE_DIR}"
+    "${MARKDOWN_CORE_CORE_BINARY_DIR}" "${MARKDOWN_CORE_EXTENSIONS_SOURCE_DIR}"
+    "${MARKDOWN_CORE_EXTENSIONS_BINARY_DIR}")
 add_library(markdown-core-test-support STATIC support/test_support.c support/test_support.h)
-target_include_directories(
-    markdown-core-test-support
-    PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/support" "${CMAKE_CURRENT_SOURCE_DIR}/../include"
-           "${MARKDOWN_CORE_CORE_SOURCE_DIR}" "${MARKDOWN_CORE_CORE_BINARY_DIR}"
-           "${MARKDOWN_CORE_EXTENSIONS_SOURCE_DIR}" "${MARKDOWN_CORE_EXTENSIONS_BINARY_DIR}")
-target_link_libraries(markdown-core-test-support PUBLIC libmarkdown-core-extensions_static libmarkdown-core_static)
+target_include_directories(markdown-core-test-support PUBLIC ${MARKDOWN_CORE_TEST_SUPPORT_INCLUDES})
+target_link_libraries(markdown-core-test-support PUBLIC ${MARKDOWN_CORE_TEST_LIBRARIES})
+
+add_library(markdown-core-harness-support STATIC support/test_support.c support/test_support.h
+                                                 support/harness_support.c support/harness_support.h)
+target_include_directories(markdown-core-harness-support PUBLIC ${MARKDOWN_CORE_TEST_SUPPORT_INCLUDES})
+target_link_libraries(markdown-core-harness-support PUBLIC libmarkdown-core-extensions_static libmarkdown-core_static)
 
 function(markdown_core_add_runner name)
     add_executable(${name} ${ARGN})
     target_link_libraries(${name} markdown-core-test-support)
 endfunction()
 
-markdown_core_add_runner(spec_runner runners/spec_runner.c)
-markdown_core_add_runner(pathological_runner runners/pathological_runner.c)
+function(markdown_core_add_harness_runner name)
+    add_executable(${name} ${ARGN})
+    target_link_libraries(${name} markdown-core-harness-support)
+endfunction()
+
+markdown_core_add_harness_runner(spec_runner runners/spec_runner.c)
+markdown_core_add_harness_runner(pathological_runner runners/pathological_runner.c)
 # The conformance harness's own executable: the former CLI `--profile` and `-e`
 # shorthands live here, built for the tests and never installed, so the cmark
 # and cmark-gfm gates can run one layer alone. The installed CLI has no flags.
-markdown_core_add_runner(markdown-core-harness runners/harness.c)
-markdown_core_add_runner(registry_runner runners/registry_runner.c)
+markdown_core_add_harness_runner(markdown-core-harness runners/harness.c)
+markdown_core_add_harness_runner(registry_runner runners/registry_runner.c)
 
 # oom_runner injects an allocator into the internal implementation of the
 # public facade transaction, so it links the static engine directly.
@@ -118,10 +132,12 @@ if(MARKDOWN_CORE_STATIC)
                            "${MARKDOWN_CORE_EXTENSIONS_SOURCE_DIR}" "${MARKDOWN_CORE_EXTENSIONS_BINARY_DIR}")
     target_link_libraries(oom_runner libmarkdown-core-extensions_static libmarkdown-core_static)
 endif()
-markdown_core_add_runner(entity_runner runners/entity_runner.c)
+markdown_core_add_harness_runner(entity_runner runners/entity_runner.c)
 markdown_core_add_runner(dump_cli_runner runners/dump_cli_runner.c)
 markdown_core_add_runner(fuzz_smoke_runner runners/fuzz_smoke_runner.c)
-markdown_core_add_runner(concurrency_runner runners/concurrency_runner.c)
+# The stress case races the base layer against the whole dialect, which only
+# the harness entry can name.
+markdown_core_add_harness_runner(concurrency_runner runners/concurrency_runner.c)
 markdown_core_add_runner(stress_runner runners/stress_runner.c)
 add_executable(corpus_guard runners/corpus_guard.c)
 
@@ -400,6 +416,8 @@ markdown_core_add_test(packaging_corpus_guard packaging 60 corpus_guard --root "
 # enables this block and reports measurements without wall-clock assertions.
 if(MARKDOWN_CORE_BENCHMARKS)
     set(MARKDOWN_CORE_BENCH_SAMPLES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../benchmarks/samples")
+    # The public flavour on purpose: the PR benchmark times the product library
+    # and reports the size of the shared library this target therefore builds.
     markdown_core_add_runner(bench_runner runners/bench_runner.c)
     target_include_directories(bench_runner PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../include")
     markdown_core_add_test(benchmark_corpus_guard benchmark 60 corpus_guard --root "${CMAKE_SOURCE_DIR}")
