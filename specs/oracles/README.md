@@ -1,9 +1,10 @@
 # External parser oracles
 
-This directory contains the repository's independent parser authorities and
-the reviewed policy that defines each comparison:
+This directory contains the repository's independent parser oracles, the
+evidence behind the dialect modules that state the rules, and the reviewed
+policy that defines each comparison:
 
-- `cmark/` pins the newest stable cmark release as the sole primary authority
+- `cmark/` pins the newest stable cmark release as the sole primary oracle
   for CommonMark syntax and parser complexity fixes.
 - `cmark-gfm/` pins the dormant upstream fork only for its GFM extension layer.
 - `remark/` pins the remark/micromark ecosystem as corrective and
@@ -18,14 +19,14 @@ the reviewed policy that defines each comparison:
   extension layer, including the shared attribute grammar and consumer model.
   Its parity gate is the first implementation-plan phase.
 
-Each active gate's `deltas.json` records the authority version, compared
+Each active gate's `deltas.json` records the oracle version, compared
 corpus, deliberate differences, and fail-closed exceptions. The Pandoc policy
 currently has an immutable `source.json` and input-only corpus; it explicitly
 does not claim parity until the planned gate and its initial delta registry
 land. A registered difference must reproduce; a new difference and a
 registered difference that disappears both fail an active gate.
 
-Authority is scoped, not voted: cmark-gfm cannot override current cmark on the
+Evidence is scoped, not voted: cmark-gfm cannot override current cmark on the
 base language, Pandoc cannot replace inherited CommonMark/GFM behavior with its
 default dialect, and Remark's directive tokenizer cannot replace the explicitly
 selected shared Pandoc attribute grammar.

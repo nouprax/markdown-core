@@ -7,7 +7,7 @@ difference in the GFM extension layer.
 GFM extension sections and extension-tagged regressions, runs Markdown Core
 with directive and formula disabled, and fails on any unregistered drift.
 
-This oracle is intentionally not an authority for CommonMark. cmark-gfm has
+This oracle is intentionally not an oracle for CommonMark. cmark-gfm has
 not published a release since 2023; the separate cmark oracle follows the
 newest stable CommonMark reference release instead.
 
@@ -19,7 +19,7 @@ specifications' examples, but their expected blocks are canonical AST dumps
 this parser produced. They pin behaviour without independently proving it, and
 a divergence introduced before those dumps were frozen would be preserved.
 
-This gate supplies the primary implementation authority for tables,
+This gate supplies the primary implementation oracle for tables,
 strikethrough, autolinks, task-list items, and cmark-gfm footnotes. The sibling
 remark/micromark oracle supplies corrective and supplementary evidence.
 

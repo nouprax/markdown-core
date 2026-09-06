@@ -224,9 +224,10 @@ does not enable Pandoc `@key` syntax through any Obsidian option.
       projection and prove that it fires; never replace a semantic difference with
       normalization.
 - [ ] Update the cmark/cmark-gfm and remark comparison projections for the
-      universal reference-link/image normalization. Those authorities continue to
-      own recognition, precedence, and fallback, but their source-shaped
-      definition/reference nodes do not override the consumer AST contract.
+      universal reference-link/image normalization. Those oracles remain
+      evidence for recognition, precedence, and fallback, which the dialect
+      modules own, and their source-shaped definition/reference nodes do not
+      override the consumer AST contract.
 - [x] Extend the Obsidian parity gate with the exact module-owned envelope
       scanner and exact-pinned `yaml@2.9.0` Document/node parsing with CST source
       tokens. Project mapping pairs without a JavaScript object intermediary so

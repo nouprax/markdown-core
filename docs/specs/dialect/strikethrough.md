@@ -120,8 +120,9 @@ Document scope=1:1..1:15 anchor=null attributes={} children=1
 
 A single tilde is subscript syntax whatever the options say: with
 `subscript` on it is a subscript delimiter, and with it off it is text. A
-run of two tildes is strikethrough when matched under the rules above and
-otherwise two subscript units under `subscript`. cmark-gfm's single-tilde
+run of two tildes is never subscript syntax: it is strikethrough when matched
+under the rules above and otherwise text, whatever `subscript` says.
+cmark-gfm's single-tilde
 strikethrough is a registered delta; the [conflicts](conflicts.md) register
 records the ruling, and the subscript module's examples show the result.
 
@@ -136,6 +137,20 @@ whatever this option says:
 Document scope=1:1..1:5 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..1:5 anchor=null attributes={} children=1
     └── Text scope=1:1..1:5 anchor=null attributes={} literal="~~a~~" children=0
+````````````````````````````````
+
+With `subscript` on and `strikethrough` off, a double run is still text
+rather than two subscript units, so a single-tilde opener before it finds no
+closer in it, while a single-tilde pair elsewhere is a subscript:
+
+```````````````````````````````` example subscript !strikethrough
+~a~~b ~~c~~ ~d~
+.
+Document scope=1:1..1:15 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:15 anchor=null attributes={} children=2
+    ├── Text scope=1:1..1:12 anchor=null attributes={} literal="~a~~b ~~c~~ " children=0
+    └── Subscript scope=1:13..1:15 anchor=null attributes={} children=1
+        └── Text scope=1:14..1:14 anchor=null attributes={} literal="d" children=0
 ````````````````````````````````
 
 ## Scopes

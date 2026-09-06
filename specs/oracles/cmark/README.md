@@ -11,7 +11,7 @@ reviewed change.
 Unicode/generated data, reviewed representation differences, and product
 surfaces that are intentionally absent.
 
-`cmark-gfm` is deliberately not treated as a CommonMark authority. Its sibling
+`cmark-gfm` is deliberately not treated as a CommonMark oracle. Its sibling
 oracle owns only the GFM/cmark-gfm extension layer. remark/mdast is an
 independent corrective and supplementary implementation: agreement can support
 a deliberate cmark delta, while disagreement triggers review; it does not

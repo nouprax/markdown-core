@@ -1,6 +1,6 @@
 # remark/micromark oracle
 
-`deltas.json` defines where remark/micromark is authoritative, pins the npm
+`deltas.json` defines where remark/micromark is the evidence, pins the npm
 dependency surface through the repository lockfile, selects the compared
 corpus, and records every deliberate divergence. `corpus.md` supplies focused
 inputs for semantics not already covered by the C extension fixtures.
@@ -14,7 +14,7 @@ generated inputs.
 This oracle is corrective and supplementary, not a second owner of the base
 language. Current cmark owns CommonMark syntax, cmark-gfm owns only its GFM
 extension layer, and a remark agreement can justify a reviewed delta without
-silently overriding either primary authority.
+silently overriding either primary oracle.
 
 For directives, Remark owns the envelope, label, and attribute attachment
 position. It does not own the attribute member grammar or public attribute

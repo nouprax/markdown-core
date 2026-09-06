@@ -29,9 +29,11 @@ broadly used candidate whose public model can witness the required facts.
 Popularity chooses an implementation oracle; it does not make that package the
 specification. The official Obsidian help snapshot registered in `deltas.json`
 is the source of the feature definitions, and the dialect modules under
-`docs/specs/dialect/` are the rule. This oracle is authoritative only for the
+`docs/specs/dialect/` are the rule. This oracle is evidence only for the
 intersection it implements: wikilinks/embeds, highlights, comment removal, and
-custom task characters. Tag and package-specific math syntax are disabled.
+custom task characters; where it and a module differ, the module decides and
+the difference is a registered delta. Tag and package-specific math syntax
+are disabled.
 Callouts, block identifiers, inline-footnote recognition, the target
 `Cite`/`Citation`/`CitationReferent`/`Footnote` consumer projection, and image
 dimensions are absent from the direct parser comparison and therefore stay
@@ -86,7 +88,7 @@ coordinate models. The Properties canaries additionally require every emitted
 record to retain ordered, in-envelope CST range evidence. Its corpus covers
 integer-looking keys in non-JavaScript order, exact large/decimal/exponent/
 negative-zero number spellings, quoted key decoding, aliases, and strict
-projection failures. Product fixtures remain authoritative for canonical
+projection failures. Product fixtures remain the rule for canonical
 binding-coordinate scopes, allocation failure, and parser-wide resource
 limits.
 

@@ -86,8 +86,8 @@ Document scope=1:1..1:9 anchor=null attributes={} children=1
         └── Text scope=1:2..1:8 anchor=null attributes={} literal="a b" children=0
 ````````````````````````````````
 
-An empty body is not a body. `^^` is text, and an unmatched `~~` run, which
-the tilde rule turns into two subscript units, is therefore text as well:
+An empty body is not a body. `^^` is text, and an unmatched `~~` run is text
+under the tilde rule rather than two subscript units:
 
 ```````````````````````````````` example superscript subscript
 ^^ a~~b
@@ -126,9 +126,10 @@ Document scope=1:1..1:7 anchor=null attributes={} children=1
 
 A run of one tilde is subscript syntax and never a strikethrough delimiter:
 with `subscript` on it is a subscript unit, and with it off it is text. A run
-of two tildes is a strikethrough delimiter, matched under the
-[strikethrough](strikethrough.md) rules, and becomes two subscript units only
-if it ends unmatched; runs of three or more are text. The
+of two tildes is never subscript syntax: it is a strikethrough delimiter unit
+matched under the [strikethrough](strikethrough.md) rules while
+`strikethrough` is on and text otherwise, so an unmatched double run is text
+whatever the options say; runs of three or more are text. The
 [conflicts](conflicts.md) register records this ruling.
 
 ```````````````````````````````` example subscript

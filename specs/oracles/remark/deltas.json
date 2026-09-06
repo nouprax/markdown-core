@@ -9,7 +9,7 @@
             "footnotes and tables": "micromark-extension-gfm-* (remark-gfm)"
         },
         "astShapeFrom": "mdast-util-directive@3.1.0 and mdast-util-from-markdown; every `ast-shape` delta below originates here, not in the parser extensions.",
-        "note": "Versions are pinned by pnpm-lock.yaml. This is a corrective and supplementary oracle: cmark remains authoritative for CommonMark and cmark-gfm for GFM extensions, while remark/mdast supplies independent evidence for directives, math, footnote representation, tables, and the reference-link model.",
+        "note": "Versions are pinned by pnpm-lock.yaml. This is a corrective and supplementary oracle: cmark remains the CommonMark oracle and cmark-gfm the GFM-extension oracle, while remark/mdast supplies independent evidence for directives, math, footnote representation, tables, and the reference-link model.",
         "notAnAuthorityFor": [
             "Which construct wins when two extensions could claim the same line. That is decided by micromark's construct priority and by this repository's audited extension attachment order — each an artifact of its own architecture, not a rule either project specifies. Divergences of that kind are product grammar decisions rather than mdast parity deltas.",
             "LaTeX-style math delimiters. micromark-extension-math implements `$` and `$$` only, so `\\(x\\)` and `\\[x\\]` reach remark as ordinary escaped brackets. It has no opinion there to compare against, which is why packages/markdown-core/tests/fixtures/extensions-formula-latex.txt is deliberately absent from the corpus below rather than present with six registered divergences. Registering them would read as `remark disagrees`, and it does not — it was never asked.",
