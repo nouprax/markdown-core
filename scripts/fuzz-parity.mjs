@@ -176,12 +176,12 @@ for (const entry of [
 // disagree about the construct generally rather than on three specific
 // strings. Generating those fragments would rediscover that in every
 // recombination, so the oracle's own exclusions say where it is authoritative.
+const excluded = (line) =>
+    (oracle.excludeFragments ?? []).some((pattern) =>
+        pattern instanceof RegExp ? pattern.test(line) : line.includes(pattern)
+    );
 const pool = fragments(policy.corpus ?? [], oracle.policy).filter(
-    (line) =>
-        !divergentLines.has(line) &&
-        !(oracle.excludeFragments ?? []).some((pattern) =>
-            pattern instanceof RegExp ? pattern.test(line) : line.includes(pattern)
-        )
+    (line) => !divergentLines.has(line) && !excluded(line)
 );
 if (pool.length === 0) {
     process.stderr.write("fuzz-parity: every corpus fragment was excluded; nothing would be generated.\n");
@@ -196,10 +196,17 @@ function generate() {
     for (let i = 0; i < count; i++) {
         const fragment = pick(pool);
         const roll = random();
-        if (roll < 0.15) lines.push(fragment.slice(0, 1 + Math.floor(random() * fragment.length)));
-        else if (roll < 0.3) lines.push(`${fragment}${pick(pool)}`);
-        else if (roll < 0.4) lines.push("");
-        else lines.push(fragment);
+        let line = fragment;
+        if (roll < 0.15) line = fragment.slice(0, 1 + Math.floor(random() * fragment.length));
+        else if (roll < 0.3) line = `${fragment}${pick(pool)}`;
+        else if (roll < 0.4) line = "";
+        // A recombined line answers to the same exclusions as a fragment:
+        // truncation and adjacency build, across a boundary, the shapes the
+        // exclusions name -- a delimiter row's closing `--:` against a line
+        // that opens `hello@...` is a text directive no fragment carried. The
+        // fragment stands in, so the draw sequence and every other line of the
+        // seed replay unchanged.
+        lines.push(excluded(line) ? fragment : line);
     }
     return `${lines.join("\n")}\n`;
 }
