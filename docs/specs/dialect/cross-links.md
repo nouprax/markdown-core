@@ -42,13 +42,15 @@ Recognition is inline step A6, run at every unescaped `[[` or `![[` before
 inherited bracket handling:
 
 ```text
-cross-link     = [ "!" ] "[[" target [ "|" label ] "]]"
+cross-link     = [ "!" ] "[[" target [ separator label ] "]]"
+separator      = "\|" / "|"
 target         = [ path ] [ heading-anchor / block-anchor ]
 heading-anchor = "#" heading-part *( "#" heading-part )
 block-anchor   = "#^" block-id
 path           = 1*path-char
 heading-part   = 1*path-char
-path-char      = any scalar except "#", "|", "[", "]", LF, and CR
+path-char      = any scalar except "#", "|", "[", "]", LF, and CR, and
+                 not a "\" immediately followed by "|"
 block-id       = 1*( ASCII-letter / DIGIT / "-" )
 label          = *( any scalar except "[", "]", LF, and CR )
 ```
@@ -162,9 +164,11 @@ Document scope=1:1..1:22 anchor=null attributes={} children=1
     └── CrossLink scope=1:11..1:22 anchor=null attributes={} embedded=false dest=cross(path="Note",anchor=null) label="a|b" children=0
 ````````````````````````````````
 
-Inside `[[...]]` the pair `\|` is also the label separator: the backslash is
-dropped and the pipe separates. No other backslash escape exists inside a
-cross link.
+Inside `[[...]]` the pair `\|` is the other spelling of the label separator:
+it is matched as one token before any path or heading character is, so a
+path never ends in the backslash of such a pair, the backslash is dropped,
+and the pipe separates. No other backslash escape exists inside a cross
+link.
 
 ```````````````````````````````` example cross_links
 [[Note\|Label]]
