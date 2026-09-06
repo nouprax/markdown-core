@@ -295,9 +295,12 @@ test("ast: the decoder's reference, formula, list and empty-string arms are exer
     assert.equal(formula.literal, "x");
 
     // `[a]()` WROTE a destination and wrote nothing in it. Empty is not absent:
-    // the tagged value is the `url` branch holding the empty string.
-    const link = paragraph.content.find((node) => node.kind === "link");
-    assert.deepEqual(link.dest, { kind: "url", value: "" });
+    // the tagged value is the `url` branch holding the empty string. It is the
+    // paragraph's third link, after the two resolved references.
+    const links = paragraph.content.filter((node) => node.kind === "link");
+    assert.equal(links.length, 3);
+    assert.deepEqual(links[2].dest, { kind: "url", value: "" });
+    assert.equal(links[2].title, null);
 
     assert.equal(list.kind, "list");
     assert.equal(list.flavor, "ordered");
