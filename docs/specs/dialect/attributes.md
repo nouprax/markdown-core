@@ -400,7 +400,7 @@ Document scope=1:1..3:19 anchor=null attributes={} children=1
 .
 Document scope=1:1..3:26 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..1:17 anchor=null attributes={} children=1
-    └── Link scope=1:1..1:17 anchor="d" attributes={.b .c .a m="2" k="3"} dest=url("/t") title=null children=1
+    └── Link scope=1:1..1:17 anchor="d" attributes={.a .b .b .c k="1" m="2" k="3"} dest=url("/t") title=null children=1
         └── Text scope=1:2..1:2 anchor=null attributes={} literal="x" children=0
 ````````````````````````````````
 
