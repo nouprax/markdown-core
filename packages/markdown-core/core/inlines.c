@@ -15,14 +15,6 @@
 #include "inlines.h"
 #include "extension.h"
 
-static const char EMDASH[] = "\xE2\x80\x94";
-static const char ENDASH[] = "\xE2\x80\x93";
-static const char ELLIPSES[] = "\xE2\x80\xA6";
-static const char LEFTDOUBLEQUOTE[] = "\xE2\x80\x9C";
-static const char RIGHTDOUBLEQUOTE[] = "\xE2\x80\x9D";
-static const char LEFTSINGLEQUOTE[] = "\xE2\x80\x98";
-static const char RIGHTSINGLEQUOTE[] = "\xE2\x80\x99";
-
 // Macros for creating various kinds of simple.
 #define make_str(subj, sc, ec, s) make_literal(subj, MARKDOWN_CORE_NODE_TEXT, sc, ec, s)
 #define make_code(subj, sc, ec, s) make_literal(subj, MARKDOWN_CORE_NODE_CODE, sc, ec, s)
@@ -99,7 +91,7 @@ static int parse_inline(markdown_core_parser *parser, subject *subj, markdown_co
 
 static void subject_from_buf(markdown_core_parser *parser, markdown_core_mem *mem, int line_number, subject *e,
                              markdown_core_chunk *buffer, markdown_core_map *refmap);
-static bufsize_t subject_find_special_char(subject *subj, int options);
+static bufsize_t subject_find_special_char(subject *subj);
 
 /* Give `node` the source extent of the content bytes [from, to].
  *
@@ -500,14 +492,9 @@ static int scan_delims(subject *subj, unsigned char c, bool *can_open, bool *can
         }
     }
 
-    if (c == '\'' || c == '"') {
+    while (peek_char(subj) == c) {
         numdelims++;
-        advance(subj); // limit to 1 delim for quotes
-    } else {
-        while (peek_char(subj) == c) {
-            numdelims++;
-            advance(subj);
-        }
+        advance(subj);
     }
 
     if (subj->pos == subj->input.len) {
@@ -535,9 +522,6 @@ static int scan_delims(subject *subj, unsigned char c, bool *can_open, bool *can
     if (c == '_') {
         *can_open = left_flanking && (!right_flanking || markdown_core_utf8proc_is_punctuation_or_symbol(before_char));
         *can_close = right_flanking && (!left_flanking || markdown_core_utf8proc_is_punctuation_or_symbol(after_char));
-    } else if (c == '\'' || c == '"') {
-        *can_open = left_flanking && !right_flanking && before_char != ']' && before_char != ')';
-        *can_close = right_flanking;
     } else {
         *can_open = left_flanking;
         *can_close = right_flanking;
@@ -587,17 +571,13 @@ static void pop_bracket(subject *subj) {
     subj->mem->free(b);
 }
 
-/** The four rules core owns, keyed by the byte that spells each of them. */
+/** The two rules core owns, keyed by the byte that spells each of them. */
 static markdown_core_delimiter_rule core_delimiter_rule(unsigned char c) {
     switch (c) {
     case '*':
         return MARKDOWN_CORE_DELIM_RULE_EMPHASIS;
     case '_':
         return MARKDOWN_CORE_DELIM_RULE_UNDERSCORE;
-    case '\'':
-        return MARKDOWN_CORE_DELIM_RULE_SINGLE_QUOTE;
-    case '"':
-        return MARKDOWN_CORE_DELIM_RULE_DOUBLE_QUOTE;
     default:
         return MARKDOWN_CORE_DELIM_RULE_NONE;
     }
@@ -670,91 +650,21 @@ static void push_bracket(subject *subj, bool image, markdown_core_node *inl_text
 }
 
 // Assumes the subject has a c at the current position.
-static markdown_core_node *handle_delim(subject *subj, unsigned char c, bool smart) {
+static markdown_core_node *handle_delim(subject *subj, unsigned char c) {
     bufsize_t numdelims;
     markdown_core_node *inl_text;
     bool can_open, can_close;
     markdown_core_chunk contents;
 
     numdelims = scan_delims(subj, c, &can_open, &can_close);
-
-    if (c == '\'' && smart) {
-        contents = markdown_core_chunk_literal(RIGHTSINGLEQUOTE);
-    } else if (c == '"' && smart) {
-        contents = markdown_core_chunk_literal(can_close ? RIGHTDOUBLEQUOTE : LEFTDOUBLEQUOTE);
-    } else {
-        contents = markdown_core_chunk_dup(&subj->input, subj->pos - numdelims, numdelims);
-    }
-
+    contents = markdown_core_chunk_dup(&subj->input, subj->pos - numdelims, numdelims);
     inl_text = make_str(subj, subj->pos - numdelims, subj->pos - 1, contents);
 
-    if (inl_text && (can_open || can_close) && (!(c == '\'' || c == '"') || smart)) {
+    if (inl_text && (can_open || can_close)) {
         push_delimiter(subj, NULL, core_delimiter_rule(c), can_open, can_close, inl_text);
     }
 
     return inl_text;
-}
-
-// Assumes we have a hyphen at the current position.
-static markdown_core_node *handle_hyphen(subject *subj, bool smart) {
-    int startpos = subj->pos;
-
-    advance(subj);
-
-    if (!smart || peek_char(subj) != '-') {
-        return make_str(subj, subj->pos - 1, subj->pos - 1, markdown_core_chunk_literal("-"));
-    }
-
-    while (smart && peek_char(subj) == '-') {
-        advance(subj);
-    }
-
-    int numhyphens = subj->pos - startpos;
-    int en_count = 0;
-    int em_count = 0;
-    int i;
-    markdown_core_strbuf buf = MARKDOWN_CORE_BUF_INIT(subj->mem);
-
-    if (numhyphens % 3 == 0) { // if divisible by 3, use all em dashes
-        em_count = numhyphens / 3;
-    } else if (numhyphens % 2 == 0) { // if divisible by 2, use all en dashes
-        en_count = numhyphens / 2;
-    } else if (numhyphens % 3 == 2) { // use one en dash at end
-        en_count = 1;
-        em_count = (numhyphens - 2) / 3;
-    } else { // use two en dashes at the end
-        en_count = 2;
-        em_count = (numhyphens - 4) / 3;
-    }
-
-    for (i = em_count; i > 0; i--) {
-        markdown_core_strbuf_puts(&buf, EMDASH);
-    }
-
-    for (i = en_count; i > 0; i--) {
-        markdown_core_strbuf_puts(&buf, ENDASH);
-    }
-
-    if (buf.oom) {
-        subj->oom = 1;
-    }
-    return make_str(subj, startpos, subj->pos - 1, markdown_core_chunk_buf_detach(&buf));
-}
-
-// Assumes we have a period at the current position.
-static markdown_core_node *handle_period(subject *subj, bool smart) {
-    advance(subj);
-    if (smart && peek_char(subj) == '.') {
-        advance(subj);
-        if (peek_char(subj) == '.') {
-            advance(subj);
-            return make_str(subj, subj->pos - 3, subj->pos - 1, markdown_core_chunk_literal(ELLIPSES));
-        } else {
-            return make_str(subj, subj->pos - 2, subj->pos - 1, markdown_core_chunk_literal(".."));
-        }
-    } else {
-        return make_str(subj, subj->pos - 1, subj->pos - 1, markdown_core_chunk_literal("."));
-    }
 }
 
 int markdown_core_byte_set_has(const char *set, unsigned char c) {
@@ -810,8 +720,6 @@ static void process_emphasis(markdown_core_parser *parser, subject *subj, bufsiz
     for (i = 0; i < 3; i++) {
         openers_bottom[i][MARKDOWN_CORE_DELIM_RULE_EMPHASIS] = stack_bottom;
         openers_bottom[i][MARKDOWN_CORE_DELIM_RULE_UNDERSCORE] = stack_bottom;
-        openers_bottom[i][MARKDOWN_CORE_DELIM_RULE_SINGLE_QUOTE] = stack_bottom;
-        openers_bottom[i][MARKDOWN_CORE_DELIM_RULE_DOUBLE_QUOTE] = stack_bottom;
     }
 
     // move back to first relevant delim.
@@ -829,6 +737,8 @@ static void process_emphasis(markdown_core_parser *parser, subject *subj, bufsiz
     // whose owner cannot be found looks like -- left `closer` where it was,
     // fell into the removal below, freed it, and read it again on the next
     // turn. With `can_open` set, nothing freed it and the loop never ended.
+    // The quote arm is gone with smart punctuation: a quotation mark is
+    // ordinary text and pushes no delimiter.
     while (closer != NULL) {
         const markdown_core_extension *extension = closer->owner;
         (void)parser;
@@ -867,25 +777,6 @@ static void process_emphasis(markdown_core_parser *parser, subject *subj, bufsiz
             } else if (closer->rule == MARKDOWN_CORE_DELIM_RULE_EMPHASIS ||
                        closer->rule == MARKDOWN_CORE_DELIM_RULE_UNDERSCORE) {
                 closer = opener_found ? S_insert_emph(subj, opener, closer) : closer->next;
-            } else if (closer->rule == MARKDOWN_CORE_DELIM_RULE_SINGLE_QUOTE ||
-                       closer->rule == MARKDOWN_CORE_DELIM_RULE_DOUBLE_QUOTE) {
-                markdown_core_chunk_free(subj->mem, &closer->inl_text->as.literal);
-                if (closer->rule == MARKDOWN_CORE_DELIM_RULE_SINGLE_QUOTE) {
-                    closer->inl_text->as.literal = markdown_core_chunk_literal(RIGHTSINGLEQUOTE);
-                } else {
-                    closer->inl_text->as.literal = markdown_core_chunk_literal(RIGHTDOUBLEQUOTE);
-                }
-                closer = closer->next;
-                if (opener_found) {
-                    markdown_core_chunk_free(subj->mem, &opener->inl_text->as.literal);
-                    if (old_closer->rule == MARKDOWN_CORE_DELIM_RULE_SINGLE_QUOTE) {
-                        opener->inl_text->as.literal = markdown_core_chunk_literal(LEFTSINGLEQUOTE);
-                    } else {
-                        opener->inl_text->as.literal = markdown_core_chunk_literal(LEFTDOUBLEQUOTE);
-                    }
-                    remove_delimiter(subj, opener);
-                    remove_delimiter(subj, old_closer);
-                }
             } else {
                 /* No rule owns it. Unreachable while every push names a rule,
                  * and it advances anyway: this is the arm whose absence was
@@ -1795,25 +1686,11 @@ static markdown_core_node *handle_newline(subject *subj) {
     return brk;
 }
 
-// " ' . -
-static const char SMART_PUNCT_CHARS[] = {
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0,
-    0, 0, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-};
-
-static bufsize_t subject_find_special_char(subject *subj, int options) {
+static bufsize_t subject_find_special_char(subject *subj) {
     bufsize_t n = subj->pos + 1;
 
     while (n < subj->input.len) {
         if (subj->special_chars[subj->input.data[n]]) {
-            return n;
-        }
-        if (options & MARKDOWN_CORE_OPT_SMART && SMART_PUNCT_CHARS[subj->input.data[n]]) {
             return n;
         }
         n++;
@@ -1971,25 +1848,12 @@ static int parse_inline(markdown_core_parser *parser, subject *subj, markdown_co
         break;
     case '*':
     case '_':
-    case '\'':
-    case '"':
         /* A `*` or `_` run is CONTENT until it matches -- an unmatched one IS
          * its own literal -- and `S_insert_emph` re-claims the bytes it uses.
-         * A smart quote is a SUBSTITUTION: the literal is a curly quote, which
-         * is not the byte the source wrote. */
-        if ((c == '\'' || c == '"') && (options & MARKDOWN_CORE_OPT_SMART) != 0) {
-        }
-        new_inl = handle_delim(subj, c, (options & MARKDOWN_CORE_OPT_SMART) != 0);
-        break;
-    case '-':
-        if ((options & MARKDOWN_CORE_OPT_SMART) != 0) {
-        }
-        new_inl = handle_hyphen(subj, (options & MARKDOWN_CORE_OPT_SMART) != 0);
-        break;
-    case '.':
-        if ((options & MARKDOWN_CORE_OPT_SMART) != 0) {
-        }
-        new_inl = handle_period(subj, (options & MARKDOWN_CORE_OPT_SMART) != 0);
+         * Quotation marks, hyphens, and periods are not here: the dialect has
+         * no smart punctuation, so they are ordinary text stored as written,
+         * and the text arm below owns them like any other byte. */
+        new_inl = handle_delim(subj, c);
         break;
     case '[':
         advance(subj);
@@ -2033,7 +1897,7 @@ static int parse_inline(markdown_core_parser *parser, subject *subj, markdown_co
             break;
         }
 
-        endpos = subject_find_special_char(subj, options);
+        endpos = subject_find_special_char(subj);
         contents = markdown_core_chunk_dup(&subj->input, subj->pos, endpos - subj->pos);
         startpos = subj->pos;
         subj->pos = endpos;

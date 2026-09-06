@@ -50,7 +50,7 @@ const ledger = loadLedger(root, LEDGER);
 const update = process.argv.includes("--update");
 const verbose = process.argv.includes("--verbose");
 
-const ours = requireBinary(root, "build/cmake/packages/markdown-core/core/markdown-core", "pnpm build:c");
+const ours = requireBinary(root, "build/cmake/packages/markdown-core/tests/markdown-core-harness", "pnpm build:c");
 
 const measured = [];
 let scanned = 0;

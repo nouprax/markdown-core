@@ -15,10 +15,9 @@ they do not change the production AST or define a serialization format.
 
 The language the parser accepts is defined by [`dialect.md`](dialect.md) and
 its modules; this document is the contract of the AST the implementation
-produces today, and its option table is the registry of record for
-`ParseOptions`. Where a dialect module describes a kind, field, value, or
-option that this document lacks, the module names the landing item that adds
-it, and this document stands until that item merges.
+produces today. Where a dialect module describes a kind, field, or value that
+this document lacks, the module names the landing item that adds it, and this
+document stands until that item merges.
 
 This document is the language-neutral public AST contract implemented by the
 Swift, Kotlin, and ES bindings. Platform APIs may use idiomatic syntax, but
@@ -225,42 +224,30 @@ shape without a generic public `children` property. `isHeader` mirrors and
 validates the owning edge: the value in `Table.header` is true and values in
 `Table.rows` are false.
 
-## ParseOptions
+## Parsing
 
-`Document.parse(source, options = ParseOptions.default)` is the only parsing
-entry point today. A parse returns exactly the `Document` this table
-describes. The document does not retain source text, a normalized source
-copy, a line index, tokens, trivia, or recovery records. `ParseOptions` is
-immutable and today contains exactly these booleans:
+`Document.parse(source)` is the only parsing entry point on every surface,
+and it takes no options. The parser recognizes the one dialect of
+[`dialect.md`](dialect.md), in which every feature is always on: there is no
+`ParseOptions`, no profile, no preset, and no switch of any kind, on the C
+facade, the installed CLI, or any binding. Quotation marks, hyphen runs, and
+periods are stored as written; the parser has no smart punctuation. HTML
+comments are still stripped from the tree until `M0` lands `Comment`, and
+nothing else strips anything.
 
-| Field | Default | Status |
-| --- | --- | --- |
-| `smartPunctuation` | `true` | active until `X0` removes it |
-| `footnotes` | `true` | active until `X0` removes it |
-| `stripHTMLComments` | `true` | active until `M0` removes it |
-| `tables` | `true` | active until `X0` removes it |
-| `strikethrough` | `true` | active until `X0` removes it |
-| `autolinks` | `true` | active until `X0` removes it |
-| `taskLists` | `true` | active until `X0` removes it |
-| `formulas` | `true` | active until `X0` removes it |
-| `directives` | `true` | active until `X0` removes it |
-
-The target contract has no parse options: the dialect of
-[`dialect.md`](dialect.md) is one language in which every feature is always
-recognized, so `X0` removes every switch above, removes smart punctuation
-from the parser, and makes `Document.parse(source)` the only entry point on
-every surface, with `ParseOptions` deleted rather than emptied. Until then an
-option that is off leaves the inherited grammar byte for byte, and
-`stripHTMLComments` is removed by `M0` because a comment is a `Comment` node
-that nothing strips. The conformance harness keeps an internal, unpublished
-way to run the base or GFM layer alone for the cmark and cmark-gfm oracles;
-no binding, C facade, or installed executable exposes it, and the shared
-canonical manifest names no option, while the package fixtures' fence tags
-are that harness's own layer selection, as
-[`test-architecture.md`](test-architecture.md) states. Scope tracking is
-mandatory and is not an option.
+A parse returns exactly the `Document` this document describes. The document
+does not retain source text, a normalized source copy, a line index, tokens,
+trivia, or recovery records. Scope tracking is mandatory and is not an option.
 Renderer-only `unsafe`, `github-pre-lang`, and `full-info-string` options do
 not exist. Raw HTML, URLs, and code info strings are always retained.
+
+The conformance harness keeps an internal, unpublished feature registry so the
+cmark and cmark-gfm oracles can be compared with the base layer or the GFM
+layer alone; the package fixtures' fence tags and the never-installed harness
+executable's `--profile` shorthands are that registry's names, as
+[`test-architecture.md`](test-architecture.md) states. No binding, C facade,
+or installed executable exposes it, and the shared canonical manifest names no
+option.
 
 ## Visitor and walking
 

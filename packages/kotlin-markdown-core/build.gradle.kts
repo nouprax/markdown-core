@@ -57,18 +57,6 @@ abstract class GenerateCanonicalAstFixtures : DefaultTask() {
             return path.toFile().readText()
         }
 
-        val optionNames =
-            listOf(
-                "smartPunctuation",
-                "footnotes",
-                "stripHTMLComments",
-                "tables",
-                "strikethrough",
-                "autolinks",
-                "taskLists",
-                "formulas",
-                "directives",
-            )
         val lines =
             mutableListOf(
                 "package com.nouprax.markdown.core",
@@ -77,7 +65,6 @@ abstract class GenerateCanonicalAstFixtures : DefaultTask() {
                 "    val name: String,",
                 "    val source: String,",
                 "    val expected: String,",
-                "    val options: ParseOptions,",
                 ")",
                 "",
                 "internal val canonicalAstCases: kotlin.collections.List<CanonicalAstCase> =",
@@ -89,22 +76,14 @@ abstract class GenerateCanonicalAstFixtures : DefaultTask() {
             val name = testCase["name"] as? String ?: error("case name must be a string")
             val input = testCase["input"] as? String ?: error("$name input must be a string")
             val expected = testCase["expected"] as? String ?: error("$name expected must be a string")
-            val parseOptions = testCase["parseOptions"] as? Map<*, *> ?: error("$name parseOptions must be an object")
-            require(parseOptions.keys.toList() == optionNames) {
-                "$name parseOptions must list the frozen option inventory in order"
-            }
+            // The dialect has no switches, so a case that still names an
+            // option is asking for a language the parser does not have.
+            require(!testCase.containsKey("parseOptions")) { "$name names parseOptions; the dialect has none" }
 
             lines += "        CanonicalAstCase("
             lines += "            name = ${kotlinLiteral(name)},"
             appendStringProperty(lines, "source", caseText(input))
             appendStringProperty(lines, "expected", caseText(expected))
-            lines += "            options ="
-            lines += "                ParseOptions("
-            for (optionName in optionNames) {
-                val value = parseOptions[optionName] as? Boolean ?: error("$name $optionName must be boolean")
-                lines += "                    $optionName = $value,"
-            }
-            lines += "                ),"
             lines += "        ),"
         }
         lines += "    )"

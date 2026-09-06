@@ -84,17 +84,6 @@ typedef enum {
  */
 int markdown_core_core_extensions_attach(markdown_core_parser *parser, unsigned mask);
 
-/** The bit for a core extension's registered name, or 0 when the name is not
- * one of them.  This is what routes a `-e NAME` lever back through the ordered
- * table instead of around it.
- */
-unsigned markdown_core_core_extensions_bit(const char *name);
-
-/** The name at `index` in the fixed table, or NULL past the end. The CLI's
- * `--help` used to walk a process-global registry list to print this. */
-MARKDOWN_CORE_EXPORT
-const char *markdown_core_core_extensions_name_at(size_t index);
-
 MARKDOWN_CORE_EXPORT
 uint16_t markdown_core_extensions_get_table_columns(markdown_core_node *node);
 

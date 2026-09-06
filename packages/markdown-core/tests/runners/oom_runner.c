@@ -108,7 +108,7 @@ static const oom_case OOM_CASES[] = {
 };
 
 static markdown_core_document *parse_with_sweep(const oom_case *test, markdown_core_error **error) {
-    return markdown_core_document_parse_with_mem((const uint8_t *)test->source, test->length, NULL, &sweep_mem, error);
+    return markdown_core_document_parse_with_mem((const uint8_t *)test->source, test->length, &sweep_mem, error);
 }
 
 static int sweep_case(const oom_case *test) {

@@ -20,6 +20,7 @@ let package = Package(
                 "core/references.c", "core/map.c",
                 "core/houdini_html_u.c", "core/markdown_core_ctype.c",
                 "core/linked_list.c", "extensions/core-extensions.c",
+                "extensions/feature-registry.c",
                 "extensions/ast.c", "extensions/table.c", "extensions/strikethrough.c",
                 "extensions/autolink.c", "extensions/formula.c", "extensions/directive.c",
                 "extensions/ext_scanners.c", "extensions/tasklist.c",

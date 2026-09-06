@@ -2,6 +2,7 @@
 #define MARKDOWN_CORE_AST_INTERNAL_H
 
 #include "../include/markdown_core.h"
+#include "feature-registry.h"
 #include <markdown-core.h>
 #include <parser.h>
 
@@ -23,7 +24,13 @@ struct markdown_core_document {
  * supplies the default allocator; allocation-failure tests supply an injected
  * allocator and assert the same consumer-visible error contract. */
 markdown_core_document *markdown_core_document_parse_with_mem(const uint8_t *source, size_t length,
-                                                              const markdown_core_parse_options *requested_options,
+                                                              markdown_core_mem *mem, markdown_core_error **error);
+
+/* The harness entry: the same transaction over a subset of the registered
+ * features, so a conformance gate can run the base layer or the GFM layer
+ * alone against its oracle. It is reached by nothing that ships. */
+markdown_core_document *markdown_core_document_parse_features(const uint8_t *source, size_t length,
+                                                              markdown_core_feature_set features,
                                                               markdown_core_mem *mem, markdown_core_error **error);
 
 #ifdef __cplusplus

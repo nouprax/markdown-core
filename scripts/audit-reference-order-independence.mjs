@@ -50,7 +50,7 @@ const ledger = loadLedger(root, LEDGER);
 const update = process.argv.includes("--update");
 const verbose = process.argv.includes("--verbose");
 
-const ours = requireBinary(root, "build/cmake/packages/markdown-core/core/markdown-core", "pnpm build:c");
+const ours = requireBinary(root, "build/cmake/packages/markdown-core/tests/markdown-core-harness", "pnpm build:c");
 const parse = (input) => parseCanonicalDump(runBinary(ours, ["--profile", ledger.profile], input));
 // A reference RESOLVED is a `LinkReference` naming that identifier; a reference
 // that did not is prose, brackets intact. Neither is stated by a destination

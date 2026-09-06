@@ -14,6 +14,8 @@
 
 #include <markdown_core.h>
 
+#include "ast_internal.h"
+
 #include "harness.h"
 #include "cplusplus.h"
 
@@ -1084,15 +1086,16 @@ static void test_pathological_regressions(test_batch_runner *runner) {
  * retired sourcepos XML renderer assertions. */
 static void test_facade_dump(test_batch_runner *runner, const char *markdown, int autolinks, const char *expected_dump,
                              const char *msg) {
-    markdown_core_parse_options options;
+    /* The base layer alone, plus the autolink scanner when asked: named
+     * through the harness registry, because nothing public names a layer. */
+    markdown_core_feature_set features = autolinks ? markdown_core_feature_named("autolink") : 0;
     markdown_core_error *error = NULL;
     markdown_core_document *document;
     uint8_t *dump = NULL;
     size_t dump_length = 0;
 
-    memset(&options, 0, sizeof(options)); /* pure CommonMark; no smart punctuation */
-    options.autolinks = autolinks != 0;
-    document = markdown_core_document_parse((const uint8_t *)markdown, strlen(markdown), &options, &error);
+    document = markdown_core_document_parse_features((const uint8_t *)markdown, strlen(markdown), features,
+                                                     markdown_core_get_default_mem_allocator(), &error);
     if (!document) {
         OK(runner, 0, "%s (facade parse succeeds)", msg);
         markdown_core_error_free(error);
@@ -1511,7 +1514,6 @@ static void association_accessor(test_batch_runner *runner) {
                                    "[ref]: /r\n"
                                    "\n"
                                    "[^n]: note\n";
-    markdown_core_parse_options options;
     markdown_core_document *document;
     const markdown_core_node *root;
     const markdown_core_node *node;
@@ -1527,9 +1529,9 @@ static void association_accessor(test_batch_runner *runner) {
         MARKDOWN_CORE_KIND_FOOTNOTE_DEFINITION, MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE};
     unsigned int found = 0;
 
-    memset(&options, 0, sizeof(options));
-    options.footnotes = true;
-    document = markdown_core_document_parse((const uint8_t *)markdown, strlen(markdown), &options, NULL);
+    document = markdown_core_document_parse_features((const uint8_t *)markdown, strlen(markdown),
+                                                     markdown_core_feature_named("footnotes"),
+                                                     markdown_core_get_default_mem_allocator(), NULL);
     if (!document) {
         OK(runner, 0, "association corpus parses");
         return;

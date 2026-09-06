@@ -6,7 +6,7 @@ leaves to the implementation. Source: the CommonMark specification 0.31.2.
 Executable oracle: cmark 0.31.2 under `specs/oracles/cmark/`, which the
 harness compares with the parser's base layer alone. Landing: present; the
 HTML-comment rule lands with `M0`, the resolved-reference model with `M1` and
-`M2`, `Callout` with `M3`, and the removal of smart punctuation with `X0`. The
+`M2`, and `Callout` with `M3`; smart punctuation was removed by `X0`. The
 [example format](../dialect.md#examples) is defined by the index.
 
 ## The inherited layer
@@ -332,9 +332,9 @@ inline; block starts are decided before inline recognition.
 
 There is no smart punctuation. Quotation marks, hyphen runs, and periods are
 stored as written, and typographic replacement is consumer policy, as every
-other rendering choice is. cmark's `--smart` mode is a harness mode with no
-dialect meaning, and the current parser's `smartPunctuation` option and its
-substitutions are removed by `X0`:
+other rendering choice is. cmark's `--smart` mode has no counterpart on any
+surface, the harness included, and the cmark gate replays the inputs of
+cmark's own `smart_punct.txt` with the mode off on both sides:
 
 ```````````````````````````````` example
 "quotes" 'single' -- --- ---- ... a\"b

@@ -40,8 +40,7 @@ enum CanonicalASTResourceGenerator {
             GeneratedCase(
                 name: testCase.name,
                 source: try fixtureContents(at: testCase.input, in: specDirectory),
-                expected: try fixtureContents(at: testCase.expected, in: specDirectory),
-                parseOptions: testCase.parseOptions
+                expected: try fixtureContents(at: testCase.expected, in: specDirectory)
             )
         }
         let generated = GeneratedManifest(schemaVersion: manifest.schemaVersion, cases: cases)
@@ -102,66 +101,36 @@ private struct CanonicalFormat: Decodable {
     let caseOrder: String
 }
 
+/// A case names no option: the dialect has no switches, so a manifest that
+/// still carried a `parseOptions` object would be asking for a language the
+/// parser does not have, and decoding refuses it.
 private struct CanonicalCase: Decodable {
     let name: String
     let input: String
     let expected: String
-    let parseOptions: CanonicalParseOptions
     let coverage: CanonicalCoverage
+
+    private enum CodingKeys: String, CodingKey {
+        case name, input, expected, coverage
+    }
+
+    init(from decoder: Decoder) throws {
+        let dynamic = try decoder.container(keyedBy: DynamicCodingKey.self)
+        if dynamic.allKeys.contains(where: { $0.stringValue == "parseOptions" }) {
+            throw GeneratorFailure.invalidManifest("a case names parseOptions; the dialect has none")
+        }
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        name = try values.decode(String.self, forKey: .name)
+        input = try values.decode(String.self, forKey: .input)
+        expected = try values.decode(String.self, forKey: .expected)
+        coverage = try values.decode(CanonicalCoverage.self, forKey: .coverage)
+    }
 }
 
 private struct CanonicalCoverage: Decodable {
     let kinds: [String]
     let states: [String]
     let orders: [String]
-}
-
-private struct CanonicalParseOptions: Codable {
-    let smartPunctuation: Bool
-    let footnotes: Bool
-    let stripHTMLComments: Bool
-    let tables: Bool
-    let strikethrough: Bool
-    let autolinks: Bool
-    let taskLists: Bool
-    let formulas: Bool
-    let directives: Bool
-
-    private enum CodingKeys: String, CodingKey, CaseIterable {
-        case smartPunctuation
-        case footnotes
-        case stripHTMLComments
-        case tables
-        case strikethrough
-        case autolinks
-        case taskLists
-        case formulas
-        case directives
-    }
-
-    init(from decoder: Decoder) throws {
-        let dynamic = try decoder.container(keyedBy: DynamicCodingKey.self)
-        let actual = Set(dynamic.allKeys.map(\.stringValue))
-        let expected = Set(CodingKeys.allCases.map(\.rawValue))
-        guard actual == expected else {
-            let missing = expected.subtracting(actual).sorted().joined(separator: ", ")
-            let unknown = actual.subtracting(expected).sorted().joined(separator: ", ")
-            throw GeneratorFailure.invalidManifest(
-                "parseOptions keys differ; missing=[\(missing)] unknown=[\(unknown)]"
-            )
-        }
-
-        let values = try decoder.container(keyedBy: CodingKeys.self)
-        smartPunctuation = try values.decode(Bool.self, forKey: .smartPunctuation)
-        footnotes = try values.decode(Bool.self, forKey: .footnotes)
-        stripHTMLComments = try values.decode(Bool.self, forKey: .stripHTMLComments)
-        tables = try values.decode(Bool.self, forKey: .tables)
-        strikethrough = try values.decode(Bool.self, forKey: .strikethrough)
-        autolinks = try values.decode(Bool.self, forKey: .autolinks)
-        taskLists = try values.decode(Bool.self, forKey: .taskLists)
-        formulas = try values.decode(Bool.self, forKey: .formulas)
-        directives = try values.decode(Bool.self, forKey: .directives)
-    }
 }
 
 private struct GeneratedManifest: Encodable {
@@ -173,7 +142,6 @@ private struct GeneratedCase: Encodable {
     let name: String
     let source: String
     let expected: String
-    let parseOptions: CanonicalParseOptions
 }
 
 private struct DynamicCodingKey: CodingKey {

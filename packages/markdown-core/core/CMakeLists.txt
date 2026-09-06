@@ -65,9 +65,11 @@ include(GenerateExportHeader)
 
 add_executable(${PROGRAM} ${PROGRAM_SOURCES})
 
-# The CLI is a repository-owned debug adapter and needs private engine
-# symbols. Keep it on the internal static graph so the installed shared facade
-# can export only the reviewed read-only API.
+# The CLI is a consumer of the public facade and nothing else: it includes
+# only the installed header and parses the one dialect. It stays on the
+# internal static graph so the installed binary carries no runtime dependency
+# on the shared library, not because it reaches past the facade.
+target_include_directories(${PROGRAM} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../include")
 target_link_libraries(${PROGRAM} libmarkdown-core-extensions_static libmarkdown-core_static)
 
 # Disable the PUBLIC declarations when compiling the executable:

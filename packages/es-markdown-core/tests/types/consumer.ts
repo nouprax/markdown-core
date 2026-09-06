@@ -13,7 +13,9 @@ import {
     type WalkPhase
 } from "@nouprax/es-markdown-core";
 
-const document: Document = Document.parse("# typed", { tables: true });
+const document: Document = Document.parse("# typed");
+// @ts-expect-error the dialect has no switches: parse takes the source and nothing else
+Document.parse("# typed", { tables: true });
 const dump: string = document.dump();
 const explicitDump: string = TreeDumper.dump(document);
 void dump;

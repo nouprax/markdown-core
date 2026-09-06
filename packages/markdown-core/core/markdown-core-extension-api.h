@@ -136,10 +136,8 @@ typedef struct subject markdown_core_inline_parser;
 typedef enum {
     MARKDOWN_CORE_DELIM_RULE_NONE = 0,
     /* Core. */
-    MARKDOWN_CORE_DELIM_RULE_EMPHASIS,     /* `*` */
-    MARKDOWN_CORE_DELIM_RULE_UNDERSCORE,   /* `_` */
-    MARKDOWN_CORE_DELIM_RULE_SINGLE_QUOTE, /* `'`, smart punctuation only */
-    MARKDOWN_CORE_DELIM_RULE_DOUBLE_QUOTE, /* `"`, smart punctuation only */
+    MARKDOWN_CORE_DELIM_RULE_EMPHASIS,   /* `*` */
+    MARKDOWN_CORE_DELIM_RULE_UNDERSCORE, /* `_` */
     /* Extensions. One entry per rule, not per extension and not per byte. */
     MARKDOWN_CORE_DELIM_RULE_STRIKETHROUGH,
     MARKDOWN_CORE_DELIM_RULE_FORMULA_DOLLAR_INLINE,

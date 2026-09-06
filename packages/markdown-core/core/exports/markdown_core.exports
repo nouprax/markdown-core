@@ -1,4 +1,3 @@
-_markdown_core_parse_options_init
 _markdown_core_document_parse
 _markdown_core_document_free
 _markdown_core_document_root

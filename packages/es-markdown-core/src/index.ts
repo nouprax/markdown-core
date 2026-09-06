@@ -28,7 +28,6 @@ export type { Strong } from "./model/strong.js";
 export type { Table, TableCell, TableRow } from "./model/table.js";
 export type { Text } from "./model/text.js";
 export type { ThematicBreak } from "./model/thematic-break.js";
-export type { ParseOptions } from "./parse-options.js";
 export { ParseError } from "./parse-error.js";
 export type { ParseErrorCode } from "./parse-error.js";
 export { TreeDumper } from "./tree-dumper.js";

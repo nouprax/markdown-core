@@ -25,6 +25,7 @@ add_library(
     "${MARKDOWN_CORE_CORE_DIR}/linked_list.c"
     "${MARKDOWN_CORE_EXTENSIONS_DIR}/ast.c"
     "${MARKDOWN_CORE_EXTENSIONS_DIR}/core-extensions.c"
+    "${MARKDOWN_CORE_EXTENSIONS_DIR}/feature-registry.c"
     "${MARKDOWN_CORE_EXTENSIONS_DIR}/table.c"
     "${MARKDOWN_CORE_EXTENSIONS_DIR}/strikethrough.c"
     "${MARKDOWN_CORE_EXTENSIONS_DIR}/autolink.c"

@@ -467,22 +467,8 @@ static void write_tree(jni_payload_buffer *buffer, const markdown_core_node *roo
     free(stack.actions);
 }
 
-static void apply_options(markdown_core_parse_options *options, uint32_t mask) {
-    options->smart_punctuation = (mask & (1u << 0)) != 0;
-    options->footnotes = (mask & (1u << 1)) != 0;
-    options->strip_html_comments = (mask & (1u << 2)) != 0;
-    options->tables = (mask & (1u << 3)) != 0;
-    options->strikethrough = (mask & (1u << 4)) != 0;
-    options->autolinks = (mask & (1u << 5)) != 0;
-    options->task_lists = (mask & (1u << 6)) != 0;
-    options->formulas = (mask & (1u << 7)) != 0;
-    options->directives = (mask & (1u << 8)) != 0;
-}
-
-bool markdown_core_kotlin_jni_encode(const uint8_t *source, size_t length, uint32_t options_mask, uint8_t **output,
-                                     size_t *output_length) {
+bool markdown_core_kotlin_jni_encode(const uint8_t *source, size_t length, uint8_t **output, size_t *output_length) {
     markdown_core_string internal_error = {internal_error_bytes, sizeof(internal_error_bytes) - 1};
-    markdown_core_parse_options options;
     markdown_core_error *error = NULL;
     markdown_core_document *document;
     jni_payload_buffer buffer = {0};
@@ -493,9 +479,7 @@ bool markdown_core_kotlin_jni_encode(const uint8_t *source, size_t length, uint3
     }
     *output = NULL;
     *output_length = 0;
-    markdown_core_parse_options_init(&options);
-    apply_options(&options, options_mask);
-    document = markdown_core_document_parse(source, length, &options, &error);
+    document = markdown_core_document_parse(source, length, &error);
 
     put_bytes(&buffer, jni_payload_magic, sizeof(jni_payload_magic));
     if (document == NULL) {

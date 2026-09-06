@@ -8,10 +8,8 @@ import Testing
 @testable import MarkdownCore
 
 @Suite("api") struct APISuite {
-    @Test("parse options and visitor dispatch use the public Swift API")
+    @Test("parse and visitor dispatch use the public Swift API")
     func publicAPI() throws {
-        let options = ParseOptions()
-        #expect(options.tables && options.directives && options.formulas)
         let document = try Document.parse("# Heading\n")
         var visitor = KindVisitor()
         #expect(document.content[0].accept(&visitor) == "heading:1")
@@ -20,10 +18,20 @@ import Testing
         )
         #expect(table.header.accept(&visitor) == "header")
         #expect(table.header.cells[0].accept(&visitor) == "cell")
-        #expect(
-            try Document.parse("| a |\n| --- |\n| b |\n", options: ParseOptions(tables: false))
-                .content.first is Paragraph
-        )
+    }
+
+    @Test("the dialect has no switches: every feature is recognised by a plain parse")
+    func wholeDialect() throws {
+        // One witness per feature that used to sit behind a `ParseOptions`
+        // field, and one for the substitution smart punctuation used to make.
+        #expect(try Document.parse("| a |\n| --- |\n| b |\n").content.first is Table)
+        #expect(try Document.parse("~~x~~\n").dump().contains("Strikethrough scope="))
+        #expect(try Document.parse("www.example.com\n").dump().contains("Link scope="))
+        #expect(try Document.parse("- [x] task\n").dump().contains("checked=true"))
+        #expect(try Document.parse("ref[^a]\n\n[^a]: note\n").dump().contains("FootnoteReference scope="))
+        #expect(try Document.parse("$x$\n").dump().contains("Formula scope="))
+        #expect(try Document.parse(":badge[label]\n").dump().contains("Directive scope="))
+        #expect(try Document.parse("\"quotes\" -- ...\n").dump().contains("literal=\"\\\"quotes\\\" -- ...\""))
     }
 
     @Test("walking dispatch is typed and preserves owned-field semantics")
@@ -115,7 +123,6 @@ import Testing
     @Test("values remain usable and Sendable after native release")
     func copiedAndSendable() async throws {
         requireSendable(Document.self)
-        requireSendable(ParseOptions.self)
         let document = try Document.parse("parallel 🚀\n")
         let counts = await withTaskGroup(of: Int.self, returning: [Int].self) { group in
             for _ in 0..<20 { group.addTask { document.content.count } }

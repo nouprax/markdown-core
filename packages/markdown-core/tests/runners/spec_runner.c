@@ -1,12 +1,18 @@
 /* Data-driven spec fixture runner.
  *
  * Parses every example of a CommonMark-style spec fixture through the
- * read-only facade and compares the canonical AST dump byte-for-byte with
- * the expected block; each example is also dumped twice to assert dump
+ * facade's one transaction and compares the canonical AST dump byte-for-byte
+ * with the expected block; each example is also dumped twice to assert dump
  * determinism.  No renderer is involved.
  *
- *   spec_runner --spec FILE [--option NAME]...
+ *   spec_runner --spec FILE [--feature NAME]...
  *               [--list] [--example N] [--section TEXT] [--dump]
+ *
+ * A suite starts from the base layer alone and adds the registered features
+ * its `--feature` flags and each example's fence tags name. That selection
+ * is the harness's own: the dialect has no switches, and a fixture that ran
+ * with a feature excluded proves what the base or GFM layer parses for the
+ * oracle that judges it, not what a consumer can ask for.
  *
  * `--rewrite` is an explicit maintenance mode that regenerates the expected
  * blocks in place from the current parser.  The resulting fixture diff must
@@ -20,27 +26,26 @@
 #include "test_support.h"
 
 static void usage(FILE *stream) {
-    fputs("usage: spec_runner --spec FILE [--option NAME]...\n"
+    fputs("usage: spec_runner --spec FILE [--feature NAME]...\n"
           "                   [--list] [--example N] [--section TEXT] [--dump] [--rewrite]\n",
           stream);
 }
 
-static uint8_t *dump_example(const ts_spec_case *test_case, const markdown_core_parse_options *base,
-                             size_t *dump_length) {
-    markdown_core_parse_options options = *base;
+static uint8_t *dump_example(const ts_spec_case *test_case, markdown_core_feature_set base, size_t *dump_length) {
+    markdown_core_feature_set features = base;
     markdown_core_document *document;
     markdown_core_error *error = NULL;
     uint8_t *dump = NULL;
     size_t extension_index;
 
     for (extension_index = 0; extension_index < test_case->extension_count; extension_index++) {
-        if (ts_ast_enable(&options, test_case->extensions[extension_index]) != 0) {
+        if (ts_ast_feature_enable(&features, test_case->extensions[extension_index]) != 0) {
             fprintf(stderr, "example %d: unknown fixture tag %s\n", test_case->example,
                     test_case->extensions[extension_index]);
             return NULL;
         }
     }
-    document = ts_ast_parse((const uint8_t *)test_case->markdown, test_case->markdown_length, &options);
+    document = ts_ast_parse((const uint8_t *)test_case->markdown, test_case->markdown_length, features);
     if (!document) {
         return NULL;
     }
@@ -94,7 +99,7 @@ static int line_has_disabled_tag(const char *line, size_t line_length) {
 /* Maintenance mode: regenerates every enabled example's expected block from
  * the current parser, preserving all prose, fences, tags, and disabled
  * examples byte-for-byte. */
-static int rewrite_fixture(const char *path, const markdown_core_parse_options *base) {
+static int rewrite_fixture(const char *path, markdown_core_feature_set base) {
     size_t length = 0;
     uint8_t *bytes = ts_read_file(path, &length);
     ts_spec_file spec;
@@ -201,7 +206,7 @@ done:
 int main(int argc, char **argv) {
     const char *spec_path = NULL;
     const char *section_filter = NULL;
-    markdown_core_parse_options base;
+    markdown_core_feature_set base;
     ts_spec_file spec;
     int list_only = 0;
     int dump_only = 0;
@@ -211,14 +216,14 @@ int main(int argc, char **argv) {
     size_t case_index;
     size_t passed = 0, failed = 0, errored = 0, skipped = 0;
 
-    ts_ast_options_none(&base);
+    ts_ast_features_none(&base);
 
     for (i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--spec") == 0 && i + 1 < argc) {
             spec_path = argv[++i];
-        } else if (strcmp(argv[i], "--option") == 0 && i + 1 < argc) {
-            if (ts_ast_enable(&base, argv[++i]) != 0) {
-                fprintf(stderr, "unknown option: %s\n", argv[i]);
+        } else if (strcmp(argv[i], "--feature") == 0 && i + 1 < argc) {
+            if (ts_ast_feature_enable(&base, argv[++i]) != 0) {
+                fprintf(stderr, "unknown feature: %s\n", argv[i]);
                 return 2;
             }
         } else if (strcmp(argv[i], "--list") == 0) {
@@ -242,7 +247,7 @@ int main(int argc, char **argv) {
         return 2;
     }
     /* `--dump` is a machine-readable view of exactly one generated AST. It
-     * deliberately reuses this runner's base options plus the example's fence
+     * deliberately reuses this runner's base features plus the example's fence
      * tags, rather than consulting the stored expected block. */
     if (dump_only && (!example_filter || list_only || rewrite || section_filter)) {
         fputs("--dump requires exactly one --example and cannot be combined with --list, --section, or --rewrite\n",
@@ -250,7 +255,7 @@ int main(int argc, char **argv) {
         return 2;
     }
     if (rewrite) {
-        if (rewrite_fixture(spec_path, &base) != 0) {
+        if (rewrite_fixture(spec_path, base) != 0) {
             fprintf(stderr, "failed to rewrite %s\n", spec_path);
             return 1;
         }
@@ -281,7 +286,7 @@ int main(int argc, char **argv) {
             continue;
         }
 
-        dump = dump_example(test_case, &base, &dump_length);
+        dump = dump_example(test_case, base, &dump_length);
         if (!dump) {
             fprintf(stderr, "example %d (lines %d-%d) %s: conversion failed\n", test_case->example,
                     test_case->start_line, test_case->end_line, test_case->section);

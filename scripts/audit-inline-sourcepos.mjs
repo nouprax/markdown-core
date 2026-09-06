@@ -53,7 +53,7 @@ const verbose = process.argv.includes("--verbose");
 // agreement.
 const upstreamVersion = loadLedger(root, "specs/oracles/cmark/deltas.json").upstream.version;
 
-const ours = requireBinary(root, "build/cmake/packages/markdown-core/core/markdown-core", "pnpm build:c");
+const ours = requireBinary(root, "build/cmake/packages/markdown-core/tests/markdown-core-harness", "pnpm build:c");
 const upstream = requireBinary(
     root,
     `.tools/cmark/${upstreamVersion}/build/src/cmark`,

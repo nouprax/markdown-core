@@ -7,6 +7,7 @@
 
 #include "ast_internal.h"
 #include "directive.h"
+#include "feature-registry.h"
 #include "formula.h"
 #include "markdown-core-extensions.h"
 #include "strikethrough.h"
@@ -60,21 +61,6 @@ static void set_error(markdown_core_error **error, const markdown_core_error *va
     *error = (markdown_core_error *)(uintptr_t)value;
 }
 
-void markdown_core_parse_options_init(markdown_core_parse_options *options) {
-    if (!options) {
-        return;
-    }
-    options->smart_punctuation = true;
-    options->footnotes = true;
-    options->strip_html_comments = true;
-    options->tables = true;
-    options->strikethrough = true;
-    options->autolinks = true;
-    options->task_lists = true;
-    options->formulas = true;
-    options->directives = true;
-}
-
 static bool configure_facade_parse(markdown_core_parser *parser, void *context) {
     const unsigned extensions = *(const unsigned *)context;
 
@@ -83,18 +69,13 @@ static bool configure_facade_parse(markdown_core_parser *parser, void *context) 
     return markdown_core_core_extensions_attach(parser, extensions);
 }
 
-markdown_core_document *markdown_core_document_parse(const uint8_t *source, size_t length,
-                                                     const markdown_core_parse_options *requested_options,
-                                                     markdown_core_error **error) {
-    return markdown_core_document_parse_with_mem(source, length, requested_options,
-                                                 markdown_core_get_default_mem_allocator(), error);
-}
-
-markdown_core_document *markdown_core_document_parse_with_mem(const uint8_t *source, size_t length,
-                                                              const markdown_core_parse_options *requested_options,
+/* THE ONE PARSE TRANSACTION. The product runs it over every registered
+ * feature; the harness runs it over the subset a comparison needs. Nothing
+ * else builds a parser, so there is exactly one language and one way to
+ * exclude a feature from it. */
+markdown_core_document *markdown_core_document_parse_features(const uint8_t *source, size_t length,
+                                                              markdown_core_feature_set features,
                                                               markdown_core_mem *mem, markdown_core_error **error) {
-    markdown_core_parse_options defaults;
-    const markdown_core_parse_options *options = requested_options;
     markdown_core_document *document;
     unsigned extensions = 0;
     int native_options = 0;
@@ -108,38 +89,7 @@ markdown_core_document *markdown_core_document_parse_with_mem(const uint8_t *sou
         set_error(error, &ERROR_INVALID_ALLOCATOR);
         return NULL;
     }
-    if (!options) {
-        markdown_core_parse_options_init(&defaults);
-        options = &defaults;
-    }
-    if (options->smart_punctuation) {
-        native_options |= MARKDOWN_CORE_OPT_SMART;
-    }
-    if (options->footnotes) {
-        native_options |= MARKDOWN_CORE_OPT_FOOTNOTES;
-    }
-    if (options->strip_html_comments) {
-        native_options |= MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS;
-    }
-
-    if (options->tables) {
-        extensions |= MARKDOWN_CORE_CORE_EXTENSION_TABLE;
-    }
-    if (options->strikethrough) {
-        extensions |= MARKDOWN_CORE_CORE_EXTENSION_STRIKETHROUGH;
-    }
-    if (options->autolinks) {
-        extensions |= MARKDOWN_CORE_CORE_EXTENSION_AUTOLINK;
-    }
-    if (options->task_lists) {
-        extensions |= MARKDOWN_CORE_CORE_EXTENSION_TASKLIST;
-    }
-    if (options->formulas) {
-        extensions |= MARKDOWN_CORE_CORE_EXTENSION_FORMULA;
-    }
-    if (options->directives) {
-        extensions |= MARKDOWN_CORE_CORE_EXTENSION_DIRECTIVE;
-    }
+    markdown_core_features_resolve(features, &native_options, &extensions);
     document = (markdown_core_document *)mem->calloc(1, sizeof(*document));
     if (!document) {
         set_error(error, &ERROR_DOCUMENT_ALLOCATION);
@@ -155,6 +105,18 @@ markdown_core_document *markdown_core_document_parse_with_mem(const uint8_t *sou
         return NULL;
     }
     return document;
+}
+
+markdown_core_document *markdown_core_document_parse_with_mem(const uint8_t *source, size_t length,
+                                                              markdown_core_mem *mem, markdown_core_error **error) {
+    /* THE DIALECT: every registered feature, always. There is no option to
+     * read and no default to fill in. */
+    return markdown_core_document_parse_features(source, length, markdown_core_features_all(), mem, error);
+}
+
+markdown_core_document *markdown_core_document_parse(const uint8_t *source, size_t length,
+                                                     markdown_core_error **error) {
+    return markdown_core_document_parse_with_mem(source, length, markdown_core_get_default_mem_allocator(), error);
 }
 
 void markdown_core_document_free(markdown_core_document *document) {

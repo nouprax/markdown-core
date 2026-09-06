@@ -24,22 +24,19 @@ JVM-only Gradle and Maven consumers can use
 
 ```kotlin
 import com.nouprax.markdown.core.Document
-import com.nouprax.markdown.core.ParseOptions
 
-val document = Document.parse(
-    "# Hello",
-    ParseOptions(directives = false),
-)
+val document = Document.parse("# Hello")
 
 println(document.content.first()::class.simpleName)
 println(document.dump())
 ```
 
-All parse options default to `true`: smart punctuation, footnotes, HTML comment
-stripping, tables, strikethrough, autolinks, task lists, formulas, dollar and
-LaTeX formula delimiters, and directives. The result is an immutable value tree
-with source scopes. The package exposes parsing and typed AST inspection, not
-rendering or mutation.
+`Document.parse` takes no options. It parses the one Markdown Core dialect,
+in which every feature is always recognized: footnotes, tables,
+strikethrough, autolinks, task lists, formulas, and directives, on the
+CommonMark base. Quotation marks, hyphens, and periods are stored as written.
+The result is an immutable value tree with source scopes. The package exposes
+parsing and typed AST inspection, not rendering or mutation.
 
 ## Traverse and Inspect
 

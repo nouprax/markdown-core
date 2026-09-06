@@ -1,6 +1,6 @@
 # Canonical vNext landing plan
 
-Status: proposed. This plan turns the feature contracts merged in #192, #193,
+Status: in progress. This plan turns the feature contracts merged in #192, #193,
 #194, and #196 into an ordered list of pull requests that can each merge alone.
 It owns the cross-track landing order, the per-pull-request definition of done,
 and the target inventory of kinds and values. It does not restate
@@ -274,7 +274,7 @@ publication step.
 
 ## Stage 0 — groundwork
 
-- [ ] **S0 — Dialect specification.** Replace the Obsidian, Pandoc, Remark, and
+- [x] **S0 — Dialect specification.** Replace the Obsidian, Pandoc, Remark, and
       shared-contract specifications with the Markdown Core dialect: the index
       `docs/specs/dialect.md` and one module per feature under
       `docs/specs/dialect/`, each stating its grammar, model, fallback, scopes,
@@ -291,7 +291,7 @@ publication step.
       Specification only; no engine change. This is the pull request that
       carries this plan: tick it, and the audit's checklist with it, when it
       merges.
-- [ ] **X0 — Remove the option surface and build the harness registry.**
+- [x] **X0 — Remove the option surface and build the harness registry.**
       Delete `ParseOptions` from the C facade, the installed CLI, and the
       Swift, Kotlin, and ES bindings, so `Document.parse(source)` is the only
       entry point on every surface and the installed CLI takes no `--profile`,

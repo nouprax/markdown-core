@@ -78,8 +78,8 @@ These decisions are made; each names the ground rule or the defining source
 that settled it.
 
 - No profiles, no umbrella switch, and, since C-10, no per-feature switch
-  either; the CLI `--profile` names are harness shorthands for the oracle
-  comparisons. Product ruling.
+  either; the `--profile` names of the never-installed harness executable are
+  shorthands for the oracle comparisons. Product ruling.
 - Features are named after the dialect's own kinds and constructs: cross
   links, marks, comments, heading attributes, and implicit heading
   references, not the source's names.

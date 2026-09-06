@@ -624,31 +624,16 @@ static uint8_t *success_result(const es_build *build, es_build_failure *failure)
     return output;
 }
 
-static void apply_options(markdown_core_parse_options *options, uint32_t flags) {
-    markdown_core_parse_options_init(options);
-    options->smart_punctuation = (flags & (1u << 0)) != 0;
-    options->footnotes = (flags & (1u << 1)) != 0;
-    options->strip_html_comments = (flags & (1u << 2)) != 0;
-    options->tables = (flags & (1u << 3)) != 0;
-    options->strikethrough = (flags & (1u << 4)) != 0;
-    options->autolinks = (flags & (1u << 5)) != 0;
-    options->task_lists = (flags & (1u << 6)) != 0;
-    options->formulas = (flags & (1u << 7)) != 0;
-    options->directives = (flags & (1u << 8)) != 0;
-}
-
-uint8_t *es_parse(const uint8_t *source, size_t length, uint32_t flags) {
+uint8_t *es_parse(const uint8_t *source, size_t length) {
     static const uint8_t internal_message_bytes[] = "could not produce AST result";
     markdown_core_string internal_message = {internal_message_bytes, sizeof(internal_message_bytes) - 1};
-    markdown_core_parse_options options;
     markdown_core_error *error = NULL;
     markdown_core_document *document;
     const markdown_core_node *root;
     es_build build = {0};
     uint8_t *output = NULL;
 
-    apply_options(&options, flags);
-    document = markdown_core_document_parse(source, length, &options, &error);
+    document = markdown_core_document_parse(source, length, &error);
     if (document == NULL) {
         markdown_core_error_code code =
             error == NULL ? MARKDOWN_CORE_ERROR_INTERNAL : markdown_core_error_get_code(error);

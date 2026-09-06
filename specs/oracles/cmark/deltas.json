@@ -14,7 +14,7 @@
             "kind": "excluded-from-comparison",
             "summary": "Every parser extension, including the GFM set, is disabled on Markdown Core's side.",
             "handling": "The comparison uses the harness's `commonmark` profile, which runs the base layer alone; the profile is harness-internal layer selection, not a product option.",
-            "evidence": "packages/markdown-core/core/main.c, --profile commonmark"
+            "evidence": "packages/markdown-core/tests/runners/harness.c, --profile commonmark"
         },
         {
             "id": "refdef-title-rewind",
@@ -58,20 +58,19 @@
             "note": "Only regressions with no extension tag belong to the CommonMark language."
         },
         "packages/markdown-core/tests/fixtures/extensions-directive.txt",
-        "packages/markdown-core/tests/fixtures/extensions-directive-option-gates.txt",
+        "packages/markdown-core/tests/fixtures/extensions-directive-layer-gates.txt",
         "packages/markdown-core/tests/fixtures/extensions-conflicts.txt",
         "packages/markdown-core/tests/fixtures/extensions-formula-github.txt",
         "packages/markdown-core/tests/fixtures/extensions-formula-latex.txt",
         "packages/markdown-core/tests/fixtures/extensions-formula-conflicts.txt",
-        "packages/markdown-core/tests/fixtures/extensions-formula-option-gates.txt",
+        "packages/markdown-core/tests/fixtures/extensions-formula-layer-gates.txt",
         {
-            "file": "packages/markdown-core/tests/fixtures/smart_punct.txt",
-            "profile": "commonmark-smart",
-            "upstreamFlags": ["--smart"],
-            "note": "Smart punctuation is a cmark option over the CommonMark parser, not a GFM extension; the dialect has no smart punctuation, and `X0` retires this comparison together with the product substitutions."
+            "file": "packages/markdown-core/tests/fixtures/punctuation.txt",
+            "profile": "commonmark",
+            "note": "The inputs of cmark's smart_punct.txt, compared without `--smart` on either side: the dialect has no smart punctuation, so quotation marks, hyphen runs, and periods are stored as written and the two parsers agree byte for byte."
         }
     ],
-    "corpusNote": "cmark is the sole primary implementation oracle for CommonMark syntax and its own pinned 0.31.2 spec is compared in full. Product-extension fixtures are also parsed with every extension off to prove that opting out returns to CommonMark rather than to a GFM-dependent fallback.",
+    "corpusNote": "cmark is the sole primary implementation oracle for CommonMark syntax and its own pinned 0.31.2 spec is compared in full. Product-extension fixtures are also parsed with every registered feature excluded, through the harness's base layer, to prove that the base layer is CommonMark rather than a GFM-dependent fallback; no consumer can select that layer.",
     "pendingDeltas": [],
     "pendingExpectedDivergences": []
 }

@@ -1,6 +1,5 @@
 #include <stddef.h>
 #include "extension.h"
-#include <string.h>
 
 #include "markdown-core-extensions.h"
 #include "autolink.h"
@@ -27,7 +26,9 @@
 // more often begins a URL.
 //
 // The order is not in the bit VALUES.  A caller passes a set; only this table
-// turns a set into a sequence.
+// turns a set into a sequence.  The NAMES are not here either: `feature-registry.c`
+// is the one registry that maps a feature name to its bit, and a name that
+// bought a bit from a second table would be a second registry.
 static const struct {
     unsigned bit;
     const markdown_core_extension *extension;
@@ -57,24 +58,4 @@ int markdown_core_core_extensions_attach(markdown_core_parser *parser, unsigned 
     }
 
     return 1;
-}
-
-unsigned markdown_core_core_extensions_bit(const char *name) {
-    size_t i;
-
-    if (!name) {
-        return 0;
-    }
-
-    for (i = 0; i < CORE_EXTENSION_COUNT; i++) {
-        if (strcmp(name, CORE_EXTENSIONS[i].extension->name) == 0) {
-            return CORE_EXTENSIONS[i].bit;
-        }
-    }
-
-    return 0;
-}
-
-const char *markdown_core_core_extensions_name_at(size_t index) {
-    return index < CORE_EXTENSION_COUNT ? CORE_EXTENSIONS[index].extension->name : NULL;
 }

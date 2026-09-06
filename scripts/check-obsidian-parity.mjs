@@ -30,7 +30,9 @@ const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const policyPath = "specs/oracles/obsidian/deltas.json";
 const policy = JSON.parse(fs.readFileSync(path.join(root, policyPath), "utf8"));
 const verbose = process.argv.includes("--verbose");
-const ours = path.join(root, "build/cmake/packages/markdown-core/core/markdown-core");
+// The conformance harness, not the installed CLI: the dialect has no switches,
+// and the layer this gate judges is selected through the harness alone.
+const ours = path.join(root, "build/cmake/packages/markdown-core/tests/markdown-core-harness");
 
 if (
     policy.metadataOracle.options.envelope !== "obsidian-exact-leading-fence" ||

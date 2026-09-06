@@ -71,7 +71,9 @@ const policy = JSON.parse(fs.readFileSync(path.join(root, policyPath), "utf8"));
 
 // Both binaries are built products of this repository's own toolchain, so a
 // missing one is a setup error with a specific fix, not a reason to skip.
-const ours = path.join(root, "build/cmake/packages/markdown-core/core/markdown-core");
+// Ours is the conformance harness, not the installed CLI: the dialect has no
+// switches, and only the harness can run the base or GFM layer alone.
+const ours = path.join(root, "build/cmake/packages/markdown-core/tests/markdown-core-harness");
 const upstream = path.join(root, oracle.binary(policy));
 for (const [binary, fix] of [
     [ours, "pnpm build:c"],
@@ -83,8 +85,8 @@ for (const [binary, fix] of [
     }
 }
 
-function runUpstream(input, flags) {
-    const argv = ["--to", "xml", ...flags];
+function runUpstream(input) {
+    const argv = ["--to", "xml"];
     for (const extension of oracle.extensions) argv.push("-e", extension);
     return execFileSync(upstream, argv, { input, encoding: "utf8", maxBuffer: 1 << 28 });
 }
@@ -103,23 +105,21 @@ function runOurs(input, profile) {
 // rather than reimplementing the comparison; without it the fuzzer would have
 // to rewrite the policy file and could leave it damaged if interrupted.
 const corpusOverride = process.argv.indexOf("--corpus");
-// A corpus entry is a path, or an object naming the option profile the file is
-// written for. Smart punctuation is the case that needs it: both parsers
-// default it off, so a fixture that asserts what `"quotes"` become has to be
-// run with it on — on both sides, or the comparison is between two languages.
+// A corpus entry is a path, or an object naming the harness layer the file is
+// written for and which of its examples to select. The upstream side always
+// runs its default language: every smart-punctuation substitution is gone, so
+// there is no upstream flag left to mirror.
 function corpus() {
     const entries = corpusOverride >= 0 ? [process.argv[corpusOverride + 1]] : (policy.corpus ?? []);
     return entries.flatMap((entry) => {
         const file = typeof entry === "string" ? entry : entry.file;
         const profile = typeof entry === "string" ? oracle.profile : (entry.profile ?? oracle.profile);
-        const flags = typeof entry === "string" ? [] : (entry.upstreamFlags ?? []);
         const selection = typeof entry === "string" ? undefined : entry.selection;
         const selected = selectExamples(readExamples(root, file), selection, policyPath);
         return selected.map((example) => ({
             line: example.source,
             input: example.input,
-            profile,
-            flags
+            profile
         }));
     });
 }
@@ -130,9 +130,9 @@ function corpus() {
  * still reproduce. */
 const fired = new Set();
 
-function compare(input, profile = oracle.profile, flags = []) {
+function compare(input, profile = oracle.profile) {
     const upstreamTree = liftFootnoteDefinitions(
-        normalize(parseUpstreamXml(runUpstream(input, flags)), "upstream", fired),
+        normalize(parseUpstreamXml(runUpstream(input)), "upstream", fired),
         fired
     );
     // `footnote-resolution-model` is applied before `normalize`, which keeps
@@ -174,9 +174,9 @@ const PROJECTED_DELTAS = new Set([
     "empty-text-node"
 ]);
 /* `own-extensions` is the one projection that is not a tree rewrite: it is the
- * CORPUS PROFILE. The extension fixtures run under `--profile gfm`, which
- * detaches this repository's own two extensions so the comparison is of one
- * language, and there is nothing for a normalizer to report. Every other
+ * CORPUS PROFILE. The extension fixtures run under the harness's `gfm` layer,
+ * which leaves this repository's own two scanners out so the comparison is of
+ * one language, and there is nothing for a normalizer to report. Every other
  * projection acts on a tree and says so. */
 const UNTRACKED_PROJECTIONS = new Set(["own-extensions"]);
 for (const delta of policy.deltas) {
@@ -207,7 +207,7 @@ const unmappedKinds = new Set();
 for (const testCase of cases) {
     let result;
     try {
-        result = compare(testCase.input, testCase.profile, testCase.flags);
+        result = compare(testCase.input, testCase.profile);
     } catch (error) {
         divergent.push({ ...testCase, failure: String(error).slice(0, 300) });
         continue;

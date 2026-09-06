@@ -23,7 +23,7 @@ const difference = (left, right) => [...left].filter((value) => !right.has(value
 const sameArray = (left, right) => left.length === right.length && left.every((value, index) => value === right[index]);
 const set = (values) => new Set(values);
 
-const nodeTable = proseContract.match(/## Node inventory[\s\S]*?## ParseOptions/)?.[0];
+const nodeTable = proseContract.match(/## Node inventory[\s\S]*?## Parsing/)?.[0];
 if (nodeTable === undefined) throw new Error("Unable to locate the canonical node inventory");
 
 const rows = [...nodeTable.matchAll(/^\| `([A-Za-z]+)` \| ([^|]+) \|/gm)];
@@ -33,17 +33,6 @@ const fieldsByKind = Object.fromEntries(
 );
 const canonicalFields = rows.flatMap((match) => fieldsByKind[match[1]].map((field) => `${match[1]}.${field}`));
 
-const optionNames = [
-    "smartPunctuation",
-    "footnotes",
-    "stripHTMLComments",
-    "tables",
-    "strikethrough",
-    "autolinks",
-    "taskLists",
-    "formulas",
-    "directives"
-];
 const stateValidators = {
     "placement.embedded": (tree) => / mode=embedded /.test(tree),
     "placement.standalone": (tree) => / mode=standalone /.test(tree),
@@ -179,10 +168,11 @@ for (const testCase of manifest.cases ?? []) {
     allowedEntries.add(testCase.input);
     allowedEntries.add(testCase.expected);
 
-    if (!sameArray(Object.keys(testCase.parseOptions ?? {}), optionNames)) {
-        failures.push(`${label} parseOptions must explicitly list every frozen option in contract order`);
-    } else if (Object.values(testCase.parseOptions).some((value) => typeof value !== "boolean")) {
-        failures.push(`${label} parseOptions values must all be booleans`);
+    // The dialect has no switches: every case is the one language, and the
+    // manifest records coverage vocabulary alone. A case that still names an
+    // option is asking for a language the parser does not have.
+    if ("parseOptions" in testCase) {
+        failures.push(`${label} names parseOptions; the dialect has no parse options`);
     }
 
     let markdown;

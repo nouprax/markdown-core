@@ -3,18 +3,12 @@
 #include <string.h>
 #include "markdown-core.h"
 #include "markdown-core-extensions.h"
+#include "feature-registry.h"
 #include "parser.h"
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
-
-const char *extension_names[] = {
-    "autolink",
-    "strikethrough",
-    "table",
-    NULL,
-};
 
 int LLVMFuzzerInitialize(int *argc, char ***argv) { return 0; }
 
@@ -24,7 +18,6 @@ static bool attach_core_extensions(markdown_core_parser *parser, void *context) 
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     struct __attribute__((packed)) {
-        int options;
         uint8_t startlen;
         uint8_t openlen;
         uint8_t middlelen;
@@ -35,8 +28,6 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
         /* The beginning of `data` is treated as fuzzer configuration */
         memcpy(&fuzz_config, data, sizeof(fuzz_config));
 
-        /* Test options that are used by GitHub. */
-        fuzz_config.options = MARKDOWN_CORE_OPT_FOOTNOTES;
         fuzz_config.openlen = fuzz_config.openlen & 0x7;
         fuzz_config.middlelen = fuzz_config.middlelen & 0x7;
         fuzz_config.closelen = fuzz_config.closelen & 0x7;
@@ -82,21 +73,15 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
                 memcpy(markdown, markdown0, markdown_size);
             }
 
-            /* A name selects a BIT; only the fixed table turns a set of bits
-             * into a sequence. Attaching from the name list directly was a
-             * second attach order, which is D15's shape. */
+            /* The one dialect: the registry resolves every feature into the
+             * engine's option word and extension mask, and the fixed table
+             * turns the mask into the one attach order. */
+            int options = 0;
             unsigned extension_mask = 0;
-            for (const char **it = extension_names; *it; ++it) {
-                unsigned bit = markdown_core_core_extensions_bit(*it);
-                if (!bit) {
-                    fprintf(stderr, "%s is not a valid parser extension\n", *it);
-                    abort();
-                }
-                extension_mask |= bit;
-            }
-            markdown_core_node *doc = markdown_core_parse_document_with_mem(
-                markdown, markdown_size, fuzz_config.options, markdown_core_get_default_mem_allocator(),
-                attach_core_extensions, &extension_mask);
+            markdown_core_features_resolve(markdown_core_features_all(), &options, &extension_mask);
+            markdown_core_node *doc = markdown_core_parse_document_with_mem(markdown, markdown_size, options,
+                                                                            markdown_core_get_default_mem_allocator(),
+                                                                            attach_core_extensions, &extension_mask);
             if (!doc) {
                 return 0;
             }

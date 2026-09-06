@@ -1,0 +1,38 @@
+---
+title: Directive extension not attached
+author: Dongyu Zhao
+version: 0.1
+date: '2026-06-22'
+license: '[CC-BY-SA 4.0](http://creativecommons.org/licenses/by-sa/4.0/)'
+...
+
+## The directive extension is not attached
+
+These examples run with NO feature attached, as the cmark gate runs the base
+layer against its oracle, and attachment is the only gate there is (Q14). They
+are a harness-internal proof that a registered feature can be excluded for a
+comparison, and nothing more: the dialect has no switch, so no consumer can ask
+for this parse. The extension's syntax is ordinary Markdown here.
+
+The file was once named after a parser option that no longer exists, and its
+title said "attach the extension without enabling its parser option", which it
+could never have shown -- the ctest entry passes no `--feature`, the examples
+carry no tags, and the runner starts from nothing attached. An oracle that
+cannot tell "attached, option off" from "not attached" is the gap D1 lived in
+for eleven releases.
+
+```````````````````````````````` example
+Use :cite[smith04] here.
+.
+Document scope=1:1..1:24 children=1
+└── Paragraph scope=1:1..1:24 children=1
+    └── Text scope=1:1..1:24 literal="Use :cite[smith04] here." children=0
+````````````````````````````````
+
+```````````````````````````````` example
+::youtube[Video]{vid=01ab2cd3efg}
+.
+Document scope=1:1..1:33 children=1
+└── Paragraph scope=1:1..1:33 children=1
+    └── Text scope=1:1..1:33 literal="::youtube[Video]{vid=01ab2cd3efg}" children=0
+````````````````````````````````

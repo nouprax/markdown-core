@@ -3,22 +3,16 @@ package com.nouprax.markdown.core
 import java.nio.file.Files
 import java.nio.file.Path
 
-internal actual fun parsePlatformDocument(
-    source: ByteArray,
-    options: ParseOptions,
-): Document {
+internal actual fun parsePlatformDocument(source: ByteArray): Document {
     DesktopNativeLoader.ensureLoaded()
-    return JniPayloadDecoder.decodeDocument(JniParser.parsePayload(source, options.toNativeMask()))
+    return JniPayloadDecoder.decodeDocument(JniParser.parsePayload(source))
 }
 
 private object JniParser {
     // Kotlin `internal` is public bytecode on the JVM. Hide the raw payload
     // method from Java source while keeping it available for JNI registration.
     @JvmSynthetic
-    external fun parsePayload(
-        source: ByteArray,
-        optionsMask: Int,
-    ): ByteArray
+    external fun parsePayload(source: ByteArray): ByteArray
 }
 
 private object DesktopNativeLoader {

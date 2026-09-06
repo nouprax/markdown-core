@@ -2,14 +2,11 @@
 
 #include <type_traits>
 
-static_assert(std::is_standard_layout<markdown_core_parse_options>::value, "parse options must cross the C++ boundary");
 static_assert(std::is_standard_layout<markdown_core_string>::value, "markdown_core_string must cross the C++ boundary");
 
 int main() {
-    markdown_core_parse_options options{};
-    markdown_core_parse_options_init(&options);
     markdown_core_error *error = nullptr;
-    const auto *document = markdown_core_document_parse(nullptr, 0, &options, &error);
+    const auto *document = markdown_core_document_parse(nullptr, 0, &error);
     if (!document || error) {
         return 1;
     }

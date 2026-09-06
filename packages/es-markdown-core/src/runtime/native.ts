@@ -2,9 +2,10 @@ export interface NativeExports extends WebAssembly.Exports {
     readonly memory: WebAssembly.Memory;
     malloc(size: number): number;
     free(pointer: number): void;
-    /** Parses and returns one owned MCB1 result, or zero only when the
-     * result itself cannot be allocated. Parse failures are typed payloads. */
-    es_parse(source: number, length: number, flags: number): number;
+    /** Parses the one dialect and returns one owned MCB1 result, or zero only
+     * when the result itself cannot be allocated. Parse failures are typed
+     * payloads. */
+    es_parse(source: number, length: number): number;
     es_result_free(result: number): void;
 }
 

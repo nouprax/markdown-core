@@ -12,9 +12,13 @@
  * Initialization: there is no process-level initialization, registry, cache,
  * teardown, or re-initialization path. The library contains only immutable
  * process-lifetime tables and constants. Every parser, extension attachment,
- * option set, allocation, and failure flag belongs to one parse transaction.
- * Concurrent first calls from any number of threads therefore require no
- * warmup, external lock, or explicit init call.
+ * allocation, and failure flag belongs to one parse transaction. Concurrent
+ * first calls from any number of threads therefore require no warmup,
+ * external lock, or explicit init call.
+ *
+ * Language: there is exactly one. A parse recognizes the whole Markdown Core
+ * dialect, every feature always on, and takes no options; nothing here
+ * enables, disables, or configures a construct.
  *
  * Distinct documents: parse, traversal, dump, and free of *different*
  * documents may run fully concurrently. A parse call shares no mutable state
@@ -86,18 +90,6 @@ typedef struct markdown_core_scope {
     markdown_core_position start;
     markdown_core_position end;
 } markdown_core_scope;
-
-typedef struct markdown_core_parse_options {
-    bool smart_punctuation;
-    bool footnotes;
-    bool strip_html_comments;
-    bool tables;
-    bool strikethrough;
-    bool autolinks;
-    bool task_lists;
-    bool formulas;
-    bool directives;
-} markdown_core_parse_options;
 
 typedef enum markdown_core_error_code {
     MARKDOWN_CORE_ERROR_NONE = 0,
@@ -200,19 +192,16 @@ typedef struct markdown_core_optional_string {
     markdown_core_string value;
 } markdown_core_optional_string;
 
-/** Initializes every field to the frozen Markdown Core defaults. */
-MARKDOWN_CORE_API void markdown_core_parse_options_init(markdown_core_parse_options *options);
-
 /**
- * Parses exactly `length` bytes as UTF-8. Valid UTF-8 is a caller
- * precondition; Markdown Core does not validate or repair malformed input.
- * `options == NULL` selects the defaults.
+ * Parses exactly `length` bytes as UTF-8 in the one Markdown Core dialect.
+ * Valid UTF-8 is a caller precondition; Markdown Core does not validate or
+ * repair malformed input. There are no options: every feature of the dialect
+ * is recognized on every call.
  * The returned document owns every node and every `markdown_core_string`
  * handed out of it. On failure,
  * NULL is returned and `*error` is set when `error` is non-NULL.
  */
 MARKDOWN_CORE_API markdown_core_document *markdown_core_document_parse(const uint8_t *source, size_t length,
-                                                                       const markdown_core_parse_options *options,
                                                                        markdown_core_error **error);
 MARKDOWN_CORE_API void markdown_core_document_free(markdown_core_document *document);
 

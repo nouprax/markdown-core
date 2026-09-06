@@ -83,6 +83,33 @@ for (const symbol of declared) {
 }
 NODE
 
+# THE DIALECT HAS NO SWITCHES. No surface names a parse option, the installed
+# CLI takes no flag that would select a language, and the harness's layer
+# selection is reached by nothing that ships: not the facade header, not the
+# export lists, not a binding.
+if grep -n -E 'parse_options|smart_punctuation|strip_html_comments' \
+    packages/markdown-core/include/markdown_core.h \
+    packages/markdown-core/core/exports/markdown_core.map \
+    packages/markdown-core/core/exports/markdown_core.exports; then
+    fail "the C facade still publishes a parse option"
+fi
+if grep -n -E '"--profile"|"--smart"|"--extension"|"-e"|feature-registry|markdown_core_feature' \
+    packages/markdown-core/core/main.c; then
+    fail "the installed CLI still exposes a language switch or reaches the harness registry"
+fi
+if grep -R -n -E 'ParseOptions|parseOptions|smartPunctuation|stripHTMLComments' \
+    packages/swift-markdown-core/Sources packages/kotlin-markdown-core/src/commonMain \
+    packages/kotlin-markdown-core/src/jvmMain packages/kotlin-markdown-core/src/androidMain \
+    packages/kotlin-markdown-core/src/nativePlatformMain packages/es-markdown-core/src; then
+    fail "a binding still publishes a parse option"
+fi
+if grep -n 'parseOptions' specs/canonical-ast/manifest.json; then
+    fail "the canonical manifest still names a parse option"
+fi
+if grep -n -E 'markdown-core-harness|registry_runner' packages/markdown-core/tests/CMakeLists.txt | grep -q 'install'; then
+    fail "the conformance harness must never be installed"
+fi
+
 # These are API identifier checks, not prose checks.
 retired_surface_terms='render|feed|stream|edit|session|snapshot|delta|diagnostic|concrete|Concrete|CST|ConcreteSyntax|Token|Trivia|Recovery|Walker|WalkEvent'
 

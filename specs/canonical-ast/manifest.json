@@ -103,17 +103,6 @@
             "name": "blocks",
             "input": "blocks.md",
             "expected": "blocks.ast",
-            "parseOptions": {
-                "smartPunctuation": true,
-                "footnotes": true,
-                "stripHTMLComments": true,
-                "tables": true,
-                "strikethrough": true,
-                "autolinks": true,
-                "taskLists": true,
-                "formulas": true,
-                "directives": true
-            },
             "coverage": {
                 "kinds": [
                     "Document",
@@ -158,17 +147,6 @@
             "name": "completeness",
             "input": "completeness.md",
             "expected": "completeness.ast",
-            "parseOptions": {
-                "smartPunctuation": true,
-                "footnotes": true,
-                "stripHTMLComments": true,
-                "tables": true,
-                "strikethrough": true,
-                "autolinks": true,
-                "taskLists": true,
-                "formulas": true,
-                "directives": true
-            },
             "coverage": {
                 "kinds": [
                     "Document",
@@ -222,17 +200,6 @@
             "name": "formulas",
             "input": "formulas.md",
             "expected": "formulas.ast",
-            "parseOptions": {
-                "smartPunctuation": true,
-                "footnotes": true,
-                "stripHTMLComments": true,
-                "tables": true,
-                "strikethrough": true,
-                "autolinks": true,
-                "taskLists": true,
-                "formulas": true,
-                "directives": true
-            },
             "coverage": {
                 "kinds": ["Document", "Paragraph", "Text", "Formula", "FormulaBlock"],
                 "states": [
@@ -249,17 +216,6 @@
             "name": "inlines",
             "input": "inlines.md",
             "expected": "inlines.ast",
-            "parseOptions": {
-                "smartPunctuation": true,
-                "footnotes": true,
-                "stripHTMLComments": true,
-                "tables": true,
-                "strikethrough": true,
-                "autolinks": true,
-                "taskLists": true,
-                "formulas": true,
-                "directives": true
-            },
             "coverage": {
                 "kinds": [
                     "Document",
@@ -296,17 +252,6 @@
             "name": "scopes",
             "input": "scopes.md",
             "expected": "scopes.ast",
-            "parseOptions": {
-                "smartPunctuation": true,
-                "footnotes": true,
-                "stripHTMLComments": true,
-                "tables": true,
-                "strikethrough": true,
-                "autolinks": true,
-                "taskLists": true,
-                "formulas": true,
-                "directives": true
-            },
             "coverage": {
                 "kinds": ["Document", "ThematicBreak", "Paragraph", "Text"],
                 "states": ["scope.positive", "children.empty", "children.populated"],
@@ -317,17 +262,6 @@
             "name": "structure",
             "input": "structure.md",
             "expected": "structure.ast",
-            "parseOptions": {
-                "smartPunctuation": true,
-                "footnotes": true,
-                "stripHTMLComments": true,
-                "tables": true,
-                "strikethrough": true,
-                "autolinks": true,
-                "taskLists": true,
-                "formulas": true,
-                "directives": true
-            },
             "coverage": {
                 "kinds": [
                     "Document",

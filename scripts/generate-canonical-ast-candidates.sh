@@ -19,8 +19,8 @@ node --input-type=module -e '
     import fs from "node:fs";
     const manifest = JSON.parse(fs.readFileSync("specs/canonical-ast/manifest.json", "utf8"));
     for (const testCase of manifest.cases) {
-        if (Object.values(testCase.parseOptions).some((value) => value !== true)) {
-            throw new Error(`${testCase.name}: the C candidate command needs explicit non-default option support`);
+        if ("parseOptions" in testCase) {
+            throw new Error(`${testCase.name}: names parseOptions; the dialect has none`);
         }
         process.stdout.write(`${testCase.input}\t${testCase.expected}\n`);
     }

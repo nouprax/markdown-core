@@ -55,16 +55,16 @@ static int pc_build(pc_context *context, const char *prefix, const char *unit, s
     return 0;
 }
 
-static int pc_parse(pc_context *context, const char *const *option_names) {
-    markdown_core_parse_options options;
+static int pc_parse(pc_context *context, const char *const *feature_names) {
+    markdown_core_feature_set features;
     size_t i;
-    ts_ast_options_none(&options);
-    for (i = 0; option_names && option_names[i]; i++) {
-        if (ts_ast_enable(&options, option_names[i]) != 0) {
+    ts_ast_features_none(&features);
+    for (i = 0; feature_names && feature_names[i]; i++) {
+        if (ts_ast_feature_enable(&features, feature_names[i]) != 0) {
             return -1;
         }
     }
-    context->document = ts_ast_parse((const uint8_t *)context->input, context->input_length, &options);
+    context->document = ts_ast_parse((const uint8_t *)context->input, context->input_length, features);
     if (!context->document) {
         return -1;
     }

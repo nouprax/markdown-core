@@ -25,12 +25,16 @@ async function readFixture(relativePath) {
 }
 
 const cases = await Promise.all(
-    manifest.cases.map(async (testCase) => ({
-        name: testCase.name,
-        source: await readFixture(testCase.input),
-        expected: await readFixture(testCase.expected),
-        parseOptions: testCase.parseOptions
-    }))
+    manifest.cases.map(async (testCase) => {
+        // The dialect has no switches, so a case that still names an option is
+        // asking for a language the parser does not have.
+        if ("parseOptions" in testCase) throw new Error(`${testCase.name} names parseOptions; the dialect has none`);
+        return {
+            name: testCase.name,
+            source: await readFixture(testCase.input),
+            expected: await readFixture(testCase.expected)
+        };
+    })
 );
 const generated = `${JSON.stringify({ schemaVersion: 1, cases }, null, 2)}\n`;
 
