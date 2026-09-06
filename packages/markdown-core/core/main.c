@@ -121,6 +121,9 @@ int main(int argc, char *argv[]) {
     _setmode(_fileno(stdout), _O_BINARY);
 #endif
 
+    /* Every option is read before any file is opened, so `--help` or
+     * `--version` after a file name answers without touching the file, and a
+     * FIFO named on the command line cannot hold an informational invocation. */
     for (i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--version") == 0) {
             printf("markdown-core %s\n", MARKDOWN_CORE_VERSION_STRING);
@@ -138,21 +141,27 @@ int main(int argc, char *argv[]) {
             fprintf(stderr, "markdown-core: unknown option %s; the parser takes no options\n", argv[i]);
             print_usage(stderr);
             goto done;
-        } else {
-            FILE *file = fopen(argv[i], "rb");
-            if (!file) {
-                fprintf(stderr, "Error opening file %s: %s\n", argv[i], strerror(errno));
-                goto done;
-            }
-            failure = read_all(&source, file);
-            if (failure) {
-                fprintf(stderr, "Error reading file %s: %s\n", argv[i], failure);
-                fclose(file);
-                goto done;
-            }
-            fclose(file);
-            file_count++;
         }
+    }
+
+    for (i = 1; i < argc; i++) {
+        FILE *file;
+        if (argv[i][0] == '-' && argv[i][1] != 0) {
+            continue;
+        }
+        file = fopen(argv[i], "rb");
+        if (!file) {
+            fprintf(stderr, "Error opening file %s: %s\n", argv[i], strerror(errno));
+            goto done;
+        }
+        failure = read_all(&source, file);
+        if (failure) {
+            fprintf(stderr, "Error reading file %s: %s\n", argv[i], failure);
+            fclose(file);
+            goto done;
+        }
+        fclose(file);
+        file_count++;
     }
 
     if (file_count == 0) {
