@@ -511,9 +511,9 @@ static bool is_link(const markdown_core_node *node) {
     return node && (node->type == MARKDOWN_CORE_NODE_LINK || node->type == MARKDOWN_CORE_NODE_IMAGE);
 }
 
-/* Every link and image the parser produces reads through a resource. One
- * built by hand has none until an engine setter gives it one, and until then
- * it is the link `[a]()` is: the empty url and no title. */
+/* Every link and image the parser produces reads through a resource, and
+ * only the parser creates one. A node built by hand has none and is the link
+ * `[a]()` is: the empty url and no title. */
 static const markdown_core_chunk empty_url = {(unsigned char *)"", 0, 0};
 static const markdown_core_optional_chunk absent_title = {{NULL, 0, 0}, false};
 

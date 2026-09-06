@@ -218,8 +218,16 @@ static void accessors(test_batch_runner *runner) {
     INT_EQ(runner, markdown_core_node_get_end_line(paragraph), 17, "get_end_line");
 
     markdown_core_node *link = markdown_core_node_first_child(paragraph);
-    STR_EQ(runner, markdown_core_node_get_url(link), "url", "get_url");
-    STR_EQ(runner, markdown_core_node_get_title(link), "title", "get_title");
+    markdown_core_destination destination;
+    markdown_core_optional_string title;
+    OK(runner,
+       markdown_core_node_destination(link, &destination) && destination.kind == MARKDOWN_CORE_DESTINATION_URL &&
+           destination.url.length == 3 && memcmp(destination.url.data, "url", 3) == 0,
+       "a parsed link's destination is read through the facade");
+    OK(runner,
+       markdown_core_node_title(link, &title) && title.has_value && title.value.length == 5 &&
+           memcmp(title.value.data, "title", 5) == 0,
+       "a parsed link's title is read through the facade");
 
     markdown_core_node *string = markdown_core_node_first_child(link);
     STR_EQ(runner, markdown_core_node_get_literal(string), "link", "get_literal string");
@@ -243,9 +251,6 @@ static void accessors(test_batch_runner *runner) {
 
     OK(runner, markdown_core_node_set_literal(html, "<div>HTML</div>\n"), "set_literal html");
 
-    OK(runner, markdown_core_node_set_url(link, "URL"), "set_url");
-    OK(runner, markdown_core_node_set_title(link, "TITLE"), "set_title");
-
     OK(runner, markdown_core_node_set_literal(string, "prefix-LINK"), "set_literal string");
 
     // Set literal to suffix of itself (issue #139).
@@ -265,8 +270,6 @@ static void accessors(test_batch_runner *runner) {
     STR_EQ(runner, markdown_core_node_get_literal(fenced), "FENCED\n", "set_literal fenced applied");
     STR_EQ(runner, markdown_core_node_get_fence_info(fenced), "LANG", "set_fence_info applied");
     STR_EQ(runner, markdown_core_node_get_literal(html), "<div>HTML</div>\n", "set_literal html applied");
-    STR_EQ(runner, markdown_core_node_get_url(link), "URL", "set_url applied");
-    STR_EQ(runner, markdown_core_node_get_title(link), "TITLE", "set_title applied");
     STR_EQ(runner, markdown_core_node_get_literal(string), "LINK", "set_literal suffix applied");
 
     // Getter errors
@@ -278,8 +281,6 @@ static void accessors(test_batch_runner *runner) {
     OK(runner, markdown_core_node_get_literal(ordered_list) == NULL, "get_literal error");
     OK(runner, markdown_core_node_get_fence_info(paragraph) == NULL, "get_fence_info error");
     INT_EQ(runner, markdown_core_node_get_fence_closed(paragraph), 0, "get_fence_closed error");
-    OK(runner, markdown_core_node_get_url(html) == NULL, "get_url error");
-    OK(runner, markdown_core_node_get_title(heading) == NULL, "get_title error");
 
     // Setter errors
 
@@ -289,8 +290,6 @@ static void accessors(test_batch_runner *runner) {
     OK(runner, !markdown_core_node_set_list_tight(fenced, 0), "set_list_tight error");
     OK(runner, !markdown_core_node_set_literal(ordered_list, "content\n"), "set_literal error");
     OK(runner, !markdown_core_node_set_fence_info(paragraph, "lang"), "set_fence_info error");
-    OK(runner, !markdown_core_node_set_url(html, "url"), "set_url error");
-    OK(runner, !markdown_core_node_set_title(heading, "title"), "set_title error");
 
     OK(runner, !markdown_core_node_set_heading_level(heading, 0), "set_heading_level too small");
     OK(runner, !markdown_core_node_set_heading_level(heading, 7), "set_heading_level too large");
@@ -1619,13 +1618,12 @@ static void association_accessor(test_batch_runner *runner) {
 
 static void link_resource_lifecycle(test_batch_runner *runner) {
     /* M2: a link or image reads its destination and title through a resource
-     * the parser shares across every occurrence of one definition. A node
-     * built by hand starts without one and is the link `[a]()` is -- the
-     * empty url and no title -- until its first setter creates the resource
-     * it then owns; a node converted into a link starts the same way instead
-     * of reading the old arm's bytes as a resource; and writing one parsed
-     * occurrence copies a shared resource first, so the others keep reading
-     * the definition. */
+     * the parser creates -- one per direct link, image, or autolink, and one
+     * per definition, shared by every occurrence that resolves to it. Nothing
+     * else writes one: the engine's url and title setters left with the
+     * model. A node built by hand, or converted into a link, has no resource
+     * and is the link `[a]()` is -- the empty url and no title -- rather than
+     * reading another arm's bytes as a resource pointer. */
     markdown_core_node *paragraph = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
     markdown_core_node *link = markdown_core_node_new(MARKDOWN_CORE_NODE_LINK);
     markdown_core_node *image = markdown_core_node_new(MARKDOWN_CORE_NODE_IMAGE);
@@ -1637,147 +1635,41 @@ static void link_resource_lifecycle(test_batch_runner *runner) {
     OK(runner, markdown_core_node_append_child(paragraph, image), "hand-built image joins a paragraph");
     OK(runner, markdown_core_node_append_child(paragraph, converted), "text joins a paragraph");
 
-    STR_EQ(runner, markdown_core_node_get_url(link), "", "a hand-built link answers the empty url");
-    OK(runner, markdown_core_node_get_title(link) == NULL, "a hand-built link has no title");
-    OK(runner, markdown_core_node_resource(link) == NULL, "a hand-built link reads through no resource yet");
+    OK(runner, markdown_core_node_resource(link) == NULL, "a hand-built link reads through no resource");
     OK(runner, markdown_core_node_destination(link, &destination), "the facade answers a hand-built link");
     INT_EQ(runner, destination.kind, MARKDOWN_CORE_DESTINATION_URL, "a hand-built link is the url branch");
     INT_EQ(runner, (int)destination.url.length, 0, "a hand-built link's url is empty");
     OK(runner, markdown_core_node_title(link, &title) && !title.has_value, "a hand-built link's title is absent");
-
-    OK(runner, markdown_core_node_set_url(link, "/hand"), "set_url creates a hand-built link's resource");
-    OK(runner, markdown_core_node_set_title(link, "made"), "set_title writes the resource set_url created");
-    STR_EQ(runner, markdown_core_node_get_url(link), "/hand", "set_url applied to a hand-built link");
-    STR_EQ(runner, markdown_core_node_get_title(link), "made", "set_title applied to a hand-built link");
-    OK(runner, markdown_core_node_resource(link) != NULL, "the hand-built link now owns a resource");
-    OK(runner,
-       markdown_core_node_destination(link, &destination) && destination.url.length == 5 &&
-           memcmp(destination.url.data, "/hand", 5) == 0,
-       "the facade reads the resource the setter created");
-    OK(runner, markdown_core_node_set_title(link, NULL), "set_title NULL clears the title");
-    OK(runner, markdown_core_node_get_title(link) == NULL, "a cleared title is absent");
-
-    OK(runner, markdown_core_node_set_title(image, "alt title"), "set_title creates a hand-built image's resource");
-    STR_EQ(runner, markdown_core_node_get_url(image), "", "an image given only a title keeps the empty url");
-    STR_EQ(runner, markdown_core_node_get_title(image), "alt title", "set_title applied to a hand-built image");
-    OK(runner, markdown_core_node_resource(image) != markdown_core_node_resource(link),
-       "two hand-built nodes own two resources");
+    OK(runner, markdown_core_node_resource(image) == NULL, "a hand-built image reads through no resource");
+    OK(runner, markdown_core_node_title(image, &title) && !title.has_value, "a hand-built image's title is absent");
 
     OK(runner, markdown_core_node_set_literal(converted, "~~"), "the text to convert has a literal");
     OK(runner, markdown_core_node_set_type(converted, MARKDOWN_CORE_NODE_LINK), "set_type converts text into a link");
-    STR_EQ(runner, markdown_core_node_get_url(converted), "", "a converted link starts with the empty url");
     OK(runner, markdown_core_node_resource(converted) == NULL, "a converted link starts without a resource");
-    OK(runner, markdown_core_node_set_url(converted, "/converted"), "set_url creates a converted link's resource");
-    STR_EQ(runner, markdown_core_node_get_url(converted), "/converted", "set_url applied to a converted link");
+    OK(runner, markdown_core_node_destination(converted, &destination) && destination.url.length == 0,
+       "a converted link starts with the empty url");
     OK(runner, markdown_core_node_set_type(converted, MARKDOWN_CORE_NODE_TEXT), "set_type converts the link back");
-    OK(runner, markdown_core_node_get_url(converted) == NULL, "a text node is not a link");
+    OK(runner, !markdown_core_node_destination(converted, &destination), "a text node has no destination");
     STR_EQ(runner, markdown_core_node_get_literal(converted), "", "converting back starts the literal empty");
 
     markdown_core_node_free(paragraph);
 
-    /* Writing one parsed occurrence never rewrites the definition the others
-     * read. */
-    static const char markdown[] = "[a]: /shared \"t\"\n\n[a] [a]\n";
+    /* Every occurrence of one definition reads one resource; a direct link
+     * with the same bytes owns its own. */
+    static const char markdown[] = "[a]: /shared \"t\"\n\n[a] [a] [d](/shared \"t\")\n";
     markdown_core_node *doc = markdown_core_parse_document(markdown, sizeof(markdown) - 1, MARKDOWN_CORE_OPT_DEFAULT);
     markdown_core_node *first = markdown_core_node_first_child(markdown_core_node_first_child(doc));
     markdown_core_node *second = markdown_core_node_next(markdown_core_node_next(first));
+    markdown_core_node *direct = markdown_core_node_next(markdown_core_node_next(second));
     OK(runner,
        markdown_core_node_resource(first) != NULL &&
            markdown_core_node_resource(first) == markdown_core_node_resource(second),
        "two occurrences of one definition read one resource");
-    OK(runner, markdown_core_node_set_url(first, "/mine"), "set_url on a shared occurrence");
-    STR_EQ(runner, markdown_core_node_get_url(first), "/mine", "the written occurrence answers its url");
-    STR_EQ(runner, markdown_core_node_get_url(second), "/shared", "the other occurrence keeps the definition's url");
-    STR_EQ(runner, markdown_core_node_get_title(first), "t", "the copy keeps the definition's title");
-    OK(runner, markdown_core_node_resource(first) != markdown_core_node_resource(second),
-       "the written occurrence now owns its own resource");
+    OK(runner,
+       markdown_core_node_resource(direct) != NULL &&
+           markdown_core_node_resource(direct) != markdown_core_node_resource(first),
+       "a direct link with the same bytes owns its own resource");
     markdown_core_node_free(doc);
-}
-
-static unsigned long setter_allocations;
-static unsigned long setter_fail_at;
-static void *setter_calloc(size_t count, size_t size) {
-    if (++setter_allocations == setter_fail_at) {
-        return NULL;
-    }
-    return calloc(count, size);
-}
-static void *setter_realloc(void *pointer, size_t size) {
-    if (++setter_allocations == setter_fail_at) {
-        return NULL;
-    }
-    return realloc(pointer, size);
-}
-static void setter_free(void *pointer) { free(pointer); }
-static markdown_core_mem setter_mem = {setter_calloc, setter_realloc, setter_free};
-
-static void link_resource_setters_are_transactions(test_batch_runner *runner) {
-    /* A setter that answers 0 leaves the node reading exactly what it read
-     * before: the same bytes through the same identity. The sweep refuses
-     * each allocation of the operation in turn, so every failure point inside
-     * it is reached -- the value, the copy of a shared resource's url and
-     * title, the resource itself -- and the attempt after the last one
-     * succeeds. Before the setters built the value first, a refusal after the
-     * copy was installed detached the occurrence from its definition while
-     * reporting that nothing was written. */
-    static const char markdown[] = "[a]: /shared \"t\"\n\n[a] [a]\n";
-    markdown_core_error *error = NULL;
-    markdown_core_document *document =
-        markdown_core_document_parse_with_mem((const uint8_t *)markdown, sizeof(markdown) - 1, &setter_mem, &error);
-    markdown_core_node *first;
-    markdown_core_node *second;
-    markdown_core_node *link;
-    unsigned long attempt;
-    int result = 0;
-
-    OK(runner, document != NULL && error == NULL, "the shared document parses on the sweep allocator");
-    first = markdown_core_node_first_child(markdown_core_node_first_child(document->root));
-    second = markdown_core_node_next(markdown_core_node_next(first));
-    OK(runner, markdown_core_node_resource(first) == markdown_core_node_resource(second),
-       "the two occurrences share the definition's resource");
-
-    for (attempt = 1; attempt <= 16 && !result; attempt++) {
-        setter_allocations = 0;
-        setter_fail_at = attempt;
-        result = markdown_core_node_set_url(first, "/mine");
-        setter_fail_at = 0;
-        if (!result) {
-            OK(runner, markdown_core_node_resource(first) == markdown_core_node_resource(second),
-               "a refused set_url leaves the occurrence on the shared resource (allocation %lu)", attempt);
-            STR_EQ(runner, markdown_core_node_get_url(first), "/shared",
-                   "a refused set_url leaves the definition's url (allocation %lu)", attempt);
-            STR_EQ(runner, markdown_core_node_get_title(first), "t",
-                   "a refused set_url leaves the definition's title (allocation %lu)", attempt);
-        }
-    }
-    OK(runner, result, "set_url succeeds once no allocation is refused");
-    OK(runner, attempt > 3, "the sweep reached the copy's allocations before the setter succeeded");
-    STR_EQ(runner, markdown_core_node_get_url(first), "/mine", "the succeeding set_url applied");
-    STR_EQ(runner, markdown_core_node_get_title(first), "t", "the succeeding set_url kept the title");
-    STR_EQ(runner, markdown_core_node_get_url(second), "/shared", "the other occurrence keeps the definition");
-    OK(runner, markdown_core_node_resource(first) != markdown_core_node_resource(second),
-       "the succeeding set_url gave the occurrence its own resource");
-    markdown_core_document_free(document);
-
-    link = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_LINK, &setter_mem);
-    result = 0;
-    for (attempt = 1; attempt <= 16 && !result; attempt++) {
-        setter_allocations = 0;
-        setter_fail_at = attempt;
-        result = markdown_core_node_set_title(link, "made");
-        setter_fail_at = 0;
-        if (!result) {
-            OK(runner, markdown_core_node_resource(link) == NULL,
-               "a refused first set_title leaves a hand-built link without a resource (allocation %lu)", attempt);
-            OK(runner, markdown_core_node_get_title(link) == NULL,
-               "a refused first set_title leaves a hand-built link without a title (allocation %lu)", attempt);
-        }
-    }
-    OK(runner, result, "set_title succeeds once no allocation is refused");
-    OK(runner, attempt > 2, "the sweep reached the resource's allocation before the setter succeeded");
-    STR_EQ(runner, markdown_core_node_get_title(link), "made", "the succeeding set_title applied");
-    OK(runner, markdown_core_node_resource(link) != NULL, "the succeeding set_title created the resource");
-    markdown_core_node_free(link);
 }
 
 static void set_type_keeps_extension_data_beside_the_arm(test_batch_runner *runner) {
@@ -1793,6 +1685,7 @@ static void set_type_keeps_extension_data_beside_the_arm(test_batch_runner *runn
     markdown_core_document *document =
         markdown_core_document_parse((const uint8_t *)markdown, sizeof(markdown) - 1, &error);
     markdown_core_node *formula;
+    markdown_core_destination destination;
 
     OK(runner, document != NULL && error == NULL, "the formula document parses");
     formula = markdown_core_node_first_child(markdown_core_node_first_child(document->root));
@@ -1803,9 +1696,8 @@ static void set_type_keeps_extension_data_beside_the_arm(test_batch_runner *runn
        "set_type converts the formula into a link");
     OK(runner, formula->opaque != NULL, "the extension's data stays with the node");
     OK(runner, markdown_core_node_resource(formula) == NULL, "the converted link starts without a resource");
-    STR_EQ(runner, markdown_core_node_get_url(formula), "", "the converted link answers the empty url");
-    OK(runner, markdown_core_node_set_url(formula, "/converted"), "set_url creates the converted link's resource");
-    STR_EQ(runner, markdown_core_node_get_url(formula), "/converted", "set_url applied to the converted link");
+    OK(runner, markdown_core_node_destination(formula, &destination) && destination.url.length == 0,
+       "the converted link answers the empty url");
     markdown_core_document_free(document);
 }
 
@@ -1897,7 +1789,6 @@ int main(void) {
     source_pos_inlines(runner);
     ref_source_pos(runner);
     link_resource_lifecycle(runner);
-    link_resource_setters_are_transactions(runner);
     set_type_keeps_extension_data_beside_the_arm(runner);
     association_accessor(runner);
     autolink_source_pos(runner);

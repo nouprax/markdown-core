@@ -81,9 +81,8 @@ static bool S_can_contain(markdown_core_node *node, markdown_core_node *child) {
 }
 
 /* The type-specific data a node of `node->type` starts with, over a zeroed
- * arm. A link or image starts without a resource: the parser gives every
- * occurrence the resource it resolves to, and a node built by hand gets its
- * own from the first setter that writes it. */
+ * arm. A link or image starts without a resource and reads as `[a]()` does;
+ * only the parser creates one, for every occurrence it resolves. */
 static void S_init_node_as(markdown_core_node *node) {
     switch (node->type) {
     case MARKDOWN_CORE_NODE_HEADING:
@@ -688,138 +687,6 @@ void markdown_core_resource_release(markdown_core_mem *mem, markdown_core_resour
     markdown_core_chunk_free(mem, &resource->url);
     markdown_core_optional_chunk_free(mem, &resource->title);
     mem->free(resource);
-}
-
-static bool S_is_link(const markdown_core_node *node) {
-    return node != NULL && (node->type == MARKDOWN_CORE_NODE_LINK || node->type == MARKDOWN_CORE_NODE_IMAGE);
-}
-
-/* An owned copy of `source`'s bytes; 0 when it could not be allocated. */
-static int S_chunk_copy(markdown_core_mem *mem, markdown_core_chunk *out, const markdown_core_chunk *source) {
-    unsigned char *data = (unsigned char *)mem->calloc((size_t)source->len + 1, 1);
-    if (!data) {
-        return 0;
-    }
-    if (source->len > 0) {
-        memcpy(data, source->data, (size_t)source->len);
-    }
-    out->data = data;
-    out->len = source->len;
-    out->alloc = 1;
-    return 1;
-}
-
-/* The resource a legacy setter writes in place, installed on the node. A node
- * built by hand has none until its first setter creates one, which the node
- * then owns. A resource shared with other occurrences, or with the reference
- * map, is copied first, so that setting one occurrence's URL never rewrites
- * the definition every other occurrence reads. Returns NULL, with the node
- * untouched, when the resource could not be allocated.
- *
- * A SETTER IS A TRANSACTION: it builds the value it will write before it
- * calls this, so that nothing can fail once the node has let go of what it
- * shared, and a setter that answers 0 leaves the node reading exactly what it
- * read before -- the same bytes through the same identity. */
-static markdown_core_resource *S_writable_resource(markdown_core_node *node) {
-    markdown_core_mem *mem = NODE_MEM(node);
-    markdown_core_resource *shared = node->as.link.resource;
-    markdown_core_resource *own;
-    markdown_core_chunk url = MARKDOWN_CORE_CHUNK_EMPTY;
-    markdown_core_optional_chunk title = markdown_core_optional_chunk_absent();
-    if (shared != NULL && shared->holders == 1) {
-        return shared;
-    }
-    if (shared != NULL) {
-        if (!S_chunk_copy(mem, &url, &shared->url)) {
-            return NULL;
-        }
-        if (shared->title.has_value) {
-            if (!S_chunk_copy(mem, &title.value, &shared->title.value)) {
-                markdown_core_chunk_free(mem, &url);
-                return NULL;
-            }
-            title.has_value = true;
-        }
-    }
-    own = markdown_core_resource_new(mem, url, title);
-    if (!own) {
-        markdown_core_chunk_free(mem, &url);
-        markdown_core_optional_chunk_free(mem, &title);
-        return NULL;
-    }
-    markdown_core_resource_release(mem, shared);
-    node->as.link.resource = own;
-    return own;
-}
-
-const char *markdown_core_node_get_url(markdown_core_node *node) {
-    if (!S_is_link(node)) {
-        return NULL;
-    }
-    /* A link that was given no destination answers the empty url, as `[a]()`
-     * does; it is not the NULL that says "not a link". */
-    if (!node->as.link.resource) {
-        return "";
-    }
-    return markdown_core_chunk_to_cstr(NODE_MEM(node), &node->as.link.resource->url);
-}
-
-int markdown_core_node_set_url(markdown_core_node *node, const char *url) {
-    markdown_core_mem *mem;
-    markdown_core_chunk value = MARKDOWN_CORE_CHUNK_EMPTY;
-    markdown_core_resource *resource;
-    if (!S_is_link(node)) {
-        return 0;
-    }
-    mem = NODE_MEM(node);
-    /* The value first, the resource second: the swap cannot fail. */
-    if (!markdown_core_chunk_set_cstr(mem, &value, url)) {
-        return 0;
-    }
-    resource = S_writable_resource(node);
-    if (!resource) {
-        markdown_core_chunk_free(mem, &value);
-        return 0;
-    }
-    markdown_core_chunk_free(mem, &resource->url);
-    resource->url = value;
-    return 1;
-}
-
-const char *markdown_core_node_get_title(markdown_core_node *node) {
-    if (!S_is_link(node)) {
-        return NULL;
-    }
-    /* ABSENT IS NULL, for the reason `get_fence_info` states. */
-    if (!node->as.link.resource || !node->as.link.resource->title.has_value) {
-        return NULL;
-    }
-    return markdown_core_chunk_to_cstr(NODE_MEM(node), &node->as.link.resource->title.value);
-}
-
-int markdown_core_node_set_title(markdown_core_node *node, const char *title) {
-    markdown_core_mem *mem;
-    markdown_core_optional_chunk value = markdown_core_optional_chunk_absent();
-    markdown_core_resource *resource;
-    if (!S_is_link(node)) {
-        return 0;
-    }
-    mem = NODE_MEM(node);
-    /* The value first, the resource second: the swap cannot fail. */
-    if (title != NULL) {
-        if (!markdown_core_chunk_set_cstr(mem, &value.value, title)) {
-            return 0;
-        }
-        value.has_value = true;
-    }
-    resource = S_writable_resource(node);
-    if (!resource) {
-        markdown_core_optional_chunk_free(mem, &value);
-        return 0;
-    }
-    markdown_core_optional_chunk_free(mem, &resource->title);
-    resource->title = value;
-    return 1;
 }
 
 int markdown_core_node_set_extension(markdown_core_node *node, const markdown_core_extension *extension) {
