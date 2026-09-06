@@ -263,12 +263,14 @@ value carries `scope` only.
 The dialect has no parse options. `X0` replaces the public `ParseOptions`
 with an internal harness registry that the conformance runners and oracle
 gates use to run the parser with the CommonMark base layer alone or with the
-GFM layer alone; the registry is exposed by no C facade, binding, or wire
-format, and the CLI reaches it only through the harness `--profile` and `-e`
-shorthands. Each feature item registers its scanner or extension there when
-it lands, so the base and GFM comparisons keep excluding it, and marks its
-feature-table row `present`; a feature is public from the item that lands its
-behavior, with no separate publication step.
+GFM layer alone. The registry is exposed by no C facade, binding, wire
+format, or installed executable: the installed CLI parses the one dialect
+and has no `--profile` or `-e`, and those shorthands move to a harness
+executable that the test tree builds and never installs. Each feature item
+registers its scanner or extension there when it lands, so the base and GFM
+comparisons keep excluding it, and marks its feature-table row `present`; a
+feature is public from the item that lands its behavior, with no separate
+publication step.
 
 ## Stage 0 — groundwork
 
@@ -290,16 +292,18 @@ behavior, with no separate publication step.
       carries this plan: tick it, and the audit's checklist with it, when it
       merges.
 - [ ] **X0 — Remove the option surface and build the harness registry.**
-      Delete `ParseOptions` from the C facade, the CLI's public interface, and
-      the Swift, Kotlin, and ES bindings, so `Document.parse(source)` is the
-      only entry point on every surface; remove smart punctuation from the
-      product parse, the `--smart` mode and its substitutions, so quotation
-      marks, hyphen runs, and periods are stored as written; and delete the
-      `ParseOptions` table of `canonical-ast.md`. Create one internal C-side
-      registry that maps a registered feature name to its engine extension bit
-      or scanner, used only by the conformance runners, the `spec_runner`
-      fixture tags, the CLI `--profile` and `-e` harness shorthands, and the
-      oracle gates, so the cmark gate can run the base layer alone and the
+      Delete `ParseOptions` from the C facade, the installed CLI, and the
+      Swift, Kotlin, and ES bindings, so `Document.parse(source)` is the only
+      entry point on every surface and the installed CLI takes no `--profile`,
+      `-e`, or `--smart`; remove smart punctuation from the product parse, the
+      `--smart` mode and its substitutions, so quotation marks, hyphen runs,
+      and periods are stored as written; and delete the `ParseOptions` table
+      of `canonical-ast.md`. Create one internal C-side registry that maps a
+      registered feature name to its engine extension bit or scanner, used
+      only by the conformance runners, the `spec_runner` fixture tags, the
+      oracle gates, and a harness executable that carries the former
+      `--profile` and `-e` shorthands, is built by the test tree, and is never
+      installed, so the cmark gate can run the base layer alone and the
       cmark-gfm gate the GFM layer alone; make
       `scripts/check-canonical-ast-fixtures.mjs` stop reading option fields
       from the manifest and validate the coverage vocabulary alone, failing on

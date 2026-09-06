@@ -254,7 +254,10 @@ option that is off leaves the inherited grammar byte for byte, and
 `stripHTMLComments` is removed by `M0` because a comment is a `Comment` node
 that nothing strips. The conformance harness keeps an internal, unpublished
 way to run the base or GFM layer alone for the cmark and cmark-gfm oracles;
-no binding, C facade, or fixture format exposes it. Scope tracking is
+no binding, C facade, or installed executable exposes it, and the shared
+canonical manifest names no option, while the package fixtures' fence tags
+are that harness's own layer selection, as
+[`test-architecture.md`](test-architecture.md) states. Scope tracking is
 mandatory and is not an option.
 Renderer-only `unsafe`, `github-pre-lang`, and `full-info-string` options do
 not exist. Raw HTML, URLs, and code info strings are always retained.

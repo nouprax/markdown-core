@@ -119,9 +119,10 @@ loose definitions are two source forms of one feature.
 
 The conformance harness keeps an internal way to run the parser with its
 base layer alone or with the GFM layer alone, so that the cmark and cmark-gfm
-oracles can be compared with the layers they judge; the CLI `--profile` names
-are that harness's shorthands. They define no language, no module refers to
-them, no binding exposes them, and no source-named shorthand is added.
+oracles can be compared with the layers they judge; the `--profile` names are
+the shorthands of a harness executable that is built for the tests and never
+installed. They define no language, no module refers to them, no binding or
+installed executable exposes them, and no source-named shorthand is added.
 
 ## Ground rules
 
