@@ -25,10 +25,6 @@ typedef struct pc_context {
     size_t counts[TS_KIND_COUNT];
 } pc_context;
 
-static const char *const PC_TABLE_ONLY[] = {"table", NULL};
-static const char *const PC_DIRECTIVE_ONLY[] = {"directive", NULL};
-static const char *const PC_FORMULA[] = {"formula", NULL};
-
 /* Builds prefix + unit*count + suffix into context->input. */
 static int pc_build(pc_context *context, const char *prefix, const char *unit, size_t count, const char *suffix) {
     size_t prefix_length = prefix ? strlen(prefix) : 0;
@@ -55,16 +51,8 @@ static int pc_build(pc_context *context, const char *prefix, const char *unit, s
     return 0;
 }
 
-static int pc_parse(pc_context *context, const char *const *option_names) {
-    markdown_core_parse_options options;
-    size_t i;
-    ts_ast_options_none(&options);
-    for (i = 0; option_names && option_names[i]; i++) {
-        if (ts_ast_enable(&options, option_names[i]) != 0) {
-            return -1;
-        }
-    }
-    context->document = ts_ast_parse((const uint8_t *)context->input, context->input_length, &options);
+static int pc_parse(pc_context *context) {
+    context->document = ts_ast_parse((const uint8_t *)context->input, context->input_length);
     if (!context->document) {
         return -1;
     }
@@ -128,7 +116,7 @@ static int case_nested_strong_emph(pc_context *context) {
     }
     free(left);
     free(right);
-    if (result != 0 || pc_parse(context, PC_TABLE_ONLY) != 0) {
+    if (result != 0 || pc_parse(context) != 0) {
         return -1;
     }
     if (pc_expect_count(context, MARKDOWN_CORE_KIND_EMPHASIS, 65000, "Emphasis") != 0 ||
@@ -143,7 +131,7 @@ static int pc_literal_case(pc_context *context, const char *unit, size_t count, 
     if (pc_build(context, NULL, unit, count, NULL) != 0) {
         return -1;
     }
-    if (pc_parse(context, PC_TABLE_ONLY) != 0) {
+    if (pc_parse(context) != 0) {
         return -1;
     }
     if (pc_expect_count(context, forbidden_kind, 0, forbidden_name) != 0) {
@@ -179,7 +167,7 @@ static int case_openers_closers_multiple_of_3(pc_context *context) {
     if (pc_build(context, "a**b", "c* ", 50000, NULL) != 0) {
         return -1;
     }
-    if (pc_parse(context, PC_TABLE_ONLY) != 0) {
+    if (pc_parse(context) != 0) {
         return -1;
     }
     if (pc_expect_count(context, MARKDOWN_CORE_KIND_EMPHASIS, 0, "Emphasis") != 0 ||
@@ -207,7 +195,7 @@ static int case_pattern_image_link(pc_context *context) {
     if (pc_build(context, NULL, "![[]()", 160000, NULL) != 0) {
         return -1;
     }
-    if (pc_parse(context, PC_TABLE_ONLY) != 0) {
+    if (pc_parse(context) != 0) {
         return -1;
     }
     if (pc_expect_count(context, MARKDOWN_CORE_KIND_LINK, 160000, "Link") != 0 ||
@@ -235,7 +223,7 @@ static int case_hard_link_emph(pc_context *context) {
     if (pc_build(context, "**x [a*b**c*](d)", "", 0, NULL) != 0) {
         return -1;
     }
-    if (pc_parse(context, PC_TABLE_ONLY) != 0) {
+    if (pc_parse(context) != 0) {
         return -1;
     }
     if (pc_expect_count(context, MARKDOWN_CORE_KIND_LINK, 1, "Link") != 0 ||
@@ -286,7 +274,7 @@ static int case_nested_brackets(pc_context *context) {
         context->input_length = old_length + 50000;
     }
     free(closers);
-    if (pc_parse(context, PC_TABLE_ONLY) != 0) {
+    if (pc_parse(context) != 0) {
         return -1;
     }
     if (pc_expect_count(context, MARKDOWN_CORE_KIND_LINK, 0, "Link") != 0) {
@@ -299,7 +287,7 @@ static int case_nested_block_quotes(pc_context *context) {
     if (pc_build(context, NULL, "> ", 50000, "a") != 0) {
         return -1;
     }
-    if (pc_parse(context, PC_TABLE_ONLY) != 0) {
+    if (pc_parse(context) != 0) {
         return -1;
     }
     if (pc_expect_count(context, MARKDOWN_CORE_KIND_BLOCK_QUOTE, 50000, "BlockQuote") != 0) {
@@ -333,7 +321,7 @@ static int case_deeply_nested_lists(pc_context *context) {
         *cursor = 0;
         context->input_length = total;
     }
-    if (pc_parse(context, PC_TABLE_ONLY) != 0) {
+    if (pc_parse(context) != 0) {
         return -1;
     }
     if (pc_expect_count(context, MARKDOWN_CORE_KIND_LIST, 1000, "List") != 0 ||
@@ -372,8 +360,7 @@ static int case_empty_lines_in_deeply_nested_lists(pc_context *context) {
     cursor += depth;
     *cursor = 0;
 
-    if (pc_parse(context, PC_TABLE_ONLY) != 0 ||
-        pc_expect_count(context, MARKDOWN_CORE_KIND_LIST, depth, "List") != 0 ||
+    if (pc_parse(context) != 0 || pc_expect_count(context, MARKDOWN_CORE_KIND_LIST, depth, "List") != 0 ||
         pc_expect_count(context, MARKDOWN_CORE_KIND_LIST_ITEM, depth, "ListItem") != 0) {
         return -1;
     }
@@ -404,7 +391,7 @@ static int case_empty_lines_in_deep_list_blockquote(pc_context *context) {
     }
     *cursor = 0;
 
-    if ((size_t)(cursor - context->input) != context->input_length || pc_parse(context, PC_TABLE_ONLY) != 0 ||
+    if ((size_t)(cursor - context->input) != context->input_length || pc_parse(context) != 0 ||
         pc_expect_count(context, MARKDOWN_CORE_KIND_BLOCK_QUOTE, 1, "BlockQuote") != 0 ||
         pc_expect_count(context, MARKDOWN_CORE_KIND_LIST, depth, "List") != 0 ||
         pc_expect_count(context, MARKDOWN_CORE_KIND_LIST_ITEM, depth, "ListItem") != 0) {
@@ -431,8 +418,7 @@ static int case_emphasis_in_deep_blockquote(pc_context *context) {
     }
     *cursor = 0;
 
-    if (pc_parse(context, PC_TABLE_ONLY) != 0 ||
-        pc_expect_count(context, MARKDOWN_CORE_KIND_BLOCK_QUOTE, depth, "BlockQuote") != 0) {
+    if (pc_parse(context) != 0 || pc_expect_count(context, MARKDOWN_CORE_KIND_BLOCK_QUOTE, depth, "BlockQuote") != 0) {
         return -1;
     }
     return 0;
@@ -448,7 +434,7 @@ static int case_nul_in_input(pc_context *context) {
     }
     memcpy(context->input, raw, sizeof(raw));
     context->input_length = sizeof(raw) - 1;
-    if (pc_parse(context, PC_TABLE_ONLY) != 0) {
+    if (pc_parse(context) != 0) {
         return -1;
     }
     return pc_expect_text(context, expected, sizeof(expected) - 1);
@@ -472,7 +458,7 @@ static int case_backticks(pc_context *context) {
     }
     *cursor = 0;
     context->input_length = total;
-    if (pc_parse(context, PC_TABLE_ONLY) != 0) {
+    if (pc_parse(context) != 0) {
         return -1;
     }
     if (pc_expect_count(context, MARKDOWN_CORE_KIND_CODE, 0, "Code") != 0) {
@@ -493,7 +479,7 @@ static int case_unclosed_comment(pc_context *context) {
     if (pc_build(context, "</", "<!--", 300000, NULL) != 0) {
         return -1;
     }
-    if (pc_parse(context, PC_TABLE_ONLY) != 0) {
+    if (pc_parse(context) != 0) {
         return -1;
     }
     return pc_expect_text_is_input(context);
@@ -506,7 +492,7 @@ static int case_tables(pc_context *context) {
     if (pc_build(context, NULL, "aaa\rbbb\n-\x0b\n", 30000, NULL) != 0) {
         return -1;
     }
-    if (pc_parse(context, PC_TABLE_ONLY) != 0) {
+    if (pc_parse(context) != 0) {
         return -1;
     }
     if (pc_expect_count(context, MARKDOWN_CORE_KIND_TABLE, 1, "Table") != 0 ||
@@ -604,7 +590,7 @@ static int case_reference_collisions(pc_context *context) {
         context->input = buffer;
         context->input_length = length;
     }
-    if (pc_parse(context, PC_TABLE_ONLY) != 0) {
+    if (pc_parse(context) != 0) {
         return -1;
     }
     if (pc_expect_count(context, MARKDOWN_CORE_KIND_PARAGRAPH, COLLISIONS - 1, "Paragraph") != 0 ||
@@ -669,7 +655,7 @@ static int case_reference_expansion_bound(pc_context *context) {
     }
     context->input_length = written;
 
-    if (pc_parse(context, NULL) != 0 ||
+    if (pc_parse(context) != 0 ||
         ts_ast_walk(markdown_core_document_root(context->document), pc_reference_payload_visit, &total) != 0) {
         return -1;
     }
@@ -688,7 +674,7 @@ static int pc_directive_literal_case(pc_context *context, const char *unit, size
     if (pc_build(context, NULL, unit, count, NULL) != 0) {
         return -1;
     }
-    if (pc_parse(context, PC_DIRECTIVE_ONLY) != 0) {
+    if (pc_parse(context) != 0) {
         return -1;
     }
     if (pc_expect_count(context, MARKDOWN_CORE_KIND_DIRECTIVE, 0, "Directive") != 0 ||
@@ -711,7 +697,7 @@ static int case_directive_unclosed_labels(pc_context *context) {
     if (pc_build(context, NULL, ":x[", 20000, NULL) != 0) {
         return -1;
     }
-    if (pc_parse(context, PC_DIRECTIVE_ONLY) != 0) {
+    if (pc_parse(context) != 0) {
         return -1;
     }
     if (pc_expect_count(context, MARKDOWN_CORE_KIND_DIRECTIVE, 20000, "Directive") != 0 ||
@@ -740,7 +726,7 @@ static int case_directive_unclosed_attributes(pc_context *context) {
     if (pc_build(context, NULL, ":x{", 20000, NULL) != 0) {
         return -1;
     }
-    if (pc_parse(context, PC_DIRECTIVE_ONLY) != 0) {
+    if (pc_parse(context) != 0) {
         return -1;
     }
     if (pc_expect_count(context, MARKDOWN_CORE_KIND_DIRECTIVE, 20000, "Directive") != 0 ||
@@ -777,7 +763,7 @@ static int case_directive_long_label(pc_context *context) {
     if (pc_build(context, ":long[", "a", 1500, "]") != 0) {
         return -1;
     }
-    if (pc_parse(context, PC_DIRECTIVE_ONLY) != 0) {
+    if (pc_parse(context) != 0) {
         return -1;
     }
     if (pc_expect_count(context, MARKDOWN_CORE_KIND_DIRECTIVE, 1, "Directive") != 0) {
@@ -826,7 +812,7 @@ static int case_directive_long_attributes(pc_context *context) {
     if (pc_build(context, ":long{data-x=\"", "a", 5000, "\"}") != 0) {
         return -1;
     }
-    if (pc_parse(context, PC_DIRECTIVE_ONLY) != 0) {
+    if (pc_parse(context) != 0) {
         return -1;
     }
     if (pc_expect_count(context, MARKDOWN_CORE_KIND_DIRECTIVE, 1, "Directive") != 0) {
@@ -863,7 +849,7 @@ static int pc_formula_case(pc_context *context, const char *prefix, const char *
     if (pc_build(context, prefix, unit, count, suffix) != 0) {
         return -1;
     }
-    if (pc_parse(context, PC_FORMULA) != 0) {
+    if (pc_parse(context) != 0) {
         return -1;
     }
     if (expected_formulas != (size_t)-1 &&
@@ -918,6 +904,20 @@ static int case_formula_backslash_openers(pc_context *context) {
     return pc_formula_case(context, "\\\\(x", " \\\\(x", 19999, NULL, (size_t)-1, NULL);
 }
 
+/* One formula, then closers with nothing left to close: each falls to the base
+ * language as an escaped backslash and a parenthesis, and none is pushed, so
+ * the next closer's look at the stack stays short. */
+static int case_formula_backslash_closers(pc_context *context) {
+    return pc_formula_case(context, "\\\\(x\\\\) ", "\\\\)", 19999, NULL, 1, "x");
+}
+
+/* Twenty thousand formulas in one paragraph: every closer asks whether an
+ * opener waits, and the answer must not depend on how many delimiters the
+ * paragraph has already pushed. */
+static int case_formula_backslash_pairs(pc_context *context) {
+    return pc_formula_case(context, "\\\\(x\\\\)", " \\\\(x\\\\)", 19999, NULL, 20000, "x");
+}
+
 /* Registry ------------------------------------------------------------------ */
 
 typedef struct pc_case_entry {
@@ -960,6 +960,8 @@ static const pc_case_entry PC_CASES[] = {
     {"formula_long_backslash", case_formula_long_backslash},
     {"formula_dollar_backtick_openers", case_formula_dollar_backtick},
     {"formula_backslash_openers", case_formula_backslash_openers},
+    {"formula_backslash_closers", case_formula_backslash_closers},
+    {"formula_backslash_pairs", case_formula_backslash_pairs},
 };
 
 int main(int argc, char **argv) {

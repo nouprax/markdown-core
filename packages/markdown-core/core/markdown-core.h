@@ -535,10 +535,6 @@ markdown_core_node *markdown_core_parse_document(const char *buffer, size_t len,
  */
 #define MARKDOWN_CORE_OPT_NORMALIZE (1 << 8)
 
-/** Convert straight quotes to curly, --- to em dashes, -- to en dashes.
- */
-#define MARKDOWN_CORE_OPT_SMART (1 << 10)
-
 /** Be liberal in interpreting inline HTML tags.
  */
 #define MARKDOWN_CORE_OPT_LIBERAL_HTML_TAG (1 << 12)

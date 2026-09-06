@@ -122,7 +122,7 @@ test("conformance: directive labels preserve missing, empty, and populated state
 
 for (const testCase of canonicalManifest.cases) {
     test(`conformance: shared canonical AST case ${testCase.name}`, async () => {
-        const document = Document.parse(testCase.source, testCase.parseOptions);
+        const document = Document.parse(testCase.source);
         assert.equal(TreeDumper.dump(document), testCase.expected, testCase.name);
         assert.equal(document.dump(), testCase.expected, testCase.name);
     });

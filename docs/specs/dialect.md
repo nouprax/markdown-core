@@ -108,21 +108,24 @@ that makes the row `present`.
 | multiline tables                    | [tables](dialect/tables.md)                                       | Pandoc                                 | Pandoc                               | missing, `P11c`                 |
 | grid tables                         | [tables](dialect/tables.md)                                       | Pandoc                                 | Pandoc                               | missing, `P11d`                 |
 
-The current parser still publishes `ParseOptions` switches for the eight
-features it implements as cmark and cmark-gfm extensions and for smart
-punctuation; `X0` removes every switch and smart punctuation itself, so that
-every surface parses one language. `stripHTMLComments` is removed by `M0` and
-has no successor; nothing in the dialect strips anything. Pandoc's `startnum`
-has no counterpart: a list's start number is always the value of its first
-marker. Pandoc's `compact_definition_lists` has no counterpart: compact and
-loose definitions are two source forms of one feature.
+The parser publishes no switch: `Document.parse(source)` is the one entry
+point on every surface, and smart punctuation is not part of the language,
+so quotation marks, hyphen runs, and periods are stored as written. HTML
+comments are still stripped from the tree until `M0` lands `Comment`; from
+then on nothing in the dialect strips anything. Pandoc's `startnum` has no
+counterpart: a list's start number is always the value of its first marker.
+Pandoc's `compact_definition_lists` has no counterpart: compact and loose
+definitions are two source forms of one feature.
 
-The conformance harness keeps an internal way to run the parser with its
-base layer alone or with the GFM layer alone, so that the cmark and cmark-gfm
-oracles can be compared with the layers they judge; the `--profile` names are
-the shorthands of a harness executable that is built for the tests and never
-installed. They define no language, no module refers to them, no binding or
-installed executable exposes them, and no source-named shorthand is added.
+There is no internal layer selection either. The parser attaches every
+extension on every parse; the package fixtures, the oracle gates, and the
+position audits parse the one language through the same entry a consumer
+uses; and an oracle's authority is a matter of which inputs it judges, never
+of how they are parsed. Where the dialect deliberately leaves an oracle's
+language, `specs/oracles/` registers the difference against the exact inputs
+or as a projection the comparison applies, and where the engine has not
+caught up with the dialect's own rules, the oracle's backlog names the item
+that closes the gap.
 
 ## Ground rules
 
@@ -181,7 +184,7 @@ landing plan's items `M0` through `M7` and by those reserved encodings.
 
 Every example runs the whole dialect, so the fence line carries no tags and
 there is nothing to configure. Examples are numbered by position within their
-module, first to last, and a harness reports an example as its module and
+module, first to last, and a runner reports an example as its module and
 number.
 
 Every example is normative. The item that lands a module's behavior adds the

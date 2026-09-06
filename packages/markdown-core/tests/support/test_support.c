@@ -101,7 +101,7 @@ static const char TS_EXAMPLE_FENCE[] = "````````````````````````````````"; /* 32
 
 static int ts_case_push_extension(ts_spec_case *test_case, const char *name, size_t length) {
     char *copy;
-    if (test_case->extension_count >= TS_MAX_EXTENSIONS) {
+    if (test_case->tag_count >= TS_MAX_TAGS) {
         return -1;
     }
     copy = (char *)malloc(length + 1);
@@ -110,7 +110,7 @@ static int ts_case_push_extension(ts_spec_case *test_case, const char *name, siz
     }
     memcpy(copy, name, length);
     copy[length] = 0;
-    test_case->extensions[test_case->extension_count++] = copy;
+    test_case->tags[test_case->tag_count++] = copy;
     return 0;
 }
 
@@ -119,8 +119,8 @@ static void ts_case_free(ts_spec_case *test_case) {
     free(test_case->markdown);
     free(test_case->expected);
     free(test_case->section);
-    for (i = 0; i < test_case->extension_count; i++) {
-        free(test_case->extensions[i]);
+    for (i = 0; i < test_case->tag_count; i++) {
+        free(test_case->tags[i]);
     }
 }
 
@@ -299,38 +299,11 @@ void ts_spec_free(ts_spec_file *file) {
     file->count = 0;
 }
 
-/* Facade parsing ----------------------------------------------------------- */
+/* Traversal ------------------------------------------------------------------ */
 
-void ts_ast_options_none(markdown_core_parse_options *options) { memset(options, 0, sizeof(*options)); }
-
-int ts_ast_enable(markdown_core_parse_options *options, const char *name) {
-    if (strcmp(name, "smart") == 0) {
-        options->smart_punctuation = true;
-    } else if (strcmp(name, "footnotes") == 0) {
-        options->footnotes = true;
-    } else if (strcmp(name, "strip-html-comments") == 0) {
-        options->strip_html_comments = true;
-    } else if (strcmp(name, "table") == 0 || strcmp(name, "tables") == 0) {
-        options->tables = true;
-    } else if (strcmp(name, "strikethrough") == 0) {
-        options->strikethrough = true;
-    } else if (strcmp(name, "autolink") == 0 || strcmp(name, "autolinks") == 0) {
-        options->autolinks = true;
-    } else if (strcmp(name, "tasklist") == 0 || strcmp(name, "task-lists") == 0) {
-        options->task_lists = true;
-    } else if (strcmp(name, "formula") == 0 || strcmp(name, "formulas") == 0) {
-        options->formulas = true;
-    } else if (strcmp(name, "directive") == 0 || strcmp(name, "directives") == 0) {
-        options->directives = true;
-    } else {
-        return -1;
-    }
-    return 0;
-}
-
-markdown_core_document *ts_ast_parse(const uint8_t *bytes, size_t length, const markdown_core_parse_options *options) {
+markdown_core_document *ts_ast_parse(const uint8_t *bytes, size_t length) {
     markdown_core_error *error = NULL;
-    markdown_core_document *document = markdown_core_document_parse(bytes, length, options, &error);
+    markdown_core_document *document = markdown_core_document_parse(bytes, length, &error);
     if (!document) {
         markdown_core_string message = error ? markdown_core_error_get_message(error) : (markdown_core_string){NULL, 0};
         fprintf(stderr, "facade parse failed: ");
@@ -343,8 +316,6 @@ markdown_core_document *ts_ast_parse(const uint8_t *bytes, size_t length, const 
     }
     return document;
 }
-
-/* Traversal ------------------------------------------------------------------ */
 
 int ts_ast_walk(const markdown_core_node *root, ts_ast_visit_fn visit, void *context) {
     const markdown_core_node **stack;

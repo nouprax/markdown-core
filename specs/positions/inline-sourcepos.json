@@ -2,9 +2,8 @@
     "schemaVersion": 1,
     "script": "scripts/audit-inline-sourcepos.mjs",
     "subject": "Every inline Code and HTML node's position, compared with cmark 0.31.2's own --sourcepos over its pinned CommonMark specification.",
-    "purpose": "Thirty-nine reviewed differences over 38 cmark 0.31.2 specification inputs: 33 code spans whose Markdown Core scope includes the creating backticks while cmark reports the content extent, and 6 raw-HTML nodes whose Markdown Core scope includes the closing byte that cmark leaves outside. This ledger is a fail-closed registry of a deliberate AST representation difference, not a defect budget. A new row, a removed row, or a changed coordinate requires review.",
+    "purpose": "Thirty-eight reviewed differences over 37 cmark 0.31.2 specification inputs: 33 code spans whose Markdown Core scope includes the creating backticks while cmark reports the content extent, and 5 raw-HTML nodes whose Markdown Core scope includes the closing byte that cmark leaves outside. HTML comments are outside the comparison until `M0` lands `Comment`: the dialect strips them, and the parity gate's `html-comment-stripping` projection drops them from cmark's tree before the two sides are paired. This ledger is a fail-closed registry of a deliberate AST representation difference, not a defect budget. A new row, a removed row, or a changed coordinate requires review.",
     "corpus": ".tools/cmark/0.31.2/test/spec.txt",
-    "profile": "commonmark",
     "expected": [
         {
             "source": ".tools/cmark/0.31.2/test/spec.txt:555",
@@ -471,20 +470,6 @@
                     "kind": "HTML",
                     "ours": "1:1..2:27",
                     "upstream": "1:1..2:26",
-                    "class": "raw-html-loses-its-closing-byte",
-                    "closedBy": "closed at Step 8.1 -- this side is right and upstream is not; the row records the disagreement"
-                }
-            ]
-        },
-        {
-            "source": ".tools/cmark/0.31.2/test/spec.txt:9134",
-            "input": "foo <!-- this is a --\ncomment - with hyphens -->\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.1",
-                    "kind": "HTML",
-                    "ours": "1:5..2:26",
-                    "upstream": "1:5..2:25",
                     "class": "raw-html-loses-its-closing-byte",
                     "closedBy": "closed at Step 8.1 -- this side is right and upstream is not; the row records the disagreement"
                 }

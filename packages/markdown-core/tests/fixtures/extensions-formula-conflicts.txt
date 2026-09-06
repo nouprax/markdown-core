@@ -78,6 +78,34 @@ Document scope=1:1..3:3 children=1
 └── CodeBlock scope=1:1..3:3 info="js" language="js" literal="$x$\n" fenced=true closed=true children=0
 ````````````````````````````````
 
+A backslash closer with nothing to close is not a formula delimiter. The base
+language keeps its escaped backslash, so a bracket that follows one still
+closes a reference (CommonMark 0.31.2 example 558).
+
+```````````````````````````````` example
+[bar\\]: /uri
+
+[bar\\] and \\) alone.
+.
+Document scope=1:1..3:22 children=2
+├── ReferenceDefinition scope=1:1..1:13 label="bar\\\\" identifier="bar\\\\" destination="/uri" title=null children=0
+└── Paragraph scope=3:1..3:22 children=2
+    ├── LinkReference scope=3:1..3:7 label="bar\\\\" identifier="bar\\\\" form=shortcut children=1
+    │   └── Text scope=3:2..3:6 literal="bar\\" children=0
+    └── Text scope=3:8..3:22 literal=" and \\) alone." children=0
+````````````````````````````````
+
+A closer whose opener an earlier closer already took is the same case.
+
+```````````````````````````````` example
+\\(x\\) and \\) again.
+.
+Document scope=1:1..1:22 children=1
+└── Paragraph scope=1:1..1:22 children=2
+    ├── Formula scope=1:1..1:7 mode=embedded literal="x" children=0
+    └── Text scope=1:8..1:22 literal=" and \\) again." children=0
+````````````````````````````````
+
 Code spans also bind before LaTeX backslash delimiters.
 
 ```````````````````````````````` example

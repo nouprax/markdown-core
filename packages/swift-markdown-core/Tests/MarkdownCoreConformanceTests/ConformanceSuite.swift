@@ -63,7 +63,7 @@ import Testing
         #expect(!manifest.cases.isEmpty)
 
         for testCase in manifest.cases {
-            let document = try Document.parse(testCase.source, options: testCase.parseOptions.value)
+            let document = try Document.parse(testCase.source)
             #expect(TreeDumper.dump(document) == testCase.expected, Comment(rawValue: testCase.name))
             #expect(document.dump() == testCase.expected, Comment(rawValue: testCase.name))
         }
@@ -79,33 +79,6 @@ private struct CanonicalCase: Decodable {
     let name: String
     let source: String
     let expected: String
-    let parseOptions: CanonicalParseOptions
-}
-
-private struct CanonicalParseOptions: Decodable {
-    let smartPunctuation: Bool
-    let footnotes: Bool
-    let stripHTMLComments: Bool
-    let tables: Bool
-    let strikethrough: Bool
-    let autolinks: Bool
-    let taskLists: Bool
-    let formulas: Bool
-    let directives: Bool
-
-    var value: ParseOptions {
-        ParseOptions(
-            smartPunctuation: smartPunctuation,
-            footnotes: footnotes,
-            stripHTMLComments: stripHTMLComments,
-            tables: tables,
-            strikethrough: strikethrough,
-            autolinks: autolinks,
-            taskLists: taskLists,
-            formulas: formulas,
-            directives: directives
-        )
-    }
 }
 
 private func dumpKinds(_ dump: String) -> [String] {

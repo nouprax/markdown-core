@@ -51,7 +51,7 @@ const update = process.argv.includes("--update");
 const verbose = process.argv.includes("--verbose");
 
 const ours = requireBinary(root, "build/cmake/packages/markdown-core/core/markdown-core", "pnpm build:c");
-const parse = (input) => parseCanonicalDump(runBinary(ours, ["--profile", ledger.profile], input));
+const parse = (input) => parseCanonicalDump(runBinary(ours, [], input));
 // A reference RESOLVED is a `LinkReference` naming that identifier; a reference
 // that did not is prose, brackets intact. Neither is stated by a destination
 // any more: the node carries none.

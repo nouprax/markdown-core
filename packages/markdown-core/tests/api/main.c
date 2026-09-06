@@ -14,6 +14,8 @@
 
 #include <markdown_core.h>
 
+#include "ast_internal.h"
+
 #include "harness.h"
 #include "cplusplus.h"
 
@@ -1082,17 +1084,14 @@ static void test_pathological_regressions(test_batch_runner *runner) {
 /* Parses through the read-only facade and compares the canonical AST dump,
  * which carries every node's scope, byte-for-byte.  This replaces the
  * retired sourcepos XML renderer assertions. */
-static void test_facade_dump(test_batch_runner *runner, const char *markdown, int autolinks, const char *expected_dump,
+static void test_facade_dump(test_batch_runner *runner, const char *markdown, const char *expected_dump,
                              const char *msg) {
-    markdown_core_parse_options options;
     markdown_core_error *error = NULL;
     markdown_core_document *document;
     uint8_t *dump = NULL;
     size_t dump_length = 0;
 
-    memset(&options, 0, sizeof(options)); /* pure CommonMark; no smart punctuation */
-    options.autolinks = autolinks != 0;
-    document = markdown_core_document_parse((const uint8_t *)markdown, strlen(markdown), &options, &error);
+    document = markdown_core_document_parse((const uint8_t *)markdown, strlen(markdown), &error);
     if (!document) {
         OK(runner, 0, "%s (facade parse succeeds)", msg);
         markdown_core_error_free(error);
@@ -1430,7 +1429,7 @@ static void source_pos(test_batch_runner *runner) {
                                    "> 2. Yes, okay.\n"
                                    ">    ![ok](hi \"yes\")\n";
 
-    test_facade_dump(runner, markdown, 0,
+    test_facade_dump(runner, markdown,
                      "Document scope=1:1..10:20 children=3\n"
                      "├── Heading scope=1:1..1:13 level=1 children=3\n"
                      "│   ├── Text scope=1:3..1:5 literal=\"Hi \" children=0\n"
@@ -1472,7 +1471,6 @@ static void source_pos_inlines(test_batch_runner *runner) {
     test_facade_dump(runner,
                      "*first*\n"
                      "second\n",
-                     0,
                      "Document scope=1:1..2:6 children=1\n"
                      "└── Paragraph scope=1:1..2:6 children=3\n"
                      "    ├── Emphasis scope=1:1..1:7 children=1\n"
@@ -1483,7 +1481,6 @@ static void source_pos_inlines(test_batch_runner *runner) {
     test_facade_dump(runner,
                      "*first\n"
                      "second*\n",
-                     0,
                      "Document scope=1:1..2:7 children=1\n"
                      "└── Paragraph scope=1:1..2:7 children=1\n"
                      "    └── Emphasis scope=1:1..2:7 children=3\n"
@@ -1511,7 +1508,6 @@ static void association_accessor(test_batch_runner *runner) {
                                    "[ref]: /r\n"
                                    "\n"
                                    "[^n]: note\n";
-    markdown_core_parse_options options;
     markdown_core_document *document;
     const markdown_core_node *root;
     const markdown_core_node *node;
@@ -1527,9 +1523,7 @@ static void association_accessor(test_batch_runner *runner) {
         MARKDOWN_CORE_KIND_FOOTNOTE_DEFINITION, MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE};
     unsigned int found = 0;
 
-    memset(&options, 0, sizeof(options));
-    options.footnotes = true;
-    document = markdown_core_document_parse((const uint8_t *)markdown, strlen(markdown), &options, NULL);
+    document = markdown_core_document_parse((const uint8_t *)markdown, strlen(markdown), NULL);
     if (!document) {
         OK(runner, 0, "association corpus parses");
         return;
@@ -1582,7 +1576,7 @@ static void ref_source_pos(test_batch_runner *runner) {
                                    "\n"
                                    "[reference]: https://github.com (GitHub)\n";
 
-    test_facade_dump(runner, markdown, 0,
+    test_facade_dump(runner, markdown,
                      "Document scope=1:1..3:40 children=2\n"
                      "├── Paragraph scope=1:1..1:28 children=3\n"
                      "│   ├── Text scope=1:1..1:10 literal=\"Let's try \" children=0\n"
@@ -1596,7 +1590,7 @@ static void ref_source_pos(test_batch_runner *runner) {
 }
 
 static void autolink_source_pos(test_batch_runner *runner) {
-    test_facade_dump(runner, "See www.example.com.\n", 1,
+    test_facade_dump(runner, "See www.example.com.\n",
                      "Document scope=1:1..1:20 children=1\n"
                      "└── Paragraph scope=1:1..1:20 children=3\n"
                      "    ├── Text scope=1:1..1:4 literal=\"See \" children=0\n"
@@ -1605,7 +1599,7 @@ static void autolink_source_pos(test_batch_runner *runner) {
                      "    │   └── Text scope=1:5..1:19 literal=\"www.example.com\" children=0\n"
                      "    └── Text scope=1:20..1:20 literal=\".\" children=0\n",
                      "www autolink scopes are as expected");
-    test_facade_dump(runner, "See http://example.com.\n", 1,
+    test_facade_dump(runner, "See http://example.com.\n",
                      "Document scope=1:1..1:23 children=1\n"
                      "└── Paragraph scope=1:1..1:23 children=3\n"
                      "    ├── Text scope=1:1..1:4 literal=\"See \" children=0\n"
@@ -1620,14 +1614,14 @@ static void autolink_source_pos(test_batch_runner *runner) {
      * it had two children when it had one thing in it. 0a.14 removes the node;
      * unpinning the assertion is the fix, the same shape as D10's
      * `regression.txt` example 24 at 0a.2. */
-    test_facade_dump(runner, "http://example.com\n", 1,
+    test_facade_dump(runner, "http://example.com\n",
                      "Document scope=1:1..1:18 children=1\n"
                      "└── Paragraph scope=1:1..1:18 children=1\n"
                      "    └── Link scope=1:1..1:18 destination=\"http://example.com\" title=null "
                      "children=1\n"
                      "        └── Text scope=1:1..1:18 literal=\"http://example.com\" children=0\n",
                      "scheme autolink at column one scopes are as expected");
-    test_facade_dump(runner, "Mail user@example.com now.\n", 1,
+    test_facade_dump(runner, "Mail user@example.com now.\n",
                      "Document scope=1:1..1:26 children=1\n"
                      "└── Paragraph scope=1:1..1:26 children=3\n"
                      "    ├── Text scope=1:1..1:5 literal=\"Mail \" children=0\n"

@@ -10,6 +10,23 @@ Reconstruct the cmark-derived engine as the renamed, parser-only Markdown Core
 product. This line adds the repository parser extensions and immutable AST
 facade while removing renderer support and the caller-driven feed lifecycle.
 
+- Remove the parse option surface: `Document.parse(source)` is the only entry
+  point on every surface, the C facade's `markdown_core_parse_options` and
+  `markdown_core_parse_options_init` are gone, and the Swift, Kotlin, and
+  ECMAScript `ParseOptions` types with them. Every feature of the Markdown
+  Core dialect is always recognized. Smart punctuation is removed with the
+  options: quotation marks, hyphen runs, and periods are stored as written.
+  The installed `markdown-core` CLI takes no `--profile`, `-e`, or `--smart`,
+  and the test tree keeps no layer selection either: every fixture, oracle
+  gate, and audit parses the one language, and each place the dialect
+  deliberately leaves an oracle's language is registered against its exact
+  inputs. Running the shipped language through the gates also showed that a
+  `\\]` or `\\)` with nothing to close swallowed the bracket after it, so
+  `[bar\\]` stopped being a reference, and that the text directive claimed
+  the colon of `mailto:x@y.z` before the autolink pass ran. The formula
+  scanner now leaves an unopened closer to the base language, and the
+  autolink scanner claims a colon that an address follows, as cmark-gfm
+  links it.
 - Raise the Swift package contract to Swift tools 6.3 and iOS 26/macOS 26,
   refresh Gradle, AGP, Kotlin, Node.js, pnpm, Emscripten, and SwiftLint
   pins, and audit every duplicated toolchain declaration for exact agreement.

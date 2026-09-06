@@ -10,11 +10,11 @@
     "claim": "For CommonMark syntax, Markdown Core tracks the newest stable cmark reference release. cmark-gfm has no authority in this scope. Deliberate AST-model differences and reviewed upstream defects are the only registered deltas.",
     "deltas": [
         {
-            "id": "own-extensions",
-            "kind": "excluded-from-comparison",
-            "summary": "Every parser extension, including the GFM set, is disabled on Markdown Core's side.",
-            "handling": "The comparison uses the harness's `commonmark` profile, which runs the base layer alone; the profile is harness-internal layer selection, not a product option.",
-            "evidence": "packages/markdown-core/core/main.c, --profile commonmark"
+            "id": "html-comment-stripping",
+            "kind": "deliberate-difference",
+            "summary": "Until `M0` lands `Comment`, Markdown Core strips every HTML comment from the tree: an `HTML` or `HTMLBlock` whose literal begins with `<!--`. Upstream keeps them as html nodes.",
+            "handling": "The shared normalizer drops those nodes from upstream's tree, which is the rule the engine applies on its own side, and records that the projection acted. A model difference, so a projection rather than a list of inputs; `M0` replaces it with the `Comment` mapping.",
+            "projected": true
         },
         {
             "id": "refdef-title-rewind",
@@ -22,6 +22,13 @@
             "summary": "cmark keeps a scanned title in its reference map after the definition parser rewinds it into paragraph text. Markdown Core drops the title so the map agrees with the accepted definition.",
             "rationale": "The pinned CommonMark specification says the example is a link reference definition with no title, and remark/micromark independently resolves it without one.",
             "handling": "Keyed to the exact specification regression input; erasing all titles would hide real title-resolution defects."
+        },
+        {
+            "id": "text-directive",
+            "kind": "deliberate-difference",
+            "summary": "The dialect's text directive claims a colon-led name, `:abc`, wherever the directives module admits one; CommonMark leaves the bytes as text.",
+            "rationale": "The dialect index lists directives as a feature of the one language, judged by remark (`pnpm check:mdast-parity`), and remark-directive parses the same input to the same text directive.",
+            "handling": "Keyed to the exact specification input."
         },
         {
             "id": "empty-text-node",
@@ -39,6 +46,36 @@
     ],
     "expectedDivergences": [
         {
+            "id": "gfm-autolink-literal",
+            "input": "<https://foo.bar/baz bim>\n",
+            "note": ".tools/cmark/0.31.2/test/spec.txt:8845: cmark keeps the text; the dialect links the URL or address inside it, as cmark-gfm does."
+        },
+        {
+            "id": "gfm-autolink-literal",
+            "input": "<foo\\+@bar.example.com>\n",
+            "note": ".tools/cmark/0.31.2/test/spec.txt:8892: cmark keeps the text; the dialect links the URL or address inside it, as cmark-gfm does."
+        },
+        {
+            "id": "gfm-autolink-literal",
+            "input": "< https://foo.bar >\n",
+            "note": ".tools/cmark/0.31.2/test/spec.txt:8908: cmark keeps the text; the dialect links the URL or address inside it, as cmark-gfm does."
+        },
+        {
+            "id": "gfm-autolink-literal",
+            "input": "https://example.com\n",
+            "note": ".tools/cmark/0.31.2/test/spec.txt:8929: cmark keeps the text; the dialect links the URL or address inside it, as cmark-gfm does."
+        },
+        {
+            "id": "gfm-autolink-literal",
+            "input": "foo@bar.example.com\n",
+            "note": ".tools/cmark/0.31.2/test/spec.txt:8936: cmark keeps the text; the dialect links the URL or address inside it, as cmark-gfm does."
+        },
+        {
+            "id": "text-directive",
+            "input": "<m:abc>\n",
+            "note": ".tools/cmark/0.31.2/test/spec.txt:8915: `m` is one letter, so no angle-bracket autolink forms and `:abc` is a text directive; remark-directive agrees."
+        },
+        {
             "id": "refdef-title-rewind",
             "input": "[foo]: /url\n\"title\" ok\n\n[foo]\n",
             "note": "cmark resolves the final reference with title=\"title\" even though the title candidate was rewound into paragraph text; Markdown Core and micromark resolve it with no title."
@@ -48,30 +85,19 @@
     "corpus": [
         {
             "file": ".tools/cmark/0.31.2/test/spec.txt",
-            "profile": "commonmark",
             "note": "The corpus comes from the same immutable cmark commit as the reference binary."
         },
         {
             "file": "packages/markdown-core/tests/fixtures/regression.txt",
-            "profile": "commonmark",
             "selection": "untagged",
             "note": "Only regressions with no extension tag belong to the CommonMark language."
         },
-        "packages/markdown-core/tests/fixtures/extensions-directive.txt",
-        "packages/markdown-core/tests/fixtures/extensions-directive-option-gates.txt",
-        "packages/markdown-core/tests/fixtures/extensions-conflicts.txt",
-        "packages/markdown-core/tests/fixtures/extensions-formula-github.txt",
-        "packages/markdown-core/tests/fixtures/extensions-formula-latex.txt",
-        "packages/markdown-core/tests/fixtures/extensions-formula-conflicts.txt",
-        "packages/markdown-core/tests/fixtures/extensions-formula-option-gates.txt",
         {
-            "file": "packages/markdown-core/tests/fixtures/smart_punct.txt",
-            "profile": "commonmark-smart",
-            "upstreamFlags": ["--smart"],
-            "note": "Smart punctuation is a cmark option over the CommonMark parser, not a GFM extension; the dialect has no smart punctuation, and `X0` retires this comparison together with the product substitutions."
+            "file": "packages/markdown-core/tests/fixtures/punctuation.txt",
+            "note": "The inputs of cmark's smart_punct.txt, compared without `--smart` on either side: the dialect has no smart punctuation, so quotation marks, hyphen runs, and periods are stored as written and the two parsers agree byte for byte."
         }
     ],
-    "corpusNote": "cmark is the sole primary implementation oracle for CommonMark syntax and its own pinned 0.31.2 spec is compared in full. Product-extension fixtures are also parsed with every extension off to prove that opting out returns to CommonMark rather than to a GFM-dependent fallback.",
+    "corpusNote": "cmark is the sole primary implementation oracle for CommonMark syntax and its own pinned 0.31.2 spec is compared in full. Both sides parse every input as their whole language: the dialect has no switches, so this gate judges what ships, and every place the dialect deliberately leaves CommonMark is registered above as a projection or keyed to its exact inputs. The product's extension fixtures are not in this corpus; their syntax is judged by cmark-gfm, remark, and the product fixtures themselves.",
     "pendingDeltas": [],
     "pendingExpectedDivergences": []
 }

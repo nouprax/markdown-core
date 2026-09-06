@@ -136,10 +136,8 @@ typedef struct subject markdown_core_inline_parser;
 typedef enum {
     MARKDOWN_CORE_DELIM_RULE_NONE = 0,
     /* Core. */
-    MARKDOWN_CORE_DELIM_RULE_EMPHASIS,     /* `*` */
-    MARKDOWN_CORE_DELIM_RULE_UNDERSCORE,   /* `_` */
-    MARKDOWN_CORE_DELIM_RULE_SINGLE_QUOTE, /* `'`, smart punctuation only */
-    MARKDOWN_CORE_DELIM_RULE_DOUBLE_QUOTE, /* `"`, smart punctuation only */
+    MARKDOWN_CORE_DELIM_RULE_EMPHASIS,   /* `*` */
+    MARKDOWN_CORE_DELIM_RULE_UNDERSCORE, /* `_` */
     /* Extensions. One entry per rule, not per extension and not per byte. */
     MARKDOWN_CORE_DELIM_RULE_STRIKETHROUGH,
     MARKDOWN_CORE_DELIM_RULE_FORMULA_DOLLAR_INLINE,
@@ -572,6 +570,19 @@ void markdown_core_inline_parser_remove_delimiter(markdown_core_inline_parser *p
 
 MARKDOWN_CORE_EXPORT
 delimiter *markdown_core_inline_parser_get_last_delimiter(markdown_core_inline_parser *parser);
+
+/** Whether the delimiters of `rule` on the stack that can open outnumber
+ * those that can close. The counts are kept at every push and removal, so the
+ * answer costs the same however deep the stack is. For a rule whose closers
+ * are pushed only when this answers yes, that is exactly whether an opener is
+ * still unmatched: an extension whose closers may not stand alone -- a
+ * formula's `\\)` is CommonMark's escaped backslash and a parenthesis unless
+ * something opened it -- asks here before pushing one, so a closer that would
+ * never pair stays with the base language.
+ */
+MARKDOWN_CORE_EXPORT
+int markdown_core_inline_parser_has_unmatched_opener(markdown_core_inline_parser *parser,
+                                                     markdown_core_delimiter_rule rule);
 
 MARKDOWN_CORE_EXPORT
 int markdown_core_inline_parser_get_line(markdown_core_inline_parser *parser);

@@ -10,6 +10,13 @@
     "claim": "With Markdown Core's product extensions disabled, GFM extension constructs match cmark-gfm 0.29.0.gfm.13 except for the reviewed deltas below. cmark-gfm has no authority over the underlying CommonMark layer.",
     "deltas": [
         {
+            "id": "html-comment-stripping",
+            "kind": "deliberate-difference",
+            "summary": "Until `M0` lands `Comment`, Markdown Core strips every HTML comment from the tree: an `HTML` or `HTMLBlock` whose literal begins with `<!--`. Upstream keeps them as html nodes.",
+            "handling": "The shared normalizer drops those nodes from upstream's tree, which is the rule the engine applies on its own side, and records that the projection acted. A model difference, so a projection rather than a list of inputs; `M0` replaces it with the `Comment` mapping.",
+            "projected": true
+        },
+        {
             "id": "footnote-resolution-model",
             "kind": "deliberate-difference",
             "summary": "cmark-gfm removes unreferenced footnote definitions. Markdown Core keeps every definition at its source location.",
@@ -67,6 +74,13 @@
             "summary": "cmark-gfm consumes reference definitions into a map. Markdown Core retains source-faithful ReferenceDefinition and reference nodes.",
             "handling": "The normalizer projects Markdown Core's representation into the upstream resolved model while still comparing which definition, destination, title, and children were selected.",
             "projected": true
+        },
+        {
+            "id": "text-directive",
+            "kind": "deliberate-difference",
+            "summary": "The dialect's text directive claims a colon-led name, `:abc`, wherever the directives module admits one; CommonMark leaves the bytes as text.",
+            "rationale": "The dialect index lists directives as a feature of the one language, judged by remark (`pnpm check:mdast-parity`), and remark-directive parses the same input to the same text directive.",
+            "handling": "Keyed to the exact specification input."
         }
     ],
     "expectedDivergences": [
@@ -114,29 +128,34 @@
             "id": "table-split-lead-spelling",
             "input": "pre \\\\| lead\n| a | b |\n| - | - |\n",
             "note": "The non-table lead is parsed once, so an escaped backslash remains distinct from a pipe escape."
+        },
+        {
+            "id": "text-directive",
+            "input": "[foo:_x_@y.z](u) and [mailto:x@y.z](u)\n\nEmail me at:x@y.z or mailto:x@y.z, not word:name@nodot.\n",
+            "note": "`word:name@nodot` has no address after its colon, so the dialect's text directive claims `:name`; cmark-gfm has no directives and keeps the text. The two links and the emphasis inside the link agree."
         }
     ],
     "notDeltas": [],
     "corpus": [
         {
             "file": "packages/markdown-core/tests/fixtures/spec.txt",
-            "profile": "gfm",
             "selection": "gfm-extension-sections",
             "note": "Only headings explicitly marked `(extension)` are in cmark-gfm's authority scope."
         },
         {
             "file": "packages/markdown-core/tests/fixtures/regression.txt",
-            "profile": "gfm",
             "selection": "tagged",
             "note": "Only regressions tagged with one or more GFM extensions are selected."
         },
         {
             "file": "packages/markdown-core/tests/fixtures/extensions.txt",
-            "profile": "gfm",
             "note": "Repository-owned tests for table, strikethrough, autolink, task-list, and footnote extensions."
         }
     ],
     "corpusNote": "This gate intentionally does not compare unextended CommonMark examples. Markdown Core runs the `gfm` profile, which attaches the cmark-gfm extension set but leaves product directive and formula syntax disabled. CommonMark is checked separately against current cmark.",
     "pendingDeltas": [],
-    "pendingExpectedDivergences": []
+    "pendingExpectedDivergences": [],
+    "backlog": [],
+    "retiredBacklog": [],
+    "backlogNote": "An entry here says cmark-gfm is right and this engine has not caught up yet. Each names the item that closes it and must still diverge until then; the commit that lands the fix deletes the entry, and `retiredBacklog` records only an entry whose input left the corpus without ever agreeing. scripts/check-upstream-parity.mjs enforces every direction."
 }

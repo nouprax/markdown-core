@@ -8,9 +8,10 @@ public class Document internal constructor(
     override fun <Result> accept(visitor: Visitor<Result>): Result = visitor.visitDocument(this)
 
     public companion object {
-        public fun parse(
-            source: String,
-            options: ParseOptions = ParseOptions(),
-        ): Document = parsePlatformDocument(source.encodeToByteArray(), options)
+        /**
+         * Parses [source] as the one Markdown Core dialect. There is nothing to
+         * configure: every feature is recognized on every call.
+         */
+        public fun parse(source: String): Document = parsePlatformDocument(source.encodeToByteArray())
     }
 }

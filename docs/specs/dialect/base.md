@@ -3,10 +3,10 @@
 Status: normative module of the [Markdown Core dialect](../dialect.md). This
 module states what the dialect inherits and the few rules the inherited layer
 leaves to the implementation. Source: the CommonMark specification 0.31.2.
-Executable oracle: cmark 0.31.2 under `specs/oracles/cmark/`, which the
-harness compares with the parser's base layer alone. Landing: present; the
+Executable oracle: cmark 0.31.2 under `specs/oracles/cmark/`, compared with
+the one language over cmark's own specification inputs. Landing: present; the
 HTML-comment rule lands with `M0`, the resolved-reference model with `M1` and
-`M2`, `Callout` with `M3`, and the removal of smart punctuation with `X0`. The
+`M2`, and `Callout` with `M3`; smart punctuation was removed by `X0`. The
 [example format](../dialect.md#examples) is defined by the index.
 
 ## The inherited layer
@@ -33,11 +33,13 @@ the GFM specification text is not a second authority over it.
 "Inherited" in every module means the output of this layer: the CommonMark
 parse of the source, which is the meaning of every byte that no feature
 claims. The dialect has no options, so no source ever parses with a feature
-off; the conformance harness runs the parser with its base layer alone only
-to compare it with the cmark oracle, and that mode is not a language.
+off, and no gate does either: the cmark oracle is compared with the one
+language over the inputs it judges, and each place the dialect leaves
+CommonMark is registered against those inputs in `specs/oracles/cmark/`.
 
-The CLI flags `--liberal-html-tag` and `--strikethrough-double-tilde` are
-harness flags with no dialect meaning; the second is removed by `P6`.
+The engine's `MARKDOWN_CORE_OPT_LIBERAL_HTML_TAG` and
+`MARKDOWN_CORE_OPT_STRIKETHROUGH_DOUBLE_TILDE` bits are set by nothing and
+have no dialect meaning; the second is removed by `P6`.
 
 ## Kinds of the base language
 
@@ -332,9 +334,9 @@ inline; block starts are decided before inline recognition.
 
 There is no smart punctuation. Quotation marks, hyphen runs, and periods are
 stored as written, and typographic replacement is consumer policy, as every
-other rendering choice is. cmark's `--smart` mode is a harness mode with no
-dialect meaning, and the current parser's `smartPunctuation` option and its
-substitutions are removed by `X0`:
+other rendering choice is. cmark's `--smart` mode has no counterpart on any
+surface, and the cmark gate replays the inputs of
+cmark's own `smart_punct.txt` with the mode off on both sides:
 
 ```````````````````````````````` example
 "quotes" 'single' -- --- ---- ... a\"b

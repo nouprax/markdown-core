@@ -26,17 +26,6 @@ if(MARKDOWN_CORE_CANONICAL_CASE_COUNT LESS 1)
 endif()
 math(EXPR MARKDOWN_CORE_CANONICAL_CASE_LAST "${MARKDOWN_CORE_CANONICAL_CASE_COUNT} - 1")
 set(MARKDOWN_CORE_CANONICAL_NAMES "")
-set(MARKDOWN_CORE_CANONICAL_FACADE_ARGUMENTS "")
-set(MARKDOWN_CORE_CANONICAL_OPTION_NAMES
-    smartPunctuation
-    footnotes
-    stripHTMLComments
-    tables
-    strikethrough
-    autolinks
-    taskLists
-    formulas
-    directives)
 foreach(case_index RANGE 0 ${MARKDOWN_CORE_CANONICAL_CASE_LAST})
     string(
         JSON
@@ -65,25 +54,22 @@ foreach(case_index RANGE 0 ${MARKDOWN_CORE_CANONICAL_CASE_LAST})
     if(NOT case_input STREQUAL "${case_name}.md" OR NOT case_expected STREQUAL "${case_name}.ast")
         message(FATAL_ERROR "Canonical AST case ${case_name} has non-canonical paths")
     endif()
-    set(case_option_mask "")
-    foreach(option_name IN LISTS MARKDOWN_CORE_CANONICAL_OPTION_NAMES)
-        string(
-            JSON
-            option_enabled
-            GET
-            "${MARKDOWN_CORE_CANONICAL_AST_JSON}"
-            cases
-            ${case_index}
-            parseOptions
-            ${option_name})
-        if(option_enabled)
-            string(APPEND case_option_mask "1")
-        else()
-            string(APPEND case_option_mask "0")
-        endif()
-    endforeach()
+    # The manifest names no option: a case that still carried one would be
+    # asking for a language the parser does not have.
+    string(
+        JSON
+        case_options
+        ERROR_VARIABLE
+        case_options_error
+        GET
+        "${MARKDOWN_CORE_CANONICAL_AST_JSON}"
+        cases
+        ${case_index}
+        parseOptions)
+    if(NOT case_options_error)
+        message(FATAL_ERROR "Canonical AST case ${case_name} names parse options; the dialect has none")
+    endif()
     list(APPEND MARKDOWN_CORE_CANONICAL_NAMES "${case_name}")
-    list(APPEND MARKDOWN_CORE_CANONICAL_FACADE_ARGUMENTS "${case_name}" "${case_option_mask}")
 endforeach()
 
 if(NOT (MARKDOWN_CORE_SHARED OR MARKDOWN_CORE_STATIC))
@@ -96,14 +82,16 @@ else()
     set(MARKDOWN_CORE_TEST_LIBRARIES libmarkdown-core-extensions_static libmarkdown-core_static)
 endif()
 
-# Shared native test support: fixture loading, in-process conversion, byte
-# comparison, deterministic diffs, PRNG, and timing.
+# Shared native test support: fixture loading, byte comparison, deterministic
+# diffs, PRNG, and timing, over the product library the consumers get. Every
+# runner on it exercises exactly the exported contract: there is one language,
+# one parse entry, and nothing in the test tree reaches past them.
+set(MARKDOWN_CORE_TEST_SUPPORT_INCLUDES
+    "${CMAKE_CURRENT_SOURCE_DIR}/support" "${CMAKE_CURRENT_SOURCE_DIR}/../include" "${MARKDOWN_CORE_CORE_SOURCE_DIR}"
+    "${MARKDOWN_CORE_CORE_BINARY_DIR}" "${MARKDOWN_CORE_EXTENSIONS_SOURCE_DIR}"
+    "${MARKDOWN_CORE_EXTENSIONS_BINARY_DIR}")
 add_library(markdown-core-test-support STATIC support/test_support.c support/test_support.h)
-target_include_directories(
-    markdown-core-test-support
-    PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/support" "${CMAKE_CURRENT_SOURCE_DIR}/../include"
-           "${MARKDOWN_CORE_CORE_SOURCE_DIR}" "${MARKDOWN_CORE_CORE_BINARY_DIR}"
-           "${MARKDOWN_CORE_EXTENSIONS_SOURCE_DIR}" "${MARKDOWN_CORE_EXTENSIONS_BINARY_DIR}")
+target_include_directories(markdown-core-test-support PUBLIC ${MARKDOWN_CORE_TEST_SUPPORT_INCLUDES})
 target_link_libraries(markdown-core-test-support PUBLIC ${MARKDOWN_CORE_TEST_LIBRARIES})
 
 function(markdown_core_add_runner name)
@@ -170,38 +158,25 @@ markdown_core_add_test(
     facade_test
     --fixtures
     "${MARKDOWN_CORE_CANONICAL_AST_DIR}"
-    ${MARKDOWN_CORE_CANONICAL_FACADE_ARGUMENTS})
+    ${MARKDOWN_CORE_CANONICAL_NAMES})
 markdown_core_add_test(consumer_facade_cplusplus consumer 120 facade_cplusplus_test)
 
-# A profile is a complete language selection. Earlier explicit extension
-# flags are discarded; explicit flags after the profile deliberately augment
-# it. Keep both orders covered because parity tooling relies on this boundary.
+# The installed CLI parses the one dialect and refuses every switch: a former
+# `--profile` must not silently parse the dialect, and must not parse at all.
 markdown_core_add_test(
-    regression_cli_profile_replaces_extensions
-    regression
-    120
-    $<TARGET_FILE:markdown-core>
-    -e
-    directive
-    --profile
-    commonmark
-    "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/profile-order.md")
-set_tests_properties(regression_cli_profile_replaces_extensions PROPERTIES FAIL_REGULAR_EXPRESSION "Directive")
-markdown_core_add_test(
-    regression_cli_extension_augments_profile
+    regression_cli_refuses_switches
     regression
     120
     $<TARGET_FILE:markdown-core>
     --profile
     commonmark
-    -e
-    directive
     "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/profile-order.md")
-set_tests_properties(regression_cli_extension_augments_profile PROPERTIES PASS_REGULAR_EXPRESSION "Directive")
+set_tests_properties(regression_cli_refuses_switches PROPERTIES PASS_REGULAR_EXPRESSION "takes no options"
+                                                                FAIL_REGULAR_EXPRESSION "Document scope=")
 
 # Facade concurrency contract: the first_parse case releases every thread into
 # its first parse in a fresh process; stress covers concurrent instance-local
-# parsing with disagreeing option sets.
+# parsing over the input matrix.
 markdown_core_add_test(facade_concurrent_first_parse facade 240 concurrency_runner --case first_parse)
 markdown_core_add_test(facade_concurrent_stress facade 600 concurrency_runner --case stress)
 
@@ -227,19 +202,12 @@ markdown_core_add_test(
     ${MARKDOWN_CORE_CANONICAL_NAMES})
 
 # spec: the product-owned GFM 0.29 golden (base examples plus tagged extension
-# sections), smart punctuation, and entities. Current CommonMark authority is
-# the separately pinned cmark parity gate, not this historical golden. The
-# runner also asserts dump determinism per example.
+# sections), punctuation stored as written, and entities. Current CommonMark
+# authority is the separately pinned cmark parity gate, not this historical
+# golden. The runner also asserts dump determinism per example.
 markdown_core_add_test(spec_gfm_golden spec 240 spec_runner --spec "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/spec.txt")
-markdown_core_add_test(
-    spec_smart_punctuation
-    spec
-    120
-    spec_runner
-    --spec
-    "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/smart_punct.txt"
-    --option
-    smart)
+markdown_core_add_test(spec_punctuation spec 120 spec_runner --spec
+                       "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/punctuation.txt")
 markdown_core_add_test(spec_entities spec 240 entity_runner)
 
 # regression: fixed bug corpus.
@@ -252,67 +220,21 @@ if(MARKDOWN_CORE_STATIC)
     markdown_core_add_test(regression_strict_oom regression 240 oom_runner --case strict_oom)
 endif()
 
-# extensions: GFM extensions, formulas, directives, and option gates.
-markdown_core_add_test(
-    extensions_gfm
-    extensions
-    240
-    spec_runner
-    --spec
-    "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/extensions.txt"
-    --option
-    table
-    --option
-    strikethrough
-    --option
-    autolink
-    --option
-    tasklist
-    --option
-    footnotes)
-markdown_core_add_test(
-    extensions_formula_github
-    extensions
-    120
-    spec_runner
-    --spec
-    "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/extensions-formula-github.txt"
-    --option
-    formula)
-markdown_core_add_test(extensions_formula_option_gates extensions 120 spec_runner --spec
-                       "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/extensions-formula-option-gates.txt")
-markdown_core_add_test(
-    extensions_formula_latex
-    extensions
-    120
-    spec_runner
-    --spec
-    "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/extensions-formula-latex.txt"
-    --option
-    formula)
-markdown_core_add_test(
-    extensions_formula_conflicts
-    extensions
-    120
-    spec_runner
-    --spec
-    "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/extensions-formula-conflicts.txt"
-    --option
-    formula)
-markdown_core_add_test(
-    extensions_directive
-    extensions
-    120
-    spec_runner
-    --spec
-    "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/extensions-directive.txt"
-    --option
-    directive)
-markdown_core_add_test(extensions_directive_option_gates extensions 120 spec_runner --spec
-                       "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/extensions-directive-option-gates.txt")
-# extensions: enabling one extension must not change another's block opener.
-# Every example carries its own option set, because the property is about two
-# extensions being on at once and no other fixture co-enables any two.
+# extensions: the product's reviewed requirements for the GFM extensions,
+# formulas, and directives. Every suite parses the one dialect, exactly as a
+# consumer would; a fence tag classifies an example for the oracle corpora and
+# selects nothing.
+markdown_core_add_test(extensions_gfm extensions 240 spec_runner --spec
+                       "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/extensions.txt")
+markdown_core_add_test(extensions_formula_github extensions 120 spec_runner --spec
+                       "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/extensions-formula-github.txt")
+markdown_core_add_test(extensions_formula_latex extensions 120 spec_runner --spec
+                       "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/extensions-formula-latex.txt")
+markdown_core_add_test(extensions_formula_conflicts extensions 120 spec_runner --spec
+                       "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/extensions-formula-conflicts.txt")
+markdown_core_add_test(extensions_directive extensions 120 spec_runner --spec
+                       "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/extensions-directive.txt")
+# extensions: attaching one extension must not change another's block opener.
 markdown_core_add_test(extensions_conflicts extensions 120 spec_runner --spec
                        "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/extensions-conflicts.txt")
 # pathological: adversarial inputs, one CTest test per case so timeouts and
@@ -352,7 +274,9 @@ set(MARKDOWN_CORE_PATHOLOGICAL_CASES
     formula_long_dollar
     formula_long_backslash
     formula_dollar_backtick_openers
-    formula_backslash_openers)
+    formula_backslash_openers
+    formula_backslash_closers
+    formula_backslash_pairs)
 foreach(case IN LISTS MARKDOWN_CORE_PATHOLOGICAL_CASES)
     markdown_core_add_test(pathological_${case} pathological 30 pathological_runner --case ${case})
 endforeach()
@@ -391,6 +315,8 @@ markdown_core_add_test(packaging_corpus_guard packaging 60 corpus_guard --root "
 # enables this block and reports measurements without wall-clock assertions.
 if(MARKDOWN_CORE_BENCHMARKS)
     set(MARKDOWN_CORE_BENCH_SAMPLES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../benchmarks/samples")
+    # The public flavour on purpose: the PR benchmark times the product library
+    # and reports the size of the shared library this target therefore builds.
     markdown_core_add_runner(bench_runner runners/bench_runner.c)
     target_include_directories(bench_runner PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../include")
     markdown_core_add_test(benchmark_corpus_guard benchmark 60 corpus_guard --root "${CMAKE_SOURCE_DIR}")

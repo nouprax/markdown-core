@@ -243,6 +243,31 @@ export function normalize(node, side, fired) {
 }
 
 /**
+ * Registered delta `html-comment-stripping`: until `M0` lands `Comment`, this
+ * engine strips every HTML comment from the tree -- an `HTML` or `HTMLBlock`
+ * whose literal begins with `<!--`, after a block's leading blanks -- and
+ * cmark keeps them as html nodes. Upstream's tree has those nodes dropped
+ * here, which is exactly the rule `S_strip_html_comments` applies on this
+ * side; the text runs around an inline comment are then joined by `normalize`
+ * on both sides. A MODEL difference, so a projection rather than a list of
+ * inputs: it appears wherever a comment does, in the fuzzed inputs too. `M0`
+ * replaces it with the `Comment` mapping.
+ */
+export function dropHtmlComments(root, fired) {
+    const isComment = (node) =>
+        (node.kind === "HTML" || node.kind === "HTMLBlock") &&
+        (node.fields.literal ?? "").replace(/^[ \t]*/, "").startsWith("<!--");
+    const rewrite = (node) => {
+        const before = node.children.length;
+        node.children = node.children.filter((child) => !isComment(child));
+        if (node.children.length !== before) fired?.add("html-comment-stripping");
+        for (const child of node.children) rewrite(child);
+        return node;
+    };
+    return rewrite(root);
+}
+
+/**
  * Registered delta `footnote-definition-placement`: upstream moves every
  * footnote definition to the document tail in first-reference order, while
  * this repository's AST is source-faithful and leaves each one where it was

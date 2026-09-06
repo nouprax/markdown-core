@@ -6,9 +6,9 @@ stood at commit `7df9454`, before the dialect rewrite replaced them with
 references point at those files. Every rule it proposes was carried into the
 modules, its settled decisions and the remaining source collisions live in the
 [conflicts register](../specs/dialect/conflicts.md), and its resolution
-checklist is discharged by landing item `S0` of the
-[landing plan](2026-09-04-canonical-vnext-landing-plan.md), which ticks the
-boxes below when it merges. The goal it measures against is a closed, well-defined extension set
+checklist was discharged by landing item `S0` of the
+[landing plan](2026-09-04-canonical-vnext-landing-plan.md), which merged as
+#197; the boxes below are ticked. The goal it measures against is a closed, well-defined extension set
 in which every input has exactly one specified output on every surface.
 Byte-for-byte agreement with Pandoc, Obsidian, or any other oracle is not a
 goal; a specification that states its own rule and registers the oracle
@@ -206,7 +206,9 @@ switch. The `--profile` names in `packages/markdown-core/core/main.c`
 (`commonmark`, `commonmark-smart`, `gfm`, `gfm-smart`, `gfm-extended`,
 `default`) are harness shorthands that select option sets for the cmark and
 cmark-gfm comparison oracles; they define no language, no specification refers
-to them, and no `obsidian` or `pandoc` shorthand is added.
+to them, and no `obsidian` or `pandoc` shorthand is added. (`X0` then removed
+the shorthands and every other layer selection: the test tree parses the one
+language.)
 
 ### Common-case scope
 
@@ -755,7 +757,8 @@ A transitional finding names the landing-plan item that resolves it.
   unchanged; two hyphens is a positive example, not a minimum.
 - **OI-4** `:170-171` — B — the index names a profile set although the product
   has none. Rule: the index states that there are no profiles and lists each
-  module's option; the CLI shorthands stay harness-only (the closed set above).
+  module's option; the CLI shorthands stay harness-only (the closed set above,
+  removed by `X0`).
 - **OI-5** `:174-175` — D — `MetadataListItem` is missing from the value set.
   Rule: add it.
 - **OI-6** `:163-165` — B — the output-affecting limits are unstated (ME-9).
@@ -1756,7 +1759,7 @@ source-and-evidence wording (X-3): the file is the normative statement, and the
 named upstream page, tool, or corpus is the source of its feature definitions
 and evidence.
 
-- [ ] **A1 — `canonical-ast.md` and `canonical-ast.json`:** the coordinate
+- [x] **A1 — `canonical-ast.md` and `canonical-ast.json`:** the coordinate
       contract, the limits section, the recognition-order tables, the
       `ParseOptions` table with defaults, off rules, and a `Status` column
       (`active` or `allocated` with the landing item; `stripHTMLComments` stays
@@ -1768,15 +1771,15 @@ and evidence.
       and the status sentences that name which target file supersedes which
       section. Closes CA-1 through CA-27 except the transitional ones, CJ-1,
       CJ-3, CJ-4, CJ-5, CJ-7, S-0, X-1, and decisions D-4, D-5, D-6.
-- [ ] **A2 — `canonical-ast-dump.md`:** token separation, the `children` table,
+- [x] **A2 — `canonical-ast-dump.md`:** token separation, the `children` table,
       the string escaping form, enum elements in arrays, the universal-field
       line, tagged-value and nested-value encodings, double formatting, the
       maintenance command. Closes CD-1 through CD-10.
-- [ ] **A3 — `test-architecture.md`:** "records" instead of "freezes", pinned
+- [x] **A3 — `test-architecture.md`:** "records" instead of "freezes", pinned
       CommonMark and cmark-gfm versions, oracles as evidence, per-test timeouts,
       the manifest carrying every option, the size-doubling definition. Closes
       TA-1 through TA-6 and AN-8.
-- [ ] **A4 — `attributes.md`, `anchors.md`, `destinations.md`,
+- [x] **A4 — `attributes.md`, `anchors.md`, `destinations.md`,
       `citation-model.md`, `metadata.md`, `inserted-text.md`:** the ABNF
       nonterminals, the quoted-value rule, the input string the grammar runs on,
       "as written", the merge steps as normative, the anchor synthesis gate and
@@ -1787,32 +1790,32 @@ and evidence.
       place of every enabled profile, and one status sentence per file. Closes
       AN-1, AN-3, AN-5 through AN-8, AT-3 through AT-8, AT-10, AT-11, DE-4
       through DE-7, CI-2 through CI-5, ME-2 through ME-10, IT-3 through IT-8.
-- [ ] **A5 — `remark/directives.md` (new) and `remark/attributes.md`:** the
+- [x] **A5 — `remark/directives.md` (new) and `remark/attributes.md`:** the
       directive envelope grammar, the leaf-versus-empty-container rule,
       name-label-container order, line-crossing containers, invalid containers
       on opener lines, the option name, the `remark.md` status sentence. Closes
       RM-1 through RM-3, RA-2 through RA-5, CA-13.
-- [ ] **B1 — `obsidian-flavored-markdown.md`:** the footnote-grammar owner, one
+- [x] **B1 — `obsidian-flavored-markdown.md`:** the footnote-grammar owner, one
       option per module and its inherited gate in place of the preset and the
       profile list, `MetadataListItem`, the limits pointer, extended autolinks,
       one GFM authority. Closes OI-1 through OI-9 and decision D-1.
-- [ ] **B2 — `obsidian/wikilinks-and-embeds.md` and `obsidian/highlights.md`:**
+- [x] **B2 — `obsidian/wikilinks-and-embeds.md` and `obsidian/highlights.md`:**
       character sets, single brackets, `#` edge cases, escapes, no trimming,
       bracket precedence, option-off, the anchor projection; highlight
       eligibility and matching, a `Comment` as sole content, block-pass and
       autolink boundaries, option-off. Closes OW-1 through OW-6, OH-1 through
       OH-4.
-- [ ] **B3 — `obsidian/comments.md`:** the opener and closer rule, the block
+- [x] **B3 — `obsidian/comments.md`:** the opener and closer rule, the block
       start and commit procedure, block-versus-inline classification, both
       content categories, no stripping, all recognition suppressed, the literal,
       table cells, an HTML comment beside a `%%` comment. Closes OC-1 through
       OC-9.
-- [ ] **B4 — `obsidian/footnotes.md`:** the referenced grammar and duplicate
+- [x] **B4 — `obsidian/footnotes.md`:** the referenced grammar and duplicate
       rule, the bracket-stack rule for `^[`, whitespace-only bodies, no
       synthesized paragraph, the `inline-N` set, the pinned fold version,
       unresolved calls, the `Document` field list, option-off, the scope split.
       Closes OF-1 through OF-11.
-- [ ] **B5 — `obsidian/block-identifiers.md` and `obsidian/callouts.md`:** the
+- [x] **B5 — `obsidian/block-identifiers.md` and `obsidian/callouts.md`:** the
       paragraph and own-line forms, the identifier-line rule,
       item-versus-paragraph ownership, metadata before identifiers, option-off,
       the second-anchor sentence, the lexical suffix rule; the metadata
@@ -1820,7 +1823,7 @@ and evidence.
       split, Setext, empty titles, `CalloutFold`, option-off, `variant` as
       written. Closes OB-1 through OB-7, OK-1 through OK-9, decisions D-2 and
       D-7.
-- [ ] **B6 — `obsidian/tasks.md`, `obsidian/properties.md`,
+- [x] **B6 — `obsidian/tasks.md`, `obsidian/properties.md`,
       `obsidian/inherited-and-integration.md`:** the separator class, `isTask`
       and `isComplete`, the UTF-8 sentence, option gating; the payload and
       line-ending grammar, keys, decoded lines, the scalar table, transactional
@@ -1829,7 +1832,7 @@ and evidence.
       and pipe rule, the extended-autolink step, the precedence pointer, the
       boundary scanner, the formula pointer. Closes OT-1 through OT-4, OP-1
       through OP-9, ON-1 through ON-8.
-- [ ] **C1 — `pandoc.md` and `pandoc/attributes.md`:** the modules as sole
+- [x] **C1 — `pandoc.md` and `pandoc/attributes.md`:** the modules as sole
       authority, the grammar owner, the inherited-behavior sentence, "comment"
       defined, the transactional failure rule, the limits pointer; table anchors
       under Pandoc rules, no language from classes, the bare word and `info`
@@ -1837,20 +1840,20 @@ and evidence.
       the attachment sites, the definition-side grammar, records versus typed
       dimensions, the ordered bracket procedure pointer, the required cases, a
       "ParseOptions field" column. Closes PX-1 through PX-6, PA-1 through PA-11.
-- [ ] **C2 — `pandoc/bracketed-spans.md` and `pandoc/citations.md`:** the
+- [x] **C2 — `pandoc/bracketed-spans.md` and `pandoc/citations.md`:** the
       ordered `]` procedure, malformed containers, directives and wikilinks, the
       spans-off case; the key grammar, Unicode classes, whitespace, balance, the
       opener precondition, group spacing, affix trimming, the `-` marker, tails,
       item scopes, non-normative notes, example labels, non-resolving tails,
       definitions, top-level headings. Closes PS-1 through PS-5, PC-1 through
       PC-16, decision D-9.
-- [ ] **C3 — `pandoc/definition-lists.md` and `pandoc/fenced-divs.md`:** body
+- [x] **C3 — `pandoc/definition-lists.md` and `pandoc/fenced-divs.md`:** body
       continuation, admissible term lines, `four_space_rule` deleted, the
       caption exclusion, laziness, absorption end, the marker-only form, term
       parsing, no interruption, scopes; the opener and closer grammar, no oracle
       clause, interruption allowed, unclosed scope, the directive rule, eligible
       closers. Closes PD-1 through PD-10, PF-1 through PF-7.
-- [ ] **C4 — `pandoc/headings-and-anchors.md` and `pandoc/lists.md`:** the
+- [x] **C4 — `pandoc/headings-and-anchors.md` and `pandoc/lists.md`:** the
       projection table with a required conformance case per projected kind,
       reservation from every enabled option, the lowercase mapping, categories,
       `base-N`, no diagnostics, footnote bodies, virtual definitions; `start >=
@@ -1859,11 +1862,11 @@ and evidence.
       `(@label)` placement, repeated labels, continuation columns, no overflow
       sentence, interruption, `#)` and `(#)`. Closes PH-1 through PH-7, PL-1
       through PL-16, decision D-3.
-- [ ] **C5 — `pandoc/superscript-and-subscript.md`:** the delimiter-stack model,
+- [x] **C5 — `pandoc/superscript-and-subscript.md`:** the delimiter-stack model,
       whitespace, the `\ ` scope, single tildes, the footnote rule pointer,
       block identifiers and autolinks, no oracle justification. Closes PU-1
       through PU-7, decision D-8.
-- [ ] **C6 — `pandoc/tables.md`:** no cell normalization, inline captions, the
+- [x] **C6 — `pandoc/tables.md`:** no cell normalization, inline captions, the
       width formula, scalar columns, the caption grammar, captions between
       tables, every table form, the simple-table grammar, alignment,
       segmentation, precedence against Setext and thematic breaks, the multiline

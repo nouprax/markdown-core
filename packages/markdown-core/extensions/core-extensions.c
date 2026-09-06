@@ -1,6 +1,5 @@
 #include <stddef.h>
 #include "extension.h"
-#include <string.h>
 
 #include "markdown-core-extensions.h"
 #include "autolink.h"
@@ -26,21 +25,17 @@
 // `autolink` stays ahead of `directive` -- both claim ':', and a bare ':' far
 // more often begins a URL.
 //
-// The order is not in the bit VALUES.  A caller passes a set; only this table
-// turns a set into a sequence.
-static const struct {
-    unsigned bit;
-    const markdown_core_extension *extension;
-} CORE_EXTENSIONS[] = {{MARKDOWN_CORE_CORE_EXTENSION_STRIKETHROUGH, &MARKDOWN_CORE_EXTENSION_STRIKETHROUGH},
-                       {MARKDOWN_CORE_CORE_EXTENSION_AUTOLINK, &MARKDOWN_CORE_EXTENSION_AUTOLINK},
-                       {MARKDOWN_CORE_CORE_EXTENSION_TASKLIST, &MARKDOWN_CORE_EXTENSION_TASKLIST},
-                       {MARKDOWN_CORE_CORE_EXTENSION_FORMULA, &MARKDOWN_CORE_EXTENSION_FORMULA},
-                       {MARKDOWN_CORE_CORE_EXTENSION_DIRECTIVE, &MARKDOWN_CORE_EXTENSION_DIRECTIVE},
-                       {MARKDOWN_CORE_CORE_EXTENSION_TABLE, &MARKDOWN_CORE_EXTENSION_TABLE}};
+// Every row is attached by every parse.  There is no mask and no name: the
+// dialect has no switches, so a table that could be attached in part would be
+// a second language nothing ships, and a name would be a registry nothing
+// reads.  A feature is public from the commit that adds its row.
+static const markdown_core_extension *const CORE_EXTENSIONS[] = {
+    &MARKDOWN_CORE_EXTENSION_STRIKETHROUGH, &MARKDOWN_CORE_EXTENSION_AUTOLINK,  &MARKDOWN_CORE_EXTENSION_TASKLIST,
+    &MARKDOWN_CORE_EXTENSION_FORMULA,       &MARKDOWN_CORE_EXTENSION_DIRECTIVE, &MARKDOWN_CORE_EXTENSION_TABLE};
 
 #define CORE_EXTENSION_COUNT (sizeof(CORE_EXTENSIONS) / sizeof(CORE_EXTENSIONS[0]))
 
-int markdown_core_core_extensions_attach(markdown_core_parser *parser, unsigned mask) {
+int markdown_core_core_extensions_attach(markdown_core_parser *parser) {
     size_t i;
 
     if (!parser) {
@@ -48,33 +43,10 @@ int markdown_core_core_extensions_attach(markdown_core_parser *parser, unsigned 
     }
 
     for (i = 0; i < CORE_EXTENSION_COUNT; i++) {
-        if (!(mask & CORE_EXTENSIONS[i].bit)) {
-            continue;
-        }
-        if (!markdown_core_parser_attach_extension(parser, CORE_EXTENSIONS[i].extension)) {
+        if (!markdown_core_parser_attach_extension(parser, CORE_EXTENSIONS[i])) {
             return 0;
         }
     }
 
     return 1;
-}
-
-unsigned markdown_core_core_extensions_bit(const char *name) {
-    size_t i;
-
-    if (!name) {
-        return 0;
-    }
-
-    for (i = 0; i < CORE_EXTENSION_COUNT; i++) {
-        if (strcmp(name, CORE_EXTENSIONS[i].extension->name) == 0) {
-            return CORE_EXTENSIONS[i].bit;
-        }
-    }
-
-    return 0;
-}
-
-const char *markdown_core_core_extensions_name_at(size_t index) {
-    return index < CORE_EXTENSION_COUNT ? CORE_EXTENSIONS[index].extension->name : NULL;
 }

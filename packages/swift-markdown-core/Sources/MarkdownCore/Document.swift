@@ -1,60 +1,5 @@
 import MarkdownCoreC
 
-/// Which constructs a parse recognises.
-///
-/// Every switch is ATTACHMENT and nothing finer: an extension is on or it is
-/// not, and there is no second knob that changes what an attached extension
-/// means. 1.0.3 had `dollarFormulaDelimiters` and `latexFormulaDelimiters`
-/// beside ``formulas``; they are gone, because an option that changes a
-/// grammar rather than enabling one is a second parser hiding in the first.
-///
-/// Every default is `true`.
-public struct ParseOptions: Sendable, Hashable {
-    /// Turn straight quotes, `--` and `...` into their typographic forms.
-    public let smartPunctuation: Bool
-    /// Recognise `[^label]` calls and `[^label]:` definitions.
-    public let footnotes: Bool
-    /// Drop HTML comments from the tree instead of keeping them as ``HTML``.
-    public let stripHTMLComments: Bool
-    /// Recognise GFM tables.
-    public let tables: Bool
-    /// Recognise `~~struck~~`.
-    public let strikethrough: Bool
-    /// Recognise bare URLs and `www.` prefixes as links.
-    public let autolinks: Bool
-    /// Recognise `- [ ]` and `- [x]` list items, which gives
-    /// ``ListItem/checked`` a value other than `nil`.
-    public let taskLists: Bool
-    /// Recognise formulas — five inline forms and four block forms.
-    public let formulas: Bool
-    /// Recognise directives — `:name`, `::name` and `:::name` fences.
-    public let directives: Bool
-
-    /// Creates an option set. Every parameter defaults to `true`, so
-    /// `ParseOptions()` recognises everything this parser knows.
-    public init(
-        smartPunctuation: Bool = true,
-        footnotes: Bool = true,
-        stripHTMLComments: Bool = true,
-        tables: Bool = true,
-        strikethrough: Bool = true,
-        autolinks: Bool = true,
-        taskLists: Bool = true,
-        formulas: Bool = true,
-        directives: Bool = true
-    ) {
-        self.smartPunctuation = smartPunctuation
-        self.footnotes = footnotes
-        self.stripHTMLComments = stripHTMLComments
-        self.tables = tables
-        self.strikethrough = strikethrough
-        self.autolinks = autolinks
-        self.taskLists = taskLists
-        self.formulas = formulas
-        self.directives = directives
-    }
-}
-
 /// Why a parse produced no document.
 ///
 /// These are failures of the parse operation itself, not syntax observations.
@@ -92,30 +37,19 @@ public struct Document: Markup {
 
     /// Parses `source` and returns the whole tree as values.
     ///
-    /// The native parse is released before this returns, so the result borrows
-    /// nothing and is safe to hold, copy and send across isolation boundaries.
+    /// There is one language and nothing to configure: every feature of the
+    /// Markdown Core dialect is recognised on every call. The native parse is
+    /// released before this returns, so the result borrows nothing and is safe
+    /// to hold, copy and send across isolation boundaries.
     ///
-    /// - Parameters:
-    ///   - source: the Markdown to parse. It is read as UTF-8.
-    ///   - options: which constructs to recognise. Everything, by default.
+    /// - Parameter source: the Markdown to parse. It is read as UTF-8.
     /// - Returns: the parsed document.
     /// - Throws: ``ParseError`` when there is no document to return at all.
-    public static func parse(_ source: String, options: ParseOptions = .init()) throws -> Document {
-        var nativeOptions = markdown_core_parse_options(
-            smart_punctuation: options.smartPunctuation,
-            footnotes: options.footnotes,
-            strip_html_comments: options.stripHTMLComments,
-            tables: options.tables,
-            strikethrough: options.strikethrough,
-            autolinks: options.autolinks,
-            task_lists: options.taskLists,
-            formulas: options.formulas,
-            directives: options.directives
-        )
+    public static func parse(_ source: String) throws -> Document {
         var nativeError: OpaquePointer?
         let bytes = Array(source.utf8)
         let nativeDocument = bytes.withUnsafeBufferPointer { buffer in
-            markdown_core_document_parse(buffer.baseAddress, buffer.count, &nativeOptions, &nativeError)
+            markdown_core_document_parse(buffer.baseAddress, buffer.count, &nativeError)
         }
         guard let nativeDocument else {
             defer { markdown_core_error_free(nativeError) }

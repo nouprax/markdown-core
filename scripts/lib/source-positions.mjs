@@ -65,10 +65,10 @@ export function fixtureCorpus(root) {
 }
 
 /**
- * Every spec fixture parsed with the exact suite configuration registered in
- * CTest. `spec_runner --dump` generates the AST without consulting its stored
- * expected block; its normal option handling combines the suite's base
- * `--option` values with the selected example's fence tags.
+ * Every spec fixture parsed exactly as its CTest suite parses it.
+ * `spec_runner --dump` generates the AST without consulting the stored
+ * expected block; every suite parses the one dialect, and a fence tag
+ * classifies an example for the oracle corpora without selecting anything.
  *
  * Reading CTest's JSON graph keeps that graph as the one source of truth. The
  * coverage checks make a newly added, removed, or multiply registered `.txt`
@@ -127,21 +127,19 @@ export function configuredFixtureCorpus(root) {
 /**
  * Every Markdown input named by the canonical AST manifest, in manifest order.
  *
- * The public C CLI is the canonical candidate generator for this corpus. It
- * currently represents the manifest's all-enabled ParseOptions with its
- * default invocation. Fail here if a case introduces a different option set;
- * silently running it under the wrong language would leave the audit looking
- * at a dump other than the one the golden specifies.
+ * The public C CLI is the canonical candidate generator for this corpus: it
+ * parses the one dialect, which is what every canonical case is. The dialect
+ * has no switches, so a case that still names an option is asking for a
+ * language the parser does not have, and the audit refuses it rather than
+ * looking at a dump other than the one the golden specifies.
  */
 export function canonicalCorpus(root) {
     const manifestPath = path.join(root, CANONICAL_AST_DIR, "manifest.json");
     const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
 
     return manifest.cases.map((testCase) => {
-        if (Object.values(testCase.parseOptions).some((value) => value !== true)) {
-            throw new Error(
-                `${testCase.name}: the position audit needs explicit CLI support for non-default ParseOptions`
-            );
+        if ("parseOptions" in testCase) {
+            throw new Error(`${testCase.name}: names parseOptions; the dialect has none`);
         }
         return {
             source: `${CANONICAL_AST_DIR}/${testCase.input}`,

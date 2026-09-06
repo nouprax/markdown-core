@@ -382,13 +382,23 @@ static markdown_core_node *match(const markdown_core_extension *extension, markd
         }
 
         closer_len = scan_backslash_close(chunk->data, chunk->len, offset, ']', 2);
-        if (closer_len) {
+        /* A backslash CLOSER is claimed only when an opener of its rule is
+         * waiting: `\\]` with nothing to close is CommonMark's escaped
+         * backslash followed by a bracket closer, and the base scanner must
+         * see that `]`, or `[bar\\]` stops being a reference (CommonMark
+         * 0.31.2 example 558). A closer whose opener a closer before it
+         * already took is the same case, and it is not pushed, so the stack
+         * never fills with closers that could not pair. `$` needs no such
+         * check because the base language claims nothing a `$` run could hide. */
+        if (closer_len &&
+            markdown_core_inline_parser_has_unmatched_opener(inline_parser, FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY)) {
             return match_formula_delimiter(extension, parser, inline_parser, FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY,
                                            closer_len, 0, 1);
         }
 
         closer_len = scan_backslash_close(chunk->data, chunk->len, offset, ')', 2);
-        if (closer_len) {
+        if (closer_len &&
+            markdown_core_inline_parser_has_unmatched_opener(inline_parser, FORMULA_DELIM_LATEX_BACKSLASH_INLINE)) {
             return match_formula_delimiter(extension, parser, inline_parser, FORMULA_DELIM_LATEX_BACKSLASH_INLINE,
                                            closer_len, 0, 1);
         }

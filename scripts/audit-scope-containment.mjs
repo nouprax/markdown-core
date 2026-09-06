@@ -56,7 +56,7 @@ const measured = [];
 let scanned = 0;
 let skipped = 0;
 for (const example of fixtureCorpus(root)) {
-    const tree = parseCanonicalDump(runBinary(ours, ["--profile", ledger.profile], example.input));
+    const tree = parseCanonicalDump(runBinary(ours, [], example.input));
     const findings = [];
     for (const { node, nodePath } of walkWithPath(tree)) {
         const parent = readScope(node);

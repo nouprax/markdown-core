@@ -9,22 +9,15 @@
 #include <fcntl.h>
 #include <unistd.h>
 
-const char *extension_names[] = {
-    "autolink",
-    "strikethrough",
-    "table",
-    NULL,
-};
-
 int LLVMFuzzerInitialize(int *argc, char ***argv) { return 0; }
 
 static bool attach_core_extensions(markdown_core_parser *parser, void *context) {
-    return markdown_core_core_extensions_attach(parser, *(const unsigned *)context) != 0;
+    (void)context;
+    return markdown_core_core_extensions_attach(parser) != 0;
 }
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     struct __attribute__((packed)) {
-        int options;
         uint8_t splitpoint;
         uint8_t repeatlen;
     } fuzz_config;
@@ -32,9 +25,6 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     if (size >= sizeof(fuzz_config)) {
         /* The beginning of `data` is treated as fuzzer configuration */
         memcpy(&fuzz_config, data, sizeof(fuzz_config));
-
-        /* Test options that are used by GitHub. */
-        fuzz_config.options = MARKDOWN_CORE_OPT_FOOTNOTES;
 
         /* Remainder of input is the markdown */
         const char *markdown0 = (const char *)(data + sizeof(fuzz_config));
@@ -60,21 +50,11 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
                 memcpy(markdown, markdown0, markdown_size);
             }
 
-            /* A name selects a BIT; only the fixed table turns a set of bits
-             * into a sequence. Attaching from the name list directly was a
-             * second attach order, which is D15's shape. */
-            unsigned extension_mask = 0;
-            for (const char **it = extension_names; *it; ++it) {
-                unsigned bit = markdown_core_core_extensions_bit(*it);
-                if (!bit) {
-                    fprintf(stderr, "%s is not a valid parser extension\n", *it);
-                    abort();
-                }
-                extension_mask |= bit;
-            }
+            /* The one dialect: the engine configuration `markdown-core-extensions.h`
+             * states, and the fixed table's one attach order. */
             markdown_core_node *doc = markdown_core_parse_document_with_mem(
-                markdown, markdown_size, fuzz_config.options, markdown_core_get_default_mem_allocator(),
-                attach_core_extensions, &extension_mask);
+                markdown, markdown_size, MARKDOWN_CORE_DIALECT_OPTIONS, markdown_core_get_default_mem_allocator(),
+                attach_core_extensions, NULL);
             if (!doc) {
                 return 0;
             }

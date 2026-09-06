@@ -82,8 +82,6 @@ import com.nouprax.markdown.core.internal.capi.markdown_core_node_table_row_is_h
 import com.nouprax.markdown.core.internal.capi.markdown_core_optional_bool
 import com.nouprax.markdown.core.internal.capi.markdown_core_optional_i64
 import com.nouprax.markdown.core.internal.capi.markdown_core_optional_string
-import com.nouprax.markdown.core.internal.capi.markdown_core_parse_options
-import com.nouprax.markdown.core.internal.capi.markdown_core_parse_options_init
 import com.nouprax.markdown.core.internal.capi.markdown_core_placement_modeVar
 import com.nouprax.markdown.core.internal.capi.markdown_core_reference_formVar
 import com.nouprax.markdown.core.internal.capi.markdown_core_string
@@ -104,34 +102,18 @@ import kotlinx.cinterop.usePinned
 import kotlinx.cinterop.value
 import platform.posix.size_tVar
 
-internal actual fun parsePlatformDocument(
-    source: ByteArray,
-    options: ParseOptions,
-): Document =
+internal actual fun parsePlatformDocument(source: ByteArray): Document =
     memScoped {
-        val nativeOptions = alloc<markdown_core_parse_options>()
-        markdown_core_parse_options_init(nativeOptions.ptr)
-        nativeOptions.smart_punctuation = options.smartPunctuation
-        nativeOptions.footnotes = options.footnotes
-        nativeOptions.strip_html_comments = options.stripHTMLComments
-        nativeOptions.tables = options.tables
-        nativeOptions.strikethrough = options.strikethrough
-        nativeOptions.autolinks = options.autolinks
-        nativeOptions.task_lists = options.taskLists
-        nativeOptions.formulas = options.formulas
-        nativeOptions.directives = options.directives
-
         val error = alloc<CPointerVar<markdown_core_error>>()
         error.value = null
         val document =
             if (source.isEmpty()) {
-                markdown_core_document_parse(null, 0u, nativeOptions.ptr, error.ptr)
+                markdown_core_document_parse(null, 0u, error.ptr)
             } else {
                 source.usePinned { pinned ->
                     markdown_core_document_parse(
                         pinned.addressOf(0).reinterpret(),
                         source.size.toULong(),
-                        nativeOptions.ptr,
                         error.ptr,
                     )
                 }

@@ -32,14 +32,12 @@ text keep their own input. The Swift, Kotlin, and ECMAScript bindings copy the
 AST into platform values and retain no native parser handle; the C API exposes
 an owned document with borrowed node views.
 
-The current parse options enable smart punctuation, footnotes, HTML comment
-stripping, tables, strikethrough, autolinks, task lists, formulas (including
-dollar and LaTeX delimiters), and directives, and each can be disabled per
-parse. The Markdown Core dialect has no switches: its landing plan removes
-`ParseOptions` and smart punctuation (`X0`) so that every surface parses one
-language. `TreeDumper` and `dump()` produce a canonical debug representation
-for logs, tests, and debugging; dump text is not a persistence or interchange
-format.
+There are no parse options. Every parse recognizes the one Markdown Core
+dialect: footnotes, tables, strikethrough, autolinks, task lists, formulas
+(including dollar and LaTeX delimiters), and directives, always on, on the
+CommonMark base; quotation marks, hyphens, and periods are stored as written.
+`TreeDumper` and `dump()` produce a canonical debug representation for logs,
+tests, and debugging; dump text is not a persistence or interchange format.
 
 ### Swift
 
@@ -53,10 +51,7 @@ The root Swift package supports iOS 26 and macOS 26 or later and exports the
 ```swift
 import MarkdownCore
 
-let document = try Document.parse(
-    "# Hello",
-    options: ParseOptions(directives: false)
-)
+let document = try Document.parse("# Hello")
 print(document.dump())
 ```
 
@@ -79,13 +74,9 @@ kotlin {
 ```
 
 ```kotlin
-import com.nouprax.markdown.core.ParseOptions
 import com.nouprax.markdown.core.Document
 
-val document = Document.parse(
-    "# Hello",
-    ParseOptions(directives = false),
-)
+val document = Document.parse("# Hello")
 println(document.dump())
 ```
 
@@ -110,7 +101,7 @@ pnpm add @nouprax/es-markdown-core
 ```js
 import { Document, TreeDumper } from "@nouprax/es-markdown-core";
 
-const document = Document.parse("# Hello", { directives: false });
+const document = Document.parse("# Hello");
 console.log(document.content[0].kind, document.content[0].scope);
 console.log(TreeDumper.dump(document));
 ```
@@ -132,9 +123,9 @@ find_package(markdown-core CONFIG REQUIRED)
 target_link_libraries(my-app PRIVATE markdown-core::markdown-core)
 ```
 
-Include the read-only facade as `#include <markdown_core.h>`. Pass `NULL` for
-parse options to use the defaults, and release every successful parse with
-`markdown_core_document_free`. Nodes and string views borrow from their owning
+Include the read-only facade as `#include <markdown_core.h>`. Parse with
+`markdown_core_document_parse`, which takes the source bytes and nothing else,
+and release every successful parse with `markdown_core_document_free`. Nodes and string views borrow from their owning
 document and must not outlive it. Error objects and allocated dump buffers use
 their corresponding `markdown_core_error_free` and `markdown_core_dump_free`
 functions.
@@ -204,7 +195,11 @@ cmake --install build/cmake --prefix /path/to/prefix
 ```
 
 Its CLI is written to
-`build/cmake/packages/markdown-core/core/markdown-core`. The main CMake options
+`build/cmake/packages/markdown-core/core/markdown-core`; it takes files or
+standard input and prints the canonical AST dump, with no language switch.
+The oracle gates and position audits run that same CLI: there is one language
+and one parser, and nothing in the test tree parses a part of it. The main
+CMake options
 are `MARKDOWN_CORE_SHARED`, `MARKDOWN_CORE_STATIC`, `MARKDOWN_CORE_TESTS`, and
 `MARKDOWN_CORE_WARNINGS_AS_ERRORS`. `MARKDOWN_CORE_BENCHMARKS` is off by
 default and exists only for an explicit local measurement build.

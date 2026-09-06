@@ -11,7 +11,7 @@ static void throw_new(JNIEnv *environment, const char *class_name, const char *m
     }
 }
 
-static jbyteArray JNICALL native_parse(JNIEnv *environment, jobject receiver, jbyteArray source, jint options_mask) {
+static jbyteArray JNICALL native_parse(JNIEnv *environment, jobject receiver, jbyteArray source) {
     jbyte *source_bytes;
     jsize source_length;
     uint8_t *output = NULL;
@@ -31,8 +31,8 @@ static jbyteArray JNICALL native_parse(JNIEnv *environment, jobject receiver, jb
             return NULL;
         }
     }
-    if (!markdown_core_kotlin_jni_encode((const uint8_t *)source_bytes, (size_t)source_length, (uint32_t)options_mask,
-                                         &output, &output_length)) {
+    if (!markdown_core_kotlin_jni_encode((const uint8_t *)source_bytes, (size_t)source_length, &output,
+                                         &output_length)) {
         if (source_bytes != NULL) {
             (*environment)->ReleaseByteArrayElements(environment, source, source_bytes, JNI_ABORT);
         }
@@ -60,7 +60,7 @@ static jbyteArray JNICALL native_parse(JNIEnv *environment, jobject receiver, jb
 
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *virtual_machine, void *reserved) {
     static const JNINativeMethod methods[] = {
-        {"parsePayload", "([BI)[B", (void *)native_parse},
+        {"parsePayload", "([B)[B", (void *)native_parse},
     };
     JNIEnv *environment = NULL;
     jclass parser_class;

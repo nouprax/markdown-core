@@ -1,6 +1,5 @@
 MARKDOWN_CORE_1.0 {
   global:
-    markdown_core_parse_options_init;
     markdown_core_document_parse;
     markdown_core_document_free;
     markdown_core_document_root;

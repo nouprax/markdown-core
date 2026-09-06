@@ -21,7 +21,6 @@ DumpVisitor$WhenMappings
 # has top-level members; the members themselves are internal and name-mangled.
 ImmutableListKt
 PlatformParser_jvmKt
-ParseOptionsKt
 TreeDumperKt
 JniPayloadDecoderKt
 JniMarkupDecoderKt

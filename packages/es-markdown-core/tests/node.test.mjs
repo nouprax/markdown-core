@@ -53,10 +53,21 @@ test("api: walking dispatch is typed and preserves owned-field semantics", () =>
     assert.deepEqual(tableRowKinds, [true, false]);
 });
 
-test("api: options gate extensions", () => {
-    const markdown = "| a |\n| --- |\n| b |\n";
-    assert.equal(Document.parse(markdown).content[0].kind, "table");
-    assert.equal(Document.parse(markdown, { tables: false }).content[0].kind, "paragraph");
+test("api: the dialect has no switches, so a plain parse recognizes every feature", () => {
+    // One witness per feature that used to sit behind a `ParseOptions`
+    // field, and one for the substitution smart punctuation used to make.
+    assert.equal(Document.parse("| a |\n| --- |\n| b |\n").content[0].kind, "table");
+    for (const [source, witness] of [
+        ["~~x~~\n", "Strikethrough scope="],
+        ["www.example.com\n", "Link scope="],
+        ["- [x] task\n", "checked=true"],
+        ["ref[^a]\n\n[^a]: note\n", "FootnoteReference scope="],
+        ["$x$\n", "Formula scope="],
+        [":badge[label]\n", "Directive scope="],
+        ['"quotes" -- ...\n', 'literal="\\"quotes\\" -- ..."']
+    ]) {
+        assert.ok(Document.parse(source).dump().includes(witness), `${witness} for ${JSON.stringify(source)}`);
+    }
 });
 
 test("ast: typed fields are copied from the native result", () => {
@@ -83,9 +94,6 @@ test("unicode: UTF-8 survives native document release", () => {
 test("errors: empty input is valid and arguments are checked", () => {
     assert.deepEqual(Document.parse("").content, []);
     assert.throws(() => Document.parse(null), TypeError);
-    assert.throws(() => Document.parse("x", 1), TypeError);
-    assert.throws(() => Document.parse("x", { tables: "yes" }), TypeError);
-    assert.throws(() => Document.parse("x", { tables: null }), TypeError);
 });
 
 test("errors: allocation failure is terminal across the WASM boundary", () => {
@@ -338,7 +346,7 @@ function nativeResult(source) {
     let resultPointer = 0;
     try {
         new Uint8Array(native.memory.buffer, sourcePointer, encoded.length).set(encoded);
-        resultPointer = native.es_parse(sourcePointer, encoded.length, 0x1ff);
+        resultPointer = native.es_parse(sourcePointer, encoded.length);
         assert.notEqual(resultPointer, 0);
         const length = new DataView(native.memory.buffer).getUint32(resultPointer + 4, true);
         return Uint8Array.from(new Uint8Array(native.memory.buffer, resultPointer, length));

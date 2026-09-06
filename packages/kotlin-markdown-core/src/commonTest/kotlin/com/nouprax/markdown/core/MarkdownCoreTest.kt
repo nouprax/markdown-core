@@ -9,25 +9,29 @@ import kotlin.test.assertTrue
 
 class ApiTest {
     @Test
-    fun defaultsAndOptionGates() {
-        val defaults = ParseOptions()
-        assertTrue(defaults.smartPunctuation && defaults.footnotes && defaults.stripHTMLComments)
-        assertTrue(defaults.tables && defaults.strikethrough && defaults.autolinks)
-        assertTrue(defaults.taskLists && defaults.formulas && defaults.directives)
-
-        val markdown = "| a |\n| --- |\n| b |\n"
+    fun theDialectHasNoSwitches() {
+        // One witness per feature that used to sit behind a `ParseOptions`
+        // field, and one for the substitution smart punctuation used to make:
+        // a plain parse recognizes all of them, and there is nothing to pass.
         assertIs<Table>(
             Document
-                .parse(markdown)
+                .parse("| a |\n| --- |\n| b |\n")
                 .content
                 .first(),
         )
-        assertIs<Paragraph>(
-            Document
-                .parse(markdown, ParseOptions(tables = false))
-                .content
-                .first(),
-        )
+        val witnesses =
+            listOf(
+                "~~x~~\n" to "Strikethrough scope=",
+                "www.example.com\n" to "Link scope=",
+                "- [x] task\n" to "checked=true",
+                "ref[^a]\n\n[^a]: note\n" to "FootnoteReference scope=",
+                "\$x\$\n" to "Formula scope=",
+                ":badge[label]\n" to "Directive scope=",
+                "\"quotes\" -- ...\n" to "literal=\"\\\"quotes\\\" -- ...\"",
+            )
+        for ((source, witness) in witnesses) {
+            assertTrue(Document.parse(source).dump().contains(witness), "expected $witness for $source")
+        }
     }
 
     @Test

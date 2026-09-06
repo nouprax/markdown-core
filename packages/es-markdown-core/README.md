@@ -18,19 +18,17 @@ initialization, so `Document.parse` is synchronous.
 ```js
 import { Document, TreeDumper } from "@nouprax/es-markdown-core";
 
-const document = Document.parse("# Hello", {
-  directives: false,
-});
+const document = Document.parse("# Hello");
 
 console.log(document.content[0].kind);
 console.log(document.dump());
 console.log(TreeDumper.dump(document.content[0]));
 ```
 
-All parse options default to `true`: smart punctuation, footnotes, HTML comment
-stripping, tables, strikethrough, autolinks, task lists, formulas, dollar and
-LaTeX formula delimiters, and directives. Pass only the options you want to
-override.
+`Document.parse` takes no options. It parses the one Markdown Core dialect,
+in which every feature is always recognized: footnotes, tables,
+strikethrough, autolinks, task lists, formulas, and directives, on the
+CommonMark base. Quotation marks, hyphens, and periods are stored as written.
 
 `Document.parse` returns a discriminated `Markup` union with source scopes and
 recursively readonly TypeScript properties. The JavaScript objects are not
