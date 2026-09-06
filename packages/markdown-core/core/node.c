@@ -174,7 +174,7 @@ static void S_free_nodes(markdown_core_node *e) {
             e->user_data_free_func(NODE_MEM(e), e->user_data);
         }
 
-        if (e->as.opaque && e->extension && e->extension->opaque_free_func) {
+        if (e->opaque && e->extension && e->extension->opaque_free_func) {
             e->extension->opaque_free_func(e->extension, NODE_MEM(e), e);
         }
 
@@ -225,14 +225,11 @@ int markdown_core_node_set_type(markdown_core_node *node, markdown_core_node_typ
 
     /* The new type starts as a new node of that type would, rather than
      * reading the old arm's bytes as its own -- a heading's level is not a
-     * resource pointer. Opaque data belongs to the node and its extension,
-     * not to the type, and stays. */
-    if (!(node->extension && node->as.opaque && node->extension->opaque_free_func)) {
-        memset(&node->as, 0, sizeof(node->as));
-        node->type = (uint16_t)type;
-        S_init_node_as(node);
-    }
+     * resource pointer. An extension's opaque data lives beside the arm, not
+     * in it, and stays with the node and its extension. */
+    memset(&node->as, 0, sizeof(node->as));
     node->type = (uint16_t)type;
+    S_init_node_as(node);
 
     return 1;
 }

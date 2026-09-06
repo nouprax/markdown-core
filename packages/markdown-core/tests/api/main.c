@@ -1780,6 +1780,35 @@ static void link_resource_setters_are_transactions(test_batch_runner *runner) {
     markdown_core_node_free(link);
 }
 
+static void set_type_keeps_extension_data_beside_the_arm(test_batch_runner *runner) {
+    /* An extension's per-node data lives beside the type-specific arm, not in
+     * it. Converting a formula, whose extension owns such data, into a link
+     * therefore starts the link without a resource instead of reading the
+     * payload as one, the payload stays for the extension to free, and
+     * freeing the document releases each once. While the payload shared the
+     * arm's storage, the freed payload's bytes were read as a resource's
+     * holder count on the way out. */
+    static const char markdown[] = "$x$ tail\n";
+    markdown_core_error *error = NULL;
+    markdown_core_document *document =
+        markdown_core_document_parse((const uint8_t *)markdown, sizeof(markdown) - 1, &error);
+    markdown_core_node *formula;
+
+    OK(runner, document != NULL && error == NULL, "the formula document parses");
+    formula = markdown_core_node_first_child(markdown_core_node_first_child(document->root));
+    INT_EQ(runner, markdown_core_node_get_kind(formula), MARKDOWN_CORE_KIND_FORMULA,
+           "the paragraph opens with a formula");
+    OK(runner, formula->opaque != NULL, "the formula's extension owns per-node data");
+    OK(runner, markdown_core_node_set_type(formula, MARKDOWN_CORE_NODE_LINK),
+       "set_type converts the formula into a link");
+    OK(runner, formula->opaque != NULL, "the extension's data stays with the node");
+    OK(runner, markdown_core_node_resource(formula) == NULL, "the converted link starts without a resource");
+    STR_EQ(runner, markdown_core_node_get_url(formula), "", "the converted link answers the empty url");
+    OK(runner, markdown_core_node_set_url(formula, "/converted"), "set_url creates the converted link's resource");
+    STR_EQ(runner, markdown_core_node_get_url(formula), "/converted", "set_url applied to the converted link");
+    markdown_core_document_free(document);
+}
+
 static void ref_source_pos(test_batch_runner *runner) {
     static const char markdown[] = "Let's try [reference] links.\n"
                                    "\n"
@@ -1869,6 +1898,7 @@ int main(void) {
     ref_source_pos(runner);
     link_resource_lifecycle(runner);
     link_resource_setters_are_transactions(runner);
+    set_type_keeps_extension_data_beside_the_arm(runner);
     association_accessor(runner);
     autolink_source_pos(runner);
     strbuf_overflow(runner);

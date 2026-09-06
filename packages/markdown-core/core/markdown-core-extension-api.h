@@ -475,8 +475,8 @@ int markdown_core_parser_attach_extension(markdown_core_parser *parser, const ma
  * Return 0 if the type could be changed, 1 otherwise.
  *
  * What the old type owned is released, and the new type's data starts as a
- * new node of that type would; opaque data belongs to the node and its
- * extension, not to the type, and stays.
+ * new node of that type would. An extension's opaque data belongs to the
+ * node and its extension, not to the type, and stays in place.
  */
 MARKDOWN_CORE_EXPORT int markdown_core_node_set_type(markdown_core_node *node, markdown_core_node_type type);
 

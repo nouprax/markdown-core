@@ -162,6 +162,11 @@ struct markdown_core_node {
     markdown_core_node_internal_flags flags;
 
     const markdown_core_extension *extension;
+    /* Per-node data an extension owns, allocated by its opaque_alloc_func and
+     * freed by its opaque_free_func. It lives beside the type-specific arm,
+     * never in it: it belongs to the node and its extension, not to the type,
+     * so a type change reinitializes the arm and leaves it in place. */
+    void *opaque;
 
     union {
         markdown_core_chunk literal;
@@ -172,7 +177,6 @@ struct markdown_core_node {
         markdown_core_association association;
         int html_block_type;
         int cell_index; // For keeping track of TABLE_CELL table alignments
-        void *opaque;
     } as;
 };
 

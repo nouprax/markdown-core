@@ -79,7 +79,7 @@ static node_directive *get_directive(markdown_core_node *node) {
         return NULL;
     }
 
-    return (node_directive *)node->as.opaque;
+    return (node_directive *)node->opaque;
 }
 
 static int ascii_is_space(unsigned char c) { return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f'; }
@@ -578,13 +578,13 @@ int markdown_core_extensions_directive_attribute_at(markdown_core_node *node, si
 static void directive_opaque_alloc(const markdown_core_extension *extension, markdown_core_mem *mem,
                                    markdown_core_node *node) {
     if (is_directive_node(node)) {
-        node->as.opaque = mem->calloc(1, sizeof(node_directive));
+        node->opaque = mem->calloc(1, sizeof(node_directive));
     }
 }
 
 static void directive_opaque_free(const markdown_core_extension *extension, markdown_core_mem *mem,
                                   markdown_core_node *node) {
-    node_directive *directive = (node_directive *)node->as.opaque;
+    node_directive *directive = (node_directive *)node->opaque;
     if (!directive) {
         return;
     }
@@ -595,7 +595,7 @@ static void directive_opaque_free(const markdown_core_extension *extension, mark
     markdown_core_chunk_free(mem, &directive->name);
     free_attribute_list(mem, &directive->attributes);
     mem->free(directive);
-    node->as.opaque = NULL;
+    node->opaque = NULL;
 }
 
 /* AN `=` PROMISES A VALUE. With none before the block ends the block is
@@ -1081,8 +1081,8 @@ static markdown_core_node *open_directive_block(const markdown_core_extension *e
     }
 
     markdown_core_node_set_extension(node, extension);
-    node->as.opaque = parser->mem->calloc(1, sizeof(node_directive));
-    if (!node->as.opaque) {
+    node->opaque = parser->mem->calloc(1, sizeof(node_directive));
+    if (!node->opaque) {
         parser->oom = true;
         markdown_core_node_free(node);
         free_parsed_directive(parser->mem, &parsed);
