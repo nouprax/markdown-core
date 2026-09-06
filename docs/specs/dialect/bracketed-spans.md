@@ -28,7 +28,7 @@ Document scope=1:1..1:32 anchor=null attributes={} children=1
     │   └── Text scope=1:2..1:5 anchor=null attributes={} literal="text" children=0
     ├── Text scope=1:15..1:15 anchor=null attributes={} literal=" " children=0
     └── Span scope=1:16..1:32 anchor="id" attributes={.c k="v"} children=1
-        └── Text scope=1:4..1:4 anchor=null attributes={} literal="x" children=0
+        └── Text scope=1:17..1:17 anchor=null attributes={} literal="x" children=0
 ````````````````````````````````
 
 `{}` yields a `Span` with `anchor=null` and `Attributes.empty`, and the

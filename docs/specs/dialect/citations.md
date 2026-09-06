@@ -16,7 +16,7 @@ never touches footnote recognition. Every example in this module runs with
 Document scope=1:1..1:19 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..1:19 anchor=null attributes={} children=1
     └── Cite scope=1:1..1:19 anchor=null attributes={} children=1
-        └── Citation scope=1:2..1:18 referent=bib(key="doe99",mode=normal) children=2
+        └── Citation scope=1:2..1:18 referent=bib(key="doe99",mode=normal) children=0
             ├── CitationPrefix children=1
             │   └── Text scope=1:2..1:4 anchor=null attributes={} literal="see" children=0
             └── CitationSuffix children=1
@@ -130,11 +130,11 @@ Document scope=1:1..1:22 anchor=null attributes={} children=1
         ├── Citation scope=1:2..1:3 referent=bib(key="a",mode=normal) children=0
         │   ├── CitationPrefix children=0
         │   └── CitationSuffix children=0
-        ├── Citation scope=1:6..1:13 referent=bib(key="b",mode=normal) children=1
+        ├── Citation scope=1:6..1:13 referent=bib(key="b",mode=normal) children=0
         │   ├── CitationPrefix children=0
         │   └── CitationSuffix children=1
         │       └── Text scope=1:8..1:13 anchor=null attributes={} literal=", p. 1" children=0
-        └── Citation scope=1:16..1:21 referent=bib(key="c",mode=normal) children=1
+        └── Citation scope=1:16..1:21 referent=bib(key="c",mode=normal) children=0
             ├── CitationPrefix children=1
             │   └── Text scope=1:16..1:18 anchor=null attributes={} literal="see" children=0
             └── CitationSuffix children=0
@@ -146,7 +146,7 @@ Document scope=1:1..1:22 anchor=null attributes={} children=1
 Document scope=1:1..1:16 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..1:16 anchor=null attributes={} children=1
     └── Cite scope=1:1..1:16 anchor=null attributes={} children=1
-        └── Citation scope=1:2..1:15 referent=bib(key="a",mode=normal) children=2
+        └── Citation scope=1:2..1:15 referent=bib(key="a",mode=normal) children=0
             ├── CitationPrefix children=0
             └── CitationSuffix children=2
                 ├── Text scope=1:4..1:5 anchor=null attributes={} literal=", " children=0
@@ -169,7 +169,7 @@ Document scope=1:1..1:23 anchor=null attributes={} children=1
     │       └── CitationSuffix children=0
     ├── Text scope=1:10..1:10 anchor=null attributes={} literal=" " children=0
     └── Cite scope=1:11..1:23 anchor=null attributes={} children=1
-        └── Citation scope=1:12..1:22 referent=bib(key="1990",mode=suppressAuthor) children=1
+        └── Citation scope=1:12..1:22 referent=bib(key="1990",mode=suppressAuthor) children=0
             ├── CitationPrefix children=1
             │   └── Text scope=1:12..1:16 anchor=null attributes={} literal="Smith" children=0
             └── CitationSuffix children=0
@@ -202,7 +202,7 @@ to a CSL-aware consumer and is not represented:
 Document scope=1:1..1:35 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..1:35 anchor=null attributes={} children=1
     └── Cite scope=1:1..1:35 anchor=null attributes={} children=1
-        └── Citation scope=1:2..1:34 referent=bib(key="smith",mode=normal) children=1
+        └── Citation scope=1:2..1:34 referent=bib(key="smith",mode=normal) children=0
             ├── CitationPrefix children=0
             └── CitationSuffix children=1
                 └── Text scope=1:8..1:34 anchor=null attributes={} literal="{ii, A, D-Z}, with a suffix" children=0
@@ -307,18 +307,18 @@ the further items:
 Document scope=1:1..3:16 anchor=null attributes={} children=2
 ├── Paragraph scope=1:1..1:27 anchor=null attributes={} children=2
 │   ├── Cite scope=1:1..1:16 anchor=null attributes={} children=1
-│   │   └── Citation scope=1:1..1:16 referent=bib(key="smith04",mode=authorInText) children=1
+│   │   └── Citation scope=1:1..1:16 referent=bib(key="smith04",mode=authorInText) children=0
 │   │       ├── CitationPrefix children=0
 │   │       └── CitationSuffix children=1
 │   │           └── Text scope=1:11..1:15 anchor=null attributes={} literal="p. 33" children=0
 │   └── Text scope=1:17..1:27 anchor=null attributes={} literal=" says blah." children=0
 └── Paragraph scope=3:1..3:16 anchor=null attributes={} children=1
     └── Cite scope=3:1..3:16 anchor=null attributes={} children=2
-        ├── Citation scope=3:1..3:6 referent=bib(key="k",mode=authorInText) children=1
+        ├── Citation scope=3:1..3:6 referent=bib(key="k",mode=authorInText) children=0
         │   ├── CitationPrefix children=0
         │   └── CitationSuffix children=1
         │       └── Text scope=3:5..3:6 anchor=null attributes={} literal="s1" children=0
-        └── Citation scope=3:9..3:15 referent=bib(key="k2",mode=normal) children=1
+        └── Citation scope=3:9..3:15 referent=bib(key="k2",mode=normal) children=0
             ├── CitationPrefix children=0
             └── CitationSuffix children=1
                 └── Text scope=3:12..3:15 anchor=null attributes={} literal=", s2" children=0

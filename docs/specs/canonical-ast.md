@@ -64,11 +64,12 @@ before entering that same parse path.
 CRLF. `column` is the 1-based byte index within the line; a tab is one byte.
 `start` is the first byte of the node's first code point and `end` the last
 byte of its last code point, inclusive. A node's scope never includes the line
-ending that terminates its last line. `SoftBreak` covers the line-ending bytes
-of its break. `LineBreak` covers the line-ending bytes together with the
-backslash that produced it; when trailing spaces produced it, the spaces stay
-inside the preceding `Text` node's scope and `LineBreak` covers the line
-ending alone. A multiline or grid table cell
+ending that terminates its last line, with one exception: `SoftBreak` and
+`LineBreak` are the nodes of a line ending, so their scopes cover those
+line-ending bytes. `SoftBreak` covers the line-ending bytes of its break.
+`LineBreak` covers the line-ending bytes together with the backslash that
+produced it; when trailing spaces produced it, the spaces stay inside the
+preceding `Text` node's scope and `LineBreak` covers the line ending alone. A multiline or grid table cell
 under the dialect's table options is the one construct whose scope may include
 bytes of sibling cells, because its segments are written on shared lines.
 
