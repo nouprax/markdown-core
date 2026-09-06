@@ -74,6 +74,13 @@
             "summary": "cmark-gfm consumes reference definitions into a map. Markdown Core retains source-faithful ReferenceDefinition and reference nodes.",
             "handling": "The normalizer projects Markdown Core's representation into the upstream resolved model while still comparing which definition, destination, title, and children were selected.",
             "projected": true
+        },
+        {
+            "id": "text-directive",
+            "kind": "deliberate-difference",
+            "summary": "The dialect's text directive claims a colon-led name, `:abc`, wherever the directives module admits one; CommonMark leaves the bytes as text.",
+            "rationale": "The dialect index lists directives as a feature of the one language, judged by remark (`pnpm check:mdast-parity`), and remark-directive parses the same input to the same text directive.",
+            "handling": "Keyed to the exact specification input."
         }
     ],
     "expectedDivergences": [
@@ -121,6 +128,11 @@
             "id": "table-split-lead-spelling",
             "input": "pre \\\\| lead\n| a | b |\n| - | - |\n",
             "note": "The non-table lead is parsed once, so an escaped backslash remains distinct from a pipe escape."
+        },
+        {
+            "id": "text-directive",
+            "input": "[foo:_x_@y.z](u) and [mailto:x@y.z](u)\n\nEmail me at:x@y.z or mailto:x@y.z, not word:name@nodot.\n",
+            "note": "`word:name@nodot` has no address after its colon, so the dialect's text directive claims `:name`; cmark-gfm has no directives and keeps the text. The two links and the emphasis inside the link agree."
         }
     ],
     "notDeltas": [],
