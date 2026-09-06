@@ -169,6 +169,9 @@ explicitly.
 - `VERSION` stays `3.0.0` until it is released, and nothing is frozen before
   that: kind ordinals, wire layouts, manifest order, and identifiers may change
   in any reviewed change.
+- Grammar notation is shared: `EOL` is a line ending or the end of input, so
+  a construct on a document's last line needs no trailing line ending; `SP`
+  is one space, `WSP` a space or tab, and `*3SP` up to three spaces.
 
 ## Examples
 
