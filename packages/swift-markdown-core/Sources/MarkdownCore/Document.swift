@@ -112,6 +112,9 @@ private struct NativeTreeBuilder {
 
     func document() -> Document {
         var values: [(any Markup)?] = Array(repeating: nil, count: records.count)
+        // Every occurrence of one reference definition shares one resource in
+        // the C tree; this materializes each distinct one once.
+        var resources: [UnsafeRawPointer: SharedResource] = [:]
         for index in records.indices.reversed() {
             let record = records[index]
             let children = record.children.map { childIndex -> any Markup in
@@ -129,7 +132,7 @@ private struct NativeTreeBuilder {
             } else {
                 label = nil
             }
-            values[index] = markup(from: record.node, children: children, label: label)
+            values[index] = markup(from: record.node, children: children, label: label, resources: &resources)
         }
         guard let document = values[0] as? Document else {
             preconditionFailure("native tree root is not a document")
@@ -144,7 +147,8 @@ private struct NativeTreeBuilder {
 func markup(
     from node: OpaquePointer,
     children: [any Markup],
-    label: DirectiveLabel?
+    label: DirectiveLabel?,
+    resources: inout [UnsafeRawPointer: SharedResource]
 ) -> any Markup {
     switch markdown_core_node_get_kind(node) {
     case MARKDOWN_CORE_KIND_DOCUMENT:
@@ -172,17 +176,14 @@ func markup(
     case MARKDOWN_CORE_KIND_EMPHASIS: Emphasis(from: node, content: children)
     case MARKDOWN_CORE_KIND_STRONG: Strong(from: node, content: children)
     case MARKDOWN_CORE_KIND_STRIKETHROUGH: Strikethrough(from: node, content: children)
-    case MARKDOWN_CORE_KIND_LINK: Link(from: node, content: children)
-    case MARKDOWN_CORE_KIND_IMAGE: Image(from: node, content: children)
+    case MARKDOWN_CORE_KIND_LINK: Link(from: node, content: children, resources: &resources)
+    case MARKDOWN_CORE_KIND_IMAGE: Image(from: node, content: children, resources: &resources)
     case MARKDOWN_CORE_KIND_DIRECTIVE: Directive(from: node, label: label)
     case MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE: FootnoteReference(from: node)
     case MARKDOWN_CORE_KIND_TABLE_ROW: TableRow(from: node, children: children)
     case MARKDOWN_CORE_KIND_TABLE_CELL: TableCell(from: node, content: children)
     case MARKDOWN_CORE_KIND_DIRECTIVE_LABEL:
         DirectiveLabel(scope: DirectiveLabel.scope(from: node), content: children)
-    case MARKDOWN_CORE_KIND_REFERENCE_DEFINITION: ReferenceDefinition(from: node)
-    case MARKDOWN_CORE_KIND_LINK_REFERENCE: LinkReference(from: node, content: children)
-    case MARKDOWN_CORE_KIND_IMAGE_REFERENCE: ImageReference(from: node, content: children)
     default: preconditionFailure("native parser returned an unknown node kind")
     }
 }

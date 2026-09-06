@@ -23,7 +23,6 @@ import { readExamples, selectExamples } from "./lib/fixture-corpus.mjs";
 
 import {
     applyUpstreamFootnoteModel,
-    applyUpstreamReferenceModel,
     liftFootnoteDefinitions,
     normalize,
     parseCanonicalDump,
@@ -132,11 +131,7 @@ function compare(input) {
     // `footnote-resolution-model` is applied before `normalize`, which keeps
     // only the compared fields and so drops the labels the model reads.
     const ourTree = liftFootnoteDefinitions(
-        normalize(
-            applyUpstreamReferenceModel(applyUpstreamFootnoteModel(parseCanonicalDump(runOurs(input)), fired), fired),
-            "ours",
-            fired
-        ),
+        normalize(applyUpstreamFootnoteModel(parseCanonicalDump(runOurs(input)), fired), "ours", fired),
         fired
     );
     const unmapped = new Set([...unknownKinds(upstreamTree), ...unknownKinds(ourTree)]);
@@ -161,7 +156,6 @@ const PROJECTED_DELTAS = new Set([
     "html-comment-node",
     "footnote-definition-placement",
     "footnote-resolution-model",
-    "reference-definition-node",
     "empty-text-node"
 ]);
 for (const delta of policy.deltas) {
@@ -269,11 +263,9 @@ if (backlog.size) {
 
 /* The projected half of the registry, held to the same rule as the keyed half.
  * A projection that never acts over the whole corpus is describing a difference
- * this engine does not have -- which is what `reference-definition-node` was
- * doing: registered as though Step 9b had landed, acting on nothing, and
- * excusing a comparison nobody was making. It is in `pendingDeltas` now, and a
- * pending projection that STARTS acting fails below for the same reason a
- * pending input that starts diverging does. */
+ * this engine does not have, and would sit here excusing a comparison nobody
+ * is making; a pending projection that STARTS acting fails below for the same
+ * reason a pending input that starts diverging does. */
 if (corpusOverride < 0 && limit === Infinity) {
     const pendingIds = new Set((policy.pendingDeltas ?? []).map((delta) => delta.id));
     const activeIds = new Set(policy.deltas.map((delta) => delta.id));

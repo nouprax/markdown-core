@@ -19,14 +19,8 @@ public struct Image: Markup {
 }
 
 extension Image {
-    init(from node: OpaquePointer, content: [any Markup]) {
-        var title = markdown_core_optional_string()
-        markdown_core_node_title(node, &title)
-        self.init(
-            scope: Self.scope(from: node),
-            content: content,
-            dest: Destination(from: node),
-            title: title.string
-        )
+    init(from node: OpaquePointer, content: [any Markup], resources: inout [UnsafeRawPointer: SharedResource]) {
+        let resource = SharedResource.shared(by: node, in: &resources)
+        self.init(scope: Self.scope(from: node), content: content, dest: resource.dest, title: resource.title)
     }
 }

@@ -4,6 +4,7 @@ package com.nouprax.markdown.core
 
 import cnames.structs.markdown_core_error
 import cnames.structs.markdown_core_node
+import cnames.structs.markdown_core_resource
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_DESTINATION_CROSS
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_DESTINATION_URL
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_ERROR_ALLOCATION_FAILED
@@ -26,14 +27,11 @@ import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_HEADING
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_HTML
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_HTML_BLOCK
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_IMAGE
-import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_IMAGE_REFERENCE
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_LINE_BREAK
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_LINK
-import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_LINK_REFERENCE
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_LIST
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_LIST_ITEM
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_PARAGRAPH
-import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_REFERENCE_DEFINITION
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_SOFT_BREAK
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_STRIKETHROUGH
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_STRONG
@@ -46,9 +44,6 @@ import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_LIST_FLAVOR_BULLET
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_LIST_FLAVOR_ORDERED
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_PLACEMENT_EMBEDDED
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_PLACEMENT_STANDALONE
-import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_REFERENCE_COLLAPSED
-import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_REFERENCE_FULL
-import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_REFERENCE_SHORTCUT
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_TABLE_ALIGNMENT_CENTER
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_TABLE_ALIGNMENT_LEFT
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_TABLE_ALIGNMENT_NONE
@@ -64,7 +59,6 @@ import com.nouprax.markdown.core.internal.capi.markdown_core_list_flavorVar
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_association
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_child_count
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_code_block_properties
-import com.nouprax.markdown.core.internal.capi.markdown_core_node_definition_resource
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_destination
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_directive_attribute_at
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_directive_label
@@ -77,7 +71,7 @@ import com.nouprax.markdown.core.internal.capi.markdown_core_node_heading_level
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_list_item_checked
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_list_properties
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_literal
-import com.nouprax.markdown.core.internal.capi.markdown_core_node_reference_form
+import com.nouprax.markdown.core.internal.capi.markdown_core_node_resource
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_scope
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_table_alignment_at
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_table_column_count
@@ -87,7 +81,6 @@ import com.nouprax.markdown.core.internal.capi.markdown_core_optional_bool
 import com.nouprax.markdown.core.internal.capi.markdown_core_optional_i64
 import com.nouprax.markdown.core.internal.capi.markdown_core_optional_string
 import com.nouprax.markdown.core.internal.capi.markdown_core_placement_modeVar
-import com.nouprax.markdown.core.internal.capi.markdown_core_reference_formVar
 import com.nouprax.markdown.core.internal.capi.markdown_core_string
 import com.nouprax.markdown.core.internal.capi.markdown_core_table_alignmentVar
 import kotlinx.cinterop.BooleanVar
@@ -163,6 +156,18 @@ private class NativeTreeBuilder(
 ) {
     private val records = mutableListOf(NativeNodeRecord(root))
     private lateinit var built: Array<Markup?>
+
+    /**
+     * Every occurrence of one reference definition shares one resource in the
+     * C tree, and its identity keys one materialization here, so a long
+     * destination referenced many times is copied out of C once.
+     */
+    private val resources = HashMap<CPointer<markdown_core_resource>, Pair<Destination, String?>>()
+
+    private fun resource(node: CPointer<markdown_core_node>): Pair<Destination, String?> {
+        val identity = requireNotNull(markdown_core_node_resource(node)) { "invalid link or image node" }
+        return resources.getOrPut(identity) { scratch.destination(node) to scratch.title(node) }
+    }
 
     fun build(): Markup {
         collectRelations()
@@ -303,11 +308,13 @@ private class NativeTreeBuilder(
             }
 
             MARKDOWN_CORE_KIND_LINK -> {
-                Link(scratch.destination(node), scratch.title(node), children, scope)
+                val resource = resource(node)
+                Link(resource.first, resource.second, children, scope)
             }
 
             MARKDOWN_CORE_KIND_IMAGE -> {
-                Image(scratch.destination(node), scratch.title(node), children, scope)
+                val resource = resource(node)
+                Image(resource.first, resource.second, children, scope)
             }
 
             MARKDOWN_CORE_KIND_DIRECTIVE -> {
@@ -330,23 +337,6 @@ private class NativeTreeBuilder(
 
             MARKDOWN_CORE_KIND_DIRECTIVE_LABEL -> {
                 DirectiveLabel(children, scope)
-            }
-
-            MARKDOWN_CORE_KIND_REFERENCE_DEFINITION -> {
-                requireLeaf(children, kind)
-                val association = scratch.association(node)
-                val resource = scratch.definitionResource(node)
-                ReferenceDefinition(association.first, association.second, resource.first, resource.second, scope)
-            }
-
-            MARKDOWN_CORE_KIND_LINK_REFERENCE -> {
-                val association = scratch.association(node)
-                LinkReference(association.first, association.second, scratch.referenceForm(node), children, scope)
-            }
-
-            MARKDOWN_CORE_KIND_IMAGE_REFERENCE -> {
-                val association = scratch.association(node)
-                ImageReference(association.first, association.second, scratch.referenceForm(node), children, scope)
             }
 
             else -> {
@@ -397,7 +387,6 @@ private class NativeScratch(
     private val listFlavor = scope.alloc<markdown_core_list_flavorVar>()
     private val placementMode = scope.alloc<markdown_core_placement_modeVar>()
     private val tableAlignment = scope.alloc<markdown_core_table_alignmentVar>()
-    private val referenceForm = scope.alloc<markdown_core_reference_formVar>()
     private val destination = scope.alloc<markdown_core_destination>()
 
     fun headingLevel(node: CPointer<markdown_core_node>): Int {
@@ -578,23 +567,6 @@ private class NativeScratch(
     fun association(node: CPointer<markdown_core_node>): Pair<String, String> {
         require(markdown_core_node_association(node, firstString.ptr, secondString.ptr)) { "invalid association node" }
         return firstString.copyString() to secondString.copyString()
-    }
-
-    fun definitionResource(node: CPointer<markdown_core_node>): Pair<String, String?> {
-        require(markdown_core_node_definition_resource(node, firstString.ptr, firstOptionalString.ptr)) {
-            "invalid reference definition node"
-        }
-        return firstString.copyString() to firstOptionalString.copyOptionalString()
-    }
-
-    fun referenceForm(node: CPointer<markdown_core_node>): ReferenceForm {
-        require(markdown_core_node_reference_form(node, referenceForm.ptr)) { "invalid reference node" }
-        return when (referenceForm.value) {
-            MARKDOWN_CORE_REFERENCE_FULL -> ReferenceForm.FULL
-            MARKDOWN_CORE_REFERENCE_COLLAPSED -> ReferenceForm.COLLAPSED
-            MARKDOWN_CORE_REFERENCE_SHORTCUT -> ReferenceForm.SHORTCUT
-            else -> error("unsupported native reference form ${referenceForm.value}")
-        }
     }
 }
 

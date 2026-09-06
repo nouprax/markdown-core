@@ -57,6 +57,24 @@ facade while removing renderer support and the caller-driven feed lifecycle.
   gates compare the real tagged value instead of wrapping a string. The
   links-and-images module's destination and autolink examples are a package
   fixture.
+- Resolve every reference link and image (M2). A link reference definition
+  produces no node: the parser consumes it into its reference map, which owns
+  the definition's destination and title once, and every successful full,
+  collapsed, shortcut, and autolink form is the `Link` or `Image` it names,
+  with the definition's destination and title and its own occurrence scope.
+  Every occurrence of one definition shares that one resource, so a long
+  destination referenced many times is stored once in the C tree, sent once
+  over the JNI and Wasm transports, and materialized once by every binding;
+  `markdown_core_node_resource` answers the identity, and the expansion bound
+  is re-derived around it. `LinkReference`, `ImageReference`,
+  `ReferenceDefinition`, and `ReferenceForm` leave every surface with their
+  accessors, `markdown_core_node_association` answers for the two footnote
+  kinds only, and an unresolved reference or an invalid definition keeps the
+  inherited literal text. The cmark and cmark-gfm gates no longer project a
+  reference model, the remark gate resolves mdast's definitions inside its
+  projection, and the order-independence audit compares the resolved links.
+  The links-and-images module's resolved-reference examples join the package
+  fixture.
 - Open one formula of a form at a time. A formula opener is a delimiter only
   while no opener of its form is unmatched, and a closer only while one is, so
   a body runs from its opener to the first closer of its form and an opener

@@ -164,36 +164,6 @@ private class DumpVisitor(
         state.container("FootnoteDefinition", node, association(node.label, node.identifier), node.content)
     }
 
-    override fun visitReferenceDefinition(node: ReferenceDefinition) {
-        state.line(
-            "ReferenceDefinition",
-            node,
-            association(node.label, node.identifier) +
-                listOf(
-                    "destination=${jsonString(node.destination)}",
-                    "title=${optionalString(node.title)}",
-                ),
-        )
-    }
-
-    override fun visitLinkReference(node: LinkReference) {
-        state.container(
-            "LinkReference",
-            node,
-            association(node.label, node.identifier) + listOf("form=${formName(node.form)}"),
-            node.content,
-        )
-    }
-
-    override fun visitImageReference(node: ImageReference) {
-        state.container(
-            "ImageReference",
-            node,
-            association(node.label, node.identifier) + listOf("form=${formName(node.form)}"),
-            node.content,
-        )
-    }
-
     override fun visitText(node: Text) {
         state.line("Text", node, listOf("literal=${jsonString(node.literal)}"))
     }
@@ -273,13 +243,6 @@ private class DumpVisitor(
         label: String,
         identifier: String,
     ): kotlin.collections.List<String> = listOf("label=${jsonString(label)}", "identifier=${jsonString(identifier)}")
-
-    private fun formName(form: ReferenceForm): String =
-        when (form) {
-            ReferenceForm.FULL -> "full"
-            ReferenceForm.COLLAPSED -> "collapsed"
-            ReferenceForm.SHORTCUT -> "shortcut"
-        }
 
     private fun directiveFields(
         name: String,

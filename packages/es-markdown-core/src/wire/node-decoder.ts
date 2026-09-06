@@ -7,7 +7,7 @@ import type { Markup } from "../model/markup.js";
 import type { TableCell, TableRow } from "../model/table.js";
 import { ParseError, type ParseErrorCode } from "../parse-error.js";
 import { TreeDumper } from "../tree-dumper.js";
-import type { Destination, ListFlavor, PlacementMode, ReferenceForm, Scope, TableAlignment } from "../values.js";
+import type { Destination, ListFlavor, PlacementMode, Scope, TableAlignment } from "../values.js";
 import { kinds, type NativeKind } from "./kinds.js";
 
 /*
@@ -73,6 +73,12 @@ interface ResultLayout {
     readonly stringsLength: number;
 }
 
+/** A destination and title materialized once and shared by every occurrence. */
+interface Resource {
+    readonly dest: Destination;
+    readonly title: string | null;
+}
+
 interface NodeRecord {
     readonly index: number;
     readonly offset: number;
@@ -93,6 +99,7 @@ export class NodeDecoder {
     private readonly utf8Decoder = new TextDecoder("utf-8", { fatal: false });
     private layout!: ResultLayout;
     private values: readonly (Markup | undefined)[] = [];
+    private readonly resources = new Map<number, Resource>();
 
     constructor(private readonly bytes: Uint8Array) {
         this.view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -334,33 +341,17 @@ export class NodeDecoder {
                 this.flags(record, 0);
                 this.leaf(record);
                 return { ...base, ...this.association(record) } as MarkupValue;
-            case "referenceDefinition":
-                this.flags(record, 0);
-                this.leaf(record);
-                return {
-                    ...base,
-                    ...this.association(record),
-                    destination: this.requiredString(record, 2),
-                    title: this.string(record, 3)
-                } as MarkupValue;
-            case "linkReference":
-            case "imageReference":
-                this.flags(record, 0);
-                return {
-                    ...base,
-                    ...this.association(record),
-                    form: this.referenceForm(record.scalar0),
-                    content: this.content(record)
-                } as MarkupValue;
             case "link":
-            case "image":
+            case "image": {
                 this.flags(record, 0);
+                const resource = this.resource(record);
                 return {
                     ...base,
-                    dest: this.destination(record),
-                    title: this.string(record, 2),
+                    dest: resource.dest,
+                    title: resource.title,
                     content: this.content(record)
                 } as MarkupValue;
+            }
             case "tableRow":
                 return this.tableRow(record);
             case "tableCell":
@@ -454,6 +445,26 @@ export class NodeDecoder {
 
     private association(record: NodeRecord): { readonly label: string; readonly identifier: string } {
         return { label: this.requiredString(record, 0), identifier: this.requiredString(record, 1) };
+    }
+
+    /**
+     * Every occurrence of one reference definition reads through one resource
+     * in the C tree, and a link or image record's integer names the first
+     * node that did. Each record carries the same string references, so the
+     * resource decodes from whichever occurrence is met first, and every
+     * record naming that index shares the one value.
+     */
+    private resource(record: NodeRecord): Resource {
+        const first = this.safeInteger(record.integer, "resource index");
+        if (first < 0 || first > record.index) {
+            throw new Error("native result resource does not name its first occurrence");
+        }
+        let resource = this.resources.get(first);
+        if (resource === undefined) {
+            resource = { dest: this.destination(record), title: this.string(record, 2) };
+            this.resources.set(first, resource);
+        }
+        return resource;
     }
 
     /**
@@ -552,13 +563,6 @@ export class NodeDecoder {
         if (value === 1) return "embedded";
         if (value === 2) return "standalone";
         throw new Error(`native result contains invalid placement mode ${value}`);
-    }
-
-    private referenceForm(value: number): ReferenceForm {
-        if (value === 1) return "full";
-        if (value === 2) return "collapsed";
-        if (value === 3) return "shortcut";
-        throw new Error(`native result contains invalid reference form ${value}`);
     }
 
     private listFlavor(value: number): ListFlavor {

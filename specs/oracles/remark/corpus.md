@@ -241,9 +241,9 @@ it. remark reads it the same way. Current cmark keeps the scanned title in its
 map, which is the reviewed `refdef-title-rewind` entry in
 specs/oracles/cmark/deltas.json.
 
-The expected block records the current source-faithful `ReferenceDefinition`
-and `LinkReference` model. The parity gate compares remark directly and does
-not use that stored block as an oracle.
+The expected block records the resolved model: the definition leaves no node,
+and the shortcut reference is the `Link` it names, with no title. The parity
+gate compares remark directly and does not use that stored block as an oracle.
 
 ```````````````````````````````` example
 [foo]: /url
@@ -251,12 +251,11 @@ not use that stored block as an oracle.
 
 [foo]
 .
-Document scope=1:1..4:5 children=3
-├── ReferenceDefinition scope=1:1..1:11 label="foo" destination="/url" title="" children=0
+Document scope=1:1..4:5 children=2
 ├── Paragraph scope=2:1..2:10 children=1
 │   └── Text scope=2:1..2:10 literal="\"title\" ok" children=0
 └── Paragraph scope=4:1..4:5 children=1
-    └── LinkReference scope=4:1..4:5 label="foo" form=shortcut children=1
+    └── Link scope=4:1..4:5 dest=url("/url") title=null children=1
         └── Text scope=4:2..4:4 literal="foo" children=0
 ````````````````````````````````
 

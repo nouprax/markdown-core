@@ -27,8 +27,7 @@ MARKDOWN_CORE_1.0 {
     markdown_core_node_destination;
     markdown_core_node_title;
     markdown_core_node_association;
-    markdown_core_node_definition_resource;
-    markdown_core_node_reference_form;
+    markdown_core_node_resource;
     markdown_core_document_dump;
     markdown_core_dump_free;
   local:

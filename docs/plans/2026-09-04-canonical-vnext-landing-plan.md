@@ -387,7 +387,7 @@ its behavior, with no separate publication step.
       the cmark, cmark-gfm, remark, and Obsidian projections read the real
       tagged value instead of wrapping a string. Manifest states:
       `destination.url.empty`, `destination.url.value`. Requires `S0`.
-- [ ] **M2 — Resolved reference links and images.** Resolve every successful
+- [x] **M2 — Resolved reference links and images.** Resolve every successful
       full, collapsed, shortcut, and autolink form to `Link(dest=url(...))` and
       every reference image to `Image` inside the existing parser-owned lookup,
       and remove `LinkReference`, `ImageReference`, `ReferenceDefinition`, and

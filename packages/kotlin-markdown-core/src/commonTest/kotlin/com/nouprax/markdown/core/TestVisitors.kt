@@ -33,12 +33,6 @@ internal class KindVisitor : Visitor<String> {
 
     override fun visitFootnoteDefinition(node: FootnoteDefinition): String = name(node)
 
-    override fun visitReferenceDefinition(node: ReferenceDefinition): String = name(node)
-
-    override fun visitLinkReference(node: LinkReference): String = name(node)
-
-    override fun visitImageReference(node: ImageReference): String = name(node)
-
     override fun visitText(node: Text): String = name(node)
 
     override fun visitSoftBreak(node: SoftBreak): String = name(node)
@@ -102,12 +96,6 @@ internal class RecordingVisitor : Visitor<Unit> {
     override fun visitDirectiveLabel(node: DirectiveLabel): Unit = record(node)
 
     override fun visitFootnoteDefinition(node: FootnoteDefinition): Unit = record(node)
-
-    override fun visitReferenceDefinition(node: ReferenceDefinition): Unit = record(node)
-
-    override fun visitLinkReference(node: LinkReference): Unit = record(node)
-
-    override fun visitImageReference(node: ImageReference): Unit = record(node)
 
     override fun visitText(node: Text): Unit = record(node)
 
@@ -245,21 +233,6 @@ internal class RecordingWalkingVisitor(
 
     override fun visitFootnoteDefinition(
         node: FootnoteDefinition,
-        phase: WalkPhase,
-    ): Unit = record(node, phase)
-
-    override fun visitReferenceDefinition(
-        node: ReferenceDefinition,
-        phase: WalkPhase,
-    ): Unit = record(node, phase)
-
-    override fun visitLinkReference(
-        node: LinkReference,
-        phase: WalkPhase,
-    ): Unit = record(node, phase)
-
-    override fun visitImageReference(
-        node: ImageReference,
         phase: WalkPhase,
     ): Unit = record(node, phase)
 

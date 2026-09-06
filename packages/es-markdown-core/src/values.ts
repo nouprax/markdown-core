@@ -20,7 +20,5 @@ export type ListFlavor = "bullet" | "ordered";
 export type Destination =
     | { readonly kind: "url"; readonly value: string }
     | { readonly kind: "cross"; readonly path: string; readonly anchor: string | null };
-/** Which of the three reference spellings the source wrote. */
-export type ReferenceForm = "full" | "collapsed" | "shortcut";
 export type PlacementMode = "embedded" | "standalone";
 export type TableAlignment = "none" | "left" | "center" | "right";

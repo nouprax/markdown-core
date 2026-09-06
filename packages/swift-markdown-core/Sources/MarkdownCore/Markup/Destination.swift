@@ -16,6 +16,32 @@ public enum Destination: Sendable, Hashable {
     case cross(path: String, anchor: String?)
 }
 
+/// The destination and title a link or image reads through its resource.
+///
+/// Every occurrence of one reference definition shares one resource in the C
+/// tree, and its identity keys one materialization here, so a long destination
+/// referenced many times is decoded once however often it is named.
+struct SharedResource {
+    let dest: Destination
+    let title: String?
+
+    static func shared(
+        by node: OpaquePointer,
+        in resources: inout [UnsafeRawPointer: SharedResource]
+    ) -> SharedResource {
+        guard let identity = markdown_core_node_resource(node) else {
+            preconditionFailure("native link or image has no resource")
+        }
+        let key = UnsafeRawPointer(identity)
+        if let known = resources[key] { return known }
+        var title = markdown_core_optional_string()
+        markdown_core_node_title(node, &title)
+        let resource = SharedResource(dest: Destination(from: node), title: title.string)
+        resources[key] = resource
+        return resource
+    }
+}
+
 extension Destination {
     init(from node: OpaquePointer) {
         var destination = markdown_core_destination()

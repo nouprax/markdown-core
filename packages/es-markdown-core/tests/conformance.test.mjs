@@ -52,10 +52,7 @@ test("conformance: public node schema is reachable", () => {
             "link",
             "image",
             "directive",
-            "footnoteReference",
-            "referenceDefinition",
-            "linkReference",
-            "imageReference"
+            "footnoteReference"
         ])
     );
     assert.ok(documents.every((document) => document.scope.start.line === 1 && document.scope.start.column === 1));

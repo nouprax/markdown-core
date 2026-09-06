@@ -568,106 +568,21 @@ static bool S_ends_with_blank_line(markdown_core_node *node) {
     }
 }
 
-/* THE DEFINITION IS A NODE (the rule above `markdown_core_definition`).
- *
- * A link reference definition read off the front of `b`'s content becomes a
- * `ReferenceDefinition` spliced in ahead of `b`, at the byte where its opening
- * bracket was written, owning every byte it read. Upstream drops those bytes
- * into a parser-private map and frees the paragraph that held them; keeping
- * them is what makes the block partition total for a definition-bearing
- * document, and it is why nothing here has to remember that a node was
- * destroyed.
- *
- * `from` and `upto` are offsets into `b`'s content, read BEFORE the harvest
- * drops it, so the content-to-source map still describes them.
- *
- * Q7 and Q26: the destination is REQUIRED. An allocation that loses it fails
- * the parse rather than producing a definition that lies about where it points.
- */
-static markdown_core_node *S_new_reference_definition(markdown_core_parser *parser, markdown_core_node *b,
-                                                      bufsize_t from, bufsize_t upto,
-                                                      const markdown_core_reference_parts *parts) {
-    markdown_core_node *node;
-    markdown_core_definition *definition;
-    markdown_core_chunk url = parts->url;
-    markdown_core_chunk title = parts->title;
-    int start_line, start_column, end_line, end_column;
-    bufsize_t last = upto;
-    int lost = 0;
-
-    /* The scope ends at the last byte the definition read that is not a line
-     * ending: a definition consumes the line ending that terminates it, and a
-     * block's end names its last byte the way every other block's does. */
-    while (last > from && S_is_line_end_char(b->content.ptr[last - 1])) {
-        last--;
-    }
-    /* Both refusals below FAIL THE PARSE rather than dropping the definition
-     * quietly. The harvest consumes these bytes either way, so a definition
-     * that could not be placed is a document missing source the author wrote
-     * while the reference map still resolves the label -- which is D30's shape
-     * exactly: a wrong document with the failure bit clear. Neither is
-     * reachable except through a lost content mark, and that already sets the
-     * bit; saying so here is what keeps it true when the map changes. */
-    if (last == from) {
-        parser->oom = true;
-        return NULL;
-    }
-    if (!markdown_core_parser_content_place(parser, b, from, &start_line, &start_column) ||
-        !markdown_core_parser_content_place(parser, b, last - 1, &end_line, &end_column)) {
-        parser->oom = true;
-        return NULL;
-    }
-
-    node = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_REFERENCE_DEFINITION, parser->mem);
-    if (!node) {
-        parser->oom = true;
-        return NULL;
-    }
-    definition = (markdown_core_definition *)parser->mem->calloc(1, sizeof(*definition));
-    if (!definition) {
-        parser->oom = true;
-        markdown_core_node_free(node);
-        return NULL;
-    }
-    node->as.definition = definition;
-    node->start_line = start_line;
-    node->start_column = start_column;
-    node->end_line = end_line;
-    node->end_column = end_column;
-
-    if (!markdown_core_association_init(parser->mem, &definition->association, &parts->label, 0)) {
-        /* The label would keep borrowing the content buffer the harvest drops. */
-        parser->oom = true;
-        markdown_core_node_free(node);
-        return NULL;
-    }
-    definition->url = markdown_core_clean_url(parser->mem, &url, &lost);
-    definition->title = markdown_core_clean_title(parser->mem, &title, &lost);
-    if (lost) {
-        parser->oom = true;
-        markdown_core_node_free(node);
-        return NULL;
-    }
-
-    if (!markdown_core_node_insert_before(b, node)) {
-        parser->oom = true;
-        markdown_core_node_free(node);
-        return NULL;
-    }
-    return node;
-}
-
+/* THE DEFINITION IS NOT A NODE (M2). A link reference definition read off the
+ * front of `b`'s content goes into the parser's map, which owns the resource it
+ * states once, and every reference that resolves to it is the `Link` or
+ * `Image` it names, sharing that resource. This is the inherited grammar's
+ * model, and it is why nothing here has to remember where the definition was
+ * written: the bytes are consumed, the block's remaining content is rebased
+ * onto where it was written, and an invalid definition is not consumed at all,
+ * so its bytes stay the paragraph text they were. */
 // returns true if content remains after link defs are resolved.
 static bool resolve_reference_link_definitions(markdown_core_parser *parser, markdown_core_node *b) {
     bufsize_t pos;
     markdown_core_strbuf *node_content = &b->content;
     markdown_core_chunk chunk = {node_content->ptr, node_content->size, 0};
-    markdown_core_reference_parts parts;
-    bufsize_t consumed = 0;
     while (chunk.len && chunk.data[0] == '[' &&
-           (pos = markdown_core_parse_reference_inline(parser->mem, &chunk, parser->refmap, &parts))) {
-        S_new_reference_definition(parser, b, consumed, consumed + pos, &parts);
-        consumed += pos;
+           (pos = markdown_core_parse_reference_inline(parser->mem, &chunk, parser->refmap))) {
         chunk.data += pos;
         chunk.len -= pos;
     }

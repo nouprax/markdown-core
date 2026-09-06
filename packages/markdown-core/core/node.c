@@ -35,8 +35,6 @@ bool markdown_core_node_can_contain_type(markdown_core_node *node, markdown_core
     case MARKDOWN_CORE_NODE_STRONG:
     case MARKDOWN_CORE_NODE_LINK:
     case MARKDOWN_CORE_NODE_IMAGE:
-    case MARKDOWN_CORE_NODE_LINK_REFERENCE:
-    case MARKDOWN_CORE_NODE_IMAGE_REFERENCE:
         return MARKDOWN_CORE_NODE_TYPE_INLINE_P(child_type);
 
     default:
@@ -147,23 +145,12 @@ static void free_node_as(markdown_core_node *node) {
     case MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION:
         markdown_core_association_free(NODE_MEM(node), &node->as.association);
         break;
-    case MARKDOWN_CORE_NODE_LINK_REFERENCE:
-    case MARKDOWN_CORE_NODE_IMAGE_REFERENCE:
-        markdown_core_association_free(NODE_MEM(node), &node->as.reference.association);
-        break;
     case MARKDOWN_CORE_NODE_LINK:
     case MARKDOWN_CORE_NODE_IMAGE:
-        markdown_core_chunk_free(NODE_MEM(node), &node->as.link.url);
-        markdown_core_optional_chunk_free(NODE_MEM(node), &node->as.link.title);
-        break;
-    case MARKDOWN_CORE_NODE_REFERENCE_DEFINITION:
-        if (node->as.definition) {
-            markdown_core_association_free(NODE_MEM(node), &node->as.definition->association);
-            markdown_core_chunk_free(NODE_MEM(node), &node->as.definition->url);
-            markdown_core_optional_chunk_free(NODE_MEM(node), &node->as.definition->title);
-            NODE_MEM(node)->free(node->as.definition);
-            node->as.definition = NULL;
-        }
+        /* One holder fewer; a resource shared with other occurrences, or
+         * still held by the reference map, stays. */
+        markdown_core_resource_release(NODE_MEM(node), node->as.link.resource);
+        node->as.link.resource = NULL;
         break;
     default:
         break;
@@ -268,12 +255,6 @@ const char *markdown_core_node_get_type_string(markdown_core_node *node) {
         return "thematic_break";
     case MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION:
         return "footnote_definition";
-    case MARKDOWN_CORE_NODE_REFERENCE_DEFINITION:
-        return "reference_definition";
-    case MARKDOWN_CORE_NODE_LINK_REFERENCE:
-        return "link_reference";
-    case MARKDOWN_CORE_NODE_IMAGE_REFERENCE:
-        return "image_reference";
     case MARKDOWN_CORE_NODE_TEXT:
         return "text";
     case MARKDOWN_CORE_NODE_SOFT_BREAK:
@@ -665,76 +646,124 @@ int markdown_core_node_set_fenced(markdown_core_node *node, int fenced, int leng
     }
 }
 
-const char *markdown_core_node_get_url(markdown_core_node *node) {
-    if (node == NULL) {
+markdown_core_resource *markdown_core_resource_new(markdown_core_mem *mem, markdown_core_chunk url,
+                                                   markdown_core_optional_chunk title) {
+    markdown_core_resource *resource = (markdown_core_resource *)mem->calloc(1, sizeof(*resource));
+    if (!resource) {
         return NULL;
     }
+    resource->url = url;
+    resource->title = title;
+    resource->holders = 1;
+    return resource;
+}
 
-    switch (node->type) {
-    case MARKDOWN_CORE_NODE_LINK:
-    case MARKDOWN_CORE_NODE_IMAGE:
-        return markdown_core_chunk_to_cstr(NODE_MEM(node), &node->as.link.url);
-    default:
-        break;
+void markdown_core_resource_retain(markdown_core_resource *resource) {
+    if (resource) {
+        resource->holders++;
     }
+}
 
-    return NULL;
+void markdown_core_resource_release(markdown_core_mem *mem, markdown_core_resource *resource) {
+    if (!resource) {
+        return;
+    }
+    assert(resource->holders > 0);
+    if (--resource->holders > 0) {
+        return;
+    }
+    markdown_core_chunk_free(mem, &resource->url);
+    markdown_core_optional_chunk_free(mem, &resource->title);
+    mem->free(resource);
+}
+
+static bool S_has_link_resource(markdown_core_node *node) {
+    return node != NULL && (node->type == MARKDOWN_CORE_NODE_LINK || node->type == MARKDOWN_CORE_NODE_IMAGE) &&
+           node->as.link.resource != NULL;
+}
+
+/* The legacy setters below write a node's resource in place. A resource shared
+ * with other occurrences, or with the reference map, is copied first, so that
+ * setting one occurrence's URL never rewrites the definition every other
+ * occurrence reads. Returns NULL when the copy could not be allocated; the
+ * node then keeps the shared resource untouched. */
+static markdown_core_resource *S_writable_resource(markdown_core_node *node) {
+    markdown_core_mem *mem = NODE_MEM(node);
+    markdown_core_resource *shared = node->as.link.resource;
+    markdown_core_resource *own;
+    markdown_core_chunk url = MARKDOWN_CORE_CHUNK_EMPTY;
+    markdown_core_optional_chunk title = markdown_core_optional_chunk_absent();
+    const char *text;
+    if (shared->holders == 1) {
+        return shared;
+    }
+    text = markdown_core_chunk_to_cstr(mem, &shared->url);
+    if (!text || !markdown_core_chunk_set_cstr(mem, &url, text)) {
+        return NULL;
+    }
+    if (shared->title.has_value) {
+        text = markdown_core_chunk_to_cstr(mem, &shared->title.value);
+        if (!text || !markdown_core_chunk_set_cstr(mem, &title.value, text)) {
+            markdown_core_chunk_free(mem, &url);
+            return NULL;
+        }
+        title.has_value = true;
+    }
+    own = markdown_core_resource_new(mem, url, title);
+    if (!own) {
+        markdown_core_chunk_free(mem, &url);
+        markdown_core_optional_chunk_free(mem, &title);
+        return NULL;
+    }
+    markdown_core_resource_release(mem, shared);
+    node->as.link.resource = own;
+    return own;
+}
+
+const char *markdown_core_node_get_url(markdown_core_node *node) {
+    if (!S_has_link_resource(node)) {
+        return NULL;
+    }
+    return markdown_core_chunk_to_cstr(NODE_MEM(node), &node->as.link.resource->url);
 }
 
 int markdown_core_node_set_url(markdown_core_node *node, const char *url) {
-    if (node == NULL) {
+    markdown_core_resource *resource;
+    if (!S_has_link_resource(node)) {
         return 0;
     }
-
-    switch (node->type) {
-    case MARKDOWN_CORE_NODE_LINK:
-    case MARKDOWN_CORE_NODE_IMAGE:
-        return markdown_core_chunk_set_cstr(NODE_MEM(node), &node->as.link.url, url);
-    default:
-        break;
+    resource = S_writable_resource(node);
+    if (!resource) {
+        return 0;
     }
-
-    return 0;
+    return markdown_core_chunk_set_cstr(NODE_MEM(node), &resource->url, url);
 }
 
 const char *markdown_core_node_get_title(markdown_core_node *node) {
-    if (node == NULL) {
+    if (!S_has_link_resource(node)) {
         return NULL;
     }
-
-    switch (node->type) {
-    case MARKDOWN_CORE_NODE_LINK:
-    case MARKDOWN_CORE_NODE_IMAGE:
-        /* ABSENT IS NULL, for the reason `get_fence_info` states. */
-        if (!node->as.link.title.has_value) {
-            return NULL;
-        }
-        return markdown_core_chunk_to_cstr(NODE_MEM(node), &node->as.link.title.value);
-    default:
-        break;
+    /* ABSENT IS NULL, for the reason `get_fence_info` states. */
+    if (!node->as.link.resource->title.has_value) {
+        return NULL;
     }
-
-    return NULL;
+    return markdown_core_chunk_to_cstr(NODE_MEM(node), &node->as.link.resource->title.value);
 }
 
 int markdown_core_node_set_title(markdown_core_node *node, const char *title) {
-    if (node == NULL) {
+    markdown_core_resource *resource;
+    if (!S_has_link_resource(node)) {
         return 0;
     }
-
-    switch (node->type) {
-    case MARKDOWN_CORE_NODE_LINK:
-    case MARKDOWN_CORE_NODE_IMAGE:
-        if (!markdown_core_chunk_set_cstr(NODE_MEM(node), &node->as.link.title.value, title)) {
-            return 0;
-        }
-        node->as.link.title.has_value = title != NULL;
-        return 1;
-    default:
-        break;
+    resource = S_writable_resource(node);
+    if (!resource) {
+        return 0;
     }
-
-    return 0;
+    if (!markdown_core_chunk_set_cstr(NODE_MEM(node), &resource->title.value, title)) {
+        return 0;
+    }
+    resource->title.has_value = title != NULL;
+    return 1;
 }
 
 int markdown_core_node_set_extension(markdown_core_node *node, const markdown_core_extension *extension) {

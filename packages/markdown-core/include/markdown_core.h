@@ -131,29 +131,16 @@ typedef enum markdown_core_node_kind {
     MARKDOWN_CORE_KIND_DIRECTIVE_LABEL,
     /* Appended, not inserted beside the other block kinds: this enum's ordinal
      * IS the wire kind every binding decodes, so a kind added in the middle
-     * renumbers every kind after it. */
-    MARKDOWN_CORE_KIND_REFERENCE_DEFINITION,
-    MARKDOWN_CORE_KIND_LINK_REFERENCE,
-    MARKDOWN_CORE_KIND_IMAGE_REFERENCE,
-    /* A comment of the dialect: the one kind that is valid in both block and
+     * renumbers every kind after it. (While 3.0.0 is unreleased a landing item
+     * may still renumber: M2 removed the three reference kinds that stood
+     * here, and this one moved down.)
+     *
+     * A comment of the dialect: the one kind that is valid in both block and
      * inline content. Its parent edge records which; the node stores no
      * placement. `markdown_core_node_literal` answers with the bytes between
      * the delimiters. */
     MARKDOWN_CORE_KIND_COMMENT
 } markdown_core_node_kind;
-
-/** The form a reference was written in: `[t][l]`, `[l][]` and `[l]` all
- * resolve the same way and are three different spellings, so nothing else on
- * the node records which one the author wrote. A footnote reference has no
- * form: there is one footnote call syntax (Q3). */
-#ifndef MARKDOWN_CORE_REFERENCE_FORM_TYPEDEF
-#define MARKDOWN_CORE_REFERENCE_FORM_TYPEDEF
-typedef enum markdown_core_reference_form {
-    MARKDOWN_CORE_REFERENCE_FULL = 1,
-    MARKDOWN_CORE_REFERENCE_COLLAPSED = 2,
-    MARKDOWN_CORE_REFERENCE_SHORTCUT = 3
-} markdown_core_reference_form;
-#endif
 
 typedef enum markdown_core_list_flavor {
     MARKDOWN_CORE_LIST_FLAVOR_BULLET = 1,
@@ -285,11 +272,11 @@ MARKDOWN_CORE_API const markdown_core_node *markdown_core_node_directive_label(c
  * and zeroes `url`. Every `Link` and `Image` answers the `url` branch.
  *
  * A destination is REQUIRED (Q26, requirement 14): `[a]()` and `[a](<>)`
- * wrote one and wrote nothing in it, so `url` is the empty string; the
- * shortcut and collapsed forms are `LinkReference` and carry none. `url`
- * holds the complete semantic destination the inherited grammar produced --
- * the bytes between angle brackets or the bare destination, with backslash
- * escapes and character references decoded and no percent-encoding,
+ * wrote one and wrote nothing in it, so `url` is the empty string, and a
+ * reference occurrence answers the destination its definition stated (M2).
+ * `url` holds the complete semantic destination the inherited grammar
+ * produced -- the bytes between angle brackets or the bare destination, with
+ * backslash escapes and character references decoded and no percent-encoding,
  * normalization, or resolution. */
 typedef enum markdown_core_destination_kind {
     MARKDOWN_CORE_DESTINATION_URL = 1,
@@ -310,9 +297,28 @@ MARKDOWN_CORE_API bool markdown_core_node_destination(const markdown_core_node *
  * `[a](/u "")` wrote an empty one, and the two stay different. Refuses every
  * other kind. */
 MARKDOWN_CORE_API bool markdown_core_node_title(const markdown_core_node *node, markdown_core_optional_string *title);
-/** The association a reference or a definition carries. Answers for
- * `ReferenceDefinition`, `LinkReference`, `ImageReference`,
- * `FootnoteDefinition` and `FootnoteReference`, and refuses every other kind.
+
+/** The resource a `Link` or `Image` reads its destination and title from, as
+ * an opaque identity (M2). Two nodes answer the same pointer exactly when they
+ * share one resource: every occurrence that resolved through one link
+ * reference definition does -- `[t][l]`, `[l][]` and `[l]` alike -- and a
+ * direct link, a direct image and an autolink never do. NULL for every other
+ * kind.
+ *
+ * The sharing is what bounds a document: one definition with a long
+ * destination referenced many times stores that destination once, however
+ * many occurrences name it. A consumer that materializes a destination once
+ * per distinct resource keys on this pointer. Nothing else about it is
+ * stated, and it is valid only while the document is. */
+#ifndef MARKDOWN_CORE_RESOURCE_TYPEDEF
+#define MARKDOWN_CORE_RESOURCE_TYPEDEF
+typedef struct markdown_core_resource markdown_core_resource;
+#endif
+MARKDOWN_CORE_API const markdown_core_resource *markdown_core_node_resource(const markdown_core_node *node);
+/** The association a footnote definition or reference carries. Answers for
+ * `FootnoteDefinition` and `FootnoteReference`, and refuses every other kind:
+ * a link or image reference resolves to the `Link` or `Image` it names (M2)
+ * and carries no association.
  *
  * `label` is the bytes between the delimiters exactly as the source spells
  * them: character escapes and character references unresolved, whitespace
@@ -332,18 +338,6 @@ MARKDOWN_CORE_API bool markdown_core_node_title(const markdown_core_node *node, 
  * this parser deliberately keeps apart. */
 MARKDOWN_CORE_API bool markdown_core_node_association(const markdown_core_node *node, markdown_core_string *label,
                                                       markdown_core_string *identifier);
-/** A link reference definition's resource.
- *
- * `destination` is REQUIRED and is never absent -- a definition whose
- * destination could not be built is not emitted at all (Q7, Q26) -- while
- * `title` is absent when the source wrote none, and empty when the source
- * wrote an empty one. */
-MARKDOWN_CORE_API bool markdown_core_node_definition_resource(const markdown_core_node *node,
-                                                              markdown_core_string *destination,
-                                                              markdown_core_optional_string *title);
-/** The form a `LinkReference` or `ImageReference` was written in. */
-MARKDOWN_CORE_API bool markdown_core_node_reference_form(const markdown_core_node *node,
-                                                         markdown_core_reference_form *form);
 
 /** Allocates the canonical file-tree dump. Free it with markdown_core_dump_free. */
 MARKDOWN_CORE_API bool markdown_core_document_dump(const markdown_core_document *document, uint8_t **output,

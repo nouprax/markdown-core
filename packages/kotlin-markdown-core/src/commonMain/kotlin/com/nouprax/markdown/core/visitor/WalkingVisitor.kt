@@ -98,21 +98,6 @@ public interface WalkingVisitor {
         phase: WalkPhase,
     )
 
-    public fun visitReferenceDefinition(
-        node: ReferenceDefinition,
-        phase: WalkPhase,
-    )
-
-    public fun visitLinkReference(
-        node: LinkReference,
-        phase: WalkPhase,
-    )
-
-    public fun visitImageReference(
-        node: ImageReference,
-        phase: WalkPhase,
-    )
-
     public fun visitText(
         node: Text,
         phase: WalkPhase,
@@ -332,23 +317,6 @@ private class WalkingDriver(
 
     override fun visitFootnoteDefinition(node: FootnoteDefinition) {
         visitor.visitFootnoteDefinition(node, phase)
-        scheduleExit(node)
-        if (phase == WalkPhase.ENTERING) schedule(node.content)
-    }
-
-    override fun visitReferenceDefinition(node: ReferenceDefinition) {
-        visitor.visitReferenceDefinition(node, phase)
-        scheduleExit(node)
-    }
-
-    override fun visitLinkReference(node: LinkReference) {
-        visitor.visitLinkReference(node, phase)
-        scheduleExit(node)
-        if (phase == WalkPhase.ENTERING) schedule(node.content)
-    }
-
-    override fun visitImageReference(node: ImageReference) {
-        visitor.visitImageReference(node, phase)
         scheduleExit(node)
         if (phase == WalkPhase.ENTERING) schedule(node.content)
     }

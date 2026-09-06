@@ -31,9 +31,6 @@ public protocol MarkupWalkingVisitor {
     mutating func visit(_ node: DirectiveBlock, phase: WalkPhase)
     mutating func visit(_ node: DirectiveLabel, phase: WalkPhase)
     mutating func visit(_ node: FootnoteDefinition, phase: WalkPhase)
-    mutating func visit(_ node: ReferenceDefinition, phase: WalkPhase)
-    mutating func visit(_ node: LinkReference, phase: WalkPhase)
-    mutating func visit(_ node: ImageReference, phase: WalkPhase)
     mutating func visit(_ node: Text, phase: WalkPhase)
     mutating func visit(_ node: SoftBreak, phase: WalkPhase)
     mutating func visit(_ node: LineBreak, phase: WalkPhase)
@@ -199,27 +196,6 @@ private struct WalkingDriver<WalkingVisitor: MarkupWalkingVisitor>: MarkupVisito
     }
 
     mutating func visit(_ node: FootnoteDefinition) {
-        visitor.visit(node, phase: phase)
-        scheduleExit(node)
-        if phase == .entering {
-            for child in node.content.reversed() { actions.append(.enter(child)) }
-        }
-    }
-
-    mutating func visit(_ node: ReferenceDefinition) {
-        visitor.visit(node, phase: phase)
-        scheduleExit(node)
-    }
-
-    mutating func visit(_ node: LinkReference) {
-        visitor.visit(node, phase: phase)
-        scheduleExit(node)
-        if phase == .entering {
-            for child in node.content.reversed() { actions.append(.enter(child)) }
-        }
-    }
-
-    mutating func visit(_ node: ImageReference) {
         visitor.visit(node, phase: phase)
         scheduleExit(node)
         if phase == .entering {

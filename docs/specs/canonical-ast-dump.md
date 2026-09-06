@@ -114,7 +114,6 @@ that the dump represents as nested descendants.
 | `TableRow` | `isHeader` |
 | `DirectiveBlock` | `name`, `attributes` |
 | `FootnoteDefinition` | `label`, `identifier` |
-| `ReferenceDefinition` | `label`, `identifier`, `destination`, `title` |
 | `Text` | `literal` |
 | `Code` | `literal` |
 | `HTML` | `literal` |
@@ -122,7 +121,6 @@ that the dump represents as nested descendants.
 | `Formula` | `mode`, `literal` |
 | `Link` | `dest`, `title` |
 | `Image` | `dest`, `title` |
-| `LinkReference`, `ImageReference` | `label`, `identifier`, `form` |
 | `Directive` | `name`, `attributes` |
 | `FootnoteReference` | `label`, `identifier` |
 

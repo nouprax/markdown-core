@@ -12,6 +12,7 @@
  * equivalents of the retired HTML-output assertions.  Traversal is
  * iterative, so 50000-deep trees cannot overflow the stack.
  */
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -610,14 +611,37 @@ static int case_reference_collisions(pc_context *context) {
     return 0;
 }
 
-/* A resolved reference names its definition instead of copying the
- * destination and title into every use. This fixed-shape regression checks the
- * resulting storage invariant directly: resource and association payload in
- * the semantic tree must stay within a constant multiple of source bytes.
- * No elapsed-time sample participates in the assertion. */
+/* A resolved reference SHARES its definition's resource instead of copying the
+ * destination and title into every use (M2). This fixed-shape regression checks
+ * the resulting storage invariant directly, around resource identity: every
+ * link or image is counted once per DISTINCT resource, the resource and
+ * association payload so counted must stay within the source bytes, and every
+ * occurrence of the one definition must answer the one identity. No
+ * elapsed-time sample participates in the assertion. */
 typedef struct pc_reference_payload {
     size_t bytes;
+    size_t occurrences;
+    size_t distinct;
+    /* Open addressing over resource identities. */
+    const void **seen;
+    size_t capacity;
 } pc_reference_payload;
+
+/* Records `identity`; answers 1 when it was already recorded. */
+static int pc_payload_seen(pc_reference_payload *total, const void *identity) {
+    size_t position = ((size_t)(uintptr_t)identity >> 4) & (total->capacity - 1);
+    for (;;) {
+        if (total->seen[position] == identity) {
+            return 1;
+        }
+        if (total->seen[position] == NULL) {
+            total->seen[position] = identity;
+            total->distinct++;
+            return 0;
+        }
+        position = (position + 1) & (total->capacity - 1);
+    }
+}
 
 static int pc_reference_payload_visit(const markdown_core_node *node, void *context) {
     pc_reference_payload *total = (pc_reference_payload *)context;
@@ -625,7 +649,19 @@ static int pc_reference_payload_visit(const markdown_core_node *node, void *cont
     markdown_core_string second;
     markdown_core_optional_string title;
     markdown_core_destination dest;
-    if (markdown_core_node_destination(node, &dest) && markdown_core_node_title(node, &title)) {
+    const markdown_core_resource *identity = markdown_core_node_resource(node);
+    if (identity) {
+        total->occurrences++;
+        if (total->distinct * 2 >= total->capacity) {
+            fprintf(stderr, "more distinct resources than the case can record\n");
+            return -1;
+        }
+        if (pc_payload_seen(total, identity)) {
+            return 0;
+        }
+        if (!markdown_core_node_destination(node, &dest) || !markdown_core_node_title(node, &title)) {
+            return -1;
+        }
         total->bytes += dest.url.length + dest.path.length + (dest.anchor.has_value ? dest.anchor.value.length : 0) +
                         (title.has_value ? title.value.length : 0);
     } else if (markdown_core_node_association(node, &first, &second)) {
@@ -635,13 +671,17 @@ static int pc_reference_payload_visit(const markdown_core_node *node, void *cont
 }
 
 static int case_reference_expansion_bound(pc_context *context) {
-    enum { DESTINATION_LENGTH = 1024, REFERENCE_COUNT = 131072 };
-    static const double MAX_PAYLOAD_RATIO = 8.0;
+    enum { DESTINATION_LENGTH = 1024, REFERENCE_COUNT = 131072, IDENTITIES = 1024 };
+    /* Decoding never lengthens a destination or a title, and a resource is
+     * stored once however often it is named, so the payload never exceeds
+     * the source. */
+    static const double MAX_PAYLOAD_RATIO = 1.0;
     size_t capacity = DESTINATION_LENGTH + 32 + REFERENCE_COUNT * 8;
     size_t written = 0;
     size_t index;
     pc_reference_payload total = {0};
     double ratio;
+    int result = 0;
 
     context->input = (char *)malloc(capacity);
     if (!context->input) {
@@ -656,17 +696,32 @@ static int case_reference_expansion_bound(pc_context *context) {
     }
     context->input_length = written;
 
+    total.capacity = IDENTITIES;
+    total.seen = (const void **)calloc(IDENTITIES, sizeof(*total.seen));
+    if (!total.seen) {
+        return -1;
+    }
     if (pc_parse(context) != 0 ||
         ts_ast_walk(markdown_core_document_root(context->document), pc_reference_payload_visit, &total) != 0) {
+        free(total.seen);
         return -1;
+    }
+    free(total.seen);
+    if (total.occurrences != REFERENCE_COUNT) {
+        fprintf(stderr, "%zu of %d references resolved\n", total.occurrences, REFERENCE_COUNT);
+        result = -1;
+    }
+    if (total.distinct != 1) {
+        fprintf(stderr, "%zu distinct resources for one definition\n", total.distinct);
+        result = -1;
     }
     ratio = (double)total.bytes / (double)context->input_length;
     if (ratio > MAX_PAYLOAD_RATIO) {
         fprintf(stderr, "reference payload expanded to %.3fx input (%zu payload bytes / %zu source bytes)\n", ratio,
                 total.bytes, context->input_length);
-        return -1;
+        result = -1;
     }
-    return 0;
+    return result;
 }
 
 /* Directive pathological cases -------------------------------------------- */

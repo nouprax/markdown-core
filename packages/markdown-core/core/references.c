@@ -53,7 +53,10 @@ void markdown_core_association_free(markdown_core_mem *mem, markdown_core_associ
     markdown_core_chunk_free(mem, &association->identifier);
 }
 
-static void definition_create(markdown_core_map *map, markdown_core_chunk *label) {
+/* Owns `resource` from the call on: it is kept on the new record or released
+ * on every path that makes none. */
+static void definition_create(markdown_core_mem *mem, markdown_core_map *map, markdown_core_chunk *label,
+                              markdown_core_resource *resource) {
     markdown_core_map_record *record;
     unsigned char *reflabel;
     int lost = 0;
@@ -61,6 +64,7 @@ static void definition_create(markdown_core_map *map, markdown_core_chunk *label
     /* A missing map means parser construction has already poisoned the parse;
      * keep cleanup paths null-safe while the transaction unwinds. */
     if (map == NULL) {
+        markdown_core_resource_release(mem, resource);
         return;
     }
 
@@ -70,6 +74,7 @@ static void definition_create(markdown_core_map *map, markdown_core_chunk *label
         if (lost) {
             map->oom = 1;
         }
+        markdown_core_resource_release(mem, resource);
         return;
     }
 
@@ -77,9 +82,11 @@ static void definition_create(markdown_core_map *map, markdown_core_chunk *label
     if (!record) {
         map->oom = 1;
         map->mem->free(reflabel);
+        markdown_core_resource_release(mem, resource);
         return;
     }
     record->label = reflabel;
+    record->resource = resource;
     record->next = map->records;
 
     map->records = record;
@@ -88,8 +95,9 @@ static void definition_create(markdown_core_map *map, markdown_core_chunk *label
 
 markdown_core_map *markdown_core_reference_map_new(markdown_core_mem *mem) { return markdown_core_map_new(mem); }
 
-void markdown_core_reference_create(markdown_core_map *map, markdown_core_chunk *label) {
-    definition_create(map, label);
+void markdown_core_reference_create(markdown_core_mem *mem, markdown_core_map *map, markdown_core_chunk *label,
+                                    markdown_core_resource *resource) {
+    definition_create(mem, map, label, resource);
 }
 
 markdown_core_map *markdown_core_footnote_definition_map_new(markdown_core_mem *mem) {
@@ -97,5 +105,5 @@ markdown_core_map *markdown_core_footnote_definition_map_new(markdown_core_mem *
 }
 
 void markdown_core_footnote_definition_create(markdown_core_map *map, markdown_core_chunk *label) {
-    definition_create(map, label);
+    definition_create(map ? map->mem : NULL, map, label, NULL);
 }

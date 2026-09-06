@@ -45,14 +45,16 @@ typedef enum {
      * the next free value. The internal type value is NOT the wire ordinal --
      * markdown_core_node_kind numbers the facade's kinds -- so the gap costs
      * nothing, but the natural assumption is that the next value is free and
-     * it is not. */
-    MARKDOWN_CORE_NODE_REFERENCE_DEFINITION = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x0010,
-    /* A block comment: an HTML block that opened with `<!--` and whose end
+     * it is not. (A link reference definition took 0x0010 until M2 resolved
+     * every reference into the `Link` or `Image` it names and the definition
+     * went back into the parser's map, where the inherited grammar keeps it.)
+     *
+     * A block comment: an HTML block that opened with `<!--` and whose end
      * line held only whitespace after the first `-->`. One public kind,
      * `MARKDOWN_CORE_KIND_COMMENT`, stands for this and for the inline type
      * below; the two internal types record which content the node sits in,
      * which is what containment checks and the inline parser ask. */
-    MARKDOWN_CORE_NODE_COMMENT_BLOCK = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x0011,
+    MARKDOWN_CORE_NODE_COMMENT_BLOCK = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x0010,
 
     /* Inline */
     MARKDOWN_CORE_NODE_TEXT = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x0001,
@@ -66,29 +68,14 @@ typedef enum {
     MARKDOWN_CORE_NODE_IMAGE = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x0009,
     MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x000a,
     /* 0x000b through 0x000e are the extension INLINE types; 0x000f is the next
-     * free value in that class and these two take it. The block class had no
-     * such value -- its extensions run to 0x000f -- which is why
-     * MARKDOWN_CORE_NODE_REFERENCE_DEFINITION starts at 0x0010 and these do
-     * not. The two classes are numbered independently; the class bits are what
-     * separate them. */
-    MARKDOWN_CORE_NODE_LINK_REFERENCE = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x000f,
-    MARKDOWN_CORE_NODE_IMAGE_REFERENCE = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x0010,
-    /* An inline HTML comment token: `<!-- ... -->`, `<!-->` or `<!--->`. */
-    MARKDOWN_CORE_NODE_COMMENT = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x0011,
+     * free value in that class. The block class had no such value -- its
+     * extensions run to 0x000f -- which is why its next core type starts at
+     * 0x0010 and this one does not. The two classes are numbered
+     * independently; the class bits are what separate them.
+     *
+     * An inline HTML comment token: `<!-- ... -->`, `<!-->` or `<!--->`. */
+    MARKDOWN_CORE_NODE_COMMENT = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x000f,
 } markdown_core_node_type;
-
-/* The form a reference was WRITTEN in, which is not derivable from anything
- * else on the node: `[t][l]`, `[l][]` and `[l]` all resolve the same way and
- * are three different spellings. A footnote reference deliberately has no form
- * -- there is one footnote call syntax, so a field would have one value (Q3). */
-#ifndef MARKDOWN_CORE_REFERENCE_FORM_TYPEDEF
-#define MARKDOWN_CORE_REFERENCE_FORM_TYPEDEF
-typedef enum markdown_core_reference_form {
-    MARKDOWN_CORE_REFERENCE_FULL = 1,
-    MARKDOWN_CORE_REFERENCE_COLLAPSED = 2,
-    MARKDOWN_CORE_REFERENCE_SHORTCUT = 3
-} markdown_core_reference_form;
-#endif
 
 typedef enum { MARKDOWN_CORE_NO_LIST, MARKDOWN_CORE_BULLET_LIST, MARKDOWN_CORE_ORDERED_LIST } markdown_core_list_type;
 

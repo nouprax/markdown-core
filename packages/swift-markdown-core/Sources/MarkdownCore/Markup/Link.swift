@@ -1,17 +1,18 @@
 import MarkdownCoreC
 
-/// An inline link — `[text](destination)`.
+/// A link — `[text](destination)`, any of the three reference forms, or an
+/// autolink.
 ///
-/// A link written in one of the three reference forms is a ``LinkReference``
-/// instead, and carries no destination at all.
+/// A reference occurrence is the link its definition names: it answers the
+/// definition's destination and title and keeps its own scope.
 public struct Link: Markup {
     /// Where it is, brackets and parentheses included. See ``Scope``.
     public let scope: Scope
     /// The link text, as inline content.
     public let content: [any Markup]
     /// Required: `[a]()` and `[a](<>)` wrote a destination and wrote nothing
-    /// in it, so they answer `.url("")`. A link with no destination at all is
-    /// a ``LinkReference``.
+    /// in it, so they answer `.url("")`; a reference occurrence answers the
+    /// destination its definition stated.
     public let dest: Destination
     /// Optional: `[a](/u)` wrote no title and `[a](/u "")` wrote an empty one.
     public let title: String?
@@ -21,14 +22,8 @@ public struct Link: Markup {
 }
 
 extension Link {
-    init(from node: OpaquePointer, content: [any Markup]) {
-        var title = markdown_core_optional_string()
-        markdown_core_node_title(node, &title)
-        self.init(
-            scope: Self.scope(from: node),
-            content: content,
-            dest: Destination(from: node),
-            title: title.string
-        )
+    init(from node: OpaquePointer, content: [any Markup], resources: inout [UnsafeRawPointer: SharedResource]) {
+        let resource = SharedResource.shared(by: node, in: &resources)
+        self.init(scope: Self.scope(from: node), content: content, dest: resource.dest, title: resource.title)
     }
 }
