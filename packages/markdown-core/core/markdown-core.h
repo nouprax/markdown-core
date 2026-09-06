@@ -427,6 +427,12 @@ MARKDOWN_CORE_EXPORT const char *markdown_core_node_get_url(markdown_core_node *
 
 /** Sets the URL of a link or image 'node'. Returns 1 on success,
  * 0 on failure.
+ *
+ * A link or image reads its URL and title through a resource. A node built
+ * by hand has none until its first setter creates one, which it then owns;
+ * a parsed occurrence that shares its definition's resource with other
+ * occurrences is given a private copy before it is written, so the others
+ * keep reading the definition.
  */
 MARKDOWN_CORE_EXPORT int markdown_core_node_set_url(markdown_core_node *node, const char *url);
 

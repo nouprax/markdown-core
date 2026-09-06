@@ -80,16 +80,11 @@ static bool S_can_contain(markdown_core_node *node, markdown_core_node *child) {
     return markdown_core_node_can_contain_type(node, (markdown_core_node_type)child->type);
 }
 
-markdown_core_node *markdown_core_node_new_with_mem_and_ext(markdown_core_node_type type, markdown_core_mem *mem,
-                                                            const markdown_core_extension *extension) {
-    markdown_core_node *node = (markdown_core_node *)mem->calloc(1, sizeof(*node));
-    if (!node) {
-        return NULL;
-    }
-    markdown_core_strbuf_init(mem, &node->content, 0);
-    node->type = (uint16_t)type;
-    node->extension = extension;
-
+/* The type-specific data a node of `node->type` starts with, over a zeroed
+ * arm. A link or image starts without a resource: the parser gives every
+ * occurrence the resource it resolves to, and a node built by hand gets its
+ * own from the first setter that writes it. */
+static void S_init_node_as(markdown_core_node *node) {
     switch (node->type) {
     case MARKDOWN_CORE_NODE_HEADING:
         node->as.heading.level = 1;
@@ -106,6 +101,18 @@ markdown_core_node *markdown_core_node_new_with_mem_and_ext(markdown_core_node_t
     default:
         break;
     }
+}
+
+markdown_core_node *markdown_core_node_new_with_mem_and_ext(markdown_core_node_type type, markdown_core_mem *mem,
+                                                            const markdown_core_extension *extension) {
+    markdown_core_node *node = (markdown_core_node *)mem->calloc(1, sizeof(*node));
+    if (!node) {
+        return NULL;
+    }
+    markdown_core_strbuf_init(mem, &node->content, 0);
+    node->type = (uint16_t)type;
+    node->extension = extension;
+    S_init_node_as(node);
 
     if (node->extension && node->extension->opaque_alloc_func) {
         node->extension->opaque_alloc_func(node->extension, mem, node);
@@ -216,6 +223,15 @@ int markdown_core_node_set_type(markdown_core_node *node, markdown_core_node_typ
     node->type = (uint16_t)initial_type;
     free_node_as(node);
 
+    /* The new type starts as a new node of that type would, rather than
+     * reading the old arm's bytes as its own -- a heading's level is not a
+     * resource pointer. Opaque data belongs to the node and its extension,
+     * not to the type, and stays. */
+    if (!(node->extension && node->as.opaque && node->extension->opaque_free_func)) {
+        memset(&node->as, 0, sizeof(node->as));
+        node->type = (uint16_t)type;
+        S_init_node_as(node);
+    }
     node->type = (uint16_t)type;
 
     return 1;
@@ -677,16 +693,16 @@ void markdown_core_resource_release(markdown_core_mem *mem, markdown_core_resour
     mem->free(resource);
 }
 
-static bool S_has_link_resource(markdown_core_node *node) {
-    return node != NULL && (node->type == MARKDOWN_CORE_NODE_LINK || node->type == MARKDOWN_CORE_NODE_IMAGE) &&
-           node->as.link.resource != NULL;
+static bool S_is_link(const markdown_core_node *node) {
+    return node != NULL && (node->type == MARKDOWN_CORE_NODE_LINK || node->type == MARKDOWN_CORE_NODE_IMAGE);
 }
 
-/* The legacy setters below write a node's resource in place. A resource shared
- * with other occurrences, or with the reference map, is copied first, so that
- * setting one occurrence's URL never rewrites the definition every other
- * occurrence reads. Returns NULL when the copy could not be allocated; the
- * node then keeps the shared resource untouched. */
+/* The legacy setters below write a node's resource in place. A node built by
+ * hand has none until its first setter creates one, which the node then owns.
+ * A resource shared with other occurrences, or with the reference map, is
+ * copied first, so that setting one occurrence's URL never rewrites the
+ * definition every other occurrence reads. Returns NULL when the resource
+ * could not be allocated; the node then keeps what it had untouched. */
 static markdown_core_resource *S_writable_resource(markdown_core_node *node) {
     markdown_core_mem *mem = NODE_MEM(node);
     markdown_core_resource *shared = node->as.link.resource;
@@ -694,6 +710,13 @@ static markdown_core_resource *S_writable_resource(markdown_core_node *node) {
     markdown_core_chunk url = MARKDOWN_CORE_CHUNK_EMPTY;
     markdown_core_optional_chunk title = markdown_core_optional_chunk_absent();
     const char *text;
+    if (shared == NULL) {
+        own = markdown_core_resource_new(mem, url, title);
+        if (own) {
+            node->as.link.resource = own;
+        }
+        return own;
+    }
     if (shared->holders == 1) {
         return shared;
     }
@@ -721,15 +744,20 @@ static markdown_core_resource *S_writable_resource(markdown_core_node *node) {
 }
 
 const char *markdown_core_node_get_url(markdown_core_node *node) {
-    if (!S_has_link_resource(node)) {
+    if (!S_is_link(node)) {
         return NULL;
+    }
+    /* A link that was given no destination answers the empty url, as `[a]()`
+     * does; it is not the NULL that says "not a link". */
+    if (!node->as.link.resource) {
+        return "";
     }
     return markdown_core_chunk_to_cstr(NODE_MEM(node), &node->as.link.resource->url);
 }
 
 int markdown_core_node_set_url(markdown_core_node *node, const char *url) {
     markdown_core_resource *resource;
-    if (!S_has_link_resource(node)) {
+    if (!S_is_link(node)) {
         return 0;
     }
     resource = S_writable_resource(node);
@@ -740,11 +768,11 @@ int markdown_core_node_set_url(markdown_core_node *node, const char *url) {
 }
 
 const char *markdown_core_node_get_title(markdown_core_node *node) {
-    if (!S_has_link_resource(node)) {
+    if (!S_is_link(node)) {
         return NULL;
     }
     /* ABSENT IS NULL, for the reason `get_fence_info` states. */
-    if (!node->as.link.resource->title.has_value) {
+    if (!node->as.link.resource || !node->as.link.resource->title.has_value) {
         return NULL;
     }
     return markdown_core_chunk_to_cstr(NODE_MEM(node), &node->as.link.resource->title.value);
@@ -752,7 +780,7 @@ const char *markdown_core_node_get_title(markdown_core_node *node) {
 
 int markdown_core_node_set_title(markdown_core_node *node, const char *title) {
     markdown_core_resource *resource;
-    if (!S_has_link_resource(node)) {
+    if (!S_is_link(node)) {
         return 0;
     }
     resource = S_writable_resource(node);

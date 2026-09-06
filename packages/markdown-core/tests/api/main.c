@@ -1617,6 +1617,83 @@ static void association_accessor(test_batch_runner *runner) {
     markdown_core_document_free(document);
 }
 
+static void link_resource_lifecycle(test_batch_runner *runner) {
+    /* M2: a link or image reads its destination and title through a resource
+     * the parser shares across every occurrence of one definition. A node
+     * built by hand starts without one and is the link `[a]()` is -- the
+     * empty url and no title -- until its first setter creates the resource
+     * it then owns; a node converted into a link starts the same way instead
+     * of reading the old arm's bytes as a resource; and writing one parsed
+     * occurrence copies a shared resource first, so the others keep reading
+     * the definition. */
+    markdown_core_node *paragraph = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
+    markdown_core_node *link = markdown_core_node_new(MARKDOWN_CORE_NODE_LINK);
+    markdown_core_node *image = markdown_core_node_new(MARKDOWN_CORE_NODE_IMAGE);
+    markdown_core_node *converted = markdown_core_node_new(MARKDOWN_CORE_NODE_TEXT);
+    markdown_core_destination destination;
+    markdown_core_optional_string title;
+
+    OK(runner, markdown_core_node_append_child(paragraph, link), "hand-built link joins a paragraph");
+    OK(runner, markdown_core_node_append_child(paragraph, image), "hand-built image joins a paragraph");
+    OK(runner, markdown_core_node_append_child(paragraph, converted), "text joins a paragraph");
+
+    STR_EQ(runner, markdown_core_node_get_url(link), "", "a hand-built link answers the empty url");
+    OK(runner, markdown_core_node_get_title(link) == NULL, "a hand-built link has no title");
+    OK(runner, markdown_core_node_resource(link) == NULL, "a hand-built link reads through no resource yet");
+    OK(runner, markdown_core_node_destination(link, &destination), "the facade answers a hand-built link");
+    INT_EQ(runner, destination.kind, MARKDOWN_CORE_DESTINATION_URL, "a hand-built link is the url branch");
+    INT_EQ(runner, (int)destination.url.length, 0, "a hand-built link's url is empty");
+    OK(runner, markdown_core_node_title(link, &title) && !title.has_value, "a hand-built link's title is absent");
+
+    OK(runner, markdown_core_node_set_url(link, "/hand"), "set_url creates a hand-built link's resource");
+    OK(runner, markdown_core_node_set_title(link, "made"), "set_title writes the resource set_url created");
+    STR_EQ(runner, markdown_core_node_get_url(link), "/hand", "set_url applied to a hand-built link");
+    STR_EQ(runner, markdown_core_node_get_title(link), "made", "set_title applied to a hand-built link");
+    OK(runner, markdown_core_node_resource(link) != NULL, "the hand-built link now owns a resource");
+    OK(runner,
+       markdown_core_node_destination(link, &destination) && destination.url.length == 5 &&
+           memcmp(destination.url.data, "/hand", 5) == 0,
+       "the facade reads the resource the setter created");
+    OK(runner, markdown_core_node_set_title(link, NULL), "set_title NULL clears the title");
+    OK(runner, markdown_core_node_get_title(link) == NULL, "a cleared title is absent");
+
+    OK(runner, markdown_core_node_set_title(image, "alt title"), "set_title creates a hand-built image's resource");
+    STR_EQ(runner, markdown_core_node_get_url(image), "", "an image given only a title keeps the empty url");
+    STR_EQ(runner, markdown_core_node_get_title(image), "alt title", "set_title applied to a hand-built image");
+    OK(runner, markdown_core_node_resource(image) != markdown_core_node_resource(link),
+       "two hand-built nodes own two resources");
+
+    OK(runner, markdown_core_node_set_literal(converted, "~~"), "the text to convert has a literal");
+    OK(runner, markdown_core_node_set_type(converted, MARKDOWN_CORE_NODE_LINK), "set_type converts text into a link");
+    STR_EQ(runner, markdown_core_node_get_url(converted), "", "a converted link starts with the empty url");
+    OK(runner, markdown_core_node_resource(converted) == NULL, "a converted link starts without a resource");
+    OK(runner, markdown_core_node_set_url(converted, "/converted"), "set_url creates a converted link's resource");
+    STR_EQ(runner, markdown_core_node_get_url(converted), "/converted", "set_url applied to a converted link");
+    OK(runner, markdown_core_node_set_type(converted, MARKDOWN_CORE_NODE_TEXT), "set_type converts the link back");
+    OK(runner, markdown_core_node_get_url(converted) == NULL, "a text node is not a link");
+    STR_EQ(runner, markdown_core_node_get_literal(converted), "", "converting back starts the literal empty");
+
+    markdown_core_node_free(paragraph);
+
+    /* Writing one parsed occurrence never rewrites the definition the others
+     * read. */
+    static const char markdown[] = "[a]: /shared \"t\"\n\n[a] [a]\n";
+    markdown_core_node *doc = markdown_core_parse_document(markdown, sizeof(markdown) - 1, MARKDOWN_CORE_OPT_DEFAULT);
+    markdown_core_node *first = markdown_core_node_first_child(markdown_core_node_first_child(doc));
+    markdown_core_node *second = markdown_core_node_next(markdown_core_node_next(first));
+    OK(runner,
+       markdown_core_node_resource(first) != NULL &&
+           markdown_core_node_resource(first) == markdown_core_node_resource(second),
+       "two occurrences of one definition read one resource");
+    OK(runner, markdown_core_node_set_url(first, "/mine"), "set_url on a shared occurrence");
+    STR_EQ(runner, markdown_core_node_get_url(first), "/mine", "the written occurrence answers its url");
+    STR_EQ(runner, markdown_core_node_get_url(second), "/shared", "the other occurrence keeps the definition's url");
+    STR_EQ(runner, markdown_core_node_get_title(first), "t", "the copy keeps the definition's title");
+    OK(runner, markdown_core_node_resource(first) != markdown_core_node_resource(second),
+       "the written occurrence now owns its own resource");
+    markdown_core_node_free(doc);
+}
+
 static void ref_source_pos(test_batch_runner *runner) {
     static const char markdown[] = "Let's try [reference] links.\n"
                                    "\n"
@@ -1704,6 +1781,7 @@ int main(void) {
     source_pos(runner);
     source_pos_inlines(runner);
     ref_source_pos(runner);
+    link_resource_lifecycle(runner);
     association_accessor(runner);
     autolink_source_pos(runner);
     strbuf_overflow(runner);

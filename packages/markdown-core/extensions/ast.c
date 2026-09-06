@@ -507,13 +507,18 @@ const markdown_core_node *markdown_core_node_directive_label(const markdown_core
     return is_directive(node) ? markdown_core_directive_label((markdown_core_node *)node) : NULL;
 }
 
-static bool has_resource(const markdown_core_node *node) {
-    return node && (node->type == MARKDOWN_CORE_NODE_LINK || node->type == MARKDOWN_CORE_NODE_IMAGE) &&
-           node->as.link.resource != NULL;
+static bool is_link(const markdown_core_node *node) {
+    return node && (node->type == MARKDOWN_CORE_NODE_LINK || node->type == MARKDOWN_CORE_NODE_IMAGE);
 }
 
+/* Every link and image the parser produces reads through a resource. One
+ * built by hand has none until an engine setter gives it one, and until then
+ * it is the link `[a]()` is: the empty url and no title. */
+static const markdown_core_chunk empty_url = {(unsigned char *)"", 0, 0};
+static const markdown_core_optional_chunk absent_title = {{NULL, 0, 0}, false};
+
 bool markdown_core_node_destination(const markdown_core_node *node, markdown_core_destination *destination) {
-    if (!has_resource(node) || !destination) {
+    if (!is_link(node) || !destination) {
         return false;
     }
     /* Every link and image the inherited grammar produces is the `url`
@@ -521,20 +526,20 @@ bool markdown_core_node_destination(const markdown_core_node *node, markdown_cor
      * other branch's fields are zeroed, not left over. */
     memset(destination, 0, sizeof(*destination));
     destination->kind = MARKDOWN_CORE_DESTINATION_URL;
-    string_from_chunk(&destination->url, &node->as.link.resource->url);
+    string_from_chunk(&destination->url, node->as.link.resource ? &node->as.link.resource->url : &empty_url);
     return true;
 }
 
 bool markdown_core_node_title(const markdown_core_node *node, markdown_core_optional_string *title) {
-    if (!has_resource(node) || !title) {
+    if (!is_link(node) || !title) {
         return false;
     }
-    optional_string_from_chunk(title, &node->as.link.resource->title);
+    optional_string_from_chunk(title, node->as.link.resource ? &node->as.link.resource->title : &absent_title);
     return true;
 }
 
 const markdown_core_resource *markdown_core_node_resource(const markdown_core_node *node) {
-    return has_resource(node) ? node->as.link.resource : NULL;
+    return is_link(node) ? node->as.link.resource : NULL;
 }
 
 /* ONE accessor for the two footnote kinds, dispatched on the type and relying

@@ -66,7 +66,12 @@ facade while removing renderer support and the caller-driven feed lifecycle.
   destination referenced many times is stored once in the C tree, sent once
   over the JNI and Wasm transports, and materialized once by every binding;
   `markdown_core_node_resource` answers the identity, and the expansion bound
-  is re-derived around it. `LinkReference`, `ImageReference`,
+  is re-derived around it. A link built through the engine API starts as
+  `[a]()` does, with the empty url and no title, its first
+  `markdown_core_node_set_url` or `set_title` creates the resource it then
+  owns, a shared occurrence is copied before it is written, and
+  `markdown_core_node_set_type` starts the new type's data as construction
+  would. `LinkReference`, `ImageReference`,
   `ReferenceDefinition`, and `ReferenceForm` leave every surface with their
   accessors, `markdown_core_node_association` answers for the two footnote
   kinds only, and an unresolved reference or an invalid definition keeps the
