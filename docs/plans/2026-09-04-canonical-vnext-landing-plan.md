@@ -311,11 +311,12 @@ its behavior, with no separate publication step.
       deliberately leaves an oracle's language: GFM autolink literals and the
       text directive against cmark, keyed to the specification inputs, and
       HTML-comment stripping against cmark and cmark-gfm as a projection until
-      `M0`; open the cmark-gfm `backlog` with the `mailto:` and `xmpp:`
-      collision that the recognition order decides for the autolink and no
-      item has implemented; and give the formula scanner's `\\]` and `\\)`
-      closers to the base language when nothing opened them, which running
-      the shipped language against cmark exposed. Make
+      `M0`. Fix the two collisions that running the shipped language
+      through the gates exposed: a colon that an address follows belongs to
+      the autolink scanner before the text directive can claim it, as the
+      recognition order (A3 before A10) and cmark-gfm say, and the formula
+      scanner's `\\]` and `\\)` closers fall to the base language when
+      nothing opened them. Make
       `scripts/check-canonical-ast-fixtures.mjs` stop reading option fields
       from the manifest and validate the coverage vocabulary alone, failing on
       a case that still names an option. Exit: every existing fixture and

@@ -121,8 +121,13 @@ const ORACLES = {
         // (`footnote-failed-call-interior`). Recombination separates a call
         // from its definition by construction, so any line carrying one
         // diverges. Both sides are exercised unrecombined by the corpus gate.
+        // A colon before an alphanumeric opens the dialect's text directive
+        // (`text-directive` in the cmark ledger), which cmark-gfm does not
+        // have; truncation turns `mailto:x@y.z` into `mailto:x@y`, where no
+        // address follows and the directive claims the name. The address
+        // forms themselves are judged unrecombined by the corpus gate.
         gateArgs: ["--oracle", "gfm"],
-        excludeFragments: ["[x]", "[X]", '"title" ok', "\\|", "[^"]
+        excludeFragments: ["[x]", "[X]", '"title" ok', "\\|", "[^", /(^|[^:]):[A-Za-z0-9]/]
     },
     remark: {
         policy: "specs/oracles/remark/deltas.json",

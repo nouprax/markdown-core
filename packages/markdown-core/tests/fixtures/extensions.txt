@@ -686,15 +686,12 @@ Document scope=1:1..13:40 children=7
 ````````````````````````````````
 
 The `mailto:` and `xmpp:` forms collide with the dialect's text directive:
-`:scyther` is a valid directive name, the directive scanner claims it in the
-inline phase, and the autolink scanner finds addresses in a later pass over
-what is left, so the address never forms. cmark-gfm links every line below;
-remark, with the same two extensions on, produces the same directive this dump
-shows. The recognition order of `docs/specs/dialect.md` puts the autolink
-scanner (A3) before the text directive (A10), which decides for the link, and
-`specs/oracles/cmark-gfm/deltas.json` carries these inputs in its backlog
-until the item that implements that order lands. This dump records the current
-behavior, not the required one.
+`:scyther` is also a valid directive name. The recognition order of
+`docs/specs/dialect.md` puts the autolink scanner (A3) before the text
+directive (A10), so the autolink scanner claims a colon that an address
+follows before the directive scanner sees it, and every line below links
+exactly as cmark-gfm links it; remark-directive, which would claim the
+directive, is not the authority here.
 
 ```````````````````````````````` example
 mailto:scyther@pokemon.com
@@ -722,56 +719,53 @@ xmpp:scyther@pokemon.com/message.
 Email me at:scyther@pokemon.com
 .
 Document scope=1:1..23:31 children=12
-├── Paragraph scope=1:1..1:26 children=3
-│   ├── Text scope=1:1..1:6 literal="mailto" children=0
-│   ├── Directive scope=1:7..1:14 name="scyther" attributes=null children=0
-│   └── Text scope=1:15..1:26 literal="@pokemon.com" children=0
-├── Paragraph scope=3:1..3:36 children=3
-│   ├── Text scope=3:1..3:16 literal="This is a mailto" children=0
-│   ├── Directive scope=3:17..3:24 name="scyther" attributes=null children=0
-│   └── Text scope=3:25..3:36 literal="@pokemon.com" children=0
-├── Paragraph scope=5:1..5:27 children=3
-│   ├── Text scope=5:1..5:6 literal="mailto" children=0
-│   ├── Directive scope=5:7..5:14 name="scyther" attributes=null children=0
-│   └── Text scope=5:15..5:27 literal="@pokemon.com." children=0
-├── Paragraph scope=7:1..7:29 children=3
-│   ├── Text scope=7:1..7:9 literal="mmmmailto" children=0
-│   ├── Directive scope=7:10..7:17 name="scyther" attributes=null children=0
-│   └── Text scope=7:18..7:29 literal="@pokemon.com" children=0
-├── Paragraph scope=9:1..9:27 children=3
-│   ├── Text scope=9:1..9:6 literal="mailto" children=0
-│   ├── Directive scope=9:7..9:14 name="scyther" attributes=null children=0
-│   └── Text scope=9:15..9:27 literal="@pokemon.com/" children=0
-├── Paragraph scope=11:1..11:34 children=3
-│   ├── Text scope=11:1..11:6 literal="mailto" children=0
-│   ├── Directive scope=11:7..11:14 name="scyther" attributes=null children=0
-│   └── Text scope=11:15..11:34 literal="@pokemon.com/message" children=0
-├── Paragraph scope=13:1..13:54 children=5
-│   ├── Text scope=13:1..13:6 literal="mailto" children=0
-│   ├── Directive scope=13:7..13:14 name="scyther" attributes=null children=0
-│   ├── Text scope=13:15..13:33 literal="@pokemon.com/mailto" children=0
-│   ├── Directive scope=13:34..13:42 name="beedrill" attributes=null children=0
-│   └── Text scope=13:43..13:54 literal="@pokemon.com" children=0
-├── Paragraph scope=15:1..15:24 children=3
-│   ├── Text scope=15:1..15:4 literal="xmpp" children=0
-│   ├── Directive scope=15:5..15:12 name="scyther" attributes=null children=0
-│   └── Text scope=15:13..15:24 literal="@pokemon.com" children=0
-├── Paragraph scope=17:1..17:25 children=3
-│   ├── Text scope=17:1..17:4 literal="xmpp" children=0
-│   ├── Directive scope=17:5..17:12 name="scyther" attributes=null children=0
-│   └── Text scope=17:13..17:25 literal="@pokemon.com." children=0
-├── Paragraph scope=19:1..19:32 children=3
-│   ├── Text scope=19:1..19:4 literal="xmpp" children=0
-│   ├── Directive scope=19:5..19:12 name="scyther" attributes=null children=0
-│   └── Text scope=19:13..19:32 literal="@pokemon.com/message" children=0
-├── Paragraph scope=21:1..21:33 children=3
-│   ├── Text scope=21:1..21:4 literal="xmpp" children=0
-│   ├── Directive scope=21:5..21:12 name="scyther" attributes=null children=0
-│   └── Text scope=21:13..21:33 literal="@pokemon.com/message." children=0
-└── Paragraph scope=23:1..23:31 children=3
-    ├── Text scope=23:1..23:11 literal="Email me at" children=0
-    ├── Directive scope=23:12..23:19 name="scyther" attributes=null children=0
-    └── Text scope=23:20..23:31 literal="@pokemon.com" children=0
+├── Paragraph scope=1:1..1:26 children=1
+│   └── Link scope=1:1..1:26 destination="mailto:scyther@pokemon.com" title=null children=1
+│       └── Text scope=1:1..1:26 literal="mailto:scyther@pokemon.com" children=0
+├── Paragraph scope=3:1..3:36 children=2
+│   ├── Text scope=3:1..3:10 literal="This is a " children=0
+│   └── Link scope=3:11..3:36 destination="mailto:scyther@pokemon.com" title=null children=1
+│       └── Text scope=3:11..3:36 literal="mailto:scyther@pokemon.com" children=0
+├── Paragraph scope=5:1..5:27 children=2
+│   ├── Link scope=5:1..5:26 destination="mailto:scyther@pokemon.com" title=null children=1
+│   │   └── Text scope=5:1..5:26 literal="mailto:scyther@pokemon.com" children=0
+│   └── Text scope=5:27..5:27 literal="." children=0
+├── Paragraph scope=7:1..7:29 children=2
+│   ├── Text scope=7:1..7:10 literal="mmmmailto:" children=0
+│   └── Link scope=7:11..7:29 destination="mailto:scyther@pokemon.com" title=null children=1
+│       └── Text scope=7:11..7:29 literal="scyther@pokemon.com" children=0
+├── Paragraph scope=9:1..9:27 children=2
+│   ├── Link scope=9:1..9:26 destination="mailto:scyther@pokemon.com" title=null children=1
+│   │   └── Text scope=9:1..9:26 literal="mailto:scyther@pokemon.com" children=0
+│   └── Text scope=9:27..9:27 literal="/" children=0
+├── Paragraph scope=11:1..11:34 children=2
+│   ├── Link scope=11:1..11:26 destination="mailto:scyther@pokemon.com" title=null children=1
+│   │   └── Text scope=11:1..11:26 literal="mailto:scyther@pokemon.com" children=0
+│   └── Text scope=11:27..11:34 literal="/message" children=0
+├── Paragraph scope=13:1..13:54 children=3
+│   ├── Link scope=13:1..13:26 destination="mailto:scyther@pokemon.com" title=null children=1
+│   │   └── Text scope=13:1..13:26 literal="mailto:scyther@pokemon.com" children=0
+│   ├── Text scope=13:27..13:27 literal="/" children=0
+│   └── Link scope=13:28..13:54 destination="mailto:beedrill@pokemon.com" title=null children=1
+│       └── Text scope=13:28..13:54 literal="mailto:beedrill@pokemon.com" children=0
+├── Paragraph scope=15:1..15:24 children=1
+│   └── Link scope=15:1..15:24 destination="xmpp:scyther@pokemon.com" title=null children=1
+│       └── Text scope=15:1..15:24 literal="xmpp:scyther@pokemon.com" children=0
+├── Paragraph scope=17:1..17:25 children=2
+│   ├── Link scope=17:1..17:24 destination="xmpp:scyther@pokemon.com" title=null children=1
+│   │   └── Text scope=17:1..17:24 literal="xmpp:scyther@pokemon.com" children=0
+│   └── Text scope=17:25..17:25 literal="." children=0
+├── Paragraph scope=19:1..19:32 children=1
+│   └── Link scope=19:1..19:32 destination="xmpp:scyther@pokemon.com/message" title=null children=1
+│       └── Text scope=19:1..19:32 literal="xmpp:scyther@pokemon.com/message" children=0
+├── Paragraph scope=21:1..21:33 children=2
+│   ├── Link scope=21:1..21:32 destination="xmpp:scyther@pokemon.com/message" title=null children=1
+│   │   └── Text scope=21:1..21:32 literal="xmpp:scyther@pokemon.com/message" children=0
+│   └── Text scope=21:33..21:33 literal="." children=0
+└── Paragraph scope=23:1..23:31 children=2
+    ├── Text scope=23:1..23:12 literal="Email me at:" children=0
+    └── Link scope=23:13..23:31 destination="mailto:scyther@pokemon.com" title=null children=1
+        └── Text scope=23:13..23:31 literal="scyther@pokemon.com" children=0
 ````````````````````````````````
 
 ```````````````````````````````` example

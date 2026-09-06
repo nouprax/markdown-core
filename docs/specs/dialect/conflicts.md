@@ -84,10 +84,10 @@ that settled it.
 - `mailto:` and `xmpp:` autolinks against the text directive: `mailto:x@y.z`
   reads as a bare autolink and as the text directive `:x`, and the
   recognition order gives it to the autolink (A3 before A10), as cmark-gfm
-  does; remark-directive gives it to the directive. The engine still finds
-  addresses in a pass after the directive scanner has claimed the colon, so
-  the cmark-gfm gate carries the collision in its backlog until the item
-  that implements the inline recognition order lands.
+  does; remark-directive, which gives it to the directive, is not the
+  authority. A colon that an address follows belongs to the autolink
+  scanner, whichever scheme or word precedes it. Product ruling on
+  2026-09-06.
 - Features are named after the dialect's own kinds and constructs: cross
   links, marks, comments, heading attributes, and implicit heading
   references, not the source's names.

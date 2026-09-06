@@ -22,8 +22,11 @@ facade while removing renderer support and the caller-driven feed lifecycle.
   deliberately leaves an oracle's language is registered against its exact
   inputs. Running the shipped language through the gates also showed that a
   `\\]` or `\\)` with nothing to close swallowed the bracket after it, so
-  `[bar\\]` stopped being a reference; the formula scanner now leaves an
-  unopened closer to the base language.
+  `[bar\\]` stopped being a reference, and that the text directive claimed
+  the colon of `mailto:x@y.z` before the autolink pass ran. The formula
+  scanner now leaves an unopened closer to the base language, and the
+  autolink scanner claims a colon that an address follows, as cmark-gfm
+  links it.
 - Raise the Swift package contract to Swift tools 6.3 and iOS 26/macOS 26,
   refresh Gradle, AGP, Kotlin, Node.js, pnpm, Emscripten, and SwiftLint
   pins, and audit every duplicated toolchain declaration for exact agreement.

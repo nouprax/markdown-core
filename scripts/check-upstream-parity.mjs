@@ -190,8 +190,9 @@ const pendingStep = new Map((policy.pendingDeltas ?? []).map((delta) => [delta.i
 // is not the authority here"; a backlog entry says "upstream is right and this
 // engine has not caught up yet", names the item that closes it, and must STILL
 // diverge: an entry that has quietly started agreeing is a fix that landed
-// without retiring its own entry, and an entry whose input left the corpus
-// proved nothing. The mdast gate runs the same protocol.
+// without deleting its own entry, and an entry whose input left the corpus
+// proved nothing and is retired on the record. The mdast gate runs the same
+// protocol.
 const backlog = new Map((policy.backlog ?? []).map((entry) => [entry.input, entry]));
 const backlogSeen = new Set();
 
@@ -343,7 +344,8 @@ if (divergent.length) {
         if (entry.settledBacklog) {
             process.stderr.write(
                 `    backlog entry owned by ${entry.settledBacklog.closedBy} no longer diverges: the two now agree,\n` +
-                    "    so the fix has landed. Move the entry into `retiredBacklog` in that commit.\n"
+                    "    so the fix has landed. Delete the entry in that commit; `retiredBacklog` is only for an input\n" +
+                    "    that left the corpus without ever agreeing.\n"
             );
             continue;
         }

@@ -143,15 +143,7 @@
     "corpusNote": "This gate intentionally does not compare unextended CommonMark examples. Markdown Core runs the `gfm` profile, which attaches the cmark-gfm extension set but leaves product directive and formula syntax disabled. CommonMark is checked separately against current cmark.",
     "pendingDeltas": [],
     "pendingExpectedDivergences": [],
-    "backlog": [
-        {
-            "input": "mailto:scyther@pokemon.com\n\nThis is a mailto:scyther@pokemon.com\n\nmailto:scyther@pokemon.com.\n\nmmmmailto:scyther@pokemon.com\n\nmailto:scyther@pokemon.com/\n\nmailto:scyther@pokemon.com/message\n\nmailto:scyther@pokemon.com/mailto:beedrill@pokemon.com\n\nxmpp:scyther@pokemon.com\n\nxmpp:scyther@pokemon.com.\n\nxmpp:scyther@pokemon.com/message\n\nxmpp:scyther@pokemon.com/message.\n\nEmail me at:scyther@pokemon.com\n",
-            "source": "packages/markdown-core/tests/fixtures/extensions.txt",
-            "summary": "`mailto:` and `xmpp:` autolinks: `:scyther` is a valid text-directive name, the directive scanner claims it in the inline phase, and the autolink scanner finds addresses in a later pass over what is left, so the address never forms. cmark-gfm links every line; remark with the same two extensions produces the same directive this engine does.",
-            "ruling": "The recognition order of docs/specs/dialect.md puts the autolink scanner (A3) before the text directive (A10), which decides for the link.",
-            "closedBy": "unassigned: the item that implements the inline recognition order"
-        }
-    ],
+    "backlog": [],
     "retiredBacklog": [],
-    "backlogNote": "An entry here says cmark-gfm is right and this engine has not caught up yet. Each names the item that closes it, must still diverge until then, and moves to `retiredBacklog` in the commit that lands the fix; scripts/check-upstream-parity.mjs enforces both directions."
+    "backlogNote": "An entry here says cmark-gfm is right and this engine has not caught up yet. Each names the item that closes it and must still diverge until then; the commit that lands the fix deletes the entry, and `retiredBacklog` records only an entry whose input left the corpus without ever agreeing. scripts/check-upstream-parity.mjs enforces every direction."
 }

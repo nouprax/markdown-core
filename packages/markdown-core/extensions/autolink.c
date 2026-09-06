@@ -359,19 +359,73 @@ static markdown_core_node *url_match(markdown_core_parser *parser, markdown_core
     return node;
 }
 
-static markdown_core_node *match(const markdown_core_extension *ext, markdown_core_parser *parser,
-                                 markdown_core_node *parent, unsigned char c,
-                                 markdown_core_inline_parser *inline_parser) {
-    if (markdown_core_inline_parser_in_bracket(inline_parser, false) ||
-        markdown_core_inline_parser_in_bracket(inline_parser, true)) {
+/* A3 BEFORE A10. A bare address is an autolink wherever it appears, and the
+ * text-directive scanner also claims a colon before a name, so at
+ * `mailto:x@y.z`, `xmpp:x@y.z`, or any `at:x@y.z` whichever scanner runs
+ * first owns the colon. The dialect's recognition order gives it to the
+ * autolink, as cmark-gfm does and remark-directive does not. The address is
+ * still linked by `postprocess_text`, byte for byte as cmark-gfm links it:
+ * this match only fences the colon and the address off as one opaque text so
+ * no later scanner can split them. The scheme before the colon stays in the
+ * text run it is in; the runs are consolidated before the postprocess pass,
+ * which then sees the whole `mailto:` spelling. */
+static markdown_core_node *address_match(markdown_core_parser *parser, markdown_core_inline_parser *inline_parser) {
+    markdown_core_chunk *chunk = markdown_core_inline_parser_get_chunk(inline_parser);
+    size_t offset = (size_t)markdown_core_inline_parser_get_offset(inline_parser);
+    uint8_t *data = chunk->data + offset;
+    size_t size = chunk->len - offset;
+    size_t at, end, np = 0;
+    markdown_core_node *node;
+
+    (void)parser;
+    /* The local part, then '@'. */
+    for (at = 1; at < size && (markdown_core_isalnum(data[at]) || strchr(".+-_", data[at]) != NULL); at++) {
+    }
+    if (at == 1 || at >= size || data[at] != '@') {
+        return NULL;
+    }
+    /* The domain, as `postprocess_text` scans it. */
+    for (end = at + 1; end < size; end++) {
+        uint8_t c = data[end];
+        if (markdown_core_isalnum(c)) {
+            continue;
+        }
+        if (c == '.' && end + 1 < size && markdown_core_isalnum(data[end + 1])) {
+            np++;
+            continue;
+        }
+        if (c != '-' && c != '_') {
+            break;
+        }
+    }
+    if (end - at < 2 || np == 0 || (!markdown_core_isalpha(data[end - 1]) && data[end - 1] != '.')) {
         return NULL;
     }
 
+    node = markdown_core_inline_parser_make_delimiter_text(inline_parser, (int)offset, (int)(offset + end - 1));
+    if (!node) {
+        return NULL;
+    }
+    markdown_core_inline_parser_set_offset(inline_parser, (int)(offset + end));
+    return node;
+}
+
+static markdown_core_node *match(const markdown_core_extension *ext, markdown_core_parser *parser,
+                                 markdown_core_node *parent, unsigned char c,
+                                 markdown_core_inline_parser *inline_parser) {
+    int in_bracket = markdown_core_inline_parser_in_bracket(inline_parser, false) ||
+                     markdown_core_inline_parser_in_bracket(inline_parser, true);
+
     if (c == ':') {
-        return url_match(parser, parent, inline_parser);
+        /* No link forms inside a bracket, but the colon is still fenced off
+         * with its address there: `postprocess_text` skips the text of a
+         * link, so `[mailto:x@y.z](u)` keeps its plain text as cmark-gfm
+         * does, and a bracket that never closes still gets its link. */
+        markdown_core_node *node = in_bracket ? NULL : url_match(parser, parent, inline_parser);
+        return node || parser->oom ? node : address_match(parser, inline_parser);
     }
 
-    if (c == 'w') {
+    if (c == 'w' && !in_bracket) {
         return www_match(parser, parent, inline_parser);
     }
 
