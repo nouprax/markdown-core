@@ -918,9 +918,10 @@ static int case_formula_backslash_pairs(pc_context *context) {
     return pc_formula_case(context, "\\\\(x\\\\)", " \\\\(x\\\\)", 19999, NULL, 20000, "x");
 }
 
-/* Twenty thousand openers, then twenty thousand closers: each closer pairs
- * with the nearest unmatched opener and the outer pairing replaces the inner
- * formula, so one formula survives and its literal is built once. */
+/* Twenty thousand openers, then twenty thousand closers: one formula of a
+ * form is open at a time, so the first opener opens, the rest are its body,
+ * the first closer closes it, and the remaining closers have nothing to close
+ * and stay with the base language. One formula, built once. */
 static int case_formula_backslash_nested(pc_context *context) {
     char *closers = ts_repeat("\\\\)", 20000, NULL);
     int result;

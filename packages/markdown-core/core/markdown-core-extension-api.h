@@ -521,15 +521,6 @@ void markdown_core_inline_parser_set_offset(markdown_core_inline_parser *parser,
 MARKDOWN_CORE_EXPORT
 struct markdown_core_chunk *markdown_core_inline_parser_get_chunk(markdown_core_inline_parser *parser);
 
-/** The block whose content the parser is reading, or NULL for a subject that
- * has none (the reference-definition parser). The chunk above is a view of
- * that block's content buffer, which outlives the inline pass, so a node that
- * records a range of it can read the bytes again at postprocess instead of
- * copying them while the delimiter stack is still being resolved.
- */
-MARKDOWN_CORE_EXPORT
-markdown_core_node *markdown_core_inline_parser_get_owner(markdown_core_inline_parser *parser);
-
 /** Returns 1 if the inline parser is currently in a bracket; pass 1 for 'image'
  * if you want to know about an image-type bracket, 0 for link-type. */
 MARKDOWN_CORE_EXPORT
@@ -587,7 +578,10 @@ delimiter *markdown_core_inline_parser_get_last_delimiter(markdown_core_inline_p
  * still unmatched: an extension whose closers may not stand alone -- a
  * formula's `\\)` is CommonMark's escaped backslash and a parenthesis unless
  * something opened it -- asks here before pushing one, so a closer that would
- * never pair stays with the base language.
+ * never pair stays with the base language. A rule whose openers may not nest
+ * asks the same question before pushing an opener, and its delimiters then
+ * alternate on the stack, so every closer pairs with the opener directly
+ * before it and no pair ever spans another of the rule.
  */
 MARKDOWN_CORE_EXPORT
 int markdown_core_inline_parser_has_unmatched_opener(markdown_core_inline_parser *parser,

@@ -158,8 +158,12 @@ Document scope=1:1..1:10 anchor=null attributes={} children=1
 ````````````````````````````````
 
 Delimiters are units on the shared delimiter stack; a closer matches the
-nearest unmatched opener of its own form, and a body may span soft line
-breaks within one inline container but not a block boundary:
+nearest unmatched opener of its own form. One formula of a form is open at a
+time: while an opener of a form is unmatched, a further opener of that form is
+the body's own bytes, and a closer of a form is a delimiter only while an
+opener of that form is unmatched, so a body runs from its opener to the first
+closer of its form. A body may span soft line breaks within one inline
+container but not a block boundary:
 
 ```````````````````````````````` example
 $a

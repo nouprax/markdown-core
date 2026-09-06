@@ -2222,8 +2222,6 @@ int markdown_core_inline_parser_get_column(markdown_core_inline_parser *parser) 
     return parser->pos + 1;
 }
 
-markdown_core_node *markdown_core_inline_parser_get_owner(markdown_core_inline_parser *parser) { return parser->owner; }
-
 markdown_core_chunk *markdown_core_inline_parser_get_chunk(markdown_core_inline_parser *parser) {
     return &parser->input;
 }

@@ -32,13 +32,6 @@ typedef struct {
     markdown_core_formula_mode mode;
     int block_delim;
     int closed;
-    /* An inline formula's body, as a range of its owning block's content,
-     * until `materialize_formula` builds the literal from it. NULL once built,
-     * or for a block formula, whose literal comes from its own content. */
-    markdown_core_node *body_owner;
-    bufsize_t body_start;
-    bufsize_t body_end;
-    markdown_core_delimiter_rule body_rule;
 } node_formula;
 
 static int is_formula_node(markdown_core_node *node) {
@@ -333,6 +326,29 @@ static bufsize_t scan_backslash_close(const unsigned char *data, bufsize_t len, 
     return 0;
 }
 
+/* ONE OPEN FORMULA PER FORM. A delimiter of a form opens only while no opener
+ * of that form is waiting on the stack, and closes only while one is, so a
+ * form's delimiters alternate opener, closer, opener, closer, and a closer's
+ * nearest unmatched opener is always the one directly before it. That is the
+ * index's word for step A4 -- a scanner whose body is opaque -- said on the
+ * delimiter stack the module names: from its opener on, a body runs to the
+ * first closer of its form, and an opener inside it is the body's own bytes.
+ * It is also what keeps the pairing linear. Without the gate, `\\(a \\(b\\) c\\)`
+ * paired the inner `\\(` first and then let the outer closer take the outer
+ * opener across the inner formula, so every level of a nest built a literal
+ * the next level threw away, and a paragraph of thousands of nested openers
+ * and closers copied bodies of growing length.
+ *
+ * The gate is the stack's own count, asked at the scan (`has_unmatched_opener`,
+ * kept at every push and removal), so it costs nothing and needs no memory of
+ * its own. A gated delimiter is still the text it was written as, and a pair
+ * that fails its shape test in `insert_formula` releases its bytes the same
+ * way.
+ *
+ * A backslash CLOSER with nothing to close is left to the base language
+ * entirely: `\\]` is then CommonMark's escaped backslash followed by a
+ * bracket closer, and the base scanner must see that `]`, or `[bar\\]` stops
+ * being a reference (CommonMark 0.31.2 example 558). */
 static markdown_core_node *match(const markdown_core_extension *extension, markdown_core_parser *parser,
                                  markdown_core_node *parent, unsigned char character,
                                  markdown_core_inline_parser *inline_parser) {
@@ -341,39 +357,39 @@ static markdown_core_node *match(const markdown_core_extension *extension, markd
     int len = (int)chunk->len;
     bufsize_t opener_len;
     bufsize_t closer_len;
+    int open;
 
     if (character == '$') {
         if (scan_formula_dollar_display_open(chunk->data, len, offset)) {
-            return match_formula_delimiter(extension, parser, inline_parser, FORMULA_DELIM_DOLLAR_DISPLAY, 2, 1, 1);
+            open = markdown_core_inline_parser_has_unmatched_opener(inline_parser, FORMULA_DELIM_DOLLAR_DISPLAY);
+            return match_formula_delimiter(extension, parser, inline_parser, FORMULA_DELIM_DOLLAR_DISPLAY, 2, !open,
+                                           open);
         }
 
         if (scan_formula_dollar_inline_open(chunk->data, len, offset)) {
+            open = markdown_core_inline_parser_has_unmatched_opener(inline_parser, FORMULA_DELIM_DOLLAR_INLINE);
             return match_formula_delimiter(extension, parser, inline_parser, FORMULA_DELIM_DOLLAR_INLINE, 1,
-                                           dollar_inline_can_open(chunk, (bufsize_t)offset),
-                                           dollar_inline_can_close(chunk, (bufsize_t)offset));
+                                           !open && dollar_inline_can_open(chunk, (bufsize_t)offset),
+                                           open && dollar_inline_can_close(chunk, (bufsize_t)offset));
         }
     } else if (character == '\\') {
         opener_len = scan_formula_latex_backslash_display_open(chunk->data, len, offset);
         if (opener_len) {
+            open =
+                markdown_core_inline_parser_has_unmatched_opener(inline_parser, FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY);
             return match_formula_delimiter(extension, parser, inline_parser, FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY,
-                                           opener_len, 1, 0);
+                                           opener_len, !open, 0);
         }
 
         opener_len = scan_formula_latex_backslash_inline_open(chunk->data, len, offset);
         if (opener_len) {
+            open =
+                markdown_core_inline_parser_has_unmatched_opener(inline_parser, FORMULA_DELIM_LATEX_BACKSLASH_INLINE);
             return match_formula_delimiter(extension, parser, inline_parser, FORMULA_DELIM_LATEX_BACKSLASH_INLINE,
-                                           opener_len, 1, 0);
+                                           opener_len, !open, 0);
         }
 
         closer_len = scan_backslash_close(chunk->data, chunk->len, offset, ']', 2);
-        /* A backslash CLOSER is claimed only when an opener of its rule is
-         * waiting: `\\]` with nothing to close is CommonMark's escaped
-         * backslash followed by a bracket closer, and the base scanner must
-         * see that `]`, or `[bar\\]` stops being a reference (CommonMark
-         * 0.31.2 example 558). A closer whose opener a closer before it
-         * already took is the same case, and it is not pushed, so the stack
-         * never fills with closers that could not pair. `$` needs no such
-         * check because the base language claims nothing a `$` run could hide. */
         if (closer_len &&
             markdown_core_inline_parser_has_unmatched_opener(inline_parser, FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY)) {
             return match_formula_delimiter(extension, parser, inline_parser, FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY,
@@ -477,65 +493,70 @@ static void strip_formula_padding(const unsigned char **literal, bufsize_t *len)
     *len = size;
 }
 
-/* THE LITERAL IS BUILT ONCE, AT POSTPROCESS. A pairing records where the
- * body lies in the owning block's content and nothing else. The module pairs
- * a closer with the nearest unmatched opener, so in `\\(a \\(b\\) c\\)` the
- * inner pair forms first and the outer pairing then replaces it; building
- * every inner literal on the way made a paragraph of N nested openers and
- * closers copy N bodies of growing length. A block's content outlives every
- * pass before this extension's postprocess, which is where the formulas that
- * survived read their bytes, each exactly once. */
-static markdown_core_node *make_pending_formula(const markdown_core_extension *extension, markdown_core_parser *parser,
-                                                markdown_core_formula_mode mode, markdown_core_node *owner,
-                                                markdown_core_delimiter_rule rule, bufsize_t body_start,
-                                                bufsize_t body_end) {
+static markdown_core_node *make_formula_node(const markdown_core_extension *extension, markdown_core_parser *parser,
+                                             markdown_core_formula_mode mode, const unsigned char *literal,
+                                             bufsize_t literal_len) {
     markdown_core_node *node =
         markdown_core_node_new_with_mem_and_ext(MARKDOWN_CORE_NODE_FORMULA, parser->mem, extension);
-    node_formula *formula;
-
     if (!node) {
         parser->oom = true;
         return NULL;
     }
-    formula = get_formula(node);
-    if (!formula) {
+    if (!get_formula(node)) {
         parser->oom = true;
         markdown_core_node_free(node);
         return NULL;
     }
-    formula->mode = mode;
-    formula->body_owner = owner;
-    formula->body_start = body_start;
-    formula->body_end = body_end;
-    formula->body_rule = rule;
+
+    get_formula(node)->mode = mode;
+    if (!set_formula_literal_bytes(node, literal, literal_len)) {
+        parser->oom = true;
+        markdown_core_node_free(node);
+        return NULL;
+    }
     return node;
 }
 
-/* Builds the literal of a formula `make_pending_formula` created: the
- * backslash forms unescape their own closer, `$`...`$` drops the backticks
- * `insert_formula` already matched, and every form then applies the padding
- * rule. Returns 0 when the copy failed. */
-static int materialize_formula(markdown_core_parser *parser, markdown_core_node *node) {
-    node_formula *formula = get_formula(node);
+/* The pair is built here, at the pairing, from the bytes between the two
+ * runs: the backslash forms unescape their own closer, `` $`...`$ `` drops the
+ * backticks it matched, and every form applies the padding rule. Each body is
+ * read once, because `match` lets one formula of a form open at a time and
+ * so no pair ever spans another of its form. */
+static delimiter *insert_formula(const markdown_core_extension *extension, markdown_core_parser *parser,
+                                 markdown_core_inline_parser *inline_parser, delimiter *opener, delimiter *closer) {
+    markdown_core_chunk *chunk = markdown_core_inline_parser_get_chunk(inline_parser);
+    markdown_core_node *opener_node = markdown_core_delimiter_node(opener);
+    markdown_core_node *closer_node = markdown_core_delimiter_node(closer);
+    delimiter *res = markdown_core_delimiter_next(closer);
+    markdown_core_node *formula;
+    markdown_core_delimiter_rule rule = markdown_core_delimiter_rule_of(opener);
+    markdown_core_formula_mode mode = mode_for_delim(rule);
+    bufsize_t body_start = markdown_core_delimiter_position(opener);
+    bufsize_t body_end = markdown_core_delimiter_position(closer) - markdown_core_delimiter_length(closer);
+    const unsigned char *body = chunk->data + body_start;
+    bufsize_t body_len = body_end - body_start;
     markdown_core_strbuf unescaped;
-    const unsigned char *body;
-    bufsize_t body_len;
-    int ok;
 
-    if (!formula || !formula->body_owner) {
-        return 1;
+    if (rule != markdown_core_delimiter_rule_of(closer)) {
+        goto done;
     }
-    if (!formula->body_owner->content.ptr || formula->body_start > formula->body_end ||
-        formula->body_end > (bufsize_t)formula->body_owner->content.size) {
-        formula->body_owner = NULL;
-        return 0;
+
+    if (markdown_core_delimiter_length(opener) != markdown_core_delimiter_length(closer) && is_backslash_delim(rule)) {
+        goto done;
     }
-    body = (const unsigned char *)formula->body_owner->content.ptr + formula->body_start;
-    body_len = formula->body_end - formula->body_start;
+
+    /* `` $`...`$ ``: a body that opens with a backtick must close with one. */
+    if (rule == FORMULA_DELIM_DOLLAR_INLINE && body_len > 0 && body[0] == '`') {
+        if (body_len < 2 || body[body_len - 1] != '`') {
+            goto done;
+        }
+        body++;
+        body_len -= 2;
+    }
+
     markdown_core_strbuf_init(parser->mem, &unescaped, 0);
-
-    if (is_backslash_delim(formula->body_rule)) {
-        unsigned char close_char = formula->mode == MARKDOWN_CORE_FORMULA_MODE_STANDALONE ? ']' : ')';
+    if (is_backslash_delim(rule)) {
+        unsigned char close_char = mode == MARKDOWN_CORE_FORMULA_MODE_STANDALONE ? ']' : ')';
         bufsize_t i = 0;
         while (i < body_len) {
             if (body[i] == '\\' && i + 1 < body_len && body[i + 1] == close_char) {
@@ -548,51 +569,16 @@ static int materialize_formula(markdown_core_parser *parser, markdown_core_node 
         }
         body = unescaped.ptr;
         body_len = unescaped.size;
-    } else if (formula->body_rule == FORMULA_DELIM_DOLLAR_INLINE && body_len > 0 && body[0] == '`') {
-        body++;
-        body_len -= 2;
     }
 
     /* micromark-extension-math's padding rule (Q18) applies to every form:
      * `\(...\)` and `\[...\]` too, and no oracle row covered that until the
      * step that added two. */
     strip_formula_padding(&body, &body_len);
-    ok = !unescaped.oom && set_formula_literal_bytes(node, body, body_len);
+    formula = unescaped.oom ? NULL : make_formula_node(extension, parser, mode, body, body_len);
     markdown_core_strbuf_free(&unescaped);
-    formula->body_owner = NULL;
-    return ok;
-}
-
-static delimiter *insert_formula(const markdown_core_extension *extension, markdown_core_parser *parser,
-                                 markdown_core_inline_parser *inline_parser, delimiter *opener, delimiter *closer) {
-    markdown_core_chunk *chunk = markdown_core_inline_parser_get_chunk(inline_parser);
-    markdown_core_node *owner = markdown_core_inline_parser_get_owner(inline_parser);
-    markdown_core_node *opener_node = markdown_core_delimiter_node(opener);
-    markdown_core_node *closer_node = markdown_core_delimiter_node(closer);
-    delimiter *res = markdown_core_delimiter_next(closer);
-    markdown_core_node *formula;
-    markdown_core_delimiter_rule rule = markdown_core_delimiter_rule_of(opener);
-    bufsize_t body_start = markdown_core_delimiter_position(opener);
-    bufsize_t body_end = markdown_core_delimiter_position(closer) - markdown_core_delimiter_length(closer);
-    const unsigned char *body = chunk->data + body_start;
-    bufsize_t body_len = body_end - body_start;
-
-    if (rule != markdown_core_delimiter_rule_of(closer) || !owner) {
-        goto done;
-    }
-
-    if (markdown_core_delimiter_length(opener) != markdown_core_delimiter_length(closer) && is_backslash_delim(rule)) {
-        goto done;
-    }
-
-    /* `` $`...`$ ``: a body that opens with a backtick must close with one. */
-    if (rule == FORMULA_DELIM_DOLLAR_INLINE && body_len > 0 && body[0] == '`' &&
-        (body_len < 2 || body[body_len - 1] != '`')) {
-        goto done;
-    }
-
-    formula = make_pending_formula(extension, parser, mode_for_delim(rule), owner, rule, body_start, body_end);
     if (!formula) {
+        parser->oom = true;
         goto done;
     }
 
@@ -694,15 +680,6 @@ static markdown_core_node *replace_with_formula_block(const markdown_core_extens
  * safe for an arbitrarily deep tree even when the tree contains no formula. */
 static markdown_core_node *postprocess_node(const markdown_core_extension *extension, markdown_core_parser *parser,
                                             markdown_core_node *node) {
-    if (node->type == MARKDOWN_CORE_NODE_FORMULA) {
-        /* Its EXIT comes before its paragraph's, so the paragraph promotion
-         * below always reads a built literal. */
-        if (!materialize_formula(parser, node)) {
-            parser->oom = true;
-        }
-        return node;
-    }
-
     if (node->type == MARKDOWN_CORE_NODE_FORMULA_BLOCK) {
         node_formula *formula = get_formula(node);
         if (formula && !formula->literal.data) {

@@ -43,12 +43,15 @@ facade while removing renderer support and the caller-driven feed lifecycle.
   the remark gate does the same for mdast, the position ledger records where
   cmark ends those blocks early, and the comments module's HTML examples are a
   package fixture.
-- Build an inline formula's literal once, at postprocess, from the owning
-  block's content. A closer pairs with the nearest unmatched opener, so a
-  nested pair replaced each inner formula after copying its body, and a
-  paragraph of thousands of nested `\\(` and `\\)` pairs took seconds;
-  twenty thousand now parse in milliseconds, and a pathological case pins
-  it.
+- Open one formula of a form at a time. A formula opener is a delimiter only
+  while no opener of its form is unmatched, and a closer only while one is, so
+  a body runs from its opener to the first closer of its form and an opener
+  inside it is the body's own bytes: `\\(a \\(b\\) c\\)` is the formula
+  `a \\(b` followed by text. Before, the inner pair formed first and the outer
+  closer then took the outer opener across it, so every level of a nest built
+  a literal the next level threw away, and a paragraph of thousands of nested
+  `\\(` and `\\)` pairs took seconds; a pathological case pins twenty
+  thousand.
 - Raise the Swift package contract to Swift tools 6.3 and iOS 26/macOS 26,
   refresh Gradle, AGP, Kotlin, Node.js, pnpm, Emscripten, and SwiftLint
   pins, and audit every duplicated toolchain declaration for exact agreement.
