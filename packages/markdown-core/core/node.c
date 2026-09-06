@@ -697,40 +697,52 @@ static bool S_is_link(const markdown_core_node *node) {
     return node != NULL && (node->type == MARKDOWN_CORE_NODE_LINK || node->type == MARKDOWN_CORE_NODE_IMAGE);
 }
 
-/* The legacy setters below write a node's resource in place. A node built by
- * hand has none until its first setter creates one, which the node then owns.
- * A resource shared with other occurrences, or with the reference map, is
- * copied first, so that setting one occurrence's URL never rewrites the
- * definition every other occurrence reads. Returns NULL when the resource
- * could not be allocated; the node then keeps what it had untouched. */
+/* An owned copy of `source`'s bytes; 0 when it could not be allocated. */
+static int S_chunk_copy(markdown_core_mem *mem, markdown_core_chunk *out, const markdown_core_chunk *source) {
+    unsigned char *data = (unsigned char *)mem->calloc((size_t)source->len + 1, 1);
+    if (!data) {
+        return 0;
+    }
+    if (source->len > 0) {
+        memcpy(data, source->data, (size_t)source->len);
+    }
+    out->data = data;
+    out->len = source->len;
+    out->alloc = 1;
+    return 1;
+}
+
+/* The resource a legacy setter writes in place, installed on the node. A node
+ * built by hand has none until its first setter creates one, which the node
+ * then owns. A resource shared with other occurrences, or with the reference
+ * map, is copied first, so that setting one occurrence's URL never rewrites
+ * the definition every other occurrence reads. Returns NULL, with the node
+ * untouched, when the resource could not be allocated.
+ *
+ * A SETTER IS A TRANSACTION: it builds the value it will write before it
+ * calls this, so that nothing can fail once the node has let go of what it
+ * shared, and a setter that answers 0 leaves the node reading exactly what it
+ * read before -- the same bytes through the same identity. */
 static markdown_core_resource *S_writable_resource(markdown_core_node *node) {
     markdown_core_mem *mem = NODE_MEM(node);
     markdown_core_resource *shared = node->as.link.resource;
     markdown_core_resource *own;
     markdown_core_chunk url = MARKDOWN_CORE_CHUNK_EMPTY;
     markdown_core_optional_chunk title = markdown_core_optional_chunk_absent();
-    const char *text;
-    if (shared == NULL) {
-        own = markdown_core_resource_new(mem, url, title);
-        if (own) {
-            node->as.link.resource = own;
-        }
-        return own;
-    }
-    if (shared->holders == 1) {
+    if (shared != NULL && shared->holders == 1) {
         return shared;
     }
-    text = markdown_core_chunk_to_cstr(mem, &shared->url);
-    if (!text || !markdown_core_chunk_set_cstr(mem, &url, text)) {
-        return NULL;
-    }
-    if (shared->title.has_value) {
-        text = markdown_core_chunk_to_cstr(mem, &shared->title.value);
-        if (!text || !markdown_core_chunk_set_cstr(mem, &title.value, text)) {
-            markdown_core_chunk_free(mem, &url);
+    if (shared != NULL) {
+        if (!S_chunk_copy(mem, &url, &shared->url)) {
             return NULL;
         }
-        title.has_value = true;
+        if (shared->title.has_value) {
+            if (!S_chunk_copy(mem, &title.value, &shared->title.value)) {
+                markdown_core_chunk_free(mem, &url);
+                return NULL;
+            }
+            title.has_value = true;
+        }
     }
     own = markdown_core_resource_new(mem, url, title);
     if (!own) {
@@ -756,15 +768,25 @@ const char *markdown_core_node_get_url(markdown_core_node *node) {
 }
 
 int markdown_core_node_set_url(markdown_core_node *node, const char *url) {
+    markdown_core_mem *mem;
+    markdown_core_chunk value = MARKDOWN_CORE_CHUNK_EMPTY;
     markdown_core_resource *resource;
     if (!S_is_link(node)) {
         return 0;
     }
-    resource = S_writable_resource(node);
-    if (!resource) {
+    mem = NODE_MEM(node);
+    /* The value first, the resource second: the swap cannot fail. */
+    if (!markdown_core_chunk_set_cstr(mem, &value, url)) {
         return 0;
     }
-    return markdown_core_chunk_set_cstr(NODE_MEM(node), &resource->url, url);
+    resource = S_writable_resource(node);
+    if (!resource) {
+        markdown_core_chunk_free(mem, &value);
+        return 0;
+    }
+    markdown_core_chunk_free(mem, &resource->url);
+    resource->url = value;
+    return 1;
 }
 
 const char *markdown_core_node_get_title(markdown_core_node *node) {
@@ -779,18 +801,27 @@ const char *markdown_core_node_get_title(markdown_core_node *node) {
 }
 
 int markdown_core_node_set_title(markdown_core_node *node, const char *title) {
+    markdown_core_mem *mem;
+    markdown_core_optional_chunk value = markdown_core_optional_chunk_absent();
     markdown_core_resource *resource;
     if (!S_is_link(node)) {
         return 0;
     }
+    mem = NODE_MEM(node);
+    /* The value first, the resource second: the swap cannot fail. */
+    if (title != NULL) {
+        if (!markdown_core_chunk_set_cstr(mem, &value.value, title)) {
+            return 0;
+        }
+        value.has_value = true;
+    }
     resource = S_writable_resource(node);
     if (!resource) {
+        markdown_core_optional_chunk_free(mem, &value);
         return 0;
     }
-    if (!markdown_core_chunk_set_cstr(NODE_MEM(node), &resource->title.value, title)) {
-        return 0;
-    }
-    resource->title.has_value = title != NULL;
+    markdown_core_optional_chunk_free(mem, &resource->title);
+    resource->title = value;
     return 1;
 }
 

@@ -1694,6 +1694,92 @@ static void link_resource_lifecycle(test_batch_runner *runner) {
     markdown_core_node_free(doc);
 }
 
+static unsigned long setter_allocations;
+static unsigned long setter_fail_at;
+static void *setter_calloc(size_t count, size_t size) {
+    if (++setter_allocations == setter_fail_at) {
+        return NULL;
+    }
+    return calloc(count, size);
+}
+static void *setter_realloc(void *pointer, size_t size) {
+    if (++setter_allocations == setter_fail_at) {
+        return NULL;
+    }
+    return realloc(pointer, size);
+}
+static void setter_free(void *pointer) { free(pointer); }
+static markdown_core_mem setter_mem = {setter_calloc, setter_realloc, setter_free};
+
+static void link_resource_setters_are_transactions(test_batch_runner *runner) {
+    /* A setter that answers 0 leaves the node reading exactly what it read
+     * before: the same bytes through the same identity. The sweep refuses
+     * each allocation of the operation in turn, so every failure point inside
+     * it is reached -- the value, the copy of a shared resource's url and
+     * title, the resource itself -- and the attempt after the last one
+     * succeeds. Before the setters built the value first, a refusal after the
+     * copy was installed detached the occurrence from its definition while
+     * reporting that nothing was written. */
+    static const char markdown[] = "[a]: /shared \"t\"\n\n[a] [a]\n";
+    markdown_core_error *error = NULL;
+    markdown_core_document *document =
+        markdown_core_document_parse_with_mem((const uint8_t *)markdown, sizeof(markdown) - 1, &setter_mem, &error);
+    markdown_core_node *first;
+    markdown_core_node *second;
+    markdown_core_node *link;
+    unsigned long attempt;
+    int result = 0;
+
+    OK(runner, document != NULL && error == NULL, "the shared document parses on the sweep allocator");
+    first = markdown_core_node_first_child(markdown_core_node_first_child(document->root));
+    second = markdown_core_node_next(markdown_core_node_next(first));
+    OK(runner, markdown_core_node_resource(first) == markdown_core_node_resource(second),
+       "the two occurrences share the definition's resource");
+
+    for (attempt = 1; attempt <= 16 && !result; attempt++) {
+        setter_allocations = 0;
+        setter_fail_at = attempt;
+        result = markdown_core_node_set_url(first, "/mine");
+        setter_fail_at = 0;
+        if (!result) {
+            OK(runner, markdown_core_node_resource(first) == markdown_core_node_resource(second),
+               "a refused set_url leaves the occurrence on the shared resource (allocation %lu)", attempt);
+            STR_EQ(runner, markdown_core_node_get_url(first), "/shared",
+                   "a refused set_url leaves the definition's url (allocation %lu)", attempt);
+            STR_EQ(runner, markdown_core_node_get_title(first), "t",
+                   "a refused set_url leaves the definition's title (allocation %lu)", attempt);
+        }
+    }
+    OK(runner, result, "set_url succeeds once no allocation is refused");
+    OK(runner, attempt > 3, "the sweep reached the copy's allocations before the setter succeeded");
+    STR_EQ(runner, markdown_core_node_get_url(first), "/mine", "the succeeding set_url applied");
+    STR_EQ(runner, markdown_core_node_get_title(first), "t", "the succeeding set_url kept the title");
+    STR_EQ(runner, markdown_core_node_get_url(second), "/shared", "the other occurrence keeps the definition");
+    OK(runner, markdown_core_node_resource(first) != markdown_core_node_resource(second),
+       "the succeeding set_url gave the occurrence its own resource");
+    markdown_core_document_free(document);
+
+    link = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_LINK, &setter_mem);
+    result = 0;
+    for (attempt = 1; attempt <= 16 && !result; attempt++) {
+        setter_allocations = 0;
+        setter_fail_at = attempt;
+        result = markdown_core_node_set_title(link, "made");
+        setter_fail_at = 0;
+        if (!result) {
+            OK(runner, markdown_core_node_resource(link) == NULL,
+               "a refused first set_title leaves a hand-built link without a resource (allocation %lu)", attempt);
+            OK(runner, markdown_core_node_get_title(link) == NULL,
+               "a refused first set_title leaves a hand-built link without a title (allocation %lu)", attempt);
+        }
+    }
+    OK(runner, result, "set_title succeeds once no allocation is refused");
+    OK(runner, attempt > 2, "the sweep reached the resource's allocation before the setter succeeded");
+    STR_EQ(runner, markdown_core_node_get_title(link), "made", "the succeeding set_title applied");
+    OK(runner, markdown_core_node_resource(link) != NULL, "the succeeding set_title created the resource");
+    markdown_core_node_free(link);
+}
+
 static void ref_source_pos(test_batch_runner *runner) {
     static const char markdown[] = "Let's try [reference] links.\n"
                                    "\n"
@@ -1782,6 +1868,7 @@ int main(void) {
     source_pos_inlines(runner);
     ref_source_pos(runner);
     link_resource_lifecycle(runner);
+    link_resource_setters_are_transactions(runner);
     association_accessor(runner);
     autolink_source_pos(runner);
     strbuf_overflow(runner);
