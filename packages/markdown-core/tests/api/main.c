@@ -1019,6 +1019,48 @@ static void comment_nodes(test_batch_runner *runner) {
     INT_EQ(runner, markdown_core_node_get_type(empty), MARKDOWN_CORE_NODE_COMMENT, "`<!---->` is an inline comment");
     STR_EQ(runner, markdown_core_node_get_literal(empty), "", "`<!---->` has an empty literal");
     markdown_core_node_free(doc);
+
+    /* The line splitter is the inherited one: a CR, an LF, or a CRLF ends a
+     * line, and every block receives its lines LF-terminated, so every
+     * literal in the tree -- a code block's, an HTML block's, a comment's --
+     * holds LF where the source held CR or CRLF. cmark 0.31.2 stores the same
+     * bytes for the same input. A comment that kept the CR bytes alone would
+     * be the one literal out of step with its neighbours. */
+    {
+        static const char crlf[] = "a <!--x\r\ny--> b\r\n\r\n<!--\r\nx\r\n-->\r\n\r\n```\r\nx\r\n```\r\n";
+        static const char cr[] = "a <!--x\ry--> b\r\r<!--\rx\r-->\r";
+        markdown_core_node *code;
+        doc = markdown_core_parse_document(crlf, sizeof(crlf) - 1, MARKDOWN_CORE_OPT_DEFAULT);
+        paragraph = markdown_core_node_first_child(doc);
+        comment = markdown_core_node_next(markdown_core_node_first_child(paragraph));
+        block_comment = markdown_core_node_next(paragraph);
+        code = markdown_core_node_next(block_comment);
+        INT_EQ(runner, markdown_core_node_get_type(comment), MARKDOWN_CORE_NODE_COMMENT, "CRLF: inline comment");
+        STR_EQ(runner, markdown_core_node_get_literal(comment), "x\ny",
+               "CRLF inside an inline comment is stored as LF");
+        INT_EQ(runner, markdown_core_node_get_end_line(comment), 2, "CRLF: the inline comment ends on line 2");
+        INT_EQ(runner, markdown_core_node_get_type(block_comment), MARKDOWN_CORE_NODE_COMMENT_BLOCK,
+               "CRLF: block comment");
+        STR_EQ(runner, markdown_core_node_get_literal(block_comment), "\nx\n",
+               "CRLF inside a block comment is stored as LF");
+        INT_EQ(runner, markdown_core_node_get_end_line(block_comment), 6,
+               "CRLF: the block comment ends on its closer line");
+        INT_EQ(runner, markdown_core_node_get_type(code), MARKDOWN_CORE_NODE_CODE_BLOCK, "CRLF: code block");
+        STR_EQ(runner, markdown_core_node_get_literal(code), "x\n", "CRLF inside a code block is stored as LF too");
+        markdown_core_node_free(doc);
+
+        doc = markdown_core_parse_document(cr, sizeof(cr) - 1, MARKDOWN_CORE_OPT_DEFAULT);
+        paragraph = markdown_core_node_first_child(doc);
+        comment = markdown_core_node_next(markdown_core_node_first_child(paragraph));
+        block_comment = markdown_core_node_next(paragraph);
+        STR_EQ(runner, markdown_core_node_get_literal(comment), "x\ny",
+               "a lone CR inside an inline comment is stored as LF");
+        STR_EQ(runner, markdown_core_node_get_literal(block_comment), "\nx\n",
+               "a lone CR inside a block comment is stored as LF");
+        INT_EQ(runner, markdown_core_node_get_end_line(block_comment), 6,
+               "CR: the block comment ends on its closer line");
+        markdown_core_node_free(doc);
+    }
 }
 
 /* Parses and asserts the document is a single paragraph whose concatenated
