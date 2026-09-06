@@ -257,9 +257,23 @@ execution platform 独立的 required gate，也不复制 suite/case discovery�
   renderer 断言后,唯一的比较对象是 canonical AST dump 与 typed accessor 值,
   规范化过程无从隐藏 drift。
 - 文本产物使用 LF 与单一 final newline。
-- Timeout 由 runner 声明层持有:CTest `TIMEOUT` 属性(pathological 30s、
-  spec/extension 120–240s、fuzz 240s);Swift
-  由 Swift Testing traits 持有。
+- Timeout 由 runner 声明层持有。CTest `TIMEOUT` 属性逐测试为(单位秒):
+  `api_engine`、`facade_native`、`consumer_facade_cplusplus`、
+  `facade_dump_cli`、`regression_cli_profile_replaces_extensions`、
+  `regression_cli_extension_augments_profile`、`regression_commonmark`、
+  `spec_smart_punctuation`、`extensions_formula_github`、
+  `extensions_formula_latex`、`extensions_formula_conflicts`、
+  `extensions_formula_option_gates`、`extensions_directive`、
+  `extensions_directive_option_gates`、`extensions_conflicts` 为 120;
+  `facade_concurrent_first_parse`、`regression_instance_lifecycle`、
+  `regression_strict_oom`(仅 static 构建)、`spec_gfm_golden`、
+  `spec_entities`、`extensions_gfm`、`fuzz_smoke` 为 240;
+  `facade_concurrent_stress` 与 `pathological_stress_large_document`、
+  `pathological_stress_deep_nesting`、`pathological_stress_repeated_release`
+  为 600;`pathological_<case>` 每个 case 为 30;`packaging_corpus_guard` 与
+  `benchmark_corpus_guard` 为 60;`benchmark_<workload>` 为 600 且
+  `RUN_SERIAL`。新增或改动的测试必须同时更新这里的登记。Swift 由 Swift
+  Testing traits 持有。
 - Expected failure 必须显式建模(当前无);禁止静默 skip;缺少必需工具时在
   configure 阶段失败(`MARKDOWN_CORE_TESTS=ON` 而无库目标时 FATAL_ERROR),不
   降级跳过。

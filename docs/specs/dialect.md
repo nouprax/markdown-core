@@ -210,14 +210,18 @@ statement of cross-module precedence.
 
 Within class A the leftmost opener in source order wins and its matched region
 is opaque to every later class and to every later class-A candidate inside it.
-A class-A candidate that fails consumes nothing: the cursor returns to the
-candidate's first byte and the next alternative runs from there.
+At one position the rows are tried in table order, with one exception: at a
+backslash, the formula openers `\\(` and `\\[` of step A4 are tested before
+the escape of step A1 while `formulas` is on, so a doubled backslash opens a
+formula and a single backslash stays an escape. A class-A candidate that
+fails consumes nothing: the cursor returns to the candidate's first byte and
+the next alternative runs from there.
 
 ### Inline
 
 | Step | Construct                                                            | Option                             | Class                                                                |
 | ---- | -------------------------------------------------------------------- | ---------------------------------- | -------------------------------------------------------------------- |
-| A1   | backslash escape                                                     | inherited                          | scanner                                                              |
+| A1   | backslash escape, after the `\\(` and `\\[` openers of A4 at a backslash | inherited                     | scanner                                                              |
 | A2   | code span                                                            | inherited                          | scanner, opaque                                                      |
 | A3   | raw HTML token, HTML comment as `Comment`, angle-bracket autolink, bare URL and `www.` autolink | inherited, `autolinks` for the bare forms | scanner, opaque token or run                          |
 | A4   | formula `$`, `$$`, `` $`...`$ ``, `\\(`, `\\[`                       | `formulas`                         | scanner, opaque                                                      |

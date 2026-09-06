@@ -54,7 +54,7 @@ Document scope=1:1..6:7 anchor=null attributes={} children=3
 │   ├── SoftBreak scope=3:6..3:6 anchor=null attributes={} children=0
 │   └── Text scope=4:1..4:5 anchor=null attributes={} literal="| - |" children=0
 └── List scope=6:1..6:7 anchor=null attributes={} flavor=bullet start=null style=null delimiter=null tight=true children=1
-    └── ListItem scope=6:1..6:7 anchor=null attributes={} marker=" " exampleLabel=null children=1
+    └── ListItem scope=6:1..6:7 anchor=null attributes={} marker=null exampleLabel=null children=1
         └── Paragraph scope=6:3..6:7 anchor=null attributes={} children=1
             └── Text scope=6:3..6:7 anchor=null attributes={} literal="[ ] g" children=0
 ````````````````````````````````

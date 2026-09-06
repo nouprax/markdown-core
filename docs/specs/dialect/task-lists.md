@@ -168,7 +168,7 @@ says, and the brackets are inline text:
 .
 Document scope=1:1..1:7 anchor=null attributes={} children=1
 └── List scope=1:1..1:7 anchor=null attributes={} flavor=bullet start=null style=null delimiter=null tight=true children=1
-    └── ListItem scope=1:1..1:7 anchor=null attributes={} marker="x" exampleLabel=null children=1
+    └── ListItem scope=1:1..1:7 anchor=null attributes={} marker=null exampleLabel=null children=1
         └── Paragraph scope=1:3..1:7 anchor=null attributes={} children=1
             └── Text scope=1:3..1:7 anchor=null attributes={} literal="[x] a" children=0
 ````````````````````````````````
