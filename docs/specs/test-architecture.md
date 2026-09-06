@@ -121,7 +121,7 @@ C 侧 CTest label taxonomy(每个测试恰有一个 label):
 | `conformance` | 公开 facade/schema shape 与 reviewed canonical dumps(`facade_native`、`facade_dump_cli`)；不进入 correctness preset |
 | `consumer` | C++ consumer 编译/链接/运行(`consumer_facade_cplusplus`) |
 | `spec` | GFM 0.29 product golden、punctuation stored as written、entities（全部为 canonical AST dump 断言；CommonMark 0.31.2 由 pinned cmark oracle 判断，GFM extension 层由 pinned cmark-gfm 0.29.0.gfm.13 判断） |
-| `extensions` | GFM/formula/directive extension specs 与 harness 内部 layer gates（`*-layer-gates.txt`） |
+| `extensions` | GFM/formula/directive extension specs，全部以完整方言解析 |
 | `regression` | 固定回归语料、实例生命周期与严格 OOM 语义(`regression_commonmark`、`regression_instance_lifecycle`、`regression_strict_oom`) |
 | `pathological` | 逐 case 注册的对抗输入、固定资源上界与语义断言(`pathological_*`) |
 | `fuzz` | 确定性 fuzz smoke(`fuzz_smoke`) |
@@ -232,13 +232,14 @@ execution platform 独立的 required gate，也不复制 suite/case discovery�
 - C spec/extension fixtures 位于 `packages/markdown-core/tests/fixtures/`
   (CommonMark 32-backtick example 格式)。`docs/specs/dialect/` 各模块的示例使用
   同一格式且 fence 行不带 tag:dialect 没有开关,每个示例都以完整方言解析;
-  package fixture 的 fence tag 与 `spec_runner --feature` 只服务于 harness 内部的
-  layer 选择(cmark、cmark-gfm oracle 比对用的 base/GFM layer),名字来自
-  `extensions/feature-registry.c` 的 feature registry,不是产品选项;未注册的
-  tag 使 suite 判失败。oracle gate 与 position audit 通过 test tree 构建、从不
-  安装的 `markdown-core-harness` 可执行文件选择 layer(`--profile commonmark |
-  gfm | gfm-extended | default`、`-e NAME`);安装的 `markdown-core` CLI 只解析
-  唯一方言,不接受任何开关。landing item 合入时把对应模块的示例逐字加入
+  package fixture 的 fence tag(`table`、`footnotes`、`directive`……)只为 oracle
+  语料分类示例(`tagged`/`untagged` 选择),不选择任何东西,runner 只对
+  `disabled` 起作用。test tree 里没有 layer 选择:oracle gate 与 position audit
+  都运行安装的 `markdown-core` CLI,以完整方言解析;oracle 的权威范围是"它判断
+  哪些输入",而不是"如何解析"。方言有意偏离某个 oracle 语言之处在
+  `specs/oracles/*/deltas.json` 以精确输入或 normalizer 投影登记;引擎尚未追上
+  方言自身规则之处进入该 oracle 的 `backlog`,命名关闭它的 item,并且在关闭前
+  必须持续偏离。landing item 合入时把对应模块的示例逐字加入
   package fixtures。自 Phase 8 起 expected block 一律是
   canonical AST dump;`spec_runner` 对每个例子解析一次、dump 两次(断言 dump
   确定性)并与 expected byte-for-byte 比较。`spec_runner --rewrite` 是显式维护
@@ -267,12 +268,9 @@ execution platform 独立的 required gate，也不复制 suite/case discovery�
 - Timeout 由 runner 声明层持有。CTest `TIMEOUT` 属性逐测试为(单位秒):
   `api_engine`、`facade_native`、`consumer_facade_cplusplus`、
   `facade_dump_cli`、`regression_cli_refuses_switches`、
-  `regression_harness_profile_replaces_features`、
-  `regression_harness_feature_augments_profile`、`regression_harness_registry`、
   `regression_commonmark`、`spec_punctuation`、`extensions_formula_github`、
   `extensions_formula_latex`、`extensions_formula_conflicts`、
-  `extensions_formula_layer_gates`、`extensions_directive`、
-  `extensions_directive_layer_gates`、`extensions_conflicts` 为 120;
+  `extensions_directive`、`extensions_conflicts` 为 120;
   `facade_concurrent_first_parse`、`regression_instance_lifecycle`、
   `regression_strict_oom`(仅 static 构建)、`spec_gfm_golden`、
   `spec_entities`、`extensions_gfm`、`fuzz_smoke` 为 240;

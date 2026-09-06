@@ -241,13 +241,12 @@ trivia, or recovery records. Scope tracking is mandatory and is not an option.
 Renderer-only `unsafe`, `github-pre-lang`, and `full-info-string` options do
 not exist. Raw HTML, URLs, and code info strings are always retained.
 
-The conformance harness keeps an internal, unpublished feature registry so the
-cmark and cmark-gfm oracles can be compared with the base layer or the GFM
-layer alone; the package fixtures' fence tags and the never-installed harness
-executable's `--profile` shorthands are that registry's names, as
-[`test-architecture.md`](test-architecture.md) states. No binding, C facade,
-or installed executable exposes it, and the shared canonical manifest names no
-option.
+The test tree keeps no layer selection either: every package fixture, oracle
+gate, and position audit parses the one language through the same entry a
+consumer uses, and the package fixtures' fence tags only classify examples for
+the oracle corpora, as [`test-architecture.md`](test-architecture.md) states.
+No binding, C facade, or installed executable exposes a switch, and the shared
+canonical manifest names no option.
 
 ## Visitor and walking
 

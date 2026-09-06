@@ -3,12 +3,11 @@
 This directory is the single source of truth for C parser correctness
 fixtures. Each tracked `.txt` file uses the CommonMark 32-backtick example
 format: Markdown input, a `.` separator, and the reviewed canonical AST dump
-expected from the harness layer the suite selects. A fence tag names a row of
-the feature registry (`table`, `footnotes`, `directive`, ...) that the example
-adds to the suite's `--feature` selection; the dialect itself has no switch,
-and a suite that runs with a feature excluded proves what the base or GFM
-layer parses for the oracle that judges it. The `*-layer-gates.txt` files are
-those proofs for the repository's own scanners.
+the one dialect produces. Every example parses exactly as a consumer's
+document does: the dialect has no switch, and neither does the runner. A fence
+tag (`table`, `footnotes`, `directive`, ...) classifies the example for the
+oracle corpora, which select `tagged` or `untagged` examples, and selects
+nothing; `disabled` is the one tag the runner acts on.
 
 The directive and formula fixtures are the product's reviewed extension
 requirements. CTest executes their input and expected blocks directly. The

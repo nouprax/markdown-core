@@ -83,19 +83,17 @@ for (const symbol of declared) {
 }
 NODE
 
-# THE DIALECT HAS NO SWITCHES. No surface names a parse option, the installed
-# CLI takes no flag that would select a language, and the harness's layer
-# selection is reached by nothing that ships: not the facade header, not the
-# export lists, not a binding.
+# THE DIALECT HAS NO SWITCHES. No surface names a parse option and the
+# installed CLI takes no flag that would select a language: not the facade
+# header, not the export lists, not a binding.
 if grep -n -E 'parse_options|smart_punctuation|strip_html_comments' \
     packages/markdown-core/include/markdown_core.h \
     packages/markdown-core/core/exports/markdown_core.map \
     packages/markdown-core/core/exports/markdown_core.exports; then
     fail "the C facade still publishes a parse option"
 fi
-if grep -n -E '"--profile"|"--smart"|"--extension"|"-e"|feature-registry|markdown_core_feature' \
-    packages/markdown-core/core/main.c; then
-    fail "the installed CLI still exposes a language switch or reaches the harness registry"
+if grep -n -E '"--profile"|"--smart"|"--extension"|"-e"' packages/markdown-core/core/main.c; then
+    fail "the installed CLI still exposes a language switch"
 fi
 if grep -R -n -E 'ParseOptions|parseOptions|smartPunctuation|stripHTMLComments' \
     packages/swift-markdown-core/Sources packages/kotlin-markdown-core/src/commonMain \
@@ -106,8 +104,12 @@ fi
 if grep -n 'parseOptions' specs/canonical-ast/manifest.json; then
     fail "the canonical manifest still names a parse option"
 fi
-if grep -n -E 'markdown-core-harness|registry_runner' packages/markdown-core/tests/CMakeLists.txt | grep -q 'install'; then
-    fail "the conformance harness must never be installed"
+# ONE LANGUAGE. The library builds every parser the same way: no entry point
+# takes a feature set, no registry names one, and no test parses a part of the
+# dialect that nothing ships.
+if grep -R -n -E 'markdown_core_document_parse_features|feature-registry|markdown_core_feature_' \
+    packages/markdown-core --include='*.c' --include='*.h' --include='CMakeLists.txt'; then
+    fail "a second parse entry or a feature registry has returned; the dialect is one language"
 fi
 
 # These are API identifier checks, not prose checks.

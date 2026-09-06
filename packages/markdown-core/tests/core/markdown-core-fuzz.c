@@ -4,28 +4,22 @@
 #include <string.h>
 #include "markdown-core.h"
 #include "markdown-core-extensions.h"
-#include "feature-registry.h"
 #include "parser.h"
 
 int LLVMFuzzerInitialize(int *argc, char ***argv) { return 0; }
 
 static bool attach_core_extensions(markdown_core_parser *parser, void *context) {
-    return markdown_core_core_extensions_attach(parser, *(const unsigned *)context) != 0;
+    (void)context;
+    return markdown_core_core_extensions_attach(parser) != 0;
 }
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
-    /* The whole input is Markdown, parsed as the one dialect: every
-     * registered feature, resolved by the registry into the engine's option
-     * word and extension mask. The dialect has no switches, so there is no
-     * configuration prefix to fuzz. */
-    int options = 0;
-    unsigned extension_mask = 0;
-    markdown_core_node *doc;
-
-    markdown_core_features_resolve(markdown_core_features_all(), &options, &extension_mask);
-    doc = markdown_core_parse_document_with_mem((const char *)data, size, options,
-                                                markdown_core_get_default_mem_allocator(), attach_core_extensions,
-                                                &extension_mask);
+    /* The whole input is Markdown, parsed as the one dialect: the engine
+     * configuration `markdown-core-extensions.h` states. The dialect has no
+     * switches, so there is no configuration prefix to fuzz. */
+    markdown_core_node *doc =
+        markdown_core_parse_document_with_mem((const char *)data, size, MARKDOWN_CORE_DIALECT_OPTIONS,
+                                              markdown_core_get_default_mem_allocator(), attach_core_extensions, NULL);
     if (!doc) {
         return 0;
     }

@@ -3,7 +3,6 @@
 #include <string.h>
 #include "markdown-core.h"
 #include "markdown-core-extensions.h"
-#include "feature-registry.h"
 #include "parser.h"
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -13,7 +12,8 @@
 int LLVMFuzzerInitialize(int *argc, char ***argv) { return 0; }
 
 static bool attach_core_extensions(markdown_core_parser *parser, void *context) {
-    return markdown_core_core_extensions_attach(parser, *(const unsigned *)context) != 0;
+    (void)context;
+    return markdown_core_core_extensions_attach(parser) != 0;
 }
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
@@ -50,15 +50,11 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
                 memcpy(markdown, markdown0, markdown_size);
             }
 
-            /* The one dialect: the registry resolves every feature into the
-             * engine's option word and extension mask, and the fixed table
-             * turns the mask into the one attach order. */
-            int options = 0;
-            unsigned extension_mask = 0;
-            markdown_core_features_resolve(markdown_core_features_all(), &options, &extension_mask);
-            markdown_core_node *doc = markdown_core_parse_document_with_mem(markdown, markdown_size, options,
-                                                                            markdown_core_get_default_mem_allocator(),
-                                                                            attach_core_extensions, &extension_mask);
+            /* The one dialect: the engine configuration `markdown-core-extensions.h`
+             * states, and the fixed table's one attach order. */
+            markdown_core_node *doc = markdown_core_parse_document_with_mem(
+                markdown, markdown_size, MARKDOWN_CORE_DIALECT_OPTIONS, markdown_core_get_default_mem_allocator(),
+                attach_core_extensions, NULL);
             if (!doc) {
                 return 0;
             }

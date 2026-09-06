@@ -36,7 +36,7 @@ const verbose = process.argv.includes("--verbose");
 
 // The conformance harness, not the installed CLI: the dialect has no switches,
 // and the layer this gate judges is selected through the harness alone.
-const ours = path.join(root, "build/cmake/packages/markdown-core/tests/markdown-core-harness");
+const ours = path.join(root, "build/cmake/packages/markdown-core/core/markdown-core");
 if (!fs.existsSync(ours)) {
     process.stderr.write(`mdast parity: missing ${path.relative(root, ours)}\nBuild it with: pnpm build:c\n`);
     process.exit(1);
@@ -96,11 +96,7 @@ function unknownKinds(node, found = new Set()) {
 function compare(input) {
     const theirs = project(dropEmptyText(liftFootnoteDefinitions(fromMdast(processor.parse(input)))));
     const mine = project(
-        dropEmptyText(
-            liftFootnoteDefinitions(
-                parseCanonicalDump(execFileSync(ours, ["--profile", "gfm-extended"], { input, encoding: "utf8" }))
-            )
-        )
+        dropEmptyText(liftFootnoteDefinitions(parseCanonicalDump(execFileSync(ours, [], { input, encoding: "utf8" }))))
     );
     return {
         remark: render(theirs),

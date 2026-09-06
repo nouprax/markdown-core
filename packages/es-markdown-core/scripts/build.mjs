@@ -23,7 +23,6 @@ const core = [
 ].map((file) => path.join(root, "packages/markdown-core/core", file));
 const extensions = [
     "core-extensions.c",
-    "feature-registry.c",
     "ast.c",
     "table.c",
     "strikethrough.c",

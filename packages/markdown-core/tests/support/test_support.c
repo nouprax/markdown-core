@@ -101,7 +101,7 @@ static const char TS_EXAMPLE_FENCE[] = "````````````````````````````````"; /* 32
 
 static int ts_case_push_extension(ts_spec_case *test_case, const char *name, size_t length) {
     char *copy;
-    if (test_case->extension_count >= TS_MAX_EXTENSIONS) {
+    if (test_case->tag_count >= TS_MAX_TAGS) {
         return -1;
     }
     copy = (char *)malloc(length + 1);
@@ -110,7 +110,7 @@ static int ts_case_push_extension(ts_spec_case *test_case, const char *name, siz
     }
     memcpy(copy, name, length);
     copy[length] = 0;
-    test_case->extensions[test_case->extension_count++] = copy;
+    test_case->tags[test_case->tag_count++] = copy;
     return 0;
 }
 
@@ -119,8 +119,8 @@ static void ts_case_free(ts_spec_case *test_case) {
     free(test_case->markdown);
     free(test_case->expected);
     free(test_case->section);
-    for (i = 0; i < test_case->extension_count; i++) {
-        free(test_case->extensions[i]);
+    for (i = 0; i < test_case->tag_count; i++) {
+        free(test_case->tags[i]);
     }
 }
 
@@ -300,6 +300,22 @@ void ts_spec_free(ts_spec_file *file) {
 }
 
 /* Traversal ------------------------------------------------------------------ */
+
+markdown_core_document *ts_ast_parse(const uint8_t *bytes, size_t length) {
+    markdown_core_error *error = NULL;
+    markdown_core_document *document = markdown_core_document_parse(bytes, length, &error);
+    if (!document) {
+        markdown_core_string message = error ? markdown_core_error_get_message(error) : (markdown_core_string){NULL, 0};
+        fprintf(stderr, "facade parse failed: ");
+        if (message.data) {
+            fwrite(message.data, 1, message.length, stderr);
+        }
+        fputc('\n', stderr);
+        markdown_core_error_free(error);
+        return NULL;
+    }
+    return document;
+}
 
 int ts_ast_walk(const markdown_core_node *root, ts_ast_visit_fn visit, void *context) {
     const markdown_core_node **stack;

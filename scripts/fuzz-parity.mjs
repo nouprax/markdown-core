@@ -76,8 +76,28 @@ const ORACLES = {
     commonmark: {
         policy: "specs/oracles/cmark/deltas.json",
         gate: "scripts/check-upstream-parity.mjs",
+        // The dialect is one language, and against CommonMark every feature
+        // beyond it diverges wherever recombination puts its trigger: a bare
+        // URL, `www.` host, or address becomes a link (`gfm-autolink-literal`),
+        // a colon before an alphanumeric opens a text directive
+        // (`text-directive`), a pipe row completes a table, `~~` strikes,
+        // `$` opens a formula, `[^` calls a footnote, `:::` opens a directive
+        // block, and `[ ]` after a bullet marks a task. Each is judged by the
+        // oracle that owns it -- cmark-gfm or remark -- whose fuzz oracle keeps
+        // the fragments; this one explores the base language cmark judges.
         gateArgs: ["--oracle", "commonmark"],
-        excludeFragments: []
+        excludeFragments: [
+            "://",
+            "www.",
+            "@",
+            "|",
+            "~~",
+            "$",
+            "[^",
+            /(^|[^:]):[A-Za-z0-9]/,
+            /^\s*:::/,
+            /^\s*[-*+]\s+\[[ xX]\]/
+        ]
     },
     gfm: {
         policy: "specs/oracles/cmark-gfm/deltas.json",
@@ -135,7 +155,14 @@ const registered = new Set((policy.expectedDivergences ?? []).map((entry) => ent
 // are dropped from the pool so the generator explores only the space where the
 // two implementations are supposed to agree.
 const divergentLines = new Set();
-for (const entry of policy.expectedDivergences ?? []) {
+// A backlog entry's lines are dropped for the same reason: the engine has not
+// caught up there yet, and rediscovering that in every recombination would
+// drown the findings the fuzzer exists for.
+for (const entry of [
+    ...(policy.expectedDivergences ?? []),
+    ...(policy.backlog ?? []),
+    ...(policy.baselineBacklog ?? [])
+]) {
     for (const line of entry.input.split("\n")) if (line.length) divergentLines.add(line);
 }
 // A registry entry names one input, but some entries stand for a disagreement
@@ -145,7 +172,11 @@ for (const entry of policy.expectedDivergences ?? []) {
 // strings. Generating those fragments would rediscover that in every
 // recombination, so the oracle's own exclusions say where it is authoritative.
 const pool = fragments(policy.corpus ?? [], oracle.policy).filter(
-    (line) => !divergentLines.has(line) && !(oracle.excludeFragments ?? []).some((pattern) => line.includes(pattern))
+    (line) =>
+        !divergentLines.has(line) &&
+        !(oracle.excludeFragments ?? []).some((pattern) =>
+            pattern instanceof RegExp ? pattern.test(line) : line.includes(pattern)
+        )
 );
 if (pool.length === 0) {
     process.stderr.write("fuzz-parity: every corpus fragment was excluded; nothing would be generated.\n");

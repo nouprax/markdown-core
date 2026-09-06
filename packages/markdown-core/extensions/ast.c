@@ -7,7 +7,6 @@
 
 #include "ast_internal.h"
 #include "directive.h"
-#include "feature-registry.h"
 #include "formula.h"
 #include "markdown-core-extensions.h"
 #include "strikethrough.h"
@@ -62,23 +61,19 @@ static void set_error(markdown_core_error **error, const markdown_core_error *va
 }
 
 static bool configure_facade_parse(markdown_core_parser *parser, void *context) {
-    const unsigned extensions = *(const unsigned *)context;
-
-    /* The facade says WHICH extensions, never in what order;
-     * `core-extensions.c` owns the one order used by every product entry. */
-    return markdown_core_core_extensions_attach(parser, extensions);
+    (void)context;
+    /* The facade never says WHICH extensions: `core-extensions.c` owns the one
+     * list and the one order used by every product entry. */
+    return markdown_core_core_extensions_attach(parser);
 }
 
-/* THE ONE PARSE TRANSACTION. The product runs it over every registered
- * feature; the harness runs it over the subset a comparison needs. Nothing
- * else builds a parser, so there is exactly one language and one way to
- * exclude a feature from it. */
-markdown_core_document *markdown_core_document_parse_features(const uint8_t *source, size_t length,
-                                                              markdown_core_feature_set features,
+/* THE ONE PARSE TRANSACTION. Every caller runs it over the whole dialect:
+ * the public entry supplies the default allocator, and the allocation-failure
+ * tests supply an injected one. Nothing else builds a parser, so there is
+ * exactly one language and no way to parse a part of it. */
+markdown_core_document *markdown_core_document_parse_with_mem(const uint8_t *source, size_t length,
                                                               markdown_core_mem *mem, markdown_core_error **error) {
     markdown_core_document *document;
-    unsigned extensions = 0;
-    int native_options = 0;
 
     clear_error(error);
     if (!source && length != 0) {
@@ -89,7 +84,6 @@ markdown_core_document *markdown_core_document_parse_features(const uint8_t *sou
         set_error(error, &ERROR_INVALID_ALLOCATOR);
         return NULL;
     }
-    markdown_core_features_resolve(features, &native_options, &extensions);
     document = (markdown_core_document *)mem->calloc(1, sizeof(*document));
     if (!document) {
         set_error(error, &ERROR_DOCUMENT_ALLOCATION);
@@ -97,21 +91,14 @@ markdown_core_document *markdown_core_document_parse_features(const uint8_t *sou
     }
     document->mem = mem;
 
-    document->root = markdown_core_parse_document_with_mem((const char *)source, length, native_options, mem,
-                                                           configure_facade_parse, &extensions);
+    document->root = markdown_core_parse_document_with_mem((const char *)source, length, MARKDOWN_CORE_DIALECT_OPTIONS,
+                                                           mem, configure_facade_parse, NULL);
     if (!document->root) {
         mem->free(document);
         set_error(error, &ERROR_PARSE_ALLOCATION);
         return NULL;
     }
     return document;
-}
-
-markdown_core_document *markdown_core_document_parse_with_mem(const uint8_t *source, size_t length,
-                                                              markdown_core_mem *mem, markdown_core_error **error) {
-    /* THE DIALECT: every registered feature, always. There is no option to
-     * read and no default to fill in. */
-    return markdown_core_document_parse_features(source, length, markdown_core_features_all(), mem, error);
 }
 
 markdown_core_document *markdown_core_document_parse(const uint8_t *source, size_t length,

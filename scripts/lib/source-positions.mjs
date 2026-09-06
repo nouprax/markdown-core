@@ -65,10 +65,10 @@ export function fixtureCorpus(root) {
 }
 
 /**
- * Every spec fixture parsed with the exact suite configuration registered in
- * CTest. `spec_runner --dump` generates the AST without consulting its stored
- * expected block; its normal layer selection combines the suite's base
- * `--feature` values with the selected example's fence tags.
+ * Every spec fixture parsed exactly as its CTest suite parses it.
+ * `spec_runner --dump` generates the AST without consulting the stored
+ * expected block; every suite parses the one dialect, and a fence tag
+ * classifies an example for the oracle corpora without selecting anything.
  *
  * Reading CTest's JSON graph keeps that graph as the one source of truth. The
  * coverage checks make a newly added, removed, or multiply registered `.txt`

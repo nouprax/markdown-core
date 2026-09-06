@@ -3,8 +3,8 @@
  * It parses the one Markdown Core dialect through the public facade and
  * nothing else. There is no `--profile`, no `-e`, and no `--smart`: the
  * dialect has no switches, so the executable has no flags that would name
- * one. The conformance harness's layer selection lives in the test tree's
- * `markdown-core-harness`, which is built for the tests and never installed.
+ * one, and the test tree has no other parser to run either -- the oracle
+ * gates and position audits run this executable.
  */
 #include <errno.h>
 #include <stdio.h>

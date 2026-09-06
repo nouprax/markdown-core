@@ -206,7 +206,9 @@ switch. The `--profile` names in `packages/markdown-core/core/main.c`
 (`commonmark`, `commonmark-smart`, `gfm`, `gfm-smart`, `gfm-extended`,
 `default`) are harness shorthands that select option sets for the cmark and
 cmark-gfm comparison oracles; they define no language, no specification refers
-to them, and no `obsidian` or `pandoc` shorthand is added.
+to them, and no `obsidian` or `pandoc` shorthand is added. (`X0` then removed
+the shorthands and every other layer selection: the test tree parses the one
+language.)
 
 ### Common-case scope
 
@@ -755,7 +757,8 @@ A transitional finding names the landing-plan item that resolves it.
   unchanged; two hyphens is a positive example, not a minimum.
 - **OI-4** `:170-171` — B — the index names a profile set although the product
   has none. Rule: the index states that there are no profiles and lists each
-  module's option; the CLI shorthands stay harness-only (the closed set above).
+  module's option; the CLI shorthands stay harness-only (the closed set above,
+  removed by `X0`).
 - **OI-5** `:174-175` — D — `MetadataListItem` is missing from the value set.
   Rule: add it.
 - **OI-6** `:163-165` — B — the output-affecting limits are unstated (ME-9).

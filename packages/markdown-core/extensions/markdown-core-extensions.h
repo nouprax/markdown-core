@@ -57,21 +57,20 @@ typedef enum {
     MARKDOWN_CORE_FORMULA_MODE_STANDALONE
 } markdown_core_formula_mode;
 
-/** One bit per core extension.  A caller says WHICH extensions it wants and
- * cannot say in what order, because the order is not in the bit values -- it
- * is the order of the table in `core-extensions.c`, and that table is the only
- * place it is written down.
+/** THE DIALECT'S ENGINE CONFIGURATION, and the only place it is written down.
+ *
+ * The parser has one language. Every extension in the attach table of
+ * `core-extensions.c` is always attached and every bit of this option word is
+ * always set; nothing selects a subset -- not the facade, not the installed
+ * CLI, not a test -- so a feature is public from the commit that adds it here,
+ * and every fixture, oracle gate, and audit judges the language that ships.
+ *
+ * `MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS` is the bit `M0` deletes: an HTML
+ * comment becomes a `Comment` node then and nothing strips anything.
  */
-typedef enum {
-    MARKDOWN_CORE_CORE_EXTENSION_TABLE = 1u << 0,
-    MARKDOWN_CORE_CORE_EXTENSION_STRIKETHROUGH = 1u << 1,
-    MARKDOWN_CORE_CORE_EXTENSION_AUTOLINK = 1u << 2,
-    MARKDOWN_CORE_CORE_EXTENSION_TASKLIST = 1u << 3,
-    MARKDOWN_CORE_CORE_EXTENSION_FORMULA = 1u << 4,
-    MARKDOWN_CORE_CORE_EXTENSION_DIRECTIVE = 1u << 5
-} markdown_core_core_extension_bit;
+#define MARKDOWN_CORE_DIALECT_OPTIONS (MARKDOWN_CORE_OPT_FOOTNOTES | MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS)
 
-/** Attaches every core extension named in `mask`, in this library's one order.
+/** Attaches every extension of the dialect, in this library's one order.
  * Returns 1 when all of them attached and 0 when any did not; on failure the
  * parser keeps whatever attached before the failure and the caller is expected
  * to discard it.
@@ -82,7 +81,7 @@ typedef enum {
  * and putting it there would make the attach order part of the public ABI at
  * the exact moment the point is that callers cannot choose it.
  */
-int markdown_core_core_extensions_attach(markdown_core_parser *parser, unsigned mask);
+int markdown_core_core_extensions_attach(markdown_core_parser *parser);
 
 MARKDOWN_CORE_EXPORT
 uint16_t markdown_core_extensions_get_table_columns(markdown_core_node *node);

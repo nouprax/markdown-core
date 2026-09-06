@@ -32,7 +32,7 @@ const policy = JSON.parse(fs.readFileSync(path.join(root, policyPath), "utf8"));
 const verbose = process.argv.includes("--verbose");
 // The conformance harness, not the installed CLI: the dialect has no switches,
 // and the layer this gate judges is selected through the harness alone.
-const ours = path.join(root, "build/cmake/packages/markdown-core/tests/markdown-core-harness");
+const ours = path.join(root, "build/cmake/packages/markdown-core/core/markdown-core");
 
 if (
     policy.metadataOracle.options.envelope !== "obsidian-exact-leading-fence" ||
@@ -506,7 +506,7 @@ function compare(input) {
     if (properties.metadata !== null) oracleTree.fields.metadata = properties.metadata;
     const ourTree = fromMarkdownCore(
         parseCanonicalDumpWithRootFields(
-            execFileSync(ours, ["--profile", "gfm-extended"], {
+            execFileSync(ours, [], {
                 input,
                 encoding: "utf8",
                 maxBuffer: 1 << 24

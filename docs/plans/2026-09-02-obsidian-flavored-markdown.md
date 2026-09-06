@@ -96,9 +96,10 @@ does not define Pandoc `@key` syntax; the citations module does.
       projection audit atomically. While 3.0.0 is unreleased, identifiers, wire
       layouts, and manifest order may be renumbered by any later item; nothing
       is reserved in advance.
-- [ ] Register each module's scanner in the internal harness registry that
-      `X0` creates; there is no parse option, no preset, and no CLI
-      `--profile obsidian`. Keep the inherited grammar stable, but make the
+- [ ] Land each module's scanner always on and register in `specs/oracles/`
+      each place it deliberately leaves an oracle's language; there is no
+      parse option, no preset, no CLI `--profile obsidian`, and no layer
+      selection in the test tree. Keep the inherited grammar stable, but make the
       canonical `BlockQuote` to `Callout` rename universal. Add only the engine
       bit each module needs; do not add a second parser.
 

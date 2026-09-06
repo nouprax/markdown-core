@@ -9,15 +9,12 @@
 //                dumps twice, and frees.  All dumps must match the
 //                single-threaded reference computed after the threads join.
 //
-//   stress       Threads hammer the parse transaction with a matrix of
-//                inputs x harness feature sets (the whole dialect, the base
-//                layer alone, and a split set) and byte-compare every dump
-//                against per-combination references.  This pins the
-//                parser-local special-character tables: a parse with a
-//                feature excluded must never observe characters registered
-//                by a concurrent parse with it attached.  The dialect has no
-//                switches, so the excluded sets go through the harness entry
-//                the conformance gates use, not through anything public.
+//   stress       Threads hammer the parse transaction over a matrix of
+//                inputs and byte-compare every dump against a per-input
+//                reference.  Every parse attaches the same extensions, so
+//                this pins instance locality: no parse may observe another's
+//                delimiter stack, reference map, or special-character
+//                table, and no parse may leave state behind for the next.
 //
 //   lifecycle    Repeated parse/free cycles interleaved with failure paths
 //                must not affect a later parser instance — the last parse
@@ -31,7 +28,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "ast_internal.h"
+#include "markdown_core.h"
 
 #if defined(_WIN32)
 #define WIN32_LEAN_AND_MEAN
@@ -142,31 +139,11 @@ static const char *const INPUTS[] = {
 };
 #define INPUT_COUNT (sizeof(INPUTS) / sizeof(INPUTS[0]))
 
-// Feature-set variants: the whole dialect, the base layer alone, and a split
-// set so concurrent parsers disagree about '~', '$', and ':'.
-typedef enum feature_variant { FEATURES_ALL = 0, FEATURES_NONE, FEATURES_SPLIT, FEATURE_VARIANT_COUNT } feature_variant;
-
-static markdown_core_feature_set features_for_variant(feature_variant variant) {
-    switch (variant) {
-    case FEATURES_NONE:
-        return 0;
-    case FEATURES_SPLIT:
-        return markdown_core_features_all() &
-               ~(markdown_core_feature_named("strikethrough") | markdown_core_feature_named("formula"));
-    default:
-        return markdown_core_features_all();
-    }
-}
-
-// The whole dialect goes through the PUBLIC entry, which is the one a
-// consumer races; the excluded sets can only be named through the harness
-// entry, because nothing public names a feature.
-static markdown_core_document *parse_variant(const char *input, feature_variant variant, markdown_core_error **error) {
-    if (variant == FEATURES_ALL) {
-        return markdown_core_document_parse((const uint8_t *)input, strlen(input), error);
-    }
-    return markdown_core_document_parse_features((const uint8_t *)input, strlen(input), features_for_variant(variant),
-                                                 markdown_core_get_default_mem_allocator(), error);
+// Every parse goes through the PUBLIC entry, which is the one a consumer
+// races: the dialect has no switches, so there is no other language to race
+// it against.
+static markdown_core_document *parse_document(const char *input, markdown_core_error **error) {
+    return markdown_core_document_parse((const uint8_t *)input, strlen(input), error);
 }
 
 // Depth-first traversal touching kind, scope, child count, and per-kind
@@ -210,11 +187,11 @@ static size_t traverse(const markdown_core_node *node) {
     return visited;
 }
 
-// Parses input+variant, verifies traversal and dump determinism, frees the
+// Parses one input, verifies traversal and dump determinism, frees the
 // document, and hands the caller a malloc'd dump to compare or discard.
-static int parse_and_dump(const char *input, feature_variant variant, uint8_t **dump_out, size_t *length_out) {
+static int parse_and_dump(const char *input, uint8_t **dump_out, size_t *length_out) {
     markdown_core_error *error = NULL;
-    markdown_core_document *document = parse_variant(input, variant, &error);
+    markdown_core_document *document = parse_document(input, &error);
     if (!document || error) {
         markdown_core_error_free(error);
         return 1;
@@ -253,9 +230,9 @@ typedef struct worker {
     int index;
     int iterations;
     int failed;
-    // One dump per (input, variant) combination produced by this worker.
-    uint8_t *dumps[INPUT_COUNT * FEATURE_VARIANT_COUNT];
-    size_t lengths[INPUT_COUNT * FEATURE_VARIANT_COUNT];
+    // One dump per input produced by this worker.
+    uint8_t *dumps[INPUT_COUNT];
+    size_t lengths[INPUT_COUNT];
 } worker;
 
 static THREAD_RETURN worker_main(void *argument) {
@@ -264,33 +241,27 @@ static THREAD_RETURN worker_main(void *argument) {
 
     for (int iteration = 0; iteration < self->iterations; iteration++) {
         for (size_t input = 0; input < INPUT_COUNT; input++) {
-            for (int variant = 0; variant < FEATURE_VARIANT_COUNT; variant++) {
-                // Stagger the starting combination per thread so different
-                // feature sets genuinely overlap in time.
-                size_t combined =
-                    (input * FEATURE_VARIANT_COUNT + (size_t)variant + (size_t)self->index + (size_t)iteration) %
-                    (INPUT_COUNT * FEATURE_VARIANT_COUNT);
-                size_t real_input = combined / FEATURE_VARIANT_COUNT;
-                feature_variant real_variant = (feature_variant)(combined % FEATURE_VARIANT_COUNT);
+            // Stagger the starting input per thread so different inputs
+            // genuinely overlap in time.
+            size_t combined = (input + (size_t)self->index + (size_t)iteration) % INPUT_COUNT;
 
-                uint8_t *dump = NULL;
-                size_t length = 0;
-                if (parse_and_dump(INPUTS[real_input], real_variant, &dump, &length)) {
+            uint8_t *dump = NULL;
+            size_t length = 0;
+            if (parse_and_dump(INPUTS[combined], &dump, &length)) {
+                self->failed = 1;
+                return THREAD_RESULT;
+            }
+            if (self->dumps[combined]) {
+                // Later iterations must reproduce the first byte-for-byte.
+                if (self->lengths[combined] != length || memcmp(self->dumps[combined], dump, length) != 0) {
+                    markdown_core_dump_free(dump);
                     self->failed = 1;
                     return THREAD_RESULT;
                 }
-                if (self->dumps[combined]) {
-                    // Later iterations must reproduce the first byte-for-byte.
-                    if (self->lengths[combined] != length || memcmp(self->dumps[combined], dump, length) != 0) {
-                        markdown_core_dump_free(dump);
-                        self->failed = 1;
-                        return THREAD_RESULT;
-                    }
-                    markdown_core_dump_free(dump);
-                } else {
-                    self->dumps[combined] = dump;
-                    self->lengths[combined] = length;
-                }
+                markdown_core_dump_free(dump);
+            } else {
+                self->dumps[combined] = dump;
+                self->lengths[combined] = length;
             }
         }
     }
@@ -299,7 +270,7 @@ static THREAD_RETURN worker_main(void *argument) {
 
 static void worker_release(worker *workers, int count) {
     for (int index = 0; index < count; index++) {
-        for (size_t slot = 0; slot < INPUT_COUNT * FEATURE_VARIANT_COUNT; slot++) {
+        for (size_t slot = 0; slot < INPUT_COUNT; slot++) {
             markdown_core_dump_free(workers[index].dumps[slot]);
         }
     }
@@ -336,30 +307,26 @@ static int run_threads_and_verify(int iterations) {
     }
 
     for (size_t input = 0; input < INPUT_COUNT && !failures; input++) {
-        for (int variant = 0; variant < FEATURE_VARIANT_COUNT; variant++) {
-            size_t combined = input * FEATURE_VARIANT_COUNT + (size_t)variant;
-            uint8_t *reference = NULL;
-            size_t reference_length = 0;
-            if (parse_and_dump(INPUTS[input], (feature_variant)variant, &reference, &reference_length)) {
-                fprintf(stderr, "concurrency: reference parse failed (input %zu variant %d)\n", input, variant);
-                failures += 1;
-                break;
-            }
-            for (int index = 0; index < THREAD_COUNT; index++) {
-                if (!workers[index].dumps[combined]) {
-                    fprintf(stderr, "concurrency: thread %d missing dump %zu\n", index, combined);
-                    failures += 1;
-                    continue;
-                }
-                if (workers[index].lengths[combined] != reference_length ||
-                    memcmp(workers[index].dumps[combined], reference, reference_length) != 0) {
-                    fprintf(stderr, "concurrency: thread %d dump diverges (input %zu variant %d)\n", index, input,
-                            variant);
-                    failures += 1;
-                }
-            }
-            markdown_core_dump_free(reference);
+        uint8_t *reference = NULL;
+        size_t reference_length = 0;
+        if (parse_and_dump(INPUTS[input], &reference, &reference_length)) {
+            fprintf(stderr, "concurrency: reference parse failed (input %zu)\n", input);
+            failures += 1;
+            break;
         }
+        for (int index = 0; index < THREAD_COUNT; index++) {
+            if (!workers[index].dumps[input]) {
+                fprintf(stderr, "concurrency: thread %d missing dump %zu\n", index, input);
+                failures += 1;
+                continue;
+            }
+            if (workers[index].lengths[input] != reference_length ||
+                memcmp(workers[index].dumps[input], reference, reference_length) != 0) {
+                fprintf(stderr, "concurrency: thread %d dump diverges (input %zu)\n", index, input);
+                failures += 1;
+            }
+        }
+        markdown_core_dump_free(reference);
     }
 
     worker_release(workers, THREAD_COUNT);
@@ -374,11 +341,11 @@ static int case_first_parse(void) {
 
 static int case_stress(void) {
     // Establish one ordinary sequential baseline, then stress concurrent
-    // parsing with disagreeing feature sets. There is no library
-    // initialization phase for this baseline to perform.
+    // parsing. There is no library initialization phase for this baseline to
+    // perform.
     uint8_t *warm = NULL;
     size_t warm_length = 0;
-    if (parse_and_dump(INPUTS[0], FEATURES_ALL, &warm, &warm_length)) {
+    if (parse_and_dump(INPUTS[0], &warm, &warm_length)) {
         return 1;
     }
     markdown_core_dump_free(warm);
@@ -388,17 +355,16 @@ static int case_stress(void) {
 static int case_lifecycle(void) {
     uint8_t *first = NULL;
     size_t first_length = 0;
-    if (parse_and_dump(INPUTS[1], FEATURES_ALL, &first, &first_length)) {
+    if (parse_and_dump(INPUTS[1], &first, &first_length)) {
         return 1;
     }
 
     int failed = 0;
     for (int cycle = 0; cycle < 2000 && !failed; cycle++) {
         size_t input = (size_t)cycle % INPUT_COUNT;
-        feature_variant variant = (feature_variant)(cycle % FEATURE_VARIANT_COUNT);
         uint8_t *dump = NULL;
         size_t length = 0;
-        if (parse_and_dump(INPUTS[input], variant, &dump, &length)) {
+        if (parse_and_dump(INPUTS[input], &dump, &length)) {
             failed = 1;
             break;
         }
@@ -416,7 +382,7 @@ static int case_lifecycle(void) {
     if (!failed) {
         uint8_t *last = NULL;
         size_t last_length = 0;
-        if (parse_and_dump(INPUTS[1], FEATURES_ALL, &last, &last_length)) {
+        if (parse_and_dump(INPUTS[1], &last, &last_length)) {
             failed = 1;
         } else {
             failed = last_length != first_length || memcmp(last, first, last_length) != 0;

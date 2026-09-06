@@ -117,14 +117,15 @@ counterpart: a list's start number is always the value of its first marker.
 Pandoc's `compact_definition_lists` has no counterpart: compact and loose
 definitions are two source forms of one feature.
 
-The conformance harness keeps an internal feature registry that names every
-feature the parser recognizes beyond the CommonMark base, so that the cmark
-and cmark-gfm oracles can be compared with the base layer or the GFM layer
-alone; the `--profile` names are the shorthands of a harness executable that
-is built for the tests and never installed. They define no language, no
-module refers to them, no binding or installed executable exposes them, and
-no source-named shorthand is added. A feature item registers its scanner
-there when it lands.
+There is no internal layer selection either. The parser attaches every
+extension on every parse; the package fixtures, the oracle gates, and the
+position audits parse the one language through the same entry a consumer
+uses; and an oracle's authority is a matter of which inputs it judges, never
+of how they are parsed. Where the dialect deliberately leaves an oracle's
+language, `specs/oracles/` registers the difference against the exact inputs
+or as a projection the comparison applies, and where the engine has not
+caught up with the dialect's own rules, the oracle's backlog names the item
+that closes the gap.
 
 ## Ground rules
 
@@ -183,7 +184,7 @@ landing plan's items `M0` through `M7` and by those reserved encodings.
 
 Every example runs the whole dialect, so the fence line carries no tags and
 there is nothing to configure. Examples are numbered by position within their
-module, first to last, and a harness reports an example as its module and
+module, first to last, and a runner reports an example as its module and
 number.
 
 Every example is normative. The item that lands a module's behavior adds the

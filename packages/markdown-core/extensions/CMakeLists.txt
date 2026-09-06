@@ -4,7 +4,6 @@ set(PUBLIC_STATIC_LIBRARY "libmarkdown-core-public-static")
 set(LIBRARY_SOURCES
     ast.c
     core-extensions.c
-    feature-registry.c
     table.c
     strikethrough.c
     autolink.c

@@ -17,8 +17,10 @@
  * the repository's containment and place-ness invariants rather than by
  * copying cmark's source-position model wholesale.
  *
- * The comparison pairs the two sides' code/HTML nodes in document order. A
- * length mismatch is a hard error rather than a skipped example: the parity
+ * The comparison pairs the two sides' code/HTML nodes in document order,
+ * after the parity gate's `html-comment-stripping` projection has dropped the
+ * comment nodes cmark keeps and this engine strips (until `M0`). A length
+ * mismatch is then a hard error rather than a skipped example: the parity
  * gate already proves the two trees agree in shape over this corpus, so a
  * mismatch means one of the two parsers changed and this oracle is comparing
  * unrelated nodes.
@@ -31,7 +33,7 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 import { readExamples } from "./lib/fixture-corpus.mjs";
-import { parseCanonicalDump, parseUpstreamXml } from "./lib/upstream-cmark.mjs";
+import { dropHtmlComments, parseCanonicalDump, parseUpstreamXml } from "./lib/upstream-cmark.mjs";
 import {
     formatScope,
     loadLedger,
@@ -53,7 +55,7 @@ const verbose = process.argv.includes("--verbose");
 // agreement.
 const upstreamVersion = loadLedger(root, "specs/oracles/cmark/deltas.json").upstream.version;
 
-const ours = requireBinary(root, "build/cmake/packages/markdown-core/tests/markdown-core-harness", "pnpm build:c");
+const ours = requireBinary(root, "build/cmake/packages/markdown-core/core/markdown-core", "pnpm build:c");
 const upstream = requireBinary(
     root,
     `.tools/cmark/${upstreamVersion}/build/src/cmark`,
@@ -68,8 +70,10 @@ const UPSTREAM_SOURCEPOS = /^(\d+):(\d+)-(\d+):(\d+)$/;
 const measured = [];
 let scanned = 0;
 for (const example of readExamples(root, ledger.corpus)) {
-    const mine = collect(parseCanonicalDump(runBinary(ours, ["--profile", ledger.profile], example.input)));
-    const theirs = collect(parseUpstreamXml(runBinary(upstream, ["--to", "xml", "--sourcepos"], example.input)));
+    const mine = collect(parseCanonicalDump(runBinary(ours, [], example.input)));
+    const theirs = collect(
+        dropHtmlComments(parseUpstreamXml(runBinary(upstream, ["--to", "xml", "--sourcepos"], example.input)))
+    );
     if (mine.length !== theirs.length)
         throw new Error(
             `${example.source}: ${String(mine.length)} inline Code/HTML nodes here, ${String(theirs.length)} upstream — ` +

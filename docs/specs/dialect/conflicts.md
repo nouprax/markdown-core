@@ -68,8 +68,9 @@ modules state the ruled behavior and the ruling is final.
 - **C-10 Switches.** The dialect has no parse options: every feature is
   always recognized, the CommonMark base is the meaning of source that no
   feature claims, and smart punctuation is consumer policy rather than a
-  parser feature. A harness may disable features internally only to compare
-  the base and GFM layers with their oracles. Product ruling on 2026-09-06.
+  parser feature. Nothing disables a feature, not even a comparison: the
+  oracle gates parse the one language and register where the dialect leaves
+  an oracle's. Product ruling on 2026-09-06.
 
 ### Earlier decisions
 
@@ -78,8 +79,15 @@ These decisions are made; each names the ground rule or the defining source
 that settled it.
 
 - No profiles, no umbrella switch, and, since C-10, no per-feature switch
-  either; the `--profile` names of the never-installed harness executable are
-  shorthands for the oracle comparisons. Product ruling.
+  either, in the product or in its test tree: the oracle gates compare the
+  one language and register where it leaves an oracle's. Product ruling.
+- `mailto:` and `xmpp:` autolinks against the text directive: `mailto:x@y.z`
+  reads as a bare autolink and as the text directive `:x`, and the
+  recognition order gives it to the autolink (A3 before A10), as cmark-gfm
+  does; remark-directive gives it to the directive. The engine still finds
+  addresses in a pass after the directive scanner has claimed the colon, so
+  the cmark-gfm gate carries the collision in its backlog until the item
+  that implements the inline recognition order lands.
 - Features are named after the dialect's own kinds and constructs: cross
   links, marks, comments, heading attributes, and implicit heading
   references, not the source's names.

@@ -10,16 +10,13 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "harness_support.h"
+#include "test_support.h"
 
 #include "entities.inc"
 
 int main(void) {
     size_t i;
     size_t passed = 0, failed = 0, errored = 0;
-    markdown_core_feature_set features;
-
-    ts_ast_features_none(&features);
 
     for (i = 0; i < ENT_TABLE_SIZE; i++) {
         uint32_t packed = markdown_core_entities[i];
@@ -36,7 +33,7 @@ int main(void) {
         memcpy(input + 1, entity, entity_length);
         input[entity_length + 1] = ';';
         input[entity_length + 2] = 0;
-        document = ts_ast_parse((const uint8_t *)input, entity_length + 2, features);
+        document = ts_ast_parse((const uint8_t *)input, entity_length + 2);
         if (!document) {
             fprintf(stderr, "%.*s [ERRORED]\n", (int)entity_length, entity);
             errored++;

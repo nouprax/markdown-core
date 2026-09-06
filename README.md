@@ -197,9 +197,9 @@ cmake --install build/cmake --prefix /path/to/prefix
 Its CLI is written to
 `build/cmake/packages/markdown-core/core/markdown-core`; it takes files or
 standard input and prints the canonical AST dump, with no language switch.
-The conformance harness's `markdown-core-harness`, which the oracle gates use
-to run the CommonMark base layer or the GFM layer alone, is built beside the
-tests and never installed. The main CMake options
+The oracle gates and position audits run that same CLI: there is one language
+and one parser, and nothing in the test tree parses a part of it. The main
+CMake options
 are `MARKDOWN_CORE_SHARED`, `MARKDOWN_CORE_STATIC`, `MARKDOWN_CORE_TESTS`, and
 `MARKDOWN_CORE_WARNINGS_AS_ERRORS`. `MARKDOWN_CORE_BENCHMARKS` is off by
 default and exists only for an explicit local measurement build.

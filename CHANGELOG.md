@@ -16,11 +16,14 @@ facade while removing renderer support and the caller-driven feed lifecycle.
   ECMAScript `ParseOptions` types with them. Every feature of the Markdown
   Core dialect is always recognized. Smart punctuation is removed with the
   options: quotation marks, hyphen runs, and periods are stored as written.
-  The installed `markdown-core` CLI takes no `--profile`, `-e`, or `--smart`;
-  the conformance harness's layer selection lives in a feature registry inside
-  the library and a `markdown-core-harness` executable that the test tree
-  builds and never installs, which is how the cmark and cmark-gfm gates keep
-  comparing the base and GFM layers alone.
+  The installed `markdown-core` CLI takes no `--profile`, `-e`, or `--smart`,
+  and the test tree keeps no layer selection either: every fixture, oracle
+  gate, and audit parses the one language, and each place the dialect
+  deliberately leaves an oracle's language is registered against its exact
+  inputs. Running the shipped language through the gates also showed that a
+  `\\]` or `\\)` with nothing to close swallowed the bracket after it, so
+  `[bar\\]` stopped being a reference; the formula scanner now leaves an
+  unopened closer to the base language.
 - Raise the Swift package contract to Swift tools 6.3 and iOS 26/macOS 26,
   refresh Gradle, AGP, Kotlin, Node.js, pnpm, Emscripten, and SwiftLint
   pins, and audit every duplicated toolchain declaration for exact agreement.

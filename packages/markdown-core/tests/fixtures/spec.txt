@@ -2672,8 +2672,7 @@ Document scope=1:1..2:5 children=2
 <!-- foo -->*bar*
 *baz*
 .
-Document scope=1:1..2:5 children=2
-├── HTMLBlock scope=1:1..1:17 literal="<!-- foo -->*bar*\n" children=0
+Document scope=1:1..2:5 children=1
 └── Paragraph scope=2:1..2:5 children=1
     └── Emphasis scope=2:1..2:5 children=1
         └── Text scope=2:2..2:4 literal="baz" children=0
@@ -2702,8 +2701,7 @@ bar
    baz -->
 okay
 .
-Document scope=1:1..5:4 children=2
-├── HTMLBlock scope=1:1..3:3 literal="<!-- Foo\n\nbar\n   baz -->\n" children=0
+Document scope=1:1..5:4 children=1
 └── Paragraph scope=5:1..5:4 children=1
     └── Text scope=5:1..5:4 literal="okay" children=0
 ````````````````````````````````
@@ -2768,8 +2766,7 @@ The opening tag can be indented 1-3 spaces, but not 4:
 
     <!-- foo -->
 .
-Document scope=1:1..3:16 children=2
-├── HTMLBlock scope=1:3..1:14 literal="  <!-- foo -->\n" children=0
+Document scope=1:1..3:16 children=1
 └── CodeBlock scope=3:5..3:16 info=null language=null literal="<!-- foo -->\n" fenced=false closed=true children=0
 ````````````````````````````````
 
@@ -5740,7 +5737,7 @@ comment:
 - baz
 - bim
 .
-Document scope=1:1..7:5 children=3
+Document scope=1:1..7:5 children=2
 ├── List scope=1:1..3:0 flavor=bullet start=null tight=true children=2
 │   ├── ListItem scope=1:1..1:5 checked=null children=1
 │   │   └── Paragraph scope=1:3..1:5 children=1
@@ -5748,7 +5745,6 @@ Document scope=1:1..7:5 children=3
 │   └── ListItem scope=2:1..3:0 checked=null children=1
 │       └── Paragraph scope=2:3..2:5 children=1
 │           └── Text scope=2:3..2:5 literal="bar" children=0
-├── HTMLBlock scope=4:1..4:8 literal="<!-- -->\n" children=0
 └── List scope=6:1..7:5 flavor=bullet start=null tight=true children=2
     ├── ListItem scope=6:1..6:5 checked=null children=1
     │   └── Paragraph scope=6:3..6:5 children=1
@@ -5770,7 +5766,7 @@ Document scope=1:1..7:5 children=3
 
     code
 .
-Document scope=1:1..9:8 children=3
+Document scope=1:1..9:8 children=2
 ├── List scope=1:1..6:0 flavor=bullet start=null tight=false children=2
 │   ├── ListItem scope=1:1..4:0 checked=null children=2
 │   │   ├── Paragraph scope=1:5..1:7 children=1
@@ -5780,7 +5776,6 @@ Document scope=1:1..9:8 children=3
 │   └── ListItem scope=5:1..6:0 checked=null children=1
 │       └── Paragraph scope=5:5..5:7 children=1
 │           └── Text scope=5:5..5:7 literal="foo" children=0
-├── HTMLBlock scope=7:1..7:8 literal="<!-- -->\n" children=0
 └── CodeBlock scope=9:5..9:8 info=null language=null literal="code\n" fenced=false closed=true children=0
 ````````````````````````````````
 
@@ -10651,8 +10646,11 @@ Spaces are not allowed in autolinks:
 <http://foo.bar/baz bim>
 .
 Document scope=1:1..1:24 children=1
-└── Paragraph scope=1:1..1:24 children=1
-    └── Text scope=1:1..1:24 literal="<http://foo.bar/baz bim>" children=0
+└── Paragraph scope=1:1..1:24 children=3
+    ├── Text scope=1:1..1:1 literal="<" children=0
+    ├── Link scope=1:2..1:19 destination="http://foo.bar/baz" title=null children=1
+    │   └── Text scope=1:2..1:19 literal="http://foo.bar/baz" children=0
+    └── Text scope=1:20..1:24 literal=" bim>" children=0
 ````````````````````````````````
 
 
@@ -10709,8 +10707,11 @@ Backslash-escapes do not work inside email autolinks:
 <foo\+@bar.example.com>
 .
 Document scope=1:1..1:23 children=1
-└── Paragraph scope=1:1..1:23 children=1
-    └── Text scope=1:1..1:23 literal="<foo+@bar.example.com>" children=0
+└── Paragraph scope=1:1..1:23 children=3
+    ├── Text scope=1:1..1:1 literal="<" children=0
+    ├── Link scope=1:2..1:21 destination="mailto:foo+@bar.example.com" title=null children=1
+    │   └── Text scope=1:2..1:21 literal="foo+@bar.example.com" children=0
+    └── Text scope=1:22..1:22 literal=">" children=0
 ````````````````````````````````
 
 
@@ -10729,8 +10730,11 @@ Document scope=1:1..1:2 children=1
 < http://foo.bar >
 .
 Document scope=1:1..1:18 children=1
-└── Paragraph scope=1:1..1:18 children=1
-    └── Text scope=1:1..1:18 literal="< http://foo.bar >" children=0
+└── Paragraph scope=1:1..1:18 children=3
+    ├── Text scope=1:1..1:2 literal="< " children=0
+    ├── Link scope=1:3..1:16 destination="http://foo.bar" title=null children=1
+    │   └── Text scope=1:3..1:16 literal="http://foo.bar" children=0
+    └── Text scope=1:17..1:18 literal=" >" children=0
 ````````````````````````````````
 
 
@@ -10738,8 +10742,10 @@ Document scope=1:1..1:18 children=1
 <m:abc>
 .
 Document scope=1:1..1:7 children=1
-└── Paragraph scope=1:1..1:7 children=1
-    └── Text scope=1:1..1:7 literal="<m:abc>" children=0
+└── Paragraph scope=1:1..1:7 children=3
+    ├── Text scope=1:1..1:2 literal="<m" children=0
+    ├── Directive scope=1:3..1:6 name="abc" attributes=null children=0
+    └── Text scope=1:7..1:7 literal=">" children=0
 ````````````````````````````````
 
 
@@ -10757,7 +10763,8 @@ http://example.com
 .
 Document scope=1:1..1:18 children=1
 └── Paragraph scope=1:1..1:18 children=1
-    └── Text scope=1:1..1:18 literal="http://example.com" children=0
+    └── Link scope=1:1..1:18 destination="http://example.com" title=null children=1
+        └── Text scope=1:1..1:18 literal="http://example.com" children=0
 ````````````````````````````````
 
 
@@ -10766,7 +10773,8 @@ foo@bar.example.com
 .
 Document scope=1:1..1:19 children=1
 └── Paragraph scope=1:1..1:19 children=1
-    └── Text scope=1:1..1:19 literal="foo@bar.example.com" children=0
+    └── Link scope=1:1..1:19 destination="mailto:foo@bar.example.com" title=null children=1
+        └── Text scope=1:1..1:19 literal="foo@bar.example.com" children=0
 ````````````````````````````````
 
 <div class="extension">
@@ -11237,9 +11245,8 @@ foo <!-- this is a --
 comment - with hyphens -->
 .
 Document scope=1:1..2:26 children=1
-└── Paragraph scope=1:1..2:26 children=2
-    ├── Text scope=1:1..1:4 literal="foo " children=0
-    └── HTML scope=1:5..2:26 literal="<!-- this is a --\ncomment - with hyphens -->" children=0
+└── Paragraph scope=1:1..2:26 children=1
+    └── Text scope=1:1..1:4 literal="foo " children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
@@ -11248,14 +11255,10 @@ foo <!--> foo -->
 foo <!---> foo -->
 .
 Document scope=1:1..3:18 children=2
-├── Paragraph scope=1:1..1:17 children=3
-│   ├── Text scope=1:1..1:4 literal="foo " children=0
-│   ├── HTML scope=1:5..1:9 literal="<!-->" children=0
-│   └── Text scope=1:10..1:17 literal=" foo -->" children=0
-└── Paragraph scope=3:1..3:18 children=3
-    ├── Text scope=3:1..3:4 literal="foo " children=0
-    ├── HTML scope=3:5..3:10 literal="<!--->" children=0
-    └── Text scope=3:11..3:18 literal=" foo -->" children=0
+├── Paragraph scope=1:1..1:17 children=1
+│   └── Text scope=1:1..1:17 literal="foo  foo -->" children=0
+└── Paragraph scope=3:1..3:18 children=1
+    └── Text scope=3:1..3:18 literal="foo  foo -->" children=0
 ````````````````````````````````
 
 

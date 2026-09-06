@@ -4,7 +4,7 @@ Status: normative module of the [Markdown Core dialect](../dialect.md). It
 owns the document metadata model and the one source rule that populates it.
 Source: Obsidian's Properties and the
 YAML 1.2.2 specification it links. Executable oracle: `yaml` 2.9.0 through
-its Document/CST API, behind the harness's exact envelope scanner, under
+its Document/CST API, behind the Obsidian gate's exact envelope scanner, under
 `specs/oracles/obsidian/`. Landing: the value types with `M7`, recognition
 with `O6`. The [example format](../dialect.md#examples) is defined by the
 index.

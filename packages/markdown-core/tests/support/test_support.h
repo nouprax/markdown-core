@@ -12,21 +12,24 @@ extern "C" {
 #endif
 
 /* Shared native test support for the CTest suites.  Every runner links this
- * library, or the harness flavour that adds layer selection, instead of
- * re-implementing fixture, comparison, or failure-report glue.  All
+ * library instead of re-implementing fixture, comparison, or failure-report
+ * glue.  All
  * verification goes through the read-only markdown_core facade (accessors,
  * canonical AST dump); no renderer is ever invoked.  All comparisons are
  * UTF-8 byte comparisons; all diffs are line-oriented and deterministic. */
 
-#define TS_MAX_EXTENSIONS 16
+#define TS_MAX_TAGS 16
 
 typedef struct ts_spec_case {
     char *markdown;
     size_t markdown_length; /* bytes; the markdown may contain NULs */
     char *expected;
     char *section;
-    char *extensions[TS_MAX_EXTENSIONS];
-    size_t extension_count;
+    /* The fence tags after `example`: labels that classify the example
+     * for the oracle corpora (`tagged`/`untagged`). They select nothing:
+     * every example parses the one dialect. */
+    char *tags[TS_MAX_TAGS];
+    size_t tag_count;
     int example;
     int start_line;
     int end_line;
@@ -51,14 +54,14 @@ uint8_t *ts_read_file(const char *path, size_t *length);
 int ts_spec_load(const char *path, ts_spec_file *out);
 void ts_spec_free(ts_spec_file *file);
 
-/* Layer selection lives in `harness_support.h`: it reaches the facade's
- * internal feature registry, which the installed shared library does not
- * export, so it links the static engine and is a separate support library.
- * Everything here goes through the public facade alone. */
-
 /* Traversal -------------------------------------------------------------- */
 
 /* Pre-order callback; return non-zero to abort the walk. */
+/* Parses `bytes` through the public facade -- the one language, the one
+ * transaction every consumer runs -- and prints the facade error message to
+ * stderr and returns NULL on failure. */
+markdown_core_document *ts_ast_parse(const uint8_t *bytes, size_t length);
+
 typedef int (*ts_ast_visit_fn)(const markdown_core_node *node, void *context);
 
 /* Iterative pre-order walk over the subtree rooted at `root` (call it on the

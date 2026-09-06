@@ -101,17 +101,18 @@ the two implementation plans are unchanged.
   the contract check. Field and enum changes on existing kinds are therefore the
   only model-only pull requests; they are the `M` items.
 - A feature pull request is one feature's behavior: the C extension or
-  scanner, its reviewed position in the attach-order table, its row in the
-  internal harness registry that `X0` creates, the new kind if any, package
-  fixtures for the module's required conformance cases, a canonical case for
-  each new kind or state, and the removal of every oracle gap it closes. The
-  feature is always on from the item that lands it; no surface gains a switch.
-- Every feature name is allocated in the inventory and registered in the
-  internal harness registry that `X0` creates, so the conformance runners can
-  compare the base and GFM layers with their oracles. A feature item lands the
-  behavior, its oracle evidence, and its product fixtures together; the dialect
-  has no switches, so nothing is published as an option and no item adds
-  option-off cases.
+  scanner, its reviewed position in the attach-order table, the new kind if
+  any, package fixtures for the module's required conformance cases, a
+  canonical case for each new kind or state, and the removal of every oracle
+  gap it closes. The feature is always on from the item that lands it; no
+  surface gains a switch.
+- Every feature name is allocated in the inventory. A feature item lands the
+  behavior, its oracle evidence, and its product fixtures together, and
+  registers in `specs/oracles/` each place its syntax deliberately leaves an
+  oracle's language, keyed to the exact inputs or as a projection the
+  comparison applies; the dialect has no switches, so nothing is published as
+  an option, no item adds option-off cases, and no gate parses a part of the
+  language.
 - Nothing here ships before `R1`. Between merges, an unproduced enum branch,
   value type, or field is allowed only where an item says so, and the item that
   first produces it is named; a landed feature always recognizes its syntax.
@@ -138,7 +139,7 @@ the two implementation plans are unchanged.
   `visitor.ts`, `walking-visitor.ts`, `tree-dumper.ts`, `wire/kinds.ts`,
   `wire/node-decoder.ts`, `bridge.c`, and the type consumer.
 - Fixtures: one package fixture file per module registered in
-  `packages/markdown-core/tests/CMakeLists.txt` with its harness layer;
+  `packages/markdown-core/tests/CMakeLists.txt`;
   regenerated goldens reviewed together with the parser change; canonical
   cases with manifest coverage vocabulary and checker validators.
 - Ledgers and gates: `specs/positions/`, `specs/reference-resolution/`, and
@@ -179,9 +180,9 @@ lands the behavior amends that module in the same pull request.
   directly, and no cell is normalized to a `Paragraph`.
 - There are no profiles, no umbrella switch, and no per-feature switch: the
   dialect is one language in which every feature is always on, and `X0`
-  deletes `ParseOptions` and smart punctuation. The conformance harness keeps
-  an internal, unpublished layer selection for the cmark and cmark-gfm oracles;
-  the CLI `--profile` names are its shorthands and define no language.
+  deletes `ParseOptions` and smart punctuation. The test tree keeps no layer
+  selection either: the oracle gates parse the one language and register
+  where it deliberately leaves an oracle's.
 - A comment is a `Comment` node and is never stripped: an HTML comment under the
   inherited grammar, and a `%%` comment. `stripHTMLComments` is removed,
   nothing strips anything, and a consumer that wants comments gone drops the
@@ -258,19 +259,21 @@ value carries `scope` only.
 | `ReferenceForm`                                                                     | removed by `M2`                                               |
 | `DirectiveAttribute`                                                                | removed by `M7`                                               |
 
-### Harness layers
+### One language
 
-The dialect has no parse options. `X0` replaces the public `ParseOptions`
-with an internal harness registry that the conformance runners and oracle
-gates use to run the parser with the CommonMark base layer alone or with the
-GFM layer alone. The registry is exposed by no C facade, binding, wire
-format, or installed executable: the installed CLI parses the one dialect
-and has no `--profile` or `-e`, and those shorthands move to a harness
-executable that the test tree builds and never installs. Each feature item
-registers its scanner or extension there when it lands, so the base and GFM
-comparisons keep excluding it, and marks its feature-table row `present`; a
-feature is public from the item that lands its behavior, with no separate
-publication step.
+The dialect has no parse options, and neither does its test tree. `X0`
+deletes the public `ParseOptions` and every internal layer selection with it:
+the parser attaches every extension on every parse; the package fixtures,
+oracle gates, and position audits parse through the installed `markdown-core`
+CLI or the same facade entry; and an oracle's authority is which inputs it
+judges, never how they are parsed. Where the dialect deliberately leaves an
+oracle's language, `specs/oracles/*/deltas.json` registers the difference
+against its exact inputs or as a projection the comparison applies; where the
+engine has not caught up with the dialect's own rules, the oracle's `backlog`
+names the item that closes the gap and must keep diverging until it does.
+Each feature item marks its feature-table row `present` and registers the
+divergences its syntax creates; a feature is public from the item that lands
+its behavior, with no separate publication step.
 
 ## Stage 0 — groundwork
 
@@ -291,29 +294,35 @@ publication step.
       Specification only; no engine change. This is the pull request that
       carries this plan: tick it, and the audit's checklist with it, when it
       merges.
-- [x] **X0 — Remove the option surface and build the harness registry.**
+- [x] **X0 — Remove the option surface and every layer selection.**
       Delete `ParseOptions` from the C facade, the installed CLI, and the
       Swift, Kotlin, and ES bindings, so `Document.parse(source)` is the only
       entry point on every surface and the installed CLI takes no `--profile`,
       `-e`, or `--smart`; remove smart punctuation from the product parse, the
       `--smart` mode and its substitutions, so quotation marks, hyphen runs,
       and periods are stored as written; and delete the `ParseOptions` table
-      of `canonical-ast.md`. Create one internal C-side registry that maps a
-      registered feature name to its engine extension bit or scanner, used
-      only by the conformance runners, the `spec_runner` fixture tags, the
-      oracle gates, and a harness executable that carries the former
-      `--profile` and `-e` shorthands, is built by the test tree, and is never
-      installed, so the cmark gate can run the base layer alone and the
-      cmark-gfm gate the GFM layer alone; make
+      of `canonical-ast.md`. Delete every internal layer selection with them:
+      the CLI's `--profile` and `-e` shorthands, `spec_runner --feature`, the
+      feature tables behind them, and the `*-option-gates` fixtures, so that
+      the engine configuration is written once, every package fixture, oracle
+      gate, and position audit parses the one language through the installed
+      CLI or the facade entry, and a fence tag only classifies an example for
+      the oracle corpora. Register in `specs/oracles/` each place the dialect
+      deliberately leaves an oracle's language: GFM autolink literals and the
+      text directive against cmark, keyed to the specification inputs, and
+      HTML-comment stripping against cmark and cmark-gfm as a projection until
+      `M0`; open the cmark-gfm `backlog` with the `mailto:` and `xmpp:`
+      collision that the recognition order decides for the autolink and no
+      item has implemented; and give the formula scanner's `\\]` and `\\)`
+      closers to the base language when nothing opened them, which running
+      the shipped language against cmark exposed. Make
       `scripts/check-canonical-ast-fixtures.mjs` stop reading option fields
       from the manifest and validate the coverage vocabulary alone, failing on
-      a case that still names an option; and rename the `*-option-gates`
-      fixtures to `*-layer-gates`, keeping them as harness-internal proofs that
-      a registered scanner can be excluded for a comparison. Exit: every
-      existing fixture and canonical case is byte-identical apart from the
-      smart-punctuation substitutions, which are regenerated and reviewed; no
-      public surface exposes a switch; and the registry, the CLI shorthands,
-      the fixture tags, and the checker agree on the registered names.
+      a case that still names an option. Exit: every existing fixture and
+      canonical case is byte-identical apart from the smart-punctuation
+      substitutions and the examples whose dump the one language changes, each
+      regenerated and reviewed; no surface and no test parses a part of the
+      dialect; and the corpus and fuzz gates judge the language that ships.
       Requires `S0`, which states the switch-less dialect.
 - [ ] **P0 — Pandoc evidence gate.** Add `oracle-pandoc` to
       `scripts/init-environment.sh`: `--install` fetches only the host archive
@@ -497,8 +506,7 @@ publication step.
 - [ ] **O1 — Wikilinks and embeds.** Create the parser-owned OFM inline
       extension, its bit, and its reviewed attach-table position (before
       `table`; the extension must see `[` and `!` before inherited bracket
-      handling), registered in the harness registry, always on, and public
-      from this item. One
+      handling), always on, and public from this item. One
       scanner recognizes `[[...]]` and `![[...]]`, splits path, optional anchor,
       and label while scanning, removes the `#` and `#^` punctuation, and builds
       one `CrossLink(embedded, dest=cross(path, anchor), label)` whose `label`
@@ -943,7 +951,7 @@ Sizes are rough review-effort estimates, not schedules.
 | `O7`   | `O1`               | M    | anchor reserved before synthesis (`P3`); identifier on a metadata-bearing callout (`O8`); identifier caret before superscript (`P6`); identifier after a table caption (`P11a`, `P11b`, `P11c`, `P11d`) | Obsidian Phase 3 block identifiers                                                                                               |
 | `O8`   | `O1`, `O2`         | M    | identifier on a metadata-bearing callout (`O7`); callout title that is one comment (`O3`)                                                                                                               | Obsidian Phase 3 callouts                                                                                                        |
 | `O9`   | `O1`               | M    | typed dimensions beside a dimension attribute record (`P2d`)                                                                                                                                            | Obsidian Phase 4 media parameters                                                                                                |
-| `O10`  | `O1`–`O9`          | M    | —                                                                                                                                                                                                       | Obsidian Phase 1 harness registration; Phase 2 caller audit; Phase 5; plan exit criterion                                          |
+| `O10`  | `O1`–`O9`          | M    | —                                                                                                                                                                                                       | Obsidian Phase 1 fixtures and oracle registration; Phase 2 caller audit; Phase 5; plan exit criterion                                          |
 | `I1`   | `X0`, `I0`, `M7`   | S    | `Insert` containing `CrossLink`, `Mark` (`O1`, `O2`); heading-text projection (`P3`)                                                                                                                    | inserted-text contract                                                                                                           |
 | `P2a`  | `P0`, `M7`         | S    | anchor reserved before synthesis (`P3`)                                                                                                                                                                 | Pandoc Phase 2 attachment sites                                                                                                  |
 | `P2b`  | `P0`, `M7`         | S    | —                                                                                                                                                                                                       | Pandoc Phase 2 attachment sites                                                                                                  |

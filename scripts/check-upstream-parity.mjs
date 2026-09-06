@@ -24,6 +24,7 @@ import { readExamples, selectExamples } from "./lib/fixture-corpus.mjs";
 import {
     applyUpstreamFootnoteModel,
     applyUpstreamReferenceModel,
+    dropHtmlComments,
     liftFootnoteDefinitions,
     normalize,
     parseCanonicalDump,
@@ -47,7 +48,6 @@ const ORACLES = {
         },
         install: "scripts/init-environment.sh --install oracle-cmark",
         label: "cmark",
-        profile: "commonmark",
         extensions: []
     },
     gfm: {
@@ -57,7 +57,6 @@ const ORACLES = {
         },
         install: "scripts/init-environment.sh --install oracle-cmark-gfm",
         label: "cmark-gfm",
-        profile: "gfm",
         extensions: ["table", "strikethrough", "autolink", "tasklist", "footnotes"]
     }
 };
@@ -71,9 +70,9 @@ const policy = JSON.parse(fs.readFileSync(path.join(root, policyPath), "utf8"));
 
 // Both binaries are built products of this repository's own toolchain, so a
 // missing one is a setup error with a specific fix, not a reason to skip.
-// Ours is the conformance harness, not the installed CLI: the dialect has no
-// switches, and only the harness can run the base or GFM layer alone.
-const ours = path.join(root, "build/cmake/packages/markdown-core/tests/markdown-core-harness");
+// Ours is the installed CLI: the dialect has no switches, so the gate judges
+// the one language that ships and nothing else.
+const ours = path.join(root, "build/cmake/packages/markdown-core/core/markdown-core");
 const upstream = path.join(root, oracle.binary(policy));
 for (const [binary, fix] of [
     [ours, "pnpm build:c"],
@@ -91,36 +90,31 @@ function runUpstream(input) {
     return execFileSync(upstream, argv, { input, encoding: "utf8", maxBuffer: 1 << 28 });
 }
 
-function runOurs(input, profile) {
-    return execFileSync(ours, ["--profile", profile], { input, encoding: "utf8", maxBuffer: 1 << 28 });
+function runOurs(input) {
+    return execFileSync(ours, [], { input, encoding: "utf8", maxBuffer: 1 << 28 });
 }
 
 /**
  * The corpus is policy-driven. CommonMark and GFM select different sections
- * and profiles so a parser is never treated as authoritative outside its
- * language layer.
+ * so a parser is never treated as authoritative outside its language layer;
+ * the selection is which INPUTS an oracle judges, never how they are parsed.
  */
 // `--corpus` replaces the policy's corpus for one run. It exists for
 // scripts/fuzz-parity.mjs, which feeds generated inputs through this gate
 // rather than reimplementing the comparison; without it the fuzzer would have
 // to rewrite the policy file and could leave it damaged if interrupted.
 const corpusOverride = process.argv.indexOf("--corpus");
-// A corpus entry is a path, or an object naming the harness layer the file is
-// written for and which of its examples to select. The upstream side always
-// runs its default language: every smart-punctuation substitution is gone, so
-// there is no upstream flag left to mirror.
+// A corpus entry is a path, or an object naming which of the file's examples
+// to select. Both sides parse the same bytes as their whole language: this
+// side has one, and upstream runs its default with the extensions the oracle
+// table names.
 function corpus() {
     const entries = corpusOverride >= 0 ? [process.argv[corpusOverride + 1]] : (policy.corpus ?? []);
     return entries.flatMap((entry) => {
         const file = typeof entry === "string" ? entry : entry.file;
-        const profile = typeof entry === "string" ? oracle.profile : (entry.profile ?? oracle.profile);
         const selection = typeof entry === "string" ? undefined : entry.selection;
         const selected = selectExamples(readExamples(root, file), selection, policyPath);
-        return selected.map((example) => ({
-            line: example.source,
-            input: example.input,
-            profile
-        }));
+        return selected.map((example) => ({ line: example.source, input: example.input }));
     });
 }
 
@@ -130,19 +124,16 @@ function corpus() {
  * still reproduce. */
 const fired = new Set();
 
-function compare(input, profile = oracle.profile) {
+function compare(input) {
     const upstreamTree = liftFootnoteDefinitions(
-        normalize(parseUpstreamXml(runUpstream(input)), "upstream", fired),
+        normalize(dropHtmlComments(parseUpstreamXml(runUpstream(input)), fired), "upstream", fired),
         fired
     );
     // `footnote-resolution-model` is applied before `normalize`, which keeps
     // only the compared fields and so drops the labels the model reads.
     const ourTree = liftFootnoteDefinitions(
         normalize(
-            applyUpstreamReferenceModel(
-                applyUpstreamFootnoteModel(parseCanonicalDump(runOurs(input, profile)), fired),
-                fired
-            ),
+            applyUpstreamReferenceModel(applyUpstreamFootnoteModel(parseCanonicalDump(runOurs(input)), fired), fired),
             "ours",
             fired
         ),
@@ -167,18 +158,12 @@ function compare(input, profile = oracle.profile) {
  * comparison nobody has looked at since.
  */
 const PROJECTED_DELTAS = new Set([
-    "own-extensions",
+    "html-comment-stripping",
     "footnote-definition-placement",
     "footnote-resolution-model",
     "reference-definition-node",
     "empty-text-node"
 ]);
-/* `own-extensions` is the one projection that is not a tree rewrite: it is the
- * CORPUS PROFILE. The extension fixtures run under the harness's `gfm` layer,
- * which leaves this repository's own two scanners out so the comparison is of
- * one language, and there is nothing for a normalizer to report. Every other
- * projection acts on a tree and says so. */
-const UNTRACKED_PROJECTIONS = new Set(["own-extensions"]);
 for (const delta of policy.deltas) {
     if (!PROJECTED_DELTAS.has(delta.id) && !(policy.expectedDivergences ?? []).some((e) => e.id === delta.id)) {
         process.stderr.write(
@@ -201,13 +186,22 @@ const reproduced = new Set();
 const pending = new Map((policy.pendingExpectedDivergences ?? []).map((entry) => [entry.input, entry]));
 const pendingStep = new Map((policy.pendingDeltas ?? []).map((delta) => [delta.id, delta.pendingStep]));
 
+// THE BACKLOG, which is a third thing. A registered divergence says "upstream
+// is not the authority here"; a backlog entry says "upstream is right and this
+// engine has not caught up yet", names the item that closes it, and must STILL
+// diverge: an entry that has quietly started agreeing is a fix that landed
+// without retiring its own entry, and an entry whose input left the corpus
+// proved nothing. The mdast gate runs the same protocol.
+const backlog = new Map((policy.backlog ?? []).map((entry) => [entry.input, entry]));
+const backlogSeen = new Set();
+
 const cases = corpus().slice(0, limit);
 const divergent = [];
 const unmappedKinds = new Set();
 for (const testCase of cases) {
     let result;
     try {
-        result = compare(testCase.input, testCase.profile);
+        result = compare(testCase.input);
     } catch (error) {
         divergent.push({ ...testCase, failure: String(error).slice(0, 300) });
         continue;
@@ -218,6 +212,7 @@ for (const testCase of cases) {
     if (result.upstream !== result.ours) {
         if (registered) reproduced.add(testCase.input);
         else if (owed) divergent.push({ ...testCase, activate: owed, ...result });
+        else if (backlog.has(testCase.input)) backlogSeen.add(testCase.input);
         else divergent.push({ ...testCase, ...result });
     } else if (registered) {
         divergent.push({ ...testCase, settled: registered, ...result });
@@ -240,6 +235,20 @@ if (corpusOverride < 0 && limit === Infinity) {
     }
 }
 
+// The backlog is held to the same rule as the keyed half, in both directions.
+if (corpusOverride < 0 && limit === Infinity) {
+    const corpusInputs = new Set(cases.map((testCase) => testCase.input));
+    for (const entry of policy.retiredBacklog ?? []) {
+        if (corpusInputs.has(entry.input))
+            divergent.push({ line: policyPath, input: entry.input, revivedBacklog: entry });
+    }
+    for (const [input, entry] of backlog) {
+        if (backlogSeen.has(input)) continue;
+        const key = corpusInputs.has(input) ? "settledBacklog" : "unreachableBacklog";
+        divergent.push({ line: policyPath, input, [key]: entry });
+    }
+}
+
 process.stdout.write(
     `upstream parity: ${String(cases.length - divergent.length)}/${String(cases.length)} inputs agree with ` +
         `${oracle.label} ${policy.upstream.version}\n`
@@ -248,6 +257,14 @@ process.stdout.write(`  registered deltas: ${policy.deltas.map((d) => d.id).join
 process.stdout.write(
     `  registered divergences: ${String(reproduced.size)}/${String(expected.size)} inputs reproduced\n`
 );
+if (backlog.size) {
+    const byOwner = new Map();
+    for (const entry of backlog.values()) byOwner.set(entry.closedBy, (byOwner.get(entry.closedBy) ?? 0) + 1);
+    process.stdout.write(`  backlog: ${String(backlogSeen.size)}/${String(backlog.size)} inputs still diverging\n`);
+    for (const [owner, count] of [...byOwner].sort()) {
+        process.stdout.write(`      ${String(count).padStart(2)}  ${owner}\n`);
+    }
+}
 
 /* The projected half of the registry, held to the same rule as the keyed half.
  * A projection that never acts over the whole corpus is describing a difference
@@ -259,9 +276,7 @@ process.stdout.write(
 if (corpusOverride < 0 && limit === Infinity) {
     const pendingIds = new Set((policy.pendingDeltas ?? []).map((delta) => delta.id));
     const activeIds = new Set(policy.deltas.map((delta) => delta.id));
-    const tracked = [...PROJECTED_DELTAS].filter(
-        (id) => activeIds.has(id) && !UNTRACKED_PROJECTIONS.has(id) && !pendingIds.has(id)
-    );
+    const tracked = [...PROJECTED_DELTAS].filter((id) => activeIds.has(id) && !pendingIds.has(id));
     const silent = tracked.filter((id) => !fired.has(id));
     const pendingProjections = (policy.pendingDeltas ?? []).filter((delta) => delta.projected);
     const acting = pendingProjections.filter((delta) => fired.has(delta.id));
@@ -322,6 +337,27 @@ if (divergent.length) {
                     `    creates it has landed: ${pendingStep.get(entry.activate.id) ?? "step unnamed"}.\n` +
                     "    Move it from `pendingDeltas`/`pendingExpectedDivergences` into `deltas`/`expectedDivergences`\n" +
                     "    in that step's commit. Do not register a second entry for the same difference.\n"
+            );
+            continue;
+        }
+        if (entry.settledBacklog) {
+            process.stderr.write(
+                `    backlog entry owned by ${entry.settledBacklog.closedBy} no longer diverges: the two now agree,\n` +
+                    "    so the fix has landed. Move the entry into `retiredBacklog` in that commit.\n"
+            );
+            continue;
+        }
+        if (entry.unreachableBacklog) {
+            process.stderr.write(
+                `    backlog entry owned by ${entry.unreachableBacklog.closedBy} is no longer in the corpus, so\n` +
+                    "    nothing checks that it still diverges. Restore the input or retire the entry on the record.\n"
+            );
+            continue;
+        }
+        if (entry.revivedBacklog) {
+            process.stderr.write(
+                `    retired backlog entry (${entry.revivedBacklog.closedBy}) is back in the corpus; if it diverges\n` +
+                    "    again it is a new finding with no owner, so re-register it rather than reviving the retirement.\n"
             );
             continue;
         }
