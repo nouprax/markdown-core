@@ -4,6 +4,8 @@ package com.nouprax.markdown.core
 
 import cnames.structs.markdown_core_error
 import cnames.structs.markdown_core_node
+import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_DESTINATION_CROSS
+import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_DESTINATION_URL
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_ERROR_ALLOCATION_FAILED
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_ERROR_INTERNAL
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_ERROR_INVALID_ARGUMENT
@@ -51,6 +53,7 @@ import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_TABLE_ALIGNMENT_CEN
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_TABLE_ALIGNMENT_LEFT
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_TABLE_ALIGNMENT_NONE
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_TABLE_ALIGNMENT_RIGHT
+import com.nouprax.markdown.core.internal.capi.markdown_core_destination
 import com.nouprax.markdown.core.internal.capi.markdown_core_document_free
 import com.nouprax.markdown.core.internal.capi.markdown_core_document_parse
 import com.nouprax.markdown.core.internal.capi.markdown_core_document_root
@@ -62,6 +65,7 @@ import com.nouprax.markdown.core.internal.capi.markdown_core_node_association
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_child_count
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_code_block_properties
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_definition_resource
+import com.nouprax.markdown.core.internal.capi.markdown_core_node_destination
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_directive_attribute_at
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_directive_label
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_directive_properties
@@ -70,8 +74,6 @@ import com.nouprax.markdown.core.internal.capi.markdown_core_node_get_first_chil
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_get_kind
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_get_next_sibling
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_heading_level
-import com.nouprax.markdown.core.internal.capi.markdown_core_node_image_properties
-import com.nouprax.markdown.core.internal.capi.markdown_core_node_link_properties
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_list_item_checked
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_list_properties
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_literal
@@ -80,6 +82,7 @@ import com.nouprax.markdown.core.internal.capi.markdown_core_node_scope
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_table_alignment_at
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_table_column_count
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_table_row_is_header
+import com.nouprax.markdown.core.internal.capi.markdown_core_node_title
 import com.nouprax.markdown.core.internal.capi.markdown_core_optional_bool
 import com.nouprax.markdown.core.internal.capi.markdown_core_optional_i64
 import com.nouprax.markdown.core.internal.capi.markdown_core_optional_string
@@ -300,13 +303,11 @@ private class NativeTreeBuilder(
             }
 
             MARKDOWN_CORE_KIND_LINK -> {
-                val resource = scratch.link(node)
-                Link(resource.first, resource.second, children, scope)
+                Link(scratch.destination(node), scratch.title(node), children, scope)
             }
 
             MARKDOWN_CORE_KIND_IMAGE -> {
-                val resource = scratch.image(node)
-                Image(resource.first, resource.second, children, scope)
+                Image(scratch.destination(node), scratch.title(node), children, scope)
             }
 
             MARKDOWN_CORE_KIND_DIRECTIVE -> {
@@ -397,6 +398,7 @@ private class NativeScratch(
     private val placementMode = scope.alloc<markdown_core_placement_modeVar>()
     private val tableAlignment = scope.alloc<markdown_core_table_alignmentVar>()
     private val referenceForm = scope.alloc<markdown_core_reference_formVar>()
+    private val destination = scope.alloc<markdown_core_destination>()
 
     fun headingLevel(node: CPointer<markdown_core_node>): Int {
         require(markdown_core_node_heading_level(node, integer.ptr)) { "invalid heading node" }
@@ -551,18 +553,26 @@ private class NativeScratch(
         return name to attributes
     }
 
-    fun link(node: CPointer<markdown_core_node>): Pair<String, String?> {
-        require(markdown_core_node_link_properties(node, firstString.ptr, firstOptionalString.ptr)) {
-            "invalid link node"
+    fun destination(node: CPointer<markdown_core_node>): Destination {
+        require(markdown_core_node_destination(node, destination.ptr)) { "invalid link or image node" }
+        return when (destination.kind) {
+            MARKDOWN_CORE_DESTINATION_URL -> {
+                Destination.Url(destination.url.copyString())
+            }
+
+            MARKDOWN_CORE_DESTINATION_CROSS -> {
+                Destination.Cross(destination.path.copyString(), destination.anchor.copyOptionalString())
+            }
+
+            else -> {
+                error("unsupported native destination kind ${destination.kind}")
+            }
         }
-        return firstString.copyString() to firstOptionalString.copyOptionalString()
     }
 
-    fun image(node: CPointer<markdown_core_node>): Pair<String, String?> {
-        require(markdown_core_node_image_properties(node, firstString.ptr, firstOptionalString.ptr)) {
-            "invalid image node"
-        }
-        return firstString.copyString() to firstOptionalString.copyOptionalString()
+    fun title(node: CPointer<markdown_core_node>): String? {
+        require(markdown_core_node_title(node, firstOptionalString.ptr)) { "invalid link or image node" }
+        return firstOptionalString.copyOptionalString()
     }
 
     fun association(node: CPointer<markdown_core_node>): Pair<String, String> {

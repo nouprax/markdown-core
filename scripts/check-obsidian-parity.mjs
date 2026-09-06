@@ -24,7 +24,13 @@ import { unified } from "unified";
 import { isAlias, isMap, isScalar, isSeq, parseAllDocuments } from "yaml";
 
 import { readExamples } from "./lib/fixture-corpus.mjs";
-import { parseCanonicalDump, parseCanonicalFields } from "./lib/upstream-cmark.mjs";
+import {
+    crossDestination,
+    parseCanonicalDump,
+    parseCanonicalFields,
+    parseDestination,
+    urlDestination
+} from "./lib/upstream-cmark.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const policyPath = "specs/oracles/obsidian/deltas.json";
@@ -96,14 +102,6 @@ const comparedFields = {
     Image: ["dest", "title"],
     CrossLink: ["embedded", "dest", "label"]
 };
-
-function urlDestination(value) {
-    return { kind: "url", value };
-}
-
-function crossDestination(path, anchor) {
-    return { kind: "cross", path, anchor };
-}
 
 const yamlStringFallback = {
     identify: (value) => typeof value === "string",
@@ -323,66 +321,6 @@ function parseProperties(source) {
     };
 }
 
-function parseJsonString(source, start) {
-    if (source[start] !== '"') return null;
-    let escaped = false;
-    for (let cursor = start + 1; cursor < source.length; cursor++) {
-        const character = source[cursor];
-        if (escaped) escaped = false;
-        else if (character === "\\") escaped = true;
-        else if (character === '"') {
-            const raw = source.slice(start, cursor + 1);
-            return { value: JSON.parse(raw), end: cursor + 1 };
-        }
-    }
-    return null;
-}
-
-function parseDestination(raw) {
-    let cursor = 0;
-    const skipSpace = () => {
-        while (/\s/.test(raw[cursor] ?? "")) cursor++;
-    };
-    const consume = (token) => {
-        skipSpace();
-        if (!raw.startsWith(token, cursor)) return false;
-        cursor += token.length;
-        return true;
-    };
-    const string = () => {
-        skipSpace();
-        const parsed = parseJsonString(raw, cursor);
-        if (parsed) cursor = parsed.end;
-        return parsed?.value;
-    };
-    const complete = () => {
-        skipSpace();
-        return cursor === raw.length;
-    };
-
-    if (consume("url(")) {
-        const value = string();
-        if (value === undefined || !consume(")") || !complete()) return null;
-        return urlDestination(value);
-    }
-
-    cursor = 0;
-    if (!consume("cross(") || !consume("path=")) return null;
-    const path = string();
-    if (path === undefined || !consume(",") || !consume("anchor=")) return null;
-    skipSpace();
-    let anchor;
-    if (raw.startsWith("null", cursor)) {
-        cursor += 4;
-        anchor = null;
-    } else {
-        anchor = string();
-        if (anchor === undefined) return null;
-    }
-    if (!consume(")") || !complete()) return null;
-    return crossDestination(path, anchor);
-}
-
 function normalizeChildren(children) {
     const result = [];
     for (const child of children) {
@@ -465,10 +403,7 @@ function fromMarkdownCore(node, includeMetadata = false) {
     const fields = {};
     for (const name of comparedFields[node.kind] ?? []) {
         let value = node.fields[name];
-        if ((node.kind === "Link" || node.kind === "Image") && name === "dest" && value == null) {
-            const legacyName = node.kind === "Link" ? "destination" : "source";
-            value = urlDestination(String(node.fields[legacyName] ?? ""));
-        } else if (name === "dest" && value != null) {
+        if (name === "dest") {
             value = parseDestination(String(value));
             if (value == null) throw new Error(`invalid canonical destination: ${String(node.fields[name])}`);
         }

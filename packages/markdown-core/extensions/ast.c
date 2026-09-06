@@ -519,24 +519,29 @@ const markdown_core_node *markdown_core_node_directive_label(const markdown_core
     return is_directive(node) ? markdown_core_directive_label((markdown_core_node *)node) : NULL;
 }
 
-static bool link_properties(const markdown_core_node *node, uint16_t expected, markdown_core_string *url,
-                            markdown_core_optional_string *title) {
-    if (!node || node->type != expected || !url || !title) {
+static bool has_resource(const markdown_core_node *node) {
+    return node && (node->type == MARKDOWN_CORE_NODE_LINK || node->type == MARKDOWN_CORE_NODE_IMAGE);
+}
+
+bool markdown_core_node_destination(const markdown_core_node *node, markdown_core_destination *destination) {
+    if (!has_resource(node) || !destination) {
         return false;
     }
-    string_from_chunk(url, &node->as.link.url);
-    optional_string_from_chunk(title, &node->as.link.title);
+    /* Every link and image the inherited grammar produces is the `url`
+     * branch; the `cross` branch arrives with the cross links of `O1`. The
+     * other branch's fields are zeroed, not left over. */
+    memset(destination, 0, sizeof(*destination));
+    destination->kind = MARKDOWN_CORE_DESTINATION_URL;
+    string_from_chunk(&destination->url, &node->as.link.url);
     return true;
 }
 
-bool markdown_core_node_link_properties(const markdown_core_node *node, markdown_core_string *destination,
-                                        markdown_core_optional_string *title) {
-    return link_properties(node, MARKDOWN_CORE_NODE_LINK, destination, title);
-}
-
-bool markdown_core_node_image_properties(const markdown_core_node *node, markdown_core_string *source,
-                                         markdown_core_optional_string *title) {
-    return link_properties(node, MARKDOWN_CORE_NODE_IMAGE, source, title);
+bool markdown_core_node_title(const markdown_core_node *node, markdown_core_optional_string *title) {
+    if (!has_resource(node) || !title) {
+        return false;
+    }
+    optional_string_from_chunk(title, &node->as.link.title);
+    return true;
 }
 
 /* ONE accessor for all five reference kinds, dispatched on the type and
@@ -748,6 +753,25 @@ static const char *mode_name(markdown_core_placement_mode mode) {
     return mode == MARKDOWN_CORE_PLACEMENT_EMBEDDED ? "embedded" : "standalone";
 }
 
+/* A tagged value prints its branch and its named fields with no spaces
+ * (canonical-ast-dump.md): `url("...")`, or `cross(path="...",anchor=null)`.
+ * Kept OUTSIDE `dump_fields`, whose body the projection audit reads for the
+ * `name=` literals a kind prints: the branch fields are the value's, not the
+ * node's. */
+static void buffer_destination(dump_buffer *buffer, markdown_core_destination destination) {
+    if (destination.kind == MARKDOWN_CORE_DESTINATION_CROSS) {
+        buffer_cstr(buffer, "cross(path=");
+        buffer_json_string(buffer, destination.path);
+        buffer_cstr(buffer, ",anchor=");
+        buffer_optional_string(buffer, destination.anchor);
+        buffer_cstr(buffer, ")");
+        return;
+    }
+    buffer_cstr(buffer, "url(");
+    buffer_json_string(buffer, destination.url);
+    buffer_cstr(buffer, ")");
+}
+
 static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, markdown_core_node_kind kind) {
     markdown_core_string a = {NULL, 0}, b = {NULL, 0}, c = {NULL, 0};
     markdown_core_optional_string oa = {false, {NULL, 0}}, ob = {false, {NULL, 0}};
@@ -756,6 +780,7 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
     markdown_core_list_flavor flavor;
     markdown_core_placement_mode mode;
     markdown_core_reference_form form = MARKDOWN_CORE_REFERENCE_SHORTCUT;
+    markdown_core_destination destination;
     bool x, y, has_attributes;
     size_t count, i;
     int32_t level;
@@ -907,20 +932,16 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
         buffer_cstr(buffer, " title=");
         buffer_optional_string(buffer, oa);
         break;
-    /* A DESTINATION IS REQUIRED (Q26) and prints as a string. `[a]()` used to
-     * print `destination=null`, which said the author wrote no destination
-     * when the empty parentheses are the destination they wrote. */
+    /* A DESTINATION IS REQUIRED (Q26): `dest=` is the tagged value and is
+     * never `null`. `[a]()` used to print `destination=null`, which said the
+     * author wrote no destination when the empty parentheses are the
+     * destination they wrote; it is `dest=url("")` now. */
     case MARKDOWN_CORE_KIND_LINK:
-        markdown_core_node_link_properties(node, &a, &oa);
-        buffer_cstr(buffer, " destination=");
-        buffer_json_string(buffer, a);
-        buffer_cstr(buffer, " title=");
-        buffer_optional_string(buffer, oa);
-        break;
     case MARKDOWN_CORE_KIND_IMAGE:
-        markdown_core_node_image_properties(node, &a, &oa);
-        buffer_cstr(buffer, " source=");
-        buffer_json_string(buffer, a);
+        markdown_core_node_destination(node, &destination);
+        markdown_core_node_title(node, &oa);
+        buffer_cstr(buffer, " dest=");
+        buffer_destination(buffer, destination);
         buffer_cstr(buffer, " title=");
         buffer_optional_string(buffer, oa);
         break;

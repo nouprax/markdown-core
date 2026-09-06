@@ -1,0 +1,13 @@
+Document scope=1:1..3:33 children=2
+├── Paragraph scope=1:1..1:31 children=3
+│   ├── Link scope=1:1..1:9 dest=url("") title=null children=1
+│   │   └── Text scope=1:2..1:6 literal="empty" children=0
+│   ├── Text scope=1:10..1:10 literal=" " children=0
+│   └── Link scope=1:11..1:31 dest=url("/path") title="title" children=1
+│       └── Text scope=1:12..1:15 literal="full" children=0
+└── Paragraph scope=3:1..3:33 children=3
+    ├── Image scope=3:1..3:10 dest=url("") title=null children=1
+    │   └── Text scope=3:3..3:5 literal="alt" children=0
+    ├── Text scope=3:11..3:11 literal=" " children=0
+    └── Image scope=3:12..3:33 dest=url("/image.png") title="t" children=1
+        └── Text scope=3:14..3:16 literal="alt" children=0

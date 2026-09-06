@@ -439,21 +439,25 @@ static void collect_node_fields(es_build *build, size_t node_index) {
         break;
     }
     case MARKDOWN_CORE_KIND_LINK:
-        if (!markdown_core_node_link_properties(node, &first, &optional_first)) {
+    case MARKDOWN_CORE_KIND_IMAGE: {
+        /* The tagged `Destination`: the branch is the scalar, its strings are
+         * the first slots -- the url, or the path and the optional anchor --
+         * and the title is the third, so a slot never means two things. */
+        markdown_core_destination destination;
+        if (!markdown_core_node_destination(node, &destination) || !markdown_core_node_title(node, &optional_first)) {
             build->failure = ES_BUILD_INTERNAL;
             break;
         }
-        record->strings[0] = required_string(first);
-        record->strings[1] = optional_first;
-        break;
-    case MARKDOWN_CORE_KIND_IMAGE:
-        if (!markdown_core_node_image_properties(node, &first, &optional_first)) {
-            build->failure = ES_BUILD_INTERNAL;
-            break;
+        record->scalar0 = (int32_t)destination.kind;
+        if (destination.kind == MARKDOWN_CORE_DESTINATION_CROSS) {
+            record->strings[0] = required_string(destination.path);
+            record->strings[1] = destination.anchor;
+        } else {
+            record->strings[0] = required_string(destination.url);
         }
-        record->strings[0] = required_string(first);
-        record->strings[1] = optional_first;
+        record->strings[2] = optional_first;
         break;
+    }
     case MARKDOWN_CORE_KIND_TABLE_ROW: {
         bool header = false;
         if (!markdown_core_node_table_row_is_header(node, &header)) {

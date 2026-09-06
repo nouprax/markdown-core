@@ -10,9 +10,9 @@ public struct Link: Markup {
     /// The link text, as inline content.
     public let content: [any Markup]
     /// Required: `[a]()` and `[a](<>)` wrote a destination and wrote nothing
-    /// in it, so they answer `""`. A link with no destination at all is a
-    /// ``LinkReference``.
-    public let destination: String
+    /// in it, so they answer `.url("")`. A link with no destination at all is
+    /// a ``LinkReference``.
+    public let dest: Destination
     /// Optional: `[a](/u)` wrote no title and `[a](/u "")` wrote an empty one.
     public let title: String?
 
@@ -22,13 +22,12 @@ public struct Link: Markup {
 
 extension Link {
     init(from node: OpaquePointer, content: [any Markup]) {
-        var destination = markdown_core_string()
         var title = markdown_core_optional_string()
-        markdown_core_node_link_properties(node, &destination, &title)
+        markdown_core_node_title(node, &title)
         self.init(
             scope: Self.scope(from: node),
             content: content,
-            destination: destination.requiredString,
+            dest: Destination(from: node),
             title: title.string
         )
     }

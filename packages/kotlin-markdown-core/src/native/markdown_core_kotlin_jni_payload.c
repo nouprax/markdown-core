@@ -391,23 +391,30 @@ static void write_node(jni_payload_buffer *buffer, jni_payload_stack *stack, con
         break;
     }
     case MARKDOWN_CORE_KIND_LINK:
-        if (!markdown_core_node_link_properties(node, &first, &optional_first)) {
+    case MARKDOWN_CORE_KIND_IMAGE: {
+        markdown_core_destination destination;
+        if (!markdown_core_node_destination(node, &destination) || !markdown_core_node_title(node, &optional_first)) {
             buffer->failure = JNI_PAYLOAD_INTERNAL;
             return;
         }
-        put_string(buffer, first, true);
-        put_optional_string(buffer, optional_first);
-        schedule_children(buffer, stack, node);
-        break;
-    case MARKDOWN_CORE_KIND_IMAGE:
-        if (!markdown_core_node_image_properties(node, &first, &optional_first)) {
+        /* The branch ordinal leads and only that branch's fields follow it. */
+        put_i32(buffer, (int32_t)destination.kind);
+        switch (destination.kind) {
+        case MARKDOWN_CORE_DESTINATION_URL:
+            put_string(buffer, destination.url, true);
+            break;
+        case MARKDOWN_CORE_DESTINATION_CROSS:
+            put_string(buffer, destination.path, true);
+            put_optional_string(buffer, destination.anchor);
+            break;
+        default:
             buffer->failure = JNI_PAYLOAD_INTERNAL;
             return;
         }
-        put_string(buffer, first, true);
         put_optional_string(buffer, optional_first);
         schedule_children(buffer, stack, node);
         break;
+    }
     case MARKDOWN_CORE_KIND_TABLE_ROW: {
         bool header = false;
         if (!markdown_core_node_table_row_is_header(node, &header)) {

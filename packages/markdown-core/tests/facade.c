@@ -125,6 +125,7 @@ static void check_null_and_empty(void) {
         const markdown_core_node *node = NULL;
         markdown_core_string destination = {NULL, 0};
         markdown_core_optional_string title = {false, {NULL, 0}};
+        markdown_core_destination tagged;
         bool read;
         if (!document) {
             check(false, "requirement 14 case parses");
@@ -135,11 +136,19 @@ static void check_null_and_empty(void) {
             node = markdown_core_node_get_first_child(node);
         }
         check(markdown_core_node_get_kind(node) == CASES[index].kind, "requirement 14 case has the expected kind");
-        read = CASES[index].kind == MARKDOWN_CORE_KIND_LINK
-                   ? markdown_core_node_link_properties(node, &destination, &title)
-               : CASES[index].kind == MARKDOWN_CORE_KIND_IMAGE
-                   ? markdown_core_node_image_properties(node, &destination, &title)
-                   : markdown_core_node_definition_resource(node, &destination, &title);
+        if (CASES[index].kind == MARKDOWN_CORE_KIND_REFERENCE_DEFINITION) {
+            read = markdown_core_node_definition_resource(node, &destination, &title);
+        } else {
+            /* M1: a link or image answers the tagged `Destination`, and every
+             * one the inherited grammar produces is the `url` branch, with the
+             * other branch's fields zeroed rather than left over. */
+            read = markdown_core_node_destination(node, &tagged) && markdown_core_node_title(node, &title);
+            check(read && tagged.kind == MARKDOWN_CORE_DESTINATION_URL,
+                  "a link or image destination is the url branch");
+            check(tagged.path.data == NULL && tagged.path.length == 0 && !tagged.anchor.has_value,
+                  "the cross branch's fields are zeroed on a url destination");
+            destination = tagged.url;
+        }
         check(read, "the resource accessor answers");
         /* A DESTINATION IS NEVER ABSENT. There is no `has_value` to test,
          * because the type does not offer one -- that IS the assertion. */

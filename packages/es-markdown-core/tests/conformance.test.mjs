@@ -91,9 +91,9 @@ test("conformance: fields, nullability, and typed table nodes map to JavaScript"
     );
     const link = document.content[3].content[0];
     const image = document.content[3].content[2];
-    assert.equal(link.destination, "/go");
+    assert.deepEqual(link.dest, { kind: "url", value: "/go" });
     assert.equal(link.title, null);
-    assert.equal(image.source, "/image");
+    assert.deepEqual(image.dest, { kind: "url", value: "/image" });
     assert.equal(image.title, "title");
 });
 

@@ -7,7 +7,7 @@ import type { Markup } from "../model/markup.js";
 import type { TableCell, TableRow } from "../model/table.js";
 import { ParseError, type ParseErrorCode } from "../parse-error.js";
 import { TreeDumper } from "../tree-dumper.js";
-import type { ListFlavor, PlacementMode, ReferenceForm, Scope, TableAlignment } from "../values.js";
+import type { Destination, ListFlavor, PlacementMode, ReferenceForm, Scope, TableAlignment } from "../values.js";
 import { kinds, type NativeKind } from "./kinds.js";
 
 /*
@@ -353,19 +353,12 @@ export class NodeDecoder {
                     content: this.content(record)
                 } as MarkupValue;
             case "link":
-                this.flags(record, 0);
-                return {
-                    ...base,
-                    destination: this.requiredString(record, 0),
-                    title: this.string(record, 1),
-                    content: this.content(record)
-                } as MarkupValue;
             case "image":
                 this.flags(record, 0);
                 return {
                     ...base,
-                    source: this.requiredString(record, 0),
-                    title: this.string(record, 1),
+                    dest: this.destination(record),
+                    title: this.string(record, 2),
                     content: this.content(record)
                 } as MarkupValue;
             case "tableRow":
@@ -461,6 +454,22 @@ export class NodeDecoder {
 
     private association(record: NodeRecord): { readonly label: string; readonly identifier: string } {
         return { label: this.requiredString(record, 0), identifier: this.requiredString(record, 1) };
+    }
+
+    /**
+     * A tagged `Destination`: the branch is the record's scalar, and the
+     * branch's own strings follow -- the url, or the path and the optional
+     * anchor -- so a field of the other branch is never read.
+     */
+    private destination(record: NodeRecord): Destination {
+        switch (record.scalar0) {
+            case 1:
+                return { kind: "url", value: this.requiredString(record, 0) };
+            case 2:
+                return { kind: "cross", path: this.requiredString(record, 0), anchor: this.string(record, 1) };
+            default:
+                throw new Error(`native result contains unknown destination kind ${String(record.scalar0)}`);
+        }
     }
 
     private string(record: NodeRecord, slot: number): string | null {

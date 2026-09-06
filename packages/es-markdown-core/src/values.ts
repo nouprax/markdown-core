@@ -9,6 +9,17 @@ export interface Scope {
 }
 
 export type ListFlavor = "bullet" | "ordered";
+/**
+ * The target of a `Link` or `Image`: a tagged value, not a node, so it has no
+ * scope and no children, and a branch's fields exist only in that branch.
+ * Every link and image owns the `url` branch, the complete semantic
+ * destination the inherited grammar produced -- decoded, not percent-encoded,
+ * normalized, or resolved, and possibly empty. The `cross` branch is the
+ * workspace address a cross link produces.
+ */
+export type Destination =
+    | { readonly kind: "url"; readonly value: string }
+    | { readonly kind: "cross"; readonly path: string; readonly anchor: string | null };
 /** Which of the three reference spellings the source wrote. */
 export type ReferenceForm = "full" | "collapsed" | "shortcut";
 export type PlacementMode = "embedded" | "standalone";

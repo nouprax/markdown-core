@@ -244,10 +244,7 @@ private struct DumpVisitor: MarkupVisitor {
         state.line(
             "Link",
             node,
-            fields: [
-                "destination=\(jsonString(node.destination))",
-                "title=\(optionalString(node.title))",
-            ],
+            fields: ["dest=\(destinationString(node.dest))", "title=\(optionalString(node.title))"],
             children: node.content.count
         )
         state.nested(node.content.count) { node.content.forEach(state.dump) }
@@ -257,7 +254,7 @@ private struct DumpVisitor: MarkupVisitor {
         state.line(
             "Image",
             node,
-            fields: ["source=\(jsonString(node.source))", "title=\(optionalString(node.title))"],
+            fields: ["dest=\(destinationString(node.dest))", "title=\(optionalString(node.title))"],
             children: node.content.count
         )
         state.nested(node.content.count) { node.content.forEach(state.dump) }
@@ -315,6 +312,14 @@ private func scope(_ value: Scope) -> String {
 }
 
 private func boolean(_ value: Bool) -> String { value ? "true" : "false" }
+
+/// A tagged value prints its branch and its named fields with no spaces.
+private func destinationString(_ value: Destination) -> String {
+    switch value {
+    case .url(let url): "url(\(jsonString(url)))"
+    case .cross(let path, let anchor): "cross(path=\(jsonString(path)),anchor=\(optionalString(anchor)))"
+    }
+}
 
 private func optionalString(_ value: String?) -> String {
     value.map(jsonString) ?? "null"

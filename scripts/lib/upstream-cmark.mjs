@@ -60,8 +60,8 @@ const COMPARED = {
     HTML: ["literal"],
     HTMLBlock: ["literal"],
     Comment: ["literal"],
-    Link: ["destination", "title"],
-    Image: ["destination", "title"],
+    Link: ["dest", "title"],
+    Image: ["dest", "title"],
     TableRow: ["isHeader"]
 };
 
@@ -116,6 +116,9 @@ export function parseUpstreamXml(xml) {
         if (name === "table_row") node.fields.isHeader = "false";
         if (name === "tasklist") node.fields.checked = attributes.completed === "true" ? "true" : "false";
         if (name === "item") node.fields.checked = "null";
+        // cmark states a link's or image's target as one string; the canonical
+        // AST states it as the `url` branch of `Destination` (M1).
+        if (name === "link" || name === "image") node.fields.dest = urlDestination(attributes.destination ?? "");
         if (LITERAL_BEARING.has(name)) node.pendingText = "";
         stack[stack.length - 1].children.push(node);
         if (!selfClose) stack.push(node);
@@ -178,6 +181,91 @@ export function parseCanonicalFields(body) {
     return fields;
 }
 
+/** The `url` branch of a `Destination`: the target as one decoded string. */
+export function urlDestination(value) {
+    return { kind: "url", value };
+}
+
+/** The `cross` branch of a `Destination`: a workspace path, possibly empty, and an anchor or null. */
+export function crossDestination(path, anchor) {
+    return { kind: "cross", path, anchor };
+}
+
+function scanJsonString(text, start) {
+    if (text[start] !== '"') return null;
+    for (let cursor = start + 1; cursor < text.length; cursor++) {
+        if (text[cursor] === "\\") {
+            cursor++;
+        } else if (text[cursor] === '"') {
+            try {
+                return { value: JSON.parse(text.slice(start, cursor + 1)), end: cursor + 1 };
+            } catch {
+                return null;
+            }
+        }
+    }
+    return null;
+}
+
+/**
+ * Parses the dump's spelling of a `Destination` — `url("...")` or
+ * `cross(path="...",anchor="..."|null)`, whitespace allowed between tokens —
+ * into the object the oracle mappings build. Anything else is null, so a
+ * caller compares a real value or fails, never a spelling.
+ */
+export function parseDestination(raw) {
+    const text = String(raw);
+    let cursor = 0;
+    const skipSpace = () => {
+        while (/\s/.test(text[cursor] ?? "")) cursor++;
+    };
+    const consume = (token) => {
+        skipSpace();
+        if (!text.startsWith(token, cursor)) return false;
+        cursor += token.length;
+        return true;
+    };
+    const string = () => {
+        skipSpace();
+        const parsed = scanJsonString(text, cursor);
+        if (parsed) cursor = parsed.end;
+        return parsed?.value;
+    };
+    const complete = () => {
+        skipSpace();
+        return cursor === text.length;
+    };
+
+    if (consume("url(")) {
+        const value = string();
+        if (value === undefined || !consume(")") || !complete()) return null;
+        return urlDestination(value);
+    }
+
+    cursor = 0;
+    if (!consume("cross(") || !consume("path=")) return null;
+    const path = string();
+    if (path === undefined || !consume(",") || !consume("anchor=")) return null;
+    skipSpace();
+    let anchor;
+    if (text.startsWith("null", cursor)) {
+        cursor += 4;
+        anchor = null;
+    } else {
+        anchor = string();
+        if (anchor === undefined) return null;
+    }
+    if (!consume(")") || !complete()) return null;
+    return crossDestination(path, anchor);
+}
+
+/** The canonical dump spelling of a `Destination`: the one form both sides compare. */
+export function renderDestination(destination) {
+    if (destination.kind === "url") return `url(${JSON.stringify(destination.value)})`;
+    const anchor = destination.anchor === null ? "null" : JSON.stringify(destination.anchor);
+    return `cross(path=${JSON.stringify(destination.path)},anchor=${anchor})`;
+}
+
 /** Parses this repository's canonical AST dump. */
 export function parseCanonicalDump(dump) {
     const lines = dump.split("\n").filter((line) => line.trim().length);
@@ -230,8 +318,15 @@ export function normalize(node, side, fired) {
             if (node.kind === "List" && key === "flavor") value = node.fields.type;
             if (node.kind === "List" && key === "tight") value = node.fields.tight ?? "false";
             if (node.kind === "CodeBlock" && key === "info") value = node.fields.info ?? "null";
-        } else if (node.kind === "Image" && key === "destination") {
-            value = node.fields.source;
+        }
+        // `dest` is a tagged value on both sides: the object the oracle mapping
+        // built, or the dump's `url("...")` text. One spelling is compared, so
+        // the comparison is of the value and not of a printer.
+        if (key === "dest") {
+            const destination = typeof value === "string" ? parseDestination(value) : value;
+            if (!destination) throw new Error(`invalid destination on ${node.kind}: ${String(value)}`);
+            fields.dest = renderDestination(destination);
+            continue;
         }
         if (value === undefined || value === "") value = key === "literal" ? "" : "null";
         if (key === "title" && value === "") value = "null";
@@ -406,8 +501,7 @@ export function applyUpstreamReferenceModel(root, fired) {
                     return {
                         kind: child.kind === "LinkReference" ? "Link" : "Image",
                         fields: {
-                            destination: found?.destination ?? "",
-                            source: found?.destination ?? "",
+                            dest: urlDestination(found?.destination ?? ""),
                             title: found?.title ?? ""
                         },
                         children: child.children

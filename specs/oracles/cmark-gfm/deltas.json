@@ -150,6 +150,11 @@
         {
             "file": "packages/markdown-core/tests/fixtures/extensions.txt",
             "note": "Repository-owned tests for table, strikethrough, autolink, task-list, and footnote extensions."
+        },
+        {
+            "file": "packages/markdown-core/tests/fixtures/dialect-links-and-images.txt",
+            "selection": "gfm-extension-sections",
+            "note": "The links-and-images module's bare autolink examples: cmark-gfm's autolink extension owns the URL, `www.`, and email forms and where each run ends. The module's CommonMark section is cmark's to judge."
         }
     ],
     "corpusNote": "This gate intentionally does not compare unextended CommonMark examples. Markdown Core runs the `gfm` profile, which attaches the cmark-gfm extension set but leaves product directive and formula syntax disabled. CommonMark is checked separately against current cmark.",

@@ -277,16 +277,39 @@ MARKDOWN_CORE_API bool markdown_core_node_directive_attribute_at(const markdown_
  * a directive child; its own children are the label's inline content. NULL
  * means either no label or a non-directive input. */
 MARKDOWN_CORE_API const markdown_core_node *markdown_core_node_directive_label(const markdown_core_node *node);
-/** A destination is REQUIRED and a title is OPTIONAL (Q26, requirement 14).
- * `[a]()` and `[a](<>)` wrote a destination and wrote nothing in it, so they
- * answer with the empty string; there is no inline link whose author wrote no
- * destination, because the shortcut and collapsed forms are `LinkReference`
- * and carry none. `[a](/u)` wrote no title; `[a](/u "")` wrote an empty one. */
-MARKDOWN_CORE_API bool markdown_core_node_link_properties(const markdown_core_node *node,
-                                                          markdown_core_string *destination,
-                                                          markdown_core_optional_string *title);
-MARKDOWN_CORE_API bool markdown_core_node_image_properties(const markdown_core_node *node, markdown_core_string *source,
-                                                           markdown_core_optional_string *title);
+/** The tagged `Destination` value of a `Link` or `Image` (M1): a value, not
+ * a node, so it has no scope and no children, and a branch's fields exist
+ * only in that branch. `MARKDOWN_CORE_DESTINATION_URL` fills `url` and zeroes
+ * `path` and `anchor`; `MARKDOWN_CORE_DESTINATION_CROSS`, the workspace
+ * address a cross link produces once `O1` lands, fills `path` and `anchor`
+ * and zeroes `url`. Every `Link` and `Image` answers the `url` branch.
+ *
+ * A destination is REQUIRED (Q26, requirement 14): `[a]()` and `[a](<>)`
+ * wrote one and wrote nothing in it, so `url` is the empty string; the
+ * shortcut and collapsed forms are `LinkReference` and carry none. `url`
+ * holds the complete semantic destination the inherited grammar produced --
+ * the bytes between angle brackets or the bare destination, with backslash
+ * escapes and character references decoded and no percent-encoding,
+ * normalization, or resolution. */
+typedef enum markdown_core_destination_kind {
+    MARKDOWN_CORE_DESTINATION_URL = 1,
+    MARKDOWN_CORE_DESTINATION_CROSS = 2
+} markdown_core_destination_kind;
+
+typedef struct markdown_core_destination {
+    markdown_core_destination_kind kind;
+    markdown_core_string url;
+    markdown_core_string path;
+    markdown_core_optional_string anchor;
+} markdown_core_destination;
+
+/** Answers for `Link` and `Image` and refuses every other kind. */
+MARKDOWN_CORE_API bool markdown_core_node_destination(const markdown_core_node *node,
+                                                      markdown_core_destination *destination);
+/** The OPTIONAL title of a `Link` or `Image`: `[a](/u)` wrote no title and
+ * `[a](/u "")` wrote an empty one, and the two stay different. Refuses every
+ * other kind. */
+MARKDOWN_CORE_API bool markdown_core_node_title(const markdown_core_node *node, markdown_core_optional_string *title);
 /** The association a reference or a definition carries. Answers for
  * `ReferenceDefinition`, `LinkReference`, `ImageReference`,
  * `FootnoteDefinition` and `FootnoteReference`, and refuses every other kind.

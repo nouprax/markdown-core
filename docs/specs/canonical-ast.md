@@ -154,6 +154,27 @@ attributes. For example:
 
 is exposed as `id="123"`, `muted="true"`, `title="My Video"`, in that order.
 
+### Destination
+
+```text
+Destination = url(String) | cross(path: String, anchor: String?)
+```
+
+`Destination` is a tagged value, not a node: it has no scope, children,
+anchor, or attributes, and a branch's fields exist only in that branch. It is
+the `dest` of every `Link` and `Image`, which own the `url` branch: the
+complete semantic destination the inherited grammar produced, the bytes
+between angle brackets or the bare destination with backslash escapes and
+character references decoded and no percent-encoding, normalization, or
+resolution, and possibly empty. The `cross` branch is the workspace address of
+the [cross links](dialect/cross-links.md) module and is first produced by
+`CrossLink` (`O1`). The parser fetches no URL, opens no file, tests no
+existence, and infers no media type; no such result is a field or a branch.
+The C facade answers it through `markdown_core_node_destination`, whose
+`kind` names the branch and whose other branch's fields are zeroed; Swift
+models it as an enum with associated values, Kotlin as a sealed interface with
+one class per branch, and ECMAScript as a discriminated union on `kind`.
+
 ### Other enums
 
 ```text
@@ -199,18 +220,18 @@ and returns no document.
 | `Emphasis` | `content: [Markup]` | inline content |
 | `Strong` | `content: [Markup]` | inline content |
 | `Strikethrough` | `content: [Markup]` | inline content |
-| `Link` | `destination: String`, `title: String?`, `content: [Markup]` | `destination` is never absent: `[a]()` and `[a](<>)` wrote one and wrote nothing in it, and a link with no destination at all is a `LinkReference`; absent and empty title remain distinct; inline content |
-| `Image` | `source: String`, `title: String?`, `content: [Markup]` | `source` is never absent, for the reason `Link.destination` is not; absent and empty title remain distinct; content is parsed alt-text inline content |
+| `Link` | `dest: Destination`, `title: String?`, `content: [Markup]` | `dest` is the tagged `Destination` value and is never absent: `[a]()` and `[a](<>)` wrote one and wrote nothing in it, so it is `url("")`, and a link with no destination at all is a `LinkReference`; every `Link` owns the `url` branch; absent and empty title remain distinct; inline content |
+| `Image` | `dest: Destination`, `title: String?`, `content: [Markup]` | `dest` is never absent, for the reason `Link.dest` is not; every `Image` owns the `url` branch; absent and empty title remain distinct; content is parsed alt-text inline content |
 | `LinkReference` | `label: String`, `identifier: String`, `form: ReferenceForm`, `content: [Markup]` | `label` and `identifier` are exactly as on `ReferenceDefinition`; the node carries NO destination — the destination is stated once, at the definition; `form` records which of the three spellings the source used, and all three resolve identically; inline content |
 | `ImageReference` | `label: String`, `identifier: String`, `form: ReferenceForm`, `content: [Markup]` | as `LinkReference`; content is parsed alt-text inline content |
 | `Directive` | `name: String`, `attributes: [DirectiveAttribute]?`, `label: DirectiveLabel?` | attributes preserves first-occurrence source order with unique names; label is a node-valued field whose scope spans its brackets and is never a child/content element; an absent attribute container and an empty one remain distinct, as do an absent label and an empty one |
 | `FootnoteReference` | `label: String`, `identifier: String` | `label` is non-empty and as written; `identifier` KEEPS the leading `^`; no form — there is one footnote call syntax; leaf |
 
 Every row above also has the final inherited field `scope: Scope`; it is not
-repeated in the table. `Link.destination`, `Image.source`, and every `title`
-are the CommonMark-unescaped values with angle-bracket wrappers removed and no
-percent-encoding or normalization; an unresolved reference is the inherited
-literal text with its brackets.
+repeated in the table. The `url` of a `Link` or `Image` destination, and
+every `title`, are the CommonMark-unescaped values with angle-bracket
+wrappers removed and no percent-encoding or normalization; an unresolved
+reference is the inherited literal text with its brackets.
 
 ### Typed table ownership
 

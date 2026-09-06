@@ -218,7 +218,7 @@ static int case_hard_link_emph(pc_context *context) {
     const markdown_core_node *link;
     const markdown_core_node *emphasis;
     markdown_core_string value;
-    markdown_core_optional_string title;
+    markdown_core_destination dest;
 
     if (pc_build(context, "**x [a*b**c*](d)", "", 0, NULL) != 0) {
         return -1;
@@ -240,8 +240,8 @@ static int case_hard_link_emph(pc_context *context) {
         return -1;
     }
     link = markdown_core_node_get_next_sibling(text);
-    if (markdown_core_node_get_kind(link) != MARKDOWN_CORE_KIND_LINK ||
-        !markdown_core_node_link_properties(link, &value, &title) || value.length != 1 || value.data[0] != 'd') {
+    if (markdown_core_node_get_kind(link) != MARKDOWN_CORE_KIND_LINK || !markdown_core_node_destination(link, &dest) ||
+        dest.kind != MARKDOWN_CORE_DESTINATION_URL || dest.url.length != 1 || dest.url.data[0] != 'd') {
         fprintf(stderr, "link destination is not 'd'\n");
         return -1;
     }
@@ -624,9 +624,10 @@ static int pc_reference_payload_visit(const markdown_core_node *node, void *cont
     markdown_core_string first;
     markdown_core_string second;
     markdown_core_optional_string title;
-    if (markdown_core_node_link_properties(node, &first, &title) ||
-        markdown_core_node_image_properties(node, &first, &title)) {
-        total->bytes += first.length + (title.has_value ? title.value.length : 0);
+    markdown_core_destination dest;
+    if (markdown_core_node_destination(node, &dest) && markdown_core_node_title(node, &title)) {
+        total->bytes += dest.url.length + dest.path.length + (dest.anchor.has_value ? dest.anchor.value.length : 0) +
+                        (title.has_value ? title.value.length : 0);
     } else if (markdown_core_node_association(node, &first, &second)) {
         total->bytes += first.length + second.length;
     }

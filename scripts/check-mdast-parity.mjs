@@ -27,7 +27,13 @@ import remarkMath from "remark-math";
 
 import { readExamples } from "./lib/fixture-corpus.mjs";
 import { dropEmptyText, fromMdast, MDAST_COMPARED } from "./lib/mdast-oracle.mjs";
-import { liftFootnoteDefinitions, parseCanonicalDump, render } from "./lib/upstream-cmark.mjs";
+import {
+    liftFootnoteDefinitions,
+    parseCanonicalDump,
+    parseDestination,
+    render,
+    renderDestination
+} from "./lib/upstream-cmark.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const policyPath = "specs/oracles/remark/deltas.json";
@@ -67,12 +73,15 @@ function project(node) {
     }
     const fields = {};
     for (const key of MDAST_COMPARED[node.kind] ?? []) {
-        // This repository's dump names an image's target `source`; mdast and
-        // cmark both call it a destination. One name reaches the comparison.
-        let value =
-            node.kind === "Image" && key === "destination"
-                ? (node.fields.destination ?? node.fields.source)
-                : node.fields[key];
+        let value = node.fields[key];
+        // `dest` is a tagged value on both sides: the object the mdast mapping
+        // built, or the dump's `url("...")` text. One spelling is compared.
+        if (key === "dest") {
+            const destination = typeof value === "string" ? parseDestination(value) : value;
+            if (!destination) throw new Error(`invalid destination on ${node.kind}: ${String(value)}`);
+            fields.dest = renderDestination(destination);
+            continue;
+        }
         // Both sides spell a directive's attributes as source-ordered
         // `key="value"` pairs; the dump brackets the group so it reads as one
         // field, and spells an empty container `[]` where the oracle spells it

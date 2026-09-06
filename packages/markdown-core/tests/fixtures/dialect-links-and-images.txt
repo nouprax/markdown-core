@@ -1,0 +1,126 @@
+---
+title: Links and images module examples
+author: Dongyu Zhao
+version: 0.1
+date: '2026-09-06'
+license: '[CC-BY-SA 4.0](http://creativecommons.org/licenses/by-sa/4.0/)'
+...
+
+## Destinations
+
+The examples of the
+[links and images module](../../../../docs/specs/dialect/links-and-images.md)
+whose behavior `M1` landed: the `Destination` value of every `Link` and
+`Image`, and the inherited and GFM link forms that produce its `url` branch.
+They are the module's examples in the module's order; the resolved-reference
+examples arrive with `M2` and the image-dimension examples with `O9`. The
+expected dumps are the module's expected dumps in the dump grammar of today,
+which does not yet print the universal `anchor` and `attributes` fields that
+`M7` lands, so every line differs from the module's by exactly
+` anchor=null attributes={}` and by nothing else.
+
+`url` holds the complete semantic destination produced by the inherited
+grammar, with backslash escapes and character references decoded and no
+percent-encoding, normalization, or resolution, and it may be empty. `title`
+is the decoded title, or `null` when none was written; absent and empty
+titles remain distinct:
+
+```````````````````````````````` example
+[text](/url "title") [a]() [b](<> "")
+.
+Document scope=1:1..1:37 children=1
+└── Paragraph scope=1:1..1:37 children=5
+    ├── Link scope=1:1..1:20 dest=url("/url") title="title" children=1
+    │   └── Text scope=1:2..1:5 literal="text" children=0
+    ├── Text scope=1:21..1:21 literal=" " children=0
+    ├── Link scope=1:22..1:26 dest=url("") title=null children=1
+    │   └── Text scope=1:23..1:23 literal="a" children=0
+    ├── Text scope=1:27..1:27 literal=" " children=0
+    └── Link scope=1:28..1:37 dest=url("") title="" children=1
+        └── Text scope=1:29..1:29 literal="b" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+[a](</u\)x> "t&amp;") [b](/u\)x)
+.
+Document scope=1:1..1:32 children=1
+└── Paragraph scope=1:1..1:32 children=3
+    ├── Link scope=1:1..1:21 dest=url("/u)x") title="t&" children=1
+    │   └── Text scope=1:2..1:2 literal="a" children=0
+    ├── Text scope=1:22..1:22 literal=" " children=0
+    └── Link scope=1:23..1:32 dest=url("/u)x") title=null children=1
+        └── Text scope=1:24..1:24 literal="b" children=0
+````````````````````````````````
+
+## Autolinks (extension)
+
+Angle-bracket autolinks and the three GFM bare forms produce
+`Link(dest=url(...), title=null)` with the link text as content; an email
+destination carries the inherited `mailto:` prefix and a `www.` destination
+the inherited `http://` prefix:
+
+```````````````````````````````` example
+<https://x.y> https://x.y/z www.x.y x@y.z <x@y.z>
+.
+Document scope=1:1..1:49 children=1
+└── Paragraph scope=1:1..1:49 children=9
+    ├── Link scope=1:1..1:13 dest=url("https://x.y") title=null children=1
+    │   └── Text scope=1:2..1:12 literal="https://x.y" children=0
+    ├── Text scope=1:14..1:14 literal=" " children=0
+    ├── Link scope=1:15..1:27 dest=url("https://x.y/z") title=null children=1
+    │   └── Text scope=1:15..1:27 literal="https://x.y/z" children=0
+    ├── Text scope=1:28..1:28 literal=" " children=0
+    ├── Link scope=1:29..1:35 dest=url("http://www.x.y") title=null children=1
+    │   └── Text scope=1:29..1:35 literal="www.x.y" children=0
+    ├── Text scope=1:36..1:36 literal=" " children=0
+    ├── Link scope=1:37..1:41 dest=url("mailto:x@y.z") title=null children=1
+    │   └── Text scope=1:37..1:41 literal="x@y.z" children=0
+    ├── Text scope=1:42..1:42 literal=" " children=0
+    └── Link scope=1:43..1:49 dest=url("mailto:x@y.z") title=null children=1
+        └── Text scope=1:44..1:48 literal="x@y.z" children=0
+````````````````````````````````
+
+A bare URL or `www.` run is opaque from its first byte to its terminator: a
+code span or emphasis delimiter that begins inside the run is URL text, an
+`<` ends the run, and a bare autolink never accepts an attribute container:
+
+```````````````````````````````` example
+https://x.y/*a* www.x.y/`b`. https://x.y/<b>c</b> https://x.y{.c}
+.
+Document scope=1:1..1:65 children=1
+└── Paragraph scope=1:1..1:65 children=10
+    ├── Link scope=1:1..1:14 dest=url("https://x.y/*a") title=null children=1
+    │   └── Text scope=1:1..1:14 literal="https://x.y/*a" children=0
+    ├── Text scope=1:15..1:16 literal="* " children=0
+    ├── Link scope=1:17..1:27 dest=url("http://www.x.y/`b`") title=null children=1
+    │   └── Text scope=1:17..1:27 literal="www.x.y/`b`" children=0
+    ├── Text scope=1:28..1:29 literal=". " children=0
+    ├── Link scope=1:30..1:41 dest=url("https://x.y/") title=null children=1
+    │   └── Text scope=1:30..1:41 literal="https://x.y/" children=0
+    ├── HTML scope=1:42..1:44 literal="<b>" children=0
+    ├── Text scope=1:45..1:45 literal="c" children=0
+    ├── HTML scope=1:46..1:49 literal="</b>" children=0
+    ├── Text scope=1:50..1:50 literal=" " children=0
+    └── Link scope=1:51..1:65 dest=url("https://x.y{.c}") title=null children=1
+        └── Text scope=1:51..1:65 literal="https://x.y{.c}" children=0
+````````````````````````````````
+
+The run is decided at its own position, so surrounding delimiters still match
+around it, and no bare form is recognized inside link text:
+
+```````````````````````````````` example
+*https://x.y* [https://x.y](/u) (www.x.y)
+.
+Document scope=1:1..1:41 children=1
+└── Paragraph scope=1:1..1:41 children=6
+    ├── Emphasis scope=1:1..1:13 children=1
+    │   └── Link scope=1:2..1:12 dest=url("https://x.y") title=null children=1
+    │       └── Text scope=1:2..1:12 literal="https://x.y" children=0
+    ├── Text scope=1:14..1:14 literal=" " children=0
+    ├── Link scope=1:15..1:31 dest=url("/u") title=null children=1
+    │   └── Text scope=1:16..1:26 literal="https://x.y" children=0
+    ├── Text scope=1:32..1:33 literal=" (" children=0
+    ├── Link scope=1:34..1:40 dest=url("http://www.x.y") title=null children=1
+    │   └── Text scope=1:34..1:40 literal="www.x.y" children=0
+    └── Text scope=1:41..1:41 literal=")" children=0
+````````````````````````````````

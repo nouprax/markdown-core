@@ -54,13 +54,23 @@ if(MARKDOWN_CORE_SHARED)
     # The engine and extension implementation retain private legacy symbols
     # internally, but the installed facade DSO exports only the reviewed
     # read-only C contract.
+    # The list is a link input: a symbol added to it must relink the library,
+    # or the new build keeps exporting the old set until something else does.
     if(APPLE)
         target_link_options(
             ${LIBRARY} PRIVATE
             "LINKER:-exported_symbols_list,${MARKDOWN_CORE_CORE_SOURCE_DIR}/exports/markdown_core.exports")
+        set_property(
+            TARGET ${LIBRARY}
+            APPEND
+            PROPERTY LINK_DEPENDS "${MARKDOWN_CORE_CORE_SOURCE_DIR}/exports/markdown_core.exports")
     elseif(UNIX)
         target_link_options(${LIBRARY} PRIVATE
                             "LINKER:--version-script=${MARKDOWN_CORE_CORE_SOURCE_DIR}/exports/markdown_core.map")
+        set_property(
+            TARGET ${LIBRARY}
+            APPEND
+            PROPERTY LINK_DEPENDS "${MARKDOWN_CORE_CORE_SOURCE_DIR}/exports/markdown_core.map")
     endif()
 
 endif()
