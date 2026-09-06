@@ -333,6 +333,7 @@ dialect. Changing one is a behavior change.
 | inline delimiter nesting depth (`MARKDOWN_CORE_MAX_INLINE_DEPTH`) | 256           | further delimiter units at that depth are literal text                                 |
 | footnote container depth (`MAX_FOOTNOTE_DEPTH`)                   | 100           | a definition at that depth or greater is not a definition; its line is ordinary content |
 | link and footnote label length (`MAX_LINK_LABEL_LENGTH`)          | 1000 bytes    | a longer label is not a label; the brackets are ordinary bracket text                  |
+| code span backtick string length (`MAXBACKTICKS`)                 | 80            | a longer backtick string is never a code span delimiter and is text; cmark shares the ceiling, so the cmark gate sees no divergence |
 | directive label bracket nesting                                   | 32            | a label with a 33rd nested `[` is not a label; the directive has no label              |
 | decimal list marker and example counter digits                    | 9             | a longer digit run is not a marker                                                     |
 | image dimension value                                             | 2147483647    | a larger value yields no dimensions; the whole label stays alt content                 |

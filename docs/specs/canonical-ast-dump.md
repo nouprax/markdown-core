@@ -76,7 +76,11 @@ that owned output; they do not redefine every nested record as a child.
 The dump prints the native C parser's public scope coordinates exactly, without
 normalizing or interpreting particular line/column combinations. The
 coordinate contract is [`canonical-ast.md`](canonical-ast.md#coordinates):
-one-based lines and one-based, end-inclusive byte columns.
+one-based lines and one-based, end-inclusive byte columns, with that
+contract's one sentinel: an end column of `0` names the boundary before the
+first byte of its line, so a block closed by a line ending it consumed ends
+at `L:0` and the empty document dumps as `1:1..1:0`. A dumper prints the
+sentinel as the parser reports it, and a validator accepts it.
 
 A directive's label is a node-valued FIELD, not a member of directive content.
 The directive-specific dump function nests that field before content to

@@ -183,6 +183,22 @@ Document scope=1:1..1:21 anchor=null attributes={} children=1
     └── Code scope=1:17..1:21 anchor=null attributes={} literal="c" children=0
 ````````````````````````````````
 
+A backtick string longer than the 80-backtick [limit](../dialect.md#limits)
+is never a code span delimiter and is text, as in cmark, whose reference
+parser has the same ceiling:
+
+```````````````````````````````` example
+````````````````````````````````````````````````````````````````````````````````a````````````````````````````````````````````````````````````````````````````````
+
+`````````````````````````````````````````````````````````````````````````````````b`````````````````````````````````````````````````````````````````````````````````
+.
+Document scope=1:1..3:163 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:161 anchor=null attributes={} children=1
+│   └── Code scope=1:1..1:161 anchor=null attributes={} literal="a" children=0
+└── Paragraph scope=3:1..3:163 anchor=null attributes={} children=1
+    └── Text scope=3:1..3:163 anchor=null attributes={} literal="`````````````````````````````````````````````````````````````````````````````````b`````````````````````````````````````````````````````````````````````````````````" children=0
+````````````````````````````````
+
 ### HTML
 
 An inline raw HTML token is an `HTML` leaf holding the token bytes as
@@ -388,6 +404,7 @@ Every example of this module is a package fixture, and the cmark
 specification corpus is replayed in full by the cmark gate. The package
 fixtures additionally cover `SoftBreak` and `LineBreak` scopes inside every
 container, `info`, `language`, `fenced`, and `closed` on every code-block
-form, every HTML block type and inline token, every smart-punctuation rule
+form, backtick strings of 80 and of 81 backticks as opener and as closer,
+every HTML block type and inline token, every smart-punctuation rule
 above with the option on and off, and the four inherited link forms with and
 without a definition.
