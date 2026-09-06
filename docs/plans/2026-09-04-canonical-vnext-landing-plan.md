@@ -333,7 +333,8 @@ nothing strips comments.
       its own option together with its behavior. Exit: every existing fixture
       and canonical case is byte-identical, and the registry, CLI, fixture tags,
       and checker agree on the set of `active` rows as it stands when this item
-      merges, nine names before `M0` and eight after it.
+      merges, nine names before `M0` and eight after it. Requires `S0`, which
+      creates the `Status` column the checker reads.
 - [ ] **P0 — Pandoc evidence gate.** Add `oracle-pandoc` to
       `scripts/init-environment.sh`: `--install` fetches only the host archive
       named by `specs/oracles/pandoc/source.json` and verifies its SHA-256, and
@@ -362,7 +363,8 @@ nothing strips comments.
       `ins_open` and `ins_close` placement and nesting to `Insert` after a
       canary requiring exactly one pair for `++inserted++`, to
       `check:oracle-parity`, CI, and the topology audit. Every case is a
-      registered gap until `I1`.
+      registered gap until `I1`. Requires `S0`, which creates the module that
+      records the pins.
 
 ## Stage 1 — shared model, one consumer fact per pull request
 
@@ -937,9 +939,9 @@ Sizes are rough review-effort estimates, not schedules.
 | Item   | Requires           | Size | Cross-item cases                                                                                                                                                                                        | Discharges                                                                                                                       |
 | ------ | ------------------ | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
 | `S0`   | —                  | L    | —                                                                                                                                                                                                       | the dialect modules; audit A1 through C6                                                                                         |
-| `X0`   | —                  | M    | —                                                                                                                                                                                                       | option registry serving both plans' option bullets                                                                               |
+| `X0`   | `S0`               | M    | —                                                                                                                                                                                                       | option registry serving both plans' option bullets                                                                               |
 | `P0`   | `X0`, `S0`         | M    | —                                                                                                                                                                                                       | Pandoc Phase 0; Pandoc Phase 1 gate activation                                                                                   |
-| `I0`   | —                  | S    | —                                                                                                                                                                                                       | inserted-text oracle setup                                                                                                       |
+| `I0`   | `S0`               | S    | —                                                                                                                                                                                                       | inserted-text oracle setup                                                                                                       |
 | `M0`   | `S0`               | S    | —                                                                                                                                                                                                       | Obsidian Phase 2 comments; removes `stripHTMLComments`                                                                           |
 | `M1`   | `S0`               | M    | —                                                                                                                                                                                                       | Obsidian and Pandoc Phase 1 `Destination`                                                                                        |
 | `M2`   | `M1`               | L    | —                                                                                                                                                                                                       | Obsidian Phase 1 reference normalization; Phase 5 projections                                                                    |

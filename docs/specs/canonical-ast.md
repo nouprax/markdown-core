@@ -257,9 +257,11 @@ grammar byte for byte, `smartPunctuation` is defined by
 
 Disabling an extension disables recognition of its syntax and produces the
 same fallback core AST on every platform. `formulas` is the whole gate for
-every formula delimiter: `$`, `$$`, `` $`...`$ ``, `\(...\)` and `\[...\]`
-are one extension's syntax and turn on together. Scope tracking is mandatory
-and is not an option.
+every formula delimiter: `$`, `$$`, `` $`...`$ ``, `\\(...\\)`, and
+`\\[...\\]`, the last two spelled with two authored backslashes as
+[`dialect/formulas.md`](dialect/formulas.md) states, are one extension's
+syntax and turn on together. Scope tracking is mandatory and is not an
+option.
 Renderer-only `unsafe`, `github-pre-lang`, and `full-info-string` options do
 not exist. Raw HTML, URLs, and code info strings are always retained.
 
