@@ -556,10 +556,17 @@ private class NativeScratch(
     fun destination(node: CPointer<markdown_core_node>): Destination {
         require(markdown_core_node_destination(node, destination.ptr)) { "invalid link or image node" }
         return when (destination.kind) {
-            MARKDOWN_CORE_DESTINATION_URL -> Destination.Url(destination.url.copyString())
-            MARKDOWN_CORE_DESTINATION_CROSS ->
+            MARKDOWN_CORE_DESTINATION_URL -> {
+                Destination.Url(destination.url.copyString())
+            }
+
+            MARKDOWN_CORE_DESTINATION_CROSS -> {
                 Destination.Cross(destination.path.copyString(), destination.anchor.copyOptionalString())
-            else -> error("unsupported native destination kind ${destination.kind}")
+            }
+
+            else -> {
+                error("unsupported native destination kind ${destination.kind}")
+            }
         }
     }
 
