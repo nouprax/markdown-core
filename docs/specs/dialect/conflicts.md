@@ -32,8 +32,13 @@ modules state the ruled behavior and the ruling is final.
   is inherited Markdown. Product ruling that the provisional rule is final.
 - **C-3 Cross links.** Not a collision. `CrossLink` with
   `Destination.cross` is the unified model of Obsidian's internal links and
-  embeds; Pandoc's `wikilinks_title_after_pipe` is a special case of it, and
-  `wikilinks_title_before_pipe` stays excluded. Product ruling.
+  embeds. Pandoc's `wikilinks_title_after_pipe` writes the same order, target
+  before the pipe and label after it, so it is a special case of the model.
+  Pandoc's `wikilinks_title_before_pipe` reads the identical bytes with the
+  two roles swapped; nothing is wrong with that convention, but one input has
+  one meaning, and Pandoc itself makes the two extensions mutually exclusive,
+  so the dialect keeps Obsidian's order and the swapped reading is a
+  deliberate exclusion. Product ruling.
 - **C-4 Heading addressing.** Both sides are stored as written: `[[#My
   Header]]` stores `anchor="My Header"`, an automatic heading anchor is
   `my-header`, and matching the two is consumer policy. The parser never
@@ -146,7 +151,9 @@ oracle registers the difference.
   cmark rule is used instead), `hard_line_breaks`, `east_asian_line_breaks`,
   `abbreviations`, `four_space_rule`, `compact_definition_lists`, `startnum`,
   `blank_before_header`, `blank_before_blockquote`, `markdown_in_html_blocks`,
-  `native_divs` and `native_spans`, `wikilinks_title_before_pipe`, pipe-table
+  `native_divs` and `native_spans`, `wikilinks_title_before_pipe` (the same
+  `[[a|b]]` bytes read with label before target; the dialect reads them with
+  Obsidian's order, and one input has one meaning), pipe-table
   relative widths from delimiter-row dashes, and the `p.` exception for
   capital-period list markers.
 - Obsidian: `#tag` tags, the suppression of Markdown between paired inline
