@@ -183,15 +183,17 @@ values inherited from a reference definition under `linkAttributes`:
 
 1. The anchor is the primary anchor when non-null, otherwise the inherited
    anchor.
-2. The classes are the primary classes followed by the inherited classes, then
-   stable-deduplicated by exact value.
-3. The records are, first, the inherited records whose names do not occur in
-   the primary sequence, keeping only the last inherited occurrence of each
-   such name in source order; then the primary records as written.
+2. The classes are the inherited classes followed by the primary classes,
+   in source order and duplicates included.
+3. The records are the inherited records followed by the primary records,
+   in source order and duplicates included.
 
-These three numbered steps are normative; Pandoc's `combineAttr` is their
-provenance and evidence. Merge transfers semantic values only and never
-changes the occurrence's scope.
+Nothing authored is dropped, so a consumer that resolves a name last-wins
+sees the occurrence's own value, and one that wants every declaration has
+them all. These three numbered steps are normative; Pandoc's `combineAttr`
+is their provenance and evidence, and its deduplication of classes and
+records is a registered divergence of the Pandoc gate. Merge transfers
+semantic values only and never changes the occurrence's scope.
 
 ## Attachment sites
 

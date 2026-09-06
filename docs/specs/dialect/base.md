@@ -235,7 +235,9 @@ tags follow the inherited grammar and are `HTML` or `HTMLBlock`.
 
 `Heading.content` is the inline content of the heading after the inherited
 removal of the ATX opening and closing sequences and of the Setext underline.
-A Setext heading's scope covers its underline:
+A heading's scope covers those sequences and the underline, as the
+[index](../dialect.md#scopes) requires of every delimiter; the current parser
+ends an ATX heading at its content, which `M0` corrects:
 
 ```````````````````````````````` example
 # ATX #
@@ -246,7 +248,7 @@ Setext
 ------
 .
 Document scope=1:1..6:6 anchor=null attributes={} children=3
-├── Heading scope=1:1..1:5 anchor=null attributes={} level=1 children=1
+├── Heading scope=1:1..1:7 anchor=null attributes={} level=1 children=1
 │   └── Text scope=1:3..1:5 anchor=null attributes={} literal="ATX" children=0
 ├── Heading scope=3:1..3:15 anchor=null attributes={} level=3 children=3
 │   ├── Code scope=3:5..3:10 anchor=null attributes={} literal="code" children=0

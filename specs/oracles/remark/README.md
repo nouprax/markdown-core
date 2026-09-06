@@ -11,14 +11,16 @@ an unregistered difference appears or a registered one stops reproducing.
 `scripts/fuzz-parity.mjs --oracle remark` reuses the same policy for seeded
 generated inputs.
 
-This oracle is corrective and supplementary, not a second owner of the base
-language. Current cmark owns CommonMark syntax, cmark-gfm owns only its GFM
-extension layer, and a remark agreement can justify a reviewed delta without
-silently overriding either primary oracle.
+This oracle is corrective and supplementary, not a second oracle for the base
+language. Current cmark is the CommonMark oracle, cmark-gfm only the
+GFM-extension oracle, and a remark agreement can justify a reviewed delta
+without silently overriding either primary oracle. The dialect modules state
+every rule; no oracle is an authority over behavior.
 
-For directives, Remark owns the envelope, label, and attribute attachment
-position. It does not own the attribute member grammar or public attribute
-shape: those follow the pinned Pandoc 3.11 contract at every attachment site.
+For directives, Remark is the evidence for the envelope, label, and attribute
+attachment position, which the directives module states. It is not evidence
+for the attribute member grammar or public attribute shape: those follow the
+pinned Pandoc 3.11 contract at every attachment site.
 The active delta registry records only differences the current runtime already
 exhibits; Phase 2 must register the additional grammar differences atomically
 when it replaces the existing directive-only attribute parser.

@@ -381,7 +381,9 @@ nothing strips comments.
       `HTML` and `HTMLBlock` rows of `canonical-ast.md`. Give a block comment
       the scope of its opener line through its closer line; the current HTML
       block position ends one line early for the comment form, as the comments
-      module's example shows. Manifest states: `comment.placement.block`,
+      module's example shows. Give an ATX heading the scope of its whole line,
+      closing sequence included, as the base module's example shows; the
+      current parser ends it at the content. Manifest states: `comment.placement.block`,
       `comment.placement.inline`. Requires `S0`.
 - [ ] **M1 — `Destination` on `Link` and `Image`.** Add the tagged `Destination`
       value with both branches and replace `Link.destination` and `Image.source`
@@ -707,7 +709,9 @@ nothing strips comments.
       container in the parser reference map as part of the shared resource that
       `M2` introduced, so an occurrence references the definition's attributes
       and materializes only its occurrence-local merge delta rather than a copy,
-      and apply the merge on resolution without touching the occurrence scope;
+      and apply the merge on resolution without touching the occurrence scope,
+      keeping inherited duplicates and registering Pandoc's `combineAttr`
+      deduplication as an expected divergence of the Pandoc gate;
       extend `pathological_reference_expansion_bound` and its transport and
       decoder counterparts so a long definition anchor, class list, or record
       referenced many times is stored once on every surface; keep `width` and
