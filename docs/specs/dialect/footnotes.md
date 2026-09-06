@@ -162,8 +162,9 @@ Document scope=1:1..3:4 anchor=null attributes={} children=1
 ````````````````````````````````
 
 When two definitions share a key, the first in source order wins; each later
-one is parsed in place as ordinary blocks beginning with the literal
-`[^label]:`, produces no `Footnote`, and calls resolve to the winner:
+one is parsed in place as ordinary blocks, produces no `Footnote`, and calls
+resolve to the winner. Inside those blocks the leading `[^label]` is itself a
+call to the winner, because the label is defined, and the rest is text:
 
 ```````````````````````````````` example
 [^a]
@@ -172,18 +173,21 @@ one is parsed in place as ordinary blocks beginning with the literal
 
 [^a]: second
 .
-Document scope=1:1..5:12 anchor=null attributes={} children=1
+Document scope=1:1..5:12 anchor=null attributes={} children=2
 ├── Paragraph scope=1:1..1:4 anchor=null attributes={} children=1
 │   └── Cite scope=1:1..1:4 anchor=null attributes={} children=1
 │       └── Citation scope=1:2..1:3 referent=footnote(id="a") children=0
 │           ├── CitationPrefix children=0
 │           └── CitationSuffix children=0
-├── Footnote scope=3:1..4:0 id="a" children=1
-│   └── Paragraph scope=3:7..3:11 anchor=null attributes={} children=1
-│       └── Text scope=3:7..3:11 anchor=null attributes={} literal="first" children=0
-└── Footnote scope=5:1..5:12 id="a" children=1
-    └── Paragraph scope=5:7..5:12 anchor=null attributes={} children=1
-        └── Text scope=5:7..5:12 anchor=null attributes={} literal="second" children=0
+├── Paragraph scope=5:1..5:12 anchor=null attributes={} children=2
+│   ├── Cite scope=5:1..5:4 anchor=null attributes={} children=1
+│   │   └── Citation scope=5:2..5:3 referent=footnote(id="a") children=0
+│   │       ├── CitationPrefix children=0
+│   │       └── CitationSuffix children=0
+│   └── Text scope=5:5..5:12 anchor=null attributes={} literal=": second" children=0
+└── Footnote scope=3:1..4:0 id="a" children=1
+    └── Paragraph scope=3:7..3:11 anchor=null attributes={} children=1
+        └── Text scope=3:7..3:11 anchor=null attributes={} literal="first" children=0
 ````````````````````````````````
 
 A call whose label no definition defines is not a call: the brackets are
