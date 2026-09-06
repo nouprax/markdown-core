@@ -1,16 +1,14 @@
 # Citations
 
 Status: normative module of the [Markdown Core dialect](../dialect.md).
-Option: `citations` (default `false`). Source: Pandoc's citation syntax.
-Executable oracle: the Pandoc 3.11 CLI under `specs/oracles/pandoc/`.
-Landing: `P7`, the first producer of `CitationReferent.bib`. The `Cite`,
-`Citation`, and `CitationReferent` values are defined by the
-[footnotes](footnotes.md) module; this module produces the `bib` branch and
-never touches footnote recognition. Every example in this module runs with
-`citations` on unless its fence says otherwise; the
+Source: Pandoc's citation syntax. Executable oracle: the Pandoc 3.11 CLI
+under `specs/oracles/pandoc/`. Landing: `P7`, the first producer of
+`CitationReferent.bib`. The `Cite`, `Citation`, and `CitationReferent` values
+are defined by the [footnotes](footnotes.md) module; this module produces the
+`bib` branch and never touches footnote recognition. The
 [example format](../dialect.md#examples) is defined by the index.
 
-```````````````````````````````` example citations
+```````````````````````````````` example
 [see @doe99, pp. 3]
 .
 Document scope=1:1..1:19 anchor=null attributes={} children=1
@@ -43,7 +41,7 @@ braces owned by code spans or HTML tokens do not count. The outer braces are
 excluded from the stored key. Keys are stored exactly after delimiter removal
 and are neither case-folded nor resolved:
 
-```````````````````````````````` example citations
+```````````````````````````````` example
 @Foo_bar.baz. @Foo_bar,baz @{https://example.com/x}.
 .
 Document scope=1:1..1:52 anchor=null attributes={} children=1
@@ -68,9 +66,9 @@ Document scope=1:1..1:52 anchor=null attributes={} children=1
 A `@`, or the `-` of `-@`, opens a candidate only at the start of the inline
 container or when the preceding scalar is not a letter, number, or `_`, so
 `foo@bar`, `1@bar`, and `x_@bar` open nothing, while `(@bar)` does; this
-holds independently of `autolinks`:
+holds independently of the email autolink post-pass:
 
-```````````````````````````````` example citations
+```````````````````````````````` example
 foo@bar 1@bar x_@bar (@bar)
 .
 Document scope=1:1..1:27 anchor=null attributes={} children=1
@@ -87,7 +85,7 @@ An escaped `\@` is text, and a `@` inside an autolink token is that token's
 byte; the email post-pass of the [links and images](links-and-images.md)
 module still runs over the text a failed candidate leaves behind:
 
-```````````````````````````````` example citations
+```````````````````````````````` example
 \@bar <x@y.z> x@y.z
 .
 Document scope=1:1..1:19 anchor=null attributes={} children=1
@@ -121,7 +119,7 @@ content after the key up to the next item boundary. Both exclude leading and
 trailing whitespace, may be empty, and may contain nested inline markup; a
 suffix of only whitespace is empty:
 
-```````````````````````````````` example citations
+```````````````````````````````` example
 [@a; @b, p. 1; see @c]
 .
 Document scope=1:1..1:22 anchor=null attributes={} children=1
@@ -140,7 +138,7 @@ Document scope=1:1..1:22 anchor=null attributes={} children=1
             └── CitationSuffix children=0
 ````````````````````````````````
 
-```````````````````````````````` example citations
+```````````````````````````````` example
 [@a, *emphasis*]
 .
 Document scope=1:1..1:16 anchor=null attributes={} children=1
@@ -161,7 +159,7 @@ candidate, and the suffix is everything after the key up to the item
 boundary. A later candidate in the suffix is ordinary suffix content, where
 step A8 makes it an author-in-text `Cite` exactly as outside brackets:
 
-```````````````````````````````` example citations
+```````````````````````````````` example
 [@a @b] [foo@bar @baz]
 .
 Document scope=1:1..1:22 anchor=null attributes={} children=1
@@ -190,7 +188,7 @@ the `-` is prefix text and the precondition is evaluated at the `@` instead,
 so `[Smith-@1990]` has the prefix `Smith-` and mode `normal`. Every other
 item has mode `normal`:
 
-```````````````````````````````` example citations
+```````````````````````````````` example
 [-@doe99] [Smith -@1990] [Smith-@1990]
 .
 Document scope=1:1..1:38 anchor=null attributes={} children=1
@@ -216,7 +214,7 @@ Document scope=1:1..1:38 anchor=null attributes={} children=1
 `spacing` admits at most one line ending, so a group may span two lines; the
 line ending belongs to neither affix:
 
-```````````````````````````````` example citations
+```````````````````````````````` example
 [@a;
 @b]
 .
@@ -234,7 +232,7 @@ Document scope=1:1..2:3 anchor=null attributes={} children=1
 Curly braces inside a suffix are suffix text; their locator meaning belongs
 to a CSL-aware consumer and is not represented:
 
-```````````````````````````````` example citations
+```````````````````````````````` example
 [@smith{ii, A, D-Z}, with a suffix]
 .
 Document scope=1:1..1:35 anchor=null attributes={} children=1
@@ -249,7 +247,7 @@ Document scope=1:1..1:35 anchor=null attributes={} children=1
 A group in which any item lacks a key is not a citation, and the bracket pair
 continues at the shortcut-reference alternative:
 
-```````````````````````````````` example citations
+```````````````````````````````` example
 [see p. 3] [@foo; no key]
 .
 Document scope=1:1..1:25 anchor=null attributes={} children=1
@@ -260,7 +258,7 @@ Document scope=1:1..1:25 anchor=null attributes={} children=1
 A non-resolving reference tail does not block a group, and a direct tail
 wins over it, with the group's bytes then parsed as ordinary link content:
 
-```````````````````````````````` example citations
+```````````````````````````````` example
 [@foo][nope] [@foo](u)
 .
 Document scope=1:1..1:22 anchor=null attributes={} children=1
@@ -277,11 +275,10 @@ Document scope=1:1..1:22 anchor=null attributes={} children=1
                 └── CitationSuffix children=0
 ````````````````````````````````
 
-With `bracketedSpans` on, a span container after the group is tested first,
-so `[@foo]{.key}` is a `Span` containing an author-in-text `Cite`; with it
-off, the container is literal text after the bracketed `Cite`:
+A span container after the group is tested first, so `[@foo]{.key}` is a
+`Span` containing an author-in-text `Cite`:
 
-```````````````````````````````` example citations bracketed_spans
+```````````````````````````````` example
 [@foo]{.key}
 .
 Document scope=1:1..1:12 anchor=null attributes={} children=1
@@ -293,25 +290,13 @@ Document scope=1:1..1:12 anchor=null attributes={} children=1
                 └── CitationSuffix children=0
 ````````````````````````````````
 
-```````````````````````````````` example citations
-[@foo]{.key}
-.
-Document scope=1:1..1:12 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:12 anchor=null attributes={} children=2
-    ├── Cite scope=1:1..1:6 anchor=null attributes={} children=1
-    │   └── Citation scope=1:2..1:5 referent=bib(key="foo",mode=normal) children=0
-    │       ├── CitationPrefix children=0
-    │       └── CitationSuffix children=0
-    └── Text scope=1:7..1:12 anchor=null attributes={} literal="{.key}" children=0
-````````````````````````````````
-
 ## Author-in-text keys
 
 An unbracketed citation key is inline step A8 and produces a one-item `Cite`
 whose referent mode is `authorInText`; `-@key` outside brackets produces
 `suppressAuthor`:
 
-```````````````````````````````` example citations
+```````````````````````````````` example
 @smith04 says blah.
 
 -@jones says blah.
@@ -337,7 +322,7 @@ separate the key from the `[`. A tail that itself contains items produces one
 `Cite` whose first item is author-in-text with the first suffix, followed by
 the further items:
 
-```````````````````````````````` example citations
+```````````````````````````````` example
 @smith04 [p. 33] says blah.
 
 @k [s1; @k2, s2]
@@ -367,7 +352,7 @@ immediately followed by `(`, `[`, or a valid attribute container, in which
 case the bracket pair is decided by the bracket procedure on its own.
 
 A bare `@label` with no bracketed tail whose label is registered as an example
-label anywhere in the document under `exampleLists` is an `ExampleReference`
+label anywhere in the document is an `ExampleReference`
 rather than a `Cite`; the [lists](lists.md) module states that rule, and the
 choice is finalized document-wide so parser order cannot change it.
 
@@ -379,18 +364,7 @@ suffixes are behaviors of a citation processor. The exact heading class
 processor to reset position-sensitive state; the parser stores the class as
 written through the [attributes](attributes.md) module and does nothing else.
 
-## Option behavior and fallback
-
-With `citations=false`, `@` has no meaning and every bracket pair follows the
-other alternatives; footnote `Cite` nodes are unaffected:
-
-```````````````````````````````` example
-[@a] @b
-.
-Document scope=1:1..1:7 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:7 anchor=null attributes={} children=1
-    └── Text scope=1:1..1:7 anchor=null attributes={} literal="[@a] @b" children=0
-````````````````````````````````
+## Fallback
 
 A failed candidate releases its opener and consumes nothing. Inline code,
 comment bodies, HTML tokens, formulas, and cross links are opaque; a

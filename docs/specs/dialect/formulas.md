@@ -1,20 +1,18 @@
 # Formulas
 
 Status: normative module of the [Markdown Core dialect](../dialect.md).
-Option: `formulas` (default `true`). Source: GitHub's mathematical-expression
+Source: GitHub's mathematical-expression
 syntax and `micromark-extension-math` 3.1.0, whose padding rule this module
 adopts. Executable oracle: remark with `micromark-extension-math` under
 `specs/oracles/remark/`, for the `$` forms only; the backslash forms and the
 GitHub heuristics are product fixtures and registered deltas. Landing:
-present. Every example in this module runs with the product defaults unless
-its fence says otherwise; the [example format](../dialect.md#examples) is
-defined by the index.
+present. The [example format](../dialect.md#examples) is defined by the
+index.
 
 The module states the grammar the parser implements in
 `packages/markdown-core/extensions/formula.c`; the fixtures
 `extensions-formula-github.txt`, `extensions-formula-latex.txt`,
-`extensions-formula-conflicts.txt`, and `extensions-formula-option-gates.txt`
-are its oracle of record.
+and `extensions-formula-conflicts.txt` are its oracle of record.
 
 ## Model
 
@@ -226,7 +224,7 @@ Document scope=1:1..3:3 anchor=null attributes={} children=1
 └── FormulaBlock scope=1:1..3:3 anchor=null attributes={} literal="x" children=0
 ````````````````````````````````
 
-## Option behavior and fallback
+## Fallback
 
 Formula bodies are opaque under the shared opacity rule, and formula
 delimiters inside code spans, HTML tokens, comments, and cross links are those
@@ -242,24 +240,7 @@ Document scope=1:1..1:18 anchor=null attributes={} children=1
     └── Comment scope=1:7..1:18 anchor=null attributes={} literal=" $b$ " children=0
 ````````````````````````````````
 
-With `formulas=false`, every delimiter above is ordinary text under the
-inherited grammar, a `formula` fence is a `CodeBlock`, and `$$` lines are
-paragraph text:
-
-```````````````````````````````` example !formulas
-$a$ $$b$$
-
-```formula
-x
-```
-.
-Document scope=1:1..5:3 anchor=null attributes={} children=2
-├── Paragraph scope=1:1..1:9 anchor=null attributes={} children=1
-│   └── Text scope=1:1..1:9 anchor=null attributes={} literal="$a$ $$b$$" children=0
-└── CodeBlock scope=3:1..5:3 anchor=null attributes={} info="formula" language="formula" literal="x\n" fenced=true closed=true children=0
-````````````````````````````````
-
-With the option on, a candidate that fails any rule above releases its bytes
+A candidate that fails any rule above releases its bytes
 as text and consumes nothing that a later construct needs.
 
 ## Scopes

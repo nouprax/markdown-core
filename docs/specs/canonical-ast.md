@@ -228,40 +228,34 @@ validates the owning edge: the value in `Table.header` is true and values in
 ## ParseOptions
 
 `Document.parse(source, options = ParseOptions.default)` is the only parsing
-entry point. A parse returns exactly the `Document` this table describes. The
-document does not retain source text, a normalized source copy, a line index,
-tokens, trivia, or recovery records. `ParseOptions` is immutable and today
-contains exactly these booleans:
+entry point today. A parse returns exactly the `Document` this table
+describes. The document does not retain source text, a normalized source
+copy, a line index, tokens, trivia, or recovery records. `ParseOptions` is
+immutable and today contains exactly these booleans:
 
 | Field | Default | Status |
 | --- | --- | --- |
-| `smartPunctuation` | `true` | active |
-| `footnotes` | `true` | active |
+| `smartPunctuation` | `true` | active until `X0` removes it |
+| `footnotes` | `true` | active until `X0` removes it |
 | `stripHTMLComments` | `true` | active until `M0` removes it |
-| `tables` | `true` | active |
-| `strikethrough` | `true` | active |
-| `autolinks` | `true` | active |
-| `taskLists` | `true` | active |
-| `formulas` | `true` | active |
-| `directives` | `true` | active |
+| `tables` | `true` | active until `X0` removes it |
+| `strikethrough` | `true` | active until `X0` removes it |
+| `autolinks` | `true` | active until `X0` removes it |
+| `taskLists` | `true` | active until `X0` removes it |
+| `formulas` | `true` | active until `X0` removes it |
+| `directives` | `true` | active until `X0` removes it |
 
-This table is the registry of record. `Status` is `active` for an option the
-implementation recognizes; every other option of the dialect is allocated by
-name in the feature table of [`dialect.md`](dialect.md), enters this table as
-`active` in the item that lands it, and defaults to `false`. Binding, C, CLI,
-and fixture spellings follow the dialect index. The effect of each option is
-stated by its dialect module: an option that is off leaves the inherited
-grammar byte for byte, `smartPunctuation` is defined by
-[`dialect/base.md`](dialect/base.md), and `stripHTMLComments` is removed by
-`M0` because a comment is a `Comment` node that nothing strips.
-
-Disabling an extension disables recognition of its syntax and produces the
-same fallback core AST on every platform. `formulas` is the whole gate for
-every formula delimiter: `$`, `$$`, `` $`...`$ ``, `\\(...\\)`, and
-`\\[...\\]`, the last two spelled with two authored backslashes as
-[`dialect/formulas.md`](dialect/formulas.md) states, are one extension's
-syntax and turn on together. Scope tracking is mandatory and is not an
-option.
+The target contract has no parse options: the dialect of
+[`dialect.md`](dialect.md) is one language in which every feature is always
+recognized, so `X0` removes every switch above, removes smart punctuation
+from the parser, and makes `Document.parse(source)` the only entry point on
+every surface, with `ParseOptions` deleted rather than emptied. Until then an
+option that is off leaves the inherited grammar byte for byte, and
+`stripHTMLComments` is removed by `M0` because a comment is a `Comment` node
+that nothing strips. The conformance harness keeps an internal, unpublished
+way to run the base or GFM layer alone for the cmark and cmark-gfm oracles;
+no binding, C facade, or fixture format exposes it. Scope tracking is
+mandatory and is not an option.
 Renderer-only `unsafe`, `github-pre-lang`, and `full-info-string` options do
 not exist. Raw HTML, URLs, and code info strings are always retained.
 

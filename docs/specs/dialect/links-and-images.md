@@ -4,13 +4,11 @@ Status: normative module of the [Markdown Core dialect](../dialect.md). It
 owns the shared `Destination` value, the consumer model of every link and
 image form, the resolved reference model, the ordered bracket procedure that
 every bracket-closing module participates in, GFM bare autolinks, and the
-Obsidian image-dimension suffix. Options: `autolinks` (default `true`) and
-`imageDimensions` (default `false`). Sources: CommonMark links, images, and
+Obsidian image-dimension suffix. Sources: CommonMark links, images, and
 reference definitions; cmark-gfm's autolink extension; Obsidian's external
 image dimensions. Executable oracles: cmark and cmark-gfm; image dimensions
 are product fixtures. Landing: `Destination` with `M1`, resolved references
-with `M2`, dimensions with `O9`. Each example in this module names the
-options it adds to the product defaults; the
+with `M2`, dimensions with `O9`. The
 [example format](../dialect.md#examples) is defined by the index.
 
 ## Model
@@ -154,24 +152,24 @@ alternative leaves the cursor at the `]`; the container after a failed
 alternative is text.
 
 1. A valid direct tail `(...)` produces `Link` or `Image`; a following
-   container attaches under `linkAttributes`.
-2. Under `footnotes`, a `[^label]` whose label is defined is a footnote call
+   container attaches.
+2. A `[^label]` whose label is defined is a footnote call
    and produces a `Cite`, whatever else follows the `]`; the
    [footnotes](footnotes.md) module states it.
 3. A full `[label]` or collapsed `[]` tail whose label resolves, explicitly or
    through a virtual heading definition, produces `Link` or `Image`; a
-   following container attaches under `linkAttributes`. A tail whose label
-   does not resolve does not block the later alternatives.
-4. Under `bracketedSpans`, a valid attribute container beginning at the byte
-   after `]` produces a `Span`.
-5. Under `citations`, a valid cite group produces a `Cite`.
+   following container attaches. A tail whose label does not resolve does
+   not block the later alternatives.
+4. A valid attribute container beginning at the byte after `]` produces a
+   `Span`.
+5. A valid cite group produces a `Cite`.
 6. A shortcut reference whose label resolves, not followed by `[]` or by a
-   link label, produces `Link` or `Image`; a following container attaches
-   under `linkAttributes` only while `bracketedSpans` is off.
+   link label, produces `Link` or `Image`; a following container belongs to
+   alternative 4, so none attaches here.
 7. Otherwise the pair is the inherited literal text.
 
 For an image opener `![`, alternatives 4 through 6 yield a literal `!`
-followed by the node. A `[[` under `crossLinks` is claimed by the cross-link
+followed by the node. A `[[` is claimed by the cross-link
 scanner before this procedure runs, and a text directive's label is claimed by
 the directive scanner; neither reaches this procedure. The modules named in
 each step show the examples of their alternative.
@@ -179,8 +177,8 @@ each step show the examples of their alternative.
 ## Autolinks
 
 Angle-bracket autolinks `<https://example.com>` and `<user@example.com>` are
-inherited and always recognized, at inline step A3. With `autolinks=true`,
-the three GFM bare forms of cmark-gfm's extension are recognized:
+inherited, at inline step A3, and the three GFM bare forms of cmark-gfm's
+extension are recognized at the same step:
 
 - The URL form is a scanner step of class A, listed at A3: at a `:` followed
   by `//`, the scanner rewinds over the preceding ASCII letters and accepts
@@ -226,7 +224,7 @@ or cross link that begins inside the run is URL text, an `<` ends the run,
 and a bare autolink never accepts an attribute container, since the
 termination rule applies to the braces:
 
-```````````````````````````````` example link_attributes
+```````````````````````````````` example
 https://x.y/*a* www.x.y/`b`. https://x.y/<b>c</b> https://x.y{.c}
 .
 Document scope=1:1..1:65 anchor=null attributes={} children=1
@@ -267,22 +265,9 @@ Document scope=1:1..1:41 anchor=null attributes={} children=1
     └── Text scope=1:41..1:41 anchor=null attributes={} literal=")" children=0
 ````````````````````````````````
 
-With the option off, bare URLs are text and angle-bracket autolinks are
-unchanged:
-
-```````````````````````````````` example !autolinks
-<https://x.y> https://x.y
-.
-Document scope=1:1..1:25 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:25 anchor=null attributes={} children=2
-    ├── Link scope=1:1..1:13 anchor=null attributes={} dest=url("https://x.y") title=null children=1
-    │   └── Text scope=1:2..1:12 anchor=null attributes={} literal="https://x.y" children=0
-    └── Text scope=1:14..1:25 anchor=null attributes={} literal=" https://x.y" children=0
-````````````````````````````````
-
 ## Image dimensions
 
-With `imageDimensions=true`, an image whose alt label ends with one of these
+An image whose alt label ends with one of these
 complete suffixes receives typed dimensions:
 
 ```text
@@ -298,7 +283,7 @@ numeric-only label the alt content is empty; for a pipe form the bytes before
 the pipe are the alt content, parsed by the inline parser, and may be empty.
 `width` is `W`; `height` is `H` or `null` for a width-only form:
 
-```````````````````````````````` example image_dimensions
+```````````````````````````````` example
 ![100x145](a.png)
 
 ![alt|100](a.png) ![alt|100x145](a.png) ![|200](a.png)
@@ -320,7 +305,7 @@ The suffix is matched against the raw source bytes between the last top-level
 unescaped `|` that is not inside a code span or nested brackets and the
 closing `]`; for a label with no such pipe, against the whole label:
 
-```````````````````````````````` example image_dimensions
+```````````````````````````````` example
 ![*a* `b|c`|300](a.png)
 .
 Document scope=1:1..1:23 anchor=null attributes={} children=1
@@ -336,7 +321,7 @@ Zero, a leading zero, a value above the limit, signs, whitespace, missing
 components, or non-decimal components produce no dimensions, and the whole
 label is alt content:
 
-```````````````````````````````` example image_dimensions
+```````````````````````````````` example
 ![0x1](a.png)
 
 ![alt| 100](a.png)
@@ -352,7 +337,7 @@ Document scope=1:1..3:18 anchor=null attributes={} children=2
 
 The rule applies to direct and resolved reference images alike:
 
-```````````````````````````````` example image_dimensions
+```````````````````````````````` example
 ![alt|100][r]
 
 [r]: /i.png
@@ -363,18 +348,7 @@ Document scope=1:1..3:11 anchor=null attributes={} children=1
         └── Text scope=1:3..1:5 anchor=null attributes={} literal="alt" children=0
 ````````````````````````````````
 
-With the option off, every alt label is inherited alt content byte for byte:
-
-```````````````````````````````` example
-![alt|100](a.png)
-.
-Document scope=1:1..1:17 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:17 anchor=null attributes={} children=1
-    └── Image scope=1:1..1:17 anchor=null attributes={} dest=url("a.png") title=null width=null height=null children=1
-        └── Text scope=1:3..1:9 anchor=null attributes={} literal="alt|100" children=0
-````````````````````````````````
-
-A `width` or `height` attribute record under `linkAttributes` is independent:
+A `width` or `height` attribute record is independent:
 it never populates the typed fields, and the typed fields never produce a
 record. Internal image embeds are `CrossLink` values whose `label` stays raw;
 this rule does not apply to them.
@@ -392,7 +366,7 @@ Every example of this module is a package fixture. Tests also cover
 fragment-only destinations; unused definitions; the identical dump of a direct
 and a resolved occurrence apart from scope; the shared-resource bound for a
 long destination or title referenced many times, on every surface; every step
-of the bracket procedure with each participating option on and off; bare
+of the bracket procedure; bare
 autolinks ending at every node boundary; every valid and invalid dimension
 form, pipes inside brackets, the limit, and coexistence with dimension
 records; exact scopes; allocation failure; and size-doubling brackets,

@@ -3,17 +3,15 @@
 Status: normative module of the [Markdown Core dialect](../dialect.md). It owns
 the universal `Markup.attributes` field, the one braced attribute grammar of
 the dialect, its normalization and merge operations, and every attachment site.
-Options: `inlineCodeAttributes`, `headingAttributes`, `fencedCodeAttributes`,
-and `linkAttributes` (each default `false`); the [directives](directives.md)
-and [bracketed spans](bracketed-spans.md) modules attach the same grammar under
-their own options. Source: Pandoc 3.11's attribute syntax and its `combineAttr`
-operation, and `remark-directive`'s attachment position. Executable oracle: the
-Pandoc 3.11 CLI under `specs/oracles/pandoc/`; remark's own attribute member
-tokenizer is not an oracle for this grammar, and every difference from it is a
-registered delta. Landing: the field and the directive site with `M7`; the four
-options with `P2a` through `P2d`. Each example in this module names the option
-it runs with; the [example format](../dialect.md#examples) is defined by the
-index.
+The [directives](directives.md) and [bracketed spans](bracketed-spans.md)
+modules attach the same grammar. Source: Pandoc 3.11's attribute syntax and
+its `combineAttr` operation, and `remark-directive`'s attachment position.
+Executable oracle: the Pandoc 3.11 CLI under `specs/oracles/pandoc/`; remark's
+own attribute member tokenizer is not an oracle for this grammar, and every
+difference from it is a registered delta. Landing: the field and the directive
+site with `M7`; the inline code, heading, fenced code, and link sites with
+`P2a` through `P2d`. The [example format](../dialect.md#examples) is defined
+by the index.
 
 ## Model
 
@@ -109,7 +107,7 @@ space, tab, a line ending, or an unescaped `}`, decodes escapes but not
 character references, and admits quotes, `<`, `=`, `>`, and backticks as
 ordinary content. The examples below show the grammar on inline code:
 
-```````````````````````````````` example inline_code_attributes
+```````````````````````````````` example
 `x`{#a#b}
 
 `x`{-k=v}
@@ -138,7 +136,7 @@ only value-less member. `{.1}` and `{_key=value}` are malformed because a
 class or assignment name begins with a letter. A malformed container attaches
 nothing and its `{` is text:
 
-```````````````````````````````` example inline_code_attributes
+```````````````````````````````` example
 `x`{.1} `x`{disabled} `x`{_k=v}
 .
 Document scope=1:1..1:31 anchor=null attributes={} children=1
@@ -157,7 +155,7 @@ members. Escaped and referenced scalars inside identifier and class
 shorthands are not decoded; those members are as written. A permitted line
 ending inside a quoted value becomes one space:
 
-```````````````````````````````` example bracketed_spans
+```````````````````````````````` example
 [a]{k="x
 y"}
 .
@@ -179,7 +177,7 @@ anchor candidate and one `Attributes` value:
 3. Every other assignment appends one `Record` in source order.
 
 `merge(primary, inherited)` combines an occurrence's own values with the
-values inherited from a reference definition under `linkAttributes`:
+values inherited from a reference definition:
 
 1. The anchor is the primary anchor when non-null, otherwise the inherited
    anchor.
@@ -199,18 +197,18 @@ semantic values only and never changes the occurrence's scope.
 
 Only these rules may populate `attributes` and the attribute-side anchor
 candidate. Every other kind keeps `Attributes.empty`, and under these rules no
-table, row, cell, or caption receives attributes or an anchor; an enabled
+table, row, cell, or caption receives attributes or an anchor; a
 [block identifier](block-identifiers.md) may still populate `Table.anchor`.
 
-| Site                          | Owner            | Option                   | Position                                                                           |
-| ----------------------------- | ---------------- | ------------------------ | ---------------------------------------------------------------------------------- |
-| text, leaf, and container directive | `Directive`, `DirectiveBlock` | `directives`  | immediately after the name or its label                                            |
-| inline code                   | `Code`           | `inlineCodeAttributes`   | immediately after the complete closing backtick run                                |
-| ATX and Setext heading        | `Heading`        | `headingAttributes`      | the last non-whitespace bytes of the heading's content line                        |
-| fenced code                   | `CodeBlock`      | `fencedCodeAttributes`   | the last non-whitespace content of the opening fence line                          |
-| direct, reference, and autolink link and image | `Link`, `Image` | `linkAttributes` | immediately after the occurrence, or inherited from its definition        |
-| bracketed span                | `Span`           | `bracketedSpans`         | immediately after the balanced closing `]`                                         |
-| nameless container directive  | `DirectiveBlock` | `directives`             | on the opening colon fence, as a container or one class word                       |
+| Site                                           | Owner                          | Position                                                              |
+| ---------------------------------------------- | ------------------------------ | --------------------------------------------------------------------- |
+| text, leaf, and container directive            | `Directive`, `DirectiveBlock`  | immediately after the name or its label                               |
+| inline code                                    | `Code`                         | immediately after the complete closing backtick run                   |
+| ATX and Setext heading                         | `Heading`                      | the last non-whitespace bytes of the heading's content line           |
+| fenced code                                    | `CodeBlock`                    | the last non-whitespace content of the opening fence line             |
+| direct, reference, and autolink link and image | `Link`, `Image`                | immediately after the occurrence, or inherited from its definition    |
+| bracketed span                                 | `Span`                         | immediately after the balanced closing `]`                            |
+| nameless container directive                   | `DirectiveBlock`               | on the opening colon fence, as a container or one class word          |
 
 Automatic anchors are synthesized by the [anchors](anchors.md) module and are
 not an attachment site. A successfully attached container is lexically part of
@@ -219,11 +217,11 @@ it.
 
 ### Inline code
 
-With `inlineCodeAttributes=true`, a container beginning at the byte after the
-closing backtick run attaches to that `Code`. The container is excluded from
+A container beginning at the byte after the closing backtick run attaches to
+that `Code`. The container is excluded from
 `Code.literal` and included in `Code.scope`:
 
-```````````````````````````````` example inline_code_attributes
+```````````````````````````````` example
 `printf()`{.c} `<$>`{#operator .haskell role="function"}
 .
 Document scope=1:1..1:56 anchor=null attributes={} children=1
@@ -238,7 +236,7 @@ completed `Code` unchanged and releases the `{` to ordinary inline parsing.
 Classes on `Code` have no parser-side meaning; no surface derives a language
 from them:
 
-```````````````````````````````` example inline_code_attributes
+```````````````````````````````` example
 `a` {.c} `b`{.1}
 .
 Document scope=1:1..1:16 anchor=null attributes={} children=1
@@ -251,14 +249,14 @@ Document scope=1:1..1:16 anchor=null attributes={} children=1
 
 ### Headings
 
-With `headingAttributes=true`, for an ATX heading: if the line's last
+For an ATX heading: if the line's last
 non-whitespace bytes form a valid container, remove it and the whitespace
 before it, then apply the inherited closing-sequence rule to the remainder;
 attach only when the first step succeeded. For a Setext heading the first step
 applies to the last content line. `# {#x}` is a `Heading` with empty content
 and `anchor="x"`:
 
-```````````````````````````````` example heading_attributes
+```````````````````````````````` example
 # Title {#custom-id .c}
 
 # {#x}
@@ -280,28 +278,21 @@ Document scope=1:1..8:11 anchor=null attributes={} children=4
 
 An invalid suffix remains heading content:
 
-```````````````````````````````` example heading_attributes
+```````````````````````````````` example
 # T {.1}
 .
 Document scope=1:1..1:8 anchor=null attributes={} children=1
-└── Heading scope=1:1..1:8 anchor=null attributes={} level=1 children=1
+└── Heading scope=1:1..1:8 anchor="t-1" attributes={} level=1 children=1
     └── Text scope=1:3..1:8 anchor=null attributes={} literal="T {.1}" children=0
 ````````````````````````````````
 
-A non-empty explicit anchor wins over automatic synthesis. With the option
-off, the container is heading text:
-
-```````````````````````````````` example
-# Title {#custom-id}
-.
-Document scope=1:1..1:20 anchor=null attributes={} children=1
-└── Heading scope=1:1..1:20 anchor=null attributes={} level=1 children=1
-    └── Text scope=1:3..1:20 anchor=null attributes={} literal="Title {#custom-id}" children=0
-````````````````````````````````
+A non-empty explicit anchor wins over automatic synthesis: the
+[anchors](anchors.md) module reserves it before it synthesizes any other
+heading's anchor.
 
 ### Fenced code
 
-With `fencedCodeAttributes=true`, the inherited fence rule is applied to the
+The inherited fence rule is applied to the
 complete opening line first; a container is then recognized only as the last
 non-whitespace content of that line. `CodeBlock.info` is the inherited info
 string over the line with the container and the whitespace before it
@@ -309,7 +300,7 @@ removed, and `language` is its first token. Nothing is lowercased, aliased,
 or derived from a class; `numberLines`, `number-lines`, `lineAnchors`,
 `line-anchors`, and `startFrom` are ordinary values:
 
-```````````````````````````````` example fenced_code_attributes
+```````````````````````````````` example
 ```python {.numberLines startFrom="10"}
 print("hello")
 ```
@@ -323,7 +314,7 @@ container followed by other bytes, or a malformed container, is ordinary
 info-string text and attaches nothing; the body and closing fence are never
 reinterpreted:
 
-```````````````````````````````` example fenced_code_attributes
+```````````````````````````````` example
 ``` python {.x} y
 z
 ```
@@ -332,25 +323,15 @@ Document scope=1:1..3:3 anchor=null attributes={} children=1
 └── CodeBlock scope=1:1..3:3 anchor=null attributes={} info="python {.x} y" language="python" literal="z\n" fenced=true closed=true children=0
 ````````````````````````````````
 
-With the option off, the inherited info contract applies to the whole line:
-
-```````````````````````````````` example
-```python {.numberLines}
-x
-```
-.
-Document scope=1:1..3:3 anchor=null attributes={} children=1
-└── CodeBlock scope=1:1..3:3 anchor=null attributes={} info="python {.numberLines}" language="python" literal="x\n" fenced=true closed=true children=0
-````````````````````````````````
-
 ### Links and images
 
-With `linkAttributes=true`, a container beginning at the byte after a complete
-direct link or image tail, a full or collapsed reference tail that resolves, a
-shortcut reference that resolves while `bracketedSpans` is off, or an
-angle-bracket autolink attaches to the resulting `Link` or `Image`:
+A container beginning at the byte after a complete direct link or image
+tail, a full or collapsed reference tail that resolves, or an angle-bracket
+autolink attaches to the resulting `Link` or `Image`; a shortcut reference
+followed by a container is a bracketed span, which the bracket procedure
+tests first:
 
-```````````````````````````````` example link_attributes
+```````````````````````````````` example
 [text](https://example.com){target="_blank"}
 
 ![image](foo.jpg){#hero .wide width=50%}
@@ -376,7 +357,7 @@ the [links and images](links-and-images.md) module. An occurrence-local
 container is outside label or alt content and inside that occurrence's
 scope. A malformed container leaves the completed node unchanged:
 
-```````````````````````````````` example link_attributes
+```````````````````````````````` example
 [a](/u) {.c}
 .
 Document scope=1:1..1:12 anchor=null attributes={} children=1
@@ -386,12 +367,11 @@ Document scope=1:1..1:12 anchor=null attributes={} children=1
     └── Text scope=1:8..1:12 anchor=null attributes={} literal=" {.c}" children=0
 ````````````````````````````````
 
-A container may also follow a reference definition. With the option on, the
-definition grammar is the destination, an optional title, optional spaces or
-tabs, at most one line ending plus optional spaces or tabs, one container, and
-then only whitespace to the line ending; a malformed container, or the option
-off, leaves the inherited definition grammar unchanged, so such a line is then
-not a definition. The container is normalized once when the definition is
+A container may also follow a reference definition. The definition grammar
+is the destination, an optional title, optional spaces or tabs, at most one
+line ending plus optional spaces or tabs, one container, and then only
+whitespace to the line ending; a malformed container leaves the inherited
+definition grammar unchanged, so such a line is then not a definition. The container is normalized once when the definition is
 stored in the parser's reference map and is part of the shared resource that
 every occurrence of the definition references. A resolved occurrence receives
 `merge(occurrence, definition)`; explicit duplicate-definition precedence is
@@ -399,7 +379,7 @@ unchanged and an unresolved reference inherits nothing. The emitted node keeps
 the source-faithful range of its own occurrence, and an occurrence-local
 anchor wins over the inherited one:
 
-```````````````````````````````` example link_attributes
+```````````````````````````````` example
 [x][r] [x][r]{#bar}
 
 [r]: /target {#foo}
@@ -413,7 +393,7 @@ Document scope=1:1..3:19 anchor=null attributes={} children=1
         └── Text scope=1:9..1:9 anchor=null attributes={} literal="x" children=0
 ````````````````````````````````
 
-```````````````````````````````` example link_attributes
+```````````````````````````````` example
 [x][r]{.b .c k=3}
 
 [r]: /t {#d .a .b k=1 m=2}
@@ -428,17 +408,7 @@ Image `width` and `height` assignments are records stored verbatim,
 `width=50%` and `height=2in` alike; the parser validates no unit. The typed
 `Image.width` and `Image.height` fields are populated only by the
 [image dimensions](links-and-images.md) rule, never by a record, and vice
-versa. With the option off, the container is text after the link:
-
-```````````````````````````````` example
-[a](/u){.c}
-.
-Document scope=1:1..1:11 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:11 anchor=null attributes={} children=2
-    ├── Link scope=1:1..1:7 anchor=null attributes={} dest=url("/u") title=null children=1
-    │   └── Text scope=1:2..1:2 anchor=null attributes={} literal="a" children=0
-    └── Text scope=1:8..1:11 anchor=null attributes={} literal="{.c}" children=0
-````````````````````````````````
+versa.
 
 ### Directives and spans
 
@@ -465,6 +435,6 @@ or storage shape.
 Every example of this module is a package fixture. Tests also cover the
 universal field on every `Markup` kind; single-quoted values; non-ASCII
 whitespace positions; merge without scope mutation; inert unsafe-looking
-metadata; unclosed fallback at every site; every attachment site with its
-option on and off and its owner's exact scope; allocation failure; and
+metadata; unclosed fallback at every site; every attachment site and its
+owner's exact scope; allocation failure; and
 size-doubling valid, duplicate, malformed, and unclosed containers.

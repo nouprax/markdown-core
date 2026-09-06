@@ -2,7 +2,8 @@
 
 This oracle owns the CommonMark layer. It pins the newest stable reference
 release, currently `cmark 0.31.2`, consumes that same commit's full specification
-corpus, and runs Markdown Core with every parser extension disabled. Moving the
+corpus, and runs Markdown Core's base layer alone through the harness's
+internal layer selection. Moving the
 pin therefore moves the reference implementation and the language corpus as one
 reviewed change.
 

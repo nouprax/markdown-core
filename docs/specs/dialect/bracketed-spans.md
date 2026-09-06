@@ -1,10 +1,8 @@
 # Bracketed spans
 
 Status: normative module of the [Markdown Core dialect](../dialect.md).
-Option: `bracketedSpans` (default `false`). Source: Pandoc's
-`bracketed_spans`. Executable oracle: the Pandoc 3.11 CLI under
-`specs/oracles/pandoc/`. Landing: `P5`. Every example in this module runs
-with `bracketedSpans` on unless its fence says otherwise; the
+Source: Pandoc's `bracketed_spans`. Executable oracle: the Pandoc 3.11 CLI
+under `specs/oracles/pandoc/`. Landing: `P5`. The
 [example format](../dialect.md#examples) is defined by the index.
 
 ## Model and syntax
@@ -19,7 +17,7 @@ Span(content: [Markup])
 attribute container populates the universal `anchor` and `attributes` fields
 under the [attributes](attributes.md) module:
 
-```````````````````````````````` example bracketed_spans
+```````````````````````````````` example
 [text]{.class} [x]{#id .c k="v"}
 .
 Document scope=1:1..1:32 anchor=null attributes={} children=1
@@ -34,7 +32,7 @@ Document scope=1:1..1:32 anchor=null attributes={} children=1
 `{}` yields a `Span` with `anchor=null` and `Attributes.empty`, and the
 content may be empty:
 
-```````````````````````````````` example bracketed_spans
+```````````````````````````````` example
 []{}
 .
 Document scope=1:1..1:4 anchor=null attributes={} children=1
@@ -51,7 +49,7 @@ scanner: escaped brackets and brackets owned by code or by a completed inline
 construct do not close the span, and the body follows the shared inline
 rules:
 
-```````````````````````````````` example bracketed_spans
+```````````````````````````````` example
 [*a* b]{.c} [a [b] c]{.c}
 .
 Document scope=1:1..1:25 anchor=null attributes={} children=1
@@ -68,7 +66,7 @@ Document scope=1:1..1:25 anchor=null attributes={} children=1
 `[text]{.key}` is a `Span`, not a shortcut reference, even when a definition
 `text` exists:
 
-```````````````````````````````` example bracketed_spans
+```````````````````````````````` example
 [text]{.key}
 
 [text]: /u
@@ -80,28 +78,27 @@ Document scope=1:1..3:10 anchor=null attributes={} children=1
 ````````````````````````````````
 
 A direct tail and a resolving full or collapsed reference tail are tested
-first, so a container after such a link is text unless `linkAttributes`
-attaches it:
+first, so a container after such a link attaches to the link under the
+[attributes](attributes.md) module and makes no span:
 
-```````````````````````````````` example bracketed_spans
+```````````````````````````````` example
 [text](/u){.c} [text][r]{.c}
 
 [r]: /r
 .
 Document scope=1:1..3:7 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:28 anchor=null attributes={} children=4
-    ├── Link scope=1:1..1:10 anchor=null attributes={} dest=url("/u") title=null children=1
+└── Paragraph scope=1:1..1:28 anchor=null attributes={} children=3
+    ├── Link scope=1:1..1:14 anchor=null attributes={.c} dest=url("/u") title=null children=1
     │   └── Text scope=1:2..1:5 anchor=null attributes={} literal="text" children=0
-    ├── Text scope=1:11..1:15 anchor=null attributes={} literal="{.c} " children=0
-    ├── Link scope=1:16..1:24 anchor=null attributes={} dest=url("/r") title=null children=1
-    │   └── Text scope=1:17..1:20 anchor=null attributes={} literal="text" children=0
-    └── Text scope=1:25..1:28 anchor=null attributes={} literal="{.c}" children=0
+    ├── Text scope=1:15..1:15 anchor=null attributes={} literal=" " children=0
+    └── Link scope=1:16..1:28 anchor=null attributes={.c} dest=url("/r") title=null children=1
+        └── Text scope=1:17..1:20 anchor=null attributes={} literal="text" children=0
 ````````````````````````````````
 
 Because a `Span` is not a link, complete links may occur inside it, each
 subject to its own no-link-inside-link restriction:
 
-```````````````````````````````` example bracketed_spans
+```````````````````````````````` example
 [see [a](/u) here]{.c}
 .
 Document scope=1:1..1:22 anchor=null attributes={} children=1
@@ -117,7 +114,7 @@ Document scope=1:1..1:22 anchor=null attributes={} children=1
 [citations](citations.md) module shows it. A cross link is complete at its
 `]]`, so `[[wiki]]{.x}` is a cross link followed by text:
 
-```````````````````````````````` example bracketed_spans cross_links
+```````````````````````````````` example
 [[wiki]]{.x}
 .
 Document scope=1:1..1:12 anchor=null attributes={} children=1
@@ -129,7 +126,7 @@ Document scope=1:1..1:12 anchor=null attributes={} children=1
 A text directive's label is claimed by the directive scanner before this
 procedure, and a `Span` may occur inside such a label:
 
-```````````````````````````````` example bracketed_spans
+```````````````````````````````` example
 :a[[x]{.c}]
 .
 Document scope=1:1..1:11 anchor=null attributes={} children=1
@@ -147,23 +144,12 @@ the bracket pair: the cite, shortcut, and literal alternatives then apply to
 the same pair and the `{` is text. Whitespace between `]` and `{` prevents
 attachment. No partial `Span` is emitted:
 
-```````````````````````````````` example bracketed_spans
+```````````````````````````````` example
 [text]{.c [text] {.c} [text]{.1}
 .
 Document scope=1:1..1:32 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..1:32 anchor=null attributes={} children=1
     └── Text scope=1:1..1:32 anchor=null attributes={} literal="[text]{.c [text] {.c} [text]{.1}" children=0
-````````````````````````````````
-
-With `bracketedSpans=false`, `[text]{.x}` follows the inherited alternatives
-and the container is literal text:
-
-```````````````````````````````` example
-[text]{.c}
-.
-Document scope=1:1..1:10 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:10 anchor=null attributes={} children=1
-    └── Text scope=1:1..1:10 anchor=null attributes={} literal="[text]{.c}" children=0
 ````````````````````````````````
 
 Code spans, comments, HTML tokens, formulas, and cross links are opaque;

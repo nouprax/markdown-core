@@ -1,16 +1,12 @@
 # Tables
 
 Status: normative module of the [Markdown Core dialect](../dialect.md). It
-owns the one table model and every table syntax. Options: `tables` (default
-`true`) for pipe tables; `tableCaptions`, `simpleTables`, `multilineTables`,
-and `gridTables` (each default `false`), every one independent of the others.
-Sources: cmark-gfm's table extension; Pandoc's `table_captions`,
+owns the one table model and every table syntax. Sources: cmark-gfm's table extension; Pandoc's `table_captions`,
 `simple_tables`, `multiline_tables`, and `grid_tables`. Executable oracles:
 cmark-gfm for pipe tables; the Pandoc 3.11 CLI for the other forms. Landing:
 the model with `M6`; captions with `P11a`; simple, multiline, and grid tables
 with `P11b`, `P11c`, and `P11d`. Until `M6` the current contract's `Table`,
-`TableRow`, and `TableCell` stand. Each example in this module names the
-options it adds to the product defaults; the
+`TableRow`, and `TableCell` stand. The
 [example format](../dialect.md#examples) is defined by the index.
 
 ## Model
@@ -99,7 +95,7 @@ syntax's fallback; the parser never emits a table that needs repair.
 
 ## Pipe tables
 
-With `tables=true`, block-start step 10 opens a pipe table when the current
+Block-start step 10 opens a pipe table when the current
 line is a delimiter row and a paragraph is open:
 
 ```text
@@ -228,7 +224,7 @@ Document scope=1:1..5:5 anchor=null attributes={} children=3
 │   │       └── TableCell scope=3:2..3:4 anchor=null attributes={} rowspan=1 colspan=1 children=1
 │   │           └── Text scope=3:3..3:3 anchor=null attributes={} literal="b" children=0
 │   └── TableFoot children=0
-├── Heading scope=4:1..4:3 anchor=null attributes={} level=1 children=1
+├── Heading scope=4:1..4:3 anchor="h" attributes={} level=1 children=1
 │   └── Text scope=4:3..4:3 anchor=null attributes={} literal="h" children=0
 └── Paragraph scope=5:1..5:5 anchor=null attributes={} children=1
     └── Text scope=5:1..5:5 anchor=null attributes={} literal="| c |" children=0
@@ -265,26 +261,11 @@ A pipe table produces `columns` with the delimiter row's alignments and
 rows, `foot=[]`, and cells with both spans equal to one. A table whose
 synthesized empty cells number more than 524288 accepts no further rows,
 and a row holds at most 65535 cells: a header or delimiter row with more is
-not a table, and a body row with more ends the table before it. With
-`tables=false`, the lines are paragraph text:
-
-```````````````````````````````` example !tables
-| a |
-| - |
-| b |
-.
-Document scope=1:1..3:5 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..3:5 anchor=null attributes={} children=5
-    ├── Text scope=1:1..1:5 anchor=null attributes={} literal="| a |" children=0
-    ├── SoftBreak scope=1:6..1:6 anchor=null attributes={} children=0
-    ├── Text scope=2:1..2:5 anchor=null attributes={} literal="| - |" children=0
-    ├── SoftBreak scope=2:6..2:6 anchor=null attributes={} children=0
-    └── Text scope=3:1..3:5 anchor=null attributes={} literal="| b |" children=0
-````````````````````````````````
+not a table, and a body row with more ends the table before it.
 
 ## Captions
 
-With `tableCaptions=true`, a caption line is:
+A caption line is:
 
 ```text
 caption-line = *3SP ( "Table:" / "table:" / ":" ) rest
@@ -297,7 +278,7 @@ content after removing the marker and the whitespace after it. A caption
 paragraph is claimed by a table of any syntax that it precedes or follows
 with zero or more blank lines and nothing else between:
 
-```````````````````````````````` example table_captions
+```````````````````````````````` example
 Table: Demo caption
 
 | a |
@@ -319,7 +300,7 @@ Document scope=1:1..5:5 anchor=null attributes={} children=1
     └── TableFoot children=0
 ````````````````````````````````
 
-```````````````````````````````` example table_captions
+```````````````````````````````` example
 | a |
 | - |
 | b |
@@ -346,7 +327,7 @@ table, the preceding caption owns it and the following paragraph stays a
 paragraph; a caption paragraph between two tables belongs to the preceding
 one. Placement is not stored:
 
-```````````````````````````````` example table_captions
+```````````````````````````````` example
 table: first
 second
 
@@ -380,36 +361,12 @@ with the table after it; when no table follows, its bytes are released to
 paragraph parsing. A following caption is claimed after the table is
 complete:
 
-```````````````````````````````` example table_captions
+```````````````````````````````` example
 Table: no table here
 .
 Document scope=1:1..1:20 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..1:20 anchor=null attributes={} children=1
     └── Text scope=1:1..1:20 anchor=null attributes={} literal="Table: no table here" children=0
-````````````````````````````````
-
-With the option off, no paragraph is claimed:
-
-```````````````````````````````` example
-Table: x
-
-| a |
-| - |
-| b |
-.
-Document scope=1:1..5:5 anchor=null attributes={} children=2
-├── Paragraph scope=1:1..1:8 anchor=null attributes={} children=1
-│   └── Text scope=1:1..1:8 anchor=null attributes={} literal="Table: x" children=0
-└── Table scope=3:1..5:5 anchor=null attributes={} columns=[none:null] children=2
-    ├── TableHead children=1
-    │   └── TableRow scope=3:1..3:5 anchor=null attributes={} children=1
-    │       └── TableCell scope=3:2..3:4 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │           └── Text scope=3:3..3:3 anchor=null attributes={} literal="a" children=0
-    ├── TableBody children=1
-    │   └── TableRow scope=5:1..5:5 anchor=null attributes={} children=1
-    │       └── TableCell scope=5:2..5:4 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │           └── Text scope=5:3..5:3 anchor=null attributes={} literal="b" children=0
-    └── TableFoot children=0
 ````````````````````````````````
 
 A caption line is tested before the definition-list step, as the
@@ -425,7 +382,7 @@ syntax; the dump prints a double as the shortest decimal that round-trips.
 
 ## Simple tables
 
-With `simpleTables=true`:
+A simple table is recognized by this grammar:
 
 ```text
 separator = *3SP dash-run *( 1*SP dash-run ) *SP EOL
@@ -448,7 +405,7 @@ mean its length is less than the dash run's; `(true, false)` is `right`,
 or an empty segment is `none`. `relative` is `null` for every column, and
 every span is one:
 
-```````````````````````````````` example simple_tables
+```````````````````````````````` example
   Right Left     Center   Default
 ------  ------  --------  -------
     12  12          12    12
@@ -492,7 +449,7 @@ The header may be omitted when a footer closes the table; then `head=[]`,
 and column boundaries and alignment are inferred from the separator runs and
 the first body line:
 
-```````````````````````````````` example simple_tables
+```````````````````````````````` example
 ----  ----
 a     b
 c     d
@@ -520,7 +477,7 @@ separator, the line before it is not the first line of the paragraph
 candidate, so there is no table: the lines stay a paragraph, and the dash
 line, completing no candidate, is a thematic break:
 
-```````````````````````````````` example simple_tables
+```````````````````````````````` example
 Right   Left
 More    Lines
 -----   -----
@@ -538,7 +495,7 @@ Document scope=1:1..4:10 anchor=null attributes={} children=3
 
 ## Multiline tables
 
-With `multilineTables=true`:
+A multiline table is recognized by this grammar:
 
 ```text
 full-boundary = *3SP 3*"-" *SP EOL
@@ -558,7 +515,7 @@ as a block sequence. `w[i]` is the scalar count from the start of dash run
 `i` to the start of run `i+1`, the last run being its own length. Alignment
 follows the simple-table rule, and every span is one:
 
-```````````````````````````````` example multiline_tables
+```````````````````````````````` example
 ----------------
 Left       Right
 ------- --------
@@ -598,7 +555,7 @@ Document scope=1:1..8:16 anchor=null attributes={} children=1
 
 ## Grid tables
 
-With `gridTables=true`, a grid table's lines begin and end with `|` or `+` at
+A grid table's lines begin and end with `|` or `+` at
 the table margin, and the column boundary set is the union of the `+`
 positions on every horizontal boundary line; every `+` and `|` must sit at a
 boundary position or the candidate fails. Between adjacent boundary positions
@@ -616,7 +573,7 @@ separator only its colons select alignment; without one the top line's do,
 and colons elsewhere are ignored. `w[i]` is the scalar count strictly between
 the column's boundary positions:
 
-```````````````````````````````` example grid_tables
+```````````````````````````````` example
 +---+---+
 | a | b |
 +===+===+
@@ -649,7 +606,7 @@ and every enabled block. A logical row begins at every line on which a cell
 is anchored, and a cell that spans down is owned by the row of its anchor
 line, and its scope extends below that row's last line:
 
-```````````````````````````````` example grid_tables
+```````````````````````````````` example
 +-------+-------+
 | first | - i   |
 | again +-------+
@@ -692,7 +649,7 @@ and grid candidates commit only after a valid opening structure establishes a
 rectangular grid, and a malformed or nonrectangular candidate restarts
 inherited block parsing at its first line with no partial table. Code and
 other opaque blocks suppress recognition. A `\|` inside a cell of any syntax
-follows the [cross links](cross-links.md) rule while `crossLinks` is on, and
+follows the [cross links](cross-links.md) rule, and
 the [comments](comments.md) rule states how comments interact with cell
 boundaries.
 
@@ -729,5 +686,4 @@ for multiline tables, headerless forms and the one-row rule; for grid
 tables, multi-row heads, interleaved active spans, fully covered rows,
 alignment, foot, and rejection of overlap, overrun, uncovered coordinates,
 cross-group spans, and stray `=` lines; and for all, exact table, caption,
-row, and cell scopes, each option independently on and off, allocation
-failure, deep nested cells, and size-doubling rows, columns, and boundaries.
+row, and cell scopes, allocation failure, deep nested cells, and size-doubling rows, columns, and boundaries.

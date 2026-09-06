@@ -1,16 +1,14 @@
 # Anchors
 
 Status: normative module of the [Markdown Core dialect](../dialect.md). It
-owns the universal `Markup.anchor` field, the document anchor registry, and
-two options: `autoAnchors` and `implicitHeadingReferences` (each default
-`false`). Sources: Pandoc's attribute identifiers, `auto_identifiers` with
-`gfm_auto_identifiers`, and `implicit_header_references`; Obsidian's block
-identifiers populate the same field under the
-[block identifiers](block-identifiers.md) module. Executable oracle: the
-Pandoc 3.11 CLI under `specs/oracles/pandoc/`. Landing: the field with `M7`,
-`autoAnchors` with `P3`, `implicitHeadingReferences` with `P4`. Each example
-in this module names the options it runs with; the
-[example format](../dialect.md#examples) is defined by the index.
+owns the universal `Markup.anchor` field, the document anchor registry,
+automatic heading anchors, and implicit heading references. Sources: Pandoc's
+attribute identifiers, `auto_identifiers` with `gfm_auto_identifiers`, and
+`implicit_header_references`; Obsidian's block identifiers populate the same
+field under the [block identifiers](block-identifiers.md) module. Executable
+oracle: the Pandoc 3.11 CLI under `specs/oracles/pandoc/`. Landing: the field
+with `M7`, automatic anchors with `P3`, implicit heading references with `P4`.
+The [example format](../dialect.md#examples) is defined by the index.
 
 ## Model
 
@@ -40,14 +38,19 @@ footnote call declare nothing by referring to something.
 reference spellings that a consumer may match against a node whose `anchor ==
 "foo"`; matching is downstream and never mutates the AST.
 
-With no anchor-producing option on, `anchor` is `null` on every node:
+`anchor` is `null` on every node that no rule populates. A heading always
+receives one, from an explicit identifier or from synthesis:
 
 ```````````````````````````````` example
 # My Header
+
+A paragraph.
 .
-Document scope=1:1..1:11 anchor=null attributes={} children=1
-└── Heading scope=1:1..1:11 anchor=null attributes={} level=1 children=1
-    └── Text scope=1:3..1:11 anchor=null attributes={} literal="My Header" children=0
+Document scope=1:1..3:12 anchor=null attributes={} children=2
+├── Heading scope=1:1..1:11 anchor="my-header" attributes={} level=1 children=1
+│   └── Text scope=1:3..1:11 anchor=null attributes={} literal="My Header" children=0
+└── Paragraph scope=3:1..3:12 anchor=null attributes={} children=1
+    └── Text scope=3:1..3:12 anchor=null attributes={} literal="A paragraph." children=0
 ````````````````````````````````
 
 ## Population and precedence
@@ -55,9 +58,9 @@ Document scope=1:1..1:11 anchor=null attributes={} children=1
 Only these rules populate `anchor`:
 
 - the attribute grammar's identifier at every attachment site of the
-  [attributes](attributes.md) module, under that site's option;
-- automatic heading anchors under `autoAnchors`; and
-- block identifiers under `blockIdentifiers`.
+  [attributes](attributes.md) module;
+- automatic heading anchors; and
+- block identifiers.
 
 One node has at most one final anchor:
 
@@ -80,8 +83,8 @@ Synthesis runs once, after block and inline parsing of the whole document has
 completed, over every node reachable from `Document.content` and
 `Document.footnotes`:
 
-1. Reserve the final anchor of every emitted node that an enabled option
-   populated explicitly. An anchor stored on a reference definition is reserved
+1. Reserve the final anchor of every emitted node that a rule other than
+   synthesis populated explicitly. An anchor stored on a reference definition is reserved
    by the occurrences that inherit it, not by the definition; an unreferenced
    definition reserves nothing.
 2. Visit headings in ascending order of `Heading.scope.start`. For each heading
@@ -89,7 +92,7 @@ completed, over every node reachable from `Document.content` and
    base if it is not registered, otherwise to `base-N` for the smallest `N` of
    at least 1 such that `base-N` is not registered. Register the result.
 
-```````````````````````````````` example auto_anchors
+```````````````````````````````` example
 # My Header
 
 ## My Header
@@ -104,7 +107,7 @@ Document scope=1:1..3:12 anchor=null attributes={} children=2
 An explicit anchor is reserved before synthesis, so a later automatic base
 that collides with it is suffixed:
 
-```````````````````````````````` example auto_anchors heading_attributes
+```````````````````````````````` example
 # T {#x}
 
 # x
@@ -121,8 +124,7 @@ is the authored heading range.
 
 ### Automatic anchor algorithm
 
-With `autoAnchors=true`, the base of a heading is derived from its parsed
-inline content:
+The base of a heading is derived from its parsed inline content:
 
 1. Project the content to plain text: `Text` and `Code` contribute `literal`;
    `Emphasis`, `Strong`, `Strikethrough`, `Span`, `Superscript`, `Subscript`,
@@ -145,7 +147,7 @@ Punctuation removal inserts nothing, so `A.B` becomes `ab`. There is no
 emoji step: `:tada:` keeps `tada` and loses its colons. Leading digits are
 kept, and each interior whitespace scalar becomes its own hyphen:
 
-```````````````````````````````` example auto_anchors
+```````````````````````````````` example
 # Hello, World!
 
 # 1. Intro
@@ -156,7 +158,7 @@ kept, and each interior whitespace scalar becomes its own hyphen:
 
 # *Em* and `code`
 
-# ---
+# !!!
 
 # Ünïcode Ĝ
 
@@ -177,7 +179,7 @@ Document scope=1:1..15:18 anchor=null attributes={} children=8
 │   ├── Text scope=9:7..9:11 anchor=null attributes={} literal=" and " children=0
 │   └── Code scope=9:12..9:17 anchor=null attributes={} literal="code" children=0
 ├── Heading scope=11:1..11:5 anchor="section" attributes={} level=1 children=1
-│   └── Text scope=11:3..11:5 anchor=null attributes={} literal="—" children=0
+│   └── Text scope=11:3..11:5 anchor=null attributes={} literal="!!!" children=0
 ├── Heading scope=13:1..13:14 anchor="ünïcode-ĝ" attributes={} level=1 children=1
 │   └── Text scope=13:3..13:14 anchor=null attributes={} literal="Ünïcode Ĝ" children=0
 └── Heading scope=15:1..15:18 anchor="spaced---words" attributes={} level=1 children=1
@@ -186,8 +188,8 @@ Document scope=1:1..15:18 anchor=null attributes={} children=8
 
 ## Implicit heading references
 
-With `implicitHeadingReferences=true`, every heading with a non-null final
-anchor contributes a virtual reference definition. Its label source is the
+Every heading with a non-null final anchor contributes a virtual reference
+definition. Its label source is the
 authored heading text after removing the ATX or Setext heading syntax, the
 optional ATX closing sequence, and a trailing attribute container, normalized
 by the inherited reference-label normalization. The virtual definition
@@ -197,7 +199,7 @@ all resolve to an ordinary `Link` through the resolver of the
 [links and images](links-and-images.md) module, in the same order-independent
 document finalization that resolves example labels:
 
-```````````````````````````````` example auto_anchors implicit_heading_references
+```````````````````````````````` example
 # First chapter
 
 [First chapter] [First chapter][] [go there][First chapter]
@@ -219,7 +221,7 @@ Document scope=1:1..3:59 anchor=null attributes={} children=2
 An explicit reference definition with the same normalized label always wins
 over the virtual one:
 
-```````````````````````````````` example auto_anchors implicit_heading_references
+```````````````````````````````` example
 # First chapter
 
 [First chapter]
@@ -237,7 +239,7 @@ Document scope=1:1..5:26 anchor=null attributes={} children=2
 Inline markup remains part of the label, so `# *Foo*` is referenced by
 `[*Foo*]`, not `[Foo]`; an unresolved candidate keeps the inherited fallback:
 
-```````````````````````````````` example auto_anchors implicit_heading_references
+```````````````````````````````` example
 # *Foo*
 
 [*Foo*] [Foo]
@@ -256,7 +258,7 @@ Document scope=1:1..3:13 anchor=null attributes={} children=2
 When several headings have the same normalized label, the virtual definition
 targets the first in source order:
 
-```````````````````````````````` example auto_anchors implicit_heading_references
+```````````````````````````````` example
 # Dup
 
 # Dup
@@ -275,27 +277,10 @@ Document scope=1:1..5:5 anchor=null attributes={} children=3
 
 A heading whose label cannot be written as a reference label, such as one
 containing an unescaped `]`, contributes no definition. Attributes authored
-at the occurrence follow the `linkAttributes` rule.
+at the occurrence follow the link rule of the [attributes](attributes.md)
+module.
 
-## Option behavior
-
-With `autoAnchors=false`, no heading anchor is synthesized. With
-`implicitHeadingReferences=false`, no virtual definition exists. The two
-options are independent, but a virtual definition can only exist for a
-heading that received an anchor from some rule, so `implicitHeadingReferences`
-alone changes nothing for a heading without an anchor:
-
-```````````````````````````````` example implicit_heading_references
-# T
-
-[T]
-.
-Document scope=1:1..3:3 anchor=null attributes={} children=2
-├── Heading scope=1:1..1:3 anchor=null attributes={} level=1 children=1
-│   └── Text scope=1:3..1:3 anchor=null attributes={} literal="T" children=0
-└── Paragraph scope=3:1..3:3 anchor=null attributes={} children=1
-    └── Text scope=3:1..3:3 anchor=null attributes={} literal="[T]" children=0
-````````````````````````````````
+## Cross links and anchors
 
 Cross links spell a heading target as written: `[[#My Header]]` stores
 `anchor="My Header"`, and the automatic anchor of that heading is
@@ -303,7 +288,7 @@ Cross links spell a heading target as written: `[[#My Header]]` stores
 decide for the consumer; matching the two values is consumer policy, as the
 [conflicts](conflicts.md) register records:
 
-```````````````````````````````` example auto_anchors cross_links
+```````````````````````````````` example
 # My Header
 
 [[#My Header]]
@@ -333,8 +318,6 @@ block identifiers; identical values from different rules; last-identifier,
 clearing, and occurrence-over-definition precedence; every kind of the
 projection table inside a heading, `Formula`, `HTML`, `Comment`, `Image`,
 line breaks, and directive labels included; combining marks and connectors;
-reservation of every explicit anchor from every enabled option before
-synthesis, including an anchor on an unreferenced definition reserving
+reservation of every explicit anchor from every rule before synthesis, including an anchor on an unreferenced definition reserving
 nothing; headings inside footnotes; explicit and generated duplicates;
-occurrence attributes; exact scopes; both options independently on and off;
-allocation failure; and large duplicate heading sets.
+occurrence attributes; exact scopes; allocation failure; and large duplicate heading sets.

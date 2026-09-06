@@ -1,11 +1,9 @@
 # Block identifiers
 
 Status: normative module of the [Markdown Core dialect](../dialect.md).
-Option: `blockIdentifiers` (default `false`). Source: Obsidian's block
-identifiers. Executable oracle: none; the Obsidian package does not parse
-them, so product fixtures are the oracle of record. Landing: `O7`. Every
-example in this module runs with `blockIdentifiers` on unless its fence says
-otherwise; the [example format](../dialect.md#examples) is defined by the
+Source: Obsidian's block identifiers. Executable oracle: none; the Obsidian
+package does not parse them, so product fixtures are the oracle of record.
+Landing: `O7`. The [example format](../dialect.md#examples) is defined by the
 index.
 
 ## Model
@@ -39,7 +37,7 @@ tabs. The removed bytes are the identifier, its caret, and the preceding
 whitespace, a tab included; the paragraph's scope still covers them, and the
 child scopes end before them:
 
-```````````````````````````````` example block_identifiers
+```````````````````````````````` example
 Some text ^abc
 
 Tabbed	^t1
@@ -56,7 +54,7 @@ indentation zero to three while the paragraph has an earlier line; then the
 preceding line ending is removed too, so no `SoftBreak` precedes the
 identifier:
 
-```````````````````````````````` example block_identifiers
+```````````````````````````````` example
 text
 ^abc
 .
@@ -65,7 +63,7 @@ Document scope=1:1..2:4 anchor=null attributes={} children=1
     └── Text scope=1:1..1:4 anchor=null attributes={} literal="text" children=0
 ````````````````````````````````
 
-```````````````````````````````` example block_identifiers
+```````````````````````````````` example
 first
 second
 ^id
@@ -92,7 +90,7 @@ are direct content of the same container; for nested lists the owner is the
 outermost list at that level. The line produces no node, and the owner's
 scope extends over it:
 
-```````````````````````````````` example block_identifiers
+```````````````````````````````` example
 - a
 - b
 
@@ -112,7 +110,7 @@ Document scope=1:1..6:4 anchor=null attributes={} children=2
     └── Text scope=6:1..6:4 anchor=null attributes={} literal="next" children=0
 ````````````````````````````````
 
-```````````````````````````````` example block_identifiers
+```````````````````````````````` example
 > quote
 
 ^q
@@ -142,7 +140,7 @@ Document scope=1:1..9:4 anchor=null attributes={} children=2
 When a table owns a following caption, the identifier line after the caption
 attaches to the `Table`. Otherwise the line is a paragraph:
 
-```````````````````````````````` example block_identifiers
+```````````````````````````````` example
 ^abc
 
 ^def
@@ -161,7 +159,7 @@ marker line, the identifier attaches to the `ListItem` and the `Paragraph`
 keeps `anchor=null`; otherwise the paragraph suffix rule applies to the
 paragraph that owns the final line:
 
-```````````````````````````````` example block_identifiers
+```````````````````````````````` example
 - item ^id
 - second
   more ^p
@@ -184,14 +182,14 @@ still `null` when finalization reaches it; otherwise its bytes are ordinary
 content. The owner's `anchor` receives the identifier value; the consumer
 value is indistinguishable from the same anchor produced by another rule.
 
-## Option behavior and fallback
+## Fallback
 
-With the option on, a caret without a valid non-empty identifier is text,
+A caret without a valid non-empty identifier is text,
 missing separation makes the candidate text, an escaped caret is text, and
 trailing non-space bytes after an identifier make the candidate ordinary
 content:
 
-```````````````````````````````` example block_identifiers
+```````````````````````````````` example
 text ^a_b text ^ text^abc
 
 text \^abc
@@ -210,7 +208,7 @@ Document scope=1:1..5:15 anchor=null attributes={} children=3
 Only the final candidate of a line is tested, so an earlier caret on the
 same line is text:
 
-```````````````````````````````` example block_identifiers
+```````````````````````````````` example
 text ^a ^b
 .
 Document scope=1:1..1:10 anchor=null attributes={} children=1
@@ -221,23 +219,13 @@ Document scope=1:1..1:10 anchor=null attributes={} children=1
 Identifier-like bytes inside code, an HTML block, a comment, or a cross link
 are those constructs' bytes:
 
-```````````````````````````````` example block_identifiers
+```````````````````````````````` example
 ```
 x ^id
 ```
 .
 Document scope=1:1..3:3 anchor=null attributes={} children=1
 └── CodeBlock scope=1:1..3:3 anchor=null attributes={} info=null language=null literal="x ^id\n" fenced=true closed=true children=0
-````````````````````````````````
-
-With `blockIdentifiers=false`, every candidate is ordinary content:
-
-```````````````````````````````` example
-text ^abc
-.
-Document scope=1:1..1:9 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:9 anchor=null attributes={} children=1
-    └── Text scope=1:1..1:9 anchor=null attributes={} literal="text ^abc" children=0
 ````````````````````````````````
 
 ## Scopes

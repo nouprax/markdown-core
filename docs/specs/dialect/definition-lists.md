@@ -1,11 +1,9 @@
 # Definition lists
 
 Status: normative module of the [Markdown Core dialect](../dialect.md).
-Option: `definitionLists` (default `false`). Source: Pandoc's
-`definition_lists`, including its compact form. Executable oracle: the Pandoc
-3.11 CLI under `specs/oracles/pandoc/`. Landing: `P10`. Every example in this
-module runs with `definitionLists` on unless its fence says otherwise; the
-[example format](../dialect.md#examples) is defined by the index.
+Source: Pandoc's `definition_lists`, including its compact form. Executable
+oracle: the Pandoc 3.11 CLI under `specs/oracles/pandoc/`. Landing: `P10`.
+The [example format](../dialect.md#examples) is defined by the index.
 
 ## Model
 
@@ -26,7 +24,7 @@ term's several bodies. In the canonical dump the term prints as a
 value for all of that term's bodies, and paragraphs inside bodies are
 ordinary `Paragraph` nodes.
 
-```````````````````````````````` example definition_lists
+```````````````````````````````` example
 Term
 : definition
 .
@@ -40,7 +38,7 @@ Document scope=1:1..2:12 anchor=null attributes={} children=1
                 └── Text scope=2:3..2:12 anchor=null attributes={} literal="definition" children=0
 ````````````````````````````````
 
-```````````````````````````````` example definition_lists
+```````````````````````````````` example
 Term
 
 : definition
@@ -77,7 +75,7 @@ definition-separator = 1*BLANK
 A term may have several bodies, and a blank line is required before a new
 term:
 
-```````````````````````````````` example definition_lists
+```````````````````````````````` example
 T1
 : one
 : two
@@ -111,7 +109,7 @@ more remaining columns begin the body and may produce an indented code block.
 Tabs are expanded before this decision. A marker followed only by whitespace
 is the marker-only form, whose first content comes from a continuation:
 
-```````````````````````````````` example definition_lists
+```````````````````````````````` example
 Term
 ~
     body
@@ -135,7 +133,7 @@ trailing whitespace removed; a trailing backslash or trailing spaces produce
 no `LineBreak`. `term-gap` permits at most one blank line and sets
 `compact`: absent gives `true`, present gives `false`.
 
-```````````````````````````````` example definition_lists
+```````````````````````````````` example
 *Term* `code`
 : d
 .
@@ -158,10 +156,9 @@ At block-start step 13, after every other enabled block start has declined
 the line and before paragraph fallback, the parser performs non-consuming
 lookahead for one term line, its optional gap, and one valid marker line, and
 commits only after that whole prefix succeeds. A complete table candidate
-has precedence, and during lookahead the candidate fails when `tableCaptions`
-and at least one table option are on and the candidate marker line is a
-caption line whose paragraph is followed by blank lines and a line that
-opens an enabled table syntax; only the blank-gap form is affected.
+has precedence, and during lookahead the candidate fails when the candidate
+marker line is a caption line whose paragraph is followed by blank lines and
+a line that opens a table syntax; only the blank-gap form is affected.
 
 After commitment:
 
@@ -184,7 +181,7 @@ After commitment:
 
 A body holds arbitrary block content:
 
-```````````````````````````````` example definition_lists
+```````````````````````````````` example
 Term
 : first
 
@@ -205,7 +202,7 @@ Document scope=1:1..4:8 anchor=null attributes={} children=1
 An indented marker inside a body, preceded by an admissible term line of the
 body, forms a nested definition list:
 
-```````````````````````````````` example definition_lists
+```````````````````````````````` example
 T
 : inner
   : d
@@ -228,7 +225,7 @@ Document scope=1:1..3:5 anchor=null attributes={} children=1
 Lazy continuation applies in compact and loose definitions alike, and a lazy
 line is never re-examined as a term:
 
-```````````````````````````````` example definition_lists
+```````````````````````````````` example
 Term1
 : d1
 Term2
@@ -255,7 +252,7 @@ the block parser decides its owner. A definition list cannot interrupt a
 paragraph: a marker line after a paragraph line that is not the candidate term
 is paragraph text, while a term after a blank line opens a list:
 
-```````````````````````````````` example definition_lists
+```````````````````````````````` example
 para
 more
 : x
@@ -283,14 +280,14 @@ Document scope=1:1..8:3 anchor=null attributes={} children=3
                 └── Text scope=8:3..8:3 anchor=null attributes={} literal="x" children=0
 ````````````````````````````````
 
-## Option behavior and fallback
+## Fallback
 
-With the option on, a marker without a preceding admissible term, without
+A marker without a preceding admissible term, without
 the required padding column or immediate line ending, or with invalid
 indentation creates no list, and a term with no complete first body stays
 available to the paragraph parser:
 
-```````````````````````````````` example definition_lists
+```````````````````````````````` example
 Term
 :x
 .
@@ -299,20 +296,6 @@ Document scope=1:1..2:2 anchor=null attributes={} children=1
     ├── Text scope=1:1..1:4 anchor=null attributes={} literal="Term" children=0
     ├── SoftBreak scope=1:5..1:5 anchor=null attributes={} children=0
     └── Text scope=2:1..2:2 anchor=null attributes={} literal=":x" children=0
-````````````````````````````````
-
-With `definitionLists=false`, every line above is paragraph text under the
-inherited grammar:
-
-```````````````````````````````` example
-Term
-: definition
-.
-Document scope=1:1..2:12 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..2:12 anchor=null attributes={} children=3
-    ├── Text scope=1:1..1:4 anchor=null attributes={} literal="Term" children=0
-    ├── SoftBreak scope=1:5..1:5 anchor=null attributes={} children=0
-    └── Text scope=2:1..2:12 anchor=null attributes={} literal=": definition" children=0
 ````````````````````````````````
 
 After commitment an invalid later marker ends the body or list under the

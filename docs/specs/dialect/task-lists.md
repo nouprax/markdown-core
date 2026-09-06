@@ -1,13 +1,11 @@
 # Task lists
 
 Status: normative module of the [Markdown Core dialect](../dialect.md).
-Options: `taskLists` (default `true`) and `taskMarkers` (default `false`,
-effective only while `taskLists` is on). Sources: cmark-gfm's task-list
+Sources: cmark-gfm's task-list
 extension; Obsidian's custom task characters. Executable oracles: cmark-gfm
 for the inherited markers, `@quartz-community/remark-obsidian` for custom
 markers. Landing: the `marker` field with `M5`, custom markers with `O5`;
-until `M5` the current contract's `checked: Bool?` stands. Each example in
-this module names the options it adds to the product defaults; the
+until `M5` the current contract's `checked: Bool?` stands. The
 [example format](../dialect.md#examples) is defined by the index.
 
 ## Model
@@ -119,11 +117,10 @@ Document scope=1:1..1:9 anchor=null attributes={} children=1
                 └── Text scope=1:9..1:9 anchor=null attributes={} literal="a" children=0
 ````````````````````````````````
 
-With `taskMarkers=false`, `task-marker` is exactly one of a space, `x`, and
-`X`. With `taskMarkers=true`, `task-marker` is exactly one Unicode scalar of
-any value:
+`task-marker` is exactly one Unicode scalar of any value: a space, `x`, and
+`X` are the inherited markers, and every other scalar is a custom marker:
 
-```````````````````````````````` example task_markers
+```````````````````````````````` example
 - [?] a
 - [-] b
 - [✓] c
@@ -144,7 +141,7 @@ Document scope=1:1..3:9 anchor=null attributes={} children=1
 `[]` and `[ab]` are not task prefixes. The scanner decodes at most the
 candidate marker before rejecting a malformed prefix:
 
-```````````````````````````````` example task_markers
+```````````````````````````````` example
 - [] a
 - [ab] b
 .
@@ -158,33 +155,9 @@ Document scope=1:1..2:8 anchor=null attributes={} children=1
             └── Text scope=2:3..2:8 anchor=null attributes={} literal="[ab] b" children=0
 ````````````````````````````````
 
-## Option behavior and fallback
+## Fallback
 
-With `taskLists=false`, no task prefix is recognized whatever `taskMarkers`
-says, and the brackets are inline text:
-
-```````````````````````````````` example !task_lists
-- [x] a
-.
-Document scope=1:1..1:7 anchor=null attributes={} children=1
-└── List scope=1:1..1:7 anchor=null attributes={} flavor=bullet start=null style=null delimiter=null tight=true children=1
-    └── ListItem scope=1:1..1:7 anchor=null attributes={} marker=null exampleLabel=null children=1
-        └── Paragraph scope=1:3..1:7 anchor=null attributes={} children=1
-            └── Text scope=1:3..1:7 anchor=null attributes={} literal="[x] a" children=0
-````````````````````````````````
-
-```````````````````````````````` example task_markers !task_lists
-- [?] a
-.
-Document scope=1:1..1:7 anchor=null attributes={} children=1
-└── List scope=1:1..1:7 anchor=null attributes={} flavor=bullet start=null style=null delimiter=null tight=true children=1
-    └── ListItem scope=1:1..1:7 anchor=null attributes={} marker=null exampleLabel=null children=1
-        └── Paragraph scope=1:3..1:7 anchor=null attributes={} children=1
-            └── Text scope=1:3..1:7 anchor=null attributes={} literal="[?] a" children=0
-````````````````````````````````
-
-With `taskLists=true` and `taskMarkers=false`, the inherited rule stands
-byte for byte. A malformed prefix is inline text of the item's first block.
+A malformed prefix is inline text of the item's first block.
 Inline code and other opaque constructs cannot affect recognition, because
 the prefix is decided before inline parsing.
 

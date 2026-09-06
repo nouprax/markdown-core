@@ -1,12 +1,11 @@
 # Strikethrough
 
-Status: normative module of the [Markdown Core dialect](../dialect.md). Option:
-`strikethrough` (default `true`). Source: cmark-gfm's strikethrough extension.
-Executable oracle: cmark-gfm under `specs/oracles/cmark-gfm/`. Landing:
-partial; `P6` removes single-tilde strikethrough from the engine, as the
-[conflicts](conflicts.md) register's ruling C-1 requires. Every example in this
-module runs with the product defaults unless its fence says otherwise; the
-[example format](../dialect.md#examples) is defined by the index.
+Status: normative module of the [Markdown Core dialect](../dialect.md).
+Source: cmark-gfm's strikethrough extension. Executable oracle: cmark-gfm
+under `specs/oracles/cmark-gfm/`. Landing: partial; `P6` removes single-tilde
+strikethrough from the engine, as the [conflicts](conflicts.md) register's
+ruling C-1 requires. The [example format](../dialect.md#examples) is defined
+by the index.
 
 ## Model
 
@@ -25,16 +24,19 @@ one tilde is subscript syntax, owned by the
 [superscript and subscript](superscript-and-subscript.md) module, and is never
 a strikethrough delimiter; a run of three or more is text. A unit can open
 when it is left-flanking and close when it is right-flanking under the
-CommonMark definitions. With `subscript` off a single tilde is text:
+CommonMark definitions. A single tilde is subscript syntax and never a
+strikethrough delimiter:
 
 ```````````````````````````````` example
-~~struck~~ but not ~this~
+~~struck~~ and ~this~
 .
-Document scope=1:1..1:25 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:25 anchor=null attributes={} children=2
+Document scope=1:1..1:21 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:21 anchor=null attributes={} children=3
     ├── Strikethrough scope=1:1..1:10 anchor=null attributes={} children=1
     │   └── Text scope=1:3..1:8 anchor=null attributes={} literal="struck" children=0
-    └── Text scope=1:11..1:25 anchor=null attributes={} literal=" but not ~this~" children=0
+    ├── Text scope=1:11..1:15 anchor=null attributes={} literal=" and " children=0
+    └── Subscript scope=1:16..1:21 anchor=null attributes={} children=1
+        └── Text scope=1:17..1:20 anchor=null attributes={} literal="this" children=0
 ````````````````````````````````
 
 A closer matches the nearest unmatched opener; a single tilde never matches
@@ -45,7 +47,8 @@ a double one, and an unmatched unit is text:
 .
 Document scope=1:1..1:9 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..1:9 anchor=null attributes={} children=1
-    └── Text scope=1:1..1:9 anchor=null attributes={} literal="~~a~ ~a~~" children=0
+    └── Strikethrough scope=1:1..1:9 anchor=null attributes={} children=1
+        └── Text scope=1:3..1:7 anchor=null attributes={} literal="a~ ~a" children=0
 ````````````````````````````````
 
 A run of three or more tildes is text and delimits nothing; a line that
@@ -116,39 +119,25 @@ Document scope=1:1..1:15 anchor=null attributes={} children=1
     └── Formula scope=1:9..1:15 anchor=null attributes={} mode=embedded literal="~~b~~" children=0
 ````````````````````````````````
 
-## Interaction with `subscript`
+## Interaction with subscript
 
-A single tilde is subscript syntax whatever the options say: with
-`subscript` on it is a subscript delimiter, and with it off it is text. A
-run of two tildes is never subscript syntax: it is strikethrough when matched
-under the rules above and otherwise text, whatever `subscript` says.
-cmark-gfm's single-tilde
-strikethrough is a registered delta; the [conflicts](conflicts.md) register
-records the ruling, and the subscript module's examples show the result.
+A single tilde is a subscript delimiter of the
+[superscript and subscript](superscript-and-subscript.md) module and never a
+strikethrough delimiter. A run of two tildes is never subscript syntax: it is
+strikethrough when matched under the rules above and otherwise text, never
+two subscript units, so a single-tilde opener before an unmatched double run
+finds no closer in it. cmark-gfm's single-tilde strikethrough is a registered
+delta; the [conflicts](conflicts.md) register records the ruling:
 
-## Option behavior and fallback
-
-With `strikethrough=false`, `~~` is text; single tildes belong to `subscript`
-whatever this option says:
-
-```````````````````````````````` example !strikethrough
-~~a~~
-.
-Document scope=1:1..1:5 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:5 anchor=null attributes={} children=1
-    └── Text scope=1:1..1:5 anchor=null attributes={} literal="~~a~~" children=0
-````````````````````````````````
-
-With `subscript` on and `strikethrough` off, a double run is still text
-rather than two subscript units, so a single-tilde opener before it finds no
-closer in it, while a single-tilde pair elsewhere is a subscript:
-
-```````````````````````````````` example subscript !strikethrough
+```````````````````````````````` example
 ~a~~b ~~c~~ ~d~
 .
 Document scope=1:1..1:15 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:15 anchor=null attributes={} children=2
-    ├── Text scope=1:1..1:12 anchor=null attributes={} literal="~a~~b ~~c~~ " children=0
+└── Paragraph scope=1:1..1:15 anchor=null attributes={} children=4
+    ├── Text scope=1:1..1:6 anchor=null attributes={} literal="~a~~b " children=0
+    ├── Strikethrough scope=1:7..1:11 anchor=null attributes={} children=1
+    │   └── Text scope=1:9..1:9 anchor=null attributes={} literal="c" children=0
+    ├── Text scope=1:12..1:12 anchor=null attributes={} literal=" " children=0
     └── Subscript scope=1:13..1:15 anchor=null attributes={} children=1
         └── Text scope=1:14..1:14 anchor=null attributes={} literal="d" children=0
 ````````````````````````````````
@@ -163,5 +152,5 @@ Every example of this module is a package fixture; `P6` regenerates the
 single-tilde rows of the GFM corpus and the extension fixtures, and every other
 row remains byte-identical. Tests also cover tildes beside every other
 delimiter, HTML tokens, comments, and cross links as opaque contexts, exact
-scopes, every combination with `subscript`, allocation failure, and
+scopes, every combination with single tildes, allocation failure, and
 size-doubling tilde runs.

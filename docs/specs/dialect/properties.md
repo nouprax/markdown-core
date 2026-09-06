@@ -2,13 +2,12 @@
 
 Status: normative module of the [Markdown Core dialect](../dialect.md). It
 owns the document metadata model and the one source rule that populates it.
-Option: `properties` (default `false`). Source: Obsidian's Properties and the
+Source: Obsidian's Properties and the
 YAML 1.2.2 specification it links. Executable oracle: `yaml` 2.9.0 through
 its Document/CST API, behind the harness's exact envelope scanner, under
 `specs/oracles/obsidian/`. Landing: the value types with `M7`, recognition
-with `O6`. Every example in this module runs with `properties` on unless its
-fence says otherwise; the [example format](../dialect.md#examples) is
-defined by the index.
+with `O6`. The [example format](../dialect.md#examples) is defined by the
+index.
 
 ## Model
 
@@ -35,7 +34,7 @@ the dump, a non-null `Metadata` prints as a nested line before the content
 lines of `Document`, with one nested `MetadataRecord` line per record whose
 `value` prints its branch:
 
-```````````````````````````````` example properties
+```````````````````````````````` example
 ---
 title: Note
 tags: [a, b]
@@ -46,7 +45,7 @@ Document scope=1:1..5:6 anchor=null attributes={} children=1
 ├── Metadata scope=1:1..4:3 children=2
 │   ├── MetadataRecord scope=2:1..2:11 name="title" value=scalar(text("Note")) children=0
 │   └── MetadataRecord scope=3:1..3:12 name="tags" value=list([text("a"),text("b")]) children=0
-└── Heading scope=5:1..5:6 anchor=null attributes={} level=1 children=1
+└── Heading scope=5:1..5:6 anchor="body" attributes={} level=1 children=1
     └── Text scope=5:3..5:6 anchor=null attributes={} literal="Body" children=0
 ````````````````````````````````
 
@@ -55,7 +54,7 @@ case-sensitive, never lowercased, slugged, pluralized, or rewritten. The name
 set is open: `tags`, `aliases`, `cssclasses`, and `publish` are ordinary
 names, and no name is a parser keyword or a dedicated `Document` field:
 
-```````````````````````````````` example properties
+```````````````````````````````` example
 ---
 tags:
   - project
@@ -89,7 +88,7 @@ Scalar values:
   those strings with no inline children, and no other dialect feature is
   recognized inside a value.
 
-```````````````````````````````` example properties
+```````````````````````````````` example
 ---
 n: null
 e:
@@ -115,7 +114,7 @@ A list is ordered and holds only text and number items. `bool` and `null`
 items, nested sequences, and mappings invalidate the candidate; block and
 flow spellings give the same value; an empty list differs from `null`:
 
-```````````````````````````````` example properties
+```````````````````````````````` example
 ---
 l:
   - a
@@ -152,7 +151,7 @@ at the end of the document. A payload line is therefore never exactly `---`;
 an indented `---` inside a scalar is payload. An empty or comment-only
 payload is a valid block with no records:
 
-```````````````````````````````` example properties
+```````````````````````````````` example
 ---
 ---
 .
@@ -160,7 +159,7 @@ Document scope=1:1..2:3 anchor=null attributes={} children=0
 └── Metadata scope=1:1..2:3 children=0
 ````````````````````````````````
 
-```````````````````````````````` example properties
+```````````````````````````````` example
 ---
 # just a comment
 ---
@@ -178,7 +177,7 @@ blank line are not fences, and a `...` line anywhere in the payload
 invalidates the whole candidate rather than closing it. No metadata syntax is
 recognized inside any container:
 
-```````````````````````````````` example properties
+```````````````````````````````` example
 
 ---
 a: 1
@@ -186,11 +185,11 @@ a: 1
 .
 Document scope=1:1..4:3 anchor=null attributes={} children=2
 ├── ThematicBreak scope=2:1..2:3 anchor=null attributes={} children=0
-└── Heading scope=3:1..4:3 anchor=null attributes={} level=2 children=1
+└── Heading scope=3:1..4:3 anchor="a-1" attributes={} level=2 children=1
     └── Text scope=3:1..3:4 anchor=null attributes={} literal="a: 1" children=0
 ````````````````````````````````
 
-```````````````````````````````` example properties
+```````````````````````````````` example
 ---
 a: 1
 ...
@@ -224,7 +223,7 @@ record, `true`, `null`, and `~` are names with those spellings, and `1`,
 `1.0`, `1e0`, `01`, `0`, and `-0` are six distinct names. Uniqueness is
 checked on the decoded text, and a duplicate invalidates the candidate:
 
-```````````````````````````````` example properties
+```````````````````````````````` example
 ---
 "1": a
 1.0: b
@@ -261,7 +260,7 @@ block style, and numeric formatting are not public fields; the exact numeric
 spelling is the one lexical payload kept, because converting it loses
 precision:
 
-```````````````````````````````` example properties
+```````````````````````````````` example
 ---
 x: &a 1
 y: *a
@@ -290,30 +289,19 @@ every byte to inherited parsing, in which the opening line is a thematic
 break or a Setext underline as the inherited grammar decides. No constructed
 block is deleted afterwards:
 
-```````````````````````````````` example properties
+```````````````````````````````` example
 ---
 key: [a, {b: c}]
 ---
 .
 Document scope=1:1..3:3 anchor=null attributes={} children=2
 ├── ThematicBreak scope=1:1..1:3 anchor=null attributes={} children=0
-└── Heading scope=2:1..3:3 anchor=null attributes={} level=2 children=1
+└── Heading scope=2:1..3:3 anchor="key-a-b-c" attributes={} level=2 children=1
     └── Text scope=2:1..2:16 anchor=null attributes={} literal="key: [a, {b: c}]" children=0
 ````````````````````````````````
 
-With `properties=false`, the envelope is inherited content and `metadata` is
-always `null`. Property values enable no other feature:
-
-```````````````````````````````` example
----
-a: 1
----
-.
-Document scope=1:1..3:3 anchor=null attributes={} children=2
-├── ThematicBreak scope=1:1..1:3 anchor=null attributes={} children=0
-└── Heading scope=2:1..3:3 anchor=null attributes={} level=2 children=1
-    └── Text scope=2:1..2:4 anchor=null attributes={} literal="a: 1" children=0
-````````````````````````````````
+Property values enable no other feature and configure nothing; a properties
+block is data for consumers.
 
 ## Scopes
 
@@ -354,5 +342,4 @@ payloads, empty or multiline names, sequence, mapping, alias, tagged, and
 explicit keys, multiline text, boolean and null list items, nested values,
 unsupported tags, non-finite numbers, undefined, cyclic, and over-budget
 aliases, non-printable bytes, thematic-break and Setext interaction,
-source-like bytes inside every container, option-off output, and allocation
-failure.
+source-like bytes inside every container, and allocation failure.

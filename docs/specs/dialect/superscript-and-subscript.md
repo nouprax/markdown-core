@@ -1,11 +1,9 @@
 # Superscript and subscript
 
 Status: normative module of the [Markdown Core dialect](../dialect.md).
-Options: `superscript` and `subscript` (each default `false`, independent).
 Source: Pandoc's `superscript` and `subscript` extensions. Executable
 oracle: the Pandoc 3.11 CLI under `specs/oracles/pandoc/`. Landing: `P6`,
-which also removes the harness-only double-tilde strikethrough flag. Each
-example in this module names the options it runs with; the
+which also removes the harness-only double-tilde strikethrough flag. The
 [example format](../dialect.md#examples) is defined by the index.
 
 ## Model
@@ -17,7 +15,7 @@ Subscript(content: [Markup])
 
 Both are inline kinds whose content is parsed by the shared inline parser.
 
-```````````````````````````````` example superscript subscript
+```````````````````````````````` example
 2^10^ and H~2~O
 .
 Document scope=1:1..1:15 anchor=null attributes={} children=1
@@ -31,7 +29,7 @@ Document scope=1:1..1:15 anchor=null attributes={} children=1
     └── Text scope=1:15..1:15 anchor=null attributes={} literal="O" children=0
 ````````````````````````````````
 
-```````````````````````````````` example superscript
+```````````````````````````````` example
 ^*x*^
 .
 Document scope=1:1..1:5 anchor=null attributes={} children=1
@@ -43,9 +41,8 @@ Document scope=1:1..1:5 anchor=null attributes={} children=1
 
 ## Syntax
 
-With `superscript=true`, every unescaped `^` is a delimiter unit at inline
-step C4; with `subscript=true`, tildes are delimiter units at step C3 under
-the tilde rule below. Units of one kind match by this procedure, applied left
+Every unescaped `^` is a delimiter unit at inline step C4, and tildes are
+delimiter units at step C3 under the tilde rule below. Units of one kind match by this procedure, applied left
 to right within one inline container:
 
 - A unit that finds an unmatched opener of its own kind on the stack closes
@@ -60,7 +57,7 @@ to right within one inline container:
 - A body is non-empty: a closer immediately after its opener matches nothing,
   and both bytes are text.
 
-```````````````````````````````` example superscript subscript
+```````````````````````````````` example
 ^a b^ ~a b~
 
 P~a\ cat~
@@ -77,7 +74,7 @@ Document scope=1:1..3:9 anchor=null attributes={} children=2
 A character reference that decodes to whitespace never invalidates a
 candidate:
 
-```````````````````````````````` example superscript
+```````````````````````````````` example
 ^a&#32;b^
 .
 Document scope=1:1..1:9 anchor=null attributes={} children=1
@@ -89,7 +86,7 @@ Document scope=1:1..1:9 anchor=null attributes={} children=1
 An empty body is not a body. `^^` is text, and an unmatched `~~` run is text
 under the tilde rule rather than two subscript units:
 
-```````````````````````````````` example superscript subscript
+```````````````````````````````` example
 ^^ a~~b
 .
 Document scope=1:1..1:7 anchor=null attributes={} children=1
@@ -99,7 +96,7 @@ Document scope=1:1..1:7 anchor=null attributes={} children=1
 
 An unmatched delimiter is text and cannot hide a later valid candidate:
 
-```````````````````````````````` example superscript
+```````````````````````````````` example
 x^y ^z
 .
 Document scope=1:1..1:6 anchor=null attributes={} children=1
@@ -110,7 +107,7 @@ Document scope=1:1..1:6 anchor=null attributes={} children=1
 Because a unit closes whenever an opener of its kind is open, consecutive
 pairs alternate:
 
-```````````````````````````````` example superscript
+```````````````````````````````` example
 ^a^b^c^
 .
 Document scope=1:1..1:7 anchor=null attributes={} children=1
@@ -124,15 +121,13 @@ Document scope=1:1..1:7 anchor=null attributes={} children=1
 
 ### Tildes
 
-A run of one tilde is subscript syntax and never a strikethrough delimiter:
-with `subscript` on it is a subscript unit, and with it off it is text. A run
-of two tildes is never subscript syntax: it is a strikethrough delimiter unit
-matched under the [strikethrough](strikethrough.md) rules while
-`strikethrough` is on and text otherwise, so an unmatched double run is text
-whatever the options say; runs of three or more are text. The
+A run of one tilde is a subscript unit and never a strikethrough delimiter.
+A run of two tildes is never subscript syntax: it is a strikethrough
+delimiter unit matched under the [strikethrough](strikethrough.md) rules, so
+an unmatched double run is text; runs of three or more are text. The
 [conflicts](conflicts.md) register records this ruling.
 
-```````````````````````````````` example subscript
+```````````````````````````````` example
 ~~a~~ ~b~
 
 ~~x~ ~~~y~~~
@@ -150,10 +145,10 @@ Document scope=1:1..3:12 anchor=null attributes={} children=2
 
 ### Carets
 
-An unescaped `^` immediately followed by `[` is an inline-footnote opener
-under `inlineFootnotes` and `footnotes`, tested before this module:
+An unescaped `^` immediately followed by `[` is an inline-footnote opener,
+tested before this module:
 
-```````````````````````````````` example superscript inline_footnotes
+```````````````````````````````` example
 text^[note]
 .
 Document scope=1:1..1:11 anchor=null attributes={} children=1
@@ -167,16 +162,15 @@ Document scope=1:1..1:11 anchor=null attributes={} children=1
     └── Text scope=1:7..1:10 anchor=null attributes={} literal="note" children=0
 ````````````````````````````````
 
-Without `inlineFootnotes`, the same bytes are a superscript whose content is
-bracket text:
+A bracket enters a superscript body only through the escape mechanism:
 
-```````````````````````````````` example superscript
-^[note]^
+```````````````````````````````` example
+^\[note]^
 .
-Document scope=1:1..1:8 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:8 anchor=null attributes={} children=1
-    └── Superscript scope=1:1..1:8 anchor=null attributes={} children=1
-        └── Text scope=1:2..1:7 anchor=null attributes={} literal="[note]" children=0
+Document scope=1:1..1:9 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:9 anchor=null attributes={} children=1
+    └── Superscript scope=1:1..1:9 anchor=null attributes={} children=1
+        └── Text scope=1:2..1:8 anchor=null attributes={} literal="[note]" children=0
 ````````````````````````````````
 
 A `^` removed by [block identifier](block-identifiers.md) attachment is never
@@ -184,24 +178,11 @@ a delimiter, because that attachment is decided before inline parsing. A `^`
 or `~` owned by an autolink, code span, HTML token, comment, formula, or cross
 link is opaque.
 
-## Option behavior and fallback
-
-With `superscript=false`, `^` is text; with `subscript=false`, a single
-tilde is text and `~~` follows the strikethrough module alone:
-
-```````````````````````````````` example
-2^10^ H~2~O ~~x~~
-.
-Document scope=1:1..1:17 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:17 anchor=null attributes={} children=2
-    ├── Text scope=1:1..1:12 anchor=null attributes={} literal="2^10^ H~2~O " children=0
-    └── Strikethrough scope=1:13..1:17 anchor=null attributes={} children=1
-        └── Text scope=1:15..1:15 anchor=null attributes={} literal="x" children=0
-````````````````````````````````
+## Fallback
 
 Escaped delimiters are text:
 
-```````````````````````````````` example superscript subscript
+```````````````````````````````` example
 \^a\^ \~b\~
 .
 Document scope=1:1..1:11 anchor=null attributes={} children=1
@@ -222,5 +203,4 @@ space.
 Every example of this module is a package fixture. Tests also cover adjacent
 and intraword forms, Unicode whitespace and newlines inside candidates, a
 caret removed by a block identifier, code, comments, HTML, formulas,
-autolinks, and other inline nesting, exact scopes, each option independently
-on and off, allocation failure, and adversarial caret and tilde runs.
+autolinks, and other inline nesting, exact scopes, allocation failure, and adversarial caret and tilde runs.

@@ -2,14 +2,12 @@
 
 Status: normative module of the [Markdown Core dialect](../dialect.md). This
 module states what the dialect inherits and the few rules the inherited layer
-leaves to the implementation. It has no option of its own except
-`smartPunctuation` (default `true`). Source: the CommonMark specification
-0.31.2. Executable oracle: cmark 0.31.2 under `specs/oracles/cmark/`, run with
-every dialect option off. Landing: present; the HTML-comment rule lands with
-`M0`, the resolved-reference model with `M1` and `M2`, and `Callout` with
-`M3`. Every example in this module runs with the product defaults unless its
-fence says otherwise; the [example format](../dialect.md#examples) is
-defined by the index.
+leaves to the implementation. Source: the CommonMark specification 0.31.2.
+Executable oracle: cmark 0.31.2 under `specs/oracles/cmark/`, which the
+harness compares with the parser's base layer alone. Landing: present; the
+HTML-comment rule lands with `M0`, the resolved-reference model with `M1` and
+`M2`, `Callout` with `M3`, and the removal of smart punctuation with `X0`. The
+[example format](../dialect.md#examples) is defined by the index.
 
 ## The inherited layer
 
@@ -32,32 +30,11 @@ cmark-gfm as executable oracle: [pipe tables](tables.md),
 and one oracle, cmark-gfm at its pinned commit minus the registered deltas;
 the GFM specification text is not a second authority over it.
 
-"Inherited" in every module means the output of this layer with the module's
-option off. The eight inherited options (`smartPunctuation`, `footnotes`,
-`tables`, `strikethrough`, `autolinks`, `taskLists`, `formulas`,
-`directives`) default to `true`; with all of them off, the output is the
-CommonMark parse of the source:
-
-```````````````````````````````` example !strikethrough !formulas !directives !autolinks !footnotes !tables !task_lists !smart_punctuation
-~~a~~ $b$ :c[d] www.x.y [^e]
-
-| f |
-| - |
-
-- [ ] g
-.
-Document scope=1:1..6:7 anchor=null attributes={} children=3
-├── Paragraph scope=1:1..1:28 anchor=null attributes={} children=1
-│   └── Text scope=1:1..1:28 anchor=null attributes={} literal="~~a~~ $b$ :c[d] www.x.y [^e]" children=0
-├── Paragraph scope=3:1..4:5 anchor=null attributes={} children=3
-│   ├── Text scope=3:1..3:5 anchor=null attributes={} literal="| f |" children=0
-│   ├── SoftBreak scope=3:6..3:6 anchor=null attributes={} children=0
-│   └── Text scope=4:1..4:5 anchor=null attributes={} literal="| - |" children=0
-└── List scope=6:1..6:7 anchor=null attributes={} flavor=bullet start=null style=null delimiter=null tight=true children=1
-    └── ListItem scope=6:1..6:7 anchor=null attributes={} marker=null exampleLabel=null children=1
-        └── Paragraph scope=6:3..6:7 anchor=null attributes={} children=1
-            └── Text scope=6:3..6:7 anchor=null attributes={} literal="[ ] g" children=0
-````````````````````````````````
+"Inherited" in every module means the output of this layer: the CommonMark
+parse of the source, which is the meaning of every byte that no feature
+claims. The dialect has no options, so no source ever parses with a feature
+off; the conformance harness runs the parser with its base layer alone only
+to compare it with the cmark oracle, and that mode is not a language.
 
 The CLI flags `--liberal-html-tag` and `--strikethrough-double-tilde` are
 harness flags with no dialect meaning; the second is removed by `P6`.
@@ -165,10 +142,10 @@ Document scope=1:1..3:8 anchor=null attributes={} children=1
 └── CodeBlock scope=1:5..3:8 anchor=null attributes={} info=null language=null literal="code\n\nmore\n" fenced=false closed=true children=0
 ````````````````````````````````
 
-Under `formulas` a fence whose `info` is exactly `formula` produces a
-`FormulaBlock` instead, as the [formulas](formulas.md) module states, and
-under `fencedCodeAttributes` the [attributes](attributes.md) module removes an
-attribute container from the info region before this rule computes `info`.
+A fence whose `info` is exactly `formula` produces a `FormulaBlock` instead,
+as the [formulas](formulas.md) module states, and the
+[attributes](attributes.md) module removes an attribute container from the
+info region before this rule computes `info`.
 
 `Code.literal` is the code span's content after the inherited stripping and
 line-ending-to-space conversion:
@@ -248,19 +225,19 @@ Setext
 ------
 .
 Document scope=1:1..6:6 anchor=null attributes={} children=3
-├── Heading scope=1:1..1:7 anchor=null attributes={} level=1 children=1
+├── Heading scope=1:1..1:7 anchor="atx" attributes={} level=1 children=1
 │   └── Text scope=1:3..1:5 anchor=null attributes={} literal="ATX" children=0
-├── Heading scope=3:1..3:15 anchor=null attributes={} level=3 children=3
+├── Heading scope=3:1..3:15 anchor="code-em" attributes={} level=3 children=3
 │   ├── Code scope=3:5..3:10 anchor=null attributes={} literal="code" children=0
 │   ├── Text scope=3:11..3:11 anchor=null attributes={} literal=" " children=0
 │   └── Emphasis scope=3:12..3:15 anchor=null attributes={} children=1
 │       └── Text scope=3:13..3:14 anchor=null attributes={} literal="em" children=0
-└── Heading scope=5:1..6:6 anchor=null attributes={} level=2 children=1
+└── Heading scope=5:1..6:6 anchor="setext" attributes={} level=2 children=1
     └── Text scope=5:1..5:6 anchor=null attributes={} literal="Setext" children=0
 ````````````````````````````````
 
-An attribute container at the end of the heading is removed first under
-`headingAttributes`, as the [attributes](attributes.md) module states. A
+An attribute container at the end of the heading is removed first, as the
+[attributes](attributes.md) module states. A
 heading's `anchor` is `null` unless an explicit or automatic rule of the
 [anchors](anchors.md) module populates it.
 
@@ -268,8 +245,8 @@ heading's `anchor` is `null` unless an explicit or automatic rule of the
 
 Every `>` container is a `Callout` with `variant=null`, `fold=none`, and no
 title; the [callouts](callouts.md) module owns that kind. The inherited
-prefix, laziness, continuation, and blank-line rules are unchanged by any
-option:
+prefix, laziness, continuation, and blank-line rules are unchanged by the
+metadata rule:
 
 ```````````````````````````````` example
 > quoted
@@ -353,51 +330,18 @@ inline; block starts are decided before inline recognition.
 
 ## Smart punctuation
 
-With `smartPunctuation=true`, these substitutions are made in `Text` literals
-only, during inline parsing, and change no node boundary:
-
-- A run of two or more hyphens becomes dashes: a run divisible by three
-  becomes that many em dashes (U+2014); otherwise a run divisible by two
-  becomes that many en dashes (U+2013); otherwise a run of `3k+2` hyphens
-  becomes `k` em dashes then one en dash, and a run of `3k+1` hyphens becomes
-  `k-1` em dashes then two en dashes. A single hyphen is unchanged.
-- Three periods become one ellipsis (U+2026). Two periods are unchanged.
-- `'` and `"` are delimiter runs on the shared stack under the inherited
-  flanking rules. A matched pair becomes U+2018 and U+2019, or U+201C and
-  U+201D. An unmatched `'` becomes U+2019. An unmatched `"` becomes U+201D
-  when it could close and U+201C otherwise.
+There is no smart punctuation. Quotation marks, hyphen runs, and periods are
+stored as written, and typographic replacement is consumer policy, as every
+other rendering choice is. cmark's `--smart` mode is a harness mode with no
+dialect meaning, and the current parser's `smartPunctuation` option and its
+substitutions are removed by `X0`:
 
 ```````````````````````````````` example
 "quotes" 'single' -- --- ---- ... a\"b
 .
 Document scope=1:1..1:38 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..1:38 anchor=null attributes={} children=1
-    └── Text scope=1:1..1:38 anchor=null attributes={} literal="“quotes” ‘single’ – — –– … a\"b" children=0
-````````````````````````````````
-
-Backslash-escaped characters and characters inside code spans, HTML tokens,
-formulas, comments, and every other opaque construct are never substituted:
-
-```````````````````````````````` example
-`"a"` <!-- "b" --> $"c"$
-.
-Document scope=1:1..1:24 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:24 anchor=null attributes={} children=5
-    ├── Code scope=1:1..1:5 anchor=null attributes={} literal="\"a\"" children=0
-    ├── Text scope=1:6..1:6 anchor=null attributes={} literal=" " children=0
-    ├── Comment scope=1:7..1:18 anchor=null attributes={} literal=" \"b\" " children=0
-    ├── Text scope=1:19..1:19 anchor=null attributes={} literal=" " children=0
-    └── Formula scope=1:20..1:24 anchor=null attributes={} mode=embedded literal="\"c\"" children=0
-````````````````````````````````
-
-With the option off, every byte above is ordinary text:
-
-```````````````````````````````` example !smart_punctuation
-"quotes" 'single' -- --- ...
-.
-Document scope=1:1..1:28 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:28 anchor=null attributes={} children=1
-    └── Text scope=1:1..1:28 anchor=null attributes={} literal="\"quotes\" 'single' -- --- ..." children=0
+    └── Text scope=1:1..1:38 anchor=null attributes={} literal="\"quotes\" 'single' -- --- ---- ... a\"b" children=0
 ````````````````````````````````
 
 ## Required conformance cases
@@ -407,6 +351,6 @@ specification corpus is replayed in full by the cmark gate. The package
 fixtures additionally cover `SoftBreak` and `LineBreak` scopes inside every
 container, `info`, `language`, `fenced`, and `closed` on every code-block
 form, backtick strings of 80 and of 81 backticks as opener and as closer,
-every HTML block type and inline token, every smart-punctuation rule
-above with the option on and off, and the four inherited link forms with and
-without a definition.
+every HTML block type and inline token, quotation marks, hyphen runs, and
+periods stored as written, and the four inherited link forms with and without
+a definition.

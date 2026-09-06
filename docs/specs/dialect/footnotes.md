@@ -1,15 +1,13 @@
 # Footnotes
 
 Status: normative module of the [Markdown Core dialect](../dialect.md).
-Options: `footnotes` (default `true`) and `inlineFootnotes` (default `false`,
-effective only while `footnotes` is on). Sources: cmark-gfm's footnote
+Sources: cmark-gfm's footnote
 extension for the referenced form; Obsidian and Pandoc for the inline form.
 Executable oracles: cmark-gfm and remark for the referenced form; the inline
 form is product fixtures. Landing: the citation model with `M4`, the inline
 form with `O4`; until `M4` the current contract's `FootnoteReference` and
-`FootnoteDefinition` stand. Each example in this module names the options it
-adds to the product defaults; the [example format](../dialect.md#examples)
-is defined by the index.
+`FootnoteDefinition` stand. The [example format](../dialect.md#examples) is
+defined by the index.
 
 ## The citation model
 
@@ -90,8 +88,8 @@ definition = *3SP "[^" label "]:" [ inline-content ] EOL continuation*
 label      = 1*( any scalar except "]", "[", SP, and TAB )
 ```
 
-A definition is recognized only while `footnotes` is on, only when the label
-is at most 1000 bytes, and only at footnote container depth below 100. Its
+A definition is recognized only when the label is at most 1000 bytes and
+only at footnote container depth below 100. Its
 key is the label under the inherited reference-label normalization; the
 stored `Footnote.id` is that key and never contains the caret. A footnote call
 is the second alternative of the bracket procedure, tested after a direct
@@ -281,13 +279,12 @@ Document scope=1:1..4:9 anchor=null attributes={} children=1
 
 ## Inline footnotes
 
-With `inlineFootnotes=true` and `footnotes=true`, an unescaped `^`
-immediately followed by `[` pushes an inline-footnote opener onto the shared
+An unescaped `^` immediately followed by `[` pushes an inline-footnote opener onto the shared
 bracket stack at inline step A7. Every recognized inline footnote creates one
 `Footnote` whose content is the parsed inline body and one one-item `Cite`
 with referent `footnote(id)` and empty affixes:
 
-```````````````````````````````` example inline_footnotes
+```````````````````````````````` example
 text^[an inline note]
 .
 Document scope=1:1..1:21 anchor=null attributes={} children=1
@@ -301,7 +298,7 @@ Document scope=1:1..1:21 anchor=null attributes={} children=1
     └── Text scope=1:7..1:20 anchor=null attributes={} literal="an inline note" children=0
 ````````````````````````````````
 
-```````````````````````````````` example inline_footnotes
+```````````````````````````````` example
 ^[a *b*]
 .
 Document scope=1:1..1:8 anchor=null attributes={} children=1
@@ -321,7 +318,7 @@ link, reference, span, cite, or attribute tail, so `^[a](b)` is a `Cite`
 followed by text `(b)`. At one `^`, the inline footnote wins over a `[^label]`
 call and over superscript, so `^[^1]` is a footnote whose body is text `^1`:
 
-```````````````````````````````` example inline_footnotes
+```````````````````````````````` example
 ^[a](b) ^[^1]
 .
 Document scope=1:1..1:13 anchor=null attributes={} children=1
@@ -352,7 +349,7 @@ already assigned, otherwise `inline-N-K` for the smallest `K` of at least 1
 in neither set. The value carries no authored meaning; consumers compare and
 copy ids and never display them:
 
-```````````````````````````````` example inline_footnotes
+```````````````````````````````` example
 ^[a ^[b] c]
 .
 Document scope=1:1..1:11 anchor=null attributes={} children=1
@@ -372,7 +369,7 @@ Document scope=1:1..1:11 anchor=null attributes={} children=1
     └── Text scope=1:7..1:7 anchor=null attributes={} literal="b" children=0
 ````````````````````````````````
 
-```````````````````````````````` example inline_footnotes
+```````````````````````````````` example
 [^inline-1] ^[b]
 
 [^inline-1]: authored
@@ -398,7 +395,7 @@ Document scope=1:1..3:21 anchor=null attributes={} children=1
 A body that is empty or consists only of spaces and tabs is invalid; the
 opener is text. `\^[` never opens:
 
-```````````````````````````````` example inline_footnotes
+```````````````````````````````` example
 ^[] ^[ ] \^[a]
 .
 Document scope=1:1..1:14 anchor=null attributes={} children=1
@@ -406,35 +403,7 @@ Document scope=1:1..1:14 anchor=null attributes={} children=1
     └── Text scope=1:1..1:14 anchor=null attributes={} literal="^[] ^[ ] ^[a]" children=0
 ````````````````````````````````
 
-## Option behavior and fallback
-
-With `footnotes=true` and `inlineFootnotes=false`, `^[` follows inherited
-bracket handling:
-
-```````````````````````````````` example
-^[a]
-.
-Document scope=1:1..1:4 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:4 anchor=null attributes={} children=1
-    └── Text scope=1:1..1:4 anchor=null attributes={} literal="^[a]" children=0
-````````````````````````````````
-
-With `footnotes=false`, `[^label]`, `[^label]:`, and `^[content]` follow the
-inherited grammar whatever `inlineFootnotes` says, and `Document.footnotes`
-is empty. Under that grammar `[^a]: note` is a link reference definition
-with the label `^a`, so `[^a]` resolves to a link:
-
-```````````````````````````````` example !footnotes inline_footnotes
-[^a] ^[b]
-
-[^a]: note
-.
-Document scope=1:1..3:10 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:9 anchor=null attributes={} children=2
-    ├── Link scope=1:1..1:4 anchor=null attributes={} dest=url("note") title=null children=1
-    │   └── Text scope=1:2..1:3 anchor=null attributes={} literal="^a" children=0
-    └── Text scope=1:5..1:9 anchor=null attributes={} literal=" ^[b]" children=0
-````````````````````````````````
+## Fallback
 
 Failed recognition consumes nothing. Inline code, HTML tokens, comments,
 formulas, and cross links are opaque to both forms.
@@ -454,5 +423,4 @@ and named labels, definitions before and after calls, nested duplicate
 definitions, the label length and container depth limits, `&Hat;`, an
 undefined call with a matching link definition, a footnote inside a link
 label, mixed referenced and inline source order in `Document.footnotes`,
-code, comments, HTML, and formulas, exact scopes, every option combination,
-allocation failure, and size-doubling runs of `^`, `[`, and `]`.
+code, comments, HTML, and formulas, exact scopes, allocation failure, and size-doubling runs of `^`, `[`, and `]`.

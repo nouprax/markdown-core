@@ -25,8 +25,8 @@ attachment candidates, and table boundary maps—remains parser-owned.
 The normative behavior is divided among the modules linked from the [dialect
 index](../specs/dialect.md). This plan owns implementation order and proof
 obligations, not a second copy of their grammars. A phase is incomplete if its
-module's model, recognition, fallback, precedence, scopes, option isolation,
-allocation behavior, or complexity requirements are unmet.
+module's model, recognition, fallback, precedence, scopes, allocation
+behavior, or complexity requirements are unmet.
 
 The inherited language remains the repository's current CommonMark/GFM
 implementation. The modules are the sole normative statement of the selected
@@ -85,7 +85,7 @@ selected Pandoc extension participates.
 - [ ] **Exit criterion:** a clean checkout can explicitly install or check the pinned
       runner, and the oracle-side canaries reject the wrong binary, API version,
       reader bundle, user-data environment, or extension behavior. This phase makes
-      no product-parity claim because the target options and AST do not yet exist.
+      no product-parity claim because the target AST does not yet exist.
 
 ## Phase 1 — freeze the public consumer model
 
@@ -120,11 +120,11 @@ selected Pandoc extension participates.
       audit atomically. While 3.0.0 is unreleased, identifiers, wire layouts,
       and manifest order may be renumbered by any later item; nothing is
       reserved in advance.
-- [ ] Expose one independent option per public extension named by the dialect
-      index. `autoAnchors` composes the two pinned Pandoc extension rules
-      internally; compact definition syntax remains part of `definitionLists`,
-      and start numbers are always honored, so neither receives an option.
-- [ ] Activate product comparison once those options and target values can be
+- [ ] Land every Pandoc feature always on: the dialect has no switches, so no
+      extension receives an option. Automatic anchors compose the two pinned
+      Pandoc extension rules internally, compact definition syntax is part of
+      definition lists, and start numbers are always honored.
+- [ ] Activate product comparison once the target values can be
       represented. Register every initial gap in a fail-closed `deltas.json` with
       both semantic digests and the phase that closes it; add the offline gate to
       `check:oracle-parity`. A new gap, changed gap, or registered gap that
@@ -158,7 +158,7 @@ selected Pandoc extension participates.
       Failed suffixes release source transactionally.
 - [ ] Finalize explicit and generated heading anchors in one document registry.
       Use the specified GFM algorithm, reserve every explicit anchor from every
-      enabled option before synthesis, generate headings in source order,
+      rule before synthesis, generate headings in source order,
       resolve generated collisions deterministically, and build virtual
       implicit-reference entries from the same final values.
 - [ ] Audit every existing Link/Image, Heading, Code/CodeBlock, directive, and
@@ -186,8 +186,8 @@ selected Pandoc extension participates.
       references through one deterministic finalization operation. Resolution
       order may not depend on whether the declaration precedes the call.
 
-- [ ] **Exit criterion:** all inline precedence and malformed boundaries pass with every
-      option independently on and off, citations project to the shared model, and
+- [ ] **Exit criterion:** all inline precedence and malformed boundaries pass,
+      citations project to the shared model, and
       size-doubling runs of brackets, attributes, `@`, braces, carets, and tildes
       show linear work.
 
@@ -242,8 +242,7 @@ selected Pandoc extension participates.
 ## Phase 6 — conformance, bindings, and release evidence
 
 - [ ] Add package-owned fixtures mapped to every normative Pandoc module. Cover
-      official positive examples, negative boundaries, option gates, extension
-      conflicts, exact scopes, allocation failures, nesting limits, and
+      official positive examples, negative boundaries, extension conflicts, exact scopes, allocation failures, nesting limits, and
       adversarial size-doubling inputs.
 - [ ] Extend the shared canonical AST corpus with every new kind, enum case,
       nullable field, universal anchor and attributes state, citation branch,
@@ -257,7 +256,7 @@ selected Pandoc extension participates.
 
 - [ ] **Exit criterion:** every selected extension is independently composable, all four
       surfaces expose one canonical model, the pinned Pandoc corpus has no
-      unregistered divergence, inherited options remain green, and no test or build
+      unregistered divergence, the inherited layers remain green, and no test or build
       step fetches mutable external state.
 
 ## Delivery sequence
@@ -265,9 +264,8 @@ selected Pandoc extension participates.
 Review and land in the order: oracle bootstrap, canonical model and parity
 skeleton, attribute/heading infrastructure, inline recognition, block/list
 recognition, table recognition, and integration evidence. Each change must
-leave every existing option set green. No Pandoc extension is public until its AST is
-available on every binding and its option-off, oracle, and product conformance
-cases pass.
+leave the existing fixtures green. No Pandoc extension is public until its AST is
+available on every binding and its oracle and product conformance cases pass.
 
 - [ ] Publish release notes listing the exact supported extension names, the
       absence of a monolithic Pandoc preset, the universal anchor and attributes

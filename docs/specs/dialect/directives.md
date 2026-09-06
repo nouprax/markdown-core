@@ -1,7 +1,7 @@
 # Directives
 
 Status: normative module of the [Markdown Core dialect](../dialect.md).
-Option: `directives` (default `true`). Sources: `remark-directive` 4.0.0 and
+Sources: `remark-directive` 4.0.0 and
 its `micromark-extension-directive` envelope syntax; Pandoc's `fenced_divs`,
 whose fenced div is the nameless container of this module. Executable
 oracles: remark under `specs/oracles/remark/`, for the envelope, label, and
@@ -10,9 +10,8 @@ the nameless container. The attribute member grammar is the dialect's own,
 stated by the [attributes](attributes.md) module. Landing: present for the
 named forms; the attribute model migrates to the universal fields and the
 letter-first name rule lands with `M7`, and the nameless container lands
-with `P8`. Every example in this module runs with the product defaults
-unless its fence says otherwise; the [example format](../dialect.md#examples)
-is defined by the index.
+with `P8`. The [example format](../dialect.md#examples) is defined by the
+index.
 
 ## Model
 
@@ -449,7 +448,7 @@ The content is ordinary block content of every enabled kind:
 .
 Document scope=1:1..5:3 anchor=null attributes={} children=1
 └── DirectiveBlock scope=1:1..5:3 anchor=null attributes={.a} name=null children=2
-    ├── Heading scope=2:1..2:3 anchor=null attributes={} level=1 children=1
+    ├── Heading scope=2:1..2:3 anchor="h" attributes={} level=1 children=1
     │   └── Text scope=2:3..2:3 anchor=null attributes={} literal="h" children=0
     └── List scope=4:1..4:3 anchor=null attributes={} flavor=bullet start=null style=null delimiter=null tight=true children=1
         └── ListItem scope=4:1..4:3 anchor=null attributes={} marker=null exampleLabel=null children=1
@@ -475,7 +474,7 @@ Document scope=1:1..1:10 anchor=null attributes={} children=1
 In a text directive a quoted value may span the line endings the grammar
 permits; in a block directive the container must close on the opener line.
 
-## Option behavior and fallback
+## Fallback
 
 Source owned by code, HTML tokens and blocks, comments, formulas, and cross
 links is never a directive:
@@ -490,43 +489,7 @@ Document scope=1:1..1:16 anchor=null attributes={} children=1
     └── Comment scope=1:6..1:16 anchor=null attributes={} literal=" :b " children=0
 ````````````````````````````````
 
-With `directives=false`, no colon has directive meaning and every byte
-follows the inherited grammar: `:name` is text, and `::name`, `:::name`, and
-`::: {...}` lines are paragraph text:
-
-```````````````````````````````` example !directives
-:a[b]
-
-::a
-
-:::a
-x
-:::
-
-::: {.a}
-y
-:::
-.
-Document scope=1:1..11:3 anchor=null attributes={} children=4
-├── Paragraph scope=1:1..1:5 anchor=null attributes={} children=1
-│   └── Text scope=1:1..1:5 anchor=null attributes={} literal=":a[b]" children=0
-├── Paragraph scope=3:1..3:3 anchor=null attributes={} children=1
-│   └── Text scope=3:1..3:3 anchor=null attributes={} literal="::a" children=0
-├── Paragraph scope=5:1..7:3 anchor=null attributes={} children=5
-│   ├── Text scope=5:1..5:4 anchor=null attributes={} literal=":::a" children=0
-│   ├── SoftBreak scope=5:5..5:5 anchor=null attributes={} children=0
-│   ├── Text scope=6:1..6:1 anchor=null attributes={} literal="x" children=0
-│   ├── SoftBreak scope=6:2..6:2 anchor=null attributes={} children=0
-│   └── Text scope=7:1..7:3 anchor=null attributes={} literal=":::" children=0
-└── Paragraph scope=9:1..11:3 anchor=null attributes={} children=5
-    ├── Text scope=9:1..9:8 anchor=null attributes={} literal="::: {.a}" children=0
-    ├── SoftBreak scope=9:9..9:9 anchor=null attributes={} children=0
-    ├── Text scope=10:1..10:1 anchor=null attributes={} literal="y" children=0
-    ├── SoftBreak scope=10:2..10:2 anchor=null attributes={} children=0
-    └── Text scope=11:1..11:3 anchor=null attributes={} literal=":::" children=0
-````````````````````````````````
-
-With the option on, a failed candidate consumes nothing.
+A failed candidate consumes nothing.
 
 ## Scopes
 
@@ -538,8 +501,7 @@ when unclosed. `DirectiveLabel.scope` covers its brackets.
 ## Required conformance cases
 
 Every example of this module is a package fixture, and the directive fixtures
-`extensions-directive.txt` and `extensions-directive-option-gates.txt` stay
-the oracle of record for the named forms. Tests also cover Unicode names,
+`extensions-directive.txt` stays the oracle of record for the named forms. Tests also cover Unicode names,
 names beginning with a digit, `-`, or `_`, nesting to depths 32 and 33,
 multi-line labels, every container success and failure, closer lines inside
 opaque blocks, closers longer than the opener, empty nameless content,

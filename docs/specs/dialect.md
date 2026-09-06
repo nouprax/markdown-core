@@ -2,12 +2,11 @@
 
 Status: normative. This document and the feature modules under
 [`dialect/`](dialect/) define the Markdown Core dialect: the complete set of
-syntax the parser recognizes, the option that enables each piece of it, the
-external implementation that is locked as evidence for it, and the rules that
-hold across all of it. `canonical-ast.json` and its prose companion
+syntax the parser recognizes, the external implementation that is locked as
+evidence for each piece of it, and the rules that hold across all of it. `canonical-ast.json` and its prose companion
 [`canonical-ast.md`](canonical-ast.md) remain the contract of the implementation
-as it stands today; where a module describes a kind, field, value, or option
-that the implementation does not have yet, its status line names the landing
+as it stands today; where a module describes a kind, field, or value that
+the implementation does not have yet, its status line names the landing
 item in the [landing plan](../plans/2026-09-04-canonical-vnext-landing-plan.md)
 that adds it, and until that item merges the current contract stands.
 
@@ -16,16 +15,17 @@ that adds it, and until that item merges the current contract stands.
 Markdown Core is one Markdown dialect. Its base is CommonMark 0.31.2. On that
 base it recognizes a fixed set of syntax features absorbed from GitHub Flavored
 Markdown, the remark/micromark extension family, Obsidian Flavored Markdown,
-Pandoc's Markdown, and `markdown-it-ins`. Every feature is one parse option;
-the caller composes features freely. There are no profiles, presets, umbrella
-switches, or dialect modes: `obsidian`, `pandoc`, `gfm`, and the like are names
-of sources, not of anything the parser accepts.
+Pandoc's Markdown, and `markdown-it-ins`. Every feature is always on: the
+dialect has no parse options, no profiles, presets, umbrella switches, or
+dialect modes, and no caller composes a smaller language. `obsidian`,
+`pandoc`, `gfm`, and the like are names of sources, not of anything the
+parser accepts.
 
 The upstream tools are sources and evidence, never authorities over behavior:
 
 - A source defines which feature exists and what its common-case source form
   looks like. The module that adopts the feature is the sole normative statement
-  of its grammar, its AST, its option behavior, its fallback, and its scopes.
+  of its grammar, its AST, its fallback, and its scopes.
   Where a module is silent, behavior is undefined until the module is amended;
   it is never inherited from the source.
 - An executable oracle is a pinned implementation whose output is compared with
@@ -59,95 +59,88 @@ block identifiers, which it does not implement. Every gate is fail-closed: an
 unregistered difference fails it, and a registered difference that stops
 reproducing fails it too.
 
-## Features and options
+## Features
 
-Option names are the binding spelling. The C facade spells the same names in
-`snake_case`, and the CLI `-e` names and the fixture `ts_ast_enable` tags are
-the `snake_case` spellings. Every option is a boolean; the eight inherited
-options default to `true` and every other option defaults to `false`. `Status`
-is `present` when the implementation recognizes the syntax and produces the
+Every feature is part of the one language and has no switch. `Status` is
+`present` when the implementation recognizes the syntax and produces the
 module's model, `partial` when it recognizes the syntax but produces a model a
 landing item still changes, and `missing` otherwise; the item named is the one
 that makes the row `present`.
 
-| Feature                            | Module                                                        | Option                            | Default | Source                | Executable oracle                  | Status                          |
-| ---------------------------------- | ------------------------------------------------------------- | --------------------------------- | ------- | --------------------- | ---------------------------------- | ------------------------------- |
-| CommonMark blocks and inlines      | [base](dialect/base.md)                                       | none                              | on      | CommonMark            | cmark                              | present                         |
-| smart punctuation                  | [base](dialect/base.md)                                       | `smartPunctuation`                | `true`  | cmark `--smart`       | cmark                              | present                         |
-| HTML comments as `Comment`         | [comments](dialect/comments.md)                               | none                              | on      | CommonMark, Obsidian  | cmark for the token boundaries     | missing, `M0`                   |
-| pipe tables                        | [tables](dialect/tables.md)                                   | `tables`                          | `true`  | GFM                   | cmark-gfm                          | partial, `M6`                   |
-| strikethrough                      | [strikethrough](dialect/strikethrough.md)                     | `strikethrough`                   | `true`  | GFM                   | cmark-gfm                          | partial, `P6`                   |
-| autolinks                          | [links and images](dialect/links-and-images.md)               | `autolinks`                       | `true`  | GFM                   | cmark-gfm                          | present                         |
-| task lists                         | [task lists](dialect/task-lists.md)                           | `taskLists`                       | `true`  | GFM                   | cmark-gfm                          | partial, `M5`                   |
-| footnotes                          | [footnotes](dialect/footnotes.md)                             | `footnotes`                       | `true`  | GFM                   | cmark-gfm, remark                  | partial, `M4`                   |
-| formulas                           | [formulas](dialect/formulas.md)                               | `formulas`                        | `true`  | GitHub math, remark   | remark (`micromark-extension-math`) | present                         |
-| directives and nameless containers | [directives](dialect/directives.md)                           | `directives`                      | `true`  | remark-directive, Pandoc `fenced_divs` | remark, Pandoc for the nameless form | partial, `M7`, `P8`      |
-| resolved reference links and images | [links and images](dialect/links-and-images.md)              | none                              | on      | CommonMark            | cmark                              | missing, `M1`, `M2`             |
-| universal anchor field             | [anchors](dialect/anchors.md)                                 | none                              | on      | Pandoc, Obsidian      | Pandoc                             | missing, `M7`                   |
-| universal attributes field         | [attributes](dialect/attributes.md)                           | none                              | on      | Pandoc                | Pandoc                             | missing, `M7`                   |
-| cross links and embeds             | [cross links](dialect/cross-links.md)                         | `crossLinks`                      | `false` | Obsidian              | remark-obsidian                    | missing, `O1`                   |
-| marks                              | [marks](dialect/marks.md)                                     | `marks`                           | `false` | Obsidian              | remark-obsidian                    | missing, `O2`                   |
-| `%%` comments                      | [comments](dialect/comments.md)                               | `comments`                        | `false` | Obsidian              | remark-obsidian                    | missing, `O3`                   |
-| inline footnotes                   | [footnotes](dialect/footnotes.md)                             | `inlineFootnotes`                 | `false` | Obsidian, Pandoc      | none; product fixtures             | missing, `O4`                   |
-| task markers                       | [task lists](dialect/task-lists.md)                           | `taskMarkers`                     | `false` | Obsidian              | remark-obsidian                    | missing, `O5`                   |
-| properties                         | [properties](dialect/properties.md)                           | `properties`                      | `false` | Obsidian              | `yaml`                             | missing, `O6`                   |
-| block identifiers                  | [block identifiers](dialect/block-identifiers.md)             | `blockIdentifiers`                | `false` | Obsidian              | none; product fixtures             | missing, `O7`                   |
-| callouts                           | [callouts](dialect/callouts.md)                               | `callouts`                        | `false` | Obsidian              | none; product fixtures             | missing, `M3`, `O8`             |
-| image dimensions                   | [links and images](dialect/links-and-images.md)               | `imageDimensions`                 | `false` | Obsidian              | none; product fixtures             | missing, `O9`                   |
-| inserted text                      | [inserted text](dialect/inserted-text.md)                     | `insertedText`                    | `false` | `markdown-it-ins`     | `markdown-it-ins`                  | missing, `I1`                   |
-| inline code attributes             | [attributes](dialect/attributes.md)                           | `inlineCodeAttributes`            | `false` | Pandoc                | Pandoc                             | missing, `P2a`                  |
-| heading attributes                 | [attributes](dialect/attributes.md)                           | `headingAttributes`               | `false` | Pandoc                | Pandoc                             | missing, `P2b`                  |
-| fenced code attributes             | [attributes](dialect/attributes.md)                           | `fencedCodeAttributes`            | `false` | Pandoc                | Pandoc                             | missing, `P2c`                  |
-| link attributes                    | [attributes](dialect/attributes.md)                           | `linkAttributes`                  | `false` | Pandoc                | Pandoc                             | missing, `P2d`                  |
-| automatic anchors                  | [anchors](dialect/anchors.md)                                 | `autoAnchors`                     | `false` | Pandoc, GFM algorithm | Pandoc                             | missing, `P3`                   |
-| implicit heading references        | [anchors](dialect/anchors.md)                                 | `implicitHeadingReferences`       | `false` | Pandoc                | Pandoc                             | missing, `P4`                   |
-| bracketed spans                    | [bracketed spans](dialect/bracketed-spans.md)                 | `bracketedSpans`                  | `false` | Pandoc                | Pandoc                             | missing, `P5`                   |
-| superscript and subscript          | [superscript and subscript](dialect/superscript-and-subscript.md) | `superscript`, `subscript`    | `false` | Pandoc                | Pandoc                             | missing, `P6`                   |
-| citations                          | [citations](dialect/citations.md)                             | `citations`                       | `false` | Pandoc                | Pandoc                             | missing, `P7`                   |
-| fancy lists                        | [lists](dialect/lists.md)                                     | `fancyLists`                      | `false` | Pandoc                | Pandoc                             | missing, `P9a`                  |
-| example lists                      | [lists](dialect/lists.md)                                     | `exampleLists`                    | `false` | Pandoc                | Pandoc                             | missing, `P9b`                  |
-| definition lists                   | [definition lists](dialect/definition-lists.md)               | `definitionLists`                 | `false` | Pandoc                | Pandoc                             | missing, `P10`                  |
-| table captions                     | [tables](dialect/tables.md)                                   | `tableCaptions`                   | `false` | Pandoc                | Pandoc                             | missing, `P11a`                 |
-| simple tables                      | [tables](dialect/tables.md)                                   | `simpleTables`                    | `false` | Pandoc                | Pandoc                             | missing, `P11b`                 |
-| multiline tables                   | [tables](dialect/tables.md)                                   | `multilineTables`                 | `false` | Pandoc                | Pandoc                             | missing, `P11c`                 |
-| grid tables                        | [tables](dialect/tables.md)                                   | `gridTables`                      | `false` | Pandoc                | Pandoc                             | missing, `P11d`                 |
+| Feature                             | Module                                                            | Source                                 | Executable oracle                    | Status                          |
+| ----------------------------------- | ----------------------------------------------------------------- | -------------------------------------- | ------------------------------------ | ------------------------------- |
+| CommonMark blocks and inlines       | [base](dialect/base.md)                                           | CommonMark                             | cmark                                | present                         |
+| HTML comments as `Comment`          | [comments](dialect/comments.md)                                   | CommonMark, Obsidian                   | cmark for the token boundaries       | missing, `M0`                   |
+| pipe tables                         | [tables](dialect/tables.md)                                       | GFM                                    | cmark-gfm                            | partial, `M6`                   |
+| strikethrough                       | [strikethrough](dialect/strikethrough.md)                         | GFM                                    | cmark-gfm                            | partial, `P6`                   |
+| autolinks                           | [links and images](dialect/links-and-images.md)                   | GFM                                    | cmark-gfm                            | present                         |
+| task lists                          | [task lists](dialect/task-lists.md)                               | GFM                                    | cmark-gfm                            | partial, `M5`                   |
+| footnotes                           | [footnotes](dialect/footnotes.md)                                 | GFM                                    | cmark-gfm, remark                    | partial, `M4`                   |
+| formulas                            | [formulas](dialect/formulas.md)                                   | GitHub math, remark                    | remark (`micromark-extension-math`)  | present                         |
+| directives and nameless containers  | [directives](dialect/directives.md)                               | remark-directive, Pandoc `fenced_divs` | remark, Pandoc for the nameless form | partial, `M7`, `P8`             |
+| resolved reference links and images | [links and images](dialect/links-and-images.md)                   | CommonMark                             | cmark                                | missing, `M1`, `M2`             |
+| universal anchor field              | [anchors](dialect/anchors.md)                                     | Pandoc, Obsidian                       | Pandoc                               | missing, `M7`                   |
+| universal attributes field          | [attributes](dialect/attributes.md)                               | Pandoc                                 | Pandoc                               | missing, `M7`                   |
+| cross links and embeds              | [cross links](dialect/cross-links.md)                             | Obsidian                               | remark-obsidian                      | missing, `O1`                   |
+| marks                               | [marks](dialect/marks.md)                                         | Obsidian                               | remark-obsidian                      | missing, `O2`                   |
+| `%%` comments                       | [comments](dialect/comments.md)                                   | Obsidian                               | remark-obsidian                      | missing, `O3`                   |
+| inline footnotes                    | [footnotes](dialect/footnotes.md)                                 | Obsidian, Pandoc                       | none; product fixtures               | missing, `O4`                   |
+| task markers                        | [task lists](dialect/task-lists.md)                               | Obsidian                               | remark-obsidian                      | missing, `O5`                   |
+| properties                          | [properties](dialect/properties.md)                               | Obsidian                               | `yaml`                               | missing, `O6`                   |
+| block identifiers                   | [block identifiers](dialect/block-identifiers.md)                 | Obsidian                               | none; product fixtures               | missing, `O7`                   |
+| callouts                            | [callouts](dialect/callouts.md)                                   | Obsidian                               | none; product fixtures               | missing, `M3`, `O8`             |
+| image dimensions                    | [links and images](dialect/links-and-images.md)                   | Obsidian                               | none; product fixtures               | missing, `O9`                   |
+| inserted text                       | [inserted text](dialect/inserted-text.md)                         | `markdown-it-ins`                      | `markdown-it-ins`                    | missing, `I1`                   |
+| inline code attributes              | [attributes](dialect/attributes.md)                               | Pandoc                                 | Pandoc                               | missing, `P2a`                  |
+| heading attributes                  | [attributes](dialect/attributes.md)                               | Pandoc                                 | Pandoc                               | missing, `P2b`                  |
+| fenced code attributes              | [attributes](dialect/attributes.md)                               | Pandoc                                 | Pandoc                               | missing, `P2c`                  |
+| link attributes                     | [attributes](dialect/attributes.md)                               | Pandoc                                 | Pandoc                               | missing, `P2d`                  |
+| automatic anchors                   | [anchors](dialect/anchors.md)                                     | Pandoc, GFM algorithm                  | Pandoc                               | missing, `P3`                   |
+| implicit heading references         | [anchors](dialect/anchors.md)                                     | Pandoc                                 | Pandoc                               | missing, `P4`                   |
+| bracketed spans                     | [bracketed spans](dialect/bracketed-spans.md)                     | Pandoc                                 | Pandoc                               | missing, `P5`                   |
+| superscript and subscript           | [superscript and subscript](dialect/superscript-and-subscript.md) | Pandoc                                 | Pandoc                               | missing, `P6`                   |
+| citations                           | [citations](dialect/citations.md)                                 | Pandoc                                 | Pandoc                               | missing, `P7`                   |
+| fancy lists                         | [lists](dialect/lists.md)                                         | Pandoc                                 | Pandoc                               | missing, `P9a`                  |
+| example lists                       | [lists](dialect/lists.md)                                         | Pandoc                                 | Pandoc                               | missing, `P9b`                  |
+| definition lists                    | [definition lists](dialect/definition-lists.md)                   | Pandoc                                 | Pandoc                               | missing, `P10`                  |
+| table captions                      | [tables](dialect/tables.md)                                       | Pandoc                                 | Pandoc                               | missing, `P11a`                 |
+| simple tables                       | [tables](dialect/tables.md)                                       | Pandoc                                 | Pandoc                               | missing, `P11b`                 |
+| multiline tables                    | [tables](dialect/tables.md)                                       | Pandoc                                 | Pandoc                               | missing, `P11c`                 |
+| grid tables                         | [tables](dialect/tables.md)                                       | Pandoc                                 | Pandoc                               | missing, `P11d`                 |
 
-The options `smartPunctuation`, `footnotes`, `tables`, `strikethrough`,
-`autolinks`, `taskLists`, `formulas`, and `directives` are the inherited
-options. `stripHTMLComments` is removed by `M0` and has no successor; nothing
-in the dialect strips anything. Pandoc's `startnum` is not an option: a list's
-start number is always the value of its first marker. Pandoc's
-`compact_definition_lists` is not an option: compact and loose definitions are
-two source forms of `definitionLists`. Every option is independent, except
-that a feature which extends inherited syntax is additionally gated by that
-syntax's inherited option: `inlineFootnotes` requires `footnotes`,
-`taskMarkers` requires `taskLists`, the `\|` rule of cross links requires
-`crossLinks` and the table option that parses the cell, and `$` inside every
-feature is gated by `formulas`.
+The current parser still publishes `ParseOptions` switches for the eight
+features it implements as cmark and cmark-gfm extensions and for smart
+punctuation; `X0` removes every switch and smart punctuation itself, so that
+every surface parses one language. `stripHTMLComments` is removed by `M0` and
+has no successor; nothing in the dialect strips anything. Pandoc's `startnum`
+has no counterpart: a list's start number is always the value of its first
+marker. Pandoc's `compact_definition_lists` has no counterpart: compact and
+loose definitions are two source forms of one feature.
 
-The `--profile` names of the CLI (`commonmark`, `commonmark-smart`, `gfm`,
-`gfm-smart`, `gfm-extended`, `default`) are harness shorthands that select
-option sets for the cmark and cmark-gfm comparison oracles. They define no
-language, no module refers to them, and no source-named shorthand is added.
+The conformance harness keeps an internal way to run the parser with its
+base layer alone or with the GFM layer alone, so that the cmark and cmark-gfm
+oracles can be compared with the layers they judge; the CLI `--profile` names
+are that harness's shorthands. They define no language, no module refers to
+them, no binding exposes them, and no source-named shorthand is added.
 
 ## Ground rules
 
 These rules hold in every module. A module that needs an exception states it
 explicitly.
 
-- An option that is off leaves the inherited behavior byte for byte. Turning an
-  option on changes the parse of source that the inherited grammar already
-  accepts only where the module states the exact rule.
-- An option that is on always recognizes its syntax. No option publishes two
-  representations of one semantic fact, and no compatibility alias survives a
-  model change.
+- There are no switches. Every feature is always recognized, and the
+  CommonMark base parse is the meaning of every byte that no feature claims; a
+  feature changes the parse of source the inherited grammar already accepts
+  only where its module states the exact rule.
+- No feature publishes two representations of one semantic fact, and no
+  compatibility alias survives a model change.
 - Values are stored as written. "As written" means no lowercasing, aliasing,
   trimming, slugging, or derivation of one field from another, unless the
   module states the transformation; the shared escape and character-reference
   decoding of the grammar that produced the value still applies. Matching,
   resolution, and rendering are consumer policy.
 - A comment is a `Comment` node and is never stripped: an HTML comment under
-  the inherited grammar and a `%%` comment under `comments`. A consumer that
+  the inherited grammar and a `%%` comment. A consumer that
   does not want comments drops the nodes.
 - There is no emoji support of any kind: no shortcode table, no alias step in
   anchor generation, and no special treatment of emoji scalars anywhere.
@@ -177,23 +170,18 @@ explicitly.
 
 Every module states its rules in prose and grammar and illustrates each rule
 with examples in the CommonMark specification's format: a fence line of 32
-backticks followed by ` example` and the example's tags, the Markdown input,
-a line holding one `.`, the expected canonical AST dump, and a closing fence
-of 32 backticks. The expected dump is the module's target model in the
+backticks followed by ` example`, the Markdown input, a line holding one `.`,
+the expected canonical AST dump, and a closing fence of 32 backticks. The expected dump is the module's target model in the
 grammar of [`canonical-ast-dump.md`](canonical-ast-dump.md), including the
 encodings that document reserves for kinds and fields that have not landed
 yet; where an example's syntax is present in the implementation today, its
 dump differs from the current fixtures only by the model changes of the
 landing plan's items `M0` through `M7` and by those reserved encodings.
 
-The tags name the options the example runs with, in the `snake_case`
-spelling of the fixture tags. An example runs with the product defaults, the
-eight inherited options on and every other option off, plus each listed
-option; a tag of the form `!name` turns an inherited option off for that
-example, and an example with no tags runs with the product defaults alone.
-Tags are independent of order. Examples are numbered by position within
-their module, first to last, and a harness reports an example as its module
-and number.
+Every example runs the whole dialect, so the fence line carries no tags and
+there is nothing to configure. Examples are numbered by position within their
+module, first to last, and a harness reports an example as its module and
+number.
 
 Every example is normative. The item that lands a module's behavior adds the
 module's examples to the package fixtures byte for byte, in the same fixture
@@ -206,8 +194,9 @@ where the two disagree, both are wrong and the module is amended.
 Recognition is one pass of the shared block parser followed by one pass of the
 shared inline parser over each inline container, in the order the two tables
 below fix. No module rescans a completed node, runs a regular expression over
-finished source, or repairs a tree in a post-pass; the two post-passes named in
-the tables are the only exceptions and each is bounded to the nodes it names.
+finished source, or repairs a tree in a post-pass; the email autolink
+post-pass named in the table is the only exception and is bounded to the
+`Text` nodes it names.
 Each module's own section names the step it occupies; the tables are the only
 statement of cross-module precedence.
 
@@ -215,42 +204,40 @@ Within class A the leftmost opener in source order wins and its matched region
 is opaque to every later class and to every later class-A candidate inside it.
 At one position the rows are tried in table order, with one exception: at a
 backslash, the formula openers `\\(` and `\\[` of step A4 are tested before
-the escape of step A1 while `formulas` is on, so a doubled backslash opens a
-formula and a single backslash stays an escape. A class-A candidate that
+the escape of step A1, so a doubled backslash opens a formula and a single
+backslash stays an escape. A class-A candidate that
 fails consumes nothing: the cursor returns to the candidate's first byte and
 the next alternative runs from there.
 
 ### Inline
 
-| Step | Construct                                                            | Option                             | Class                                                                |
-| ---- | -------------------------------------------------------------------- | ---------------------------------- | -------------------------------------------------------------------- |
-| A1   | backslash escape, after the `\\(` and `\\[` openers of A4 at a backslash | inherited                     | scanner                                                              |
-| A2   | code span                                                            | inherited                          | scanner, opaque                                                      |
-| A3   | raw HTML token, HTML comment as `Comment`, angle-bracket autolink, bare URL and `www.` autolink | inherited, `autolinks` for the bare forms | scanner, opaque token or run                          |
-| A4   | formula `$`, `$$`, `` $`...`$ ``, `\\(`, `\\[`                       | `formulas`                         | scanner, opaque                                                      |
-| A5   | inline comment `%%...%%`                                             | `comments`                         | scanner, opaque                                                      |
-| A6   | cross link `[[...]]`, `![[...]]`                                     | `crossLinks`                       | scanner, opaque                                                      |
-| A7   | inline footnote `^[...]`                                             | `inlineFootnotes` and `footnotes`  | scanner, body parsed                                                 |
-| A8   | citation key `@key`, `-@key`                                         | `citations`                        | scanner; a bare key with no bracketed tail is finalized document-wide |
-| A9   | example reference `(@label)`                                         | `exampleLists`                     | scanner, finalized document-wide                                     |
-| A10  | text directive `:name[...]{...}`                                     | `directives`                       | scanner                                                              |
-| A11  | character reference                                                  | inherited                          | scanner                                                              |
-| B1   | direct link and image tail, then an attribute container              | inherited, `linkAttributes`        | bracket close, first                                                 |
-| B2   | defined footnote call `[^label]`                                     | `footnotes`                        | bracket close                                                        |
-| B3   | resolving full and collapsed reference tails, then a container       | inherited, `linkAttributes`        | bracket close                                                        |
-| B4   | `[...]{attrs}` span                                                  | `bracketedSpans`                   | bracket close                                                        |
-| B5   | `[@key...; ...]` cite group                                          | `citations`                        | bracket close                                                        |
-| B6   | resolving shortcut reference, then a container while `bracketedSpans` is off | inherited, `linkAttributes` | bracket close, last                                                |
-| C1   | `*`, `_` emphasis and strong                                         | inherited                          | delimiter stack                                                      |
-| C2   | `~~` strikethrough                                                   | `strikethrough`                    | delimiter stack                                                      |
-| C3   | `~` subscript                                                        | `subscript`                        | delimiter stack                                                      |
-| C4   | `^` superscript                                                      | `superscript`                      | delimiter stack                                                      |
-| C5   | `==` mark                                                            | `marks`                            | delimiter stack                                                      |
-| C6   | `++` insert                                                          | `insertedText`                     | delimiter stack                                                      |
-| D    | attribute suffix at every attachment site                            | per option                         | immediately after its owner                                          |
-| E    | GFM email autolink                                                   | `autolinks`                        | post-pass over `Text` only                                           |
-| F    | smart punctuation                                                    | `smartPunctuation`                 | post-pass over `Text` only                                           |
-
+| Step | Construct                                                                                       | Class                                                                 |
+| ---- | ----------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| A1   | backslash escape, after the `\\(` and `\\[` openers of A4 at a backslash                        | scanner                                                               |
+| A2   | code span                                                                                       | scanner, opaque                                                       |
+| A3   | raw HTML token, HTML comment as `Comment`, angle-bracket autolink, bare URL and `www.` autolink | scanner, opaque token or run                                          |
+| A4   | formula `$`, `$$`, `` $`...`$ ``, `\\(`, `\\[`                                                  | scanner, opaque                                                       |
+| A5   | inline comment `%%...%%`                                                                        | scanner, opaque                                                       |
+| A6   | cross link `[[...]]`, `![[...]]`                                                                | scanner, opaque                                                       |
+| A7   | inline footnote `^[...]`                                                                        | scanner, body parsed                                                  |
+| A8   | citation key `@key`, `-@key`                                                                    | scanner; a bare key with no bracketed tail is finalized document-wide |
+| A9   | example reference `(@label)`                                                                    | scanner, finalized document-wide                                      |
+| A10  | text directive `:name[...]{...}`                                                                | scanner                                                               |
+| A11  | character reference                                                                             | scanner                                                               |
+| B1   | direct link and image tail, then an attribute container                                         | bracket close, first                                                  |
+| B2   | defined footnote call `[^label]`                                                                | bracket close                                                         |
+| B3   | resolving full and collapsed reference tails, then a container                                  | bracket close                                                         |
+| B4   | `[...]{attrs}` span                                                                             | bracket close                                                         |
+| B5   | `[@key...; ...]` cite group                                                                     | bracket close                                                         |
+| B6   | resolving shortcut reference                                                                    | bracket close, last                                                   |
+| C1   | `*`, `_` emphasis and strong                                                                    | delimiter stack                                                       |
+| C2   | `~~` strikethrough                                                                              | delimiter stack                                                       |
+| C3   | `~` subscript                                                                                   | delimiter stack                                                       |
+| C4   | `^` superscript                                                                                 | delimiter stack                                                       |
+| C5   | `==` mark                                                                                       | delimiter stack                                                       |
+| C6   | `++` insert                                                                                     | delimiter stack                                                       |
+| D    | attribute suffix at every attachment site                                                       | immediately after its owner                                           |
+| E    | GFM email autolink                                                                              | post-pass over `Text` only                                            |
 Classes B and C are the inherited bracket and delimiter algorithms of
 CommonMark, extended with the listed steps. Class B is the ordered procedure
 run at every unescaped `]` that matches an active bracket opener; the first
@@ -261,24 +248,24 @@ inherited process-emphasis algorithm.
 
 ### Block starts
 
-| Step | Block start                                                              | Option                                                                              |
-| ---- | ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------- |
-| 0    | properties envelope, first line of the document only                     | `properties`                                                                        |
-| 1    | container prefixes of open containers                                    | inherited                                                                           |
-| 2    | fenced and indented code, HTML block, an HTML comment block as `Comment` | inherited                                                                           |
-| 3    | formula block `$$` and `\\[` lines                                       | `formulas`                                                                          |
-| 4    | block comment `%%` line                                                  | `comments`                                                                          |
-| 5    | block quote, becoming `Callout`, with metadata on its first line         | inherited, `callouts`                                                               |
-| 6    | list markers, including fancy and example markers                        | inherited, `fancyLists`, `exampleLists`                                             |
-| 7    | container, nameless container, and leaf directive `:::name`, `::: {...}`, `::: word`, `::name` | `directives`                                                  |
-| 8    | ATX heading, with `headingAttributes`                                    | inherited                                                                           |
-| 9    | Setext heading                                                           | inherited                                                                           |
-| 10   | tables: caption-prefixed, pipe, grid, multiline, simple                  | `tableCaptions` for the prefix, `tables` for pipe, `gridTables`, `multilineTables`, `simpleTables` |
-| 11   | thematic break                                                           | inherited                                                                           |
-| 12   | footnote definition, reference definition                                | `footnotes`, inherited                                                              |
-| 13   | definition list                                                          | `definitionLists`                                                                   |
-| 14   | block identifier line `^id`                                              | `blockIdentifiers`                                                                  |
-| 15   | paragraph, with the `^id` suffix at finalization                         | inherited                                                                           |
+| Step | Block start                                                                                    |
+| ---- | ---------------------------------------------------------------------------------------------- |
+| 0    | properties envelope, first line of the document only                                           |
+| 1    | container prefixes of open containers                                                          |
+| 2    | fenced and indented code, HTML block, an HTML comment block as `Comment`                       |
+| 3    | formula block `$$` and `\\[` lines                                                             |
+| 4    | block comment `%%` line                                                                        |
+| 5    | block quote, becoming `Callout`, with metadata on its first line                               |
+| 6    | list markers, including fancy and example markers                                              |
+| 7    | container, nameless container, and leaf directive `:::name`, `::: {...}`, `::: word`, `::name` |
+| 8    | ATX heading, with its attribute container                                                      |
+| 9    | Setext heading                                                                                 |
+| 10   | tables: caption-prefixed, pipe, grid, multiline, simple                                        |
+| 11   | thematic break                                                                                 |
+| 12   | footnote definition, reference definition                                                      |
+| 13   | definition list                                                                                |
+| 14   | block identifier line `^id`                                                                    |
+| 15   | paragraph, with the `^id` suffix at finalization                                               |
 
 A block start is tested at the first non-space byte of the line after the open
 containers' prefixes have been consumed. Steps 2 through 14 are tested in
@@ -295,12 +282,12 @@ module recognizes anything inside them.
 
 - a code span and a fenced or indented code block;
 - an HTML token, an HTML block, and a `Comment` produced by either grammar;
-- a formula body, inline or block, under `formulas`;
-- an inline or block `%%` comment under `comments`;
-- a completed cross link under `crossLinks`;
+- a formula body, inline or block;
+- an inline or block `%%` comment;
+- a completed cross link;
 - the source of an angle-bracket autolink; and
-- the run of a bare URL or `www.` autolink under `autolinks`, from its first
-  byte to its terminator.
+- the run of a bare URL or `www.` autolink, from its first byte to its
+  terminator.
 
 Opacity is by ownership, not by region: a pair of matching inline HTML tags,
 a pair of comments, or two cross links do not make the bytes between them
@@ -314,9 +301,9 @@ are decoded only where its module says so.
   alternative in the recognition order runs from there. A failed candidate
   therefore never removes a bracket, fence, delimiter, or attribute container
   from a later construct.
-- Fallback is to the inherited grammar at the same position, exactly as if
-  the failed candidate's option were off for those bytes, unless the module
-  states another output.
+- Fallback is to the next alternative of the recognition order at the same
+  position and, when no alternative claims the bytes, to the inherited
+  grammar, unless the module states another output.
 - A construct that would exceed a limit below is not recognized; its opener
   bytes are literal at their position and parsing continues after them.
 - Allocation failure aborts the whole `Document.parse` with the platform
@@ -339,7 +326,7 @@ dialect. Changing one is a behavior change.
 | code span backtick string length (`MAXBACKTICKS`)                 | 80            | a longer backtick string is never a code span delimiter and is text; cmark shares the ceiling, so the cmark gate sees no divergence |
 | directive label bracket nesting                                   | 32            | a label with a 33rd nested `[` is not a label; the directive has no label              |
 | decimal list marker and example counter digits                    | 9             | a longer digit run is not a marker                                                     |
-| Roman list marker value (`fancyLists`)                            | 999999999     | a numeral of greater value, whatever its components, is not a marker; the line is ordinary content |
+| Roman list marker value                                           | 999999999     | a numeral of greater value, whatever its components, is not a marker; the line is ordinary content |
 | image dimension value                                             | 2147483647    | a larger value yields no dimensions; the whole label stays alt content                 |
 | properties alias expansion                                        | 1048576 bytes | a payload whose expanded alias occurrences exceed the budget invalidates the candidate |
 | properties records per block                                      | 65536         | a payload with more top-level records invalidates the candidate                        |
@@ -395,8 +382,8 @@ Every module ends with a required-cases section, and its examples are its
 first required cases. A feature lands only with:
 
 - package fixtures for every example of the module, byte for byte, and for
-  every required case, including the option-off case for every documented
-  form, every malformed boundary, exact scopes, allocation failure at every
+  every required case, including every malformed boundary, exact scopes,
+  allocation failure at every
   allocation, and a size-doubling case, defined in
   [`test-architecture.md`](test-architecture.md);
 - a canonical case in `specs/canonical-ast/` for every new kind, enum value,
@@ -404,7 +391,7 @@ first required cases. A feature lands only with:
   every declared kind produced;
 - the registration of every oracle delta it creates and the retirement of every
   oracle gap it closes, in the same change; and
-- one row of the option table above flipped to `present`.
+- one row of the feature table above flipped to `present`.
 
 A case that composes the syntax of two features is owned by whichever of the
 two lands later; the landing plan lists those cases.

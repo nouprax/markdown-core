@@ -1,13 +1,11 @@
 # Cross links
 
 Status: normative module of the [Markdown Core dialect](../dialect.md).
-Option: `crossLinks` (default `false`). Source: Obsidian's internal links and
-embeds (`[[...]]` and `![[...]]`). Executable oracle:
-`@quartz-community/remark-obsidian` 0.2.4 under `specs/oracles/obsidian/`,
-for the forms it parses; its label-nullability and destination projections
-are registered deltas. Landing: `O1`, the first producer of
-`Destination.cross`. Every example in this module runs with `crossLinks` on
-unless its fence says otherwise; the [example format](../dialect.md#examples)
+Source: Obsidian's internal links and embeds (`[[...]]` and `![[...]]`).
+Executable oracle: `@quartz-community/remark-obsidian` 0.2.4 under
+`specs/oracles/obsidian/`, for the forms it parses; its label-nullability and
+destination projections are registered deltas. Landing: `O1`, the first
+producer of `Destination.cross`. The [example format](../dialect.md#examples)
 is defined by the index.
 
 ## Model
@@ -57,7 +55,7 @@ label          = *( any scalar except "[", "]", LF, and CR )
 
 A target alone is a link to a note:
 
-```````````````````````````````` example cross_links
+```````````````````````````````` example
 See [[Note]] for details.
 .
 Document scope=1:1..1:25 anchor=null attributes={} children=1
@@ -70,7 +68,7 @@ Document scope=1:1..1:25 anchor=null attributes={} children=1
 A `!` immediately before the opener makes the cross link an embed; nothing
 else about the value changes:
 
-```````````````````````````````` example cross_links
+```````````````````````````````` example
 ![[Note]]
 .
 Document scope=1:1..1:9 anchor=null attributes={} children=1
@@ -80,7 +78,7 @@ Document scope=1:1..1:9 anchor=null attributes={} children=1
 
 The first `|` after the target begins the label, which is stored raw:
 
-```````````````````````````````` example cross_links
+```````````````````````````````` example
 [[Folder/Note|Label]]
 .
 Document scope=1:1..1:21 anchor=null attributes={} children=1
@@ -94,7 +92,7 @@ Every byte after the first `#` of the target is the anchor, as written. A
 path may be empty when an anchor is present, and then the cross link
 addresses the current document:
 
-```````````````````````````````` example cross_links
+```````````````````````````````` example
 [[Note#Heading]] and [[#Heading]]
 .
 Document scope=1:1..1:33 anchor=null attributes={} children=1
@@ -107,7 +105,7 @@ Document scope=1:1..1:33 anchor=null attributes={} children=1
 A heading anchor may name several nested heading parts; the parts are not
 split, and the stored anchor keeps its inner `#`:
 
-```````````````````````````````` example cross_links
+```````````````````````````````` example
 [[Note#Parent#Child|Label]]
 .
 Document scope=1:1..1:27 anchor=null attributes={} children=1
@@ -120,7 +118,7 @@ non-empty `block-id` runs to the `|` or `]]`; then `anchor` is the identifier
 without `#^`. In every other position `^` is an ordinary heading byte, and a
 `^^` at the start of the target is part of the path:
 
-```````````````````````````````` example cross_links
+```````````````````````````````` example
 ![[Note#^block-id]] [[A#^id#x]] [[^^text]]
 .
 Document scope=1:1..1:42 anchor=null attributes={} children=1
@@ -137,7 +135,7 @@ such as `page=3`, and the spaces inside `[[ Note ]]` are stored as written;
 their meaning belongs to the resolver, and no media type is inferred from an
 extension:
 
-```````````````````````````````` example cross_links
+```````````````````````````````` example
 ![[Image.png|100x145]] ![[Document.pdf#page=3]] [[ Note ]]
 .
 Document scope=1:1..1:58 anchor=null attributes={} children=1
@@ -154,7 +152,7 @@ Document scope=1:1..1:58 anchor=null attributes={} children=1
 An authored empty label is `""`, distinct from no label, and a second `|` is
 label content:
 
-```````````````````````````````` example cross_links
+```````````````````````````````` example
 [[Note|]] [[Note|a|b]]
 .
 Document scope=1:1..1:22 anchor=null attributes={} children=1
@@ -170,7 +168,7 @@ path never ends in the backslash of such a pair, the backslash is dropped,
 and the pipe separates. No other backslash escape exists inside a cross
 link.
 
-```````````````````````````````` example cross_links
+```````````````````````````````` example
 [[Note\|Label]]
 .
 Document scope=1:1..1:15 anchor=null attributes={} children=1
@@ -184,7 +182,7 @@ At least one of `path` and an anchor is non-empty, and a heading part that is
 empty at any position makes the opener text. A failed candidate consumes
 nothing; the inherited rules run from its first `[`:
 
-```````````````````````````````` example cross_links
+```````````````````````````````` example
 [[]] [[#]] [[|x]]
 
 [[Note#]] [[A##B]] [[A#B#]]
@@ -200,7 +198,7 @@ The candidate ends at the first `]]` after the opener. An unescaped `[` or
 `]` before that `]]` makes the opener text, and scanning resumes at the next
 byte, so a triple bracket is text, a cross link, and text:
 
-```````````````````````````````` example cross_links
+```````````````````````````````` example
 [[[Note]]]
 .
 Document scope=1:1..1:10 anchor=null attributes={} children=1
@@ -213,7 +211,7 @@ Document scope=1:1..1:10 anchor=null attributes={} children=1
 `\[[Note]]` is an inherited escape and is text. `\![[Note]]` is a literal `!`
 followed by a cross link with `embedded=false`:
 
-```````````````````````````````` example cross_links
+```````````````````````````````` example
 \[[Note]]
 
 \![[Note]]
@@ -229,7 +227,7 @@ Document scope=1:1..3:10 anchor=null attributes={} children=2
 A recognized cross link is complete at its `]]`. A following `(`, `[`, or `{`
 is text, so no link, reference, or span forms around it:
 
-```````````````````````````````` example cross_links
+```````````````````````````````` example
 [[Note]](url) [[Note]]{.c}
 .
 Document scope=1:1..1:26 anchor=null attributes={} children=1
@@ -242,7 +240,7 @@ Document scope=1:1..1:26 anchor=null attributes={} children=1
 
 Link content and image alt content may contain a cross link:
 
-```````````````````````````````` example cross_links
+```````````````````````````````` example
 [a [[Note]] b](/u)
 .
 Document scope=1:1..1:18 anchor=null attributes={} children=1
@@ -255,7 +253,7 @@ Document scope=1:1..1:18 anchor=null attributes={} children=1
 
 A line ending before the `]]` makes the opener text:
 
-```````````````````````````````` example cross_links
+```````````````````````````````` example
 [[No
 te]]
 .
@@ -269,7 +267,7 @@ Document scope=1:1..2:4 anchor=null attributes={} children=1
 Source owned by code spans, HTML tokens, comments, and formulas is opaque to
 this module, and a completed cross link is opaque to every later step:
 
-```````````````````````````````` example cross_links
+```````````````````````````````` example
 `[[a]]` $[[b]]$ <!-- [[c]] -->
 .
 Document scope=1:1..1:30 anchor=null attributes={} children=1
@@ -283,15 +281,14 @@ Document scope=1:1..1:30 anchor=null attributes={} children=1
 
 ## Tables
 
-While `crossLinks` is on, in every table syntax that parses cell content, a
-`\|` inside a cell is not a cell boundary and reaches the inline scanner,
+In every table syntax that parses cell content, a `\|` inside a cell is not a cell boundary and reaches the inline scanner,
 where it is the label separator inside `[[...]]` and the inherited escaped
 pipe elsewhere. An unescaped `|` inside a cross link candidate in a table row
 splits the cell, and the unmatched `[[` bytes are text. There is no
 table-specific cross-link parser and the inherited delimiter-row grammar is
 unchanged.
 
-```````````````````````````````` example cross_links
+```````````````````````````````` example
 | x | y |
 | - | - |
 | [[a\|b]] | c |
@@ -325,7 +322,7 @@ A GFM bare URL or `www.` autolink is an earlier scanner step whose run is
 opaque, as the [links and images](links-and-images.md) module states, so
 `[[y]]` inside a URL is URL text and no cross link forms there:
 
-```````````````````````````````` example cross_links
+```````````````````````````````` example
 www.x.com/[[y]] z
 .
 Document scope=1:1..1:17 anchor=null attributes={} children=1
@@ -333,19 +330,6 @@ Document scope=1:1..1:17 anchor=null attributes={} children=1
     ├── Link scope=1:1..1:15 anchor=null attributes={} dest=url("http://www.x.com/[[y]]") title=null children=1
     │   └── Text scope=1:1..1:15 anchor=null attributes={} literal="www.x.com/[[y]]" children=0
     └── Text scope=1:16..1:17 anchor=null attributes={} literal=" z" children=0
-````````````````````````````````
-
-## Option behavior
-
-With `crossLinks=false`, `[[`, `]]`, and `![[` follow inherited bracket
-handling byte for byte:
-
-```````````````````````````````` example
-[[Note]] ![[Note|Label]]
-.
-Document scope=1:1..1:24 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:24 anchor=null attributes={} children=1
-    └── Text scope=1:1..1:24 anchor=null attributes={} literal="[[Note]] ![[Note|Label]]" children=0
 ````````````````````````````````
 
 ## Downstream meaning

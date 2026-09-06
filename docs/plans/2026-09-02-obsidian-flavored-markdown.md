@@ -10,8 +10,8 @@ mergeable pull requests is
 
 ## Outcome
 
-Add the Obsidian syntax extensions to the C parser and all three bindings, one
-parse option per module. They reuse the current CommonMark/GFM block and inline
+Add the Obsidian syntax extensions to the C parser and all three bindings,
+always on, with no parse option. They reuse the current CommonMark/GFM block and inline
 algorithms, add the documented OFM syntax as composable extensions, expose every
 new semantic fact through the immutable canonical AST, and keep vault resolution
 and rendering out of the parser. Every `>` container becomes `Callout`; a plain
@@ -24,8 +24,8 @@ parser-internal. One valid beginning-of-file Properties block populates optional
 open string domain; vault conventions such as `aliases` do not become parser
 keywords or link-resolution results.
 
-The modules are independent extensions, each behind its own option, not a preset
-and not a full Obsidian parser dialect. They preserve inherited cmark/CommonMark
+The modules are independent extensions of one language, not a preset and not a
+full Obsidian parser dialect. They preserve inherited cmark/CommonMark
 behavior, including Markdown recognition between paired inline HTML tags, and
 add no HTML element-region suppression. Block identifiers populate the same
 universal `Markup.anchor` string used by other extensions; they do not introduce
@@ -43,7 +43,7 @@ tables rules they extend. A phase is incomplete if its module's grammar, AST
 invariants, fallback, scopes, or required conformance cases are unmet. The
 shared [`Cite`, `Citation`, and `CitationReferent`
 model](../specs/dialect/footnotes.md) owns their reusable semantics; this plan
-does not enable Pandoc `@key` syntax through any Obsidian option.
+does not define Pandoc `@key` syntax; the citations module does.
 
 - [ ] **Plan exit criterion:** the in-scope official extension examples, negative
       boundaries, cross-extension interactions, oracle comparison, allocation
@@ -96,11 +96,11 @@ does not enable Pandoc `@key` syntax through any Obsidian option.
       projection audit atomically. While 3.0.0 is unreleased, identifiers, wire
       layouts, and manifest order may be renumbered by any later item; nothing
       is reserved in advance.
-- [ ] Add one parse option per module to the registry, the CLI, and each
-      binding; there is no preset and no CLI `--profile obsidian`. Keep the
-      inherited grammar stable, but make the canonical `BlockQuote` to `Callout`
-      rename universal. Add only the option bit each module needs; do not add a
-      second parser.
+- [ ] Register each module's scanner in the internal harness registry that
+      `X0` creates; there is no parse option, no preset, and no CLI
+      `--profile obsidian`. Keep the inherited grammar stable, but make the
+      canonical `BlockQuote` to `Callout` rename universal. Add only the engine
+      bit each module needs; do not add a second parser.
 
 - [ ] **Exit criterion:** all public surfaces compile with exhaustive handling, the
       canonical schema audit proves kind/field parity, and fixtures can express every
@@ -202,8 +202,8 @@ does not enable Pandoc `@key` syntax through any Obsidian option.
 - [ ] Move wiki alias-pipe awareness into the shared table/inline boundary so
       `[[target\|label]]` and `![[image\|100]]` stay inside one cell. Do not add a
       table-only wikilink parser.
-- [ ] Preserve current GFM semantics for ordinary tables and task items while
-      every Obsidian option is off.
+- [ ] Preserve current GFM semantics for ordinary tables and task items that use
+      no Obsidian syntax.
 
 - [ ] **Exit criterion:** task markers round-trip through every public AST, two-hyphen
       tables retain current behavior, escaped wiki pipes never create extra cells,
@@ -213,7 +213,7 @@ does not enable Pandoc `@key` syntax through any Obsidian option.
 
 - [ ] Add package-owned C fixtures with a manifest mapping every example back to
       its normative OFM module. They own in-scope official extension examples,
-      strict fallbacks, option gates, cross-extension conflicts, scopes, and
+      strict fallbacks, cross-extension conflicts, scopes, and
       source-order behavior. Do not copy product goldens into `specs/oracles/`.
 - [ ] Extend `specs/canonical-ast/` with compact cross-binding cases covering every
       new kind, enum state, nullable field, ownership edge, escaping rule, and
@@ -252,10 +252,10 @@ does not enable Pandoc `@key` syntax through any Obsidian option.
 ## Delivery sequence
 
 The durable review sequence is model, inline engine, block ownership, existing
-extension integration, and evidence. Each change must leave every existing
-option set green. No phase may publish a module's option until its AST exists on
+extension integration, and evidence. Each change must leave the existing
+fixtures green. No phase may publish a module's syntax until its AST exists on
 every platform and the module's target fixture is enabled; before that point the
-option remains internal test plumbing.
+module's scanner remains internal test plumbing.
 
 - [ ] Publish release notes listing the documented OFM subset, parser-only
       boundary, `Document.metadata` addition, reference-link/image normalization,

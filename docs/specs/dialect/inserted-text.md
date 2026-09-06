@@ -1,15 +1,13 @@
 # Inserted text
 
 Status: normative module of the [Markdown Core dialect](../dialect.md).
-Option: `insertedText` (default `false`). Source: `markdown-it-ins` 4.0.0 at
+Source: `markdown-it-ins` 4.0.0 at
 commit `d1a13b290c944e8f212d3a6bd2de2f70b751c924`, whose README is the pinned
 source for the valid source form and `<ins>` meaning; this module states the
 rule, and the plugin is evidence whose differences become registered deltas.
 Executable oracle: `markdown-it` 13.0.2 with the plugin registered, under
-`specs/oracles/markdown-it-ins/`, which lands with `I0`. Landing: `I1`. Every
-example in this module runs with `insertedText` on unless its fence says
-otherwise; the [example format](../dialect.md#examples) is defined by the
-index.
+`specs/oracles/markdown-it-ins/`, which lands with `I0`. Landing: `I1`. The
+[example format](../dialect.md#examples) is defined by the index.
 
 ## Model
 
@@ -26,7 +24,7 @@ and a purely presentational underline, if ever supported, is not encoded as
 final content may nevertheless be empty when another feature semantically
 removes every child in that region.
 
-```````````````````````````````` example inserted_text
+```````````````````````````````` example
 This is ++inserted++ text.
 .
 Document scope=1:1..1:26 anchor=null attributes={} children=1
@@ -39,7 +37,7 @@ Document scope=1:1..1:26 anchor=null attributes={} children=1
 
 Properly nested markup is parsed into the content:
 
-```````````````````````````````` example inserted_text
+```````````````````````````````` example
 ++**b**++ ++c *d*++
 .
 Document scope=1:1..1:19 anchor=null attributes={} children=1
@@ -82,7 +80,7 @@ A unit may open exactly when the run is left-flanking and close exactly when
 it is right-flanking. Intraword opening and closing are allowed, and the rule
 of three is not applied:
 
-```````````````````````````````` example inserted_text
+```````````````````````````````` example
 a++b++c
 .
 Document scope=1:1..1:7 anchor=null attributes={} children=1
@@ -98,7 +96,7 @@ order. A unit that can both open and close is first tried as a closer against
 the nearest legal unmatched opener; if none matches it stays on the stack as
 a potential opener. Multiple matching units nest rather than merge:
 
-```````````````````````````````` example inserted_text
+```````````````````````````````` example
 ++++text++++
 .
 Document scope=1:1..1:12 anchor=null attributes={} children=1
@@ -111,7 +109,7 @@ Document scope=1:1..1:12 anchor=null attributes={} children=1
 The literal `+` of an odd run is placed after all of that run's closing units
 and before all of its opening units:
 
-```````````````````````````````` example inserted_text
+```````````````````````````````` example
 +++text+++
 .
 Document scope=1:1..1:10 anchor=null attributes={} children=1
@@ -126,7 +124,7 @@ Units of the same run cannot match one another, and a unit that is not
 eligible on the side it needs is text, so `++++` and `a++++b` are entirely
 literal and a run with whitespace on its outer side never delimits:
 
-```````````````````````````````` example inserted_text
+```````````````````````````````` example
 ++++ a++++b + not ++
 .
 Document scope=1:1..1:20 anchor=null attributes={} children=1
@@ -140,7 +138,7 @@ Plus delimiters use the same machinery and precedence boundary as emphasis.
 A closer never crosses an already established inline boundary, so crossed
 delimiters are not repaired:
 
-```````````````````````````````` example inserted_text
+```````````````````````````````` example
 **++text**++
 .
 Document scope=1:1..1:12 anchor=null attributes={} children=1
@@ -152,7 +150,7 @@ Document scope=1:1..1:12 anchor=null attributes={} children=1
 
 Backslash-escaped plus signs are text and join no run:
 
-```````````````````````````````` example inserted_text
+```````````````````````````````` example
 \++a++ ++a\++
 .
 Document scope=1:1..1:13 anchor=null attributes={} children=1
@@ -164,7 +162,7 @@ A soft line break may occur inside an insertion, and a line ending beside a
 candidate is whitespace for the flanking tests. Pairing is local to the
 current inline container:
 
-```````````````````````````````` example inserted_text
+```````````````````````````````` example
 ++a
 b++
 .
@@ -178,7 +176,7 @@ Document scope=1:1..2:3 anchor=null attributes={} children=1
 
 An insertion may occur inside link content:
 
-```````````````````````````````` example inserted_text
+```````````````````````````````` example
 [++link++](/u)
 .
 Document scope=1:1..1:14 anchor=null attributes={} children=1
@@ -191,7 +189,7 @@ Document scope=1:1..1:14 anchor=null attributes={} children=1
 Code spans, comments, HTML tokens, formulas, cross links, and autolinks are
 opaque; text between paired HTML tags is eligible:
 
-```````````````````````````````` example inserted_text
+```````````````````````````````` example
 `++a++` <b>++c++</b>
 .
 Document scope=1:1..1:20 anchor=null attributes={} children=1
@@ -204,19 +202,9 @@ Document scope=1:1..1:20 anchor=null attributes={} children=1
     └── HTML scope=1:17..1:20 anchor=null attributes={} literal="</b>" children=0
 ````````````````````````````````
 
-## Option behavior and fallback
+## Fallback
 
-With `insertedText=false`, no plus run has delimiter meaning:
-
-```````````````````````````````` example
-++inserted++
-.
-Document scope=1:1..1:12 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:12 anchor=null attributes={} children=1
-    └── Text scope=1:1..1:12 anchor=null attributes={} literal="++inserted++" children=0
-````````````````````````````````
-
-With the option on, an unmatched or ineligible unit is text, and failed
+An unmatched or ineligible unit is text, and failed
 recognition consumes no escape, bracket, or plus sign a later construct
 needs. Each run is scanned once, parsing stays linear for long runs and many
 unmatched candidates, the inline nesting limit applies, and allocation

@@ -2,13 +2,12 @@
 
 Status: normative module of the [Markdown Core dialect](../dialect.md). It
 owns the `Comment` kind, the HTML-comment rule of the inherited grammar, and
-the `%%` comment syntax. Option: `comments` (default `false`) for `%%`; HTML
-comments have no option. Sources: CommonMark's HTML comment token and block;
+the `%%` comment syntax. Sources: CommonMark's HTML comment token and block;
 Obsidian's `%%` comments. Executable oracles: cmark for the HTML token and
 block boundaries; `@quartz-community/remark-obsidian` for `%%`, whose
 stripping is a registered projection. Landing: `M0` for the kind and the HTML
-rule, `O3` for `%%`. The `%%` examples in this module run with `comments` on;
-the [example format](../dialect.md#examples) is defined by the index.
+rule, `O3` for `%%`. The [example format](../dialect.md#examples) is defined
+by the index.
 
 ## Model
 
@@ -24,11 +23,11 @@ container-prefix removal.
 
 Nothing strips a comment. Every recognized comment of either grammar is a
 `Comment` node; a consumer that does not want comments drops the nodes. There
-is no retention option, and `stripHTMLComments` is removed.
+is no retention switch, and `stripHTMLComments` is removed.
 
 ## HTML comments
 
-Under the inherited grammar, with no option, an inline HTML comment token
+Under the inherited grammar, an inline HTML comment token
 `<!-- ... -->` is an inline `Comment` whose literal is the bytes between
 `<!--` and `-->`:
 
@@ -86,11 +85,11 @@ Document scope=1:1..1:12 anchor=null attributes={} children=1
 
 ## `%%` comments
 
-With `comments=true`, the opener is the first two `%` of a run of percent
+The opener is the first two `%` of a run of percent
 signs that is not preceded by an unescaped backslash, and the body ends at
 the first later `%%`. Inline recognition is inline step A5.
 
-```````````````````````````````` example comments
+```````````````````````````````` example
 a %%hidden%% b
 .
 Document scope=1:1..1:14 anchor=null attributes={} children=1
@@ -103,7 +102,7 @@ Document scope=1:1..1:14 anchor=null attributes={} children=1
 `%%%%` is an empty comment; `%%%a%%%` is `Comment("%a")` followed by text
 `%`; `\%%` is text. Backslashes inside the body are ordinary bytes.
 
-```````````````````````````````` example comments
+```````````````````````````````` example
 %%%% %%%a%%%
 
 \%%a%%
@@ -120,7 +119,7 @@ Document scope=1:1..3:6 anchor=null attributes={} children=2
 
 An inline body may span the lines of one inline container:
 
-```````````````````````````````` example comments
+```````````````````````````````` example
 a %%x
 y%% b
 .
@@ -141,7 +140,7 @@ prefixes and indentation bound; intervening lines carry the prefixes and may
 be blank. If found, the candidate commits as a block `Comment` whose literal
 is the intervening lines after prefix removal, each with its line ending:
 
-```````````````````````````````` example comments
+```````````````````````````````` example
 %%
 hidden
 block
@@ -153,7 +152,7 @@ Document scope=1:1..4:2 anchor=null attributes={} children=1
 
 The rule applies inside any container:
 
-```````````````````````````````` example comments
+```````````````````````````````` example
 > %%
 > x
 > %%
@@ -166,7 +165,7 @@ Document scope=1:1..3:4 anchor=null attributes={} children=1
 Without a closer line, the opener line is paragraph text and the inline rule
 applies to it; an unmatched inline opener is text and hides nothing:
 
-```````````````````````````````` example comments
+```````````````````````````````` example
 %%
 text
 .
@@ -179,7 +178,7 @@ Document scope=1:1..2:4 anchor=null attributes={} children=1
 
 A block candidate may interrupt a paragraph:
 
-```````````````````````````````` example comments
+```````````````````````````````` example
 para
 %%
 c
@@ -195,7 +194,7 @@ An inline body cannot cross a block boundary. Here the opener line finds no
 closer line, so it is paragraph text; the heading is a heading; and the
 `%%` on the last line is unmatched text:
 
-```````````````````````````````` example comments
+```````````````````````````````` example
 %%
 # h
 end %% x
@@ -203,7 +202,7 @@ end %% x
 Document scope=1:1..3:8 anchor=null attributes={} children=3
 ├── Paragraph scope=1:1..1:2 anchor=null attributes={} children=1
 │   └── Text scope=1:1..1:2 anchor=null attributes={} literal="%%" children=0
-├── Heading scope=2:1..2:3 anchor=null attributes={} level=1 children=1
+├── Heading scope=2:1..2:3 anchor="h" attributes={} level=1 children=1
 │   └── Text scope=2:3..2:3 anchor=null attributes={} literal="h" children=0
 └── Paragraph scope=3:1..3:8 anchor=null attributes={} children=1
     └── Text scope=3:1..3:8 anchor=null attributes={} literal="end %% x" children=0
@@ -213,7 +212,7 @@ A comment suppresses all recognition, inherited and extension, until its
 closer. Code spans, HTML tokens, and formulas are earlier class-A steps, so a
 `%%` inside them is their byte:
 
-```````````````````````````````` example comments cross_links
+```````````````````````````````` example
 %% *a* [[b]] `c` %% `%%`
 .
 Document scope=1:1..1:24 anchor=null attributes={} children=1
@@ -227,7 +226,7 @@ Table boundary scanning does not recognize comments: a `|` inside `%%...%%`
 on a table row splits the cell and the unmatched `%%` bytes are text, and a
 `\|` inside a comment in a table cell becomes `|` in the literal.
 
-```````````````````````````````` example comments
+```````````````````````````````` example
 | a | b |
 | - | - |
 | c %% | d %% |
@@ -247,19 +246,6 @@ Document scope=1:1..3:15 anchor=null attributes={} children=1
     │       └── TableCell scope=3:9..3:14 anchor=null attributes={} rowspan=1 colspan=1 children=1
     │           └── Text scope=3:10..3:13 anchor=null attributes={} literal="d %%" children=0
     └── TableFoot children=0
-````````````````````````````````
-
-## Option behavior
-
-With `comments=false`, `%%` is ordinary text everywhere, and HTML comments
-are still `Comment` nodes:
-
-```````````````````````````````` example
-%%a%%
-.
-Document scope=1:1..1:5 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:5 anchor=null attributes={} children=1
-    └── Text scope=1:1..1:5 anchor=null attributes={} literal="%%a%%" children=0
 ````````````````````````````````
 
 Every module that says "comment" means a `Comment` node of either grammar.

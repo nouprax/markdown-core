@@ -1,14 +1,12 @@
 # Callouts
 
 Status: normative module of the [Markdown Core dialect](../dialect.md). It
-owns the `Callout` kind, which every `>` container produces, and the option
-`callouts` (default `false`) that recognizes `[!type]` metadata. Source:
-Obsidian's callouts. Executable oracle: none; the Obsidian package does not
-parse callouts, so product fixtures are the oracle of record. Landing: the
-kind with `M3`, metadata with `O8`; until `M3` the current contract's
-`BlockQuote` stands. Every example in this module runs with `callouts` on
-unless its fence says otherwise; the [example format](../dialect.md#examples)
-is defined by the index.
+owns the `Callout` kind, which every `>` container produces, and the
+`[!type]` metadata rule. Source: Obsidian's callouts. Executable oracle:
+none; the Obsidian package does not parse callouts, so product fixtures are
+the oracle of record. Landing: the kind with `M3`, metadata with `O8`; until
+`M3` the current contract's `BlockQuote` stands. The
+[example format](../dialect.md#examples) is defined by the index.
 
 ## Model
 
@@ -37,7 +35,7 @@ lines and prints nothing for a null title.
 - `title == null` means no title bytes were authored; otherwise `title` is
   the parsed inline content of the title, which may consist of one `Comment`.
 
-```````````````````````````````` example callouts
+```````````````````````````````` example
 > quote
 .
 Document scope=1:1..1:7 anchor=null attributes={} children=1
@@ -46,7 +44,7 @@ Document scope=1:1..1:7 anchor=null attributes={} children=1
         └── Text scope=1:3..1:7 anchor=null attributes={} literal="quote" children=0
 ````````````````````````````````
 
-```````````````````````````````` example callouts
+```````````````````````````````` example
 > [!info]
 
 > [!TIP] Title
@@ -62,7 +60,7 @@ Default titles, built-in aliases, icons, colors, custom CSS types, and the
 current fold state are renderer data. An unknown type stays its `variant`,
 and so does a built-in type in any spelling; the parser substitutes nothing:
 
-```````````````````````````````` example callouts
+```````````````````````````````` example
 > [!custom-type]
 
 > [!Note]
@@ -74,7 +72,7 @@ Document scope=1:1..3:9 anchor=null attributes={} children=2
 
 ## Metadata grammar
 
-With `callouts=true`, the candidate is the first line of the container after
+The candidate is the first line of the container after
 the `>` prefix and its optional space are removed; up to three further spaces
 may precede `[!`. A blank first line, four or more spaces, or any other
 leading byte means no metadata.
@@ -86,7 +84,7 @@ fold-marker   = "+" / "-"
 sep           = SP / TAB
 ```
 
-```````````````````````````````` example callouts
+```````````````````````````````` example
 > [!faq]+ Are callouts foldable?
 
 > [!faq]- Are callouts foldable?
@@ -105,7 +103,7 @@ or the end of the line; otherwise the line is not a metadata line and the
 callout is metadata-free, so `[!note]Title` and `[!faq]+Title` are content, as
 is a marker that is not at the first position:
 
-```````````````````````````````` example callouts
+```````````````````````````````` example
 > [!note]Title
 
 > [!faq]+Title
@@ -127,7 +125,7 @@ Document scope=1:1..5:11 anchor=null attributes={} children=3
 Up to three spaces may precede `[!`; four make the line an indented code
 block under the inherited grammar, so the callout is metadata-free:
 
-```````````````````````````````` example callouts
+```````````````````````````````` example
 >    [!note] x
 
 >     [!note]
@@ -142,7 +140,7 @@ Document scope=1:1..3:13 anchor=null attributes={} children=2
 
 A blank first line means no metadata:
 
-```````````````````````````````` example callouts
+```````````````````````````````` example
 >
 > [!note] x
 .
@@ -155,7 +153,7 @@ Document scope=1:1..2:11 anchor=null attributes={} children=1
 Trailing spaces and tabs are removed before the title is parsed, and a title
 never contains `SoftBreak` or `LineBreak`. The title is inline content:
 
-```````````````````````````````` example callouts
+```````````````````````````````` example
 > [!note] **bold** title
 .
 Document scope=1:1..1:24 anchor=null attributes={} children=1
@@ -170,7 +168,7 @@ The paragraph that began on the metadata line is split: its remaining lines,
 lazy lines included, form a `Paragraph` whose scope starts at the first byte
 of the second line, and with no remaining lines the body is empty:
 
-```````````````````````````````` example callouts
+```````````````````````````````` example
 > [!note] Title
 > body
 > more
@@ -185,7 +183,7 @@ Document scope=1:1..3:6 anchor=null attributes={} children=1
         └── Text scope=3:3..3:6 anchor=null attributes={} literal="more" children=0
 ````````````````````````````````
 
-```````````````````````````````` example callouts
+```````````````````````````````` example
 > [!note] T
 > body
 lazy
@@ -203,7 +201,7 @@ Document scope=1:1..3:4 anchor=null attributes={} children=1
 Metadata is decided when the first line is consumed, before Setext
 resolution, so a following underline belongs to the body:
 
-```````````````````````````````` example callouts
+```````````````````````````````` example
 > [!note] T
 > ===
 .
@@ -217,7 +215,7 @@ Document scope=1:1..2:5 anchor=null attributes={} children=1
 
 Metadata is evaluated independently for every nested container:
 
-```````````````````````````````` example callouts
+```````````````````````````````` example
 > [!outer]
 > > [!inner] x
 .
@@ -231,7 +229,7 @@ Document scope=1:1..2:14 anchor=null attributes={} children=1
 A comment is an earlier scanner step, so a title may consist of one
 `Comment`:
 
-```````````````````````````````` example callouts comments
+```````````````````````````````` example
 > [!note] %%t%%
 .
 Document scope=1:1..1:15 anchor=null attributes={} children=1
@@ -244,7 +242,7 @@ A block identifier candidate on a metadata line is title text; the
 [block identifiers](block-identifiers.md) module attaches after metadata is
 extracted, so a candidate in the body attaches to the body paragraph:
 
-```````````````````````````````` example callouts block_identifiers
+```````````````````````````````` example
 > [!note] Title ^t
 > body ^p
 .
@@ -261,7 +259,7 @@ GitHub's alerts spell a subset of this grammar: `> [!NOTE]` is a callout with
 body, because the AST does not decide for the consumer; the
 [conflicts](conflicts.md) register records the ruling:
 
-```````````````````````````````` example callouts
+```````````````````````````````` example
 > [!NOTE]
 > text
 .
@@ -271,23 +269,11 @@ Document scope=1:1..2:6 anchor=null attributes={} children=1
         └── Text scope=2:3..2:6 anchor=null attributes={} literal="text" children=0
 ````````````````````````````````
 
-## Option behavior and fallback
+## Fallback
 
-With `callouts=false`, `[!type]` is paragraph text inside a metadata-free
-`Callout`:
-
-```````````````````````````````` example
-> [!info] x
-.
-Document scope=1:1..1:11 anchor=null attributes={} children=1
-└── Callout scope=1:1..1:11 anchor=null attributes={} variant=null fold=none children=1
-    └── Paragraph scope=1:3..1:11 anchor=null attributes={} children=1
-        └── Text scope=1:3..1:11 anchor=null attributes={} literal="[!info] x" children=0
-````````````````````````````````
-
-With the option on, an invalid type, a marker after the first line, or a
-marker separated from the first position by other content is ordinary
-content of a metadata-free `Callout`; no second kind exists.
+An invalid type, a marker after the first line, or a marker separated from
+the first position by other content is ordinary content of a metadata-free
+`Callout`; no second kind exists.
 
 ## Scopes
 

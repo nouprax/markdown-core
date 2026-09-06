@@ -12,18 +12,8 @@ does not absorb.
 
 ## Open for decision
 
-### C-8 Attribute members after a directive
-
-- Modules: [attributes](attributes.md), [directives](directives.md).
-- Pandoc's attribute grammar rejects a bare name such as `{disabled}`,
-  treats `-` as the `unnumbered` class, decodes character references only
-  inside quotes, and accepts an empty `name=`. `micromark-extension-directive`
-  accepts bare names, has no `-` member, and decodes references everywhere.
-- Provisional rule: one grammar, Pandoc's, at every attachment site,
-  directives included; every runtime difference from remark is a registered
-  delta.
-- Alternative: keep remark's member grammar at directive sites only, which
-  gives the dialect two attribute grammars for one brace syntax.
+Nothing is open. Every collision below is settled, and a new collision is
+added here with its alternatives until the product rules on it.
 
 ## Settled
 
@@ -61,8 +51,20 @@ modules state the ruled behavior and the ruling is final.
   at least as long as the opener, closes both. The `Div` kind and the
   `fencedDivs` option are gone, because either construct could express the
   other and the dialect keeps one. Product ruling.
+- **C-8 Attribute members after a directive.** One grammar, Pandoc's, at
+  every attachment site, directives included: a bare name such as
+  `{disabled}` is rejected, `-` is the `unnumbered` class, character
+  references decode only inside quotes, and an empty `name=` is accepted.
+  `micromark-extension-directive`'s member grammar is not a second grammar;
+  every runtime difference from remark is a registered delta. Product ruling
+  on 2026-09-06 that the earlier decision is final.
 - **C-9 Marks.** `==` is a delimiter run under the flanking rules of `*`.
   Product ruling.
+- **C-10 Switches.** The dialect has no parse options: every feature is
+  always recognized, the CommonMark base is the meaning of source that no
+  feature claims, and smart punctuation is consumer policy rather than a
+  parser feature. A harness may disable features internally only to compare
+  the base and GFM layers with their oracles. Product ruling on 2026-09-06.
 
 ### Earlier decisions
 
@@ -70,12 +72,13 @@ modules state the ruled behavior and the ruling is final.
 These decisions are made; each names the ground rule or the defining source
 that settled it.
 
-- No profiles and no umbrella switch; one option per feature; the CLI
-  `--profile` names are harness shorthands. Product ruling.
-- Options are named after the dialect's own kinds and features: `crossLinks`,
-  `marks`, `comments`, `headingAttributes`, and
-  `implicitHeadingReferences`, not the source's names.
-- `startnum` is not an option. Pandoc's switch exists because Pandoc's
+- No profiles, no umbrella switch, and, since C-10, no per-feature switch
+  either; the CLI `--profile` names are harness shorthands for the oracle
+  comparisons. Product ruling.
+- Features are named after the dialect's own kinds and constructs: cross
+  links, marks, comments, heading attributes, and implicit heading
+  references, not the source's names.
+- `startnum` has no counterpart. Pandoc's switch exists because Pandoc's
   default ignores start numbers; CommonMark already honors them, so
   `List.start` is always the first marker's value for every style.
 - The own-line block identifier `text` then `^id` on the next line is a

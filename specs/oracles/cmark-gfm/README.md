@@ -5,7 +5,8 @@ difference in the GFM extension layer.
 
 `scripts/check-upstream-parity.mjs --oracle gfm` enforces it. It selects only
 GFM extension sections and extension-tagged regressions, runs Markdown Core
-with directive and formula disabled, and fails on any unregistered drift.
+with the product scanners excluded through the harness's internal layer
+selection, and fails on any unregistered drift.
 
 This oracle is intentionally not an oracle for CommonMark. cmark-gfm has
 not published a release since 2023; the separate cmark oracle follows the

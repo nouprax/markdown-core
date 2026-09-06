@@ -32,10 +32,12 @@ text keep their own input. The Swift, Kotlin, and ECMAScript bindings copy the
 AST into platform values and retain no native parser handle; the C API exposes
 an owned document with borrowed node views.
 
-The default parse options enable smart punctuation, footnotes, HTML comment
+The current parse options enable smart punctuation, footnotes, HTML comment
 stripping, tables, strikethrough, autolinks, task lists, formulas (including
-dollar and LaTeX delimiters), and directives. Each option can be disabled per
-parse. `TreeDumper` and `dump()` produce a canonical debug representation
+dollar and LaTeX delimiters), and directives, and each can be disabled per
+parse. The Markdown Core dialect has no switches: its landing plan removes
+`ParseOptions` and smart punctuation (`X0`) so that every surface parses one
+language. `TreeDumper` and `dump()` produce a canonical debug representation
 for logs, tests, and debugging; dump text is not a persistence or interchange
 format.
 
@@ -151,7 +153,7 @@ freed only after all access to it has finished. The complete C contract is in
 - `packages/es-markdown-core`: ECMAScript/TypeScript package and WebAssembly runtime.
 - `specs/canonical-ast`: shared, platform-independent AST conformance fixtures.
 - `docs/specs/dialect.md`: the Markdown Core dialect index: the feature set,
-  one parse option per feature, the locked executable oracle of each feature,
+  always on with no switches, the locked executable oracle of each feature,
   the cross-feature recognition order, opacity, failure, and limit rules.
 - `docs/specs/dialect/`: one normative module per feature (base language,
   formulas, directives, attributes, anchors, links and images, cross links,
