@@ -7,6 +7,7 @@
  * gates and position audits run this executable.
  */
 #include <errno.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -44,20 +45,32 @@ typedef struct source_buffer {
     size_t capacity;
 } source_buffer;
 
-static bool read_all(source_buffer *source, FILE *input) {
+/* The parser refuses a source longer than this (`blocks.c`), so the adapter
+ * never buffers more. The bound also keeps the doubling below inside `size_t`
+ * on a 32-bit host, where a capacity that reached 2 GiB would wrap to zero on
+ * the next doubling and the loop would never end. */
+#define SOURCE_LIMIT ((size_t)(INT32_MAX / 2))
+
+/* Reads `input` to its end. Returns NULL, or the reason it stopped. */
+static const char *read_all(source_buffer *source, FILE *input) {
     uint8_t chunk[4096];
     size_t bytes;
 
     while ((bytes = fread(chunk, 1, sizeof(chunk), input)) > 0) {
+        if (bytes > SOURCE_LIMIT - source->size) {
+            return "the input is longer than the parser accepts";
+        }
         if (source->size + bytes > source->capacity) {
             size_t capacity = source->capacity ? source->capacity : 4096;
             uint8_t *grown;
+            /* `size + bytes` is at most SOURCE_LIMIT, so the last doubling
+             * stops at 2^30 and cannot wrap. */
             while (capacity < source->size + bytes) {
                 capacity *= 2;
             }
             grown = (uint8_t *)realloc(source->data, capacity);
             if (!grown) {
-                return false;
+                return "out of memory";
             }
             source->data = grown;
             source->capacity = capacity;
@@ -65,7 +78,7 @@ static bool read_all(source_buffer *source, FILE *input) {
         memcpy(source->data + source->size, chunk, bytes);
         source->size += bytes;
     }
-    return ferror(input) == 0;
+    return ferror(input) ? strerror(errno) : NULL;
 }
 
 static bool print_document(const markdown_core_document *document) {
@@ -91,6 +104,7 @@ int main(int argc, char *argv[]) {
     markdown_core_document *document = NULL;
     markdown_core_error *error = NULL;
     markdown_core_string message;
+    const char *failure;
     int i;
     int file_count = 0;
     int result = 1;
@@ -130,8 +144,9 @@ int main(int argc, char *argv[]) {
                 fprintf(stderr, "Error opening file %s: %s\n", argv[i], strerror(errno));
                 goto done;
             }
-            if (!read_all(&source, file)) {
-                fprintf(stderr, "Error reading file %s\n", argv[i]);
+            failure = read_all(&source, file);
+            if (failure) {
+                fprintf(stderr, "Error reading file %s: %s\n", argv[i], failure);
                 fclose(file);
                 goto done;
             }
@@ -140,9 +155,12 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    if (file_count == 0 && !read_all(&source, stdin)) {
-        fputs("Error reading standard input\n", stderr);
-        goto done;
+    if (file_count == 0) {
+        failure = read_all(&source, stdin);
+        if (failure) {
+            fprintf(stderr, "Error reading standard input: %s\n", failure);
+            goto done;
+        }
     }
 
 #ifdef USE_PLEDGE
