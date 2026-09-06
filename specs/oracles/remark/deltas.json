@@ -56,6 +56,12 @@
             "authority": "cmark. CommonMark states that a code span line ending is treated as a space; cmark applies it when it builds the node, and mdast-util-to-hast applies it at render time instead. The two agree on the span content; they disagree on which layer states it.",
             "handling": "The oracle converts line endings in mdast inline code before comparing, so the comparison is about the span content.",
             "evidence": "scripts/lib/mdast-oracle.mjs, inlineCode; the base-language claim is checked by scripts/check-upstream-parity.mjs over spec.txt."
+        },
+        {
+            "id": "html-comment-node",
+            "kind": "ast-shape",
+            "summary": "mdast keeps an HTML comment as an `html` node holding the token as written. Markdown Core makes it a `Comment` whose literal is the bytes between `<!--` and `-->`: the inline token, and a flow HTML node that opens with `<!--` and whose end line holds only whitespace after the first `-->`.",
+            "handling": "The comparison maps mdast's comment nodes to `Comment` with the delimiters removed, the rule the engine applies on its own side (`docs/specs/dialect/comments.md`); cmark owns the token and block boundaries, and this projection only keeps the two models in one shape where a comment appears."
         }
     ],
     "notDeltas": [

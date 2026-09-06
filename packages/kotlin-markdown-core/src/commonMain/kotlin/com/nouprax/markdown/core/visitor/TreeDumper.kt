@@ -214,6 +214,10 @@ private class DumpVisitor(
         state.line("HTML", node, listOf("literal=${jsonString(node.literal)}"))
     }
 
+    override fun visitComment(node: Comment) {
+        state.line("Comment", node, listOf("literal=${jsonString(node.literal)}"))
+    }
+
     override fun visitFormula(node: Formula) {
         state.line("Formula", node, listOf("mode=${node.mode.token()}", "literal=${jsonString(node.literal)}"))
     }

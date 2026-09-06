@@ -47,6 +47,7 @@ const visitor: Visitor<string> = {
     visitLineBreak: (node) => node.kind,
     visitCode: (node) => node.kind,
     visitHTML: (node) => node.kind,
+    visitComment: (node) => node.kind,
     visitFormula: (node) => node.kind,
     visitEmphasis: (node) => node.kind,
     visitStrong: (node) => node.kind,

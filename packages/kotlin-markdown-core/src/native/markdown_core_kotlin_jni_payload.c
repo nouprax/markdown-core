@@ -258,6 +258,7 @@ static void write_node(jni_payload_buffer *buffer, jni_payload_stack *stack, con
     case MARKDOWN_CORE_KIND_TEXT:
     case MARKDOWN_CORE_KIND_CODE:
     case MARKDOWN_CORE_KIND_HTML:
+    case MARKDOWN_CORE_KIND_COMMENT:
         if (!markdown_core_node_literal(node, &first)) {
             buffer->failure = JNI_PAYLOAD_INTERNAL;
             return;

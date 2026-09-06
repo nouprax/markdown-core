@@ -127,11 +127,16 @@ enum markdown_core_node__internal_flags {
     MARKDOWN_CORE_NODE__LAST_LINE_BLANK = (1 << 1),
     MARKDOWN_CORE_NODE__LAST_LINE_CHECKED = (1 << 2),
     MARKDOWN_CORE_NODE__LIST_LAST_LINE_BLANK = (1 << 3),
+    // An HTML block whose own end condition matched on the line being
+    // processed. `finalize` reads it to end the block on that line rather
+    // than on the line before, and to know that a `-->` line really closed a
+    // type-2 block rather than the input or a container running out.
+    MARKDOWN_CORE_NODE__CLOSED_BY_END_CONDITION = (1 << 4),
 
     // The first bit an extension may claim. Extension flags are compile-time
     // constants owned by the extension that uses them; there is no runtime
     // registration and no allocator to run out of bits.
-    MARKDOWN_CORE_NODE__EXTENSION_FIRST = (1 << 4),
+    MARKDOWN_CORE_NODE__EXTENSION_FIRST = (1 << 5),
 };
 
 typedef uint16_t markdown_core_node_internal_flags;

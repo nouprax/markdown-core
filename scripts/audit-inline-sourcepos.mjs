@@ -1,29 +1,32 @@
 #!/usr/bin/env node
 /**
- * Position oracle (a): inline `Code` and `HTML` against reference cmark.
+ * Position oracle (a): `Code`, `HTML`, and `Comment` against reference cmark.
  *
  * cmark is asked for `--to xml --sourcepos` over its pinned CommonMark spec
- * fixture and its inline code and raw-HTML positions are compared with this
- * engine's. Those two kinds, and no others, because they expose the deliberate
- * difference between cmark's content extent and this AST's element scope:
+ * fixture and its inline code, raw-HTML, and HTML-comment positions are
+ * compared with this engine's. Those kinds, and no others, because they expose
+ * the deliberate difference between cmark's content extent and this AST's
+ * element scope:
  *
  *   a Markdown Core element scope includes the markup bytes that create the
  *   element. Code therefore includes its backtick delimiters, and raw HTML
  *   includes its closing byte. cmark reports code content positions and can
- *   leave raw HTML's final byte outside the node.
+ *   leave raw HTML's final byte outside the node. A comment is the same token
+ *   under the inherited grammar and a `Comment` node here (M0), so it is
+ *   paired the same way; the block form is a block on both sides and its
+ *   position is the block's.
  *
  * The ledger is therefore a fail-closed registry of reviewed representation
  * differences, not a list of local defects. Other node kinds are governed by
  * the repository's containment and place-ness invariants rather than by
  * copying cmark's source-position model wholesale.
  *
- * The comparison pairs the two sides' code/HTML nodes in document order,
- * after the parity gate's `html-comment-stripping` projection has dropped the
- * comment nodes cmark keeps and this engine strips (until `M0`). A length
- * mismatch is then a hard error rather than a skipped example: the parity
- * gate already proves the two trees agree in shape over this corpus, so a
- * mismatch means one of the two parsers changed and this oracle is comparing
- * unrelated nodes.
+ * The comparison pairs the two sides' nodes in document order, after the
+ * parity gate's `html-comment-node` projection has given cmark's comment
+ * nodes the kind this engine gives them. A length mismatch is then a hard
+ * error rather than a skipped example: the parity gate already proves the two
+ * trees agree in shape over this corpus, so a mismatch means one of the two
+ * parsers changed and this oracle is comparing unrelated nodes.
  *
  *   node scripts/audit-inline-sourcepos.mjs [--update] [--verbose]
  */
@@ -33,7 +36,7 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 import { readExamples } from "./lib/fixture-corpus.mjs";
-import { dropHtmlComments, parseCanonicalDump, parseUpstreamXml } from "./lib/upstream-cmark.mjs";
+import { parseCanonicalDump, parseUpstreamXml, projectHtmlComments } from "./lib/upstream-cmark.mjs";
 import {
     formatScope,
     loadLedger,
@@ -62,7 +65,7 @@ const upstream = requireBinary(
     "scripts/init-environment.sh --install oracle-cmark"
 );
 
-const SUBJECT = new Set(["Code", "HTML"]);
+const SUBJECT = new Set(["Code", "HTML", "Comment"]);
 const collect = (tree) => [...walkWithPath(tree)].filter(({ node }) => SUBJECT.has(node.kind));
 
 const UPSTREAM_SOURCEPOS = /^(\d+):(\d+)-(\d+):(\d+)$/;
@@ -72,11 +75,11 @@ let scanned = 0;
 for (const example of readExamples(root, ledger.corpus)) {
     const mine = collect(parseCanonicalDump(runBinary(ours, [], example.input)));
     const theirs = collect(
-        dropHtmlComments(parseUpstreamXml(runBinary(upstream, ["--to", "xml", "--sourcepos"], example.input)))
+        projectHtmlComments(parseUpstreamXml(runBinary(upstream, ["--to", "xml", "--sourcepos"], example.input)))
     );
     if (mine.length !== theirs.length)
         throw new Error(
-            `${example.source}: ${String(mine.length)} inline Code/HTML nodes here, ${String(theirs.length)} upstream — ` +
+            `${example.source}: ${String(mine.length)} Code/HTML/Comment nodes here, ${String(theirs.length)} upstream — ` +
                 `the two trees no longer pair, so no position comparison is meaningful. Run pnpm check:commonmark-parity first.`
         );
 

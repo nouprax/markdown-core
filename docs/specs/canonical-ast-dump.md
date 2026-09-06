@@ -115,6 +115,7 @@ that the dump represents as nested descendants.
 | `Text` | `literal` |
 | `Code` | `literal` |
 | `HTML` | `literal` |
+| `Comment` | `literal` |
 | `Formula` | `mode`, `literal` |
 | `Link` | `destination`, `title` |
 | `Image` | `source`, `title` |

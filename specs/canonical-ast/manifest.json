@@ -32,6 +32,7 @@
             "LineBreak",
             "Code",
             "HTML",
+            "Comment",
             "Formula",
             "Emphasis",
             "Strong",
@@ -88,7 +89,9 @@
             "children.populated",
             "escaping.empty-string",
             "escaping.newline",
-            "escaping.attribute-value"
+            "escaping.attribute-value",
+            "comment.placement.block",
+            "comment.placement.inline"
         ],
         "orders": [
             "document.source-order",
@@ -293,6 +296,24 @@
                     "directive.label-before-content",
                     "directive.attributes.source-order"
                 ]
+            }
+        },
+        {
+            "name": "comments",
+            "input": "comments.md",
+            "expected": "comments.ast",
+            "coverage": {
+                "kinds": ["Document", "Comment", "Paragraph", "Text", "HTMLBlock"],
+                "states": [
+                    "comment.placement.block",
+                    "comment.placement.inline",
+                    "scope.positive",
+                    "children.empty",
+                    "children.populated",
+                    "escaping.empty-string",
+                    "escaping.newline"
+                ],
+                "orders": ["document.source-order", "inline.source-order"]
             }
         }
     ]

@@ -191,6 +191,11 @@ markdown_core_node_kind markdown_core_node_get_kind(const markdown_core_node *no
     if (node->type == MARKDOWN_CORE_NODE_HTML) {
         return MARKDOWN_CORE_KIND_HTML;
     }
+    /* One public kind for both internal types: the parent edge says which
+     * content a comment sits in, and the node stores no placement. */
+    if (node->type == MARKDOWN_CORE_NODE_COMMENT || node->type == MARKDOWN_CORE_NODE_COMMENT_BLOCK) {
+        return MARKDOWN_CORE_KIND_COMMENT;
+    }
     if (node->type == MARKDOWN_CORE_NODE_EMPHASIS) {
         return MARKDOWN_CORE_KIND_EMPHASIS;
     }
@@ -269,8 +274,9 @@ const char *markdown_core_node_kind_name(markdown_core_node_kind kind) {
                                         "DirectiveLabel",
                                         "ReferenceDefinition",
                                         "LinkReference",
-                                        "ImageReference"};
-    if (kind < MARKDOWN_CORE_KIND_NONE || kind > MARKDOWN_CORE_KIND_IMAGE_REFERENCE) {
+                                        "ImageReference",
+                                        "Comment"};
+    if (kind < MARKDOWN_CORE_KIND_NONE || kind > MARKDOWN_CORE_KIND_COMMENT) {
         return "None";
     }
     return names[kind];
@@ -398,6 +404,8 @@ bool markdown_core_node_literal(const markdown_core_node *node, markdown_core_st
     case MARKDOWN_CORE_NODE_TEXT:
     case MARKDOWN_CORE_NODE_HTML:
     case MARKDOWN_CORE_NODE_CODE:
+    case MARKDOWN_CORE_NODE_COMMENT:
+    case MARKDOWN_CORE_NODE_COMMENT_BLOCK:
         string_from_chunk(literal, &node->as.literal);
         return true;
     default:
@@ -795,6 +803,7 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
     case MARKDOWN_CORE_KIND_HTML_BLOCK:
     case MARKDOWN_CORE_KIND_TEXT:
     case MARKDOWN_CORE_KIND_HTML:
+    case MARKDOWN_CORE_KIND_COMMENT:
         markdown_core_node_literal(node, &a);
         buffer_cstr(buffer, " literal=");
         buffer_json_string(buffer, a);
@@ -1021,6 +1030,7 @@ static void dump_node(dump_buffer *buffer, const markdown_core_node *node, size_
     case MARKDOWN_CORE_KIND_LINE_BREAK:
     case MARKDOWN_CORE_KIND_CODE:
     case MARKDOWN_CORE_KIND_HTML:
+    case MARKDOWN_CORE_KIND_COMMENT:
     case MARKDOWN_CORE_KIND_FORMULA:
     case MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE:
     case MARKDOWN_CORE_KIND_NONE:

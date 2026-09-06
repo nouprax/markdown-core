@@ -213,6 +213,10 @@ private struct DumpVisitor: MarkupVisitor {
         state.line("HTML", node, fields: ["literal=\(jsonString(node.literal))"])
     }
 
+    mutating func visit(_ node: Comment) {
+        state.line("Comment", node, fields: ["literal=\(jsonString(node.literal))"])
+    }
+
     mutating func visit(_ node: Formula) {
         state.line(
             "Formula",

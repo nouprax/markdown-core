@@ -65,10 +65,10 @@ typedef enum {
  * CLI, not a test -- so a feature is public from the commit that adds it here,
  * and every fixture, oracle gate, and audit judges the language that ships.
  *
- * `MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS` is the bit `M0` deletes: an HTML
- * comment becomes a `Comment` node then and nothing strips anything.
+ * Nothing here strips anything: an HTML comment is a `Comment` node, and a
+ * consumer that does not want comments drops the nodes.
  */
-#define MARKDOWN_CORE_DIALECT_OPTIONS (MARKDOWN_CORE_OPT_FOOTNOTES | MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS)
+#define MARKDOWN_CORE_DIALECT_OPTIONS (MARKDOWN_CORE_OPT_FOOTNOTES)
 
 /** Attaches every extension of the dialect, in this library's one order.
  * Returns 1 when all of them attached and 0 when any did not; on failure the

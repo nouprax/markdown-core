@@ -70,7 +70,7 @@ that makes the row `present`.
 | Feature                             | Module                                                            | Source                                 | Executable oracle                    | Status                          |
 | ----------------------------------- | ----------------------------------------------------------------- | -------------------------------------- | ------------------------------------ | ------------------------------- |
 | CommonMark blocks and inlines       | [base](dialect/base.md)                                           | CommonMark                             | cmark                                | present                         |
-| HTML comments as `Comment`          | [comments](dialect/comments.md)                                   | CommonMark, Obsidian                   | cmark for the token boundaries       | missing, `M0`                   |
+| HTML comments as `Comment`          | [comments](dialect/comments.md)                                   | CommonMark, Obsidian                   | cmark for the token boundaries       | present                         |
 | pipe tables                         | [tables](dialect/tables.md)                                       | GFM                                    | cmark-gfm                            | partial, `M6`                   |
 | strikethrough                       | [strikethrough](dialect/strikethrough.md)                         | GFM                                    | cmark-gfm                            | partial, `P6`                   |
 | autolinks                           | [links and images](dialect/links-and-images.md)                   | GFM                                    | cmark-gfm                            | present                         |
@@ -110,9 +110,9 @@ that makes the row `present`.
 
 The parser publishes no switch: `Document.parse(source)` is the one entry
 point on every surface, and smart punctuation is not part of the language,
-so quotation marks, hyphen runs, and periods are stored as written. HTML
-comments are still stripped from the tree until `M0` lands `Comment`; from
-then on nothing in the dialect strips anything. Pandoc's `startnum` has no
+so quotation marks, hyphen runs, and periods are stored as written. Nothing
+in the dialect strips anything: an HTML comment is a `Comment` node, and a
+consumer that does not want comments drops the nodes. Pandoc's `startnum` has no
 counterpart: a list's start number is always the value of its first marker.
 Pandoc's `compact_definition_lists` has no counterpart: compact and loose
 definitions are two source forms of one feature.

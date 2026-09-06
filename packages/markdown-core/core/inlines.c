@@ -19,6 +19,7 @@
 #define make_str(subj, sc, ec, s) make_literal(subj, MARKDOWN_CORE_NODE_TEXT, sc, ec, s)
 #define make_code(subj, sc, ec, s) make_literal(subj, MARKDOWN_CORE_NODE_CODE, sc, ec, s)
 #define make_raw_html(subj, sc, ec, s) make_literal(subj, MARKDOWN_CORE_NODE_HTML, sc, ec, s)
+#define make_comment(subj, sc, ec, s) make_literal(subj, MARKDOWN_CORE_NODE_COMMENT, sc, ec, s)
 #define make_line_break(mem) make_simple(mem, MARKDOWN_CORE_NODE_LINE_BREAK)
 #define make_soft_break(mem) make_simple(mem, MARKDOWN_CORE_NODE_SOFT_BREAK)
 #define make_emphasis(mem) make_simple(mem, MARKDOWN_CORE_NODE_EMPHASIS)
@@ -1071,10 +1072,11 @@ markdown_core_optional_chunk markdown_core_clean_title(markdown_core_mem *mem, m
     return markdown_core_optional_chunk_present(markdown_core_chunk_buf_detach(&buf));
 }
 
-// Parse an autolink or HTML tag.
+// Parse an autolink, an HTML comment, or an HTML tag.
 // Assumes the subject has a '<' character at the current position.
 static markdown_core_node *handle_pointy_brace(subject *subj, int options) {
     bufsize_t matchlen = 0;
+    bool comment = false;
     markdown_core_chunk contents;
 
     advance(subj); // advance past first <
@@ -1116,6 +1118,7 @@ static markdown_core_node *handle_pointy_brace(subject *subj, int options) {
                         subj->flags |= FLAG_SKIP_HTML_COMMENT;
                     }
                 }
+                comment = matchlen > 0;
             } else if (c == '[') {
                 if ((subj->flags & FLAG_SKIP_HTML_CDATA) == 0) {
                     matchlen = scan_html_cdata(&subj->input, subj->pos + 2);
@@ -1155,6 +1158,20 @@ static markdown_core_node *handle_pointy_brace(subject *subj, int options) {
         }
     }
     if (matchlen > 0) {
+        if (comment) {
+            /* M0: the token is a `Comment` whose literal is the bytes between
+             * `<!--` and `-->`. `matchlen` counts from the `!`, so the body
+             * starts three bytes past it and the two delimiters take seven of
+             * the token's `matchlen + 1` bytes. `<!-->` and `<!--->` are the
+             * two tokens the inherited grammar names as comments with nothing
+             * inside: their closer overlaps their opener and the literal is
+             * empty. The scope is the whole token, delimiters included, as
+             * for every raw HTML token. */
+            bufsize_t body_len = matchlen > 6 ? matchlen - 6 : 0;
+            contents = markdown_core_chunk_dup(&subj->input, subj->pos + 3, body_len);
+            subj->pos += matchlen;
+            return make_comment(subj, subj->pos - matchlen - 1, subj->pos - 1, contents);
+        }
         contents = markdown_core_chunk_dup(&subj->input, subj->pos - 1, matchlen + 1);
         subj->pos += matchlen;
         markdown_core_node *node = make_raw_html(subj, subj->pos - matchlen - 1, subj->pos - 1, contents);

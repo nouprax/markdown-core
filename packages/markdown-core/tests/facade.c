@@ -272,7 +272,7 @@ static void check_dialect_is_whole(void) {
         {"ref[^a]\n\n[^a]: note\n", "FootnoteReference scope="},
         {"$x$\n", "Formula scope="},
         {":badge[label]\n", "Directive scope="},
-        {"before <!-- kept --> after\n", "literal=\"before  after\""},
+        {"before <!-- kept --> after\n", "Comment scope=1:8..1:20 literal=\" kept \""},
         /* No smart punctuation: quotation marks, hyphen runs, and periods are
          * stored as written. */
         {"\"quotes\" 'single' -- --- ... a\n", "literal=\"\\\"quotes\\\" 'single' -- --- ... a\""},

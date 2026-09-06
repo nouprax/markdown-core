@@ -59,6 +59,7 @@ const COMPARED = {
     Text: ["literal"],
     HTML: ["literal"],
     HTMLBlock: ["literal"],
+    Comment: ["literal"],
     Link: ["destination", "title"],
     Image: ["destination", "title"],
     TableRow: ["isHeader"]
@@ -243,28 +244,56 @@ export function normalize(node, side, fired) {
 }
 
 /**
- * Registered delta `html-comment-stripping`: until `M0` lands `Comment`, this
- * engine strips every HTML comment from the tree -- an `HTML` or `HTMLBlock`
- * whose literal begins with `<!--`, after a block's leading blanks -- and
- * cmark keeps them as html nodes. Upstream's tree has those nodes dropped
- * here, which is exactly the rule `S_strip_html_comments` applies on this
- * side; the text runs around an inline comment are then joined by `normalize`
- * on both sides. A MODEL difference, so a projection rather than a list of
- * inputs: it appears wherever a comment does, in the fuzzed inputs too. `M0`
- * replaces it with the `Comment` mapping.
+ * Registered delta `html-comment-node`: an HTML comment is a `Comment` node of
+ * the dialect, and cmark keeps it as an html node holding the token as
+ * written. Upstream's tree has those nodes mapped here by the rule the engine
+ * applies on its own side (M0, `docs/specs/dialect/comments.md`):
+ *
+ *   - an `html_inline` whose literal opens with `<!--` is the comment token,
+ *     and its literal is the bytes between `<!--` and `-->`; `<!-->` and
+ *     `<!--->` are the two tokens the grammar names as comments with nothing
+ *     inside, so their literal is empty;
+ *   - an `html_block` whose literal opens with `<!--`, after the block's own
+ *     indentation, and whose end line holds only whitespace after the first
+ *     `-->` is a block comment with the bytes between the delimiters, line
+ *     endings included; the `-->` is searched from two bytes into the opener,
+ *     which is what makes `<!-->` and `<!--->` empty comments as blocks too.
+ *     Every other block stays `HTMLBlock` as written.
+ *
+ * A MODEL difference, so a projection rather than a list of inputs: it appears
+ * wherever a comment does, in the fuzzed inputs too.
  */
-export function dropHtmlComments(root, fired) {
-    const isComment = (node) =>
-        (node.kind === "HTML" || node.kind === "HTMLBlock") &&
-        (node.fields.literal ?? "").replace(/^[ \t]*/, "").startsWith("<!--");
+export function projectHtmlComments(root, fired) {
     const rewrite = (node) => {
-        const before = node.children.length;
-        node.children = node.children.filter((child) => !isComment(child));
-        if (node.children.length !== before) fired?.add("html-comment-stripping");
-        for (const child of node.children) rewrite(child);
+        for (const child of node.children) {
+            const literal = child.fields.literal ?? "";
+            if (child.kind === "HTML" && literal.startsWith("<!--")) {
+                child.kind = "Comment";
+                child.fields.literal = literal.length > 6 ? literal.slice(4, -3) : "";
+                fired?.add("html-comment-node");
+            } else if (child.kind === "HTMLBlock") {
+                const body = blockCommentBody(literal);
+                if (body !== null) {
+                    child.kind = "Comment";
+                    child.fields.literal = body;
+                    fired?.add("html-comment-node");
+                }
+            }
+            rewrite(child);
+        }
         return node;
     };
     return rewrite(root);
+}
+
+/** The block comment's body, or null when the block is not a comment. */
+export function blockCommentBody(literal) {
+    const open = literal.search(/[^ \t]/);
+    if (open < 0 || !literal.startsWith("<!--", open)) return null;
+    const close = literal.indexOf("-->", open + 2);
+    if (close < 0) return null;
+    if (!/^[ \t]*(?:\r?\n)?$/.test(literal.slice(close + 3))) return null;
+    return close > open + 4 ? literal.slice(open + 4, close) : "";
 }
 
 /**

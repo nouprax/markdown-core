@@ -359,7 +359,7 @@ its behavior, with no separate publication step.
 
 ## Stage 1 — shared model, one consumer fact per pull request
 
-- [ ] **M0 — `Comment` replaces HTML comment nodes.** Add the `Comment(literal)`
+- [x] **M0 — `Comment` replaces HTML comment nodes.** Add the `Comment(literal)`
       kind on every surface as the node for an inline HTML comment token and for
       an HTML block that opens with `<!--` and whose end line holds only
       whitespace after the first `-->`; `literal` is the bytes between `<!--`

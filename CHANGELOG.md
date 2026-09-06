@@ -27,6 +27,22 @@ facade while removing renderer support and the caller-driven feed lifecycle.
   scanner now leaves an unopened closer to the base language, and the
   autolink scanner claims a colon that an address follows, as cmark-gfm
   links it.
+- Add the `Comment` kind on every surface (M0). An inline HTML comment token
+  is a `Comment` whose literal is the bytes between `<!--` and `-->`, empty
+  for `<!-->` and `<!--->`, and an HTML block that opens with `<!--` and whose
+  end line holds only whitespace after the first `-->` is a block `Comment`
+  whose literal keeps its line endings; every other HTML block stays
+  `HTMLBlock` as written. Nothing strips a comment any more: the C option bit
+  and the tree pass that removed them are gone, and a consumer drops the nodes
+  instead. Two scopes move with it. An HTML block that its own end condition
+  closes now ends on that line rather than the line before, so `<pre>`,
+  `<?...?>`, `<![CDATA[`, and comment blocks that span lines end at their
+  terminator, and an ATX heading covers its whole line, closing sequence and
+  trailing spaces included, as a paragraph does. The cmark and cmark-gfm gates
+  project upstream's comment nodes to `Comment` with the delimiters removed,
+  the remark gate does the same for mdast, the position ledger records where
+  cmark ends those blocks early, and the comments module's HTML examples are a
+  package fixture.
 - Build an inline formula's literal once, at postprocess, from the owning
   block's content. A closer pairs with the nearest unmatched opener, so a
   nested pair replaced each inner formula after copying its body, and a

@@ -47,6 +47,12 @@ typedef enum {
      * nothing, but the natural assumption is that the next value is free and
      * it is not. */
     MARKDOWN_CORE_NODE_REFERENCE_DEFINITION = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x0010,
+    /* A block comment: an HTML block that opened with `<!--` and whose end
+     * line held only whitespace after the first `-->`. One public kind,
+     * `MARKDOWN_CORE_KIND_COMMENT`, stands for this and for the inline type
+     * below; the two internal types record which content the node sits in,
+     * which is what containment checks and the inline parser ask. */
+    MARKDOWN_CORE_NODE_COMMENT_BLOCK = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x0011,
 
     /* Inline */
     MARKDOWN_CORE_NODE_TEXT = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x0001,
@@ -67,6 +73,8 @@ typedef enum {
      * separate them. */
     MARKDOWN_CORE_NODE_LINK_REFERENCE = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x000f,
     MARKDOWN_CORE_NODE_IMAGE_REFERENCE = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x0010,
+    /* An inline HTML comment token: `<!-- ... -->`, `<!-->` or `<!--->`. */
+    MARKDOWN_CORE_NODE_COMMENT = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x0011,
 } markdown_core_node_type;
 
 /* The form a reference was WRITTEN in, which is not derivable from anything
@@ -240,6 +248,8 @@ MARKDOWN_CORE_EXPORT markdown_core_node *markdown_core_node_last_child(markdown_
  * * MARKDOWN_CORE_NODE_LINE_BREAK
  * * MARKDOWN_CORE_NODE_CODE
  * * MARKDOWN_CORE_NODE_HTML
+ * * MARKDOWN_CORE_NODE_COMMENT
+ * * MARKDOWN_CORE_NODE_COMMENT_BLOCK
  *
  * Nodes must only be modified after an `EXIT` event, or an `ENTER` event for
  * leaf nodes.
@@ -538,10 +548,6 @@ markdown_core_node *markdown_core_parse_document(const char *buffer, size_t len,
 /** Be liberal in interpreting inline HTML tags.
  */
 #define MARKDOWN_CORE_OPT_LIBERAL_HTML_TAG (1 << 12)
-
-/** Strip HTML comment nodes from the parsed AST.
- */
-#define MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS (1 << 25)
 
 /** Parse footnotes.
  */

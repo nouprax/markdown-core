@@ -23,6 +23,13 @@ public final class com/nouprax/markdown/core/CodeBlock : com/nouprax/markdown/co
 	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 }
 
+public final class com/nouprax/markdown/core/Comment : com/nouprax/markdown/core/Markup {
+	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
+	public fun dump ()Ljava/lang/String;
+	public final fun getLiteral ()Ljava/lang/String;
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+}
+
 public final class com/nouprax/markdown/core/Directive : com/nouprax/markdown/core/Markup {
 	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
 	public fun dump ()Ljava/lang/String;
@@ -358,6 +365,7 @@ public abstract interface class com/nouprax/markdown/core/Visitor {
 	public abstract fun visitBlockQuote (Lcom/nouprax/markdown/core/BlockQuote;)Ljava/lang/Object;
 	public abstract fun visitCode (Lcom/nouprax/markdown/core/Code;)Ljava/lang/Object;
 	public abstract fun visitCodeBlock (Lcom/nouprax/markdown/core/CodeBlock;)Ljava/lang/Object;
+	public abstract fun visitComment (Lcom/nouprax/markdown/core/Comment;)Ljava/lang/Object;
 	public abstract fun visitDirective (Lcom/nouprax/markdown/core/Directive;)Ljava/lang/Object;
 	public abstract fun visitDirectiveBlock (Lcom/nouprax/markdown/core/DirectiveBlock;)Ljava/lang/Object;
 	public abstract fun visitDirectiveLabel (Lcom/nouprax/markdown/core/DirectiveLabel;)Ljava/lang/Object;
@@ -401,6 +409,7 @@ public abstract interface class com/nouprax/markdown/core/WalkingVisitor {
 	public abstract fun visitBlockQuote (Lcom/nouprax/markdown/core/BlockQuote;Lcom/nouprax/markdown/core/WalkPhase;)V
 	public abstract fun visitCode (Lcom/nouprax/markdown/core/Code;Lcom/nouprax/markdown/core/WalkPhase;)V
 	public abstract fun visitCodeBlock (Lcom/nouprax/markdown/core/CodeBlock;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visitComment (Lcom/nouprax/markdown/core/Comment;Lcom/nouprax/markdown/core/WalkPhase;)V
 	public abstract fun visitDirective (Lcom/nouprax/markdown/core/Directive;Lcom/nouprax/markdown/core/WalkPhase;)V
 	public abstract fun visitDirectiveBlock (Lcom/nouprax/markdown/core/DirectiveBlock;Lcom/nouprax/markdown/core/WalkPhase;)V
 	public abstract fun visitDirectiveLabel (Lcom/nouprax/markdown/core/DirectiveLabel;Lcom/nouprax/markdown/core/WalkPhase;)V

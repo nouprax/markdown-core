@@ -35,6 +35,7 @@ internal enum class JniNodeKind(
     REFERENCE_DEFINITION(30),
     LINK_REFERENCE(31),
     IMAGE_REFERENCE(32),
+    COMMENT(33),
     ;
 
     companion object {

@@ -14,6 +14,7 @@ class AstTest {
                 "Text *em* **strong** ~~strike~~ `code` [link](/go \"title\") ![alt](/image.png) :badge[label]{kind=demo} \$x\$ [^n]  \nnext <i>raw</i>\nsoft\n\n[^n]: definition\n",
                 "| left | center |\n| :--- | :----: |\n| a | b |\n\n::leaf[Label]{id=value}\n\n:::container[Title]{kind=demo}\nBody\n:::\n",
                 "\$\$\ny\n\$\$\n",
+                "a <!-- b --> c\n\n<!-- block -->\n",
             )
         val documents = sources.map { Document.parse(it) }
         val kinds = documents.flatMap { dumpKinds(it.dump()) }.toSet()
@@ -38,6 +39,7 @@ class AstTest {
                 "LineBreak",
                 "Code",
                 "HTML",
+                "Comment",
                 "Formula",
                 "Emphasis",
                 "Strong",

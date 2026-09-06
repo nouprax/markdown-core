@@ -237,6 +237,11 @@ markdown_core_add_test(extensions_directive extensions 120 spec_runner --spec
 # extensions: attaching one extension must not change another's block opener.
 markdown_core_add_test(extensions_conflicts extensions 120 spec_runner --spec
                        "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/extensions-conflicts.txt")
+
+# spec: the examples of each dialect module whose behavior has landed, byte for
+# byte in the dump grammar of today; one fixture per module.
+markdown_core_add_test(spec_dialect_comments spec 120 spec_runner --spec
+                       "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/dialect-comments.txt")
 # pathological: adversarial inputs, one CTest test per case so timeouts and
 # failures stay addressable.  The audit script cross-checks this list against
 # `pathological_runner --list`.

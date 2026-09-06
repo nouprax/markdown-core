@@ -46,31 +46,23 @@ static markdown_core_node *parse_with_extensions(const char *source, size_t leng
                                                  attach_extensions, &setup);
 }
 
-static const markdown_core_node_type node_types[] = {MARKDOWN_CORE_NODE_DOCUMENT,
-                                                     MARKDOWN_CORE_NODE_BLOCK_QUOTE,
-                                                     MARKDOWN_CORE_NODE_LIST,
-                                                     MARKDOWN_CORE_NODE_LIST_ITEM,
-                                                     MARKDOWN_CORE_NODE_CODE_BLOCK,
-                                                     MARKDOWN_CORE_NODE_HTML_BLOCK,
-                                                     MARKDOWN_CORE_NODE_PARAGRAPH,
-                                                     MARKDOWN_CORE_NODE_HEADING,
-                                                     MARKDOWN_CORE_NODE_THEMATIC_BREAK,
-                                                     MARKDOWN_CORE_NODE_TEXT,
-                                                     MARKDOWN_CORE_NODE_SOFT_BREAK,
-                                                     MARKDOWN_CORE_NODE_LINE_BREAK,
-                                                     MARKDOWN_CORE_NODE_CODE,
-                                                     MARKDOWN_CORE_NODE_HTML,
-                                                     MARKDOWN_CORE_NODE_EMPHASIS,
-                                                     MARKDOWN_CORE_NODE_STRONG,
-                                                     MARKDOWN_CORE_NODE_LINK,
-                                                     MARKDOWN_CORE_NODE_IMAGE,
-                                                     MARKDOWN_CORE_NODE_REFERENCE_DEFINITION,
-                                                     MARKDOWN_CORE_NODE_LINK_REFERENCE,
-                                                     MARKDOWN_CORE_NODE_IMAGE_REFERENCE};
-static const char *const node_type_names[] = {
-    "document", "block_quote",    "list", "list_item",  "code_block",           "html_block",     "paragraph",
-    "heading",  "thematic_break", "text", "soft_break", "line_break",           "code",           "html",
-    "emphasis", "strong",         "link", "image",      "reference_definition", "link_reference", "image_reference"};
+static const markdown_core_node_type node_types[] = {
+    MARKDOWN_CORE_NODE_DOCUMENT,       MARKDOWN_CORE_NODE_BLOCK_QUOTE,    MARKDOWN_CORE_NODE_LIST,
+    MARKDOWN_CORE_NODE_LIST_ITEM,      MARKDOWN_CORE_NODE_CODE_BLOCK,     MARKDOWN_CORE_NODE_HTML_BLOCK,
+    MARKDOWN_CORE_NODE_COMMENT_BLOCK,  MARKDOWN_CORE_NODE_PARAGRAPH,      MARKDOWN_CORE_NODE_HEADING,
+    MARKDOWN_CORE_NODE_THEMATIC_BREAK, MARKDOWN_CORE_NODE_TEXT,           MARKDOWN_CORE_NODE_SOFT_BREAK,
+    MARKDOWN_CORE_NODE_LINE_BREAK,     MARKDOWN_CORE_NODE_CODE,           MARKDOWN_CORE_NODE_HTML,
+    MARKDOWN_CORE_NODE_COMMENT,        MARKDOWN_CORE_NODE_EMPHASIS,       MARKDOWN_CORE_NODE_STRONG,
+    MARKDOWN_CORE_NODE_LINK,           MARKDOWN_CORE_NODE_IMAGE,          MARKDOWN_CORE_NODE_REFERENCE_DEFINITION,
+    MARKDOWN_CORE_NODE_LINK_REFERENCE, MARKDOWN_CORE_NODE_IMAGE_REFERENCE};
+static const char *const node_type_names[] = {"document",       "block_quote",    "list",
+                                              "list_item",      "code_block",     "html_block",
+                                              "comment_block",  "paragraph",      "heading",
+                                              "thematic_break", "text",           "soft_break",
+                                              "line_break",     "code",           "html",
+                                              "comment",        "emphasis",       "strong",
+                                              "link",           "image",          "reference_definition",
+                                              "link_reference", "image_reference"};
 static const int num_node_types = sizeof(node_types) / sizeof(*node_types);
 
 static void test_md_paragraph_text(test_batch_runner *runner, const char *markdown, const char *expected_text,
@@ -113,7 +105,8 @@ static void node_type_values(test_batch_runner *runner) {
                                                           MARKDOWN_CORE_NODE_TABLE_CELL,
                                                           MARKDOWN_CORE_NODE_FORMULA_BLOCK,
                                                           MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK,
-                                                          MARKDOWN_CORE_NODE_REFERENCE_DEFINITION};
+                                                          MARKDOWN_CORE_NODE_REFERENCE_DEFINITION,
+                                                          MARKDOWN_CORE_NODE_COMMENT_BLOCK};
     static const markdown_core_node_type inline_types[] = {
         MARKDOWN_CORE_NODE_TEXT,           MARKDOWN_CORE_NODE_SOFT_BREAK,
         MARKDOWN_CORE_NODE_LINE_BREAK,     MARKDOWN_CORE_NODE_CODE,
@@ -122,7 +115,8 @@ static void node_type_values(test_batch_runner *runner) {
         MARKDOWN_CORE_NODE_IMAGE,          MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE,
         MARKDOWN_CORE_NODE_STRIKETHROUGH,  MARKDOWN_CORE_NODE_FORMULA,
         MARKDOWN_CORE_NODE_DIRECTIVE,      MARKDOWN_CORE_NODE_DIRECTIVE_LABEL,
-        MARKDOWN_CORE_NODE_LINK_REFERENCE, MARKDOWN_CORE_NODE_IMAGE_REFERENCE};
+        MARKDOWN_CORE_NODE_LINK_REFERENCE, MARKDOWN_CORE_NODE_IMAGE_REFERENCE,
+        MARKDOWN_CORE_NODE_COMMENT};
 
     for (size_t i = 0; i < sizeof(block_types) / sizeof(*block_types); ++i) {
         INT_EQ(runner, block_types[i] & MARKDOWN_CORE_NODE_TYPE_MASK, MARKDOWN_CORE_NODE_TYPE_BLOCK,
@@ -768,6 +762,7 @@ void hierarchy(test_batch_runner *runner) {
                                        MARKDOWN_CORE_NODE_LIST,
                                        MARKDOWN_CORE_NODE_CODE_BLOCK,
                                        MARKDOWN_CORE_NODE_HTML_BLOCK,
+                                       MARKDOWN_CORE_NODE_COMMENT_BLOCK,
                                        MARKDOWN_CORE_NODE_PARAGRAPH,
                                        MARKDOWN_CORE_NODE_HEADING,
                                        MARKDOWN_CORE_NODE_THEMATIC_BREAK,
@@ -778,6 +773,7 @@ void hierarchy(test_batch_runner *runner) {
                                   MARKDOWN_CORE_NODE_LINE_BREAK,
                                   MARKDOWN_CORE_NODE_CODE,
                                   MARKDOWN_CORE_NODE_HTML,
+                                  MARKDOWN_CORE_NODE_COMMENT,
                                   MARKDOWN_CORE_NODE_EMPHASIS,
                                   MARKDOWN_CORE_NODE_STRONG,
                                   MARKDOWN_CORE_NODE_LINK,
@@ -792,6 +788,7 @@ void hierarchy(test_batch_runner *runner) {
     test_content(runner, MARKDOWN_CORE_NODE_LIST_ITEM, top_level_blocks);
     test_content(runner, MARKDOWN_CORE_NODE_CODE_BLOCK, 0);
     test_content(runner, MARKDOWN_CORE_NODE_HTML_BLOCK, 0);
+    test_content(runner, MARKDOWN_CORE_NODE_COMMENT_BLOCK, 0);
     test_content(runner, MARKDOWN_CORE_NODE_PARAGRAPH, all_inlines);
     test_content(runner, MARKDOWN_CORE_NODE_HEADING, all_inlines);
     test_content(runner, MARKDOWN_CORE_NODE_THEMATIC_BREAK, 0);
@@ -802,6 +799,7 @@ void hierarchy(test_batch_runner *runner) {
     test_content(runner, MARKDOWN_CORE_NODE_LINE_BREAK, 0);
     test_content(runner, MARKDOWN_CORE_NODE_CODE, 0);
     test_content(runner, MARKDOWN_CORE_NODE_HTML, 0);
+    test_content(runner, MARKDOWN_CORE_NODE_COMMENT, 0);
     test_content(runner, MARKDOWN_CORE_NODE_EMPHASIS, all_inlines);
     test_content(runner, MARKDOWN_CORE_NODE_STRONG, all_inlines);
     test_content(runner, MARKDOWN_CORE_NODE_LINK, all_inlines);
@@ -949,58 +947,77 @@ static void numeric_entities(test_batch_runner *runner) {
                            "Unicode symbols are punctuation for emphasis flanking");
 }
 
-static int count_html_comment_nodes(markdown_core_node *root) {
-    int count = 0;
-    markdown_core_iter *iter = markdown_core_iter_new(root);
-    markdown_core_event_type ev_type;
-
-    while ((ev_type = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
-        markdown_core_node *node = markdown_core_iter_get_node(iter);
-        if (ev_type == MARKDOWN_CORE_EVENT_ENTER &&
-            (node->type == MARKDOWN_CORE_NODE_HTML_BLOCK || node->type == MARKDOWN_CORE_NODE_HTML)) {
-            const char *literal = markdown_core_node_get_literal(node);
-            if (literal && strncmp(literal, "<!--", 4) == 0) {
-                count++;
-            }
-        }
-    }
-
-    markdown_core_iter_free(iter);
-    return count;
-}
-
-static void strip_html_comments(test_batch_runner *runner) {
+/* M0: an HTML comment is a `Comment` node of the dialect -- inline for the
+ * token, block for an HTML block that opened with `<!--` and whose end line
+ * held only whitespace after the first `-->` -- and its literal is the bytes
+ * between the delimiters. Nothing strips it; the text around an inline
+ * comment stays split where the comment sits. */
+static void comment_nodes(test_batch_runner *runner) {
     static const char markdown[] = "before <!-- hidden --> after <br>\n"
                                    "\n"
                                    "<!-- block\n"
                                    "hidden -->\n"
                                    "\n"
-                                   "<div>raw</div>\n";
+                                   "<div>raw</div>\n"
+                                   "\n"
+                                   "<!-- a --> b\n"
+                                   "\n"
+                                   "<!-->\n";
 
     markdown_core_node *doc = markdown_core_parse_document(markdown, sizeof(markdown) - 1, MARKDOWN_CORE_OPT_DEFAULT);
-    INT_EQ(runner, count_html_comment_nodes(doc), 2, "default parse preserves HTML comment nodes");
-    markdown_core_node_free(doc);
-
-    doc = markdown_core_parse_document(markdown, sizeof(markdown) - 1, MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS);
-    INT_EQ(runner, count_html_comment_nodes(doc), 0, "strip-html-comments option removes HTML comment nodes");
-
     markdown_core_node *paragraph = markdown_core_node_first_child(doc);
     markdown_core_node *text = markdown_core_node_first_child(paragraph);
-    STR_EQ(runner, markdown_core_node_get_literal(text), "before  after ",
-           "strip-html-comments preserves surrounding text");
+    markdown_core_node *comment = markdown_core_node_next(text);
+    markdown_core_node *after = markdown_core_node_next(comment);
+    markdown_core_node *inline_html = markdown_core_node_next(after);
+    markdown_core_node *block_comment = markdown_core_node_next(paragraph);
+    markdown_core_node *block_html = markdown_core_node_next(block_comment);
+    markdown_core_node *trailing = markdown_core_node_next(block_html);
+    markdown_core_node *empties = markdown_core_node_next(trailing);
+    markdown_core_node *empty;
 
-    markdown_core_node *inline_html = markdown_core_node_next(text);
-    INT_EQ(runner, markdown_core_node_get_type(inline_html), MARKDOWN_CORE_NODE_HTML,
-           "strip-html-comments preserves non-comment inline HTML");
-    STR_EQ(runner, markdown_core_node_get_literal(inline_html), "<br>",
-           "strip-html-comments keeps inline HTML literal");
+    STR_EQ(runner, markdown_core_node_get_literal(text), "before ", "text before an inline comment");
+    INT_EQ(runner, markdown_core_node_get_type(comment), MARKDOWN_CORE_NODE_COMMENT, "inline comment type");
+    STR_EQ(runner, markdown_core_node_get_literal(comment), " hidden ", "inline comment literal excludes delimiters");
+    STR_EQ(runner, markdown_core_node_get_type_string(comment), "comment", "inline comment type string");
+    STR_EQ(runner, markdown_core_node_get_literal(after), " after ", "text after an inline comment");
+    INT_EQ(runner, markdown_core_node_get_type(inline_html), MARKDOWN_CORE_NODE_HTML, "a tag stays inline HTML");
+    STR_EQ(runner, markdown_core_node_get_literal(inline_html), "<br>", "inline HTML literal");
 
-    markdown_core_node *block_html = markdown_core_node_next(paragraph);
-    INT_EQ(runner, markdown_core_node_get_type(block_html), MARKDOWN_CORE_NODE_HTML_BLOCK,
-           "strip-html-comments preserves non-comment HTML blocks");
-    STR_EQ(runner, markdown_core_node_get_literal(block_html), "<div>raw</div>\n",
-           "strip-html-comments keeps block HTML literal");
+    INT_EQ(runner, markdown_core_node_get_type(block_comment), MARKDOWN_CORE_NODE_COMMENT_BLOCK, "block comment type");
+    STR_EQ(runner, markdown_core_node_get_literal(block_comment), " block\nhidden ",
+           "block comment literal keeps its line ending and excludes delimiters");
+    STR_EQ(runner, markdown_core_node_get_type_string(block_comment), "comment_block", "block comment type string");
+    INT_EQ(runner, markdown_core_node_get_start_line(block_comment), 3, "block comment starts on its opener line");
+    INT_EQ(runner, markdown_core_node_get_end_line(block_comment), 4, "block comment ends on its closer line");
+    INT_EQ(runner, markdown_core_node_get_end_column(block_comment), 10, "block comment ends at its closer");
 
+    INT_EQ(runner, markdown_core_node_get_type(block_html), MARKDOWN_CORE_NODE_HTML_BLOCK, "a div stays an HTML block");
+    STR_EQ(runner, markdown_core_node_get_literal(block_html), "<div>raw</div>\n", "HTML block literal");
+    INT_EQ(runner, markdown_core_node_get_type(trailing), MARKDOWN_CORE_NODE_HTML_BLOCK,
+           "non-whitespace after the closer keeps the HTML block");
+    STR_EQ(runner, markdown_core_node_get_literal(trailing), "<!-- a --> b\n", "HTML block literal as written");
+
+    INT_EQ(runner, markdown_core_node_get_type(empties), MARKDOWN_CORE_NODE_COMMENT_BLOCK,
+           "`<!-->` opens a block comment");
+    STR_EQ(runner, markdown_core_node_get_literal(empties), "", "`<!-->` as a block has an empty literal");
+    OK(runner, markdown_core_node_first_child(empties) == NULL, "a block comment is a leaf");
+
+    markdown_core_node_free(doc);
+
+    doc = markdown_core_parse_document("a <!--> b <!---> c <!----> d\n", 29, MARKDOWN_CORE_OPT_DEFAULT);
+    paragraph = markdown_core_node_first_child(doc);
+    empty = markdown_core_node_next(markdown_core_node_first_child(paragraph));
+    INT_EQ(runner, markdown_core_node_get_type(empty), MARKDOWN_CORE_NODE_COMMENT, "`<!-->` is an inline comment");
+    STR_EQ(runner, markdown_core_node_get_literal(empty), "", "`<!-->` has an empty literal");
+    INT_EQ(runner, markdown_core_node_get_start_column(empty), 3, "`<!-->` starts at its `<`");
+    INT_EQ(runner, markdown_core_node_get_end_column(empty), 7, "`<!-->` ends at its `>`");
+    empty = markdown_core_node_next(markdown_core_node_next(empty));
+    INT_EQ(runner, markdown_core_node_get_type(empty), MARKDOWN_CORE_NODE_COMMENT, "`<!--->` is an inline comment");
+    STR_EQ(runner, markdown_core_node_get_literal(empty), "", "`<!--->` has an empty literal");
+    empty = markdown_core_node_next(markdown_core_node_next(empty));
+    INT_EQ(runner, markdown_core_node_get_type(empty), MARKDOWN_CORE_NODE_COMMENT, "`<!---->` is an inline comment");
+    STR_EQ(runner, markdown_core_node_get_literal(empty), "", "`<!---->` has an empty literal");
     markdown_core_node_free(doc);
 }
 
@@ -1155,9 +1172,9 @@ static void extension_decline_yields_turn(test_batch_runner *runner) {
  * EXIT of a node that "cannot have children" -- a list, not a property, so a
  * `FOOTNOTE_REFERENCE` with no children got an EXIT and a `TEXT` with no
  * children did not, and every walk in the engine had to know which. Three did:
- * `consolidate_text_nodes`, `S_strip_html_comments` and `autolink`'s
- * `postprocess`, and all three freed or spliced at ENTER because the
- * suppression made it safe. The input below contains one of every suppressed
+ * `consolidate_text_nodes`, the HTML-comment stripper `M0` deleted, and
+ * `autolink`'s `postprocess`, and all three freed or spliced at ENTER because
+ * the suppression made it safe. The input below contains one of every suppressed
  * kind. */
 static size_t total_nodes(markdown_core_node *node) {
     size_t n = 1;
@@ -1652,7 +1669,7 @@ int main(void) {
     line_endings(runner);
     numeric_entities(runner);
     test_cplusplus(runner);
-    strip_html_comments(runner);
+    comment_nodes(runner);
     test_crlf_line_ending(runner);
     test_pathological_regressions(runner);
     extension_decline_yields_turn(runner);

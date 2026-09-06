@@ -139,6 +139,8 @@ static void free_node_as(markdown_core_node *node) {
     case MARKDOWN_CORE_NODE_HTML:
     case MARKDOWN_CORE_NODE_CODE:
     case MARKDOWN_CORE_NODE_HTML_BLOCK:
+    case MARKDOWN_CORE_NODE_COMMENT:
+    case MARKDOWN_CORE_NODE_COMMENT_BLOCK:
         markdown_core_chunk_free(NODE_MEM(node), &node->as.literal);
         break;
     case MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE:
@@ -256,6 +258,8 @@ const char *markdown_core_node_get_type_string(markdown_core_node *node) {
         return "code_block";
     case MARKDOWN_CORE_NODE_HTML_BLOCK:
         return "html_block";
+    case MARKDOWN_CORE_NODE_COMMENT_BLOCK:
+        return "comment_block";
     case MARKDOWN_CORE_NODE_PARAGRAPH:
         return "paragraph";
     case MARKDOWN_CORE_NODE_HEADING:
@@ -280,6 +284,8 @@ const char *markdown_core_node_get_type_string(markdown_core_node *node) {
         return "code";
     case MARKDOWN_CORE_NODE_HTML:
         return "html";
+    case MARKDOWN_CORE_NODE_COMMENT:
+        return "comment";
     case MARKDOWN_CORE_NODE_EMPHASIS:
         return "emphasis";
     case MARKDOWN_CORE_NODE_STRONG:
@@ -369,6 +375,8 @@ const char *markdown_core_node_get_literal(markdown_core_node *node) {
     case MARKDOWN_CORE_NODE_TEXT:
     case MARKDOWN_CORE_NODE_HTML:
     case MARKDOWN_CORE_NODE_CODE:
+    case MARKDOWN_CORE_NODE_COMMENT:
+    case MARKDOWN_CORE_NODE_COMMENT_BLOCK:
         return markdown_core_chunk_to_cstr(NODE_MEM(node), &node->as.literal);
 
     case MARKDOWN_CORE_NODE_CODE_BLOCK:
@@ -391,6 +399,8 @@ int markdown_core_node_set_literal(markdown_core_node *node, const char *content
     case MARKDOWN_CORE_NODE_TEXT:
     case MARKDOWN_CORE_NODE_HTML:
     case MARKDOWN_CORE_NODE_CODE:
+    case MARKDOWN_CORE_NODE_COMMENT:
+    case MARKDOWN_CORE_NODE_COMMENT_BLOCK:
         return markdown_core_chunk_set_cstr(NODE_MEM(node), &node->as.literal, content);
 
     case MARKDOWN_CORE_NODE_CODE_BLOCK:

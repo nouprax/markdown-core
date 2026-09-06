@@ -337,6 +337,7 @@ static void collect_node_fields(es_build *build, size_t node_index) {
     case MARKDOWN_CORE_KIND_TEXT:
     case MARKDOWN_CORE_KIND_CODE:
     case MARKDOWN_CORE_KIND_HTML:
+    case MARKDOWN_CORE_KIND_COMMENT:
         if (!markdown_core_node_literal(node, &first)) {
             build->failure = ES_BUILD_INTERNAL;
             break;

@@ -1,6 +1,7 @@
 import type { BlockQuote } from "./block-quote.js";
 import type { CodeBlock } from "./code-block.js";
 import type { Code } from "./code.js";
+import type { Comment } from "./comment.js";
 import type { DirectiveBlock } from "./directive-block.js";
 import type { DirectiveLabel } from "./directive-label.js";
 import type { Directive } from "./directive.js";
@@ -49,6 +50,7 @@ export type Markup =
     | LineBreak
     | Code
     | HTML
+    | Comment
     | Formula
     | Emphasis
     | Strong

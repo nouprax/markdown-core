@@ -49,6 +49,8 @@ internal class KindVisitor : Visitor<String> {
 
     override fun visitHTML(node: HTML): String = name(node)
 
+    override fun visitComment(node: Comment): String = name(node)
+
     override fun visitFormula(node: Formula): String = name(node)
 
     override fun visitEmphasis(node: Emphasis): String = name(node)
@@ -116,6 +118,8 @@ internal class RecordingVisitor : Visitor<Unit> {
     override fun visitCode(node: Code): Unit = record(node)
 
     override fun visitHTML(node: HTML): Unit = record(node)
+
+    override fun visitComment(node: Comment): Unit = record(node)
 
     override fun visitFormula(node: Formula): Unit = record(node)
 
@@ -281,6 +285,11 @@ internal class RecordingWalkingVisitor(
 
     override fun visitHTML(
         node: HTML,
+        phase: WalkPhase,
+    ): Unit = record(node, phase)
+
+    override fun visitComment(
+        node: Comment,
         phase: WalkPhase,
     ): Unit = record(node, phase)
 
