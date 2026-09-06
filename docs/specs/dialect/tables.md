@@ -490,8 +490,7 @@ Document scope=1:1..4:27 anchor=null attributes={} children=1
 
 The header may be omitted when a footer closes the table; then `head=[]`,
 and column boundaries and alignment are inferred from the separator runs and
-the first body line. A multi-line header uses the shortest non-empty line's
-segment:
+the first body line:
 
 ```````````````````````````````` example simple_tables
 ----  ----
@@ -514,6 +513,27 @@ Document scope=1:1..4:10 anchor=null attributes={} children=1
     │       └── TableCell scope=3:7..3:7 anchor=null attributes={} rowspan=1 colspan=1 children=1
     │           └── Text scope=3:7..3:7 anchor=null attributes={} literal="d" children=0
     └── TableFoot children=0
+````````````````````````````````
+
+The header is one line, as in Pandoc. When two or more lines precede the
+separator, the line before it is not the first line of the paragraph
+candidate, so there is no table: the lines stay a paragraph, and the dash
+line, completing no candidate, is a thematic break:
+
+```````````````````````````````` example simple_tables
+Right   Left
+More    Lines
+-----   -----
+12      12
+.
+Document scope=1:1..4:10 anchor=null attributes={} children=3
+├── Paragraph scope=1:1..2:13 anchor=null attributes={} children=3
+│   ├── Text scope=1:1..1:12 anchor=null attributes={} literal="Right   Left" children=0
+│   ├── SoftBreak scope=1:13..1:13 anchor=null attributes={} children=0
+│   └── Text scope=2:1..2:13 anchor=null attributes={} literal="More    Lines" children=0
+├── ThematicBreak scope=3:1..3:13 anchor=null attributes={} children=0
+└── Paragraph scope=4:1..4:10 anchor=null attributes={} children=1
+    └── Text scope=4:1..4:10 anchor=null attributes={} literal="12      12" children=0
 ````````````````````````````````
 
 ## Multiline tables
@@ -703,7 +723,8 @@ Every example of this module is a package fixture. Tests also cover, for
 pipe tables, two-hyphen and aligned markers, every interrupting block start,
 and the cell limit; for captions, between two tables, punctuation after the
 colon, and definition-list precedence; for simple tables, closing
-separators, multi-line headers, and Setext and thematic-break precedence;
+separators, a second line before the separator, and Setext and
+thematic-break precedence;
 for multiline tables, headerless forms and the one-row rule; for grid
 tables, multi-row heads, interleaved active spans, fully covered rows,
 alignment, foot, and rejection of overlap, overrun, uncovered coordinates,
