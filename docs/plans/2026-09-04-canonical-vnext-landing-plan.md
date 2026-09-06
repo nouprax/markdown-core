@@ -830,8 +830,9 @@ nothing strips comments.
       disambiguation, same-style continuation, a new list on a style or
       delimiter change, and the nested-start restriction; `List.start` is always
       the first marker's value for every style, so no `startnum` option exists,
-      and a Roman marker with more than 999999 `M` is ordinary text so the
-      value never exceeds the nine-digit decimal ceiling that `int` holds.
+      and a Roman numeral whose value exceeds the nine-digit decimal ceiling
+      is ordinary text, the accumulation stopping at the ceiling so no run of
+      any component can overflow the `int` that holds `List.start`.
       Remove the `fancy-list-and-startnum` gap. Requires `P0`, `M7`.
 - [ ] **P9b — `example_lists`.** Add `(@)`, `(@label)`, `(N@)`, and `(N@label)`
       markers with `style=example`, a document-wide counter and label map as
