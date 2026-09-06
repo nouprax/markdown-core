@@ -2,12 +2,14 @@
 
 Status: normative module of the [Markdown Core dialect](../dialect.md).
 Option: `insertedText` (default `false`). Source: `markdown-it-ins` 4.0.0 at
-commit `d1a13b290c944e8f212d3a6bd2de2f70b751c924`, whose README owns the
-valid source form and `<ins>` meaning. Executable oracle: `markdown-it`
-13.0.2 with the plugin registered, under `specs/oracles/markdown-it-ins/`,
-which lands with `I0`. Landing: `I1`. Every example in this module runs with
-`insertedText` on unless its fence says otherwise; the
-[example format](../dialect.md#examples) is defined by the index.
+commit `d1a13b290c944e8f212d3a6bd2de2f70b751c924`, whose README is the pinned
+source for the valid source form and `<ins>` meaning; this module states the
+rule, and the plugin is evidence whose differences become registered deltas.
+Executable oracle: `markdown-it` 13.0.2 with the plugin registered, under
+`specs/oracles/markdown-it-ins/`, which lands with `I0`. Landing: `I1`. Every
+example in this module runs with `insertedText` on unless its fence says
+otherwise; the [example format](../dialect.md#examples) is defined by the
+index.
 
 ## Model
 

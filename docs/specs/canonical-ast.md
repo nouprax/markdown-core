@@ -77,7 +77,10 @@ backslash that produced it; when trailing spaces produced it, the spaces stay
 inside the preceding `Text` node's scope and `LineBreak` covers the line ending
 alone. A multiline or grid table cell under the dialect's table options is the
 one construct whose scope may include bytes of sibling cells, because its
-segments are written on shared lines.
+segments are written on shared lines. A grid table cell whose `rowspan`
+exceeds one is the one construct whose scope leaves its parent's: a
+`TableRow` covers its own lines, the spanning cell reaches into the lines of
+later rows, and the scope-containment gate ledgers that exception.
 
 Scopes inherit the native C parser's source-position values and semantics
 exactly. The C facade and platform bindings copy `line` and `column` without

@@ -895,7 +895,9 @@ nothing strips comments.
       bodies through the ordinary block parser, missing segments as `rowspan`
       and `colspan` stored once in the upper-left anchor row, a row-width
       occupancy array validating overlap, overrun, uncovered coordinates, and
-      cross-group spans, and alignment colons and widths. Remove the
+      cross-group spans, and alignment colons and widths. Ledger the row-span
+      containment exception the tables module states in
+      `specs/positions/containment.json` with its reason. Remove the
       `grid-table-block-cells` and `grid-table-row-and-column-spans` gaps. Grid
       widths populate `TableColumn.relative` through the producer `P11c`
       establishes. Caption precedence over definition-term lookahead for this

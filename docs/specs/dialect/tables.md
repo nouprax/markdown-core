@@ -627,7 +627,7 @@ space is removed from each; the lines are joined with LF and parsed by the
 block parser, so cells hold paragraphs, code, lists, headings, nested tables,
 and every enabled block. A logical row begins at every line on which a cell
 is anchored, and a cell that spans down is owned by the row of its anchor
-line:
+line, and its scope extends below that row's last line:
 
 ```````````````````````````````` example grid_tables
 +-------+-------+
@@ -691,8 +691,11 @@ its column boundaries on its first line through the same region on its last
 line, clipped to each line's end; its descendants use original-source
 coordinates, so a `SoftBreak` produced by joining two segments covers the
 physical line ending of the earlier segment's line, and such a range may
-include other cells' bytes. `canonical-ast.md` records this exception to
-the contiguous-range rule.
+include other cells' bytes. A grid cell whose `rowspan` exceeds one ends
+below its owning row's last line; this is the one case in which a child's
+scope leaves its parent's. `canonical-ast.md` records both exceptions to
+the contiguous-range and containment rules, and the scope-containment gate
+ledgers the second with `P11d`.
 
 ## Required conformance cases
 
