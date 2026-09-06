@@ -535,8 +535,9 @@ nothing strips comments.
       merges later. An attribute container following a complete `CrossLink`
       staying text under `bracketedSpans` is a cross-item case owned by
       whichever of `O1` and `P5` merges later. Requires `X0`, `M7`.
-- [ ] **O2 — Highlights.** Add `==` to the shared delimiter stack under `marks`
-      with the exact-two-run and non-empty rules, local pairing, and opaque
+- [ ] **O2 — Highlights.** Add `=` to the shared delimiter stack under `marks`
+      with pairwise run matching (two signs per match, a leftover single sign
+      is text) and the non-empty rule, local pairing, and opaque
       code, formula, comment, HTML-token, and wikilink bytes; add the
       `Mark(content)` kind, fixtures for formatted, adjacent, escaped,
       unmatched, triple, table-cell, and footnote-content bodies plus

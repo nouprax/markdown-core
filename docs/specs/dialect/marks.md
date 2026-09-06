@@ -18,12 +18,16 @@ and may contain any inline construct whose delimiters nest legally inside it.
 
 ## Syntax
 
-`==` is a delimiter on the shared stack at inline step C5. A candidate is a
-maximal run of unescaped `=` of length exactly two; runs of one or of three or
-more are text. A candidate can open if and only if it is left-flanking and
-can close if and only if it is right-flanking, under the CommonMark
-definitions with the same character classes as `*`. Matching uses the
-inherited process-emphasis algorithm without the rule of three.
+`=` is a delimiter character on the shared stack at inline step C5. A
+candidate is a maximal run of two or more unescaped `=`; a run of one is
+text. A candidate can open if and only if it is left-flanking and can close
+if and only if it is right-flanking, under the CommonMark definitions with
+the same character classes as `*`. Matching uses the inherited
+process-emphasis algorithm without the rule of three, and a match consumes
+exactly two `=` from the end of the opener and two from the start of the
+closer, as a `**` match does. What remains of a run keeps its flanking, so a
+run of four can close one mark and open the next, while a remaining single
+`=` matches nothing more and is text before or after the mark.
 
 ```````````````````````````````` example marks
 This is ==important== text.
@@ -50,7 +54,8 @@ Document scope=1:1..1:11 anchor=null attributes={} children=1
         └── Text scope=1:8..1:9 anchor=null attributes={} literal=" c" children=0
 ````````````````````````````````
 
-Intraword pairs are allowed, and adjacent marks are separate nodes:
+Intraword pairs are allowed, and a run of four closes one mark and opens
+the next, so adjacent marks are separate nodes:
 
 ```````````````````````````````` example marks
 a==b==c ==d====e==
@@ -67,20 +72,25 @@ Document scope=1:1..1:18 anchor=null attributes={} children=1
         └── Text scope=1:16..1:16 anchor=null attributes={} literal="e" children=0
 ````````````````````````````````
 
-A run of one, three, or four or more equals signs is text, so a longer run
-inside a mark is content:
+A run of one is text. A run of three matches two of its signs and leaves
+the third as text outside the mark, and a run that is neither left- nor
+right-flanking is text:
 
 ```````````````````````````````` example marks
-==a====b==
+==a===b==
 
 =a= ===a=== ====
 .
 Document scope=1:1..3:16 anchor=null attributes={} children=2
-├── Paragraph scope=1:1..1:10 anchor=null attributes={} children=1
-│   └── Mark scope=1:1..1:10 anchor=null attributes={} children=1
-│       └── Text scope=1:3..1:8 anchor=null attributes={} literal="a====b" children=0
-└── Paragraph scope=3:1..3:16 anchor=null attributes={} children=1
-    └── Text scope=3:1..3:16 anchor=null attributes={} literal="=a= ===a=== ====" children=0
+├── Paragraph scope=1:1..1:9 anchor=null attributes={} children=2
+│   ├── Mark scope=1:1..1:5 anchor=null attributes={} children=1
+│   │   └── Text scope=1:3..1:3 anchor=null attributes={} literal="a" children=0
+│   └── Text scope=1:6..1:9 anchor=null attributes={} literal="=b==" children=0
+└── Paragraph scope=3:1..3:16 anchor=null attributes={} children=3
+    ├── Text scope=3:1..3:5 anchor=null attributes={} literal="=a= =" children=0
+    ├── Mark scope=3:6..3:10 anchor=null attributes={} children=1
+    │   └── Text scope=3:8..3:8 anchor=null attributes={} literal="a" children=0
+    └── Text scope=3:11..3:16 anchor=null attributes={} literal="= ====" children=0
 ````````````````````````````````
 
 A closer matches the nearest unmatched opener, and a run that finds no

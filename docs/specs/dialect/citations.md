@@ -154,6 +154,34 @@ Document scope=1:1..1:16 anchor=null attributes={} children=1
                     └── Text scope=1:7..1:14 anchor=null attributes={} literal="emphasis" children=0
 ````````````````````````````````
 
+The grammar is applied left to right: an item's key is the first candidate
+key in the item at which the opener precondition of the key grammar holds,
+the prefix is the inline content before that key and therefore contains no
+candidate, and the suffix is everything after the key up to the item
+boundary. A later candidate in the suffix is ordinary suffix content, where
+step A8 makes it an author-in-text `Cite` exactly as outside brackets:
+
+```````````````````````````````` example citations
+[@a @b] [foo@bar @baz]
+.
+Document scope=1:1..1:22 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:22 anchor=null attributes={} children=3
+    ├── Cite scope=1:1..1:7 anchor=null attributes={} children=1
+    │   └── Citation scope=1:2..1:6 referent=bib(key="a",mode=normal) children=0
+    │       ├── CitationPrefix children=0
+    │       └── CitationSuffix children=1
+    │           └── Cite scope=1:5..1:6 anchor=null attributes={} children=1
+    │               └── Citation scope=1:5..1:6 referent=bib(key="b",mode=authorInText) children=0
+    │                   ├── CitationPrefix children=0
+    │                   └── CitationSuffix children=0
+    ├── Text scope=1:8..1:8 anchor=null attributes={} literal=" " children=0
+    └── Cite scope=1:9..1:22 anchor=null attributes={} children=1
+        └── Citation scope=1:10..1:21 referent=bib(key="baz",mode=normal) children=0
+            ├── CitationPrefix children=1
+            │   └── Text scope=1:10..1:16 anchor=null attributes={} literal="foo@bar" children=0
+            └── CitationSuffix children=0
+````````````````````````````````
+
 An unescaped `-` immediately before `@` is the mode marker when the opener
 precondition of the key grammar holds at the `-`: it then selects
 `suppressAuthor` and is excluded from the affixes and the key. When the
@@ -386,5 +414,6 @@ key punctuation scalar, repeated punctuation, braced keys with nesting,
 spacing after `[` and `;`, author-in-text tails with a `^` start and with a
 following `(`, `[`, or container, example labels before and after their
 definitions, code, comments, HTML, and formulas, definitions with a leading
-`@`, exact group, item, and affix scopes, allocation failure, and
-adversarial runs of `@`, punctuation, braces, brackets, and semicolons.
+`@`, a second key inside an item with and without a mode marker, exact
+group, item, and affix scopes, allocation failure, and adversarial runs of
+`@`, punctuation, braces, brackets, and semicolons.
