@@ -24,6 +24,12 @@ static const markdown_core_feature FEATURES[] = {
 
 #define FEATURE_COUNT (sizeof(FEATURES) / sizeof(FEATURES[0]))
 
+/* One bit per row: a table that outgrows the set is a compile error, not a
+ * silently unselectable feature. (C99 has no static assertion, so the
+ * check is a typedef whose array size goes negative.) */
+typedef char
+    markdown_core_feature_set_holds_every_row[(FEATURE_COUNT <= sizeof(markdown_core_feature_set) * 8) ? 1 : -1];
+
 size_t markdown_core_feature_count(void) { return FEATURE_COUNT; }
 
 const markdown_core_feature *markdown_core_feature_at(size_t index) {

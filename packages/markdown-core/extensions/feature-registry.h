@@ -46,8 +46,10 @@ typedef struct markdown_core_feature {
     int option_bit;
 } markdown_core_feature;
 
-/** A set of registry rows: bit `i` is the row `markdown_core_feature_at(i)`. */
-typedef uint32_t markdown_core_feature_set;
+/** A set of registry rows: bit `i` is the row `markdown_core_feature_at(i)`.
+ * Wide enough for every row the dialect specification lists, and the table
+ * is checked against this width where it is defined. */
+typedef uint64_t markdown_core_feature_set;
 
 size_t markdown_core_feature_count(void);
 
