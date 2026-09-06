@@ -331,14 +331,15 @@ dialect. Changing one is a behavior change.
 | Limit                                                             | Value         | Effect when exceeded                                                                   |
 | ----------------------------------------------------------------- | ------------- | -------------------------------------------------------------------------------------- |
 | inline delimiter nesting depth (`MARKDOWN_CORE_MAX_INLINE_DEPTH`) | 256           | further delimiter units at that depth are literal text                                 |
-| footnote container depth (`MAX_FOOTNOTE_DEPTH`)                   | 100           | a definition at greater depth is not a definition; its line is ordinary content        |
+| footnote container depth (`MAX_FOOTNOTE_DEPTH`)                   | 100           | a definition at that depth or greater is not a definition; its line is ordinary content |
 | link and footnote label length (`MAX_LINK_LABEL_LENGTH`)          | 1000 bytes    | a longer label is not a label; the brackets are ordinary bracket text                  |
 | directive label bracket nesting                                   | 32            | a label with a 33rd nested `[` is not a label; the directive has no label              |
 | decimal list marker and example counter digits                    | 9             | a longer digit run is not a marker                                                     |
 | image dimension value                                             | 2147483647    | a larger value yields no dimensions; the whole label stays alt content                 |
 | properties alias expansion                                        | 1048576 bytes | a payload whose expanded alias occurrences exceed the budget invalidates the candidate |
 | properties records per block                                      | 65536         | a payload with more top-level records invalidates the candidate                        |
-| completed pipe-table cells per table                              | 524288        | the next line ends the table                                                           |
+| autocompleted pipe-table cells per table (`MAX_AUTOCOMPLETED_CELLS`) | 524288     | once the synthesized empty cells exceed it, the next line is not a row and ends the table |
+| pipe-table cells per row                                          | 65535         | a header or delimiter row with more cells is not a table; a body row with more cells ends the table before it |
 
 Block container depth is not limited: the parser, every transport, and every
 binding are stack-safe at any depth, and the conformance suites prove it with

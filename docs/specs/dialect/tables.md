@@ -262,8 +262,10 @@ Document scope=1:1..3:21 anchor=null attributes={} children=1
 
 A pipe table produces `columns` with the delimiter row's alignments and
 `relative=null`, `head` with the one header row, `content` with the body
-rows, `foot=[]`, and cells with both spans equal to one. A table that has
-completed more than 524288 cells accepts no further rows. With
+rows, `foot=[]`, and cells with both spans equal to one. A table whose
+synthesized empty cells number more than 524288 accepts no further rows,
+and a row holds at most 65535 cells: a header or delimiter row with more is
+not a table, and a body row with more ends the table before it. With
 `tables=false`, the lines are paragraph text:
 
 ```````````````````````````````` example !tables
