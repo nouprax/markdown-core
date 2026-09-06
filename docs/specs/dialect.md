@@ -335,6 +335,7 @@ dialect. Changing one is a behavior change.
 | decimal list marker and example counter digits                    | 9             | a longer digit run is not a marker                                                     |
 | image dimension value                                             | 2147483647    | a larger value yields no dimensions; the whole label stays alt content                 |
 | properties alias expansion                                        | 1048576 bytes | a payload whose expanded alias occurrences exceed the budget invalidates the candidate |
+| properties records per block                                      | 65536         | a payload with more top-level records invalidates the candidate                        |
 | completed pipe-table cells per table                              | 524288        | the next line ends the table                                                           |
 
 Block container depth is not limited: the parser, every transport, and every

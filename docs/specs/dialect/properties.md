@@ -253,7 +253,9 @@ An alias contributes the resolved value at its occurrence when its anchor was
 defined earlier in the same block, the graph is acyclic, and the value is
 supported; it creates no public reference. The sum, over all alias
 occurrences, of the source byte length of the aliased node may not exceed
-the dialect's alias expansion budget; exceeding it invalidates the candidate.
+the dialect's alias expansion budget of 1048576 bytes, and a payload holds at
+most 65536 top-level records; exceeding either limit invalidates the
+candidate, as the limits table of the [index](../dialect.md#limits) states.
 Presentation details such as comments, anchor names, quote style, flow versus
 block style, and numeric formatting are not public fields; the exact numeric
 spelling is the one lexical payload kept, because converting it loses
@@ -283,7 +285,7 @@ removed from `Document.content`; the remaining bytes are parsed once by the
 ordinary block parser, and a blank line after the fence is ordinary
 separation. Any failure, including an unclosed fence, invalid YAML, a
 non-mapping root such as an explicit null, a duplicate name, an unsupported
-value, an invalid alias, or a limit, sets `metadata` to `null` and returns
+value, an invalid alias, or either limit, sets `metadata` to `null` and returns
 every byte to inherited parsing, in which the opening line is a thematic
 break or a Setext underline as the inherited grammar decides. No constructed
 block is deleted afterwards:

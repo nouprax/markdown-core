@@ -320,8 +320,9 @@ list. No item stores its derived number. In inline content outside opaque
 constructs, the exact spelling `(@label)` with no internal whitespace is an
 `ExampleReference` when the label is registered anywhere in the document;
 where it is a valid list marker, the marker rule wins. A repeated label never
-splits a list: the item is an ordinary item, `exampleLabel` records the
-label, and the counter does not advance:
+splits a list: the item is an ordinary item that advances the counter like
+any other, `exampleLabel` records the label, and the label stays registered
+to the first item that carried it:
 
 ```````````````````````````````` example example_lists
 (@good) This is a good example.
@@ -431,9 +432,10 @@ Document scope=1:1..1:12 anchor=null attributes={} children=1
 ````````````````````````````````
 
 The continuation column of an example item is the container start plus four
-columns after tab expansion, whatever the marker width. A consumer derives
-the displayed number by resolving the first item with that label and using
-its list's `start` plus the item's position.
+columns after tab expansion, whatever the marker width. Every item's number
+is its list's `start` plus its zero-based position in the list, so a
+consumer derives the number of a reference by resolving the first item
+registered with its label and computing that item's number.
 
 ## Option behavior and fallback
 
