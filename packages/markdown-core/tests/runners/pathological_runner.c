@@ -911,6 +911,13 @@ static int case_formula_backslash_closers(pc_context *context) {
     return pc_formula_case(context, "\\\\(x\\\\) ", "\\\\)", 19999, NULL, 1, "x");
 }
 
+/* Twenty thousand formulas in one paragraph: every closer asks whether an
+ * opener waits, and the answer must not depend on how many delimiters the
+ * paragraph has already pushed. */
+static int case_formula_backslash_pairs(pc_context *context) {
+    return pc_formula_case(context, "\\\\(x\\\\)", " \\\\(x\\\\)", 19999, NULL, 20000, "x");
+}
+
 /* Registry ------------------------------------------------------------------ */
 
 typedef struct pc_case_entry {
@@ -954,6 +961,7 @@ static const pc_case_entry PC_CASES[] = {
     {"formula_dollar_backtick_openers", case_formula_dollar_backtick},
     {"formula_backslash_openers", case_formula_backslash_openers},
     {"formula_backslash_closers", case_formula_backslash_closers},
+    {"formula_backslash_pairs", case_formula_backslash_pairs},
 };
 
 int main(int argc, char **argv) {

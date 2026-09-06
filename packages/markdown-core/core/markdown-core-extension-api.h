@@ -571,13 +571,14 @@ void markdown_core_inline_parser_remove_delimiter(markdown_core_inline_parser *p
 MARKDOWN_CORE_EXPORT
 delimiter *markdown_core_inline_parser_get_last_delimiter(markdown_core_inline_parser *parser);
 
-/** Whether a delimiter of `rule` that can open is on the stack with no later
- * closer of `rule` already spoken for it: the balance the core computes for
- * `]` before a bracket takes it, asked for one rule. An extension whose
- * closers may not stand alone -- a formula's `\\)` is CommonMark's escaped
- * backslash and a parenthesis unless something opened it -- asks here before
- * pushing one, so a closer that would never pair stays with the base language
- * and never piles up on the stack for the next closer to walk past.
+/** Whether the delimiters of `rule` on the stack that can open outnumber
+ * those that can close. The counts are kept at every push and removal, so the
+ * answer costs the same however deep the stack is. For a rule whose closers
+ * are pushed only when this answers yes, that is exactly whether an opener is
+ * still unmatched: an extension whose closers may not stand alone -- a
+ * formula's `\\)` is CommonMark's escaped backslash and a parenthesis unless
+ * something opened it -- asks here before pushing one, so a closer that would
+ * never pair stays with the base language.
  */
 MARKDOWN_CORE_EXPORT
 int markdown_core_inline_parser_has_unmatched_opener(markdown_core_inline_parser *parser,

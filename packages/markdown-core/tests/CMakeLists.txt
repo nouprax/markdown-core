@@ -275,7 +275,8 @@ set(MARKDOWN_CORE_PATHOLOGICAL_CASES
     formula_long_backslash
     formula_dollar_backtick_openers
     formula_backslash_openers
-    formula_backslash_closers)
+    formula_backslash_closers
+    formula_backslash_pairs)
 foreach(case IN LISTS MARKDOWN_CORE_PATHOLOGICAL_CASES)
     markdown_core_add_test(pathological_${case} pathological 30 pathological_runner --case ${case})
 endforeach()

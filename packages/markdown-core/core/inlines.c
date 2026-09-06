@@ -56,6 +56,11 @@ typedef struct subject {
     markdown_core_node *owner;
     markdown_core_map *refmap;
     delimiter *last_delim;
+    /* How many delimiters of each rule on the stack can open, and how many
+     * can close, kept at every push and removal so a scanner can ask whether
+     * a closer will pair without walking the stack. */
+    int delim_openers[MARKDOWN_CORE_DELIM_RULE_COUNT];
+    int delim_closers[MARKDOWN_CORE_DELIM_RULE_COUNT];
     bracket *last_bracket;
     bufsize_t backticks[MAXBACKTICKS + 1];
     bool scanned_for_backticks;
@@ -263,6 +268,8 @@ static void subject_from_buf(markdown_core_parser *parser, markdown_core_mem *me
     e->owner = NULL;
     e->refmap = refmap;
     e->last_delim = NULL;
+    memset(e->delim_openers, 0, sizeof(e->delim_openers));
+    memset(e->delim_closers, 0, sizeof(e->delim_closers));
     e->last_bracket = NULL;
     for (i = 0; i <= MAXBACKTICKS; i++) {
         e->backticks[i] = 0;
@@ -558,6 +565,12 @@ static void remove_delimiter(subject *subj, delimiter *delim) {
     if (delim->previous != NULL) {
         delim->previous->next = delim->next;
     }
+    if (delim->can_open) {
+        subj->delim_openers[delim->rule]--;
+    }
+    if (delim->can_close) {
+        subj->delim_closers[delim->rule]--;
+    }
     subj->mem->free(delim);
 }
 
@@ -619,6 +632,12 @@ static void push_delimiter(subject *subj, const markdown_core_extension *owner, 
         delim->previous->next = delim;
     }
     subj->last_delim = delim;
+    if (can_open) {
+        subj->delim_openers[rule]++;
+    }
+    if (can_close) {
+        subj->delim_closers[rule]++;
+    }
 }
 
 static void push_bracket(subject *subj, bool image, markdown_core_node *inl_text) {
@@ -2243,25 +2262,14 @@ void markdown_core_node_unput(markdown_core_node *node, int n) {
 
 int markdown_core_inline_parser_has_unmatched_opener(markdown_core_inline_parser *parser,
                                                      markdown_core_delimiter_rule rule) {
-    const delimiter *delim = parser->last_delim;
-    int closers = 0;
-
-    /* The same balance `find_extension_opener_for_special_char` keeps, for one
-     * rule: a closer above an opener has already claimed it. */
-    while (delim) {
-        if (delim->rule == rule) {
-            if (delim->can_close) {
-                closers++;
-            } else if (delim->can_open) {
-                if (closers == 0) {
-                    return 1;
-                }
-                closers--;
-            }
-        }
-        delim = delim->previous;
+    if (rule <= MARKDOWN_CORE_DELIM_RULE_NONE || rule >= MARKDOWN_CORE_DELIM_RULE_COUNT) {
+        return 0;
     }
-    return 0;
+    /* Counts kept at push and removal, so this is one comparison however deep
+     * the stack is. For a rule whose closers are pushed only when this says
+     * yes, every closer on the stack has an opener below it, and an opener is
+     * unmatched exactly when the openers outnumber the closers. */
+    return parser->delim_openers[rule] > parser->delim_closers[rule];
 }
 
 delimiter *markdown_core_inline_parser_get_last_delimiter(markdown_core_inline_parser *parser) {
