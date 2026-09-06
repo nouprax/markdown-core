@@ -2,22 +2,22 @@
     "schemaVersion": 1,
     "oracle": {
         "runner": "unified / remark",
-        "why": "The authorities below are micromark extensions, which emit a token stream rather than a tree. remark is the harness that runs them and turns the tokens into mdast, so it is what this gate executes — but the syntax decisions being compared are the extensions' own.",
+        "why": "The oracles below are micromark extensions, which emit a token stream rather than a tree. remark is the harness that runs them and turns the tokens into mdast, so it is what this gate executes — but the syntax decisions being compared are the extensions' own.",
         "authorities": {
             "directives": "micromark-extension-directive@4.0.0 for directive envelopes, labels, and attachment positions (run through remark-directive); the shared attribute member grammar is explicitly Pandoc-owned",
             "math": "micromark-extension-math@3.1.0",
             "footnotes and tables": "micromark-extension-gfm-* (remark-gfm)"
         },
         "astShapeFrom": "mdast-util-directive@3.1.0 and mdast-util-from-markdown; every `ast-shape` delta below originates here, not in the parser extensions.",
-        "note": "Versions are pinned by pnpm-lock.yaml. This is a corrective and supplementary oracle: cmark remains authoritative for CommonMark and cmark-gfm for GFM extensions, while remark/mdast supplies independent evidence for directives, math, footnote representation, tables, and the reference-link model.",
+        "note": "Versions are pinned by pnpm-lock.yaml. This is a corrective and supplementary oracle: cmark remains the CommonMark oracle and cmark-gfm the GFM-extension oracle, while remark/mdast supplies independent evidence for directives, math, footnote representation, tables, and the reference-link model.",
         "notAnAuthorityFor": [
             "Which construct wins when two extensions could claim the same line. That is decided by micromark's construct priority and by this repository's audited extension attachment order — each an artifact of its own architecture, not a rule either project specifies. Divergences of that kind are product grammar decisions rather than mdast parity deltas.",
             "LaTeX-style math delimiters. micromark-extension-math implements `$` and `$$` only, so `\\(x\\)` and `\\[x\\]` reach remark as ordinary escaped brackets. It has no opinion there to compare against, which is why packages/markdown-core/tests/fixtures/extensions-formula-latex.txt is deliberately absent from the corpus below rather than present with six registered divergences. Registering them would read as `remark disagrees`, and it does not — it was never asked.",
-            "Whether an extension is on. The gate runs one parser profile for the whole corpus, so the `*-option-gates` fixtures, which assert what the same input parses to with an extension off, cannot be judged here. The cmark oracle judges that negative property with every extension disabled.",
-            "Attribute member grammar and consumer projection. Markdown Core deliberately uses the pinned Pandoc 3.11 grammar at every attachment site and projects IDs to the universal anchor and remaining values to shared classes and records; remark remains authoritative only for the directive envelope and attachment position. New runtime differences caused by that planned migration must be registered when they begin reproducing."
+            "Whether an extension is on. The gate runs one parser profile for the whole corpus, so the `*-option-gates` fixtures (harness layer gates, renamed by `X0`), which assert what the same input parses to with a product scanner excluded, cannot be judged here. The cmark oracle judges that negative property on the base layer alone.",
+            "Attribute member grammar and consumer projection. Markdown Core deliberately uses the pinned Pandoc 3.11 grammar at every attachment site and projects IDs to the universal anchor and remaining values to shared classes and records; remark remains the evidence only for the directive envelope and attachment position, which the directives module states. New runtime differences caused by that planned migration must be registered when they begin reproducing."
         ]
     },
-    "claim": "Within the authority boundary above, Markdown Core's semantics are identical to the unified/remark ecosystem's except for the registered differences below. The check that enforces current runtime behavior is scripts/check-mdast-parity.mjs.",
+    "claim": "Within the evidence boundary above, Markdown Core's semantics are identical to the unified/remark ecosystem's except for the registered differences below. The check that enforces current runtime behavior is scripts/check-mdast-parity.mjs.",
     "corpus": [
         "specs/oracles/remark/corpus.md",
         "packages/markdown-core/tests/fixtures/extensions-directive.txt",
@@ -71,7 +71,7 @@
         },
         {
             "id": "unresolved-footnote-reference",
-            "summary": "A footnote reference whose label no document footnote defines is literal text in both, label included and unparsed. This was a registered divergence until 2026-08-02, when Markdown Core adopted the rule the two authorities already shared; it is recorded here so the corpus keeps checking that the agreement holds.",
+            "summary": "A footnote reference whose label no document footnote defines is literal text in both, label included and unparsed. This was a registered divergence until 2026-08-02, when Markdown Core adopted the rule the two oracles already shared; it is recorded here so the corpus keeps checking that the agreement holds.",
             "evidence": "docs/specs/canonical-ast.md footnote semantics; specs/oracles/remark/corpus.md \"dangling[^nope] tail\"."
         }
     ],
@@ -88,7 +88,7 @@
             "input": "Inline $ x$ end.\n",
             "authority": "GitHub",
             "summary": "A single-dollar span whose content is padded is not math here; remark-math accepts it.",
-            "why": "GitHub's renderer is the authority for `$...$`, and its heuristics exist to keep prose about money from becoming math. remark-math has no such heuristic."
+            "why": "GitHub's renderer is the evidence for `$...$`, and its heuristics exist to keep prose about money from becoming math. remark-math has no such heuristic."
         },
         {
             "id": "github-inline-math-heuristics-trailing",

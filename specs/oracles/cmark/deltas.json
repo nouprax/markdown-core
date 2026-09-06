@@ -13,7 +13,7 @@
             "id": "own-extensions",
             "kind": "excluded-from-comparison",
             "summary": "Every parser extension, including the GFM set, is disabled on Markdown Core's side.",
-            "handling": "The comparison uses the `commonmark` profile, which attaches no parser extensions and enables no footnote option.",
+            "handling": "The comparison uses the harness's `commonmark` profile, which runs the base layer alone; the profile is harness-internal layer selection, not a product option.",
             "evidence": "packages/markdown-core/core/main.c, --profile commonmark"
         },
         {
@@ -68,7 +68,7 @@
             "file": "packages/markdown-core/tests/fixtures/smart_punct.txt",
             "profile": "commonmark-smart",
             "upstreamFlags": ["--smart"],
-            "note": "Smart punctuation is a cmark option over the CommonMark parser, not a GFM extension."
+            "note": "Smart punctuation is a cmark option over the CommonMark parser, not a GFM extension; the dialect has no smart punctuation, and `X0` retires this comparison together with the product substitutions."
         }
     ],
     "corpusNote": "cmark is the sole primary implementation oracle for CommonMark syntax and its own pinned 0.31.2 spec is compared in full. Product-extension fixtures are also parsed with every extension off to prove that opting out returns to CommonMark rather than to a GFM-dependent fallback.",
