@@ -108,8 +108,9 @@ With `fancyLists=true`, an ordered marker is one of:
 - one ASCII letter, `lowerAlpha` or `upperAlpha`, with value its one-based
   position in the alphabet; `i` and `I` alone are Roman one;
 - a Roman numeral `M* [CM] [D] [CD] C* [XC] [L] [XL] X* [IX] [V] [IV] I*`
-  of at least one character in one case, `lowerRoman` or `upperRoman`, with
-  the usual value, the whole marker consumed; or
+  of at least one character and at most 999999 `M` in one case, `lowerRoman`
+  or `upperRoman`, with the usual value, which therefore never exceeds the
+  nine-digit decimal ceiling, the whole marker consumed; or
 - `#`, `style=default`, with value 1.
 
 The marker is followed by `.`, by `)`, or is enclosed in `(...)`, giving
@@ -455,9 +456,11 @@ Document scope=1:1..3:5 anchor=null attributes={} children=2
 ````````````````````````````````
 
 Invalid numerals, missing marker whitespace, prohibited nested starts,
-incomplete parentheses, and ten-digit runs are ordinary text. Counters cannot
-overflow because markers and `N` are limited to nine digits. The example map
-is parser state, not a public side table.
+incomplete parentheses, ten-digit runs, and Roman markers with more than
+999999 `M` are ordinary text. Counters cannot overflow because decimal
+markers and `N` are limited to nine digits and a Roman marker's value to the
+same ceiling, 999999999, which every surface's counter type holds. The
+example map is parser state, not a public side table.
 
 ## Scopes
 
@@ -470,4 +473,5 @@ Every example of this module is a package fixture. Tests also cover Roman
 markers in both cases and every delimiter, `i` and `I`, committed-style
 reading, tight and loose items, global examples across footnotes, resets on
 later items, four-column continuations, exact scopes, each option
-independently, allocation failure, and long numeral, label, and list inputs.
+independently, allocation failure, Roman markers of 999999 and of 1000000
+`M`, and long numeral, label, and list inputs.

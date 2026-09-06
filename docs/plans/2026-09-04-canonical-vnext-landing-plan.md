@@ -829,7 +829,9 @@ nothing strips comments.
       two-paren delimiters, the capital-period two-space rule, `i` and `I`
       disambiguation, same-style continuation, a new list on a style or
       delimiter change, and the nested-start restriction; `List.start` is always
-      the first marker's value for every style, so no `startnum` option exists.
+      the first marker's value for every style, so no `startnum` option exists,
+      and a Roman marker with more than 999999 `M` is ordinary text so the
+      value never exceeds the nine-digit decimal ceiling that `int` holds.
       Remove the `fancy-list-and-startnum` gap. Requires `P0`, `M7`.
 - [ ] **P9b — `example_lists`.** Add `(@)`, `(@label)`, `(N@)`, and `(N@label)`
       markers with `style=example`, a document-wide counter and label map as

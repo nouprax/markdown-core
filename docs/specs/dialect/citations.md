@@ -345,7 +345,7 @@ the further items:
 Document scope=1:1..3:16 anchor=null attributes={} children=2
 ├── Paragraph scope=1:1..1:27 anchor=null attributes={} children=2
 │   ├── Cite scope=1:1..1:16 anchor=null attributes={} children=1
-│   │   └── Citation scope=1:1..1:16 referent=bib(key="smith04",mode=authorInText) children=0
+│   │   └── Citation scope=1:1..1:15 referent=bib(key="smith04",mode=authorInText) children=0
 │   │       ├── CitationPrefix children=0
 │   │       └── CitationSuffix children=1
 │   │           └── Text scope=1:11..1:15 anchor=null attributes={} literal="p. 33" children=0
@@ -402,10 +402,13 @@ a leading `@`.
 
 A bracketed `Cite.scope` covers its outer brackets and contents. Each
 `Citation.scope` runs from the first non-whitespace byte after `[` or `;` to
-the last non-whitespace byte before `;` or `]`. An author-in-text `Cite` and
-its item both run from the mode marker or `@` through the tail's closing `]`,
-or through the key when no tail is claimed. Affix child scopes cover visible
-authored content only.
+the last non-whitespace byte before `;` or `]`. An author-in-text `Cite`
+runs from the mode marker or `@` through the tail's closing `]`, or through
+the key when no tail is claimed. Its first item starts at the same byte and
+ends at the key when no tail is claimed, and otherwise at the last
+non-whitespace byte before the tail's first `;` or its `]`, so an item never
+includes a closing bracket or a semicolon; the further items of a tail follow
+the bracketed rule. Affix child scopes cover visible authored content only.
 
 ## Required conformance cases
 

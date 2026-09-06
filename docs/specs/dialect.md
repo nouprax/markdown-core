@@ -336,6 +336,7 @@ dialect. Changing one is a behavior change.
 | code span backtick string length (`MAXBACKTICKS`)                 | 80            | a longer backtick string is never a code span delimiter and is text; cmark shares the ceiling, so the cmark gate sees no divergence |
 | directive label bracket nesting                                   | 32            | a label with a 33rd nested `[` is not a label; the directive has no label              |
 | decimal list marker and example counter digits                    | 9             | a longer digit run is not a marker                                                     |
+| Roman list marker value (`fancyLists`)                            | 999999999     | a marker with more than 999999 `M` exceeds it and is not a marker; the line is ordinary content |
 | image dimension value                                             | 2147483647    | a larger value yields no dimensions; the whole label stays alt content                 |
 | properties alias expansion                                        | 1048576 bytes | a payload whose expanded alias occurrences exceed the budget invalidates the candidate |
 | properties records per block                                      | 65536         | a payload with more top-level records invalidates the candidate                        |
