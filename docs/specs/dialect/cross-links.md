@@ -46,14 +46,17 @@ target         = [ path ] [ heading-anchor / block-anchor ]
 heading-anchor = "#" heading-part *( "#" heading-part )
 block-anchor   = "#^" block-id
 path           = 1*path-char
-heading-part   = 1*path-char
+heading-part   = heading-first *path-char
+heading-first  = any path-char except "^"
 path-char      = any scalar except "#", "|", "[", "]", LF, and CR, and
                  not a "\" immediately followed by "|"
 block-id       = 1*( ASCII-letter / DIGIT / "-" )
 label          = *( any scalar except "[", "]", LF, and CR )
 ```
 
-A target alone is a link to a note:
+The two anchor alternatives are disjoint: a heading part never begins with
+`^`, so `#^` always opens a block anchor. A target alone is a link to a
+note:
 
 ```````````````````````````````` example
 See [[Note]] for details.

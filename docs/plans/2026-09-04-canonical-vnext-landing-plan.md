@@ -629,8 +629,8 @@ behavior, with no separate publication step.
       and the binding READMEs. Requires `O1` through `O9`.
 - **Obsidian track exit criterion**, verified in the `O10` pull request: the
   plan exit criterion of the Obsidian implementation plan holds on every public
-  surface, with every Obsidian module independently switchable and no composed
-  switch.
+  surface, with every Obsidian module always on in the switch-less dialect and
+  no option, preset, or composed switch on any surface.
 
 ## Stage 3 — inserted-text track
 
@@ -896,7 +896,7 @@ behavior, with no separate publication step.
       through `P11d`.
 - **Pandoc track exit criterion**, verified in the `P12` pull request: the Phase
   6 exit criterion of the Pandoc implementation plan holds, with every selected
-  extension independently composable and no monolithic preset.
+  extension always on in the switch-less dialect and no preset of any kind.
 
 ## Stage 5 — release
 
@@ -937,7 +937,7 @@ Sizes are rough review-effort estimates, not schedules.
 | `O7`   | `O1`               | M    | anchor reserved before synthesis (`P3`); identifier on a metadata-bearing callout (`O8`); identifier caret before superscript (`P6`); identifier after a table caption (`P11a`, `P11b`, `P11c`, `P11d`) | Obsidian Phase 3 block identifiers                                                                                               |
 | `O8`   | `O1`, `O2`         | M    | identifier on a metadata-bearing callout (`O7`); callout title that is one comment (`O3`)                                                                                                               | Obsidian Phase 3 callouts                                                                                                        |
 | `O9`   | `O1`               | M    | typed dimensions beside a dimension attribute record (`P2d`)                                                                                                                                            | Obsidian Phase 4 media parameters                                                                                                |
-| `O10`  | `O1`–`O9`          | M    | —                                                                                                                                                                                                       | Obsidian Phase 1 option publication; Phase 2 caller audit; Phase 5; plan exit criterion                                          |
+| `O10`  | `O1`–`O9`          | M    | —                                                                                                                                                                                                       | Obsidian Phase 1 harness registration; Phase 2 caller audit; Phase 5; plan exit criterion                                          |
 | `I1`   | `X0`, `I0`, `M7`   | S    | `Insert` containing `CrossLink`, `Mark` (`O1`, `O2`); heading-text projection (`P3`)                                                                                                                    | inserted-text contract                                                                                                           |
 | `P2a`  | `P0`, `M7`         | S    | anchor reserved before synthesis (`P3`)                                                                                                                                                                 | Pandoc Phase 2 attachment sites                                                                                                  |
 | `P2b`  | `P0`, `M7`         | S    | —                                                                                                                                                                                                       | Pandoc Phase 2 attachment sites                                                                                                  |

@@ -254,7 +254,7 @@ selected Pandoc extension participates.
       browser, static audits, fuzz seeds, and the complete external oracle suite.
       Supported-host CI supplies the remaining release evidence.
 
-- [ ] **Exit criterion:** every selected extension is independently composable, all four
+- [ ] **Exit criterion:** every selected extension is always on, all four
       surfaces expose one canonical model, the pinned Pandoc corpus has no
       unregistered divergence, the inherited layers remain green, and no test or build
       step fetches mutable external state.

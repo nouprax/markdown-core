@@ -55,9 +55,10 @@ Document scope=1:1..3:12 anchor=null attributes={} children=1
 
 ## Grammar
 
-`EOL` is one line ending, `BLANK` a line of only spaces and tabs, `LINE` a
-line without its ending, and `NONINDENT` zero through three leading space
-columns under the inherited four-column tab stops; a leading tab is not
+`EOL` is the shared notation of the [index](../dialect.md#ground-rules), a
+line ending or the end of input; `BLANK` is a line of only spaces and tabs,
+`LINE` a line without its ending, and `NONINDENT` zero through three leading
+space columns under the inherited four-column tab stops; a leading tab is not
 `NONINDENT`.
 
 ```text

@@ -12,7 +12,7 @@ mergeable pull requests is
 
 Add the Obsidian syntax extensions to the C parser and all three bindings,
 always on, with no parse option. They reuse the current CommonMark/GFM block and inline
-algorithms, add the documented OFM syntax as composable extensions, expose every
+algorithms, add the documented OFM syntax as always-on extensions, expose every
 new semantic fact through the immutable canonical AST, and keep vault resolution
 and rendering out of the parser. Every `>` container becomes `Callout`; a plain
 quoted block has `variant=null`, `title=null`, and `fold=none`, while `[!type]`
