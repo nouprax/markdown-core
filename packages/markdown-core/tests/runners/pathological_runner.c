@@ -904,6 +904,13 @@ static int case_formula_backslash_openers(pc_context *context) {
     return pc_formula_case(context, "\\\\(x", " \\\\(x", 19999, NULL, (size_t)-1, NULL);
 }
 
+/* One formula, then closers with nothing left to close: each falls to the base
+ * language as an escaped backslash and a parenthesis, and none is pushed, so
+ * the next closer's look at the stack stays short. */
+static int case_formula_backslash_closers(pc_context *context) {
+    return pc_formula_case(context, "\\\\(x\\\\) ", "\\\\)", 19999, NULL, 1, "x");
+}
+
 /* Registry ------------------------------------------------------------------ */
 
 typedef struct pc_case_entry {
@@ -946,6 +953,7 @@ static const pc_case_entry PC_CASES[] = {
     {"formula_long_backslash", case_formula_long_backslash},
     {"formula_dollar_backtick_openers", case_formula_dollar_backtick},
     {"formula_backslash_openers", case_formula_backslash_openers},
+    {"formula_backslash_closers", case_formula_backslash_closers},
 };
 
 int main(int argc, char **argv) {

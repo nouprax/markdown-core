@@ -95,6 +95,17 @@ Document scope=1:1..3:22 children=2
     └── Text scope=3:8..3:22 literal=" and \\) alone." children=0
 ````````````````````````````````
 
+A closer whose opener an earlier closer already took is the same case.
+
+```````````````````````````````` example
+\\(x\\) and \\) again.
+.
+Document scope=1:1..1:22 children=1
+└── Paragraph scope=1:1..1:22 children=2
+    ├── Formula scope=1:1..1:7 mode=embedded literal="x" children=0
+    └── Text scope=1:8..1:22 literal=" and \\) again." children=0
+````````````````````````````````
+
 Code spans also bind before LaTeX backslash delimiters.
 
 ```````````````````````````````` example

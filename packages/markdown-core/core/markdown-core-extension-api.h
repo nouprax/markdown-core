@@ -571,6 +571,18 @@ void markdown_core_inline_parser_remove_delimiter(markdown_core_inline_parser *p
 MARKDOWN_CORE_EXPORT
 delimiter *markdown_core_inline_parser_get_last_delimiter(markdown_core_inline_parser *parser);
 
+/** Whether a delimiter of `rule` that can open is on the stack with no later
+ * closer of `rule` already spoken for it: the balance the core computes for
+ * `]` before a bracket takes it, asked for one rule. An extension whose
+ * closers may not stand alone -- a formula's `\\)` is CommonMark's escaped
+ * backslash and a parenthesis unless something opened it -- asks here before
+ * pushing one, so a closer that would never pair stays with the base language
+ * and never piles up on the stack for the next closer to walk past.
+ */
+MARKDOWN_CORE_EXPORT
+int markdown_core_inline_parser_has_unmatched_opener(markdown_core_inline_parser *parser,
+                                                     markdown_core_delimiter_rule rule);
+
 MARKDOWN_CORE_EXPORT
 int markdown_core_inline_parser_get_line(markdown_core_inline_parser *parser);
 

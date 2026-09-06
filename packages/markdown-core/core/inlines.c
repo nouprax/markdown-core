@@ -2241,6 +2241,29 @@ void markdown_core_node_unput(markdown_core_node *node, int n) {
     }
 }
 
+int markdown_core_inline_parser_has_unmatched_opener(markdown_core_inline_parser *parser,
+                                                     markdown_core_delimiter_rule rule) {
+    const delimiter *delim = parser->last_delim;
+    int closers = 0;
+
+    /* The same balance `find_extension_opener_for_special_char` keeps, for one
+     * rule: a closer above an opener has already claimed it. */
+    while (delim) {
+        if (delim->rule == rule) {
+            if (delim->can_close) {
+                closers++;
+            } else if (delim->can_open) {
+                if (closers == 0) {
+                    return 1;
+                }
+                closers--;
+            }
+        }
+        delim = delim->previous;
+    }
+    return 0;
+}
+
 delimiter *markdown_core_inline_parser_get_last_delimiter(markdown_core_inline_parser *parser) {
     return parser->last_delim;
 }

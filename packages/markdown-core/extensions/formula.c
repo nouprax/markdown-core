@@ -349,24 +349,6 @@ static bufsize_t scan_backslash_close(const unsigned char *data, bufsize_t len, 
     return 0;
 }
 
-/* Whether an opener of `rule` is still waiting on the delimiter stack. A
- * backslash CLOSER is claimed only then: `\\]` with nothing to close is not a
- * formula delimiter but CommonMark's escaped backslash followed by a bracket
- * closer, and the base scanner must see that `]`, or `[bar\\]` stops being a
- * reference (CommonMark 0.31.2 example 558). `$` needs no such check because
- * the base language claims nothing that a `$` run could hide. */
-static int has_pending_opener(markdown_core_inline_parser *inline_parser, markdown_core_delimiter_rule rule) {
-    const delimiter *delim = markdown_core_inline_parser_get_last_delimiter(inline_parser);
-
-    while (delim) {
-        if (markdown_core_delimiter_rule_of(delim) == rule && markdown_core_delimiter_can_open(delim)) {
-            return 1;
-        }
-        delim = markdown_core_delimiter_previous(delim);
-    }
-    return 0;
-}
-
 static markdown_core_node *match(const markdown_core_extension *extension, markdown_core_parser *parser,
                                  markdown_core_node *parent, unsigned char character,
                                  markdown_core_inline_parser *inline_parser) {
@@ -400,13 +382,23 @@ static markdown_core_node *match(const markdown_core_extension *extension, markd
         }
 
         closer_len = scan_backslash_close(chunk->data, chunk->len, offset, ']', 2);
-        if (closer_len && has_pending_opener(inline_parser, FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY)) {
+        /* A backslash CLOSER is claimed only when an opener of its rule is
+         * waiting: `\\]` with nothing to close is CommonMark's escaped
+         * backslash followed by a bracket closer, and the base scanner must
+         * see that `]`, or `[bar\\]` stops being a reference (CommonMark
+         * 0.31.2 example 558). A closer whose opener a closer before it
+         * already took is the same case, and it is not pushed, so the stack
+         * never fills with closers that could not pair. `$` needs no such
+         * check because the base language claims nothing a `$` run could hide. */
+        if (closer_len &&
+            markdown_core_inline_parser_has_unmatched_opener(inline_parser, FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY)) {
             return match_formula_delimiter(extension, parser, inline_parser, FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY,
                                            closer_len, 0, 1);
         }
 
         closer_len = scan_backslash_close(chunk->data, chunk->len, offset, ')', 2);
-        if (closer_len && has_pending_opener(inline_parser, FORMULA_DELIM_LATEX_BACKSLASH_INLINE)) {
+        if (closer_len &&
+            markdown_core_inline_parser_has_unmatched_opener(inline_parser, FORMULA_DELIM_LATEX_BACKSLASH_INLINE)) {
             return match_formula_delimiter(extension, parser, inline_parser, FORMULA_DELIM_LATEX_BACKSLASH_INLINE,
                                            closer_len, 0, 1);
         }
