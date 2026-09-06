@@ -199,7 +199,7 @@ Document scope=1:1..3:3 anchor=null attributes={} children=2
 └── Paragraph scope=2:1..3:3 anchor=null attributes={} children=3
     ├── Text scope=2:1..2:4 anchor=null attributes={} literal="a: 1" children=0
     ├── SoftBreak scope=2:5..2:5 anchor=null attributes={} children=0
-    └── Text scope=3:1..3:3 anchor=null attributes={} literal="…" children=0
+    └── Text scope=3:1..3:3 anchor=null attributes={} literal="..." children=0
 ````````````````````````````````
 
 ## YAML projection
