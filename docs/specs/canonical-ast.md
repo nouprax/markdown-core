@@ -60,18 +60,24 @@ UTF-8 is a caller precondition; Markdown Core has no validation or repair mode
 for malformed input. Swift, Kotlin, and ECMAScript strings are encoded as UTF-8
 before entering that same parse path.
 
-`line` is 1-based and increments once per line ending, whether LF, CR, or
-CRLF. `column` is the 1-based byte index within the line; a tab is one byte.
-`start` is the first byte of the node's first code point and `end` the last
-byte of its last code point, inclusive. A node's scope never includes the line
-ending that terminates its last line, with one exception: `SoftBreak` and
-`LineBreak` are the nodes of a line ending, so their scopes cover those
-line-ending bytes. `SoftBreak` covers the line-ending bytes of its break.
-`LineBreak` covers the line-ending bytes together with the backslash that
-produced it; when trailing spaces produced it, the spaces stay inside the
-preceding `Text` node's scope and `LineBreak` covers the line ending alone. A multiline or grid table cell
-under the dialect's table options is the one construct whose scope may include
-bytes of sibling cells, because its segments are written on shared lines.
+`line` is 1-based and increments once per line ending, whether LF, CR, or CRLF.
+`column` is the 1-based byte index within the line; a tab is one byte. `start`
+is the first byte of the node's first code point and `end` the last byte of its
+last code point, inclusive. Column 0 is the one sentinel: an end position `L:0`
+names the boundary before the first byte of line `L`, that is, the position
+just after the line ending of line `L - 1`. It is the end of a block whose
+extent closes with a line ending it consumed, such as a list item, a footnote
+definition, an indented code block, or a Setext heading that is followed by a
+blank line, and an empty document has the scope `1:1..1:0`. A node's scope
+never includes the line ending that terminates its last line, with one
+exception: `SoftBreak` and `LineBreak` are the nodes of a line ending, so their
+scopes cover those line-ending bytes. `SoftBreak` covers the line-ending bytes
+of its break. `LineBreak` covers the line-ending bytes together with the
+backslash that produced it; when trailing spaces produced it, the spaces stay
+inside the preceding `Text` node's scope and `LineBreak` covers the line ending
+alone. A multiline or grid table cell under the dialect's table options is the
+one construct whose scope may include bytes of sibling cells, because its
+segments are written on shared lines.
 
 Scopes inherit the native C parser's source-position values and semantics
 exactly. The C facade and platform bindings copy `line` and `column` without

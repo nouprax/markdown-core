@@ -285,10 +285,11 @@ Document scope=1:1..8:4 anchor=null attributes={} children=4
 
 With `exampleLists=true`, `@` is a marker character only inside parentheses:
 `(@)`, `(@label)`, `(N@)`, and `(N@label)`, with `style=example` and
-`delimiter=twoParens`. Items receive monotonically increasing document-wide
-numbers starting at 1, assigned in ascending order of item `scope.start`
-across content and footnotes, continuing across separated lists, so a later
-list's `start` is the number its first item received:
+`delimiter=twoParens`. Items are numbered document-wide in ascending order
+of item `scope.start` across content and footnotes: the counter starts at 1,
+increases by one per item, continues across separated lists, and is set to
+`N` by an explicit `(N@)` on the first item of a list before that item is
+numbered, so a list's `start` is the number its first item received:
 
 ```````````````````````````````` example example_lists
 (@) First example.

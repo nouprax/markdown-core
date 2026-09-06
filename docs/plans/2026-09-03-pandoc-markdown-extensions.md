@@ -193,9 +193,11 @@ selected Pandoc extension participates.
 
 ## Phase 4 — block containers, lists, and definitions
 
-- [ ] Recognize fenced Divs in the existing container stack. Opening attributes
-      are required, closing fences have no separate semantic node, nesting obeys
-      the shared limit, and contained blocks are parsed in place.
+- [ ] Recognize Pandoc's fenced divs as nameless container directives in the
+      existing container stack. An attribute container or class word is
+      required on the opener, closing fences have no separate semantic node,
+      nesting is unbounded and stack-safe as the dialect index requires, and
+      contained blocks are parsed in place.
 - [ ] Generalize the ordered-list marker operation for Pandoc style, delimiter,
       and starting-number facts. Preserve one List model and the ordinary list
       continuation algorithm; do not add a Pandoc-only list tree.
