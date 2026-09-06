@@ -69,7 +69,7 @@ multi
 .
 Document scope=1:1..5:3 anchor=null attributes={} children=2
 ├── Comment scope=1:1..1:10 anchor=null attributes={} literal=" c " children=0
-└── Comment scope=3:1..4:5 anchor=null attributes={} literal="\nmulti\n" children=0
+└── Comment scope=3:1..5:3 anchor=null attributes={} literal="\nmulti\n" children=0
 ````````````````````````````````
 
 Every other HTML block, including one whose end line carries non-whitespace

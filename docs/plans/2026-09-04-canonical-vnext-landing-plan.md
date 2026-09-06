@@ -376,8 +376,11 @@ nothing strips comments.
       comment is ever stripped and a consumer drops `Comment` nodes instead.
       Regenerate every fixture containing an HTML comment, add a canonical case,
       and delete the `stripHTMLComments` row of the option table and amend the
-      `HTML` and `HTMLBlock` rows of `canonical-ast.md`. Manifest states:
-      `comment.placement.block`, `comment.placement.inline`. Requires `S0`.
+      `HTML` and `HTMLBlock` rows of `canonical-ast.md`. Give a block comment
+      the scope of its opener line through its closer line; the current HTML
+      block position ends one line early for the comment form, as the comments
+      module's example shows. Manifest states: `comment.placement.block`,
+      `comment.placement.inline`. Requires `S0`.
 - [ ] **M1 — `Destination` on `Link` and `Image`.** Add the tagged `Destination`
       value with both branches and replace `Link.destination` and `Image.source`
       with `dest`; only `url` is produced until `O1`. New facade accessors
@@ -453,7 +456,9 @@ nothing strips comments.
       stay inline and later table forms store blocks directly, with no
       `Paragraph` normalization. Replace the table facade accessors, update the
       cmark-gfm and remark projections, keep the empty-cell positions from #191
-      exact in the ledgers, and regenerate every table fixture. `Table.caption`
+      exact in the ledgers, give the content of a cell containing `\|` its
+      authored coordinates, which the current path shifts by the removed
+      backslashes, and regenerate every table fixture. `Table.caption`
       is not added here: a typed field cannot precede its kind, and the
       `TableCaption` kind cannot precede a producer, so `P11a` adds the field
       and the kind together. Manifest states and orders:
@@ -568,7 +573,8 @@ nothing strips comments.
       Unicode scalar followed by a structural separator, decoding at most the
       candidate marker; with the option off the inherited rule stands byte for
       byte. Fixtures cover the module's marker table, ordered and nested lists,
-      tabs and newlines as separators, empty and multi-scalar markers, missing
+      tabs, vertical tabs, and form feeds as separators, a prefix at the end
+      of its line as a non-task, empty and multi-scalar markers, missing
       separators, scopes, and long malformed bracket runs; remove the
       `custom-task-character` gap. Requires `O1`.
 - [ ] **O6 — Properties.** Under `properties`, recognize at most one exact `---`

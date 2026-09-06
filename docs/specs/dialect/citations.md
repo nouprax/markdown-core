@@ -154,24 +154,34 @@ Document scope=1:1..1:16 anchor=null attributes={} children=1
                     └── Text scope=1:7..1:14 anchor=null attributes={} literal="emphasis" children=0
 ````````````````````````````````
 
-An unescaped `-` immediately before `@` is always the mode marker: it selects
-`suppressAuthor`, is excluded from the affixes and the key, and is where the
-opener precondition is evaluated. Every other item has mode `normal`:
+An unescaped `-` immediately before `@` is the mode marker when the opener
+precondition of the key grammar holds at the `-`: it then selects
+`suppressAuthor` and is excluded from the affixes and the key. When the
+precondition fails at the `-`, because a letter, number, or `_` precedes it,
+the `-` is prefix text and the precondition is evaluated at the `@` instead,
+so `[Smith-@1990]` has the prefix `Smith-` and mode `normal`. Every other
+item has mode `normal`:
 
 ```````````````````````````````` example citations
-[-@doe99] [Smith-@1990]
+[-@doe99] [Smith -@1990] [Smith-@1990]
 .
-Document scope=1:1..1:23 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:23 anchor=null attributes={} children=3
+Document scope=1:1..1:38 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:38 anchor=null attributes={} children=5
     ├── Cite scope=1:1..1:9 anchor=null attributes={} children=1
     │   └── Citation scope=1:2..1:8 referent=bib(key="doe99",mode=suppressAuthor) children=0
     │       ├── CitationPrefix children=0
     │       └── CitationSuffix children=0
     ├── Text scope=1:10..1:10 anchor=null attributes={} literal=" " children=0
-    └── Cite scope=1:11..1:23 anchor=null attributes={} children=1
-        └── Citation scope=1:12..1:22 referent=bib(key="1990",mode=suppressAuthor) children=0
+    ├── Cite scope=1:11..1:24 anchor=null attributes={} children=1
+    │   └── Citation scope=1:12..1:23 referent=bib(key="1990",mode=suppressAuthor) children=0
+    │       ├── CitationPrefix children=1
+    │       │   └── Text scope=1:12..1:16 anchor=null attributes={} literal="Smith" children=0
+    │       └── CitationSuffix children=0
+    ├── Text scope=1:25..1:25 anchor=null attributes={} literal=" " children=0
+    └── Cite scope=1:26..1:38 anchor=null attributes={} children=1
+        └── Citation scope=1:27..1:37 referent=bib(key="1990",mode=normal) children=0
             ├── CitationPrefix children=1
-            │   └── Text scope=1:12..1:16 anchor=null attributes={} literal="Smith" children=0
+            │   └── Text scope=1:27..1:32 anchor=null attributes={} literal="Smith-" children=0
             └── CitationSuffix children=0
 ````````````````````````````````
 

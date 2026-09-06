@@ -254,9 +254,9 @@ Document scope=1:1..3:21 anchor=null attributes={} children=1
     ├── TableBody children=1
     │   └── TableRow scope=3:1..3:21 anchor=null attributes={} children=2
     │       ├── TableCell scope=3:2..3:9 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │       │   └── Text scope=3:3..3:7 anchor=null attributes={} literal="x | y" children=0
+    │       │   └── Text scope=3:3..3:8 anchor=null attributes={} literal="x | y" children=0
     │       └── TableCell scope=3:11..3:20 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │           └── Code scope=3:12..3:18 anchor=null attributes={} literal="c | d" children=0
+    │           └── Code scope=3:12..3:19 anchor=null attributes={} literal="c | d" children=0
     └── TableFoot children=0
 ````````````````````````````````
 
