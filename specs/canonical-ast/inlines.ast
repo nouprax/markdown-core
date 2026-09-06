@@ -12,10 +12,10 @@ Document scope=1:1..5:19 children=2
 │   ├── Text scope=1:32..1:32 literal=" " children=0
 │   ├── Code scope=1:33..1:38 literal="code" children=0
 │   ├── Text scope=1:39..1:39 literal=" " children=0
-│   ├── Link scope=1:40..1:58 destination="/go" title="title" children=1
+│   ├── Link scope=1:40..1:58 dest=url("/go") title="title" children=1
 │   │   └── Text scope=1:41..1:44 literal="link" children=0
 │   ├── Text scope=1:59..1:59 literal=" " children=0
-│   ├── Image scope=1:60..1:85 source="/image.png" title="image" children=1
+│   ├── Image scope=1:60..1:85 dest=url("/image.png") title="image" children=1
 │   │   └── Text scope=1:62..1:64 literal="alt" children=0
 │   ├── Text scope=1:86..1:86 literal=" " children=0
 │   ├── Directive scope=1:87..1:115 name="badge" attributes=[data-kind="demo"] children=0

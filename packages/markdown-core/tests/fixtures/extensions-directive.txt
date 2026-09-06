@@ -154,7 +154,7 @@ Document scope=1:1..1:39 children=1
     └── Directive scope=1:1..1:39 name="note" attributes=null children=0
         └── DirectiveLabel scope=1:6..1:39 children=3
             ├── Text scope=1:7..1:10 literal="See " children=0
-            ├── Link scope=1:11..1:37 destination="https://example.com" title=null children=1
+            ├── Link scope=1:11..1:37 dest=url("https://example.com") title=null children=1
             │   └── Text scope=1:12..1:15 literal="docs" children=0
             └── Text scope=1:38..1:38 literal="." children=0
 ````````````````````````````````
@@ -178,7 +178,7 @@ Text directives can appear inside link text.
 .
 Document scope=1:1..1:27 children=1
 └── Paragraph scope=1:1..1:27 children=1
-    └── Link scope=1:1..1:27 destination="/roadmap" title=null children=2
+    └── Link scope=1:1..1:27 dest=url("/roadmap") title=null children=2
         ├── Text scope=1:2..1:4 literal="Go " children=0
         └── Directive scope=1:5..1:16 name="badge" attributes=null children=0
             └── DirectiveLabel scope=1:11..1:16 children=1

@@ -239,7 +239,7 @@ private class DumpVisitor(
             "Link",
             node,
             listOf(
-                "destination=${jsonString(node.destination)}",
+                "dest=${destination(node.dest)}",
                 "title=${optionalString(node.title)}",
             ),
             node.content,
@@ -251,7 +251,7 @@ private class DumpVisitor(
             "Image",
             node,
             listOf(
-                "source=${jsonString(node.source)}",
+                "dest=${destination(node.dest)}",
                 "title=${optionalString(node.title)}",
             ),
             node.content,
@@ -300,6 +300,13 @@ private fun scope(value: Scope): String =
     "scope=${value.start.line}:${value.start.column}..${value.end.line}:${value.end.column}"
 
 private fun optionalString(value: String?): String = value?.let(::jsonString) ?: "null"
+
+/** A tagged value prints as its branch name applied to its fields, in declaration order. */
+private fun destination(value: Destination): String =
+    when (value) {
+        is Destination.Url -> "url(${jsonString(value.value)})"
+        is Destination.Cross -> "cross(path=${jsonString(value.path)},anchor=${optionalString(value.anchor)})"
+    }
 
 private fun PlacementMode.token(): String = name.lowercase()
 

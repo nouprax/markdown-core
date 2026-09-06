@@ -139,7 +139,12 @@ const stateValidators = {
     "comment.placement.block": (tree) =>
         parentEdges(tree).some((edge) => edge.kind === "Comment" && BLOCK_CONTENT.has(edge.parent)),
     "comment.placement.inline": (tree) =>
-        parentEdges(tree).some((edge) => edge.kind === "Comment" && INLINE_CONTENT.has(edge.parent))
+        parentEdges(tree).some((edge) => edge.kind === "Comment" && INLINE_CONTENT.has(edge.parent)),
+    // `dest` is the tagged `Destination` value (M1). `[a]()` wrote a
+    // destination and wrote nothing in it, so the empty branch is a state of
+    // its own and not an absence.
+    "destination.url.empty": (tree) => / dest=url\(""\) /.test(tree),
+    "destination.url.value": (tree) => / dest=url\("(?:\\.|[^"\\])+"\) /.test(tree)
 };
 const orderValidators = {
     "document.source-order": (tree) => tree.startsWith("Document scope="),

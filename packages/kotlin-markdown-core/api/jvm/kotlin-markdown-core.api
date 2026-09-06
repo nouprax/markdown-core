@@ -30,6 +30,18 @@ public final class com/nouprax/markdown/core/Comment : com/nouprax/markdown/core
 	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 }
 
+public abstract interface class com/nouprax/markdown/core/Destination {
+}
+
+public final class com/nouprax/markdown/core/Destination$Cross : com/nouprax/markdown/core/Destination {
+	public final fun getAnchor ()Ljava/lang/String;
+	public final fun getPath ()Ljava/lang/String;
+}
+
+public final class com/nouprax/markdown/core/Destination$Url : com/nouprax/markdown/core/Destination {
+	public final fun getValue ()Ljava/lang/String;
+}
+
 public final class com/nouprax/markdown/core/Directive : com/nouprax/markdown/core/Markup {
 	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
 	public fun dump ()Ljava/lang/String;
@@ -138,8 +150,8 @@ public final class com/nouprax/markdown/core/Image : com/nouprax/markdown/core/M
 	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
 	public fun dump ()Ljava/lang/String;
 	public final fun getContent ()Ljava/util/List;
+	public final fun getDest ()Lcom/nouprax/markdown/core/Destination;
 	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
-	public final fun getSource ()Ljava/lang/String;
 	public final fun getTitle ()Ljava/lang/String;
 }
 
@@ -163,7 +175,7 @@ public final class com/nouprax/markdown/core/Link : com/nouprax/markdown/core/Ma
 	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
 	public fun dump ()Ljava/lang/String;
 	public final fun getContent ()Ljava/util/List;
-	public final fun getDestination ()Ljava/lang/String;
+	public final fun getDest ()Lcom/nouprax/markdown/core/Destination;
 	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 	public final fun getTitle ()Ljava/lang/String;
 }

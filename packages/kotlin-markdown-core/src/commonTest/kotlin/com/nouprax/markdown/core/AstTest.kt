@@ -82,9 +82,9 @@ class AstTest {
         val paragraph = document.content[3] as Paragraph
         val link = paragraph.content[0] as Link
         val image = paragraph.content[2] as Image
-        assertEquals("/go", link.destination)
+        assertEquals("/go", (link.dest as Destination.Url).value)
         assertNull(link.title)
-        assertEquals("/image", image.source)
+        assertEquals("/image", (image.dest as Destination.Url).value)
         assertEquals("title", image.title)
     }
 

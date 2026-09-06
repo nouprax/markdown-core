@@ -408,8 +408,8 @@
             "name": "Link",
             "fields": [
                 {
-                    "name": "destination",
-                    "type": "String",
+                    "name": "dest",
+                    "type": "Destination",
                     "optional": false
                 },
                 {
@@ -423,14 +423,14 @@
                     "optional": false
                 }
             ],
-            "invariants": "absent and empty title remain distinct; inline content"
+            "invariants": "`dest` is the tagged `Destination` value and is never absent: `[a]()` and `[a](<>)` wrote one and wrote nothing in it, so it is `url(\"\")`, and a link with no destination at all is a `LinkReference`; every `Link` owns the `url` branch; absent and empty title remain distinct; inline content"
         },
         {
             "name": "Image",
             "fields": [
                 {
-                    "name": "source",
-                    "type": "String",
+                    "name": "dest",
+                    "type": "Destination",
                     "optional": false
                 },
                 {
@@ -444,7 +444,7 @@
                     "optional": false
                 }
             ],
-            "invariants": "content is parsed alt-text inline content"
+            "invariants": "`dest` is the tagged `Destination` value and is never absent, for the reason `Link.dest` is not; every `Image` owns the `url` branch; absent and empty title remain distinct; content is parsed alt-text inline content"
         },
         {
             "name": "LinkReference",
@@ -535,5 +535,32 @@
             ],
             "invariants": "label is non-empty and as written; identifier KEEPS the leading `^`; no form -- there is one footnote call syntax; leaf"
         }
-    ]
+    ],
+    "values": {
+        "Destination": {
+            "purpose": "A tagged value, not a node: it has no scope, children, anchor, or attributes, and a branch's fields exist only in that branch. Every Link and Image owns the url branch; the cross branch is the workspace address a CrossLink produces once O1 lands.",
+            "branches": {
+                "url": [
+                    {
+                        "name": "value",
+                        "type": "String",
+                        "optional": false
+                    }
+                ],
+                "cross": [
+                    {
+                        "name": "path",
+                        "type": "String",
+                        "optional": false
+                    },
+                    {
+                        "name": "anchor",
+                        "type": "String",
+                        "optional": true
+                    }
+                ]
+            },
+            "dump": "url(\"...\") or cross(path=\"...\",anchor=null)"
+        }
+    }
 }

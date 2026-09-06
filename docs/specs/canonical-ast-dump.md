@@ -68,6 +68,9 @@ that owned output; they do not redefine every nested record as a child.
 - Directive attributes are printed as their ordered name/value pairs. Each name
   keeps its first-occurrence source position; values use normal JSON string
   escaping.
+- A tagged value prints its branch and its named fields with no spaces: a
+  `Destination` prints as `dest=url("...")`, or as
+  `dest=cross(path="...",anchor=null)` with `anchor` a string or `null`.
 - Every optional and default-bearing field is printed; fields are never
   omitted because they are null, empty, false, or default.
 - Scope is always printed immediately after the kind. Kind-specific fields
@@ -117,8 +120,8 @@ that the dump represents as nested descendants.
 | `HTML` | `literal` |
 | `Comment` | `literal` |
 | `Formula` | `mode`, `literal` |
-| `Link` | `destination`, `title` |
-| `Image` | `source`, `title` |
+| `Link` | `dest`, `title` |
+| `Image` | `dest`, `title` |
 | `LinkReference`, `ImageReference` | `label`, `identifier`, `form` |
 | `Directive` | `name`, `attributes` |
 | `FootnoteReference` | `label`, `identifier` |
@@ -150,9 +153,9 @@ item, so that the grammar has one answer before the first of them arrives:
   `attributes={...}`, where the braces hold the classes as `.name` and the
   records as `name="value"` in source order, separated by single spaces, and
   `Attributes.empty` prints as `attributes={}`.
-- A tagged value prints its branch and named fields with no spaces:
-  `dest=url("...")`, `dest=cross(path="...",anchor=null)`,
-  `referent=bib(key="...",mode=normal)`, `referent=footnote(id="...")`,
+- A tagged value prints its branch and named fields with no spaces, as
+  `dest` does today: `referent=bib(key="...",mode=normal)`,
+  `referent=footnote(id="...")`,
   `value=scalar(text("..."))`, `value=scalar(null)`,
   `value=scalar(bool(true))`, `value=scalar(number("1.50"))`, and
   `value=list([text("a"),number("1")])`.

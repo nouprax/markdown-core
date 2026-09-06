@@ -1497,7 +1497,7 @@ static void source_pos(test_batch_runner *runner) {
                      "│   └── Text scope=1:13..1:13 literal=\".\" children=0\n"
                      "├── Paragraph scope=3:1..4:42 children=8\n"
                      "│   ├── Text scope=3:1..3:14 literal=\"Hello “ \" children=0\n"
-                     "│   ├── Link scope=3:15..3:37 destination=\"http://www.google.com\" "
+                     "│   ├── Link scope=3:15..3:37 dest=url(\"http://www.google.com\") "
                      "title=null children=1\n"
                      "│   │   └── Text scope=3:16..3:36 literal=\"http://www.google.com\" "
                      "children=0\n"
@@ -1505,7 +1505,7 @@ static void source_pos(test_batch_runner *runner) {
                      "│   ├── Text scope=4:1..4:6 literal=\"there \" children=0\n"
                      "│   ├── Code scope=4:7..4:10 literal=\"hi\" children=0\n"
                      "│   ├── Text scope=4:11..4:14 literal=\" -- \" children=0\n"
-                     "│   ├── Link scope=4:15..4:41 destination=\"www.google.com\" title=\"ok\" "
+                     "│   ├── Link scope=4:15..4:41 dest=url(\"www.google.com\") title=\"ok\" "
                      "children=1\n"
                      "│   │   └── Text scope=4:16..4:19 literal=\"okay\" children=0\n"
                      "│   └── Text scope=4:42..4:42 literal=\".\" children=0\n"
@@ -1520,7 +1520,7 @@ static void source_pos(test_batch_runner *runner) {
                      "            └── Paragraph scope=9:6..10:20 children=3\n"
                      "                ├── Text scope=9:6..9:15 literal=\"Yes, okay.\" children=0\n"
                      "                ├── SoftBreak scope=9:16..9:16 children=0\n"
-                     "                └── Image scope=10:6..10:20 source=\"hi\" title=\"yes\" "
+                     "                └── Image scope=10:6..10:20 dest=url(\"hi\") title=\"yes\" "
                      "children=1\n"
                      "                    └── Text scope=10:8..10:9 literal=\"ok\" children=0\n",
                      "scopes are as expected");
@@ -1653,7 +1653,7 @@ static void autolink_source_pos(test_batch_runner *runner) {
                      "Document scope=1:1..1:20 children=1\n"
                      "└── Paragraph scope=1:1..1:20 children=3\n"
                      "    ├── Text scope=1:1..1:4 literal=\"See \" children=0\n"
-                     "    ├── Link scope=1:5..1:19 destination=\"http://www.example.com\" "
+                     "    ├── Link scope=1:5..1:19 dest=url(\"http://www.example.com\") "
                      "title=null children=1\n"
                      "    │   └── Text scope=1:5..1:19 literal=\"www.example.com\" children=0\n"
                      "    └── Text scope=1:20..1:20 literal=\".\" children=0\n",
@@ -1662,7 +1662,7 @@ static void autolink_source_pos(test_batch_runner *runner) {
                      "Document scope=1:1..1:23 children=1\n"
                      "└── Paragraph scope=1:1..1:23 children=3\n"
                      "    ├── Text scope=1:1..1:4 literal=\"See \" children=0\n"
-                     "    ├── Link scope=1:5..1:22 destination=\"http://example.com\" title=null "
+                     "    ├── Link scope=1:5..1:22 dest=url(\"http://example.com\") title=null "
                      "children=1\n"
                      "    │   └── Text scope=1:5..1:22 literal=\"http://example.com\" children=0\n"
                      "    └── Text scope=1:23..1:23 literal=\".\" children=0\n",
@@ -1676,7 +1676,7 @@ static void autolink_source_pos(test_batch_runner *runner) {
     test_facade_dump(runner, "http://example.com\n",
                      "Document scope=1:1..1:18 children=1\n"
                      "└── Paragraph scope=1:1..1:18 children=1\n"
-                     "    └── Link scope=1:1..1:18 destination=\"http://example.com\" title=null "
+                     "    └── Link scope=1:1..1:18 dest=url(\"http://example.com\") title=null "
                      "children=1\n"
                      "        └── Text scope=1:1..1:18 literal=\"http://example.com\" children=0\n",
                      "scheme autolink at column one scopes are as expected");
@@ -1684,7 +1684,7 @@ static void autolink_source_pos(test_batch_runner *runner) {
                      "Document scope=1:1..1:26 children=1\n"
                      "└── Paragraph scope=1:1..1:26 children=3\n"
                      "    ├── Text scope=1:1..1:5 literal=\"Mail \" children=0\n"
-                     "    ├── Link scope=1:6..1:21 destination=\"mailto:user@example.com\" "
+                     "    ├── Link scope=1:6..1:21 dest=url(\"mailto:user@example.com\") "
                      "title=null children=1\n"
                      "    │   └── Text scope=1:6..1:21 literal=\"user@example.com\" children=0\n"
                      "    └── Text scope=1:22..1:26 literal=\" now.\" children=0\n",

@@ -24,8 +24,8 @@ MARKDOWN_CORE_1.0 {
     markdown_core_node_directive_properties;
     markdown_core_node_directive_attribute_at;
     markdown_core_node_directive_label;
-    markdown_core_node_link_properties;
-    markdown_core_node_image_properties;
+    markdown_core_node_destination;
+    markdown_core_node_title;
     markdown_core_node_association;
     markdown_core_node_definition_resource;
     markdown_core_node_reference_form;

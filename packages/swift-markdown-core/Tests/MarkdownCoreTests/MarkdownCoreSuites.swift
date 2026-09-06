@@ -106,10 +106,10 @@ import Testing
         // a string with no bytes is still a string.
         let paragraph = try #require(Document.parse("[a]()\n").content.first as? Paragraph)
         let link = try #require(paragraph.content.first as? Link)
-        // `destination` is not optional at all -- Q26 -- so empty is the only
-        // way it can say "nothing was written between the parens"; `title` is,
-        // and says absent instead.
-        #expect(link.destination.isEmpty)
+        // `dest` is not optional at all -- Q26 -- so the `url` branch holding
+        // the empty string is the only way it can say "nothing was written
+        // between the parens"; `title` is, and says absent instead.
+        #expect(link.dest == .url(""))
         #expect(link.title == nil)
     }
 

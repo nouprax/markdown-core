@@ -49,8 +49,8 @@ import Testing
         let paragraph = try #require(document.content[3] as? Paragraph)
         let link = try #require(paragraph.content[0] as? Link)
         let image = try #require(paragraph.content[2] as? Image)
-        #expect(link.destination == "/go" && link.title == nil)
-        #expect(image.source == "/image" && image.title == "title")
+        #expect(link.dest == .url("/go") && link.title == nil)
+        #expect(image.dest == .url("/image") && image.title == "title")
     }
 
     @Test("all manifest cases match the shared canonical AST spec")

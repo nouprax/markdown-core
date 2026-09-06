@@ -231,7 +231,7 @@ test("robustness: the heap grows, and a document larger than the initial one par
     const withLink = Document.parse(`${source}[a](/u "t")\n`);
     const link = withLink.content.at(-1).content[0];
     assert.equal(link.kind, "link");
-    assert.equal(link.destination, "/u");
+    assert.deepEqual(link.dest, { kind: "url", value: "/u" });
     assert.equal(link.title, "t");
 });
 
@@ -258,10 +258,10 @@ test("ast: the decoder's reference, formula, list and empty-string arms are exer
     assert.equal(formula.mode, "standalone");
     assert.equal(formula.literal, "x");
 
-    // `[a]()` WROTE a destination and wrote nothing in it. Empty is not absent.
+    // `[a]()` WROTE a destination and wrote nothing in it. Empty is not absent:
+    // the tagged value is the `url` branch holding the empty string.
     const link = paragraph.content.find((node) => node.kind === "link");
-    assert.equal(link.destination, "");
-    assert.notEqual(link.destination, null);
+    assert.deepEqual(link.dest, { kind: "url", value: "" });
 
     assert.equal(list.kind, "list");
     assert.equal(list.flavor, "ordered");

@@ -378,7 +378,7 @@ its behavior, with no separate publication step.
       closing sequence included, as the base module's example shows; the
       current parser ends it at the content. Manifest states: `comment.placement.block`,
       `comment.placement.inline`. Requires `S0`.
-- [ ] **M1 — `Destination` on `Link` and `Image`.** Add the tagged `Destination`
+- [x] **M1 — `Destination` on `Link` and `Image`.** Add the tagged `Destination`
       value with both branches and replace `Link.destination` and `Image.source`
       with `dest`; only `url` is produced until `O1`. New facade accessors
       reporting the branch and its strings replace

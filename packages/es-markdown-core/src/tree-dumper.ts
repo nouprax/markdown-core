@@ -28,7 +28,7 @@ import type { Strong } from "./model/strong.js";
 import type { Table, TableCell, TableRow } from "./model/table.js";
 import type { Text } from "./model/text.js";
 import type { ThematicBreak } from "./model/thematic-break.js";
-import type { Scope } from "./values.js";
+import type { Destination, Scope } from "./values.js";
 import { visit, type Visitor } from "./visitor.js";
 
 /** Produces the canonical debug tree for immutable Markdown markup. */
@@ -115,14 +115,14 @@ class DumpState {
             this.container(
                 "Link",
                 node,
-                [`destination=${jsonString(node.destination)}`, `title=${optionalString(node.title)}`],
+                [`dest=${destination(node.dest)}`, `title=${optionalString(node.title)}`],
                 node.content
             ),
         visitImage: (node: Image) =>
             this.container(
                 "Image",
                 node,
-                [`source=${jsonString(node.source)}`, `title=${optionalString(node.title)}`],
+                [`dest=${destination(node.dest)}`, `title=${optionalString(node.title)}`],
                 node.content
             ),
         visitDirective: (node: Directive) => {
@@ -190,6 +190,13 @@ function scope(value: Scope): string {
 
 function optionalString(value: string | null): string {
     return value === null ? "null" : jsonString(value);
+}
+
+/** A tagged value prints its branch and its named fields with no spaces. */
+function destination(value: Destination): string {
+    return value.kind === "url"
+        ? `url(${jsonString(value.value)})`
+        : `cross(path=${jsonString(value.path)},anchor=${optionalString(value.anchor)})`;
 }
 
 function jsonString(value: string): string {

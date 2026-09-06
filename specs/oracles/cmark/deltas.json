@@ -99,6 +99,11 @@
         {
             "file": "packages/markdown-core/tests/fixtures/dialect-comments.txt",
             "note": "The comments module's HTML-comment examples: cmark owns the token and block boundaries, and the `html-comment-node` projection states the one model difference."
+        },
+        {
+            "file": "packages/markdown-core/tests/fixtures/dialect-links-and-images.txt",
+            "selection": "commonmark-sections",
+            "note": "The links-and-images module's destination examples: cmark owns the link and image grammar, and its `Destination` is the `url` branch of the dialect's tagged value. The module's GFM autolink section is cmark-gfm's to judge."
         }
     ],
     "corpusNote": "cmark is the sole primary implementation oracle for CommonMark syntax and its own pinned 0.31.2 spec is compared in full. Both sides parse every input as their whole language: the dialect has no switches, so this gate judges what ships, and every place the dialect deliberately leaves CommonMark is registered above as a projection or keyed to its exact inputs. The product's extension fixtures are not in this corpus; their syntax is judged by cmark-gfm, remark, and the product fixtures themselves.",

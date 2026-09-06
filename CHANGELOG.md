@@ -43,6 +43,20 @@ facade while removing renderer support and the caller-driven feed lifecycle.
   the remark gate does the same for mdast, the position ledger records where
   cmark ends those blocks early, and the comments module's HTML examples are a
   package fixture.
+- Replace `Link.destination` and `Image.source` with `dest`, a tagged
+  `Destination` value with the branches `url(String)` and
+  `cross(path: String, anchor: String?)` (M1). Every link and image the
+  grammar produces today carries the `url` branch, the complete decoded
+  destination, empty for `[a]()` and `[a](<>)`; the `cross` branch is declared
+  on every surface and produced by nothing until cross links land. The C
+  facade's `markdown_core_node_destination` and `markdown_core_node_title`
+  replace `markdown_core_node_link_properties` and
+  `markdown_core_node_image_properties`, the dump prints the value as
+  `dest=url("...")`, the Swift enum, Kotlin sealed interface, and ECMAScript
+  union state both branches, and the cmark, cmark-gfm, remark, and Obsidian
+  gates compare the real tagged value instead of wrapping a string. The
+  links-and-images module's destination and autolink examples are a package
+  fixture.
 - Open one formula of a form at a time. A formula opener is a delimiter only
   while no opener of its form is unmatched, and a closer only while one is, so
   a body runs from its opener to the first closer of its form and an opener

@@ -242,6 +242,8 @@ markdown_core_add_test(extensions_conflicts extensions 120 spec_runner --spec
 # byte in the dump grammar of today; one fixture per module.
 markdown_core_add_test(spec_dialect_comments spec 120 spec_runner --spec
                        "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/dialect-comments.txt")
+markdown_core_add_test(spec_dialect_links_and_images spec 120 spec_runner --spec
+                       "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/dialect-links-and-images.txt")
 # pathological: adversarial inputs, one CTest test per case so timeouts and
 # failures stay addressable.  The audit script cross-checks this list against
 # `pathological_runner --list`.

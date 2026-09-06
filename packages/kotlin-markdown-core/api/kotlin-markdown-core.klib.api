@@ -148,6 +148,20 @@ abstract interface com.nouprax.markdown.core/WalkingVisitor { // com.nouprax.mar
     abstract fun visitThematicBreak(com.nouprax.markdown.core/ThematicBreak, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitThematicBreak|visitThematicBreak(com.nouprax.markdown.core.ThematicBreak;com.nouprax.markdown.core.WalkPhase){}[0]
 }
 
+sealed interface com.nouprax.markdown.core/Destination { // com.nouprax.markdown.core/Destination|null[0]
+    final class Cross : com.nouprax.markdown.core/Destination { // com.nouprax.markdown.core/Destination.Cross|null[0]
+        final val anchor // com.nouprax.markdown.core/Destination.Cross.anchor|{}anchor[0]
+            final fun <get-anchor>(): kotlin/String? // com.nouprax.markdown.core/Destination.Cross.anchor.<get-anchor>|<get-anchor>(){}[0]
+        final val path // com.nouprax.markdown.core/Destination.Cross.path|{}path[0]
+            final fun <get-path>(): kotlin/String // com.nouprax.markdown.core/Destination.Cross.path.<get-path>|<get-path>(){}[0]
+    }
+
+    final class Url : com.nouprax.markdown.core/Destination { // com.nouprax.markdown.core/Destination.Url|null[0]
+        final val value // com.nouprax.markdown.core/Destination.Url.value|{}value[0]
+            final fun <get-value>(): kotlin/String // com.nouprax.markdown.core/Destination.Url.value.<get-value>|<get-value>(){}[0]
+    }
+}
+
 sealed interface com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core/Markup|null[0]
     abstract val scope // com.nouprax.markdown.core/Markup.scope|{}scope[0]
         abstract fun <get-scope>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/Markup.scope.<get-scope>|<get-scope>(){}[0]
@@ -342,10 +356,10 @@ final class com.nouprax.markdown.core/Heading : com.nouprax.markdown.core/Markup
 final class com.nouprax.markdown.core/Image : com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core/Image|null[0]
     final val content // com.nouprax.markdown.core/Image.content|{}content[0]
         final fun <get-content>(): kotlin.collections/List<com.nouprax.markdown.core/Markup> // com.nouprax.markdown.core/Image.content.<get-content>|<get-content>(){}[0]
+    final val dest // com.nouprax.markdown.core/Image.dest|{}dest[0]
+        final fun <get-dest>(): com.nouprax.markdown.core/Destination // com.nouprax.markdown.core/Image.dest.<get-dest>|<get-dest>(){}[0]
     final val scope // com.nouprax.markdown.core/Image.scope|{}scope[0]
         final fun <get-scope>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/Image.scope.<get-scope>|<get-scope>(){}[0]
-    final val source // com.nouprax.markdown.core/Image.source|{}source[0]
-        final fun <get-source>(): kotlin/String // com.nouprax.markdown.core/Image.source.<get-source>|<get-source>(){}[0]
     final val title // com.nouprax.markdown.core/Image.title|{}title[0]
         final fun <get-title>(): kotlin/String? // com.nouprax.markdown.core/Image.title.<get-title>|<get-title>(){}[0]
 
@@ -377,8 +391,8 @@ final class com.nouprax.markdown.core/LineBreak : com.nouprax.markdown.core/Mark
 final class com.nouprax.markdown.core/Link : com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core/Link|null[0]
     final val content // com.nouprax.markdown.core/Link.content|{}content[0]
         final fun <get-content>(): kotlin.collections/List<com.nouprax.markdown.core/Markup> // com.nouprax.markdown.core/Link.content.<get-content>|<get-content>(){}[0]
-    final val destination // com.nouprax.markdown.core/Link.destination|{}destination[0]
-        final fun <get-destination>(): kotlin/String // com.nouprax.markdown.core/Link.destination.<get-destination>|<get-destination>(){}[0]
+    final val dest // com.nouprax.markdown.core/Link.dest|{}dest[0]
+        final fun <get-dest>(): com.nouprax.markdown.core/Destination // com.nouprax.markdown.core/Link.dest.<get-dest>|<get-dest>(){}[0]
     final val scope // com.nouprax.markdown.core/Link.scope|{}scope[0]
         final fun <get-scope>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/Link.scope.<get-scope>|<get-scope>(){}[0]
     final val title // com.nouprax.markdown.core/Link.title|{}title[0]

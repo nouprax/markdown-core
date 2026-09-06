@@ -157,15 +157,15 @@ private class JniTreeDecoder(
             }
 
             JniNodeKind.LINK -> {
-                val destination = reader.requiredString()
+                val dest = destination()
                 val title = reader.string()
-                readChildren { consume(Link(destination, title, it, scope)) }
+                readChildren { consume(Link(dest, title, it, scope)) }
             }
 
             JniNodeKind.IMAGE -> {
-                val source = reader.requiredString()
+                val dest = destination()
                 val title = reader.string()
-                readChildren { consume(Image(source, title, it, scope)) }
+                readChildren { consume(Image(dest, title, it, scope)) }
             }
 
             JniNodeKind.DIRECTIVE -> {
@@ -301,6 +301,14 @@ private class JniTreeDecoder(
             consume(TableRow(header, cells, scope))
         }
     }
+
+    /** The branch ordinal leads; only that branch's fields follow it. */
+    private fun destination(): Destination =
+        when (val rawValue = reader.int()) {
+            1 -> Destination.Url(reader.requiredString())
+            2 -> Destination.Cross(reader.requiredString(), reader.string())
+            else -> error("invalid native destination kind $rawValue")
+        }
 
     private fun placement(): PlacementMode =
         when (val rawValue = reader.int()) {

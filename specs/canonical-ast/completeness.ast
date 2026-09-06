@@ -10,13 +10,13 @@ Document scope=1:1..18:8 children=6
 │       └── Paragraph scope=7:3..7:11 children=1
 │           └── Text scope=7:3..7:11 literal="loose two" children=0
 ├── Paragraph scope=9:1..9:40 children=5
-│   ├── Link scope=9:1..9:14 destination="/a" title=null children=1
+│   ├── Link scope=9:1..9:14 dest=url("/a") title=null children=1
 │   │   └── Text scope=9:2..9:9 literal="no title" children=0
 │   ├── Text scope=9:15..9:15 literal=" " children=0
-│   ├── Link scope=9:16..9:29 destination="/b" title="" children=1
+│   ├── Link scope=9:16..9:29 dest=url("/b") title="" children=1
 │   │   └── Text scope=9:17..9:21 literal="empty" children=0
 │   ├── Text scope=9:30..9:30 literal=" " children=0
-│   └── Image scope=9:31..9:40 source="/i" title=null children=1
+│   └── Image scope=9:31..9:40 dest=url("/i") title=null children=1
 │       └── Text scope=9:33..9:35 literal="alt" children=0
 ├── Paragraph scope=11:1..11:17 children=3
 │   ├── Directive scope=11:1..11:6 name="plain" attributes=null children=0

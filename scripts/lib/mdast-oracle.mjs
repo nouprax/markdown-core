@@ -19,6 +19,8 @@
  *     ownership semantics.
  */
 
+import { urlDestination } from "./upstream-cmark.mjs";
+
 const MDAST_KIND = {
     root: "Document",
     paragraph: "Paragraph",
@@ -165,7 +167,9 @@ function convert(node, definitions, parentType = "root") {
         if (comment !== null) return [{ kind: "Comment", fields: { literal: comment }, children: [] }];
     }
     if (node.type === "link" || node.type === "image") {
-        fields.destination = node.url ?? "";
+        // mdast's `url` is the decoded target; the canonical AST states it as
+        // the `url` branch of `Destination` (M1).
+        fields.dest = urlDestination(node.url ?? "");
         fields.title = node.title ?? "null";
     }
     // §5.6: a footnote's label bytes were compared by nobody, on either side.
@@ -261,8 +265,8 @@ export const MDAST_COMPARED = {
     Text: ["literal"],
     HTML: ["literal"],
     Comment: ["literal"],
-    Link: ["destination", "title"],
-    Image: ["destination", "title"],
+    Link: ["dest", "title"],
+    Image: ["dest", "title"],
     TableRow: ["isHeader"],
     ReferenceDefinition: ["label", "identifier", "destination", "title"],
     LinkReference: ["label", "identifier", "form"],

@@ -91,7 +91,9 @@
             "escaping.newline",
             "escaping.attribute-value",
             "comment.placement.block",
-            "comment.placement.inline"
+            "comment.placement.inline",
+            "destination.url.empty",
+            "destination.url.value"
         ],
         "orders": [
             "document.source-order",
@@ -312,6 +314,26 @@
                     "children.populated",
                     "escaping.empty-string",
                     "escaping.newline"
+                ],
+                "orders": ["document.source-order", "inline.source-order"]
+            }
+        },
+        {
+            "name": "destinations",
+            "input": "destinations.md",
+            "expected": "destinations.ast",
+            "coverage": {
+                "kinds": ["Document", "Paragraph", "Link", "Image", "Text"],
+                "states": [
+                    "destination.url.empty",
+                    "destination.url.value",
+                    "link.title.null",
+                    "link.title.value",
+                    "image.title.null",
+                    "image.title.value",
+                    "scope.positive",
+                    "children.empty",
+                    "children.populated"
                 ],
                 "orders": ["document.source-order", "inline.source-order"]
             }

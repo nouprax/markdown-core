@@ -9,8 +9,8 @@ public struct Image: Markup {
     public let scope: Scope
     /// The alt text, as parsed inline content.
     public let content: [any Markup]
-    /// Required, for the reason ``Link/destination`` is.
-    public let source: String
+    /// Required, for the reason ``Link/dest`` is.
+    public let dest: Destination
     /// Optional.
     public let title: String?
 
@@ -20,13 +20,12 @@ public struct Image: Markup {
 
 extension Image {
     init(from node: OpaquePointer, content: [any Markup]) {
-        var source = markdown_core_string()
         var title = markdown_core_optional_string()
-        markdown_core_node_image_properties(node, &source, &title)
+        markdown_core_node_title(node, &title)
         self.init(
             scope: Self.scope(from: node),
             content: content,
-            source: source.requiredString,
+            dest: Destination(from: node),
             title: title.string
         )
     }
