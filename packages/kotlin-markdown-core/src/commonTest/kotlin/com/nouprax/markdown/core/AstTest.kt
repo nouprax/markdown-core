@@ -113,7 +113,7 @@ class AstTest {
     fun allManifestCasesMatchTheSharedCanonicalAstSpec() {
         assertTrue(canonicalAstCases.isNotEmpty())
         for (testCase in canonicalAstCases) {
-            val document = Document.parse(testCase.source, testCase.options)
+            val document = Document.parse(testCase.source)
             assertEquals(testCase.expected, TreeDumper.dump(document), testCase.name)
             assertEquals(testCase.expected, document.dump(), testCase.name)
         }

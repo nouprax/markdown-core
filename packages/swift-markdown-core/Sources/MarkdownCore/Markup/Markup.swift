@@ -42,7 +42,7 @@ public struct Scope: Sendable, Hashable {
 /// One node of the parsed document.
 ///
 /// Every kind is a value type and every kind is `Sendable`: the native parse is
-/// released before ``Document/parse(_:options:)`` returns, so nothing here
+/// released before ``Document/parse(_:)`` returns, so nothing here
 /// borrows memory the C library owns and a tree can cross an isolation
 /// boundary unchanged.
 ///

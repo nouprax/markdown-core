@@ -85,7 +85,7 @@ import Testing
         // error object, which is the only way to watch a native code and
         // message actually cross.
         var native: OpaquePointer?
-        #expect(markdown_core_document_parse(nil, 1, nil, &native) == nil)
+        #expect(markdown_core_document_parse(nil, 1, &native) == nil)
         let error = try #require(native)
         defer { markdown_core_error_free(error) }
         let crossed = ParseError(from: error)
