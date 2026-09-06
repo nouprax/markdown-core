@@ -874,7 +874,9 @@ publication step.
       a multiline-table cell is a cross-item case owned by whichever of `P11c`
       and `O1` merges later. Requires `P11b`.
 - [ ] **P11d — `grid_tables`.** Parse `+`, `-`, `=`, and `|` boundaries with the
-      top line defining columns, `=` separators selecting head and foot, cell
+      column boundary set the union of the `+` positions on every horizontal
+      boundary line, as the tables module states, `=` separators selecting
+      head and foot, cell
       bodies through the ordinary block parser, missing segments as `rowspan`
       and `colspan` stored once in the upper-left anchor row, a row-width
       occupancy array validating overlap, overrun, uncovered coordinates, and

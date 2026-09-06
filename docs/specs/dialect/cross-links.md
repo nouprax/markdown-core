@@ -42,21 +42,22 @@ inherited bracket handling:
 ```text
 cross-link     = [ "!" ] "[[" target [ separator label ] "]]"
 separator      = "\|" / "|"
-target         = [ path ] [ heading-anchor / block-anchor ]
-heading-anchor = "#" heading-part *( "#" heading-part )
+target         = [ path ] [ block-anchor / heading-anchor ]
 block-anchor   = "#^" block-id
+heading-anchor = "#" heading-part *( "#" heading-part )
 path           = 1*path-char
-heading-part   = heading-first *path-char
-heading-first  = any path-char except "^"
+heading-part   = 1*path-char
 path-char      = any scalar except "#", "|", "[", "]", LF, and CR, and
                  not a "\" immediately followed by "|"
 block-id       = 1*( ASCII-letter / DIGIT / "-" )
 label          = *( any scalar except "[", "]", LF, and CR )
 ```
 
-The two anchor alternatives are disjoint: a heading part never begins with
-`^`, so `#^` always opens a block anchor. A target alone is a link to a
-note:
+The anchor alternatives are ordered: `block-anchor` is tried first and
+succeeds only when the target ends after its identifier, at the separator or
+the closing `]]`; otherwise the same bytes are parsed as a `heading-anchor`,
+whose parts may begin with `^`, so `#^id` alone is a block anchor and
+`#^id#x` is a heading anchor. A target alone is a link to a note:
 
 ```````````````````````````````` example
 See [[Note]] for details.
