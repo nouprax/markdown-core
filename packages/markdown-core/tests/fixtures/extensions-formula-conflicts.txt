@@ -95,6 +95,18 @@ Document scope=1:1..3:22 children=2
     └── Text scope=3:8..3:22 literal=" and \\) alone." children=0
 ````````````````````````````````
 
+A closer pairs with the nearest unmatched opener, so an opener inside a
+formula's body is part of that body once the outer pair forms: the inner
+formula gives way to the outer one.
+
+```````````````````````````````` example
+\\(a \\(b\\) c\\)
+.
+Document scope=1:1..1:17 children=1
+└── Paragraph scope=1:1..1:17 children=1
+    └── Formula scope=1:1..1:17 mode=embedded literal="a \\\\(b\\) c" children=0
+````````````````````````````````
+
 A closer whose opener an earlier closer already took is the same case.
 
 ```````````````````````````````` example

@@ -521,6 +521,15 @@ void markdown_core_inline_parser_set_offset(markdown_core_inline_parser *parser,
 MARKDOWN_CORE_EXPORT
 struct markdown_core_chunk *markdown_core_inline_parser_get_chunk(markdown_core_inline_parser *parser);
 
+/** The block whose content the parser is reading, or NULL for a subject that
+ * has none (the reference-definition parser). The chunk above is a view of
+ * that block's content buffer, which outlives the inline pass, so a node that
+ * records a range of it can read the bytes again at postprocess instead of
+ * copying them while the delimiter stack is still being resolved.
+ */
+MARKDOWN_CORE_EXPORT
+markdown_core_node *markdown_core_inline_parser_get_owner(markdown_core_inline_parser *parser);
+
 /** Returns 1 if the inline parser is currently in a bracket; pass 1 for 'image'
  * if you want to know about an image-type bracket, 0 for link-type. */
 MARKDOWN_CORE_EXPORT

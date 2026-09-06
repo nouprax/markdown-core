@@ -27,6 +27,12 @@ facade while removing renderer support and the caller-driven feed lifecycle.
   scanner now leaves an unopened closer to the base language, and the
   autolink scanner claims a colon that an address follows, as cmark-gfm
   links it.
+- Build an inline formula's literal once, at postprocess, from the owning
+  block's content. A closer pairs with the nearest unmatched opener, so a
+  nested pair replaced each inner formula after copying its body, and a
+  paragraph of thousands of nested `\\(` and `\\)` pairs took seconds;
+  twenty thousand now parse in milliseconds, and a pathological case pins
+  it.
 - Raise the Swift package contract to Swift tools 6.3 and iOS 26/macOS 26,
   refresh Gradle, AGP, Kotlin, Node.js, pnpm, Emscripten, and SwiftLint
   pins, and audit every duplicated toolchain declaration for exact agreement.

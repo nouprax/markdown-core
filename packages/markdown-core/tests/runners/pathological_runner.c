@@ -918,6 +918,20 @@ static int case_formula_backslash_pairs(pc_context *context) {
     return pc_formula_case(context, "\\\\(x\\\\)", " \\\\(x\\\\)", 19999, NULL, 20000, "x");
 }
 
+/* Twenty thousand openers, then twenty thousand closers: each closer pairs
+ * with the nearest unmatched opener and the outer pairing replaces the inner
+ * formula, so one formula survives and its literal is built once. */
+static int case_formula_backslash_nested(pc_context *context) {
+    char *closers = ts_repeat("\\\\)", 20000, NULL);
+    int result;
+    if (!closers) {
+        return -1;
+    }
+    result = pc_formula_case(context, "", "\\\\(x ", 20000, closers, 1, NULL);
+    free(closers);
+    return result;
+}
+
 /* Registry ------------------------------------------------------------------ */
 
 typedef struct pc_case_entry {
@@ -962,6 +976,7 @@ static const pc_case_entry PC_CASES[] = {
     {"formula_backslash_openers", case_formula_backslash_openers},
     {"formula_backslash_closers", case_formula_backslash_closers},
     {"formula_backslash_pairs", case_formula_backslash_pairs},
+    {"formula_backslash_nested", case_formula_backslash_nested},
 };
 
 int main(int argc, char **argv) {
