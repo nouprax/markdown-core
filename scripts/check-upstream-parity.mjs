@@ -24,11 +24,11 @@ import { readExamples, selectExamples } from "./lib/fixture-corpus.mjs";
 import {
     applyUpstreamFootnoteModel,
     applyUpstreamReferenceModel,
-    dropHtmlComments,
     liftFootnoteDefinitions,
     normalize,
     parseCanonicalDump,
     parseUpstreamXml,
+    projectHtmlComments,
     render,
     unknownKinds
 } from "./lib/upstream-cmark.mjs";
@@ -126,7 +126,7 @@ const fired = new Set();
 
 function compare(input) {
     const upstreamTree = liftFootnoteDefinitions(
-        normalize(dropHtmlComments(parseUpstreamXml(runUpstream(input)), fired), "upstream", fired),
+        normalize(projectHtmlComments(parseUpstreamXml(runUpstream(input)), fired), "upstream", fired),
         fired
     );
     // `footnote-resolution-model` is applied before `normalize`, which keeps
@@ -158,7 +158,7 @@ function compare(input) {
  * comparison nobody has looked at since.
  */
 const PROJECTED_DELTAS = new Set([
-    "html-comment-stripping",
+    "html-comment-node",
     "footnote-definition-placement",
     "footnote-resolution-model",
     "reference-definition-node",

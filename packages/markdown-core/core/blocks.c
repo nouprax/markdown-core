@@ -42,56 +42,6 @@
 
 #define peek_at(i, n) (i)->data[n]
 
-static bool S_html_literal_starts_with_comment(markdown_core_node *node) {
-    markdown_core_chunk *literal;
-    bufsize_t offset = 0;
-
-    if (node->type != MARKDOWN_CORE_NODE_HTML_BLOCK && node->type != MARKDOWN_CORE_NODE_HTML) {
-        return false;
-    }
-
-    literal = &node->as.literal;
-
-    if (node->type == MARKDOWN_CORE_NODE_HTML_BLOCK) {
-        while (offset < literal->len && (literal->data[offset] == ' ' || literal->data[offset] == '\t')) {
-            offset++;
-        }
-    }
-
-    return literal->len - offset >= 4 && memcmp(literal->data + offset, "<!--", 4) == 0;
-}
-
-static bool S_strip_html_comments(markdown_core_node *root) {
-    bool stripped = false;
-    markdown_core_iter *iter = markdown_core_iter_new(root);
-    markdown_core_event_type ev_type;
-
-    if (!iter) {
-        return false;
-    }
-
-    while ((ev_type = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
-        markdown_core_node *node = markdown_core_iter_get_node(iter);
-        /* EXIT, not ENTER: the mutation rule names the node whose EXIT is
-         * current, and it is the only moment the iterator's lookahead is
-         * outside this node's subtree. `HTML` and `HTML_BLOCK` were both in
-         * the old `S_is_leaf` list, so their EXIT was suppressed and freeing
-         * at ENTER happened to be safe; with the contract total it is a
-         * use-after-free on the very next `markdown_core_iter_next`. */
-        if (ev_type == MARKDOWN_CORE_EVENT_EXIT && S_html_literal_starts_with_comment(node)) {
-            markdown_core_node_free(node);
-            stripped = true;
-        }
-    }
-
-    markdown_core_iter_free(iter);
-
-    if (stripped) {
-        return markdown_core_consolidate_text_nodes(root) != 0;
-    }
-    return true;
-}
-
 static bool S_last_line_blank(const markdown_core_node *node) {
     return (node->flags & MARKDOWN_CORE_NODE__LAST_LINE_BLANK) != 0;
 }
@@ -754,6 +704,72 @@ static bool resolve_reference_link_definitions(markdown_core_parser *parser, mar
     return !is_blank(&b->content, 0);
 }
 
+/* M0: an HTML block that opened with `<!--` and whose end line holds only
+ * whitespace after the first `-->` is a block `Comment`, and its literal is
+ * the bytes between `<!--` and that `-->`, line endings included. Every other
+ * type-2 block -- `<!-- a --> b`, or one the input ended before a `-->` line --
+ * stays an HTML block as written.
+ *
+ * The block's literal is its lines after container-prefix removal, so the
+ * opener may sit behind up to three spaces of indentation and the block is
+ * still the comment; `  <!-- x -->` is a comment whose literal is ` x `.
+ *
+ * The `-->` is searched from two bytes into the opener, so `<!-->` and
+ * `<!--->` -- the two tokens the inherited grammar names as comments with
+ * nothing inside -- find the closer overlapping the opener and give the empty
+ * literal the inline rule gives them. The caller has established that the
+ * block's own end condition closed it, which is what makes "the first `-->`"
+ * the one on the end line: no earlier line held one, or the block would have
+ * ended there. */
+static void S_convert_comment_block(markdown_core_node *b) {
+    markdown_core_chunk *literal = &b->as.literal;
+    unsigned char *data = literal->data;
+    bufsize_t len = literal->len;
+    bufsize_t open = 0;
+    bufsize_t close;
+    bufsize_t body_start;
+    bufsize_t body_len;
+    bufsize_t rest;
+
+    while (open < len && (data[open] == ' ' || data[open] == '\t')) {
+        open++;
+    }
+    if (len - open < 4 || memcmp(data + open, "<!--", 4) != 0) {
+        return;
+    }
+    for (close = open + 2; close + 3 <= len; close++) {
+        if (data[close] == '-' && data[close + 1] == '-' && data[close + 2] == '>') {
+            break;
+        }
+    }
+    if (close + 3 > len) {
+        return;
+    }
+    rest = close + 3;
+    while (rest < len && (data[rest] == ' ' || data[rest] == '\t')) {
+        rest++;
+    }
+    if (rest < len && data[rest] == '\r') {
+        rest++;
+    }
+    if (rest < len && data[rest] == '\n') {
+        rest++;
+    }
+    if (rest != len) {
+        return;
+    }
+
+    body_start = open + 4;
+    body_len = close > body_start ? close - body_start : 0;
+    /* The chunk is the detached content buffer, so it is owned and the body
+     * can be moved to its front in place. */
+    assert(literal->alloc);
+    memmove(data, data + body_start, body_len);
+    data[body_len] = '\0';
+    literal->len = body_len;
+    b->type = (uint16_t)MARKDOWN_CORE_NODE_COMMENT_BLOCK;
+}
+
 static markdown_core_node *finalize(markdown_core_parser *parser, markdown_core_node *b) {
     bufsize_t pos;
     markdown_core_node *item;
@@ -782,7 +798,16 @@ static markdown_core_node *finalize(markdown_core_parser *parser, markdown_core_
                 * 3:10, and `last_line_length` there is the length of the BLANK
                 * line before it. Four of the eleven observed negative rows
                 * were this. */
-               parser->line_number == b->start_line) {
+               parser->line_number == b->start_line ||
+               /* M0: the same block closed by its end condition on a LATER
+                * line. The terminator line is the block's last line and is
+                * the line being processed, so the block ends here too:
+                * `<!--\nmulti\n-->` gave `HTMLBlock scope=1:1..2:5`, one line
+                * short of the `-->` its literal holds, and `<pre>\nx\n</pre>`
+                * the same shape. Only the last two ways a block can close --
+                * the input ending and a container closing under it -- still
+                * end it on the line before. */
+               (b->flags & MARKDOWN_CORE_NODE__CLOSED_BY_END_CONDITION) != 0) {
         S_set_end_to_current_line(parser, b);
     } else {
         b->end_line = parser->line_number - 1;
@@ -861,12 +886,20 @@ static markdown_core_node *finalize(markdown_core_parser *parser, markdown_core_
         }
         break;
 
-    case MARKDOWN_CORE_NODE_HTML_BLOCK:
+    case MARKDOWN_CORE_NODE_HTML_BLOCK: {
+        /* `html_block_type` shares the union with the literal, so it is read
+         * before the detach writes over it. */
+        int html_block_type = b->as.html_block_type;
         b->as.literal = markdown_core_chunk_buf_detach(node_content);
         if (!b->as.literal.data) {
             parser->oom = true;
+            break;
+        }
+        if (html_block_type == 2 && (b->flags & MARKDOWN_CORE_NODE__CLOSED_BY_END_CONDITION) != 0) {
+            S_convert_comment_block(b);
         }
         break;
+    }
 
     case MARKDOWN_CORE_NODE_LIST: // determine tight/loose status
         b->as.list.tight = true;  // tight by default
@@ -2016,6 +2049,7 @@ static void add_text_to_container(markdown_core_parser *parser, markdown_core_no
             }
 
             if (matches_end_condition) {
+                container->flags |= MARKDOWN_CORE_NODE__CLOSED_BY_END_CONDITION;
                 container = finalize(parser, container);
                 assert(parser->current != NULL);
             }
@@ -2107,11 +2141,20 @@ static void S_process_line(markdown_core_parser *parser, const unsigned char *bu
     add_text_to_container(parser, container, last_matched_container, &input);
 
 finished:
-    parser->last_line_length = input.len;
-    if (parser->last_line_length && input.data[parser->last_line_length - 1] == '\n') {
+    /* M0: measured from `curline`, not from `input`. The two share their
+     * bytes, but `chop_trailing_hashtags` shortens `input` to an ATX
+     * heading's content before the line is added, and a block that ends on
+     * this line -- the heading itself, when the next line closes it -- took
+     * that shortened length as its end: `# ATX #` ended at 1:5, the content,
+     * while `foo   ` as a paragraph ended at 1:6, its whole line. A heading's
+     * closing sequence is a delimiter, and delimiters belong to the node
+     * they delimit, so the heading now ends where every other block does:
+     * at its line's last byte before the line ending. */
+    parser->last_line_length = parser->curline.size;
+    if (parser->last_line_length && parser->curline.ptr[parser->last_line_length - 1] == '\n') {
         parser->last_line_length -= 1;
     }
-    if (parser->last_line_length && input.data[parser->last_line_length - 1] == '\r') {
+    if (parser->last_line_length && parser->curline.ptr[parser->last_line_length - 1] == '\r') {
         parser->last_line_length -= 1;
     }
 
@@ -2195,12 +2238,6 @@ static int S_postprocess_tree(markdown_core_parser *parser, markdown_core_node *
     return !parser->oom;
 }
 
-static int S_strip_comments_tree(markdown_core_parser *parser, markdown_core_node **root_slot, void *context) {
-    (void)parser;
-    (void)context;
-    return S_strip_html_comments(*root_slot);
-}
-
 static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
     markdown_core_node *res;
     markdown_core_llist *extensions;
@@ -2242,16 +2279,6 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
             }
         }
     }
-    if (parser->oom) {
-        goto failed;
-    }
-
-    if (parser->options & MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS) {
-        if (!S_apply_tree_phase(parser, &parser->root, S_strip_comments_tree, NULL)) {
-            parser->oom = true;
-        }
-    }
-
     if (parser->oom) {
         goto failed;
     }

@@ -136,6 +136,10 @@ private class JniTreeDecoder(
                 consume(HTML(reader.requiredString(), scope))
             }
 
+            JniNodeKind.COMMENT -> {
+                consume(Comment(reader.requiredString(), scope))
+            }
+
             JniNodeKind.FORMULA -> {
                 consume(Formula(placement(), reader.requiredString(), scope))
             }

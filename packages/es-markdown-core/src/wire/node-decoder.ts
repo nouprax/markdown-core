@@ -297,6 +297,7 @@ export class NodeDecoder {
             case "text":
             case "code":
             case "html":
+            case "comment":
                 this.flags(record, 0);
                 this.leaf(record);
                 return { ...base, literal: this.requiredString(record, 0) } as MarkupValue;

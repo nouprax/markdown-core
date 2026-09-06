@@ -166,29 +166,6 @@ static int set_formula_literal_trimmed(markdown_core_node *node, const unsigned 
     return set_formula_literal_bytes(node, data, len);
 }
 
-static markdown_core_node *make_formula_node(const markdown_core_extension *extension, markdown_core_parser *parser,
-                                             markdown_core_node_type node_type, markdown_core_formula_mode mode,
-                                             const unsigned char *literal, bufsize_t literal_len) {
-    markdown_core_node *node = markdown_core_node_new_with_mem_and_ext(node_type, parser->mem, extension);
-    if (!node) {
-        parser->oom = true;
-        return NULL;
-    }
-    if (!get_formula(node)) {
-        parser->oom = true;
-        markdown_core_node_free(node);
-        return NULL;
-    }
-
-    get_formula(node)->mode = mode;
-    if (!set_formula_literal_bytes(node, literal, literal_len)) {
-        parser->oom = true;
-        markdown_core_node_free(node);
-        return NULL;
-    }
-    return node;
-}
-
 static int is_line_end(const unsigned char *data, bufsize_t len, bufsize_t pos) {
     return pos >= len || data[pos] == '\n' || data[pos] == '\r';
 }
@@ -349,6 +326,29 @@ static bufsize_t scan_backslash_close(const unsigned char *data, bufsize_t len, 
     return 0;
 }
 
+/* ONE OPEN FORMULA PER FORM. A delimiter of a form opens only while no opener
+ * of that form is waiting on the stack, and closes only while one is, so a
+ * form's delimiters alternate opener, closer, opener, closer, and a closer's
+ * nearest unmatched opener is always the one directly before it. That is the
+ * index's word for step A4 -- a scanner whose body is opaque -- said on the
+ * delimiter stack the module names: from its opener on, a body runs to the
+ * first closer of its form, and an opener inside it is the body's own bytes.
+ * It is also what keeps the pairing linear. Without the gate, `\\(a \\(b\\) c\\)`
+ * paired the inner `\\(` first and then let the outer closer take the outer
+ * opener across the inner formula, so every level of a nest built a literal
+ * the next level threw away, and a paragraph of thousands of nested openers
+ * and closers copied bodies of growing length.
+ *
+ * The gate is the stack's own count, asked at the scan (`has_unmatched_opener`,
+ * kept at every push and removal), so it costs nothing and needs no memory of
+ * its own. A gated delimiter is still the text it was written as, and a pair
+ * that fails its shape test in `insert_formula` releases its bytes the same
+ * way.
+ *
+ * A backslash CLOSER with nothing to close is left to the base language
+ * entirely: `\\]` is then CommonMark's escaped backslash followed by a
+ * bracket closer, and the base scanner must see that `]`, or `[bar\\]` stops
+ * being a reference (CommonMark 0.31.2 example 558). */
 static markdown_core_node *match(const markdown_core_extension *extension, markdown_core_parser *parser,
                                  markdown_core_node *parent, unsigned char character,
                                  markdown_core_inline_parser *inline_parser) {
@@ -357,39 +357,39 @@ static markdown_core_node *match(const markdown_core_extension *extension, markd
     int len = (int)chunk->len;
     bufsize_t opener_len;
     bufsize_t closer_len;
+    int open;
 
     if (character == '$') {
         if (scan_formula_dollar_display_open(chunk->data, len, offset)) {
-            return match_formula_delimiter(extension, parser, inline_parser, FORMULA_DELIM_DOLLAR_DISPLAY, 2, 1, 1);
+            open = markdown_core_inline_parser_has_unmatched_opener(inline_parser, FORMULA_DELIM_DOLLAR_DISPLAY);
+            return match_formula_delimiter(extension, parser, inline_parser, FORMULA_DELIM_DOLLAR_DISPLAY, 2, !open,
+                                           open);
         }
 
         if (scan_formula_dollar_inline_open(chunk->data, len, offset)) {
+            open = markdown_core_inline_parser_has_unmatched_opener(inline_parser, FORMULA_DELIM_DOLLAR_INLINE);
             return match_formula_delimiter(extension, parser, inline_parser, FORMULA_DELIM_DOLLAR_INLINE, 1,
-                                           dollar_inline_can_open(chunk, (bufsize_t)offset),
-                                           dollar_inline_can_close(chunk, (bufsize_t)offset));
+                                           !open && dollar_inline_can_open(chunk, (bufsize_t)offset),
+                                           open && dollar_inline_can_close(chunk, (bufsize_t)offset));
         }
     } else if (character == '\\') {
         opener_len = scan_formula_latex_backslash_display_open(chunk->data, len, offset);
         if (opener_len) {
+            open =
+                markdown_core_inline_parser_has_unmatched_opener(inline_parser, FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY);
             return match_formula_delimiter(extension, parser, inline_parser, FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY,
-                                           opener_len, 1, 0);
+                                           opener_len, !open, 0);
         }
 
         opener_len = scan_formula_latex_backslash_inline_open(chunk->data, len, offset);
         if (opener_len) {
+            open =
+                markdown_core_inline_parser_has_unmatched_opener(inline_parser, FORMULA_DELIM_LATEX_BACKSLASH_INLINE);
             return match_formula_delimiter(extension, parser, inline_parser, FORMULA_DELIM_LATEX_BACKSLASH_INLINE,
-                                           opener_len, 1, 0);
+                                           opener_len, !open, 0);
         }
 
         closer_len = scan_backslash_close(chunk->data, chunk->len, offset, ']', 2);
-        /* A backslash CLOSER is claimed only when an opener of its rule is
-         * waiting: `\\]` with nothing to close is CommonMark's escaped
-         * backslash followed by a bracket closer, and the base scanner must
-         * see that `]`, or `[bar\\]` stops being a reference (CommonMark
-         * 0.31.2 example 558). A closer whose opener a closer before it
-         * already took is the same case, and it is not pushed, so the stack
-         * never fills with closers that could not pair. `$` needs no such
-         * check because the base language claims nothing a `$` run could hide. */
         if (closer_len &&
             markdown_core_inline_parser_has_unmatched_opener(inline_parser, FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY)) {
             return match_formula_delimiter(extension, parser, inline_parser, FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY,
@@ -493,82 +493,92 @@ static void strip_formula_padding(const unsigned char **literal, bufsize_t *len)
     *len = size;
 }
 
-static markdown_core_node *make_backslash_delimited_formula(const markdown_core_extension *extension,
-                                                            markdown_core_parser *parser,
-                                                            markdown_core_formula_mode mode, const unsigned char *data,
-                                                            bufsize_t body_start, bufsize_t body_end, int slash_count,
-                                                            unsigned char close_char) {
-    markdown_core_strbuf literal;
-    bufsize_t i = body_start;
-    markdown_core_node *node;
-    const unsigned char *body;
-    bufsize_t body_len;
-
-    markdown_core_strbuf_init(parser->mem, &literal, 0);
-
-    while (i < body_end) {
-        if (slash_count > 1 && data[i] == '\\' && i + 1 < body_end && data[i + 1] == close_char) {
-            markdown_core_strbuf_putc(&literal, close_char);
-            i += 2;
-            continue;
-        }
-
-        markdown_core_strbuf_putc(&literal, data[i]);
-        i++;
+static markdown_core_node *make_formula_node(const markdown_core_extension *extension, markdown_core_parser *parser,
+                                             markdown_core_formula_mode mode, const unsigned char *literal,
+                                             bufsize_t literal_len) {
+    markdown_core_node *node =
+        markdown_core_node_new_with_mem_and_ext(MARKDOWN_CORE_NODE_FORMULA, parser->mem, extension);
+    if (!node) {
+        parser->oom = true;
+        return NULL;
+    }
+    if (!get_formula(node)) {
+        parser->oom = true;
+        markdown_core_node_free(node);
+        return NULL;
     }
 
-    /* The same padding rule as the dollar forms: Q18 says it applies to
-     * `\(...\)` and `\[...\]` too, and no oracle row covered that until this
-     * step added two. */
-    body = literal.ptr;
-    body_len = literal.size;
-    strip_formula_padding(&body, &body_len);
-    node = make_formula_node(extension, parser, MARKDOWN_CORE_NODE_FORMULA, mode, body, body_len);
-    markdown_core_strbuf_free(&literal);
+    get_formula(node)->mode = mode;
+    if (!set_formula_literal_bytes(node, literal, literal_len)) {
+        parser->oom = true;
+        markdown_core_node_free(node);
+        return NULL;
+    }
     return node;
 }
 
+/* The pair is built here, at the pairing, from the bytes between the two
+ * runs: the backslash forms unescape their own closer, `` $`...`$ `` drops the
+ * backticks it matched, and every form applies the padding rule. Each body is
+ * read once, because `match` lets one formula of a form open at a time and
+ * so no pair ever spans another of its form. */
 static delimiter *insert_formula(const markdown_core_extension *extension, markdown_core_parser *parser,
                                  markdown_core_inline_parser *inline_parser, delimiter *opener, delimiter *closer) {
     markdown_core_chunk *chunk = markdown_core_inline_parser_get_chunk(inline_parser);
     markdown_core_node *opener_node = markdown_core_delimiter_node(opener);
     markdown_core_node *closer_node = markdown_core_delimiter_node(closer);
     delimiter *res = markdown_core_delimiter_next(closer);
-    markdown_core_node *formula = NULL;
+    markdown_core_node *formula;
+    markdown_core_delimiter_rule rule = markdown_core_delimiter_rule_of(opener);
+    markdown_core_formula_mode mode = mode_for_delim(rule);
     bufsize_t body_start = markdown_core_delimiter_position(opener);
     bufsize_t body_end = markdown_core_delimiter_position(closer) - markdown_core_delimiter_length(closer);
-    markdown_core_formula_mode mode = mode_for_delim(markdown_core_delimiter_rule_of(opener));
-    const unsigned char *literal = chunk->data + body_start;
-    bufsize_t literal_len = body_end - body_start;
+    const unsigned char *body = chunk->data + body_start;
+    bufsize_t body_len = body_end - body_start;
+    markdown_core_strbuf unescaped;
 
-    if (markdown_core_delimiter_rule_of(opener) != markdown_core_delimiter_rule_of(closer)) {
+    if (rule != markdown_core_delimiter_rule_of(closer)) {
         goto done;
     }
 
-    if (markdown_core_delimiter_length(opener) != markdown_core_delimiter_length(closer) &&
-        is_backslash_delim(markdown_core_delimiter_rule_of(opener))) {
+    if (markdown_core_delimiter_length(opener) != markdown_core_delimiter_length(closer) && is_backslash_delim(rule)) {
         goto done;
     }
 
-    if (markdown_core_delimiter_rule_of(opener) == FORMULA_DELIM_DOLLAR_INLINE && literal_len > 0 &&
-        literal[0] == '`') {
-        if (literal_len < 2 || literal[literal_len - 1] != '`') {
+    /* `` $`...`$ ``: a body that opens with a backtick must close with one. */
+    if (rule == FORMULA_DELIM_DOLLAR_INLINE && body_len > 0 && body[0] == '`') {
+        if (body_len < 2 || body[body_len - 1] != '`') {
             goto done;
         }
-
-        literal++;
-        literal_len -= 2;
+        body++;
+        body_len -= 2;
     }
 
-    if (is_backslash_delim(markdown_core_delimiter_rule_of(opener))) {
-        formula = make_backslash_delimited_formula(extension, parser, mode, chunk->data, body_start, body_end, 2,
-                                                   mode == MARKDOWN_CORE_FORMULA_MODE_STANDALONE ? ']' : ')');
-    } else {
-        strip_formula_padding(&literal, &literal_len);
-        formula = make_formula_node(extension, parser, MARKDOWN_CORE_NODE_FORMULA, mode, literal, literal_len);
+    markdown_core_strbuf_init(parser->mem, &unescaped, 0);
+    if (is_backslash_delim(rule)) {
+        unsigned char close_char = mode == MARKDOWN_CORE_FORMULA_MODE_STANDALONE ? ']' : ')';
+        bufsize_t i = 0;
+        while (i < body_len) {
+            if (body[i] == '\\' && i + 1 < body_len && body[i + 1] == close_char) {
+                markdown_core_strbuf_putc(&unescaped, close_char);
+                i += 2;
+                continue;
+            }
+            markdown_core_strbuf_putc(&unescaped, body[i]);
+            i++;
+        }
+        body = unescaped.ptr;
+        body_len = unescaped.size;
     }
 
+    /* micromark-extension-math's padding rule (Q18) applies to every form:
+     * `\(...\)` and `\[...\]` too, and no oracle row covered that until the
+     * step that added two. */
+    strip_formula_padding(&body, &body_len);
+    formula = unescaped.oom ? NULL : make_formula_node(extension, parser, mode, body, body_len);
+    markdown_core_strbuf_free(&unescaped);
     if (!formula) {
+        parser->oom = true;
         goto done;
     }
 

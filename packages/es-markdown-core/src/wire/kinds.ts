@@ -30,7 +30,8 @@ export type NativeKind =
     | "directiveLabel"
     | "referenceDefinition"
     | "linkReference"
-    | "imageReference";
+    | "imageReference"
+    | "comment";
 
 export const kinds: readonly (NativeKind | "none")[] = Object.freeze([
     "none",
@@ -65,5 +66,6 @@ export const kinds: readonly (NativeKind | "none")[] = Object.freeze([
     "directiveLabel",
     "referenceDefinition",
     "linkReference",
-    "imageReference"
+    "imageReference",
+    "comment"
 ]);

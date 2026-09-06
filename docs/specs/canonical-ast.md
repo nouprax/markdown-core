@@ -180,7 +180,7 @@ and returns no document.
 | `List` | `flavor: ListFlavor`, `start: Int?`, `tight: Bool`, `items: [ListItem]` | `start` is non-null only for ordered lists |
 | `ListItem` | `checked: Bool?`, `content: [Markup]` | `checked == null` means not a task item; block content |
 | `CodeBlock` | `info: String?`, `language: String?`, `literal: String`, `fenced: Bool`, `closed: Bool` | `info` is the info string after escape and character-reference processing, stripped of leading and trailing spaces and tabs, and `null` when that is empty or the block is indented; `language` is the prefix of `info` before the first space or tab; `fenced` is true for a fenced block; `closed` is true if and only if a closing fence was found, and always for an indented block |
-| `HTMLBlock` | `literal: String` | raw HTML is preserved |
+| `HTMLBlock` | `literal: String` | raw HTML is preserved; a block that opens with `<!--` and whose end line holds only whitespace after the first `-->` is a `Comment` |
 | `FormulaBlock` | `literal: String` | a formula block is always standalone; see the note below |
 | `Table` | `alignments: [TableAlignment]`, `header: TableRow`, `rows: [TableRow]` | one alignment per column; header is non-optional; a row shorter than the delimiter row is completed with empty cells scoped at the row's end and a longer row is truncated, so every row has one cell per column |
 | `TableRow` | `isHeader: Bool`, `cells: [TableCell]` | `isHeader` is true only for `Table.header` and false for entries in `Table.rows` |
@@ -193,7 +193,8 @@ and returns no document.
 | `SoftBreak` | none | leaf |
 | `LineBreak` | none | leaf |
 | `Code` | `literal: String` | leaf |
-| `HTML` | `literal: String` | raw HTML is preserved; leaf |
+| `HTML` | `literal: String` | raw HTML is preserved; an HTML comment token is a `Comment`; leaf |
+| `Comment` | `literal: String` | the one kind valid in both block and inline content, which the parent edge records; `literal` excludes the delimiters and keeps every byte between them; leaf |
 | `Formula` | `mode`, `literal: String` | either mode; leaf |
 | `Emphasis` | `content: [Markup]` | inline content |
 | `Strong` | `content: [Markup]` | inline content |
@@ -231,9 +232,9 @@ and it takes no options. The parser recognizes the one dialect of
 [`dialect.md`](dialect.md), in which every feature is always on: there is no
 `ParseOptions`, no profile, no preset, and no switch of any kind, on the C
 facade, the installed CLI, or any binding. Quotation marks, hyphen runs, and
-periods are stored as written; the parser has no smart punctuation. HTML
-comments are still stripped from the tree until `M0` lands `Comment`, and
-nothing else strips anything.
+periods are stored as written; the parser has no smart punctuation. Nothing
+strips anything: an HTML comment is a `Comment` node, and a consumer that does
+not want comments drops the nodes.
 
 A parse returns exactly the `Document` this document describes. The document
 does not retain source text, a normalized source copy, a line index, tokens,

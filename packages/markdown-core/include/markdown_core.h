@@ -134,7 +134,12 @@ typedef enum markdown_core_node_kind {
      * renumbers every kind after it. */
     MARKDOWN_CORE_KIND_REFERENCE_DEFINITION,
     MARKDOWN_CORE_KIND_LINK_REFERENCE,
-    MARKDOWN_CORE_KIND_IMAGE_REFERENCE
+    MARKDOWN_CORE_KIND_IMAGE_REFERENCE,
+    /* A comment of the dialect: the one kind that is valid in both block and
+     * inline content. Its parent edge records which; the node stores no
+     * placement. `markdown_core_node_literal` answers with the bytes between
+     * the delimiters. */
+    MARKDOWN_CORE_KIND_COMMENT
 } markdown_core_node_kind;
 
 /** The form a reference was written in: `[t][l]`, `[l][]` and `[l]` all
@@ -245,6 +250,9 @@ MARKDOWN_CORE_API bool markdown_core_node_code_block_properties(const markdown_c
                                                                 markdown_core_optional_string *language,
                                                                 markdown_core_string *literal, bool *fenced,
                                                                 bool *closed);
+/** The literal of a `Text`, `Code`, `HTML`, `HTMLBlock`, or `Comment` node.
+ * A comment's literal excludes its delimiters and keeps every byte between
+ * them, line endings and indentation included. */
 MARKDOWN_CORE_API bool markdown_core_node_literal(const markdown_core_node *node, markdown_core_string *literal);
 MARKDOWN_CORE_API bool markdown_core_node_formula_properties(const markdown_core_node *node,
                                                              markdown_core_placement_mode *mode,

@@ -138,6 +138,11 @@ public interface WalkingVisitor {
         phase: WalkPhase,
     )
 
+    public fun visitComment(
+        node: Comment,
+        phase: WalkPhase,
+    )
+
     public fun visitFormula(
         node: Formula,
         phase: WalkPhase,
@@ -370,6 +375,11 @@ private class WalkingDriver(
 
     override fun visitHTML(node: HTML) {
         visitor.visitHTML(node, phase)
+        scheduleExit(node)
+    }
+
+    override fun visitComment(node: Comment) {
+        visitor.visitComment(node, phase)
         scheduleExit(node)
     }
 

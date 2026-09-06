@@ -49,6 +49,8 @@ public interface Visitor<Result> {
 
     public fun visitHTML(node: HTML): Result
 
+    public fun visitComment(node: Comment): Result
+
     public fun visitFormula(node: Formula): Result
 
     public fun visitEmphasis(node: Emphasis): Result

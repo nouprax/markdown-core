@@ -215,8 +215,9 @@ tags follow the inherited grammar and are `HTML` or `HTMLBlock`.
 `Heading.content` is the inline content of the heading after the inherited
 removal of the ATX opening and closing sequences and of the Setext underline.
 A heading's scope covers those sequences and the underline, as the
-[index](../dialect.md#scopes) requires of every delimiter; the current parser
-ends an ATX heading at its content, which `M0` corrects:
+[index](../dialect.md#scopes) requires of every delimiter, and so the whole of
+an ATX heading's line, trailing spaces included, the way a paragraph's scope
+covers the whole of its last line:
 
 ```````````````````````````````` example
 # ATX #

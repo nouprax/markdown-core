@@ -33,6 +33,42 @@ const fieldsByKind = Object.fromEntries(
 );
 const canonicalFields = rows.flatMap((match) => fieldsByKind[match[1]].map((field) => `${match[1]}.${field}`));
 
+/**
+ * The kind of every node and of its parent, read from the connectors: a line's
+ * depth is the column of its connector, and its parent is the nearest line
+ * above at the depth before it. The dump nests a `DirectiveLabel` under its
+ * directive the same way, so the label reads as that directive's child here,
+ * which is what a placement question needs.
+ */
+function parentEdges(tree) {
+    const byDepth = ["Document"];
+    const edges = [];
+    for (const line of tree.split("\n")) {
+        if (!line.length) continue;
+        const marker = line.search(/[\u251c\u2514]/);
+        const depth = marker < 0 ? 0 : marker / 4 + 1;
+        const kind = (marker < 0 ? line : line.slice(marker + 4)).split(" ", 1)[0];
+        if (depth > 0) edges.push({ kind, parent: byDepth[depth - 1] });
+        byDepth[depth] = kind;
+        byDepth.length = depth + 1;
+    }
+    return edges;
+}
+const BLOCK_CONTENT = new Set(["Document", "BlockQuote", "ListItem", "FootnoteDefinition", "DirectiveBlock"]);
+const INLINE_CONTENT = new Set([
+    "Paragraph",
+    "Heading",
+    "TableCell",
+    "DirectiveLabel",
+    "Emphasis",
+    "Strong",
+    "Strikethrough",
+    "Link",
+    "Image",
+    "LinkReference",
+    "ImageReference"
+]);
+
 const stateValidators = {
     "placement.embedded": (tree) => / mode=embedded /.test(tree),
     "placement.standalone": (tree) => / mode=standalone /.test(tree),
@@ -97,7 +133,13 @@ const stateValidators = {
     // An attribute VALUE that contains a quote. It was called `escaping.json`
     // when the whole attribute map was one JSON string; the escaping it checks
     // is the dump's, and that is what it was always about.
-    "escaping.attribute-value": (tree) => /attributes=\[[^\]]*="[^\]]*\\"/.test(tree)
+    "escaping.attribute-value": (tree) => /attributes=\[[^\]]*="[^\]]*\\"/.test(tree),
+    // `Comment` is the one kind valid in both block and inline content, and
+    // the parent edge is what records which (M0).
+    "comment.placement.block": (tree) =>
+        parentEdges(tree).some((edge) => edge.kind === "Comment" && BLOCK_CONTENT.has(edge.parent)),
+    "comment.placement.inline": (tree) =>
+        parentEdges(tree).some((edge) => edge.kind === "Comment" && INLINE_CONTENT.has(edge.parent))
 };
 const orderValidators = {
     "document.source-order": (tree) => tree.startsWith("Document scope="),

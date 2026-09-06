@@ -29,11 +29,13 @@ node ending four columns past the end of its own line still does.
 None of the three subsumes another, and each is blind where another sees:
 
 - Current cmark has a different inline-scope model. The external ledger compares
-  `Code` and `HTML` only: Markdown Core deliberately includes a code span's
-  backticks and raw HTML's closing byte in the semantic element scope, while
-  cmark reports a content extent. The exact reviewed differences are ratcheted;
-  cmark is not copied wholesale where its positions contradict this AST's
-  source-ownership rules.
+  `Code`, `HTML`, and `Comment` only: Markdown Core deliberately includes a
+  code span's backticks and raw HTML's closing byte in the semantic element
+  scope, while cmark reports a content extent, and cmark ends an HTML block
+  that its own end condition closed on the line before that condition matched,
+  where a block `Comment` here runs from its opener line through its closer
+  line. The exact reviewed differences are ratcheted; cmark is not copied
+  wholesale where its positions contradict this AST's source-ownership rules.
 - Containment is blind to a whole subtree displaced by the same amount, and
   blind to `Code scope=1:9..1:17` on a twelve-byte line. Its sibling half is
   what catches two nodes claiming one byte, which is not a containment

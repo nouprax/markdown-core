@@ -1,6 +1,7 @@
 import type { BlockQuote } from "./model/block-quote.js";
 import type { CodeBlock } from "./model/code-block.js";
 import type { Code } from "./model/code.js";
+import type { Comment } from "./model/comment.js";
 import type { DirectiveBlock } from "./model/directive-block.js";
 import type { DirectiveLabel } from "./model/directive-label.js";
 import type { Directive } from "./model/directive.js";
@@ -52,6 +53,7 @@ export interface Visitor<Result> {
     visitLineBreak(this: void, node: LineBreak): Result;
     visitCode(this: void, node: Code): Result;
     visitHTML(this: void, node: HTML): Result;
+    visitComment(this: void, node: Comment): Result;
     visitFormula(this: void, node: Formula): Result;
     visitEmphasis(this: void, node: Emphasis): Result;
     visitStrong(this: void, node: Strong): Result;
@@ -112,6 +114,8 @@ export function visit<Result>(node: Markup, visitor: Visitor<Result>): Result {
             return visitor.visitCode(node);
         case "html":
             return visitor.visitHTML(node);
+        case "comment":
+            return visitor.visitComment(node);
         case "formula":
             return visitor.visitFormula(node);
         case "emphasis":

@@ -1,0 +1,71 @@
+---
+title: Comments module examples
+author: Dongyu Zhao
+version: 0.1
+date: '2026-09-06'
+license: '[CC-BY-SA 4.0](http://creativecommons.org/licenses/by-sa/4.0/)'
+...
+
+## HTML comments
+
+The examples of the [comments module](../../../../docs/specs/dialect/comments.md)
+whose behavior `M0` landed: the HTML-comment rule of the inherited grammar. They
+are the module's examples in the module's order; the `%%` examples arrive with
+`O3`. The expected dumps are the module's expected dumps in the dump grammar of
+today, which does not yet print the universal `anchor` and `attributes` fields
+that `M7` lands, so every line differs from the module's by exactly
+` anchor=null attributes={}` and by nothing else.
+
+An inline HTML comment token is a `Comment` whose literal is the bytes between
+`<!--` and `-->`:
+
+```````````````````````````````` example
+a <!-- b --> c
+.
+Document scope=1:1..1:14 children=1
+└── Paragraph scope=1:1..1:14 children=3
+    ├── Text scope=1:1..1:2 literal="a " children=0
+    ├── Comment scope=1:3..1:12 literal=" b " children=0
+    └── Text scope=1:13..1:14 literal=" c" children=0
+````````````````````````````````
+
+The tokens `<!-->` and `<!--->` are comments with an empty literal:
+
+```````````````````````````````` example
+a <!--> b <!---> c
+.
+Document scope=1:1..1:18 children=1
+└── Paragraph scope=1:1..1:18 children=5
+    ├── Text scope=1:1..1:2 literal="a " children=0
+    ├── Comment scope=1:3..1:7 literal="" children=0
+    ├── Text scope=1:8..1:10 literal=" b " children=0
+    ├── Comment scope=1:11..1:16 literal="" children=0
+    └── Text scope=1:17..1:18 literal=" c" children=0
+````````````````````````````````
+
+An HTML block that opens with `<!--` and whose end line holds only whitespace
+after the first `-->` is a block `Comment` whose literal is the bytes between
+`<!--` and that `-->`, line endings included, and whose scope runs from its
+opener line through its closer line:
+
+```````````````````````````````` example
+<!-- c -->
+
+<!--
+multi
+-->
+.
+Document scope=1:1..5:3 children=2
+├── Comment scope=1:1..1:10 literal=" c " children=0
+└── Comment scope=3:1..5:3 literal="\nmulti\n" children=0
+````````````````````````````````
+
+Every other HTML block, including one whose end line carries non-whitespace
+after `-->`, stays `HTMLBlock` as written:
+
+```````````````````````````````` example
+<!-- a --> b
+.
+Document scope=1:1..1:12 children=1
+└── HTMLBlock scope=1:1..1:12 literal="<!-- a --> b\n" children=0
+````````````````````````````````

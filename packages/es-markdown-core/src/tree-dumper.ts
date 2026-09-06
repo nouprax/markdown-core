@@ -1,6 +1,7 @@
 import type { BlockQuote } from "./model/block-quote.js";
 import type { CodeBlock } from "./model/code-block.js";
 import type { Code } from "./model/code.js";
+import type { Comment } from "./model/comment.js";
 import type { DirectiveAttribute } from "./model/directive-attribute.js";
 import type { DirectiveBlock } from "./model/directive-block.js";
 import type { DirectiveLabel } from "./model/directive-label.js";
@@ -104,6 +105,7 @@ class DumpState {
         visitLineBreak: (node: LineBreak) => this.line("LineBreak", node),
         visitCode: (node: Code) => this.line("Code", node, [`literal=${jsonString(node.literal)}`]),
         visitHTML: (node: HTML) => this.line("HTML", node, [`literal=${jsonString(node.literal)}`]),
+        visitComment: (node: Comment) => this.line("Comment", node, [`literal=${jsonString(node.literal)}`]),
         visitFormula: (node: Formula) =>
             this.line("Formula", node, [`mode=${node.mode}`, `literal=${jsonString(node.literal)}`]),
         visitEmphasis: (node: Emphasis) => this.container("Emphasis", node, [], node.content),

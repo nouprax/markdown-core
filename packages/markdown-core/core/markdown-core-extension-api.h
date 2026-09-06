@@ -578,7 +578,10 @@ delimiter *markdown_core_inline_parser_get_last_delimiter(markdown_core_inline_p
  * still unmatched: an extension whose closers may not stand alone -- a
  * formula's `\\)` is CommonMark's escaped backslash and a parenthesis unless
  * something opened it -- asks here before pushing one, so a closer that would
- * never pair stays with the base language.
+ * never pair stays with the base language. A rule whose openers may not nest
+ * asks the same question before pushing an opener, and its delimiters then
+ * alternate on the stack, so every closer pairs with the opener directly
+ * before it and no pair ever spans another of the rule.
  */
 MARKDOWN_CORE_EXPORT
 int markdown_core_inline_parser_has_unmatched_opener(markdown_core_inline_parser *parser,

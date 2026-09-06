@@ -10,10 +10,10 @@
     "claim": "With Markdown Core's product extensions disabled, GFM extension constructs match cmark-gfm 0.29.0.gfm.13 except for the reviewed deltas below. cmark-gfm has no authority over the underlying CommonMark layer.",
     "deltas": [
         {
-            "id": "html-comment-stripping",
+            "id": "html-comment-node",
             "kind": "deliberate-difference",
-            "summary": "Until `M0` lands `Comment`, Markdown Core strips every HTML comment from the tree: an `HTML` or `HTMLBlock` whose literal begins with `<!--`. Upstream keeps them as html nodes.",
-            "handling": "The shared normalizer drops those nodes from upstream's tree, which is the rule the engine applies on its own side, and records that the projection acted. A model difference, so a projection rather than a list of inputs; `M0` replaces it with the `Comment` mapping.",
+            "summary": "An HTML comment is a `Comment` node whose literal is the bytes between `<!--` and `-->`: the inline token, and an HTML block that opens with `<!--` and whose end line holds only whitespace after the first `-->`. Upstream keeps both as html nodes holding the token as written.",
+            "handling": "The shared normalizer maps upstream's comment nodes to `Comment` with the delimiters removed, which is the rule the engine applies on its own side (`docs/specs/dialect/comments.md`), and records that the projection acted. A model difference, so a projection rather than a list of inputs; the token and block boundaries are upstream's and are compared unchanged.",
             "projected": true
         },
         {

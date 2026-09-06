@@ -10,6 +10,7 @@ import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_ERROR_INVALID_ARGUM
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_BLOCK_QUOTE
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_CODE
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_CODE_BLOCK
+import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_COMMENT
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_DIRECTIVE
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_DIRECTIVE_LABEL
@@ -275,6 +276,10 @@ private class NativeTreeBuilder(
 
             MARKDOWN_CORE_KIND_HTML -> {
                 HTML(scratch.literal(node), scope).also { requireLeaf(children, kind) }
+            }
+
+            MARKDOWN_CORE_KIND_COMMENT -> {
+                Comment(scratch.literal(node), scope).also { requireLeaf(children, kind) }
             }
 
             MARKDOWN_CORE_KIND_FORMULA -> {

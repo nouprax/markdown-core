@@ -95,6 +95,20 @@ Document scope=1:1..3:22 children=2
     └── Text scope=3:8..3:22 literal=" and \\) alone." children=0
 ````````````````````````````````
 
+One formula of a form is open at a time: an opener inside an open body of its
+own form is the body's bytes, and the first closer of the form ends the body.
+The trailing `\\)` then has nothing to close and is the base language's
+escaped backslash and a parenthesis.
+
+```````````````````````````````` example
+\\(a \\(b\\) c\\)
+.
+Document scope=1:1..1:17 children=1
+└── Paragraph scope=1:1..1:17 children=2
+    ├── Formula scope=1:1..1:12 mode=embedded literal="a \\\\(b" children=0
+    └── Text scope=1:13..1:17 literal=" c\\)" children=0
+````````````````````````````````
+
 A closer whose opener an earlier closer already took is the same case.
 
 ```````````````````````````````` example

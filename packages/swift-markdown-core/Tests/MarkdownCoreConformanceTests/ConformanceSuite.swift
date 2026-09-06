@@ -14,6 +14,7 @@ import Testing
             "| left | center |\n| :--- | :----: |\n| a | b |\n\n::leaf[Label]{id=value}\n\n"
                 + ":::container[Title]{kind=demo}\nBody\n:::\n",
             "$$\ny\n$$\n",
+            "a <!-- b --> c\n\n<!-- block -->\n",
         ]
         let documents = try sources.map { try Document.parse($0) }
         let kinds = Set(documents.flatMap { dumpKinds($0.dump()) })
@@ -22,7 +23,7 @@ import Testing
             "ListItem", "CodeBlock", "HTMLBlock", "FormulaBlock", "Table",
             "DirectiveBlock", "DirectiveLabel", "FootnoteDefinition", "Text", "SoftBreak",
             "LineBreak",
-            "Code", "HTML", "Formula", "Emphasis", "Strong",
+            "Code", "HTML", "Comment", "Formula", "Emphasis", "Strong",
             "Strikethrough", "Link", "Image", "Directive", "FootnoteReference",
             "TableRow", "TableCell", "ReferenceDefinition", "LinkReference", "ImageReference",
         ]
@@ -64,8 +65,9 @@ import Testing
 
         for testCase in manifest.cases {
             let document = try Document.parse(testCase.source)
-            #expect(TreeDumper.dump(document) == testCase.expected, Comment(rawValue: testCase.name))
-            #expect(document.dump() == testCase.expected, Comment(rawValue: testCase.name))
+            // `Testing.Comment`, qualified: the package exports a `Comment` markup kind.
+            #expect(TreeDumper.dump(document) == testCase.expected, Testing.Comment(rawValue: testCase.name))
+            #expect(document.dump() == testCase.expected, Testing.Comment(rawValue: testCase.name))
         }
     }
 }

@@ -70,7 +70,24 @@ function collectDefinitions(node, into = new Map()) {
     return into;
 }
 
-function convert(node, definitions) {
+/** mdast parents whose `html` children are flow (block) nodes. */
+const FLOW_PARENTS = new Set(["root", "blockquote", "listItem", "footnoteDefinition", "containerDirective"]);
+
+function inlineCommentBody(literal) {
+    if (!literal.startsWith("<!--")) return null;
+    return literal.length > 6 ? literal.slice(4, -3) : "";
+}
+
+function blockCommentBody(literal) {
+    const open = literal.search(/[^ \t]/);
+    if (open < 0 || !literal.startsWith("<!--", open)) return null;
+    const close = literal.indexOf("-->", open + 2);
+    if (close < 0) return null;
+    if (!/^[ \t]*(?:\r?\n)?$/.test(literal.slice(close + 3))) return null;
+    return close > open + 4 ? literal.slice(open + 4, close) : "";
+}
+
+function convert(node, definitions, parentType = "root") {
     if (node.type === "text") return splitSoftBreaks(node.value);
 
     // The two models now agree here, so nothing is projected away: a
@@ -107,7 +124,7 @@ function convert(node, definitions) {
                     identifier: node.identifier ?? "",
                     form: node.referenceType ?? "shortcut"
                 },
-                children: (node.children ?? []).flatMap((child) => convert(child, definitions))
+                children: (node.children ?? []).flatMap((child) => convert(child, definitions, node.type))
             }
         ];
     }
@@ -133,6 +150,20 @@ function convert(node, definitions) {
     if (node.type === "code") fields.literal = `${node.value ?? ""}\n`;
     if (node.type === "code") fields.info = node.lang ? node.lang : "null";
     if (node.type === "html") fields.literal = node.value ?? "";
+    // Registered shape delta `html-comment-node`: mdast keeps an HTML comment
+    // as an `html` node holding the token; Markdown Core makes it a `Comment`
+    // whose literal is the bytes between the delimiters (M0). The same rule
+    // the cmark projection states: an inline token whose literal opens with
+    // `<!--`, and a flow node that opens with `<!--` after its indentation and
+    // whose end line holds only whitespace after the first `-->`. mdast's
+    // flow value carries no trailing line ending, so the end-line test is on
+    // the value's tail.
+    if (node.type === "html") {
+        const comment = FLOW_PARENTS.has(parentType)
+            ? blockCommentBody(fields.literal)
+            : inlineCommentBody(fields.literal);
+        if (comment !== null) return [{ kind: "Comment", fields: { literal: comment }, children: [] }];
+    }
     if (node.type === "link" || node.type === "image") {
         fields.destination = node.url ?? "";
         fields.title = node.title ?? "null";
@@ -149,7 +180,7 @@ function convert(node, definitions) {
         fields.attributes = renderAttributes(node.attributes);
     }
 
-    let children = (node.children ?? []).flatMap((child) => convert(child, definitions));
+    let children = (node.children ?? []).flatMap((child) => convert(child, definitions, node.type));
     // A directive's label becomes a nested `DirectiveLabel` in this comparison
     // tree. In the canonical AST it is a field, not directive content. mdast states it two
     // ways: for text and leaf directives it is the directive's own children,
@@ -229,6 +260,7 @@ export const MDAST_COMPARED = {
     Code: ["literal"],
     Text: ["literal"],
     HTML: ["literal"],
+    Comment: ["literal"],
     Link: ["destination", "title"],
     Image: ["destination", "title"],
     TableRow: ["isHeader"],

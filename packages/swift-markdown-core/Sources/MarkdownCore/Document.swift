@@ -167,6 +167,7 @@ func markup(
     case MARKDOWN_CORE_KIND_LINE_BREAK: LineBreak(from: node)
     case MARKDOWN_CORE_KIND_CODE: Code(from: node)
     case MARKDOWN_CORE_KIND_HTML: HTML(from: node)
+    case MARKDOWN_CORE_KIND_COMMENT: Comment(from: node)
     case MARKDOWN_CORE_KIND_FORMULA: Formula(from: node)
     case MARKDOWN_CORE_KIND_EMPHASIS: Emphasis(from: node, content: children)
     case MARKDOWN_CORE_KIND_STRONG: Strong(from: node, content: children)

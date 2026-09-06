@@ -156,7 +156,7 @@
                     "optional": false
                 }
             ],
-            "invariants": "raw HTML is preserved"
+            "invariants": "raw HTML is preserved; a block that opens with `<!--` and whose end line holds only whitespace after the first `-->` is a `Comment`"
         },
         {
             "name": "FormulaBlock",
@@ -342,7 +342,18 @@
                     "optional": false
                 }
             ],
-            "invariants": "raw HTML is preserved; leaf"
+            "invariants": "raw HTML is preserved; an HTML comment token is a `Comment`; leaf"
+        },
+        {
+            "name": "Comment",
+            "fields": [
+                {
+                    "name": "literal",
+                    "type": "String",
+                    "optional": false
+                }
+            ],
+            "invariants": "the one kind valid in both block and inline content, which the parent edge records; `literal` excludes the delimiters and keeps every byte between them; leaf"
         },
         {
             "name": "Formula",
