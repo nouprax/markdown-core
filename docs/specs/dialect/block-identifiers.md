@@ -83,7 +83,7 @@ inline comments on that line do not. `\^` never starts an identifier.
 
 ### Structured block line
 
-Block-start step 15: a line indented zero to three spaces whose content is
+Block-start step 14: a line indented zero to three spaces whose content is
 `^block-id` optionally followed by spaces or tabs, preceded by one or more
 blank lines and followed by one or more blank lines or the end of the
 document, attaches to the last block before those blank lines when that block

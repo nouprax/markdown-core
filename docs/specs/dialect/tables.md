@@ -99,7 +99,7 @@ syntax's fallback; the parser never emits a table that needs repair.
 
 ## Pipe tables
 
-With `tables=true`, block-start step 11 opens a pipe table when the current
+With `tables=true`, block-start step 10 opens a pipe table when the current
 line is a delimiter row and a paragraph is open:
 
 ```text
@@ -169,7 +169,7 @@ Document scope=1:1..5:5 anchor=null attributes={} children=2
 
 Column alignment comes from the markers' colons: left, right, both, or none.
 Every following line is a body row until a blank line or a line that a block
-start of steps 1 through 10, 12, or 13 claims; a line without pipes is a
+start of steps 1 through 9, 11, or 12 claims; a line without pipes is a
 one-cell row. A row with fewer cells than the delimiter row is completed
 with empty cells whose scope is the row's end; excess cells are dropped, so
 every row has `columns.count` cells:

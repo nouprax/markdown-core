@@ -154,7 +154,7 @@ Document scope=1:1..2:3 anchor=null attributes={} children=1
 
 ## Recognition
 
-At block-start step 14, after every other enabled block start has declined
+At block-start step 13, after every other enabled block start has declined
 the line and before paragraph fallback, the parser performs non-consuming
 lookahead for one term line, its optional gap, and one valid marker line, and
 commits only after that whole prefix succeeds. A complete table candidate
@@ -250,10 +250,10 @@ Document scope=1:1..4:4 anchor=null attributes={} children=1
 ````````````````````````````````
 
 A line at the current depth that starts another list item, a fenced-code
-opener, or an enclosing fenced-div closer ends lazy absorption, and the block
-parser decides its owner. A definition list cannot interrupt a paragraph: a
-marker line after a paragraph line that is not the candidate term is
-paragraph text, while a term after a blank line opens a list:
+opener, or an enclosing container-directive closer ends lazy absorption, and
+the block parser decides its owner. A definition list cannot interrupt a
+paragraph: a marker line after a paragraph line that is not the candidate term
+is paragraph text, while a term after a blank line opens a list:
 
 ```````````````````````````````` example definition_lists
 para

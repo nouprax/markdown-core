@@ -193,7 +193,7 @@ Document scope=1:1..1:8 anchor=null attributes={} children=1
 With the option on, a failed pair cannot consume equals signs needed by a
 later valid pair. Pandoc's `mark` extension delimits the same bytes with a
 different boundary rule; the [conflicts](conflicts.md) register records the
-difference.
+ruling that the flanking rule stands.
 
 ## Scopes
 

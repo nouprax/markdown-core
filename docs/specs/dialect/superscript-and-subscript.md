@@ -124,13 +124,12 @@ Document scope=1:1..1:7 anchor=null attributes={} children=1
 
 ### Tildes
 
-With `subscript` on, a run of one tilde is a subscript unit and never a
-strikethrough delimiter; a run of two tildes is a strikethrough delimiter,
-matched under the [strikethrough](strikethrough.md) rules, and becomes two
-subscript units only if it ends unmatched; runs of three or more are text.
-With `subscript` off, inherited strikethrough behavior is unchanged. The
-[conflicts](conflicts.md) register records this rule as the resolution of the
-one collision between the GFM and Pandoc sources.
+A run of one tilde is subscript syntax and never a strikethrough delimiter:
+with `subscript` on it is a subscript unit, and with it off it is text. A run
+of two tildes is a strikethrough delimiter, matched under the
+[strikethrough](strikethrough.md) rules, and becomes two subscript units only
+if it ends unmatched; runs of three or more are text. The
+[conflicts](conflicts.md) register records this ruling.
 
 ```````````````````````````````` example subscript
 ~~a~~ ~b~
@@ -186,19 +185,17 @@ link is opaque.
 
 ## Option behavior and fallback
 
-With `superscript=false`, `^` is text; with `subscript=false`, `~` follows
-the strikethrough module alone, so the inherited single-tilde strikethrough
-stands:
+With `superscript=false`, `^` is text; with `subscript=false`, a single
+tilde is text and `~~` follows the strikethrough module alone:
 
 ```````````````````````````````` example
-2^10^ H~2~O
+2^10^ H~2~O ~~x~~
 .
-Document scope=1:1..1:11 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:11 anchor=null attributes={} children=3
-    ├── Text scope=1:1..1:7 anchor=null attributes={} literal="2^10^ H" children=0
-    ├── Strikethrough scope=1:8..1:10 anchor=null attributes={} children=1
-    │   └── Text scope=1:9..1:9 anchor=null attributes={} literal="2" children=0
-    └── Text scope=1:11..1:11 anchor=null attributes={} literal="O" children=0
+Document scope=1:1..1:17 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:17 anchor=null attributes={} children=2
+    ├── Text scope=1:1..1:12 anchor=null attributes={} literal="2^10^ H~2~O " children=0
+    └── Strikethrough scope=1:13..1:17 anchor=null attributes={} children=1
+        └── Text scope=1:15..1:15 anchor=null attributes={} literal="x" children=0
 ````````````````````````````````
 
 Escaped delimiters are text:

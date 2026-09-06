@@ -83,7 +83,7 @@ Document scope=1:1..4:25 anchor=null attributes={} children=1
 
 ## Referenced footnotes
 
-A footnote definition is step 13 of the block-start order:
+A footnote definition is step 12 of the block-start order:
 
 ```text
 definition = *3SP "[^" label "]:" [ inline-content ] EOL continuation*

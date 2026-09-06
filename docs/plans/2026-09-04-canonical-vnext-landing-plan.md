@@ -217,9 +217,8 @@ and the manifest order.
 | `TableRow`                                                                                         | `cells`                                                                                                           | changed; `isHeader` removed                      | `M6`         |
 | `TableCell`                                                                                        | `rowspan: Int`, `colspan: Int`, `content: [Markup]`                                                               | changed; inline or block content                 | `M6`         |
 | `TableCaption`                                                                                     | `content: [Markup]`                                                                                               | new; typed field of `Table`                      | `P11a`       |
-| `DirectiveBlock`                                                                                   | `name`, `label`, `content`                                                                                        | changed; attributes move to the inherited field  | `M7`         |
+| `DirectiveBlock`                                                                                   | `name: String?`, `label`, `content`                                                                               | changed; attributes move to the inherited field, `name` nullable for the nameless container | `M7`, `P8` |
 | `DirectiveLabel`                                                                                   | `content`                                                                                                         | unchanged                                        | —            |
-| `Div`                                                                                              | `closed: Bool`, `content`                                                                                         | new                                              | `P8`         |
 | `DefinitionList`                                                                                   | `definitions: [Definition]`                                                                                       | new                                              | `P10`        |
 | `Definition`                                                                                       | `term: [Markup]`, `content: [[Markup]]`, `compact: Bool`                                                          | new                                              | `P10`        |
 | `Text`, `SoftBreak`, `LineBreak`, `Code`, `HTML`, `Formula`, `Emphasis`, `Strong`, `Strikethrough` | as today                                                                                                          | unchanged                                        | —            |
@@ -290,7 +289,6 @@ nothing strips comments.
 | `bracketedSpans`            | `P5`              | `P5`        |
 | `superscript`, `subscript`  | `P6`              | `P6`        |
 | `citations`                 | `P7`              | `P7`        |
-| `fencedDivs`                | `P8`              | `P8`        |
 | `fancyLists`                | `P9a`             | `P9a`       |
 | `exampleLists`              | `P9b`             | `P9b`       |
 | `definitionLists`           | `P10`             | `P10`       |
@@ -478,7 +476,9 @@ nothing strips comments.
       directive-specific facade and extension accessors, and the
       absent-versus-empty distinction, so inline, leaf, and container directives
       populate `anchor` and `attributes` through the shared operation alone and
-      `{}` attaches as empty. Register every resulting remark grammar difference
+      `{}` attaches as empty. Restrict directive names to the letter-first
+      grammar of the directives module, so `12:30` contains no directive, and
+      register the remark delta for non-ASCII letters. Register every resulting remark grammar difference
       (bare names, empty assignments, entity decoding, `-`, duplicate names) in
       `specs/oracles/remark/deltas.json`, make the remark projection compare the
       universal fields, rewrite the directive fixtures, retarget the
@@ -771,8 +771,10 @@ nothing strips comments.
       canonical cases; remove the `superscript-and-subscript` and
       `empty-superscript-and-subscript` gaps. Remove the legacy
       double-tilde-only strikethrough mode with it: the CLI flag, the C option
-      bit, and the parser branch, so a single tilde is a subscript delimiter
-      when `subscript` is on and inherited strikethrough otherwise. Two
+      bit, and the parser branch; and remove single-tilde strikethrough from
+      the strikethrough extension, registering the cmark-gfm delta, so a
+      single tilde is a subscript delimiter when `subscript` is on and text
+      otherwise. Two
       cross-item cases are owned by whichever item merges later: the `^[`
       precedence case with `O4`, and an identifier caret removed by
       block-identifier attachment before superscript parsing with `O7`. The
@@ -799,19 +801,20 @@ nothing strips comments.
       whichever of `P7` and `P3` merges later. A complete cite beating the
       shortcut reference of a virtual heading definition is a cross-item case
       owned by whichever of `P7` and `P4` merges later. Requires `P5`, `P9b`.
-- [ ] **P8 — `fenced_divs`.** Open a `Div` on a line of three or more colons
-      followed, after `{` or whitespace, by a braced list or one unbraced class
-      word, so a colon run followed immediately by a directive name stays a
-      container directive; close the innermost open colon container, `Div` or
-      directive, on any bare colon line through the one container-stack close
-      operation both constructs share, with the combined case covered; nest
-      through the normal container stack, and record `closed=false` when the
-      document ends first. Add the kind, fixtures, and a canonical case; remove
-      the `fenced-divs-nested` gap. A definition body ending at an enclosing
-      fenced-div close is a cross-item case owned by whichever of `P8` and `P10`
-      merges later. An explicit ID from this syntax reserved before heading
-      synthesis is a cross-item case owned by whichever of `P8` and `P3` merges
-      later. Requires `P0`, `M7`.
+- [ ] **P8 — Nameless container directives.** Open a `DirectiveBlock` with
+      `name=null` on a line of three or more colons followed, after `{` or
+      whitespace, by a braced attribute container or one unbraced class word,
+      Pandoc's fenced-div spelling, under `directives`; a colon run followed
+      immediately by a name stays a named container. Make `DirectiveBlock.name`
+      nullable on every surface, close a nameless container through the one
+      closer rule of the directives module, a bare colon run at least as long
+      as the opener, and nest through the normal container stack. Add fixtures
+      and a canonical case for the null name; register the Pandoc deltas for the
+      closer rule; remove the `fenced-divs-nested` gap. A definition body
+      ending at an enclosing nameless-container close is a cross-item case owned
+      by whichever of `P8` and `P10` merges later. An explicit ID from this
+      syntax reserved before heading synthesis is a cross-item case owned by
+      whichever of `P8` and `P3` merges later. Requires `P0`, `M7`.
 - [ ] **P9a — `fancy_lists`.** Generalize the ordered-marker operation for
       decimal, alphabetic, Roman, and `#` markers with period, one-paren, and
       two-paren delimiters, the capital-period two-space rule, `i` and `I`
@@ -839,8 +842,8 @@ nothing strips comments.
       canonical cases; remove the two `definition-list-*` gaps. Cross-item cases
       owned by whichever item merges later: caption precedence over term
       lookahead with `P11a` and again for each later table form with `P11b`,
-      `P11c`, and `P11d`, and a body ending at an enclosing fenced-div close
-      with `P8`. Requires `P0`, `M7`.
+      `P11c`, and `P11d`, and a body ending at an enclosing nameless-container
+      close with `P8`. Requires `P0`, `M7`.
 - [ ] **P11a — `table_captions`.** Recognize a `Table:`, `table:`, or `:`
       caption line as a table-candidate block start parsed in one lookahead with
       the table that follows it, releasing the bytes to paragraph parsing when
@@ -956,10 +959,10 @@ Sizes are rough review-effort estimates, not schedules.
 | `P5`   | `P0`, `M7`         | M    | link tail ahead of a span (`P2d`); anchor reserved before synthesis (`P3`); heading-text projection (`P3`); container after a complete wikilink (`O1`)                                                  | Pandoc Phase 3 spans                                                                                                             |
 | `P6`   | `P0`, `M7`         | S    | `^[` before superscript (`O4`); identifier caret before superscript (`O7`); heading-text projection (`P3`)                                                                                              | Pandoc Phase 3 superscript and subscript                                                                                         |
 | `P7`   | `P5`, `P9b`        | L    | heading-text projection (`P3`); complete cite over a virtual heading reference (`P4`)                                                                                                                   | Pandoc Phase 3 citations and resolution                                                                                          |
-| `P8`   | `P0`, `M7`         | M    | definition body ends at a div close (`P10`); anchor reserved before synthesis (`P3`)                                                                                                                    | Pandoc Phase 4 fenced divs                                                                                                       |
+| `P8`   | `P0`, `M7`         | M    | definition body ends at a nameless-container close (`P10`); anchor reserved before synthesis (`P3`)                                                                                                                    | Pandoc Phase 4 fenced divs                                                                                                       |
 | `P9a`  | `P0`, `M7`         | M    | —                                                                                                                                                                                                       | Pandoc Phase 4 ordered markers                                                                                                   |
 | `P9b`  | `P9a`              | M    | heading-text projection (`P3`)                                                                                                                                                                          | Pandoc Phase 4 example lists                                                                                                     |
-| `P10`  | `P0`, `M7`         | L    | caption precedence over term lookahead (`P11a`, `P11b`, `P11c`, `P11d`); definition body ends at a div close (`P8`)                                                                                     | Pandoc Phase 4 definition lists                                                                                                  |
+| `P10`  | `P0`, `M7`         | L    | caption precedence over term lookahead (`P11a`, `P11b`, `P11c`, `P11d`); definition body ends at a nameless-container close (`P8`)                                                                                     | Pandoc Phase 4 definition lists                                                                                                  |
 | `P11a` | `P0`, `M7`         | M    | caption precedence over term lookahead (`P10`); identifier after a table caption (`O7`)                                                                                                                 | Pandoc Phase 5 captions                                                                                                          |
 | `P11b` | `P11a`             | M    | caption precedence over term lookahead (`P10`); identifier after a table caption (`O7`); escaped wikilink pipe in a simple-table cell (`O1`)                                                            | Pandoc Phase 5 simple tables and precedence                                                                                      |
 | `P11c` | `P11b`             | M    | caption precedence over term lookahead (`P10`); identifier after a table caption (`O7`); escaped wikilink pipe in a multiline-table cell (`O1`)                                                         | Pandoc Phase 5 multiline tables                                                                                                  |

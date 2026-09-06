@@ -104,7 +104,7 @@ selected Pandoc extension participates.
       source-independent string; `Attributes` contains ordered classes and
       ordered `Record` values. Kinds without an enabled source rule retain
       `anchor=null` and `Attributes.empty`; do not create node-specific copies.
-- [ ] Add `Span`, `Superscript`, `Subscript`, `Div`, `DefinitionList`,
+- [ ] Add `Span`, `Superscript`, `Subscript`, `DefinitionList`,
       `Definition`, and `ExampleReference`, plus the ordered-list style and
       delimiter values, `ListItem.exampleLabel`, heading anchors through the
       universal field, and the complete unified Table values defined by the

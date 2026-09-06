@@ -257,8 +257,9 @@ Document scope=1:1..2:9 anchor=null attributes={} children=1
 ````````````````````````````````
 
 GitHub's alerts spell a subset of this grammar: `> [!NOTE]` is a callout with
-`variant="NOTE"`, and the [conflicts](conflicts.md) register records the
-difference between the two sources:
+`variant="NOTE"`. The parser keeps no type list and demotes no title to
+body, because the AST does not decide for the consumer; the
+[conflicts](conflicts.md) register records the ruling:
 
 ```````````````````````````````` example callouts
 > [!NOTE]

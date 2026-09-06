@@ -157,7 +157,7 @@ freed only after all access to it has finished. The complete C contract is in
   formulas, directives, attributes, anchors, links and images, cross links,
   footnotes, citations, comments, marks, strikethrough, superscript and
   subscript, inserted text, bracketed spans, task lists, lists, definition
-  lists, callouts, fenced divs, block identifiers, properties, tables), plus
+  lists, callouts, block identifiers, properties, tables), plus
   `conflicts.md`, the register of source-versus-source collisions, settled
   decisions, and deliberate exclusions.
 - `samples`: sample consumers and integration examples.

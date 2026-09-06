@@ -57,7 +57,6 @@ for target_spec in \
     docs/specs/dialect/cross-links.md \
     docs/specs/dialect/definition-lists.md \
     docs/specs/dialect/directives.md \
-    docs/specs/dialect/fenced-divs.md \
     docs/specs/dialect/footnotes.md \
     docs/specs/dialect/formulas.md \
     docs/specs/dialect/inserted-text.md \

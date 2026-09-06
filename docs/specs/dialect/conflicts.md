@@ -12,111 +12,6 @@ does not absorb.
 
 ## Open for decision
 
-### C-1 A single tilde: strikethrough or subscript
-
-- Modules: [strikethrough](strikethrough.md),
-  [superscript and subscript](superscript-and-subscript.md).
-- cmark-gfm makes `~x~` a strikethrough, exactly like `~~x~~`. Pandoc makes
-  `~x~` a subscript and knows only `~~x~~` as strikeout.
-- Provisional rule: the explicitly enabled feature owns the bytes. With
-  `subscript` on, a single tilde is a subscript delimiter and never a
-  strikethrough delimiter, `~~x~~` stays strikethrough, and an unmatched
-  `~~` run becomes two subscript delimiters; with `subscript` off, the
-  inherited single-tilde strikethrough stands. The harness-only double-tilde
-  flag is removed.
-- Alternatives: make single-tilde strikethrough part of the dialect's GFM
-  layer only, so that `subscript` never changes an inherited parse, and accept
-  that `~x~` then has two meanings the caller must keep apart by option; or
-  drop single-tilde strikethrough from the dialect altogether as a registered
-  delta against cmark-gfm, so `~x~` is text unless `subscript` is on.
-
-### C-2 Front matter: Obsidian properties or Pandoc metadata blocks
-
-- Module: [properties](properties.md).
-- Obsidian recognizes one YAML block at the very start of the file, closed by
-  `---`, with a flat domain of scalars and text or number lists and no
-  Markdown inside values. Pandoc's `yaml_metadata_block` accepts a block
-  anywhere a block can start, several of them merged, `...` as a closer,
-  arbitrarily nested values, and parses string values as Markdown. remark's
-  `remark-frontmatter` also accepts TOML between `+++` fences.
-- Provisional rule: the Obsidian form only. A later `---` pair is inherited
-  Markdown, `...` invalidates the candidate, nested values invalidate it, and
-  values are atomic text.
-- Alternatives, separately decidable: accept `...` as a closer; accept nested
-  mappings and sequences as a generic value tree instead of invalidating;
-  accept blocks after the first line; parse Markdown inside string values.
-  Each widens the consumer model of the properties module.
-
-### C-3 Cross links: pipe order and result kind
-
-- Module: [cross links](cross-links.md).
-- Obsidian and Pandoc's `wikilinks_title_after_pipe` write
-  `[[target|label]]`; GitHub wikis, Gollum, and Pandoc's
-  `wikilinks_title_before_pipe` write `[[label|target]]`. Obsidian adds `#`
-  heading and `#^` block anchors and the `![[...]]` embed form; Pandoc
-  produces an ordinary link with the class `wikilink` and no anchor
-  structure.
-- Provisional rule: the Obsidian order and forms, producing `CrossLink` with
-  a raw label and a structured `Destination.cross`.
-- Alternatives: the label-before-target order; or project a cross link to an
-  ordinary `Link` with class `wikilink` and lose the anchor structure.
-
-### C-4 Heading addressing: written text or generated anchor
-
-- Modules: [cross links](cross-links.md), [anchors](anchors.md).
-- Obsidian addresses a heading by its text, `[[#My Header]]`. Pandoc and GFM
-  address it by a generated identifier, `#my-header`.
-- Provisional rule: both values are stored as written. `[[#My Header]]`
-  stores `anchor="My Header"`, `autoAnchors` gives the heading
-  `anchor="my-header"`, and matching the two is consumer policy.
-- Alternative: while `autoAnchors` is on, run the heading part of a cross
-  link's anchor through the same algorithm, so the two values agree in the
-  AST. This gives one answer inside the parser at the cost of a value that is
-  no longer as written.
-
-### C-5 Callouts: Obsidian grammar or GitHub alerts
-
-- Module: [callouts](callouts.md).
-- Obsidian accepts any type, matches it case-insensitively, allows a `+` or
-  `-` fold marker, and reads the rest of the first line as a title. GitHub
-  alerts accept exactly `NOTE`, `TIP`, `IMPORTANT`, `WARNING`, and `CAUTION`
-  in uppercase, require nothing else on the marker line, and have no fold or
-  title.
-- Provisional rule: the Obsidian grammar, with `variant` stored as written,
-  so `> [!NOTE] Title` has a title and `> [!Note]` has `variant="Note"`.
-  GitHub's five alerts parse as callouts whose variant a consumer recognizes.
-- Alternatives: reject types outside a fixed set; or treat text after the
-  marker as body content rather than a title.
-
-### C-6 Automatic anchors: GFM algorithm or Pandoc's default
-
-- Module: [anchors](anchors.md).
-- Pandoc's default `auto_identifiers` strips everything up to the first
-  letter, keeps `_`, `-`, and `.`, and lowercases; its `gfm_auto_identifiers`
-  keeps leading digits and combining marks and removes `.`. The two give
-  different values for `1. Intro` and for `A.B`.
-- Provisional rule: the GFM algorithm, as `autoAnchors` states.
-- Alternative: Pandoc's default algorithm, or a second option selecting it.
-
-### C-7 Colon fences: fenced divs and container directives
-
-- Modules: [fenced divs](fenced-divs.md), [directives](directives.md).
-- Pandoc opens a div with three or more colons followed by an attribute
-  container or a bare class word, with or without a space after the colons,
-  and closes it with any line of three or more colons. remark opens a
-  container directive with a colon run immediately followed by a name and
-  closes it only with a fence at least as long as the opener.
-- Provisional rule: a colon run immediately followed by a name is a
-  directive, and a run followed by whitespace or `{` is a div, whichever
-  options are on; a bare colon line closes the innermost open colon container
-  of either kind only when it is at least as long as that container's opener,
-  and a shorter one is content. `:::warning` is therefore never a div, and
-  `::::` is not closed by `:::`.
-- Alternatives: length-insensitive closers for divs, which gives the two
-  constructs different closing rules on the same bytes; or accept
-  `:::warning` as a div when `directives` is off, which makes the parse of one
-  line depend on an unrelated option.
-
 ### C-8 Attribute members after a directive
 
 - Modules: [attributes](attributes.md), [directives](directives.md).
@@ -130,18 +25,47 @@ does not absorb.
 - Alternative: keep remark's member grammar at directive sites only, which
   gives the dialect two attribute grammars for one brace syntax.
 
-### C-9 Marks: flanking or Pandoc's boundary rule
-
-- Module: [marks](marks.md).
-- Obsidian documents `==text==` without an error grammar. Pandoc's `mark`
-  extension opens at `==` followed by a non-space scalar that is not `=` and
-  closes at the next `==`, so `==a ==` is a mark containing `a `.
-- Provisional rule: `==` is a delimiter run with the flanking rules of `*`,
-  so `==a ==` is text and `a==b==c` is a mark, consistent with every other
-  delimiter of the dialect.
-- Alternative: Pandoc's rule.
-
 ## Settled
+
+### Rulings on the former open entries
+
+These entries were open until the product ruled on them on 2026-09-06; the
+modules state the ruled behavior and the ruling is final.
+
+- **C-1 A single tilde.** A single tilde is subscript syntax and never a
+  strikethrough delimiter; strikethrough is `~~` only. cmark-gfm's
+  single-tilde strikethrough is a registered delta, removed from the engine
+  by `P6`. Product ruling.
+- **C-2 Front matter.** The Obsidian form only: one block at the very start
+  of the document, closed by `---`, flat scalars and text or number lists,
+  atomic text values; `...` invalidates the candidate and a later `---` pair
+  is inherited Markdown. Product ruling that the provisional rule is final.
+- **C-3 Cross links.** Not a collision. `CrossLink` with
+  `Destination.cross` is the unified model of Obsidian's internal links and
+  embeds; Pandoc's `wikilinks_title_after_pipe` is a special case of it, and
+  `wikilinks_title_before_pipe` stays excluded. Product ruling.
+- **C-4 Heading addressing.** Both sides are stored as written: `[[#My
+  Header]]` stores `anchor="My Header"`, an automatic heading anchor is
+  `my-header`, and matching the two is consumer policy. The parser never
+  normalizes one to the other, because the AST does not decide for the
+  consumer. Product ruling.
+- **C-5 Callouts.** Obsidian's grammar with no type list: `variant` is
+  stored as written, text after the marker is the title, and GitHub's five
+  alerts are callouts whose variant a consumer recognizes. The AST does not
+  decide for the consumer. Product ruling.
+- **C-6 Automatic anchors.** The GFM algorithm, as the anchors module
+  states. Product ruling.
+- **C-7 Colon fences.** One construct. Pandoc's fenced div is the nameless
+  container directive: `::: {attrs}` and `::: word` open a `DirectiveBlock`
+  with `name=null`, `:::name` a named one, and one closer rule, a colon run
+  at least as long as the opener, closes both. The `Div` kind and the
+  `fencedDivs` option are gone, because either construct could express the
+  other and the dialect keeps one. Product ruling.
+- **C-9 Marks.** `==` is a delimiter run under the flanking rules of `*`.
+  Product ruling.
+
+### Earlier decisions
+
 
 These decisions are made; each names the ground rule or the defining source
 that settled it.

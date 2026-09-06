@@ -299,8 +299,9 @@ Document scope=1:1..3:3 anchor=null attributes={} children=2
 
 Cross links spell a heading target as written: `[[#My Header]]` stores
 `anchor="My Header"`, and the automatic anchor of that heading is
-`my-header`. The parser normalizes neither side; the
-[conflicts](conflicts.md) register records this as an open decision:
+`my-header`. The parser normalizes neither side, because the AST does not
+decide for the consumer; matching the two values is consumer policy, as the
+[conflicts](conflicts.md) register records:
 
 ```````````````````````````````` example auto_anchors cross_links
 # My Header

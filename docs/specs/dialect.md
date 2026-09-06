@@ -76,12 +76,12 @@ that makes the row `present`.
 | smart punctuation                  | [base](dialect/base.md)                                       | `smartPunctuation`                | `true`  | cmark `--smart`       | cmark                              | present                         |
 | HTML comments as `Comment`         | [comments](dialect/comments.md)                               | none                              | on      | CommonMark, Obsidian  | cmark for the token boundaries     | missing, `M0`                   |
 | pipe tables                        | [tables](dialect/tables.md)                                   | `tables`                          | `true`  | GFM                   | cmark-gfm                          | partial, `M6`                   |
-| strikethrough                      | [strikethrough](dialect/strikethrough.md)                     | `strikethrough`                   | `true`  | GFM                   | cmark-gfm                          | present                         |
+| strikethrough                      | [strikethrough](dialect/strikethrough.md)                     | `strikethrough`                   | `true`  | GFM                   | cmark-gfm                          | partial, `P6`                   |
 | autolinks                          | [links and images](dialect/links-and-images.md)               | `autolinks`                       | `true`  | GFM                   | cmark-gfm                          | present                         |
 | task lists                         | [task lists](dialect/task-lists.md)                           | `taskLists`                       | `true`  | GFM                   | cmark-gfm                          | partial, `M5`                   |
 | footnotes                          | [footnotes](dialect/footnotes.md)                             | `footnotes`                       | `true`  | GFM                   | cmark-gfm, remark                  | partial, `M4`                   |
 | formulas                           | [formulas](dialect/formulas.md)                               | `formulas`                        | `true`  | GitHub math, remark   | remark (`micromark-extension-math`) | present                         |
-| directives                         | [directives](dialect/directives.md)                           | `directives`                      | `true`  | remark-directive      | remark                             | partial, `M7`                   |
+| directives and nameless containers | [directives](dialect/directives.md)                           | `directives`                      | `true`  | remark-directive, Pandoc `fenced_divs` | remark, Pandoc for the nameless form | partial, `M7`, `P8`      |
 | resolved reference links and images | [links and images](dialect/links-and-images.md)              | none                              | on      | CommonMark            | cmark                              | missing, `M1`, `M2`             |
 | universal anchor field             | [anchors](dialect/anchors.md)                                 | none                              | on      | Pandoc, Obsidian      | Pandoc                             | missing, `M7`                   |
 | universal attributes field         | [attributes](dialect/attributes.md)                           | none                              | on      | Pandoc                | Pandoc                             | missing, `M7`                   |
@@ -104,7 +104,6 @@ that makes the row `present`.
 | bracketed spans                    | [bracketed spans](dialect/bracketed-spans.md)                 | `bracketedSpans`                  | `false` | Pandoc                | Pandoc                             | missing, `P5`                   |
 | superscript and subscript          | [superscript and subscript](dialect/superscript-and-subscript.md) | `superscript`, `subscript`    | `false` | Pandoc                | Pandoc                             | missing, `P6`                   |
 | citations                          | [citations](dialect/citations.md)                             | `citations`                       | `false` | Pandoc                | Pandoc                             | missing, `P7`                   |
-| fenced divs                        | [fenced divs](dialect/fenced-divs.md)                         | `fencedDivs`                      | `false` | Pandoc                | Pandoc                             | missing, `P8`                   |
 | fancy lists                        | [lists](dialect/lists.md)                                     | `fancyLists`                      | `false` | Pandoc                | Pandoc                             | missing, `P9a`                  |
 | example lists                      | [lists](dialect/lists.md)                                     | `exampleLists`                    | `false` | Pandoc                | Pandoc                             | missing, `P9b`                  |
 | definition lists                   | [definition lists](dialect/definition-lists.md)               | `definitionLists`                 | `false` | Pandoc                | Pandoc                             | missing, `P10`                  |
@@ -237,7 +236,7 @@ candidate's first byte and the next alternative runs from there.
 | B6   | resolving shortcut reference, then a container while `bracketedSpans` is off | inherited, `linkAttributes` | bracket close, last                                                |
 | C1   | `*`, `_` emphasis and strong                                         | inherited                          | delimiter stack                                                      |
 | C2   | `~~` strikethrough                                                   | `strikethrough`                    | delimiter stack                                                      |
-| C3   | `~` subscript, or single-tilde strikethrough                         | `subscript`, `strikethrough`       | delimiter stack                                                      |
+| C3   | `~` subscript                                                        | `subscript`                        | delimiter stack                                                      |
 | C4   | `^` superscript                                                      | `superscript`                      | delimiter stack                                                      |
 | C5   | `==` mark                                                            | `marks`                            | delimiter stack                                                      |
 | C6   | `++` insert                                                          | `insertedText`                     | delimiter stack                                                      |
@@ -264,19 +263,18 @@ inherited process-emphasis algorithm.
 | 4    | block comment `%%` line                                                  | `comments`                                                                          |
 | 5    | block quote, becoming `Callout`, with metadata on its first line         | inherited, `callouts`                                                               |
 | 6    | list markers, including fancy and example markers                        | inherited, `fancyLists`, `exampleLists`                                             |
-| 7    | container and leaf directive `:::name`, `::name`                         | `directives`                                                                        |
-| 8    | fenced div `::: {...}`, `::: word`                                       | `fencedDivs`                                                                        |
-| 9    | ATX heading, with `headingAttributes`                                    | inherited                                                                           |
-| 10   | Setext heading                                                           | inherited                                                                           |
-| 11   | tables: caption-prefixed, pipe, grid, multiline, simple                  | `tableCaptions` for the prefix, `tables` for pipe, `gridTables`, `multilineTables`, `simpleTables` |
-| 12   | thematic break                                                           | inherited                                                                           |
-| 13   | footnote definition, reference definition                                | `footnotes`, inherited                                                              |
-| 14   | definition list                                                          | `definitionLists`                                                                   |
-| 15   | block identifier line `^id`                                              | `blockIdentifiers`                                                                  |
-| 16   | paragraph, with the `^id` suffix at finalization                         | inherited                                                                           |
+| 7    | container, nameless container, and leaf directive `:::name`, `::: {...}`, `::: word`, `::name` | `directives`                                                  |
+| 8    | ATX heading, with `headingAttributes`                                    | inherited                                                                           |
+| 9    | Setext heading                                                           | inherited                                                                           |
+| 10   | tables: caption-prefixed, pipe, grid, multiline, simple                  | `tableCaptions` for the prefix, `tables` for pipe, `gridTables`, `multilineTables`, `simpleTables` |
+| 11   | thematic break                                                           | inherited                                                                           |
+| 12   | footnote definition, reference definition                                | `footnotes`, inherited                                                              |
+| 13   | definition list                                                          | `definitionLists`                                                                   |
+| 14   | block identifier line `^id`                                              | `blockIdentifiers`                                                                  |
+| 15   | paragraph, with the `^id` suffix at finalization                         | inherited                                                                           |
 
 A block start is tested at the first non-space byte of the line after the open
-containers' prefixes have been consumed. Steps 2 through 15 are tested in
+containers' prefixes have been consumed. Steps 2 through 14 are tested in
 order, and the first module whose start condition holds owns the line; a
 module's start condition includes any lookahead its section requires, and a
 candidate that fails leaves the line to the next step. Which steps may

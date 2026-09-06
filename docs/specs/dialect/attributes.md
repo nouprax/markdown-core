@@ -1,20 +1,19 @@
 # Attributes
 
-Status: normative module of the [Markdown Core dialect](../dialect.md). It
-owns the universal `Markup.attributes` field, the one braced attribute grammar
-of the dialect, its normalization and merge operations, and every attachment
-site. Options: `inlineCodeAttributes`, `headingAttributes`,
-`fencedCodeAttributes`, and `linkAttributes` (each default `false`); the
-[directives](directives.md), [bracketed spans](bracketed-spans.md), and
-[fenced divs](fenced-divs.md) modules attach the same grammar under their own
-options. Source: Pandoc 3.11's attribute syntax and its `combineAttr`
-operation, and `remark-directive`'s attachment position. Executable oracle:
-the Pandoc 3.11 CLI under `specs/oracles/pandoc/`; remark's own attribute
-member tokenizer is not an oracle for this grammar, and every difference from
-it is a registered delta. Landing: the field and the directive site with `M7`;
-the four options with `P2a` through `P2d`. Each example in this module names
-the option it runs with; the [example format](../dialect.md#examples) is
-defined by the index.
+Status: normative module of the [Markdown Core dialect](../dialect.md). It owns
+the universal `Markup.attributes` field, the one braced attribute grammar of
+the dialect, its normalization and merge operations, and every attachment site.
+Options: `inlineCodeAttributes`, `headingAttributes`, `fencedCodeAttributes`,
+and `linkAttributes` (each default `false`); the [directives](directives.md)
+and [bracketed spans](bracketed-spans.md) modules attach the same grammar under
+their own options. Source: Pandoc 3.11's attribute syntax and its `combineAttr`
+operation, and `remark-directive`'s attachment position. Executable oracle: the
+Pandoc 3.11 CLI under `specs/oracles/pandoc/`; remark's own attribute member
+tokenizer is not an oracle for this grammar, and every difference from it is a
+registered delta. Landing: the field and the directive site with `M7`; the four
+options with `P2a` through `P2d`. Each example in this module names the option
+it runs with; the [example format](../dialect.md#examples) is defined by the
+index.
 
 ## Model
 
@@ -209,7 +208,7 @@ table, row, cell, or caption receives attributes or an anchor; an enabled
 | fenced code                   | `CodeBlock`      | `fencedCodeAttributes`   | the last non-whitespace content of the opening fence line                          |
 | direct, reference, and autolink link and image | `Link`, `Image` | `linkAttributes` | immediately after the occurrence, or inherited from its definition        |
 | bracketed span                | `Span`           | `bracketedSpans`         | immediately after the balanced closing `]`                                         |
-| fenced div                    | `Div`            | `fencedDivs`             | on the opening colon fence                                                         |
+| nameless container directive  | `DirectiveBlock` | `directives`             | on the opening colon fence, as a container or one class word                       |
 
 Automatic anchors are synthesized by the [anchors](anchors.md) module and are
 not an attachment site. A successfully attached container is lexically part of
@@ -439,15 +438,15 @@ Document scope=1:1..1:11 anchor=null attributes={} children=1
     └── Text scope=1:8..1:11 anchor=null attributes={} literal="{.c}" children=0
 ````````````````````````````````
 
-### Directives, spans, and divs
+### Directives and spans
 
 The directive container follows the name or the label with no whitespace, at
 most one container attaches, and a container in a block directive must close
-on the opener line; the [directives](directives.md) module states the rest. A
-bracketed span's container follows its closing `]` immediately, and a fenced
-div's container or class word sits on the opening fence; the
-[bracketed spans](bracketed-spans.md) and [fenced divs](fenced-divs.md)
-modules state the rest and show the examples.
+on the opener line; a nameless container's attribute container or class word
+sits on its opening colon fence. The [directives](directives.md) module
+states the rest. A bracketed span's container follows its closing `]`
+immediately; the [bracketed spans](bracketed-spans.md) module states the rest.
+Both modules show the examples.
 
 ## Failure and complexity
 
