@@ -107,14 +107,6 @@ int markdown_core_extensions_get_table_row_is_header(markdown_core_node *node);
 MARKDOWN_CORE_EXPORT
 int markdown_core_extensions_set_table_row_is_header(markdown_core_node *node, int is_header);
 
-MARKDOWN_CORE_EXPORT
-bool markdown_core_extensions_get_tasklist_item_checked(markdown_core_node *node);
-
-/** Sets whether a tasklist item is "checked" (completed), returning 1 on success and 0 on error.
- */
-MARKDOWN_CORE_EXPORT
-int markdown_core_extensions_set_tasklist_item_checked(markdown_core_node *node, bool is_checked);
-
 /** Returns the literal formula payload for formula extension nodes, or NULL on error.
  */
 MARKDOWN_CORE_EXPORT

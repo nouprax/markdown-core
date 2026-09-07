@@ -115,8 +115,8 @@ that the dump represents as nested descendants.
 | `Document`, `Paragraph`, `ThematicBreak`, `TableCell`, `DirectiveLabel`, `SoftBreak`, `LineBreak`, `Emphasis`, `Strong`, `Strikethrough`, `Cite` | none |
 | `Callout` | `variant`, `collapsed` |
 | `Heading` | `level` |
-| `List` | `flavor`, `start`, `tight` |
-| `ListItem` | `checked` |
+| `List` | `flavor`, `start`, `variant`, `delimiter`, `tight` |
+| `ListItem` | `marker`, `exampleLabel` |
 | `CodeBlock` | `info`, `language`, `literal`, `fenced`, `closed` |
 | `HTMLBlock` | `literal` |
 | `FormulaBlock` | `literal` |

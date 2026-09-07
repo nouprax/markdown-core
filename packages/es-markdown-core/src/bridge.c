@@ -524,7 +524,7 @@ static void collect_node_fields(es_build *build, size_t node_index) {
     switch (kind) {
     case MARKDOWN_CORE_KIND_CALLOUT: {
         /* The variant is the first slot and the fold marker the scalar, as
-         * a list item's checked state; the title relation was recorded with
+         * a list item's task marker; the title relation was recorded with
          * the topology. */
         markdown_core_optional_bool collapsed;
         if (!markdown_core_node_callout_properties(node, &optional_first, &collapsed)) {
@@ -554,24 +554,31 @@ static void collect_node_fields(es_build *build, size_t node_index) {
         break;
     case MARKDOWN_CORE_KIND_LIST: {
         markdown_core_list_flavor flavor;
+        markdown_core_ordered_list_variant variant;
+        markdown_core_ordered_list_delimiter delimiter;
         markdown_core_optional_i64 start;
         bool tight = false;
-        if (!markdown_core_node_list_properties(node, &flavor, &start, &tight)) {
+        if (!markdown_core_node_list_properties(node, &flavor, &start, &variant, &delimiter, &tight)) {
             build->failure = ES_BUILD_INTERNAL;
             break;
         }
         record->scalar0 = (int32_t)flavor;
         record->integer = start.value;
-        record->flags = (start.has_value ? 1u : 0u) | (tight ? 2u : 0u);
+        record->flags = (start.has_value ? 1u : 0u) | (tight ? 2u : 0u) |
+                        (start.has_value ? ((uint32_t)variant << 2) | ((uint32_t)delimiter.kind << 5) |
+                                               (delimiter.closed ? (1u << 8) : 0u)
+                                         : 0u);
         break;
     }
     case MARKDOWN_CORE_KIND_LIST_ITEM: {
-        markdown_core_optional_bool checked;
-        if (!markdown_core_node_list_item_checked(node, &checked)) {
+        markdown_core_optional_string marker;
+        markdown_core_optional_string example_label;
+        if (!markdown_core_node_list_item_properties(node, &marker, &example_label)) {
             build->failure = ES_BUILD_INTERNAL;
             break;
         }
-        record->scalar0 = checked.has_value ? (checked.value ? 1 : 0) : -1;
+        record->strings[0] = marker;
+        record->strings[1] = example_label;
         break;
     }
     case MARKDOWN_CORE_KIND_CODE_BLOCK: {

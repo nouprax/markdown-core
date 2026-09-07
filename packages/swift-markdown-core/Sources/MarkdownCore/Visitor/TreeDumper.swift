@@ -136,6 +136,8 @@ private struct DumpVisitor: MarkupVisitor {
             fields: [
                 "flavor=\(node.flavor.rawValue)",
                 "start=\(node.start.map(String.init) ?? "null")",
+                "variant=\(node.variant?.rawValue ?? "null")",
+                "delimiter=\(orderedListDelimiter(node.delimiter))",
                 "tight=\(boolean(node.tight))",
             ],
             children: node.items.count
@@ -147,7 +149,7 @@ private struct DumpVisitor: MarkupVisitor {
         state.line(
             "ListItem",
             node,
-            fields: ["checked=\(node.checked.map(boolean) ?? "null")"],
+            fields: ["marker=\(optionalString(node.marker))", "exampleLabel=\(optionalString(node.exampleLabel))"],
             children: node.content.count
         )
         state.nested(node.content.count) { node.content.forEach(state.dump) }
@@ -340,6 +342,15 @@ private func destinationString(_ value: Destination) -> String {
     switch value {
     case .url(let url): "url(\(jsonString(url)))"
     case .cross(let path, let anchor): "cross(path=\(jsonString(path)),anchor=\(optionalString(anchor)))"
+    }
+}
+
+private func orderedListDelimiter(_ value: OrderedListDelimiter?) -> String {
+    switch value {
+    case .period: "period"
+    case .parenthesis(let closed): "parenthesis(closed=\(boolean(closed)))"
+    case .default: "default"
+    case nil: "null"
     }
 }
 

@@ -65,7 +65,7 @@ class AstTest {
         val ordered = document.content[0] as List
         assertEquals(ListFlavor.ORDERED, ordered.flavor)
         assertEquals(3, ordered.start)
-        assertEquals(true, (document.content[1] as List).items.single().checked)
+        assertEquals("x", (document.content[1] as List).items.single().marker)
         val table = document.content[2] as Table
         assertEquals(listOf(TableAlignment.CENTER), table.alignments)
         assertTrue(table.header.isHeader)

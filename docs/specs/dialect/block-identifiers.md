@@ -99,7 +99,7 @@ scope extends over it:
 next
 .
 Document scope=1:1..6:4 anchor=null attributes={} children=2
-├── List scope=1:1..4:4 anchor="lst" attributes={} flavor=bullet start=null style=null delimiter=null tight=true children=2
+├── List scope=1:1..4:4 anchor="lst" attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=2
 │   ├── ListItem scope=1:1..1:3 anchor=null attributes={} marker=null exampleLabel=null children=1
 │   │   └── Paragraph scope=1:3..1:3 anchor=null attributes={} children=1
 │   │       └── Text scope=1:3..1:3 anchor=null attributes={} literal="a" children=0
@@ -165,7 +165,7 @@ paragraph that owns the final line:
   more ^p
 .
 Document scope=1:1..3:9 anchor=null attributes={} children=1
-└── List scope=1:1..3:9 anchor=null attributes={} flavor=bullet start=null style=null delimiter=null tight=true children=2
+└── List scope=1:1..3:9 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=2
     ├── ListItem scope=1:1..1:10 anchor="id" attributes={} marker=null exampleLabel=null children=1
     │   └── Paragraph scope=1:3..1:10 anchor=null attributes={} children=1
     │       └── Text scope=1:3..1:6 anchor=null attributes={} literal="item" children=0

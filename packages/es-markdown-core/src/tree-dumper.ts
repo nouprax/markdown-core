@@ -27,7 +27,7 @@ import type { Strong } from "./model/strong.js";
 import type { Table, TableCell, TableRow } from "./model/table.js";
 import type { Text } from "./model/text.js";
 import type { ThematicBreak } from "./model/thematic-break.js";
-import type { CitationReferent, Destination, Scope } from "./values.js";
+import type { CitationReferent, Destination, OrderedListDelimiter, Scope } from "./values.js";
 import { visit, type Visitor } from "./visitor.js";
 
 /** Produces the canonical debug tree for immutable Markdown markup. */
@@ -83,11 +83,22 @@ class DumpState {
             this.container(
                 "List",
                 node,
-                [`flavor=${node.flavor}`, `start=${node.start ?? "null"}`, `tight=${node.tight}`],
+                [
+                    `flavor=${node.flavor}`,
+                    `start=${node.start ?? "null"}`,
+                    `variant=${node.variant ?? "null"}`,
+                    `delimiter=${orderedListDelimiter(node.delimiter)}`,
+                    `tight=${node.tight}`
+                ],
                 node.items
             ),
         visitListItem: (node: ListItem) =>
-            this.container("ListItem", node, [`checked=${node.checked ?? "null"}`], node.content),
+            this.container(
+                "ListItem",
+                node,
+                [`marker=${optionalString(node.marker)}`, `exampleLabel=${optionalString(node.exampleLabel)}`],
+                node.content
+            ),
         visitCodeBlock: (node: CodeBlock) =>
             this.line("CodeBlock", node, [
                 `info=${optionalString(node.info)}`,
@@ -243,6 +254,11 @@ function scope(value: Scope): string {
 
 function optionalString(value: string | null): string {
     return value === null ? "null" : jsonString(value);
+}
+
+function orderedListDelimiter(value: OrderedListDelimiter | null): string {
+    if (value === null || typeof value === "string") return value ?? "null";
+    return `parenthesis(closed=${value.closed})`;
 }
 
 /** A tagged value prints its branch and its named fields with no spaces. */

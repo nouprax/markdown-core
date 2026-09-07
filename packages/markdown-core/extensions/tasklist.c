@@ -16,30 +16,6 @@ static const char *get_type_string(const markdown_core_extension *extension, mar
     return TYPE_STRING;
 }
 
-// Return 1 if state was set, 0 otherwise
-int markdown_core_extensions_set_tasklist_item_checked(markdown_core_node *node, bool is_checked) {
-    // The node has to exist, and be an extension, and actually be the right type in order to get
-    // the value.
-    if (!node || !node->extension || strcmp(markdown_core_node_get_type_string(node), TYPE_STRING)) {
-        return 0;
-    }
-
-    node->as.list.checked = is_checked;
-    return 1;
-}
-
-bool markdown_core_extensions_get_tasklist_item_checked(markdown_core_node *node) {
-    if (!node || !node->extension || strcmp(markdown_core_node_get_type_string(node), TYPE_STRING)) {
-        return false;
-    }
-
-    if (node->as.list.checked) {
-        return true;
-    } else {
-        return false;
-    }
-}
-
 static bool parse_node_item_prefix(markdown_core_parser *parser, const char *input, markdown_core_node *container) {
     bool res = false;
 
@@ -93,15 +69,14 @@ static markdown_core_node *open_tasklist_item(const markdown_core_extension *sel
     // A substring search over the whole line answers for the wrong bytes:
     // `- [ ] call me [x] later` is an OPEN task whose text happens to mention a
     // closed one, and searching says it is closed. (Upstream cmark-gfm still
-    // does; the difference is registered as `tasklist-checked-marker`.)
+    // does; the difference is registered as `tasklist-authored-marker`.)
     //
     // The read is in range because the scanner says so, not because the line is
     // long: `scan_tasklist`'s rule is ("[ ]"|"[x]"|"[X]")spacechar+, so a
     // non-zero `matched` means at least four bytes were matched from
     // `first_nonspace` and the marker byte is the second of them.
     assert(matched >= 4 && parser->first_nonspace + 1 < len);
-    parent_container->as.list.checked =
-        (input[parser->first_nonspace + 1] == 'x' || input[parser->first_nonspace + 1] == 'X');
+    parent_container->as.list.task_marker = input[parser->first_nonspace + 1];
 
     return NULL;
 }

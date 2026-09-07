@@ -34,6 +34,8 @@ CommonMark base. Quotation marks, hyphens, and periods are stored as written.
 recursively readonly TypeScript properties. The JavaScript objects are not
 runtime-frozen. The package exposes parsing and typed AST inspection, not
 rendering or AST mutation.
+Task items preserve their authored `marker`; `tasked` and `completed` are
+derived conveniences. Ordered lists expose their `variant` and `delimiter`.
 
 ## Traverse and Inspect
 

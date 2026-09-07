@@ -11,19 +11,19 @@ with `P9a`, example lists with `P9b`. The
 ## Model
 
 ```text
-OrderedListStyle     = decimal | lowerAlpha | upperAlpha | lowerRoman |
+OrderedListVariant     = decimal | lowerAlpha | upperAlpha | lowerRoman |
                        upperRoman | example | default
-OrderedListDelimiter = period | oneParen | twoParens | default
+OrderedListDelimiter = period | parenthesis(closed: Bool) | default
 
-List(flavor: bullet | ordered, start: Int?, style: OrderedListStyle?,
+List(flavor: bullet | ordered, start: Int?, variant: OrderedListVariant?,
      delimiter: OrderedListDelimiter?, tight: Bool, items: [ListItem])
 ListItem(marker: String?, exampleLabel: String?, content: [Markup])
 ExampleReference(label: String)
 ```
 
-For a bullet list `start`, `style`, and `delimiter` are `null`. For an
+For a bullet list `start`, `variant`, and `delimiter` are `null`. For an
 ordered list all three are non-null and `start >= 0`. `start` is always the
-numeric value of the first marker; nothing changes it. Style
+numeric value of the first marker; nothing changes it. Variant
 and delimiter are authored facts and are never reconstructed from `start`.
 `ExampleReference` is an inline leaf. `ListItem.marker` belongs to the
 [task lists](task-lists.md) module.
@@ -34,15 +34,15 @@ and delimiter are authored facts and are never reconstructed from `start`.
 * c
 .
 Document scope=1:1..3:3 anchor=null attributes={} children=3
-├── List scope=1:1..1:3 anchor=null attributes={} flavor=bullet start=null style=null delimiter=null tight=true children=1
+├── List scope=1:1..1:3 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
 │   └── ListItem scope=1:1..1:3 anchor=null attributes={} marker=null exampleLabel=null children=1
 │       └── Paragraph scope=1:3..1:3 anchor=null attributes={} children=1
 │           └── Text scope=1:3..1:3 anchor=null attributes={} literal="a" children=0
-├── List scope=2:1..2:3 anchor=null attributes={} flavor=bullet start=null style=null delimiter=null tight=true children=1
+├── List scope=2:1..2:3 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
 │   └── ListItem scope=2:1..2:3 anchor=null attributes={} marker=null exampleLabel=null children=1
 │       └── Paragraph scope=2:3..2:3 anchor=null attributes={} children=1
 │           └── Text scope=2:3..2:3 anchor=null attributes={} literal="b" children=0
-└── List scope=3:1..3:3 anchor=null attributes={} flavor=bullet start=null style=null delimiter=null tight=true children=1
+└── List scope=3:1..3:3 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
     └── ListItem scope=3:1..3:3 anchor=null attributes={} marker=null exampleLabel=null children=1
         └── Paragraph scope=3:3..3:3 anchor=null attributes={} children=1
             └── Text scope=3:3..3:3 anchor=null attributes={} literal="c" children=0
@@ -51,8 +51,8 @@ Document scope=1:1..3:3 anchor=null attributes={} children=3
 ## Decimal markers
 
 The inherited markers `N.` and `N)` are decimal markers: `N` is one to nine
-ASCII digits, `style` is `decimal`,
-`delimiter` is `period` or `oneParen`, and `start` is the value of the first
+ASCII digits, `variant` is `decimal`,
+`delimiter` is `period` or `parenthesis(closed=false)`, and `start` is the value of the first
 marker, so `0.` starts at zero:
 
 ```````````````````````````````` example
@@ -64,18 +64,18 @@ marker, so `0.` starts at zero:
 0. z
 .
 Document scope=1:1..6:4 anchor=null attributes={} children=3
-├── List scope=1:1..3:0 anchor=null attributes={} flavor=ordered start=3 style=decimal delimiter=period tight=true children=2
+├── List scope=1:1..3:0 anchor=null attributes={} flavor=ordered start=3 variant=decimal delimiter=period tight=true children=2
 │   ├── ListItem scope=1:1..1:4 anchor=null attributes={} marker=null exampleLabel=null children=1
 │   │   └── Paragraph scope=1:4..1:4 anchor=null attributes={} children=1
 │   │       └── Text scope=1:4..1:4 anchor=null attributes={} literal="a" children=0
 │   └── ListItem scope=2:1..3:0 anchor=null attributes={} marker=null exampleLabel=null children=1
 │       └── Paragraph scope=2:4..2:4 anchor=null attributes={} children=1
 │           └── Text scope=2:4..2:4 anchor=null attributes={} literal="b" children=0
-├── List scope=4:1..5:0 anchor=null attributes={} flavor=ordered start=1 style=decimal delimiter=oneParen tight=true children=1
+├── List scope=4:1..5:0 anchor=null attributes={} flavor=ordered start=1 variant=decimal delimiter=parenthesis(closed=false) tight=true children=1
 │   └── ListItem scope=4:1..5:0 anchor=null attributes={} marker=null exampleLabel=null children=1
 │       └── Paragraph scope=4:4..4:4 anchor=null attributes={} children=1
 │           └── Text scope=4:4..4:4 anchor=null attributes={} literal="c" children=0
-└── List scope=6:1..6:4 anchor=null attributes={} flavor=ordered start=0 style=decimal delimiter=period tight=true children=1
+└── List scope=6:1..6:4 anchor=null attributes={} flavor=ordered start=0 variant=decimal delimiter=period tight=true children=1
     └── ListItem scope=6:1..6:4 anchor=null attributes={} marker=null exampleLabel=null children=1
         └── Paragraph scope=6:4..6:4 anchor=null attributes={} children=1
             └── Text scope=6:4..6:4 anchor=null attributes={} literal="z" children=0
@@ -91,7 +91,7 @@ unchanged:
 1234567890. ten
 .
 Document scope=1:1..3:15 anchor=null attributes={} children=2
-├── List scope=1:1..2:0 anchor=null attributes={} flavor=ordered start=123456789 style=decimal delimiter=period tight=true children=1
+├── List scope=1:1..2:0 anchor=null attributes={} flavor=ordered start=123456789 variant=decimal delimiter=period tight=true children=1
 │   └── ListItem scope=1:1..2:0 anchor=null attributes={} marker=null exampleLabel=null children=1
 │       └── Paragraph scope=1:12..1:15 anchor=null attributes={} children=1
 │           └── Text scope=1:12..1:15 anchor=null attributes={} literal="nine" children=0
@@ -103,7 +103,7 @@ Document scope=1:1..3:15 anchor=null attributes={} children=2
 
 An ordered marker is one of:
 
-- one to nine decimal digits, `style=decimal`;
+- one to nine decimal digits, `variant=decimal`;
 - one ASCII letter, `lowerAlpha` or `upperAlpha`, with value its one-based
   position in the alphabet; `i` and `I` alone are Roman one;
 - a Roman numeral `M* [CM] [D] [CD] C* [XC] [L] [XL] X* [IX] [V] [IV] I*`
@@ -111,10 +111,10 @@ An ordered marker is one of:
   the usual value, which is at most the nine-digit decimal ceiling of
   999999999, the whole marker consumed; a numeral of greater value, whatever
   its components, is not a marker; or
-- `#`, `style=default`, with value 1.
+- `#`, `variant=default`, with value 1.
 
 The marker is followed by `.`, by `)`, or is enclosed in `(...)`, giving
-`period`, `oneParen`, or `twoParens`:
+`period`, `parenthesis(closed=false)`, or `parenthesis(closed=true)`:
 
 ```````````````````````````````` example
 a. x
@@ -128,32 +128,32 @@ A) x
 IV. x
 .
 Document scope=1:1..9:5 anchor=null attributes={} children=4
-├── List scope=1:1..3:0 anchor=null attributes={} flavor=ordered start=1 style=lowerAlpha delimiter=period tight=true children=2
+├── List scope=1:1..3:0 anchor=null attributes={} flavor=ordered start=1 variant=lowerAlpha delimiter=period tight=true children=2
 │   ├── ListItem scope=1:1..1:4 anchor=null attributes={} marker=null exampleLabel=null children=1
 │   │   └── Paragraph scope=1:4..1:4 anchor=null attributes={} children=1
 │   │       └── Text scope=1:4..1:4 anchor=null attributes={} literal="x" children=0
 │   └── ListItem scope=2:1..3:0 anchor=null attributes={} marker=null exampleLabel=null children=1
 │       └── Paragraph scope=2:4..2:4 anchor=null attributes={} children=1
 │           └── Text scope=2:4..2:4 anchor=null attributes={} literal="y" children=0
-├── List scope=4:1..5:0 anchor=null attributes={} flavor=ordered start=1 style=upperAlpha delimiter=oneParen tight=true children=1
+├── List scope=4:1..5:0 anchor=null attributes={} flavor=ordered start=1 variant=upperAlpha delimiter=parenthesis(closed=false) tight=true children=1
 │   └── ListItem scope=4:1..5:0 anchor=null attributes={} marker=null exampleLabel=null children=1
 │       └── Paragraph scope=4:4..4:4 anchor=null attributes={} children=1
 │           └── Text scope=4:4..4:4 anchor=null attributes={} literal="x" children=0
-├── List scope=6:1..8:0 anchor=null attributes={} flavor=ordered start=1 style=lowerRoman delimiter=twoParens tight=true children=2
+├── List scope=6:1..8:0 anchor=null attributes={} flavor=ordered start=1 variant=lowerRoman delimiter=parenthesis(closed=true) tight=true children=2
 │   ├── ListItem scope=6:1..6:5 anchor=null attributes={} marker=null exampleLabel=null children=1
 │   │   └── Paragraph scope=6:5..6:5 anchor=null attributes={} children=1
 │   │       └── Text scope=6:5..6:5 anchor=null attributes={} literal="x" children=0
 │   └── ListItem scope=7:1..8:0 anchor=null attributes={} marker=null exampleLabel=null children=1
 │       └── Paragraph scope=7:6..7:6 anchor=null attributes={} children=1
 │           └── Text scope=7:6..7:6 anchor=null attributes={} literal="y" children=0
-└── List scope=9:1..9:5 anchor=null attributes={} flavor=ordered start=4 style=upperRoman delimiter=period tight=true children=1
+└── List scope=9:1..9:5 anchor=null attributes={} flavor=ordered start=4 variant=upperRoman delimiter=period tight=true children=1
     └── ListItem scope=9:1..9:5 anchor=null attributes={} marker=null exampleLabel=null children=1
         └── Paragraph scope=9:5..9:5 anchor=null attributes={} children=1
             └── Text scope=9:5..9:5 anchor=null attributes={} literal="x" children=0
 ````````````````````````````````
 
-`#.` stores `delimiter=default`, while `#)` and `(#)` store `oneParen` and
-`twoParens`:
+`#.` stores `delimiter=default`, while `#)` and `(#)` store `parenthesis(closed=false)` and
+`parenthesis(closed=true)`:
 
 ```````````````````````````````` example
 #. x
@@ -162,14 +162,14 @@ Document scope=1:1..9:5 anchor=null attributes={} children=4
 #) z
 .
 Document scope=1:1..4:4 anchor=null attributes={} children=2
-├── List scope=1:1..3:0 anchor=null attributes={} flavor=ordered start=1 style=default delimiter=default tight=true children=2
+├── List scope=1:1..3:0 anchor=null attributes={} flavor=ordered start=1 variant=default delimiter=default tight=true children=2
 │   ├── ListItem scope=1:1..1:4 anchor=null attributes={} marker=null exampleLabel=null children=1
 │   │   └── Paragraph scope=1:4..1:4 anchor=null attributes={} children=1
 │   │       └── Text scope=1:4..1:4 anchor=null attributes={} literal="x" children=0
 │   └── ListItem scope=2:1..3:0 anchor=null attributes={} marker=null exampleLabel=null children=1
 │       └── Paragraph scope=2:4..2:4 anchor=null attributes={} children=1
 │           └── Text scope=2:4..2:4 anchor=null attributes={} literal="y" children=0
-└── List scope=4:1..4:4 anchor=null attributes={} flavor=ordered start=1 style=default delimiter=oneParen tight=true children=1
+└── List scope=4:1..4:4 anchor=null attributes={} flavor=ordered start=1 variant=default delimiter=parenthesis(closed=false) tight=true children=1
     └── ListItem scope=4:1..4:4 anchor=null attributes={} marker=null exampleLabel=null children=1
         └── Paragraph scope=4:4..4:4 anchor=null attributes={} children=1
             └── Text scope=4:4..4:4 anchor=null attributes={} literal="z" children=0
@@ -188,15 +188,15 @@ B.  Russell
 Document scope=1:1..3:11 anchor=null attributes={} children=2
 ├── Paragraph scope=1:1..1:10 anchor=null attributes={} children=1
 │   └── Text scope=1:1..1:10 anchor=null attributes={} literal="B. Russell" children=0
-└── List scope=3:1..3:11 anchor=null attributes={} flavor=ordered start=2 style=upperAlpha delimiter=period tight=true children=1
+└── List scope=3:1..3:11 anchor=null attributes={} flavor=ordered start=2 variant=upperAlpha delimiter=period tight=true children=1
     └── ListItem scope=3:1..3:11 anchor=null attributes={} marker=null exampleLabel=null children=1
         └── Paragraph scope=3:5..3:11 anchor=null attributes={} children=1
             └── Text scope=3:5..3:11 anchor=null attributes={} literal="Russell" children=0
 ````````````````````````````````
 
-After the first item commits a style and delimiter, each later marker is
-read in that style first; `#` continues any style; a marker unreadable in the
-committed style, or with another delimiter, ends the list and may start
+After the first item commits a variant and delimiter, each later marker is
+read in that variant first; `#` continues any variant; a marker unreadable in the
+committed variant, or with another delimiter, ends the list and may start
 another:
 
 ```````````````````````````````` example
@@ -207,19 +207,19 @@ i. x
 j. y
 .
 Document scope=1:1..5:4 anchor=null attributes={} children=4
-├── List scope=1:1..1:4 anchor=null attributes={} flavor=ordered start=1 style=lowerAlpha delimiter=period tight=true children=1
+├── List scope=1:1..1:4 anchor=null attributes={} flavor=ordered start=1 variant=lowerAlpha delimiter=period tight=true children=1
 │   └── ListItem scope=1:1..1:4 anchor=null attributes={} marker=null exampleLabel=null children=1
 │       └── Paragraph scope=1:4..1:4 anchor=null attributes={} children=1
 │           └── Text scope=1:4..1:4 anchor=null attributes={} literal="x" children=0
-├── List scope=2:1..3:0 anchor=null attributes={} flavor=ordered start=1 style=decimal delimiter=period tight=true children=1
+├── List scope=2:1..3:0 anchor=null attributes={} flavor=ordered start=1 variant=decimal delimiter=period tight=true children=1
 │   └── ListItem scope=2:1..3:0 anchor=null attributes={} marker=null exampleLabel=null children=1
 │       └── Paragraph scope=2:4..2:4 anchor=null attributes={} children=1
 │           └── Text scope=2:4..2:4 anchor=null attributes={} literal="y" children=0
-├── List scope=4:1..4:4 anchor=null attributes={} flavor=ordered start=1 style=lowerRoman delimiter=period tight=true children=1
+├── List scope=4:1..4:4 anchor=null attributes={} flavor=ordered start=1 variant=lowerRoman delimiter=period tight=true children=1
 │   └── ListItem scope=4:1..4:4 anchor=null attributes={} marker=null exampleLabel=null children=1
 │       └── Paragraph scope=4:4..4:4 anchor=null attributes={} children=1
 │           └── Text scope=4:4..4:4 anchor=null attributes={} literal="x" children=0
-└── List scope=5:1..5:4 anchor=null attributes={} flavor=ordered start=10 style=lowerAlpha delimiter=period tight=true children=1
+└── List scope=5:1..5:4 anchor=null attributes={} flavor=ordered start=10 variant=lowerAlpha delimiter=period tight=true children=1
     └── ListItem scope=5:1..5:4 anchor=null attributes={} marker=null exampleLabel=null children=1
         └── Paragraph scope=5:4..5:4 anchor=null attributes={} children=1
             └── Text scope=5:4..5:4 anchor=null attributes={} literal="y" children=0
@@ -237,7 +237,7 @@ item or a definition body must have value 1 (`1`, `a`, `A`, `i`, `I`, or
   a. y
 .
 Document scope=1:1..5:6 anchor=null attributes={} children=1
-└── List scope=1:1..5:6 anchor=null attributes={} flavor=bullet start=null style=null delimiter=null tight=false children=2
+└── List scope=1:1..5:6 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=false children=2
     ├── ListItem scope=1:1..3:0 anchor=null attributes={} marker=null exampleLabel=null children=1
     │   └── Paragraph scope=1:3..2:6 anchor=null attributes={} children=3
     │       ├── Text scope=1:3..1:3 anchor=null attributes={} literal="x" children=0
@@ -246,7 +246,7 @@ Document scope=1:1..5:6 anchor=null attributes={} children=1
     └── ListItem scope=4:1..5:6 anchor=null attributes={} marker=null exampleLabel=null children=2
         ├── Paragraph scope=4:3..4:3 anchor=null attributes={} children=1
         │   └── Text scope=4:3..4:3 anchor=null attributes={} literal="x" children=0
-        └── List scope=5:3..5:6 anchor=null attributes={} flavor=ordered start=1 style=lowerAlpha delimiter=period tight=true children=1
+        └── List scope=5:3..5:6 anchor=null attributes={} flavor=ordered start=1 variant=lowerAlpha delimiter=period tight=true children=1
             └── ListItem scope=5:3..5:6 anchor=null attributes={} marker=null exampleLabel=null children=1
                 └── Paragraph scope=5:6..5:6 anchor=null attributes={} children=1
                     └── Text scope=5:6..5:6 anchor=null attributes={} literal="y" children=0
@@ -276,7 +276,7 @@ Document scope=1:1..8:4 anchor=null attributes={} children=4
 │   └── Text scope=5:1..5:4 anchor=null attributes={} literal="b. x" children=0
 ├── Paragraph scope=7:1..7:4 anchor=null attributes={} children=1
 │   └── Text scope=7:1..7:4 anchor=null attributes={} literal="para" children=0
-└── List scope=8:1..8:4 anchor=null attributes={} flavor=ordered start=1 style=decimal delimiter=period tight=true children=1
+└── List scope=8:1..8:4 anchor=null attributes={} flavor=ordered start=1 variant=decimal delimiter=period tight=true children=1
     └── ListItem scope=8:1..8:4 anchor=null attributes={} marker=null exampleLabel=null children=1
         └── Paragraph scope=8:4..8:4 anchor=null attributes={} children=1
             └── Text scope=8:4..8:4 anchor=null attributes={} literal="x" children=0
@@ -285,8 +285,8 @@ Document scope=1:1..8:4 anchor=null attributes={} children=4
 ## Example lists
 
 `@` is a marker character only inside parentheses:
-`(@)`, `(@label)`, `(N@)`, and `(N@label)`, with `style=example` and
-`delimiter=twoParens`. Items are numbered document-wide in ascending order
+`(@)`, `(@label)`, `(N@)`, and `(N@label)`, with `variant=example` and
+`delimiter=parenthesis(closed=true)`. Items are numbered document-wide in ascending order
 of item `scope.start` across content and footnotes: the counter starts at 1,
 increases by one per item, continues across separated lists, and is set to
 `N` by an explicit `(N@)` on the first item of a list before that item is
@@ -301,7 +301,7 @@ Intervening text.
 (@) Third example.
 .
 Document scope=1:1..6:18 anchor=null attributes={} children=3
-├── List scope=1:1..3:0 anchor=null attributes={} flavor=ordered start=1 style=example delimiter=twoParens tight=true children=2
+├── List scope=1:1..3:0 anchor=null attributes={} flavor=ordered start=1 variant=example delimiter=parenthesis(closed=true) tight=true children=2
 │   ├── ListItem scope=1:1..1:18 anchor=null attributes={} marker=null exampleLabel=null children=1
 │   │   └── Paragraph scope=1:5..1:18 anchor=null attributes={} children=1
 │   │       └── Text scope=1:5..1:18 anchor=null attributes={} literal="First example." children=0
@@ -310,7 +310,7 @@ Document scope=1:1..6:18 anchor=null attributes={} children=3
 │           └── Text scope=2:5..2:19 anchor=null attributes={} literal="Second example." children=0
 ├── Paragraph scope=4:1..4:17 anchor=null attributes={} children=1
 │   └── Text scope=4:1..4:17 anchor=null attributes={} literal="Intervening text." children=0
-└── List scope=6:1..6:18 anchor=null attributes={} flavor=ordered start=3 style=example delimiter=twoParens tight=true children=1
+└── List scope=6:1..6:18 anchor=null attributes={} flavor=ordered start=3 variant=example delimiter=parenthesis(closed=true) tight=true children=1
     └── ListItem scope=6:1..6:18 anchor=null attributes={} marker=null exampleLabel=null children=1
         └── Paragraph scope=6:5..6:18 anchor=null attributes={} children=1
             └── Text scope=6:5..6:18 anchor=null attributes={} literal="Third example." children=0
@@ -335,7 +335,7 @@ As (@good) illustrates, the label resolves.
 (@a) y
 .
 Document scope=1:1..6:6 anchor=null attributes={} children=3
-├── List scope=1:1..2:0 anchor=null attributes={} flavor=ordered start=1 style=example delimiter=twoParens tight=true children=1
+├── List scope=1:1..2:0 anchor=null attributes={} flavor=ordered start=1 variant=example delimiter=parenthesis(closed=true) tight=true children=1
 │   └── ListItem scope=1:1..2:0 anchor=null attributes={} marker=null exampleLabel="good" children=1
 │       └── Paragraph scope=1:9..1:31 anchor=null attributes={} children=1
 │           └── Text scope=1:9..1:31 anchor=null attributes={} literal="This is a good example." children=0
@@ -343,7 +343,7 @@ Document scope=1:1..6:6 anchor=null attributes={} children=3
 │   ├── Text scope=3:1..3:3 anchor=null attributes={} literal="As " children=0
 │   ├── ExampleReference scope=3:4..3:10 anchor=null attributes={} label="good" children=0
 │   └── Text scope=3:11..3:43 anchor=null attributes={} literal=" illustrates, the label resolves." children=0
-└── List scope=5:1..6:6 anchor=null attributes={} flavor=ordered start=2 style=example delimiter=twoParens tight=true children=2
+└── List scope=5:1..6:6 anchor=null attributes={} flavor=ordered start=2 variant=example delimiter=parenthesis(closed=true) tight=true children=2
     ├── ListItem scope=5:1..5:6 anchor=null attributes={} marker=null exampleLabel="a" children=1
     │   └── Paragraph scope=5:6..5:6 anchor=null attributes={} children=1
     │       └── Text scope=5:6..5:6 anchor=null attributes={} literal="x" children=0
@@ -365,7 +365,7 @@ Document scope=1:1..3:28 anchor=null attributes={} children=2
 │   ├── Text scope=1:1..1:4 anchor=null attributes={} literal="See " children=0
 │   ├── ExampleReference scope=1:5..1:12 anchor=null attributes={} label="later" children=0
 │   └── Text scope=1:13..1:13 anchor=null attributes={} literal="." children=0
-└── List scope=3:1..3:28 anchor=null attributes={} flavor=ordered start=1 style=example delimiter=twoParens tight=true children=1
+└── List scope=3:1..3:28 anchor=null attributes={} flavor=ordered start=1 variant=example delimiter=parenthesis(closed=true) tight=true children=1
     └── ListItem scope=3:1..3:28 anchor=null attributes={} marker=null exampleLabel="later" children=1
         └── Paragraph scope=3:10..3:28 anchor=null attributes={} children=1
             └── Text scope=3:10..3:28 anchor=null attributes={} literal="Defined afterwards." children=0
@@ -382,7 +382,7 @@ it is ignored. `(0@)` and longer runs are not markers:
 (0@) z
 .
 Document scope=1:1..4:6 anchor=null attributes={} children=2
-├── List scope=1:1..3:0 anchor=null attributes={} flavor=ordered start=5 style=example delimiter=twoParens tight=true children=2
+├── List scope=1:1..3:0 anchor=null attributes={} flavor=ordered start=5 variant=example delimiter=parenthesis(closed=true) tight=true children=2
 │   ├── ListItem scope=1:1..1:6 anchor=null attributes={} marker=null exampleLabel=null children=1
 │   │   └── Paragraph scope=1:6..1:6 anchor=null attributes={} children=1
 │   │       └── Text scope=1:6..1:6 anchor=null attributes={} literal="x" children=0
@@ -403,7 +403,7 @@ key with a bracketed tail are citations:
 @a and [@a] and @nope
 .
 Document scope=1:1..3:21 anchor=null attributes={} children=2
-├── List scope=1:1..2:0 anchor=null attributes={} flavor=ordered start=1 style=example delimiter=twoParens tight=true children=1
+├── List scope=1:1..2:0 anchor=null attributes={} flavor=ordered start=1 variant=example delimiter=parenthesis(closed=true) tight=true children=1
 │   └── ListItem scope=1:1..2:0 anchor=null attributes={} marker=null exampleLabel="a" children=1
 │       └── Paragraph scope=1:6..1:6 anchor=null attributes={} children=1
 │           └── Text scope=1:6..1:6 anchor=null attributes={} literal="x" children=0
@@ -463,7 +463,7 @@ covers the parentheses and marker, or the bare `@` and label.
 ## Required conformance cases
 
 Every example of this module is a package fixture. Tests also cover Roman
-markers in both cases and every delimiter, `i` and `I`, committed-style
+markers in both cases and every delimiter, `i` and `I`, committed-variant
 reading, tight and loose items, global examples across footnotes, resets on
 later items, four-column continuations, exact scopes, allocation failure, Roman numerals at the ceiling and just
 above it spelled with runs of `M`, of `C`, of `X`, and of `I`, and long

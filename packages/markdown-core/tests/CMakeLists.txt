@@ -248,6 +248,10 @@ markdown_core_add_test(spec_dialect_footnotes spec 120 spec_runner --spec
                        "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/dialect-footnotes.txt")
 markdown_core_add_test(spec_dialect_callouts spec 120 spec_runner --spec
                        "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/dialect-callouts.txt")
+markdown_core_add_test(spec_dialect_lists spec 120 spec_runner --spec
+                       "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/dialect-lists.txt")
+markdown_core_add_test(spec_dialect_task_lists spec 120 spec_runner --spec
+                       "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/dialect-task-lists.txt")
 # pathological: adversarial inputs, one CTest test per case so timeouts and
 # failures stay addressable.  The audit script cross-checks this list against
 # `pathological_runner --list`.
