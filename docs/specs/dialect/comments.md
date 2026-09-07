@@ -85,9 +85,10 @@ Document scope=1:1..1:12 anchor=null attributes={} children=1
 
 ## `%%` comments
 
-The opener is the first two `%` of a run of percent
-signs that is not preceded by an unescaped backslash, and the body ends at
-the first later `%%`. Inline recognition is inline step A5.
+The opener is `%%` at the cursor, and the body ends at the first later `%%`.
+Inline recognition is inline step A5. The backslash escape is step A1 and runs
+first: `\%` is the sign as text, so `\%%` opens nothing, and the signs after
+an escaped one are a fresh candidate.
 
 ```````````````````````````````` example
 a %%hidden%% b
@@ -117,6 +118,20 @@ Document scope=1:1..3:6 anchor=null attributes={} children=2
     └── Text scope=3:1..3:6 anchor=null attributes={} literal="%%a%%" children=0
 ````````````````````````````````
 
+An escape takes one sign out of a run, and a backslash inside the body is the
+body's byte:
+
+```````````````````````````````` example
+\%%%a%% %%b\%%
+.
+Document scope=1:1..1:14 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:14 anchor=null attributes={} children=4
+    ├── Text scope=1:1..1:2 anchor=null attributes={} literal="%" children=0
+    ├── Comment scope=1:3..1:7 anchor=null attributes={} literal="a" children=0
+    ├── Text scope=1:8..1:8 anchor=null attributes={} literal=" " children=0
+    └── Comment scope=1:9..1:14 anchor=null attributes={} literal="b\\" children=0
+````````````````````````````````
+
 An inline body may span the lines of one inline container:
 
 ```````````````````````````````` example
@@ -134,11 +149,12 @@ Document scope=1:1..2:5 anchor=null attributes={} children=1
 
 Step 4 of the block-start order: after container prefixes, a line whose
 content is `%%` at indentation zero to three followed only by spaces or tabs
-opens a candidate. The candidate scans forward, interpreting no block syntax,
-for the first later line whose content is exactly `%%` under the same
-prefixes and indentation bound; intervening lines carry the prefixes and may
-be blank. If found, the candidate commits as a block `Comment` whose literal
-is the intervening lines after prefix removal, each with its line ending:
+is a fence line, and a fence line opens a candidate. The candidate scans
+forward, interpreting no block syntax, for the first later fence line under
+the same prefixes; intervening lines carry the prefixes and may be blank, and
+a container's own closing line ends the scan. If found, the candidate commits
+as a block `Comment` whose literal is the intervening lines after prefix
+removal, each with its line ending; the fence lines contribute nothing to it:
 
 ```````````````````````````````` example
 %%
@@ -176,7 +192,10 @@ Document scope=1:1..2:4 anchor=null attributes={} children=1
     └── Text scope=2:1..2:4 anchor=null attributes={} literal="text" children=0
 ````````````````````````````````
 
-A block candidate may interrupt a paragraph:
+A block candidate may interrupt a paragraph. A fence line that could otherwise
+continue a paragraph lazily is a block start instead: when its candidate
+commits, the container the line does not belong to closes before it, and when
+it fails, the line continues the paragraph as text.
 
 ```````````````````````````````` example
 para
@@ -253,8 +272,9 @@ Every module that says "comment" means a `Comment` node of either grammar.
 ## Scopes
 
 An inline `Comment.scope` covers both delimiters and the body. A block
-`Comment.scope` covers the opener line through the closer line. An HTML
-comment's scope is the inherited token or block range.
+`Comment.scope` covers the opener line through the closer line, the spaces or
+tabs after either fence included. An HTML comment's scope is the inherited
+token or block range.
 
 ## Required conformance cases
 

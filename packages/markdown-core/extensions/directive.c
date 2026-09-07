@@ -603,11 +603,32 @@ static markdown_core_node *open_directive_block(const markdown_core_extension *e
     return node;
 }
 
+/* The one closer rule of the directives module: a bare colon run at least as
+ * long as the opener, at indentation zero to three, alone on its line. Shared
+ * by the matcher that closes the container and the lookahead that only asks. */
+static int directive_closer_line(const node_directive *directive, markdown_core_parser *parser,
+                                 const unsigned char *input, int len) {
+    bufsize_t first_nonspace = (bufsize_t)markdown_core_parser_get_first_nonspace(parser);
+    bufsize_t colon_count = count_colons(input, (bufsize_t)len, first_nonspace);
+
+    return markdown_core_parser_get_indent(parser) <= 3 && colon_count >= (bufsize_t)directive->fence_length &&
+           has_only_spaces_until_line_end(input, (bufsize_t)len, first_nonspace + colon_count);
+}
+
+static int directive_block_continues(const markdown_core_extension *extension, markdown_core_parser *parser,
+                                     const unsigned char *input, int len, markdown_core_node *container) {
+    node_directive *directive = get_directive(container);
+
+    if (!directive || directive->closed) {
+        return 0;
+    }
+
+    return !directive_closer_line(directive, parser, input, len);
+}
+
 static int directive_block_matches(const markdown_core_extension *extension, markdown_core_parser *parser,
                                    unsigned char *input, int len, markdown_core_node *container) {
     node_directive *directive = get_directive(container);
-    bufsize_t first_nonspace = (bufsize_t)markdown_core_parser_get_first_nonspace(parser);
-    bufsize_t colon_count;
 
     if (!directive) {
         return 0;
@@ -619,9 +640,7 @@ static int directive_block_matches(const markdown_core_extension *extension, mar
 
     directive->consume_line = 0;
 
-    colon_count = count_colons(input, (bufsize_t)len, first_nonspace);
-    if (markdown_core_parser_get_indent(parser) <= 3 && colon_count >= (bufsize_t)directive->fence_length &&
-        has_only_spaces_until_line_end(input, (bufsize_t)len, first_nonspace + colon_count)) {
+    if (directive_closer_line(directive, parser, input, len)) {
         directive->closed = 1;
         directive->consume_line = 1;
         markdown_core_parser_advance_offset(parser, (char *)input, len - markdown_core_parser_get_offset(parser),
@@ -706,6 +725,7 @@ const markdown_core_extension MARKDOWN_CORE_EXTENSION_DIRECTIVE = {
     .name = "directive",
     .match_inline = match,
     .last_block_matches = directive_block_matches,
+    .continues_block = directive_block_continues,
     .try_opening_block = open_directive_block,
     .get_type_string_func = get_type_string,
     .can_contain_func = can_contain,

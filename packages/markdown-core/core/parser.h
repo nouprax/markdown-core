@@ -81,6 +81,34 @@ struct markdown_core_parser {
     size_t opaque_scan_work;
     /* Run bytes, opener comparisons, and child moves in the shared delimiter algorithm. */
     size_t delimiter_work;
+    /* Opener checks of the `%%` comment scanner; and the lines the block-start
+     * lookahead visited plus the prefix bytes each visit matched itself, for
+     * the linearity gates of both. */
+    size_t comment_scan_work;
+    size_t block_lookahead_work;
+    /* THE SOURCE AFTER THE LINE BEING PROCESSED. `S_parse_source` sets the
+     * cursor to the first byte of the next raw line before it hands each line
+     * to `S_process_line`, so a block start whose grammar needs a later line --
+     * the `%%` block comment's closer -- can look ahead without consuming
+     * anything (see markdown_core_parser_lookahead_begin). NULL until the
+     * first line is processed; `cursor == end` once the input has run out. */
+    const unsigned char *lookahead_cursor;
+    const unsigned char *lookahead_end;
+    /* The input's last line as the block parser will see it, normalized once
+     * and reused by every lookahead that reaches it: it has no terminator of
+     * its own in the source, and a line handed to the prefix matchers must
+     * end in one. */
+    markdown_core_strbuf lookahead_last_line;
+    bool lookahead_last_line_ready;
+    /* The open containers a lookahead matches, root first, with the flags they
+     * had when it began; and the per-line resume cache. Both are owned by the
+     * parser so a document with many candidates allocates them once. */
+    struct markdown_core_node **lookahead_chain;
+    markdown_core_node_internal_flags *lookahead_chain_flags;
+    int lookahead_chain_alloc;
+    struct markdown_core_lookahead_entry *lookahead_entries;
+    int lookahead_entries_alloc;
+    int lookahead_base_line;
     markdown_core_llist *extensions;
     markdown_core_llist *inline_extensions;
     markdown_core_ispunct_func backslash_ispunct;
@@ -98,6 +126,78 @@ struct markdown_core_parser {
     bufsize_t line_marks_size;
     bufsize_t line_marks_alloc;
 };
+
+/* ONE LINE OF THE BLOCK-START LOOKAHEAD'S RESUME CACHE.
+ *
+ * A candidate that scans forward matches the open containers' prefixes on
+ * every line it visits. Two failed candidates that both reach a line have
+ * nested container chains -- the later one opened inside the earlier one's
+ * scan -- so the later scan resumes each line from the deepest container the
+ * earlier one matched, and every (container, line) prefix is matched at most
+ * once per parse. `container` is NULL for a line no scan has recorded. */
+typedef struct markdown_core_lookahead_entry {
+    const struct markdown_core_node *container;
+    /* Its distance from the document root: chain[depth] == container. */
+    int depth;
+    /* The line state after that container's prefix: what S_advance_offset left. */
+    bufsize_t offset;
+    bufsize_t column;
+    bool partially_consumed_tab;
+    /* A list's second consecutive blank line at indentation zero: the innermost
+     * open block owns the whole line and nothing below the list is asked. */
+    bool taken;
+    /* Blank after the recorded container's prefix. */
+    bool blank;
+    /* On the first line of a run of blank lines: the number of the first line
+     * after the run and where it begins, so a later scan whose extra containers
+     * accept every blank line steps over the run at once. 0 when not a run. */
+    int run_end;
+    const unsigned char *run_end_cursor;
+} markdown_core_lookahead_entry;
+
+/* A NON-CONSUMING LOOKAHEAD over the lines after the one being processed.
+ *
+ * A block start whose grammar reaches past its own line -- the `%%` block
+ * comment, which is a paragraph line unless a closer line follows under the
+ * same container prefixes -- decides here before it opens anything, so a
+ * candidate that fails consumes nothing and the block parser never rewinds.
+ * Each line is offered exactly as the block parser will see it once the block
+ * exists: the open containers' prefixes matched by the same matchers
+ * `check_open_blocks` runs, through the same parser cursor, with a list item
+ * whose first child is the block about to be added accepting a blank line the
+ * way it will then. A line that does not carry every prefix, a container's
+ * own closing line, or the end of the input ends the lookahead. Blank lines
+ * are stepped over and counted, because no block start begins on one.
+ *
+ * `begin` saves the parser's line state and the chain's flags, `end` restores
+ * them; nothing else in the parser or the tree is touched. `begin` returns
+ * false only when an allocation failed, and has then marked the parse lost. */
+typedef struct {
+    markdown_core_parser *parser;
+    struct markdown_core_node *parent;
+    int depth;
+    const unsigned char *cursor;
+    int line;
+    int run_start;
+    bufsize_t saved_offset;
+    bufsize_t saved_column;
+    bufsize_t saved_first_nonspace;
+    bufsize_t saved_first_nonspace_column;
+    int saved_indent;
+    bool saved_blank;
+    bool saved_partially_consumed_tab;
+    bool active;
+} markdown_core_block_lookahead;
+
+bool markdown_core_parser_lookahead_begin(markdown_core_parser *parser, struct markdown_core_node *parent_container,
+                                          markdown_core_node_type child, markdown_core_block_lookahead *lookahead);
+/* The next non-blank line that carries the prefixes: its bytes through its
+ * line ending, the index of its first non-space byte, its indentation after
+ * the prefixes, and the blank lines stepped over before it. Returns 0 when the
+ * lookahead has ended. */
+int markdown_core_parser_lookahead_next(markdown_core_block_lookahead *lookahead, markdown_core_chunk *line,
+                                        int *first_nonspace, int *indent, int *blank_lines);
+void markdown_core_parser_lookahead_end(markdown_core_block_lookahead *lookahead);
 
 /* The engine has one parse operation. `setup`, when present, configures the
  * fresh parser before any source is read; extension attachment belongs there.

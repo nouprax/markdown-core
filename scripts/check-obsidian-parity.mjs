@@ -412,6 +412,20 @@ function parseMetadataDump(node) {
     });
 }
 
+// O3: the `comment-removal` projection. The oracle removes a `%%` comment
+// while parsing and drops a paragraph the removal leaves empty; the product
+// keeps every comment as a `Comment` node. Both trees are compared without
+// the comments, so the intersection judged is what surrounds them.
+function withoutComments(children) {
+    const kept = [];
+    for (const child of children) {
+        if (child.kind === "Comment") continue;
+        if (child.kind === "Paragraph" && child.children.length === 0) continue;
+        kept.push(child);
+    }
+    return kept;
+}
+
 function fromMarkdownCore(node, includeMetadata = false) {
     const fields = {};
     for (const name of comparedFields[node.kind] ?? []) {
@@ -429,7 +443,9 @@ function fromMarkdownCore(node, includeMetadata = false) {
         kind: node.kind,
         fields,
         children: normalizeChildren(
-            node.children.filter((child) => child.kind !== "Metadata").map((child) => fromMarkdownCore(child))
+            withoutComments(
+                node.children.filter((child) => child.kind !== "Metadata").map((child) => fromMarkdownCore(child))
+            )
         )
     };
 }
@@ -508,6 +524,20 @@ const commentCanary = processor.runSync(processor.parse("%%hidden%%\n"), "%%hidd
 if (commentCanary.children.length !== 0) {
     process.stderr.write("obsidian parity: oracle canary did not remove an Obsidian comment\n");
     process.exit(1);
+}
+// O3: the `comment-removal` projection compares recognition, not absence. The
+// product must parse the same input as one Comment inside one Paragraph, and
+// the projection must then reduce that tree to the oracle's empty root.
+const commentProduct = parseCanonicalDump(execFileSync(ours, [], { input: "%%hidden%%\n", encoding: "utf8" }));
+if (
+    commentProduct.children.length !== 1 ||
+    commentProduct.children[0]?.kind !== "Paragraph" ||
+    commentProduct.children[0].children.length !== 1 ||
+    commentProduct.children[0].children[0]?.kind !== "Comment" ||
+    commentProduct.children[0].children[0].fields.literal !== "hidden" ||
+    fromMarkdownCore(commentProduct).children.length !== 0
+) {
+    throw new Error("obsidian parity: comment-removal canary failed");
 }
 const taskCanary = processor.runSync(processor.parse("- [?] task\n"), "- [?] task\n");
 if (taskCanary.children[0]?.children?.[0]?.data?.taskChar !== "?") {

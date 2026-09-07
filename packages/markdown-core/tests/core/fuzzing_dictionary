@@ -71,3 +71,6 @@ wiki_embed="![["
 wiki_close="]]"
 wiki_separator="\\|"
 wiki_block_anchor="#^"
+
+comment_percent="%%"
+comment_percent_line="\n%%\n"

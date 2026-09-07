@@ -118,22 +118,6 @@
     "corpus": ["specs/oracles/obsidian/corpus.md", "specs/oracles/obsidian/metadata-corpus.md"],
     "baselineGaps": [
         {
-            "id": "comment-inline",
-            "input": "before %%hidden%% after\n",
-            "oracleDigest": "4632312c72b8bf43f132ba1d592ab74142a7f0c2bfd2fb101247734925a2a7fd",
-            "markdownCoreDigest": "4aa87b351904fa81efcd6a7e179424edf39d6708f860be81bfaf81c7c47988bc",
-            "requirement": "Recognize an inline comment as a Comment node without consuming surrounding text; the oracle removes comments, which the comparison projects.",
-            "closedBy": "Phase 2 — one OFM inline extension"
-        },
-        {
-            "id": "comment-block",
-            "input": "%%\nhidden **strong**\n%%\n",
-            "oracleDigest": "d6bd8c0aeee80fedb2dbf05c973100c3db04be90c072a88572533f2684131a36",
-            "markdownCoreDigest": "e72e6e754416e1c462132b36def888d5833613d2669d0dc4c04f6e94bc49b535",
-            "requirement": "Treat a multiline comment as opaque and emit one Comment node; the oracle removes it, which the comparison projects.",
-            "closedBy": "Phase 2 — one OFM inline extension"
-        },
-        {
             "id": "custom-task-character",
             "input": "- [?] custom state\n",
             "oracleDigest": "e3e696d3ca75290972a4560ae370df8bb389c3b0256f3198cc8a39c9d29351da",
@@ -210,6 +194,11 @@
         }
     ],
     "modelDeltas": [
+        {
+            "id": "comment-removal",
+            "summary": "The oracle removes every %% comment while parsing, and drops a paragraph the removal leaves empty. Markdown Core emits a Comment node for each and strips nothing.",
+            "handling": "The comparison projects the product tree by dropping Comment nodes and then any Paragraph left with no children; canaries assert that the oracle removes `%%hidden%%` and that the product parses it as one Comment inside one Paragraph, so agreement is recognition on both sides rather than absence."
+        },
         {
             "id": "highlight-content-model",
             "summary": "The oracle emits the complete highlight body as one Text child. Markdown Core parses Mark.content as inline content, like emphasis and strikethrough.",

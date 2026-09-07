@@ -347,10 +347,13 @@
             "input": "comments.md",
             "expected": "comments.ast",
             "coverage": {
-                "kinds": ["Document", "Comment", "Paragraph", "Text", "HTMLBlock"],
+                "kinds": ["Document", "Comment", "Paragraph", "Text", "HTMLBlock", "Callout"],
                 "states": [
                     "comment.placement.block",
                     "comment.placement.inline",
+                    "callout.variant.null",
+                    "callout.collapsed.null",
+                    "callout.title.null",
                     "scope.positive",
                     "children.empty",
                     "children.populated",

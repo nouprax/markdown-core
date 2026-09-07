@@ -6,6 +6,14 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
+- Recognize `%%...%%` comments as `Comment` on C, Swift, Kotlin, and ES, the
+  kind an HTML comment already produces. Inline, the body ends at the first
+  later `%%` and is opaque to every other construct; on fence lines of their
+  own, a block comment commits only when a closer line follows under the same
+  container prefixes, and its literal keeps indentation and line endings as
+  written. Nothing is stripped: a consumer that does not want comments drops
+  the nodes.
+
 - Recognize `==highlight==` as `Mark(content)` on C, Swift, Kotlin, and ES.
   Parse nested inline content through the shared delimiter stack, consume two
   equals signs per match, and retain unmatched single signs as text. Scopes

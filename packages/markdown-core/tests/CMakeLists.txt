@@ -288,6 +288,10 @@ set(MARKDOWN_CORE_PATHOLOGICAL_CASES
     unclosed_links_a
     unclosed_links_b
     unclosed_comment
+    comment_percent_runs
+    comment_unclosed_body
+    comment_nested_quote_candidates
+    comment_nested_item_blank_runs
     tables
     reference_collisions
     reference_expansion_bound
@@ -319,6 +323,8 @@ markdown_core_add_test(
     "${MARKDOWN_CORE_TESTS_SOURCE_DIR}/core/afl_test_cases/test.md"
     --corpus
     "${MARKDOWN_CORE_CANONICAL_AST_DIR}/blocks.md"
+    --corpus
+    "${MARKDOWN_CORE_CANONICAL_AST_DIR}/comments.md"
     --corpus
     "${MARKDOWN_CORE_CANONICAL_AST_DIR}/completeness.md"
     --corpus

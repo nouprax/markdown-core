@@ -1,20 +1,22 @@
 ---
 title: Comments module examples
 author: Dongyu Zhao
-version: 0.1
-date: '2026-09-06'
+version: 0.2
+date: '2026-09-07'
 license: '[CC-BY-SA 4.0](http://creativecommons.org/licenses/by-sa/4.0/)'
 ...
 
-## HTML comments
-
 The examples of the [comments module](../../../../docs/specs/dialect/comments.md)
-whose behavior `M0` landed: the HTML-comment rule of the inherited grammar. They
-are the module's examples in the module's order; the `%%` examples arrive with
-`O3`. The expected dumps are the module's expected dumps in the dump grammar of
-today, which does not yet print the universal `anchor` and `attributes` fields
-that `M7` lands, so every line differs from the module's by exactly
-` anchor=null attributes={}` and by nothing else.
+in the module's order, byte for byte: the HTML-comment rule of the inherited
+grammar that `M0` landed, and the `%%` syntax that `O3` landed. The `%%`
+examples carry the `comment` fence tag, which classifies them for the oracle
+corpora: cmark judges the untagged HTML-comment examples and has no opinion on
+`%%`. The one line that differs from the module is the heading anchor of the
+block-boundary example, which the module states in the target grammar and
+which `P3` generates; until then the fixture prints `anchor=null` there and
+nothing else differs.
+
+## HTML comments
 
 An inline HTML comment token is a `Comment` whose literal is the bytes between
 `<!--` and `-->`:
@@ -68,4 +70,794 @@ after `-->`, stays `HTMLBlock` as written:
 .
 Document scope=1:1..1:12 anchor=null attributes={} children=1
 └── HTMLBlock scope=1:1..1:12 anchor=null attributes={} literal="<!-- a --> b\n" children=0
+````````````````````````````````
+
+## `%%` comments
+
+The opener is `%%` at the cursor, and the body ends at the first later `%%`:
+
+```````````````````````````````` example comment
+a %%hidden%% b
+.
+Document scope=1:1..1:14 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:14 anchor=null attributes={} children=3
+    ├── Text scope=1:1..1:2 anchor=null attributes={} literal="a " children=0
+    ├── Comment scope=1:3..1:12 anchor=null attributes={} literal="hidden" children=0
+    └── Text scope=1:13..1:14 anchor=null attributes={} literal=" b" children=0
+````````````````````````````````
+
+`%%%%` is an empty comment; `%%%a%%%` is `Comment("%a")` followed by text
+`%`; `\%%` is text. Backslashes inside the body are ordinary bytes.
+
+```````````````````````````````` example comment
+%%%% %%%a%%%
+
+\%%a%%
+.
+Document scope=1:1..3:6 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:12 anchor=null attributes={} children=4
+│   ├── Comment scope=1:1..1:4 anchor=null attributes={} literal="" children=0
+│   ├── Text scope=1:5..1:5 anchor=null attributes={} literal=" " children=0
+│   ├── Comment scope=1:6..1:11 anchor=null attributes={} literal="%a" children=0
+│   └── Text scope=1:12..1:12 anchor=null attributes={} literal="%" children=0
+└── Paragraph scope=3:1..3:6 anchor=null attributes={} children=1
+    └── Text scope=3:1..3:6 anchor=null attributes={} literal="%%a%%" children=0
+````````````````````````````````
+
+An escape takes one sign out of a run, and a backslash inside the body is the
+body's byte:
+
+```````````````````````````````` example comment
+\%%%a%% %%b\%%
+.
+Document scope=1:1..1:14 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:14 anchor=null attributes={} children=4
+    ├── Text scope=1:1..1:2 anchor=null attributes={} literal="%" children=0
+    ├── Comment scope=1:3..1:7 anchor=null attributes={} literal="a" children=0
+    ├── Text scope=1:8..1:8 anchor=null attributes={} literal=" " children=0
+    └── Comment scope=1:9..1:14 anchor=null attributes={} literal="b\\" children=0
+````````````````````````````````
+
+An inline body may span the lines of one inline container:
+
+```````````````````````````````` example comment
+a %%x
+y%% b
+.
+Document scope=1:1..2:5 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..2:5 anchor=null attributes={} children=3
+    ├── Text scope=1:1..1:2 anchor=null attributes={} literal="a " children=0
+    ├── Comment scope=1:3..2:3 anchor=null attributes={} literal="x\ny" children=0
+    └── Text scope=2:4..2:5 anchor=null attributes={} literal=" b" children=0
+````````````````````````````````
+
+### Block form
+
+A line whose content is `%%` at indentation zero to three, followed only by
+spaces or tabs, opens a candidate that commits when a later line whose content
+is the same fence under the same prefixes closes it; the literal is the
+intervening lines after prefix removal, each with its line ending:
+
+```````````````````````````````` example comment
+%%
+hidden
+block
+%%
+.
+Document scope=1:1..4:2 anchor=null attributes={} children=1
+└── Comment scope=1:1..4:2 anchor=null attributes={} literal="hidden\nblock\n" children=0
+````````````````````````````````
+
+The rule applies inside any container:
+
+```````````````````````````````` example comment
+> %%
+> x
+> %%
+.
+Document scope=1:1..3:4 anchor=null attributes={} children=1
+└── Callout scope=1:1..3:4 anchor=null attributes={} variant=null collapsed=null children=1
+    └── Comment scope=1:3..3:4 anchor=null attributes={} literal="x\n" children=0
+````````````````````````````````
+
+Without a closer line, the opener line is paragraph text and the inline rule
+applies to it; an unmatched inline opener is text and hides nothing:
+
+```````````````````````````````` example comment
+%%
+text
+.
+Document scope=1:1..2:4 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..2:4 anchor=null attributes={} children=3
+    ├── Text scope=1:1..1:2 anchor=null attributes={} literal="%%" children=0
+    ├── SoftBreak scope=1:3..1:3 anchor=null attributes={} children=0
+    └── Text scope=2:1..2:4 anchor=null attributes={} literal="text" children=0
+````````````````````````````````
+
+A block candidate may interrupt a paragraph:
+
+```````````````````````````````` example comment
+para
+%%
+c
+%%
+.
+Document scope=1:1..4:2 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:4 anchor=null attributes={} children=1
+│   └── Text scope=1:1..1:4 anchor=null attributes={} literal="para" children=0
+└── Comment scope=2:1..4:2 anchor=null attributes={} literal="c\n" children=0
+````````````````````````````````
+
+An inline body cannot cross a block boundary. The opener line finds no closer
+line, so it is paragraph text; the heading is a heading; and the `%%` on the
+last line is unmatched text. The module prints the heading's generated anchor,
+which `P3` lands; this fixture prints `anchor=null` there until it does:
+
+```````````````````````````````` example comment
+%%
+# h
+end %% x
+.
+Document scope=1:1..3:8 anchor=null attributes={} children=3
+├── Paragraph scope=1:1..1:2 anchor=null attributes={} children=1
+│   └── Text scope=1:1..1:2 anchor=null attributes={} literal="%%" children=0
+├── Heading scope=2:1..2:3 anchor=null attributes={} level=1 children=1
+│   └── Text scope=2:3..2:3 anchor=null attributes={} literal="h" children=0
+└── Paragraph scope=3:1..3:8 anchor=null attributes={} children=1
+    └── Text scope=3:1..3:8 anchor=null attributes={} literal="end %% x" children=0
+````````````````````````````````
+
+A comment suppresses all recognition, inherited and extension, until its
+closer. Code spans, HTML tokens, and formulas are earlier class-A steps, so a
+`%%` inside them is their byte:
+
+```````````````````````````````` example comment
+%% *a* [[b]] `c` %% `%%`
+.
+Document scope=1:1..1:24 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:24 anchor=null attributes={} children=3
+    ├── Comment scope=1:1..1:19 anchor=null attributes={} literal=" *a* [[b]] `c` " children=0
+    ├── Text scope=1:20..1:20 anchor=null attributes={} literal=" " children=0
+    └── Code scope=1:21..1:24 anchor=null attributes={} literal="%%" children=0
+````````````````````````````````
+
+Table boundary scanning does not recognize comments: a `|` inside `%%...%%`
+on a table row splits the cell and the unmatched `%%` bytes are text:
+
+```````````````````````````````` example comment
+| a | b |
+| - | - |
+| c %% | d %% |
+.
+Document scope=1:1..3:15 anchor=null attributes={} children=1
+└── Table scope=1:1..3:15 anchor=null attributes={} columns=[none:null,none:null] children=2
+    ├── TableHead children=1
+    │   └── TableRow scope=1:1..1:9 anchor=null attributes={} children=2
+    │       ├── TableCell scope=1:2..1:4 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       │   └── Text scope=1:3..1:3 anchor=null attributes={} literal="a" children=0
+    │       └── TableCell scope=1:6..1:8 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │           └── Text scope=1:7..1:7 anchor=null attributes={} literal="b" children=0
+    ├── TableBody children=1
+    │   └── TableRow scope=3:1..3:15 anchor=null attributes={} children=2
+    │       ├── TableCell scope=3:2..3:7 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       │   └── Text scope=3:3..3:6 anchor=null attributes={} literal="c %%" children=0
+    │       └── TableCell scope=3:9..3:14 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │           └── Text scope=3:10..3:13 anchor=null attributes={} literal="d %%" children=0
+    └── TableFoot children=0
+````````````````````````````````
+
+## Adjacent, escaped, unmatched, and percent runs
+
+Adjacent comments close and open at consecutive signs; a space between them
+is text:
+
+```````````````````````````````` example comment
+%%a%%%%b%% %%c%%
+.
+Document scope=1:1..1:16 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:16 anchor=null attributes={} children=4
+    ├── Comment scope=1:1..1:5 anchor=null attributes={} literal="a" children=0
+    ├── Comment scope=1:6..1:10 anchor=null attributes={} literal="b" children=0
+    ├── Text scope=1:11..1:11 anchor=null attributes={} literal=" " children=0
+    └── Comment scope=1:12..1:16 anchor=null attributes={} literal="c" children=0
+````````````````````````````````
+
+An escaped backslash leaves the signs after it free to open:
+
+```````````````````````````````` example comment
+\\%%a%%
+.
+Document scope=1:1..1:7 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:7 anchor=null attributes={} children=2
+    ├── Text scope=1:1..1:2 anchor=null attributes={} literal="\\" children=0
+    └── Comment scope=1:3..1:7 anchor=null attributes={} literal="a" children=0
+````````````````````````````````
+
+An opener with no closer is text, and a single sign is never a delimiter. An
+opener sees only its own inline container:
+
+```````````````````````````````` example comment
+%% a
+
+a %%
+
+%%%
+
+a % b %% c
+
+%% d
+.
+Document scope=1:1..9:4 anchor=null attributes={} children=5
+├── Paragraph scope=1:1..1:4 anchor=null attributes={} children=1
+│   └── Text scope=1:1..1:4 anchor=null attributes={} literal="%% a" children=0
+├── Paragraph scope=3:1..3:4 anchor=null attributes={} children=1
+│   └── Text scope=3:1..3:4 anchor=null attributes={} literal="a %%" children=0
+├── Paragraph scope=5:1..5:3 anchor=null attributes={} children=1
+│   └── Text scope=5:1..5:3 anchor=null attributes={} literal="%%%" children=0
+├── Paragraph scope=7:1..7:10 anchor=null attributes={} children=1
+│   └── Text scope=7:1..7:10 anchor=null attributes={} literal="a % b %% c" children=0
+└── Paragraph scope=9:1..9:4 anchor=null attributes={} children=1
+    └── Text scope=9:1..9:4 anchor=null attributes={} literal="%% d" children=0
+````````````````````````````````
+
+Runs of four or more signs: the first two open, the next two close, and a
+leftover is text:
+
+```````````````````````````````` example comment
+%%%%%
+
+%%%%%%
+
+%%%%%%%%
+
+%%% %%%
+
+%%%%a%%
+.
+Document scope=1:1..9:7 anchor=null attributes={} children=5
+├── Paragraph scope=1:1..1:5 anchor=null attributes={} children=2
+│   ├── Comment scope=1:1..1:4 anchor=null attributes={} literal="" children=0
+│   └── Text scope=1:5..1:5 anchor=null attributes={} literal="%" children=0
+├── Paragraph scope=3:1..3:6 anchor=null attributes={} children=2
+│   ├── Comment scope=3:1..3:4 anchor=null attributes={} literal="" children=0
+│   └── Text scope=3:5..3:6 anchor=null attributes={} literal="%%" children=0
+├── Paragraph scope=5:1..5:8 anchor=null attributes={} children=2
+│   ├── Comment scope=5:1..5:4 anchor=null attributes={} literal="" children=0
+│   └── Comment scope=5:5..5:8 anchor=null attributes={} literal="" children=0
+├── Paragraph scope=7:1..7:7 anchor=null attributes={} children=2
+│   ├── Comment scope=7:1..7:6 anchor=null attributes={} literal="% " children=0
+│   └── Text scope=7:7..7:7 anchor=null attributes={} literal="%" children=0
+└── Paragraph scope=9:1..9:7 anchor=null attributes={} children=2
+    ├── Comment scope=9:1..9:4 anchor=null attributes={} literal="" children=0
+    └── Text scope=9:5..9:7 anchor=null attributes={} literal="a%%" children=0
+````````````````````````````````
+
+## Markdown-looking and extension-looking bodies
+
+Every byte between the delimiters is the comment's, as written: escapes,
+character references, code, links, images, HTML, and every merged extension's
+syntax:
+
+```````````````````````````````` example comment
+%%*a* **b** `c` [d](e) ![f](g) <h> &amp; \* # i%%
+
+%%~~s~~ https://x.y/z www.x.y a@b.cd $f$ $$g$$ \\(h\\) [[w]] ![[e]] ==m== :d[l]{.c} [^n] ^[i] ++x++%%
+.
+Document scope=1:1..3:101 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:49 anchor=null attributes={} children=1
+│   └── Comment scope=1:1..1:49 anchor=null attributes={} literal="*a* **b** `c` [d](e) ![f](g) <h> &amp; \\* # i" children=0
+└── Paragraph scope=3:1..3:101 anchor=null attributes={} children=1
+    └── Comment scope=3:1..3:101 anchor=null attributes={} literal="~~s~~ https://x.y/z www.x.y a@b.cd $f$ $$g$$ \\\\(h\\\\) [[w]] ![[e]] ==m== :d[l]{.c} [^n] ^[i] ++x++" children=0
+````````````````````````````````
+
+A block body interprets no block syntax:
+
+```````````````````````````````` example comment
+%%
+# h
+> q
+- l
+```
+c
+```
+| t |
+| - |
+$$
+m
+$$
+:::d
+x
+:::
+<div>
+h
+</div>
+<!-- c -->
+a %% b
+%%%
+%% d
+%%
+.
+Document scope=1:1..23:2 anchor=null attributes={} children=1
+└── Comment scope=1:1..23:2 anchor=null attributes={} literal="# h\n> q\n- l\n```\nc\n```\n| t |\n| - |\n$$\nm\n$$\n:::d\nx\n:::\n<div>\nh\n</div>\n<!-- c -->\na %% b\n%%%\n%% d\n" children=0
+````````````````````````````````
+
+## Comments inside opaque constructs
+
+A `%%` inside a code span, a formula, an HTML token or comment, an
+angle-bracket autolink, or a bare URL is that construct's byte:
+
+```````````````````````````````` example comment
+`%%a%%` $%%b%%$ <i title="%%c%%"> <!-- %%d%% --> <https://x/%%e%%> https://x/%%f%%
+.
+Document scope=1:1..1:82 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:82 anchor=null attributes={} children=11
+    ├── Code scope=1:1..1:7 anchor=null attributes={} literal="%%a%%" children=0
+    ├── Text scope=1:8..1:8 anchor=null attributes={} literal=" " children=0
+    ├── Formula scope=1:9..1:15 anchor=null attributes={} mode=embedded literal="%%b%%" children=0
+    ├── Text scope=1:16..1:16 anchor=null attributes={} literal=" " children=0
+    ├── HTML scope=1:17..1:33 anchor=null attributes={} literal="<i title=\"%%c%%\">" children=0
+    ├── Text scope=1:34..1:34 anchor=null attributes={} literal=" " children=0
+    ├── Comment scope=1:35..1:48 anchor=null attributes={} literal=" %%d%% " children=0
+    ├── Text scope=1:49..1:49 anchor=null attributes={} literal=" " children=0
+    ├── Link scope=1:50..1:66 anchor=null attributes={} dest=url("https://x/%%e%%") title=null children=1
+    │   └── Text scope=1:51..1:65 anchor=null attributes={} literal="https://x/%%e%%" children=0
+    ├── Text scope=1:67..1:67 anchor=null attributes={} literal=" " children=0
+    └── Link scope=1:68..1:82 anchor=null attributes={} dest=url("https://x/%%f%%") title=null children=1
+        └── Text scope=1:68..1:82 anchor=null attributes={} literal="https://x/%%f%%" children=0
+````````````````````````````````
+
+A completed cross link is opaque, and a comment that opened first owns the
+brackets inside it:
+
+```````````````````````````````` example comment
+[[a %%b]]%%
+
+[[c|%%d%%]]
+
+%%[[e]]%% %%[[f%%]]
+.
+Document scope=1:1..5:19 anchor=null attributes={} children=3
+├── Paragraph scope=1:1..1:11 anchor=null attributes={} children=2
+│   ├── CrossLink scope=1:1..1:9 anchor=null attributes={} embedded=false dest=cross(path="a %%b",anchor=null) label=null children=0
+│   └── Text scope=1:10..1:11 anchor=null attributes={} literal="%%" children=0
+├── Paragraph scope=3:1..3:11 anchor=null attributes={} children=1
+│   └── CrossLink scope=3:1..3:11 anchor=null attributes={} embedded=false dest=cross(path="c",anchor=null) label="%%d%%" children=0
+└── Paragraph scope=5:1..5:19 anchor=null attributes={} children=4
+    ├── Comment scope=5:1..5:9 anchor=null attributes={} literal="[[e]]" children=0
+    ├── Text scope=5:10..5:10 anchor=null attributes={} literal=" " children=0
+    ├── Comment scope=5:11..5:17 anchor=null attributes={} literal="[[f" children=0
+    └── Text scope=5:18..5:19 anchor=null attributes={} literal="]]" children=0
+````````````````````````````````
+
+An HTML block owns its lines; a fenced code block owns its lines:
+
+```````````````````````````````` example comment
+<div>
+%%
+x
+%%
+</div>
+
+```
+%%
+```
+.
+Document scope=1:1..9:3 anchor=null attributes={} children=2
+├── HTMLBlock scope=1:1..5:6 anchor=null attributes={} literal="<div>\n%%\nx\n%%\n</div>\n" children=0
+└── CodeBlock scope=7:1..9:3 anchor=null attributes={} info=null language=null literal="%%\n" fenced=true closed=true children=0
+````````````````````````````````
+
+## An HTML comment beside a `%%` comment
+
+Both grammars produce the same kind and neither sees inside the other; on a
+line of its own, each grammar's block form is a block `Comment`:
+
+```````````````````````````````` example comment
+a <!-- b --> %%c%% <!--> %%%%
+
+x <!-- %%d%% --> %%<!-- e -->%%
+.
+Document scope=1:1..3:31 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:29 anchor=null attributes={} children=8
+│   ├── Text scope=1:1..1:2 anchor=null attributes={} literal="a " children=0
+│   ├── Comment scope=1:3..1:12 anchor=null attributes={} literal=" b " children=0
+│   ├── Text scope=1:13..1:13 anchor=null attributes={} literal=" " children=0
+│   ├── Comment scope=1:14..1:18 anchor=null attributes={} literal="c" children=0
+│   ├── Text scope=1:19..1:19 anchor=null attributes={} literal=" " children=0
+│   ├── Comment scope=1:20..1:24 anchor=null attributes={} literal="" children=0
+│   ├── Text scope=1:25..1:25 anchor=null attributes={} literal=" " children=0
+│   └── Comment scope=1:26..1:29 anchor=null attributes={} literal="" children=0
+└── Paragraph scope=3:1..3:31 anchor=null attributes={} children=4
+    ├── Text scope=3:1..3:2 anchor=null attributes={} literal="x " children=0
+    ├── Comment scope=3:3..3:16 anchor=null attributes={} literal=" %%d%% " children=0
+    ├── Text scope=3:17..3:17 anchor=null attributes={} literal=" " children=0
+    └── Comment scope=3:18..3:31 anchor=null attributes={} literal="<!-- e -->" children=0
+````````````````````````````````
+```````````````````````````````` example comment
+<!-- a -->
+%%
+b
+%%
+.
+Document scope=1:1..4:2 anchor=null attributes={} children=2
+├── Comment scope=1:1..1:10 anchor=null attributes={} literal=" a " children=0
+└── Comment scope=2:1..4:2 anchor=null attributes={} literal="b\n" children=0
+````````````````````````````````
+
+## Marks and cross links beside comments
+
+A comment inside a mark is content, the `==` inside a comment is the
+comment's, and a comment may hold a whole mark or cross link:
+
+```````````````````````````````` example comment
+==a %%==b%% c== %%==d==%%
+.
+Document scope=1:1..1:25 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:25 anchor=null attributes={} children=3
+    ├── Mark scope=1:1..1:15 anchor=null attributes={} children=3
+    │   ├── Text scope=1:3..1:4 anchor=null attributes={} literal="a " children=0
+    │   ├── Comment scope=1:5..1:11 anchor=null attributes={} literal="==b" children=0
+    │   └── Text scope=1:12..1:13 anchor=null attributes={} literal=" c" children=0
+    ├── Text scope=1:16..1:16 anchor=null attributes={} literal=" " children=0
+    └── Comment scope=1:17..1:25 anchor=null attributes={} literal="==d==" children=0
+````````````````````````````````
+
+## Inline containers, scopes, and lines
+
+A body may span the lines of one paragraph inside any container; a comment
+inside a heading, a link, or emphasis is content there:
+
+```````````````````````````````` example comment
+> a %%x
+> y%% b
+
+- a %%x
+  y%% b
+
+# a %%b%% c
+
+[a %%b%%](/u) *%%c%%*
+.
+Document scope=1:1..9:21 anchor=null attributes={} children=4
+├── Callout scope=1:1..2:7 anchor=null attributes={} variant=null collapsed=null children=1
+│   └── Paragraph scope=1:3..2:7 anchor=null attributes={} children=3
+│       ├── Text scope=1:3..1:4 anchor=null attributes={} literal="a " children=0
+│       ├── Comment scope=1:5..2:5 anchor=null attributes={} literal="x\ny" children=0
+│       └── Text scope=2:6..2:7 anchor=null attributes={} literal=" b" children=0
+├── List scope=4:1..6:0 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+│   └── ListItem scope=4:1..6:0 anchor=null attributes={} marker=null children=1
+│       └── Paragraph scope=4:3..5:7 anchor=null attributes={} children=3
+│           ├── Text scope=4:3..4:4 anchor=null attributes={} literal="a " children=0
+│           ├── Comment scope=4:5..5:5 anchor=null attributes={} literal="x\ny" children=0
+│           └── Text scope=5:6..5:7 anchor=null attributes={} literal=" b" children=0
+├── Heading scope=7:1..7:11 anchor=null attributes={} level=1 children=3
+│   ├── Text scope=7:3..7:4 anchor=null attributes={} literal="a " children=0
+│   ├── Comment scope=7:5..7:9 anchor=null attributes={} literal="b" children=0
+│   └── Text scope=7:10..7:11 anchor=null attributes={} literal=" c" children=0
+└── Paragraph scope=9:1..9:21 anchor=null attributes={} children=3
+    ├── Link scope=9:1..9:13 anchor=null attributes={} dest=url("/u") title=null children=2
+    │   ├── Text scope=9:2..9:3 anchor=null attributes={} literal="a " children=0
+    │   └── Comment scope=9:4..9:8 anchor=null attributes={} literal="b" children=0
+    ├── Text scope=9:14..9:14 anchor=null attributes={} literal=" " children=0
+    └── Emphasis scope=9:15..9:21 anchor=null attributes={} children=1
+        └── Comment scope=9:16..9:20 anchor=null attributes={} literal="c" children=0
+````````````````````````````````
+
+A comment that opened first owns a bracket or a delimiter inside it:
+
+```````````````````````````````` example comment
+[a %%](/u)%% b *c %%d* e%% f
+.
+Document scope=1:1..1:28 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:28 anchor=null attributes={} children=5
+    ├── Text scope=1:1..1:3 anchor=null attributes={} literal="[a " children=0
+    ├── Comment scope=1:4..1:12 anchor=null attributes={} literal="](/u)" children=0
+    ├── Text scope=1:13..1:18 anchor=null attributes={} literal=" b *c " children=0
+    ├── Comment scope=1:19..1:26 anchor=null attributes={} literal="d* e" children=0
+    └── Text scope=1:27..1:28 anchor=null attributes={} literal=" f" children=0
+````````````````````````````````
+
+A `\|` inside a comment in a table cell becomes `|` in the literal, and an
+empty comment in a cell is a comment:
+
+```````````````````````````````` example comment
+| a | b |
+| - | - |
+| %%c\|d%% | %%%% |
+.
+Document scope=1:1..3:19 anchor=null attributes={} children=1
+└── Table scope=1:1..3:19 anchor=null attributes={} columns=[none:null,none:null] children=2
+    ├── TableHead children=1
+    │   └── TableRow scope=1:1..1:9 anchor=null attributes={} children=2
+    │       ├── TableCell scope=1:2..1:4 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       │   └── Text scope=1:3..1:3 anchor=null attributes={} literal="a" children=0
+    │       └── TableCell scope=1:6..1:8 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │           └── Text scope=1:7..1:7 anchor=null attributes={} literal="b" children=0
+    ├── TableBody children=1
+    │   └── TableRow scope=3:1..3:19 anchor=null attributes={} children=2
+    │       ├── TableCell scope=3:2..3:11 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       │   └── Comment scope=3:3..3:10 anchor=null attributes={} literal="c|d" children=0
+    │       └── TableCell scope=3:13..3:18 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │           └── Comment scope=3:14..3:17 anchor=null attributes={} literal="" children=0
+    └── TableFoot children=0
+````````````````````````````````
+
+Footnote content holds inline and block comments like any other content:
+
+```````````````````````````````` example comment
+x[^n]
+
+[^n]: a %%b%%
+
+[^m]: %%
+    c
+    %%
+.
+Document scope=1:1..7:6 anchor=null attributes={} children=1
+├── Paragraph scope=1:1..1:5 anchor=null attributes={} children=2
+│   ├── Text scope=1:1..1:1 anchor=null attributes={} literal="x" children=0
+│   └── Cite scope=1:2..1:5 anchor=null attributes={} children=1
+│       └── Citation scope=1:3..1:4 referent=footnote(id="n") children=0
+│           ├── CitationPrefix children=0
+│           └── CitationSuffix children=0
+├── Footnote scope=3:1..4:0 id="n" children=1
+│   └── Paragraph scope=3:7..3:13 anchor=null attributes={} children=2
+│       ├── Text scope=3:7..3:8 anchor=null attributes={} literal="a " children=0
+│       └── Comment scope=3:9..3:13 anchor=null attributes={} literal="b" children=0
+└── Footnote scope=5:1..7:6 id="m" children=1
+    └── Comment scope=5:7..7:6 anchor=null attributes={} literal="c\n" children=0
+````````````````````````````````
+
+## Block form boundaries
+
+Trailing spaces and tabs after either fence are allowed and belong to the
+block's scope; indentation of one to three columns is allowed on both fences,
+and the body keeps its own indentation:
+
+```````````````````````````````` example comment
+%%  
+a
+%%→ 
+
+ %%
+  a
+   %%
+.
+Document scope=1:1..7:5 anchor=null attributes={} children=2
+├── Comment scope=1:1..3:4 anchor=null attributes={} literal="a\n" children=0
+└── Comment scope=5:2..7:5 anchor=null attributes={} literal="  a\n" children=0
+````````````````````````````````
+
+Four columns of indentation make an indented code block of the opener, and a
+line indented four columns is body, not a closer:
+
+```````````````````````````````` example comment
+    %%
+    a
+    %%
+
+%%
+a
+    %%
+%%
+.
+Document scope=1:1..8:2 anchor=null attributes={} children=2
+├── CodeBlock scope=1:5..4:0 anchor=null attributes={} info=null language=null literal="%%\na\n%%\n" fenced=false closed=true children=0
+└── Comment scope=5:1..8:2 anchor=null attributes={} literal="a\n    %%\n" children=0
+````````````````````````````````
+
+An empty body, blank lines, and fence-looking lines that are not fences:
+
+```````````````````````````````` example comment
+%%
+%%
+
+%%
+
+  a
+
+%%
+
+%%
+%%%
+%% a
+a %%
+%%
+.
+Document scope=1:1..14:2 anchor=null attributes={} children=3
+├── Comment scope=1:1..2:2 anchor=null attributes={} literal="" children=0
+├── Comment scope=4:1..8:2 anchor=null attributes={} literal="\n  a\n\n" children=0
+└── Comment scope=10:1..14:2 anchor=null attributes={} literal="%%%\n%% a\na %%\n" children=0
+````````````````````````````````
+
+Consecutive block comments, and text on the line after a closer:
+
+```````````````````````````````` example comment
+%%
+a
+%%
+%%
+b
+%%
+c
+.
+Document scope=1:1..7:1 anchor=null attributes={} children=3
+├── Comment scope=1:1..3:2 anchor=null attributes={} literal="a\n" children=0
+├── Comment scope=4:1..6:2 anchor=null attributes={} literal="b\n" children=0
+└── Paragraph scope=7:1..7:1 anchor=null attributes={} children=1
+    └── Text scope=7:1..7:1 anchor=null attributes={} literal="c" children=0
+````````````````````````````````
+
+The candidate carries every open container's prefix: inside a list item
+inside a block quote, with a blank line, and interrupting a paragraph inside a
+list item and inside a block quote:
+
+```````````````````````````````` example comment
+> - %%
+>   a
+>
+>   %%
+> - b
+
+- a
+  %%
+  b
+  %%
+  c
+
+> a
+> %%
+> b
+> %%
+.
+Document scope=1:1..16:4 anchor=null attributes={} children=3
+├── Callout scope=1:1..5:5 anchor=null attributes={} variant=null collapsed=null children=1
+│   └── List scope=1:3..5:5 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=2
+│       ├── ListItem scope=1:3..4:6 anchor=null attributes={} marker=null children=1
+│       │   └── Comment scope=1:5..4:6 anchor=null attributes={} literal="a\n\n" children=0
+│       └── ListItem scope=5:3..5:5 anchor=null attributes={} marker=null children=1
+│           └── Paragraph scope=5:5..5:5 anchor=null attributes={} children=1
+│               └── Text scope=5:5..5:5 anchor=null attributes={} literal="b" children=0
+├── List scope=7:1..12:0 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+│   └── ListItem scope=7:1..12:0 anchor=null attributes={} marker=null children=3
+│       ├── Paragraph scope=7:3..7:3 anchor=null attributes={} children=1
+│       │   └── Text scope=7:3..7:3 anchor=null attributes={} literal="a" children=0
+│       ├── Comment scope=8:3..10:4 anchor=null attributes={} literal="b\n" children=0
+│       └── Paragraph scope=11:3..11:3 anchor=null attributes={} children=1
+│           └── Text scope=11:3..11:3 anchor=null attributes={} literal="c" children=0
+└── Callout scope=13:1..16:4 anchor=null attributes={} variant=null collapsed=null children=2
+    ├── Paragraph scope=13:3..13:3 anchor=null attributes={} children=1
+    │   └── Text scope=13:3..13:3 anchor=null attributes={} literal="a" children=0
+    └── Comment scope=14:3..16:4 anchor=null attributes={} literal="b\n" children=0
+````````````````````````````````
+
+A candidate fails when its container ends before a closer, when the input
+ends, or when the closer's indentation is not the candidate's: the opener line
+is then paragraph text under the inline rule:
+
+```````````````````````````````` example comment
+> %%
+> a
+
+b
+%%
+
+- %%
+  a
+.
+Document scope=1:1..8:3 anchor=null attributes={} children=3
+├── Callout scope=1:1..2:3 anchor=null attributes={} variant=null collapsed=null children=1
+│   └── Paragraph scope=1:3..2:3 anchor=null attributes={} children=3
+│       ├── Text scope=1:3..1:4 anchor=null attributes={} literal="%%" children=0
+│       ├── SoftBreak scope=1:5..1:5 anchor=null attributes={} children=0
+│       └── Text scope=2:3..2:3 anchor=null attributes={} literal="a" children=0
+├── Paragraph scope=4:1..5:2 anchor=null attributes={} children=3
+│   ├── Text scope=4:1..4:1 anchor=null attributes={} literal="b" children=0
+│   ├── SoftBreak scope=4:2..4:2 anchor=null attributes={} children=0
+│   └── Text scope=5:1..5:2 anchor=null attributes={} literal="%%" children=0
+└── List scope=7:1..8:3 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+    └── ListItem scope=7:1..8:3 anchor=null attributes={} marker=null children=1
+        └── Paragraph scope=7:3..8:3 anchor=null attributes={} children=3
+            ├── Text scope=7:3..7:4 anchor=null attributes={} literal="%%" children=0
+            ├── SoftBreak scope=7:5..7:5 anchor=null attributes={} children=0
+            └── Text scope=8:3..8:3 anchor=null attributes={} literal="a" children=0
+````````````````````````````````
+
+A candidate line that could be a lazy continuation is a block start instead,
+and it closes the container it does not belong to:
+
+```````````````````````````````` example comment
+> para
+%%
+c
+%%
+
+- para
+%%
+d
+%%
+.
+Document scope=1:1..9:2 anchor=null attributes={} children=4
+├── Callout scope=1:1..1:6 anchor=null attributes={} variant=null collapsed=null children=1
+│   └── Paragraph scope=1:3..1:6 anchor=null attributes={} children=1
+│       └── Text scope=1:3..1:6 anchor=null attributes={} literal="para" children=0
+├── Comment scope=2:1..4:2 anchor=null attributes={} literal="c\n" children=0
+├── List scope=6:1..6:6 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+│   └── ListItem scope=6:1..6:6 anchor=null attributes={} marker=null children=1
+│       └── Paragraph scope=6:3..6:6 anchor=null attributes={} children=1
+│           └── Text scope=6:3..6:6 anchor=null attributes={} literal="para" children=0
+└── Comment scope=7:1..9:2 anchor=null attributes={} literal="d\n" children=0
+````````````````````````````````
+
+Block structure is decided before inline structure. A candidate with a closer
+wins over a Setext underline and a thematic break inside it; one without a
+closer is the paragraph a Setext underline makes a heading of:
+
+```````````````````````````````` example comment
+%%
+---
+%%
+
+%%
+===
+.
+Document scope=1:1..6:3 anchor=null attributes={} children=2
+├── Comment scope=1:1..3:2 anchor=null attributes={} literal="---\n" children=0
+└── Heading scope=5:1..6:3 anchor=null attributes={} level=1 children=1
+    └── Text scope=5:1..5:2 anchor=null attributes={} literal="%%" children=0
+````````````````````````````````
+
+Inside a container directive the candidate stops at the directive's own
+closing line:
+
+```````````````````````````````` example comment
+:::note
+%%
+x
+%%
+:::
+
+:::note
+%%
+:::
+%%
+:::
+.
+Document scope=1:1..11:3 anchor=null attributes={} children=3
+├── DirectiveBlock scope=1:1..5:3 anchor=null attributes={} name="note" children=1
+│   └── Comment scope=2:1..4:2 anchor=null attributes={} literal="x\n" children=0
+├── DirectiveBlock scope=7:1..9:3 anchor=null attributes={} name="note" children=1
+│   └── Paragraph scope=8:1..8:2 anchor=null attributes={} children=1
+│       └── Text scope=8:1..8:2 anchor=null attributes={} literal="%%" children=0
+└── Paragraph scope=10:1..11:3 anchor=null attributes={} children=3
+    ├── Text scope=10:1..10:2 anchor=null attributes={} literal="%%" children=0
+    ├── SoftBreak scope=10:3..10:3 anchor=null attributes={} children=0
+    └── Text scope=11:1..11:3 anchor=null attributes={} literal=":::" children=0
+````````````````````````````````
+
+A candidate after a table, and an opener line that carries content after the
+fence, which is inline placement:
+
+```````````````````````````````` example comment
+| a |
+| - |
+%%
+x
+%%
+
+%% a
+b
+%%
+.
+Document scope=1:1..9:2 anchor=null attributes={} children=3
+├── Table scope=1:1..2:5 anchor=null attributes={} columns=[none:null] children=1
+│   ├── TableHead children=1
+│   │   └── TableRow scope=1:1..1:5 anchor=null attributes={} children=1
+│   │       └── TableCell scope=1:2..1:4 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │           └── Text scope=1:3..1:3 anchor=null attributes={} literal="a" children=0
+│   ├── TableBody children=0
+│   └── TableFoot children=0
+├── Comment scope=3:1..5:2 anchor=null attributes={} literal="x\n" children=0
+└── Paragraph scope=7:1..9:2 anchor=null attributes={} children=1
+    └── Comment scope=7:1..9:2 anchor=null attributes={} literal=" a\nb\n" children=0
 ````````````````````````````````

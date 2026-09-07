@@ -101,6 +101,33 @@ static const char OOM_EXTENSION_EDGE_CORPUS[] = ":inline[label]{.a class=\"\" .b
 static const char OOM_MARK_CORPUS[] = "===a *b*=== ==c====d== ==[link](/u) <!--c-->==\n\n"
                                       "| ==h== |\n| --- |\n| ==x\\|y== |\n\ncall[^n]\n\n[^n]: ==note==\n";
 
+/* O3: both `%%` forms, the lookahead's chain and cache in nested containers, a
+ * candidate that fails at its container's end, the last line without a line
+ * ending, and comments beside every earlier opaque construct. */
+static const char OOM_COMMENT_CORPUS[] = "a %%b%% %%%% %%%c%%% \\%%d%% %%x\ny%% `%%` $%%$ <!--%%--> [[%%]] ==%%m%%==\n"
+                                         "\n"
+                                         "%%\n"
+                                         "block *a*\n"
+                                         "%%\n"
+                                         "\n"
+                                         "> - %%\n"
+                                         ">   q\n"
+                                         ">\n"
+                                         ">   %%\n"
+                                         "> - %%\n"
+                                         ">   open\n"
+                                         "\n"
+                                         "| %%c\\|d%% | %%%% |\n"
+                                         "| - | - |\n"
+                                         "\n"
+                                         "[^n]: %%\n"
+                                         "    f\n"
+                                         "    %%\n"
+                                         "\n"
+                                         "- %%\n"
+                                         "\n"
+                                         "  %%";
+
 typedef struct oom_case {
     const char *name;
     const char *source;
@@ -108,6 +135,7 @@ typedef struct oom_case {
 } oom_case;
 
 static const oom_case OOM_CASES[] = {
+    {"comments", OOM_COMMENT_CORPUS, sizeof(OOM_COMMENT_CORPUS) - 1},
     {"marks", OOM_MARK_CORPUS, sizeof(OOM_MARK_CORPUS) - 1},
     {"full-feature", OOM_CORPUS, sizeof(OOM_CORPUS) - 1},
     {"line-and-core", OOM_LINE_AND_CORE_CORPUS, sizeof(OOM_LINE_AND_CORE_CORPUS) - 1},

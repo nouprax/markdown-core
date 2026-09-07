@@ -15,6 +15,9 @@ typedef int (*markdown_core_visit_owned_subtrees_func)(const markdown_core_exten
 
 struct markdown_core_extension {
     markdown_core_match_block_func last_block_matches;
+    /* The speculative form of `last_block_matches` a block-start lookahead asks
+     * (see the typedef); required of an extension whose blocks contain blocks. */
+    markdown_core_continues_block_func continues_block;
     markdown_core_open_block_func try_opening_block;
     markdown_core_match_inline_func match_inline;
     markdown_core_inline_from_delim_func insert_inline_from_delim;
