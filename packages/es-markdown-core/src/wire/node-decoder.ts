@@ -1,5 +1,5 @@
+import type { Attributes, Metadata, MetadataRecord, MetadataValue } from "../values.js";
 import type { MarkupBase } from "../model/base.js";
-import type { DirectiveAttribute } from "../model/directive-attribute.js";
 import type { DirectiveLabel } from "../model/directive-label.js";
 import type { Citation } from "../model/cite.js";
 import type { Document } from "../model/document.js";
@@ -31,7 +31,7 @@ import { kinds, type NativeKind } from "./kinds.js";
 
 const magic = [0x4d, 0x43, 0x42, 0x31] as const;
 export const transferHeaderSize = 64;
-const nodeSize = 96;
+const nodeSize = 136;
 const attributeSize = 16;
 const columnSize = 16;
 const noIndex = 0xffff_ffff;
@@ -41,10 +41,16 @@ const noIndex = 0xffff_ffff;
  * a footnote's content is its child range, a cite's items are its child
  * range, and the document's definitions are its auxiliary range.
  */
-type ValueKind = "citation" | "footnote" | "specimen";
+type ValueKind = "citation" | "footnote" | "specimen" | "metadata" | "metadataRecord";
 const valueKindBase = 0x100;
-const valueKinds: readonly ValueKind[] = Object.freeze(["citation", "footnote", "specimen"]);
-type Decoded = Markup | Citation | Footnote | Specimen;
+const valueKinds: readonly ValueKind[] = Object.freeze([
+    "citation",
+    "footnote",
+    "specimen",
+    "metadata",
+    "metadataRecord"
+]);
+type Decoded = Markup | Citation | Footnote | Specimen | Metadata | MetadataRecord;
 const isMarkup = (value: Decoded): value is Markup => "kind" in value;
 
 const header = {
@@ -77,7 +83,15 @@ const nodeField = {
     scalar0: 44,
     integer2: 48,
     integer: 56,
-    strings: 64
+    strings: 64,
+    anchor: 96,
+    classesStart: 104,
+    classesCount: 108,
+    recordsStart: 112,
+    recordsCount: 116,
+    metadata: 120,
+    width: 124,
+    height: 128
 } as const;
 
 type MarkupValue = Markup extends infer Node ? (Node extends Markup ? Omit<Node, "dump"> : never) : never;
@@ -141,6 +155,8 @@ export class NodeDecoder {
             if (record.kind === "citation") values[index] = this.citation(record);
             else if (record.kind === "footnote") values[index] = this.footnote(record);
             else if (record.kind === "specimen") values[index] = this.specimen(record);
+            else if (record.kind === "metadata") values[index] = this.metadata(record);
+            else if (record.kind === "metadataRecord") values[index] = this.metadataRecord(record);
             else values[index] = this.markup(this.value(record));
         }
         const document = values[0];
@@ -257,6 +273,26 @@ export class NodeDecoder {
             for (let offset = 0; offset < record.childCount; ++offset) {
                 this.recordRelation(record, this.edge(record.childStart + offset), incoming, "child");
             }
+            const anchor = this.stringAt(record.offset + nodeField.anchor);
+            if (anchor === "") throw new Error("empty normalized anchor");
+            if (
+                this.uint(record.offset) >= valueKindBase &&
+                (anchor !== null ||
+                    this.uint(record.offset + nodeField.classesCount) !== 0 ||
+                    this.uint(record.offset + nodeField.recordsCount) !== 0)
+            )
+                throw new Error("scoped value carries Markup fields");
+            const metadata = this.uint(record.offset + nodeField.metadata);
+            if (metadata !== noIndex) {
+                if (record.kind !== "document" || this.readRecord(metadata).kind !== "metadata")
+                    throw new Error("invalid metadata relation");
+                this.recordRelation(record, metadata, incoming, "metadata");
+            }
+            if (
+                record.kind !== "image" &&
+                (this.uint(record.offset + nodeField.width) !== 0 || this.uint(record.offset + nodeField.height) !== 0)
+            )
+                throw new Error("non-image carries dimensions");
             if (record.labelIndex !== noIndex) {
                 if (record.kind !== "directive" && record.kind !== "directiveBlock") {
                     throw new Error("only a directive may own a label relation");
@@ -310,14 +346,25 @@ export class NodeDecoder {
         // The scoped values are decoded by their owners, never as nodes,
         // so the kind dispatch below is over Markup kinds alone.
         const kind = record.kind;
-        if (kind === "citation" || kind === "footnote" || kind === "specimen") {
+        if (
+            kind === "citation" ||
+            kind === "footnote" ||
+            kind === "specimen" ||
+            kind === "metadata" ||
+            kind === "metadataRecord"
+        ) {
             throw new Error(`native result places a ${kind} value where a node belongs`);
         }
         const base = this.base(record);
         switch (kind) {
             case "document":
                 this.flags(record, 0);
-                return { ...base, content: this.content(record), ...this.definitions(record) } as MarkupValue;
+                return {
+                    ...base,
+                    content: this.content(record),
+                    metadata: this.documentMetadata(record),
+                    ...this.definitions(record)
+                } as MarkupValue;
             case "cite":
                 this.flags(record, 0);
                 return { ...base, citations: this.citations(record) } as MarkupValue;
@@ -400,7 +447,6 @@ export class NodeDecoder {
                 return {
                     ...base,
                     name: fields.name,
-                    attributes: fields.attributes,
                     label: fields.label
                 } as MarkupValue;
             }
@@ -412,6 +458,12 @@ export class NodeDecoder {
                     ...base,
                     dest: resource.dest,
                     title: resource.title,
+                    ...(kind === "image"
+                        ? {
+                              width: this.dimension(record, nodeField.width),
+                              height: this.dimension(record, nodeField.height)
+                          }
+                        : {}),
                     content: this.content(record)
                 } as MarkupValue;
             }
@@ -546,26 +598,12 @@ export class NodeDecoder {
 
     private directiveFields(record: NodeRecord): {
         readonly name: string;
-        readonly attributes: readonly DirectiveAttribute[] | null;
         readonly label: DirectiveLabel | null;
         readonly content: readonly Markup[];
     } {
-        this.flags(record, 1);
-        let attributes: readonly DirectiveAttribute[] | null = null;
-        if ((record.flags & 1) !== 0) {
-            this.range(record.auxiliaryStart, record.auxiliaryCount, this.layout.attributeCount, "attribute range");
-            attributes = Object.freeze(
-                Array.from({ length: record.auxiliaryCount }, (_, index) => {
-                    const offset = this.layout.attributesOffset + (record.auxiliaryStart + index) * attributeSize;
-                    return { name: this.requiredStringAt(offset), value: this.requiredStringAt(offset + 8) };
-                })
-            );
-        } else if (record.auxiliaryCount !== 0) {
-            throw new Error("directive without an attribute container carries attributes");
-        }
+        this.flags(record, 0);
         return {
             name: this.requiredString(record, 0),
-            attributes,
             label: this.directiveLabel(record),
             content: this.content(record)
         };
@@ -751,7 +789,91 @@ export class NodeDecoder {
         record: NodeRecord,
         kind: Kind = record.kind as Kind
     ): Omit<MarkupBase<Kind>, "dump"> {
-        return { kind, scope: record.scope };
+        return {
+            kind,
+            scope: record.scope,
+            anchor: this.stringAt(record.offset + nodeField.anchor),
+            attributes: this.attributes(record)
+        };
+    }
+
+    private attributes(record: NodeRecord): Attributes {
+        const classes = this.attributeRange(
+            this.uint(record.offset + nodeField.classesStart),
+            this.uint(record.offset + nodeField.classesCount)
+        );
+        if (classes.some((value) => value.name !== "" || value.value.length === 0))
+            throw new Error("class has a record name");
+        const records = this.attributeRange(
+            this.uint(record.offset + nodeField.recordsStart),
+            this.uint(record.offset + nodeField.recordsCount)
+        );
+        if (records.some((value) => value.name === "id" || value.name === "class" || value.name.length === 0))
+            throw new Error("invalid normalized attribute record");
+        return { classes: classes.map((value) => value.value), records };
+    }
+    private attributeRange(start: number, count: number): readonly { readonly name: string; readonly value: string }[] {
+        this.range(start, count, this.layout.attributeCount, "attribute range");
+        return Array.from({ length: count }, (_, index) => {
+            const offset = this.layout.attributesOffset + (start + index) * attributeSize;
+            return { name: this.requiredStringAt(offset), value: this.requiredStringAt(offset + 8) };
+        });
+    }
+    private dimension(record: NodeRecord, field: number): number | null {
+        const value = this.uint(record.offset + field);
+        if (value > 0x7fffffff) throw new Error("invalid image dimension");
+        return value === 0 ? null : value;
+    }
+    private documentMetadata(record: NodeRecord): Metadata | null {
+        const index = this.uint(record.offset + nodeField.metadata);
+        if (index === noIndex) return null;
+        const value = this.values[index];
+        if (!value || !("records" in value)) throw new Error("invalid document metadata");
+        return value;
+    }
+    private metadata(record: NodeRecord): Metadata {
+        this.flags(record, 0);
+        return {
+            scope: record.scope,
+            records: this.edgeRange(record.childStart, record.childCount, "metadata records").map((value) => {
+                if ("kind" in value || !("name" in value) || !("value" in value))
+                    throw new Error("invalid metadata record");
+                return value;
+            })
+        };
+    }
+    private metadataRecord(record: NodeRecord): MetadataRecord {
+        this.leaf(record);
+        let value: MetadataValue;
+        if (record.scalar0 === 1) {
+            switch (record.flags) {
+                case 0:
+                    value = { kind: "scalar", value: { kind: "null" } };
+                    break;
+                case 1:
+                    if (record.integer !== 0n && record.integer !== 1n) throw new Error("invalid metadata boolean");
+                    value = { kind: "scalar", value: { kind: "bool", value: record.integer === 1n } };
+                    break;
+                case 2:
+                    value = { kind: "scalar", value: { kind: "number", value: this.requiredString(record, 1) } };
+                    break;
+                case 3:
+                    value = { kind: "scalar", value: { kind: "text", value: this.requiredString(record, 1) } };
+                    break;
+                default:
+                    throw new Error("invalid metadata scalar");
+            }
+        } else if (record.scalar0 === 2) {
+            this.flags(record, 0);
+            value = {
+                kind: "list",
+                items: this.attributeRange(record.auxiliaryStart, record.auxiliaryCount).map((item) => {
+                    if (item.name !== "number" && item.name !== "text") throw new Error("invalid metadata item");
+                    return { kind: item.name, value: item.value };
+                })
+            };
+        } else throw new Error("invalid metadata value");
+        return { scope: record.scope, name: this.requiredString(record, 0), value };
     }
 
     private flags(record: NodeRecord, allowed: number): void {

@@ -7,5 +7,7 @@ export interface Image extends MarkupBase<"image"> {
     readonly dest: Destination;
     /** Optional. */
     readonly title: string | null;
+    readonly width: number | null;
+    readonly height: number | null;
     readonly content: readonly Markup[];
 }

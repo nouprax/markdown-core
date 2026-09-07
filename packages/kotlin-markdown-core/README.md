@@ -20,6 +20,15 @@ JVM-only Gradle and Maven consumers can use
 `com.nouprax:kotlin-markdown-core-jvm:3.0.0`. Published targets are Android API
 21 or later, JVM 17, macOS arm64, and Linux x64.
 
+Every Markup value also exposes `anchor` and `attributes`. Attributes contain
+ordered `classes` and ordered `records` (`name`, `value`), with duplicates
+preserved. Directives populate these fields through the shared Pandoc braced
+attribute grammar; an absent or empty container produces empty attributes.
+`Document.metadata` exposes scoped Metadata records and tagged scalar/list
+values, with numbers stored as decimal text. `Image.width` and `Image.height`
+are optional integers. Metadata and dimensions remain absent until their
+syntax lands in O6 and O9.
+
 ## Parse Markdown
 
 ```kotlin

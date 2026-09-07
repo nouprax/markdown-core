@@ -187,10 +187,10 @@ test("ast: every `>` container is a metadata-free callout", () => {
     assert.equal(callout.content.length, 1);
     assert.equal(
         document.dump(),
-        "Document scope=1:1..1:7 children=1\n" +
-            "└── Callout scope=1:1..1:7 variant=null collapsed=null children=1\n" +
-            "    └── Paragraph scope=1:3..1:7 children=1\n" +
-            '        └── Text scope=1:3..1:7 literal="quote" children=0\n'
+        "Document scope=1:1..1:7 anchor=null attributes={} children=1\n" +
+            "└── Callout scope=1:1..1:7 anchor=null attributes={} variant=null collapsed=null children=1\n" +
+            "    └── Paragraph scope=1:3..1:7 anchor=null attributes={} children=1\n" +
+            '        └── Text scope=1:3..1:7 anchor=null attributes={} literal="quote" children=0\n'
     );
 });
 
@@ -199,7 +199,7 @@ test("ast: a title is decoded from the auxiliary range before the content and du
     // its auxiliary range. No parse produces one until O8, so the result is
     // built by hand: a document holding one collapsed `note` callout whose
     // title is the text `T` and whose content is empty.
-    const nodeSize = 96;
+    const nodeSize = 136;
     const strings = Uint8Array.from("noteT", (character) => character.charCodeAt(0));
     const nodesOffset = 64;
     const edgesOffset = nodesOffset + 3 * nodeSize;
@@ -225,6 +225,8 @@ test("ast: a title is decoded from the auxiliary range before the content and du
         const at = nodesOffset + index * nodeSize;
         view.setUint32(at, kind, true);
         for (const [slot, value] of scope.entries()) view.setInt32(at + 8 + slot * 4, value, true);
+        view.setUint32(at + 96, 0xffff_ffff, true);
+        view.setUint32(at + 120, 0xffff_ffff, true);
         view.setUint32(at + 32, 0xffff_ffff, true);
         view.setUint32(at + 36, 0xffff_ffff, true);
         for (let slot = 0; slot < 4; ++slot) view.setUint32(at + 64 + slot * 8, 0xffff_ffff, true);
@@ -249,10 +251,10 @@ test("ast: a title is decoded from the auxiliary range before the content and du
     assert.deepEqual(callout.content, []);
     assert.equal(
         TreeDumper.dump(document),
-        "Document scope=1:1..1:8 children=1\n" +
-            '└── Callout scope=1:1..1:8 variant="note" collapsed=true children=0\n' +
+        "Document scope=1:1..1:8 anchor=null attributes={} children=1\n" +
+            '└── Callout scope=1:1..1:8 anchor=null attributes={} variant="note" collapsed=true children=0\n' +
             "    └── Title children=1\n" +
-            '        └── Text scope=1:10..1:10 literal="T" children=0\n'
+            '        └── Text scope=1:10..1:10 anchor=null attributes={} literal="T" children=0\n'
     );
     const events = [];
     walk(
@@ -355,20 +357,20 @@ test("ast: an inherited call is a one-item cite and the document owns its footno
     assert.equal(document.footnotes[0].content[0].kind, "paragraph");
     assert.equal(
         document.dump(),
-        "Document scope=1:1..3:10 children=1\n" +
-            "├── Paragraph scope=1:1..1:9 children=3\n" +
-            "│   ├── Cite scope=1:1..1:4 children=1\n" +
+        "Document scope=1:1..3:10 anchor=null attributes={} children=1\n" +
+            "├── Paragraph scope=1:1..1:9 anchor=null attributes={} children=3\n" +
+            "│   ├── Cite scope=1:1..1:4 anchor=null attributes={} children=1\n" +
             '│   │   └── Citation scope=1:2..1:3 referent=footnote(id="a") children=0\n' +
             "│   │       ├── CitationPrefix children=0\n" +
             "│   │       └── CitationSuffix children=0\n" +
-            '│   ├── Text scope=1:5..1:5 literal=" " children=0\n' +
-            "│   └── Cite scope=1:6..1:9 children=1\n" +
+            '│   ├── Text scope=1:5..1:5 anchor=null attributes={} literal=" " children=0\n' +
+            "│   └── Cite scope=1:6..1:9 anchor=null attributes={} children=1\n" +
             '│       └── Citation scope=1:7..1:8 referent=footnote(id="a") children=0\n' +
             "│           ├── CitationPrefix children=0\n" +
             "│           └── CitationSuffix children=0\n" +
             '└── Footnote scope=3:1..3:10 id="a" children=1\n' +
-            "    └── Paragraph scope=3:7..3:10 children=1\n" +
-            '        └── Text scope=3:7..3:10 literal="once" children=0\n'
+            "    └── Paragraph scope=3:7..3:10 anchor=null attributes={} children=1\n" +
+            '        └── Text scope=3:7..3:10 anchor=null attributes={} literal="once" children=0\n'
     );
     const events = [];
     walk(
@@ -509,7 +511,7 @@ test("errors: malformed native values are rejected before they enter the AST", (
     const directiveOffset = findNode(malformedDirective, kinds.indexOf("directive"));
     const labelIndex = new DataView(malformedDirective.buffer).getUint32(directiveOffset + 32, true);
     const nodesOffset = new DataView(malformedDirective.buffer).getUint32(40, true);
-    new DataView(malformedDirective.buffer).setUint32(nodesOffset + labelIndex * 96, 3, true);
+    new DataView(malformedDirective.buffer).setUint32(nodesOffset + labelIndex * 136, 3, true);
     assert.throws(
         () => new NodeDecoder(malformedDirective).decodeDocument(),
         /directive label field contains a non-label node/u
@@ -611,7 +613,7 @@ function findNode(result, kind) {
     const count = view.getUint32(24, true);
     const nodesOffset = view.getUint32(40, true);
     for (let index = 0; index < count; index += 1) {
-        const offset = nodesOffset + index * 96;
+        const offset = nodesOffset + index * 136;
         if (view.getUint32(offset, true) === kind) return offset;
     }
     throw new Error(`result does not contain kind ${kind}`);
@@ -627,7 +629,7 @@ test("ast: specimen definitions and references retain ownership, nulls and reset
     let citations = 0;
     let firstSpecimen;
     for (let i = 0; i < view.getUint32(24, true); ++i) {
-        const at = nodes + i * 96;
+        const at = nodes + i * 136;
         const kind = view.getUint32(at, true);
         if (kind === 0x100 && ++citations === 2) view.setInt32(at + 44, 3, true);
         if (kind === 0x101 && ++definitions > 1) {
@@ -719,4 +721,147 @@ test("ast: table groups, column widths and spans survive the wire as owned facts
     bytes.fill(0);
     assert.equal(value.columns[0].relative, 0.1);
     assert.equal(value.foot[0].cells[0].content[0].literal, "f");
+});
+
+test("ast: metadata preserves tags, decimal text, duplicate keys and owned lists", () => {
+    const strings = [
+        "key",
+        "n",
+        "s",
+        "empty",
+        "list",
+        "9007199254740993",
+        "中文\nquoted",
+        "number",
+        "text",
+        "1.25",
+        ""
+    ];
+    const encoded = strings.map((value) => new globalThis.TextEncoder().encode(value));
+    const nodes = 64,
+        edges = nodes + 8 * 136,
+        attributes = edges + 6 * 4,
+        blob = attributes + 2 * 16;
+    const bytes = new Uint8Array(blob + encoded.reduce((n, value) => n + value.length, 0));
+    const view = new DataView(bytes.buffer);
+    const put = (offset, value) => view.setUint32(offset, value, true);
+    bytes.set([0x4d, 0x43, 0x42, 0x31]);
+    for (const [offset, value] of [
+        [4, bytes.length],
+        [24, 8],
+        [28, 6],
+        [32, 2],
+        [40, nodes],
+        [44, edges],
+        [48, attributes],
+        [52, blob],
+        [56, blob],
+        [60, bytes.length - blob]
+    ])
+        put(offset, value);
+    let cursor = blob;
+    const refs = encoded.map((value) => {
+        const ref = [cursor, value.length];
+        bytes.set(value, cursor);
+        cursor += value.length;
+        return ref;
+    });
+    const string = (offset, index) => {
+        put(offset, refs[index][0]);
+        put(offset + 4, refs[index][1]);
+    };
+    const node = (index, kind) => {
+        const at = nodes + index * 136;
+        put(at, kind);
+        for (const offset of [8, 12, 16, 20]) put(at + offset, 1);
+        for (const offset of [32, 36, 64, 72, 80, 88, 96, 120]) put(at + offset, 0xffff_ffff);
+        return at;
+    };
+    const root = node(0, 1);
+    put(root + 120, 1);
+    const metadata = node(1, 0x103);
+    put(metadata + 28, 6);
+    for (let index = 0; index < 6; index++) {
+        put(edges + index * 4, index + 2);
+        const at = node(index + 2, 0x104);
+        string(at + 64, index < 2 ? 0 : index - 1);
+        put(at + 44, index < 4 ? 1 : 2);
+        if (index < 4) put(at + 4, index);
+        if (index === 1) view.setBigInt64(at + 56, 1n, true);
+        if (index === 2 || index === 3) string(at + 72, index + 3);
+        if (index >= 4) {
+            put(at + 36, 0);
+            put(at + 40, index === 5 ? 2 : 0);
+        }
+    }
+    string(attributes, 7);
+    string(attributes + 8, 9);
+    string(attributes + 16, 8);
+    string(attributes + 24, 10);
+    const document = new NodeDecoder(bytes).decodeDocument();
+    const bad = bytes.slice();
+    new DataView(bad.buffer).setUint32(nodes + 3 * 136 + 4, 9, true);
+    assert.throws(() => new NodeDecoder(bad).decodeDocument(), /metadata scalar/);
+    bytes.fill(0);
+    assert.deepEqual(
+        document.metadata.records.map((record) => record.value),
+        [
+            { kind: "scalar", value: { kind: "null" } },
+            { kind: "scalar", value: { kind: "bool", value: true } },
+            { kind: "scalar", value: { kind: "number", value: "9007199254740993" } },
+            { kind: "scalar", value: { kind: "text", value: "中文\nquoted" } },
+            { kind: "list", items: [] },
+            {
+                kind: "list",
+                items: [
+                    { kind: "number", value: "1.25" },
+                    { kind: "text", value: "" }
+                ]
+            }
+        ]
+    );
+    assert.deepEqual(
+        document.metadata.records.slice(0, 2).map((record) => record.name),
+        ["key", "key"]
+    );
+    assert.match(document.dump(), /value=scalar\(number\("9007199254740993"\)\)/);
+    const visited = [];
+    walk(
+        document,
+        walkingVisitor((value, phase) => {
+            if (phase === "entering") visited.push(value.kind);
+        })
+    );
+    assert.deepEqual(visited, ["document"]);
+});
+
+test("ast: dimensions belong to occurrences and universal attributes survive release", () => {
+    const bytes = nativeResult("![a][r] ![b][r]\n\n[r]: /u\n");
+    const view = new DataView(bytes.buffer);
+    const image = findNode(bytes, kinds.indexOf("image"));
+    view.setUint32(image + 124, 640, true);
+    view.setUint32(image + 128, 480, true);
+    const document = new NodeDecoder(bytes).decodeDocument();
+    const images = document.content[0].content.filter((value) => value.kind === "image");
+    assert.equal(images[0].dest, images[1].dest);
+    assert.deepEqual(
+        images.map((value) => [value.width, value.height]),
+        [
+            [640, 480],
+            [null, null]
+        ]
+    );
+    view.setUint32(image + 124, 0xffff_ffff, true);
+    assert.throws(() => new NodeDecoder(bytes).decodeDocument(), /image dimension/);
+    bytes.fill(0);
+    const directive = Document.parse(':n{#id .a class="a b}c" k=1 k=2}').content[0].content[0];
+    assert.equal(directive.anchor, "id");
+    assert.deepEqual(directive.attributes, {
+        classes: ["a", "a", "b}c"],
+        records: [
+            { name: "k", value: "1" },
+            { name: "k", value: "2" }
+        ]
+    });
+    assert.ok(directive.dump().includes('attributes={.a .a ."b}c" k="1" k="2"}'));
 });

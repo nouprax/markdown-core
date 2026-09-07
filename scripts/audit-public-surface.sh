@@ -162,7 +162,7 @@ grep -q 'public enum WalkPhase' \
 # scoped value of the contract (M4) through exactly one `value` entry; the two
 # are counted apart so a value entry can neither stand in for a kind nor go
 # missing.
-scoped_values=$(node -e 'const contract = JSON.parse(require("node:fs").readFileSync("docs/specs/canonical-ast.json", "utf8")); process.stdout.write(Object.entries(contract.values).filter(([, value]) => value.scoped).map(([name]) => name).join(" "))')
+scoped_values=$(node -e 'const contract = JSON.parse(require("node:fs").readFileSync("docs/specs/canonical-ast.json", "utf8")); process.stdout.write(Object.entries(contract.values).filter(([, value]) => value.scoped && value.walk !== false).map(([name]) => name).join(" "))')
 test "$(awk '/public protocol MarkupWalkingVisitor/{inside=1; next} inside && /^}/{exit} inside && /mutating func visit\(_ node:/{count++} END{print count+0}' packages/swift-markdown-core/Sources/MarkdownCore/Visitor/MarkupWalkingVisitor.swift)" -eq "$kind_count" \
     || fail "Swift MarkupWalkingVisitor is not exhaustive over all $kind_count Markup kinds"
 for value in $scoped_values; do
@@ -291,7 +291,7 @@ const runtimeExports = [
         match[1].split(",").map((name) => name.trim())
     )
 ].sort();
-const expectedRuntime = ["Document", "ParseError", "TreeDumper", "visit", "walk"].sort();
+const expectedRuntime = ["Attributes", "Document", "ParseError", "TreeDumper", "visit", "walk"].sort();
 if (runtimeExports.join("\n") !== expectedRuntime.join("\n")) {
     throw new Error(`Unexpected ES runtime exports: ${runtimeExports.join(", ")}`);
 }

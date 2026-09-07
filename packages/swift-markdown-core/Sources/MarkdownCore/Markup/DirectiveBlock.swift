@@ -8,11 +8,12 @@ import MarkdownCoreC
 public struct DirectiveBlock: Markup {
     /// Where it is, opening fence through closing fence. See ``Scope``.
     public let scope: Scope
+    /// The explicit anchor, absent when none was attached.
+    public let anchor: String?
+    /// Ordered classes and records, including duplicates.
+    public let attributes: Attributes
     /// The directive's name, without its colons.
     public let name: String
-    /// The attributes the source wrote, in first-occurrence source order, or
-    /// `nil` when it wrote no `{...}` at all.
-    public let attributes: [DirectiveAttribute]?
     /// The bracketed label, or `nil` when the source wrote none.
     public let label: DirectiveLabel?
     /// The block content the fence encloses.
@@ -27,8 +28,9 @@ extension DirectiveBlock {
         let values = DirectiveValues(from: node)
         self.init(
             scope: Self.scope(from: node),
+            anchor: markdown_core_node_anchor(node).string,
+            attributes: Attributes(from: node),
             name: values.name,
-            attributes: values.attributes,
             label: label,
             content: content
         )

@@ -51,6 +51,10 @@ public struct Citation: Sendable {
 public struct Cite: Markup {
     /// Where it is. See ``Scope`` — boundaries, not a byte range.
     public let scope: Scope
+    /// The explicit anchor, absent when none was attached.
+    public let anchor: String?
+    /// Ordered classes and records, including duplicates.
+    public let attributes: Attributes
     /// Never empty: every cite is authored with at least one item.
     public let citations: [Citation]
 
@@ -93,6 +97,17 @@ extension Citation {
             referent: CitationReferent(from: citation),
             prefix: prefix,
             suffix: suffix
+        )
+    }
+}
+
+extension Cite {
+    init(from node: OpaquePointer, citations: [Citation]) {
+        self.init(
+            scope: Self.scope(from: node),
+            anchor: markdown_core_node_anchor(node).string,
+            attributes: Attributes(from: node),
+            citations: citations
         )
     }
 }

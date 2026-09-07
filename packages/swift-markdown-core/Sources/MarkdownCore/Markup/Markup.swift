@@ -53,6 +53,8 @@ public protocol Markup: Sendable {
     /// Where this element is, as a pair of boundaries. See ``Scope`` for what
     /// those boundaries are and are not.
     var scope: Scope { get }
+    var anchor: String? { get }
+    var attributes: Attributes { get }
     /// Dispatches to the visitor case for this element's kind.
     func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result
     /// The canonical debug dump of this element and everything under it.

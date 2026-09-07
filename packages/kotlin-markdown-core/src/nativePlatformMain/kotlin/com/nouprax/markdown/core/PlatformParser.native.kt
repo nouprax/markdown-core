@@ -47,6 +47,14 @@ import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_TEXT
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_THEMATIC_BREAK
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_LIST_FLAVOR_BULLET
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_LIST_FLAVOR_ORDERED
+import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_METADATA_BOOL
+import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_METADATA_ITEM_NUMBER
+import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_METADATA_ITEM_TEXT
+import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_METADATA_LIST
+import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_METADATA_NULL
+import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_METADATA_NUMBER
+import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_METADATA_SCALAR
+import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_METADATA_TEXT
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_ORDERED_LIST_DELIMITER_DEFAULT
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PARENTHESIS
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PERIOD
@@ -79,22 +87,39 @@ import com.nouprax.markdown.core.internal.capi.markdown_core_footnote_id
 import com.nouprax.markdown.core.internal.capi.markdown_core_footnote_next
 import com.nouprax.markdown.core.internal.capi.markdown_core_footnote_scope
 import com.nouprax.markdown.core.internal.capi.markdown_core_list_flavorVar
+import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_list_item
+import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_record_at
+import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_record_count
+import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_record_item_at
+import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_record_item_count
+import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_record_kind
+import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_record_name
+import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_record_scalar
+import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_record_scope
+import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_scalar
+import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_scope
+import com.nouprax.markdown.core.internal.capi.markdown_core_node_anchor
+import com.nouprax.markdown.core.internal.capi.markdown_core_node_attribute_class_at
+import com.nouprax.markdown.core.internal.capi.markdown_core_node_attribute_class_count
+import com.nouprax.markdown.core.internal.capi.markdown_core_node_attribute_record_at
+import com.nouprax.markdown.core.internal.capi.markdown_core_node_attribute_record_count
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_callout_properties
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_callout_title
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_child_count
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_cite_citations
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_code_block_properties
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_destination
-import com.nouprax.markdown.core.internal.capi.markdown_core_node_directive_attribute_at
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_directive_label
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_directive_properties
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_document_footnotes
+import com.nouprax.markdown.core.internal.capi.markdown_core_node_document_metadata
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_document_specimens
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_formula_properties
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_get_first_child
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_get_kind
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_get_next_sibling
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_heading_level
+import com.nouprax.markdown.core.internal.capi.markdown_core_node_image_dimensions
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_list_item_marker
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_list_properties
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_literal
@@ -339,129 +364,141 @@ private class NativeTreeBuilder(
         val node = record.pointer
         val kind = markdown_core_node_get_kind(node)
         val scope = nativeScope(node)
+        val anchor = markdown_core_node_anchor(node).useContents { copyOptionalString() }
+        val attributes = scratch.attributes(node)
         val children = children(record)
         return when (kind) {
             MARKDOWN_CORE_KIND_DOCUMENT -> {
-                Document(children, footnotes(record), specimens(record), scope)
+                Document(
+                    children,
+                    scratch.metadata(node),
+                    footnotes(record),
+                    specimens(record),
+                    scope,
+                    anchor,
+                    attributes,
+                )
             }
 
             MARKDOWN_CORE_KIND_CALLOUT -> {
                 val (variant, collapsed) = scratch.callout(node)
-                Callout(variant, collapsed, title(record), children, scope)
+                Callout(variant, collapsed, title(record), children, scope, anchor, attributes)
             }
 
             MARKDOWN_CORE_KIND_PARAGRAPH -> {
-                Paragraph(children, scope)
+                Paragraph(children, scope, anchor, attributes)
             }
 
             MARKDOWN_CORE_KIND_HEADING -> {
-                Heading(scratch.headingLevel(node), children, scope)
+                Heading(scratch.headingLevel(node), children, scope, anchor, attributes)
             }
 
             MARKDOWN_CORE_KIND_THEMATIC_BREAK -> {
-                ThematicBreak(scope).also { requireLeaf(children, kind) }
+                ThematicBreak(scope, anchor, attributes).also { requireLeaf(children, kind) }
             }
 
             MARKDOWN_CORE_KIND_LIST -> {
-                scratch.list(node, children, scope)
+                scratch.list(node, children, scope, anchor, attributes)
             }
 
             MARKDOWN_CORE_KIND_LIST_ITEM -> {
-                ListItem(scratch.listItemMarker(node), children, scope)
+                ListItem(scratch.listItemMarker(node), children, scope, anchor, attributes)
             }
 
             MARKDOWN_CORE_KIND_CODE_BLOCK -> {
-                scratch.codeBlock(node, scope).also { requireLeaf(children, kind) }
+                scratch.codeBlock(node, scope, anchor, attributes).also { requireLeaf(children, kind) }
             }
 
             MARKDOWN_CORE_KIND_HTML_BLOCK -> {
-                HTMLBlock(scratch.literal(node), scope).also { requireLeaf(children, kind) }
+                HTMLBlock(scratch.literal(node), scope, anchor, attributes).also { requireLeaf(children, kind) }
             }
 
             MARKDOWN_CORE_KIND_FORMULA_BLOCK -> {
                 val formula = scratch.formula(node)
                 require(formula.first == PlacementMode.STANDALONE) { "formula block is not standalone" }
-                FormulaBlock(formula.second, scope).also { requireLeaf(children, kind) }
+                FormulaBlock(formula.second, scope, anchor, attributes).also { requireLeaf(children, kind) }
             }
 
             MARKDOWN_CORE_KIND_TABLE -> {
-                scratch.table(node, children, scope)
+                scratch.table(node, children, scope, anchor, attributes)
             }
 
             MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK -> {
-                scratch.directiveBlock(node, label(record), children, scope)
+                scratch.directiveBlock(node, label(record), children, scope, anchor, attributes)
             }
 
             MARKDOWN_CORE_KIND_TEXT -> {
-                Text(scratch.literal(node), scope).also { requireLeaf(children, kind) }
+                Text(scratch.literal(node), scope, anchor, attributes).also { requireLeaf(children, kind) }
             }
 
             MARKDOWN_CORE_KIND_SOFT_BREAK -> {
-                SoftBreak(scope).also { requireLeaf(children, kind) }
+                SoftBreak(scope, anchor, attributes).also { requireLeaf(children, kind) }
             }
 
             MARKDOWN_CORE_KIND_LINE_BREAK -> {
-                LineBreak(scope).also { requireLeaf(children, kind) }
+                LineBreak(scope, anchor, attributes).also { requireLeaf(children, kind) }
             }
 
             MARKDOWN_CORE_KIND_CODE -> {
-                Code(scratch.literal(node), scope).also { requireLeaf(children, kind) }
+                Code(scratch.literal(node), scope, anchor, attributes).also { requireLeaf(children, kind) }
             }
 
             MARKDOWN_CORE_KIND_HTML -> {
-                HTML(scratch.literal(node), scope).also { requireLeaf(children, kind) }
+                HTML(scratch.literal(node), scope, anchor, attributes).also { requireLeaf(children, kind) }
             }
 
             MARKDOWN_CORE_KIND_COMMENT -> {
-                Comment(scratch.literal(node), scope).also { requireLeaf(children, kind) }
+                Comment(scratch.literal(node), scope, anchor, attributes).also { requireLeaf(children, kind) }
             }
 
             MARKDOWN_CORE_KIND_FORMULA -> {
                 val formula = scratch.formula(node)
-                Formula(formula.first, formula.second, scope).also { requireLeaf(children, kind) }
+                Formula(formula.first, formula.second, scope, anchor, attributes).also { requireLeaf(children, kind) }
             }
 
             MARKDOWN_CORE_KIND_EMPHASIS -> {
-                Emphasis(children, scope)
+                Emphasis(children, scope, anchor, attributes)
             }
 
             MARKDOWN_CORE_KIND_STRONG -> {
-                Strong(children, scope)
+                Strong(children, scope, anchor, attributes)
             }
 
             MARKDOWN_CORE_KIND_STRIKETHROUGH -> {
-                Strikethrough(children, scope)
+                Strikethrough(children, scope, anchor, attributes)
             }
 
             MARKDOWN_CORE_KIND_LINK -> {
                 val resource = resource(node)
-                Link(resource.first, resource.second, children, scope)
+                Link(resource.first, resource.second, children, scope, anchor, attributes)
             }
 
             MARKDOWN_CORE_KIND_IMAGE -> {
                 val resource = resource(node)
-                Image(resource.first, resource.second, children, scope)
+                scratch.dimensions(node).let { (width, height) ->
+                    Image(resource.first, resource.second, width, height, children, scope, anchor, attributes)
+                }
             }
 
             MARKDOWN_CORE_KIND_DIRECTIVE -> {
-                scratch.directive(node, label(record), children, scope)
+                scratch.directive(node, label(record), children, scope, anchor, attributes)
             }
 
             MARKDOWN_CORE_KIND_CITE -> {
                 requireLeaf(children, kind)
-                Cite(citations(record), scope)
+                Cite(citations(record), scope, anchor, attributes)
             }
 
             MARKDOWN_CORE_KIND_TABLE_ROW -> {
-                scratch.tableRow(children, scope)
+                scratch.tableRow(children, scope, anchor, attributes)
             }
 
             MARKDOWN_CORE_KIND_TABLE_CELL -> {
-                scratch.tableCell(node, children, scope)
+                scratch.tableCell(node, children, scope, anchor, attributes)
             }
 
             MARKDOWN_CORE_KIND_DIRECTIVE_LABEL -> {
-                DirectiveLabel(children, scope)
+                DirectiveLabel(children, scope, anchor, attributes)
             }
 
             else -> {
@@ -547,6 +584,10 @@ private class NativeScratch(
     scope: MemScope,
 ) {
     private val firstString = scope.alloc<markdown_core_string>()
+    private val imageWidth = scope.alloc<markdown_core_optional_i64>()
+    private val imageHeight = scope.alloc<markdown_core_optional_i64>()
+    private val metadataScalar = scope.alloc<markdown_core_metadata_scalar>()
+    private val metadataItem = scope.alloc<markdown_core_metadata_list_item>()
     private val secondString = scope.alloc<markdown_core_string>()
     private val thirdString = scope.alloc<markdown_core_string>()
     private val firstOptionalString = scope.alloc<markdown_core_optional_string>()
@@ -579,6 +620,8 @@ private class NativeScratch(
         node: CPointer<markdown_core_node>,
         children: kotlin.collections.List<Markup>,
         scope: Scope,
+        anchor: String?,
+        attributes: Attributes,
     ): List {
         require(
             markdown_core_node_list_properties(
@@ -615,6 +658,8 @@ private class NativeScratch(
             firstBoolean.value,
             items,
             scope,
+            anchor,
+            attributes,
         )
     }
 
@@ -628,6 +673,8 @@ private class NativeScratch(
     fun codeBlock(
         node: CPointer<markdown_core_node>,
         scope: Scope,
+        anchor: String?,
+        attributes: Attributes,
     ): CodeBlock {
         require(
             markdown_core_node_code_block_properties(
@@ -646,6 +693,8 @@ private class NativeScratch(
             firstBoolean.value,
             secondBoolean.value,
             scope,
+            anchor,
+            attributes,
         )
     }
 
@@ -678,6 +727,8 @@ private class NativeScratch(
         node: CPointer<markdown_core_node>,
         children: kotlin.collections.List<Markup>,
         scope: Scope,
+        anchor: String?,
+        attributes: Attributes,
     ): Table {
         require(markdown_core_node_table_properties(node, count.ptr, tableHead.ptr, tableContent.ptr, tableFoot.ptr)) {
             "invalid table node"
@@ -708,27 +759,33 @@ private class NativeScratch(
             immutableList(content) { rows[head + it] },
             immutableList(foot) { rows[head + content + it] },
             scope,
+            anchor,
+            attributes,
         )
     }
 
     fun tableRow(
         children: kotlin.collections.List<Markup>,
         scope: Scope,
+        anchor: String?,
+        attributes: Attributes,
     ): TableRow {
         val cells = children.immutableMap { requireNotNull(it as? TableCell) { "table row contains a non-cell node" } }
-        return TableRow(cells, scope)
+        return TableRow(cells, scope, anchor, attributes)
     }
 
     fun tableCell(
         node: CPointer<markdown_core_node>,
         children: kotlin.collections.List<Markup>,
         scope: Scope,
+        anchor: String?,
+        attributes: Attributes,
     ): TableCell {
         require(markdown_core_node_table_cell_spans(node, tableRowspan.ptr, tableColspan.ptr)) { "invalid table cell" }
         require(tableRowspan.value in 1..Int.MAX_VALUE.toLong() && tableColspan.value in 1..Int.MAX_VALUE.toLong()) {
             "invalid table cell spans"
         }
-        return TableCell(tableRowspan.value.toInt(), tableColspan.value.toInt(), children, scope)
+        return TableCell(tableRowspan.value.toInt(), tableColspan.value.toInt(), children, scope, anchor, attributes)
     }
 
     fun directiveBlock(
@@ -736,9 +793,11 @@ private class NativeScratch(
         label: DirectiveLabel?,
         children: kotlin.collections.List<Markup>,
         scope: Scope,
+        anchor: String?,
+        attributes: Attributes,
     ): DirectiveBlock {
         val properties = directiveProperties(node)
-        return DirectiveBlock(properties.first, properties.second, label, children, scope)
+        return DirectiveBlock(properties, label, children, scope, anchor, attributes)
     }
 
     fun directive(
@@ -746,37 +805,135 @@ private class NativeScratch(
         label: DirectiveLabel?,
         children: kotlin.collections.List<Markup>,
         scope: Scope,
+        anchor: String?,
+        attributes: Attributes,
     ): Directive {
         require(children.isEmpty()) { "inline directive contains block content" }
         val properties = directiveProperties(node)
-        return Directive(properties.first, properties.second, label, scope)
+        return Directive(properties, label, scope, anchor, attributes)
     }
 
-    private fun directiveProperties(
-        node: CPointer<markdown_core_node>,
-    ): Pair<String, kotlin.collections.List<DirectiveAttribute>?> {
-        require(markdown_core_node_directive_properties(node, firstString.ptr, firstBoolean.ptr, count.ptr)) {
-            "invalid directive node"
-        }
-        val name = firstString.copyString()
-        val attributeCount = count.value.checkedSize("directive attribute count")
-        if (!firstBoolean.value) {
-            require(attributeCount == 0) { "absent directive attributes have a nonzero count" }
-            return name to null
-        }
-        val attributes =
-            immutableList(attributeCount) { index ->
+    private fun directiveProperties(node: CPointer<markdown_core_node>): String {
+        require(markdown_core_node_directive_properties(node, firstString.ptr)) { "invalid directive node" }
+        return firstString.copyString()
+    }
+
+    fun attributes(node: CPointer<markdown_core_node>): Attributes {
+        val classes =
+            immutableList(markdown_core_node_attribute_class_count(node).checkedSize("class count")) { index ->
                 require(
-                    markdown_core_node_directive_attribute_at(
-                        node,
-                        index.toULong(),
-                        firstString.ptr,
-                        secondString.ptr,
-                    ),
-                ) { "invalid directive attribute" }
-                DirectiveAttribute(firstString.copyString(), secondString.copyString())
+                    markdown_core_node_attribute_class_at(node, index.toULong(), firstString.ptr),
+                ) { "invalid class" }
+                firstString.copyString()
             }
-        return name to attributes
+        val records =
+            immutableList(markdown_core_node_attribute_record_count(node).checkedSize("record count")) { index ->
+                require(
+                    markdown_core_node_attribute_record_at(node, index.toULong(), firstString.ptr, secondString.ptr),
+                ) {
+                    "invalid record"
+                }
+                Record(firstString.copyString(), secondString.copyString())
+            }
+        return Attributes(classes, records)
+    }
+
+    fun dimensions(node: CPointer<markdown_core_node>): Pair<Int?, Int?> {
+        require(
+            markdown_core_node_image_dimensions(node, imageWidth.ptr, imageHeight.ptr),
+        ) { "invalid image dimensions" }
+
+        fun dimension(value: markdown_core_optional_i64): Int? {
+            if (!value.has_value) return null
+            require(value.value in 1..Int.MAX_VALUE.toLong()) { "invalid image dimension" }
+            return value.value.toInt()
+        }
+        return dimension(imageWidth) to dimension(imageHeight)
+    }
+
+    fun metadata(node: CPointer<markdown_core_node>): Metadata? {
+        val metadata = markdown_core_node_document_metadata(node) ?: return null
+        val records =
+            immutableList(markdown_core_metadata_record_count(metadata).checkedSize("metadata count")) { index ->
+                val record = requireNotNull(markdown_core_metadata_record_at(metadata, index.toULong()))
+                val name = markdown_core_metadata_record_name(record).useContents { copyString() }
+                val value =
+                    when (markdown_core_metadata_record_kind(record)) {
+                        MARKDOWN_CORE_METADATA_SCALAR -> {
+                            require(
+                                markdown_core_metadata_record_scalar(record, metadataScalar.ptr),
+                            ) { "invalid metadata scalar" }
+                            MetadataValue.Scalar(
+                                when (metadataScalar.kind) {
+                                    MARKDOWN_CORE_METADATA_NULL -> {
+                                        MetadataScalar.Null
+                                    }
+
+                                    MARKDOWN_CORE_METADATA_BOOL -> {
+                                        MetadataScalar.Bool(metadataScalar.value.boolean)
+                                    }
+
+                                    MARKDOWN_CORE_METADATA_NUMBER -> {
+                                        MetadataScalar.Number(
+                                            metadataScalar.value.string.copyString(),
+                                        )
+                                    }
+
+                                    MARKDOWN_CORE_METADATA_TEXT -> {
+                                        MetadataScalar.Text(
+                                            metadataScalar.value.string.copyString(),
+                                        )
+                                    }
+
+                                    else -> {
+                                        error("invalid metadata scalar kind")
+                                    }
+                                },
+                            )
+                        }
+
+                        MARKDOWN_CORE_METADATA_LIST -> {
+                            MetadataValue.List(
+                                immutableList(
+                                    markdown_core_metadata_record_item_count(record).checkedSize("metadata list count"),
+                                ) { itemIndex ->
+                                    require(
+                                        markdown_core_metadata_record_item_at(
+                                            record,
+                                            itemIndex.toULong(),
+                                            metadataItem.ptr,
+                                        ),
+                                    ) {
+                                        "invalid metadata item"
+                                    }
+                                    when (metadataItem.kind) {
+                                        MARKDOWN_CORE_METADATA_ITEM_NUMBER -> {
+                                            MetadataListItem.Number(
+                                                metadataItem.value.copyString(),
+                                            )
+                                        }
+
+                                        MARKDOWN_CORE_METADATA_ITEM_TEXT -> {
+                                            MetadataListItem.Text(
+                                                metadataItem.value.copyString(),
+                                            )
+                                        }
+
+                                        else -> {
+                                            error("invalid metadata item kind")
+                                        }
+                                    }
+                                },
+                            )
+                        }
+
+                        else -> {
+                            error("invalid metadata value kind")
+                        }
+                    }
+                MetadataRecord(name, value, markdown_core_metadata_record_scope(record).toScope())
+            }
+        return Metadata(records, markdown_core_metadata_scope(metadata).toScope())
     }
 
     fun destination(node: CPointer<markdown_core_node>): Destination {

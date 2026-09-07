@@ -27,9 +27,8 @@ directive and an empty container directive produce identical values with
 `content=[]`, and a nameless container has `name=null`. `DirectiveLabel` is
 `Markup` owned only by the typed `label` field, never an element of
 `content`, and its scope spans its brackets, so an empty label is a place.
-Attributes populate the universal `anchor` and `attributes` fields once `M7`
-lands; until then the current contract's `attributes: [DirectiveAttribute]?`
-stands.
+Attributes populate the universal `anchor` and `attributes` fields through
+the shared operation. Missing and empty containers have the same empty value.
 
 ```````````````````````````````` example
 A :badge[new]{#id .tag level="3"} here.

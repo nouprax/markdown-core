@@ -6,6 +6,15 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
+- Add universal `anchor` and ordered `Attributes(classes, records)` to every
+  node on C, Swift, Kotlin, and ES. Directives now use the one shared Pandoc
+  attribute operation: the last ID wins, an empty final ID clears it, classes
+  append, and records preserve duplicates. Empty and absent containers have
+  the same empty value. Directive names begin with a Unicode letter.
+- Add document-owned Metadata values and optional image width/height across
+  the facade and transports. Properties syntax and image dimension syntax
+  follow in O6 and O9; parsed metadata and dimensions remain absent for now.
+
 - Unify tables as columns plus head/content/foot row groups on C, Swift, Kotlin,
   and ES. Remove row header flags, expose cell spans, and retain inline or block
   cell content directly. Escaped pipes now retain authored content coordinates.
@@ -193,16 +202,10 @@ facade while removing renderer support and the caller-driven feed lifecycle.
   emphasis means when they are attached.
 - Test the flanking scan's bound before reading it, and stop the directive
   extension registering a byte its inline matcher cannot consume.
-- The directive grammar is rebuilt against the syntax it claims to implement.
-  `#name` and `.name` are `id` and `class`, `class` accumulates across an
-  attribute list where every other name is last-wins, and `.` `:` `-` `_` are
-  ordinary name characters from the second character on, so `{a:b}` is one
-  attribute rather than the start of a nested directive. An attribute name may
-  not begin with punctuation, an `=` promises a value, an unquoted value holds
-  no `<` `>` `=` or backtick, and a quoted value needs whitespace or `}` after
-  it. An attribute list the parser refuses leaves the directive standing and
-  its braces beside it as text instead of taking the directive down, and a text
-  directive's colon has no colon beside it, so `x ::a y` is text.
+- Invalid directive attributes leave the directive standing and the braces
+  available to ordinary inline parsing. Attribute recognition shares one
+  index per input extent, bounding overlapping malformed and unclosed
+  candidates linearly; allocation failures remain terminal.
 - A formula body that begins and ends with a space or a line ending, and is not
   all whitespace, loses one from each end. It is both ends or neither:
   `text $$ mid$$ text` reports `" mid"`, because the space the rule wants at the

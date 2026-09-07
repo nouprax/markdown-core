@@ -37,7 +37,12 @@ private class DumpState {
         fields: kotlin.collections.List<String> = emptyList(),
         children: Int = 0,
     ) {
-        line(kind, node.scope, fields, children)
+        line(
+            kind,
+            node.scope,
+            listOf("anchor=${optionalString(node.anchor)}", "attributes=${attributesString(node.attributes)}") + fields,
+            children,
+        )
     }
 
     /** A value line has the node line's shape: a scoped value prints like a node. */
@@ -95,10 +100,27 @@ private class DumpVisitor(
         // The footnotes are value lines after the content, each nesting its
         // own content; `children` counts the content alone.
         state.line("Document", node, children = node.content.size)
-        state.nested(node.content.size + node.footnotes.size + node.specimens.size) {
+        state.nested(
+            node.content.size + node.footnotes.size + node.specimens.size + (if (node.metadata == null) 0 else 1),
+        ) {
+            node.metadata?.let { metadata(it) }
             node.content.forEach(state::dump)
             node.footnotes.forEach { footnote(it) }
             node.specimens.forEach { specimen(it) }
+        }
+    }
+
+    private fun metadata(value: Metadata) {
+        state.line("Metadata", value.scope, emptyList(), value.records.size)
+        state.nested(value.records.size) {
+            value.records.forEach { record ->
+                state.line(
+                    "MetadataRecord",
+                    record.scope,
+                    listOf("name=${jsonString(record.name)}", "value=${metadataValue(record.value)}"),
+                    0,
+                )
+            }
         }
     }
 
@@ -220,7 +242,7 @@ private class DumpVisitor(
         state.line(
             "DirectiveBlock",
             node,
-            directiveFields(node.name, node.attributes),
+            listOf("name=${jsonString(node.name)}"),
             children = node.content.size,
         )
         state.nested(node.content.size + if (node.label == null) 0 else 1) {
@@ -292,13 +314,15 @@ private class DumpVisitor(
             listOf(
                 "dest=${destination(node.dest)}",
                 "title=${optionalString(node.title)}",
+                "width=${node.width ?: "null"}",
+                "height=${node.height ?: "null"}",
             ),
             node.content,
         )
     }
 
     override fun visitDirective(node: Directive) {
-        state.line("Directive", node, directiveFields(node.name, node.attributes))
+        state.line("Directive", node, listOf("name=${jsonString(node.name)}"))
         state.nested(if (node.label == null) 0 else 1) {
             node.label?.let(state::dump)
         }
@@ -320,20 +344,6 @@ private class DumpVisitor(
             state.nested(value.suffix.size) { value.suffix.forEach(state::dump) }
         }
     }
-
-    private fun directiveFields(
-        name: String,
-        attributes: kotlin.collections.List<DirectiveAttribute>?,
-    ): kotlin.collections.List<String> =
-        listOf(
-            "name=${jsonString(name)}",
-            "attributes=" +
-                (
-                    attributes?.joinToString(" ", prefix = "[", postfix = "]") {
-                        "${it.name}=${jsonString(it.value)}"
-                    } ?: "null"
-                ),
-        )
 }
 
 private fun scope(value: Scope): String =
@@ -458,4 +468,41 @@ private fun decimal(value: Double): String {
     if (point <= 0) return "0." + "0".repeat(-point) + digits
     if (point >= digits.length) return digits + "0".repeat(point - digits.length)
     return digits.take(point) + "." + digits.drop(point)
+}
+
+private fun attributesString(value: Attributes): String =
+    (
+        value.classes.map {
+            "." + attributeClass(it)
+        } + value.records.map { "${it.name}=${jsonString(it.value)}" }
+    ).joinToString(" ", "{", "}")
+
+private fun metadataValue(value: MetadataValue): String =
+    when (value) {
+        is MetadataValue.Scalar -> {
+            "scalar(" +
+                when (val scalar = value.value) {
+                    MetadataScalar.Null -> "null"
+                    is MetadataScalar.Bool -> "bool(${scalar.value})"
+                    is MetadataScalar.Number -> "number(${jsonString(scalar.value)})"
+                    is MetadataScalar.Text -> "text(${jsonString(scalar.value)})"
+                } + ")"
+        }
+
+        is MetadataValue.List -> {
+            "list([" +
+                value.items.joinToString(",") { item ->
+                    when (item) {
+                        is MetadataListItem.Number -> "number(${jsonString(item.value)})"
+                        is MetadataListItem.Text -> "text(${jsonString(item.value)})"
+                    }
+                } + "])"
+        }
+    }
+
+private fun attributeClass(value: String): String {
+    val plain =
+        value.isNotEmpty() &&
+            value.all { it.code in 33..126 && it.code !in listOf(34, 92, 123, 125, 91, 93, 40, 41, 61) }
+    return if (plain) value else jsonString(value)
 }

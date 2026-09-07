@@ -143,6 +143,15 @@ read-only document access is also safe. Callers must ensure that a document is
 freed only after all access to it has finished. The complete C contract is in
 [`markdown_core.h`](packages/markdown-core/include/markdown_core.h).
 
+Every Markup value also exposes `anchor` and `attributes`. Attributes contain
+ordered `classes` and ordered `records` (`name`, `value`), with duplicates
+preserved. Directives populate these fields through the shared Pandoc braced
+attribute grammar; an absent or empty container produces empty attributes.
+`Document.metadata` exposes scoped Metadata records and tagged scalar/list
+values, with numbers stored as decimal text. `Image.width` and `Image.height`
+are optional integers. Metadata and dimensions remain absent until their
+syntax lands in O6 and O9.
+
 ## Repository layout
 
 - `packages/markdown-core`: C parser, public facade, CLI, extensions, and C tests.

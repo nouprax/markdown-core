@@ -32,6 +32,12 @@ authority. The dump prints the two fields on every node line as
 classes as `.name` and the records as `name="value"` in order, and
 `Attributes.empty` prints as `attributes={}`.
 
+Class dump tokens use `.name` for non-empty printable ASCII strings excluding
+`"`, `\`, `{`, `}`, `[`, `]`, `(`, `)`, and `=`. Every other class uses `.`
+followed by a JSON string, for example `."a}b"` or `."中文"`. This escaping is
+only dump syntax; it never changes the stored class or the attribute grammar.
+
+
 `Attributes.empty` is `classes=[]` and `records=[]`. It is the value when the
 kind has no enabled attachment rule, when no container was authored, when an
 authored container was `{}`, when a container held only an ID, and when an
@@ -425,8 +431,10 @@ Both modules show the examples.
 A candidate commits atomically only after its closing `}` and every member
 have parsed. An invalid or unclosed candidate attaches nothing, emits no
 partial value, and releases its source under the owning construct's fallback;
-the failed `{` is text. Scanning is a single forward pass, and normalization
-and merging are linear in source bytes plus output. There is one attribute
+the failed `{` is text. Recognition indexes every suffix once, so overlapping malformed or unclosed
+candidates cannot repeatedly scan the same source. Normalization runs forward
+only over committed containers; recognition, normalization, and merging are
+linear in source bytes plus output. There is one attribute
 scanner in the C core, shared by every site; no site keeps a private tokenizer
 or storage shape.
 

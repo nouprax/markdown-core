@@ -136,6 +136,34 @@ markdown_core_node *markdown_core_node_new(markdown_core_node_type type) {
 
 static void free_node_as(markdown_core_node *node) {
     switch (node->type) {
+    case MARKDOWN_CORE_NODE_DOCUMENT: {
+        markdown_core_metadata *metadata = node->as.document.metadata;
+        if (metadata) {
+            for (size_t i = 0; i < metadata->count; i++) {
+                markdown_core_metadata_record *record = &metadata->records[i];
+                markdown_core_metadata_value *value = &record->value;
+                NODE_MEM(node)->free((void *)record->name.data);
+                switch (value->kind) {
+                case MARKDOWN_CORE_METADATA_SCALAR:
+                    if (value->as.scalar.kind == MARKDOWN_CORE_METADATA_NUMBER ||
+                        value->as.scalar.kind == MARKDOWN_CORE_METADATA_TEXT) {
+                        NODE_MEM(node)->free((void *)value->as.scalar.value.string.data);
+                    }
+                    break;
+                case MARKDOWN_CORE_METADATA_LIST:
+                    for (size_t j = 0; j < value->as.list.count; j++) {
+                        NODE_MEM(node)->free((void *)value->as.list.items[j].value.data);
+                    }
+                    NODE_MEM(node)->free(value->as.list.items);
+                    break;
+                }
+            }
+            NODE_MEM(node)->free(metadata->records);
+            NODE_MEM(node)->free(metadata);
+            node->as.document.metadata = NULL;
+        }
+        break;
+    }
     case MARKDOWN_CORE_NODE_LIST_ITEM:
         markdown_core_optional_chunk_free(NODE_MEM(node), &node->as.list.task_marker);
         break;
@@ -193,6 +221,7 @@ static void S_splice_after(markdown_core_node *e, markdown_core_node *first) {
 static void S_free_nodes(markdown_core_node *e) {
     markdown_core_node *next;
     while (e != NULL) {
+        markdown_core_attributes_free(NODE_MEM(e), &e->attributes);
         markdown_core_strbuf_free(&e->content);
 
         if (e->user_data && e->user_data_free_func) {

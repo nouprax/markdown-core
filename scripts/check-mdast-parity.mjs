@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { parseAttributesDump } from "./lib/upstream-cmark.mjs";
 /**
  * mdast-parity gate.
  *
@@ -84,13 +85,11 @@ function project(node) {
             fields.dest = renderDestination(destination);
             continue;
         }
-        // Both sides spell a directive's attributes as source-ordered
-        // `key="value"` pairs; the dump brackets the group so it reads as one
-        // field, and spells an empty container `[]` where the oracle spells it
-        // "null".
-        if (key === "attributes" && typeof value === "string" && value.startsWith("[")) {
-            const inner = value.slice(1, -1);
-            value = inner === "" ? "null" : inner;
+        if (key === "attributes") {
+            fields.attributes = JSON.stringify(
+                typeof value === "string" ? parseAttributesDump(value) : (value ?? { classes: [], records: [] })
+            );
+            continue;
         }
         if (value === undefined || value === "") value = key === "literal" ? "" : "null";
         fields[key] = String(value);

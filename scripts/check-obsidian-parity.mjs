@@ -24,13 +24,7 @@ import { unified } from "unified";
 import { isAlias, isMap, isScalar, isSeq, parseAllDocuments } from "yaml";
 
 import { readExamples } from "./lib/fixture-corpus.mjs";
-import {
-    crossDestination,
-    parseCanonicalDump,
-    parseCanonicalFields,
-    parseDestination,
-    urlDestination
-} from "./lib/upstream-cmark.mjs";
+import { crossDestination, parseCanonicalDump, parseDestination, urlDestination } from "./lib/upstream-cmark.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const policyPath = "specs/oracles/obsidian/deltas.json";
@@ -386,17 +380,36 @@ function fromMdast(node, unknown, source) {
     };
 }
 
-function parseMetadataDump(value) {
-    if (value === undefined || value === "null") return null;
-    const parsed = JSON.parse(String(value));
-    if (!Array.isArray(parsed)) throw new Error("canonical metadata field is not an array or null");
-    return parsed;
+function parseMetadataValue(text) {
+    const scalar = /^scalar\(([\s\S]*)\)$/.exec(text);
+    const atom = (value) => {
+        if (value === "null") return { kind: "null" };
+        const branch = /^(bool|number|text)\(([\s\S]*)\)$/.exec(value);
+        if (!branch) throw new Error("invalid metadata atom");
+        return { kind: branch[1], value: JSON.parse(branch[2]) };
+    };
+    if (scalar) return { kind: "scalar", value: atom(scalar[1]) };
+    if (!text.startsWith("list([") || !text.endsWith("])")) throw new Error("invalid metadata list");
+    const body = text.slice(6, -2),
+        items = [];
+    const pattern = /(number|text)\(("(?:\\.|[^"\\])*")\)(?:,|$)/gy;
+    let end = 0,
+        match;
+    while ((match = pattern.exec(body))) {
+        items.push({ kind: match[1], value: JSON.parse(match[2]) });
+        end = pattern.lastIndex;
+    }
+    if (end !== body.length) throw new Error("invalid metadata list item");
+    return { kind: "list", items };
 }
-
-function parseCanonicalDumpWithRootFields(dump) {
-    const tree = parseCanonicalDump(dump);
-    tree.fields = parseCanonicalFields(dump.split("\n", 1)[0]?.trim() ?? "Document");
-    return tree;
+function parseMetadataDump(node) {
+    const metadata = node.children.filter((child) => child.kind === "Metadata");
+    if (!metadata.length) return null;
+    if (metadata.length !== 1) throw new Error("multiple metadata values");
+    return metadata[0].children.map((record) => {
+        if (record.kind !== "MetadataRecord") throw new Error("invalid metadata record");
+        return { name: record.fields.name, value: parseMetadataValue(record.fields.value) };
+    });
 }
 
 function fromMarkdownCore(node, includeMetadata = false) {
@@ -410,12 +423,14 @@ function fromMarkdownCore(node, includeMetadata = false) {
         fields[name] = value ?? (name === "literal" ? "" : "null");
     }
     if (node.kind === "Document" && includeMetadata) {
-        fields.metadata = parseMetadataDump(node.fields.metadata);
+        fields.metadata = parseMetadataDump(node);
     }
     return {
         kind: node.kind,
         fields,
-        children: normalizeChildren(node.children.map((child) => fromMarkdownCore(child)))
+        children: normalizeChildren(
+            node.children.filter((child) => child.kind !== "Metadata").map((child) => fromMarkdownCore(child))
+        )
     };
 }
 
@@ -440,7 +455,7 @@ function compare(input) {
     const oracleTree = fromMdast(transformed, unknown, properties.content);
     if (properties.metadata !== null) oracleTree.fields.metadata = properties.metadata;
     const ourTree = fromMarkdownCore(
-        parseCanonicalDumpWithRootFields(
+        parseCanonicalDump(
             execFileSync(ours, [], {
                 input,
                 encoding: "utf8",
@@ -619,12 +634,11 @@ for (const [raw, expected] of [
     }
 }
 const metadataDumpCanary = [{ name: "x", value: { kind: "scalar", value: { kind: "text", value: "a b" } } }];
-const capturedMetadata = parseCanonicalDumpWithRootFields(
-    `Document metadata=${JSON.stringify(metadataDumpCanary)} children=0\n`
-).fields.metadata;
+const capturedMetadata = parseCanonicalDump(
+    'Document scope=1:1..3:3 anchor=null attributes={} children=0\n└── Metadata scope=1:1..3:3 children=1\n    └── MetadataRecord scope=2:1..2:8 name="x" value=scalar(text("a b")) children=0\n'
+);
 if (JSON.stringify(parseMetadataDump(capturedMetadata)) !== JSON.stringify(metadataDumpCanary)) {
-    process.stderr.write("obsidian parity: canonical metadata parser rejected or truncated a record array\n");
-    process.exit(1);
+    throw new Error("obsidian parity: nested metadata parser rejected a scoped record");
 }
 
 const invalidPolicy = [];

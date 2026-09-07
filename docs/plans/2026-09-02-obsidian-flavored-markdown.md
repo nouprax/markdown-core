@@ -65,8 +65,9 @@ does not define Pandoc `@key` syntax; the citations module does.
       `Footnote(id, content, scope)` value, and `Document.footnotes`. Referenced and
       inline source forms must lower to the same one-item resolved consumer model;
       retain none of the source-shaped kinds as aliases.
-- [ ] Add optional `Document.metadata` and the document-owned `Metadata`,
-      ordered `MetadataRecord`, `MetadataValue`, and `MetadataScalar` values.
+- [x] Add optional `Document.metadata` and the document-owned `Metadata`,
+      ordered `MetadataRecord`, `MetadataValue`, `MetadataScalar`, and
+      `MetadataListItem` values (`M7`; Properties syntax remains O6).
       Preserve exact record-name case and source order, distinguish absent from
       explicitly empty metadata, retain number payloads as exact strings, and
       add no known-name enum, vault type, resolved link, or Markup child.
@@ -82,10 +83,12 @@ does not define Pandoc `@key` syntax; the citations module does.
       `docs/specs/canonical-ast-dump.md`:
       the shared `Destination` enum and `Link.dest`/`Image.dest`; `CrossLink`,
       `Mark`, and `Comment`; the `Destination.cross(path, anchor)` branch;
-      the callout-fold enum; shared image dimensions; the universal nullable
-      `anchor` field on every Markup kind; and `marker` on `ListItem`. Only the
+      the callout-fold enum; and `marker` on `ListItem`. Only the
       addressable kinds named by the block-identifier grammar receive a non-null
       anchor from that source rule.
+- [x] Add the universal nullable `anchor` field and optional `Image.width` and
+      `Image.height` across the facade, models and transports (`M7`). Typed
+      dimensions remain absent until O9; directive IDs populate anchors now.
 - [x] Replace stored `checked: Bool?` with the authored `marker: String?`.
       Keep source compatibility only through a derived language convenience
       property when that does not duplicate wire state. Treat the public shape

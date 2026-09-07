@@ -182,6 +182,7 @@ export function parseCanonicalFields(body) {
         const valueStart = cursor;
         let parentheses = 0;
         let brackets = 0;
+        let braces = 0;
         let quoted = false;
         let escaped = false;
 
@@ -201,7 +202,11 @@ export function parseCanonicalFields(body) {
                 brackets++;
             } else if (character === "]") {
                 brackets--;
-            } else if (/\s/.test(character) && parentheses === 0 && brackets === 0) {
+            } else if (character === "{") {
+                braces++;
+            } else if (character === "}") {
+                braces--;
+            } else if (/\s/.test(character) && parentheses === 0 && brackets === 0 && braces === 0) {
                 break;
             }
             cursor++;
@@ -314,7 +319,7 @@ export function renderDestination(destination) {
 /** Parses this repository's canonical AST dump. */
 export function parseCanonicalDump(dump) {
     const lines = dump.split("\n").filter((line) => line.trim().length);
-    const root = { kind: "Document", fields: {}, children: [] };
+    const root = { kind: "Document", fields: parseCanonicalFields(lines[0] ?? "Document"), children: [] };
     const byDepth = [root];
     for (const line of lines.slice(1)) {
         const marker = line.search(/[├└]/);
@@ -547,4 +552,40 @@ export function taskCompletion(fields) {
     if (fields.completed !== undefined) return fields.completed;
     const marker = fields.marker;
     return marker === undefined || marker === "null" ? "null" : String(marker !== " ");
+}
+
+/** The dump's universal attribute value, independent of source tokenization. */
+export function parseAttributesDump(text = "{}") {
+    if (!text.startsWith("{") || !text.endsWith("}")) throw new Error("invalid attribute dump");
+    let cursor = 1;
+    const classes = [],
+        records = [];
+    function quoted() {
+        const match = /^"(?:\\.|[^"\\])*"/.exec(text.slice(cursor));
+        if (!match) throw new Error("invalid attribute string");
+        cursor += match[0].length;
+        return JSON.parse(match[0]);
+    }
+    while (cursor < text.length - 1) {
+        if (text[cursor] === " ") {
+            cursor++;
+            continue;
+        }
+        if (text[cursor] === ".") {
+            cursor++;
+            if (text[cursor] === '"') classes.push(quoted());
+            else {
+                const start = cursor;
+                while (cursor < text.length - 1 && text[cursor] !== " ") cursor++;
+                classes.push(text.slice(start, cursor));
+            }
+        } else {
+            const start = cursor;
+            while (cursor < text.length - 1 && text[cursor] !== "=") cursor++;
+            if (text[cursor++] !== "=") throw new Error("invalid attribute record");
+            const name = text.slice(start, cursor - 1);
+            records.push({ name, value: quoted() });
+        }
+    }
+    return { classes, records };
 }

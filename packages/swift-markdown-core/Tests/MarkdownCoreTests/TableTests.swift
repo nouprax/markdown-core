@@ -17,7 +17,9 @@ extension APISuite {
                 head: [],
                 content: [],
                 foot: [],
-                scope: scope
+                scope: scope,
+                anchor: nil,
+                attributes: .empty
             )
             #expect(table.dump().contains("columns=[none:\(expected)]"))
         }
@@ -28,18 +30,14 @@ extension APISuite {
         let head = try Document.parse("# head")
         let body = try Document.parse("body")
         let foot = try Document.parse("---")
-        func row(_ document: Document) -> TableRow {
-            TableRow(
-                cells: [TableCell(rowspan: 1, colspan: 2, content: document.content, scope: document.scope)],
-                scope: document.scope
-            )
-        }
         let table = Table(
             columns: [TableColumn(alignment: .left, relative: 0.1), TableColumn(alignment: .none, relative: nil)],
             head: [row(head)],
             content: [row(body)],
             foot: [row(foot)],
-            scope: body.scope
+            scope: body.scope,
+            anchor: nil,
+            attributes: .empty
         )
         #expect(table.head[0].cells[0].content[0] is Heading)
         #expect(table.foot[0].cells[0].content[0] is ThematicBreak)
@@ -52,9 +50,35 @@ extension APISuite {
         #expect(kinds == ["entering:Heading", "entering:Paragraph", "entering:ThematicBreak"])
         #expect(table.dump().contains("columns=[left:0.1,none:null] children=3"))
         #expect(table.dump().contains("TableFoot children=1"))
-        let empty = Table(columns: table.columns, head: [], content: [], foot: [], scope: table.scope)
+        let empty = Table(
+            columns: table.columns,
+            head: [],
+            content: [],
+            foot: [],
+            scope: table.scope,
+            anchor: nil,
+            attributes: .empty
+        )
         #expect(empty.dump().contains("TableHead children=0\n"))
         #expect(empty.dump().contains("TableFoot children=0\n"))
     }
 
+}
+
+private func row(_ document: Document) -> TableRow {
+    TableRow(
+        cells: [
+            TableCell(
+                rowspan: 1,
+                colspan: 2,
+                content: document.content,
+                scope: document.scope,
+                anchor: nil,
+                attributes: .empty
+            )
+        ],
+        scope: document.scope,
+        anchor: nil,
+        attributes: .empty
+    )
 }

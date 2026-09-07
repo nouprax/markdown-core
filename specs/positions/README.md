@@ -74,3 +74,10 @@ document, its kind, and the position. `class` and `closedBy` are annotations
 written by hand: they carry across an update and never distinguish two rows.
 `class` is analysis, `closedBy` is measurement, and a row whose owner has not
 been measured says `unassigned` rather than guessing.
+
+M7 makes the dump parser retain the Document root's fields, including its
+scope. The containment gate now checks root content geometry and registers
+previously invisible root-level heading and footnote overlaps. Document
+content, footnotes, specimens and metadata are separate owned fields, so
+field-order printing does not imply source order between those collections.
+This ledger update exposes existing scopes; it changes no parser position.

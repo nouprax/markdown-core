@@ -169,3 +169,20 @@ descendants begin after the separator.
 Every example of this module is a package fixture. Tests also cover every
 separator, deeper nesting, wire round-trips of the marker on every binding,
 allocation failure, and long malformed bracket runs.
+
+A task prefix is removed before the first block is decided. When nothing
+remains on the opening line, the item has no paragraph to continue lazily;
+an unindented following line starts outside the item. Remark removes the task
+prefix after forming paragraph content, so its different lazy continuation
+is registered as `task-prefix-before-block-content`.
+
+```````````````````````````````` example
+- [x]→
+outside
+.
+Document scope=1:1..2:7 anchor=null attributes={} children=2
+├── List scope=1:1..1:6 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+│   └── ListItem scope=1:1..1:6 anchor=null attributes={} marker="x" children=0
+└── Paragraph scope=2:1..2:7 anchor=null attributes={} children=1
+    └── Text scope=2:1..2:7 anchor=null attributes={} literal="outside" children=0
+````````````````````````````````

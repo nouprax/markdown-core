@@ -108,10 +108,10 @@ class BindingMappingTest {
         assertEquals(null, callout.title)
         assertEquals(1, callout.content.size)
         assertEquals(
-            "Document scope=1:1..1:7 children=1\n" +
-                "└── Callout scope=1:1..1:7 variant=null collapsed=null children=1\n" +
-                "    └── Paragraph scope=1:3..1:7 children=1\n" +
-                "        └── Text scope=1:3..1:7 literal=\"quote\" children=0\n",
+            "Document scope=1:1..1:7 anchor=null attributes={} children=1\n" +
+                "└── Callout scope=1:1..1:7 anchor=null attributes={} variant=null collapsed=null children=1\n" +
+                "    └── Paragraph scope=1:3..1:7 anchor=null attributes={} children=1\n" +
+                "        └── Text scope=1:3..1:7 anchor=null attributes={} literal=\"quote\" children=0\n",
             document.dump(),
         )
     }
@@ -147,7 +147,12 @@ class BindingMappingTest {
         assertIs<DirectiveLabel>(assertNotNull(block.label))
         assertEquals(1, block.content.size)
         assertIs<Paragraph>(block.content.single())
-        assertEquals("kind", block.attributes?.first()?.name)
+        assertEquals(
+            "kind",
+            block.attributes.records
+                .first()
+                .name,
+        )
 
         val inlines = assertIs<Paragraph>(document.content[1]).content
         val links = inlines.filterIsInstance<Link>()
@@ -215,11 +220,11 @@ class BindingMappingTest {
         assertTrue(
             document.dump().endsWith(
                 "└── Footnote scope=5:1..5:11 id=\"a\" children=1\n" +
-                    "    └── Paragraph scope=5:7..5:11 children=1\n" +
-                    "        └── Text scope=5:7..5:11 literal=\"twice\" children=0\n",
+                    "    └── Paragraph scope=5:7..5:11 anchor=null attributes={} children=1\n" +
+                    "        └── Text scope=5:7..5:11 anchor=null attributes={} literal=\"twice\" children=0\n",
             ),
         )
-        assertTrue(document.dump().startsWith("Document scope=1:1..5:11 children=1\n"))
+        assertTrue(document.dump().startsWith("Document scope=1:1..5:11 anchor=null attributes={} children=1\n"))
 
         val visitor = RecordingWalkingVisitor()
         document.walk(visitor)
@@ -301,8 +306,8 @@ class BindingMappingTest {
         assertEquals(null, plain.filterIsInstance<Link>().single().title)
         assertEquals(null, plain.filterIsInstance<Image>().single().title)
 
-        assertNotNull(assertIs<DirectiveBlock>(withEverything.content[2]).attributes)
-        assertEquals(null, assertIs<DirectiveBlock>(withNothing.content[2]).attributes)
+        assertEquals(listOf(Record("k", "v")), assertIs<DirectiveBlock>(withEverything.content[2]).attributes.records)
+        assertEquals(emptyList(), assertIs<DirectiveBlock>(withNothing.content[2]).attributes.records)
 
         val checked = assertIs<com.nouprax.markdown.core.List>(withEverything.content[3])
         assertEquals("x", checked.items.single().marker)

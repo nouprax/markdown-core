@@ -7,6 +7,19 @@ import kotlin.test.assertTrue
 
 class AstTest {
     @Test
+    fun universalAttributesPreserveOrderAndEscapedClassDumping() {
+        val document = Document.parse(":n{#id .a class=\"a b}c\" k=1 k=2}")
+        val directive = (document.content.single() as Paragraph).content.single() as Directive
+        assertEquals("id", directive.anchor)
+        assertEquals(listOf("a", "a", "b}c"), directive.attributes.classes)
+        assertEquals(listOf(Record("k", "1"), Record("k", "2")), directive.attributes.records)
+        assertTrue(directive.dump().contains("attributes={.a .a .\"b}c\" k=\"1\" k=\"2\"}"))
+        assertNull(document.anchor)
+        assertNull(document.metadata)
+        assertTrue(document.attributes.classes.isEmpty() && document.attributes.records.isEmpty())
+    }
+
+    @Test
     fun tableColumnWidthsUseCanonicalDecimals() {
         val scope = Document.parse("x").scope
         val widths =
@@ -21,7 +34,15 @@ class AstTest {
             )
         for ((width, expected) in widths) {
             val table =
-                Table(listOf(TableColumn(TableAlignment.NONE, width)), emptyList(), emptyList(), emptyList(), scope)
+                Table(
+                    listOf(TableColumn(TableAlignment.NONE, width)),
+                    emptyList(),
+                    emptyList(),
+                    emptyList(),
+                    scope,
+                    null,
+                    Attributes.empty,
+                )
             assertTrue(table.dump().contains("columns=[none:$expected]"))
         }
     }
@@ -29,7 +50,15 @@ class AstTest {
     @Test
     fun tablesPreserveGroupsSpansAndDirectBlockContent() {
         val documents = listOf(Document.parse("# head"), Document.parse("body"), Document.parse("---"))
-        val rows = documents.map { TableRow(listOf(TableCell(1, 2, it.content, it.scope)), it.scope) }
+        val rows =
+            documents.map {
+                TableRow(
+                    listOf(TableCell(1, 2, it.content, it.scope, null, Attributes.empty)),
+                    it.scope,
+                    null,
+                    Attributes.empty,
+                )
+            }
         val table =
             Table(
                 listOf(TableColumn(TableAlignment.LEFT, 0.1), TableColumn(TableAlignment.NONE, null)),
@@ -37,6 +66,8 @@ class AstTest {
                 listOf(rows[1]),
                 listOf(rows[2]),
                 documents[0].scope,
+                null,
+                Attributes.empty,
             )
         assertTrue(table.head[0].cells[0].content[0] is Heading)
         assertTrue(table.foot[0].cells[0].content[0] is ThematicBreak)

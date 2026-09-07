@@ -22,6 +22,123 @@ private fun jniPayload(vararg parts: Any): ByteArray {
 
 class JniPayloadDecoderTest {
     @Test
+    fun metadataAndOccurrenceFieldsSurviveThePayloadLifetime() {
+        fun string(value: String): Array<Any> = arrayOf(value.encodeToByteArray().size, value)
+
+        fun scope(): Array<Any> = arrayOf(1, 1, 1, 4)
+
+        fun payload(
+            scalarKind: Byte = 1,
+            width: Long = 640,
+        ): ByteArray =
+            jniPayload(
+                "MKJ1",
+                0.toByte(),
+                1.toByte(),
+                *scope(),
+                -1,
+                0,
+                0,
+                1.toByte(),
+                *scope(),
+                6, // metadata and six ordered records
+                *scope(),
+                *string("key"),
+                1.toByte(),
+                0.toByte(),
+                *scope(),
+                *string("key"),
+                1.toByte(),
+                scalarKind,
+                1.toByte(),
+                *scope(),
+                *string("n"),
+                1.toByte(),
+                2.toByte(),
+                *string("9007199254740993"),
+                *scope(),
+                *string("s"),
+                1.toByte(),
+                3.toByte(),
+                *string("中文\nquoted"),
+                *scope(),
+                *string("empty"),
+                2.toByte(),
+                0,
+                *scope(),
+                *string("list"),
+                2.toByte(),
+                2,
+                1.toByte(),
+                *string("1.25"),
+                2.toByte(),
+                *string(""),
+                2, // two image occurrences sharing one resource
+                23.toByte(),
+                *scope(),
+                *string("first"),
+                2,
+                *string("a"),
+                *string("a"),
+                2,
+                *string("k"),
+                *string("1"),
+                *string("k"),
+                *string("2"),
+                0,
+                1,
+                *string("/u"),
+                -1,
+                1.toByte(),
+                width,
+                1.toByte(),
+                480L,
+                0,
+                23.toByte(),
+                *scope(),
+                -1,
+                0,
+                0,
+                0,
+                0.toByte(),
+                0.toByte(),
+                0,
+                0,
+                0,
+            )
+        val bytes = payload()
+        val document = JniPayloadDecoder.decodeDocument(bytes)
+        bytes.fill(0)
+        val records = document.metadata!!.records
+        assertEquals(6, records.size)
+        assertEquals("key", records[0].name)
+        assertEquals("key", records[1].name)
+        assertEquals(MetadataScalar.Null, assertIs<MetadataValue.Scalar>(records[0].value).value)
+        assertEquals(MetadataScalar.Bool(true), assertIs<MetadataValue.Scalar>(records[1].value).value)
+        assertEquals(MetadataScalar.Number("9007199254740993"), assertIs<MetadataValue.Scalar>(records[2].value).value)
+        assertEquals(MetadataScalar.Text("中文\nquoted"), assertIs<MetadataValue.Scalar>(records[3].value).value)
+        assertEquals(emptyList(), assertIs<MetadataValue.List>(records[4].value).items)
+        assertEquals(
+            listOf(MetadataListItem.Number("1.25"), MetadataListItem.Text("")),
+            assertIs<MetadataValue.List>(records[5].value).items,
+        )
+        val first = document.content[0] as Image
+        val second = document.content[1] as Image
+        assertTrue(first.dest === second.dest)
+        assertEquals(640, first.width)
+        assertEquals(null, second.width)
+        assertEquals("first", first.anchor)
+        assertEquals(listOf("a", "a"), first.attributes.classes)
+        assertEquals(listOf(Record("k", "1"), Record("k", "2")), first.attributes.records)
+        assertTrue(document.dump().contains("value=scalar(number(\"9007199254740993\"))"))
+        val visitor = RecordingWalkingVisitor()
+        document.walk(visitor)
+        assertTrue(visitor.events.none { it.contains("Metadata") })
+        assertFailsWith<IllegalStateException> { JniPayloadDecoder.decodeDocument(payload(scalarKind = 9)) }
+        assertFailsWith<IllegalArgumentException> { JniPayloadDecoder.decodeDocument(payload(width = 0)) }
+    }
+
+    @Test
     fun tableWireCarriesGroupsWidthsAndSpans() {
         fun payload(
             head: Int = 1,
@@ -37,12 +154,19 @@ class JniPayloadDecoderTest {
                     1,
                     4,
                     1,
+                    -1,
+                    0,
+                    0, // anchor and attributes
+                    0.toByte(), // no metadata
                     1,
                     11.toByte(),
                     1,
                     1,
                     4,
                     1,
+                    -1,
+                    0,
+                    0, // anchor and attributes
                     2, // table, two columns
                     1.toByte(),
                     1.toByte(),
@@ -62,12 +186,18 @@ class JniPayloadDecoderTest {
                         1,
                         index + 1,
                         1,
+                        -1,
+                        0,
+                        0, // anchor and attributes
                         1,
                         27.toByte(),
                         index + 1,
                         1,
                         index + 1,
                         1,
+                        -1,
+                        0,
+                        0, // anchor and attributes
                         rowspan,
                         2L,
                         0,
@@ -104,18 +234,28 @@ class JniPayloadDecoderTest {
                 1,
                 7,
                 8,
+                -1,
+                0,
+                0, // anchor and attributes
+                0.toByte(), // no metadata
                 1, // document and content
                 3.toByte(),
                 1,
                 1,
                 1,
                 8,
+                -1,
+                0,
+                0, // anchor and attributes
                 1, // paragraph
                 25.toByte(),
                 1,
                 1,
                 1,
                 8,
+                -1,
+                0,
+                0, // anchor and attributes
                 1, // cite
                 1,
                 2,
@@ -150,12 +290,18 @@ class JniPayloadDecoderTest {
                 5,
                 5,
                 8,
+                -1,
+                0,
+                0, // anchor and attributes
                 1,
                 13.toByte(),
                 5,
                 5,
                 5,
                 8,
+                -1,
+                0,
+                0, // anchor and attributes
                 4,
                 "body",
                 7,
@@ -213,12 +359,19 @@ class JniPayloadDecoderTest {
                 1,
                 1,
                 1,
+                -1,
+                0,
+                0, // anchor and attributes
+                0.toByte(), // no metadata
                 1, // document scope and one child
                 6.toByte(),
                 1,
                 1,
                 1,
                 1, // list scope
+                -1,
+                0,
+                0, // anchor and attributes
                 2,
                 1,
                 0,
@@ -234,6 +387,9 @@ class JniPayloadDecoderTest {
                 1,
                 1,
                 1, // item scope
+                -1,
+                0,
+                0, // anchor and attributes
                 4,
                 "🚀",
                 0, // marker, no content
@@ -308,12 +464,19 @@ class JniPayloadDecoderTest {
                 1,
                 1,
                 8,
+                -1,
+                0,
+                0, // anchor and attributes
+                0.toByte(), // no metadata
                 1,
                 2.toByte(),
                 1,
                 1,
                 1,
                 8,
+                -1,
+                0,
+                0, // anchor and attributes
                 4,
                 "note",
                 1.toByte(),
@@ -323,6 +486,9 @@ class JniPayloadDecoderTest {
                 10,
                 1,
                 10,
+                -1,
+                0,
+                0, // anchor and attributes
                 1,
                 "T",
                 0,
@@ -336,10 +502,10 @@ class JniPayloadDecoderTest {
         assertEquals("T", (callout.title!!.single() as Text).literal)
         assertEquals(emptyList(), callout.content)
         assertEquals(
-            "Document scope=1:1..1:8 children=1\n" +
-                "└── Callout scope=1:1..1:8 variant=\"note\" collapsed=true children=0\n" +
+            "Document scope=1:1..1:8 anchor=null attributes={} children=1\n" +
+                "└── Callout scope=1:1..1:8 anchor=null attributes={} variant=\"note\" collapsed=true children=0\n" +
                 "    └── Title children=1\n" +
-                "        └── Text scope=1:10..1:10 literal=\"T\" children=0\n",
+                "        └── Text scope=1:10..1:10 anchor=null attributes={} literal=\"T\" children=0\n",
             document.dump(),
         )
         val events = mutableListOf<String>()
@@ -373,7 +539,7 @@ class JniPayloadDecoderTest {
         // item names bib key `k` in author-in-text mode with the prefix
         // `see ` and the suffix `p. 3`, then one footnote `n` holding `note`.
         val text: (Int, Int, Int, Int, String) -> Array<Any> = { l1, c1, l2, c2, literal ->
-            arrayOf(13.toByte(), l1, c1, l2, c2, literal.length, literal)
+            arrayOf(13.toByte(), l1, c1, l2, c2, -1, 0, 0, literal.encodeToByteArray().size, literal)
         }
         val payload =
             jniPayload(
@@ -384,18 +550,28 @@ class JniPayloadDecoderTest {
                 1,
                 3,
                 9,
+                -1,
+                0,
+                0, // anchor and attributes
+                0.toByte(), // no metadata
                 1,
                 3.toByte(),
                 1,
                 1,
                 1,
                 20,
+                -1,
+                0,
+                0, // anchor and attributes
                 1,
                 25.toByte(),
                 1,
                 1,
                 1,
                 20,
+                -1,
+                0,
+                0, // anchor and attributes
                 1,
                 1,
                 2,
@@ -422,6 +598,9 @@ class JniPayloadDecoderTest {
                 6,
                 3,
                 9,
+                -1,
+                0,
+                0, // anchor and attributes
                 1,
                 *text(3, 6, 3, 9, "note"),
                 0, // no document specimens
@@ -436,17 +615,17 @@ class JniPayloadDecoderTest {
         assertEquals("p. 3", (citation.suffix.single() as Text).literal)
         assertEquals("n", document.footnotes.single().id)
         assertEquals(
-            "Document scope=1:1..3:9 children=1\n" +
-                "├── Paragraph scope=1:1..1:20 children=1\n" +
-                "│   └── Cite scope=1:1..1:20 children=1\n" +
+            "Document scope=1:1..3:9 anchor=null attributes={} children=1\n" +
+                "├── Paragraph scope=1:1..1:20 anchor=null attributes={} children=1\n" +
+                "│   └── Cite scope=1:1..1:20 anchor=null attributes={} children=1\n" +
                 "│       └── Citation scope=1:2..1:19 referent=bib(key=\"k\",mode=authorInText) children=0\n" +
                 "│           ├── CitationPrefix children=1\n" +
-                "│           │   └── Text scope=1:2..1:5 literal=\"see \" children=0\n" +
+                "│           │   └── Text scope=1:2..1:5 anchor=null attributes={} literal=\"see \" children=0\n" +
                 "│           └── CitationSuffix children=1\n" +
-                "│               └── Text scope=1:10..1:13 literal=\"p. 3\" children=0\n" +
+                "│               └── Text scope=1:10..1:13 anchor=null attributes={} literal=\"p. 3\" children=0\n" +
                 "└── Footnote scope=3:1..3:9 id=\"n\" children=1\n" +
-                "    └── Paragraph scope=3:6..3:9 children=1\n" +
-                "        └── Text scope=3:6..3:9 literal=\"note\" children=0\n",
+                "    └── Paragraph scope=3:6..3:9 anchor=null attributes={} children=1\n" +
+                "        └── Text scope=3:6..3:9 anchor=null attributes={} literal=\"note\" children=0\n",
             document.dump(),
         )
         val visitor = RecordingWalkingVisitor()

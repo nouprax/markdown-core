@@ -74,9 +74,13 @@
             "callout.variant.null",
             "callout.collapsed.null",
             "callout.title.null",
-            "directive.attributes.null",
-            "directive.attributes.empty",
-            "directive.attributes.value",
+            "markup.anchor.null",
+            "markup.anchor.value",
+            "markup.attributes.empty",
+            "markup.attributes.classes",
+            "markup.attributes.records",
+            "document.metadata.null",
+            "image.dimensions.null",
             "directive.label.null",
             "directive.label.empty",
             "directive.label.populated",
@@ -106,7 +110,7 @@
             "document.source-order",
             "table.head-content-foot",
             "directive.label-before-content",
-            "directive.attributes.source-order",
+            "markup.attributes.source-order",
             "inline.source-order",
             "document.content-before-footnotes",
             "cite.items-in-order"
@@ -199,8 +203,8 @@
                     "table.column.relative.null",
                     "tableCell.span.one",
                     "tableCell.content.inline",
-                    "directive.attributes.null",
-                    "directive.attributes.empty",
+                    "markup.anchor.null",
+                    "markup.attributes.empty",
                     "directive.label.null",
                     "directive.label.empty",
                     "link.title.null",
@@ -210,7 +214,11 @@
                     "children.empty",
                     "children.populated",
                     "escaping.empty-string",
-                    "escaping.newline"
+                    "escaping.newline",
+                    "markup.anchor.value",
+                    "markup.attributes.classes",
+                    "document.metadata.null",
+                    "image.dimensions.null"
                 ],
                 "orders": ["document.source-order", "table.head-content-foot", "inline.source-order"]
             }
@@ -255,7 +263,7 @@
                     "Cite"
                 ],
                 "states": [
-                    "directive.attributes.value",
+                    "markup.attributes.records",
                     "directive.label.populated",
                     "link.title.value",
                     "image.title.value",
@@ -307,7 +315,7 @@
                     "table.column.relative.null",
                     "tableCell.span.one",
                     "tableCell.content.inline",
-                    "directive.attributes.value",
+                    "markup.attributes.records",
                     "directive.label.populated",
                     "scope.positive",
                     "children.empty",
@@ -319,7 +327,7 @@
                     "document.source-order",
                     "table.head-content-foot",
                     "directive.label-before-content",
-                    "directive.attributes.source-order"
+                    "markup.attributes.source-order"
                 ]
             }
         },

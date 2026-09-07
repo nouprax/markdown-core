@@ -9,6 +9,7 @@ const dist = path.join(packageDirectory, "dist");
 const core = [
     "markdown_core.c",
     "node.c",
+    "attributes.c",
     "iterator.c",
     "blocks.c",
     "inlines.c",

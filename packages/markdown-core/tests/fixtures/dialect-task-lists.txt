@@ -7,17 +7,17 @@
 - [x] done
 - [X] also done
 .
-Document scope=1:1..3:15 children=1
-└── List scope=1:1..3:15 flavor=bullet start=null variant=null delimiter=null tight=true children=3
-    ├── ListItem scope=1:1..1:10 marker=" " children=1
-    │   └── Paragraph scope=1:7..1:10 children=1
-    │       └── Text scope=1:7..1:10 literal="open" children=0
-    ├── ListItem scope=2:1..2:10 marker="x" children=1
-    │   └── Paragraph scope=2:7..2:10 children=1
-    │       └── Text scope=2:7..2:10 literal="done" children=0
-    └── ListItem scope=3:1..3:15 marker="X" children=1
-        └── Paragraph scope=3:7..3:15 children=1
-            └── Text scope=3:7..3:15 literal="also done" children=0
+Document scope=1:1..3:15 anchor=null attributes={} children=1
+└── List scope=1:1..3:15 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=3
+    ├── ListItem scope=1:1..1:10 anchor=null attributes={} marker=" " children=1
+    │   └── Paragraph scope=1:7..1:10 anchor=null attributes={} children=1
+    │       └── Text scope=1:7..1:10 anchor=null attributes={} literal="open" children=0
+    ├── ListItem scope=2:1..2:10 anchor=null attributes={} marker="x" children=1
+    │   └── Paragraph scope=2:7..2:10 anchor=null attributes={} children=1
+    │       └── Text scope=2:7..2:10 anchor=null attributes={} literal="done" children=0
+    └── ListItem scope=3:1..3:15 anchor=null attributes={} marker="X" children=1
+        └── Paragraph scope=3:7..3:15 anchor=null attributes={} children=1
+            └── Text scope=3:7..3:15 anchor=null attributes={} literal="also done" children=0
 ````````````````````````````````
 
 ## Only an initial marker is structural
@@ -26,12 +26,23 @@ Document scope=1:1..3:15 children=1
 - a [x] b
 - [x]none
 .
-Document scope=1:1..2:9 children=1
-└── List scope=1:1..2:9 flavor=bullet start=null variant=null delimiter=null tight=true children=2
-    ├── ListItem scope=1:1..1:9 marker=null children=1
-    │   └── Paragraph scope=1:3..1:9 children=1
-    │       └── Text scope=1:3..1:9 literal="a [x] b" children=0
-    └── ListItem scope=2:1..2:9 marker=null children=1
-        └── Paragraph scope=2:3..2:9 children=1
-            └── Text scope=2:3..2:9 literal="[x]none" children=0
+Document scope=1:1..2:9 anchor=null attributes={} children=1
+└── List scope=1:1..2:9 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=2
+    ├── ListItem scope=1:1..1:9 anchor=null attributes={} marker=null children=1
+    │   └── Paragraph scope=1:3..1:9 anchor=null attributes={} children=1
+    │       └── Text scope=1:3..1:9 anchor=null attributes={} literal="a [x] b" children=0
+    └── ListItem scope=2:1..2:9 anchor=null attributes={} marker=null children=1
+        └── Paragraph scope=2:3..2:9 anchor=null attributes={} children=1
+            └── Text scope=2:3..2:9 anchor=null attributes={} literal="[x]none" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+- [x]→
+outside
+.
+Document scope=1:1..2:7 anchor=null attributes={} children=2
+├── List scope=1:1..1:6 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+│   └── ListItem scope=1:1..1:6 anchor=null attributes={} marker="x" children=0
+└── Paragraph scope=2:1..2:7 anchor=null attributes={} children=1
+    └── Text scope=2:1..2:7 anchor=null attributes={} literal="outside" children=0
 ````````````````````````````````

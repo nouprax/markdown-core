@@ -8,7 +8,7 @@
 
 [no title](/a) [empty](/b "") ![alt](/i)
 
-:plain :empty[]{}
+:plain :empty[]{} :attrs{#kept .a class="b a" k=1 k=2}
 
 | none |
 | ---- |

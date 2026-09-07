@@ -459,43 +459,94 @@ bool markdown_core_node_table_cell_spans(const markdown_core_node *node, int64_t
     return true;
 }
 
-/* ATTRIBUTES ARE AN ORDERED SEQUENCE in first-occurrence source order. The JSON string
- * this used to hand out was a second representation of the list the parser
- * already holds, with a parser of its own to read it back; both are gone.
- * `has_attributes` distinguishes `:n` from `:n{}` -- absent from empty -- which
- * the old `null` versus `"{}"` said and a count alone cannot. */
-bool markdown_core_node_directive_properties(const markdown_core_node *node, markdown_core_string *name,
-                                             bool *has_attributes, size_t *attribute_count) {
-    const char *value;
-    if (!node || !name || !has_attributes || !attribute_count ||
-        (node->type != MARKDOWN_CORE_NODE_DIRECTIVE && node->type != MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK)) {
+bool markdown_core_node_directive_properties(const markdown_core_node *node, markdown_core_string *name) {
+    if (!node || !name || !is_directive(node)) {
         return false;
     }
-    value = markdown_core_extensions_get_directive_name((markdown_core_node *)node);
-    name->data = (const uint8_t *)value;
-    name->length = value ? strlen(value) : 0;
-    *has_attributes = markdown_core_extensions_directive_has_attributes((markdown_core_node *)node) != 0;
-    *attribute_count = markdown_core_extensions_directive_attribute_count((markdown_core_node *)node);
+    const char *value = markdown_core_extensions_get_directive_name((markdown_core_node *)node);
+    *name = (markdown_core_string){(const uint8_t *)value, value ? strlen(value) : 0};
     return true;
 }
 
-bool markdown_core_node_directive_attribute_at(const markdown_core_node *node, size_t index, markdown_core_string *name,
-                                               markdown_core_string *value) {
-    const char *name_bytes;
-    const char *value_bytes;
-    size_t name_length;
-    size_t value_length;
-    if (!node || !name || !value) {
+static markdown_core_string chunk_string(markdown_core_chunk value) {
+    return (markdown_core_string){value.data, (size_t)value.len};
+}
+markdown_core_optional_string markdown_core_node_anchor(const markdown_core_node *node) {
+    return node
+               ? (markdown_core_optional_string){node->attributes.anchor.len > 0, chunk_string(node->attributes.anchor)}
+               : (markdown_core_optional_string){0};
+}
+size_t markdown_core_node_attribute_class_count(const markdown_core_node *node) {
+    return node ? node->attributes.class_count : 0;
+}
+bool markdown_core_node_attribute_class_at(const markdown_core_node *node, size_t index, markdown_core_string *value) {
+    if (!node || !value || index >= node->attributes.class_count) {
         return false;
     }
-    if (!markdown_core_extensions_directive_attribute_at((markdown_core_node *)node, index, &name_bytes, &name_length,
-                                                         &value_bytes, &value_length)) {
+    *value = chunk_string(node->attributes.classes[index]);
+    return true;
+}
+size_t markdown_core_node_attribute_record_count(const markdown_core_node *node) {
+    return node ? node->attributes.record_count : 0;
+}
+bool markdown_core_node_attribute_record_at(const markdown_core_node *node, size_t index, markdown_core_string *name,
+                                            markdown_core_string *value) {
+    if (!node || !name || !value || index >= node->attributes.record_count) {
         return false;
     }
-    name->data = (const uint8_t *)name_bytes;
-    name->length = name_length;
-    value->data = (const uint8_t *)value_bytes;
-    value->length = value_length;
+    *name = chunk_string(node->attributes.records[index].name);
+    *value = chunk_string(node->attributes.records[index].value);
+    return true;
+}
+bool markdown_core_node_image_dimensions(const markdown_core_node *node, markdown_core_optional_i64 *width,
+                                         markdown_core_optional_i64 *height) {
+    if (!node || node->type != MARKDOWN_CORE_NODE_IMAGE || !width || !height) {
+        return false;
+    }
+    *width = node->as.link.width;
+    *height = node->as.link.height;
+    return true;
+}
+const markdown_core_metadata *markdown_core_node_document_metadata(const markdown_core_node *node) {
+    return node && node->type == MARKDOWN_CORE_NODE_DOCUMENT ? node->as.document.metadata : NULL;
+}
+markdown_core_scope markdown_core_metadata_scope(const markdown_core_metadata *metadata) {
+    return metadata ? metadata->scope : (markdown_core_scope){0};
+}
+size_t markdown_core_metadata_record_count(const markdown_core_metadata *metadata) {
+    return metadata ? metadata->count : 0;
+}
+const markdown_core_metadata_record *markdown_core_metadata_record_at(const markdown_core_metadata *metadata,
+                                                                      size_t index) {
+    return metadata && index < metadata->count ? &metadata->records[index] : NULL;
+}
+markdown_core_scope markdown_core_metadata_record_scope(const markdown_core_metadata_record *record) {
+    return record ? record->scope : (markdown_core_scope){0};
+}
+markdown_core_string markdown_core_metadata_record_name(const markdown_core_metadata_record *record) {
+    return record ? record->name : (markdown_core_string){0};
+}
+markdown_core_metadata_value_kind markdown_core_metadata_record_kind(const markdown_core_metadata_record *record) {
+    return record ? record->value.kind : 0;
+}
+bool markdown_core_metadata_record_scalar(const markdown_core_metadata_record *record,
+                                          markdown_core_metadata_scalar *value) {
+    if (!record || record->value.kind != MARKDOWN_CORE_METADATA_SCALAR || !value) {
+        return false;
+    }
+    *value = record->value.as.scalar;
+    return true;
+}
+size_t markdown_core_metadata_record_item_count(const markdown_core_metadata_record *record) {
+    return record && record->value.kind == MARKDOWN_CORE_METADATA_LIST ? record->value.as.list.count : 0;
+}
+bool markdown_core_metadata_record_item_at(const markdown_core_metadata_record *record, size_t index,
+                                           markdown_core_metadata_list_item *value) {
+    if (!record || record->value.kind != MARKDOWN_CORE_METADATA_LIST || !value ||
+        index >= record->value.as.list.count) {
+        return false;
+    }
+    *value = record->value.as.list.items[index];
     return true;
 }
 
@@ -907,7 +958,7 @@ static void buffer_double(dump_buffer *buffer, double value) {
 }
 
 static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, markdown_core_node_kind kind) {
-    markdown_core_string a = {NULL, 0}, b = {NULL, 0}, c = {NULL, 0};
+    markdown_core_string a = {NULL, 0}, c = {NULL, 0};
     markdown_core_optional_string oa = {false, {NULL, 0}}, ob = {false, {NULL, 0}};
     markdown_core_optional_i64 start;
     markdown_core_optional_bool collapsed;
@@ -916,7 +967,7 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
     markdown_core_list_flavor flavor;
     markdown_core_placement_mode mode;
     markdown_core_destination destination;
-    bool x, y, has_attributes;
+    bool x, y;
     size_t count, i;
     int32_t level;
     switch (kind) {
@@ -1050,34 +1101,15 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
     }
     case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
     case MARKDOWN_CORE_KIND_DIRECTIVE:
-        markdown_core_node_directive_properties(node, &a, &has_attributes, &count);
+        markdown_core_node_directive_properties(node, &a);
         buffer_cstr(buffer, " name=");
         buffer_json_string(buffer, a);
-        buffer_cstr(buffer, " attributes=");
-        if (!has_attributes) {
-            buffer_cstr(buffer, "null");
-        } else {
-            buffer_cstr(buffer, "[");
-            for (i = 0; i < count; i++) {
-                if (!markdown_core_node_directive_attribute_at(node, i, &a, &b)) {
-                    continue;
-                }
-                if (i) {
-                    buffer_cstr(buffer, " ");
-                }
-                buffer_bytes(buffer, a.data, a.length);
-                buffer_cstr(buffer, "=");
-                buffer_json_string(buffer, b);
-            }
-            buffer_cstr(buffer, "]");
-        }
         break;
     /* A DESTINATION IS REQUIRED (Q26): `dest=` is the tagged value and is
      * never `null`. `[a]()` used to print `destination=null`, which said the
      * author wrote no destination when the empty parentheses are the
      * destination they wrote; it is `dest=url("")` now. */
     case MARKDOWN_CORE_KIND_LINK:
-    case MARKDOWN_CORE_KIND_IMAGE:
         markdown_core_node_destination(node, &destination);
         markdown_core_node_title(node, &oa);
         buffer_cstr(buffer, " dest=");
@@ -1085,6 +1117,29 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
         buffer_cstr(buffer, " title=");
         buffer_optional_string(buffer, oa);
         break;
+    case MARKDOWN_CORE_KIND_IMAGE: {
+        markdown_core_node_destination(node, &destination);
+        markdown_core_node_title(node, &oa);
+        buffer_cstr(buffer, " dest=");
+        buffer_destination(buffer, destination);
+        buffer_cstr(buffer, " title=");
+        buffer_optional_string(buffer, oa);
+        markdown_core_optional_i64 width, height;
+        markdown_core_node_image_dimensions(node, &width, &height);
+        buffer_cstr(buffer, " width=");
+        if (width.has_value) {
+            buffer_i64(buffer, width.value);
+        } else {
+            buffer_cstr(buffer, "null");
+        }
+        buffer_cstr(buffer, " height=");
+        if (height.has_value) {
+            buffer_i64(buffer, height.value);
+        } else {
+            buffer_cstr(buffer, "null");
+        }
+        break;
+    }
     default:
         break;
     }
@@ -1272,6 +1327,86 @@ static void dump_cite_nodes(dump_buffer *buffer, const markdown_core_node *node,
     }
 }
 
+static void dump_metadata_value(dump_buffer *buffer, const markdown_core_metadata_record *record) {
+    if (markdown_core_metadata_record_kind(record) == MARKDOWN_CORE_METADATA_SCALAR) {
+        markdown_core_metadata_scalar value;
+        if (!markdown_core_metadata_record_scalar(record, &value)) {
+            buffer->failed = true;
+            return;
+        }
+        buffer_cstr(buffer, "scalar(");
+        switch (value.kind) {
+        case MARKDOWN_CORE_METADATA_NULL:
+            buffer_cstr(buffer, "null");
+            break;
+        case MARKDOWN_CORE_METADATA_BOOL:
+            buffer_cstr(buffer, value.value.boolean ? "bool(true)" : "bool(false)");
+            break;
+        case MARKDOWN_CORE_METADATA_NUMBER:
+        case MARKDOWN_CORE_METADATA_TEXT:
+            buffer_cstr(buffer, value.kind == MARKDOWN_CORE_METADATA_NUMBER ? "number(" : "text(");
+            buffer_json_string(buffer, value.value.string);
+            buffer_cstr(buffer, ")");
+            break;
+        default:
+            buffer->failed = true;
+            return;
+        }
+        buffer_cstr(buffer, ")");
+    } else if (markdown_core_metadata_record_kind(record) == MARKDOWN_CORE_METADATA_LIST) {
+        buffer_cstr(buffer, "list([");
+        for (size_t i = 0; i < markdown_core_metadata_record_item_count(record); i++) {
+            markdown_core_metadata_list_item item;
+            if (!markdown_core_metadata_record_item_at(record, i, &item)) {
+                buffer->failed = true;
+                return;
+            }
+            if (i) {
+                buffer_cstr(buffer, ",");
+            }
+            if (item.kind == MARKDOWN_CORE_METADATA_ITEM_NUMBER) {
+                buffer_cstr(buffer, "number(");
+            } else if (item.kind == MARKDOWN_CORE_METADATA_ITEM_TEXT) {
+                buffer_cstr(buffer, "text(");
+            } else {
+                buffer->failed = true;
+                return;
+            }
+            buffer_json_string(buffer, item.value);
+            buffer_cstr(buffer, ")");
+        }
+        buffer_cstr(buffer, "])");
+    } else {
+        buffer->failed = true;
+    }
+}
+
+static void dump_metadata(dump_buffer *buffer, const markdown_core_metadata *metadata, size_t depth, bool has_next) {
+    if (!ensure_more(buffer, depth + 1)) {
+        return;
+    }
+    buffer->more[depth] = has_next;
+    dump_prefix(buffer, depth + 1);
+    buffer_cstr(buffer, "Metadata scope=");
+    buffer_scope(buffer, markdown_core_metadata_scope(metadata));
+    size_t count = markdown_core_metadata_record_count(metadata);
+    buffer_cstr(buffer, " children=");
+    buffer_i64(buffer, (int64_t)count);
+    buffer_cstr(buffer, "\n");
+    for (size_t i = 0; i < count; i++) {
+        const markdown_core_metadata_record *record = markdown_core_metadata_record_at(metadata, i);
+        buffer->more[depth + 1] = i + 1 < count;
+        dump_prefix(buffer, depth + 2);
+        buffer_cstr(buffer, "MetadataRecord scope=");
+        buffer_scope(buffer, markdown_core_metadata_record_scope(record));
+        buffer_cstr(buffer, " name=");
+        buffer_json_string(buffer, markdown_core_metadata_record_name(record));
+        buffer_cstr(buffer, " value=");
+        dump_metadata_value(buffer, record);
+        buffer_cstr(buffer, " children=0\n");
+    }
+}
+
 /* The document's footnotes are scoped values nested after its content (M4):
  * each prints a `Footnote` value line with its id and its content count, then
  * its block content one level below. The document's own `children` counts
@@ -1281,6 +1416,10 @@ static void dump_document_nodes(dump_buffer *buffer, const markdown_core_node *n
     size_t remaining = child_count;
     for (size_t family = 0; family < 2; family++) {
         remaining += chain_length(definitions[family]);
+    }
+    const markdown_core_metadata *metadata = markdown_core_node_document_metadata(node);
+    if (metadata) {
+        dump_metadata(buffer, metadata, depth, remaining != 0);
     }
     dump_children(buffer, node, depth, remaining);
     remaining -= child_count;
@@ -1335,6 +1474,42 @@ static void dump_node(dump_buffer *buffer, const markdown_core_node *node, size_
     buffer_cstr(buffer, markdown_core_node_kind_name(kind));
     buffer_cstr(buffer, " scope=");
     buffer_scope(buffer, scope);
+    buffer_cstr(buffer, " anchor=");
+    buffer_optional_string(buffer, markdown_core_node_anchor(node));
+    buffer_cstr(buffer, " attributes={");
+    size_t classes = markdown_core_node_attribute_class_count(node);
+    size_t records = markdown_core_node_attribute_record_count(node);
+    for (size_t i = 0; i < classes; i++) {
+        markdown_core_string value;
+        markdown_core_node_attribute_class_at(node, i, &value);
+        if (i) {
+            buffer_cstr(buffer, " ");
+        }
+        buffer_cstr(buffer, ".");
+        bool plain = value.length != 0;
+        for (size_t j = 0; j < value.length; j++) {
+            unsigned char c = (unsigned char)value.data[j];
+            if (c <= 32 || c >= 127 || strchr("\"\\{}[]()=", c)) {
+                plain = false;
+            }
+        }
+        if (plain) {
+            buffer_bytes(buffer, value.data, value.length);
+        } else {
+            buffer_json_string(buffer, value);
+        }
+    }
+    for (size_t i = 0; i < records; i++) {
+        markdown_core_string name, value;
+        markdown_core_node_attribute_record_at(node, i, &name, &value);
+        if (i || classes) {
+            buffer_cstr(buffer, " ");
+        }
+        buffer_bytes(buffer, name.data, name.length);
+        buffer_cstr(buffer, "=");
+        buffer_json_string(buffer, value);
+    }
+    buffer_cstr(buffer, "}");
     dump_fields(buffer, node, kind);
     buffer_cstr(buffer, " children=");
     buffer_i64(buffer, (int64_t)child_count);

@@ -106,12 +106,16 @@ const stateValidators = {
     // O8; until then every callout is metadata-free, which these three states
     // pin: no variant, no fold marker, and no `Title` group, which is
     // the only way a title prints.
-    "callout.variant.null": (tree) => /^.*Callout scope=\S+ variant=null /m.test(tree),
+    "callout.variant.null": (tree) => /^.*Callout scope=\S+ anchor=null attributes=\{\} variant=null /m.test(tree),
     "callout.collapsed.null": (tree) => /^.*Callout scope=.* collapsed=null /m.test(tree),
     "callout.title.null": (tree) => /^.*Callout scope=/m.test(tree) && !/Title children=/.test(tree),
-    "directive.attributes.null": (tree) => /^.*Directive(?:Block)? scope=.* attributes=null /m.test(tree),
-    "directive.attributes.empty": (tree) => /^.*Directive(?:Block)? scope=.* attributes=\[\] /m.test(tree),
-    "directive.attributes.value": (tree) => /^.*Directive(?:Block)? scope=.* attributes=\[.+\] /m.test(tree),
+    "markup.anchor.null": (tree) => / anchor=null /.test(tree),
+    "markup.anchor.value": (tree) => / anchor="[^"\n]+" /.test(tree),
+    "markup.attributes.empty": (tree) => / attributes=\{\} /.test(tree),
+    "markup.attributes.classes": (tree) => / attributes=\{\./.test(tree),
+    "markup.attributes.records": (tree) => / attributes=\{[^}]*[A-Za-z]+="/.test(tree),
+    "document.metadata.null": (tree) => !/Metadata scope=/.test(tree),
+    "image.dimensions.null": (tree) => /Image scope=.* width=null height=null /.test(tree),
     // The dump visualizes the DirectiveLabel field as a nested Markup node:
     // absent emits no label node, empty has `children=0`, and populated owns
     // inline descendants.
@@ -119,8 +123,9 @@ const stateValidators = {
         /^(.*)Directive(?:Block)? scope=[^\n]*\n(?!\1(?:\u2502|\|)?\s*(?:\u251c|\u2514)\u2500\u2500 DirectiveLabel )/m.test(
             tree
         ),
-    "directive.label.empty": (tree) => /DirectiveLabel scope=\S+ children=0$/m.test(tree),
-    "directive.label.populated": (tree) => /DirectiveLabel scope=\S+ children=[1-9]\d*$/m.test(tree),
+    "directive.label.empty": (tree) => /DirectiveLabel scope=\S+ anchor=null attributes=\{\} children=0$/m.test(tree),
+    "directive.label.populated": (tree) =>
+        /DirectiveLabel scope=\S+ anchor=null attributes=\{\} children=[1-9]\d*$/m.test(tree),
     // M2: a reference occurrence is the `Link` or `Image` it names, and dumps
     // identically to a direct one apart from scope. The case holds one direct
     // and several reference occurrences of each kind, so every `Link` line and
@@ -156,7 +161,7 @@ const stateValidators = {
     // An attribute VALUE that contains a quote. It was called `escaping.json`
     // when the whole attribute map was one JSON string; the escaping it checks
     // is the dump's, and that is what it was always about.
-    "escaping.attribute-value": (tree) => /attributes=\[[^\]]*="[^\]]*\\"/.test(tree),
+    "escaping.attribute-value": (tree) => /attributes=\{[^\n]*="[^\n]*\\"/.test(tree),
     // `Comment` is the one kind valid in both block and inline content, and
     // the parent edge is what records which (M0).
     "comment.placement.block": (tree) =>
@@ -187,8 +192,8 @@ const orderValidators = {
         /TableHead children=\d+[\s\S]*TableBody children=\d+[\s\S]*TableFoot children=\d+/.test(tree),
     "directive.label-before-content": (tree) =>
         /DirectiveBlock scope=.* children=[1-9]\d*\n[\s\S]*DirectiveLabel scope=[\s\S]*Paragraph scope=/.test(tree),
-    "directive.attributes.source-order": (tree) =>
-        /DirectiveBlock scope=.*attributes=\[properties=".*" metadata=".*"\]/.test(tree),
+    "markup.attributes.source-order": (tree) =>
+        /DirectiveBlock scope=.*attributes=\{[^}]*properties=".*" metadata=".*"\}/.test(tree),
     "inline.source-order": (tree) => /Paragraph scope=.* children=[2-9]\d*/.test(tree),
     // Every `Footnote` value nests under `Document` after the last content
     // line (M4).
@@ -339,9 +344,12 @@ for (const testCase of manifest.cases ?? []) {
             actualKinds.add(kind);
             for (const field of fieldsByKind[kind] ?? []) allObservedFields.add(`${kind}.${field}`);
         }
-        // Strings first, then bracketed groups: `attributes=[a="1" b="2"]` is
+        // Strings first, then bracketed groups: `attributes={a="1" b="2"}` is
         // ONE field, and without the second pass ` b=` reads as a second one.
-        const lineWithoutStrings = line.replace(/"(?:\\.|[^"\\])*"/g, '""').replace(/=\[[^\]]*\]/g, "=[]");
+        const lineWithoutStrings = line
+            .replace(/"(?:\\.|[^"\\])*"/g, '""')
+            .replace(/=\[[^\]]*\]/g, "=[]")
+            .replace(/=\{[^}]*\}/g, "={}");
         const fieldNames = [...lineWithoutStrings.matchAll(/ ([A-Za-z]+)=/g)].map((field) => field[1]);
         // The dump's scalar field names ARE the contract's; node-valued fields
         // are represented by nested dump descendants. Until Step 15A this was a
@@ -365,7 +373,8 @@ for (const testCase of manifest.cases ?? []) {
                 ]
             )
         );
-        const expectedFieldNames = ["scope", ...(dumpFields[kind] ?? []), "children"];
+        const inherited = value ? ["scope"] : contract.inheritedFields.map((field) => field.name);
+        const expectedFieldNames = [...inherited, ...(dumpFields[kind] ?? []), "children"];
         if (!sameArray(fieldNames, expectedFieldNames)) {
             failures.push(
                 `${testCase.expected}:${index + 1} fields are ${fieldNames.join(",")}; expected ${expectedFieldNames.join(",")}`

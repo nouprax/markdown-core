@@ -27,18 +27,18 @@ a[^f]
 
 tail
 .
-Document scope=1:1..5:4 children=2
-├── Paragraph scope=1:1..1:5 children=2
-│   ├── Text scope=1:1..1:1 literal="a" children=0
-│   └── Cite scope=1:2..1:5 children=1
+Document scope=1:1..5:4 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:5 anchor=null attributes={} children=2
+│   ├── Text scope=1:1..1:1 anchor=null attributes={} literal="a" children=0
+│   └── Cite scope=1:2..1:5 anchor=null attributes={} children=1
 │       └── Citation scope=1:3..1:4 referent=footnote(id="f") children=0
 │           ├── CitationPrefix children=0
 │           └── CitationSuffix children=0
-├── Paragraph scope=5:1..5:4 children=1
-│   └── Text scope=5:1..5:4 literal="tail" children=0
+├── Paragraph scope=5:1..5:4 anchor=null attributes={} children=1
+│   └── Text scope=5:1..5:4 anchor=null attributes={} literal="tail" children=0
 └── Footnote scope=3:1..4:0 id="f" children=1
-    └── Paragraph scope=3:7..3:10 children=1
-        └── Text scope=3:7..3:10 literal="body" children=0
+    └── Paragraph scope=3:7..3:10 anchor=null attributes={} children=1
+        └── Text scope=3:7..3:10 anchor=null attributes={} literal="body" children=0
 ````````````````````````````````
 
 Several definitions, out of first-reference order, each staying at its own
@@ -53,26 +53,26 @@ mid
 
 [^b]: B
 .
-Document scope=1:1..7:7 children=2
-├── Paragraph scope=1:1..1:11 children=4
-│   ├── Text scope=1:1..1:1 literal="x" children=0
-│   ├── Cite scope=1:2..1:5 children=1
+Document scope=1:1..7:7 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:11 anchor=null attributes={} children=4
+│   ├── Text scope=1:1..1:1 anchor=null attributes={} literal="x" children=0
+│   ├── Cite scope=1:2..1:5 anchor=null attributes={} children=1
 │   │   └── Citation scope=1:3..1:4 referent=footnote(id="b") children=0
 │   │       ├── CitationPrefix children=0
 │   │       └── CitationSuffix children=0
-│   ├── Text scope=1:6..1:7 literal=" y" children=0
-│   └── Cite scope=1:8..1:11 children=1
+│   ├── Text scope=1:6..1:7 anchor=null attributes={} literal=" y" children=0
+│   └── Cite scope=1:8..1:11 anchor=null attributes={} children=1
 │       └── Citation scope=1:9..1:10 referent=footnote(id="a") children=0
 │           ├── CitationPrefix children=0
 │           └── CitationSuffix children=0
-├── Paragraph scope=5:1..5:3 children=1
-│   └── Text scope=5:1..5:3 literal="mid" children=0
+├── Paragraph scope=5:1..5:3 anchor=null attributes={} children=1
+│   └── Text scope=5:1..5:3 anchor=null attributes={} literal="mid" children=0
 ├── Footnote scope=3:1..4:0 id="a" children=1
-│   └── Paragraph scope=3:7..3:7 children=1
-│       └── Text scope=3:7..3:7 literal="A" children=0
+│   └── Paragraph scope=3:7..3:7 anchor=null attributes={} children=1
+│       └── Text scope=3:7..3:7 anchor=null attributes={} literal="A" children=0
 └── Footnote scope=7:1..7:7 id="b" children=1
-    └── Paragraph scope=7:7..7:7 children=1
-        └── Text scope=7:7..7:7 literal="B" children=0
+    └── Paragraph scope=7:7..7:7 anchor=null attributes={} children=1
+        └── Text scope=7:7..7:7 anchor=null attributes={} literal="B" children=0
 ````````````````````````````````
 
 An unreferenced definition is kept, not dropped.
@@ -82,12 +82,12 @@ no references here
 
 [^orphan]: still a definition
 .
-Document scope=1:1..3:29 children=1
-├── Paragraph scope=1:1..1:18 children=1
-│   └── Text scope=1:1..1:18 literal="no references here" children=0
+Document scope=1:1..3:29 anchor=null attributes={} children=1
+├── Paragraph scope=1:1..1:18 anchor=null attributes={} children=1
+│   └── Text scope=1:1..1:18 anchor=null attributes={} literal="no references here" children=0
 └── Footnote scope=3:1..3:29 id="orphan" children=1
-    └── Paragraph scope=3:12..3:29 children=1
-        └── Text scope=3:12..3:29 literal="still a definition" children=0
+    └── Paragraph scope=3:12..3:29 anchor=null attributes={} children=1
+        └── Text scope=3:12..3:29 anchor=null attributes={} literal="still a definition" children=0
 ````````````````````````````````
 
 A footnote reference with no definition is literal text in both models, label
@@ -96,9 +96,9 @@ included and unparsed — the same rule the missing link reference below follows
 ```````````````````````````````` example
 dangling[^nope] tail
 .
-Document scope=1:1..1:20 children=1
-└── Paragraph scope=1:1..1:20 children=1
-    └── Text scope=1:1..1:20 literal="dangling[^nope] tail" children=0
+Document scope=1:1..1:20 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:20 anchor=null attributes={} children=1
+    └── Text scope=1:1..1:20 anchor=null attributes={} literal="dangling[^nope] tail" children=0
 ````````````````````````````````
 
 A reference link resolves to its definition; the definition itself leaves no
@@ -110,12 +110,12 @@ node, as in cmark. remark keeps a `definition` node and an unresolved
 
 See [link][ref].
 .
-Document scope=1:1..3:16 children=1
-└── Paragraph scope=3:1..3:16 children=3
-    ├── Text scope=3:1..3:4 literal="See " children=0
-    ├── Link scope=3:5..3:15 dest=url("/r") title="T" children=1
-    │   └── Text scope=3:6..3:9 literal="link" children=0
-    └── Text scope=3:16..3:16 literal="." children=0
+Document scope=1:1..3:16 anchor=null attributes={} children=1
+└── Paragraph scope=3:1..3:16 anchor=null attributes={} children=3
+    ├── Text scope=3:1..3:4 anchor=null attributes={} literal="See " children=0
+    ├── Link scope=3:5..3:15 anchor=null attributes={} dest=url("/r") title="T" children=1
+    │   └── Text scope=3:6..3:9 anchor=null attributes={} literal="link" children=0
+    └── Text scope=3:16..3:16 anchor=null attributes={} literal="." children=0
 ````````````````````````````````
 
 A collapsed reference and a shortcut reference resolve the same way.
@@ -125,14 +125,14 @@ A collapsed reference and a shortcut reference resolve the same way.
 
 [ref][] and [ref].
 .
-Document scope=1:1..3:18 children=1
-└── Paragraph scope=3:1..3:18 children=4
-    ├── Link scope=3:1..3:7 dest=url("/r") title=null children=1
-    │   └── Text scope=3:2..3:4 literal="ref" children=0
-    ├── Text scope=3:8..3:12 literal=" and " children=0
-    ├── Link scope=3:13..3:17 dest=url("/r") title=null children=1
-    │   └── Text scope=3:14..3:16 literal="ref" children=0
-    └── Text scope=3:18..3:18 literal="." children=0
+Document scope=1:1..3:18 anchor=null attributes={} children=1
+└── Paragraph scope=3:1..3:18 anchor=null attributes={} children=4
+    ├── Link scope=3:1..3:7 anchor=null attributes={} dest=url("/r") title=null children=1
+    │   └── Text scope=3:2..3:4 anchor=null attributes={} literal="ref" children=0
+    ├── Text scope=3:8..3:12 anchor=null attributes={} literal=" and " children=0
+    ├── Link scope=3:13..3:17 anchor=null attributes={} dest=url("/r") title=null children=1
+    │   └── Text scope=3:14..3:16 anchor=null attributes={} literal="ref" children=0
+    └── Text scope=3:18..3:18 anchor=null attributes={} literal="." children=0
 ````````````````````````````````
 
 A reference whose definition is missing degrades to literal text in both
@@ -141,9 +141,9 @@ models.
 ```````````````````````````````` example
 See [missing][nope].
 .
-Document scope=1:1..1:20 children=1
-└── Paragraph scope=1:1..1:20 children=1
-    └── Text scope=1:1..1:20 literal="See [missing][nope]." children=0
+Document scope=1:1..1:20 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:20 anchor=null attributes={} children=1
+    └── Text scope=1:1..1:20 anchor=null attributes={} literal="See [missing][nope]." children=0
 ````````````````````````````````
 
 A definition appearing after its use still resolves.
@@ -153,12 +153,12 @@ Use [a] first.
 
 [a]: /late "L"
 .
-Document scope=1:1..3:14 children=1
-└── Paragraph scope=1:1..1:14 children=3
-    ├── Text scope=1:1..1:4 literal="Use " children=0
-    ├── Link scope=1:5..1:7 dest=url("/late") title="L" children=1
-    │   └── Text scope=1:6..1:6 literal="a" children=0
-    └── Text scope=1:8..1:14 literal=" first." children=0
+Document scope=1:1..3:14 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:14 anchor=null attributes={} children=3
+    ├── Text scope=1:1..1:4 anchor=null attributes={} literal="Use " children=0
+    ├── Link scope=1:5..1:7 anchor=null attributes={} dest=url("/late") title="L" children=1
+    │   └── Text scope=1:6..1:6 anchor=null attributes={} literal="a" children=0
+    └── Text scope=1:8..1:14 anchor=null attributes={} literal=" first." children=0
 ````````````````````````````````
 
 An image reference resolves to an image.
@@ -168,10 +168,10 @@ An image reference resolves to an image.
 
 [pic]: /p "P"
 .
-Document scope=1:1..3:13 children=1
-└── Paragraph scope=1:1..1:11 children=1
-    └── Image scope=1:1..1:11 dest=url("/p") title="P" children=1
-        └── Text scope=1:3..1:5 literal="alt" children=0
+Document scope=1:1..3:13 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:11 anchor=null attributes={} children=1
+    └── Image scope=1:1..1:11 anchor=null attributes={} dest=url("/p") title="P" width=null height=null children=1
+        └── Text scope=1:3..1:5 anchor=null attributes={} literal="alt" children=0
 ````````````````````````````````
 
 Definitions are matched case-insensitively and with collapsed whitespace.
@@ -181,10 +181,10 @@ Definitions are matched case-insensitively and with collapsed whitespace.
 
 [foo bar]
 .
-Document scope=1:1..3:9 children=1
-└── Paragraph scope=3:1..3:9 children=1
-    └── Link scope=3:1..3:9 dest=url("/fb") title=null children=1
-        └── Text scope=3:2..3:8 literal="foo bar" children=0
+Document scope=1:1..3:9 anchor=null attributes={} children=1
+└── Paragraph scope=3:1..3:9 anchor=null attributes={} children=1
+    └── Link scope=3:1..3:9 anchor=null attributes={} dest=url("/fb") title=null children=1
+        └── Text scope=3:2..3:8 anchor=null attributes={} literal="foo bar" children=0
 ````````````````````````````````
 
 A directive label that never closes leaves the rest of the line as ordinary
@@ -195,10 +195,10 @@ difference is registered rather than fixed.
 ```````````````````````````````` example
 :note[See [docs](https://examp
 .
-Document scope=1:1..1:30 children=1
-└── Paragraph scope=1:1..1:30 children=2
-    ├── Directive scope=1:1..1:5 name="note" attributes=null children=0
-    └── Text scope=1:6..1:30 literal="[See [docs](https://examp" children=0
+Document scope=1:1..1:30 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:30 anchor=null attributes={} children=2
+    ├── Directive scope=1:1..1:5 anchor=null attributes={} name="note" children=0
+    └── Text scope=1:6..1:30 anchor=null attributes={} literal="[See [docs](https://examp" children=0
 ````````````````````````````````
 
 A row with more cells than the header declares. cmark-gfm drops the excess
@@ -210,16 +210,16 @@ a
 | --- |
 b.| status |
 .
-Document scope=1:1..3:12 children=1
-└── Table scope=1:1..3:12 columns=[none:null] children=2
+Document scope=1:1..3:12 anchor=null attributes={} children=1
+└── Table scope=1:1..3:12 anchor=null attributes={} columns=[none:null] children=2
     ├── TableHead children=1
-    │   └── TableRow scope=1:1..1:1 children=1
-    │       └── TableCell scope=1:1..1:1 rowspan=1 colspan=1 children=1
-    │           └── Text scope=1:1..1:1 literal="a" children=0
+    │   └── TableRow scope=1:1..1:1 anchor=null attributes={} children=1
+    │       └── TableCell scope=1:1..1:1 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │           └── Text scope=1:1..1:1 anchor=null attributes={} literal="a" children=0
     ├── TableBody children=1
-    │   └── TableRow scope=3:1..3:12 children=1
-    │       └── TableCell scope=3:1..3:2 rowspan=1 colspan=1 children=1
-    │           └── Text scope=3:1..3:2 literal="b." children=0
+    │   └── TableRow scope=3:1..3:12 anchor=null attributes={} children=1
+    │       └── TableCell scope=3:1..3:2 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │           └── Text scope=3:1..3:2 anchor=null attributes={} literal="b." children=0
     └── TableFoot children=0
 ````````````````````````````````
 
@@ -236,16 +236,16 @@ lead \| text
 | a | b |
 | - | - |
 .
-Document scope=1:1..3:9 children=2
-├── Paragraph scope=1:1..1:12 children=1
-│   └── Text scope=1:1..1:12 literal="lead | text" children=0
-└── Table scope=2:1..3:9 columns=[none:null,none:null] children=1
+Document scope=1:1..3:9 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:12 anchor=null attributes={} children=1
+│   └── Text scope=1:1..1:12 anchor=null attributes={} literal="lead | text" children=0
+└── Table scope=2:1..3:9 anchor=null attributes={} columns=[none:null,none:null] children=1
     ├── TableHead children=1
-    │   └── TableRow scope=2:1..2:9 children=2
-    │       ├── TableCell scope=2:2..2:4 rowspan=1 colspan=1 children=1
-    │       │   └── Text scope=2:3..2:3 literal="a" children=0
-    │       └── TableCell scope=2:6..2:8 rowspan=1 colspan=1 children=1
-    │           └── Text scope=2:7..2:7 literal="b" children=0
+    │   └── TableRow scope=2:1..2:9 anchor=null attributes={} children=2
+    │       ├── TableCell scope=2:2..2:4 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       │   └── Text scope=2:3..2:3 anchor=null attributes={} literal="a" children=0
+    │       └── TableCell scope=2:6..2:8 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │           └── Text scope=2:7..2:7 anchor=null attributes={} literal="b" children=0
     ├── TableBody children=0
     └── TableFoot children=0
 ````````````````````````````````
@@ -255,16 +255,16 @@ pre \\| lead
 | a | b |
 | - | - |
 .
-Document scope=1:1..3:9 children=2
-├── Paragraph scope=1:1..1:12 children=1
-│   └── Text scope=1:1..1:12 literal="pre \\| lead" children=0
-└── Table scope=2:1..3:9 columns=[none:null,none:null] children=1
+Document scope=1:1..3:9 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:12 anchor=null attributes={} children=1
+│   └── Text scope=1:1..1:12 anchor=null attributes={} literal="pre \\| lead" children=0
+└── Table scope=2:1..3:9 anchor=null attributes={} columns=[none:null,none:null] children=1
     ├── TableHead children=1
-    │   └── TableRow scope=2:1..2:9 children=2
-    │       ├── TableCell scope=2:2..2:4 rowspan=1 colspan=1 children=1
-    │       │   └── Text scope=2:3..2:3 literal="a" children=0
-    │       └── TableCell scope=2:6..2:8 rowspan=1 colspan=1 children=1
-    │           └── Text scope=2:7..2:7 literal="b" children=0
+    │   └── TableRow scope=2:1..2:9 anchor=null attributes={} children=2
+    │       ├── TableCell scope=2:2..2:4 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       │   └── Text scope=2:3..2:3 anchor=null attributes={} literal="a" children=0
+    │       └── TableCell scope=2:6..2:8 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │           └── Text scope=2:7..2:7 anchor=null attributes={} literal="b" children=0
     ├── TableBody children=0
     └── TableFoot children=0
 ````````````````````````````````
@@ -277,11 +277,11 @@ renderer, which is the `code-span-line-ending` shape delta.
 a `x
 y` b
 .
-Document scope=1:1..2:4 children=1
-└── Paragraph scope=1:1..2:4 children=3
-    ├── Text scope=1:1..1:2 literal="a " children=0
-    ├── Code scope=1:3..2:2 literal="x y" children=0
-    └── Text scope=2:3..2:4 literal=" b" children=0
+Document scope=1:1..2:4 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..2:4 anchor=null attributes={} children=3
+    ├── Text scope=1:1..1:2 anchor=null attributes={} literal="a " children=0
+    ├── Code scope=1:3..2:2 anchor=null attributes={} literal="x y" children=0
+    └── Text scope=2:3..2:4 anchor=null attributes={} literal=" b" children=0
 ````````````````````````````````
 
 A definition whose title candidate is followed by non-whitespace: the title
@@ -300,12 +300,12 @@ gate compares remark directly and does not use that stored block as an oracle.
 
 [foo]
 .
-Document scope=1:1..4:5 children=2
-├── Paragraph scope=2:1..2:10 children=1
-│   └── Text scope=2:1..2:10 literal="\"title\" ok" children=0
-└── Paragraph scope=4:1..4:5 children=1
-    └── Link scope=4:1..4:5 dest=url("/url") title=null children=1
-        └── Text scope=4:2..4:4 literal="foo" children=0
+Document scope=1:1..4:5 anchor=null attributes={} children=2
+├── Paragraph scope=2:1..2:10 anchor=null attributes={} children=1
+│   └── Text scope=2:1..2:10 anchor=null attributes={} literal="\"title\" ok" children=0
+└── Paragraph scope=4:1..4:5 anchor=null attributes={} children=1
+    └── Link scope=4:1..4:5 anchor=null attributes={} dest=url("/url") title=null children=1
+        └── Text scope=4:2..4:4 anchor=null attributes={} literal="foo" children=0
 ````````````````````````````````
 
 Attaching an extension must not change what CommonMark emphasis means. The
@@ -319,31 +319,31 @@ than in an engine fixture alone.
 ```````````````````````````````` example
 foo:_bar_
 .
-Document scope=1:1..1:9 children=1
-└── Paragraph scope=1:1..1:9 children=2
-    ├── Text scope=1:1..1:4 literal="foo:" children=0
-    └── Emphasis scope=1:5..1:9 children=1
-        └── Text scope=1:6..1:8 literal="bar" children=0
+Document scope=1:1..1:9 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:9 anchor=null attributes={} children=2
+    ├── Text scope=1:1..1:4 anchor=null attributes={} literal="foo:" children=0
+    └── Emphasis scope=1:5..1:9 anchor=null attributes={} children=1
+        └── Text scope=1:6..1:8 anchor=null attributes={} literal="bar" children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
 foo$_bar_
 .
-Document scope=1:1..1:9 children=1
-└── Paragraph scope=1:1..1:9 children=2
-    ├── Text scope=1:1..1:4 literal="foo$" children=0
-    └── Emphasis scope=1:5..1:9 children=1
-        └── Text scope=1:6..1:8 literal="bar" children=0
+Document scope=1:1..1:9 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:9 anchor=null attributes={} children=2
+    ├── Text scope=1:1..1:4 anchor=null attributes={} literal="foo$" children=0
+    └── Emphasis scope=1:5..1:9 anchor=null attributes={} children=1
+        └── Text scope=1:6..1:8 anchor=null attributes={} literal="bar" children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
 a}*.foo.*
 .
-Document scope=1:1..1:9 children=1
-└── Paragraph scope=1:1..1:9 children=2
-    ├── Text scope=1:1..1:2 literal="a}" children=0
-    └── Emphasis scope=1:3..1:9 children=1
-        └── Text scope=1:4..1:8 literal=".foo." children=0
+Document scope=1:1..1:9 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:9 anchor=null attributes={} children=2
+    ├── Text scope=1:1..1:2 anchor=null attributes={} literal="a}" children=0
+    └── Emphasis scope=1:3..1:9 anchor=null attributes={} children=1
+        └── Text scope=1:4..1:8 anchor=null attributes={} literal=".foo." children=0
 ````````````````````````````````
 
 Ordered punctuation is absent from mdast; task markers compare as decoded
@@ -354,18 +354,18 @@ values, including the space that denotes an incomplete task.
    - [ ] open
    - [x] done
 .
-Document scope=1:1..3:13 children=1
-└── List scope=1:1..3:13 flavor=ordered start=1 variant=decimal delimiter=parenthesis(closed=false) tight=true children=1
-    └── ListItem scope=1:1..3:13 marker=null children=2
-        ├── Paragraph scope=1:4..1:8 children=1
-        │   └── Text scope=1:4..1:8 literal="outer" children=0
-        └── List scope=2:4..3:13 flavor=bullet start=null variant=null delimiter=null tight=true children=2
-            ├── ListItem scope=2:4..2:13 marker=" " children=1
-            │   └── Paragraph scope=2:10..2:13 children=1
-            │       └── Text scope=2:10..2:13 literal="open" children=0
-            └── ListItem scope=3:4..3:13 marker="x" children=1
-                └── Paragraph scope=3:10..3:13 children=1
-                    └── Text scope=3:10..3:13 literal="done" children=0
+Document scope=1:1..3:13 anchor=null attributes={} children=1
+└── List scope=1:1..3:13 anchor=null attributes={} flavor=ordered start=1 variant=decimal delimiter=parenthesis(closed=false) tight=true children=1
+    └── ListItem scope=1:1..3:13 anchor=null attributes={} marker=null children=2
+        ├── Paragraph scope=1:4..1:8 anchor=null attributes={} children=1
+        │   └── Text scope=1:4..1:8 anchor=null attributes={} literal="outer" children=0
+        └── List scope=2:4..3:13 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=2
+            ├── ListItem scope=2:4..2:13 anchor=null attributes={} marker=" " children=1
+            │   └── Paragraph scope=2:10..2:13 anchor=null attributes={} children=1
+            │       └── Text scope=2:10..2:13 anchor=null attributes={} literal="open" children=0
+            └── ListItem scope=3:4..3:13 anchor=null attributes={} marker="x" children=1
+                └── Paragraph scope=3:10..3:13 anchor=null attributes={} children=1
+                    └── Text scope=3:10..3:13 anchor=null attributes={} literal="done" children=0
 ````````````````````````````````
 
 Ragged rows use their own table's width, including tables nested in containers.
@@ -381,50 +381,50 @@ Ragged rows use their own table's width, including tables nested in containers.
 > short
 > | first | second | third | ignored |
 .
-Document scope=1:1..9:38 children=2
-├── Table scope=1:1..4:28 columns=[none:null,none:null] children=3
+Document scope=1:1..9:38 anchor=null attributes={} children=2
+├── Table scope=1:1..4:28 anchor=null attributes={} columns=[none:null,none:null] children=3
 │   ├── TableHead children=1
-│   │   └── TableRow scope=1:1..1:9 children=2
-│   │       ├── TableCell scope=1:2..1:4 rowspan=1 colspan=1 children=1
-│   │       │   └── Text scope=1:3..1:3 literal="a" children=0
-│   │       └── TableCell scope=1:6..1:8 rowspan=1 colspan=1 children=1
-│   │           └── Text scope=1:7..1:7 literal="b" children=0
+│   │   └── TableRow scope=1:1..1:9 anchor=null attributes={} children=2
+│   │       ├── TableCell scope=1:2..1:4 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │       │   └── Text scope=1:3..1:3 anchor=null attributes={} literal="a" children=0
+│   │       └── TableCell scope=1:6..1:8 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │           └── Text scope=1:7..1:7 anchor=null attributes={} literal="b" children=0
 │   ├── TableBody children=2
-│   │   ├── TableRow scope=3:1..3:13 children=2
-│   │   │   ├── TableCell scope=3:1..3:13 rowspan=1 colspan=1 children=1
-│   │   │   │   └── Directive scope=3:1..3:13 name="badge" attributes=null children=0
-│   │   │   │       └── DirectiveLabel scope=3:7..3:13 children=1
-│   │   │   │           └── Text scope=3:8..3:12 literal="short" children=0
-│   │   │   └── TableCell scope=3:13..3:13 rowspan=1 colspan=1 children=0
-│   │   └── TableRow scope=4:1..4:28 children=2
-│   │       ├── TableCell scope=4:2..4:8 rowspan=1 colspan=1 children=1
-│   │       │   └── Text scope=4:3..4:7 literal="first" children=0
-│   │       └── TableCell scope=4:10..4:17 rowspan=1 colspan=1 children=1
-│   │           └── Text scope=4:11..4:16 literal="second" children=0
+│   │   ├── TableRow scope=3:1..3:13 anchor=null attributes={} children=2
+│   │   │   ├── TableCell scope=3:1..3:13 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │   │   │   └── Directive scope=3:1..3:13 anchor=null attributes={} name="badge" children=0
+│   │   │   │       └── DirectiveLabel scope=3:7..3:13 anchor=null attributes={} children=1
+│   │   │   │           └── Text scope=3:8..3:12 anchor=null attributes={} literal="short" children=0
+│   │   │   └── TableCell scope=3:13..3:13 anchor=null attributes={} rowspan=1 colspan=1 children=0
+│   │   └── TableRow scope=4:1..4:28 anchor=null attributes={} children=2
+│   │       ├── TableCell scope=4:2..4:8 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │       │   └── Text scope=4:3..4:7 anchor=null attributes={} literal="first" children=0
+│   │       └── TableCell scope=4:10..4:17 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │           └── Text scope=4:11..4:16 anchor=null attributes={} literal="second" children=0
 │   └── TableFoot children=0
-└── Callout scope=6:1..9:38 variant=null collapsed=null children=1
-    └── Table scope=6:3..9:38 columns=[none:null,none:null,none:null] children=3
+└── Callout scope=6:1..9:38 anchor=null attributes={} variant=null collapsed=null children=1
+    └── Table scope=6:3..9:38 anchor=null attributes={} columns=[none:null,none:null,none:null] children=3
         ├── TableHead children=1
-        │   └── TableRow scope=6:3..6:15 children=3
-        │       ├── TableCell scope=6:4..6:6 rowspan=1 colspan=1 children=1
-        │       │   └── Text scope=6:5..6:5 literal="a" children=0
-        │       ├── TableCell scope=6:8..6:10 rowspan=1 colspan=1 children=1
-        │       │   └── Text scope=6:9..6:9 literal="b" children=0
-        │       └── TableCell scope=6:12..6:14 rowspan=1 colspan=1 children=1
-        │           └── Text scope=6:13..6:13 literal="c" children=0
+        │   └── TableRow scope=6:3..6:15 anchor=null attributes={} children=3
+        │       ├── TableCell scope=6:4..6:6 anchor=null attributes={} rowspan=1 colspan=1 children=1
+        │       │   └── Text scope=6:5..6:5 anchor=null attributes={} literal="a" children=0
+        │       ├── TableCell scope=6:8..6:10 anchor=null attributes={} rowspan=1 colspan=1 children=1
+        │       │   └── Text scope=6:9..6:9 anchor=null attributes={} literal="b" children=0
+        │       └── TableCell scope=6:12..6:14 anchor=null attributes={} rowspan=1 colspan=1 children=1
+        │           └── Text scope=6:13..6:13 anchor=null attributes={} literal="c" children=0
         ├── TableBody children=2
-        │   ├── TableRow scope=8:3..8:7 children=3
-        │   │   ├── TableCell scope=8:3..8:7 rowspan=1 colspan=1 children=1
-        │   │   │   └── Text scope=8:3..8:7 literal="short" children=0
-        │   │   ├── TableCell scope=8:7..8:7 rowspan=1 colspan=1 children=0
-        │   │   └── TableCell scope=8:7..8:7 rowspan=1 colspan=1 children=0
-        │   └── TableRow scope=9:3..9:38 children=3
-        │       ├── TableCell scope=9:4..9:10 rowspan=1 colspan=1 children=1
-        │       │   └── Text scope=9:5..9:9 literal="first" children=0
-        │       ├── TableCell scope=9:12..9:19 rowspan=1 colspan=1 children=1
-        │       │   └── Text scope=9:13..9:18 literal="second" children=0
-        │       └── TableCell scope=9:21..9:27 rowspan=1 colspan=1 children=1
-        │           └── Text scope=9:22..9:26 literal="third" children=0
+        │   ├── TableRow scope=8:3..8:7 anchor=null attributes={} children=3
+        │   │   ├── TableCell scope=8:3..8:7 anchor=null attributes={} rowspan=1 colspan=1 children=1
+        │   │   │   └── Text scope=8:3..8:7 anchor=null attributes={} literal="short" children=0
+        │   │   ├── TableCell scope=8:7..8:7 anchor=null attributes={} rowspan=1 colspan=1 children=0
+        │   │   └── TableCell scope=8:7..8:7 anchor=null attributes={} rowspan=1 colspan=1 children=0
+        │   └── TableRow scope=9:3..9:38 anchor=null attributes={} children=3
+        │       ├── TableCell scope=9:4..9:10 anchor=null attributes={} rowspan=1 colspan=1 children=1
+        │       │   └── Text scope=9:5..9:9 anchor=null attributes={} literal="first" children=0
+        │       ├── TableCell scope=9:12..9:19 anchor=null attributes={} rowspan=1 colspan=1 children=1
+        │       │   └── Text scope=9:13..9:18 anchor=null attributes={} literal="second" children=0
+        │       └── TableCell scope=9:21..9:27 anchor=null attributes={} rowspan=1 colspan=1 children=1
+        │           └── Text scope=9:22..9:26 anchor=null attributes={} literal="third" children=0
         └── TableFoot children=0
 ````````````````````````````````
 
@@ -437,17 +437,17 @@ afte
    - [ ] open
 | expr |
 .
-Document scope=1:1..5:8 children=2
-├── Paragraph scope=1:1..1:4 children=1
-│   └── Text scope=1:1..1:4 literal="afte" children=0
-└── List scope=2:1..5:8 flavor=ordered start=1 variant=decimal delimiter=parenthesis(closed=false) tight=false children=1
-    └── ListItem scope=2:1..5:8 marker=null children=2
-        ├── Paragraph scope=2:4..2:8 children=1
-        │   └── Text scope=2:4..2:8 literal="outer" children=0
-        └── List scope=4:4..5:8 flavor=bullet start=null variant=null delimiter=null tight=true children=1
-            └── ListItem scope=4:4..5:8 marker=" " children=1
-                └── Paragraph scope=4:10..5:8 children=3
-                    ├── Text scope=4:10..4:13 literal="open" children=0
-                    ├── SoftBreak scope=4:14..4:14 children=0
-                    └── Text scope=5:1..5:8 literal="| expr |" children=0
+Document scope=1:1..5:8 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:4 anchor=null attributes={} children=1
+│   └── Text scope=1:1..1:4 anchor=null attributes={} literal="afte" children=0
+└── List scope=2:1..5:8 anchor=null attributes={} flavor=ordered start=1 variant=decimal delimiter=parenthesis(closed=false) tight=false children=1
+    └── ListItem scope=2:1..5:8 anchor=null attributes={} marker=null children=2
+        ├── Paragraph scope=2:4..2:8 anchor=null attributes={} children=1
+        │   └── Text scope=2:4..2:8 anchor=null attributes={} literal="outer" children=0
+        └── List scope=4:4..5:8 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+            └── ListItem scope=4:4..5:8 anchor=null attributes={} marker=" " children=1
+                └── Paragraph scope=4:10..5:8 anchor=null attributes={} children=3
+                    ├── Text scope=4:10..4:13 anchor=null attributes={} literal="open" children=0
+                    ├── SoftBreak scope=4:14..4:14 anchor=null attributes={} children=0
+                    └── Text scope=5:1..5:8 anchor=null attributes={} literal="| expr |" children=0
 ````````````````````````````````

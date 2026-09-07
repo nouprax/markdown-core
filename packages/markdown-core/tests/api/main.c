@@ -421,15 +421,11 @@ static void formula_extension_accessors(test_batch_runner *runner) {
  * doing for these tests. */
 static void attribute_eq(test_batch_runner *runner, markdown_core_node *node, size_t index, const char *name,
                          const char *value, const char *message) {
-    const char *actual_name = NULL;
-    const char *actual_value = NULL;
-    size_t name_length = 0;
-    size_t value_length = 0;
-    int ok = markdown_core_extensions_directive_attribute_at(node, index, &actual_name, &name_length, &actual_value,
-                                                             &value_length);
+    markdown_core_string actual_name, actual_value;
+    int ok = markdown_core_node_attribute_record_at(node, index, &actual_name, &actual_value);
     OK(runner,
-       ok && name_length == strlen(name) && memcmp(actual_name, name, name_length) == 0 &&
-           value_length == strlen(value) && memcmp(actual_value, value, value_length) == 0,
+       ok && actual_name.length == strlen(name) && memcmp(actual_name.data, name, actual_name.length) == 0 &&
+           actual_value.length == strlen(value) && memcmp(actual_value.data, value, actual_value.length) == 0,
        message);
 }
 
@@ -440,7 +436,7 @@ static void directive_extension_accessors(test_batch_runner *runner) {
      * the three of them are one value rather than the last one. The sequence
      * keeps the first occurrence of each name in source order. */
     markdown_core_node *doc =
-        parse_with_directive_extension(":a[]{id=first muted=true title=\"My Video\" bare dup=first dup=last "
+        parse_with_directive_extension(":a[]{id=first muted=true title=\"My Video\" bare= dup=first dup=last "
                                        "class=red class=green class=blue id=123}\n");
     markdown_core_node *paragraph = markdown_core_node_first_child(doc);
     markdown_core_node *directive = markdown_core_node_first_child(paragraph);
@@ -455,17 +451,17 @@ static void directive_extension_accessors(test_batch_runner *runner) {
            markdown_core_node_next(label) == NULL,
        "a directive label is a detached field root, not a child or sibling");
     STR_EQ(runner, markdown_core_extensions_get_directive_name(directive), "a", "directive name getter");
-    INT_EQ(runner, markdown_core_extensions_directive_has_attributes(directive), 1,
-           "directive reports its attribute container");
-    INT_EQ(runner, (int)markdown_core_extensions_directive_attribute_count(directive), 6, "directive attribute count");
-    attribute_eq(runner, directive, 0, "id", "123", "a repeated name updates its first source position");
-    attribute_eq(runner, directive, 1, "muted", "true", "source order preserves a bare-looking value");
-    attribute_eq(runner, directive, 2, "title", "My Video", "source order preserves a quoted value");
-    attribute_eq(runner, directive, 3, "bare", "", "source order preserves a valueless attribute");
-    attribute_eq(runner, directive, 4, "dup", "last", "a repeated name keeps its last value in its first slot");
-    attribute_eq(runner, directive, 5, "class", "red green blue", "class accumulates in its first source slot");
-    OK(runner, !markdown_core_extensions_directive_attribute_at(directive, 6, NULL, NULL, NULL, NULL),
-       "an out-of-range attribute index is refused");
+    markdown_core_optional_string anchor = markdown_core_node_anchor(directive);
+    OK(runner, anchor.has_value && anchor.value.length == 3 && memcmp(anchor.value.data, "123", 3) == 0,
+       "last ID wins");
+    INT_EQ(runner, (int)markdown_core_node_attribute_record_count(directive), 5, "every record occurrence survives");
+    INT_EQ(runner, (int)markdown_core_node_attribute_class_count(directive), 3, "class assignments append words");
+    attribute_eq(runner, directive, 0, "muted", "true", "first record");
+    attribute_eq(runner, directive, 1, "title", "My Video", "quoted value");
+    attribute_eq(runner, directive, 2, "bare", "", "empty assignment");
+    attribute_eq(runner, directive, 3, "dup", "first", "first duplicate");
+    attribute_eq(runner, directive, 4, "dup", "last", "last duplicate");
+    OK(runner, !markdown_core_node_attribute_record_at(directive, 5, NULL, NULL), "out of range refused");
 
     INT_EQ(runner, markdown_core_extensions_set_directive_name(directive, "next_name-2"), 1,
            "set directive name succeeds");
@@ -488,9 +484,9 @@ static void directive_extension_accessors(test_batch_runner *runner) {
            "set directive name rejects non-directive nodes");
     OK(runner, markdown_core_extensions_get_directive_name(paragraph) == NULL,
        "get directive name rejects non-directive nodes");
-    INT_EQ(runner, markdown_core_extensions_directive_has_attributes(paragraph), 0,
+    INT_EQ(runner, markdown_core_node_anchor(paragraph).has_value, 0,
            "a non-directive node has no attribute container");
-    INT_EQ(runner, (int)markdown_core_extensions_directive_attribute_count(paragraph), 0,
+    INT_EQ(runner, (int)markdown_core_node_attribute_record_count(paragraph), 0,
            "a non-directive node has no attributes to count");
     markdown_core_node_free(doc);
 
@@ -549,19 +545,18 @@ static void directive_extension_accessors(test_batch_runner *runner) {
     }
     markdown_core_node_free(doc);
 
-    /* ABSENT is not EMPTY. `:plain[]` wrote no container and `:empty{}` wrote
-     * one with nothing in it; a count of zero cannot tell them apart, which is
-     * why has_attributes exists at all. */
+    /* Missing and authored-empty containers have the same public value. */
     doc = parse_with_directive_extension(":plain[] :empty{}\n");
     paragraph = markdown_core_node_first_child(doc);
     directive = markdown_core_node_first_child(paragraph);
-    INT_EQ(runner, markdown_core_extensions_directive_has_attributes(directive), 0,
-           "a directive with no attribute container reports none");
-    directive = markdown_core_node_next(markdown_core_node_next(directive));
-    INT_EQ(runner, markdown_core_extensions_directive_has_attributes(directive), 1,
-           "an explicit empty attribute container is preserved");
-    INT_EQ(runner, (int)markdown_core_extensions_directive_attribute_count(directive), 0,
-           "an explicit empty attribute container holds nothing");
+    for (int i = 0; i < 2; i++) {
+        OK(runner, !markdown_core_node_anchor(directive).has_value, "empty value has no anchor");
+        INT_EQ(runner, (int)markdown_core_node_attribute_class_count(directive), 0, "empty classes");
+        INT_EQ(runner, (int)markdown_core_node_attribute_record_count(directive), 0, "empty records");
+        if (i == 0) {
+            directive = markdown_core_node_next(markdown_core_node_next(directive));
+        }
+    }
     markdown_core_node_free(doc);
 }
 
@@ -1464,40 +1459,42 @@ static void source_pos(test_batch_runner *runner) {
 
     test_facade_dump(
         runner, markdown,
-        "Document scope=1:1..10:20 children=3\n"
-        "├── Heading scope=1:1..1:13 level=1 children=3\n"
-        "│   ├── Text scope=1:3..1:5 literal=\"Hi \" children=0\n"
-        "│   ├── Emphasis scope=1:6..1:12 children=1\n"
-        "│   │   └── Text scope=1:7..1:11 literal=\"there\" children=0\n"
-        "│   └── Text scope=1:13..1:13 literal=\".\" children=0\n"
-        "├── Paragraph scope=3:1..4:42 children=8\n"
-        "│   ├── Text scope=3:1..3:14 literal=\"Hello “ \" children=0\n"
-        "│   ├── Link scope=3:15..3:37 dest=url(\"http://www.google.com\") "
+        "Document scope=1:1..10:20 anchor=null attributes={} children=3\n"
+        "├── Heading scope=1:1..1:13 anchor=null attributes={} level=1 children=3\n"
+        "│   ├── Text scope=1:3..1:5 anchor=null attributes={} literal=\"Hi \" children=0\n"
+        "│   ├── Emphasis scope=1:6..1:12 anchor=null attributes={} children=1\n"
+        "│   │   └── Text scope=1:7..1:11 anchor=null attributes={} literal=\"there\" children=0\n"
+        "│   └── Text scope=1:13..1:13 anchor=null attributes={} literal=\".\" children=0\n"
+        "├── Paragraph scope=3:1..4:42 anchor=null attributes={} children=8\n"
+        "│   ├── Text scope=3:1..3:14 anchor=null attributes={} literal=\"Hello “ \" children=0\n"
+        "│   ├── Link scope=3:15..3:37 anchor=null attributes={} dest=url(\"http://www.google.com\") "
         "title=null children=1\n"
-        "│   │   └── Text scope=3:16..3:36 literal=\"http://www.google.com\" "
+        "│   │   └── Text scope=3:16..3:36 anchor=null attributes={} literal=\"http://www.google.com\" "
         "children=0\n"
-        "│   ├── SoftBreak scope=3:38..3:38 children=0\n"
-        "│   ├── Text scope=4:1..4:6 literal=\"there \" children=0\n"
-        "│   ├── Code scope=4:7..4:10 literal=\"hi\" children=0\n"
-        "│   ├── Text scope=4:11..4:14 literal=\" -- \" children=0\n"
-        "│   ├── Link scope=4:15..4:41 dest=url(\"www.google.com\") title=\"ok\" "
+        "│   ├── SoftBreak scope=3:38..3:38 anchor=null attributes={} children=0\n"
+        "│   ├── Text scope=4:1..4:6 anchor=null attributes={} literal=\"there \" children=0\n"
+        "│   ├── Code scope=4:7..4:10 anchor=null attributes={} literal=\"hi\" children=0\n"
+        "│   ├── Text scope=4:11..4:14 anchor=null attributes={} literal=\" -- \" children=0\n"
+        "│   ├── Link scope=4:15..4:41 anchor=null attributes={} dest=url(\"www.google.com\") title=\"ok\" "
         "children=1\n"
-        "│   │   └── Text scope=4:16..4:19 literal=\"okay\" children=0\n"
-        "│   └── Text scope=4:42..4:42 literal=\".\" children=0\n"
-        "└── Callout scope=6:1..10:20 variant=null collapsed=null children=1\n"
-        "    └── List scope=6:3..10:20 flavor=ordered start=1 variant=decimal delimiter=period tight=false children=2\n"
-        "        ├── ListItem scope=6:3..8:1 marker=null children=1\n"
-        "        │   └── Paragraph scope=6:6..7:10 children=3\n"
-        "        │       ├── Text scope=6:6..6:10 literal=\"Okay.\" children=0\n"
-        "        │       ├── SoftBreak scope=6:11..6:11 children=0\n"
-        "        │       └── Text scope=7:6..7:10 literal=\"Sure.\" children=0\n"
-        "        └── ListItem scope=9:3..10:20 marker=null children=1\n"
-        "            └── Paragraph scope=9:6..10:20 children=3\n"
-        "                ├── Text scope=9:6..9:15 literal=\"Yes, okay.\" children=0\n"
-        "                ├── SoftBreak scope=9:16..9:16 children=0\n"
-        "                └── Image scope=10:6..10:20 dest=url(\"hi\") title=\"yes\" "
+        "│   │   └── Text scope=4:16..4:19 anchor=null attributes={} literal=\"okay\" children=0\n"
+        "│   └── Text scope=4:42..4:42 anchor=null attributes={} literal=\".\" children=0\n"
+        "└── Callout scope=6:1..10:20 anchor=null attributes={} variant=null collapsed=null children=1\n"
+        "    └── List scope=6:3..10:20 anchor=null attributes={} flavor=ordered start=1 variant=decimal "
+        "delimiter=period tight=false children=2\n"
+        "        ├── ListItem scope=6:3..8:1 anchor=null attributes={} marker=null children=1\n"
+        "        │   └── Paragraph scope=6:6..7:10 anchor=null attributes={} children=3\n"
+        "        │       ├── Text scope=6:6..6:10 anchor=null attributes={} literal=\"Okay.\" children=0\n"
+        "        │       ├── SoftBreak scope=6:11..6:11 anchor=null attributes={} children=0\n"
+        "        │       └── Text scope=7:6..7:10 anchor=null attributes={} literal=\"Sure.\" children=0\n"
+        "        └── ListItem scope=9:3..10:20 anchor=null attributes={} marker=null children=1\n"
+        "            └── Paragraph scope=9:6..10:20 anchor=null attributes={} children=3\n"
+        "                ├── Text scope=9:6..9:15 anchor=null attributes={} literal=\"Yes, okay.\" children=0\n"
+        "                ├── SoftBreak scope=9:16..9:16 anchor=null attributes={} children=0\n"
+        "                └── Image scope=10:6..10:20 anchor=null attributes={} dest=url(\"hi\") title=\"yes\" "
+        "width=null height=null "
         "children=1\n"
-        "                    └── Text scope=10:8..10:9 literal=\"ok\" children=0\n",
+        "                    └── Text scope=10:8..10:9 anchor=null attributes={} literal=\"ok\" children=0\n",
         "scopes are as expected");
 }
 
@@ -1505,22 +1502,22 @@ static void source_pos_inlines(test_batch_runner *runner) {
     test_facade_dump(runner,
                      "*first*\n"
                      "second\n",
-                     "Document scope=1:1..2:6 children=1\n"
-                     "└── Paragraph scope=1:1..2:6 children=3\n"
-                     "    ├── Emphasis scope=1:1..1:7 children=1\n"
-                     "    │   └── Text scope=1:2..1:6 literal=\"first\" children=0\n"
-                     "    ├── SoftBreak scope=1:8..1:8 children=0\n"
-                     "    └── Text scope=2:1..2:6 literal=\"second\" children=0\n",
+                     "Document scope=1:1..2:6 anchor=null attributes={} children=1\n"
+                     "└── Paragraph scope=1:1..2:6 anchor=null attributes={} children=3\n"
+                     "    ├── Emphasis scope=1:1..1:7 anchor=null attributes={} children=1\n"
+                     "    │   └── Text scope=1:2..1:6 anchor=null attributes={} literal=\"first\" children=0\n"
+                     "    ├── SoftBreak scope=1:8..1:8 anchor=null attributes={} children=0\n"
+                     "    └── Text scope=2:1..2:6 anchor=null attributes={} literal=\"second\" children=0\n",
                      "closed emphasis scopes are as expected");
     test_facade_dump(runner,
                      "*first\n"
                      "second*\n",
-                     "Document scope=1:1..2:7 children=1\n"
-                     "└── Paragraph scope=1:1..2:7 children=1\n"
-                     "    └── Emphasis scope=1:1..2:7 children=3\n"
-                     "        ├── Text scope=1:2..1:6 literal=\"first\" children=0\n"
-                     "        ├── SoftBreak scope=1:7..1:7 children=0\n"
-                     "        └── Text scope=2:1..2:6 literal=\"second\" children=0\n",
+                     "Document scope=1:1..2:7 anchor=null attributes={} children=1\n"
+                     "└── Paragraph scope=1:1..2:7 anchor=null attributes={} children=1\n"
+                     "    └── Emphasis scope=1:1..2:7 anchor=null attributes={} children=3\n"
+                     "        ├── Text scope=1:2..1:6 anchor=null attributes={} literal=\"first\" children=0\n"
+                     "        ├── SoftBreak scope=1:7..1:7 anchor=null attributes={} children=0\n"
+                     "        └── Text scope=2:1..2:6 anchor=null attributes={} literal=\"second\" children=0\n",
                      "multiline emphasis scopes are as expected");
 }
 
@@ -1837,56 +1834,61 @@ static void ref_source_pos(test_batch_runner *runner) {
     /* M2: the occurrence is the Link it names, with its own scope and the
      * definition's destination and title; the definition produces no node. */
     test_facade_dump(runner, markdown,
-                     "Document scope=1:1..3:40 children=1\n"
-                     "└── Paragraph scope=1:1..1:28 children=3\n"
-                     "    ├── Text scope=1:1..1:10 literal=\"Let's try \" children=0\n"
-                     "    ├── Link scope=1:11..1:21 dest=url(\"https://github.com\") title=\"GitHub\" children=1\n"
-                     "    │   └── Text scope=1:12..1:20 literal=\"reference\" children=0\n"
-                     "    └── Text scope=1:22..1:28 literal=\" links.\" children=0\n",
+                     "Document scope=1:1..3:40 anchor=null attributes={} children=1\n"
+                     "└── Paragraph scope=1:1..1:28 anchor=null attributes={} children=3\n"
+                     "    ├── Text scope=1:1..1:10 anchor=null attributes={} literal=\"Let's try \" children=0\n"
+                     "    ├── Link scope=1:11..1:21 anchor=null attributes={} dest=url(\"https://github.com\") "
+                     "title=\"GitHub\" children=1\n"
+                     "    │   └── Text scope=1:12..1:20 anchor=null attributes={} literal=\"reference\" children=0\n"
+                     "    └── Text scope=1:22..1:28 anchor=null attributes={} literal=\" links.\" children=0\n",
                      "reference link scopes are as expected");
 }
 
 static void autolink_source_pos(test_batch_runner *runner) {
-    test_facade_dump(runner, "See www.example.com.\n",
-                     "Document scope=1:1..1:20 children=1\n"
-                     "└── Paragraph scope=1:1..1:20 children=3\n"
-                     "    ├── Text scope=1:1..1:4 literal=\"See \" children=0\n"
-                     "    ├── Link scope=1:5..1:19 dest=url(\"http://www.example.com\") "
-                     "title=null children=1\n"
-                     "    │   └── Text scope=1:5..1:19 literal=\"www.example.com\" children=0\n"
-                     "    └── Text scope=1:20..1:20 literal=\".\" children=0\n",
-                     "www autolink scopes are as expected");
-    test_facade_dump(runner, "See http://example.com.\n",
-                     "Document scope=1:1..1:23 children=1\n"
-                     "└── Paragraph scope=1:1..1:23 children=3\n"
-                     "    ├── Text scope=1:1..1:4 literal=\"See \" children=0\n"
-                     "    ├── Link scope=1:5..1:22 dest=url(\"http://example.com\") title=null "
-                     "children=1\n"
-                     "    │   └── Text scope=1:5..1:22 literal=\"http://example.com\" children=0\n"
-                     "    └── Text scope=1:23..1:23 literal=\".\" children=0\n",
-                     "scheme autolink scopes are as expected");
+    test_facade_dump(
+        runner, "See www.example.com.\n",
+        "Document scope=1:1..1:20 anchor=null attributes={} children=1\n"
+        "└── Paragraph scope=1:1..1:20 anchor=null attributes={} children=3\n"
+        "    ├── Text scope=1:1..1:4 anchor=null attributes={} literal=\"See \" children=0\n"
+        "    ├── Link scope=1:5..1:19 anchor=null attributes={} dest=url(\"http://www.example.com\") "
+        "title=null children=1\n"
+        "    │   └── Text scope=1:5..1:19 anchor=null attributes={} literal=\"www.example.com\" children=0\n"
+        "    └── Text scope=1:20..1:20 anchor=null attributes={} literal=\".\" children=0\n",
+        "www autolink scopes are as expected");
+    test_facade_dump(
+        runner, "See http://example.com.\n",
+        "Document scope=1:1..1:23 anchor=null attributes={} children=1\n"
+        "└── Paragraph scope=1:1..1:23 anchor=null attributes={} children=3\n"
+        "    ├── Text scope=1:1..1:4 anchor=null attributes={} literal=\"See \" children=0\n"
+        "    ├── Link scope=1:5..1:22 anchor=null attributes={} dest=url(\"http://example.com\") title=null "
+        "children=1\n"
+        "    │   └── Text scope=1:5..1:22 anchor=null attributes={} literal=\"http://example.com\" children=0\n"
+        "    └── Text scope=1:23..1:23 anchor=null attributes={} literal=\".\" children=0\n",
+        "scheme autolink scopes are as expected");
     /* An autolink at column one leaves NO prefix. This assertion used to pin the
-     * defect -- it asserted a `Text scope=0:0..0:0 literal=""` as expected
+     * defect -- it asserted a `Text scope=0:0..0:0 anchor=null attributes={} literal=""` as expected
      * output, a child with no bytes and no position, and a paragraph that said
      * it had two children when it had one thing in it. 0a.14 removes the node;
      * unpinning the assertion is the fix, the same shape as D10's
      * `regression.txt` example 24 at 0a.2. */
-    test_facade_dump(runner, "http://example.com\n",
-                     "Document scope=1:1..1:18 children=1\n"
-                     "└── Paragraph scope=1:1..1:18 children=1\n"
-                     "    └── Link scope=1:1..1:18 dest=url(\"http://example.com\") title=null "
-                     "children=1\n"
-                     "        └── Text scope=1:1..1:18 literal=\"http://example.com\" children=0\n",
-                     "scheme autolink at column one scopes are as expected");
-    test_facade_dump(runner, "Mail user@example.com now.\n",
-                     "Document scope=1:1..1:26 children=1\n"
-                     "└── Paragraph scope=1:1..1:26 children=3\n"
-                     "    ├── Text scope=1:1..1:5 literal=\"Mail \" children=0\n"
-                     "    ├── Link scope=1:6..1:21 dest=url(\"mailto:user@example.com\") "
-                     "title=null children=1\n"
-                     "    │   └── Text scope=1:6..1:21 literal=\"user@example.com\" children=0\n"
-                     "    └── Text scope=1:22..1:26 literal=\" now.\" children=0\n",
-                     "email autolink scopes are as expected");
+    test_facade_dump(
+        runner, "http://example.com\n",
+        "Document scope=1:1..1:18 anchor=null attributes={} children=1\n"
+        "└── Paragraph scope=1:1..1:18 anchor=null attributes={} children=1\n"
+        "    └── Link scope=1:1..1:18 anchor=null attributes={} dest=url(\"http://example.com\") title=null "
+        "children=1\n"
+        "        └── Text scope=1:1..1:18 anchor=null attributes={} literal=\"http://example.com\" children=0\n",
+        "scheme autolink at column one scopes are as expected");
+    test_facade_dump(
+        runner, "Mail user@example.com now.\n",
+        "Document scope=1:1..1:26 anchor=null attributes={} children=1\n"
+        "└── Paragraph scope=1:1..1:26 anchor=null attributes={} children=3\n"
+        "    ├── Text scope=1:1..1:5 anchor=null attributes={} literal=\"Mail \" children=0\n"
+        "    ├── Link scope=1:6..1:21 anchor=null attributes={} dest=url(\"mailto:user@example.com\") "
+        "title=null children=1\n"
+        "    │   └── Text scope=1:6..1:21 anchor=null attributes={} literal=\"user@example.com\" children=0\n"
+        "    └── Text scope=1:22..1:26 anchor=null attributes={} literal=\" now.\" children=0\n",
+        "email autolink scopes are as expected");
 }
 
 static void table_values(test_batch_runner *runner) {
@@ -1999,10 +2001,178 @@ static void table_source_map_growth(test_batch_runner *runner) {
     }
 }
 
+static markdown_core_string owned_metadata_string(const char *text) {
+    size_t length = strlen(text);
+    char *copy = malloc(length + 1);
+    memcpy(copy, text, length + 1);
+    return (markdown_core_string){(const uint8_t *)copy, length};
+}
+
+static void universal_values(test_batch_runner *runner) {
+    const char *source = "![x](/u) ![y](/u)";
+    markdown_core_document *document = markdown_core_document_parse((const uint8_t *)source, strlen(source), NULL);
+    markdown_core_node *root = document->root;
+    markdown_core_metadata *metadata = calloc(1, sizeof(*metadata));
+    metadata->scope = (markdown_core_scope){{1, 1}, {1, 4}};
+    metadata->count = 6;
+    metadata->records = calloc(metadata->count, sizeof(*metadata->records));
+    root->as.document.metadata = metadata;
+    for (size_t i = 0; i < metadata->count; i++) {
+        markdown_core_metadata_record *r = &metadata->records[i];
+        r->scope = metadata->scope;
+        r->name = owned_metadata_string("key");
+        /* Only initialize the active payload. Access and destruction must not
+         * depend on zeroed bytes in either union's inactive members. */
+        memset(&r->value.as, 0xa5, sizeof(r->value.as));
+        r->value.kind = i < 4 ? MARKDOWN_CORE_METADATA_SCALAR : MARKDOWN_CORE_METADATA_LIST;
+        if (i < 4) {
+            r->value.as.scalar.kind = (markdown_core_metadata_scalar_kind)i;
+        } else {
+            r->value.as.list.items = NULL;
+            r->value.as.list.count = 0;
+        }
+    }
+    metadata->records[1].value.as.scalar.value.boolean = true;
+    metadata->records[2].value.as.scalar.value.string = owned_metadata_string("9007199254740993");
+    metadata->records[3].value.as.scalar.value.string = owned_metadata_string("中文\nquoted");
+    markdown_core_metadata_value *list = &metadata->records[5].value;
+    list->as.list.count = 2;
+    list->as.list.items = calloc(2, sizeof(*list->as.list.items));
+    list->as.list.items[0] =
+        (markdown_core_metadata_list_item){MARKDOWN_CORE_METADATA_ITEM_NUMBER, owned_metadata_string("1.25")};
+    list->as.list.items[1] =
+        (markdown_core_metadata_list_item){MARKDOWN_CORE_METADATA_ITEM_TEXT, owned_metadata_string("")};
+    OK(runner, markdown_core_node_document_metadata(root) == metadata, "document owns metadata");
+    INT_EQ(runner, markdown_core_metadata_record_count(metadata), 6, "all metadata records retained");
+    for (size_t i = 0; i < 6; i++) {
+        const markdown_core_metadata_record *record = markdown_core_metadata_record_at(metadata, i);
+        markdown_core_metadata_scalar scalar = {.kind = MARKDOWN_CORE_METADATA_BOOL, .value.boolean = false};
+        markdown_core_metadata_list_item item = {.kind = MARKDOWN_CORE_METADATA_ITEM_TEXT, .value = {0}};
+        INT_EQ(runner, markdown_core_metadata_record_kind(record),
+               i < 4 ? MARKDOWN_CORE_METADATA_SCALAR : MARKDOWN_CORE_METADATA_LIST, "metadata value tag retained");
+        INT_EQ(runner, markdown_core_metadata_record_scalar(record, &scalar), i < 4,
+               "scalar accessor checks value branch");
+        if (i < 4) {
+            INT_EQ(runner, scalar.kind, i, "scalar tag retained");
+            if (i == 1) {
+                OK(runner, scalar.value.boolean, "boolean payload retained");
+            } else if (i >= 2) {
+                const char *expected = i == 2 ? "9007199254740993" : "中文\nquoted";
+                OK(runner,
+                   scalar.value.string.length == strlen(expected) &&
+                       memcmp(scalar.value.string.data, expected, strlen(expected)) == 0,
+                   "scalar string payload retained");
+                OK(runner, scalar.value.string.data == record->value.as.scalar.value.string.data,
+                   "scalar accessor borrows document string");
+            }
+        } else {
+            OK(runner, scalar.kind == MARKDOWN_CORE_METADATA_BOOL && !scalar.value.boolean,
+               "wrong scalar branch leaves output unchanged");
+        }
+        INT_EQ(runner, markdown_core_metadata_record_item_count(record), i == 5 ? 2 : 0,
+               "only list branch exposes item count");
+        INT_EQ(runner, markdown_core_metadata_record_item_at(record, 0, &item), i == 5,
+               "list accessor checks value branch");
+        if (i == 5) {
+            OK(runner,
+               item.kind == MARKDOWN_CORE_METADATA_ITEM_NUMBER && item.value.length == 4 &&
+                   memcmp(item.value.data, "1.25", 4) == 0,
+               "list number payload retained");
+            OK(runner, item.value.data == list->as.list.items[0].value.data, "list accessor borrows document string");
+            OK(runner, markdown_core_metadata_record_item_at(record, 1, &item), "second list item accessible");
+            OK(runner, item.kind == MARKDOWN_CORE_METADATA_ITEM_TEXT && item.value.length == 0,
+               "empty text list item retained");
+        } else {
+            OK(runner, item.kind == MARKDOWN_CORE_METADATA_ITEM_TEXT && !item.value.data && !item.value.length,
+               "absent list item leaves output unchanged");
+        }
+        markdown_core_metadata_list_item before = item;
+        OK(runner, !markdown_core_metadata_record_item_at(record, 2, &item), "metadata item bounds checked");
+        OK(runner,
+           item.kind == before.kind && item.value.data == before.value.data && item.value.length == before.value.length,
+           "out-of-bounds item leaves output unchanged");
+        OK(runner, !markdown_core_metadata_record_scalar(record, NULL), "null scalar output rejected");
+        OK(runner, !markdown_core_metadata_record_item_at(record, 0, NULL), "null list item output rejected");
+    }
+    OK(runner, !markdown_core_metadata_record_at(metadata, 6), "metadata record bounds checked");
+    markdown_core_node *image = root->first_child->first_child;
+    image->as.link.width = (markdown_core_optional_i64){true, 640};
+    image->as.link.height = (markdown_core_optional_i64){true, 480};
+    markdown_core_optional_i64 width, height;
+    OK(runner, markdown_core_node_image_dimensions(image, &width, &height), "image dimensions accessible");
+    OK(runner, width.has_value && width.value == 640 && height.has_value && height.value == 480,
+       "dimensions preserve their owned values");
+    OK(runner, !markdown_core_node_image_dimensions(root, &width, &height), "non-image has no dimension operation");
+    uint8_t *dump = NULL;
+    size_t length = 0;
+    OK(runner, markdown_core_document_dump(document, &dump, &length, NULL), "metadata and dimensions dump");
+    OK(runner, strstr((const char *)dump, "value=scalar(number(\"9007199254740993\"))") != NULL,
+       "decimal text never rounded");
+    OK(runner, strstr((const char *)dump, "value=list([])") != NULL, "empty list distinct from null");
+    OK(runner, strstr((const char *)dump, "width=640 height=480") != NULL, "typed dimensions dump");
+    markdown_core_dump_free(dump);
+    markdown_core_document_free(document); /* Sanitizers verify complete recursive ownership. */
+}
+
+/* Count visited source positions as well as verifying values. Repeated failed
+ * candidates share one extent, so they cannot rescan each other's suffixes. */
+static void attribute_linear_work(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    static const struct {
+        const char *prefix, *unit, *suffix;
+        bool valid;
+    } cases[] = {
+        {"{", ".a k=1 ", "}", true},   {"{", "k=1 k=2 class='a a' ", "}", true},
+        {"", "{#valid ", "?}", false}, {"", "{k=bad ", "", false},
+        {"", "{k=' ", "", false},
+    };
+    for (size_t c = 0; c < sizeof(cases) / sizeof(*cases); c++) {
+        for (size_t count = 128; count <= 8192; count *= 2) {
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+            markdown_core_strbuf_puts(&source, cases[c].prefix);
+            for (size_t i = 0; i < count; i++) {
+                markdown_core_strbuf_puts(&source, cases[c].unit);
+            }
+            markdown_core_strbuf_puts(&source, cases[c].suffix);
+            markdown_core_attribute_parser parser = {.mem = mem, .data = source.ptr, .length = source.size};
+            size_t attempts = 0;
+            for (bufsize_t at = 0; at < source.size; at++) {
+                if (source.ptr[at] != '{') {
+                    continue;
+                }
+                markdown_core_attributes value = {0};
+                bufsize_t end = -1;
+                int valid = markdown_core_attributes_parse(&parser, at, &value, &end);
+                attempts++;
+                INT_EQ(runner, valid, cases[c].valid, "attribute recognition is atomic");
+                if (valid) {
+                    INT_EQ(runner, end, source.size, "complete container consumed");
+                    INT_EQ(runner, value.class_count, count * (c == 1 ? 2 : 1), "class occurrences retained");
+                    INT_EQ(runner, value.record_count, count * (c == 1 ? 2 : 1), "duplicate records retained");
+                    OK(runner,
+                       value.class_capacity <= 2 * value.class_count && value.record_capacity <= 2 * value.record_count,
+                       "attribute vector storage is linear in retained values");
+                } else {
+                    INT_EQ(runner, end, -1, "failed candidate never advances caller");
+                    OK(runner, !value.classes && !value.records && !value.anchor.data,
+                       "no partial attribute value escapes");
+                }
+                markdown_core_attributes_free(mem, &value);
+            }
+            OK(runner, parser.work <= 12 * (size_t)source.size + attempts,
+               "attribute work is linear: case=%zu size=%d work=%zu", c, source.size, parser.work);
+            markdown_core_attribute_parser_free(&parser);
+            markdown_core_strbuf_free(&source);
+        }
+    }
+}
+
 int main(void) {
     int retval;
     test_batch_runner *runner = test_batch_runner_new();
 
+    universal_values(runner);
+    attribute_linear_work(runner);
     version(runner);
     node_type_values(runner);
     constructor(runner);
