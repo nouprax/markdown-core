@@ -135,6 +135,9 @@ markdown_core_node *markdown_core_node_new(markdown_core_node_type type) {
 
 static void free_node_as(markdown_core_node *node) {
     switch (node->type) {
+    case MARKDOWN_CORE_NODE_LIST_ITEM:
+        markdown_core_optional_chunk_free(NODE_MEM(node), &node->as.list.task_marker);
+        break;
     case MARKDOWN_CORE_NODE_CODE_BLOCK:
         markdown_core_optional_chunk_free(NODE_MEM(node), &node->as.code.info);
         markdown_core_chunk_free(NODE_MEM(node), &node->as.code.literal);

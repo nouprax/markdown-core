@@ -1674,6 +1674,64 @@ static void link_resource_lifecycle(test_batch_runner *runner) {
     markdown_core_node_free(doc);
 }
 
+static void *marker_to_free;
+static int marker_free_count;
+static void marker_test_free(void *pointer) {
+    if (pointer == marker_to_free && pointer != NULL) {
+        marker_free_count++;
+        marker_to_free = NULL;
+    }
+    free(pointer);
+}
+static markdown_core_mem marker_test_mem = {calloc, realloc, marker_test_free};
+
+static void task_marker_ownership(test_batch_runner *runner) {
+    char source[] = "- [ ] open\n- [X] done\n- ordinary\n";
+    markdown_core_document *document = markdown_core_document_parse((const uint8_t *)source, strlen(source), NULL);
+    OK(runner, document != NULL, "task marker ownership document parses");
+    if (!document) {
+        return;
+    }
+    memset(source, '?', sizeof(source) - 1);
+    markdown_core_node *item = markdown_core_node_first_child(markdown_core_node_first_child(document->root));
+    markdown_core_optional_string marker, label;
+    markdown_core_node_list_item_properties(item, &marker, &label);
+    OK(runner, marker.has_value && marker.value.length == 1 && marker.value.data[0] == ' ',
+       "incomplete marker survives input reuse");
+    OK(runner, item->as.list.task_marker.value.alloc, "parsed task owns its marker bytes");
+    markdown_core_node_list_item_properties(item->next, &marker, &label);
+    OK(runner, marker.has_value && marker.value.length == 1 && marker.value.data[0] == 'X',
+       "completed marker retains authored case");
+    markdown_core_node_list_item_properties(item->next->next, &marker, &label);
+    OK(runner, !marker.has_value && marker.value.data == NULL && marker.value.length == 0,
+       "ordinary item has an absent marker");
+
+    /* O5's grammar is separate; the storage and facade already preserve a
+     * complete UTF-8 scalar without interpreting it as a completion bit. */
+    char custom[] = "🚀";
+    OK(runner, markdown_core_chunk_set_cstr(markdown_core_node_mem(item), &item->as.list.task_marker.value, custom),
+       "owned marker accepts UTF-8 bytes");
+    memset(custom, '?', sizeof(custom) - 1);
+    markdown_core_node_list_item_properties(item, &marker, &label);
+    OK(runner, marker.has_value && marker.value.length == 4 && memcmp(marker.value.data, "🚀", 4) == 0,
+       "facade preserves the complete owned UTF-8 marker");
+    uint8_t *dump = NULL;
+    size_t length = 0;
+    OK(runner, markdown_core_document_dump(document, &dump, &length, NULL), "UTF-8 marker document dumps");
+    OK(runner, dump && strstr((const char *)dump, "marker=\"🚀\""), "dump preserves UTF-8 marker spelling");
+    markdown_core_dump_free(dump);
+    markdown_core_document_free(document);
+
+    item = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_LIST_ITEM, &marker_test_mem);
+    markdown_core_chunk bytes = markdown_core_chunk_literal("🚀");
+    OK(runner, markdown_core_chunk_to_cstr(&marker_test_mem, &bytes) != NULL, "custom marker allocates");
+    item->as.list.task_marker = markdown_core_optional_chunk_present(bytes);
+    marker_to_free = bytes.data;
+    marker_free_count = 0;
+    markdown_core_node_free(item);
+    INT_EQ(runner, marker_free_count, 1, "destroying an item frees its owned marker exactly once");
+}
+
 static void set_type_keeps_extension_data_beside_the_arm(test_batch_runner *runner) {
     /* An extension's per-node data lives beside the type-specific arm, not in
      * it. Converting a formula, whose extension owns such data, into a link
@@ -1791,6 +1849,7 @@ int main(void) {
     source_pos_inlines(runner);
     ref_source_pos(runner);
     link_resource_lifecycle(runner);
+    task_marker_ownership(runner);
     set_type_keeps_extension_data_beside_the_arm(runner);
     citation_and_footnote_values(runner);
     autolink_source_pos(runner);

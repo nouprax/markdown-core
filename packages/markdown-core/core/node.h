@@ -21,10 +21,9 @@ typedef struct {
     markdown_core_delim_type delimiter;
     unsigned char bullet_char;
     bool tight;
-    /* The authored task marker byte (' ', 'x', or 'X'), or NUL when this is
-     * not a task item.  Preserve spelling: completion is a derived consumer
-     * convenience, not the semantic value stored by the tree. */
-    unsigned char task_marker;
+    /* The authored UTF-8 task marker, owned by the item; absent on ordinary
+     * items. Completion is derived by consumers, not stored by the tree. */
+    markdown_core_optional_chunk task_marker;
 } markdown_core_list;
 
 typedef struct {

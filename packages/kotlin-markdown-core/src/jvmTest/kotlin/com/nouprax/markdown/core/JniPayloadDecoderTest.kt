@@ -3,6 +3,8 @@ package com.nouprax.markdown.core
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertIs
+import kotlin.test.assertTrue
 
 private fun jniPayload(vararg parts: Any): ByteArray {
     val out = mutableListOf<Byte>()
@@ -18,6 +20,103 @@ private fun jniPayload(vararg parts: Any): ByteArray {
 }
 
 class JniPayloadDecoderTest {
+    @Test
+    fun orderedValuesAndUtf8MarkersSurviveWireDecoding() {
+        // Reserved values cannot yet be produced by parsing; exercise the wire
+        // with all payload combinations, including a four-byte UTF-8 scalar.
+        fun payload(
+            variant: Int,
+            lowercased: Boolean,
+            delimiter: Int,
+            closed: Boolean,
+        ): ByteArray =
+            jniPayload(
+                "MKJ1",
+                0.toByte(),
+                1.toByte(),
+                1,
+                1,
+                1,
+                1,
+                1, // document scope and one child
+                6.toByte(),
+                1,
+                1,
+                1,
+                1, // list scope
+                2,
+                1,
+                0,
+                1.toByte(), // ordered, start=1 as int64, present
+                variant,
+                (if (lowercased) 1 else 0).toByte(),
+                delimiter,
+                (if (closed) 1 else 0).toByte(),
+                1.toByte(),
+                1,
+                7.toByte(),
+                1,
+                1,
+                1,
+                1, // item scope
+                4,
+                "🚀",
+                -1,
+                0, // marker, absent label, no content
+                0, // no document footnotes
+            )
+        val delimiters =
+            listOf(
+                Triple(1, false, OrderedListDelimiter.Period),
+                Triple(2, false, OrderedListDelimiter.Parenthesis(false)),
+                Triple(2, true, OrderedListDelimiter.Parenthesis(true)),
+                Triple(3, false, OrderedListDelimiter.Default),
+            )
+        for (variant in listOf(2, 3)) {
+            for (lowercased in listOf(false, true)) {
+                for ((delimiter, closed, expected) in delimiters) {
+                    val bytes = payload(variant, lowercased, delimiter, closed)
+                    val document = JniPayloadDecoder.decodeDocument(bytes)
+                    bytes.fill(0)
+                    val list = document.content.single() as List
+                    val decodedLowercased =
+                        if (variant == 2) {
+                            assertIs<OrderedListVariant.Alpha>(list.variant).lowercased
+                        } else {
+                            assertIs<OrderedListVariant.Roman>(list.variant).lowercased
+                        }
+                    assertEquals(lowercased, decodedLowercased)
+                    when (expected) {
+                        OrderedListDelimiter.Period -> {
+                            assertEquals(expected, list.delimiter)
+                        }
+
+                        OrderedListDelimiter.Default -> {
+                            assertEquals(expected, list.delimiter)
+                        }
+
+                        is OrderedListDelimiter.Parenthesis -> {
+                            assertEquals(
+                                closed,
+                                assertIs<OrderedListDelimiter.Parenthesis>(list.delimiter).closed,
+                            )
+                        }
+                    }
+                    assertEquals("🚀", list.items.single().marker)
+                    val spelling =
+                        when (expected) {
+                            OrderedListDelimiter.Period -> "period"
+                            OrderedListDelimiter.Default -> "default"
+                            is OrderedListDelimiter.Parenthesis -> "parenthesis(closed=${expected.closed})"
+                        }
+                    assertTrue(document.dump().contains("delimiter=$spelling"))
+                    assertTrue(document.dump().contains("marker=\"🚀\""))
+                }
+            }
+        }
+        assertFailsWith<IllegalStateException> { JniPayloadDecoder.decodeDocument(payload(2, true, 99, false)) }
+    }
+
     @Test
     fun aTitleIsDecodedBeforeTheContentAndDumpedAsAGroup() {
         // The title path of the wire: a node-valued list the payload sends

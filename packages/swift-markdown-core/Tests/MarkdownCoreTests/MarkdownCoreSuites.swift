@@ -1,13 +1,24 @@
 import MarkdownCoreC
 import Testing
 
-// `@testable` for one reason, and it is stated at the use below: `ParseError`
-// cannot be reached through the public surface, because no input a Swift caller
-// can hand `Document` is invalid. Everything else here goes through the
-// published API.
+// `@testable` covers native failure and reserved-value decoding paths that
+// cannot yet be reached by parsing source. Other tests use the public API.
 @testable import MarkdownCore
 
 @Suite("api") struct APISuite {
+    @Test("all native delimiter branches retain their authored value")
+    func nativeListDelimiters() {
+        let cases: [(markdown_core_ordered_list_delimiter, OrderedListDelimiter)] = [
+            (.init(kind: MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PERIOD, closed: false), .period),
+            (.init(kind: MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PARENTHESIS, closed: false), .parenthesis(closed: false)),
+            (.init(kind: MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PARENTHESIS, closed: true), .parenthesis(closed: true)),
+            (.init(kind: MARKDOWN_CORE_ORDERED_LIST_DELIMITER_DEFAULT, closed: false), .default),
+        ]
+        for (value, expected) in cases {
+            #expect(MarkdownCore.List.delimiter(value) == expected)
+        }
+    }
+
     @Test("parse and visitor dispatch use the public Swift API")
     func publicAPI() throws {
         let document = try Document.parse("# Heading\n")

@@ -294,6 +294,7 @@ private class JniTreeDecoder(
                 0 -> null
                 1 -> OrderedListDelimiter.Period
                 2 -> OrderedListDelimiter.Parenthesis(delimiterClosed)
+                3 -> OrderedListDelimiter.Default
                 else -> error("invalid native list delimiter $delimiterKind")
             }
         val tight = reader.boolean()

@@ -534,6 +534,57 @@ function errorResult(code, message) {
     return result;
 }
 
+test("wire: every ordered delimiter and associated numbering value survives decoding", () => {
+    const delimiters = [
+        [1, false, "period"],
+        [2, false, { kind: "parenthesis", closed: false }],
+        [2, true, { kind: "parenthesis", closed: true }],
+        [3, false, "default"]
+    ];
+    for (const [variantRaw, kind] of [
+        [2, "alpha"],
+        [3, "roman"]
+    ]) {
+        for (const lowercased of [false, true]) {
+            for (const [delimiterRaw, closed, expected] of delimiters) {
+                const bytes = nativeResult("1. item\n");
+                const view = new DataView(bytes.buffer);
+                const at = findNode(bytes, kinds.indexOf("list")) + 4;
+                const flags = view.getUint32(at, true) & ~0x3fc;
+                view.setUint32(
+                    at,
+                    flags | (variantRaw << 2) | (delimiterRaw << 5) | (Number(closed) << 8) | (Number(lowercased) << 9),
+                    true
+                );
+                const document = new NodeDecoder(bytes).decodeDocument();
+                assert.deepEqual(document.content[0].variant, { kind, lowercased });
+                assert.deepEqual(document.content[0].delimiter, expected);
+                assert.match(TreeDumper.dump(document), new RegExp(`variant=${kind}\\(lowercased=${lowercased}\\)`));
+                const spelling = typeof expected === "string" ? expected : `parenthesis(closed=${closed})`;
+                assert.ok(TreeDumper.dump(document).includes(`delimiter=${spelling}`));
+            }
+        }
+    }
+    const malformed = nativeResult("1. item\n");
+    const view = new DataView(malformed.buffer);
+    const at = findNode(malformed, kinds.indexOf("list")) + 4;
+    view.setUint32(at, view.getUint32(at, true) | (7 << 5), true);
+    assert.throws(() => new NodeDecoder(malformed).decodeDocument(), /invalid ordered list facts/u);
+});
+
+test("wire: a UTF-8 task marker is an owned string, independent of the payload", () => {
+    const bytes = nativeResult("- [x] 🚀\n");
+    const view = new DataView(bytes.buffer);
+    const text = findNode(bytes, kinds.indexOf("text"));
+    const item = findNode(bytes, kinds.indexOf("listItem"));
+    view.setUint32(item + 64, view.getUint32(text + 64, true), true);
+    view.setUint32(item + 68, view.getUint32(text + 68, true), true);
+    const document = new NodeDecoder(bytes).decodeDocument();
+    bytes.fill(0);
+    assert.equal(document.content[0].items[0].marker, "🚀");
+    assert.ok(TreeDumper.dump(document).includes('marker="🚀"'));
+});
+
 function nativeResult(source) {
     const encoded = new globalThis.TextEncoder().encode(source);
     const sourcePointer = native.malloc(Math.max(encoded.length, 1));

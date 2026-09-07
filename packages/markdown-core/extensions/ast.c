@@ -331,21 +331,6 @@ bool markdown_core_node_list_properties(const markdown_core_node *node, markdown
     return true;
 }
 
-bool markdown_core_node_list_item_properties(const markdown_core_node *node, markdown_core_optional_string *marker,
-                                             markdown_core_optional_string *example_label) {
-    if (!node || node->type != MARKDOWN_CORE_NODE_LIST_ITEM || !marker || !example_label) {
-        return false;
-    }
-    marker->has_value =
-        node->extension && strcmp(markdown_core_node_get_type_string((markdown_core_node *)node), "tasklist") == 0;
-    marker->value.data = &node->as.list.task_marker;
-    marker->value.length = marker->has_value ? 1 : 0;
-    example_label->has_value = false;
-    example_label->value.data = NULL;
-    example_label->value.length = 0;
-    return true;
-}
-
 /* The chunk's bytes are LENT, not copied: `out` points into the document and
  * dies with it, which is what `markdown_core_string` documents. */
 static void string_from_chunk(markdown_core_string *out, const markdown_core_chunk *chunk) {
@@ -358,6 +343,18 @@ static void string_from_chunk(markdown_core_string *out, const markdown_core_chu
 static void optional_string_from_chunk(markdown_core_optional_string *out, const markdown_core_optional_chunk *chunk) {
     out->has_value = chunk->has_value;
     string_from_chunk(&out->value, &chunk->value);
+}
+
+bool markdown_core_node_list_item_properties(const markdown_core_node *node, markdown_core_optional_string *marker,
+                                             markdown_core_optional_string *example_label) {
+    if (!node || node->type != MARKDOWN_CORE_NODE_LIST_ITEM || !marker || !example_label) {
+        return false;
+    }
+    optional_string_from_chunk(marker, &node->as.list.task_marker);
+    example_label->has_value = false;
+    example_label->value.data = NULL;
+    example_label->value.length = 0;
+    return true;
 }
 
 bool markdown_core_node_code_block_properties(const markdown_core_node *node, markdown_core_optional_string *info,
@@ -887,7 +884,9 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
         } else {
             if (delimiter.kind == MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PARENTHESIS) {
                 buffer_cstr(buffer, "parenthesis(closed");
-                buffer_cstr(buffer, "=false)");
+                buffer_cstr(buffer, delimiter.closed ? "=true)" : "=false)");
+            } else if (delimiter.kind == MARKDOWN_CORE_ORDERED_LIST_DELIMITER_DEFAULT) {
+                buffer_cstr(buffer, "default");
             } else {
                 buffer_cstr(buffer, "period");
             }

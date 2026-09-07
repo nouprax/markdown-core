@@ -476,7 +476,9 @@ export class NodeDecoder {
                   ? "period"
                   : delimiterRaw === 2
                     ? { kind: "parenthesis" as const, closed: (record.flags & (1 << 8)) !== 0 }
-                    : null;
+                    : delimiterRaw === 3
+                      ? "default"
+                      : null;
         if (start !== null && (variant === null || delimiter === null)) throw new Error("invalid ordered list facts");
         return {
             ...this.base(record, "list"),

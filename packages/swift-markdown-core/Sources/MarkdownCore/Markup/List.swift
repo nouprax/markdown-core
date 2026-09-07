@@ -73,12 +73,18 @@ extension List {
             flavor: flavor == MARKDOWN_CORE_LIST_FLAVOR_ORDERED ? .ordered : .bullet,
             start: start.has_value ? start.value : nil,
             variant: start.has_value ? Self.variant(variant) : nil,
-            delimiter: start.has_value
-                ? (delimiter.kind == MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PARENTHESIS
-                    ? .parenthesis(closed: delimiter.closed) : .period)
-                : nil,
+            delimiter: start.has_value ? Self.delimiter(delimiter) : nil,
             tight: tight
         )
+    }
+
+    static func delimiter(_ value: markdown_core_ordered_list_delimiter) -> OrderedListDelimiter {
+        switch value.kind {
+        case MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PERIOD: .period
+        case MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PARENTHESIS: .parenthesis(closed: value.closed)
+        case MARKDOWN_CORE_ORDERED_LIST_DELIMITER_DEFAULT: .default
+        default: preconditionFailure("Unsupported native list delimiter \(value.kind)")
+        }
     }
 
     private static func variant(_ value: markdown_core_ordered_list_variant) -> OrderedListVariant {

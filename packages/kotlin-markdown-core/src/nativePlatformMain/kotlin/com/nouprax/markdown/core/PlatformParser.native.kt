@@ -46,6 +46,7 @@ import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_TEXT
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_THEMATIC_BREAK
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_LIST_FLAVOR_BULLET
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_LIST_FLAVOR_ORDERED
+import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_ORDERED_LIST_DELIMITER_DEFAULT
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PARENTHESIS
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PERIOD
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_ORDERED_LIST_VARIANT_ALPHA
@@ -501,6 +502,14 @@ private class NativeTreeBuilder(
     }
 }
 
+internal fun decodeNativeListDelimiter(value: markdown_core_ordered_list_delimiter): OrderedListDelimiter =
+    when (value.kind) {
+        MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PERIOD -> OrderedListDelimiter.Period
+        MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PARENTHESIS -> OrderedListDelimiter.Parenthesis(value.closed)
+        MARKDOWN_CORE_ORDERED_LIST_DELIMITER_DEFAULT -> OrderedListDelimiter.Default
+        else -> error("unsupported native list delimiter ${value.kind}")
+    }
+
 private class NativeScratch(
     scope: MemScope,
 ) {
@@ -560,20 +569,7 @@ private class NativeScratch(
                 MARKDOWN_CORE_ORDERED_LIST_VARIANT_DEFAULT -> OrderedListVariant.Default
                 else -> OrderedListVariant.Decimal
             }.takeIf { optionalLong.has_value }
-        val delimiter =
-            when (listDelimiter.kind) {
-                MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PERIOD -> {
-                    OrderedListDelimiter.Period
-                }
-
-                MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PARENTHESIS -> {
-                    OrderedListDelimiter.Parenthesis(listDelimiter.closed)
-                }
-
-                else -> {
-                    null
-                }
-            }.takeIf { optionalLong.has_value }
+        val delimiter = decodeNativeListDelimiter(listDelimiter).takeIf { optionalLong.has_value }
         return List(
             flavor,
             optionalLong.value.takeIf { optionalLong.has_value },

@@ -508,6 +508,8 @@ kotlin {
         }
         macosArm64Main { kotlin.srcDir("src/nativePlatformMain/kotlin") }
         linuxX64Main { kotlin.srcDir("src/nativePlatformMain/kotlin") }
+        macosArm64Test { kotlin.srcDir("src/nativePlatformTest/kotlin") }
+        linuxX64Test { kotlin.srcDir("src/nativePlatformTest/kotlin") }
     }
 }
 
