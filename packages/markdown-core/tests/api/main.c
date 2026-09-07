@@ -127,7 +127,7 @@ static void constructor(test_batch_runner *runner) {
         switch (node->type) {
         case MARKDOWN_CORE_NODE_HEADING:
             INT_EQ(runner, markdown_core_node_get_heading_level(node), 1, "default heading level is 1");
-            node->as.heading.level = 1;
+            node->as.heading->level = 1;
             break;
 
         case MARKDOWN_CORE_NODE_LIST:
@@ -1674,6 +1674,136 @@ static void link_resource_lifecycle(test_batch_runner *runner) {
     markdown_core_node_free(doc);
 }
 
+static size_t payload_allocations, payload_fail_at, payload_live;
+static void *payload_test_calloc(size_t count, size_t size) {
+    if (++payload_allocations == payload_fail_at) {
+        return NULL;
+    }
+    void *pointer = calloc(count, size);
+    payload_live += pointer != NULL;
+    return pointer;
+}
+static void *payload_test_realloc(void *pointer, size_t size) {
+    if (++payload_allocations == payload_fail_at) {
+        return NULL;
+    }
+    bool new_allocation = pointer == NULL;
+    void *result = realloc(pointer, size);
+    payload_live += result != NULL && new_allocation;
+    return result;
+}
+static void payload_test_free(void *pointer) {
+    payload_live -= pointer != NULL;
+    free(pointer);
+}
+static markdown_core_mem payload_test_mem = {payload_test_calloc, payload_test_realloc, payload_test_free};
+
+typedef struct {
+    char prefix;
+    long double value;
+} payload_float_alignment;
+typedef struct {
+    char prefix;
+    int64_t value;
+} payload_integer_alignment;
+
+static void node_payload_lifecycle(test_batch_runner *runner) {
+    INT_EQ(runner, sizeof(markdown_core_node_payload), sizeof(void *),
+           "all payload arms share one pointer-sized node slot");
+    static const markdown_core_node_type extra_types[] = {
+        MARKDOWN_CORE_NODE_CROSS_LINK,      MARKDOWN_CORE_NODE_CITE,
+        MARKDOWN_CORE_NODE_CITATION,        MARKDOWN_CORE_NODE_FOOTNOTE,
+        MARKDOWN_CORE_NODE_SPECIMEN,        MARKDOWN_CORE_NODE_TABLE,
+        MARKDOWN_CORE_NODE_TABLE_ROW,       MARKDOWN_CORE_NODE_TABLE_CELL,
+        MARKDOWN_CORE_NODE_STRIKETHROUGH,   MARKDOWN_CORE_NODE_FORMULA,
+        MARKDOWN_CORE_NODE_FORMULA_BLOCK,   MARKDOWN_CORE_NODE_DIRECTIVE,
+        MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK, MARKDOWN_CORE_NODE_DIRECTIVE_LABEL,
+    };
+    size_t extra_count = sizeof(extra_types) / sizeof(*extra_types);
+    for (size_t i = 0; i < (size_t)num_node_types + extra_count; i++) {
+        markdown_core_node_type type = i < (size_t)num_node_types ? node_types[i] : extra_types[i - num_node_types];
+        payload_allocations = payload_fail_at = 0;
+        markdown_core_node *node = markdown_core_node_new_with_mem(type, &payload_test_mem);
+        OK(runner, node != NULL, "type %u constructs with its default fields", (unsigned)type);
+        size_t total = payload_allocations;
+        INT_EQ(runner, total, 1, "node and initial typed record have one allocation for every kind");
+        if (node->as.data) {
+            OK(runner,
+               (uintptr_t)node->as.data % offsetof(payload_float_alignment, value) == 0 &&
+                   (uintptr_t)node->as.data % offsetof(payload_integer_alignment, value) == 0,
+               "initial typed record has scalar alignment");
+        }
+        markdown_core_node_free(node);
+        INT_EQ(runner, payload_live, 0, "type %u releases every constructor allocation", (unsigned)type);
+        for (size_t fail = 1; fail <= total; fail++) {
+            payload_allocations = 0;
+            payload_fail_at = fail;
+            node = markdown_core_node_new_with_mem(type, &payload_test_mem);
+            OK(runner, node == NULL, "type %u never publishes a partial payload", (unsigned)type);
+            if (node) {
+                markdown_core_node_free(node);
+            }
+            INT_EQ(runner, payload_live, 0, "failed constructor releases all acquired allocations");
+        }
+    }
+    payload_fail_at = 0;
+    markdown_core_node *parent = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_PARAGRAPH, &payload_test_mem);
+    markdown_core_node *text = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_TEXT, &payload_test_mem);
+    OK(runner, markdown_core_node_append_child(parent, text), "text joins its parent");
+    OK(runner, markdown_core_node_set_literal(text, "retained"), "text owns a literal");
+    markdown_core_chunk *original_payload = text->as.literal;
+    size_t before = payload_live;
+    payload_fail_at = payload_allocations + 1;
+    OK(runner, !markdown_core_node_set_type(text, MARKDOWN_CORE_NODE_LINK), "payload allocation can reject retyping");
+    OK(runner,
+       text->type == MARKDOWN_CORE_NODE_TEXT && text->as.literal == original_payload && text->parent == parent &&
+           parent->first_child == text,
+       "failed retyping preserves type, payload, identity, and tree links");
+    STR_EQ(runner, markdown_core_node_get_literal(text), "retained", "failed retyping retains owned bytes");
+    INT_EQ(runner, payload_live, before, "failed retyping neither frees nor leaks an allocation");
+    payload_fail_at = 0;
+    OK(runner, markdown_core_node_set_type(text, MARKDOWN_CORE_NODE_LINK), "successful retyping installs new defaults");
+    OK(runner, text->as.link && !text->as.link->resource, "converted link has a payload and no resource");
+    size_t attempts = payload_allocations;
+    OK(runner, !markdown_core_node_set_type(text, MARKDOWN_CORE_NODE_CODE_BLOCK),
+       "containment rejects a block in a paragraph");
+    INT_EQ(runner, payload_allocations, attempts, "invalid containment allocates nothing");
+    OK(runner, markdown_core_node_set_type(text, MARKDOWN_CORE_NODE_STRONG) && !text->as.data,
+       "a fieldless kind releases the old payload without creating an empty record");
+
+    markdown_core_node *empty = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_EMPHASIS, &payload_test_mem);
+    OK(runner, markdown_core_node_append_child(parent, empty), "a fieldless node joins the parent");
+    OK(runner, markdown_core_node_set_type(empty, MARKDOWN_CORE_NODE_CROSS_LINK),
+       "a node constructed without fields acquires an owned replacement record");
+    markdown_core_destination destination;
+    markdown_core_optional_string label;
+    bool embedded;
+    OK(runner,
+       markdown_core_node_destination(empty, &destination) && destination.path.length == 0 &&
+           !destination.anchor.has_value && markdown_core_node_cross_link_properties(empty, &embedded, &label) &&
+           !embedded && !label.has_value,
+       "converted cross link establishes ordinary empty and absent defaults");
+
+    markdown_core_node *cite = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_CITE, &payload_test_mem);
+    markdown_core_node *item = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_CITATION, &payload_test_mem);
+    markdown_core_node *prefix = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_TEXT, &payload_test_mem);
+    OK(runner, markdown_core_node_append_child(parent, cite), "cite joins its parent");
+    cite->as.cite->citations = item;
+    item->as.citation->prefix = prefix;
+    OK(runner, markdown_core_node_set_literal(prefix, "prefix"), "citation owns an affix subtree");
+    payload_fail_at = payload_allocations + 1;
+    before = payload_live;
+    OK(runner,
+       !markdown_core_node_set_type(cite, MARKDOWN_CORE_NODE_TEXT) && cite->as.cite->citations == item &&
+           item->as.citation->prefix == prefix,
+       "failed retyping preserves node-valued fields");
+    INT_EQ(runner, payload_live, before, "failed retyping leaves the owned subtree alive");
+    payload_fail_at = 0;
+    OK(runner, markdown_core_node_set_type(cite, MARKDOWN_CORE_NODE_TEXT), "retyping releases the old owned subtrees");
+    markdown_core_node_free(parent);
+    INT_EQ(runner, payload_live, 0, "conversion and destruction release payloads, fields, and affixes exactly once");
+}
+
 static void *marker_to_free;
 static int marker_free_count;
 static void marker_test_free(void *pointer) {
@@ -1698,7 +1828,7 @@ static void task_marker_ownership(test_batch_runner *runner) {
     markdown_core_node_list_item_marker(item, &marker);
     OK(runner, marker.has_value && marker.value.length == 1 && marker.value.data[0] == ' ',
        "incomplete marker survives input reuse");
-    OK(runner, item->as.list.task_marker.value.alloc, "parsed task owns its marker bytes");
+    OK(runner, item->as.list->task_marker.value.alloc, "parsed task owns its marker bytes");
     markdown_core_node_list_item_marker(item->next, &marker);
     OK(runner, marker.has_value && marker.value.length == 1 && marker.value.data[0] == 'X',
        "completed marker retains authored case");
@@ -1709,7 +1839,7 @@ static void task_marker_ownership(test_batch_runner *runner) {
     /* O5's grammar is separate; the storage and facade already preserve a
      * complete UTF-8 scalar without interpreting it as a completion bit. */
     char custom[] = "🚀";
-    OK(runner, markdown_core_chunk_set_cstr(markdown_core_node_mem(item), &item->as.list.task_marker.value, custom),
+    OK(runner, markdown_core_chunk_set_cstr(markdown_core_node_mem(item), &item->as.list->task_marker.value, custom),
        "owned marker accepts UTF-8 bytes");
     memset(custom, '?', sizeof(custom) - 1);
     markdown_core_node_list_item_marker(item, &marker);
@@ -1725,7 +1855,7 @@ static void task_marker_ownership(test_batch_runner *runner) {
     item = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_LIST_ITEM, &marker_test_mem);
     markdown_core_chunk bytes = markdown_core_chunk_literal("🚀");
     OK(runner, markdown_core_chunk_to_cstr(&marker_test_mem, &bytes) != NULL, "custom marker allocates");
-    item->as.list.task_marker = markdown_core_optional_chunk_present(bytes);
+    item->as.list->task_marker = markdown_core_optional_chunk_present(bytes);
     marker_to_free = bytes.data;
     marker_free_count = 0;
     markdown_core_node_free(item);
@@ -1744,13 +1874,13 @@ static void specimen_values(test_batch_runner *runner) {
     markdown_core_optional_string id;
     markdown_core_optional_i64 start;
     OK(runner, markdown_core_chunk_to_cstr(&marker_test_mem, &bytes) != NULL, "specimen id allocates");
-    first->as.specimen.id = markdown_core_optional_chunk_present(bytes);
-    first->as.specimen.start = 5;
-    first->as.specimen.has_start = true;
+    first->as.specimen->id = markdown_core_optional_chunk_present(bytes);
+    first->as.specimen->start = 5;
+    first->as.specimen->has_start = true;
     first->next = anonymous;
     anonymous->prev = first;
-    root->as.document.specimens = first;
-    root->as.document.footnotes = footnote;
+    root->as.document->specimens = first;
+    root->as.document->footnotes = footnote;
     OK(runner, markdown_core_node_append_child(first, body), "specimen owns block content");
     const markdown_core_specimen *value = markdown_core_node_document_specimens(root);
     OK(runner, markdown_core_specimen_properties(value, &id, &start), "specimen answers properties");
@@ -1768,8 +1898,8 @@ static void specimen_values(test_batch_runner *runner) {
            !markdown_core_specimen_properties(value, &id, NULL) && markdown_core_node_document_specimens(body) == NULL,
        "typed accessors reject missing values and incorrect owners");
     markdown_core_node *citation = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_CITATION, &marker_test_mem);
-    citation->as.citation.referent = MARKDOWN_CORE_NODE_REFERENT_SPECIMEN;
-    OK(runner, markdown_core_chunk_set_cstr(&marker_test_mem, &citation->as.citation.value, "étude"),
+    citation->as.citation->referent = MARKDOWN_CORE_NODE_REFERENT_SPECIMEN;
+    OK(runner, markdown_core_chunk_set_cstr(&marker_test_mem, &citation->as.citation->value, "étude"),
        "specimen reference owns its label");
     markdown_core_referent referent;
     OK(runner,
@@ -1777,7 +1907,7 @@ static void specimen_values(test_batch_runner *runner) {
            referent.kind == MARKDOWN_CORE_REFERENT_SPECIMEN && referent.id.length == 6 && referent.key.data == NULL &&
            referent.mode == 0,
        "specimen reference uses only its own branch fields");
-    citation->as.citation.referent = 99;
+    citation->as.citation->referent = 99;
     OK(runner, !markdown_core_citation_referent((const markdown_core_citation *)citation, &referent),
        "unknown referent cannot masquerade as a specimen");
     markdown_core_node_free(citation);
@@ -1907,7 +2037,7 @@ static void table_values(test_batch_runner *runner) {
         markdown_core_node *cell = row->first_child;
         markdown_core_node_free(cell->next);
         markdown_core_node_free(cell->first_child);
-        cell->as.table_cell.colspan = 2;
+        cell->as.table_cell->colspan = 2;
         markdown_core_node *block = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
         OK(runner, markdown_core_node_append_child(cell, block), "cell owns block content directly");
         int64_t rowspan, colspan;
@@ -2016,7 +2146,7 @@ static void universal_values(test_batch_runner *runner) {
     metadata->scope = (markdown_core_scope){{1, 1}, {1, 4}};
     metadata->count = 6;
     metadata->records = calloc(metadata->count, sizeof(*metadata->records));
-    root->as.document.metadata = metadata;
+    root->as.document->metadata = metadata;
     for (size_t i = 0; i < metadata->count; i++) {
         markdown_core_metadata_record *r = &metadata->records[i];
         r->scope = metadata->scope;
@@ -2096,8 +2226,8 @@ static void universal_values(test_batch_runner *runner) {
     }
     OK(runner, !markdown_core_metadata_record_at(metadata, 6), "metadata record bounds checked");
     markdown_core_node *image = root->first_child->first_child;
-    image->as.link.width = (markdown_core_optional_i64){true, 640};
-    image->as.link.height = (markdown_core_optional_i64){true, 480};
+    image->as.link->width = (markdown_core_optional_i64){true, 640};
+    image->as.link->height = (markdown_core_optional_i64){true, 480};
     markdown_core_optional_i64 width, height;
     OK(runner, markdown_core_node_image_dimensions(image, &width, &height), "image dimensions accessible");
     OK(runner, width.has_value && width.value == 640 && height.has_value && height.value == 480,
@@ -2277,6 +2407,7 @@ int main(void) {
     attribute_linear_work(runner);
     cross_link_linear_work(runner);
     cross_link_fields(runner);
+    node_payload_lifecycle(runner);
     version(runner);
     node_type_values(runner);
     constructor(runner);

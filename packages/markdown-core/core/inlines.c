@@ -139,11 +139,11 @@ static MARKDOWN_CORE_INLINE void S_place_inline(subject *subj, markdown_core_nod
         node->end_line = line;
         node->end_column = column;
     }
-    if (node->type == MARKDOWN_CORE_NODE_TEXT && node->as.literal.len > 0 && subj->owner) {
+    if (node->type == MARKDOWN_CORE_NODE_TEXT && node->as.literal->len > 0 && subj->owner) {
         /* Copied bytes take a view of the source map; a decoded source token
          * maps each of its output bytes to that token's authored extent. */
-        if (node->as.literal.len == to - from + 1 &&
-            memcmp(node->as.literal.data, subj->input.data + from, (size_t)node->as.literal.len) == 0) {
+        if (node->as.literal->len == to - from + 1 &&
+            memcmp(node->as.literal->data, subj->input.data + from, (size_t)node->as.literal->len) == 0) {
             markdown_core_parser_adopt_content_marks(subj->owner_parser, subj->owner, node, from, to - from + 1);
         } else {
             node->content_mark_count = 0;
@@ -176,29 +176,21 @@ int markdown_core_inline_parser_attributes(markdown_core_inline_parser *parser, 
 // Create an inline with a literal string value.
 static MARKDOWN_CORE_INLINE markdown_core_node *make_literal(subject *subj, markdown_core_node_type t, int start_column,
                                                              int end_column, markdown_core_chunk s) {
-    markdown_core_node *e = (markdown_core_node *)subj->mem->calloc(1, sizeof(*e));
+    markdown_core_node *e = markdown_core_node_new_with_mem(t, subj->mem);
     if (!e) {
         /* Frees an owned literal; borrowed chunks only reset fields. */
         markdown_core_chunk_free(subj->mem, &s);
         subj->oom = 1;
         return NULL;
     }
-    markdown_core_strbuf_init(subj->mem, &e->content, 0);
-    e->type = (uint16_t)t;
-    e->as.literal = s;
+    *e->as.literal = s;
     S_place_inline(subj, e, start_column, end_column);
     return e;
 }
 
 // Create an inline with no value.
 static MARKDOWN_CORE_INLINE markdown_core_node *make_simple(markdown_core_mem *mem, markdown_core_node_type t) {
-    markdown_core_node *e = (markdown_core_node *)mem->calloc(1, sizeof(*e));
-    if (!e) {
-        return NULL;
-    }
-    markdown_core_strbuf_init(mem, &e->content, 0);
-    e->type = (uint16_t)t;
-    return e;
+    return markdown_core_node_new_with_mem(t, mem);
 }
 
 /* make_simple with the subject's loss flag for handlers that consume input
@@ -279,9 +271,9 @@ static MARKDOWN_CORE_INLINE markdown_core_node *make_autolink(subject *subj, int
         // `extensions.txt` records both spellings of one construct on one line
         // disagreeing about it three columns apart.
         markdown_core_chunk destination = markdown_core_clean_autolink(subj, &url, is_email);
-        link->as.link.resource =
+        link->as.link->resource =
             markdown_core_resource_new(subj->mem, destination, markdown_core_optional_chunk_absent());
-        if (!link->as.link.resource) {
+        if (!link->as.link->resource) {
             subj->oom = 1;
             markdown_core_chunk_free(subj->mem, &destination);
             markdown_core_node_free(link);
@@ -675,7 +667,7 @@ static void push_delimiter(subject *subj, const markdown_core_extension *owner, 
     delim->can_close = can_close;
     delim->inl_text = inl_text;
     delim->position = subj->pos;
-    delim->length = inl_text->as.literal.len;
+    delim->length = inl_text->as.literal->len;
     delim->previous = subj->last_delim;
     delim->next = NULL;
     if (delim->previous != NULL) {
@@ -878,8 +870,8 @@ static delimiter *S_insert_emph(subject *subj, delimiter *opener, delimiter *clo
     bufsize_t use_delims;
     markdown_core_node *opener_inl = opener->inl_text;
     markdown_core_node *closer_inl = closer->inl_text;
-    bufsize_t opener_num_chars = opener_inl->as.literal.len;
-    bufsize_t closer_num_chars = closer_inl->as.literal.len;
+    bufsize_t opener_num_chars = opener_inl->as.literal->len;
+    bufsize_t closer_num_chars = closer_inl->as.literal->len;
     markdown_core_node *tmp, *tmpnext, *emph;
 
     // calculate the actual number of characters used from this closer
@@ -888,8 +880,8 @@ static delimiter *S_insert_emph(subject *subj, delimiter *opener, delimiter *clo
     // remove used characters from associated inlines.
     opener_num_chars -= use_delims;
     closer_num_chars -= use_delims;
-    opener_inl->as.literal.len = opener_num_chars;
-    closer_inl->as.literal.len = closer_num_chars;
+    opener_inl->as.literal->len = opener_num_chars;
+    closer_inl->as.literal->len = closer_num_chars;
 
     // free delimiters between opener and closer
     delim = closer->previous;
@@ -1493,7 +1485,7 @@ noMatch:
     if (parser->options & MARKDOWN_CORE_OPT_FOOTNOTES && opener->inl_text->next &&
         opener->inl_text->next->type == MARKDOWN_CORE_NODE_TEXT) {
 
-        markdown_core_chunk *literal = &opener->inl_text->next->as.literal;
+        markdown_core_chunk *literal = opener->inl_text->next->as.literal;
 
         // A footnote call opens with a caret the SOURCE spells literally.
         //
@@ -1600,11 +1592,11 @@ noMatch:
                     subj->pos = initial_pos;
                     return make_str(subj, subj->pos - 1, subj->pos - 1, markdown_core_chunk_literal("]"));
                 }
-                citation->as.citation.referent = MARKDOWN_CORE_NODE_REFERENT_FOOTNOTE;
-                citation->as.citation.value.data = id;
-                citation->as.citation.value.len = (bufsize_t)strlen((const char *)id);
-                citation->as.citation.value.alloc = 1;
-                fnref->as.cite.citations = citation;
+                citation->as.citation->referent = MARKDOWN_CORE_NODE_REFERENT_FOOTNOTE;
+                citation->as.citation->value.data = id;
+                citation->as.citation->value.len = (bufsize_t)strlen((const char *)id);
+                citation->as.citation->value.alloc = 1;
+                fnref->as.cite->citations = citation;
             }
 
             // The call runs from its own '[' to its ']', and the two need not be
@@ -1668,10 +1660,10 @@ match:
          * unioned or substituted into it. */
         assert(record->resource != NULL);
         markdown_core_resource_retain(record->resource);
-        inl->as.link.resource = record->resource;
+        inl->as.link->resource = record->resource;
     } else if (inl) {
-        inl->as.link.resource = markdown_core_resource_new(subj->mem, url, title);
-        if (!inl->as.link.resource) {
+        inl->as.link->resource = markdown_core_resource_new(subj->mem, url, title);
+        if (!inl->as.link->resource) {
             markdown_core_node_free(inl);
             inl = NULL;
         }
@@ -2341,18 +2333,18 @@ int markdown_core_inline_parser_in_bracket(markdown_core_inline_parser *parser, 
 }
 
 static void S_update_text_sourcepos(markdown_core_parser *parser, markdown_core_node *node) {
-    if (node->as.literal.len == 0) {
+    if (node->as.literal->len == 0) {
         node->start_line = node->start_column = node->end_line = node->end_column = 0;
         return;
     }
-    markdown_core_parser_content_end_place(parser, node, node->as.literal.len - 1, &node->end_line, &node->end_column);
+    markdown_core_parser_content_end_place(parser, node, node->as.literal->len - 1, &node->end_line, &node->end_column);
 }
 
 void markdown_core_node_unput(markdown_core_parser *parser, markdown_core_node *node, int n) {
     node = node->last_child;
     while (n > 0 && node && node->type == MARKDOWN_CORE_NODE_TEXT) {
-        bufsize_t remove = node->as.literal.len < (bufsize_t)n ? node->as.literal.len : (bufsize_t)n;
-        node->as.literal.len -= remove;
+        bufsize_t remove = node->as.literal->len < (bufsize_t)n ? node->as.literal->len : (bufsize_t)n;
+        node->as.literal->len -= remove;
         n -= (int)remove;
         S_update_text_sourcepos(parser, node);
         node = node->prev;

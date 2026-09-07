@@ -56,8 +56,8 @@ static void free_node_table(markdown_core_mem *mem, markdown_core_table *table) 
 }
 
 static void init_cell(markdown_core_node *node) {
-    node->as.table_cell.rowspan = 1;
-    node->as.table_cell.colspan = 1;
+    node->as.table_cell->rowspan = 1;
+    node->as.table_cell->colspan = 1;
 }
 
 static markdown_core_node *new_cell(markdown_core_parser *parser, markdown_core_node *row, int column) {
@@ -377,6 +377,7 @@ static markdown_core_node *try_opening_table_header(const markdown_core_extensio
     }
 
     if (!markdown_core_node_set_type(parent_container, MARKDOWN_CORE_NODE_TABLE)) {
+        parser->oom = true;
         free_table_row(parser->mem, header_row);
         free_table_row(parser->mem, delimiter_row);
         return NULL;

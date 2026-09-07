@@ -492,7 +492,8 @@ int markdown_core_parser_attach_extension(markdown_core_parser *parser, const ma
 
 /** Change the type of 'node'.
  *
- * Return 0 if the type could be changed, 1 otherwise.
+ * Return 1 on success, or 0 if containment rejects the type or allocation fails.
+ * Failure leaves the old type and all of its owned fields unchanged.
  *
  * What the old type owned is released, and the new type's data starts as a
  * new node of that type would. An extension's opaque data belongs to the

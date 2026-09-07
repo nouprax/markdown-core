@@ -183,6 +183,38 @@ enum markdown_core_node__internal_flags {
 
 typedef uint16_t markdown_core_node_internal_flags;
 
+/* HTML recognition state and the eventual literal have one owner throughout
+ * the block lifecycle. They never overlay or replace each other's storage. */
+typedef struct {
+    markdown_core_chunk literal;
+    int block_type;
+} markdown_core_html_block;
+
+typedef struct {
+    int64_t rowspan, colspan;
+} markdown_core_table_cell;
+
+/* Every arm points to the kind's ordinary typed record. Construction places
+ * the record after an aligned node allocation header; a kind with no fields
+ * has no record. Retyping keeps node identity stable and installs a separately
+ * allocated replacement. The common node layout never depends on record size. */
+typedef union {
+    void *data;
+    markdown_core_chunk *literal;
+    markdown_core_list *list;
+    markdown_core_code *code;
+    markdown_core_heading *heading;
+    markdown_core_link *link;
+    markdown_core_cross_link *cross_link;
+    markdown_core_cite *cite;
+    markdown_core_citation_item *citation;
+    markdown_core_footnote_value *footnote;
+    markdown_core_specimen_value *specimen;
+    markdown_core_document_value *document;
+    markdown_core_html_block *html_block;
+    markdown_core_table_cell *table_cell;
+} markdown_core_node_payload;
+
 struct markdown_core_node {
     markdown_core_attributes attributes;
     markdown_core_strbuf content;
@@ -218,23 +250,10 @@ struct markdown_core_node {
      * so a type change reinitializes the arm and leaves it in place. */
     void *opaque;
 
-    union {
-        markdown_core_chunk literal;
-        markdown_core_list list;
-        markdown_core_code code;
-        markdown_core_heading heading;
-        markdown_core_link link;
-        markdown_core_cross_link cross_link;
-        markdown_core_cite cite;
-        markdown_core_citation_item citation;
-        markdown_core_footnote_value footnote;
-        markdown_core_specimen_value specimen;
-        markdown_core_document_value document;
-        int html_block_type;
-        struct {
-            int64_t rowspan, colspan;
-        } table_cell;
-    } as;
+    /* Owns a replacement record, when present. The initial record belongs to
+     * the node allocation instead. `as` is the typed view in either case. */
+    void *payload_allocation;
+    markdown_core_node_payload as;
 };
 
 static MARKDOWN_CORE_INLINE markdown_core_mem *markdown_core_node_mem(markdown_core_node *node) {

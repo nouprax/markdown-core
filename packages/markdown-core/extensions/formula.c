@@ -734,9 +734,9 @@ static markdown_core_node *postprocess_node(const markdown_core_extension *exten
         return node;
     }
 
-    if (node->type == MARKDOWN_CORE_NODE_CODE_BLOCK && info_is_formula(&node->as.code.info)) {
-        markdown_core_node *formula =
-            replace_with_formula_block(extension, parser, node, node->as.code.literal.data, node->as.code.literal.len);
+    if (node->type == MARKDOWN_CORE_NODE_CODE_BLOCK && info_is_formula(&node->as.code->info)) {
+        markdown_core_node *formula = replace_with_formula_block(extension, parser, node, node->as.code->literal.data,
+                                                                 node->as.code->literal.len);
         if (!formula) {
             parser->oom = true;
         }

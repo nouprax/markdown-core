@@ -52,11 +52,13 @@ static delimiter *insert(const markdown_core_extension *self, markdown_core_pars
 
     strikethrough = markdown_core_delimiter_node(opener);
 
-    if (markdown_core_delimiter_node(opener)->as.literal.len != markdown_core_delimiter_node(closer)->as.literal.len) {
+    if (markdown_core_delimiter_node(opener)->as.literal->len !=
+        markdown_core_delimiter_node(closer)->as.literal->len) {
         goto done;
     }
 
     if (!markdown_core_node_set_type(strikethrough, MARKDOWN_CORE_NODE_STRIKETHROUGH)) {
+        parser->oom = true;
         goto done;
     }
 
@@ -74,7 +76,7 @@ static delimiter *insert(const markdown_core_extension *self, markdown_core_pars
     }
 
     strikethrough->end_column =
-        markdown_core_delimiter_node(closer)->start_column + markdown_core_delimiter_node(closer)->as.literal.len - 1;
+        markdown_core_delimiter_node(closer)->start_column + markdown_core_delimiter_node(closer)->as.literal->len - 1;
     /* REQUIREMENT 11b: both tilde runs are the strikethrough's markers. The
      * opener's node IS the strikethrough -- it was retyped in place -- so its
      * own claim would otherwise read CONTENT, and the closer's node is freed on
