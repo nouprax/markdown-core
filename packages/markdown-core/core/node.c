@@ -21,7 +21,7 @@ bool markdown_core_node_can_contain_type(markdown_core_node *node, markdown_core
 
     switch (node->type) {
     case MARKDOWN_CORE_NODE_DOCUMENT:
-    case MARKDOWN_CORE_NODE_BLOCK_QUOTE:
+    case MARKDOWN_CORE_NODE_CALLOUT:
     case MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION:
     case MARKDOWN_CORE_NODE_LIST_ITEM:
         return MARKDOWN_CORE_NODE_TYPE_BLOCK_P(child_type) && child_type != MARKDOWN_CORE_NODE_LIST_ITEM;
@@ -247,8 +247,8 @@ const char *markdown_core_node_get_type_string(markdown_core_node *node) {
         return "none";
     case MARKDOWN_CORE_NODE_DOCUMENT:
         return "document";
-    case MARKDOWN_CORE_NODE_BLOCK_QUOTE:
-        return "block_quote";
+    case MARKDOWN_CORE_NODE_CALLOUT:
+        return "callout";
     case MARKDOWN_CORE_NODE_LIST:
         return "list";
     case MARKDOWN_CORE_NODE_LIST_ITEM:

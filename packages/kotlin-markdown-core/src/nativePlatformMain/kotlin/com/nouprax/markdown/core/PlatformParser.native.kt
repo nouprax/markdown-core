@@ -5,12 +5,15 @@ package com.nouprax.markdown.core
 import cnames.structs.markdown_core_error
 import cnames.structs.markdown_core_node
 import cnames.structs.markdown_core_resource
+import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_CALLOUT_FOLD_COLLAPSED
+import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_CALLOUT_FOLD_EXPANDED
+import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_CALLOUT_FOLD_NONE
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_DESTINATION_CROSS
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_DESTINATION_URL
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_ERROR_ALLOCATION_FAILED
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_ERROR_INTERNAL
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_ERROR_INVALID_ARGUMENT
-import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_BLOCK_QUOTE
+import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_CALLOUT
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_CODE
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_CODE_BLOCK
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_COMMENT
@@ -48,6 +51,7 @@ import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_TABLE_ALIGNMENT_CEN
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_TABLE_ALIGNMENT_LEFT
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_TABLE_ALIGNMENT_NONE
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_TABLE_ALIGNMENT_RIGHT
+import com.nouprax.markdown.core.internal.capi.markdown_core_callout_foldVar
 import com.nouprax.markdown.core.internal.capi.markdown_core_destination
 import com.nouprax.markdown.core.internal.capi.markdown_core_document_free
 import com.nouprax.markdown.core.internal.capi.markdown_core_document_parse
@@ -57,6 +61,8 @@ import com.nouprax.markdown.core.internal.capi.markdown_core_error_get_code
 import com.nouprax.markdown.core.internal.capi.markdown_core_error_get_message
 import com.nouprax.markdown.core.internal.capi.markdown_core_list_flavorVar
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_association
+import com.nouprax.markdown.core.internal.capi.markdown_core_node_callout_properties
+import com.nouprax.markdown.core.internal.capi.markdown_core_node_callout_title
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_child_count
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_code_block_properties
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_destination
@@ -147,6 +153,9 @@ private data class NativeNodeRecord(
     var childStart: Int = 0,
     var childCount: Int = 0,
     var labelIndex: Int = -1,
+    var hasTitle: Boolean = false,
+    var titleStart: Int = 0,
+    var titleCount: Int = 0,
 )
 
 /** Copies the C tree iteratively while the immutable native document is alive. */
@@ -189,6 +198,22 @@ private class NativeTreeBuilder(
                         records += NativeNodeRecord(label)
                     }
                 }
+
+                MARKDOWN_CORE_KIND_CALLOUT -> {
+                    // The title is a sibling chain the callout owns beside its
+                    // content; its nodes are recorded like children, and the
+                    // record remembers which are the title's.
+                    var title = markdown_core_node_callout_title(record.pointer)
+                    if (title != null) {
+                        record.hasTitle = true
+                        record.titleStart = records.size
+                        while (title != null) {
+                            records += NativeNodeRecord(title)
+                            record.titleCount++
+                            title = markdown_core_node_get_next_sibling(title)
+                        }
+                    }
+                }
             }
             record.childStart = records.size
             var child = markdown_core_node_get_first_child(record.pointer)
@@ -215,8 +240,9 @@ private class NativeTreeBuilder(
                 Document(children, scope)
             }
 
-            MARKDOWN_CORE_KIND_BLOCK_QUOTE -> {
-                BlockQuote(children, scope)
+            MARKDOWN_CORE_KIND_CALLOUT -> {
+                val (variant, fold) = scratch.callout(node)
+                Callout(variant, fold, title(record), children, scope)
             }
 
             MARKDOWN_CORE_KIND_PARAGRAPH -> {
@@ -350,6 +376,13 @@ private class NativeTreeBuilder(
             requireNotNull(built[record.childStart + offset]) { "native child was not materialized" }
         }
 
+    private fun title(record: NativeNodeRecord): kotlin.collections.List<Markup>? {
+        if (!record.hasTitle) return null
+        return immutableList(record.titleCount) { offset ->
+            requireNotNull(built[record.titleStart + offset]) { "native callout title was not materialized" }
+        }
+    }
+
     private fun label(record: NativeNodeRecord): DirectiveLabel? {
         if (record.labelIndex < 0) return null
         val value = requireNotNull(built[record.labelIndex]) { "native directive label was not materialized" }
@@ -386,6 +419,7 @@ private class NativeScratch(
     private val count = scope.alloc<size_tVar>()
     private val listFlavor = scope.alloc<markdown_core_list_flavorVar>()
     private val placementMode = scope.alloc<markdown_core_placement_modeVar>()
+    private val calloutFold = scope.alloc<markdown_core_callout_foldVar>()
     private val tableAlignment = scope.alloc<markdown_core_table_alignmentVar>()
     private val destination = scope.alloc<markdown_core_destination>()
 
@@ -444,6 +478,20 @@ private class NativeScratch(
     fun literal(node: CPointer<markdown_core_node>): String {
         require(markdown_core_node_literal(node, firstString.ptr)) { "invalid literal node" }
         return firstString.copyString()
+    }
+
+    fun callout(node: CPointer<markdown_core_node>): Pair<String?, CalloutFold> {
+        require(markdown_core_node_callout_properties(node, firstOptionalString.ptr, calloutFold.ptr)) {
+            "invalid callout node"
+        }
+        val fold =
+            when (calloutFold.value) {
+                MARKDOWN_CORE_CALLOUT_FOLD_NONE -> CalloutFold.NONE
+                MARKDOWN_CORE_CALLOUT_FOLD_EXPANDED -> CalloutFold.EXPANDED
+                MARKDOWN_CORE_CALLOUT_FOLD_COLLAPSED -> CalloutFold.COLLAPSED
+                else -> error("unsupported native callout fold ${calloutFold.value}")
+            }
+        return firstOptionalString.copyOptionalString() to fold
     }
 
     fun formula(node: CPointer<markdown_core_node>): Pair<PlacementMode, String> {

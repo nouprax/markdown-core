@@ -408,7 +408,7 @@ its behavior, with no separate publication step.
       holds on every surface. Manifest: the `reference.form.*` states are
       replaced by a case proving that a direct and a reference occurrence dump
       identically apart from scope. Requires `M1`.
-- [ ] **M3 — `Callout` replaces `BlockQuote`.** Rename the kind everywhere, add
+- [x] **M3 — `Callout` replaces `BlockQuote`.** Rename the kind everywhere, add
       `CalloutFold`, expose `variant`, `fold`, and `title` on every surface, and
       give every `>` container `variant=null`, `fold=none`, and `title=null`
       with unchanged content and scope; no alias or wrapper survives. The C node

@@ -19,7 +19,7 @@ import Testing
         let documents = try sources.map { try Document.parse($0) }
         let kinds = Set(documents.flatMap { dumpKinds($0.dump()) })
         let expected: Set<String> = [
-            "Document", "BlockQuote", "Paragraph", "Heading", "ThematicBreak", "List",
+            "Document", "Callout", "Paragraph", "Heading", "ThematicBreak", "List",
             "ListItem", "CodeBlock", "HTMLBlock", "FormulaBlock", "Table",
             "DirectiveBlock", "DirectiveLabel", "FootnoteDefinition", "Text", "SoftBreak",
             "LineBreak",

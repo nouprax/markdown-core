@@ -1,8 +1,20 @@
-public final class com/nouprax/markdown/core/BlockQuote : com/nouprax/markdown/core/Markup {
+public final class com/nouprax/markdown/core/Callout : com/nouprax/markdown/core/Markup {
 	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
 	public fun dump ()Ljava/lang/String;
 	public final fun getContent ()Ljava/util/List;
+	public final fun getFold ()Lcom/nouprax/markdown/core/CalloutFold;
 	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+	public final fun getTitle ()Ljava/util/List;
+	public final fun getVariant ()Ljava/lang/String;
+}
+
+public final class com/nouprax/markdown/core/CalloutFold : java/lang/Enum {
+	public static final field COLLAPSED Lcom/nouprax/markdown/core/CalloutFold;
+	public static final field EXPANDED Lcom/nouprax/markdown/core/CalloutFold;
+	public static final field NONE Lcom/nouprax/markdown/core/CalloutFold;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/nouprax/markdown/core/CalloutFold;
+	public static fun values ()[Lcom/nouprax/markdown/core/CalloutFold;
 }
 
 public final class com/nouprax/markdown/core/Code : com/nouprax/markdown/core/Markup {
@@ -335,7 +347,7 @@ public final class com/nouprax/markdown/core/TreeDumper {
 }
 
 public abstract interface class com/nouprax/markdown/core/Visitor {
-	public abstract fun visitBlockQuote (Lcom/nouprax/markdown/core/BlockQuote;)Ljava/lang/Object;
+	public abstract fun visitCallout (Lcom/nouprax/markdown/core/Callout;)Ljava/lang/Object;
 	public abstract fun visitCode (Lcom/nouprax/markdown/core/Code;)Ljava/lang/Object;
 	public abstract fun visitCodeBlock (Lcom/nouprax/markdown/core/CodeBlock;)Ljava/lang/Object;
 	public abstract fun visitComment (Lcom/nouprax/markdown/core/Comment;)Ljava/lang/Object;
@@ -376,7 +388,7 @@ public final class com/nouprax/markdown/core/WalkPhase : java/lang/Enum {
 }
 
 public abstract interface class com/nouprax/markdown/core/WalkingVisitor {
-	public abstract fun visitBlockQuote (Lcom/nouprax/markdown/core/BlockQuote;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visitCallout (Lcom/nouprax/markdown/core/Callout;Lcom/nouprax/markdown/core/WalkPhase;)V
 	public abstract fun visitCode (Lcom/nouprax/markdown/core/Code;Lcom/nouprax/markdown/core/WalkPhase;)V
 	public abstract fun visitCodeBlock (Lcom/nouprax/markdown/core/CodeBlock;Lcom/nouprax/markdown/core/WalkPhase;)V
 	public abstract fun visitComment (Lcom/nouprax/markdown/core/Comment;Lcom/nouprax/markdown/core/WalkPhase;)V

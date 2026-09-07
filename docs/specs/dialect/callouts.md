@@ -4,8 +4,8 @@ Status: normative module of the [Markdown Core dialect](../dialect.md). It
 owns the `Callout` kind, which every `>` container produces, and the
 `[!type]` metadata rule. Source: Obsidian's callouts. Executable oracle:
 none; the Obsidian package does not parse callouts, so product fixtures are
-the oracle of record. Landing: the kind with `M3`, metadata with `O8`; until
-`M3` the current contract's `BlockQuote` stands. The
+the oracle of record. Landing: the kind landed with `M3`, and the metadata
+rule lands with `O8`; until then every callout is metadata-free. The
 [example format](../dialect.md#examples) is defined by the index.
 
 ## Model
@@ -23,7 +23,7 @@ or wrapper. The inherited algorithm owns the `>` prefix, laziness,
 continuation, blank-line, and nesting rules; this module changes the kind and
 adds optional metadata without a second container parser. `title` is a
 node-valued field visited before `content` and is not counted in `children`;
-the dump prints a non-null title as a `CalloutTitle` group before the content
+the dump prints a non-null title as a `Title` group before the content
 lines and prints nothing for a null title.
 
 - `variant == null` means no valid metadata line; then `title == null`,
@@ -52,7 +52,7 @@ Document scope=1:1..1:7 anchor=null attributes={} children=1
 Document scope=1:1..3:14 anchor=null attributes={} children=2
 ├── Callout scope=1:1..1:9 anchor=null attributes={} variant="info" fold=none children=0
 └── Callout scope=3:1..3:14 anchor=null attributes={} variant="TIP" fold=none children=0
-    └── CalloutTitle children=1
+    └── Title children=1
         └── Text scope=3:10..3:14 anchor=null attributes={} literal="Title" children=0
 ````````````````````````````````
 
@@ -91,10 +91,10 @@ sep           = SP / TAB
 .
 Document scope=1:1..3:32 anchor=null attributes={} children=2
 ├── Callout scope=1:1..1:32 anchor=null attributes={} variant="faq" fold=expanded children=0
-│   └── CalloutTitle children=1
+│   └── Title children=1
 │       └── Text scope=1:11..1:32 anchor=null attributes={} literal="Are callouts foldable?" children=0
 └── Callout scope=3:1..3:32 anchor=null attributes={} variant="faq" fold=collapsed children=0
-    └── CalloutTitle children=1
+    └── Title children=1
         └── Text scope=3:11..3:32 anchor=null attributes={} literal="Are callouts foldable?" children=0
 ````````````````````````````````
 
@@ -132,7 +132,7 @@ block under the inherited grammar, so the callout is metadata-free:
 .
 Document scope=1:1..3:13 anchor=null attributes={} children=2
 ├── Callout scope=1:1..1:14 anchor=null attributes={} variant="note" fold=none children=0
-│   └── CalloutTitle children=1
+│   └── Title children=1
 │       └── Text scope=1:14..1:14 anchor=null attributes={} literal="x" children=0
 └── Callout scope=3:1..3:13 anchor=null attributes={} variant=null fold=none children=1
     └── CodeBlock scope=3:7..3:13 anchor=null attributes={} info=null language=null literal="[!note]\n" fenced=false closed=true children=0
@@ -158,7 +158,7 @@ never contains `SoftBreak` or `LineBreak`. The title is inline content:
 .
 Document scope=1:1..1:24 anchor=null attributes={} children=1
 └── Callout scope=1:1..1:24 anchor=null attributes={} variant="note" fold=none children=0
-    └── CalloutTitle children=2
+    └── Title children=2
         ├── Strong scope=1:11..1:18 anchor=null attributes={} children=1
         │   └── Text scope=1:13..1:16 anchor=null attributes={} literal="bold" children=0
         └── Text scope=1:19..1:24 anchor=null attributes={} literal=" title" children=0
@@ -175,7 +175,7 @@ of the second line, and with no remaining lines the body is empty:
 .
 Document scope=1:1..3:6 anchor=null attributes={} children=1
 └── Callout scope=1:1..3:6 anchor=null attributes={} variant="note" fold=none children=1
-    ├── CalloutTitle children=1
+    ├── Title children=1
     │   └── Text scope=1:11..1:15 anchor=null attributes={} literal="Title" children=0
     └── Paragraph scope=2:3..3:6 anchor=null attributes={} children=3
         ├── Text scope=2:3..2:6 anchor=null attributes={} literal="body" children=0
@@ -190,7 +190,7 @@ lazy
 .
 Document scope=1:1..3:4 anchor=null attributes={} children=1
 └── Callout scope=1:1..3:4 anchor=null attributes={} variant="note" fold=none children=1
-    ├── CalloutTitle children=1
+    ├── Title children=1
     │   └── Text scope=1:11..1:11 anchor=null attributes={} literal="T" children=0
     └── Paragraph scope=2:3..3:4 anchor=null attributes={} children=3
         ├── Text scope=2:3..2:6 anchor=null attributes={} literal="body" children=0
@@ -207,7 +207,7 @@ resolution, so a following underline belongs to the body:
 .
 Document scope=1:1..2:5 anchor=null attributes={} children=1
 └── Callout scope=1:1..2:5 anchor=null attributes={} variant="note" fold=none children=1
-    ├── CalloutTitle children=1
+    ├── Title children=1
     │   └── Text scope=1:11..1:11 anchor=null attributes={} literal="T" children=0
     └── Paragraph scope=2:3..2:5 anchor=null attributes={} children=1
         └── Text scope=2:3..2:5 anchor=null attributes={} literal="===" children=0
@@ -222,7 +222,7 @@ Metadata is evaluated independently for every nested container:
 Document scope=1:1..2:14 anchor=null attributes={} children=1
 └── Callout scope=1:1..2:14 anchor=null attributes={} variant="outer" fold=none children=1
     └── Callout scope=2:3..2:14 anchor=null attributes={} variant="inner" fold=none children=0
-        └── CalloutTitle children=1
+        └── Title children=1
             └── Text scope=2:14..2:14 anchor=null attributes={} literal="x" children=0
 ````````````````````````````````
 
@@ -234,7 +234,7 @@ A comment is an earlier scanner step, so a title may consist of one
 .
 Document scope=1:1..1:15 anchor=null attributes={} children=1
 └── Callout scope=1:1..1:15 anchor=null attributes={} variant="note" fold=none children=0
-    └── CalloutTitle children=1
+    └── Title children=1
         └── Comment scope=1:11..1:15 anchor=null attributes={} literal="t" children=0
 ````````````````````````````````
 
@@ -248,7 +248,7 @@ extracted, so a candidate in the body attaches to the body paragraph:
 .
 Document scope=1:1..2:9 anchor=null attributes={} children=1
 └── Callout scope=1:1..2:9 anchor=null attributes={} variant="note" fold=none children=1
-    ├── CalloutTitle children=1
+    ├── Title children=1
     │   └── Text scope=1:11..1:18 anchor=null attributes={} literal="Title ^t" children=0
     └── Paragraph scope=2:3..2:9 anchor="p" attributes={} children=1
         └── Text scope=2:3..2:6 anchor=null attributes={} literal="body" children=0

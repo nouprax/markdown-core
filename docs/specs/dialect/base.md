@@ -5,7 +5,7 @@ module states what the dialect inherits and the few rules the inherited layer
 leaves to the implementation. Source: the CommonMark specification 0.31.2.
 Executable oracle: cmark 0.31.2 under `specs/oracles/cmark/`, compared with
 the one language over cmark's own specification inputs. Landing: present; the
-HTML-comment rule lands with `M0`, the resolved-reference model with `M1` and
+HTML-comment rule landed with `M0`, the resolved-reference model with `M1` and
 `M2`, and `Callout` with `M3`; smart punctuation was removed by `X0`. The
 [example format](../dialect.md#examples) is defined by the index.
 

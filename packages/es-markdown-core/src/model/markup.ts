@@ -1,4 +1,4 @@
-import type { BlockQuote } from "./block-quote.js";
+import type { Callout } from "./callout.js";
 import type { CodeBlock } from "./code-block.js";
 import type { Code } from "./code.js";
 import type { Comment } from "./comment.js";
@@ -27,7 +27,7 @@ import type { ThematicBreak } from "./thematic-break.js";
 
 export type Markup =
     | Document
-    | BlockQuote
+    | Callout
     | Paragraph
     | Heading
     | ThematicBreak

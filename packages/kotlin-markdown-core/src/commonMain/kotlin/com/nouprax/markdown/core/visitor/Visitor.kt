@@ -3,7 +3,7 @@ package com.nouprax.markdown.core
 public interface Visitor<Result> {
     public fun visitDocument(node: Document): Result
 
-    public fun visitBlockQuote(node: BlockQuote): Result
+    public fun visitCallout(node: Callout): Result
 
     public fun visitParagraph(node: Paragraph): Result
 

@@ -22,7 +22,7 @@ void dump;
 void explicitDump;
 const visitor: Visitor<string> = {
     visitDocument: (node) => node.kind,
-    visitBlockQuote: (node) => node.kind,
+    visitCallout: (node) => node.kind,
     visitParagraph: (node) => node.kind,
     visitHeading(node: Heading) {
         return String(node.level);

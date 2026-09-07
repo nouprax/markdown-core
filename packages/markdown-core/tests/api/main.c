@@ -47,17 +47,17 @@ static markdown_core_node *parse_with_extensions(const char *source, size_t leng
 }
 
 static const markdown_core_node_type node_types[] = {
-    MARKDOWN_CORE_NODE_DOCUMENT,       MARKDOWN_CORE_NODE_BLOCK_QUOTE, MARKDOWN_CORE_NODE_LIST,
-    MARKDOWN_CORE_NODE_LIST_ITEM,      MARKDOWN_CORE_NODE_CODE_BLOCK,  MARKDOWN_CORE_NODE_HTML_BLOCK,
-    MARKDOWN_CORE_NODE_COMMENT_BLOCK,  MARKDOWN_CORE_NODE_PARAGRAPH,   MARKDOWN_CORE_NODE_HEADING,
-    MARKDOWN_CORE_NODE_THEMATIC_BREAK, MARKDOWN_CORE_NODE_TEXT,        MARKDOWN_CORE_NODE_SOFT_BREAK,
-    MARKDOWN_CORE_NODE_LINE_BREAK,     MARKDOWN_CORE_NODE_CODE,        MARKDOWN_CORE_NODE_HTML,
-    MARKDOWN_CORE_NODE_COMMENT,        MARKDOWN_CORE_NODE_EMPHASIS,    MARKDOWN_CORE_NODE_STRONG,
+    MARKDOWN_CORE_NODE_DOCUMENT,       MARKDOWN_CORE_NODE_CALLOUT,    MARKDOWN_CORE_NODE_LIST,
+    MARKDOWN_CORE_NODE_LIST_ITEM,      MARKDOWN_CORE_NODE_CODE_BLOCK, MARKDOWN_CORE_NODE_HTML_BLOCK,
+    MARKDOWN_CORE_NODE_COMMENT_BLOCK,  MARKDOWN_CORE_NODE_PARAGRAPH,  MARKDOWN_CORE_NODE_HEADING,
+    MARKDOWN_CORE_NODE_THEMATIC_BREAK, MARKDOWN_CORE_NODE_TEXT,       MARKDOWN_CORE_NODE_SOFT_BREAK,
+    MARKDOWN_CORE_NODE_LINE_BREAK,     MARKDOWN_CORE_NODE_CODE,       MARKDOWN_CORE_NODE_HTML,
+    MARKDOWN_CORE_NODE_COMMENT,        MARKDOWN_CORE_NODE_EMPHASIS,   MARKDOWN_CORE_NODE_STRONG,
     MARKDOWN_CORE_NODE_LINK,           MARKDOWN_CORE_NODE_IMAGE};
 static const char *const node_type_names[] = {
-    "document",  "block_quote", "list",           "list_item", "code_block", "html_block", "comment_block",
-    "paragraph", "heading",     "thematic_break", "text",      "soft_break", "line_break", "code",
-    "html",      "comment",     "emphasis",       "strong",    "link",       "image"};
+    "document",  "callout", "list",           "list_item", "code_block", "html_block", "comment_block",
+    "paragraph", "heading", "thematic_break", "text",      "soft_break", "line_break", "code",
+    "html",      "comment", "emphasis",       "strong",    "link",       "image"};
 static const int num_node_types = sizeof(node_types) / sizeof(*node_types);
 
 static void test_md_paragraph_text(test_batch_runner *runner, const char *markdown, const char *expected_text,
@@ -86,7 +86,7 @@ static void version(test_batch_runner *runner) {
  * single one of them. */
 static void node_type_values(test_batch_runner *runner) {
     static const markdown_core_node_type block_types[] = {MARKDOWN_CORE_NODE_DOCUMENT,
-                                                          MARKDOWN_CORE_NODE_BLOCK_QUOTE,
+                                                          MARKDOWN_CORE_NODE_CALLOUT,
                                                           MARKDOWN_CORE_NODE_LIST,
                                                           MARKDOWN_CORE_NODE_LIST_ITEM,
                                                           MARKDOWN_CORE_NODE_CODE_BLOCK,
@@ -738,9 +738,9 @@ static void create_tree(test_batch_runner *runner) {
 }
 
 void hierarchy(test_batch_runner *runner) {
-    markdown_core_node *bquote1 = markdown_core_node_new(MARKDOWN_CORE_NODE_BLOCK_QUOTE);
-    markdown_core_node *bquote2 = markdown_core_node_new(MARKDOWN_CORE_NODE_BLOCK_QUOTE);
-    markdown_core_node *bquote3 = markdown_core_node_new(MARKDOWN_CORE_NODE_BLOCK_QUOTE);
+    markdown_core_node *bquote1 = markdown_core_node_new(MARKDOWN_CORE_NODE_CALLOUT);
+    markdown_core_node *bquote2 = markdown_core_node_new(MARKDOWN_CORE_NODE_CALLOUT);
+    markdown_core_node *bquote3 = markdown_core_node_new(MARKDOWN_CORE_NODE_CALLOUT);
 
     OK(runner, markdown_core_node_append_child(bquote1, bquote2), "append bquote2");
     OK(runner, markdown_core_node_append_child(bquote2, bquote3), "append bquote3");
@@ -751,9 +751,9 @@ void hierarchy(test_batch_runner *runner) {
 
     unsigned int list_item_flag[] = {MARKDOWN_CORE_NODE_LIST_ITEM, 0};
     unsigned int top_level_blocks[] = {
-        MARKDOWN_CORE_NODE_BLOCK_QUOTE, MARKDOWN_CORE_NODE_LIST,           MARKDOWN_CORE_NODE_CODE_BLOCK,
-        MARKDOWN_CORE_NODE_HTML_BLOCK,  MARKDOWN_CORE_NODE_COMMENT_BLOCK,  MARKDOWN_CORE_NODE_PARAGRAPH,
-        MARKDOWN_CORE_NODE_HEADING,     MARKDOWN_CORE_NODE_THEMATIC_BREAK, 0};
+        MARKDOWN_CORE_NODE_CALLOUT,    MARKDOWN_CORE_NODE_LIST,           MARKDOWN_CORE_NODE_CODE_BLOCK,
+        MARKDOWN_CORE_NODE_HTML_BLOCK, MARKDOWN_CORE_NODE_COMMENT_BLOCK,  MARKDOWN_CORE_NODE_PARAGRAPH,
+        MARKDOWN_CORE_NODE_HEADING,    MARKDOWN_CORE_NODE_THEMATIC_BREAK, 0};
     unsigned int all_inlines[] = {MARKDOWN_CORE_NODE_TEXT,
                                   MARKDOWN_CORE_NODE_SOFT_BREAK,
                                   MARKDOWN_CORE_NODE_LINE_BREAK,
@@ -767,7 +767,7 @@ void hierarchy(test_batch_runner *runner) {
                                   0};
 
     test_content(runner, MARKDOWN_CORE_NODE_DOCUMENT, top_level_blocks);
-    test_content(runner, MARKDOWN_CORE_NODE_BLOCK_QUOTE, top_level_blocks);
+    test_content(runner, MARKDOWN_CORE_NODE_CALLOUT, top_level_blocks);
     test_content(runner, MARKDOWN_CORE_NODE_LIST, list_item_flag);
     test_content(runner, MARKDOWN_CORE_NODE_LIST_ITEM, top_level_blocks);
     test_content(runner, MARKDOWN_CORE_NODE_CODE_BLOCK, 0);
@@ -1256,10 +1256,10 @@ static void iterator_contract_is_total(test_batch_runner *runner) {
  * request and returned success, while the tests that denied it flipped a flag
  * nothing else flipped. */
 static void no_node_is_its_own_ancestor(test_batch_runner *runner) {
-    markdown_core_node *q = markdown_core_node_new(MARKDOWN_CORE_NODE_BLOCK_QUOTE);
-    markdown_core_node *r = markdown_core_node_new(MARKDOWN_CORE_NODE_BLOCK_QUOTE);
-    markdown_core_node *a = markdown_core_node_new(MARKDOWN_CORE_NODE_BLOCK_QUOTE);
-    markdown_core_node *b = markdown_core_node_new(MARKDOWN_CORE_NODE_BLOCK_QUOTE);
+    markdown_core_node *q = markdown_core_node_new(MARKDOWN_CORE_NODE_CALLOUT);
+    markdown_core_node *r = markdown_core_node_new(MARKDOWN_CORE_NODE_CALLOUT);
+    markdown_core_node *a = markdown_core_node_new(MARKDOWN_CORE_NODE_CALLOUT);
+    markdown_core_node *b = markdown_core_node_new(MARKDOWN_CORE_NODE_CALLOUT);
 
     INT_EQ(runner, markdown_core_node_append_child(q, q), 0, "a node cannot be appended to itself");
     OK(runner, q->parent != q, "and it is not left as its own parent");
@@ -1489,7 +1489,7 @@ static void source_pos(test_batch_runner *runner) {
                      "children=1\n"
                      "│   │   └── Text scope=4:16..4:19 literal=\"okay\" children=0\n"
                      "│   └── Text scope=4:42..4:42 literal=\".\" children=0\n"
-                     "└── BlockQuote scope=6:1..10:20 children=1\n"
+                     "└── Callout scope=6:1..10:20 variant=null fold=none children=1\n"
                      "    └── List scope=6:3..10:20 flavor=ordered start=1 tight=false children=2\n"
                      "        ├── ListItem scope=6:3..8:1 checked=null children=1\n"
                      "        │   └── Paragraph scope=6:6..7:10 children=3\n"

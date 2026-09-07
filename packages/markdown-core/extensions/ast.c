@@ -140,8 +140,8 @@ markdown_core_node_kind markdown_core_node_get_kind(const markdown_core_node *no
     if (node->type == MARKDOWN_CORE_NODE_DOCUMENT) {
         return MARKDOWN_CORE_KIND_DOCUMENT;
     }
-    if (node->type == MARKDOWN_CORE_NODE_BLOCK_QUOTE) {
-        return MARKDOWN_CORE_KIND_BLOCK_QUOTE;
+    if (node->type == MARKDOWN_CORE_NODE_CALLOUT) {
+        return MARKDOWN_CORE_KIND_CALLOUT;
     }
     if (node->type == MARKDOWN_CORE_NODE_PARAGRAPH) {
         return MARKDOWN_CORE_KIND_PARAGRAPH;
@@ -235,7 +235,7 @@ markdown_core_node_kind markdown_core_node_get_kind(const markdown_core_node *no
 const char *markdown_core_node_kind_name(markdown_core_node_kind kind) {
     static const char *const names[] = {"None",
                                         "Document",
-                                        "BlockQuote",
+                                        "Callout",
                                         "Paragraph",
                                         "Heading",
                                         "ThematicBreak",
@@ -507,6 +507,28 @@ const markdown_core_node *markdown_core_node_directive_label(const markdown_core
     return is_directive(node) ? markdown_core_directive_label((markdown_core_node *)node) : NULL;
 }
 
+static bool is_callout(const markdown_core_node *node) { return node && node->type == MARKDOWN_CORE_NODE_CALLOUT; }
+
+bool markdown_core_node_callout_properties(const markdown_core_node *node, markdown_core_optional_string *variant,
+                                           markdown_core_callout_fold *fold) {
+    if (!is_callout(node) || !variant || !fold) {
+        return false;
+    }
+    /* Every `>` container is metadata-free until the callouts module's
+     * metadata rule lands with O8: no variant, no fold marker, no title. */
+    variant->has_value = false;
+    variant->value.data = NULL;
+    variant->value.length = 0;
+    *fold = MARKDOWN_CORE_CALLOUT_FOLD_NONE;
+    return true;
+}
+
+const markdown_core_node *markdown_core_node_callout_title(const markdown_core_node *node) {
+    /* No callout carries a title until O8, and a non-callout never does. */
+    (void)node;
+    return NULL;
+}
+
 static bool is_link(const markdown_core_node *node) {
     return node && (node->type == MARKDOWN_CORE_NODE_LINK || node->type == MARKDOWN_CORE_NODE_IMAGE);
 }
@@ -724,6 +746,17 @@ static void buffer_destination(dump_buffer *buffer, markdown_core_destination de
     buffer_cstr(buffer, ")");
 }
 
+static const char *callout_fold_name(markdown_core_callout_fold fold) {
+    switch (fold) {
+    case MARKDOWN_CORE_CALLOUT_FOLD_EXPANDED:
+        return "expanded";
+    case MARKDOWN_CORE_CALLOUT_FOLD_COLLAPSED:
+        return "collapsed";
+    default:
+        return "none";
+    }
+}
+
 static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, markdown_core_node_kind kind) {
     markdown_core_string a = {NULL, 0}, b = {NULL, 0}, c = {NULL, 0};
     markdown_core_optional_string oa = {false, {NULL, 0}}, ob = {false, {NULL, 0}};
@@ -731,11 +764,19 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
     markdown_core_optional_bool checked;
     markdown_core_list_flavor flavor;
     markdown_core_placement_mode mode;
+    markdown_core_callout_fold fold;
     markdown_core_destination destination;
     bool x, y, has_attributes;
     size_t count, i;
     int32_t level;
     switch (kind) {
+    case MARKDOWN_CORE_KIND_CALLOUT:
+        markdown_core_node_callout_properties(node, &oa, &fold);
+        buffer_cstr(buffer, " variant=");
+        buffer_optional_string(buffer, oa);
+        buffer_cstr(buffer, " fold=");
+        buffer_cstr(buffer, callout_fold_name(fold));
+        break;
     case MARKDOWN_CORE_KIND_HEADING:
         markdown_core_node_heading_level(node, &level);
         buffer_cstr(buffer, " level=");
@@ -877,6 +918,18 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
 
 static void dump_node(dump_buffer *buffer, const markdown_core_node *node, size_t depth);
 
+/* The file-tree connectors that lead a line at `depth`. */
+static void dump_prefix(dump_buffer *buffer, size_t depth) {
+    size_t i;
+    if (!depth) {
+        return;
+    }
+    for (i = 0; i + 1 < depth; i++) {
+        buffer_cstr(buffer, buffer->more[i] ? "│   " : "    ");
+    }
+    buffer_cstr(buffer, buffer->more[depth - 1] ? "├── " : "└── ");
+}
+
 /* The file-tree drawing can nest both child nodes and node-valued fields.  The
  * caller states their total so connectors remain a formatting concern rather
  * than redefining either relation as the other. */
@@ -909,21 +962,52 @@ static void dump_directive_nodes(dump_buffer *buffer, const markdown_core_node *
     dump_children(buffer, node, depth, remaining);
 }
 
+/* A group line nests a node-valued list under its owner: `Kind children=N`
+ * with no scope and no fields, at the owner's nesting depth, and the list's
+ * nodes one level below it. */
+static void dump_group_line(dump_buffer *buffer, const char *name, size_t count, size_t depth, bool has_next) {
+    if (!ensure_more(buffer, depth)) {
+        return;
+    }
+    buffer->more[depth] = has_next;
+    dump_prefix(buffer, depth + 1);
+    buffer_cstr(buffer, name);
+    buffer_cstr(buffer, " children=");
+    buffer_i64(buffer, (int64_t)count);
+    buffer_cstr(buffer, "\n");
+}
+
+/* A callout's `title` is a node-valued field, never callout content: a
+ * non-null title is a `Title` group before the content, and a null one
+ * prints nothing (M3). */
+static void dump_callout_nodes(dump_buffer *buffer, const markdown_core_node *node, size_t depth, size_t child_count) {
+    const markdown_core_node *title = markdown_core_node_callout_title(node);
+    size_t remaining = child_count + (title ? 1u : 0u);
+    if (title) {
+        const markdown_core_node *cursor;
+        size_t count = 0;
+        for (cursor = title; cursor; cursor = markdown_core_node_get_next_sibling(cursor)) {
+            count++;
+        }
+        remaining--;
+        dump_group_line(buffer, "Title", count, depth, remaining != 0);
+        for (cursor = title; cursor; cursor = markdown_core_node_get_next_sibling(cursor)) {
+            count--;
+            dump_nested_node(buffer, cursor, depth + 1, count != 0);
+        }
+    }
+    dump_children(buffer, node, depth, remaining);
+}
+
 static void dump_node(dump_buffer *buffer, const markdown_core_node *node, size_t depth) {
     markdown_core_node_kind kind = markdown_core_node_get_kind(node);
     markdown_core_scope scope = markdown_core_node_scope(node);
     size_t child_count = markdown_core_node_child_count(node);
-    size_t i;
     if (kind == MARKDOWN_CORE_KIND_NONE) {
         buffer->failed = true;
         return;
     }
-    if (depth) {
-        for (i = 0; i + 1 < depth; i++) {
-            buffer_cstr(buffer, buffer->more[i] ? "│   " : "    ");
-        }
-        buffer_cstr(buffer, buffer->more[depth - 1] ? "├── " : "└── ");
-    }
+    dump_prefix(buffer, depth);
     buffer_cstr(buffer, markdown_core_node_kind_name(kind));
     buffer_cstr(buffer, " scope=");
     buffer_i64(buffer, scope.start.line);
@@ -946,8 +1030,10 @@ static void dump_node(dump_buffer *buffer, const markdown_core_node *node, size_
     case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
         dump_directive_nodes(buffer, node, depth, child_count);
         break;
+    case MARKDOWN_CORE_KIND_CALLOUT:
+        dump_callout_nodes(buffer, node, depth, child_count);
+        break;
     case MARKDOWN_CORE_KIND_DOCUMENT:
-    case MARKDOWN_CORE_KIND_BLOCK_QUOTE:
     case MARKDOWN_CORE_KIND_PARAGRAPH:
     case MARKDOWN_CORE_KIND_HEADING:
     case MARKDOWN_CORE_KIND_LIST:

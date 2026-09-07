@@ -6,6 +6,18 @@
 // - Show declarations: true
 
 // Library unique name: <com.nouprax:kotlin-markdown-core>
+final enum class com.nouprax.markdown.core/CalloutFold : kotlin/Enum<com.nouprax.markdown.core/CalloutFold> { // com.nouprax.markdown.core/CalloutFold|null[0]
+    enum entry COLLAPSED // com.nouprax.markdown.core/CalloutFold.COLLAPSED|null[0]
+    enum entry EXPANDED // com.nouprax.markdown.core/CalloutFold.EXPANDED|null[0]
+    enum entry NONE // com.nouprax.markdown.core/CalloutFold.NONE|null[0]
+
+    final val entries // com.nouprax.markdown.core/CalloutFold.entries|#static{}entries[0]
+        final fun <get-entries>(): kotlin.enums/EnumEntries<com.nouprax.markdown.core/CalloutFold> // com.nouprax.markdown.core/CalloutFold.entries.<get-entries>|<get-entries>#static(){}[0]
+
+    final fun valueOf(kotlin/String): com.nouprax.markdown.core/CalloutFold // com.nouprax.markdown.core/CalloutFold.valueOf|valueOf#static(kotlin.String){}[0]
+    final fun values(): kotlin/Array<com.nouprax.markdown.core/CalloutFold> // com.nouprax.markdown.core/CalloutFold.values|values#static(){}[0]
+}
+
 final enum class com.nouprax.markdown.core/ListFlavor : kotlin/Enum<com.nouprax.markdown.core/ListFlavor> { // com.nouprax.markdown.core/ListFlavor|null[0]
     enum entry BULLET // com.nouprax.markdown.core/ListFlavor.BULLET|null[0]
     enum entry ORDERED // com.nouprax.markdown.core/ListFlavor.ORDERED|null[0]
@@ -65,7 +77,7 @@ final enum class com.nouprax.markdown.core/WalkPhase : kotlin/Enum<com.nouprax.m
 }
 
 abstract interface <#A: kotlin/Any?> com.nouprax.markdown.core/Visitor { // com.nouprax.markdown.core/Visitor|null[0]
-    abstract fun visitBlockQuote(com.nouprax.markdown.core/BlockQuote): #A // com.nouprax.markdown.core/Visitor.visitBlockQuote|visitBlockQuote(com.nouprax.markdown.core.BlockQuote){}[0]
+    abstract fun visitCallout(com.nouprax.markdown.core/Callout): #A // com.nouprax.markdown.core/Visitor.visitCallout|visitCallout(com.nouprax.markdown.core.Callout){}[0]
     abstract fun visitCode(com.nouprax.markdown.core/Code): #A // com.nouprax.markdown.core/Visitor.visitCode|visitCode(com.nouprax.markdown.core.Code){}[0]
     abstract fun visitCodeBlock(com.nouprax.markdown.core/CodeBlock): #A // com.nouprax.markdown.core/Visitor.visitCodeBlock|visitCodeBlock(com.nouprax.markdown.core.CodeBlock){}[0]
     abstract fun visitComment(com.nouprax.markdown.core/Comment): #A // com.nouprax.markdown.core/Visitor.visitComment|visitComment(com.nouprax.markdown.core.Comment){}[0]
@@ -98,7 +110,7 @@ abstract interface <#A: kotlin/Any?> com.nouprax.markdown.core/Visitor { // com.
 }
 
 abstract interface com.nouprax.markdown.core/WalkingVisitor { // com.nouprax.markdown.core/WalkingVisitor|null[0]
-    abstract fun visitBlockQuote(com.nouprax.markdown.core/BlockQuote, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitBlockQuote|visitBlockQuote(com.nouprax.markdown.core.BlockQuote;com.nouprax.markdown.core.WalkPhase){}[0]
+    abstract fun visitCallout(com.nouprax.markdown.core/Callout, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitCallout|visitCallout(com.nouprax.markdown.core.Callout;com.nouprax.markdown.core.WalkPhase){}[0]
     abstract fun visitCode(com.nouprax.markdown.core/Code, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitCode|visitCode(com.nouprax.markdown.core.Code;com.nouprax.markdown.core.WalkPhase){}[0]
     abstract fun visitCodeBlock(com.nouprax.markdown.core/CodeBlock, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitCodeBlock|visitCodeBlock(com.nouprax.markdown.core.CodeBlock;com.nouprax.markdown.core.WalkPhase){}[0]
     abstract fun visitComment(com.nouprax.markdown.core/Comment, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitComment|visitComment(com.nouprax.markdown.core.Comment;com.nouprax.markdown.core.WalkPhase){}[0]
@@ -152,13 +164,19 @@ sealed interface com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core
     open fun dump(): kotlin/String // com.nouprax.markdown.core/Markup.dump|dump(){}[0]
 }
 
-final class com.nouprax.markdown.core/BlockQuote : com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core/BlockQuote|null[0]
-    final val content // com.nouprax.markdown.core/BlockQuote.content|{}content[0]
-        final fun <get-content>(): kotlin.collections/List<com.nouprax.markdown.core/Markup> // com.nouprax.markdown.core/BlockQuote.content.<get-content>|<get-content>(){}[0]
-    final val scope // com.nouprax.markdown.core/BlockQuote.scope|{}scope[0]
-        final fun <get-scope>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/BlockQuote.scope.<get-scope>|<get-scope>(){}[0]
+final class com.nouprax.markdown.core/Callout : com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core/Callout|null[0]
+    final val content // com.nouprax.markdown.core/Callout.content|{}content[0]
+        final fun <get-content>(): kotlin.collections/List<com.nouprax.markdown.core/Markup> // com.nouprax.markdown.core/Callout.content.<get-content>|<get-content>(){}[0]
+    final val fold // com.nouprax.markdown.core/Callout.fold|{}fold[0]
+        final fun <get-fold>(): com.nouprax.markdown.core/CalloutFold // com.nouprax.markdown.core/Callout.fold.<get-fold>|<get-fold>(){}[0]
+    final val scope // com.nouprax.markdown.core/Callout.scope|{}scope[0]
+        final fun <get-scope>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/Callout.scope.<get-scope>|<get-scope>(){}[0]
+    final val title // com.nouprax.markdown.core/Callout.title|{}title[0]
+        final fun <get-title>(): kotlin.collections/List<com.nouprax.markdown.core/Markup>? // com.nouprax.markdown.core/Callout.title.<get-title>|<get-title>(){}[0]
+    final val variant // com.nouprax.markdown.core/Callout.variant|{}variant[0]
+        final fun <get-variant>(): kotlin/String? // com.nouprax.markdown.core/Callout.variant.<get-variant>|<get-variant>(){}[0]
 
-    final fun <#A1: kotlin/Any?> accept(com.nouprax.markdown.core/Visitor<#A1>): #A1 // com.nouprax.markdown.core/BlockQuote.accept|accept(com.nouprax.markdown.core.Visitor<0:0>){0§<kotlin.Any?>}[0]
+    final fun <#A1: kotlin/Any?> accept(com.nouprax.markdown.core/Visitor<#A1>): #A1 // com.nouprax.markdown.core/Callout.accept|accept(com.nouprax.markdown.core.Visitor<0:0>){0§<kotlin.Any?>}[0]
 }
 
 final class com.nouprax.markdown.core/Code : com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core/Code|null[0]

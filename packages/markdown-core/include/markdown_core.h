@@ -101,7 +101,7 @@ typedef enum markdown_core_error_code {
 typedef enum markdown_core_node_kind {
     MARKDOWN_CORE_KIND_NONE = 0,
     MARKDOWN_CORE_KIND_DOCUMENT,
-    MARKDOWN_CORE_KIND_BLOCK_QUOTE,
+    MARKDOWN_CORE_KIND_CALLOUT,
     MARKDOWN_CORE_KIND_PARAGRAPH,
     MARKDOWN_CORE_KIND_HEADING,
     MARKDOWN_CORE_KIND_THEMATIC_BREAK,
@@ -151,6 +151,14 @@ typedef enum markdown_core_placement_mode {
     MARKDOWN_CORE_PLACEMENT_EMBEDDED = 1,
     MARKDOWN_CORE_PLACEMENT_STANDALONE = 2
 } markdown_core_placement_mode;
+
+/** How a `Callout`'s fold marker was authored (M3): `+` is expanded, `-` is
+ * collapsed, and no marker is none. */
+typedef enum markdown_core_callout_fold {
+    MARKDOWN_CORE_CALLOUT_FOLD_NONE = 1,
+    MARKDOWN_CORE_CALLOUT_FOLD_EXPANDED = 2,
+    MARKDOWN_CORE_CALLOUT_FOLD_COLLAPSED = 3
+} markdown_core_callout_fold;
 
 typedef enum markdown_core_table_alignment {
     MARKDOWN_CORE_TABLE_ALIGNMENT_NONE = 0,
@@ -264,6 +272,17 @@ MARKDOWN_CORE_API bool markdown_core_node_directive_attribute_at(const markdown_
  * a directive child; its own children are the label's inline content. NULL
  * means either no label or a non-directive input. */
 MARKDOWN_CORE_API const markdown_core_node *markdown_core_node_directive_label(const markdown_core_node *node);
+/** A `Callout`'s metadata (M3). Every `>` container is a callout: `variant`
+ * is the authored type as written, absent when the container has no metadata
+ * line, and `fold` is its marker. Until the callouts module's metadata rule
+ * lands with `O8`, every callout answers an absent variant and `none`. */
+MARKDOWN_CORE_API bool markdown_core_node_callout_properties(const markdown_core_node *node,
+                                                             markdown_core_optional_string *variant,
+                                                             markdown_core_callout_fold *fold);
+/** The first node of a `Callout`'s `title`: a node-valued field whose inline
+ * nodes follow by `markdown_core_node_get_next_sibling` and are never callout
+ * children. NULL means no title, or a non-callout input. */
+MARKDOWN_CORE_API const markdown_core_node *markdown_core_node_callout_title(const markdown_core_node *node);
 /** The tagged `Destination` value of a `Link` or `Image` (M1): a value, not
  * a node, so it has no scope and no children, and a branch's fields exist
  * only in that branch. `MARKDOWN_CORE_DESTINATION_URL` fills `url` and zeroes

@@ -1,6 +1,6 @@
 export type NativeKind =
     | "document"
-    | "blockQuote"
+    | "callout"
     | "paragraph"
     | "heading"
     | "thematicBreak"
@@ -33,7 +33,7 @@ export type NativeKind =
 export const kinds: readonly (NativeKind | "none")[] = Object.freeze([
     "none",
     "document",
-    "blockQuote",
+    "callout",
     "paragraph",
     "heading",
     "thematicBreak",

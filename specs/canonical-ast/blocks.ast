@@ -1,7 +1,7 @@
 Document scope=1:1..21:38 children=9
 ├── Heading scope=1:1..1:9 level=1 children=1
 │   └── Text scope=1:3..1:9 literal="Heading" children=0
-├── BlockQuote scope=3:1..3:7 children=1
+├── Callout scope=3:1..3:7 variant=null fold=none children=1
 │   └── Paragraph scope=3:3..3:7 children=1
 │       └── Text scope=3:3..3:7 literal="Quote" children=0
 ├── ThematicBreak scope=5:1..6:0 children=0

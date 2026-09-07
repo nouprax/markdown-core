@@ -35,7 +35,16 @@ private final class DumpState {
         children: Int = 0
     ) {
         let fieldText = fields.isEmpty ? "" : " " + fields.joined(separator: " ")
-        let text = "\(kind) \(scope(node.scope))\(fieldText) children=\(children)"
+        emit("\(kind) \(scope(node.scope))\(fieldText) children=\(children)")
+    }
+
+    /// A group line nests a node-valued list under its owner: `Kind children=N`
+    /// with no scope and no fields. The caller opens the list's own nesting.
+    func group(_ kind: String, children: Int) {
+        emit("\(kind) children=\(children)")
+    }
+
+    private func emit(_ text: String) {
         guard !frames.isEmpty else {
             lines.append(text)
             return
@@ -65,9 +74,22 @@ private struct DumpVisitor: MarkupVisitor {
         state.nested(node.content.count) { node.content.forEach(state.dump) }
     }
 
-    mutating func visit(_ node: BlockQuote) {
-        state.line("BlockQuote", node, children: node.content.count)
-        state.nested(node.content.count) { node.content.forEach(state.dump) }
+    mutating func visit(_ node: Callout) {
+        state.line(
+            "Callout",
+            node,
+            fields: ["variant=\(optionalString(node.variant))", "fold=\(node.fold.rawValue)"],
+            children: node.content.count
+        )
+        // A non-null title is a `Title` group before the content; a
+        // null one prints nothing. Neither is counted by `children`.
+        state.nested(node.content.count + (node.title == nil ? 0 : 1)) {
+            if let title = node.title {
+                state.group("Title", children: title.count)
+                state.nested(title.count) { title.forEach(state.dump) }
+            }
+            node.content.forEach(state.dump)
+        }
     }
 
     mutating func visit(_ node: Paragraph) {

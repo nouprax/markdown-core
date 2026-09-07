@@ -241,6 +241,37 @@ static void check_resource_identity(void) {
     markdown_core_document_free(document);
 }
 
+static void check_callout_fields(void) {
+    /* M3: every `>` container is a `Callout` that reads as metadata-free --
+     * an absent variant, `none`, and no title -- through the facade, and the
+     * accessors answer nothing for another kind. */
+    static const char source[] = "> quote\n\ntext\n";
+    markdown_core_document *document = markdown_core_document_parse((const uint8_t *)source, strlen(source), NULL);
+    const markdown_core_node *callout;
+    const markdown_core_node *paragraph;
+    markdown_core_optional_string variant = {true, {(const uint8_t *)"x", 1}};
+    markdown_core_callout_fold fold = MARKDOWN_CORE_CALLOUT_FOLD_COLLAPSED;
+    if (!document) {
+        check(false, "callout corpus parses");
+        return;
+    }
+    callout = markdown_core_node_get_first_child(markdown_core_document_root(document));
+    paragraph = markdown_core_node_get_next_sibling(callout);
+    check(markdown_core_node_get_kind(callout) == MARKDOWN_CORE_KIND_CALLOUT, "a `>` container is a Callout");
+    check(strcmp(markdown_core_node_kind_name(MARKDOWN_CORE_KIND_CALLOUT), "Callout") == 0,
+          "the kind is named Callout");
+    check(markdown_core_node_callout_properties(callout, &variant, &fold), "a callout answers its properties");
+    check(!variant.has_value && variant.value.length == 0, "a `>` container has no variant");
+    check(fold == MARKDOWN_CORE_CALLOUT_FOLD_NONE, "a `>` container has no fold marker");
+    check(markdown_core_node_callout_title(callout) == NULL, "a `>` container has no title");
+    check(!markdown_core_node_callout_properties(paragraph, &variant, &fold), "a paragraph has no callout properties");
+    check(!markdown_core_node_callout_properties(callout, NULL, &fold), "properties need a variant out-parameter");
+    check(!markdown_core_node_callout_properties(callout, &variant, NULL), "properties need a fold out-parameter");
+    check(markdown_core_node_callout_title(paragraph) == NULL && markdown_core_node_callout_title(NULL) == NULL,
+          "only a callout may have a title");
+    markdown_core_document_free(document);
+}
+
 static void check_directive_label_projection(void) {
     static const uint8_t inline_source[] = ":badge[label]\n";
     static const uint8_t bare_source[] = ":badge\n";
@@ -402,6 +433,7 @@ int main(int argc, char **argv) {
     check_dialect_is_whole();
     check_null_and_empty();
     check_resource_identity();
+    check_callout_fields();
     check_directive_label_projection();
     for (i = 3; i < argc; i++) {
         check_fixture(fixture_dir, argv[i]);

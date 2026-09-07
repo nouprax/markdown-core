@@ -1,4 +1,4 @@
-import type { BlockQuote } from "./model/block-quote.js";
+import type { Callout } from "./model/callout.js";
 import type { CodeBlock } from "./model/code-block.js";
 import type { Code } from "./model/code.js";
 import type { Comment } from "./model/comment.js";
@@ -39,7 +39,7 @@ export type WalkPhase = "entering" | "exiting";
  */
 export interface WalkingVisitor {
     visitDocument(this: void, node: Document, phase: WalkPhase): void;
-    visitBlockQuote(this: void, node: BlockQuote, phase: WalkPhase): void;
+    visitCallout(this: void, node: Callout, phase: WalkPhase): void;
     visitParagraph(this: void, node: Paragraph, phase: WalkPhase): void;
     visitHeading(this: void, node: Heading, phase: WalkPhase): void;
     visitThematicBreak(this: void, node: ThematicBreak, phase: WalkPhase): void;
@@ -103,10 +103,14 @@ export function walk(root: Markup, walkingVisitor: WalkingVisitor): void {
             scheduleExit(node);
             if (phase === "entering") schedule(node.content);
         },
-        visitBlockQuote: (node) => {
-            walkingVisitor.visitBlockQuote(node, phase);
+        visitCallout: (node) => {
+            walkingVisitor.visitCallout(node, phase);
             scheduleExit(node);
-            if (phase === "entering") schedule(node.content);
+            if (phase === "entering") {
+                schedule(node.content);
+                // The title is a node-valued field, visited before the content.
+                if (node.title !== null) schedule(node.title);
+            }
         },
         visitParagraph: (node) => {
             walkingVisitor.visitParagraph(node, phase);

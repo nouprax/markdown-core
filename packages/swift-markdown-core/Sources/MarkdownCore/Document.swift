@@ -70,6 +70,7 @@ private struct NativeNodeRecord {
     let node: OpaquePointer
     var children: [Int] = []
     var label: Int?
+    var title: [Int]?
 }
 
 /// Copies the C tree without making Swift's call stack proportional to input
@@ -103,6 +104,20 @@ private struct NativeTreeBuilder {
                     records[recordIndex].label = records.count
                     records.append(NativeNodeRecord(node: label))
                 }
+            case MARKDOWN_CORE_KIND_CALLOUT:
+                // The title is a sibling chain the callout owns beside its
+                // content; its nodes are recorded like children, and the
+                // record remembers which are the title's.
+                var titleNode = markdown_core_node_callout_title(node)
+                if titleNode != nil {
+                    var indices: [Int] = []
+                    while let current = titleNode {
+                        indices.append(records.count)
+                        records.append(NativeNodeRecord(node: current))
+                        titleNode = markdown_core_node_get_next_sibling(current)
+                    }
+                    records[recordIndex].title = indices
+                }
             default:
                 break
             }
@@ -132,7 +147,21 @@ private struct NativeTreeBuilder {
             } else {
                 label = nil
             }
-            values[index] = markup(from: record.node, children: children, label: label, resources: &resources)
+            let title = record.title.map { indices -> [any Markup] in
+                indices.map { titleIndex -> any Markup in
+                    guard let node = values[titleIndex] else {
+                        preconditionFailure("native callout title was not materialized before its owner")
+                    }
+                    return node
+                }
+            }
+            values[index] = markup(
+                from: record.node,
+                children: children,
+                label: label,
+                title: title,
+                resources: &resources
+            )
         }
         guard let document = values[0] as? Document else {
             preconditionFailure("native tree root is not a document")
@@ -148,12 +177,13 @@ func markup(
     from node: OpaquePointer,
     children: [any Markup],
     label: DirectiveLabel?,
+    title: [any Markup]?,
     resources: inout [UnsafeRawPointer: SharedResource]
 ) -> any Markup {
     switch markdown_core_node_get_kind(node) {
     case MARKDOWN_CORE_KIND_DOCUMENT:
         Document(scope: Document.scope(from: node), content: children)
-    case MARKDOWN_CORE_KIND_BLOCK_QUOTE: BlockQuote(from: node, content: children)
+    case MARKDOWN_CORE_KIND_CALLOUT: Callout(from: node, title: title, content: children)
     case MARKDOWN_CORE_KIND_PARAGRAPH: Paragraph(from: node, content: children)
     case MARKDOWN_CORE_KIND_HEADING: Heading(from: node, content: children)
     case MARKDOWN_CORE_KIND_THEMATIC_BREAK: ThematicBreak(from: node)

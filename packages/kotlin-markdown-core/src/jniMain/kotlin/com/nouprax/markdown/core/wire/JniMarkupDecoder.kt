@@ -29,8 +29,8 @@ private class JniTreeDecoder(
                 readChildren { consume(Document(it, scope)) }
             }
 
-            JniNodeKind.BLOCK_QUOTE -> {
-                readChildren { consume(BlockQuote(it, scope)) }
+            JniNodeKind.CALLOUT -> {
+                readCallout(scope, consume)
             }
 
             JniNodeKind.PARAGRAPH -> {
@@ -219,6 +219,38 @@ private class JniTreeDecoder(
             consume(Directive(name, attributes, label, scope))
         }
     }
+
+    /**
+     * A callout's metadata leads, then its title -- a node-valued list that the
+     * payload sends before the content, as the walk visits it -- and then the
+     * content. Every callout is metadata-free until O8.
+     */
+    private fun readCallout(
+        scope: Scope,
+        consume: (Markup) -> Unit,
+    ) {
+        val variant = reader.string()
+        val fold = calloutFold(reader.int())
+        if (!reader.boolean()) {
+            readChildren { consume(Callout(variant, fold, null, it, scope)) }
+            return
+        }
+        var title: kotlin.collections.List<Markup>? = null
+        actions.addLast {
+            readChildren { children -> consume(Callout(variant, fold, requireNotNull(title), children, scope)) }
+        }
+        actions.addLast {
+            readChildren { title = it }
+        }
+    }
+
+    private fun calloutFold(rawValue: Int): CalloutFold =
+        when (rawValue) {
+            1 -> CalloutFold.NONE
+            2 -> CalloutFold.EXPANDED
+            3 -> CalloutFold.COLLAPSED
+            else -> error("invalid native callout fold $rawValue")
+        }
 
     /** Reads the independent node-valued label field before directive content. */
     private fun readDirectiveRelations(consume: (DirectiveLabel?, kotlin.collections.List<Markup>) -> Unit) {

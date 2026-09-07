@@ -4,7 +4,7 @@ internal enum class JniNodeKind(
     val rawValue: Int,
 ) {
     DOCUMENT(1),
-    BLOCK_QUOTE(2),
+    CALLOUT(2),
     PARAGRAPH(3),
     HEADING(4),
     THEMATIC_BREAK(5),

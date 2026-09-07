@@ -39,7 +39,7 @@ const MDAST_KIND = {
     image: "Image",
     list: "List",
     listItem: "ListItem",
-    blockquote: "BlockQuote",
+    blockquote: "Callout",
     thematicBreak: "ThematicBreak",
     break: "LineBreak",
     delete: "Strikethrough",
@@ -125,6 +125,13 @@ function convert(node, definitions, parentType = "root") {
     const kind = MDAST_KIND[node.type] ?? `?${node.type}`;
     const fields = {};
     if (node.type === "heading") fields.level = String(node.depth);
+    // Every `>` container is a `Callout` (M3). mdast's `blockquote` carries no
+    // callout metadata, so the projection states the absence the canonical
+    // AST prints for a metadata-free container.
+    if (node.type === "blockquote") {
+        fields.variant = "null";
+        fields.fold = "none";
+    }
     if (node.type === "list") {
         fields.flavor = node.ordered ? "ordered" : "bullet";
         fields.tight = String(Boolean(!node.spread));
@@ -248,6 +255,7 @@ export function fromMdast(tree) {
  * field is compared only where both models agree it means the same thing.
  */
 export const MDAST_COMPARED = {
+    Callout: ["variant", "fold"],
     Heading: ["level"],
     List: ["flavor", "tight", "start"],
     ListItem: ["checked"],

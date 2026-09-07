@@ -139,6 +139,25 @@ import Testing
         }
     }
 
+    @Test("every `>` container is a metadata-free callout")
+    func callout() throws {
+        // M3: the kind is `Callout`; the metadata rule that fills variant,
+        // fold, and title in lands with O8, so every callout reads as
+        // metadata-free and dumps its fields as such.
+        let document = try Document.parse("> quote\n")
+        let callout = try #require(document.content.first as? Callout)
+        #expect(callout.variant == nil)
+        #expect(callout.fold == CalloutFold.none)
+        #expect(callout.title == nil)
+        #expect(callout.content.count == 1)
+        #expect(
+            document.dump()
+                == "Document scope=1:1..1:7 children=1\n"
+                + "└── Callout scope=1:1..1:7 variant=null fold=none children=1\n"
+                + "    └── Paragraph scope=1:3..1:7 children=1\n"
+                + "        └── Text scope=1:3..1:7 literal=\"quote\" children=0\n")
+    }
+
     @Test("empty input maps to an empty document")
     func empty() throws {
         #expect(try Document.parse("").content.isEmpty)
@@ -227,7 +246,7 @@ import Testing
 
 private struct KindVisitor: MarkupVisitor {
     mutating func visit(_ node: Document) -> String { kindName(node) }
-    mutating func visit(_ node: BlockQuote) -> String { kindName(node) }
+    mutating func visit(_ node: Callout) -> String { kindName(node) }
     mutating func visit(_ node: Paragraph) -> String { kindName(node) }
     mutating func visit(_ node: Heading) -> String { "heading:\(node.level)" }
     mutating func visit(_ node: ThematicBreak) -> String { kindName(node) }
@@ -285,7 +304,7 @@ private struct RecordingWalkingVisitor: MarkupWalkingVisitor {
     }
 
     mutating func visit(_ node: Document, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: BlockQuote, phase: WalkPhase) { record(node, phase) }
+    mutating func visit(_ node: Callout, phase: WalkPhase) { record(node, phase) }
     mutating func visit(_ node: Paragraph, phase: WalkPhase) { record(node, phase) }
     mutating func visit(_ node: Heading, phase: WalkPhase) { record(node, phase) }
     mutating func visit(_ node: ThematicBreak, phase: WalkPhase) { record(node, phase) }

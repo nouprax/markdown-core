@@ -1,6 +1,6 @@
 export const kindVisitor = {
     visitDocument: (node) => node.kind,
-    visitBlockQuote: (node) => node.kind,
+    visitCallout: (node) => node.kind,
     visitParagraph: (node) => node.kind,
     visitHeading: (node) => node.kind,
     visitThematicBreak: (node) => node.kind,

@@ -170,6 +170,94 @@ test("references: every occurrence of one definition crosses the boundary once a
     );
 });
 
+test("callouts: every `>` container is a metadata-free callout", () => {
+    // M3: the kind is `callout`; the metadata rule that fills variant, fold,
+    // and title in lands with O8, so every callout reads as metadata-free and
+    // dumps its fields as such.
+    const document = Document.parse("> quote\n");
+    const [callout] = document.content;
+    assert.equal(callout.kind, "callout");
+    assert.equal(callout.variant, null);
+    assert.equal(callout.fold, "none");
+    assert.equal(callout.title, null);
+    assert.equal(callout.content.length, 1);
+    assert.equal(
+        document.dump(),
+        "Document scope=1:1..1:7 children=1\n" +
+            "└── Callout scope=1:1..1:7 variant=null fold=none children=1\n" +
+            "    └── Paragraph scope=1:3..1:7 children=1\n" +
+            '        └── Text scope=1:3..1:7 literal="quote" children=0\n'
+    );
+});
+
+test("callouts: a title is decoded from the auxiliary range before the content and dumped as a group", () => {
+    // The title path of the wire: a node-valued list the record owns through
+    // its auxiliary range under flag 1. No parse produces one until O8, so the
+    // result is built by hand: a document holding one expanded `note` callout
+    // whose title is the text `T` and whose content is empty.
+    const nodeSize = 96;
+    const strings = Uint8Array.from("noteT", (character) => character.charCodeAt(0));
+    const nodesOffset = 64;
+    const edgesOffset = nodesOffset + 3 * nodeSize;
+    const stringsOffset = edgesOffset + 2 * 4;
+    const total = stringsOffset + strings.length;
+    const bytes = new Uint8Array(total);
+    const view = new DataView(bytes.buffer);
+    bytes.set([0x4d, 0x43, 0x42, 0x31], 0);
+    for (const [offset, value] of [
+        [4, total],
+        [24, 3],
+        [28, 2],
+        [40, nodesOffset],
+        [44, edgesOffset],
+        [48, stringsOffset],
+        [52, stringsOffset],
+        [56, stringsOffset],
+        [60, strings.length]
+    ]) {
+        view.setUint32(offset, value, true);
+    }
+    const node = (index, kind, scope, fields) => {
+        const at = nodesOffset + index * nodeSize;
+        view.setUint32(at, kind, true);
+        for (const [slot, value] of scope.entries()) view.setInt32(at + 8 + slot * 4, value, true);
+        view.setUint32(at + 32, 0xffff_ffff, true);
+        view.setUint32(at + 36, 0xffff_ffff, true);
+        for (let slot = 0; slot < 4; ++slot) view.setUint32(at + 64 + slot * 8, 0xffff_ffff, true);
+        for (const [offset, value] of Object.entries(fields)) view.setUint32(at + Number(offset), value, true);
+    };
+    node(0, 1, [1, 1, 1, 8], { 24: 0, 28: 1 });
+    node(1, 2, [1, 1, 1, 8], { 4: 1, 24: 1, 28: 0, 36: 1, 40: 1, 44: 2, 64: stringsOffset, 68: 4 });
+    node(2, 14, [1, 10, 1, 10], { 64: stringsOffset + 4, 68: 1 });
+    view.setUint32(edgesOffset, 1, true);
+    view.setUint32(edgesOffset + 4, 2, true);
+    bytes.set(strings, stringsOffset);
+
+    const document = new NodeDecoder(bytes).decodeDocument();
+    const [callout] = document.content;
+    assert.equal(callout.kind, "callout");
+    assert.equal(callout.variant, "note");
+    assert.equal(callout.fold, "expanded");
+    assert.deepEqual(
+        callout.title.map((child) => [child.kind, child.literal]),
+        [["text", "T"]]
+    );
+    assert.deepEqual(callout.content, []);
+    assert.equal(
+        TreeDumper.dump(document),
+        "Document scope=1:1..1:8 children=1\n" +
+            '└── Callout scope=1:1..1:8 variant="note" fold=expanded children=0\n' +
+            "    └── Title children=1\n" +
+            '        └── Text scope=1:10..1:10 literal="T" children=0\n'
+    );
+    const events = [];
+    walk(
+        callout,
+        walkingVisitor((visited, phase) => events.push(`${phase}:${nodeKindName(visited)}`))
+    );
+    assert.deepEqual(events, ["entering:Callout", "entering:Text", "exiting:Text", "exiting:Callout"]);
+});
+
 test("ownership: declarations are readonly without runtime freeze", () => {
     const document = Document.parse("text\n");
     assert.equal(Object.isFrozen(document), false);

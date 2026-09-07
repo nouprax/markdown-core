@@ -178,6 +178,7 @@ one class per branch, and ECMAScript as a discriminated union on `kind`.
 ### Other enums
 
 ```text
+CalloutFold = none | expanded | collapsed
 ListFlavor = bullet | ordered
 TableAlignment = none | left | center | right
 ```
@@ -193,7 +194,7 @@ and returns no document.
 | Kind | Fields in canonical order | Nullability and invariants |
 | --- | --- | --- |
 | `Document` | `content: [Markup]` | block content |
-| `BlockQuote` | `content: [Markup]` | block content |
+| `Callout` | `variant: String?`, `fold: CalloutFold`, `title: [Markup]?`, `content: [Markup]` | every `>` container; `variant` is the authored type as written, or null when the container has no metadata line, and then `fold` is `none` and `title` is null; `title` is a node-valued field of inline content, visited before `content` and never counted among its children, and an absent title and an empty one are distinct; block content |
 | `Paragraph` | `content: [Markup]` | inline content |
 | `Heading` | `level: Int`, `content: [Markup]` | `level` is 1 through 6; inline content |
 | `ThematicBreak` | none | leaf |
