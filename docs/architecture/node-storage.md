@@ -21,7 +21,7 @@ validation, it allocates a replacement record before releasing the old fields.
 The original record shares the node's allocation and is reclaimed with the
 node; replacement records are freed when replaced or when the node dies.
 The typed view and allocation ownership are explicit: `as` points to the
-current record, while `payload_allocation` owns a replacement allocation, if
+current record, while `node_data_allocation` owns a replacement allocation, if
 any. Ownership is never inferred by comparing potentially adjacent addresses.
 Failure leaves the original type and all owned values intact. A successful
 conversion releases node-valued fields through the same iterative

@@ -587,11 +587,11 @@ static int matches(const markdown_core_extension *self, markdown_core_parser *pa
 }
 
 static const char *get_type_string(const markdown_core_extension *self, markdown_core_node *node) {
-    if (node->type == MARKDOWN_CORE_NODE_TABLE) {
+    if (node->kind == MARKDOWN_CORE_NODE_TABLE) {
         return "table";
-    } else if (node->type == MARKDOWN_CORE_NODE_TABLE_ROW) {
+    } else if (node->kind == MARKDOWN_CORE_NODE_TABLE_ROW) {
         return "table_row";
-    } else if (node->type == MARKDOWN_CORE_NODE_TABLE_CELL) {
+    } else if (node->kind == MARKDOWN_CORE_NODE_TABLE_CELL) {
         return "table_cell";
     }
 
@@ -600,32 +600,32 @@ static const char *get_type_string(const markdown_core_extension *self, markdown
 
 static int can_contain(const markdown_core_extension *extension, markdown_core_node *node,
                        markdown_core_node_type child_type) {
-    if (node->type == MARKDOWN_CORE_NODE_TABLE) {
+    if (node->kind == MARKDOWN_CORE_NODE_TABLE) {
         return child_type == MARKDOWN_CORE_NODE_TABLE_ROW;
-    } else if (node->type == MARKDOWN_CORE_NODE_TABLE_ROW) {
+    } else if (node->kind == MARKDOWN_CORE_NODE_TABLE_ROW) {
         return child_type == MARKDOWN_CORE_NODE_TABLE_CELL;
-    } else if (node->type == MARKDOWN_CORE_NODE_TABLE_CELL) {
+    } else if (node->kind == MARKDOWN_CORE_NODE_TABLE_CELL) {
         return MARKDOWN_CORE_NODE_TYPE_INLINE_P(child_type) || MARKDOWN_CORE_NODE_TYPE_BLOCK_P(child_type);
     }
     return false;
 }
 
 static int contains_inlines(const markdown_core_extension *extension, markdown_core_node *node) {
-    return node->type == MARKDOWN_CORE_NODE_TABLE_CELL;
+    return node->kind == MARKDOWN_CORE_NODE_TABLE_CELL;
 }
 
 static void opaque_alloc(const markdown_core_extension *self, markdown_core_mem *mem, markdown_core_node *node) {
     /* A NULL payload makes the table facade accessors fail; no incomplete
      * table is returned by a successful parse. */
-    if (node->type == MARKDOWN_CORE_NODE_TABLE) {
+    if (node->kind == MARKDOWN_CORE_NODE_TABLE) {
         node->opaque = mem->calloc(1, sizeof(markdown_core_table));
-    } else if (node->type == MARKDOWN_CORE_NODE_TABLE_CELL) {
+    } else if (node->kind == MARKDOWN_CORE_NODE_TABLE_CELL) {
         init_cell(node);
     }
 }
 
 static void opaque_free(const markdown_core_extension *self, markdown_core_mem *mem, markdown_core_node *node) {
-    if (node->type == MARKDOWN_CORE_NODE_TABLE) {
+    if (node->kind == MARKDOWN_CORE_NODE_TABLE) {
         free_node_table(mem, node->opaque);
     }
 }

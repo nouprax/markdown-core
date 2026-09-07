@@ -39,7 +39,7 @@ static int is_formula_node(markdown_core_node *node) {
         return 0;
     }
 
-    return node->type == MARKDOWN_CORE_NODE_FORMULA || node->type == MARKDOWN_CORE_NODE_FORMULA_BLOCK;
+    return node->kind == MARKDOWN_CORE_NODE_FORMULA || node->kind == MARKDOWN_CORE_NODE_FORMULA_BLOCK;
 }
 
 static node_formula *get_formula(markdown_core_node *node) {
@@ -98,7 +98,7 @@ int markdown_core_extensions_set_formula_mode(markdown_core_node *node, markdown
         return 0;
     }
 
-    if (node->type == MARKDOWN_CORE_NODE_FORMULA_BLOCK && mode != MARKDOWN_CORE_FORMULA_MODE_STANDALONE) {
+    if (node->kind == MARKDOWN_CORE_NODE_FORMULA_BLOCK && mode != MARKDOWN_CORE_FORMULA_MODE_STANDALONE) {
         return 0;
     }
 
@@ -643,11 +643,11 @@ done:
 }
 
 static const char *get_type_string(const markdown_core_extension *extension, markdown_core_node *node) {
-    if (node->type == MARKDOWN_CORE_NODE_FORMULA) {
+    if (node->kind == MARKDOWN_CORE_NODE_FORMULA) {
         return "formula";
     }
 
-    if (node->type == MARKDOWN_CORE_NODE_FORMULA_BLOCK) {
+    if (node->kind == MARKDOWN_CORE_NODE_FORMULA_BLOCK) {
         return "formula_block";
     }
 
@@ -664,7 +664,7 @@ static int can_contain(const markdown_core_extension *extension, markdown_core_n
 }
 
 static int accepts_lines(const markdown_core_extension *extension, markdown_core_node *node) {
-    return node && node->type == MARKDOWN_CORE_NODE_FORMULA_BLOCK;
+    return node && node->kind == MARKDOWN_CORE_NODE_FORMULA_BLOCK;
 }
 
 /* An absent info string is not the word `formula`; it is no word at all. */
@@ -720,7 +720,7 @@ static markdown_core_node *replace_with_formula_block(const markdown_core_extens
  * safe for an arbitrarily deep tree even when the tree contains no formula. */
 static markdown_core_node *postprocess_node(const markdown_core_extension *extension, markdown_core_parser *parser,
                                             markdown_core_node *node) {
-    if (node->type == MARKDOWN_CORE_NODE_FORMULA_BLOCK) {
+    if (node->kind == MARKDOWN_CORE_NODE_FORMULA_BLOCK) {
         node_formula *formula = get_formula(node);
         if (formula && !formula->literal.data) {
             /* The literal is copied OUT of `node->content` and the content is
@@ -734,7 +734,7 @@ static markdown_core_node *postprocess_node(const markdown_core_extension *exten
         return node;
     }
 
-    if (node->type == MARKDOWN_CORE_NODE_CODE_BLOCK && info_is_formula(&node->as.code->info)) {
+    if (node->kind == MARKDOWN_CORE_NODE_CODE_BLOCK && info_is_formula(&node->as.code->info)) {
         markdown_core_node *formula = replace_with_formula_block(extension, parser, node, node->as.code->literal.data,
                                                                  node->as.code->literal.len);
         if (!formula) {
@@ -743,8 +743,8 @@ static markdown_core_node *postprocess_node(const markdown_core_extension *exten
         return formula;
     }
 
-    if (node->type == MARKDOWN_CORE_NODE_PARAGRAPH && node->first_child && node->first_child == node->last_child &&
-        node->first_child->type == MARKDOWN_CORE_NODE_FORMULA && is_standalone_formula_node(node->first_child)) {
+    if (node->kind == MARKDOWN_CORE_NODE_PARAGRAPH && node->first_child && node->first_child == node->last_child &&
+        node->first_child->kind == MARKDOWN_CORE_NODE_FORMULA && is_standalone_formula_node(node->first_child)) {
         node_formula *formula = get_formula(node->first_child);
         if (formula) {
             markdown_core_node *block =

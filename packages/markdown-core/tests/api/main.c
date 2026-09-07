@@ -124,7 +124,7 @@ static void constructor(test_batch_runner *runner) {
         INT_EQ(runner, markdown_core_node_get_type(node), type, "get_type %d", type);
         STR_EQ(runner, markdown_core_node_get_type_string(node), node_type_names[i], "get_type_string %d", type);
 
-        switch (node->type) {
+        switch (node->kind) {
         case MARKDOWN_CORE_NODE_HEADING:
             INT_EQ(runner, markdown_core_node_get_heading_level(node), 1, "default heading level is 1");
             node->as.heading->level = 1;
@@ -583,7 +583,7 @@ static void iterator(test_batch_runner *runner) {
 
     while ((ev_type = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
         cur = markdown_core_iter_get_node(iter);
-        if (cur->type == MARKDOWN_CORE_NODE_PARAGRAPH && ev_type == MARKDOWN_CORE_EVENT_ENTER) {
+        if (cur->kind == MARKDOWN_CORE_NODE_PARAGRAPH && ev_type == MARKDOWN_CORE_EVENT_ENTER) {
             parnodes += 1;
         }
     }
@@ -615,8 +615,8 @@ static void iterator_delete(test_batch_runner *runner) {
         // suppressed `CODE`'s EXIT. A test that frees at ENTER is a test
         // asserting the suppression list.
         if (ev_type == MARKDOWN_CORE_EVENT_EXIT &&
-            (node->type == MARKDOWN_CORE_NODE_LIST || node->type == MARKDOWN_CORE_NODE_EMPHASIS ||
-             node->type == MARKDOWN_CORE_NODE_CODE)) {
+            (node->kind == MARKDOWN_CORE_NODE_LIST || node->kind == MARKDOWN_CORE_NODE_EMPHASIS ||
+             node->kind == MARKDOWN_CORE_NODE_CODE)) {
             markdown_core_node_free(node);
         }
     }
@@ -1708,7 +1708,7 @@ typedef struct {
 } payload_integer_alignment;
 
 static void node_payload_lifecycle(test_batch_runner *runner) {
-    INT_EQ(runner, sizeof(markdown_core_node_payload), sizeof(void *),
+    INT_EQ(runner, sizeof(markdown_core_node_data), sizeof(void *),
            "all payload arms share one pointer-sized node slot");
     static const markdown_core_node_type extra_types[] = {
         MARKDOWN_CORE_NODE_CROSS_LINK,      MARKDOWN_CORE_NODE_CITE,
@@ -1756,7 +1756,7 @@ static void node_payload_lifecycle(test_batch_runner *runner) {
     payload_fail_at = payload_allocations + 1;
     OK(runner, !markdown_core_node_set_type(text, MARKDOWN_CORE_NODE_LINK), "payload allocation can reject retyping");
     OK(runner,
-       text->type == MARKDOWN_CORE_NODE_TEXT && text->as.literal == original_payload && text->parent == parent &&
+       text->kind == MARKDOWN_CORE_NODE_TEXT && text->as.literal == original_payload && text->parent == parent &&
            parent->first_child == text,
        "failed retyping preserves type, payload, identity, and tree links");
     STR_EQ(runner, markdown_core_node_get_literal(text), "retained", "failed retyping retains owned bytes");
@@ -2117,7 +2117,7 @@ static void table_source_map_growth(test_batch_runner *runner) {
             markdown_core_node *cell = table->first_child->next->first_child;
             size_t links = 0;
             for (markdown_core_node *node = cell->first_child; node; node = node->next) {
-                if (node->type != MARKDOWN_CORE_NODE_LINK) {
+                if (node->kind != MARKDOWN_CORE_NODE_LINK) {
                     continue;
                 }
                 INT_EQ(runner, node->start_column, 12 + links * unit_length, "address begins at its authored byte");

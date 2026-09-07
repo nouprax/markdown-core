@@ -51,7 +51,7 @@ static bool S_last_line_checked(const markdown_core_node *node) {
 }
 
 static MARKDOWN_CORE_INLINE markdown_core_node_type S_type(const markdown_core_node *node) {
-    return (markdown_core_node_type)node->type;
+    return (markdown_core_node_type)node->kind;
 }
 
 static void S_set_last_line_blank(markdown_core_node *node, bool is_blank) {
@@ -266,7 +266,7 @@ static MARKDOWN_CORE_INLINE bool contains_inlines(markdown_core_node *node) {
         return node->extension->contains_inlines_func(node->extension, node) != 0;
     }
 
-    return (node->type == MARKDOWN_CORE_NODE_PARAGRAPH || node->type == MARKDOWN_CORE_NODE_HEADING);
+    return (node->kind == MARKDOWN_CORE_NODE_PARAGRAPH || node->kind == MARKDOWN_CORE_NODE_HEADING);
 }
 
 #define MARKDOWN_CORE_MAX_INLINE_DEPTH 256
@@ -1812,7 +1812,7 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
             (*container)->internal_offset = matched;
         } else if ((!indented || cont_type == MARKDOWN_CORE_NODE_LIST) && parser->indent < 4 &&
                    (matched = parse_list_marker(parser, input, parser->first_nonspace,
-                                                (*container)->type == MARKDOWN_CORE_NODE_PARAGRAPH, &data))) {
+                                                (*container)->kind == MARKDOWN_CORE_NODE_PARAGRAPH, &data))) {
 
             // Note that we can have new list items starting with >= 4
             // spaces indent, as long as the list container is still open.

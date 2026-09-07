@@ -189,7 +189,7 @@ static void set_sourcepos_from_range(markdown_core_parser *parser, markdown_core
     markdown_core_parser_content_place(parser, source, (bufsize_t)start, &node->start_line, &node->start_column);
     markdown_core_parser_content_end_place(parser, source, (bufsize_t)(start + len - 1), &node->end_line,
                                            &node->end_column);
-    if (node->type == MARKDOWN_CORE_NODE_TEXT) {
+    if (node->kind == MARKDOWN_CORE_NODE_TEXT) {
         markdown_core_parser_adopt_content_marks(parser, source, node, (bufsize_t)start, (bufsize_t)len);
     }
 }
@@ -671,13 +671,13 @@ static markdown_core_node *postprocess(const markdown_core_extension *ext, markd
     while ((ev = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
         node = markdown_core_iter_get_node(iter);
         if (in_link) {
-            if (ev == MARKDOWN_CORE_EVENT_EXIT && node->type == MARKDOWN_CORE_NODE_LINK) {
+            if (ev == MARKDOWN_CORE_EVENT_EXIT && node->kind == MARKDOWN_CORE_NODE_LINK) {
                 in_link = false;
             }
             continue;
         }
 
-        if (ev == MARKDOWN_CORE_EVENT_ENTER && node->type == MARKDOWN_CORE_NODE_LINK) {
+        if (ev == MARKDOWN_CORE_EVENT_ENTER && node->kind == MARKDOWN_CORE_NODE_LINK) {
             in_link = true;
             continue;
         }
@@ -689,7 +689,7 @@ static markdown_core_node *postprocess(const markdown_core_extension *ext, markd
          * `TEXT`'s EXIT was suppressed and ENTER's lookahead was that same
          * sibling. Doing it at ENTER once the contract is total makes the walk
          * descend into the autolinks it just created. */
-        if (ev == MARKDOWN_CORE_EVENT_EXIT && node->type == MARKDOWN_CORE_NODE_TEXT) {
+        if (ev == MARKDOWN_CORE_EVENT_EXIT && node->kind == MARKDOWN_CORE_NODE_TEXT) {
             postprocess_text(parser, node);
         }
     }

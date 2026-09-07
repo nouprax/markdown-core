@@ -35,7 +35,7 @@ static int matches(const markdown_core_extension *self, markdown_core_parser *pa
 
 static int can_contain(const markdown_core_extension *extension, markdown_core_node *node,
                        markdown_core_node_type child_type) {
-    return (node->type == MARKDOWN_CORE_NODE_LIST_ITEM) ? 1 : 0;
+    return (node->kind == MARKDOWN_CORE_NODE_LIST_ITEM) ? 1 : 0;
 }
 
 static markdown_core_node *open_tasklist_item(const markdown_core_extension *self, int indented,

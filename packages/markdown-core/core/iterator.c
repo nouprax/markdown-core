@@ -106,11 +106,11 @@ int markdown_core_consolidate_text_nodes_with_parser(markdown_core_parser *parse
      * happened to be safe; with the contract total it is a use-after-free. */
     while ((ev_type = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
         cur = markdown_core_iter_get_node(iter);
-        if (ev_type != MARKDOWN_CORE_EVENT_EXIT || cur->type != MARKDOWN_CORE_NODE_TEXT) {
+        if (ev_type != MARKDOWN_CORE_EVENT_EXIT || cur->kind != MARKDOWN_CORE_NODE_TEXT) {
             continue;
         }
 
-        if (cur->next && cur->next->type == MARKDOWN_CORE_NODE_TEXT) {
+        if (cur->next && cur->next->kind == MARKDOWN_CORE_NODE_TEXT) {
             markdown_core_node combined_map = {0};
             if (parser &&
                 !markdown_core_parser_append_content_marks(parser, cur, &combined_map, 0, cur->as.literal->len, 0)) {
@@ -122,7 +122,7 @@ int markdown_core_consolidate_text_nodes_with_parser(markdown_core_parser *parse
                 goto failed;
             }
             tmp = cur->next;
-            while (tmp && tmp->type == MARKDOWN_CORE_NODE_TEXT) {
+            while (tmp && tmp->kind == MARKDOWN_CORE_NODE_TEXT) {
                 /* Bring `tmp` to its own EXIT before freeing it: two events
                  * now, where a suppressed EXIT used to make one enough. */
                 markdown_core_iter_next(iter); /* tmp ENTER */

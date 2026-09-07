@@ -139,7 +139,7 @@ static MARKDOWN_CORE_INLINE void S_place_inline(subject *subj, markdown_core_nod
         node->end_line = line;
         node->end_column = column;
     }
-    if (node->type == MARKDOWN_CORE_NODE_TEXT && node->as.literal->len > 0 && subj->owner) {
+    if (node->kind == MARKDOWN_CORE_NODE_TEXT && node->as.literal->len > 0 && subj->owner) {
         /* Copied bytes take a view of the source map; a decoded source token
          * maps each of its output bytes to that token's authored extent. */
         if (node->as.literal->len == to - from + 1 &&
@@ -1483,7 +1483,7 @@ noMatch:
     // If we fall through to here, it means we didn't match a link.
     // What if we're a footnote link?
     if (parser->options & MARKDOWN_CORE_OPT_FOOTNOTES && opener->inl_text->next &&
-        opener->inl_text->next->type == MARKDOWN_CORE_NODE_TEXT) {
+        opener->inl_text->next->kind == MARKDOWN_CORE_NODE_TEXT) {
 
         markdown_core_chunk *literal = opener->inl_text->next->as.literal;
 
@@ -2342,7 +2342,7 @@ static void S_update_text_sourcepos(markdown_core_parser *parser, markdown_core_
 
 void markdown_core_node_unput(markdown_core_parser *parser, markdown_core_node *node, int n) {
     node = node->last_child;
-    while (n > 0 && node && node->type == MARKDOWN_CORE_NODE_TEXT) {
+    while (n > 0 && node && node->kind == MARKDOWN_CORE_NODE_TEXT) {
         bufsize_t remove = node->as.literal->len < (bufsize_t)n ? node->as.literal->len : (bufsize_t)n;
         node->as.literal->len -= remove;
         n -= (int)remove;

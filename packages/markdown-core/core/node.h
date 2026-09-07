@@ -213,7 +213,7 @@ typedef union {
     markdown_core_document_value *document;
     markdown_core_html_block *html_block;
     markdown_core_table_cell *table_cell;
-} markdown_core_node_payload;
+} markdown_core_node_data;
 
 struct markdown_core_node {
     markdown_core_attributes attributes;
@@ -240,7 +240,7 @@ struct markdown_core_node {
     int content_mark_count;
     /* A slice reads immutable parser-owned marks at this content origin. */
     int content_mark_offset;
-    uint16_t type;
+    uint16_t kind;
     markdown_core_node_internal_flags flags;
 
     const markdown_core_extension *extension;
@@ -252,8 +252,8 @@ struct markdown_core_node {
 
     /* Owns a replacement record, when present. The initial record belongs to
      * the node allocation instead. `as` is the typed view in either case. */
-    void *payload_allocation;
-    markdown_core_node_payload as;
+    void *node_data_allocation;
+    markdown_core_node_data as;
 };
 
 static MARKDOWN_CORE_INLINE markdown_core_mem *markdown_core_node_mem(markdown_core_node *node) {
@@ -275,7 +275,7 @@ static MARKDOWN_CORE_INLINE bool MARKDOWN_CORE_NODE_TYPE_BLOCK_P(markdown_core_n
 }
 
 static MARKDOWN_CORE_INLINE bool MARKDOWN_CORE_NODE_BLOCK_P(markdown_core_node *node) {
-    return node != NULL && MARKDOWN_CORE_NODE_TYPE_BLOCK_P((markdown_core_node_type)node->type);
+    return node != NULL && MARKDOWN_CORE_NODE_TYPE_BLOCK_P((markdown_core_node_type)node->kind);
 }
 
 static MARKDOWN_CORE_INLINE bool MARKDOWN_CORE_NODE_TYPE_INLINE_P(markdown_core_node_type node_type) {
@@ -283,7 +283,7 @@ static MARKDOWN_CORE_INLINE bool MARKDOWN_CORE_NODE_TYPE_INLINE_P(markdown_core_
 }
 
 static MARKDOWN_CORE_INLINE bool MARKDOWN_CORE_NODE_INLINE_P(markdown_core_node *node) {
-    return node != NULL && MARKDOWN_CORE_NODE_TYPE_INLINE_P((markdown_core_node_type)node->type);
+    return node != NULL && MARKDOWN_CORE_NODE_TYPE_INLINE_P((markdown_core_node_type)node->kind);
 }
 
 MARKDOWN_CORE_EXPORT bool markdown_core_node_can_contain_type(markdown_core_node *node,

@@ -20,7 +20,7 @@ bool markdown_core_node_can_contain_type(markdown_core_node *node, markdown_core
         return node->extension->can_contain_func(node->extension, node, child_type) != 0;
     }
 
-    switch (node->type) {
+    switch (node->kind) {
     case MARKDOWN_CORE_NODE_DOCUMENT:
     case MARKDOWN_CORE_NODE_CALLOUT:
     case MARKDOWN_CORE_NODE_FOOTNOTE:
@@ -79,7 +79,7 @@ static bool S_can_contain(markdown_core_node *node, markdown_core_node *child) {
         } while (cur != NULL);
     }
 
-    return markdown_core_node_can_contain_type(node, (markdown_core_node_type)child->type);
+    return markdown_core_node_can_contain_type(node, (markdown_core_node_type)child->kind);
 }
 
 /* A C99 allocation header aligns both the node and the trailing record for
@@ -149,7 +149,7 @@ static size_t S_node_payload_size(markdown_core_node_type type) {
 }
 
 /* Establish defaults over zero-initialized storage. */
-static void S_init_node_as(markdown_core_node_type type, markdown_core_node_payload *as) {
+static void S_init_node_as(markdown_core_node_type type, markdown_core_node_data *as) {
     switch ((uint16_t)type) {
     case MARKDOWN_CORE_NODE_HEADING:
         as->heading->level = 1;
@@ -172,7 +172,7 @@ markdown_core_node *markdown_core_node_new_with_mem_and_ext(markdown_core_node_t
         return NULL;
     }
     markdown_core_strbuf_init(mem, &node->content, 0);
-    node->type = (uint16_t)type;
+    node->kind = (uint16_t)type;
     node->extension = extension;
     node->as.data = payload_size ? S_initial_payload(node) : NULL;
     S_init_node_as(type, &node->as);
@@ -198,7 +198,7 @@ markdown_core_node *markdown_core_node_new(markdown_core_node_type type) {
 }
 
 static void free_node_as(markdown_core_node *node) {
-    switch (node->type) {
+    switch (node->kind) {
     case MARKDOWN_CORE_NODE_DOCUMENT: {
         markdown_core_metadata *metadata = node->as.document->metadata;
         if (metadata) {
@@ -273,8 +273,8 @@ static void free_node_as(markdown_core_node *node) {
     /* Free only the allocation this node owns separately. Pointer equality
      * cannot establish ownership: an allocator may place a replacement right
      * after a fieldless node's allocation. */
-    NODE_MEM(node)->free(node->payload_allocation);
-    node->payload_allocation = NULL;
+    NODE_MEM(node)->free(node->node_data_allocation);
+    node->node_data_allocation = NULL;
     node->as.data = NULL;
 }
 
@@ -297,7 +297,7 @@ static void S_splice_after(markdown_core_node *e, markdown_core_node *first) {
 /* The node-valued fields join the same iterative free walk as content.
  * Type conversion uses a separate walk so its siblings remain untouched. */
 static void S_splice_owned_fields(markdown_core_node *owner, markdown_core_node *after) {
-    switch (owner->type) {
+    switch (owner->kind) {
     case MARKDOWN_CORE_NODE_CITE:
         S_splice_after(after, owner->as.cite->citations);
         break;
@@ -352,18 +352,18 @@ markdown_core_node_type markdown_core_node_get_type(markdown_core_node *node) {
     if (node == NULL) {
         return MARKDOWN_CORE_NODE_NONE;
     } else {
-        return (markdown_core_node_type)node->type;
+        return (markdown_core_node_type)node->kind;
     }
 }
 
 int markdown_core_node_set_type(markdown_core_node *node, markdown_core_node_type type) {
-    markdown_core_node_type initial_type = (markdown_core_node_type)node->type;
+    markdown_core_node_type initial_type = (markdown_core_node_type)node->kind;
     if (type == initial_type) {
         return 1;
     }
-    node->type = (uint16_t)type;
+    node->kind = (uint16_t)type;
     bool allowed = S_can_contain(node->parent, node);
-    node->type = (uint16_t)initial_type;
+    node->kind = (uint16_t)initial_type;
     if (!allowed) {
         return 0;
     }
@@ -371,7 +371,7 @@ int markdown_core_node_set_type(markdown_core_node *node, markdown_core_node_typ
     /* Allocate before releasing anything. A failed conversion preserves the
      * old type, fields, and owned subtrees, with stable node identity. */
     size_t size = S_node_payload_size(type);
-    markdown_core_node_payload replacement = {.data = size ? NODE_MEM(node)->calloc(1, size) : NULL};
+    markdown_core_node_data replacement = {.data = size ? NODE_MEM(node)->calloc(1, size) : NULL};
     if (size && !replacement.data) {
         return 0;
     }
@@ -381,8 +381,8 @@ int markdown_core_node_set_type(markdown_core_node *node, markdown_core_node_typ
     S_free_nodes(fields.next);
     free_node_as(node);
     node->as = replacement;
-    node->payload_allocation = replacement.data;
-    node->type = (uint16_t)type;
+    node->node_data_allocation = replacement.data;
+    node->kind = (uint16_t)type;
     return 1;
 }
 
@@ -395,7 +395,7 @@ const char *markdown_core_node_get_type_string(markdown_core_node *node) {
         return node->extension->get_type_string_func(node->extension, node);
     }
 
-    switch (node->type) {
+    switch (node->kind) {
     case MARKDOWN_CORE_NODE_NONE:
         return "none";
     case MARKDOWN_CORE_NODE_DOCUMENT:
@@ -520,7 +520,7 @@ const char *markdown_core_node_get_literal(markdown_core_node *node) {
         return NULL;
     }
 
-    switch (node->type) {
+    switch (node->kind) {
     case MARKDOWN_CORE_NODE_HTML_BLOCK:
         return markdown_core_chunk_to_cstr(NODE_MEM(node), &node->as.html_block->literal);
     case MARKDOWN_CORE_NODE_TEXT:
@@ -545,7 +545,7 @@ int markdown_core_node_set_literal(markdown_core_node *node, const char *content
         return 0;
     }
 
-    switch (node->type) {
+    switch (node->kind) {
     case MARKDOWN_CORE_NODE_HTML_BLOCK:
         return markdown_core_chunk_set_cstr(NODE_MEM(node), &node->as.html_block->literal, content);
     case MARKDOWN_CORE_NODE_TEXT:
@@ -577,7 +577,7 @@ int markdown_core_node_get_heading_level(markdown_core_node *node) {
         return 0;
     }
 
-    switch (node->type) {
+    switch (node->kind) {
     case MARKDOWN_CORE_NODE_HEADING:
         return node->as.heading->level;
 
@@ -593,7 +593,7 @@ int markdown_core_node_set_heading_level(markdown_core_node *node, int level) {
         return 0;
     }
 
-    switch (node->type) {
+    switch (node->kind) {
     case MARKDOWN_CORE_NODE_HEADING:
         node->as.heading->level = level;
         return 1;
@@ -610,7 +610,7 @@ markdown_core_list_type markdown_core_node_get_list_type(markdown_core_node *nod
         return MARKDOWN_CORE_NO_LIST;
     }
 
-    if (node->type == MARKDOWN_CORE_NODE_LIST) {
+    if (node->kind == MARKDOWN_CORE_NODE_LIST) {
         return node->as.list->list_type;
     } else {
         return MARKDOWN_CORE_NO_LIST;
@@ -626,7 +626,7 @@ int markdown_core_node_set_list_type(markdown_core_node *node, markdown_core_lis
         return 0;
     }
 
-    if (node->type == MARKDOWN_CORE_NODE_LIST) {
+    if (node->kind == MARKDOWN_CORE_NODE_LIST) {
         node->as.list->list_type = type;
         return 1;
     } else {
@@ -639,7 +639,7 @@ markdown_core_delim_type markdown_core_node_get_list_delim(markdown_core_node *n
         return MARKDOWN_CORE_NO_DELIM;
     }
 
-    if (node->type == MARKDOWN_CORE_NODE_LIST) {
+    if (node->kind == MARKDOWN_CORE_NODE_LIST) {
         return node->as.list->delimiter;
     } else {
         return MARKDOWN_CORE_NO_DELIM;
@@ -655,7 +655,7 @@ int markdown_core_node_set_list_delim(markdown_core_node *node, markdown_core_de
         return 0;
     }
 
-    if (node->type == MARKDOWN_CORE_NODE_LIST) {
+    if (node->kind == MARKDOWN_CORE_NODE_LIST) {
         node->as.list->delimiter = delim;
         return 1;
     } else {
@@ -668,7 +668,7 @@ int markdown_core_node_get_list_start(markdown_core_node *node) {
         return 0;
     }
 
-    if (node->type == MARKDOWN_CORE_NODE_LIST) {
+    if (node->kind == MARKDOWN_CORE_NODE_LIST) {
         return node->as.list->start;
     } else {
         return 0;
@@ -680,7 +680,7 @@ int markdown_core_node_set_list_start(markdown_core_node *node, int start) {
         return 0;
     }
 
-    if (node->type == MARKDOWN_CORE_NODE_LIST) {
+    if (node->kind == MARKDOWN_CORE_NODE_LIST) {
         node->as.list->start = start;
         return 1;
     } else {
@@ -693,7 +693,7 @@ int markdown_core_node_get_list_tight(markdown_core_node *node) {
         return 0;
     }
 
-    if (node->type == MARKDOWN_CORE_NODE_LIST) {
+    if (node->kind == MARKDOWN_CORE_NODE_LIST) {
         return node->as.list->tight;
     } else {
         return 0;
@@ -705,7 +705,7 @@ int markdown_core_node_set_list_tight(markdown_core_node *node, int tight) {
         return 0;
     }
 
-    if (node->type == MARKDOWN_CORE_NODE_LIST) {
+    if (node->kind == MARKDOWN_CORE_NODE_LIST) {
         node->as.list->tight = tight == 1;
         return 1;
     } else {
@@ -718,7 +718,7 @@ int markdown_core_node_get_list_item_index(markdown_core_node *node) {
         return 0;
     }
 
-    if (node->type == MARKDOWN_CORE_NODE_LIST_ITEM) {
+    if (node->kind == MARKDOWN_CORE_NODE_LIST_ITEM) {
         return node->as.list->start;
     } else {
         return 0;
@@ -730,7 +730,7 @@ int markdown_core_node_set_list_item_index(markdown_core_node *node, int idx) {
         return 0;
     }
 
-    if (node->type == MARKDOWN_CORE_NODE_LIST_ITEM) {
+    if (node->kind == MARKDOWN_CORE_NODE_LIST_ITEM) {
         node->as.list->start = idx;
         return 1;
     } else {
@@ -743,7 +743,7 @@ const char *markdown_core_node_get_fence_info(markdown_core_node *node) {
         return NULL;
     }
 
-    if (node->type == MARKDOWN_CORE_NODE_CODE_BLOCK) {
+    if (node->kind == MARKDOWN_CORE_NODE_CODE_BLOCK) {
         /* ABSENT IS NULL. `markdown_core_chunk_to_cstr` allocates a `""` for a
          * chunk with no data, which would answer "the source wrote an empty
          * info string" for a fence that wrote none (requirement 14). */
@@ -761,7 +761,7 @@ int markdown_core_node_set_fence_info(markdown_core_node *node, const char *info
         return 0;
     }
 
-    if (node->type == MARKDOWN_CORE_NODE_CODE_BLOCK) {
+    if (node->kind == MARKDOWN_CORE_NODE_CODE_BLOCK) {
         /* A NULL argument is ABSENCE and anything else is presence, including
          * `""`; the caller states which, and this is the write site. */
         if (!markdown_core_chunk_set_cstr(NODE_MEM(node), &node->as.code->info.value, info)) {
@@ -779,7 +779,7 @@ int markdown_core_node_get_fence_closed(markdown_core_node *node) {
         return 0;
     }
 
-    if (node->type == MARKDOWN_CORE_NODE_CODE_BLOCK) {
+    if (node->kind == MARKDOWN_CORE_NODE_CODE_BLOCK) {
         return node->as.code->fenced && node->as.code->fence_closed;
     } else {
         return 0;
@@ -791,7 +791,7 @@ int markdown_core_node_get_fenced(markdown_core_node *node, int *length, int *of
         return 0;
     }
 
-    if (node->type == MARKDOWN_CORE_NODE_CODE_BLOCK) {
+    if (node->kind == MARKDOWN_CORE_NODE_CODE_BLOCK) {
         *length = node->as.code->fence_length;
         *offset = node->as.code->fence_offset;
         *character = node->as.code->fence_char;
@@ -806,7 +806,7 @@ int markdown_core_node_set_fenced(markdown_core_node *node, int fenced, int leng
         return 0;
     }
 
-    if (node->type == MARKDOWN_CORE_NODE_CODE_BLOCK) {
+    if (node->kind == MARKDOWN_CORE_NODE_CODE_BLOCK) {
         node->as.code->fenced = (int8_t)fenced;
         node->as.code->fence_length = (uint8_t)length;
         node->as.code->fence_offset = (uint8_t)offset;

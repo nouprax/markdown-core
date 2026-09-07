@@ -97,12 +97,12 @@ done:
 }
 
 static const char *get_type_string(const markdown_core_extension *extension, markdown_core_node *node) {
-    return node->type == MARKDOWN_CORE_NODE_STRIKETHROUGH ? "strikethrough" : "<unknown>";
+    return node->kind == MARKDOWN_CORE_NODE_STRIKETHROUGH ? "strikethrough" : "<unknown>";
 }
 
 static int can_contain(const markdown_core_extension *extension, markdown_core_node *node,
                        markdown_core_node_type child_type) {
-    if (node->type != MARKDOWN_CORE_NODE_STRIKETHROUGH) {
+    if (node->kind != MARKDOWN_CORE_NODE_STRIKETHROUGH) {
         return false;
     }
 

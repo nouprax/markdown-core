@@ -40,7 +40,7 @@ typedef struct {
 } parsed_directive;
 
 static int is_directive_node(markdown_core_node *node) {
-    return node && (node->type == MARKDOWN_CORE_NODE_DIRECTIVE || node->type == MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK);
+    return node && (node->kind == MARKDOWN_CORE_NODE_DIRECTIVE || node->kind == MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK);
 }
 
 static node_directive *get_directive(markdown_core_node *node) {
@@ -638,15 +638,15 @@ static int directive_block_matches(const markdown_core_extension *extension, mar
 }
 
 static const char *get_type_string(const markdown_core_extension *extension, markdown_core_node *node) {
-    if (node->type == MARKDOWN_CORE_NODE_DIRECTIVE) {
+    if (node->kind == MARKDOWN_CORE_NODE_DIRECTIVE) {
         return "directive";
     }
 
-    if (node->type == MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK) {
+    if (node->kind == MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK) {
         return "directive_block";
     }
 
-    if (node->type == MARKDOWN_CORE_NODE_DIRECTIVE_LABEL) {
+    if (node->kind == MARKDOWN_CORE_NODE_DIRECTIVE_LABEL) {
         return "directive_label";
     }
 
@@ -655,16 +655,16 @@ static const char *get_type_string(const markdown_core_extension *extension, mar
 
 static int can_contain(const markdown_core_extension *extension, markdown_core_node *node,
                        markdown_core_node_type child_type) {
-    if (node->type == MARKDOWN_CORE_NODE_DIRECTIVE) {
+    if (node->kind == MARKDOWN_CORE_NODE_DIRECTIVE) {
         return 0;
     }
 
-    if (node->type == MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK) {
+    if (node->kind == MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK) {
         return MARKDOWN_CORE_NODE_TYPE_BLOCK_P(child_type) && child_type != MARKDOWN_CORE_NODE_LIST_ITEM &&
                child_type != MARKDOWN_CORE_NODE_DOCUMENT;
     }
 
-    if (node->type == MARKDOWN_CORE_NODE_DIRECTIVE_LABEL) {
+    if (node->kind == MARKDOWN_CORE_NODE_DIRECTIVE_LABEL) {
         return MARKDOWN_CORE_NODE_TYPE_INLINE_P(child_type) && child_type != MARKDOWN_CORE_NODE_DIRECTIVE_LABEL;
     }
 
@@ -672,7 +672,7 @@ static int can_contain(const markdown_core_extension *extension, markdown_core_n
 }
 
 static int contains_inlines(const markdown_core_extension *extension, markdown_core_node *node) {
-    return node->type == MARKDOWN_CORE_NODE_DIRECTIVE_LABEL;
+    return node->kind == MARKDOWN_CORE_NODE_DIRECTIVE_LABEL;
 }
 
 static int accepts_lines(const markdown_core_extension *extension, markdown_core_node *node) {
@@ -682,7 +682,7 @@ static int accepts_lines(const markdown_core_extension *extension, markdown_core
         return 0;
     }
 
-    if (node->type != MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK) {
+    if (node->kind != MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK) {
         return 0;
     }
 
