@@ -418,7 +418,7 @@ its behavior, with no separate publication step.
       as the general projection of mdast `blockquote`. Manifest states:
       `callout.variant.null`, `callout.collapsed.null`, `callout.title.null`.
       Requires `S0`.
-- [ ] **M4 — Citation and footnote model.** Replace `FootnoteReference` and
+- [x] **M4 — Citation and footnote model.** Replace `FootnoteReference` and
       `FootnoteDefinition` with inline `Cite(citations)`, the scoped
       `Citation(referent, prefix, suffix)` value, the complete
       `CitationReferent` union with `BibMode`, the document-owned `Footnote(id,

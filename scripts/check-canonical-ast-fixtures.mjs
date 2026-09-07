@@ -54,7 +54,9 @@ function parentEdges(tree) {
     }
     return edges;
 }
-const BLOCK_CONTENT = new Set(["Document", "Callout", "ListItem", "FootnoteDefinition", "DirectiveBlock"]);
+// A `Footnote` is a scoped value rather than a kind, and its content is block
+// content, so a comment nested under it is block-placed (M4).
+const BLOCK_CONTENT = new Set(["Document", "Callout", "ListItem", "Footnote", "DirectiveBlock"]);
 const INLINE_CONTENT = new Set([
     "Paragraph",
     "Heading",
@@ -158,7 +160,17 @@ const stateValidators = {
     // destination and wrote nothing in it, so the empty branch is a state of
     // its own and not an absence.
     "destination.url.empty": (tree) => / dest=url\(""\) /.test(tree),
-    "destination.url.value": (tree) => / dest=url\("(?:\\.|[^"\\])+"\) /.test(tree)
+    "destination.url.value": (tree) => / dest=url\("(?:\\.|[^"\\])+"\) /.test(tree),
+    // The citation model (M4): a `Citation` is a value line under its `Cite`
+    // with a tagged referent, its affixes are groups printed even when
+    // empty, and a `Footnote` is a value line under `Document` after the
+    // content, or absent.
+    "citation.referent.footnote": (tree) =>
+        /^.*Citation scope=\S+ referent=footnote\(id="[^"]*"\) children=0$/m.test(tree),
+    "citation.affix.empty": (tree) => /CitationPrefix children=0\n.*CitationSuffix children=0(?:\n|$)/.test(tree),
+    "document.footnotes.empty": (tree) =>
+        tree.startsWith("Document scope=") && !/^(?:├──|└──) Footnote scope=/m.test(tree),
+    "document.footnotes.populated": (tree) => /^(?:├──|└──) Footnote scope=\S+ id="[^"]*" children=\d+$/m.test(tree)
 };
 const orderValidators = {
     "document.source-order": (tree) => tree.startsWith("Document scope="),
@@ -170,7 +182,41 @@ const orderValidators = {
         /DirectiveBlock scope=.* children=[1-9]\d*\n[\s\S]*DirectiveLabel scope=[\s\S]*Paragraph scope=/.test(tree),
     "directive.attributes.source-order": (tree) =>
         /DirectiveBlock scope=.*attributes=\[properties=".*" metadata=".*"\]/.test(tree),
-    "inline.source-order": (tree) => /Paragraph scope=.* children=[2-9]\d*/.test(tree)
+    "inline.source-order": (tree) => /Paragraph scope=.* children=[2-9]\d*/.test(tree),
+    // Every `Footnote` value nests under `Document` after the last content
+    // line (M4).
+    "document.content-before-footnotes": (tree) => {
+        const top = tree
+            .split("\n")
+            .filter((line) => /^(?:├──|└──) /.test(line))
+            .map((line) => line.slice(4).split(" ", 1)[0]);
+        const first = top.indexOf("Footnote");
+        return first >= 0 && top.slice(first).every((kind) => kind === "Footnote");
+    },
+    // A `Cite` nests its items in source order: their scopes ascend (M4).
+    "cite.items-in-order": (tree) => {
+        let cites = 0;
+        let ordered = true;
+        const lines = tree.split("\n");
+        for (const [index, line] of lines.entries()) {
+            const marker = line.search(/[├└]/);
+            if (marker < 0 || !line.slice(marker + 4).startsWith("Cite scope=")) continue;
+            cites++;
+            let previous = null;
+            for (const item of lines.slice(index + 1)) {
+                const itemMarker = item.search(/[├└]/);
+                if (itemMarker <= marker) break;
+                const match = /^Citation scope=(\d+):(\d+)\.\./.exec(item.slice(itemMarker + 4));
+                if (match === null) continue;
+                const start = [Number(match[1]), Number(match[2])];
+                if (previous && (start[0] < previous[0] || (start[0] === previous[0] && start[1] <= previous[1]))) {
+                    ordered = false;
+                }
+                previous = start;
+            }
+        }
+        return cites > 0 && ordered;
+    }
 };
 
 if (manifest.schemaVersion !== 1) failures.push("manifest schemaVersion must be 1");
@@ -208,6 +254,17 @@ const allCoveredOrders = new Set();
 const allObservedFields = new Set();
 const treeLine =
     /^(?:(?:│ {3}| {4})*(?:├──|└──) )?([A-Z][A-Za-z]+) scope=-?\d+:-?\d+\.\.-?\d+:-?\d+(?: .+)? children=\d+$/;
+// A group line nests a node-valued list under its owner with no scope and no
+// fields; the names are the dump grammar's.
+const groupLine = /^(?:(?:│ {3}| {4})*(?:├──|└──) )([A-Z][A-Za-z]+) children=\d+$/;
+const GROUPS = new Set(["Title", "CitationPrefix", "CitationSuffix"]);
+// A scoped value prints as a value line -- scope, its scalar fields, children
+// -- without being a kind (M4).
+const scopedValues = Object.fromEntries(
+    Object.entries(contract.values ?? {})
+        .filter(([, value]) => value.scoped)
+        .map(([name, value]) => [name, value.fields])
+);
 
 if (!Array.isArray(manifest.cases) || manifest.cases.length === 0) {
     failures.push("manifest cases must be a non-empty array");
@@ -259,14 +316,22 @@ for (const testCase of manifest.cases ?? []) {
     const lines = tree.slice(0, -1).split("\n");
     const actualKinds = new Set();
     for (const [index, line] of lines.entries()) {
+        const group = line.match(groupLine);
+        if (group !== null) {
+            if (!GROUPS.has(group[1])) failures.push(`${testCase.expected}:${index + 1} names an unknown group`);
+            continue;
+        }
         const match = line.match(treeLine);
         if (match === null) {
             failures.push(`${testCase.expected}:${index + 1} does not match the canonical line grammar`);
             continue;
         }
         const kind = match[1];
-        actualKinds.add(kind);
-        for (const field of fieldsByKind[kind] ?? []) allObservedFields.add(`${kind}.${field}`);
+        const value = kind in scopedValues;
+        if (!value) {
+            actualKinds.add(kind);
+            for (const field of fieldsByKind[kind] ?? []) allObservedFields.add(`${kind}.${field}`);
+        }
         // Strings first, then bracketed groups: `attributes=[a="1" b="2"]` is
         // ONE field, and without the second pass ` b=` reads as a second one.
         const lineWithoutStrings = line.replace(/"(?:\\.|[^"\\])*"/g, '""').replace(/=\[[^\]]*\]/g, "=[]");
@@ -282,12 +347,16 @@ for (const testCase of manifest.cases ?? []) {
         // node; Step 7 made it a node and the exception became a lie.
         const kindNames = new Set(contract.kinds.map((kind) => kind.name));
         const isNodeValuedField = (type) =>
-            [...type.matchAll(/[A-Za-z]+/g)].some((word) => word[0] === "Markup" || kindNames.has(word[0]));
+            [...type.matchAll(/[A-Za-z]+/g)].some(
+                (word) => word[0] === "Markup" || kindNames.has(word[0]) || word[0] in scopedValues
+            );
         const dumpFields = Object.fromEntries(
-            contract.kinds.map((kind) => [
-                kind.name,
-                kind.fields.filter((field) => !isNodeValuedField(field.type)).map((field) => field.name)
-            ])
+            [...contract.kinds, ...Object.entries(scopedValues).map(([name, fields]) => ({ name, fields }))].map(
+                (kind) => [
+                    kind.name,
+                    kind.fields.filter((field) => !isNodeValuedField(field.type)).map((field) => field.name)
+                ]
+            )
         );
         const expectedFieldNames = ["scope", ...(dumpFields[kind] ?? []), "children"];
         if (!sameArray(fieldNames, expectedFieldNames)) {

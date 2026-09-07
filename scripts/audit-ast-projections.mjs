@@ -203,8 +203,17 @@ const contract = JSON.parse(fs.readFileSync(path.join(root, CONTRACT_PATH), "utf
  * a scalar token. This includes typed ownership fields such as `label`; nested
  * dump layout does not make every such field part of a generic child list. */
 const kindNames = new Set(contract.kinds.map((kind) => kind.name));
+/** A scoped value -- `Citation`, `Footnote` -- is dumped as a nested value
+ * line, like a kind, so a field holding one is structural too. */
+const scopedValueNames = new Set(
+    Object.entries(contract.values ?? {})
+        .filter(([, value]) => value.scoped)
+        .map(([name]) => name)
+);
 const structural = (field) =>
-    [...field.type.matchAll(/[A-Za-z]+/g)].some((word) => word[0] === "Markup" || kindNames.has(word[0]));
+    [...field.type.matchAll(/[A-Za-z]+/g)].some(
+        (word) => word[0] === "Markup" || kindNames.has(word[0]) || scopedValueNames.has(word[0])
+    );
 
 let failed = false;
 

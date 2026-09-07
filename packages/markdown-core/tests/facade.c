@@ -273,6 +273,45 @@ static void check_callout_fields(void) {
     markdown_core_document_free(document);
 }
 
+static size_t count_occurrences(const char *text, const char *needle) {
+    size_t count = 0;
+    size_t step = strlen(needle);
+    for (text = strstr(text, needle); text; text = strstr(text + step, needle)) {
+        count++;
+    }
+    return count;
+}
+
+static void check_citation_model(void) {
+    /* M4: repeated calls share one footnote, a losing duplicate is content
+     * whose leading call names the winner, and the dump nests each value
+     * under its owner: items under the cite, footnotes after the content. */
+    static const char source[] = "[^a] [^a]\n\n[^a]: once\n\n[^a]: twice\n";
+    markdown_core_error *error = NULL;
+    markdown_core_document *document = markdown_core_document_parse((const uint8_t *)source, strlen(source), &error);
+    uint8_t *dump = NULL;
+    size_t length = 0;
+    check(document != NULL, "citation corpus parses");
+    if (!document) {
+        return;
+    }
+    check(markdown_core_document_dump(document, &dump, &length, &error), "citation corpus dumps");
+    if (dump) {
+        const char *text = (const char *)dump;
+        check(count_occurrences(text, "Cite scope=") == 3, "every defined call is a Cite");
+        check(count_occurrences(text, "referent=footnote(id=\"a\") children=0\n") == 3,
+              "every item names the one footnote");
+        check(count_occurrences(text, "CitationPrefix children=0\n") == 3 &&
+                  count_occurrences(text, "CitationSuffix children=0\n") == 3,
+              "an inherited call has empty affix groups");
+        check(count_occurrences(text, "Footnote scope=") == 1, "the first definition wins");
+        check(strstr(text, "\n└── Footnote scope=3:1..4:0 id=\"a\" children=1\n") != NULL,
+              "the footnote is nested last under the document");
+        markdown_core_dump_free(dump);
+    }
+    markdown_core_document_free(document);
+}
+
 static void check_directive_label_projection(void) {
     static const uint8_t inline_source[] = ":badge[label]\n";
     static const uint8_t bare_source[] = ":badge\n";
@@ -357,7 +396,7 @@ static void check_dialect_is_whole(void) {
         {"~~x~~\n", "Strikethrough scope="},
         {"www.example.com\n", "Link scope="},
         {"- [x] task\n", "checked=true"},
-        {"ref[^a]\n\n[^a]: note\n", "FootnoteReference scope="},
+        {"ref[^a]\n\n[^a]: note\n", "Cite scope="},
         {"$x$\n", "Formula scope="},
         {":badge[label]\n", "Directive scope="},
         {"before <!-- kept --> after\n", "Comment scope=1:8..1:20 literal=\" kept \""},
@@ -435,6 +474,7 @@ int main(int argc, char **argv) {
     check_null_and_empty();
     check_resource_identity();
     check_callout_fields();
+    check_citation_model();
     check_directive_label_projection();
     for (i = 3; i < argc; i++) {
         check_fixture(fixture_dir, argv[i]);

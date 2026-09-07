@@ -73,7 +73,7 @@
     "notDeltas": [
         {
             "id": "footnote-definition-placement",
-            "summary": "Both keep footnote definitions at their source position, unreferenced ones included. This independently corrects cmark-gfm's extension-specific destructive placement model.",
+            "summary": "Both keep every footnote definition, unreferenced ones included: remark at its source position, Markdown Core as a document-owned `Footnote` ordered by scope start, which the gate lifts into one order. This independently corrects cmark-gfm's extension-specific destructive placement model.",
             "evidence": "docs/specs/canonical-ast.md footnote semantics; verified on in-body, out-of-order, unreferenced, and dangling cases."
         },
         {

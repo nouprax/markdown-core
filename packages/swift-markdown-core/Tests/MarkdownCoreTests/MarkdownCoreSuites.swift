@@ -28,7 +28,7 @@ import Testing
         #expect(try Document.parse("~~x~~\n").dump().contains("Strikethrough scope="))
         #expect(try Document.parse("www.example.com\n").dump().contains("Link scope="))
         #expect(try Document.parse("- [x] task\n").dump().contains("checked=true"))
-        #expect(try Document.parse("ref[^a]\n\n[^a]: note\n").dump().contains("FootnoteReference scope="))
+        #expect(try Document.parse("ref[^a]\n\n[^a]: note\n").dump().contains("Cite scope="))
         #expect(try Document.parse("$x$\n").dump().contains("Formula scope="))
         #expect(try Document.parse(":badge[label]\n").dump().contains("Directive scope="))
         #expect(try Document.parse("\"quotes\" -- ...\n").dump().contains("literal=\"\\\"quotes\\\" -- ...\""))
@@ -159,6 +159,53 @@ import Testing
         )
     }
 
+    @Test("citations are values and the document owns its footnotes")
+    func citations() throws {
+        // M4: an inherited call is a one-item cite naming its footnote by id
+        // with empty affixes; the footnote is a value the document owns, never
+        // content, and the walk reaches it after the content. Repeated calls
+        // share one footnote, the first definition wins, and the loser is
+        // ordinary content whose leading call names the winner.
+        let document = try Document.parse("[^a] [^a]\n\n[^a]: once\n\n[^a]: twice\n")
+        let cites = document.content.flatMap { ($0 as? Paragraph)?.content ?? [] }.compactMap { $0 as? Cite }
+        #expect(cites.count == 3)
+        for cite in cites {
+            let citation = try #require(cite.citations.first)
+            #expect(cite.citations.count == 1)
+            #expect(citation.referent == .footnote(id: "a"))
+            #expect(citation.prefix.isEmpty && citation.suffix.isEmpty)
+        }
+        let footnote = try #require(document.footnotes.first)
+        #expect(document.footnotes.count == 1)
+        #expect(footnote.id == "a")
+        #expect(footnote.scope == Scope(start: Position(line: 3, column: 1), end: Position(line: 4, column: 0)))
+        #expect(((footnote.content.first as? Paragraph)?.content.first as? Text)?.literal == "once")
+        let dump = document.dump()
+        #expect(dump.hasPrefix("Document scope=1:1..5:11 children=2\n"))
+        let tail = """
+            └── Footnote scope=3:1..4:0 id="a" children=1
+                └── Paragraph scope=3:7..3:10 children=1
+                    └── Text scope=3:7..3:10 literal="once" children=0
+
+            """
+        #expect(dump.hasSuffix(tail))
+
+        var visitor = RecordingWalkingVisitor()
+        document.walk(with: &visitor)
+        let expected = [
+            "entering:Document", "entering:Paragraph",
+            "entering:Cite", "entering:Citation", "exiting:Citation", "exiting:Cite",
+            "entering:Text", "exiting:Text",
+            "entering:Cite", "entering:Citation", "exiting:Citation", "exiting:Cite",
+            "exiting:Paragraph", "entering:Paragraph",
+            "entering:Cite", "entering:Citation", "exiting:Citation", "exiting:Cite",
+            "entering:Text", "exiting:Text", "exiting:Paragraph",
+            "entering:Footnote", "entering:Paragraph", "entering:Text", "exiting:Text", "exiting:Paragraph",
+            "exiting:Footnote", "exiting:Document",
+        ]
+        #expect(visitor.events == expected)
+    }
+
     @Test("empty input maps to an empty document")
     func empty() throws {
         #expect(try Document.parse("").content.isEmpty)
@@ -260,7 +307,6 @@ private struct KindVisitor: MarkupVisitor {
     mutating func visit(_ node: DirectiveBlock) -> String { kindName(node) }
 
     mutating func visit(_ node: DirectiveLabel) -> String { kindName(node) }
-    mutating func visit(_ node: FootnoteDefinition) -> String { kindName(node) }
     mutating func visit(_ node: Text) -> String { kindName(node) }
     mutating func visit(_ node: SoftBreak) -> String { kindName(node) }
     mutating func visit(_ node: LineBreak) -> String { kindName(node) }
@@ -274,7 +320,7 @@ private struct KindVisitor: MarkupVisitor {
     mutating func visit(_ node: Link) -> String { kindName(node) }
     mutating func visit(_ node: Image) -> String { kindName(node) }
     mutating func visit(_ node: Directive) -> String { kindName(node) }
-    mutating func visit(_ node: FootnoteReference) -> String { kindName(node) }
+    mutating func visit(_ node: Cite) -> String { kindName(node) }
     mutating func visit(_ node: TableRow) -> String { node.isHeader ? "header" : "row" }
     mutating func visit(_ node: TableCell) -> String { "cell" }
 }
@@ -297,11 +343,15 @@ private struct RecordingWalkingVisitor: MarkupWalkingVisitor {
     }
 
     private mutating func record(_ node: any Markup, _ phase: WalkPhase) {
+        record(kindName(node), phase)
+    }
+
+    private mutating func record(_ name: String, _ phase: WalkPhase) {
         switch phase {
         case .entering: entered += 1
         case .exiting: exited += 1
         }
-        if recordEvents { events.append("\(phase):\(kindName(node))") }
+        if recordEvents { events.append("\(phase):\(name)") }
     }
 
     mutating func visit(_ node: Document, phase: WalkPhase) { record(node, phase) }
@@ -317,7 +367,6 @@ private struct RecordingWalkingVisitor: MarkupWalkingVisitor {
     mutating func visit(_ node: Table, phase: WalkPhase) { record(node, phase) }
     mutating func visit(_ node: DirectiveBlock, phase: WalkPhase) { record(node, phase) }
     mutating func visit(_ node: DirectiveLabel, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: FootnoteDefinition, phase: WalkPhase) { record(node, phase) }
     mutating func visit(_ node: Text, phase: WalkPhase) { record(node, phase) }
     mutating func visit(_ node: SoftBreak, phase: WalkPhase) { record(node, phase) }
     mutating func visit(_ node: LineBreak, phase: WalkPhase) { record(node, phase) }
@@ -331,10 +380,12 @@ private struct RecordingWalkingVisitor: MarkupWalkingVisitor {
     mutating func visit(_ node: Link, phase: WalkPhase) { record(node, phase) }
     mutating func visit(_ node: Image, phase: WalkPhase) { record(node, phase) }
     mutating func visit(_ node: Directive, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: FootnoteReference, phase: WalkPhase) { record(node, phase) }
+    mutating func visit(_ node: Cite, phase: WalkPhase) { record(node, phase) }
     mutating func visit(_ node: TableRow, phase: WalkPhase) {
         record(node, phase)
         if phase == .entering { tableRowKinds.append(node.isHeader) }
     }
     mutating func visit(_ node: TableCell, phase: WalkPhase) { record(node, phase) }
+    mutating func visit(_ value: Citation, phase: WalkPhase) { record("Citation", phase) }
+    mutating func visit(_ value: Footnote, phase: WalkPhase) { record("Footnote", phase) }
 }

@@ -1,4 +1,4 @@
-Document scope=1:1..5:19 children=2
+Document scope=1:1..5:19 children=1
 ├── Paragraph scope=1:1..3:4 children=25
 │   ├── Text scope=1:1..1:5 literal="Text " children=0
 │   ├── Emphasis scope=1:6..1:9 children=1
@@ -24,7 +24,10 @@ Document scope=1:1..5:19 children=2
 │   ├── Text scope=1:116..1:116 literal=" " children=0
 │   ├── Formula scope=1:117..1:119 mode=embedded literal="x" children=0
 │   ├── Text scope=1:120..1:120 literal=" " children=0
-│   ├── FootnoteReference scope=1:121..1:127 label="note" identifier="^note" children=0
+│   ├── Cite scope=1:121..1:127 children=1
+│   │   └── Citation scope=1:122..1:126 referent=footnote(id="note") children=0
+│   │       ├── CitationPrefix children=0
+│   │       └── CitationSuffix children=0
 │   ├── LineBreak scope=1:130..1:130 children=0
 │   ├── Text scope=2:1..2:5 literal="next " children=0
 │   ├── HTML scope=2:6..2:8 literal="<i>" children=0
@@ -32,6 +35,6 @@ Document scope=1:1..5:19 children=2
 │   ├── HTML scope=2:12..2:15 literal="</i>" children=0
 │   ├── SoftBreak scope=2:16..2:16 children=0
 │   └── Text scope=3:1..3:4 literal="soft" children=0
-└── FootnoteDefinition scope=5:1..5:19 label="note" identifier="^note" children=1
+└── Footnote scope=5:1..5:19 id="note" children=1
     └── Paragraph scope=5:10..5:19 children=1
         └── Text scope=5:10..5:19 literal="definition" children=0

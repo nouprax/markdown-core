@@ -3,6 +3,9 @@ import {
     TreeDumper,
     visit,
     walk,
+    type Citation,
+    type CitationReferent,
+    type Footnote,
     type Heading,
     type Markup,
     type Table,
@@ -38,7 +41,6 @@ const visitor: Visitor<string> = {
     visitTableCell: (node) => node.kind,
     visitDirectiveBlock: (node) => node.kind,
     visitDirectiveLabel: (node) => node.kind,
-    visitFootnoteDefinition: (node) => node.kind,
     visitText: (node) => node.kind,
     visitSoftBreak: (node) => node.kind,
     visitLineBreak: (node) => node.kind,
@@ -52,13 +54,24 @@ const visitor: Visitor<string> = {
     visitLink: (node) => node.kind,
     visitImage: (node) => node.kind,
     visitDirective: (node) => node.kind,
-    visitFootnoteReference: (node) => node.kind
+    visitCite: (node) => node.kind
 };
 visit(document, visitor);
 const walkingVisitor: WalkingVisitor = {
     ...visitor,
     visitHeading(node: Heading, phase: WalkPhase) {
         void node.level;
+        void phase;
+    },
+    // The scoped values are not `Markup`: they arrive through their own
+    // callbacks and never through a kind case.
+    visitCitation(value: Citation, phase: WalkPhase) {
+        const referent: CitationReferent = value.referent;
+        void referent;
+        void phase;
+    },
+    visitFootnote(value: Footnote, phase: WalkPhase) {
+        void value.id;
         void phase;
     }
 };

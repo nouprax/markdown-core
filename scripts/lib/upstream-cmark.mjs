@@ -110,9 +110,14 @@ export function parseUpstreamXml(xml) {
             if (attr[1] !== "xml:space") attributes[attr[1]] = unescapeXml(attr[2]);
         }
         let kind = XML_KIND[name];
-        if (name === "<unknown>") kind = selfClose ? "FootnoteReference" : "FootnoteDefinition";
+        // The footnote extension's two nodes (M4): a call is a one-item `Cite`
+        // whose `Citation` carries empty affix groups, and a definition is a
+        // `Footnote` value; upstream states no label for either, so neither
+        // carries a compared field.
+        if (name === "<unknown>") kind = selfClose ? "Cite" : "Footnote";
         if (kind === undefined) kind = `?${name}`;
         const node = { kind, fields: attributes, children: [] };
+        if (kind === "Cite") node.children.push(citationItem({}));
         if (name === "table_header") node.fields.isHeader = "true";
         if (name === "table_row") node.fields.isHeader = "false";
         if (name === "tasklist") node.fields.checked = attributes.completed === "true" ? "true" : "false";
@@ -267,6 +272,19 @@ export function parseDestination(raw) {
     return crossDestination(path, anchor);
 }
 
+/** One `Citation` item as the dump nests it: a value line with the given
+ * fields, then its `CitationPrefix` and `CitationSuffix` groups. */
+export function citationItem(fields, prefix = [], suffix = []) {
+    return {
+        kind: "Citation",
+        fields,
+        children: [
+            { kind: "CitationPrefix", fields: {}, children: prefix },
+            { kind: "CitationSuffix", fields: {}, children: suffix }
+        ]
+    };
+}
+
 /** The canonical dump spelling of a `Destination`: the one form both sides compare. */
 export function renderDestination(destination) {
     if (destination.kind === "url") return `url(${JSON.stringify(destination.value)})`;
@@ -402,16 +420,16 @@ export function blockCommentBody(literal) {
 /**
  * Registered delta `footnote-definition-placement`: upstream moves every
  * footnote definition to the document tail in first-reference order, while
- * this repository's AST is source-faithful and leaves each one where it was
- * written (canonical-ast.md). Both sides therefore have their definitions
- * lifted out and re-attached in one deterministic order, which compares their
- * *content* while deliberately not comparing their position.
+ * this repository's AST owns every footnote as a `Footnote` value of the
+ * document in source order (canonical-ast.md, M4). Both sides therefore have
+ * their footnotes lifted out and re-attached in one deterministic order, which
+ * compares their *content* while deliberately not comparing their position.
  */
-export function liftFootnoteDefinitions(root, fired) {
+export function liftFootnotes(root, fired) {
     const definitions = [];
     const strip = (node) => {
         node.children = node.children.filter((child) => {
-            if (child.kind === "FootnoteDefinition") {
+            if (child.kind === "Footnote") {
                 definitions.push(child);
                 return false;
             }
@@ -442,12 +460,12 @@ export function liftFootnoteDefinitions(root, fired) {
  * representations of retention.
  */
 export function applyUpstreamFootnoteModel(root, fired) {
-    // cmark matches footnote labels through the reference map's normalization:
-    // case-folded with whitespace runs collapsed.
-    const fold = (label) => label.trim().replace(/\s+/g, " ").toLowerCase();
+    // Both a `Footnote.id` and a `footnote` referent's id are the label under
+    // the reference map's own normalization (M4), so they compare directly.
     const referenced = new Set();
     const survey = (node) => {
-        if (node.kind === "FootnoteReference") referenced.add(fold(node.fields.label ?? ""));
+        const referent = /^footnote\(id=("(?:\\.|[^"\\])*")\)$/.exec(node.fields.referent ?? "");
+        if (node.kind === "Citation" && referent) referenced.add(JSON.parse(referent[1]));
         for (const child of node.children) survey(child);
     };
     survey(root);
@@ -455,7 +473,7 @@ export function applyUpstreamFootnoteModel(root, fired) {
     const rewrite = (node) => {
         const before = node.children.length;
         node.children = node.children.filter(
-            (child) => !(child.kind === "FootnoteDefinition" && !referenced.has(fold(child.fields.label ?? "")))
+            (child) => !(child.kind === "Footnote" && !referenced.has(child.fields.id ?? ""))
         );
         if (node.children.length !== before) fired?.add("footnote-resolution-model");
         for (const child of node.children) rewrite(child);

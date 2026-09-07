@@ -16,6 +16,11 @@ public enum class WalkPhase {
  * kind therefore breaks every walking visitor until it handles the new kind.
  * Markup-valued fields are not projected into a generic children collection:
  * each node-kind traversal branch schedules its own typed relations.
+ *
+ * The two scoped values outside the markup union have entries of their own:
+ * a [Citation] is reported between its cite's phases, before its prefix and
+ * suffix content, and a [Footnote] after the document's content, before the
+ * footnote's own content.
  */
 public interface WalkingVisitor {
     public fun visitDocument(
@@ -93,11 +98,6 @@ public interface WalkingVisitor {
         phase: WalkPhase,
     )
 
-    public fun visitFootnoteDefinition(
-        node: FootnoteDefinition,
-        phase: WalkPhase,
-    )
-
     public fun visitText(
         node: Text,
         phase: WalkPhase,
@@ -163,8 +163,18 @@ public interface WalkingVisitor {
         phase: WalkPhase,
     )
 
-    public fun visitFootnoteReference(
-        node: FootnoteReference,
+    public fun visitCite(
+        node: Cite,
+        phase: WalkPhase,
+    )
+
+    public fun visitCitation(
+        value: Citation,
+        phase: WalkPhase,
+    )
+
+    public fun visitFootnote(
+        value: Footnote,
         phase: WalkPhase,
     )
 }
@@ -185,10 +195,25 @@ private enum class ActionPhase {
     EXIT,
 }
 
-private data class WalkAction(
-    val node: Markup,
-    val phase: ActionPhase,
-)
+/** One pending step: a markup node or one of the two scoped values, with the phase to report. */
+private sealed interface WalkAction {
+    val phase: ActionPhase
+
+    data class Node(
+        val node: Markup,
+        override val phase: ActionPhase,
+    ) : WalkAction
+
+    data class CitationValue(
+        val value: Citation,
+        override val phase: ActionPhase,
+    ) : WalkAction
+
+    data class FootnoteValue(
+        val value: Footnote,
+        override val phase: ActionPhase,
+    ) : WalkAction
+}
 
 /**
  * Node-kind callbacks own the relation schedule. The action stack is only a
@@ -201,7 +226,7 @@ private class WalkingDriver(
     private var phase: WalkPhase = WalkPhase.ENTERING
 
     fun walk(root: Markup) {
-        actions += WalkAction(root, ActionPhase.ENTER)
+        actions += WalkAction.Node(root, ActionPhase.ENTER)
         while (actions.isNotEmpty()) {
             val action = actions.removeAt(actions.lastIndex)
             phase =
@@ -209,24 +234,52 @@ private class WalkingDriver(
                     ActionPhase.ENTER -> WalkPhase.ENTERING
                     ActionPhase.EXIT -> WalkPhase.EXITING
                 }
-            action.node.accept(this)
+            when (action) {
+                is WalkAction.Node -> action.node.accept(this)
+                is WalkAction.CitationValue -> visitCitation(action.value)
+                is WalkAction.FootnoteValue -> visitFootnote(action.value)
+            }
         }
     }
 
     private fun scheduleExit(node: Markup) {
-        if (phase == WalkPhase.ENTERING) actions += WalkAction(node, ActionPhase.EXIT)
+        if (phase == WalkPhase.ENTERING) actions += WalkAction.Node(node, ActionPhase.EXIT)
     }
 
     private fun schedule(nodes: kotlin.collections.List<Markup>) {
         for (index in nodes.indices.reversed()) {
-            actions += WalkAction(nodes[index], ActionPhase.ENTER)
+            actions += WalkAction.Node(nodes[index], ActionPhase.ENTER)
         }
     }
 
     override fun visitDocument(node: Document) {
         visitor.visitDocument(node, phase)
         scheduleExit(node)
-        if (phase == WalkPhase.ENTERING) schedule(node.content)
+        if (phase == WalkPhase.ENTERING) {
+            // The footnotes are visited after the content, in their order.
+            for (index in node.footnotes.indices.reversed()) {
+                actions += WalkAction.FootnoteValue(node.footnotes[index], ActionPhase.ENTER)
+            }
+            schedule(node.content)
+        }
+    }
+
+    /** A citation's prefix is visited before its suffix, between its phases. */
+    private fun visitCitation(value: Citation) {
+        visitor.visitCitation(value, phase)
+        if (phase == WalkPhase.ENTERING) {
+            actions += WalkAction.CitationValue(value, ActionPhase.EXIT)
+            schedule(value.suffix)
+            schedule(value.prefix)
+        }
+    }
+
+    private fun visitFootnote(value: Footnote) {
+        visitor.visitFootnote(value, phase)
+        if (phase == WalkPhase.ENTERING) {
+            actions += WalkAction.FootnoteValue(value, ActionPhase.EXIT)
+            schedule(value.content)
+        }
     }
 
     override fun visitCallout(node: Callout) {
@@ -288,7 +341,7 @@ private class WalkingDriver(
         scheduleExit(node)
         if (phase == WalkPhase.ENTERING) {
             schedule(node.rows)
-            actions += WalkAction(node.header, ActionPhase.ENTER)
+            actions += WalkAction.Node(node.header, ActionPhase.ENTER)
         }
     }
 
@@ -309,18 +362,12 @@ private class WalkingDriver(
         scheduleExit(node)
         if (phase == WalkPhase.ENTERING) {
             schedule(node.content)
-            node.label?.let { actions += WalkAction(it, ActionPhase.ENTER) }
+            node.label?.let { actions += WalkAction.Node(it, ActionPhase.ENTER) }
         }
     }
 
     override fun visitDirectiveLabel(node: DirectiveLabel) {
         visitor.visitDirectiveLabel(node, phase)
-        scheduleExit(node)
-        if (phase == WalkPhase.ENTERING) schedule(node.content)
-    }
-
-    override fun visitFootnoteDefinition(node: FootnoteDefinition) {
-        visitor.visitFootnoteDefinition(node, phase)
         scheduleExit(node)
         if (phase == WalkPhase.ENTERING) schedule(node.content)
     }
@@ -394,12 +441,17 @@ private class WalkingDriver(
         visitor.visitDirective(node, phase)
         scheduleExit(node)
         if (phase == WalkPhase.ENTERING) {
-            node.label?.let { actions += WalkAction(it, ActionPhase.ENTER) }
+            node.label?.let { actions += WalkAction.Node(it, ActionPhase.ENTER) }
         }
     }
 
-    override fun visitFootnoteReference(node: FootnoteReference) {
-        visitor.visitFootnoteReference(node, phase)
+    override fun visitCite(node: Cite) {
+        visitor.visitCite(node, phase)
         scheduleExit(node)
+        if (phase == WalkPhase.ENTERING) {
+            for (index in node.citations.indices.reversed()) {
+                actions += WalkAction.CitationValue(node.citations[index], ActionPhase.ENTER)
+            }
+        }
     }
 }

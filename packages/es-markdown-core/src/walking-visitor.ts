@@ -1,4 +1,5 @@
 import type { Callout } from "./model/callout.js";
+import type { Citation, Cite } from "./model/cite.js";
 import type { CodeBlock } from "./model/code-block.js";
 import type { Code } from "./model/code.js";
 import type { Comment } from "./model/comment.js";
@@ -7,7 +8,7 @@ import type { DirectiveLabel } from "./model/directive-label.js";
 import type { Directive } from "./model/directive.js";
 import type { Document } from "./model/document.js";
 import type { Emphasis } from "./model/emphasis.js";
-import type { FootnoteDefinition, FootnoteReference } from "./model/footnote.js";
+import type { Footnote } from "./model/footnote.js";
 import type { FormulaBlock } from "./model/formula-block.js";
 import type { Formula } from "./model/formula.js";
 import type { Heading } from "./model/heading.js";
@@ -53,7 +54,6 @@ export interface WalkingVisitor {
     visitTableCell(this: void, node: TableCell, phase: WalkPhase): void;
     visitDirectiveBlock(this: void, node: DirectiveBlock, phase: WalkPhase): void;
     visitDirectiveLabel(this: void, node: DirectiveLabel, phase: WalkPhase): void;
-    visitFootnoteDefinition(this: void, node: FootnoteDefinition, phase: WalkPhase): void;
     visitText(this: void, node: Text, phase: WalkPhase): void;
     visitSoftBreak(this: void, node: SoftBreak, phase: WalkPhase): void;
     visitLineBreak(this: void, node: LineBreak, phase: WalkPhase): void;
@@ -67,13 +67,17 @@ export interface WalkingVisitor {
     visitLink(this: void, node: Link, phase: WalkPhase): void;
     visitImage(this: void, node: Image, phase: WalkPhase): void;
     visitDirective(this: void, node: Directive, phase: WalkPhase): void;
-    visitFootnoteReference(this: void, node: FootnoteReference, phase: WalkPhase): void;
+    visitCite(this: void, node: Cite, phase: WalkPhase): void;
+    /** A value callback: a `Citation` is a scoped value, not a `Markup` kind. */
+    visitCitation(this: void, value: Citation, phase: WalkPhase): void;
+    /** A value callback: a `Footnote` is a scoped value, not a `Markup` kind. */
+    visitFootnote(this: void, value: Footnote, phase: WalkPhase): void;
 }
 
-interface WalkAction {
-    readonly node: Markup;
-    readonly phase: WalkPhase;
-}
+type WalkAction =
+    | { readonly kind: "markup"; readonly node: Markup; readonly phase: WalkPhase }
+    | { readonly kind: "citation"; readonly value: Citation; readonly phase: WalkPhase }
+    | { readonly kind: "footnote"; readonly value: Footnote; readonly phase: WalkPhase };
 
 /**
  * Walks `root` and all of its owned markup depth first.
@@ -83,15 +87,42 @@ interface WalkAction {
  * and `exiting` after them.
  */
 export function walk(root: Markup, walkingVisitor: WalkingVisitor): void {
-    const actions: WalkAction[] = [{ node: root, phase: "entering" }];
+    const actions: WalkAction[] = [{ kind: "markup", node: root, phase: "entering" }];
     let phase: WalkPhase = "entering";
 
     const scheduleExit = (node: Markup): void => {
-        if (phase === "entering") actions.push({ node, phase: "exiting" });
+        if (phase === "entering") actions.push({ kind: "markup", node, phase: "exiting" });
     };
     const schedule = (nodes: readonly Markup[]): void => {
         for (let index = nodes.length - 1; index >= 0; index -= 1) {
-            actions.push({ node: nodes[index]!, phase: "entering" });
+            actions.push({ kind: "markup", node: nodes[index]!, phase: "entering" });
+        }
+    };
+    // The scoped values are scheduled like nodes and receive their own
+    // callbacks; each descends into its markup arrays in declared field order.
+    const scheduleCitations = (items: readonly Citation[]): void => {
+        for (let index = items.length - 1; index >= 0; index -= 1) {
+            actions.push({ kind: "citation", value: items[index]!, phase: "entering" });
+        }
+    };
+    const scheduleFootnotes = (footnotes: readonly Footnote[]): void => {
+        for (let index = footnotes.length - 1; index >= 0; index -= 1) {
+            actions.push({ kind: "footnote", value: footnotes[index]!, phase: "entering" });
+        }
+    };
+    const visitCitation = (value: Citation): void => {
+        walkingVisitor.visitCitation(value, phase);
+        if (phase === "entering") {
+            actions.push({ kind: "citation", value, phase: "exiting" });
+            schedule(value.suffix);
+            schedule(value.prefix);
+        }
+    };
+    const visitFootnote = (value: Footnote): void => {
+        walkingVisitor.visitFootnote(value, phase);
+        if (phase === "entering") {
+            actions.push({ kind: "footnote", value, phase: "exiting" });
+            schedule(value.content);
         }
     };
 
@@ -101,7 +132,11 @@ export function walk(root: Markup, walkingVisitor: WalkingVisitor): void {
         visitDocument: (node) => {
             walkingVisitor.visitDocument(node, phase);
             scheduleExit(node);
-            if (phase === "entering") schedule(node.content);
+            if (phase === "entering") {
+                // The footnotes are visited after the content.
+                scheduleFootnotes(node.footnotes);
+                schedule(node.content);
+            }
         },
         visitCallout: (node) => {
             walkingVisitor.visitCallout(node, phase);
@@ -153,7 +188,7 @@ export function walk(root: Markup, walkingVisitor: WalkingVisitor): void {
             scheduleExit(node);
             if (phase === "entering") {
                 schedule(node.rows);
-                actions.push({ node: node.header, phase: "entering" });
+                actions.push({ kind: "markup", node: node.header, phase: "entering" });
             }
         },
         visitTableRow: (node) => {
@@ -171,16 +206,11 @@ export function walk(root: Markup, walkingVisitor: WalkingVisitor): void {
             scheduleExit(node);
             if (phase === "entering") {
                 schedule(node.content);
-                if (node.label !== null) actions.push({ node: node.label, phase: "entering" });
+                if (node.label !== null) actions.push({ kind: "markup", node: node.label, phase: "entering" });
             }
         },
         visitDirectiveLabel: (node) => {
             walkingVisitor.visitDirectiveLabel(node, phase);
-            scheduleExit(node);
-            if (phase === "entering") schedule(node.content);
-        },
-        visitFootnoteDefinition: (node) => {
-            walkingVisitor.visitFootnoteDefinition(node, phase);
             scheduleExit(node);
             if (phase === "entering") schedule(node.content);
         },
@@ -241,18 +271,21 @@ export function walk(root: Markup, walkingVisitor: WalkingVisitor): void {
             walkingVisitor.visitDirective(node, phase);
             scheduleExit(node);
             if (phase === "entering" && node.label !== null) {
-                actions.push({ node: node.label, phase: "entering" });
+                actions.push({ kind: "markup", node: node.label, phase: "entering" });
             }
         },
-        visitFootnoteReference: (node) => {
-            walkingVisitor.visitFootnoteReference(node, phase);
+        visitCite: (node) => {
+            walkingVisitor.visitCite(node, phase);
             scheduleExit(node);
+            if (phase === "entering") scheduleCitations(node.citations);
         }
     };
 
     while (actions.length > 0) {
         const action = actions.pop()!;
         phase = action.phase;
-        visit(action.node, driver);
+        if (action.kind === "markup") visit(action.node, driver);
+        else if (action.kind === "citation") visitCitation(action.value);
+        else visitFootnote(action.value);
     }
 }

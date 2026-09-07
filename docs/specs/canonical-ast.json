@@ -9,6 +9,7 @@
     },
     "enums": {
         "PlacementMode": ["embedded", "standalone"],
+        "BibMode": ["normal", "authorInText", "suppressAuthor"],
         "ListFlavor": ["bullet", "ordered"],
         "TableAlignment": ["none", "left", "center", "right"],
         "DirectiveAttribute": "a name/value pair of Strings"
@@ -26,9 +27,14 @@
                     "name": "content",
                     "type": "[Markup]",
                     "optional": false
+                },
+                {
+                    "name": "footnotes",
+                    "type": "[Footnote]",
+                    "optional": false
                 }
             ],
-            "invariants": "block content"
+            "invariants": "block content; `footnotes` is the document-owned sequence of every winning or unreferenced footnote definition, ordered by scope start, visited after `content`, and never counted among its children"
         },
         {
             "name": "Callout",
@@ -269,27 +275,6 @@
             "invariants": "inline content; the scope spans the brackets, so an empty label is still a place"
         },
         {
-            "name": "FootnoteDefinition",
-            "fields": [
-                {
-                    "name": "label",
-                    "type": "String",
-                    "optional": false
-                },
-                {
-                    "name": "identifier",
-                    "type": "String",
-                    "optional": false
-                },
-                {
-                    "name": "content",
-                    "type": "[Markup]",
-                    "optional": false
-                }
-            ],
-            "invariants": "label is non-empty and as written; identifier KEEPS the leading `^`, so a footnote and a link definition of one name cannot collide; block content"
-        },
-        {
             "name": "Text",
             "fields": [
                 {
@@ -456,20 +441,15 @@
             "invariants": "attributes preserves first-occurrence source order with unique names; label is a node-valued field whose scope spans its brackets and is never a child/content element; an absent attribute container and an empty one remain distinct, as do an absent label and an empty one"
         },
         {
-            "name": "FootnoteReference",
+            "name": "Cite",
             "fields": [
                 {
-                    "name": "label",
-                    "type": "String",
-                    "optional": false
-                },
-                {
-                    "name": "identifier",
-                    "type": "String",
+                    "name": "citations",
+                    "type": "[Citation]",
                     "optional": false
                 }
             ],
-            "invariants": "label is non-empty and as written; identifier KEEPS the leading `^`; no form -- there is one footnote call syntax; leaf"
+            "invariants": "one or more items in source order; every item has exactly one referent and one cite never mixes referent families; an inherited `[^label]` call is one item with a `footnote` referent whose id is the normalized label without the caret and with empty affixes; its items are scoped values, never children, so it is a leaf"
         }
     ],
     "values": {
@@ -497,6 +477,70 @@
                 ]
             },
             "dump": "url(\"...\") or cross(path=\"...\",anchor=null)"
+        },
+        "CitationReferent": {
+            "purpose": "A tagged value, not a node: it has no scope, and a branch's fields exist only in that branch. The bib branch is first produced by the citations module with P7; every inherited footnote call produces the footnote branch, whose id names the Footnote in Document.footnotes with the equal id.",
+            "branches": {
+                "bib": [
+                    {
+                        "name": "key",
+                        "type": "String",
+                        "optional": false
+                    },
+                    {
+                        "name": "mode",
+                        "type": "BibMode",
+                        "optional": false
+                    }
+                ],
+                "footnote": [
+                    {
+                        "name": "id",
+                        "type": "String",
+                        "optional": false
+                    }
+                ]
+            },
+            "dump": "bib(key=\"...\",mode=normal) or footnote(id=\"...\")"
+        },
+        "Citation": {
+            "purpose": "One item of a Cite: a scoped value, not a Markup kind, because it is written. It is reached only through Cite.citations, it receives a value callback from the walking visitor, and its affixes are non-null inline content, empty when absent.",
+            "scoped": true,
+            "fields": [
+                {
+                    "name": "referent",
+                    "type": "CitationReferent",
+                    "optional": false
+                },
+                {
+                    "name": "prefix",
+                    "type": "[Markup]",
+                    "optional": false
+                },
+                {
+                    "name": "suffix",
+                    "type": "[Markup]",
+                    "optional": false
+                }
+            ],
+            "dump": "Citation scope=L:C..L:C referent=... children=0, then a CitationPrefix and a CitationSuffix group"
+        },
+        "Footnote": {
+            "purpose": "One element of Document.footnotes: a scoped value, not a Markup kind, because it is written. Its id is the definition's label under the reference-label normalization without the caret, and its content is the parsed block content of a referenced definition or, once O4 lands, the inline body of an inline footnote.",
+            "scoped": true,
+            "fields": [
+                {
+                    "name": "id",
+                    "type": "String",
+                    "optional": false
+                },
+                {
+                    "name": "content",
+                    "type": "[Markup]",
+                    "optional": false
+                }
+            ],
+            "dump": "Footnote scope=L:C..L:C id=\"...\" children=N"
         }
     }
 }

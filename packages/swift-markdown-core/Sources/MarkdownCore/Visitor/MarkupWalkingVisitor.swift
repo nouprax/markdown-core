@@ -16,6 +16,11 @@ public enum WalkPhase: Sendable {
 /// Each node-kind branch schedules its own typed relations: for example, a
 /// directive label is visited as the directive's `label` field and remains
 /// distinct from the directive's `content`.
+///
+/// The two scoped values outside the markup union have cases of their own: a
+/// ``Citation`` is reported between its cite's phases, before its prefix and
+/// suffix content, and a ``Footnote`` after the document's content, before
+/// the footnote's own content.
 public protocol MarkupWalkingVisitor {
     mutating func visit(_ node: Document, phase: WalkPhase)
     mutating func visit(_ node: Callout, phase: WalkPhase)
@@ -30,7 +35,6 @@ public protocol MarkupWalkingVisitor {
     mutating func visit(_ node: Table, phase: WalkPhase)
     mutating func visit(_ node: DirectiveBlock, phase: WalkPhase)
     mutating func visit(_ node: DirectiveLabel, phase: WalkPhase)
-    mutating func visit(_ node: FootnoteDefinition, phase: WalkPhase)
     mutating func visit(_ node: Text, phase: WalkPhase)
     mutating func visit(_ node: SoftBreak, phase: WalkPhase)
     mutating func visit(_ node: LineBreak, phase: WalkPhase)
@@ -44,9 +48,11 @@ public protocol MarkupWalkingVisitor {
     mutating func visit(_ node: Link, phase: WalkPhase)
     mutating func visit(_ node: Image, phase: WalkPhase)
     mutating func visit(_ node: Directive, phase: WalkPhase)
-    mutating func visit(_ node: FootnoteReference, phase: WalkPhase)
+    mutating func visit(_ node: Cite, phase: WalkPhase)
     mutating func visit(_ node: TableRow, phase: WalkPhase)
     mutating func visit(_ node: TableCell, phase: WalkPhase)
+    mutating func visit(_ value: Citation, phase: WalkPhase)
+    mutating func visit(_ value: Footnote, phase: WalkPhase)
 }
 
 extension Markup {
@@ -63,9 +69,15 @@ extension Markup {
     }
 }
 
+/// One pending step: a markup node or one of the two scoped values, with the
+/// phase to report.
 private enum WalkAction {
     case enter(any Markup)
     case exit(any Markup)
+    case enterCitation(Citation)
+    case exitCitation(Citation)
+    case enterFootnote(Footnote)
+    case exitFootnote(Footnote)
 }
 
 /// Node-kind callbacks own the relation schedule. The action stack is only a
@@ -84,16 +96,26 @@ private struct WalkingDriver<WalkingVisitor: MarkupWalkingVisitor>: MarkupVisito
     mutating func walk(_ root: any Markup) {
         actions.append(.enter(root))
         while let action = actions.popLast() {
-            let node: any Markup
             switch action {
-            case let .enter(value):
+            case let .enter(node):
                 phase = .entering
-                node = value
-            case let .exit(value):
+                node.accept(&self)
+            case let .exit(node):
                 phase = .exiting
-                node = value
+                node.accept(&self)
+            case let .enterCitation(value):
+                phase = .entering
+                visitCitation(value)
+            case let .exitCitation(value):
+                phase = .exiting
+                visitCitation(value)
+            case let .enterFootnote(value):
+                phase = .entering
+                visitFootnote(value)
+            case let .exitFootnote(value):
+                phase = .exiting
+                visitFootnote(value)
             }
-            node.accept(&self)
         }
     }
 
@@ -101,10 +123,30 @@ private struct WalkingDriver<WalkingVisitor: MarkupWalkingVisitor>: MarkupVisito
         if phase == .entering { actions.append(.exit(node)) }
     }
 
+    /// A citation's prefix is visited before its suffix, between its phases.
+    private mutating func visitCitation(_ value: Citation) {
+        visitor.visit(value, phase: phase)
+        if phase == .entering {
+            actions.append(.exitCitation(value))
+            for child in value.suffix.reversed() { actions.append(.enter(child)) }
+            for child in value.prefix.reversed() { actions.append(.enter(child)) }
+        }
+    }
+
+    private mutating func visitFootnote(_ value: Footnote) {
+        visitor.visit(value, phase: phase)
+        if phase == .entering {
+            actions.append(.exitFootnote(value))
+            for child in value.content.reversed() { actions.append(.enter(child)) }
+        }
+    }
+
     mutating func visit(_ node: Document) {
         visitor.visit(node, phase: phase)
         scheduleExit(node)
         if phase == .entering {
+            // The footnotes are visited after the content, in their order.
+            for footnote in node.footnotes.reversed() { actions.append(.enterFootnote(footnote)) }
             for child in node.content.reversed() { actions.append(.enter(child)) }
         }
     }
@@ -199,14 +241,6 @@ private struct WalkingDriver<WalkingVisitor: MarkupWalkingVisitor>: MarkupVisito
         }
     }
 
-    mutating func visit(_ node: FootnoteDefinition) {
-        visitor.visit(node, phase: phase)
-        scheduleExit(node)
-        if phase == .entering {
-            for child in node.content.reversed() { actions.append(.enter(child)) }
-        }
-    }
-
     mutating func visit(_ node: Text) {
         visitor.visit(node, phase: phase)
         scheduleExit(node)
@@ -288,9 +322,12 @@ private struct WalkingDriver<WalkingVisitor: MarkupWalkingVisitor>: MarkupVisito
         if phase == .entering, let label = node.label { actions.append(.enter(label)) }
     }
 
-    mutating func visit(_ node: FootnoteReference) {
+    mutating func visit(_ node: Cite) {
         visitor.visit(node, phase: phase)
         scheduleExit(node)
+        if phase == .entering {
+            for citation in node.citations.reversed() { actions.append(.enterCitation(citation)) }
+        }
     }
 
     mutating func visit(_ node: TableRow) {

@@ -112,7 +112,6 @@ typedef enum markdown_core_node_kind {
     MARKDOWN_CORE_KIND_FORMULA_BLOCK,
     MARKDOWN_CORE_KIND_TABLE,
     MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK,
-    MARKDOWN_CORE_KIND_FOOTNOTE_DEFINITION,
     MARKDOWN_CORE_KIND_TEXT,
     MARKDOWN_CORE_KIND_SOFT_BREAK,
     MARKDOWN_CORE_KIND_LINE_BREAK,
@@ -125,7 +124,7 @@ typedef enum markdown_core_node_kind {
     MARKDOWN_CORE_KIND_LINK,
     MARKDOWN_CORE_KIND_IMAGE,
     MARKDOWN_CORE_KIND_DIRECTIVE,
-    MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE,
+    MARKDOWN_CORE_KIND_CITE,
     MARKDOWN_CORE_KIND_TABLE_ROW,
     MARKDOWN_CORE_KIND_TABLE_CELL,
     MARKDOWN_CORE_KIND_DIRECTIVE_LABEL,
@@ -329,29 +328,75 @@ MARKDOWN_CORE_API bool markdown_core_node_title(const markdown_core_node *node, 
 typedef struct markdown_core_resource markdown_core_resource;
 #endif
 MARKDOWN_CORE_API const markdown_core_resource *markdown_core_node_resource(const markdown_core_node *node);
-/** The association a footnote definition or reference carries. Answers for
- * `FootnoteDefinition` and `FootnoteReference`, and refuses every other kind:
- * a link or image reference resolves to the `Link` or `Image` it names (M2)
- * and carries no association.
+/** The scoped values of the citation model (M4). A `Citation` is one item of
+ * a `Cite` and a `Footnote` is one element of `Document.footnotes`. Each is
+ * written, so it has a scope, and each owns Markup, but neither is a `Markup`
+ * kind: a value is reached only through its owner's accessor below, never as
+ * a child, and it has no `markdown_core_node_kind`. The handle types are
+ * never defined, so nothing can pass one where a node is expected. Both are
+ * valid only while the document is. */
+typedef struct markdown_core_citation markdown_core_citation;
+typedef struct markdown_core_footnote markdown_core_footnote;
+
+/** How a bibliographic citation is to be rendered (M4): `[@key]` is normal,
+ * `@key` in running text names the author in text, and `-@key` suppresses
+ * the author. First produced by the citations module with `P7`. */
+typedef enum markdown_core_bib_mode {
+    MARKDOWN_CORE_BIB_MODE_NORMAL = 1,
+    MARKDOWN_CORE_BIB_MODE_AUTHOR_IN_TEXT = 2,
+    MARKDOWN_CORE_BIB_MODE_SUPPRESS_AUTHOR = 3
+} markdown_core_bib_mode;
+
+typedef enum markdown_core_referent_kind {
+    MARKDOWN_CORE_REFERENT_BIB = 1,
+    MARKDOWN_CORE_REFERENT_FOOTNOTE = 2
+} markdown_core_referent_kind;
+
+/** The tagged `CitationReferent` value (M4): a value, not a node, so it has
+ * no scope, and a branch's fields exist only in that branch. `BIB` fills
+ * `key` and `mode` and zeroes `id`; `FOOTNOTE` fills `id`, the `Footnote.id`
+ * the item names, and zeroes `key` and `mode`. Every referent is the
+ * `FOOTNOTE` branch until `P7`. */
+typedef struct markdown_core_referent {
+    markdown_core_referent_kind kind;
+    markdown_core_string key;
+    markdown_core_bib_mode mode;
+    markdown_core_string id;
+} markdown_core_referent;
+
+/** The first item of a `Cite`, or NULL for a non-cite input; a cite holds at
+ * least one item, and the items follow by `markdown_core_citation_next` in
+ * source order. */
+MARKDOWN_CORE_API const markdown_core_citation *markdown_core_node_cite_citations(const markdown_core_node *node);
+MARKDOWN_CORE_API const markdown_core_citation *markdown_core_citation_next(const markdown_core_citation *citation);
+MARKDOWN_CORE_API markdown_core_scope markdown_core_citation_scope(const markdown_core_citation *citation);
+MARKDOWN_CORE_API bool markdown_core_citation_referent(const markdown_core_citation *citation,
+                                                       markdown_core_referent *referent);
+/** The first node of an item's `prefix` or `suffix`, the inline nodes
+ * following by `markdown_core_node_get_next_sibling`, or NULL when the affix
+ * is empty; every affix is empty until `P7`. */
+MARKDOWN_CORE_API const markdown_core_node *markdown_core_citation_prefix(const markdown_core_citation *citation);
+MARKDOWN_CORE_API const markdown_core_node *markdown_core_citation_suffix(const markdown_core_citation *citation);
+
+/** The first element of `Document.footnotes`, or NULL when the document has
+ * none or the node is not the document root. Footnotes follow by
+ * `markdown_core_footnote_next` in ascending scope order: every winning or
+ * unreferenced definition, wherever it was written, and none of them is a
+ * child of any node. */
+MARKDOWN_CORE_API const markdown_core_footnote *markdown_core_node_document_footnotes(const markdown_core_node *node);
+MARKDOWN_CORE_API const markdown_core_footnote *markdown_core_footnote_next(const markdown_core_footnote *footnote);
+MARKDOWN_CORE_API markdown_core_scope markdown_core_footnote_scope(const markdown_core_footnote *footnote);
+/** The id: the definition's label under the reference-label normalization --
+ * full Unicode case fold, trimmed, internal whitespace collapsed -- WITHOUT
+ * the caret, exactly the `id` of every `footnote` referent that names it.
  *
- * `label` is the bytes between the delimiters exactly as the source spells
- * them: character escapes and character references unresolved, whitespace
- * uncollapsed, case unfolded. `identifier` is the match key -- full Unicode
- * case fold, trimmed, internal whitespace collapsed -- and for the two
- * footnote kinds it KEEPS a leading `^`, so a footnote and a link definition
- * of one name cannot collide in a consumer's single map.
- *
- * NEITHER DERIVES THE OTHER. `label` to `identifier` needs the case-fold
- * table; `identifier` to `label` is impossible, because the fold is
- * many-to-one.
- *
- * NORMATIVE: `identifier` is compared with memcmp over its bytes. It is never
- * case mapped, never NFC/NFD normalized, never re-encoded, and never used as a
- * key in a language map whose equality has an opinion about Unicode -- Swift's
- * `String ==` is canonical equivalence, which would collapse two spellings
- * this parser deliberately keeps apart. */
-MARKDOWN_CORE_API bool markdown_core_node_association(const markdown_core_node *node, markdown_core_string *label,
-                                                      markdown_core_string *identifier);
+ * NORMATIVE: an id is compared with memcmp over its bytes. It is never case
+ * mapped, never NFC/NFD normalized, never re-encoded, and never used as a key
+ * in a language map whose equality has an opinion about Unicode. */
+MARKDOWN_CORE_API bool markdown_core_footnote_id(const markdown_core_footnote *footnote, markdown_core_string *id);
+/** The first node of the footnote's block content, the rest following by
+ * `markdown_core_node_get_next_sibling`, or NULL when the content is empty. */
+MARKDOWN_CORE_API const markdown_core_node *markdown_core_footnote_content(const markdown_core_footnote *footnote);
 
 /** Allocates the canonical file-tree dump. Free it with markdown_core_dump_free. */
 MARKDOWN_CORE_API bool markdown_core_document_dump(const markdown_core_document *document, uint8_t **output,

@@ -4,55 +4,6 @@
 #include "inlines.h"
 #include "chunk.h"
 
-int markdown_core_association_init(markdown_core_mem *mem, markdown_core_association *out,
-                                   const markdown_core_chunk *label, unsigned char prefix) {
-    markdown_core_chunk raw = *label;
-    unsigned char *key;
-    bufsize_t length;
-    int lost = 0;
-
-    out->label.data = NULL;
-    out->label.len = 0;
-    out->label.alloc = 0;
-    out->identifier = out->label;
-
-    /* The label OWNS its bytes: it is read out of a block's content buffer,
-     * which a harvest may drop, and it outlives the parse. */
-    out->label = markdown_core_chunk_dup(label, 0, label->len);
-    if (!markdown_core_chunk_to_cstr(mem, &out->label)) {
-        return 0;
-    }
-
-    key = normalize_map_label(mem, &raw, &lost);
-    if (key == NULL) {
-        markdown_core_chunk_free(mem, &out->label);
-        return 0;
-    }
-    length = (bufsize_t)strlen((char *)key);
-    if (prefix) {
-        unsigned char *prefixed = (unsigned char *)mem->calloc((size_t)length + 2, 1);
-        if (!prefixed) {
-            mem->free(key);
-            markdown_core_chunk_free(mem, &out->label);
-            return 0;
-        }
-        prefixed[0] = prefix;
-        memcpy(prefixed + 1, key, (size_t)length);
-        mem->free(key);
-        key = prefixed;
-        length += 1;
-    }
-    out->identifier.data = key;
-    out->identifier.len = length;
-    out->identifier.alloc = 1;
-    return 1;
-}
-
-void markdown_core_association_free(markdown_core_mem *mem, markdown_core_association *association) {
-    markdown_core_chunk_free(mem, &association->label);
-    markdown_core_chunk_free(mem, &association->identifier);
-}
-
 /* Owns `resource` from the call on: it is kept on the new record or released
  * on every path that makes none. */
 static void definition_create(markdown_core_mem *mem, markdown_core_map *map, markdown_core_chunk *label,
@@ -91,6 +42,14 @@ static void definition_create(markdown_core_mem *mem, markdown_core_map *map, ma
 
     map->records = record;
     map->size++;
+    /* A lookup may have indexed the map already -- the block phase asks
+     * whether a label is defined as each footnote definition opens (M4) --
+     * so a record added afterwards joins the index now. The slot keeps its
+     * first record, which is the source-order rule. */
+    if (map->prepared &&
+        !markdown_core_key_index_insert(&map->index, reflabel, (bufsize_t)strlen((char *)reflabel), record, 0, NULL)) {
+        map->oom = 1;
+    }
 }
 
 markdown_core_map *markdown_core_reference_map_new(markdown_core_mem *mem) { return markdown_core_map_new(mem); }

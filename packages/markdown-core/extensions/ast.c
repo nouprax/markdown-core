@@ -164,9 +164,6 @@ markdown_core_node_kind markdown_core_node_get_kind(const markdown_core_node *no
     if (node->type == MARKDOWN_CORE_NODE_HTML_BLOCK) {
         return MARKDOWN_CORE_KIND_HTML_BLOCK;
     }
-    if (node->type == MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION) {
-        return MARKDOWN_CORE_KIND_FOOTNOTE_DEFINITION;
-    }
     if (node->type == MARKDOWN_CORE_NODE_TEXT) {
         return MARKDOWN_CORE_KIND_TEXT;
     }
@@ -199,8 +196,8 @@ markdown_core_node_kind markdown_core_node_get_kind(const markdown_core_node *no
     if (node->type == MARKDOWN_CORE_NODE_IMAGE) {
         return MARKDOWN_CORE_KIND_IMAGE;
     }
-    if (node->type == MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE) {
-        return MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE;
+    if (node->type == MARKDOWN_CORE_NODE_CITE) {
+        return MARKDOWN_CORE_KIND_CITE;
     }
     if (node->type == MARKDOWN_CORE_NODE_TABLE) {
         return MARKDOWN_CORE_KIND_TABLE;
@@ -233,37 +230,40 @@ markdown_core_node_kind markdown_core_node_get_kind(const markdown_core_node *no
 }
 
 const char *markdown_core_node_kind_name(markdown_core_node_kind kind) {
-    static const char *const names[] = {"None",
-                                        "Document",
-                                        "Callout",
-                                        "Paragraph",
-                                        "Heading",
-                                        "ThematicBreak",
-                                        "List",
-                                        "ListItem",
-                                        "CodeBlock",
-                                        "HTMLBlock",
-                                        "FormulaBlock",
-                                        "Table",
-                                        "DirectiveBlock",
-                                        "FootnoteDefinition",
-                                        "Text",
-                                        "SoftBreak",
-                                        "LineBreak",
-                                        "Code",
-                                        "HTML",
-                                        "Formula",
-                                        "Emphasis",
-                                        "Strong",
-                                        "Strikethrough",
-                                        "Link",
-                                        "Image",
-                                        "Directive",
-                                        "FootnoteReference",
-                                        "TableRow",
-                                        "TableCell",
-                                        "DirectiveLabel",
-                                        "Comment"};
+    /* One name per line: the projection audit reads this table as data. */
+    /* clang-format off */
+    static const char *const names[] = {
+        "None",
+        "Document",
+        "Callout",
+        "Paragraph",
+        "Heading",
+        "ThematicBreak",
+        "List",
+        "ListItem",
+        "CodeBlock",
+        "HTMLBlock",
+        "FormulaBlock",
+        "Table",
+        "DirectiveBlock",
+        "Text",
+        "SoftBreak",
+        "LineBreak",
+        "Code",
+        "HTML",
+        "Formula",
+        "Emphasis",
+        "Strong",
+        "Strikethrough",
+        "Link",
+        "Image",
+        "Directive",
+        "Cite",
+        "TableRow",
+        "TableCell",
+        "DirectiveLabel",
+        "Comment"};
+    /* clang-format on */
     if (kind < MARKDOWN_CORE_KIND_NONE || kind > MARKDOWN_CORE_KIND_COMMENT) {
         return "None";
     }
@@ -567,27 +567,88 @@ const markdown_core_resource *markdown_core_node_resource(const markdown_core_no
     return is_link(node) ? node->as.link.resource : NULL;
 }
 
-/* ONE accessor for the two footnote kinds, dispatched on the type and relying
- * on no layout at all. It answered for five kinds until M2 resolved every link
- * and image reference into the node it names and consumed the definition into
- * the reference map; the footnote kinds keep their association until M4. */
-bool markdown_core_node_association(const markdown_core_node *node, markdown_core_string *label,
-                                    markdown_core_string *identifier) {
-    const markdown_core_association *association;
-    if (!node || !label || !identifier) {
+/* THE VALUES (M4). A citation and a footnote are nodes inside the engine and
+ * opaque handles outside it: the handle types are never defined, so the only
+ * way through one is these accessors, and each of them checks the node's
+ * type rather than trusting the cast. */
+static const markdown_core_node *citation_node(const markdown_core_citation *citation) {
+    const markdown_core_node *node = (const markdown_core_node *)citation;
+    return node && node->type == MARKDOWN_CORE_NODE_CITATION ? node : NULL;
+}
+
+static const markdown_core_node *footnote_node(const markdown_core_footnote *footnote) {
+    const markdown_core_node *node = (const markdown_core_node *)footnote;
+    return node && node->type == MARKDOWN_CORE_NODE_FOOTNOTE ? node : NULL;
+}
+
+const markdown_core_citation *markdown_core_node_cite_citations(const markdown_core_node *node) {
+    return node && node->type == MARKDOWN_CORE_NODE_CITE ? (const markdown_core_citation *)node->as.cite.citations
+                                                         : NULL;
+}
+
+const markdown_core_citation *markdown_core_citation_next(const markdown_core_citation *citation) {
+    const markdown_core_node *node = citation_node(citation);
+    return node ? (const markdown_core_citation *)node->next : NULL;
+}
+
+markdown_core_scope markdown_core_citation_scope(const markdown_core_citation *citation) {
+    return markdown_core_node_scope(citation_node(citation));
+}
+
+bool markdown_core_citation_referent(const markdown_core_citation *citation, markdown_core_referent *referent) {
+    const markdown_core_node *node = citation_node(citation);
+    if (!node || !referent) {
         return false;
     }
-    switch (node->type) {
-    case MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION:
-    case MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE:
-        association = &node->as.association;
-        break;
-    default:
-        return false;
+    memset(referent, 0, sizeof(*referent));
+    if (node->as.citation.referent == MARKDOWN_CORE_NODE_REFERENT_BIB) {
+        referent->kind = MARKDOWN_CORE_REFERENT_BIB;
+        string_from_chunk(&referent->key, &node->as.citation.value);
+        referent->mode = (markdown_core_bib_mode)node->as.citation.mode;
+    } else {
+        referent->kind = MARKDOWN_CORE_REFERENT_FOOTNOTE;
+        string_from_chunk(&referent->id, &node->as.citation.value);
     }
-    string_from_chunk(label, &association->label);
-    string_from_chunk(identifier, &association->identifier);
     return true;
+}
+
+const markdown_core_node *markdown_core_citation_prefix(const markdown_core_citation *citation) {
+    const markdown_core_node *node = citation_node(citation);
+    return node ? node->as.citation.prefix : NULL;
+}
+
+const markdown_core_node *markdown_core_citation_suffix(const markdown_core_citation *citation) {
+    const markdown_core_node *node = citation_node(citation);
+    return node ? node->as.citation.suffix : NULL;
+}
+
+const markdown_core_footnote *markdown_core_node_document_footnotes(const markdown_core_node *node) {
+    return node && node->type == MARKDOWN_CORE_NODE_DOCUMENT
+               ? (const markdown_core_footnote *)node->as.document.footnotes
+               : NULL;
+}
+
+const markdown_core_footnote *markdown_core_footnote_next(const markdown_core_footnote *footnote) {
+    const markdown_core_node *node = footnote_node(footnote);
+    return node ? (const markdown_core_footnote *)node->next : NULL;
+}
+
+markdown_core_scope markdown_core_footnote_scope(const markdown_core_footnote *footnote) {
+    return markdown_core_node_scope(footnote_node(footnote));
+}
+
+bool markdown_core_footnote_id(const markdown_core_footnote *footnote, markdown_core_string *id) {
+    const markdown_core_node *node = footnote_node(footnote);
+    if (!node || !id) {
+        return false;
+    }
+    string_from_chunk(id, &node->as.footnote.id);
+    return true;
+}
+
+const markdown_core_node *markdown_core_footnote_content(const markdown_core_footnote *footnote) {
+    const markdown_core_node *node = footnote_node(footnote);
+    return node ? node->first_child : NULL;
 }
 
 static void buffer_reserve(dump_buffer *buffer, size_t additional) {
@@ -883,16 +944,6 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
             buffer_cstr(buffer, "]");
         }
         break;
-    /* `label=`, not `id=` (Q5). Two names for one field after unifying the
-     * field is the failure mode that produced three accessors. */
-    case MARKDOWN_CORE_KIND_FOOTNOTE_DEFINITION:
-    case MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE:
-        markdown_core_node_association(node, &a, &b);
-        buffer_cstr(buffer, " label=");
-        buffer_json_string(buffer, a);
-        buffer_cstr(buffer, " identifier=");
-        buffer_json_string(buffer, b);
-        break;
     /* A DESTINATION IS REQUIRED (Q26): `dest=` is the tagged value and is
      * never `null`. `[a]()` used to print `destination=null`, which said the
      * author wrote no destination when the empty parentheses are the
@@ -994,17 +1045,15 @@ static void dump_callout_nodes(dump_buffer *buffer, const markdown_core_node *no
     dump_children(buffer, node, depth, remaining);
 }
 
-static void dump_node(dump_buffer *buffer, const markdown_core_node *node, size_t depth) {
-    markdown_core_node_kind kind = markdown_core_node_get_kind(node);
-    markdown_core_scope scope = markdown_core_node_scope(node);
-    size_t child_count = markdown_core_node_child_count(node);
-    if (kind == MARKDOWN_CORE_KIND_NONE) {
-        buffer->failed = true;
-        return;
+static size_t chain_length(const markdown_core_node *first) {
+    size_t count = 0;
+    for (; first; first = first->next) {
+        count++;
     }
-    dump_prefix(buffer, depth);
-    buffer_cstr(buffer, markdown_core_node_kind_name(kind));
-    buffer_cstr(buffer, " scope=");
+    return count;
+}
+
+static void buffer_scope(dump_buffer *buffer, markdown_core_scope scope) {
     buffer_i64(buffer, scope.start.line);
     buffer_cstr(buffer, ":");
     buffer_i64(buffer, scope.start.column);
@@ -1012,6 +1061,117 @@ static void dump_node(dump_buffer *buffer, const markdown_core_node *node, size_
     buffer_i64(buffer, scope.end.line);
     buffer_cstr(buffer, ":");
     buffer_i64(buffer, scope.end.column);
+}
+
+static const char *bib_mode_name(markdown_core_bib_mode mode) {
+    switch (mode) {
+    case MARKDOWN_CORE_BIB_MODE_AUTHOR_IN_TEXT:
+        return "authorInText";
+    case MARKDOWN_CORE_BIB_MODE_SUPPRESS_AUTHOR:
+        return "suppressAuthor";
+    default:
+        return "normal";
+    }
+}
+
+/* A tagged value prints its branch and named fields with no spaces, as
+ * `dest` does. */
+static void buffer_referent(dump_buffer *buffer, markdown_core_referent referent) {
+    if (referent.kind == MARKDOWN_CORE_REFERENT_BIB) {
+        buffer_cstr(buffer, "bib(key=");
+        buffer_json_string(buffer, referent.key);
+        buffer_cstr(buffer, ",mode=");
+        buffer_cstr(buffer, bib_mode_name(referent.mode));
+        buffer_cstr(buffer, ")");
+    } else {
+        buffer_cstr(buffer, "footnote(id=");
+        buffer_json_string(buffer, referent.id);
+        buffer_cstr(buffer, ")");
+    }
+}
+
+/* An affix is a group under its item: the group line names the affix and
+ * counts its nodes, which nest one level below it. */
+static void dump_affix_group(dump_buffer *buffer, const char *name, const markdown_core_node *first, size_t depth,
+                             bool has_next) {
+    size_t count = chain_length(first);
+    dump_group_line(buffer, name, count, depth, has_next);
+    for (; first; first = first->next) {
+        count--;
+        dump_nested_node(buffer, first, depth + 1, count != 0);
+    }
+}
+
+/* A cite's items are scoped values nested under it (M4): each prints a
+ * `Citation` value line -- scope, referent, and a `children` of zero, since
+ * its affixes are groups, not children -- and then a `CitationPrefix` and a
+ * `CitationSuffix` group. The cite's own `children` counts the items. */
+static void dump_cite_nodes(dump_buffer *buffer, const markdown_core_node *node, size_t depth, size_t item_count) {
+    const markdown_core_node *item = node->as.cite.citations;
+    size_t remaining = item_count;
+    for (; item; item = item->next) {
+        markdown_core_referent referent;
+        remaining--;
+        if (!ensure_more(buffer, depth)) {
+            return;
+        }
+        buffer->more[depth] = remaining != 0;
+        dump_prefix(buffer, depth + 1);
+        buffer_cstr(buffer, "Citation scope=");
+        buffer_scope(buffer, markdown_core_node_scope(item));
+        markdown_core_citation_referent((const markdown_core_citation *)item, &referent);
+        buffer_cstr(buffer, " referent=");
+        buffer_referent(buffer, referent);
+        buffer_cstr(buffer, " children=0\n");
+        dump_affix_group(buffer, "CitationPrefix", item->as.citation.prefix, depth + 1, true);
+        dump_affix_group(buffer, "CitationSuffix", item->as.citation.suffix, depth + 1, false);
+    }
+}
+
+/* The document's footnotes are scoped values nested after its content (M4):
+ * each prints a `Footnote` value line with its id and its content count, then
+ * its block content one level below. The document's own `children` counts
+ * the content alone. */
+static void dump_document_nodes(dump_buffer *buffer, const markdown_core_node *node, size_t depth, size_t child_count) {
+    const markdown_core_node *footnote = node->as.document.footnotes;
+    size_t remaining = child_count + chain_length(footnote);
+    dump_children(buffer, node, depth, remaining);
+    remaining -= child_count;
+    for (; footnote; footnote = footnote->next) {
+        size_t content = markdown_core_node_child_count(footnote);
+        markdown_core_string id;
+        remaining--;
+        if (!ensure_more(buffer, depth)) {
+            return;
+        }
+        buffer->more[depth] = remaining != 0;
+        dump_prefix(buffer, depth + 1);
+        buffer_cstr(buffer, "Footnote scope=");
+        buffer_scope(buffer, markdown_core_node_scope(footnote));
+        markdown_core_footnote_id((const markdown_core_footnote *)footnote, &id);
+        buffer_cstr(buffer, " id=");
+        buffer_json_string(buffer, id);
+        buffer_cstr(buffer, " children=");
+        buffer_i64(buffer, (int64_t)content);
+        buffer_cstr(buffer, "\n");
+        dump_children(buffer, footnote, depth + 1, content);
+    }
+}
+
+static void dump_node(dump_buffer *buffer, const markdown_core_node *node, size_t depth) {
+    markdown_core_node_kind kind = markdown_core_node_get_kind(node);
+    markdown_core_scope scope = markdown_core_node_scope(node);
+    /* `children` counts structural children: a cite's are its items. */
+    size_t child_count =
+        kind == MARKDOWN_CORE_KIND_CITE ? chain_length(node->as.cite.citations) : markdown_core_node_child_count(node);
+    if (kind == MARKDOWN_CORE_KIND_NONE) {
+        buffer->failed = true;
+        return;
+    }
+    dump_prefix(buffer, depth);
+    buffer_cstr(buffer, markdown_core_node_kind_name(kind));
+    buffer_cstr(buffer, " scope=");
+    buffer_scope(buffer, scope);
     dump_fields(buffer, node, kind);
     buffer_cstr(buffer, " children=");
     buffer_i64(buffer, (int64_t)child_count);
@@ -1029,6 +1189,11 @@ static void dump_node(dump_buffer *buffer, const markdown_core_node *node, size_
         dump_callout_nodes(buffer, node, depth, child_count);
         break;
     case MARKDOWN_CORE_KIND_DOCUMENT:
+        dump_document_nodes(buffer, node, depth, child_count);
+        break;
+    case MARKDOWN_CORE_KIND_CITE:
+        dump_cite_nodes(buffer, node, depth, child_count);
+        break;
     case MARKDOWN_CORE_KIND_PARAGRAPH:
     case MARKDOWN_CORE_KIND_HEADING:
     case MARKDOWN_CORE_KIND_LIST:
@@ -1037,7 +1202,6 @@ static void dump_node(dump_buffer *buffer, const markdown_core_node *node, size_
     case MARKDOWN_CORE_KIND_TABLE_ROW:
     case MARKDOWN_CORE_KIND_TABLE_CELL:
     case MARKDOWN_CORE_KIND_DIRECTIVE_LABEL:
-    case MARKDOWN_CORE_KIND_FOOTNOTE_DEFINITION:
     case MARKDOWN_CORE_KIND_EMPHASIS:
     case MARKDOWN_CORE_KIND_STRONG:
     case MARKDOWN_CORE_KIND_STRIKETHROUGH:
@@ -1056,7 +1220,6 @@ static void dump_node(dump_buffer *buffer, const markdown_core_node *node, size_
     case MARKDOWN_CORE_KIND_HTML:
     case MARKDOWN_CORE_KIND_COMMENT:
     case MARKDOWN_CORE_KIND_FORMULA:
-    case MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE:
     case MARKDOWN_CORE_KIND_NONE:
         break;
     }

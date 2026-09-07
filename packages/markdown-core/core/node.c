@@ -22,7 +22,7 @@ bool markdown_core_node_can_contain_type(markdown_core_node *node, markdown_core
     switch (node->type) {
     case MARKDOWN_CORE_NODE_DOCUMENT:
     case MARKDOWN_CORE_NODE_CALLOUT:
-    case MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION:
+    case MARKDOWN_CORE_NODE_FOOTNOTE:
     case MARKDOWN_CORE_NODE_LIST_ITEM:
         return MARKDOWN_CORE_NODE_TYPE_BLOCK_P(child_type) && child_type != MARKDOWN_CORE_NODE_LIST_ITEM;
 
@@ -147,9 +147,13 @@ static void free_node_as(markdown_core_node *node) {
     case MARKDOWN_CORE_NODE_COMMENT_BLOCK:
         markdown_core_chunk_free(NODE_MEM(node), &node->as.literal);
         break;
-    case MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE:
-    case MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION:
-        markdown_core_association_free(NODE_MEM(node), &node->as.association);
+    case MARKDOWN_CORE_NODE_CITATION:
+        /* The affix chains are freed by the walk in `S_free_nodes`, spliced
+         * in beside the children; only the referent's bytes are the arm's. */
+        markdown_core_chunk_free(NODE_MEM(node), &node->as.citation.value);
+        break;
+    case MARKDOWN_CORE_NODE_FOOTNOTE:
+        markdown_core_chunk_free(NODE_MEM(node), &node->as.footnote.id);
         break;
     case MARKDOWN_CORE_NODE_LINK:
     case MARKDOWN_CORE_NODE_IMAGE:
@@ -164,6 +168,21 @@ static void free_node_as(markdown_core_node *node) {
 }
 
 // Free a markdown_core_node list and any children.
+/* Splices `first`'s sibling chain into the free walk right after `e`, so the
+ * walk frees it as it frees children: without recursion. */
+static void S_splice_after(markdown_core_node *e, markdown_core_node *first) {
+    markdown_core_node *last;
+    if (first == NULL) {
+        return;
+    }
+    last = first;
+    while (last->next != NULL) {
+        last = last->next;
+    }
+    last->next = e->next;
+    e->next = first;
+}
+
 static void S_free_nodes(markdown_core_node *e) {
     markdown_core_node *next;
     while (e != NULL) {
@@ -178,6 +197,24 @@ static void S_free_nodes(markdown_core_node *e) {
         }
 
         free_node_as(e);
+
+        /* The node-valued chains a node owns beside its children (M4): a
+         * cite's items, an item's affixes, and the document's footnotes join
+         * the walk exactly as the children do below. */
+        switch (e->type) {
+        case MARKDOWN_CORE_NODE_CITE:
+            S_splice_after(e, e->as.cite.citations);
+            break;
+        case MARKDOWN_CORE_NODE_CITATION:
+            S_splice_after(e, e->as.citation.suffix);
+            S_splice_after(e, e->as.citation.prefix);
+            break;
+        case MARKDOWN_CORE_NODE_DOCUMENT:
+            S_splice_after(e, e->as.document.footnotes);
+            break;
+        default:
+            break;
+        }
 
         if (e->last_child) {
             // Splice children into list
@@ -265,8 +302,8 @@ const char *markdown_core_node_get_type_string(markdown_core_node *node) {
         return "heading";
     case MARKDOWN_CORE_NODE_THEMATIC_BREAK:
         return "thematic_break";
-    case MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION:
-        return "footnote_definition";
+    case MARKDOWN_CORE_NODE_FOOTNOTE:
+        return "footnote";
     case MARKDOWN_CORE_NODE_TEXT:
         return "text";
     case MARKDOWN_CORE_NODE_SOFT_BREAK:
@@ -287,8 +324,10 @@ const char *markdown_core_node_get_type_string(markdown_core_node *node) {
         return "link";
     case MARKDOWN_CORE_NODE_IMAGE:
         return "image";
-    case MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE:
-        return "footnote_reference";
+    case MARKDOWN_CORE_NODE_CITE:
+        return "cite";
+    case MARKDOWN_CORE_NODE_CITATION:
+        return "citation";
     }
 
     return "<unknown>";

@@ -26,7 +26,7 @@ private class JniTreeDecoder(
         val scope = reader.scope()
         when (kind) {
             JniNodeKind.DOCUMENT -> {
-                readChildren { consume(Document(it, scope)) }
+                readDocument(scope, consume)
             }
 
             JniNodeKind.CALLOUT -> {
@@ -84,12 +84,6 @@ private class JniTreeDecoder(
                 readDirectiveBlock(scope, consume)
             }
 
-            JniNodeKind.FOOTNOTE_DEFINITION -> {
-                val label = reader.requiredString()
-                val identifier = reader.requiredString()
-                readChildren { consume(FootnoteDefinition(label, identifier, it, scope)) }
-            }
-
             JniNodeKind.TEXT -> {
                 consume(Text(reader.requiredString(), scope))
             }
@@ -144,8 +138,8 @@ private class JniTreeDecoder(
                 readDirective(scope, consume)
             }
 
-            JniNodeKind.FOOTNOTE_REFERENCE -> {
-                consume(FootnoteReference(reader.requiredString(), reader.requiredString(), scope))
+            JniNodeKind.CITE -> {
+                readCitations { consume(Cite(it, scope)) }
             }
 
             JniNodeKind.TABLE_ROW -> {
@@ -185,6 +179,88 @@ private class JniTreeDecoder(
             actions.addLast { readNode { values[index] = it } }
         }
     }
+
+    /**
+     * The document's content leads, as the walk visits it; its footnotes
+     * follow as a counted list of values, each its scope, its id, and its
+     * content.
+     */
+    private fun readDocument(
+        scope: Scope,
+        consume: (Markup) -> Unit,
+    ) {
+        var content: kotlin.collections.List<Markup>? = null
+        actions.addLast {
+            val count = reader.int()
+            require(count >= 0) { "invalid native footnote count" }
+            val values = arrayOfNulls<Footnote>(count)
+            actions.addLast {
+                val footnotes =
+                    immutableList(count) { index ->
+                        requireNotNull(values[index]) { "JNI footnote was not decoded" }
+                    }
+                consume(Document(requireNotNull(content), footnotes, scope))
+            }
+            for (index in count - 1 downTo 0) {
+                actions.addLast { readFootnote { values[index] = it } }
+            }
+        }
+        actions.addLast {
+            readChildren { content = it }
+        }
+    }
+
+    private fun readFootnote(consume: (Footnote) -> Unit) {
+        val scope = reader.scope()
+        val id = reader.requiredString()
+        readChildren { consume(Footnote(id, it, scope)) }
+    }
+
+    /**
+     * A cite's items are a counted list of values, each its scope, its
+     * referent -- the branch ordinal, then only that branch's fields -- and
+     * its prefix and suffix content in that order.
+     */
+    private fun readCitations(consume: (kotlin.collections.List<Citation>) -> Unit) {
+        val count = reader.int()
+        require(count >= 1) { "invalid native citation count" }
+        val values = arrayOfNulls<Citation>(count)
+        actions.addLast {
+            consume(
+                immutableList(count) { index ->
+                    requireNotNull(values[index]) { "JNI citation was not decoded" }
+                },
+            )
+        }
+        for (index in count - 1 downTo 0) {
+            actions.addLast { readCitation { values[index] = it } }
+        }
+    }
+
+    private fun readCitation(consume: (Citation) -> Unit) {
+        val scope = reader.scope()
+        val referent =
+            when (val branch = reader.byte().toInt()) {
+                1 -> CitationReferent.Bib(reader.requiredString(), bibMode())
+                2 -> CitationReferent.Footnote(reader.requiredString())
+                else -> error("invalid native citation referent $branch")
+            }
+        var prefix: kotlin.collections.List<Markup>? = null
+        actions.addLast {
+            readChildren { suffix -> consume(Citation(referent, requireNotNull(prefix), suffix, scope)) }
+        }
+        actions.addLast {
+            readChildren { prefix = it }
+        }
+    }
+
+    private fun bibMode(): BibMode =
+        when (val rawValue = reader.int()) {
+            1 -> BibMode.NORMAL
+            2 -> BibMode.AUTHOR_IN_TEXT
+            3 -> BibMode.SUPPRESS_AUTHOR
+            else -> error("invalid native bib mode $rawValue")
+        }
 
     private fun readList(
         scope: Scope,

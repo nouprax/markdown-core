@@ -1,13 +1,23 @@
 import type { MarkupBase } from "../model/base.js";
 import type { DirectiveAttribute } from "../model/directive-attribute.js";
 import type { DirectiveLabel } from "../model/directive-label.js";
+import type { Citation } from "../model/cite.js";
 import type { Document } from "../model/document.js";
+import type { Footnote } from "../model/footnote.js";
 import type { ListItem } from "../model/list.js";
 import type { Markup } from "../model/markup.js";
 import type { TableCell, TableRow } from "../model/table.js";
 import { ParseError, type ParseErrorCode } from "../parse-error.js";
 import { TreeDumper } from "../tree-dumper.js";
-import type { Destination, ListFlavor, PlacementMode, Scope, TableAlignment } from "../values.js";
+import type {
+    BibMode,
+    CitationReferent,
+    Destination,
+    ListFlavor,
+    PlacementMode,
+    Scope,
+    TableAlignment
+} from "../values.js";
 import { kinds, type NativeKind } from "./kinds.js";
 
 /*
@@ -23,6 +33,17 @@ export const transferHeaderSize = 64;
 const nodeSize = 96;
 const attributeSize = 16;
 const noIndex = 0xffff_ffff;
+/**
+ * The two scoped values travel as records above the node-kind space (M4):
+ * a citation's prefix is its child range and its suffix its auxiliary range,
+ * a footnote's content is its child range, a cite's items are its child
+ * range, and the document's footnotes are its auxiliary range.
+ */
+type ValueKind = "citation" | "footnote";
+const valueKindBase = 0x100;
+const valueKinds: readonly ValueKind[] = Object.freeze(["citation", "footnote"]);
+type Decoded = Markup | Citation | Footnote;
+const isMarkup = (value: Decoded): value is Markup => "kind" in value;
 
 const header = {
     totalSize: 4,
@@ -82,7 +103,7 @@ interface Resource {
 interface NodeRecord {
     readonly index: number;
     readonly offset: number;
-    readonly kind: NativeKind;
+    readonly kind: NativeKind | ValueKind;
     readonly flags: number;
     readonly scope: Scope;
     readonly childStart: number;
@@ -98,7 +119,7 @@ export class NodeDecoder {
     private readonly view: DataView;
     private readonly utf8Decoder = new TextDecoder("utf-8", { fatal: false });
     private layout!: ResultLayout;
-    private values: readonly (Markup | undefined)[] = [];
+    private values: readonly (Decoded | undefined)[] = [];
     private readonly resources = new Map<number, Resource>();
 
     constructor(private readonly bytes: Uint8Array) {
@@ -108,14 +129,19 @@ export class NodeDecoder {
     decodeDocument(): Document {
         this.readHeader();
         this.validateTopology();
-        const values: (Markup | undefined)[] = Array.from({ length: this.layout.nodeCount });
+        const values: (Decoded | undefined)[] = Array.from({ length: this.layout.nodeCount });
         this.values = values;
         for (let remaining = this.layout.nodeCount; remaining > 0; --remaining) {
             const index = remaining - 1;
-            values[index] = this.markup(this.value(this.readRecord(index)));
+            const record = this.readRecord(index);
+            if (record.kind === "citation") values[index] = this.citation(record);
+            else if (record.kind === "footnote") values[index] = this.footnote(record);
+            else values[index] = this.markup(this.value(record));
         }
         const document = values[0];
-        if (document?.kind !== "document") throw new Error("native result root is not a document");
+        if (document === undefined || !isMarkup(document) || document.kind !== "document") {
+            throw new Error("native result root is not a document");
+        }
         return document;
     }
 
@@ -193,7 +219,7 @@ export class NodeDecoder {
     private readRecord(index: number): NodeRecord {
         const offset = this.layout.nodesOffset + index * nodeSize;
         const rawKind = this.uint(offset + nodeField.kind);
-        const kind = kinds[rawKind];
+        const kind = rawKind >= valueKindBase ? valueKinds[rawKind - valueKindBase] : kinds[rawKind];
         if (!kind || kind === "none") throw new Error(`native result contains unknown node kind ${rawKind}`);
         return {
             index,
@@ -240,6 +266,15 @@ export class NodeDecoder {
                     this.recordRelation(record, this.edge(record.auxiliaryStart + offset), incoming, "title");
                 }
             }
+            // The document's footnotes and a citation's suffix are owned
+            // through the auxiliary range as well (M4).
+            const auxiliary = record.kind === "document" ? "footnotes" : record.kind === "citation" ? "suffix" : null;
+            if (auxiliary !== null && record.auxiliaryCount !== 0) {
+                this.range(record.auxiliaryStart, record.auxiliaryCount, this.layout.edgeCount, `${auxiliary} range`);
+                for (let offset = 0; offset < record.auxiliaryCount; ++offset) {
+                    this.recordRelation(record, this.edge(record.auxiliaryStart + offset), incoming, auxiliary);
+                }
+            }
         }
         if (incoming[0] !== 0) throw new Error("native result root has an incoming relation");
         for (let index = 1; index < incoming.length; ++index) {
@@ -266,9 +301,20 @@ export class NodeDecoder {
     }
 
     private value(record: NodeRecord): MarkupValue {
+        // The two scoped values are decoded by their owners, never as nodes,
+        // so the kind dispatch below is over Markup kinds alone.
+        const kind = record.kind;
+        if (kind === "citation" || kind === "footnote") {
+            throw new Error(`native result places a ${kind} value where a node belongs`);
+        }
         const base = this.base(record);
-        switch (record.kind) {
+        switch (kind) {
             case "document":
+                this.flags(record, 0);
+                return { ...base, content: this.content(record), footnotes: this.footnotes(record) } as MarkupValue;
+            case "cite":
+                this.flags(record, 0);
+                return { ...base, citations: this.citations(record) } as MarkupValue;
             case "paragraph":
             case "emphasis":
             case "strong":
@@ -344,13 +390,6 @@ export class NodeDecoder {
                     label: fields.label
                 } as MarkupValue;
             }
-            case "footnoteDefinition":
-                this.flags(record, 0);
-                return { ...base, ...this.association(record), content: this.content(record) } as MarkupValue;
-            case "footnoteReference":
-                this.flags(record, 0);
-                this.leaf(record);
-                return { ...base, ...this.association(record) } as MarkupValue;
             case "link":
             case "image": {
                 this.flags(record, 0);
@@ -381,10 +420,9 @@ export class NodeDecoder {
         let title: readonly Markup[] | null = null;
         if (record.auxiliaryCount !== 0) {
             this.range(record.auxiliaryStart, record.auxiliaryCount, this.layout.edgeCount, "callout title range");
-            title = Array.from({ length: record.auxiliaryCount }, (_, index) => {
-                const node = this.values[this.edge(record.auxiliaryStart + index)];
-                if (!node) throw new Error("native result callout title was not constructed");
-                return node;
+            title = this.edgeRange(record.auxiliaryStart, record.auxiliaryCount, "callout title").map((value) => {
+                if (!isMarkup(value)) throw new Error("native result callout title is a value, not a node");
+                return value;
             });
         }
         return {
@@ -467,20 +505,86 @@ export class NodeDecoder {
     private directiveLabel(record: NodeRecord): DirectiveLabel | null {
         if (record.labelIndex === noIndex) return null;
         const label = this.values[record.labelIndex];
-        if (label?.kind !== "directiveLabel") throw new Error("directive label field contains a non-label node");
+        if (label === undefined || !isMarkup(label) || label.kind !== "directiveLabel") {
+            throw new Error("directive label field contains a non-label node");
+        }
         return label;
     }
 
     private content(record: NodeRecord): readonly Markup[] {
-        return Array.from({ length: record.childCount }, (_, index) => {
-            const node = this.values[this.edge(record.childStart + index)];
-            if (!node) throw new Error("native result child was not constructed");
-            return node;
+        return this.edgeRange(record.childStart, record.childCount, "child").map((value) => {
+            if (!isMarkup(value)) throw new Error("native result child is a value, not a node");
+            return value;
         });
     }
 
-    private association(record: NodeRecord): { readonly label: string; readonly identifier: string } {
-        return { label: this.requiredString(record, 0), identifier: this.requiredString(record, 1) };
+    private edgeRange(start: number, count: number, field: string): readonly Decoded[] {
+        return Array.from({ length: count }, (_, index) => {
+            const value = this.values[this.edge(start + index)];
+            if (!value) throw new Error(`native result ${field} was not constructed`);
+            return value;
+        });
+    }
+
+    /**
+     * A citation (M4): its referent branch is the scalar, the bib mode the
+     * integer and its key or id the first string; its prefix is its child
+     * range and its suffix its auxiliary range.
+     */
+    private citation(record: NodeRecord): Citation {
+        this.flags(record, 0);
+        let suffix: readonly Markup[] = [];
+        if (record.auxiliaryCount !== 0) {
+            this.range(record.auxiliaryStart, record.auxiliaryCount, this.layout.edgeCount, "suffix range");
+            suffix = this.edgeRange(record.auxiliaryStart, record.auxiliaryCount, "suffix").map((value) => {
+                if (!isMarkup(value)) throw new Error("native result suffix is a value, not a node");
+                return value;
+            });
+        }
+        return { scope: record.scope, referent: this.referent(record), prefix: this.content(record), suffix };
+    }
+
+    private referent(record: NodeRecord): CitationReferent {
+        switch (record.scalar0) {
+            case 1:
+                return { kind: "bib", key: this.requiredString(record, 0), mode: this.bibMode(record.integer) };
+            case 2:
+                return { kind: "footnote", id: this.requiredString(record, 0) };
+            default:
+                throw new Error(`native result contains unknown referent kind ${String(record.scalar0)}`);
+        }
+    }
+
+    private bibMode(value: bigint): BibMode {
+        if (value === 1n) return "normal";
+        if (value === 2n) return "authorInText";
+        if (value === 3n) return "suppressAuthor";
+        throw new Error(`native result contains invalid bib mode ${String(value)}`);
+    }
+
+    /** A footnote (M4): its id is the first string and its content its child range. */
+    private footnote(record: NodeRecord): Footnote {
+        this.flags(record, 0);
+        return { scope: record.scope, id: this.requiredString(record, 0), content: this.content(record) };
+    }
+
+    private citations(record: NodeRecord): readonly Citation[] {
+        const items = this.edgeRange(record.childStart, record.childCount, "citation").map((value) => {
+            if (isMarkup(value) || !("referent" in value)) throw new Error("cite contains a non-citation record");
+            return value;
+        });
+        if (items.length === 0) throw new Error("native result gives a cite no items");
+        return items;
+    }
+
+    private footnotes(record: NodeRecord): readonly Footnote[] {
+        if (record.auxiliaryCount === 0) return [];
+        this.range(record.auxiliaryStart, record.auxiliaryCount, this.layout.edgeCount, "footnotes range");
+        return this.edgeRange(record.auxiliaryStart, record.auxiliaryCount, "footnote").map((value) => {
+            if (isMarkup(value) || !("id" in value))
+                throw new Error("document footnotes contain a non-footnote record");
+            return value;
+        });
     }
 
     /**

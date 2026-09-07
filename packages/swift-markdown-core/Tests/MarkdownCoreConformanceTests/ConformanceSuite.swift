@@ -21,10 +21,10 @@ import Testing
         let expected: Set<String> = [
             "Document", "Callout", "Paragraph", "Heading", "ThematicBreak", "List",
             "ListItem", "CodeBlock", "HTMLBlock", "FormulaBlock", "Table",
-            "DirectiveBlock", "DirectiveLabel", "FootnoteDefinition", "Text", "SoftBreak",
+            "DirectiveBlock", "DirectiveLabel", "Text", "SoftBreak",
             "LineBreak",
             "Code", "HTML", "Comment", "Formula", "Emphasis", "Strong",
-            "Strikethrough", "Link", "Image", "Directive", "FootnoteReference",
+            "Strikethrough", "Link", "Image", "Directive", "Cite",
             "TableRow", "TableCell",
         ]
         #expect(kinds == expected)
@@ -83,11 +83,15 @@ private struct CanonicalCase: Decodable {
     let expected: String
 }
 
+/// The node lines of a dump: value lines (`Citation`, `Footnote`) and group
+/// lines are not kinds.
 private func dumpKinds(_ dump: String) -> [String] {
-    dump.split(separator: "\n").compactMap { line in
-        line.trimmingCharacters(in: CharacterSet(charactersIn: "│ ├└─"))
+    let names = dump.split(separator: "\n").compactMap { line -> String? in
+        guard line.contains(" scope=") else { return nil }
+        return line.trimmingCharacters(in: CharacterSet(charactersIn: "│ ├└─"))
             .split(separator: " ")
             .first
             .map(String.init)
     }
+    return names.filter { $0 != "Citation" && $0 != "Footnote" }
 }

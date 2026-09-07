@@ -11,7 +11,6 @@ export type NativeKind =
     | "formulaBlock"
     | "table"
     | "directiveBlock"
-    | "footnoteDefinition"
     | "text"
     | "softBreak"
     | "lineBreak"
@@ -24,7 +23,7 @@ export type NativeKind =
     | "link"
     | "image"
     | "directive"
-    | "footnoteReference"
+    | "cite"
     | "tableRow"
     | "tableCell"
     | "directiveLabel"
@@ -44,7 +43,6 @@ export const kinds: readonly (NativeKind | "none")[] = Object.freeze([
     "formulaBlock",
     "table",
     "directiveBlock",
-    "footnoteDefinition",
     "text",
     "softBreak",
     "lineBreak",
@@ -57,7 +55,7 @@ export const kinds: readonly (NativeKind | "none")[] = Object.freeze([
     "link",
     "image",
     "directive",
-    "footnoteReference",
+    "cite",
     "tableRow",
     "tableCell",
     "directiveLabel",

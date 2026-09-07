@@ -1,4 +1,5 @@
 import type { Callout } from "./model/callout.js";
+import type { Cite } from "./model/cite.js";
 import type { CodeBlock } from "./model/code-block.js";
 import type { Code } from "./model/code.js";
 import type { Comment } from "./model/comment.js";
@@ -7,7 +8,6 @@ import type { DirectiveLabel } from "./model/directive-label.js";
 import type { Directive } from "./model/directive.js";
 import type { Document } from "./model/document.js";
 import type { Emphasis } from "./model/emphasis.js";
-import type { FootnoteDefinition, FootnoteReference } from "./model/footnote.js";
 import type { FormulaBlock } from "./model/formula-block.js";
 import type { Formula } from "./model/formula.js";
 import type { Heading } from "./model/heading.js";
@@ -42,7 +42,6 @@ export interface Visitor<Result> {
     visitTableCell(this: void, node: TableCell): Result;
     visitDirectiveBlock(this: void, node: DirectiveBlock): Result;
     visitDirectiveLabel(this: void, node: DirectiveLabel): Result;
-    visitFootnoteDefinition(this: void, node: FootnoteDefinition): Result;
     visitText(this: void, node: Text): Result;
     visitSoftBreak(this: void, node: SoftBreak): Result;
     visitLineBreak(this: void, node: LineBreak): Result;
@@ -56,7 +55,7 @@ export interface Visitor<Result> {
     visitLink(this: void, node: Link): Result;
     visitImage(this: void, node: Image): Result;
     visitDirective(this: void, node: Directive): Result;
-    visitFootnoteReference(this: void, node: FootnoteReference): Result;
+    visitCite(this: void, node: Cite): Result;
 }
 
 export function visit<Result>(node: Markup, visitor: Visitor<Result>): Result {
@@ -91,8 +90,6 @@ export function visit<Result>(node: Markup, visitor: Visitor<Result>): Result {
             return visitor.visitDirectiveBlock(node);
         case "directiveLabel":
             return visitor.visitDirectiveLabel(node);
-        case "footnoteDefinition":
-            return visitor.visitFootnoteDefinition(node);
         case "text":
             return visitor.visitText(node);
         case "softBreak":
@@ -119,8 +116,8 @@ export function visit<Result>(node: Markup, visitor: Visitor<Result>): Result {
             return visitor.visitImage(node);
         case "directive":
             return visitor.visitDirective(node);
-        case "footnoteReference":
-            return visitor.visitFootnoteReference(node);
+        case "cite":
+            return visitor.visitCite(node);
     }
     return unreachable(node);
 }

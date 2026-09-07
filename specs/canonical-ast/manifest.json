@@ -25,7 +25,6 @@
             "TableCell",
             "DirectiveBlock",
             "DirectiveLabel",
-            "FootnoteDefinition",
             "Text",
             "SoftBreak",
             "LineBreak",
@@ -39,7 +38,7 @@
             "Link",
             "Image",
             "Directive",
-            "FootnoteReference"
+            "Cite"
         ],
         "states": [
             "placement.embedded",
@@ -91,14 +90,20 @@
             "comment.placement.block",
             "comment.placement.inline",
             "destination.url.empty",
-            "destination.url.value"
+            "destination.url.value",
+            "citation.referent.footnote",
+            "citation.affix.empty",
+            "document.footnotes.empty",
+            "document.footnotes.populated"
         ],
         "orders": [
             "document.source-order",
             "table.header-rows-cells",
             "directive.label-before-content",
             "directive.attributes.source-order",
-            "inline.source-order"
+            "inline.source-order",
+            "document.content-before-footnotes",
+            "cite.items-in-order"
         ]
     },
     "cases": [
@@ -118,7 +123,6 @@
                     "ListItem",
                     "CodeBlock",
                     "HTMLBlock",
-                    "FootnoteDefinition",
                     "Link",
                     "Image"
                 ],
@@ -140,9 +144,10 @@
                     "scope.positive",
                     "children.empty",
                     "children.populated",
-                    "escaping.newline"
+                    "escaping.newline",
+                    "document.footnotes.populated"
                 ],
-                "orders": ["document.source-order"]
+                "orders": ["document.source-order", "document.content-before-footnotes"]
             }
         },
         {
@@ -232,11 +237,10 @@
                     "Directive",
                     "DirectiveLabel",
                     "Formula",
-                    "FootnoteReference",
                     "LineBreak",
                     "HTML",
                     "SoftBreak",
-                    "FootnoteDefinition"
+                    "Cite"
                 ],
                 "states": [
                     "directive.attributes.value",
@@ -245,9 +249,17 @@
                     "image.title.value",
                     "scope.positive",
                     "children.empty",
-                    "children.populated"
+                    "children.populated",
+                    "citation.referent.footnote",
+                    "citation.affix.empty",
+                    "document.footnotes.populated"
                 ],
-                "orders": ["document.source-order", "inline.source-order"]
+                "orders": [
+                    "document.source-order",
+                    "inline.source-order",
+                    "cite.items-in-order",
+                    "document.content-before-footnotes"
+                ]
             }
         },
         {
@@ -287,7 +299,8 @@
                     "scope.positive",
                     "children.empty",
                     "children.populated",
-                    "escaping.attribute-value"
+                    "escaping.attribute-value",
+                    "document.footnotes.empty"
                 ],
                 "orders": [
                     "document.source-order",

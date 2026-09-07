@@ -50,8 +50,17 @@ enum es_node_offset {
     ES_NODE_STRINGS = 64
 };
 
+/* The wire kinds of the two scoped values (M4), above the node-kind space
+ * so that the decoder tells a value record from a node record by its kind. */
+enum { ES_KIND_CITATION = 0x100, ES_KIND_FOOTNOTE = 0x101 };
+
 typedef struct es_source_node {
+    /* A node record names its node; a value record names its handle instead
+     * and leaves `node` NULL (M4). */
     const markdown_core_node *node;
+    const markdown_core_citation *citation;
+    const markdown_core_footnote *footnote;
+    uint32_t wire_kind;
     uint32_t child_start;
     uint32_t child_count;
     uint32_t label_index;
@@ -164,22 +173,43 @@ static bool reserve_vector(void **values, size_t *capacity, size_t required, siz
     return true;
 }
 
-static uint32_t append_node(es_build *build, const markdown_core_node *node) {
-    es_source_node value;
+static uint32_t append_record(es_build *build, es_source_node value) {
     uint32_t index;
     if (build->failure != ES_BUILD_OK || build->node_count >= UINT32_MAX ||
         !reserve_vector((void **)&build->nodes, &build->node_capacity, build->node_count + 1, sizeof(*build->nodes))) {
         build->failure = ES_BUILD_ALLOCATION;
         return ES_NO_INDEX;
     }
-    memset(&value, 0, sizeof(value));
-    value.node = node;
     value.label_index = ES_NO_INDEX;
     value.aux_start = ES_NO_INDEX;
     value.resource_first = ES_NO_INDEX;
     index = (uint32_t)build->node_count;
     build->nodes[build->node_count++] = value;
     return index;
+}
+
+static uint32_t append_node(es_build *build, const markdown_core_node *node) {
+    es_source_node value;
+    memset(&value, 0, sizeof(value));
+    value.node = node;
+    value.wire_kind = (uint32_t)markdown_core_node_get_kind(node);
+    return append_record(build, value);
+}
+
+static uint32_t append_citation(es_build *build, const markdown_core_citation *citation) {
+    es_source_node value;
+    memset(&value, 0, sizeof(value));
+    value.citation = citation;
+    value.wire_kind = ES_KIND_CITATION;
+    return append_record(build, value);
+}
+
+static uint32_t append_footnote(es_build *build, const markdown_core_footnote *footnote) {
+    es_source_node value;
+    memset(&value, 0, sizeof(value));
+    value.footnote = footnote;
+    value.wire_kind = ES_KIND_FOOTNOTE;
+    return append_record(build, value);
 }
 
 static void append_edge(es_build *build, uint32_t node_index) {
@@ -295,6 +325,45 @@ static bool is_directive(markdown_core_node_kind kind) {
     return kind == MARKDOWN_CORE_KIND_DIRECTIVE || kind == MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK;
 }
 
+/* Appends every node of a sibling chain as a record and an edge and answers
+ * the edge count, or SIZE_MAX once the build has failed. */
+static size_t append_chain(es_build *build, const markdown_core_node *first) {
+    size_t count = 0;
+    for (; first != NULL && build->failure == ES_BUILD_OK; first = markdown_core_node_get_next_sibling(first)) {
+        uint32_t index = append_node(build, first);
+        if (index == ES_NO_INDEX) {
+            return SIZE_MAX;
+        }
+        append_edge(build, index);
+        count++;
+    }
+    return build->failure == ES_BUILD_OK ? count : SIZE_MAX;
+}
+
+/* A citation's prefix is its child range and its suffix its auxiliary range;
+ * a footnote's content is its child range (M4). Both chains are records like
+ * any other node's children. */
+static void collect_value_topology(es_build *build, size_t cursor) {
+    const markdown_core_citation *citation = build->nodes[cursor].citation;
+    const markdown_core_footnote *footnote = build->nodes[cursor].footnote;
+    size_t count;
+    build->nodes[cursor].child_start = (uint32_t)build->edge_count;
+    count = append_chain(build,
+                         citation ? markdown_core_citation_prefix(citation) : markdown_core_footnote_content(footnote));
+    if (count == SIZE_MAX) {
+        return;
+    }
+    build->nodes[cursor].child_count = (uint32_t)count;
+    if (citation) {
+        build->nodes[cursor].aux_start = (uint32_t)build->edge_count;
+        count = append_chain(build, markdown_core_citation_suffix(citation));
+        if (count == SIZE_MAX) {
+            return;
+        }
+        build->nodes[cursor].aux_count = (uint32_t)count;
+    }
+}
+
 /* Breadth-first indexes guarantee that every relation points forward. The JS
  * decoder can consequently build records in reverse order without recursion. */
 static void collect_topology(es_build *build, const markdown_core_node *root) {
@@ -302,14 +371,35 @@ static void collect_topology(es_build *build, const markdown_core_node *root) {
     append_node(build, root);
     for (cursor = 0; cursor < build->node_count && build->failure == ES_BUILD_OK; ++cursor) {
         const markdown_core_node *node = build->nodes[cursor].node;
-        markdown_core_node_kind kind = markdown_core_node_get_kind(node);
+        markdown_core_node_kind kind;
         const markdown_core_node *child;
         size_t count;
         size_t index;
 
+        if (node == NULL) {
+            collect_value_topology(build, cursor);
+            continue;
+        }
+        kind = markdown_core_node_get_kind(node);
         if (kind == MARKDOWN_CORE_KIND_NONE) {
             build->failure = ES_BUILD_INTERNAL;
             break;
+        }
+        if (kind == MARKDOWN_CORE_KIND_CITE) {
+            /* A cite's items are its child range: value records rather than
+             * nodes, one per item in source order (M4). */
+            const markdown_core_citation *item;
+            build->nodes[cursor].child_start = (uint32_t)build->edge_count;
+            for (item = markdown_core_node_cite_citations(node); item != NULL && build->failure == ES_BUILD_OK;
+                 item = markdown_core_citation_next(item)) {
+                uint32_t item_index = append_citation(build, item);
+                if (item_index == ES_NO_INDEX) {
+                    break;
+                }
+                append_edge(build, item_index);
+                build->nodes[cursor].child_count++;
+            }
+            continue;
         }
         if (is_directive(kind)) {
             const markdown_core_node *label = markdown_core_node_directive_label(node);
@@ -369,19 +459,68 @@ static void collect_topology(es_build *build, const markdown_core_node *root) {
         if (build->failure == ES_BUILD_OK && child != NULL) {
             build->failure = ES_BUILD_INTERNAL;
         }
+
+        if (kind == MARKDOWN_CORE_KIND_DOCUMENT && build->failure == ES_BUILD_OK) {
+            /* The document's footnotes are its auxiliary range: value
+             * records after the content, in scope order (M4). */
+            const markdown_core_footnote *footnote;
+            build->nodes[cursor].aux_start = (uint32_t)build->edge_count;
+            for (footnote = markdown_core_node_document_footnotes(node);
+                 footnote != NULL && build->failure == ES_BUILD_OK; footnote = markdown_core_footnote_next(footnote)) {
+                uint32_t footnote_index = append_footnote(build, footnote);
+                if (footnote_index == ES_NO_INDEX) {
+                    break;
+                }
+                append_edge(build, footnote_index);
+                build->nodes[cursor].aux_count++;
+            }
+        }
     }
+}
+
+/* A value record's fields (M4): a citation's referent branch is the scalar,
+ * its bib mode the integer, and its key or id the first string; a footnote's
+ * id is the first string. */
+static void collect_value_fields(es_build *build, es_source_node *record) {
+    if (record->citation) {
+        markdown_core_referent referent;
+        if (!markdown_core_citation_referent(record->citation, &referent)) {
+            build->failure = ES_BUILD_INTERNAL;
+            return;
+        }
+        record->scalar0 = (int32_t)referent.kind;
+        if (referent.kind == MARKDOWN_CORE_REFERENT_BIB) {
+            record->integer = (int64_t)referent.mode;
+            record->strings[0] = required_string(referent.key);
+        } else {
+            record->strings[0] = required_string(referent.id);
+        }
+    } else {
+        markdown_core_string id;
+        if (!markdown_core_footnote_id(record->footnote, &id)) {
+            build->failure = ES_BUILD_INTERNAL;
+            return;
+        }
+        record->strings[0] = required_string(id);
+    }
+    count_string(build, record->strings[0]);
 }
 
 static void collect_node_fields(es_build *build, size_t node_index) {
     es_source_node *record = &build->nodes[node_index];
     const markdown_core_node *node = record->node;
-    markdown_core_node_kind kind = markdown_core_node_get_kind(node);
+    markdown_core_node_kind kind;
     markdown_core_string first = {0};
     markdown_core_string second = {0};
     markdown_core_string third = {0};
     markdown_core_optional_string optional_first = {0};
     markdown_core_optional_string optional_second = {0};
 
+    if (node == NULL) {
+        collect_value_fields(build, record);
+        return;
+    }
+    kind = markdown_core_node_get_kind(node);
     switch (kind) {
     case MARKDOWN_CORE_KIND_CALLOUT: {
         /* The variant is the first slot and the fold marker the scalar, as
@@ -397,6 +536,7 @@ static void collect_node_fields(es_build *build, size_t node_index) {
         break;
     }
     case MARKDOWN_CORE_KIND_DOCUMENT:
+    case MARKDOWN_CORE_KIND_CITE:
     case MARKDOWN_CORE_KIND_PARAGRAPH:
     case MARKDOWN_CORE_KIND_THEMATIC_BREAK:
     case MARKDOWN_CORE_KIND_SOFT_BREAK:
@@ -521,15 +661,6 @@ static void collect_node_fields(es_build *build, size_t node_index) {
         }
         break;
     }
-    case MARKDOWN_CORE_KIND_FOOTNOTE_DEFINITION:
-    case MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE:
-        if (!markdown_core_node_association(node, &first, &second)) {
-            build->failure = ES_BUILD_INTERNAL;
-            break;
-        }
-        record->strings[0] = required_string(first);
-        record->strings[1] = required_string(second);
-        break;
     case MARKDOWN_CORE_KIND_LINK:
     case MARKDOWN_CORE_KIND_IMAGE: {
         /* The tagged `Destination`: the branch is the scalar, its strings are
@@ -699,10 +830,12 @@ static uint8_t *success_result(const es_build *build, es_build_failure *failure)
     string_cursor = strings_offset;
     for (index = 0; index < build->node_count; ++index) {
         const es_source_node *source = &build->nodes[index];
-        markdown_core_scope scope = markdown_core_node_scope(source->node);
+        markdown_core_scope scope = source->node       ? markdown_core_node_scope(source->node)
+                                    : source->citation ? markdown_core_citation_scope(source->citation)
+                                                       : markdown_core_footnote_scope(source->footnote);
         size_t node_offset = nodes_offset + index * ES_NODE_SIZE;
         size_t string_index;
-        put_u32(output, node_offset + ES_NODE_KIND, (uint32_t)markdown_core_node_get_kind(source->node));
+        put_u32(output, node_offset + ES_NODE_KIND, source->wire_kind);
         put_u32(output, node_offset + ES_NODE_FLAGS, source->flags);
         put_i32(output, node_offset + ES_NODE_SCOPE, scope.start.line);
         put_i32(output, node_offset + ES_NODE_SCOPE + 4, scope.start.column);

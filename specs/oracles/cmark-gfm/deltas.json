@@ -19,15 +19,15 @@
         {
             "id": "footnote-resolution-model",
             "kind": "deliberate-difference",
-            "summary": "cmark-gfm removes unreferenced footnote definitions. Markdown Core keeps every definition at its source location.",
+            "summary": "cmark-gfm removes unreferenced footnote definitions. Markdown Core keeps every valid definition as a document-owned `Footnote`, referenced or not.",
             "rationale": "An unreferenced definition is authored source and must remain represented. remark independently keeps it.",
-            "handling": "The comparison projects Markdown Core's retained definitions into cmark-gfm's resolved model before comparing."
+            "handling": "The comparison projects Markdown Core's retained footnotes into cmark-gfm's resolved model before comparing."
         },
         {
             "id": "footnote-definition-placement",
             "kind": "deliberate-difference",
-            "summary": "cmark-gfm moves definitions to the document tail in reference order; Markdown Core leaves them where they were written.",
-            "handling": "Both sides lift definitions into a deterministic comparison-only order, preserving their content while ignoring the representation difference."
+            "summary": "cmark-gfm moves definitions to the document tail in reference order; Markdown Core's `Document.footnotes` holds them as values ordered by scope start.",
+            "handling": "Both sides lift definitions into the same document-owned comparison order, preserving their content while ignoring the representation difference."
         },
         {
             "id": "footnote-call-label-bytes",

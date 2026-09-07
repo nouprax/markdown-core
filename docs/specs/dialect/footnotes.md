@@ -4,10 +4,10 @@ Status: normative module of the [Markdown Core dialect](../dialect.md).
 Sources: cmark-gfm's footnote
 extension for the referenced form; Obsidian and Pandoc for the inline form.
 Executable oracles: cmark-gfm and remark for the referenced form; the inline
-form is product fixtures. Landing: the citation model with `M4`, the inline
-form with `O4`; until `M4` the current contract's `FootnoteReference` and
-`FootnoteDefinition` stand. The [example format](../dialect.md#examples) is
-defined by the index.
+form is product fixtures. Landing: the citation model landed with `M4`, and
+the inline form lands with `O4`; until then only the referenced form is
+recognized. The [example format](../dialect.md#examples) is defined by the
+index.
 
 ## The citation model
 

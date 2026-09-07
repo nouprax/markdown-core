@@ -32,6 +32,9 @@ public struct Document: Markup {
     public let scope: Scope
     /// The document's blocks. Block content, not inline.
     public let content: [any Markup]
+    /// The footnotes the document owns, ordered by scope start; never part of
+    /// `content`.
+    public let footnotes: [Footnote]
     /// Dispatches to the visitor's `Document` case.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 
@@ -71,13 +74,42 @@ private struct NativeNodeRecord {
     var children: [Int] = []
     var label: Int?
     var title: [Int]?
+    /// The document's footnotes, each with the records of its content.
+    var footnotes: [NativeFootnoteRecord] = []
+    /// The cite's items, each with the records of its prefix and suffix.
+    var citations: [NativeCitationRecord] = []
+}
+
+private struct NativeFootnoteRecord {
+    let footnote: OpaquePointer
+    let content: [Int]
+}
+
+private struct NativeCitationRecord {
+    let citation: OpaquePointer
+    let prefix: [Int]
+    let suffix: [Int]
 }
 
 /// Copies the C tree without making Swift's call stack proportional to input
 /// depth. A directive label is recorded as its own node-valued field, never as
-/// an entry in the directive's content relation.
+/// an entry in the directive's content relation, and the nodes a scoped value
+/// owns -- a footnote's content, a citation's affixes -- are recorded like
+/// children under the value's owner.
 private struct NativeTreeBuilder {
     private var records: [NativeNodeRecord]
+
+    /// Records every node of a sibling chain a value owns and answers their indices.
+    private mutating func recordChain(_ first: OpaquePointer?) -> [Int] {
+        var indices: [Int] = []
+        var node = first
+        while let current = node {
+            indices.append(records.count)
+            records.append(NativeNodeRecord(node: current))
+            node = markdown_core_node_get_next_sibling(current)
+        }
+        return indices
+    }
 
     init(root: OpaquePointer) {
         records = [NativeNodeRecord(node: root)]
@@ -108,16 +140,32 @@ private struct NativeTreeBuilder {
                 // The title is a sibling chain the callout owns beside its
                 // content; its nodes are recorded like children, and the
                 // record remembers which are the title's.
-                var titleNode = markdown_core_node_callout_title(node)
-                if titleNode != nil {
-                    var indices: [Int] = []
-                    while let current = titleNode {
-                        indices.append(records.count)
-                        records.append(NativeNodeRecord(node: current))
-                        titleNode = markdown_core_node_get_next_sibling(current)
-                    }
-                    records[recordIndex].title = indices
+                if let titleNode = markdown_core_node_callout_title(node) {
+                    let title = recordChain(titleNode)
+                    records[recordIndex].title = title
                 }
+            case MARKDOWN_CORE_KIND_DOCUMENT:
+                // The footnotes are values the document owns beside its
+                // content (M4); each one's content is recorded like children.
+                var footnote = markdown_core_node_document_footnotes(node)
+                while let current = footnote {
+                    let content = recordChain(markdown_core_footnote_content(current))
+                    records[recordIndex].footnotes.append(NativeFootnoteRecord(footnote: current, content: content))
+                    footnote = markdown_core_footnote_next(current)
+                }
+            case MARKDOWN_CORE_KIND_CITE:
+                // The items are values the cite owns (M4); each one's prefix
+                // and suffix are recorded like children.
+                var citation = markdown_core_node_cite_citations(node)
+                while let current = citation {
+                    let prefix = recordChain(markdown_core_citation_prefix(current))
+                    let suffix = recordChain(markdown_core_citation_suffix(current))
+                    records[recordIndex].citations.append(
+                        NativeCitationRecord(citation: current, prefix: prefix, suffix: suffix)
+                    )
+                    citation = markdown_core_citation_next(current)
+                }
+                precondition(!records[recordIndex].citations.isEmpty, "native cite holds no citation")
             default:
                 break
             }
@@ -130,14 +178,17 @@ private struct NativeTreeBuilder {
         // Every occurrence of one reference definition shares one resource in
         // the C tree; this materializes each distinct one once.
         var resources: [UnsafeRawPointer: SharedResource] = [:]
+        func nodes(_ indices: [Int], _ what: String) -> [any Markup] {
+            indices.map { nodeIndex -> any Markup in
+                guard let node = values[nodeIndex] else {
+                    preconditionFailure("native \(what) was not materialized before its owner")
+                }
+                return node
+            }
+        }
         for index in records.indices.reversed() {
             let record = records[index]
-            let children = record.children.map { childIndex -> any Markup in
-                guard let child = values[childIndex] else {
-                    preconditionFailure("native child was not materialized before its parent")
-                }
-                return child
-            }
+            let children = nodes(record.children, "child")
             let label: DirectiveLabel?
             if let labelIndex = record.label {
                 guard let builtLabel = values[labelIndex] as? DirectiveLabel else {
@@ -147,19 +198,24 @@ private struct NativeTreeBuilder {
             } else {
                 label = nil
             }
-            let title = record.title.map { indices -> [any Markup] in
-                indices.map { titleIndex -> any Markup in
-                    guard let node = values[titleIndex] else {
-                        preconditionFailure("native callout title was not materialized before its owner")
-                    }
-                    return node
-                }
+            let title = record.title.map { nodes($0, "callout title") }
+            let footnotes = record.footnotes.map { footnote in
+                Footnote(from: footnote.footnote, content: nodes(footnote.content, "footnote content"))
+            }
+            let citations = record.citations.map { citation in
+                Citation(
+                    from: citation.citation,
+                    prefix: nodes(citation.prefix, "citation prefix"),
+                    suffix: nodes(citation.suffix, "citation suffix")
+                )
             }
             values[index] = markup(
                 from: record.node,
                 children: children,
                 label: label,
                 title: title,
+                footnotes: footnotes,
+                citations: citations,
                 resources: &resources
             )
         }
@@ -178,11 +234,13 @@ func markup(
     children: [any Markup],
     label: DirectiveLabel?,
     title: [any Markup]?,
+    footnotes: [Footnote],
+    citations: [Citation],
     resources: inout [UnsafeRawPointer: SharedResource]
 ) -> any Markup {
     switch markdown_core_node_get_kind(node) {
     case MARKDOWN_CORE_KIND_DOCUMENT:
-        Document(scope: Document.scope(from: node), content: children)
+        Document(scope: Document.scope(from: node), content: children, footnotes: footnotes)
     case MARKDOWN_CORE_KIND_CALLOUT: Callout(from: node, title: title, content: children)
     case MARKDOWN_CORE_KIND_PARAGRAPH: Paragraph(from: node, content: children)
     case MARKDOWN_CORE_KIND_HEADING: Heading(from: node, content: children)
@@ -195,7 +253,6 @@ func markup(
     case MARKDOWN_CORE_KIND_TABLE: Table(from: node, children: children)
     case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
         DirectiveBlock(from: node, label: label, content: children)
-    case MARKDOWN_CORE_KIND_FOOTNOTE_DEFINITION: FootnoteDefinition(from: node, content: children)
     case MARKDOWN_CORE_KIND_TEXT: Text(from: node)
     case MARKDOWN_CORE_KIND_SOFT_BREAK: SoftBreak(from: node)
     case MARKDOWN_CORE_KIND_LINE_BREAK: LineBreak(from: node)
@@ -209,7 +266,7 @@ func markup(
     case MARKDOWN_CORE_KIND_LINK: Link(from: node, content: children, resources: &resources)
     case MARKDOWN_CORE_KIND_IMAGE: Image(from: node, content: children, resources: &resources)
     case MARKDOWN_CORE_KIND_DIRECTIVE: Directive(from: node, label: label)
-    case MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE: FootnoteReference(from: node)
+    case MARKDOWN_CORE_KIND_CITE: Cite(scope: Cite.scope(from: node), citations: citations)
     case MARKDOWN_CORE_KIND_TABLE_ROW: TableRow(from: node, children: children)
     case MARKDOWN_CORE_KIND_TABLE_CELL: TableCell(from: node, content: children)
     case MARKDOWN_CORE_KIND_DIRECTIVE_LABEL:

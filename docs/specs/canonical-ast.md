@@ -178,9 +178,44 @@ one class per branch, and ECMAScript as a discriminated union on `kind`.
 ### Other enums
 
 ```text
+BibMode = normal | authorInText | suppressAuthor
 ListFlavor = bullet | ordered
 TableAlignment = none | left | center | right
 ```
+
+### CitationReferent, Citation, and Footnote
+
+```text
+CitationReferent = bib(key: String, mode: BibMode) | footnote(id: String)
+
+Citation(referent: CitationReferent, prefix: [Markup], suffix: [Markup], scope)
+
+Footnote(id: String, content: [Markup], scope)
+```
+
+`CitationReferent` is a tagged value like `Destination`: no scope, and a
+branch's fields exist only in that branch. The `bib` branch is first produced
+by the [citations](dialect/citations.md) module with `P7`; every inherited
+`[^label]` call produces the `footnote` branch, whose `id` names the
+`Footnote` in `Document.footnotes` with the equal id.
+
+`Citation` and `Footnote` are scoped values, not `Markup` kinds, as the
+[footnotes](dialect/footnotes.md) module defines them: they are written, so
+each carries a `scope`, and each owns Markup, but neither is ever a child of
+a node. A `Citation` is reached only through `Cite.citations`, which holds at
+least one item in source order; its `prefix` and `suffix` are non-null inline
+content, empty when absent. A `Footnote` is reached only through
+`Document.footnotes`, which holds every winning or unreferenced definition
+ordered by scope start, wherever it was written; its `id` is the definition's
+label under the reference-label normalization without the caret, and its
+`content` is the parsed block content. A losing duplicate definition is
+ordinary content in which the leading `[^label]` is itself a call to the
+winner. The C facade answers the values through the opaque handles
+`markdown_core_citation` and `markdown_core_footnote` and their accessors,
+never through `markdown_core_node`; Swift, Kotlin, and ECMAScript model them
+as value types outside their `Markup` unions, and `CitationReferent` as
+`Destination` is modeled: a Swift enum with associated values, a Kotlin sealed
+interface, and an ECMAScript discriminated union on `kind`.
 
 ## Node inventory
 
@@ -192,7 +227,7 @@ and returns no document.
 
 | Kind | Fields in canonical order | Nullability and invariants |
 | --- | --- | --- |
-| `Document` | `content: [Markup]` | block content |
+| `Document` | `content: [Markup]`, `footnotes: [Footnote]` | block content; `footnotes` is the document-owned sequence of every winning or unreferenced footnote definition, ordered by scope start, visited after `content`, and never counted among its children |
 | `Callout` | `variant: String?`, `collapsed: Bool?`, `title: [Markup]?`, `content: [Markup]` | every `>` container; `variant` is the authored type as written, or null when the container has no metadata line, and then `collapsed` and `title` are null; `collapsed` is null when no `+` or `-` fold marker was authored, false for `+` and true for `-`; `title` is a node-valued field of inline content, visited before `content` and never counted among its children, and a present title holds at least one node; block content |
 | `Paragraph` | `content: [Markup]` | inline content |
 | `Heading` | `level: Int`, `content: [Markup]` | `level` is 1 through 6; inline content |
@@ -207,7 +242,6 @@ and returns no document.
 | `TableCell` | `content: [Markup]` | inline content |
 | `DirectiveBlock` | `name: String`, `attributes: [DirectiveAttribute]?`, `label: DirectiveLabel?`, `content: [Markup]` | attributes preserves first-occurrence source order with unique names; label is a node-valued field whose scope spans its brackets and is never part of content; content is block; an absent attribute container and an empty one remain distinct, as do an absent label and an empty one |
 | `DirectiveLabel` | `content: [Markup]` | inline content; the scope spans the brackets, so an empty label is still a place |
-| `FootnoteDefinition` | `label: String`, `identifier: String`, `content: [Markup]` | `label` is non-empty and as written; `identifier` KEEPS the leading `^`, so a footnote and a link definition of one name cannot collide; block content |
 | `Text` | `literal: String` | leaf |
 | `SoftBreak` | none | leaf |
 | `LineBreak` | none | leaf |
@@ -221,7 +255,7 @@ and returns no document.
 | `Link` | `dest: Destination`, `title: String?`, `content: [Markup]` | `dest` is the tagged `Destination` value and is never absent: `[a]()` and `[a](<>)` wrote one and wrote nothing in it, so it is `url("")`; a reference occurrence answers the destination its definition stated, and an unresolved reference is the inherited literal text; every `Link` owns the `url` branch; absent and empty title remain distinct; inline content |
 | `Image` | `dest: Destination`, `title: String?`, `content: [Markup]` | `dest` is never absent, for the reason `Link.dest` is not; every `Image` owns the `url` branch; absent and empty title remain distinct; content is parsed alt-text inline content |
 | `Directive` | `name: String`, `attributes: [DirectiveAttribute]?`, `label: DirectiveLabel?` | attributes preserves first-occurrence source order with unique names; label is a node-valued field whose scope spans its brackets and is never a child/content element; an absent attribute container and an empty one remain distinct, as do an absent label and an empty one |
-| `FootnoteReference` | `label: String`, `identifier: String` | `label` is non-empty and as written; `identifier` KEEPS the leading `^`; no form — there is one footnote call syntax; leaf |
+| `Cite` | `citations: [Citation]` | one or more items in source order; every item has exactly one referent, and one cite never mixes referent families; an inherited `[^label]` call is one item with a `footnote` referent whose id is the normalized label without the caret, with empty affixes; its items are scoped values, never children, so it is a leaf |
 
 Every row above also has the final inherited field `scope: Scope`; it is not
 repeated in the table. The `url` of a `Link` or `Image` destination, and
@@ -293,9 +327,11 @@ are visited in canonical field order and arrays retain their stored order:
 complete AST walk as the named `label` field without becoming directive
 content or contributing to a `children` collection.
 
-Once `M4` adds them, the scoped values `Citation` and `Footnote` receive value
-callbacks and the walk descends into their markup arrays in declared field
-order; unscoped values receive no callback and are not descended into.
+The scoped values `Citation` and `Footnote` receive value callbacks and the
+walk descends into their markup arrays in declared field order: a `Cite`
+visits each `Citation`, whose `prefix` precedes its `suffix`, and `Document`
+visits `content` before `footnotes`, each `Footnote` descending into its
+`content`. Unscoped values receive no callback and are not descended into.
 
 The walking visitor is exhaustive under the same rule as `Visitor`: every
 node-kind callback is required and there is no default, optional handler,

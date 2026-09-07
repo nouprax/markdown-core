@@ -1111,6 +1111,58 @@ static int lists_match(markdown_core_list *list_data, markdown_core_list *item_d
             list_data->bullet_char == item_data->bullet_char);
 }
 
+/* Every footnote definition leaves the tree for the document's own chain
+ * (M4), in ascending scope order, which a pre-order walk yields: a definition
+ * nested in another's body starts after the outer one does. The walk collects
+ * first and unlinks after, so unlinking never disturbs the traversal, and it
+ * runs after every other phase, each of which must still find every body in
+ * the tree. */
+static void lift_footnotes(markdown_core_parser *parser) {
+    markdown_core_node **found = NULL;
+    size_t count = 0;
+    size_t capacity = 0;
+    size_t index;
+    markdown_core_node *node = parser->root;
+    markdown_core_node *last = NULL;
+
+    while (node) {
+        if (S_type(node) == MARKDOWN_CORE_NODE_FOOTNOTE) {
+            if (count == capacity) {
+                size_t grown = capacity ? capacity * 2 : 8;
+                markdown_core_node **more = (markdown_core_node **)parser->mem->realloc(found, grown * sizeof(*found));
+                if (!more) {
+                    parser->mem->free(found);
+                    parser->oom = true;
+                    return;
+                }
+                found = more;
+                capacity = grown;
+            }
+            found[count++] = node;
+        }
+        if (node->first_child) {
+            node = node->first_child;
+            continue;
+        }
+        while (node != parser->root && !node->next) {
+            node = node->parent;
+        }
+        node = node == parser->root ? NULL : node->next;
+    }
+    for (index = 0; index < count; index++) {
+        markdown_core_node *footnote = found[index];
+        markdown_core_node_unlink(footnote);
+        if (last) {
+            last->next = footnote;
+            footnote->prev = last;
+        } else {
+            parser->root->as.document.footnotes = footnote;
+        }
+        last = footnote;
+    }
+    parser->mem->free(found);
+}
+
 static markdown_core_node *finalize_document(markdown_core_parser *parser) {
     while (parser->current != parser->root) {
         parser->current = finalize(parser, parser->current);
@@ -1376,6 +1428,23 @@ static bool parse_callout_prefix(markdown_core_parser *parser, markdown_core_chu
     return res;
 }
 
+/* Whether the document already defines the label a definition line opens
+ * (M4): the first definition of a label in source order wins, and a later one
+ * opens no block -- its line is ordinary content, in which the leading
+ * `[^label]` is itself a call to the winner. The label is read exactly as the
+ * opening reads it, over a borrowed slice; the map normalizes. */
+static bool S_footnote_label_defined(markdown_core_parser *parser, markdown_core_chunk *input, bufsize_t first_nonspace,
+                                     bufsize_t matched) {
+    markdown_core_chunk label = markdown_core_chunk_dup(input, first_nonspace + 2, matched - 2);
+    while (label.len > 0 && label.data[label.len - 1] != ']') {
+        --label.len;
+    }
+    if (label.len > 0) {
+        --label.len;
+    }
+    return markdown_core_map_lookup(parser->footnote_defs, &label) != NULL;
+}
+
 static bool parse_footnote_definition_block_prefix(markdown_core_parser *parser, markdown_core_chunk *input,
                                                    markdown_core_node *container) {
     if (parser->indent >= 4) {
@@ -1582,7 +1651,7 @@ static markdown_core_node *check_open_blocks(markdown_core_parser *parser, markd
                 goto done;
             }
             break;
-        case MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION:
+        case MARKDOWN_CORE_NODE_FOOTNOTE:
             if (!parse_footnote_definition_block_prefix(parser, input, container)) {
                 goto done;
             }
@@ -1722,8 +1791,11 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
             }
             S_advance_offset(parser, input, input->len - 1 - parser->offset, false);
         } else if (!indented && (parser->options & MARKDOWN_CORE_OPT_FOOTNOTES) && depth < MAX_FOOTNOTE_DEPTH &&
-                   (matched = scan_footnote_definition(input, parser->first_nonspace))) {
+                   (matched = scan_footnote_definition(input, parser->first_nonspace)) &&
+                   !S_footnote_label_defined(parser, input, parser->first_nonspace, matched)) {
             markdown_core_chunk c = markdown_core_chunk_dup(input, parser->first_nonspace + 2, matched - 2);
+            unsigned char *id;
+            int lost = 0;
 
             while (c.data[c.len - 1] != ']') {
                 --c.len;
@@ -1744,20 +1816,25 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
              * began at column 13. Every other block in this engine starts at
              * its own first byte and the marker is inside it; a footnote
              * definition was the one that started after its own marker. */
-            *container =
-                add_child(parser, *container, MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION, parser->first_nonspace + 1);
+            *container = add_child(parser, *container, MARKDOWN_CORE_NODE_FOOTNOTE, parser->first_nonspace + 1);
             if (!*container) {
                 markdown_core_chunk_free(parser->mem, &c);
                 return;
             }
-            /* The identifier KEEPS the caret the label does not carry
-             * (markdown_core_association). */
-            if (!markdown_core_association_init(parser->mem, &(*container)->as.association, &c, '^')) {
+            /* The id is the label under the map's own normalization and
+             * WITHOUT a caret (M4): the key every call's referent names. The
+             * caret that kept a footnote apart from a link definition in a
+             * consumer's single map went with the association -- a
+             * `Footnote` and a resolved `Link` are different values now. */
+            id = normalize_map_label(parser->mem, &c, &lost);
+            if (!id) {
                 parser->oom = true;
                 markdown_core_chunk_free(parser->mem, &c);
                 return;
             }
-            markdown_core_chunk_free(parser->mem, &c);
+            (*container)->as.footnote.id.data = id;
+            (*container)->as.footnote.id.len = (bufsize_t)strlen((const char *)id);
+            (*container)->as.footnote.id.alloc = 1;
 
             /* The document defines this label from here on.
              *
@@ -1772,7 +1849,8 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
              * one was freed with everything written in it (D11). A set of
              * labels owns no node and picks no winner, so order decides
              * nothing left to get wrong. */
-            markdown_core_footnote_definition_create(parser->footnote_defs, &(*container)->as.literal);
+            markdown_core_footnote_definition_create(parser->footnote_defs, &c);
+            markdown_core_chunk_free(parser->mem, &c);
 
             (*container)->internal_offset = matched;
         } else if ((!indented || cont_type == MARKDOWN_CORE_NODE_LIST) && parser->indent < 4 &&
@@ -2194,6 +2272,15 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
             }
         }
     }
+    if (parser->oom) {
+        goto failed;
+    }
+
+    /* The last phase (M4): every footnote definition leaves the tree once
+     * text consolidation and every extension post-pass have seen its body in
+     * place, so a footnote's content is autolinked and merged exactly as any
+     * other block's is. */
+    lift_footnotes(parser);
     if (parser->oom) {
         goto failed;
     }

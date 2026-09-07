@@ -31,8 +31,6 @@ internal class KindVisitor : Visitor<String> {
 
     override fun visitDirectiveLabel(node: DirectiveLabel): String = name(node)
 
-    override fun visitFootnoteDefinition(node: FootnoteDefinition): String = name(node)
-
     override fun visitText(node: Text): String = name(node)
 
     override fun visitSoftBreak(node: SoftBreak): String = name(node)
@@ -59,7 +57,7 @@ internal class KindVisitor : Visitor<String> {
 
     override fun visitDirective(node: Directive): String = name(node)
 
-    override fun visitFootnoteReference(node: FootnoteReference): String = name(node)
+    override fun visitCite(node: Cite): String = name(node)
 }
 
 internal class RecordingVisitor : Visitor<Unit> {
@@ -95,8 +93,6 @@ internal class RecordingVisitor : Visitor<Unit> {
 
     override fun visitDirectiveLabel(node: DirectiveLabel): Unit = record(node)
 
-    override fun visitFootnoteDefinition(node: FootnoteDefinition): Unit = record(node)
-
     override fun visitText(node: Text): Unit = record(node)
 
     override fun visitSoftBreak(node: SoftBreak): Unit = record(node)
@@ -123,7 +119,7 @@ internal class RecordingVisitor : Visitor<Unit> {
 
     override fun visitDirective(node: Directive): Unit = record(node)
 
-    override fun visitFootnoteReference(node: FootnoteReference): Unit = record(node)
+    override fun visitCite(node: Cite): Unit = record(node)
 
     private fun record(node: Markup) {
         visited += name(node)
@@ -146,11 +142,18 @@ internal class RecordingWalkingVisitor(
         node: Markup,
         phase: WalkPhase,
     ) {
+        record(name(node), phase)
+    }
+
+    private fun record(
+        name: String,
+        phase: WalkPhase,
+    ) {
         when (phase) {
             WalkPhase.ENTERING -> entered++
             WalkPhase.EXITING -> exited++
         }
-        if (recordEvents) events += "${phase.name.lowercase()}:${name(node)}"
+        if (recordEvents) events += "${phase.name.lowercase()}:$name"
     }
 
     override fun visitDocument(
@@ -231,11 +234,6 @@ internal class RecordingWalkingVisitor(
         phase: WalkPhase,
     ): Unit = record(node, phase)
 
-    override fun visitFootnoteDefinition(
-        node: FootnoteDefinition,
-        phase: WalkPhase,
-    ): Unit = record(node, phase)
-
     override fun visitText(
         node: Text,
         phase: WalkPhase,
@@ -301,8 +299,18 @@ internal class RecordingWalkingVisitor(
         phase: WalkPhase,
     ): Unit = record(node, phase)
 
-    override fun visitFootnoteReference(
-        node: FootnoteReference,
+    override fun visitCite(
+        node: Cite,
         phase: WalkPhase,
     ): Unit = record(node, phase)
+
+    override fun visitCitation(
+        value: Citation,
+        phase: WalkPhase,
+    ): Unit = record("Citation", phase)
+
+    override fun visitFootnote(
+        value: Footnote,
+        phase: WalkPhase,
+    ): Unit = record("Footnote", phase)
 }

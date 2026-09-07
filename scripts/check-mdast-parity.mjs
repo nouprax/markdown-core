@@ -28,7 +28,7 @@ import remarkMath from "remark-math";
 import { readExamples } from "./lib/fixture-corpus.mjs";
 import { dropEmptyText, fromMdast, MDAST_COMPARED } from "./lib/mdast-oracle.mjs";
 import {
-    liftFootnoteDefinitions,
+    liftFootnotes,
     parseCanonicalDump,
     parseDestination,
     render,
@@ -103,9 +103,9 @@ function unknownKinds(node, found = new Set()) {
 }
 
 function compare(input) {
-    const theirs = project(dropEmptyText(liftFootnoteDefinitions(fromMdast(processor.parse(input)))));
+    const theirs = project(dropEmptyText(liftFootnotes(fromMdast(processor.parse(input)))));
     const mine = project(
-        dropEmptyText(liftFootnoteDefinitions(parseCanonicalDump(execFileSync(ours, [], { input, encoding: "utf8" }))))
+        dropEmptyText(liftFootnotes(parseCanonicalDump(execFileSync(ours, [], { input, encoding: "utf8" }))))
     );
     return {
         remark: render(theirs),
