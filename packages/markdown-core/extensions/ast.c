@@ -312,7 +312,7 @@ bool markdown_core_node_heading_level(const markdown_core_node *node, int32_t *l
 }
 
 bool markdown_core_node_list_properties(const markdown_core_node *node, markdown_core_list_flavor *flavor,
-                                        markdown_core_optional_i64 *start, markdown_core_ordered_list_style *style,
+                                        markdown_core_optional_i64 *start, markdown_core_ordered_list_variant *style,
                                         markdown_core_ordered_list_delimiter *delimiter, bool *tight) {
     if (!node || node->type != MARKDOWN_CORE_NODE_LIST || !flavor || !start || !style || !delimiter || !tight) {
         return false;
@@ -321,7 +321,7 @@ bool markdown_core_node_list_properties(const markdown_core_node *node, markdown
                                                                     : MARKDOWN_CORE_LIST_FLAVOR_BULLET;
     start->has_value = *flavor == MARKDOWN_CORE_LIST_FLAVOR_ORDERED;
     start->value = node->as.list.start;
-    *style = MARKDOWN_CORE_ORDERED_LIST_STYLE_DECIMAL;
+    *style = MARKDOWN_CORE_ORDERED_LIST_VARIANT_DECIMAL;
     *delimiter = node->as.list.delimiter == MARKDOWN_CORE_PAREN_DELIM
                      ? MARKDOWN_CORE_ORDERED_LIST_DELIMITER_ONE_PAREN
                      : MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PERIOD;
@@ -833,7 +833,7 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
     markdown_core_optional_string oa = {false, {NULL, 0}}, ob = {false, {NULL, 0}};
     markdown_core_optional_i64 start;
     markdown_core_optional_bool collapsed;
-    markdown_core_ordered_list_style style;
+    markdown_core_ordered_list_variant style;
     markdown_core_ordered_list_delimiter delimiter;
     markdown_core_list_flavor flavor;
     markdown_core_placement_mode mode;

@@ -554,7 +554,7 @@ static void collect_node_fields(es_build *build, size_t node_index) {
         break;
     case MARKDOWN_CORE_KIND_LIST: {
         markdown_core_list_flavor flavor;
-        markdown_core_ordered_list_style style;
+        markdown_core_ordered_list_variant style;
         markdown_core_ordered_list_delimiter delimiter;
         markdown_core_optional_i64 start;
         bool tight = false;

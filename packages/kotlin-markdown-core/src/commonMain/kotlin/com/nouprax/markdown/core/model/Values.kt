@@ -11,7 +11,7 @@ public data class Scope(
 )
 
 public enum class ListFlavor { BULLET, ORDERED }
-public enum class OrderedListStyle {
+public enum class OrderedListVariant {
     DECIMAL,
     LOWER_ALPHA,
     UPPER_ALPHA,

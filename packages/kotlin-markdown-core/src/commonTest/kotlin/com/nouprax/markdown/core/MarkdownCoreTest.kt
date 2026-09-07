@@ -306,8 +306,12 @@ class BindingMappingTest {
 
         val checked = assertIs<com.nouprax.markdown.core.List>(withEverything.content[3])
         assertEquals("x", checked.items.single().marker)
+        assertEquals(true, checked.items.single().task)
+        assertEquals(true, checked.items.single().completed)
         val unchecked = assertIs<com.nouprax.markdown.core.List>(withNothing.content[3])
         assertEquals(null, unchecked.items.single().marker)
+        assertEquals(false, unchecked.items.single().task)
+        assertEquals(false, unchecked.items.single().completed)
     }
 
     @Test

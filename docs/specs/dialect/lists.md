@@ -11,11 +11,11 @@ with `P9a`, example lists with `P9b`. The
 ## Model
 
 ```text
-OrderedListStyle     = decimal | lowerAlpha | upperAlpha | lowerRoman |
+OrderedListVariant     = decimal | lowerAlpha | upperAlpha | lowerRoman |
                        upperRoman | example | default
 OrderedListDelimiter = period | oneParen | twoParens | default
 
-List(flavor: bullet | ordered, start: Int?, style: OrderedListStyle?,
+List(flavor: bullet | ordered, start: Int?, style: OrderedListVariant?,
      delimiter: OrderedListDelimiter?, tight: Bool, items: [ListItem])
 ListItem(marker: String?, exampleLabel: String?, content: [Markup])
 ExampleReference(label: String)

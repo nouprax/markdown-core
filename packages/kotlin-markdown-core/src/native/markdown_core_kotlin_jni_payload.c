@@ -460,7 +460,7 @@ static void write_node(jni_payload_buffer *buffer, jni_payload_stack *stack, jni
         break;
     case MARKDOWN_CORE_KIND_LIST: {
         markdown_core_list_flavor flavor;
-        markdown_core_ordered_list_style style;
+        markdown_core_ordered_list_variant style;
         markdown_core_ordered_list_delimiter delimiter;
         markdown_core_optional_i64 start;
         bool tight = false;

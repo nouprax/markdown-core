@@ -180,7 +180,7 @@ one class per branch, and ECMAScript as a discriminated union on `kind`.
 ```text
 BibMode = normal | authorInText | suppressAuthor
 ListFlavor = bullet | ordered
-OrderedListStyle = decimal | lowerAlpha | upperAlpha | lowerRoman | upperRoman | example | default
+OrderedListVariant = decimal | lowerAlpha | upperAlpha | lowerRoman | upperRoman | example | default
 OrderedListDelimiter = period | oneParen | twoParens | default
 TableAlignment = none | left | center | right
 ```
@@ -234,7 +234,7 @@ and returns no document.
 | `Paragraph` | `content: [Markup]` | inline content |
 | `Heading` | `level: Int`, `content: [Markup]` | `level` is 1 through 6; inline content |
 | `ThematicBreak` | none | leaf |
-| `List` | `flavor: ListFlavor`, `start: Int?`, `style: OrderedListStyle?`, `delimiter: OrderedListDelimiter?`, `tight: Bool`, `items: [ListItem]` | `start`, `style`, and `delimiter` are non-null only for ordered lists |
+| `List` | `flavor: ListFlavor`, `start: Int?`, `style: OrderedListVariant?`, `delimiter: OrderedListDelimiter?`, `tight: Bool`, `items: [ListItem]` | `start`, `style`, and `delimiter` are non-null only for ordered lists |
 | `ListItem` | `marker: String?`, `exampleLabel: String?`, `content: [Markup]` | `marker == null` means not a task item; `exampleLabel` is reserved for example lists; block content |
 | `CodeBlock` | `info: String?`, `language: String?`, `literal: String`, `fenced: Bool`, `closed: Bool` | `info` is the info string after escape and character-reference processing, stripped of leading and trailing spaces and tabs, and `null` when that is empty or the block is indented; `language` is the prefix of `info` before the first space or tab; `fenced` is true for a fenced block; `closed` is true if and only if a closing fence was found, and always for an indented block |
 | `HTMLBlock` | `literal: String` | raw HTML is preserved; a block that opens with `<!--` and whose end line holds only whitespace after the first `-->` is a `Comment` |

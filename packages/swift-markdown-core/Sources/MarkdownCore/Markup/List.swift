@@ -12,7 +12,7 @@ public enum ListFlavor: String, Sendable {
 }
 
 /// The numbering system authored for an ordered list.
-public enum OrderedListStyle: String, Sendable {
+public enum OrderedListVariant: String, Sendable {
     /// ASCII decimal digits.
     case decimal
     /// Lowercase ASCII letters.
@@ -53,7 +53,7 @@ public struct List: Markup {
     /// one — which is the only reason it is optional.
     public let start: Int64?
     /// The authored numbering style, or `nil` for a bullet list.
-    public let style: OrderedListStyle?
+    public let style: OrderedListVariant?
     /// The authored delimiter, or `nil` for a bullet list.
     public let delimiter: OrderedListDelimiter?
     /// Whether the source separated the items by blank lines. A loose list
@@ -69,7 +69,7 @@ extension List {
     init(from node: OpaquePointer, children: [any Markup]) {
         var flavor = MARKDOWN_CORE_LIST_FLAVOR_BULLET
         var start = markdown_core_optional_i64()
-        var style = MARKDOWN_CORE_ORDERED_LIST_STYLE_DECIMAL
+        var style = MARKDOWN_CORE_ORDERED_LIST_VARIANT_DECIMAL
         var delimiter = MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PERIOD
         var tight = false
         markdown_core_node_list_properties(node, &flavor, &start, &style, &delimiter, &tight)
@@ -98,10 +98,10 @@ public struct ListItem: Markup {
     /// The authored example-list label; reserved until example lists land.
     public let exampleLabel: String?
     /// Whether this item authored a task marker.
-    public var isTask: Bool { marker != nil }
+    public var task: Bool { marker != nil }
     /// Whether this item authored a completed or custom-state task marker.
     /// Non-task items and the incomplete marker (`" "`) are not complete.
-    public var isComplete: Bool { marker != nil && marker != " " }
+    public var completed: Bool { marker != nil && marker != " " }
 
     /// Dispatches to the visitor's `ListItem` case.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }

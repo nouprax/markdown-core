@@ -345,10 +345,10 @@ export class NodeDecoder {
                     ...base,
                     marker,
                     exampleLabel: this.string(record, 1),
-                    get isTask() {
+                    get task() {
                         return marker !== null;
                     },
-                    get isComplete() {
+                    get completed() {
                         return marker !== null && marker !== " ";
                     },
                     content: this.content(record)

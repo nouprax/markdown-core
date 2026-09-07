@@ -11,7 +11,7 @@
         "PlacementMode": ["embedded", "standalone"],
         "BibMode": ["normal", "authorInText", "suppressAuthor"],
         "ListFlavor": ["bullet", "ordered"],
-        "OrderedListStyle": ["decimal", "lowerAlpha", "upperAlpha", "lowerRoman", "upperRoman", "example", "default"],
+        "OrderedListVariant": ["decimal", "lowerAlpha", "upperAlpha", "lowerRoman", "upperRoman", "example", "default"],
         "OrderedListDelimiter": ["period", "oneParen", "twoParens", "default"],
         "TableAlignment": ["none", "left", "center", "right"],
         "DirectiveAttribute": "a name/value pair of Strings"
@@ -111,7 +111,7 @@
                 },
                 {
                     "name": "style",
-                    "type": "OrderedListStyle",
+                    "type": "OrderedListVariant",
                     "optional": true
                 },
                 {

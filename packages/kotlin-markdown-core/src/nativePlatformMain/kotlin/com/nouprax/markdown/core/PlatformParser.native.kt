@@ -74,7 +74,7 @@ import com.nouprax.markdown.core.internal.capi.markdown_core_footnote_next
 import com.nouprax.markdown.core.internal.capi.markdown_core_footnote_scope
 import com.nouprax.markdown.core.internal.capi.markdown_core_list_flavorVar
 import com.nouprax.markdown.core.internal.capi.markdown_core_ordered_list_delimiterVar
-import com.nouprax.markdown.core.internal.capi.markdown_core_ordered_list_styleVar
+import com.nouprax.markdown.core.internal.capi.markdown_core_ordered_list_variantVar
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_callout_properties
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_callout_title
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_child_count
@@ -512,7 +512,7 @@ private class NativeScratch(
     private val integer = scope.alloc<IntVar>()
     private val count = scope.alloc<size_tVar>()
     private val listFlavor = scope.alloc<markdown_core_list_flavorVar>()
-    private val listStyle = scope.alloc<markdown_core_ordered_list_styleVar>()
+    private val listStyle = scope.alloc<markdown_core_ordered_list_variantVar>()
     private val listDelimiter = scope.alloc<markdown_core_ordered_list_delimiterVar>()
     private val placementMode = scope.alloc<markdown_core_placement_modeVar>()
     private val tableAlignment = scope.alloc<markdown_core_table_alignmentVar>()
@@ -548,7 +548,7 @@ private class NativeScratch(
                 else -> error("unsupported native list flavor ${listFlavor.value}")
             }
         val items = children.immutableMap { requireNotNull(it as? ListItem) { "list contains a non-item node" } }
-        val style = OrderedListStyle.DECIMAL.takeIf { optionalLong.has_value }
+        val style = OrderedListVariant.DECIMAL.takeIf { optionalLong.has_value }
         val delimiter = when (listDelimiter.value) {
             MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PERIOD -> OrderedListDelimiter.PERIOD
             MARKDOWN_CORE_ORDERED_LIST_DELIMITER_ONE_PAREN -> OrderedListDelimiter.ONE_PAREN

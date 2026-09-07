@@ -37,7 +37,7 @@ strikethrough, autolinks, task lists, formulas, and directives, on the
 CommonMark base. Quotation marks, hyphens, and periods are stored as written.
 The result is an immutable value tree with source scopes. The package exposes
 parsing and typed AST inspection, not rendering or mutation.
-Task items preserve their authored `marker`; `isTask` and `isComplete` are
+Task items preserve their authored `marker`; `task` and `completed` are
 derived conveniences. Ordered lists expose their `style` and `delimiter`.
 
 ## Traverse and Inspect

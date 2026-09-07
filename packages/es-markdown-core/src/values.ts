@@ -9,7 +9,7 @@ export interface Scope {
 }
 
 export type ListFlavor = "bullet" | "ordered";
-export type OrderedListStyle =
+export type OrderedListVariant =
     "decimal" | "lowerAlpha" | "upperAlpha" | "lowerRoman" | "upperRoman" | "example" | "default";
 export type OrderedListDelimiter = "period" | "oneParen" | "twoParens" | "default";
 /**

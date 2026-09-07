@@ -1000,8 +1000,8 @@ A transitional finding names the landing-plan item that resolves it.
   under the module's grammar; end of input without a newline is undecided. Rule:
   the separator is space, tab, vertical tab, form feed, or a line ending; end of
   input counts as a line ending.
-- **OT-2** `:47-52` — A — `checked` and `isComplete` are two names for one
-  property. Rule: bindings expose exactly `isTask` and `isComplete`.
+- **OT-2** `:47-52` — A — `checked` and `completed` are two names for one
+  property. Rule: bindings expose exactly `task` and `completed`.
 - **OT-3** `:67-68` — D — "existing source-decoding contract" for invalid UTF-8
   versus the precondition. Rule: delete; a marker is one scalar of the
   caller-supplied UTF-8.
@@ -1824,8 +1824,8 @@ and evidence.
       written. Closes OB-1 through OB-7, OK-1 through OK-9, decisions D-2 and
       D-7.
 - [x] **B6 — `obsidian/tasks.md`, `obsidian/properties.md`,
-      `obsidian/inherited-and-integration.md`:** the separator class, `isTask`
-      and `isComplete`, the UTF-8 sentence, option gating; the payload and
+      `obsidian/inherited-and-integration.md`:** the separator class, `task`
+      and `completed`, the UTF-8 sentence, option gating; the payload and
       line-ending grammar, keys, decoded lines, the scalar table, transactional
       wording, the toggle clause, the snapshot sentence, the limits pointer; the
       inherited delimiter grammar, the target table shape, the dimension range

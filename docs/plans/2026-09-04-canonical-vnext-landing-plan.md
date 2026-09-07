@@ -212,7 +212,7 @@ and the manifest order.
 | `Callout`                                                                                          | `variant: String?`, `collapsed: Bool?`, `title: [Markup]?`, `content`                                            | replaces `BlockQuote`                            | `M3`         |
 | `Paragraph`, `ThematicBreak`, `HTMLBlock`, `FormulaBlock`                                          | as today                                                                                                          | unchanged                                        | —            |
 | `Heading`                                                                                          | `level`, `content`                                                                                                | unchanged; anchors use the inherited field       | —            |
-| `List`                                                                                             | `flavor`, `start`, `style: OrderedListStyle?`, `delimiter: OrderedListDelimiter?`, `tight`, `items`               | changed                                          | `M5`         |
+| `List`                                                                                             | `flavor`, `start`, `style: OrderedListVariant?`, `delimiter: OrderedListDelimiter?`, `tight`, `items`               | changed                                          | `M5`         |
 | `ListItem`                                                                                         | `marker: String?`, `exampleLabel: String?`, `content`                                                             | changed; `checked` removed                       | `M5`         |
 | `CodeBlock`                                                                                        | `info`, `language`, `literal`, `fenced`, `closed`                                                                 | unchanged; `info` and `language` stay as written | —            |
 | `Table`                                                                                            | `caption: TableCaption?`, `columns: [TableColumn]`, `head: [TableRow]`, `content: [TableRow]`, `foot: [TableRow]` | changed; `caption` arrives with its kind         | `M6`, `P11a` |
@@ -252,7 +252,7 @@ value carries `scope` only.
 | `CitationReferent = bib(key, mode: BibMode) \| footnote(id)`, `BibMode`             | `M4`; `bib` first produced by `P7`                            |
 | `Citation(referent, prefix: [Markup], suffix: [Markup], scope)`                     | `M4`; scoped and traversed, not `Markup`                      |
 | `Footnote(id, content: [Markup], scope)`                                            | `M4`; document-owned, scoped and traversed, not `Markup`      |
-| `OrderedListStyle`, `OrderedListDelimiter`                                          | `M5`; values beyond the inherited forms first by `P9a`, `P9b` |
+| `OrderedListVariant`, `OrderedListDelimiter`                                          | `M5`; values beyond the inherited forms first by `P9a`, `P9b` |
 | `TableColumn(alignment: TableAlignment, relative: Double?)`                         | `M6`; `relative` first produced by `P11c`                     |
 | `Metadata`, `MetadataRecord`, `MetadataValue`, `MetadataScalar`, `MetadataListItem` | `M7`; first produced by `O6`                                  |
 | `ReferenceForm`                                                                     | removed by `M2`                                               |
@@ -439,7 +439,7 @@ its behavior, with no separate publication step.
       `S0`.
 - [ ] **M5 — List and item facts.** Replace `ListItem.checked` with `marker:
       String?` (`" "`, `"x"`, and `"X"` under the inherited task-list rule,
-      `null` otherwise) and expose `isTask` and `isComplete` only as derived
+      `null` otherwise) and expose `task` and `completed` only as derived
       binding conveniences; add `List.style` and `List.delimiter`, populated as
       `decimal` with `period` or `oneParen` for inherited ordered lists and
       `null` for bullets; add `ListItem.exampleLabel` as `null`. Replace the

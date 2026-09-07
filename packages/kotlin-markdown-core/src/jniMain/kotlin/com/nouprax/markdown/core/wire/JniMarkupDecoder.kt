@@ -275,7 +275,7 @@ private class JniTreeDecoder(
             }
         val startValue = reader.long()
         val start = if (reader.boolean()) startValue else null
-        val style = if (reader.int() == 0) null else OrderedListStyle.DECIMAL
+        val style = if (reader.int() == 0) null else OrderedListVariant.DECIMAL
         val delimiter =
             when (val rawValue = reader.int()) {
                 0 -> null

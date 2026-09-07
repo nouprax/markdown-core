@@ -146,9 +146,9 @@ typedef enum markdown_core_list_flavor {
     MARKDOWN_CORE_LIST_FLAVOR_ORDERED = 2
 } markdown_core_list_flavor;
 
-typedef enum markdown_core_ordered_list_style {
-    MARKDOWN_CORE_ORDERED_LIST_STYLE_DECIMAL = 1
-} markdown_core_ordered_list_style;
+typedef enum markdown_core_ordered_list_variant {
+    MARKDOWN_CORE_ORDERED_LIST_VARIANT_DECIMAL = 1
+} markdown_core_ordered_list_variant;
 
 typedef enum markdown_core_ordered_list_delimiter {
     MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PERIOD = 1,
@@ -234,7 +234,7 @@ MARKDOWN_CORE_API bool markdown_core_node_heading_level(const markdown_core_node
 MARKDOWN_CORE_API bool markdown_core_node_list_properties(const markdown_core_node *node,
                                                           markdown_core_list_flavor *flavor,
                                                           markdown_core_optional_i64 *start,
-                                                          markdown_core_ordered_list_style *style,
+                                                          markdown_core_ordered_list_variant *style,
                                                           markdown_core_ordered_list_delimiter *delimiter,
                                                           bool *tight);
 MARKDOWN_CORE_API bool markdown_core_node_list_item_properties(const markdown_core_node *node,

@@ -37,7 +37,7 @@ export type {
     Destination,
     ListFlavor,
     OrderedListDelimiter,
-    OrderedListStyle,
+    OrderedListVariant,
     PlacementMode,
     Position,
     Scope,

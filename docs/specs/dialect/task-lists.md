@@ -18,8 +18,8 @@ ListItem(marker: String?, exampleLabel: String?, content: [Markup])
 - Every other marker is a completed or custom-state task; the exact scalar is
   preserved, `x` and `X` included, and the parser assigns no meaning to it.
 
-Bindings may expose the derived conveniences `isTask = marker != null` and
-`isComplete = marker != null && marker != " "`. No native node, wire payload,
+Bindings may expose the derived conveniences `task = marker != null` and
+`completed = marker != null && marker != " "`. No native node, wire payload,
 or binding stores a checked boolean beside `marker`. `exampleLabel` belongs
 to the [lists](lists.md) module.
 

@@ -42,20 +42,20 @@ final enum class com.nouprax.markdown.core/OrderedListDelimiter : kotlin/Enum<co
     final fun values(): kotlin/Array<com.nouprax.markdown.core/OrderedListDelimiter> // com.nouprax.markdown.core/OrderedListDelimiter.values|values#static(){}[0]
 }
 
-final enum class com.nouprax.markdown.core/OrderedListStyle : kotlin/Enum<com.nouprax.markdown.core/OrderedListStyle> { // com.nouprax.markdown.core/OrderedListStyle|null[0]
-    enum entry DECIMAL // com.nouprax.markdown.core/OrderedListStyle.DECIMAL|null[0]
-    enum entry DEFAULT // com.nouprax.markdown.core/OrderedListStyle.DEFAULT|null[0]
-    enum entry EXAMPLE // com.nouprax.markdown.core/OrderedListStyle.EXAMPLE|null[0]
-    enum entry LOWER_ALPHA // com.nouprax.markdown.core/OrderedListStyle.LOWER_ALPHA|null[0]
-    enum entry LOWER_ROMAN // com.nouprax.markdown.core/OrderedListStyle.LOWER_ROMAN|null[0]
-    enum entry UPPER_ALPHA // com.nouprax.markdown.core/OrderedListStyle.UPPER_ALPHA|null[0]
-    enum entry UPPER_ROMAN // com.nouprax.markdown.core/OrderedListStyle.UPPER_ROMAN|null[0]
+final enum class com.nouprax.markdown.core/OrderedListVariant : kotlin/Enum<com.nouprax.markdown.core/OrderedListVariant> { // com.nouprax.markdown.core/OrderedListVariant|null[0]
+    enum entry DECIMAL // com.nouprax.markdown.core/OrderedListVariant.DECIMAL|null[0]
+    enum entry DEFAULT // com.nouprax.markdown.core/OrderedListVariant.DEFAULT|null[0]
+    enum entry EXAMPLE // com.nouprax.markdown.core/OrderedListVariant.EXAMPLE|null[0]
+    enum entry LOWER_ALPHA // com.nouprax.markdown.core/OrderedListVariant.LOWER_ALPHA|null[0]
+    enum entry LOWER_ROMAN // com.nouprax.markdown.core/OrderedListVariant.LOWER_ROMAN|null[0]
+    enum entry UPPER_ALPHA // com.nouprax.markdown.core/OrderedListVariant.UPPER_ALPHA|null[0]
+    enum entry UPPER_ROMAN // com.nouprax.markdown.core/OrderedListVariant.UPPER_ROMAN|null[0]
 
-    final val entries // com.nouprax.markdown.core/OrderedListStyle.entries|#static{}entries[0]
-        final fun <get-entries>(): kotlin.enums/EnumEntries<com.nouprax.markdown.core/OrderedListStyle> // com.nouprax.markdown.core/OrderedListStyle.entries.<get-entries>|<get-entries>#static(){}[0]
+    final val entries // com.nouprax.markdown.core/OrderedListVariant.entries|#static{}entries[0]
+        final fun <get-entries>(): kotlin.enums/EnumEntries<com.nouprax.markdown.core/OrderedListVariant> // com.nouprax.markdown.core/OrderedListVariant.entries.<get-entries>|<get-entries>#static(){}[0]
 
-    final fun valueOf(kotlin/String): com.nouprax.markdown.core/OrderedListStyle // com.nouprax.markdown.core/OrderedListStyle.valueOf|valueOf#static(kotlin.String){}[0]
-    final fun values(): kotlin/Array<com.nouprax.markdown.core/OrderedListStyle> // com.nouprax.markdown.core/OrderedListStyle.values|values#static(){}[0]
+    final fun valueOf(kotlin/String): com.nouprax.markdown.core/OrderedListVariant // com.nouprax.markdown.core/OrderedListVariant.valueOf|valueOf#static(kotlin.String){}[0]
+    final fun values(): kotlin/Array<com.nouprax.markdown.core/OrderedListVariant> // com.nouprax.markdown.core/OrderedListVariant.values|values#static(){}[0]
 }
 
 final enum class com.nouprax.markdown.core/ParseErrorCode : kotlin/Enum<com.nouprax.markdown.core/ParseErrorCode> { // com.nouprax.markdown.core/ParseErrorCode|null[0]
@@ -448,7 +448,7 @@ final class com.nouprax.markdown.core/List : com.nouprax.markdown.core/Markup { 
     final val start // com.nouprax.markdown.core/List.start|{}start[0]
         final fun <get-start>(): kotlin/Long? // com.nouprax.markdown.core/List.start.<get-start>|<get-start>(){}[0]
     final val style // com.nouprax.markdown.core/List.style|{}style[0]
-        final fun <get-style>(): com.nouprax.markdown.core/OrderedListStyle? // com.nouprax.markdown.core/List.style.<get-style>|<get-style>(){}[0]
+        final fun <get-style>(): com.nouprax.markdown.core/OrderedListVariant? // com.nouprax.markdown.core/List.style.<get-style>|<get-style>(){}[0]
     final val tight // com.nouprax.markdown.core/List.tight|{}tight[0]
         final fun <get-tight>(): kotlin/Boolean // com.nouprax.markdown.core/List.tight.<get-tight>|<get-tight>(){}[0]
 
@@ -456,18 +456,18 @@ final class com.nouprax.markdown.core/List : com.nouprax.markdown.core/Markup { 
 }
 
 final class com.nouprax.markdown.core/ListItem : com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core/ListItem|null[0]
+    final val completed // com.nouprax.markdown.core/ListItem.completed|{}completed[0]
+        final fun <get-completed>(): kotlin/Boolean // com.nouprax.markdown.core/ListItem.completed.<get-completed>|<get-completed>(){}[0]
     final val content // com.nouprax.markdown.core/ListItem.content|{}content[0]
         final fun <get-content>(): kotlin.collections/List<com.nouprax.markdown.core/Markup> // com.nouprax.markdown.core/ListItem.content.<get-content>|<get-content>(){}[0]
     final val exampleLabel // com.nouprax.markdown.core/ListItem.exampleLabel|{}exampleLabel[0]
         final fun <get-exampleLabel>(): kotlin/String? // com.nouprax.markdown.core/ListItem.exampleLabel.<get-exampleLabel>|<get-exampleLabel>(){}[0]
-    final val isComplete // com.nouprax.markdown.core/ListItem.isComplete|{}isComplete[0]
-        final fun <get-isComplete>(): kotlin/Boolean // com.nouprax.markdown.core/ListItem.isComplete.<get-isComplete>|<get-isComplete>(){}[0]
-    final val isTask // com.nouprax.markdown.core/ListItem.isTask|{}isTask[0]
-        final fun <get-isTask>(): kotlin/Boolean // com.nouprax.markdown.core/ListItem.isTask.<get-isTask>|<get-isTask>(){}[0]
     final val marker // com.nouprax.markdown.core/ListItem.marker|{}marker[0]
         final fun <get-marker>(): kotlin/String? // com.nouprax.markdown.core/ListItem.marker.<get-marker>|<get-marker>(){}[0]
     final val scope // com.nouprax.markdown.core/ListItem.scope|{}scope[0]
         final fun <get-scope>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/ListItem.scope.<get-scope>|<get-scope>(){}[0]
+    final val task // com.nouprax.markdown.core/ListItem.task|{}task[0]
+        final fun <get-task>(): kotlin/Boolean // com.nouprax.markdown.core/ListItem.task.<get-task>|<get-task>(){}[0]
 
     final fun <#A1: kotlin/Any?> accept(com.nouprax.markdown.core/Visitor<#A1>): #A1 // com.nouprax.markdown.core/ListItem.accept|accept(com.nouprax.markdown.core.Visitor<0:0>){0§<kotlin.Any?>}[0]
 }

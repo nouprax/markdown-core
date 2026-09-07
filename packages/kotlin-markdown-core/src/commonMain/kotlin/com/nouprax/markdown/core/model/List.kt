@@ -3,7 +3,7 @@ package com.nouprax.markdown.core
 public class List internal constructor(
     public val flavor: ListFlavor,
     public val start: Long?,
-    public val style: OrderedListStyle?,
+    public val style: OrderedListVariant?,
     public val delimiter: OrderedListDelimiter?,
     public val tight: Boolean,
     public val items: kotlin.collections.List<ListItem>,
@@ -18,8 +18,8 @@ public class ListItem internal constructor(
     public val content: kotlin.collections.List<Markup>,
     override val scope: Scope,
 ) : Markup {
-    public val isTask: Boolean get() = marker != null
-    public val isComplete: Boolean get() = marker != null && marker != " "
+    public val task: Boolean get() = marker != null
+    public val completed: Boolean get() = marker != null && marker != " "
 
     override fun <Result> accept(visitor: Visitor<Result>): Result = visitor.visitListItem(this)
 }

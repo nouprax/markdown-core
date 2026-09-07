@@ -347,7 +347,7 @@ private fun BibMode.token(): String =
 private fun PlacementMode.token(): String = name.lowercase()
 
 private fun ListFlavor.token(): String = name.lowercase()
-private fun OrderedListStyle.token(): String = name.lowercase().replace("_alpha", "Alpha").replace("_roman", "Roman")
+private fun OrderedListVariant.token(): String = name.lowercase().replace("_alpha", "Alpha").replace("_roman", "Roman")
 private fun OrderedListDelimiter.token(): String =
     name.lowercase().replace("_paren", "Paren").replace("_parens", "Parens")
 
