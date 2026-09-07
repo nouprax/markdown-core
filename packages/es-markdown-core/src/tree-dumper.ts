@@ -9,6 +9,7 @@ import type { DirectiveLabel } from "./model/directive-label.js";
 import type { Directive } from "./model/directive.js";
 import type { Document } from "./model/document.js";
 import type { Emphasis } from "./model/emphasis.js";
+import type { Specimen } from "./model/specimen.js";
 import type { Footnote } from "./model/footnote.js";
 import type { FormulaBlock } from "./model/formula-block.js";
 import type { Formula } from "./model/formula.js";
@@ -52,9 +53,10 @@ class DumpState {
             // The footnotes are value lines after the content, never counted
             // by the document's own `children`.
             this.line("Document", node, [], node.content.length);
-            this.nested(node.content.length + node.footnotes.length, () => {
+            this.nested(node.content.length + node.footnotes.length + node.specimens.length, () => {
                 for (const child of node.content) this.dump(child);
                 for (const footnote of node.footnotes) this.footnote(footnote);
+                for (const specimen of node.specimens) this.specimen(specimen);
             });
         },
         visitCallout: (node: Callout) => {
@@ -93,12 +95,7 @@ class DumpState {
                 node.items
             ),
         visitListItem: (node: ListItem) =>
-            this.container(
-                "ListItem",
-                node,
-                [`marker=${optionalString(node.marker)}`, `exampleLabel=${optionalString(node.exampleLabel)}`],
-                node.content
-            ),
+            this.container("ListItem", node, [`marker=${optionalString(node.marker)}`], node.content),
         visitCodeBlock: (node: CodeBlock) =>
             this.line("CodeBlock", node, [
                 `info=${optionalString(node.info)}`,
@@ -194,6 +191,18 @@ class DumpState {
         });
     }
 
+    private specimen(value: Specimen): void {
+        this.valueLine(
+            "Specimen",
+            value.scope,
+            [`id=${value.id === null ? "null" : jsonString(value.id)}`, `start=${value.start ?? "null"}`],
+            value.content.length
+        );
+        this.nested(value.content.length, () => {
+            for (const child of value.content) this.dump(child);
+        });
+    }
+
     private container(kind: string, node: Markup, fields: readonly string[], children: readonly Markup[]): void {
         this.line(kind, node, fields, children.length);
         this.nested(children.length, () => {
@@ -270,7 +279,7 @@ function orderedListVariant(value: OrderedListVariant | null): string {
 function referent(value: CitationReferent): string {
     return value.kind === "bib"
         ? `bib(key=${jsonString(value.key)},mode=${value.mode})`
-        : `footnote(id=${jsonString(value.id)})`;
+        : `${value.kind}(id=${jsonString(value.id)})`;
 }
 
 /** A tagged value prints its branch and its named fields with no spaces. */

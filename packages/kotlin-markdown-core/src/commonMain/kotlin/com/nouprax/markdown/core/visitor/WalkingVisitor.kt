@@ -17,7 +17,7 @@ public enum class WalkPhase {
  * Markup-valued fields are not projected into a generic children collection:
  * each node-kind traversal branch schedules its own typed relations.
  *
- * The two scoped values outside the markup union have entries of their own:
+ * The scoped values outside the markup union have entries of their own:
  * a [Citation] is reported between its cite's phases, before its prefix and
  * suffix content, and a [Footnote] after the document's content, before the
  * footnote's own content.
@@ -177,6 +177,11 @@ public interface WalkingVisitor {
         value: Footnote,
         phase: WalkPhase,
     )
+
+    public fun visitSpecimen(
+        value: Specimen,
+        phase: WalkPhase,
+    )
 }
 
 /**
@@ -195,7 +200,7 @@ private enum class ActionPhase {
     EXIT,
 }
 
-/** One pending step: a markup node or one of the two scoped values, with the phase to report. */
+/** One pending step: a markup node or one of the scoped values, with the phase to report. */
 private sealed interface WalkAction {
     val phase: ActionPhase
 
@@ -211,6 +216,11 @@ private sealed interface WalkAction {
 
     data class FootnoteValue(
         val value: Footnote,
+        override val phase: ActionPhase,
+    ) : WalkAction
+
+    data class SpecimenValue(
+        val value: Specimen,
         override val phase: ActionPhase,
     ) : WalkAction
 }
@@ -238,6 +248,7 @@ private class WalkingDriver(
                 is WalkAction.Node -> action.node.accept(this)
                 is WalkAction.CitationValue -> visitCitation(action.value)
                 is WalkAction.FootnoteValue -> visitFootnote(action.value)
+                is WalkAction.SpecimenValue -> visitSpecimen(action.value)
             }
         }
     }
@@ -257,6 +268,9 @@ private class WalkingDriver(
         scheduleExit(node)
         if (phase == WalkPhase.ENTERING) {
             // The footnotes are visited after the content, in their order.
+            for (index in node.specimens.indices.reversed()) {
+                actions += WalkAction.SpecimenValue(node.specimens[index], ActionPhase.ENTER)
+            }
             for (index in node.footnotes.indices.reversed()) {
                 actions += WalkAction.FootnoteValue(node.footnotes[index], ActionPhase.ENTER)
             }
@@ -278,6 +292,14 @@ private class WalkingDriver(
         visitor.visitFootnote(value, phase)
         if (phase == WalkPhase.ENTERING) {
             actions += WalkAction.FootnoteValue(value, ActionPhase.EXIT)
+            schedule(value.content)
+        }
+    }
+
+    private fun visitSpecimen(value: Specimen) {
+        visitor.visitSpecimen(value, phase)
+        if (phase == WalkPhase.ENTERING) {
+            actions += WalkAction.SpecimenValue(value, ActionPhase.EXIT)
             schedule(value.content)
         }
     }

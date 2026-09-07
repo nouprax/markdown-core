@@ -50,9 +50,9 @@ enum es_node_offset {
     ES_NODE_STRINGS = 64
 };
 
-/* The wire kinds of the two scoped values (M4), above the node-kind space
+/* The wire kinds of the scoped values (M4), above the node-kind space
  * so that the decoder tells a value record from a node record by its kind. */
-enum { ES_KIND_CITATION = 0x100, ES_KIND_FOOTNOTE = 0x101 };
+enum { ES_KIND_CITATION = 0x100, ES_KIND_FOOTNOTE = 0x101, ES_KIND_SPECIMEN = 0x102 };
 
 typedef struct es_source_node {
     /* A node record names its node; a value record names its handle instead
@@ -60,6 +60,7 @@ typedef struct es_source_node {
     const markdown_core_node *node;
     const markdown_core_citation *citation;
     const markdown_core_footnote *footnote;
+    const markdown_core_specimen *specimen;
     uint32_t wire_kind;
     uint32_t child_start;
     uint32_t child_count;
@@ -212,6 +213,14 @@ static uint32_t append_footnote(es_build *build, const markdown_core_footnote *f
     return append_record(build, value);
 }
 
+static uint32_t append_specimen(es_build *build, const markdown_core_specimen *specimen) {
+    es_source_node value;
+    memset(&value, 0, sizeof(value));
+    value.specimen = specimen;
+    value.wire_kind = ES_KIND_SPECIMEN;
+    return append_record(build, value);
+}
+
 static void append_edge(es_build *build, uint32_t node_index) {
     if (build->failure != ES_BUILD_OK || build->edge_count >= UINT32_MAX ||
         !reserve_vector((void **)&build->edges, &build->edge_capacity, build->edge_count + 1, sizeof(*build->edges))) {
@@ -346,10 +355,12 @@ static size_t append_chain(es_build *build, const markdown_core_node *first) {
 static void collect_value_topology(es_build *build, size_t cursor) {
     const markdown_core_citation *citation = build->nodes[cursor].citation;
     const markdown_core_footnote *footnote = build->nodes[cursor].footnote;
+    const markdown_core_specimen *specimen = build->nodes[cursor].specimen;
     size_t count;
     build->nodes[cursor].child_start = (uint32_t)build->edge_count;
-    count = append_chain(build,
-                         citation ? markdown_core_citation_prefix(citation) : markdown_core_footnote_content(footnote));
+    count = append_chain(build, citation   ? markdown_core_citation_prefix(citation)
+                                : footnote ? markdown_core_footnote_content(footnote)
+                                           : markdown_core_specimen_content(specimen));
     if (count == SIZE_MAX) {
         return;
     }
@@ -461,7 +472,7 @@ static void collect_topology(es_build *build, const markdown_core_node *root) {
         }
 
         if (kind == MARKDOWN_CORE_KIND_DOCUMENT && build->failure == ES_BUILD_OK) {
-            /* The document's footnotes are its auxiliary range: value
+            /* The document's definitions are its auxiliary range: value
              * records after the content, in scope order (M4). */
             const markdown_core_footnote *footnote;
             build->nodes[cursor].aux_start = (uint32_t)build->edge_count;
@@ -472,6 +483,16 @@ static void collect_topology(es_build *build, const markdown_core_node *root) {
                     break;
                 }
                 append_edge(build, footnote_index);
+                build->nodes[cursor].aux_count++;
+            }
+            const markdown_core_specimen *specimen;
+            for (specimen = markdown_core_node_document_specimens(node);
+                 specimen != NULL && build->failure == ES_BUILD_OK; specimen = markdown_core_specimen_next(specimen)) {
+                uint32_t specimen_index = append_specimen(build, specimen);
+                if (specimen_index == ES_NO_INDEX) {
+                    break;
+                }
+                append_edge(build, specimen_index);
                 build->nodes[cursor].aux_count++;
             }
         }
@@ -495,6 +516,14 @@ static void collect_value_fields(es_build *build, es_source_node *record) {
         } else {
             record->strings[0] = required_string(referent.id);
         }
+    } else if (record->specimen) {
+        markdown_core_optional_i64 start;
+        if (!markdown_core_specimen_properties(record->specimen, &record->strings[0], &start)) {
+            build->failure = ES_BUILD_INTERNAL;
+            return;
+        }
+        record->integer = start.value;
+        record->flags = start.has_value ? 1 : 0;
     } else {
         markdown_core_string id;
         if (!markdown_core_footnote_id(record->footnote, &id)) {
@@ -573,13 +602,11 @@ static void collect_node_fields(es_build *build, size_t node_index) {
     }
     case MARKDOWN_CORE_KIND_LIST_ITEM: {
         markdown_core_optional_string marker;
-        markdown_core_optional_string example_label;
-        if (!markdown_core_node_list_item_properties(node, &marker, &example_label)) {
+        if (!markdown_core_node_list_item_marker(node, &marker)) {
             build->failure = ES_BUILD_INTERNAL;
             break;
         }
         record->strings[0] = marker;
-        record->strings[1] = example_label;
         break;
     }
     case MARKDOWN_CORE_KIND_CODE_BLOCK: {
@@ -840,7 +867,8 @@ static uint8_t *success_result(const es_build *build, es_build_failure *failure)
         const es_source_node *source = &build->nodes[index];
         markdown_core_scope scope = source->node       ? markdown_core_node_scope(source->node)
                                     : source->citation ? markdown_core_citation_scope(source->citation)
-                                                       : markdown_core_footnote_scope(source->footnote);
+                                    : source->footnote ? markdown_core_footnote_scope(source->footnote)
+                                                       : markdown_core_specimen_scope(source->specimen);
         size_t node_offset = nodes_offset + index * ES_NODE_SIZE;
         size_t string_index;
         put_u32(output, node_offset + ES_NODE_KIND, source->wire_kind);

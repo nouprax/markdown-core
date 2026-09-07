@@ -133,8 +133,8 @@ The base of a heading is derived from its parsed inline content:
    and `LineBreak` contribute one space; `Formula` contributes `literal`;
    `CrossLink` contributes `label` when non-null and otherwise its authored
    path and anchor text; a bibliography `Cite` contributes, per item, prefix
-   text, `@` and the key, and suffix text in order; `ExampleReference`
-   contributes `@` and its label; `HTML`, `Comment`, and a footnote `Cite`
+   text, `@` and the key, and suffix text in order; `Cite` with a `specimen` referent
+   contributes `@` and its referent id; `HTML`, `Comment`, and a footnote `Cite`
    contribute nothing.
 2. Apply the simple lowercase mapping.
 3. Replace each Unicode whitespace scalar with one `-`, without collapsing
@@ -197,7 +197,7 @@ targets `#` followed by the final anchor and has `title=null`, `anchor=null`,
 and `Attributes.empty` for `merge`. The full, collapsed, and shortcut forms
 all resolve to an ordinary `Link` through the resolver of the
 [links and images](links-and-images.md) module, in the same order-independent
-document finalization that resolves example labels:
+document finalization that resolves specimen labels:
 
 ```````````````````````````````` example
 # First chapter

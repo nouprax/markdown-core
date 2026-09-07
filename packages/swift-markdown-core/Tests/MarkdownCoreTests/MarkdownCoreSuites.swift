@@ -6,6 +6,33 @@ import Testing
 @testable import MarkdownCore
 
 @Suite("api") struct APISuite {
+    @Test("specimen definitions share citation ownership and preserve absent facts")
+    func specimenValues() throws {
+        let parsed = try Document.parse("body")
+        let scope = parsed.scope
+        let definition = Specimen(scope: scope, id: "étude", start: 5, content: parsed.content)
+        let anonymous = Specimen(scope: scope, id: nil, start: nil, content: [])
+        let citation = Citation(scope: scope, referent: .specimen(id: "étude"), prefix: [], suffix: [])
+        let cite = Cite(scope: scope, citations: [citation])
+        let footnote = Footnote(scope: scope, id: "n", content: [])
+        let document = Document(
+            scope: scope,
+            content: [Paragraph(scope: scope, content: [cite])],
+            footnotes: [footnote],
+            specimens: [definition, anonymous]
+        )
+        #expect(document.specimens[0].start == 5)
+        #expect(document.specimens[1].id == nil)
+        #expect(document.dump().contains("referent=specimen(id=\"étude\")"))
+        #expect(document.dump().contains("Specimen scope=1:1..1:4 id=null start=null children=0"))
+        var visitor = RecordingWalkingVisitor()
+        document.walk(with: &visitor)
+        #expect(visitor.events.filter { $0 == "entering:Specimen" }.count == 2)
+        let footnoteExit = try #require(visitor.events.firstIndex(of: "exiting:Footnote"))
+        let specimenEnter = try #require(visitor.events.firstIndex(of: "entering:Specimen"))
+        #expect(footnoteExit < specimenEnter)
+    }
+
     @Test("all native delimiter branches retain their authored value")
     func nativeListDelimiters() {
         let cases: [(markdown_core_ordered_list_delimiter, OrderedListDelimiter)] = [
@@ -403,4 +430,5 @@ private struct RecordingWalkingVisitor: MarkupWalkingVisitor {
     mutating func visit(_ node: TableCell, phase: WalkPhase) { record(node, phase) }
     mutating func visit(_ value: Citation, phase: WalkPhase) { record("Citation", phase) }
     mutating func visit(_ value: Footnote, phase: WalkPhase) { record("Footnote", phase) }
+    mutating func visit(_ value: Specimen, phase: WalkPhase) { record("Specimen", phase) }
 }

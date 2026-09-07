@@ -56,7 +56,6 @@
             "list.variant.null",
             "list.delimiter.period",
             "list.delimiter.parenthesis.unclosed",
-            "listItem.exampleLabel.null",
             "codeBlock.info.null",
             "codeBlock.info.value",
             "codeBlock.language.null",
@@ -98,6 +97,7 @@
             "destination.url.value",
             "citation.referent.footnote",
             "citation.affix.empty",
+            "document.specimens.empty",
             "document.footnotes.empty",
             "document.footnotes.populated"
         ],
@@ -144,7 +144,6 @@
                     "list.variant.null",
                     "list.delimiter.period",
                     "list.delimiter.parenthesis.unclosed",
-                    "listItem.exampleLabel.null",
                     "listItem.marker.null",
                     "listItem.marker.value",
                     "codeBlock.info.value",
@@ -155,7 +154,8 @@
                     "children.empty",
                     "children.populated",
                     "escaping.newline",
-                    "document.footnotes.populated"
+                    "document.footnotes.populated",
+                    "document.specimens.empty"
                 ],
                 "orders": ["document.source-order", "document.content-before-footnotes"]
             }

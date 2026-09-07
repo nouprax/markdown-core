@@ -3,6 +3,7 @@ import type { DirectiveAttribute } from "../model/directive-attribute.js";
 import type { DirectiveLabel } from "../model/directive-label.js";
 import type { Citation } from "../model/cite.js";
 import type { Document } from "../model/document.js";
+import type { Specimen } from "../model/specimen.js";
 import type { Footnote } from "../model/footnote.js";
 import type { ListItem } from "../model/list.js";
 import type { Markup } from "../model/markup.js";
@@ -34,15 +35,15 @@ const nodeSize = 96;
 const attributeSize = 16;
 const noIndex = 0xffff_ffff;
 /**
- * The two scoped values travel as records above the node-kind space (M4):
+ * The scoped values travel as records above the node-kind space (M4):
  * a citation's prefix is its child range and its suffix its auxiliary range,
  * a footnote's content is its child range, a cite's items are its child
- * range, and the document's footnotes are its auxiliary range.
+ * range, and the document's definitions are its auxiliary range.
  */
-type ValueKind = "citation" | "footnote";
+type ValueKind = "citation" | "footnote" | "specimen";
 const valueKindBase = 0x100;
-const valueKinds: readonly ValueKind[] = Object.freeze(["citation", "footnote"]);
-type Decoded = Markup | Citation | Footnote;
+const valueKinds: readonly ValueKind[] = Object.freeze(["citation", "footnote", "specimen"]);
+type Decoded = Markup | Citation | Footnote | Specimen;
 const isMarkup = (value: Decoded): value is Markup => "kind" in value;
 
 const header = {
@@ -136,6 +137,7 @@ export class NodeDecoder {
             const record = this.readRecord(index);
             if (record.kind === "citation") values[index] = this.citation(record);
             else if (record.kind === "footnote") values[index] = this.footnote(record);
+            else if (record.kind === "specimen") values[index] = this.specimen(record);
             else values[index] = this.markup(this.value(record));
         }
         const document = values[0];
@@ -266,9 +268,9 @@ export class NodeDecoder {
                     this.recordRelation(record, this.edge(record.auxiliaryStart + offset), incoming, "title");
                 }
             }
-            // The document's footnotes and a citation's suffix are owned
+            // The document's definitions and a citation's suffix are owned
             // through the auxiliary range as well (M4).
-            const auxiliary = record.kind === "document" ? "footnotes" : record.kind === "citation" ? "suffix" : null;
+            const auxiliary = record.kind === "document" ? "definitions" : record.kind === "citation" ? "suffix" : null;
             if (auxiliary !== null && record.auxiliaryCount !== 0) {
                 this.range(record.auxiliaryStart, record.auxiliaryCount, this.layout.edgeCount, `${auxiliary} range`);
                 for (let offset = 0; offset < record.auxiliaryCount; ++offset) {
@@ -301,17 +303,17 @@ export class NodeDecoder {
     }
 
     private value(record: NodeRecord): MarkupValue {
-        // The two scoped values are decoded by their owners, never as nodes,
+        // The scoped values are decoded by their owners, never as nodes,
         // so the kind dispatch below is over Markup kinds alone.
         const kind = record.kind;
-        if (kind === "citation" || kind === "footnote") {
+        if (kind === "citation" || kind === "footnote" || kind === "specimen") {
             throw new Error(`native result places a ${kind} value where a node belongs`);
         }
         const base = this.base(record);
         switch (kind) {
             case "document":
                 this.flags(record, 0);
-                return { ...base, content: this.content(record), footnotes: this.footnotes(record) } as MarkupValue;
+                return { ...base, content: this.content(record), ...this.definitions(record) } as MarkupValue;
             case "cite":
                 this.flags(record, 0);
                 return { ...base, citations: this.citations(record) } as MarkupValue;
@@ -344,7 +346,6 @@ export class NodeDecoder {
                 return {
                     ...base,
                     marker,
-                    exampleLabel: this.string(record, 1),
                     get tasked() {
                         return marker !== null;
                     },
@@ -464,10 +465,8 @@ export class NodeDecoder {
                     : variantRaw === 3
                       ? { kind: "roman" as const, lowercased }
                       : variantRaw === 4
-                        ? "example"
-                        : variantRaw === 5
-                          ? "default"
-                          : null;
+                        ? "default"
+                        : null;
         const delimiterRaw = (record.flags >> 5) & 0x7;
         const delimiter =
             start === null
@@ -595,6 +594,8 @@ export class NodeDecoder {
                 return { kind: "bib", key: this.requiredString(record, 0), mode: this.bibMode(record.integer) };
             case 2:
                 return { kind: "footnote", id: this.requiredString(record, 0) };
+            case 3:
+                return { kind: "specimen", id: this.requiredString(record, 0) };
             default:
                 throw new Error(`native result contains unknown referent kind ${String(record.scalar0)}`);
         }
@@ -622,14 +623,31 @@ export class NodeDecoder {
         return items;
     }
 
-    private footnotes(record: NodeRecord): readonly Footnote[] {
-        if (record.auxiliaryCount === 0) return [];
-        this.range(record.auxiliaryStart, record.auxiliaryCount, this.layout.edgeCount, "footnotes range");
-        return this.edgeRange(record.auxiliaryStart, record.auxiliaryCount, "footnote").map((value) => {
+    private specimen(record: NodeRecord): Specimen {
+        this.flags(record, 1);
+        return {
+            scope: record.scope,
+            id: this.string(record, 0),
+            start: (record.flags & 1) === 0 ? null : this.safeInteger(record.integer, "specimen start"),
+            content: this.content(record)
+        };
+    }
+
+    private definitions(record: NodeRecord): { footnotes: readonly Footnote[]; specimens: readonly Specimen[] } {
+        if (record.auxiliaryCount === 0) return { footnotes: [], specimens: [] };
+        this.range(record.auxiliaryStart, record.auxiliaryCount, this.layout.edgeCount, "definitions range");
+        const footnotes: Footnote[] = [];
+        const specimens: Specimen[] = [];
+        for (const value of this.edgeRange(record.auxiliaryStart, record.auxiliaryCount, "definition")) {
             if (isMarkup(value) || !("id" in value))
-                throw new Error("document footnotes contain a non-footnote record");
-            return value;
-        });
+                throw new Error("document definitions contain a non-definition record");
+            if ("start" in value) specimens.push(value);
+            else {
+                if (specimens.length !== 0) throw new Error("document footnotes follow specimens");
+                footnotes.push(value);
+            }
+        }
+        return { footnotes, specimens };
     }
 
     /**

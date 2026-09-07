@@ -10,7 +10,7 @@ markers. Landing: the `marker` field landed with `M5`; custom markers land with 
 ## Model
 
 ```text
-ListItem(marker: String?, exampleLabel: String?, content: [Markup])
+ListItem(marker: String?, content: [Markup])
 ```
 
 - `marker == null` means the item is not a task.
@@ -20,8 +20,7 @@ ListItem(marker: String?, exampleLabel: String?, content: [Markup])
 
 Bindings may expose the derived conveniences `tasked = marker != null` and
 `completed = marker != null && marker != " "`. No native node, wire payload,
-or binding stores a checked boolean beside `marker`. `exampleLabel` belongs
-to the [lists](lists.md) module.
+or binding stores a checked boolean beside `marker`.
 
 ```````````````````````````````` example
 - [ ] open
@@ -30,13 +29,13 @@ to the [lists](lists.md) module.
 .
 Document scope=1:1..3:15 anchor=null attributes={} children=1
 └── List scope=1:1..3:15 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=3
-    ├── ListItem scope=1:1..1:10 anchor=null attributes={} marker=" " exampleLabel=null children=1
+    ├── ListItem scope=1:1..1:10 anchor=null attributes={} marker=" " children=1
     │   └── Paragraph scope=1:7..1:10 anchor=null attributes={} children=1
     │       └── Text scope=1:7..1:10 anchor=null attributes={} literal="open" children=0
-    ├── ListItem scope=2:1..2:10 anchor=null attributes={} marker="x" exampleLabel=null children=1
+    ├── ListItem scope=2:1..2:10 anchor=null attributes={} marker="x" children=1
     │   └── Paragraph scope=2:7..2:10 anchor=null attributes={} children=1
     │       └── Text scope=2:7..2:10 anchor=null attributes={} literal="done" children=0
-    └── ListItem scope=3:1..3:15 anchor=null attributes={} marker="X" exampleLabel=null children=1
+    └── ListItem scope=3:1..3:15 anchor=null attributes={} marker="X" children=1
         └── Paragraph scope=3:7..3:15 anchor=null attributes={} children=1
             └── Text scope=3:7..3:15 anchor=null attributes={} literal="also done" children=0
 ````````````````````````````````
@@ -60,11 +59,11 @@ any nesting depth:
 .
 Document scope=1:1..2:10 anchor=null attributes={} children=1
 └── List scope=1:1..2:10 anchor=null attributes={} flavor=ordered start=1 variant=decimal delimiter=period tight=true children=1
-    └── ListItem scope=1:1..2:10 anchor=null attributes={} marker="x" exampleLabel=null children=2
+    └── ListItem scope=1:1..2:10 anchor=null attributes={} marker="x" children=2
         ├── Paragraph scope=1:8..1:8 anchor=null attributes={} children=1
         │   └── Text scope=1:8..1:8 anchor=null attributes={} literal="a" children=0
         └── List scope=2:4..2:10 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
-            └── ListItem scope=2:4..2:10 anchor=null attributes={} marker=" " exampleLabel=null children=1
+            └── ListItem scope=2:4..2:10 anchor=null attributes={} marker=" " children=1
                 └── Paragraph scope=2:10..2:10 anchor=null attributes={} children=1
                     └── Text scope=2:10..2:10 anchor=null attributes={} literal="b" children=0
 ````````````````````````````````
@@ -80,13 +79,13 @@ not a separator, and neither is a letter:
 .
 Document scope=1:1..3:9 anchor=null attributes={} children=1
 └── List scope=1:1..3:9 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=3
-    ├── ListItem scope=1:1..1:9 anchor=null attributes={} marker="x" exampleLabel=null children=1
+    ├── ListItem scope=1:1..1:9 anchor=null attributes={} marker="x" children=1
     │   └── Paragraph scope=1:7..1:9 anchor=null attributes={} children=1
     │       └── Text scope=1:7..1:9 anchor=null attributes={} literal="tab" children=0
-    ├── ListItem scope=2:1..2:5 anchor=null attributes={} marker=null exampleLabel=null children=1
+    ├── ListItem scope=2:1..2:5 anchor=null attributes={} marker=null children=1
     │   └── Paragraph scope=2:3..2:5 anchor=null attributes={} children=1
     │       └── Text scope=2:3..2:5 anchor=null attributes={} literal="[x]" children=0
-    └── ListItem scope=3:1..3:9 anchor=null attributes={} marker=null exampleLabel=null children=1
+    └── ListItem scope=3:1..3:9 anchor=null attributes={} marker=null children=1
         └── Paragraph scope=3:3..3:9 anchor=null attributes={} children=1
             └── Text scope=3:3..3:9 anchor=null attributes={} literal="[x]none" children=0
 ````````````````````````````````
@@ -98,7 +97,7 @@ Only the first bytes of the item are tested; a later `[x]` is text:
 .
 Document scope=1:1..1:9 anchor=null attributes={} children=1
 └── List scope=1:1..1:9 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
-    └── ListItem scope=1:1..1:9 anchor=null attributes={} marker=null exampleLabel=null children=1
+    └── ListItem scope=1:1..1:9 anchor=null attributes={} marker=null children=1
         └── Paragraph scope=1:3..1:9 anchor=null attributes={} children=1
             └── Text scope=1:3..1:9 anchor=null attributes={} literal="a [x] b" children=0
 ````````````````````````````````
@@ -111,7 +110,7 @@ The rule applies inside any container:
 Document scope=1:1..1:9 anchor=null attributes={} children=1
 └── Callout scope=1:1..1:9 anchor=null attributes={} variant=null collapsed=null children=1
     └── List scope=1:3..1:9 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
-        └── ListItem scope=1:3..1:9 anchor=null attributes={} marker=" " exampleLabel=null children=1
+        └── ListItem scope=1:3..1:9 anchor=null attributes={} marker=" " children=1
             └── Paragraph scope=1:9..1:9 anchor=null attributes={} children=1
                 └── Text scope=1:9..1:9 anchor=null attributes={} literal="a" children=0
 ````````````````````````````````
@@ -126,13 +125,13 @@ Document scope=1:1..1:9 anchor=null attributes={} children=1
 .
 Document scope=1:1..3:9 anchor=null attributes={} children=1
 └── List scope=1:1..3:9 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=3
-    ├── ListItem scope=1:1..1:7 anchor=null attributes={} marker="?" exampleLabel=null children=1
+    ├── ListItem scope=1:1..1:7 anchor=null attributes={} marker="?" children=1
     │   └── Paragraph scope=1:7..1:7 anchor=null attributes={} children=1
     │       └── Text scope=1:7..1:7 anchor=null attributes={} literal="a" children=0
-    ├── ListItem scope=2:1..2:7 anchor=null attributes={} marker="-" exampleLabel=null children=1
+    ├── ListItem scope=2:1..2:7 anchor=null attributes={} marker="-" children=1
     │   └── Paragraph scope=2:7..2:7 anchor=null attributes={} children=1
     │       └── Text scope=2:7..2:7 anchor=null attributes={} literal="b" children=0
-    └── ListItem scope=3:1..3:9 anchor=null attributes={} marker="✓" exampleLabel=null children=1
+    └── ListItem scope=3:1..3:9 anchor=null attributes={} marker="✓" children=1
         └── Paragraph scope=3:9..3:9 anchor=null attributes={} children=1
             └── Text scope=3:9..3:9 anchor=null attributes={} literal="c" children=0
 ````````````````````````````````
@@ -146,10 +145,10 @@ candidate marker before rejecting a malformed prefix:
 .
 Document scope=1:1..2:8 anchor=null attributes={} children=1
 └── List scope=1:1..2:8 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=2
-    ├── ListItem scope=1:1..1:6 anchor=null attributes={} marker=null exampleLabel=null children=1
+    ├── ListItem scope=1:1..1:6 anchor=null attributes={} marker=null children=1
     │   └── Paragraph scope=1:3..1:6 anchor=null attributes={} children=1
     │       └── Text scope=1:3..1:6 anchor=null attributes={} literal="[] a" children=0
-    └── ListItem scope=2:1..2:8 anchor=null attributes={} marker=null exampleLabel=null children=1
+    └── ListItem scope=2:1..2:8 anchor=null attributes={} marker=null children=1
         └── Paragraph scope=2:3..2:8 anchor=null attributes={} children=1
             └── Text scope=2:3..2:8 anchor=null attributes={} literal="[ab] b" children=0
 ````````````````````````````````

@@ -2,7 +2,7 @@
     "schemaVersion": 1,
     "oracle": {
         "runner": "unified / remark",
-        "why": "The oracles below are micromark extensions, which emit a token stream rather than a tree. remark is the harness that runs them and turns the tokens into mdast, so it is what this gate executes — but the syntax decisions being compared are the extensions' own.",
+        "why": "The oracles below are micromark extensions, which emit a token stream rather than a tree. remark is the harness that runs them and turns the tokens into mdast, so it is what this gate executes \u2014 but the syntax decisions being compared are the extensions' own.",
         "authorities": {
             "directives": "micromark-extension-directive@4.0.0 for directive envelopes, labels, and attachment positions (run through remark-directive); the shared attribute member grammar is explicitly Pandoc-owned",
             "math": "micromark-extension-math@3.1.0",
@@ -11,8 +11,8 @@
         "astShapeFrom": "mdast-util-directive@3.1.0 and mdast-util-from-markdown; every `ast-shape` delta below originates here, not in the parser extensions.",
         "note": "Versions are pinned by pnpm-lock.yaml. This is a corrective and supplementary oracle: cmark remains the CommonMark oracle and cmark-gfm the GFM-extension oracle, while remark/mdast supplies independent evidence for directives, math, footnote representation, tables, and the reference-link model.",
         "notAnAuthorityFor": [
-            "Which construct wins when two extensions could claim the same line. That is decided by micromark's construct priority and by this repository's audited extension attachment order — each an artifact of its own architecture, not a rule either project specifies. Divergences of that kind are product grammar decisions rather than mdast parity deltas.",
-            "LaTeX-style math delimiters. micromark-extension-math implements `$` and `$$` only, so `\\(x\\)` and `\\[x\\]` reach remark as ordinary escaped brackets. It has no opinion there to compare against, which is why packages/markdown-core/tests/fixtures/extensions-formula-latex.txt is deliberately absent from the corpus below rather than present with six registered divergences. Registering them would read as `remark disagrees`, and it does not — it was never asked.",
+            "Which construct wins when two extensions could claim the same line. That is decided by micromark's construct priority and by this repository's audited extension attachment order \u2014 each an artifact of its own architecture, not a rule either project specifies. Divergences of that kind are product grammar decisions rather than mdast parity deltas.",
+            "LaTeX-style math delimiters. micromark-extension-math implements `$` and `$$` only, so `\\(x\\)` and `\\[x\\]` reach remark as ordinary escaped brackets. It has no opinion there to compare against, which is why packages/markdown-core/tests/fixtures/extensions-formula-latex.txt is deliberately absent from the corpus below rather than present with six registered divergences. Registering them would read as `remark disagrees`, and it does not \u2014 it was never asked.",
             "Whether an extension is on. The dialect has no switches and every parse attaches every extension, so what an input parses to with a scanner excluded is not a property of the product; no fixture and no gate asserts it.",
             "Attribute member grammar and consumer projection. Markdown Core deliberately uses the pinned Pandoc 3.11 grammar at every attachment site and projects IDs to the universal anchor and remaining values to shared classes and records; remark remains the evidence only for the directive envelope and attachment position, which the directives module states. New runtime differences caused by that planned migration must be registered when they begin reproducing."
         ]
@@ -21,7 +21,8 @@
     "corpus": [
         "specs/oracles/remark/corpus.md",
         "packages/markdown-core/tests/fixtures/extensions-directive.txt",
-        "packages/markdown-core/tests/fixtures/extensions-formula-github.txt"
+        "packages/markdown-core/tests/fixtures/extensions-formula-github.txt",
+        "packages/markdown-core/tests/fixtures/dialect-task-lists.txt"
     ],
     "deltas": [
         {
@@ -68,6 +69,26 @@
             "kind": "ast-shape",
             "summary": "mdast keeps a link reference definition as a `definition` node where it was written and leaves `linkReference` and `imageReference` unresolved, carrying the label. Markdown Core consumes the definition into the parser's map and resolves every successful reference into the `Link` or `Image` it names (M2), as cmark does.",
             "handling": "The comparison resolves mdast's references against its own definitions inside the projection -- the first definition of an identifier wins, as in both grammars -- into `Link`/`Image` carrying the definition's destination and title, drops the definition nodes, and leaves a reference with no definition as the prose both models make of it. The label bytes are compared through the resolved destination, so a reference that resolved to the wrong definition, or to none, still shows up as a difference."
+        },
+        {
+            "id": "table-row-width-shape",
+            "kind": "ast-shape",
+            "summary": "mdast retains ragged table rows. Markdown Core applies the delimiter column count while building its AST, as mdast-util-to-hast does when rendering: missing cells are empty and excess cells are omitted.",
+            "handling": "The mdast projection uses each table's own alignment count to complete or truncate its rows and identify its header, including nested tables. The native tree is not normalized, so incorrect native row widths still fail comparison.",
+            "evidence": "docs/specs/dialect/tables.md; syntax-tree/mdast-util-to-hast lib/handlers/table-row.js; the remark corpus covers short, long, and nested rows."
+        },
+        {
+            "id": "list-tightness-shape",
+            "kind": "ast-shape",
+            "summary": "mdast records blank separation on both a list and its items; Markdown Core stores one tight flag per list.",
+            "handling": "A projected list is tight only when neither the list nor any direct item is spread. Nested lists are evaluated independently. Native tight flags are unchanged.",
+            "evidence": "syntax-tree/mdast-util-to-hast lib/handlers/list-item.js listLoose; remark corpus nested task and loose item cases."
+        },
+        {
+            "id": "task-marker-completion",
+            "kind": "ast-shape",
+            "summary": "Boolean-only oracles retain task completion but lose the authored marker spelling, including x versus X.",
+            "handling": "Compare the three shared states: absent, incomplete and complete. Exact marker spelling remains covered by canonical fixtures and binding tests; the non-leading [x] witness still compares unequal completion states."
         }
     ],
     "notDeltas": [
@@ -145,13 +166,6 @@
             "why": "GitHub documents a fenced form for block math. The info string is the selector, so the fence is not source content."
         },
         {
-            "id": "table-excess-cells",
-            "input": "a\n| --- |\nb.| status |\n",
-            "authority": "GFM specification, and cmark-gfm",
-            "summary": "A body row with more cells than the header keeps all of them in remark; the excess is dropped here.",
-            "why": "The GFM specification says of a row's cells: \"If there are greater, the excess is ignored.\" cmark-gfm does exactly that, and so does this parser. remark keeps the extra cell, which is the deviation."
-        },
-        {
             "id": "github-backtick-math-padding",
             "input": "text $`  k  `$ text\n",
             "authority": "GitHub",
@@ -179,13 +193,13 @@
         {
             "input": "Inline \\\\(x+y\\\\) and \\(a+b\\).\n",
             "source": "packages/markdown-core/tests/fixtures/extensions-formula-layer-gates.txt",
-            "closedBy": "Step 6 — formula"
+            "closedBy": "Step 6 \u2014 formula"
         },
         {
             "input": "Display \\\\[x+y\\\\] and \\[a+b\\].\n",
             "source": "packages/markdown-core/tests/fixtures/extensions-formula-layer-gates.txt",
-            "closedBy": "Step 6 — formula"
+            "closedBy": "Step 6 \u2014 formula"
         }
     ],
-    "retiredBacklogNote": "Retired by Step 6, not by agreement. Both inputs are LaTeX-delimiter rows that the 1.0 baseline had filed under extensions-formula-github.txt, where this parity corpus reads them; the active C requirement fixture files them under extensions-formula-layer-gates.txt, which this corpus deliberately does not read. Two clauses of notAnAuthorityFor already cover them: remark has no opinion on `\\(x\\)` and `\\[x\\]`, and this gate runs one profile so it cannot judge a row whose whole assertion is what happens with the extension off. Under Q14 that is what these rows assert. They diverge from remark today and would still diverge if restored — which is why they are recorded here rather than deleted, and why the gate re-checks that they stay out. The layer-gates fixture named above was removed with the harness by X0; both inputs stay retired."
+    "retiredBacklogNote": "Retired by Step 6, not by agreement. Both inputs are LaTeX-delimiter rows that the 1.0 baseline had filed under extensions-formula-github.txt, where this parity corpus reads them; the active C requirement fixture files them under extensions-formula-layer-gates.txt, which this corpus deliberately does not read. Two clauses of notAnAuthorityFor already cover them: remark has no opinion on `\\(x\\)` and `\\[x\\]`, and this gate runs one profile so it cannot judge a row whose whole assertion is what happens with the extension off. Under Q14 that is what these rows assert. They diverge from remark today and would still diverge if restored \u2014 which is why they are recorded here rather than deleted, and why the gate re-checks that they stay out. The layer-gates fixture named above was removed with the harness by X0; both inputs stay retired."
 }

@@ -208,12 +208,12 @@ and the manifest order.
 
 | Kind                                                                                               | Target fields in canonical order                                                                                  | Change                                           | Item         |
 | -------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ | ------------ |
-| `Document`                                                                                         | `content`, `metadata: Metadata?`, `footnotes: [Footnote]`                                                         | changed                                          | `M4`, `M7`   |
+| `Document`                                                                                         | `content`, `metadata: Metadata?`, `footnotes: [Footnote]`, `specimens: [Specimen]`                                                         | changed                                          | `M4`, `M7`   |
 | `Callout`                                                                                          | `variant: String?`, `collapsed: Bool?`, `title: [Markup]?`, `content`                                            | replaces `BlockQuote`                            | `M3`         |
 | `Paragraph`, `ThematicBreak`, `HTMLBlock`, `FormulaBlock`                                          | as today                                                                                                          | unchanged                                        | —            |
 | `Heading`                                                                                          | `level`, `content`                                                                                                | unchanged; anchors use the inherited field       | —            |
 | `List`                                                                                             | `flavor`, `start`, `variant: OrderedListVariant?`, `delimiter: OrderedListDelimiter?`, `tight`, `items`               | changed                                          | `M5`         |
-| `ListItem`                                                                                         | `marker: String?`, `exampleLabel: String?`, `content`                                                             | changed; `checked` removed                       | `M5`         |
+| `ListItem`                                                                                         | `marker: String?`, `content`                                                             | changed; `checked` removed                       | `M5`         |
 | `CodeBlock`                                                                                        | `info`, `language`, `literal`, `fenced`, `closed`                                                                 | unchanged; `info` and `language` stay as written | —            |
 | `Table`                                                                                            | `caption: TableCaption?`, `columns: [TableColumn]`, `head: [TableRow]`, `content: [TableRow]`, `foot: [TableRow]` | changed; `caption` arrives with its kind         | `M6`, `P11a` |
 | `TableRow`                                                                                         | `cells`                                                                                                           | changed; `isHeader` removed                      | `M6`         |
@@ -234,7 +234,6 @@ and the manifest order.
 | `Insert`                                                                                           | `content`                                                                                                         | new                                              | `I1`         |
 | `Span`                                                                                             | `content`                                                                                                         | new                                              | `P5`         |
 | `Superscript`, `Subscript`                                                                         | `content`                                                                                                         | new                                              | `P6`         |
-| `ExampleReference`                                                                                 | `label: String`                                                                                                   | new                                              | `P9b`        |
 | `BlockQuote`                                                                                       | —                                                                                                                 | removed                                          | `M3`         |
 | `ReferenceDefinition`, `LinkReference`, `ImageReference`                                           | —                                                                                                                 | removed                                          | `M2`         |
 | `FootnoteDefinition`, `FootnoteReference`                                                          | —                                                                                                                 | removed                                          | `M4`         |
@@ -442,12 +441,16 @@ its behavior, with no separate publication step.
       `null` otherwise) and expose `tasked` and `completed` only as derived
       binding conveniences; add `List.variant` and `List.delimiter`, populated as
       `decimal` with `period` or `parenthesis(closed=false)` for inherited ordered lists and
-      `null` for bullets; add `ListItem.exampleLabel` as `null`. Replace the
+      `null` for bullets. Replace the
       task-list and list facade accessors, update the cmark-gfm and remark
       projections, and regenerate the list fixtures. Manifest states:
       `listItem.marker.null`, `listItem.marker.space`, `listItem.marker.value`,
       `list.variant.decimal`, `list.variant.null`, `list.delimiter.period`,
-      `list.delimiter.parenthesis(closed=false)`, `listItem.exampleLabel.null`. Requires `S0`.
+      `list.delimiter.parenthesis(closed=false)`. Requires `S0`.
+      The revised citation model also exposes `Specimen(id?, start?, content,
+      scope)`, `Document.specimens`, and the specimen referent and walk callback.
+      Retire the reserved example list variant and item label. Definition
+      ownership, copying and wire support land here; grammar remains in P9b.
 - [ ] **M6 — One table model.** Emit `Table(columns, head, content, foot=[])`
       with `TableColumn(alignment, relative=null)` from the existing pipe-table
       path, remove `TableRow.isHeader`, add `TableCell.rowspan` and `colspan` as
@@ -735,7 +738,7 @@ its behavior, with no separate publication step.
       kind a later item produces is a cross-item case owned by whichever of `P3`
       and that item merges later: `CrossLink` with `O1`, `Mark` with `O2`,
       `Insert` with `I1`, `Span` with `P5`, `Superscript` and `Subscript` with
-      `P6`, a bibliography `Cite` with `P7`, and `ExampleReference` with `P9b`.
+      `P6`, a bibliography `Cite` with `P7`, and `Cite` with a `specimen` referent with `P9b`.
       Requires `P2b`.
 - [ ] **P4 — `implicit_heading_references`.** Register a virtual reference
       definition for every heading with a final anchor, keyed by the authored
@@ -744,7 +747,7 @@ its behavior, with no separate publication step.
       the final anchor; explicit definitions win, the first of duplicate labels
       wins, and every reference spelling resolves to an ordinary `Link` through
       the `M2` resolver in one order-independent finalization shared with
-      example labels. Attributes authored on such an occurrence are a cross-item
+      specimen labels. Attributes authored on such an occurrence are a cross-item
       case owned by whichever of `P4` and `P2d` merges later. A complete cite
       beating the shortcut reference of a virtual definition registered for a
       heading such as `# @foo` is a cross-item case owned by whichever of `P4`
@@ -788,8 +791,8 @@ its behavior, with no separate publication step.
       candidate followed by a direct-link destination or reference tail belongs
       to that link; one followed by an attribute container belongs to the outer
       `Span`, which the bracket procedure tests first; a complete cite beats shortcut-reference lookup; and, as Pandoc
-      resolves it, a bare `@key` with no bracketed tail whose key is an example
-      label registered anywhere in the document is an `ExampleReference`, while
+      resolves it, a bare `@key` with no bracketed tail whose key is a specimen
+      label registered anywhere in the document is a `Cite` with a `specimen` referent, while
       `[@key]` and a bare key followed by a bracketed tail stay citations. This
       is the first producer of `CitationReferent.bib`. The
       `reset-citation-positions` class is documented here, and its heading
@@ -823,16 +826,19 @@ its behavior, with no separate publication step.
       is ordinary text, the accumulation stopping at the ceiling so no run of
       any component can overflow the `int` that holds `List.start`.
       Remove the `fancy-list-and-startnum` gap. Requires `P0`, `M7`.
-- [ ] **P9b — `example_lists`.** Add `(@)`, `(@label)`, `(N@)`, and `(N@label)`
-      markers with `variant=example`, a document-wide counter and label map as
-      parser state, `ListItem.exampleLabel`, the `ExampleReference(label)` kind
-      for `(@label)` occurrences anywhere in the document, with bare `@label`
-      capture arriving in `P7`, the repeated-label and reset rules, four-space
-      continuations, and `N` limited to nine digits so no counter can overflow,
-      a longer digit run being ordinary text. Fixtures and a canonical case;
-      remove the `example-lists-and-reference` gap. The heading-text projection
-      of `ExampleReference` in generated anchors is a cross-item case owned by
-      whichever of `P9b` and `P3` merges later. Requires `P9a`.
+- [ ] **P9b — specimen definitions and references (`example_lists`).**
+      Implement [specimens](../specs/dialect/specimens.md) through the citation
+      model: document-owned `Specimen(id?, start?, content, scope)` definitions
+      and `Cite` items with `CitationReferent.specimen(id)`. The public model,
+      native ownership, transports, dump and walking callbacks are available;
+      P9b adds source recognition and document-wide registration. Preserve
+      anonymous and duplicate definitions, first-label resolution, effective
+      first-in-group resets, four-column continuations, and bounded numerals.
+      No list variant, list-item label, separate reference node, or stored
+      derived numbering is introduced. Add every module fixture and canonical
+      coverage; retire the upstream `example-lists-and-reference` gap. The
+      heading projection uses the existing citation projection with the id as
+      its key spelling; test it with `P3`. Requires `M4`, `M5`, `P9a`.
 - [ ] **P10 — `definition_lists`.** Recognize a one-line term, an optional
       single blank line, and a first marker line by bounded non-consuming
       lookahead before paragraph fallback; feed each body's lines to the
@@ -967,7 +973,7 @@ Sizes are rough review-effort estimates, not schedules.
 | `P7`   | `P5`, `P9b`        | L    | heading-text projection (`P3`); complete cite over a virtual heading reference (`P4`)                                                                                                                   | Pandoc Phase 3 citations and resolution                                                                                          |
 | `P8`   | `P0`, `M7`         | M    | definition body ends at a nameless-container close (`P10`); anchor reserved before synthesis (`P3`)                                                                                                                    | Pandoc Phase 4 fenced divs                                                                                                       |
 | `P9a`  | `P0`, `M7`         | M    | —                                                                                                                                                                                                       | Pandoc Phase 4 ordered markers                                                                                                   |
-| `P9b`  | `P9a`              | M    | heading-text projection (`P3`)                                                                                                                                                                          | Pandoc Phase 4 example lists                                                                                                     |
+| `P9b`  | `P9a`              | M    | heading-text projection (`P3`)                                                                                                                                                                          | Pandoc Phase 4 specimens                                                                                                     |
 | `P10`  | `P0`, `M7`         | L    | caption precedence over term lookahead (`P11a`, `P11b`, `P11c`, `P11d`); definition body ends at a nameless-container close (`P8`)                                                                                     | Pandoc Phase 4 definition lists                                                                                                  |
 | `P11a` | `P0`, `M7`         | M    | caption precedence over term lookahead (`P10`); identifier after a table caption (`O7`)                                                                                                                 | Pandoc Phase 5 captions                                                                                                          |
 | `P11b` | `P11a`             | M    | caption precedence over term lookahead (`P10`); identifier after a table caption (`O7`); escaped wikilink pipe in a simple-table cell (`O1`)                                                            | Pandoc Phase 5 simple tables and precedence                                                                                      |

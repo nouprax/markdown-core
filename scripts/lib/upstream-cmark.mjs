@@ -54,7 +54,7 @@ const COMPARED = {
     Callout: ["variant", "collapsed"],
     Heading: ["level"],
     List: ["flavor", "start", "variant", "delimiter", "tight"],
-    ListItem: ["marker", "exampleLabel"],
+    ListItem: ["completed"],
     CodeBlock: ["info", "literal"],
     Code: ["literal"],
     Text: ["literal"],
@@ -120,10 +120,8 @@ export function parseUpstreamXml(xml) {
         if (kind === "Cite") node.children.push(citationItem({}));
         if (name === "table_header") node.fields.isHeader = "true";
         if (name === "table_row") node.fields.isHeader = "false";
-        if (name === "tasklist") node.fields.marker = attributes.completed === "true" ? "x" : " ";
         if (name === "item") {
-            node.fields.marker = "null";
-            node.fields.exampleLabel = "null";
+            node.fields.completed = "null";
         }
         // Every `>` container is a `Callout` (M3), and an inherited quote is
         // metadata-free: cmark has no callout metadata to state, so the
@@ -343,6 +341,10 @@ export function normalize(node, side, fired) {
     const fields = {};
     for (const key of COMPARED[node.kind] ?? []) {
         let value = node.fields[key];
+        if (node.kind === "ListItem" && key === "completed") {
+            value = taskCompletion(node.fields);
+            if (value !== "null") fired?.add("task-marker-completion");
+        }
         if (side === "upstream") {
             if (node.kind === "List" && key === "flavor") value = node.fields.type;
             if (node.kind === "List" && key === "variant") value = node.fields.type === "ordered" ? "decimal" : "null";
@@ -518,4 +520,13 @@ export function unknownKinds(node, found = new Set()) {
     if (node.kind.startsWith("?")) found.add(node.kind.slice(1));
     for (const child of node.children) unknownKinds(child, found);
     return found;
+}
+
+/** The completion fact shared by boolean-only oracles and authored markers.
+ * Absence stays distinct from incomplete and complete; spelling is tested by
+ * the canonical fixtures rather than fabricated from an oracle boolean. */
+export function taskCompletion(fields) {
+    if (fields.completed !== undefined) return fields.completed;
+    const marker = fields.marker;
+    return marker === undefined || marker === "null" ? "null" : String(marker !== " ");
 }

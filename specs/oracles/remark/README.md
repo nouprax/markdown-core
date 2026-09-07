@@ -15,6 +15,11 @@ mdast does not retain ordered-list delimiter punctuation, so this oracle does
 not compare `List.delimiter`. The cmark oracle compares that field, and the
 canonical fixtures check the authored spelling in every binding.
 
+mdast's ragged table rows are projected to the delimiter's column count,
+matching its HTML conversion and the canonical AST: absent cells are empty and
+excess cells are omitted. Only the oracle tree is normalized; a malformed
+native row still fails comparison.
+
 This oracle is corrective and supplementary, not a second oracle for the base
 language. Current cmark is the CommonMark oracle, cmark-gfm only the
 GFM-extension oracle, and a remark agreement can justify a reviewed delta
@@ -31,3 +36,13 @@ when it replaces the existing directive-only attribute parser.
 
 The stored corpus contains inputs only. It never stores Markdown Core's
 expected output and is not a replacement for canonical AST conformance.
+
+`list-tightness-shape` combines mdast list and direct-item spread flags into
+one tight flag, following mdast-util-to-hast's `listLoose`. Each list is
+projected independently, and the native flag is compared unchanged.
+
+`task-marker-completion` compares absent, incomplete, and complete task states
+against boolean-only mdast and cmark-gfm XML. Those oracles cannot attest to
+`x` versus `X`; exact authored markers remain covered by canonical fixtures
+and binding tests. An unchecked marker followed by literal `[x]` still
+exposes the registered upstream task-state defect.

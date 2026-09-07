@@ -17,7 +17,7 @@ public enum WalkPhase: Sendable {
 /// directive label is visited as the directive's `label` field and remains
 /// distinct from the directive's `content`.
 ///
-/// The two scoped values outside the markup union have cases of their own: a
+/// The scoped values outside the markup union have cases of their own: a
 /// ``Citation`` is reported between its cite's phases, before its prefix and
 /// suffix content, and a ``Footnote`` after the document's content, before
 /// the footnote's own content.
@@ -53,6 +53,7 @@ public protocol MarkupWalkingVisitor {
     mutating func visit(_ node: TableCell, phase: WalkPhase)
     mutating func visit(_ value: Citation, phase: WalkPhase)
     mutating func visit(_ value: Footnote, phase: WalkPhase)
+    mutating func visit(_ value: Specimen, phase: WalkPhase)
 }
 
 extension Markup {
@@ -69,7 +70,7 @@ extension Markup {
     }
 }
 
-/// One pending step: a markup node or one of the two scoped values, with the
+/// One pending step: a markup node or one of the scoped values, with the
 /// phase to report.
 private enum WalkAction {
     case enter(any Markup)
@@ -78,6 +79,8 @@ private enum WalkAction {
     case exitCitation(Citation)
     case enterFootnote(Footnote)
     case exitFootnote(Footnote)
+    case enterSpecimen(Specimen)
+    case exitSpecimen(Specimen)
 }
 
 /// Node-kind callbacks own the relation schedule. The action stack is only a
@@ -115,6 +118,12 @@ private struct WalkingDriver<WalkingVisitor: MarkupWalkingVisitor>: MarkupVisito
             case let .exitFootnote(value):
                 phase = .exiting
                 visitFootnote(value)
+            case let .enterSpecimen(value):
+                phase = .entering
+                visitSpecimen(value)
+            case let .exitSpecimen(value):
+                phase = .exiting
+                visitSpecimen(value)
             }
         }
     }
@@ -141,11 +150,20 @@ private struct WalkingDriver<WalkingVisitor: MarkupWalkingVisitor>: MarkupVisito
         }
     }
 
+    private mutating func visitSpecimen(_ value: Specimen) {
+        visitor.visit(value, phase: phase)
+        if phase == .entering {
+            actions.append(.exitSpecimen(value))
+            for child in value.content.reversed() { actions.append(.enter(child)) }
+        }
+    }
+
     mutating func visit(_ node: Document) {
         visitor.visit(node, phase: phase)
         scheduleExit(node)
         if phase == .entering {
             // The footnotes are visited after the content, in their order.
+            for specimen in node.specimens.reversed() { actions.append(.enterSpecimen(specimen)) }
             for footnote in node.footnotes.reversed() { actions.append(.enterFootnote(footnote)) }
             for child in node.content.reversed() { actions.append(.enter(child)) }
         }

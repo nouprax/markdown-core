@@ -156,7 +156,8 @@ const PROJECTED_DELTAS = new Set([
     "html-comment-node",
     "footnote-definition-placement",
     "footnote-resolution-model",
-    "empty-text-node"
+    "empty-text-node",
+    "task-marker-completion"
 ]);
 for (const delta of policy.deltas) {
     if (!PROJECTED_DELTAS.has(delta.id) && !(policy.expectedDivergences ?? []).some((e) => e.id === delta.id)) {

@@ -14,7 +14,6 @@ public class List internal constructor(
 
 public class ListItem internal constructor(
     public val marker: String?,
-    public val exampleLabel: String?,
     public val content: kotlin.collections.List<Markup>,
     override val scope: Scope,
 ) : Markup {

@@ -31,13 +31,13 @@ Document scope=1:1..7:16 children=4
 ├── Paragraph scope=1:1..1:18 children=1
 │   └── Text scope=1:1..1:18 literal="By taking it apart" children=0
 ├── List scope=3:1..4:1 flavor=bullet start=null variant=null delimiter=null tight=true children=1
-│   └── ListItem scope=3:1..4:1 marker=null exampleLabel=null children=1
+│   └── ListItem scope=3:1..4:1 marker=null children=1
 │       └── Paragraph scope=3:3..3:23 children=1
 │           └── Text scope=3:3..3:23 literal="alternative solutions" children=0
 ├── Paragraph scope=5:1..5:18 children=1
 │   └── Text scope=5:1..5:18 literal="Repeatedly solving" children=0
 └── List scope=7:1..7:16 flavor=bullet start=null variant=null delimiter=null tight=true children=1
-    └── ListItem scope=7:1..7:16 marker=null exampleLabel=null children=1
+    └── ListItem scope=7:1..7:16 marker=null children=1
         └── Paragraph scope=7:3..7:16 children=1
             └── Text scope=7:3..7:16 literal="how techniques" children=0
 ````````````````````````````````
@@ -119,7 +119,7 @@ two
 .
 Document scope=1:1..3:3 children=1
 └── List scope=1:1..3:3 flavor=bullet start=null variant=null delimiter=null tight=true children=1
-    └── ListItem scope=1:1..3:3 marker=null exampleLabel=null children=1
+    └── ListItem scope=1:1..3:3 marker=null children=1
         └── Paragraph scope=1:3..3:3 children=5
             ├── Text scope=1:3..1:5 literal="one" children=0
             ├── SoftBreak scope=1:6..1:6 children=0

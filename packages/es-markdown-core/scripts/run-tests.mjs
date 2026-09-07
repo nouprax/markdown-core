@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -15,6 +16,13 @@ const correctnessSuites = [
     "types",
     "packaging"
 ];
+// Every declared node test must belong to a scheduled correctness suite.
+// Reject unclassified tests even when a per-suite CI job filters them out.
+const nodeTests = readFileSync(path.join(packageDirectory, "tests/node.test.mjs"), "utf8");
+const nodeSuites = ["api", "ast", "errors", "ownership", "robustness", "unicode"];
+for (const [, name] of nodeTests.matchAll(/^test\("([^"\n]+)"/gm)) {
+    if (!nodeSuites.includes(name.split(":")[0])) throw new Error(`unscheduled node test: ${name}`);
+}
 const targetIndex = process.argv.indexOf("--target");
 const suiteIndex = process.argv.indexOf("--suite");
 const target = targetIndex >= 0 ? process.argv[targetIndex + 1] : "node";
@@ -44,9 +52,7 @@ if (target === "browser") {
     run("node", ["tests/browser.mjs"]);
     process.exit(0);
 }
-const selectedNodeSuites = selected.filter((suite) =>
-    ["api", "ast", "errors", "ownership", "robustness", "unicode"].includes(suite)
-);
+const selectedNodeSuites = selected.filter((suite) => nodeSuites.includes(suite));
 if (selectedNodeSuites.length) {
     run("node", ["--test", `--test-name-pattern=^(${selectedNodeSuites.join("|")}):`, "tests/node.test.mjs"]);
 }

@@ -1,5 +1,10 @@
 # Pandoc Markdown extensions implementation plan
 
+> Specimen model update: historical example-list/ExampleReference proposals below
+> are superseded by [the specimen citation contract](../specs/dialect/specimens.md).
+> `ListItem.exampleLabel` and `OrderedListVariant.example` are retired.
+
+
 Status: proposed. This plan implements the Pandoc-derived modules of the
 [Markdown Core dialect](../specs/dialect.md) on the canonical parser and all
 public bindings. It does not add a monolithic Pandoc dialect and does not retain

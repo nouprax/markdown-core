@@ -43,4 +43,9 @@ public sealed interface CitationReferent {
     public class Footnote internal constructor(
         public val id: String,
     ) : CitationReferent
+
+    /** A specimen definition named by its authored [id]; first produced with P9b. */
+    public class Specimen internal constructor(
+        public val id: String,
+    ) : CitationReferent
 }

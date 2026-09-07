@@ -21,6 +21,108 @@ private fun jniPayload(vararg parts: Any): ByteArray {
 
 class JniPayloadDecoderTest {
     @Test
+    fun specimensShareCitationOwnershipWithoutListState() {
+        val payload =
+            jniPayload(
+                "MKJ1",
+                0.toByte(),
+                1.toByte(),
+                1,
+                1,
+                7,
+                8,
+                1, // document and content
+                3.toByte(),
+                1,
+                1,
+                1,
+                8,
+                1, // paragraph
+                25.toByte(),
+                1,
+                1,
+                1,
+                8,
+                1, // cite
+                1,
+                2,
+                1,
+                7,
+                3.toByte(),
+                6,
+                "étude",
+                0,
+                0, // specimen referent, empty affixes
+                1,
+                3,
+                1,
+                3,
+                8,
+                1,
+                "n",
+                0, // one footnote, empty body
+                2, // specimen definitions
+                5,
+                1,
+                5,
+                8,
+                6,
+                "étude",
+                5,
+                0,
+                1.toByte(),
+                1,
+                3.toByte(),
+                5,
+                5,
+                5,
+                8,
+                1,
+                13.toByte(),
+                5,
+                5,
+                5,
+                8,
+                4,
+                "body",
+                7,
+                1,
+                7,
+                8,
+                -1,
+                0,
+                0,
+                0.toByte(),
+                0, // anonymous, no reset
+            )
+        val document = JniPayloadDecoder.decodeDocument(payload)
+        payload.fill(0)
+        assertEquals("n", document.footnotes.single().id)
+        assertEquals(listOf("étude", null), document.specimens.map { it.id })
+        assertEquals(listOf(5L, null), document.specimens.map { it.start })
+        val cite = (document.content.single() as Paragraph).content.single() as Cite
+        assertEquals("étude", assertIs<CitationReferent.Specimen>(cite.citations.single().referent).id)
+        assertEquals(
+            "body",
+            (
+                (
+                    document.specimens
+                        .first()
+                        .content
+                        .single() as Paragraph
+                ).content.single() as Text
+            ).literal,
+        )
+        assertTrue(document.dump().contains("Specimen scope=5:1..5:8 id=\"étude\" start=5 children=1"))
+        assertTrue(document.dump().contains("Specimen scope=7:1..7:8 id=null start=null children=0"))
+        val visitor = RecordingWalkingVisitor()
+        document.walk(visitor)
+        assertEquals(2, visitor.events.count { it == "entering:Specimen" })
+        assertTrue(visitor.events.indexOf("exiting:Footnote") < visitor.events.indexOf("entering:Specimen"))
+        assertEquals(visitor.entered, visitor.exited)
+    }
+
+    @Test
     fun orderedValuesAndUtf8MarkersSurviveWireDecoding() {
         // Reserved values cannot yet be produced by parsing; exercise the wire
         // with all payload combinations, including a four-byte UTF-8 scalar.
@@ -61,9 +163,9 @@ class JniPayloadDecoderTest {
                 1, // item scope
                 4,
                 "🚀",
-                -1,
-                0, // marker, absent label, no content
+                0, // marker, no content
                 0, // no document footnotes
+                0, // no document specimens
             )
         val delimiters =
             listOf(
@@ -150,6 +252,7 @@ class JniPayloadDecoderTest {
                 10,
                 1,
                 "T",
+                0,
                 0,
                 0,
             )
@@ -248,6 +351,7 @@ class JniPayloadDecoderTest {
                 9,
                 1,
                 *text(3, 6, 3, 9, "note"),
+                0, // no document specimens
             )
         val document = JniPayloadDecoder.decodeDocument(payload)
         val cite = (document.content.single() as Paragraph).content.single() as Cite

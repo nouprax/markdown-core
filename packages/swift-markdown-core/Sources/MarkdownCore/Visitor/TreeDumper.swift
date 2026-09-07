@@ -83,9 +83,10 @@ private struct DumpVisitor: MarkupVisitor {
         // The footnotes are value lines after the content, each nesting its
         // own content; `children` counts the content alone.
         state.line("Document", node, children: node.content.count)
-        state.nested(node.content.count + node.footnotes.count) {
+        state.nested(node.content.count + node.footnotes.count + node.specimens.count) {
             node.content.forEach(state.dump)
             for footnote in node.footnotes { dumpFootnote(footnote) }
+            for specimen in node.specimens { dumpSpecimen(specimen) }
         }
     }
 
@@ -94,6 +95,16 @@ private struct DumpVisitor: MarkupVisitor {
             "Footnote",
             scope: value.scope,
             fields: ["id=\(jsonString(value.id))"],
+            children: value.content.count
+        )
+        state.nested(value.content.count) { value.content.forEach(state.dump) }
+    }
+
+    private func dumpSpecimen(_ value: Specimen) {
+        state.line(
+            "Specimen",
+            scope: value.scope,
+            fields: ["id=\(optionalString(value.id))", "start=\(value.start.map(String.init) ?? "null")"],
             children: value.content.count
         )
         state.nested(value.content.count) { value.content.forEach(state.dump) }
@@ -149,7 +160,7 @@ private struct DumpVisitor: MarkupVisitor {
         state.line(
             "ListItem",
             node,
-            fields: ["marker=\(optionalString(node.marker))", "exampleLabel=\(optionalString(node.exampleLabel))"],
+            fields: ["marker=\(optionalString(node.marker))"],
             children: node.content.count
         )
         state.nested(node.content.count) { node.content.forEach(state.dump) }
@@ -334,6 +345,7 @@ private func referentString(_ value: CitationReferent) -> String {
     switch value {
     case .bib(let key, let mode): "bib(key=\(jsonString(key)),mode=\(mode.rawValue))"
     case .footnote(let id): "footnote(id=\(jsonString(id)))"
+    case .specimen(let id): "specimen(id=\(jsonString(id)))"
     }
 }
 
@@ -359,7 +371,6 @@ private func orderedListVariant(_ value: OrderedListVariant?) -> String {
     case .decimal: "decimal"
     case .alpha(let lowercased): "alpha(lowercased=\(boolean(lowercased)))"
     case .roman(let lowercased): "roman(lowercased=\(boolean(lowercased)))"
-    case .example: "example"
     case .default: "default"
     case nil: "null"
     }

@@ -13,7 +13,6 @@ export type OrderedListVariant =
     | "decimal"
     | { readonly kind: "alpha"; readonly lowercased: boolean }
     | { readonly kind: "roman"; readonly lowercased: boolean }
-    | "example"
     | "default";
 export type OrderedListDelimiter = "period" | { readonly kind: "parenthesis"; readonly closed: boolean } | "default";
 /**
@@ -41,5 +40,6 @@ export type BibMode = "normal" | "authorInText" | "suppressAuthor";
  */
 export type CitationReferent =
     | { readonly kind: "bib"; readonly key: string; readonly mode: BibMode }
-    | { readonly kind: "footnote"; readonly id: string };
+    | { readonly kind: "footnote"; readonly id: string }
+    | { readonly kind: "specimen"; readonly id: string };
 export type TableAlignment = "none" | "left" | "center" | "right";

@@ -1,5 +1,10 @@
 # Extension specification audit
 
+> Specimen model update: historical example-list/ExampleReference proposals below
+> are superseded by [the specimen citation contract](../specs/dialect/specimens.md).
+> `ListItem.exampleLabel` and `OrderedListVariant.example` are retired.
+
+
 Status: historical record. It audited every file under `docs/specs` as they
 stood at commit `7df9454`, before the dialect rewrite replaced them with
 [`docs/specs/dialect.md`](../specs/dialect.md) and its modules, and its line

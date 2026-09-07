@@ -23,8 +23,6 @@ public sealed interface OrderedListVariant {
         public val lowercased: Boolean,
     ) : OrderedListVariant
 
-    public data object Example : OrderedListVariant
-
     public data object Default : OrderedListVariant
 }
 

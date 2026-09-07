@@ -95,14 +95,25 @@ private class DumpVisitor(
         // The footnotes are value lines after the content, each nesting its
         // own content; `children` counts the content alone.
         state.line("Document", node, children = node.content.size)
-        state.nested(node.content.size + node.footnotes.size) {
+        state.nested(node.content.size + node.footnotes.size + node.specimens.size) {
             node.content.forEach(state::dump)
             node.footnotes.forEach { footnote(it) }
+            node.specimens.forEach { specimen(it) }
         }
     }
 
     private fun footnote(value: Footnote) {
         state.line("Footnote", value.scope, listOf("id=${jsonString(value.id)}"), value.content.size)
+        state.nested(value.content.size) { value.content.forEach(state::dump) }
+    }
+
+    private fun specimen(value: Specimen) {
+        state.line(
+            "Specimen",
+            value.scope,
+            listOf("id=${optionalString(value.id)}", "start=${value.start ?: "null"}"),
+            value.content.size,
+        )
         state.nested(value.content.size) { value.content.forEach(state::dump) }
     }
 
@@ -155,7 +166,7 @@ private class DumpVisitor(
         state.container(
             "ListItem",
             node,
-            listOf("marker=${optionalString(node.marker)}", "exampleLabel=${optionalString(node.exampleLabel)}"),
+            listOf("marker=${optionalString(node.marker)}"),
             node.content,
         )
     }
@@ -335,6 +346,7 @@ private fun referent(value: CitationReferent): String =
     when (value) {
         is CitationReferent.Bib -> "bib(key=${jsonString(value.key)},mode=${value.mode.token()})"
         is CitationReferent.Footnote -> "footnote(id=${jsonString(value.id)})"
+        is CitationReferent.Specimen -> "specimen(id=${jsonString(value.id)})"
     }
 
 private fun BibMode.token(): String =
@@ -353,7 +365,6 @@ private fun OrderedListVariant.token(): String =
         OrderedListVariant.Decimal -> "decimal"
         is OrderedListVariant.Alpha -> "alpha(lowercased=$lowercased)"
         is OrderedListVariant.Roman -> "roman(lowercased=$lowercased)"
-        OrderedListVariant.Example -> "example"
         OrderedListVariant.Default -> "default"
     }
 

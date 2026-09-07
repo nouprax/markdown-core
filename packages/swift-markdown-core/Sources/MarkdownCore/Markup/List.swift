@@ -19,8 +19,6 @@ public enum OrderedListVariant: Equatable, Sendable {
     case alpha(lowercased: Bool)
     /// Roman numerals, recording their authored case.
     case roman(lowercased: Bool)
-    /// A labeled example-list marker.
-    case example
     /// A source marker that requests the default numbering variant.
     case `default`
 }
@@ -91,7 +89,6 @@ extension List {
         switch value.kind {
         case MARKDOWN_CORE_ORDERED_LIST_VARIANT_ALPHA: .alpha(lowercased: value.lowercased)
         case MARKDOWN_CORE_ORDERED_LIST_VARIANT_ROMAN: .roman(lowercased: value.lowercased)
-        case MARKDOWN_CORE_ORDERED_LIST_VARIANT_EXAMPLE: .example
         case MARKDOWN_CORE_ORDERED_LIST_VARIANT_DEFAULT: .default
         default: .decimal
         }
@@ -106,8 +103,6 @@ public struct ListItem: Markup {
     public let content: [any Markup]
     /// The authored task marker, or `nil` when this is not a task item.
     public let marker: String?
-    /// The authored example-list label; reserved until example lists land.
-    public let exampleLabel: String?
     /// Whether this item authored a task marker.
     public var tasked: Bool { marker != nil }
     /// Whether this item authored a completed or custom-state task marker.
@@ -121,13 +116,11 @@ public struct ListItem: Markup {
 extension ListItem {
     init(from node: OpaquePointer, content: [any Markup]) {
         var marker = markdown_core_optional_string()
-        var exampleLabel = markdown_core_optional_string()
-        markdown_core_node_list_item_properties(node, &marker, &exampleLabel)
+        markdown_core_node_list_item_marker(node, &marker)
         self.init(
             scope: Self.scope(from: node),
             content: content,
             marker: marker.string,
-            exampleLabel: exampleLabel.string
         )
     }
 }

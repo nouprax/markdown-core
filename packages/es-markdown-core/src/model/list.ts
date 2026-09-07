@@ -13,7 +13,6 @@ export interface List extends MarkupBase<"list"> {
 
 export interface ListItem extends MarkupBase<"listItem"> {
     readonly marker: string | null;
-    readonly exampleLabel: string | null;
     readonly tasked: boolean;
     readonly completed: boolean;
     readonly content: readonly Markup[];

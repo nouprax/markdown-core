@@ -347,14 +347,92 @@ values, including the space that denotes an incomplete task.
 .
 Document scope=1:1..3:13 children=1
 └── List scope=1:1..3:13 flavor=ordered start=1 variant=decimal delimiter=parenthesis(closed=false) tight=true children=1
-    └── ListItem scope=1:1..3:13 marker=null exampleLabel=null children=2
+    └── ListItem scope=1:1..3:13 marker=null children=2
         ├── Paragraph scope=1:4..1:8 children=1
         │   └── Text scope=1:4..1:8 literal="outer" children=0
         └── List scope=2:4..3:13 flavor=bullet start=null variant=null delimiter=null tight=true children=2
-            ├── ListItem scope=2:4..2:13 marker=" " exampleLabel=null children=1
+            ├── ListItem scope=2:4..2:13 marker=" " children=1
             │   └── Paragraph scope=2:10..2:13 children=1
             │       └── Text scope=2:10..2:13 literal="open" children=0
-            └── ListItem scope=3:4..3:13 marker="x" exampleLabel=null children=1
+            └── ListItem scope=3:4..3:13 marker="x" children=1
                 └── Paragraph scope=3:10..3:13 children=1
                     └── Text scope=3:10..3:13 literal="done" children=0
+````````````````````````````````
+
+Ragged rows use their own table's width, including tables nested in containers.
+
+```````````````````````````````` example
+| a | b |
+| - | - |
+:badge[short]
+| first | second | ignored |
+
+> | a | b | c |
+> | - | - | - |
+> short
+> | first | second | third | ignored |
+.
+Document scope=1:1..9:38 children=2
+├── Table scope=1:1..4:28 alignments=[none,none] children=3
+│   ├── TableRow scope=1:1..1:9 isHeader=true children=2
+│   │   ├── TableCell scope=1:2..1:4 children=1
+│   │   │   └── Text scope=1:3..1:3 literal="a" children=0
+│   │   └── TableCell scope=1:6..1:8 children=1
+│   │       └── Text scope=1:7..1:7 literal="b" children=0
+│   ├── TableRow scope=3:1..3:13 isHeader=false children=2
+│   │   ├── TableCell scope=3:1..3:13 children=1
+│   │   │   └── Directive scope=3:1..3:13 name="badge" attributes=null children=0
+│   │   │       └── DirectiveLabel scope=3:7..3:13 children=1
+│   │   │           └── Text scope=3:8..3:12 literal="short" children=0
+│   │   └── TableCell scope=3:13..3:13 children=0
+│   └── TableRow scope=4:1..4:28 isHeader=false children=2
+│       ├── TableCell scope=4:2..4:8 children=1
+│       │   └── Text scope=4:3..4:7 literal="first" children=0
+│       └── TableCell scope=4:10..4:17 children=1
+│           └── Text scope=4:11..4:16 literal="second" children=0
+└── Callout scope=6:1..9:38 variant=null collapsed=null children=1
+    └── Table scope=6:3..9:38 alignments=[none,none,none] children=3
+        ├── TableRow scope=6:3..6:15 isHeader=true children=3
+        │   ├── TableCell scope=6:4..6:6 children=1
+        │   │   └── Text scope=6:5..6:5 literal="a" children=0
+        │   ├── TableCell scope=6:8..6:10 children=1
+        │   │   └── Text scope=6:9..6:9 literal="b" children=0
+        │   └── TableCell scope=6:12..6:14 children=1
+        │       └── Text scope=6:13..6:13 literal="c" children=0
+        ├── TableRow scope=8:3..8:7 isHeader=false children=3
+        │   ├── TableCell scope=8:3..8:7 children=1
+        │   │   └── Text scope=8:3..8:7 literal="short" children=0
+        │   ├── TableCell scope=8:7..8:7 children=0
+        │   └── TableCell scope=8:7..8:7 children=0
+        └── TableRow scope=9:3..9:38 isHeader=false children=3
+            ├── TableCell scope=9:4..9:10 children=1
+            │   └── Text scope=9:5..9:9 literal="first" children=0
+            ├── TableCell scope=9:12..9:19 children=1
+            │   └── Text scope=9:13..9:18 literal="second" children=0
+            └── TableCell scope=9:21..9:27 children=1
+                └── Text scope=9:22..9:26 literal="third" children=0
+````````````````````````````````
+
+List tightness includes separation inside an item, independently of nested list tightness.
+
+```````````````````````````````` example
+afte
+1) outer
+
+   - [ ] open
+| expr |
+.
+Document scope=1:1..5:8 children=2
+├── Paragraph scope=1:1..1:4 children=1
+│   └── Text scope=1:1..1:4 literal="afte" children=0
+└── List scope=2:1..5:8 flavor=ordered start=1 variant=decimal delimiter=parenthesis(closed=false) tight=false children=1
+    └── ListItem scope=2:1..5:8 marker=null children=2
+        ├── Paragraph scope=2:4..2:8 children=1
+        │   └── Text scope=2:4..2:8 literal="outer" children=0
+        └── List scope=4:4..5:8 flavor=bullet start=null variant=null delimiter=null tight=true children=1
+            └── ListItem scope=4:4..5:8 marker=" " children=1
+                └── Paragraph scope=4:10..5:8 children=3
+                    ├── Text scope=4:10..4:13 literal="open" children=0
+                    ├── SoftBreak scope=4:14..4:14 children=0
+                    └── Text scope=5:1..5:8 literal="| expr |" children=0
 ````````````````````````````````

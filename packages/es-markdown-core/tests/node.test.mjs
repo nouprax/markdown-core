@@ -136,7 +136,7 @@ test("errors: allocation failure is terminal across the WASM boundary", () => {
     assert.deepEqual(frees, [8]);
 });
 
-test("references: every occurrence of one definition crosses the boundary once and is materialized once", () => {
+test("ownership: every occurrence of one definition crosses the boundary once and is materialized once", () => {
     // M2: the C tree shares one resource across every occurrence of a
     // definition; the Wasm result writes its strings once and each later
     // occurrence points at the same bytes, and the decoder reuses the value it
@@ -171,7 +171,7 @@ test("references: every occurrence of one definition crosses the boundary once a
     );
 });
 
-test("callouts: every `>` container is a metadata-free callout", () => {
+test("ast: every `>` container is a metadata-free callout", () => {
     // M3: the kind is `callout`; the metadata rule that fills variant,
     // collapsed, and title in lands with O8, so every callout reads as
     // metadata-free and dumps its fields as such.
@@ -191,7 +191,7 @@ test("callouts: every `>` container is a metadata-free callout", () => {
     );
 });
 
-test("callouts: a title is decoded from the auxiliary range before the content and dumped as a group", () => {
+test("ast: a title is decoded from the auxiliary range before the content and dumped as a group", () => {
     // The title path of the wire: a node-valued list the record owns through
     // its auxiliary range. No parse produces one until O8, so the result is
     // built by hand: a document holding one collapsed `note` callout whose
@@ -323,6 +323,7 @@ function walkingVisitor(callback) {
         ...Object.fromEntries(Object.keys(kindVisitor).map((method) => [method, callback])),
         // The scoped values have no `kind`; their callbacks report their names.
         visitCitation: (value, phase) => callback({ kind: "citation", ...value }, phase),
+        visitSpecimen: (value, phase) => callback({ kind: "specimen", ...value }, phase),
         visitFootnote: (value, phase) => callback({ kind: "footnote", ...value }, phase)
     };
 }
@@ -331,7 +332,7 @@ function nodeKindName(node) {
     return node.kind[0].toUpperCase() + node.kind.slice(1);
 }
 
-test("citations: an inherited call is a one-item cite and the document owns its footnotes", () => {
+test("ast: an inherited call is a one-item cite and the document owns its footnotes", () => {
     // M4: repeated calls share one footnote; the item names it by id with
     // empty affixes; the footnote is a document-owned value after the
     // content, never a child; the walk visits values through their own
@@ -534,7 +535,7 @@ function errorResult(code, message) {
     return result;
 }
 
-test("wire: every ordered delimiter and associated numbering value survives decoding", () => {
+test("ast: every ordered delimiter and associated numbering value survives decoding", () => {
     const delimiters = [
         [1, false, "period"],
         [2, false, { kind: "parenthesis", closed: false }],
@@ -572,7 +573,7 @@ test("wire: every ordered delimiter and associated numbering value survives deco
     assert.throws(() => new NodeDecoder(malformed).decodeDocument(), /invalid ordered list facts/u);
 });
 
-test("wire: a UTF-8 task marker is an owned string, independent of the payload", () => {
+test("ast: a UTF-8 task marker is an owned string, independent of the payload", () => {
     const bytes = nativeResult("- [x] 🚀\n");
     const view = new DataView(bytes.buffer);
     const text = findNode(bytes, kinds.indexOf("text"));
@@ -612,3 +613,58 @@ function findNode(result, kind) {
     }
     throw new Error(`result does not contain kind ${kind}`);
 }
+
+test("ast: specimen definitions and references retain ownership, nulls and reset facts", () => {
+    // Parsing these values lands with P9b. Existing definition records supply
+    // the shared topology; only the reserved value tags and scalar facts change.
+    const bytes = nativeResult("[^note] [^étude]\n\n[^note]: note\n\n[^étude]: body\n\n[^anonymous]: tail\n");
+    const view = new DataView(bytes.buffer);
+    const nodes = view.getUint32(40, true);
+    let definitions = 0;
+    let citations = 0;
+    let firstSpecimen;
+    for (let i = 0; i < view.getUint32(24, true); ++i) {
+        const at = nodes + i * 96;
+        const kind = view.getUint32(at, true);
+        if (kind === 0x100 && ++citations === 2) view.setInt32(at + 44, 3, true);
+        if (kind === 0x101 && ++definitions > 1) {
+            view.setUint32(at, 0x102, true);
+            if (definitions === 2) {
+                firstSpecimen = at;
+                view.setUint32(at + 4, 1, true);
+                view.setBigInt64(at + 56, 5n, true);
+            } else {
+                view.setUint32(at + 64, 0xffff_ffff, true);
+                view.setUint32(at + 68, 0, true);
+            }
+        }
+    }
+    const document = new NodeDecoder(bytes).decodeDocument();
+    const invalid = bytes.slice();
+    new DataView(invalid.buffer).setBigInt64(firstSpecimen + 56, 9007199254740993n, true);
+    assert.throws(() => new NodeDecoder(invalid).decodeDocument(), /precision/);
+    bytes.fill(0);
+    assert.equal(document.footnotes.length, 1);
+    assert.deepEqual(
+        document.specimens.map(({ id, start }) => [id, start]),
+        [
+            ["étude", 5],
+            [null, null]
+        ]
+    );
+    assert.equal(document.specimens[0].content[0].content[0].literal, "body");
+    assert.deepEqual(document.content[0].content[2].citations[0].referent, { kind: "specimen", id: "étude" });
+    const dumped = document.dump();
+    assert.match(dumped, /Specimen scope=5:1..6:0 id="étude" start=5 children=1/);
+    assert.match(dumped, /Specimen scope=7:1..7:18 id=null start=null children=1/);
+    assert.ok(dumped.indexOf("Footnote scope=") < dumped.indexOf("Specimen scope="));
+    const events = [];
+    walk(
+        document,
+        walkingVisitor((value, phase) => {
+            if (phase === "entering") events.push(value.kind);
+        })
+    );
+    assert.equal(events.filter((kind) => kind === "specimen").length, 2);
+    assert.ok(events.indexOf("footnote") < events.indexOf("specimen"));
+});

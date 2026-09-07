@@ -1,4 +1,5 @@
 import type { MarkupBase } from "./base.js";
+import type { Specimen } from "./specimen.js";
 import type { Footnote } from "./footnote.js";
 import type { Markup } from "./markup.js";
 
@@ -13,4 +14,6 @@ export interface Document extends MarkupBase<"document"> {
      * never counted among its children.
      */
     readonly footnotes: readonly Footnote[];
+    /** Definitions in scope order, visited after footnotes and never counted as children. */
+    readonly specimens: readonly Specimen[];
 }

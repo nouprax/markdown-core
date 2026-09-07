@@ -5,7 +5,7 @@
     "dumpGrammar": "docs/specs/canonical-ast-dump.md",
     "walk": {
         "phases": ["entering", "exiting"],
-        "order": "Depth first. A node enters, then its owned Markup-valued fields are visited in canonical field order with arrays retaining stored order, then the node exits. Relations remain named fields; the walk does not project them into generic children."
+        "order": "Depth first. A node enters, then its owned Markup-valued fields are visited in canonical field order with arrays retaining stored order, then the node exits. Relations remain named fields; the walk does not project them into generic children. Scoped values receive their own entering/exiting callbacks and traverse their owned Markup fields. Document visits content, footnotes, specimens in that order."
     },
     "enums": {
         "PlacementMode": ["embedded", "standalone"],
@@ -32,9 +32,14 @@
                     "name": "footnotes",
                     "type": "[Footnote]",
                     "optional": false
+                },
+                {
+                    "name": "specimens",
+                    "type": "[Specimen]",
+                    "optional": false
                 }
             ],
-            "invariants": "block content; `footnotes` is the document-owned sequence of every winning or unreferenced footnote definition, ordered by scope start, visited after `content`, and never counted among its children"
+            "invariants": "block content; document-owned footnotes and specimens each retain all definitions in scope-start order; visit content, then footnotes, then specimens; neither definition sequence counts as children"
         },
         {
             "name": "Callout",
@@ -139,17 +144,12 @@
                     "optional": true
                 },
                 {
-                    "name": "exampleLabel",
-                    "type": "String",
-                    "optional": true
-                },
-                {
                     "name": "content",
                     "type": "[Markup]",
                     "optional": false
                 }
             ],
-            "invariants": "`marker == null` means not a task item; `exampleLabel` is reserved for example lists; block content"
+            "invariants": "`marker == null` means not a task item; block content"
         },
         {
             "name": "CodeBlock",
@@ -494,7 +494,7 @@
             "dump": "url(\"...\") or cross(path=\"...\",anchor=null)"
         },
         "CitationReferent": {
-            "purpose": "A tagged value, not a node: it has no scope, and a branch's fields exist only in that branch. The bib branch is first produced by the citations module with P7; every inherited footnote call produces the footnote branch, whose id names the Footnote in Document.footnotes with the equal id.",
+            "purpose": "A tagged value, not a node: it has no scope, and a branch's fields exist only in that branch. The bib branch is first produced by the citations module with P7; every inherited footnote call produces the footnote branch, whose id names the Footnote in Document.footnotes with the equal id. The specimen branch names the first Specimen in Document.specimens with the equal non-null id; syntax production lands with P9b.",
             "branches": {
                 "bib": [
                     {
@@ -514,9 +514,16 @@
                         "type": "String",
                         "optional": false
                     }
+                ],
+                "specimen": [
+                    {
+                        "name": "id",
+                        "type": "String",
+                        "optional": false
+                    }
                 ]
             },
-            "dump": "bib(key=\"...\",mode=normal) or footnote(id=\"...\")"
+            "dump": "bib(key=\"...\",mode=normal) or footnote(id=\"...\") or specimen(id=\"...\")"
         },
         "Citation": {
             "purpose": "One item of a Cite: a scoped value, not a Markup kind, because it is written. It is reached only through Cite.citations, it receives a value callback from the walking visitor, and its affixes are non-null inline content, empty when absent.",
@@ -611,15 +618,33 @@
                     ]
                 },
                 {
-                    "name": "example",
-                    "fields": []
-                },
-                {
                     "name": "default",
                     "fields": []
                 }
             ],
-            "dump": "decimal, alpha(lowercased=true|false), roman(lowercased=true|false), example, or default"
+            "dump": "decimal, alpha(lowercased=true|false), roman(lowercased=true|false), or default"
+        },
+        "Specimen": {
+            "purpose": "One document-owned specimen definition: a scoped value, never Markup or a structural child. All definitions, including duplicates and anonymous definitions, remain in scope-start order. id is the authored label or null. start is an effective explicit counter reset or null for continuation; displayed numbers are derived, never stored. P9b produces this value from source.",
+            "scoped": true,
+            "fields": [
+                {
+                    "name": "id",
+                    "type": "String",
+                    "optional": true
+                },
+                {
+                    "name": "start",
+                    "type": "Int",
+                    "optional": true
+                },
+                {
+                    "name": "content",
+                    "type": "[Markup]",
+                    "optional": false
+                }
+            ],
+            "dump": "Specimen scope=L:C..L:C id=null start=null children=N"
         }
     }
 }

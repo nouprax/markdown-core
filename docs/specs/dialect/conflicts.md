@@ -104,16 +104,16 @@ that settled it.
   for metadata names.
 - Valid UTF-8 is a caller precondition of the C entry point. Product ruling
   in #191.
-- `Citation` and `Footnote` are scoped values with callbacks;
+- `Citation`, `Footnote`, and `Specimen` are scoped values with callbacks;
   `TableCaption`, `Definition`, and `DefinitionList` are `Markup` kinds;
   `Metadata` and `MetadataRecord` are scoped values without callbacks;
   `TableColumn`, `Destination`, `CitationReferent`, and `Attributes` are
   unscoped values. Scope ground rule.
-- A bare `@label` with no bracketed tail naming a registered example label is
-  an `ExampleReference`, while `[@label]` and a tailed key are citations, and
-  `(@label)` is always subject to example resolution. Pandoc's reader, the
+- A bare `@label` with no bracketed tail naming a registered specimen label is
+  a `Cite` with a `specimen` referent, while `[@label]` and a tailed key use bibliography referents, and
+  `(@label)` is always subject to specimen resolution. Pandoc's reader, the
   defining source of both features.
-- Grid-table spans, multiline tables, example-list resets, definition-list
+- Grid-table spans, multiline tables, specimen resets, definition-list
   lazy continuation, and author-in-text citation tails stay in the dialect as
   their modules specify. Pandoc defines each and nothing else depends on it.
 - Inline `$` heuristics: an opening `$` needs a non-whitespace scalar after

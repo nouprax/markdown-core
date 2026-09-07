@@ -46,7 +46,7 @@
             "id": "tasklist-authored-marker",
             "kind": "deliberate-difference",
             "summary": "cmark-gfm searches the whole line for `[x]`; Markdown Core reads only the marker the task-list scanner matched.",
-            "handling": "The exact unchecked-item witness is registered; normalizing `marker` back to a boolean would hide real task-state drift."
+            "handling": "The exact unchecked-item witness is registered. The completion projection preserves the false-versus-true difference caused by scanning a later literal [x]."
         },
         {
             "id": "empty-text-node",
@@ -74,6 +74,13 @@
             "summary": "The dialect's text directive claims a colon-led name, `:abc`, wherever the directives module admits one; CommonMark leaves the bytes as text.",
             "rationale": "The dialect index lists directives as a feature of the one language, judged by remark (`pnpm check:mdast-parity`), and remark-directive parses the same input to the same text directive.",
             "handling": "Keyed to the exact specification input."
+        },
+        {
+            "id": "task-marker-completion",
+            "kind": "deliberate-difference",
+            "summary": "Boolean-only oracles retain task completion but lose the authored marker spelling, including x versus X.",
+            "handling": "Compare the three shared states: absent, incomplete and complete. Exact marker spelling remains covered by canonical fixtures and binding tests; the non-leading [x] witness still compares unequal completion states.",
+            "projected": true
         }
     ],
     "expectedDivergences": [
@@ -148,6 +155,10 @@
             "file": "packages/markdown-core/tests/fixtures/dialect-links-and-images.txt",
             "selection": "gfm-extension-sections",
             "note": "The links-and-images module's bare autolink examples: cmark-gfm's autolink extension owns the URL, `www.`, and email forms and where each run ends. The module's CommonMark section is cmark's to judge."
+        },
+        {
+            "file": "packages/markdown-core/tests/fixtures/dialect-task-lists.txt",
+            "note": "Inherited task states and authored uppercase markers; comparison checks shared completion states."
         }
     ],
     "corpusNote": "This gate intentionally does not compare unextended CommonMark examples. Markdown Core runs the `gfm` profile, which attaches the cmark-gfm extension set but leaves product directive and formula syntax disabled. CommonMark is checked separately against current cmark.",

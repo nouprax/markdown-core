@@ -95,7 +95,8 @@ typedef struct {
  * `footnote` referent carries the id of the `Footnote` it names. */
 typedef enum {
     MARKDOWN_CORE_NODE_REFERENT_BIB = 1,
-    MARKDOWN_CORE_NODE_REFERENT_FOOTNOTE = 2
+    MARKDOWN_CORE_NODE_REFERENT_FOOTNOTE = 2,
+    MARKDOWN_CORE_NODE_REFERENT_SPECIMEN = 3
 } markdown_core_node_referent_kind;
 
 /* ONE ITEM of a cite (M4): the referent, and two affix chains the item owns
@@ -122,11 +123,21 @@ typedef struct {
     markdown_core_chunk id;
 } markdown_core_footnote_value;
 
+/* A specimen owns its optional authored label and effective explicit counter
+ * reset. Anonymous definitions and absent resets remain absent; numbering is
+ * derived from the document's definition order by consumers. */
+typedef struct {
+    markdown_core_optional_chunk id;
+    int64_t start;
+    bool has_start;
+} markdown_core_specimen_value;
+
 /* THE DOCUMENT's own footnotes (M4): every footnote definition leaves the tree
  * when the document finalizes and is chained here in ascending scope order, a
  * node-valued field the root owns beside its content. */
 typedef struct {
     struct markdown_core_node *footnotes;
+    struct markdown_core_node *specimens;
 } markdown_core_document_value;
 
 /* A link reference definition is not a node (M2). The block phase reads it off
@@ -200,6 +211,7 @@ struct markdown_core_node {
         markdown_core_cite cite;
         markdown_core_citation_item citation;
         markdown_core_footnote_value footnote;
+        markdown_core_specimen_value specimen;
         markdown_core_document_value document;
         int html_block_type;
         int cell_index; // For keeping track of TABLE_CELL table alignments
