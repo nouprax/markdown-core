@@ -68,7 +68,7 @@
             "tableRow.isHeader.false",
             "tableRow.isHeader.true",
             "callout.variant.null",
-            "callout.fold.none",
+            "callout.collapsed.null",
             "callout.title.null",
             "directive.attributes.null",
             "directive.attributes.empty",
@@ -124,7 +124,7 @@
                 ],
                 "states": [
                     "callout.variant.null",
-                    "callout.fold.none",
+                    "callout.collapsed.null",
                     "callout.title.null",
                     "list.flavor.bullet",
                     "list.flavor.ordered",

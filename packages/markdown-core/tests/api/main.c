@@ -1489,7 +1489,7 @@ static void source_pos(test_batch_runner *runner) {
                      "children=1\n"
                      "│   │   └── Text scope=4:16..4:19 literal=\"okay\" children=0\n"
                      "│   └── Text scope=4:42..4:42 literal=\".\" children=0\n"
-                     "└── Callout scope=6:1..10:20 variant=null fold=none children=1\n"
+                     "└── Callout scope=6:1..10:20 variant=null collapsed=null children=1\n"
                      "    └── List scope=6:3..10:20 flavor=ordered start=1 tight=false children=2\n"
                      "        ├── ListItem scope=6:3..8:1 checked=null children=1\n"
                      "        │   └── Paragraph scope=6:6..7:10 children=3\n"

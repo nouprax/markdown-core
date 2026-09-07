@@ -325,10 +325,10 @@ static void collect_topology(es_build *build, const markdown_core_node *root) {
         if (kind == MARKDOWN_CORE_KIND_CALLOUT) {
             /* The title is a node-valued list the callout owns beside its
              * content: its nodes are records like any other, and the
-             * auxiliary range names them in the edge table under flag 1. */
+             * auxiliary range names them in the edge table; a present title
+             * holds at least one node, so the range's count is its presence. */
             const markdown_core_node *title = markdown_core_node_callout_title(node);
             if (title != NULL) {
-                build->nodes[cursor].flags |= 1u;
                 build->nodes[cursor].aux_start = (uint32_t)build->edge_count;
                 for (; title != NULL && build->failure == ES_BUILD_OK;
                      title = markdown_core_node_get_next_sibling(title)) {
@@ -384,15 +384,16 @@ static void collect_node_fields(es_build *build, size_t node_index) {
 
     switch (kind) {
     case MARKDOWN_CORE_KIND_CALLOUT: {
-        /* The variant is the first slot and the fold the scalar; the title
-         * relation was recorded with the topology. */
-        markdown_core_callout_fold fold = MARKDOWN_CORE_CALLOUT_FOLD_NONE;
-        if (!markdown_core_node_callout_properties(node, &optional_first, &fold)) {
+        /* The variant is the first slot and the fold marker the scalar, as
+         * a list item's checked state; the title relation was recorded with
+         * the topology. */
+        markdown_core_optional_bool collapsed;
+        if (!markdown_core_node_callout_properties(node, &optional_first, &collapsed)) {
             build->failure = ES_BUILD_INTERNAL;
             break;
         }
         record->strings[0] = optional_first;
-        record->scalar0 = (int32_t)fold;
+        record->scalar0 = collapsed.has_value ? (collapsed.value ? 1 : 0) : -1;
         break;
     }
     case MARKDOWN_CORE_KIND_DOCUMENT:

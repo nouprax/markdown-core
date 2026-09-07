@@ -130,7 +130,7 @@ function convert(node, definitions, parentType = "root") {
     // AST prints for a metadata-free container.
     if (node.type === "blockquote") {
         fields.variant = "null";
-        fields.fold = "none";
+        fields.collapsed = "null";
     }
     if (node.type === "list") {
         fields.flavor = node.ordered ? "ordered" : "bullet";
@@ -255,7 +255,7 @@ export function fromMdast(tree) {
  * field is compared only where both models agree it means the same thing.
  */
 export const MDAST_COMPARED = {
-    Callout: ["variant", "fold"],
+    Callout: ["variant", "collapsed"],
     Heading: ["level"],
     List: ["flavor", "tight", "start"],
     ListItem: ["checked"],

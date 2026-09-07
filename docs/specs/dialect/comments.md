@@ -158,7 +158,7 @@ The rule applies inside any container:
 > %%
 .
 Document scope=1:1..3:4 anchor=null attributes={} children=1
-└── Callout scope=1:1..3:4 anchor=null attributes={} variant=null fold=none children=1
+└── Callout scope=1:1..3:4 anchor=null attributes={} variant=null collapsed=null children=1
     └── Comment scope=1:3..3:4 anchor=null attributes={} literal="x\n" children=0
 ````````````````````````````````
 

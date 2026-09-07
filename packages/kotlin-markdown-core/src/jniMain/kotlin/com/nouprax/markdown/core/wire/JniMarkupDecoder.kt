@@ -165,6 +165,14 @@ private class JniTreeDecoder(
     private fun readChildren(consume: (kotlin.collections.List<Markup>) -> Unit) {
         val count = reader.int()
         require(count >= 0) { "invalid native child count" }
+        readNodes(count, consume)
+    }
+
+    /** Schedules `count` nodes and then the list they form, in payload order. */
+    private fun readNodes(
+        count: Int,
+        consume: (kotlin.collections.List<Markup>) -> Unit,
+    ) {
         val values = arrayOfNulls<Markup>(count)
         actions.addLast {
             consume(
@@ -222,35 +230,30 @@ private class JniTreeDecoder(
 
     /**
      * A callout's metadata leads, then its title -- a node-valued list that the
-     * payload sends before the content, as the walk visits it -- and then the
-     * content. Every callout is metadata-free until O8.
+     * payload sends before the content, as the walk visits it, and whose count
+     * is its presence because a present title holds at least one node -- and
+     * then the content. Every callout is metadata-free until O8.
      */
     private fun readCallout(
         scope: Scope,
         consume: (Markup) -> Unit,
     ) {
         val variant = reader.string()
-        val fold = calloutFold(reader.int())
-        if (!reader.boolean()) {
-            readChildren { consume(Callout(variant, fold, null, it, scope)) }
+        val collapsed = reader.nullableBoolean()
+        val titleCount = reader.int()
+        require(titleCount >= 0) { "invalid native callout title count" }
+        if (titleCount == 0) {
+            readChildren { consume(Callout(variant, collapsed, null, it, scope)) }
             return
         }
         var title: kotlin.collections.List<Markup>? = null
         actions.addLast {
-            readChildren { children -> consume(Callout(variant, fold, requireNotNull(title), children, scope)) }
+            readChildren { children -> consume(Callout(variant, collapsed, requireNotNull(title), children, scope)) }
         }
         actions.addLast {
-            readChildren { title = it }
+            readNodes(titleCount) { title = it }
         }
     }
-
-    private fun calloutFold(rawValue: Int): CalloutFold =
-        when (rawValue) {
-            1 -> CalloutFold.NONE
-            2 -> CalloutFold.EXPANDED
-            3 -> CalloutFold.COLLAPSED
-            else -> error("invalid native callout fold $rawValue")
-        }
 
     /** Reads the independent node-valued label field before directive content. */
     private fun readDirectiveRelations(consume: (DirectiveLabel?, kotlin.collections.List<Markup>) -> Unit) {

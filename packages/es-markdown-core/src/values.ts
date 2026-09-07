@@ -20,7 +20,5 @@ export type ListFlavor = "bullet" | "ordered";
 export type Destination =
     | { readonly kind: "url"; readonly value: string }
     | { readonly kind: "cross"; readonly path: string; readonly anchor: string | null };
-/** How a callout's fold marker was written: no marker, `+`, or `-`. */
-export type CalloutFold = "none" | "expanded" | "collapsed";
 export type PlacementMode = "embedded" | "standalone";
 export type TableAlignment = "none" | "left" | "center" | "right";

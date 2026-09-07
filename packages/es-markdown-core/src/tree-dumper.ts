@@ -52,7 +52,7 @@ class DumpState {
             this.line(
                 "Callout",
                 node,
-                [`variant=${optionalString(node.variant)}`, `fold=${node.fold}`],
+                [`variant=${optionalString(node.variant)}`, `collapsed=${node.collapsed ?? "null"}`],
                 node.content.length
             );
             // A non-null title is a `Title` group before the content; a null

@@ -23,7 +23,7 @@ class JniPayloadDecoderTest {
         // The title path of the wire: a node-valued list the payload sends
         // between the callout's metadata and its content. No parse produces
         // one until O8, so the payload is built by hand: a document holding
-        // one expanded `note` callout whose title is the text `T` and whose
+        // one collapsed `note` callout whose title is the text `T` and whose
         // content is empty.
         val payload =
             jniPayload(
@@ -42,7 +42,6 @@ class JniPayloadDecoderTest {
                 8,
                 4,
                 "note",
-                2,
                 1.toByte(),
                 1,
                 14.toByte(),
@@ -57,12 +56,12 @@ class JniPayloadDecoderTest {
         val document = JniPayloadDecoder.decodeDocument(payload)
         val callout = document.content.single() as Callout
         assertEquals("note", callout.variant)
-        assertEquals(CalloutFold.EXPANDED, callout.fold)
+        assertEquals(true, callout.collapsed)
         assertEquals("T", (callout.title!!.single() as Text).literal)
         assertEquals(emptyList(), callout.content)
         assertEquals(
             "Document scope=1:1..1:8 children=1\n" +
-                "└── Callout scope=1:1..1:8 variant=\"note\" fold=expanded children=0\n" +
+                "└── Callout scope=1:1..1:8 variant=\"note\" collapsed=true children=0\n" +
                 "    └── Title children=1\n" +
                 "        └── Text scope=1:10..1:10 literal=\"T\" children=0\n",
             document.dump(),

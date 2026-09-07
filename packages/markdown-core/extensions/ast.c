@@ -510,8 +510,8 @@ const markdown_core_node *markdown_core_node_directive_label(const markdown_core
 static bool is_callout(const markdown_core_node *node) { return node && node->type == MARKDOWN_CORE_NODE_CALLOUT; }
 
 bool markdown_core_node_callout_properties(const markdown_core_node *node, markdown_core_optional_string *variant,
-                                           markdown_core_callout_fold *fold) {
-    if (!is_callout(node) || !variant || !fold) {
+                                           markdown_core_optional_bool *collapsed) {
+    if (!is_callout(node) || !variant || !collapsed) {
         return false;
     }
     /* Every `>` container is metadata-free until the callouts module's
@@ -519,12 +519,15 @@ bool markdown_core_node_callout_properties(const markdown_core_node *node, markd
     variant->has_value = false;
     variant->value.data = NULL;
     variant->value.length = 0;
-    *fold = MARKDOWN_CORE_CALLOUT_FOLD_NONE;
+    collapsed->has_value = false;
+    collapsed->value = false;
     return true;
 }
 
 const markdown_core_node *markdown_core_node_callout_title(const markdown_core_node *node) {
-    /* No callout carries a title until O8, and a non-callout never does. */
+    /* No callout carries a title until O8, and a non-callout never does; a
+     * present title holds at least one node, so its first node is its
+     * presence. */
     (void)node;
     return NULL;
 }
@@ -746,14 +749,11 @@ static void buffer_destination(dump_buffer *buffer, markdown_core_destination de
     buffer_cstr(buffer, ")");
 }
 
-static const char *callout_fold_name(markdown_core_callout_fold fold) {
-    switch (fold) {
-    case MARKDOWN_CORE_CALLOUT_FOLD_EXPANDED:
-        return "expanded";
-    case MARKDOWN_CORE_CALLOUT_FOLD_COLLAPSED:
-        return "collapsed";
-    default:
-        return "none";
+static void buffer_optional_bool(dump_buffer *buffer, markdown_core_optional_bool value) {
+    if (value.has_value) {
+        buffer_cstr(buffer, value.value ? "true" : "false");
+    } else {
+        buffer_cstr(buffer, "null");
     }
 }
 
@@ -761,21 +761,20 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
     markdown_core_string a = {NULL, 0}, b = {NULL, 0}, c = {NULL, 0};
     markdown_core_optional_string oa = {false, {NULL, 0}}, ob = {false, {NULL, 0}};
     markdown_core_optional_i64 start;
-    markdown_core_optional_bool checked;
+    markdown_core_optional_bool checked, collapsed;
     markdown_core_list_flavor flavor;
     markdown_core_placement_mode mode;
-    markdown_core_callout_fold fold;
     markdown_core_destination destination;
     bool x, y, has_attributes;
     size_t count, i;
     int32_t level;
     switch (kind) {
     case MARKDOWN_CORE_KIND_CALLOUT:
-        markdown_core_node_callout_properties(node, &oa, &fold);
+        markdown_core_node_callout_properties(node, &oa, &collapsed);
         buffer_cstr(buffer, " variant=");
         buffer_optional_string(buffer, oa);
-        buffer_cstr(buffer, " fold=");
-        buffer_cstr(buffer, callout_fold_name(fold));
+        buffer_cstr(buffer, " collapsed=");
+        buffer_optional_bool(buffer, collapsed);
         break;
     case MARKDOWN_CORE_KIND_HEADING:
         markdown_core_node_heading_level(node, &level);
@@ -798,11 +797,7 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
     case MARKDOWN_CORE_KIND_LIST_ITEM:
         markdown_core_node_list_item_checked(node, &checked);
         buffer_cstr(buffer, " checked=");
-        if (checked.has_value) {
-            buffer_cstr(buffer, checked.value ? "true" : "false");
-        } else {
-            buffer_cstr(buffer, "null");
-        }
+        buffer_optional_bool(buffer, checked);
         break;
     case MARKDOWN_CORE_KIND_CODE_BLOCK:
         markdown_core_node_code_block_properties(node, &oa, &ob, &c, &x, &y);

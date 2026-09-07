@@ -51,7 +51,7 @@ const XML_KIND = {
  * dumps instead, and the gap is recorded in specs/oracles/cmark-gfm/README.md.
  */
 const COMPARED = {
-    Callout: ["variant", "fold"],
+    Callout: ["variant", "collapsed"],
     Heading: ["level"],
     List: ["flavor", "tight", "start"],
     ListItem: ["checked"],
@@ -122,7 +122,7 @@ export function parseUpstreamXml(xml) {
         // projection states the absence the canonical AST prints.
         if (name === "block_quote") {
             node.fields.variant = "null";
-            node.fields.fold = "none";
+            node.fields.collapsed = "null";
         }
         // cmark states a link's or image's target as one string; the canonical
         // AST states it as the `url` branch of `Destination` (M1).

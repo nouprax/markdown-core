@@ -11,9 +11,7 @@ rule lands with `O8`; until then every callout is metadata-free. The
 ## Model
 
 ```text
-CalloutFold = none | expanded | collapsed
-
-Callout(variant: String?, fold: CalloutFold, title: [Markup]?,
+Callout(variant: String?, collapsed: Bool?, title: [Markup]?,
         content: [Markup])
 ```
 
@@ -27,19 +25,20 @@ the dump prints a non-null title as a `Title` group before the content
 lines and prints nothing for a null title.
 
 - `variant == null` means no valid metadata line; then `title == null`,
-  `fold == none`, and every quoted byte is represented by `content`.
+  `collapsed == null`, and every quoted byte is represented by `content`.
 - A non-null `variant` is the authored type as written, case preserved;
   matching against a type list is consumer policy.
-- `fold == none` means no `+` or `-` was authored; `+` is `expanded` and `-`
-  is `collapsed`.
+- `collapsed == null` means no `+` or `-` was authored; `+` is `false`, the
+  callout opens expanded, and `-` is `true`.
 - `title == null` means no title bytes were authored; otherwise `title` is
-  the parsed inline content of the title, which may consist of one `Comment`.
+  the parsed inline content of the title, which holds at least one node and
+  may consist of one `Comment`.
 
 ```````````````````````````````` example
 > quote
 .
 Document scope=1:1..1:7 anchor=null attributes={} children=1
-└── Callout scope=1:1..1:7 anchor=null attributes={} variant=null fold=none children=1
+└── Callout scope=1:1..1:7 anchor=null attributes={} variant=null collapsed=null children=1
     └── Paragraph scope=1:3..1:7 anchor=null attributes={} children=1
         └── Text scope=1:3..1:7 anchor=null attributes={} literal="quote" children=0
 ````````````````````````````````
@@ -50,8 +49,8 @@ Document scope=1:1..1:7 anchor=null attributes={} children=1
 > [!TIP] Title
 .
 Document scope=1:1..3:14 anchor=null attributes={} children=2
-├── Callout scope=1:1..1:9 anchor=null attributes={} variant="info" fold=none children=0
-└── Callout scope=3:1..3:14 anchor=null attributes={} variant="TIP" fold=none children=0
+├── Callout scope=1:1..1:9 anchor=null attributes={} variant="info" collapsed=null children=0
+└── Callout scope=3:1..3:14 anchor=null attributes={} variant="TIP" collapsed=null children=0
     └── Title children=1
         └── Text scope=3:10..3:14 anchor=null attributes={} literal="Title" children=0
 ````````````````````````````````
@@ -66,8 +65,8 @@ and so does a built-in type in any spelling; the parser substitutes nothing:
 > [!Note]
 .
 Document scope=1:1..3:9 anchor=null attributes={} children=2
-├── Callout scope=1:1..1:16 anchor=null attributes={} variant="custom-type" fold=none children=0
-└── Callout scope=3:1..3:9 anchor=null attributes={} variant="Note" fold=none children=0
+├── Callout scope=1:1..1:16 anchor=null attributes={} variant="custom-type" collapsed=null children=0
+└── Callout scope=3:1..3:9 anchor=null attributes={} variant="Note" collapsed=null children=0
 ````````````````````````````````
 
 ## Metadata grammar
@@ -90,10 +89,10 @@ sep           = SP / TAB
 > [!faq]- Are callouts foldable?
 .
 Document scope=1:1..3:32 anchor=null attributes={} children=2
-├── Callout scope=1:1..1:32 anchor=null attributes={} variant="faq" fold=expanded children=0
+├── Callout scope=1:1..1:32 anchor=null attributes={} variant="faq" collapsed=false children=0
 │   └── Title children=1
 │       └── Text scope=1:11..1:32 anchor=null attributes={} literal="Are callouts foldable?" children=0
-└── Callout scope=3:1..3:32 anchor=null attributes={} variant="faq" fold=collapsed children=0
+└── Callout scope=3:1..3:32 anchor=null attributes={} variant="faq" collapsed=true children=0
     └── Title children=1
         └── Text scope=3:11..3:32 anchor=null attributes={} literal="Are callouts foldable?" children=0
 ````````````````````````````````
@@ -111,13 +110,13 @@ is a marker that is not at the first position:
 > x [!note]
 .
 Document scope=1:1..5:11 anchor=null attributes={} children=3
-├── Callout scope=1:1..1:14 anchor=null attributes={} variant=null fold=none children=1
+├── Callout scope=1:1..1:14 anchor=null attributes={} variant=null collapsed=null children=1
 │   └── Paragraph scope=1:3..1:14 anchor=null attributes={} children=1
 │       └── Text scope=1:3..1:14 anchor=null attributes={} literal="[!note]Title" children=0
-├── Callout scope=3:1..3:14 anchor=null attributes={} variant=null fold=none children=1
+├── Callout scope=3:1..3:14 anchor=null attributes={} variant=null collapsed=null children=1
 │   └── Paragraph scope=3:3..3:14 anchor=null attributes={} children=1
 │       └── Text scope=3:3..3:14 anchor=null attributes={} literal="[!faq]+Title" children=0
-└── Callout scope=5:1..5:11 anchor=null attributes={} variant=null fold=none children=1
+└── Callout scope=5:1..5:11 anchor=null attributes={} variant=null collapsed=null children=1
     └── Paragraph scope=5:3..5:11 anchor=null attributes={} children=1
         └── Text scope=5:3..5:11 anchor=null attributes={} literal="x [!note]" children=0
 ````````````````````````````````
@@ -131,10 +130,10 @@ block under the inherited grammar, so the callout is metadata-free:
 >     [!note]
 .
 Document scope=1:1..3:13 anchor=null attributes={} children=2
-├── Callout scope=1:1..1:14 anchor=null attributes={} variant="note" fold=none children=0
+├── Callout scope=1:1..1:14 anchor=null attributes={} variant="note" collapsed=null children=0
 │   └── Title children=1
 │       └── Text scope=1:14..1:14 anchor=null attributes={} literal="x" children=0
-└── Callout scope=3:1..3:13 anchor=null attributes={} variant=null fold=none children=1
+└── Callout scope=3:1..3:13 anchor=null attributes={} variant=null collapsed=null children=1
     └── CodeBlock scope=3:7..3:13 anchor=null attributes={} info=null language=null literal="[!note]\n" fenced=false closed=true children=0
 ````````````````````````````````
 
@@ -145,7 +144,7 @@ A blank first line means no metadata:
 > [!note] x
 .
 Document scope=1:1..2:11 anchor=null attributes={} children=1
-└── Callout scope=1:1..2:11 anchor=null attributes={} variant=null fold=none children=1
+└── Callout scope=1:1..2:11 anchor=null attributes={} variant=null collapsed=null children=1
     └── Paragraph scope=2:3..2:11 anchor=null attributes={} children=1
         └── Text scope=2:3..2:11 anchor=null attributes={} literal="[!note] x" children=0
 ````````````````````````````````
@@ -157,7 +156,7 @@ never contains `SoftBreak` or `LineBreak`. The title is inline content:
 > [!note] **bold** title
 .
 Document scope=1:1..1:24 anchor=null attributes={} children=1
-└── Callout scope=1:1..1:24 anchor=null attributes={} variant="note" fold=none children=0
+└── Callout scope=1:1..1:24 anchor=null attributes={} variant="note" collapsed=null children=0
     └── Title children=2
         ├── Strong scope=1:11..1:18 anchor=null attributes={} children=1
         │   └── Text scope=1:13..1:16 anchor=null attributes={} literal="bold" children=0
@@ -174,7 +173,7 @@ of the second line, and with no remaining lines the body is empty:
 > more
 .
 Document scope=1:1..3:6 anchor=null attributes={} children=1
-└── Callout scope=1:1..3:6 anchor=null attributes={} variant="note" fold=none children=1
+└── Callout scope=1:1..3:6 anchor=null attributes={} variant="note" collapsed=null children=1
     ├── Title children=1
     │   └── Text scope=1:11..1:15 anchor=null attributes={} literal="Title" children=0
     └── Paragraph scope=2:3..3:6 anchor=null attributes={} children=3
@@ -189,7 +188,7 @@ Document scope=1:1..3:6 anchor=null attributes={} children=1
 lazy
 .
 Document scope=1:1..3:4 anchor=null attributes={} children=1
-└── Callout scope=1:1..3:4 anchor=null attributes={} variant="note" fold=none children=1
+└── Callout scope=1:1..3:4 anchor=null attributes={} variant="note" collapsed=null children=1
     ├── Title children=1
     │   └── Text scope=1:11..1:11 anchor=null attributes={} literal="T" children=0
     └── Paragraph scope=2:3..3:4 anchor=null attributes={} children=3
@@ -206,7 +205,7 @@ resolution, so a following underline belongs to the body:
 > ===
 .
 Document scope=1:1..2:5 anchor=null attributes={} children=1
-└── Callout scope=1:1..2:5 anchor=null attributes={} variant="note" fold=none children=1
+└── Callout scope=1:1..2:5 anchor=null attributes={} variant="note" collapsed=null children=1
     ├── Title children=1
     │   └── Text scope=1:11..1:11 anchor=null attributes={} literal="T" children=0
     └── Paragraph scope=2:3..2:5 anchor=null attributes={} children=1
@@ -220,8 +219,8 @@ Metadata is evaluated independently for every nested container:
 > > [!inner] x
 .
 Document scope=1:1..2:14 anchor=null attributes={} children=1
-└── Callout scope=1:1..2:14 anchor=null attributes={} variant="outer" fold=none children=1
-    └── Callout scope=2:3..2:14 anchor=null attributes={} variant="inner" fold=none children=0
+└── Callout scope=1:1..2:14 anchor=null attributes={} variant="outer" collapsed=null children=1
+    └── Callout scope=2:3..2:14 anchor=null attributes={} variant="inner" collapsed=null children=0
         └── Title children=1
             └── Text scope=2:14..2:14 anchor=null attributes={} literal="x" children=0
 ````````````````````````````````
@@ -233,7 +232,7 @@ A comment is an earlier scanner step, so a title may consist of one
 > [!note] %%t%%
 .
 Document scope=1:1..1:15 anchor=null attributes={} children=1
-└── Callout scope=1:1..1:15 anchor=null attributes={} variant="note" fold=none children=0
+└── Callout scope=1:1..1:15 anchor=null attributes={} variant="note" collapsed=null children=0
     └── Title children=1
         └── Comment scope=1:11..1:15 anchor=null attributes={} literal="t" children=0
 ````````````````````````````````
@@ -247,7 +246,7 @@ extracted, so a candidate in the body attaches to the body paragraph:
 > body ^p
 .
 Document scope=1:1..2:9 anchor=null attributes={} children=1
-└── Callout scope=1:1..2:9 anchor=null attributes={} variant="note" fold=none children=1
+└── Callout scope=1:1..2:9 anchor=null attributes={} variant="note" collapsed=null children=1
     ├── Title children=1
     │   └── Text scope=1:11..1:18 anchor=null attributes={} literal="Title ^t" children=0
     └── Paragraph scope=2:3..2:9 anchor="p" attributes={} children=1
@@ -264,7 +263,7 @@ body, because the AST does not decide for the consumer; the
 > text
 .
 Document scope=1:1..2:6 anchor=null attributes={} children=1
-└── Callout scope=1:1..2:6 anchor=null attributes={} variant="NOTE" fold=none children=1
+└── Callout scope=1:1..2:6 anchor=null attributes={} variant="NOTE" collapsed=null children=1
     └── Paragraph scope=2:3..2:6 anchor=null attributes={} children=1
         └── Text scope=2:3..2:6 anchor=null attributes={} literal="text" children=0
 ````````````````````````````````

@@ -78,7 +78,7 @@ private struct DumpVisitor: MarkupVisitor {
         state.line(
             "Callout",
             node,
-            fields: ["variant=\(optionalString(node.variant))", "fold=\(node.fold.rawValue)"],
+            fields: ["variant=\(optionalString(node.variant))", "collapsed=\(node.collapsed.map(boolean) ?? "null")"],
             children: node.content.count
         )
         // A non-null title is a `Title` group before the content; a

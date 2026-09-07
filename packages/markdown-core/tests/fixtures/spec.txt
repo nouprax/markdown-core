@@ -431,7 +431,7 @@ code block starting with two spaces.
 >→→foo
 .
 Document scope=1:1..1:6 children=1
-└── Callout scope=1:1..1:6 variant=null fold=none children=1
+└── Callout scope=1:1..1:6 variant=null collapsed=null children=1
     └── CodeBlock scope=1:3..1:6 info=null language=null literal="  foo\n" fenced=false closed=true children=0
 ````````````````````````````````
 
@@ -1322,7 +1322,7 @@ line] in a list item or block quote:
 ---
 .
 Document scope=1:1..2:3 children=2
-├── Callout scope=1:1..1:5 variant=null fold=none children=1
+├── Callout scope=1:1..1:5 variant=null collapsed=null children=1
 │   └── Paragraph scope=1:3..1:5 children=1
 │       └── Text scope=1:3..1:5 literal="Foo" children=0
 └── ThematicBreak scope=2:1..2:3 children=0
@@ -1335,7 +1335,7 @@ bar
 ===
 .
 Document scope=1:1..3:3 children=1
-└── Callout scope=1:1..3:3 variant=null fold=none children=1
+└── Callout scope=1:1..3:3 variant=null collapsed=null children=1
     └── Paragraph scope=1:3..3:3 children=5
         ├── Text scope=1:3..1:5 literal="foo" children=0
         ├── SoftBreak scope=1:6..1:6 children=0
@@ -1451,7 +1451,7 @@ Document scope=1:1..2:3 children=2
 -----
 .
 Document scope=1:1..2:5 children=2
-├── Callout scope=1:1..1:5 variant=null fold=none children=1
+├── Callout scope=1:1..1:5 variant=null collapsed=null children=1
 │   └── Paragraph scope=1:3..1:5 children=1
 │       └── Text scope=1:3..1:5 literal="foo" children=0
 └── ThematicBreak scope=2:1..2:5 children=0
@@ -1926,7 +1926,7 @@ Document scope=1:1..4:3 children=1
 bbb
 .
 Document scope=1:1..4:3 children=2
-├── Callout scope=1:1..2:5 variant=null fold=none children=1
+├── Callout scope=1:1..2:5 variant=null collapsed=null children=1
 │   └── CodeBlock scope=1:3..3:0 info=null language=null literal="aaa\n" fenced=true closed=false children=0
 └── Paragraph scope=4:1..4:3 children=1
     └── Text scope=4:1..4:3 literal="bbb" children=0
@@ -2633,7 +2633,7 @@ Document scope=1:1..4:3 children=1
 bar
 .
 Document scope=1:1..4:3 children=2
-├── Callout scope=1:1..2:5 variant=null fold=none children=1
+├── Callout scope=1:1..2:5 variant=null collapsed=null children=1
 │   └── HTMLBlock scope=1:3..2:5 literal="<div>\nfoo\n" children=0
 └── Paragraph scope=4:1..4:3 children=1
     └── Text scope=4:1..4:3 literal="bar" children=0
@@ -3305,7 +3305,7 @@ Document scope=1:1..3:5 children=2
 ├── Heading scope=1:1..1:7 level=1 children=1
 │   └── Link scope=1:3..1:7 dest=url("/url") title=null children=1
 │       └── Text scope=1:4..1:6 literal="Foo" children=0
-└── Callout scope=3:1..3:5 variant=null fold=none children=1
+└── Callout scope=3:1..3:5 variant=null collapsed=null children=1
     └── Paragraph scope=3:3..3:5 children=1
         └── Text scope=3:3..3:5 literal="bar" children=0
 ````````````````````````````````
@@ -3380,7 +3380,7 @@ Document scope=1:1..3:13 children=2
 ├── Paragraph scope=1:1..1:5 children=1
 │   └── Link scope=1:1..1:5 dest=url("/url") title=null children=1
 │       └── Text scope=1:2..1:4 literal="foo" children=0
-└── Callout scope=3:1..3:13 variant=null fold=none children=0
+└── Callout scope=3:1..3:13 variant=null collapsed=null children=0
 ````````````````````````````````
 
 
@@ -3667,7 +3667,7 @@ Document scope=1:1..4:5 children=2
 │       │   └── Text scope=3:3..3:5 literal="bar" children=0
 │       └── TableCell scope=3:8..3:12 children=1
 │           └── Text scope=3:9..3:11 literal="baz" children=0
-└── Callout scope=4:1..4:5 variant=null fold=none children=1
+└── Callout scope=4:1..4:5 variant=null collapsed=null children=1
     └── Paragraph scope=4:3..4:5 children=1
         └── Text scope=4:3..4:5 literal="bar" children=0
 ````````````````````````````````
@@ -3818,7 +3818,7 @@ Here is a simple example:
 > baz
 .
 Document scope=1:1..3:5 children=1
-└── Callout scope=1:1..3:5 variant=null fold=none children=2
+└── Callout scope=1:1..3:5 variant=null collapsed=null children=2
     ├── Heading scope=1:3..1:7 level=1 children=1
     │   └── Text scope=1:5..1:7 literal="Foo" children=0
     └── Paragraph scope=2:3..3:5 children=3
@@ -3836,7 +3836,7 @@ The spaces after the `>` characters can be omitted:
 > baz
 .
 Document scope=1:1..3:5 children=1
-└── Callout scope=1:1..3:5 variant=null fold=none children=2
+└── Callout scope=1:1..3:5 variant=null collapsed=null children=2
     ├── Heading scope=1:2..1:6 level=1 children=1
     │   └── Text scope=1:4..1:6 literal="Foo" children=0
     └── Paragraph scope=2:2..3:5 children=3
@@ -3854,7 +3854,7 @@ The `>` characters can be indented 1-3 spaces:
  > baz
 .
 Document scope=1:1..3:6 children=1
-└── Callout scope=1:4..3:6 variant=null fold=none children=2
+└── Callout scope=1:4..3:6 variant=null collapsed=null children=2
     ├── Heading scope=1:6..1:10 level=1 children=1
     │   └── Text scope=1:8..1:10 literal="Foo" children=0
     └── Paragraph scope=2:6..3:6 children=3
@@ -3885,7 +3885,7 @@ The Laziness clause allows us to omit the `>` before
 baz
 .
 Document scope=1:1..3:3 children=1
-└── Callout scope=1:1..3:3 variant=null fold=none children=2
+└── Callout scope=1:1..3:3 variant=null collapsed=null children=2
     ├── Heading scope=1:3..1:7 level=1 children=1
     │   └── Text scope=1:5..1:7 literal="Foo" children=0
     └── Paragraph scope=2:3..3:3 children=3
@@ -3904,7 +3904,7 @@ baz
 > foo
 .
 Document scope=1:1..3:5 children=1
-└── Callout scope=1:1..3:5 variant=null fold=none children=1
+└── Callout scope=1:1..3:5 variant=null collapsed=null children=1
     └── Paragraph scope=1:3..3:5 children=5
         ├── Text scope=1:3..1:5 literal="bar" children=0
         ├── SoftBreak scope=1:6..1:6 children=0
@@ -3930,7 +3930,7 @@ without changing the meaning:
 ---
 .
 Document scope=1:1..2:3 children=2
-├── Callout scope=1:1..1:5 variant=null fold=none children=1
+├── Callout scope=1:1..1:5 variant=null collapsed=null children=1
 │   └── Paragraph scope=1:3..1:5 children=1
 │       └── Text scope=1:3..1:5 literal="foo" children=0
 └── ThematicBreak scope=2:1..2:3 children=0
@@ -3951,7 +3951,7 @@ then the block quote ends after the first line:
 - bar
 .
 Document scope=1:1..2:5 children=2
-├── Callout scope=1:1..1:7 variant=null fold=none children=1
+├── Callout scope=1:1..1:7 variant=null collapsed=null children=1
 │   └── List scope=1:3..1:7 flavor=bullet start=null tight=true children=1
 │       └── ListItem scope=1:3..1:7 checked=null children=1
 │           └── Paragraph scope=1:5..1:7 children=1
@@ -3971,7 +3971,7 @@ subsequent lines of an indented or fenced code block:
     bar
 .
 Document scope=1:1..2:7 children=2
-├── Callout scope=1:1..1:9 variant=null fold=none children=1
+├── Callout scope=1:1..1:9 variant=null collapsed=null children=1
 │   └── CodeBlock scope=1:7..1:9 info=null language=null literal="foo\n" fenced=false closed=true children=0
 └── CodeBlock scope=2:5..2:7 info=null language=null literal="bar\n" fenced=false closed=true children=0
 ````````````````````````````````
@@ -3983,7 +3983,7 @@ foo
 ```
 .
 Document scope=1:1..3:3 children=3
-├── Callout scope=1:1..1:5 variant=null fold=none children=1
+├── Callout scope=1:1..1:5 variant=null collapsed=null children=1
 │   └── CodeBlock scope=1:3..2:3 info=null language=null literal="" fenced=true closed=false children=0
 ├── Paragraph scope=2:1..2:3 children=1
 │   └── Text scope=2:1..2:3 literal="foo" children=0
@@ -3999,7 +3999,7 @@ continuation line]:
     - bar
 .
 Document scope=1:1..2:9 children=1
-└── Callout scope=1:1..2:9 variant=null fold=none children=1
+└── Callout scope=1:1..2:9 variant=null collapsed=null children=1
     └── Paragraph scope=1:3..2:9 children=3
         ├── Text scope=1:3..1:5 literal="foo" children=0
         ├── SoftBreak scope=1:6..1:6 children=0
@@ -4024,7 +4024,7 @@ A block quote can be empty:
 >
 .
 Document scope=1:1..1:1 children=1
-└── Callout scope=1:1..1:1 variant=null fold=none children=0
+└── Callout scope=1:1..1:1 variant=null collapsed=null children=0
 ````````````````````````````````
 
 
@@ -4034,7 +4034,7 @@ Document scope=1:1..1:1 children=1
 > 
 .
 Document scope=1:1..3:2 children=1
-└── Callout scope=1:1..3:2 variant=null fold=none children=0
+└── Callout scope=1:1..3:2 variant=null collapsed=null children=0
 ````````````````````````````````
 
 
@@ -4046,7 +4046,7 @@ A block quote can have initial or final blank lines:
 >  
 .
 Document scope=1:1..3:3 children=1
-└── Callout scope=1:1..3:3 variant=null fold=none children=1
+└── Callout scope=1:1..3:3 variant=null collapsed=null children=1
     └── Paragraph scope=2:3..2:5 children=1
         └── Text scope=2:3..2:5 literal="foo" children=0
 ````````````````````````````````
@@ -4060,10 +4060,10 @@ A blank line always separates block quotes:
 > bar
 .
 Document scope=1:1..3:5 children=2
-├── Callout scope=1:1..1:5 variant=null fold=none children=1
+├── Callout scope=1:1..1:5 variant=null collapsed=null children=1
 │   └── Paragraph scope=1:3..1:5 children=1
 │       └── Text scope=1:3..1:5 literal="foo" children=0
-└── Callout scope=3:1..3:5 variant=null fold=none children=1
+└── Callout scope=3:1..3:5 variant=null collapsed=null children=1
     └── Paragraph scope=3:3..3:5 children=1
         └── Text scope=3:3..3:5 literal="bar" children=0
 ````````````````````````````````
@@ -4082,7 +4082,7 @@ we get a single block quote:
 > bar
 .
 Document scope=1:1..2:5 children=1
-└── Callout scope=1:1..2:5 variant=null fold=none children=1
+└── Callout scope=1:1..2:5 variant=null collapsed=null children=1
     └── Paragraph scope=1:3..2:5 children=3
         ├── Text scope=1:3..1:5 literal="foo" children=0
         ├── SoftBreak scope=1:6..1:6 children=0
@@ -4098,7 +4098,7 @@ To get a block quote with two paragraphs, use:
 > bar
 .
 Document scope=1:1..3:5 children=1
-└── Callout scope=1:1..3:5 variant=null fold=none children=2
+└── Callout scope=1:1..3:5 variant=null collapsed=null children=2
     ├── Paragraph scope=1:3..1:5 children=1
     │   └── Text scope=1:3..1:5 literal="foo" children=0
     └── Paragraph scope=3:3..3:5 children=1
@@ -4115,7 +4115,7 @@ foo
 Document scope=1:1..2:5 children=2
 ├── Paragraph scope=1:1..1:3 children=1
 │   └── Text scope=1:1..1:3 literal="foo" children=0
-└── Callout scope=2:1..2:5 variant=null fold=none children=1
+└── Callout scope=2:1..2:5 variant=null collapsed=null children=1
     └── Paragraph scope=2:3..2:5 children=1
         └── Text scope=2:3..2:5 literal="bar" children=0
 ````````````````````````````````
@@ -4130,11 +4130,11 @@ quotes:
 > bbb
 .
 Document scope=1:1..3:5 children=3
-├── Callout scope=1:1..1:5 variant=null fold=none children=1
+├── Callout scope=1:1..1:5 variant=null collapsed=null children=1
 │   └── Paragraph scope=1:3..1:5 children=1
 │       └── Text scope=1:3..1:5 literal="aaa" children=0
 ├── ThematicBreak scope=2:1..2:3 children=0
-└── Callout scope=3:1..3:5 variant=null fold=none children=1
+└── Callout scope=3:1..3:5 variant=null collapsed=null children=1
     └── Paragraph scope=3:3..3:5 children=1
         └── Text scope=3:3..3:5 literal="bbb" children=0
 ````````````````````````````````
@@ -4148,7 +4148,7 @@ a block quote and a following paragraph:
 baz
 .
 Document scope=1:1..2:3 children=1
-└── Callout scope=1:1..2:3 variant=null fold=none children=1
+└── Callout scope=1:1..2:3 variant=null collapsed=null children=1
     └── Paragraph scope=1:3..2:3 children=3
         ├── Text scope=1:3..1:5 literal="bar" children=0
         ├── SoftBreak scope=1:6..1:6 children=0
@@ -4162,7 +4162,7 @@ Document scope=1:1..2:3 children=1
 baz
 .
 Document scope=1:1..3:3 children=2
-├── Callout scope=1:1..1:5 variant=null fold=none children=1
+├── Callout scope=1:1..1:5 variant=null collapsed=null children=1
 │   └── Paragraph scope=1:3..1:5 children=1
 │       └── Text scope=1:3..1:5 literal="bar" children=0
 └── Paragraph scope=3:1..3:3 children=1
@@ -4176,7 +4176,7 @@ Document scope=1:1..3:3 children=2
 baz
 .
 Document scope=1:1..3:3 children=2
-├── Callout scope=1:1..2:1 variant=null fold=none children=1
+├── Callout scope=1:1..2:1 variant=null collapsed=null children=1
 │   └── Paragraph scope=1:3..1:5 children=1
 │       └── Text scope=1:3..1:5 literal="bar" children=0
 └── Paragraph scope=3:1..3:3 children=1
@@ -4193,9 +4193,9 @@ nested block quote:
 bar
 .
 Document scope=1:1..2:3 children=1
-└── Callout scope=1:1..2:3 variant=null fold=none children=1
-    └── Callout scope=1:3..2:3 variant=null fold=none children=1
-        └── Callout scope=1:5..2:3 variant=null fold=none children=1
+└── Callout scope=1:1..2:3 variant=null collapsed=null children=1
+    └── Callout scope=1:3..2:3 variant=null collapsed=null children=1
+        └── Callout scope=1:5..2:3 variant=null collapsed=null children=1
             └── Paragraph scope=1:7..2:3 children=3
                 ├── Text scope=1:7..1:9 literal="foo" children=0
                 ├── SoftBreak scope=1:10..1:10 children=0
@@ -4209,9 +4209,9 @@ Document scope=1:1..2:3 children=1
 >>baz
 .
 Document scope=1:1..3:5 children=1
-└── Callout scope=1:1..3:5 variant=null fold=none children=1
-    └── Callout scope=1:2..3:5 variant=null fold=none children=1
-        └── Callout scope=1:3..3:5 variant=null fold=none children=1
+└── Callout scope=1:1..3:5 variant=null collapsed=null children=1
+    └── Callout scope=1:2..3:5 variant=null collapsed=null children=1
+        └── Callout scope=1:3..3:5 variant=null collapsed=null children=1
             └── Paragraph scope=1:5..3:5 children=5
                 ├── Text scope=1:5..1:7 literal="foo" children=0
                 ├── SoftBreak scope=1:8..1:8 children=0
@@ -4232,9 +4232,9 @@ the `>`:
 >    not code
 .
 Document scope=1:1..3:13 children=2
-├── Callout scope=1:1..1:10 variant=null fold=none children=1
+├── Callout scope=1:1..1:10 variant=null collapsed=null children=1
 │   └── CodeBlock scope=1:7..1:10 info=null language=null literal="code\n" fenced=false closed=true children=0
-└── Callout scope=3:1..3:13 variant=null fold=none children=1
+└── Callout scope=3:1..3:13 variant=null collapsed=null children=1
     └── Paragraph scope=3:6..3:13 children=1
         └── Text scope=3:6..3:13 literal="not code" children=0
 ````````````````````````````````
@@ -4293,7 +4293,7 @@ Document scope=1:1..6:16 children=3
 │   ├── SoftBreak scope=1:12..1:12 children=0
 │   └── Text scope=2:1..2:15 literal="with two lines." children=0
 ├── CodeBlock scope=4:5..5:0 info=null language=null literal="indented code\n" fenced=false closed=true children=0
-└── Callout scope=6:1..6:16 variant=null fold=none children=1
+└── Callout scope=6:1..6:16 variant=null collapsed=null children=1
     └── Paragraph scope=6:3..6:16 children=1
         └── Text scope=6:3..6:16 literal="A block quote." children=0
 ````````````````````````````````
@@ -4319,7 +4319,7 @@ Document scope=1:1..6:20 children=1
         │   ├── SoftBreak scope=1:16..1:16 children=0
         │   └── Text scope=2:5..2:19 literal="with two lines." children=0
         ├── CodeBlock scope=4:9..5:0 info=null language=null literal="indented code\n" fenced=false closed=true children=0
-        └── Callout scope=6:5..6:20 variant=null fold=none children=1
+        └── Callout scope=6:5..6:20 variant=null collapsed=null children=1
             └── Paragraph scope=6:7..6:20 children=1
                 └── Text scope=6:7..6:20 literal="A block quote." children=0
 ````````````````````````````````
@@ -4409,8 +4409,8 @@ this example:
 >>     two
 .
 Document scope=1:1..3:10 children=1
-└── Callout scope=1:4..3:10 variant=null fold=none children=1
-    └── Callout scope=1:6..3:10 variant=null fold=none children=1
+└── Callout scope=1:4..3:10 variant=null collapsed=null children=1
+    └── Callout scope=1:6..3:10 variant=null collapsed=null children=1
         └── List scope=1:8..3:10 flavor=ordered start=1 tight=false children=1
             └── ListItem scope=1:8..3:10 checked=null children=2
                 ├── Paragraph scope=1:12..1:14 children=1
@@ -4435,8 +4435,8 @@ far enough past the blockquote marker:
   >  > two
 .
 Document scope=1:1..3:10 children=1
-└── Callout scope=1:1..3:10 variant=null fold=none children=1
-    └── Callout scope=1:2..3:10 variant=null fold=none children=2
+└── Callout scope=1:1..3:10 variant=null collapsed=null children=1
+    └── Callout scope=1:2..3:10 variant=null collapsed=null children=2
         ├── List scope=1:3..2:2 flavor=bullet start=null tight=true children=1
         │   └── ListItem scope=1:3..2:2 checked=null children=1
         │       └── Paragraph scope=1:5..1:7 children=1
@@ -4502,7 +4502,7 @@ Document scope=1:1..9:9 children=1
         ├── CodeBlock scope=3:5..5:7 info=null language=null literal="bar\n" fenced=true closed=true children=0
         ├── Paragraph scope=7:5..7:7 children=1
         │   └── Text scope=7:5..7:7 literal="baz" children=0
-        └── Callout scope=9:5..9:9 variant=null fold=none children=1
+        └── Callout scope=9:5..9:9 variant=null collapsed=null children=1
             └── Paragraph scope=9:7..9:9 children=1
                 └── Text scope=9:7..9:9 literal="bam" children=0
 ````````````````````````````````
@@ -4921,7 +4921,7 @@ Document scope=1:1..6:21 children=1
         │   ├── SoftBreak scope=1:17..1:17 children=0
         │   └── Text scope=2:6..2:20 literal="with two lines." children=0
         ├── CodeBlock scope=4:10..5:0 info=null language=null literal="indented code\n" fenced=false closed=true children=0
-        └── Callout scope=6:6..6:21 variant=null fold=none children=1
+        └── Callout scope=6:6..6:21 variant=null collapsed=null children=1
             └── Paragraph scope=6:8..6:21 children=1
                 └── Text scope=6:8..6:21 literal="A block quote." children=0
 ````````````````````````````````
@@ -4945,7 +4945,7 @@ Document scope=1:1..6:22 children=1
         │   ├── SoftBreak scope=1:18..1:18 children=0
         │   └── Text scope=2:7..2:21 literal="with two lines." children=0
         ├── CodeBlock scope=4:11..5:0 info=null language=null literal="indented code\n" fenced=false closed=true children=0
-        └── Callout scope=6:7..6:22 variant=null fold=none children=1
+        └── Callout scope=6:7..6:22 variant=null collapsed=null children=1
             └── Paragraph scope=6:9..6:22 children=1
                 └── Text scope=6:9..6:22 literal="A block quote." children=0
 ````````````````````````````````
@@ -4969,7 +4969,7 @@ Document scope=1:1..6:23 children=1
         │   ├── SoftBreak scope=1:19..1:19 children=0
         │   └── Text scope=2:8..2:22 literal="with two lines." children=0
         ├── CodeBlock scope=4:12..5:0 info=null language=null literal="indented code\n" fenced=false closed=true children=0
-        └── Callout scope=6:8..6:23 variant=null fold=none children=1
+        └── Callout scope=6:8..6:23 variant=null collapsed=null children=1
             └── Paragraph scope=6:10..6:23 children=1
                 └── Text scope=6:10..6:23 literal="A block quote." children=0
 ````````````````````````````````
@@ -5018,7 +5018,7 @@ Document scope=1:1..6:22 children=1
         │   ├── SoftBreak scope=1:18..1:18 children=0
         │   └── Text scope=2:1..2:15 literal="with two lines." children=0
         ├── CodeBlock scope=4:11..5:0 info=null language=null literal="indented code\n" fenced=false closed=true children=0
-        └── Callout scope=6:7..6:22 variant=null fold=none children=1
+        └── Callout scope=6:7..6:22 variant=null collapsed=null children=1
             └── Paragraph scope=6:9..6:22 children=1
                 └── Text scope=6:9..6:22 literal="A block quote." children=0
 ````````````````````````````````
@@ -5047,10 +5047,10 @@ These examples show how laziness can work in nested structures:
 continued here.
 .
 Document scope=1:1..2:15 children=1
-└── Callout scope=1:1..2:15 variant=null fold=none children=1
+└── Callout scope=1:1..2:15 variant=null collapsed=null children=1
     └── List scope=1:3..2:15 flavor=ordered start=1 tight=true children=1
         └── ListItem scope=1:3..2:15 checked=null children=1
-            └── Callout scope=1:6..2:15 variant=null fold=none children=1
+            └── Callout scope=1:6..2:15 variant=null collapsed=null children=1
                 └── Paragraph scope=1:8..2:15 children=3
                     ├── Text scope=1:8..1:17 literal="Blockquote" children=0
                     ├── SoftBreak scope=1:18..1:18 children=0
@@ -5063,10 +5063,10 @@ Document scope=1:1..2:15 children=1
 > continued here.
 .
 Document scope=1:1..2:17 children=1
-└── Callout scope=1:1..2:17 variant=null fold=none children=1
+└── Callout scope=1:1..2:17 variant=null collapsed=null children=1
     └── List scope=1:3..2:17 flavor=ordered start=1 tight=true children=1
         └── ListItem scope=1:3..2:17 checked=null children=1
-            └── Callout scope=1:6..2:17 variant=null fold=none children=1
+            └── Callout scope=1:6..2:17 variant=null collapsed=null children=1
                 └── Paragraph scope=1:8..2:17 children=3
                     ├── Text scope=1:8..1:17 literal="Blockquote" children=0
                     ├── SoftBreak scope=1:18..1:18 children=0
@@ -6030,7 +6030,7 @@ Document scope=1:1..4:3 children=1
     ├── ListItem scope=1:1..3:3 checked=null children=2
     │   ├── Paragraph scope=1:3..1:3 children=1
     │   │   └── Text scope=1:3..1:3 literal="a" children=0
-    │   └── Callout scope=2:3..3:3 variant=null fold=none children=1
+    │   └── Callout scope=2:3..3:3 variant=null collapsed=null children=1
     │       └── Paragraph scope=2:5..2:5 children=1
     │           └── Text scope=2:5..2:5 literal="b" children=0
     └── ListItem scope=4:1..4:3 checked=null children=1
@@ -6055,7 +6055,7 @@ Document scope=1:1..6:3 children=1
     ├── ListItem scope=1:1..5:5 checked=null children=3
     │   ├── Paragraph scope=1:3..1:3 children=1
     │   │   └── Text scope=1:3..1:3 literal="a" children=0
-    │   ├── Callout scope=2:3..2:5 variant=null fold=none children=1
+    │   ├── Callout scope=2:3..2:5 variant=null collapsed=null children=1
     │   │   └── Paragraph scope=2:5..2:5 children=1
     │   │       └── Text scope=2:5..2:5 literal="b" children=0
     │   └── CodeBlock scope=3:3..5:5 info=null language=null literal="c\n" fenced=true closed=true children=0

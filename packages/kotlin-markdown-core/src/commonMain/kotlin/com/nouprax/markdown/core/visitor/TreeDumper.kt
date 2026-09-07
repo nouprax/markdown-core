@@ -89,7 +89,7 @@ private class DumpVisitor(
         state.line(
             "Callout",
             node,
-            listOf("variant=${optionalString(node.variant)}", "fold=${node.fold.token()}"),
+            listOf("variant=${optionalString(node.variant)}", "collapsed=${node.collapsed ?: "null"}"),
             node.content.size,
         )
         // A non-null title is a `Title` group before the content; a
@@ -300,8 +300,6 @@ private fun destination(value: Destination): String =
     }
 
 private fun PlacementMode.token(): String = name.lowercase()
-
-private fun CalloutFold.token(): String = name.lowercase()
 
 private fun ListFlavor.token(): String = name.lowercase()
 

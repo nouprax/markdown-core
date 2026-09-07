@@ -97,7 +97,8 @@ and it is a list rather than a node: the callout-specific dump function nests
 it before the content as a GROUP line, `Title children=N`, with no
 scope and no fields, at the callout's nesting depth, and the title's inline
 nodes one level below it. A null title prints no line. `N` is the number of
-title nodes and is never counted by the callout's own `children`.
+title nodes, never zero because a present title holds at least one node, and
+it is never counted by the callout's own `children`.
 
 ## Field order by record kind
 
@@ -111,7 +112,7 @@ that the dump represents as nested descendants.
 | Kind | Ordered fields between `scope` and `children` |
 | --- | --- |
 | `Document`, `Paragraph`, `ThematicBreak`, `TableCell`, `DirectiveLabel`, `SoftBreak`, `LineBreak`, `Emphasis`, `Strong`, `Strikethrough` | none |
-| `Callout` | `variant`, `fold` |
+| `Callout` | `variant`, `collapsed` |
 | `Heading` | `level` |
 | `List` | `flavor`, `start`, `tight` |
 | `ListItem` | `checked` |

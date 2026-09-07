@@ -81,24 +81,27 @@ facade while removing renderer support and the caller-driven feed lifecycle.
   The links-and-images module's resolved-reference examples join the package
   fixture.
 - `Callout` replaces `BlockQuote` (M3). Every `>` container is a `Callout`
-  with `variant`, `fold`, and `title`, which the callouts module's metadata
-  rule fills in with `O8`; until then every callout is metadata-free, with a
-  null variant, `fold=none`, and no title, and the inherited prefix, laziness,
-  continuation, blank-line, and nesting rules are unchanged. The kind is
-  renamed on the C engine and facade, which gain `CalloutFold`,
-  `markdown_core_node_callout_properties`, and
-  `markdown_core_node_callout_title`; the dump prints `variant` and `fold` and
-  nests a non-null title as a `Title` group before the content; every
-  binding's model, visitors, walkers, and dumpers replace `BlockQuote` with
-  `Callout` and visit the title before the content; the JNI payload and the
-  Wasm result carry the three fields; and every fixture and golden containing
-  a quote regenerates. The cmark, cmark-gfm, and remark projections state the
-  metadata-free callout, the Obsidian `universal-callout-container` delta
-  stays as the general projection of mdast `blockquote`, the containment
-  ledger names `Callout`, the manifest gains `callout.variant.null`,
-  `callout.fold.none`, and `callout.title.null`, and the base and callouts
-  modules' metadata-free examples join the package fixture
-  `dialect-callouts.txt`.
+  with `variant`, `collapsed`, and `title`, which the callouts module's
+  metadata rule fills in with `O8`; until then every callout is metadata-free,
+  with a null variant, `collapsed=null`, and no title, and the inherited
+  prefix, laziness, continuation, blank-line, and nesting rules are unchanged.
+  `collapsed` is the fold marker as an optional boolean, like a list item's
+  `checked`: null without a marker, false for `+`, true for `-`. A present
+  title holds at least one node, so its first node is its presence on the C
+  facade and its count is its presence on the wire. The kind is renamed on
+  the C engine and facade, which gain `markdown_core_node_callout_properties`
+  and `markdown_core_node_callout_title`; the dump prints `variant` and
+  `collapsed` and nests a non-null title as a `Title` group before the
+  content; every binding's model, visitors, walkers, and dumpers replace
+  `BlockQuote` with `Callout` and visit the title before the content; the JNI
+  payload and the Wasm result carry the three fields; and every fixture and
+  golden containing a quote regenerates. The cmark, cmark-gfm, and remark
+  projections state the metadata-free callout, the Obsidian
+  `universal-callout-container` delta stays as the general projection of
+  mdast `blockquote`, the containment ledger names `Callout`, the manifest
+  gains `callout.variant.null`, `callout.collapsed.null`, and
+  `callout.title.null`, and the base and callouts modules' metadata-free
+  examples join the package fixture `dialect-callouts.txt`.
 - Open one formula of a form at a time. A formula opener is a delimiter only
   while no opener of its form is unmatched, and a closer only while one is, so
   a body runs from its opener to the first closer of its form and an opener

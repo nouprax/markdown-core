@@ -30,7 +30,7 @@ export type { ThematicBreak } from "./model/thematic-break.js";
 export { ParseError } from "./parse-error.js";
 export type { ParseErrorCode } from "./parse-error.js";
 export { TreeDumper } from "./tree-dumper.js";
-export type { CalloutFold, Destination, ListFlavor, PlacementMode, Position, Scope, TableAlignment } from "./values.js";
+export type { Destination, ListFlavor, PlacementMode, Position, Scope, TableAlignment } from "./values.js";
 export { visit } from "./visitor.js";
 export type { Visitor } from "./visitor.js";
 export { walk } from "./walking-visitor.js";

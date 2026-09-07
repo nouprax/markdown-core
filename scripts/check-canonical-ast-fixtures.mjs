@@ -98,7 +98,7 @@ const stateValidators = {
     // pin: no variant, no fold marker, and no `Title` group, which is
     // the only way a title prints.
     "callout.variant.null": (tree) => /^.*Callout scope=\S+ variant=null /m.test(tree),
-    "callout.fold.none": (tree) => /^.*Callout scope=.* fold=none /m.test(tree),
+    "callout.collapsed.null": (tree) => /^.*Callout scope=.* collapsed=null /m.test(tree),
     "callout.title.null": (tree) => /^.*Callout scope=/m.test(tree) && !/Title children=/.test(tree),
     "directive.attributes.null": (tree) => /^.*Directive(?:Block)? scope=.* attributes=null /m.test(tree),
     "directive.attributes.empty": (tree) => /^.*Directive(?:Block)? scope=.* attributes=\[\] /m.test(tree),

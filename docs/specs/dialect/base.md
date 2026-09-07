@@ -246,7 +246,7 @@ heading's `anchor` is `null` unless an explicit or automatic rule of the
 
 ### Callouts
 
-Every `>` container is a `Callout` with `variant=null`, `fold=none`, and no
+Every `>` container is a `Callout` with `variant=null`, `collapsed=null`, and no
 title; the [callouts](callouts.md) module owns that kind. The inherited
 prefix, laziness, continuation, and blank-line rules are unchanged by the
 metadata rule:
@@ -259,15 +259,15 @@ continued
 > > nested
 .
 Document scope=1:1..5:10 anchor=null attributes={} children=2
-├── Callout scope=1:1..3:9 anchor=null attributes={} variant=null fold=none children=1
+├── Callout scope=1:1..3:9 anchor=null attributes={} variant=null collapsed=null children=1
 │   └── Paragraph scope=1:3..3:9 anchor=null attributes={} children=5
 │       ├── Text scope=1:3..1:8 anchor=null attributes={} literal="quoted" children=0
 │       ├── SoftBreak scope=1:9..1:9 anchor=null attributes={} children=0
 │       ├── Text scope=2:3..2:6 anchor=null attributes={} literal="lazy" children=0
 │       ├── SoftBreak scope=2:7..2:7 anchor=null attributes={} children=0
 │       └── Text scope=3:1..3:9 anchor=null attributes={} literal="continued" children=0
-└── Callout scope=5:1..5:10 anchor=null attributes={} variant=null fold=none children=1
-    └── Callout scope=5:3..5:10 anchor=null attributes={} variant=null fold=none children=1
+└── Callout scope=5:1..5:10 anchor=null attributes={} variant=null collapsed=null children=1
+    └── Callout scope=5:3..5:10 anchor=null attributes={} variant=null collapsed=null children=1
         └── Paragraph scope=5:5..5:10 anchor=null attributes={} children=1
             └── Text scope=5:5..5:10 anchor=null attributes={} literal="nested" children=0
 ````````````````````````````````

@@ -228,7 +228,7 @@ the end of the document and produces the same node:
 y
 .
 Document scope=1:1..4:1 anchor=null attributes={} children=2
-├── Callout scope=1:1..2:3 anchor=null attributes={} variant=null fold=none children=1
+├── Callout scope=1:1..2:3 anchor=null attributes={} variant=null collapsed=null children=1
 │   └── DirectiveBlock scope=1:3..2:3 anchor=null attributes={} name="a" children=1
 │       └── Paragraph scope=2:3..2:3 anchor=null attributes={} children=1
 │           └── Text scope=2:3..2:3 anchor=null attributes={} literal="x" children=0

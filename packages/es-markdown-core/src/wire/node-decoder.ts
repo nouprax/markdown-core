@@ -7,7 +7,7 @@ import type { Markup } from "../model/markup.js";
 import type { TableCell, TableRow } from "../model/table.js";
 import { ParseError, type ParseErrorCode } from "../parse-error.js";
 import { TreeDumper } from "../tree-dumper.js";
-import type { CalloutFold, Destination, ListFlavor, PlacementMode, Scope, TableAlignment } from "../values.js";
+import type { Destination, ListFlavor, PlacementMode, Scope, TableAlignment } from "../values.js";
 import { kinds, type NativeKind } from "./kinds.js";
 
 /*
@@ -231,9 +231,10 @@ export class NodeDecoder {
                 }
                 this.recordRelation(record, record.labelIndex, incoming, "label");
             }
-            if (record.kind === "callout" && (record.flags & 1) !== 0) {
+            if (record.kind === "callout" && record.auxiliaryCount !== 0) {
                 // The title's nodes are owned through the auxiliary range, as
-                // a directive's label is through its index.
+                // a directive's label is through its index; a present title
+                // holds at least one node, so the range's count is its presence.
                 this.range(record.auxiliaryStart, record.auxiliaryCount, this.layout.edgeCount, "callout title range");
                 for (let offset = 0; offset < record.auxiliaryCount; ++offset) {
                     this.recordRelation(record, this.edge(record.auxiliaryStart + offset), incoming, "title");
@@ -370,27 +371,26 @@ export class NodeDecoder {
     }
 
     /**
-     * The variant is the first string slot and the fold the scalar; the title
-     * is present when the flag is set and then owns the nodes the auxiliary
-     * range names in the edge table, a node-valued list beside the content.
+     * The variant is the first string slot and the fold marker the scalar; the
+     * auxiliary range names the title's nodes in the edge table, a node-valued
+     * list beside the content, and an empty range is no title because a
+     * present title holds at least one node.
      */
     private callout(record: NodeRecord): MarkupValueOf<"callout"> {
-        this.flags(record, 1);
+        this.flags(record, 0);
         let title: readonly Markup[] | null = null;
-        if ((record.flags & 1) !== 0) {
+        if (record.auxiliaryCount !== 0) {
             this.range(record.auxiliaryStart, record.auxiliaryCount, this.layout.edgeCount, "callout title range");
             title = Array.from({ length: record.auxiliaryCount }, (_, index) => {
                 const node = this.values[this.edge(record.auxiliaryStart + index)];
                 if (!node) throw new Error("native result callout title was not constructed");
                 return node;
             });
-        } else if (record.auxiliaryCount !== 0) {
-            throw new Error("callout without a title carries title nodes");
         }
         return {
             ...this.base(record, "callout"),
             variant: this.string(record, 0),
-            fold: this.calloutFold(record.scalar0),
+            collapsed: this.nullableBoolean(record.scalar0, "callout fold marker"),
             title,
             content: this.content(record)
         };
@@ -599,13 +599,6 @@ export class NodeDecoder {
         if (value === 1) return "embedded";
         if (value === 2) return "standalone";
         throw new Error(`native result contains invalid placement mode ${value}`);
-    }
-
-    private calloutFold(value: number): CalloutFold {
-        if (value === 1) return "none";
-        if (value === 2) return "expanded";
-        if (value === 3) return "collapsed";
-        throw new Error(`native result contains invalid callout fold ${value}`);
     }
 
     private listFlavor(value: number): ListFlavor {
