@@ -263,9 +263,14 @@ static markdown_core_node *www_match(markdown_core_parser *parser, markdown_core
     markdown_core_strbuf_init(parser->mem, &buf, 10);
     markdown_core_strbuf_puts(&buf, "http://");
     markdown_core_strbuf_put(&buf, data, (bufsize_t)link_end);
-    node->as.link.url = markdown_core_chunk_buf_detach(&buf);
-    if (!node->as.link.url.data) {
-        parser->oom = true;
+    {
+        markdown_core_chunk url = markdown_core_chunk_buf_detach(&buf);
+        node->as.link.resource =
+            url.data ? markdown_core_resource_new(parser->mem, url, markdown_core_optional_chunk_absent()) : NULL;
+        if (!node->as.link.resource) {
+            markdown_core_chunk_free(parser->mem, &url);
+            parser->oom = true;
+        }
     }
 
     markdown_core_node *text = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_TEXT, parser->mem);
@@ -339,7 +344,10 @@ static markdown_core_node *url_match(markdown_core_parser *parser, markdown_core
     }
 
     markdown_core_chunk url = markdown_core_chunk_dup(chunk, max_rewind - rewind, (bufsize_t)(link_end + rewind));
-    node->as.link.url = url;
+    node->as.link.resource = markdown_core_resource_new(parser->mem, url, markdown_core_optional_chunk_absent());
+    if (!node->as.link.resource) {
+        parser->oom = true;
+    }
 
     markdown_core_node *text = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_TEXT, parser->mem);
     if (!text) {
@@ -588,9 +596,14 @@ static void postprocess_text(markdown_core_parser *parser, markdown_core_node *t
             markdown_core_strbuf_puts(&buf, "mailto:");
         }
         markdown_core_strbuf_put(&buf, data + start + offset + max_rewind - rewind, (bufsize_t)(link_end + rewind));
-        link_node->as.link.url = markdown_core_chunk_buf_detach(&buf);
-        if (!link_node->as.link.url.data) {
-            parser->oom = true;
+        {
+            markdown_core_chunk url = markdown_core_chunk_buf_detach(&buf);
+            link_node->as.link.resource =
+                url.data ? markdown_core_resource_new(parser->mem, url, markdown_core_optional_chunk_absent()) : NULL;
+            if (!link_node->as.link.resource) {
+                markdown_core_chunk_free(parser->mem, &url);
+                parser->oom = true;
+            }
         }
         set_sourcepos_from_range(link_node, source_start_line, source_start_column, &detached_chunk, link_start,
                                  link_len);

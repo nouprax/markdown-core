@@ -19,8 +19,6 @@ import type { Link } from "./model/link.js";
 import type { List, ListItem } from "./model/list.js";
 import type { Markup } from "./model/markup.js";
 import type { Paragraph } from "./model/paragraph.js";
-import type { ReferenceDefinition } from "./model/reference-definition.js";
-import type { ImageReference, LinkReference } from "./model/reference.js";
 import type { SoftBreak } from "./model/soft-break.js";
 import type { Strikethrough } from "./model/strikethrough.js";
 import type { Strong } from "./model/strong.js";
@@ -56,9 +54,6 @@ export interface WalkingVisitor {
     visitDirectiveBlock(this: void, node: DirectiveBlock, phase: WalkPhase): void;
     visitDirectiveLabel(this: void, node: DirectiveLabel, phase: WalkPhase): void;
     visitFootnoteDefinition(this: void, node: FootnoteDefinition, phase: WalkPhase): void;
-    visitReferenceDefinition(this: void, node: ReferenceDefinition, phase: WalkPhase): void;
-    visitLinkReference(this: void, node: LinkReference, phase: WalkPhase): void;
-    visitImageReference(this: void, node: ImageReference, phase: WalkPhase): void;
     visitText(this: void, node: Text, phase: WalkPhase): void;
     visitSoftBreak(this: void, node: SoftBreak, phase: WalkPhase): void;
     visitLineBreak(this: void, node: LineBreak, phase: WalkPhase): void;
@@ -182,20 +177,6 @@ export function walk(root: Markup, walkingVisitor: WalkingVisitor): void {
         },
         visitFootnoteDefinition: (node) => {
             walkingVisitor.visitFootnoteDefinition(node, phase);
-            scheduleExit(node);
-            if (phase === "entering") schedule(node.content);
-        },
-        visitReferenceDefinition: (node) => {
-            walkingVisitor.visitReferenceDefinition(node, phase);
-            scheduleExit(node);
-        },
-        visitLinkReference: (node) => {
-            walkingVisitor.visitLinkReference(node, phase);
-            scheduleExit(node);
-            if (phase === "entering") schedule(node.content);
-        },
-        visitImageReference: (node) => {
-            walkingVisitor.visitImageReference(node, phase);
             scheduleExit(node);
             if (phase === "entering") schedule(node.content);
         },

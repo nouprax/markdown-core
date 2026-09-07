@@ -167,15 +167,6 @@ markdown_core_node_kind markdown_core_node_get_kind(const markdown_core_node *no
     if (node->type == MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION) {
         return MARKDOWN_CORE_KIND_FOOTNOTE_DEFINITION;
     }
-    if (node->type == MARKDOWN_CORE_NODE_REFERENCE_DEFINITION) {
-        return MARKDOWN_CORE_KIND_REFERENCE_DEFINITION;
-    }
-    if (node->type == MARKDOWN_CORE_NODE_LINK_REFERENCE) {
-        return MARKDOWN_CORE_KIND_LINK_REFERENCE;
-    }
-    if (node->type == MARKDOWN_CORE_NODE_IMAGE_REFERENCE) {
-        return MARKDOWN_CORE_KIND_IMAGE_REFERENCE;
-    }
     if (node->type == MARKDOWN_CORE_NODE_TEXT) {
         return MARKDOWN_CORE_KIND_TEXT;
     }
@@ -272,9 +263,6 @@ const char *markdown_core_node_kind_name(markdown_core_node_kind kind) {
                                         "TableRow",
                                         "TableCell",
                                         "DirectiveLabel",
-                                        "ReferenceDefinition",
-                                        "LinkReference",
-                                        "ImageReference",
                                         "Comment"};
     if (kind < MARKDOWN_CORE_KIND_NONE || kind > MARKDOWN_CORE_KIND_COMMENT) {
         return "None";
@@ -519,12 +507,18 @@ const markdown_core_node *markdown_core_node_directive_label(const markdown_core
     return is_directive(node) ? markdown_core_directive_label((markdown_core_node *)node) : NULL;
 }
 
-static bool has_resource(const markdown_core_node *node) {
+static bool is_link(const markdown_core_node *node) {
     return node && (node->type == MARKDOWN_CORE_NODE_LINK || node->type == MARKDOWN_CORE_NODE_IMAGE);
 }
 
+/* Every link and image the parser produces reads through a resource, and
+ * only the parser creates one. A node built by hand has none and is the link
+ * `[a]()` is: the empty url and no title. */
+static const markdown_core_chunk empty_url = {(unsigned char *)"", 0, 0};
+static const markdown_core_optional_chunk absent_title = {{NULL, 0, 0}, false};
+
 bool markdown_core_node_destination(const markdown_core_node *node, markdown_core_destination *destination) {
-    if (!has_resource(node) || !destination) {
+    if (!is_link(node) || !destination) {
         return false;
     }
     /* Every link and image the inherited grammar produces is the `url`
@@ -532,26 +526,26 @@ bool markdown_core_node_destination(const markdown_core_node *node, markdown_cor
      * other branch's fields are zeroed, not left over. */
     memset(destination, 0, sizeof(*destination));
     destination->kind = MARKDOWN_CORE_DESTINATION_URL;
-    string_from_chunk(&destination->url, &node->as.link.url);
+    string_from_chunk(&destination->url, node->as.link.resource ? &node->as.link.resource->url : &empty_url);
     return true;
 }
 
 bool markdown_core_node_title(const markdown_core_node *node, markdown_core_optional_string *title) {
-    if (!has_resource(node) || !title) {
+    if (!is_link(node) || !title) {
         return false;
     }
-    optional_string_from_chunk(title, &node->as.link.title);
+    optional_string_from_chunk(title, node->as.link.resource ? &node->as.link.resource->title : &absent_title);
     return true;
 }
 
-/* ONE accessor for all five reference kinds, dispatched on the type and
- * relying on no layout at all.
- *
- * The union arms genuinely differ -- a definition is BOXED and the other four
- * are inline -- so the common-initial-sequence read that would have made this
- * a single load is not merely unlicensed, it is impossible: `as.association`
- * on a definition node would read a POINTER as `chunk.data`. It costs a branch
- * and buys a guarantee the union trick never had. */
+const markdown_core_resource *markdown_core_node_resource(const markdown_core_node *node) {
+    return is_link(node) ? node->as.link.resource : NULL;
+}
+
+/* ONE accessor for the two footnote kinds, dispatched on the type and relying
+ * on no layout at all. It answered for five kinds until M2 resolved every link
+ * and image reference into the node it names and consumed the definition into
+ * the reference map; the footnote kinds keep their association until M4. */
 bool markdown_core_node_association(const markdown_core_node *node, markdown_core_string *label,
                                     markdown_core_string *identifier) {
     const markdown_core_association *association;
@@ -559,45 +553,15 @@ bool markdown_core_node_association(const markdown_core_node *node, markdown_cor
         return false;
     }
     switch (node->type) {
-    case MARKDOWN_CORE_NODE_REFERENCE_DEFINITION:
-        if (!node->as.definition) {
-            return false;
-        }
-        association = &node->as.definition->association;
-        break;
     case MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION:
     case MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE:
         association = &node->as.association;
-        break;
-    case MARKDOWN_CORE_NODE_LINK_REFERENCE:
-    case MARKDOWN_CORE_NODE_IMAGE_REFERENCE:
-        association = &node->as.reference.association;
         break;
     default:
         return false;
     }
     string_from_chunk(label, &association->label);
     string_from_chunk(identifier, &association->identifier);
-    return true;
-}
-
-bool markdown_core_node_definition_resource(const markdown_core_node *node, markdown_core_string *destination,
-                                            markdown_core_optional_string *title) {
-    if (!node || node->type != MARKDOWN_CORE_NODE_REFERENCE_DEFINITION || !node->as.definition || !destination ||
-        !title) {
-        return false;
-    }
-    string_from_chunk(destination, &node->as.definition->url);
-    optional_string_from_chunk(title, &node->as.definition->title);
-    return true;
-}
-
-bool markdown_core_node_reference_form(const markdown_core_node *node, markdown_core_reference_form *form) {
-    if (!node || !form ||
-        (node->type != MARKDOWN_CORE_NODE_LINK_REFERENCE && node->type != MARKDOWN_CORE_NODE_IMAGE_REFERENCE)) {
-        return false;
-    }
-    *form = node->as.reference.form;
     return true;
 }
 
@@ -737,18 +701,6 @@ static const char *alignment_name(markdown_core_table_alignment alignment) {
     }
 }
 
-static const char *form_name(markdown_core_reference_form form) {
-    switch (form) {
-    case MARKDOWN_CORE_REFERENCE_FULL:
-        return "full";
-    case MARKDOWN_CORE_REFERENCE_COLLAPSED:
-        return "collapsed";
-    case MARKDOWN_CORE_REFERENCE_SHORTCUT:
-        break;
-    }
-    return "shortcut";
-}
-
 static const char *mode_name(markdown_core_placement_mode mode) {
     return mode == MARKDOWN_CORE_PLACEMENT_EMBEDDED ? "embedded" : "standalone";
 }
@@ -779,7 +731,6 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
     markdown_core_optional_bool checked;
     markdown_core_list_flavor flavor;
     markdown_core_placement_mode mode;
-    markdown_core_reference_form form = MARKDOWN_CORE_REFERENCE_SHORTCUT;
     markdown_core_destination destination;
     bool x, y, has_attributes;
     size_t count, i;
@@ -906,32 +857,6 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
         buffer_cstr(buffer, " identifier=");
         buffer_json_string(buffer, b);
         break;
-    case MARKDOWN_CORE_KIND_LINK_REFERENCE:
-    case MARKDOWN_CORE_KIND_IMAGE_REFERENCE:
-        markdown_core_node_association(node, &a, &b);
-        markdown_core_node_reference_form(node, &form);
-        buffer_cstr(buffer, " label=");
-        buffer_json_string(buffer, a);
-        buffer_cstr(buffer, " identifier=");
-        buffer_json_string(buffer, b);
-        buffer_cstr(buffer, " form=");
-        buffer_cstr(buffer, form_name(form));
-        break;
-    case MARKDOWN_CORE_KIND_REFERENCE_DEFINITION:
-        markdown_core_node_association(node, &a, &b);
-        markdown_core_node_definition_resource(node, &c, &oa);
-        buffer_cstr(buffer, " label=");
-        buffer_json_string(buffer, a);
-        buffer_cstr(buffer, " identifier=");
-        buffer_json_string(buffer, b);
-        /* `destination=` is printed as a string and never as `null`: a
-         * definition that could not build one is not emitted (Q7, Q26), so an
-         * empty destination here means the source wrote `<>` and meant it. */
-        buffer_cstr(buffer, " destination=");
-        buffer_json_string(buffer, c);
-        buffer_cstr(buffer, " title=");
-        buffer_optional_string(buffer, oa);
-        break;
     /* A DESTINATION IS REQUIRED (Q26): `dest=` is the tagged value and is
      * never `null`. `[a]()` used to print `destination=null`, which said the
      * author wrote no destination when the empty parentheses are the
@@ -1032,8 +957,6 @@ static void dump_node(dump_buffer *buffer, const markdown_core_node *node, size_
     case MARKDOWN_CORE_KIND_TABLE_CELL:
     case MARKDOWN_CORE_KIND_DIRECTIVE_LABEL:
     case MARKDOWN_CORE_KIND_FOOTNOTE_DEFINITION:
-    case MARKDOWN_CORE_KIND_LINK_REFERENCE:
-    case MARKDOWN_CORE_KIND_IMAGE_REFERENCE:
     case MARKDOWN_CORE_KIND_EMPHASIS:
     case MARKDOWN_CORE_KIND_STRONG:
     case MARKDOWN_CORE_KIND_STRIKETHROUGH:
@@ -1045,7 +968,6 @@ static void dump_node(dump_buffer *buffer, const markdown_core_node *node, size_
     case MARKDOWN_CORE_KIND_CODE_BLOCK:
     case MARKDOWN_CORE_KIND_HTML_BLOCK:
     case MARKDOWN_CORE_KIND_FORMULA_BLOCK:
-    case MARKDOWN_CORE_KIND_REFERENCE_DEFINITION:
     case MARKDOWN_CORE_KIND_TEXT:
     case MARKDOWN_CORE_KIND_SOFT_BREAK:
     case MARKDOWN_CORE_KIND_LINE_BREAK:

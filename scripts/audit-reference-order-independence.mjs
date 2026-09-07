@@ -28,11 +28,13 @@
  * `pathological_runner.c` now guards the payload ratio directly; this audit
  * guards the independent lookup-order invariant.
  *
- * A reference that NAMES its definition instead of copying it buys both, and
- * that is Step 9b.2's model change: `LinkReference` and `ImageReference` carry
- * an association and no destination, the map holds labels and no resource,
- * there is nothing to charge and no budget. `reference_expansion_bound` now
- * measures 0.399x on the same input while both properties below hold.
+ * A reference that SHARES its definition's resource buys both, and that is
+ * M2's model: the parser's map owns each winning destination and title once,
+ * every occurrence that resolves to the label is the `Link` or `Image` it
+ * names and reads through that one resource, so nothing is copied, there is
+ * nothing to charge and no budget. `reference_expansion_bound` counts the
+ * payload once per distinct resource identity and holds it within the source
+ * while both properties below hold.
  *
  *   node scripts/audit-reference-order-independence.mjs [--update] [--verbose]
  */
@@ -41,7 +43,7 @@ import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
-import { parseCanonicalDump } from "./lib/upstream-cmark.mjs";
+import { parseCanonicalDump, parseDestination } from "./lib/upstream-cmark.mjs";
 import { loadLedger, reconcileLedger, requireBinary, runBinary, walkWithPath } from "./lib/source-positions.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
@@ -52,12 +54,15 @@ const verbose = process.argv.includes("--verbose");
 
 const ours = requireBinary(root, "build/cmake/packages/markdown-core/core/markdown-core", "pnpm build:c");
 const parse = (input) => parseCanonicalDump(runBinary(ours, [], input));
-// A reference RESOLVED is a `LinkReference` naming that identifier; a reference
-// that did not is prose, brackets intact. Neither is stated by a destination
-// any more: the node carries none.
-const resolved = (tree, identifier) =>
-    [...walkWithPath(tree)].filter(({ node }) => node.kind === "LinkReference" && node.fields.identifier === identifier)
-        .length;
+// A reference RESOLVED is the `Link` its definition names, carrying that
+// definition's destination (M2); a reference that did not is prose, brackets
+// intact.
+const resolved = (tree, destination) =>
+    [...walkWithPath(tree)].filter(({ node }) => {
+        if (node.kind !== "Link") return false;
+        const dest = parseDestination(node.fields.dest ?? "");
+        return dest?.kind === "url" && dest.value === destination;
+    }).length;
 const unresolved = (tree, label) =>
     [...walkWithPath(tree)].filter(({ node }) => node.kind === "Text" && node.fields.literal === label).length;
 
@@ -72,7 +77,7 @@ const measured = [];
     const count = ledger.uniformReferences;
     const input = `[a]: ${DESTINATION}\n\n${"[a]\n\n".repeat(count)}`;
     const tree = parse(input);
-    const yes = resolved(tree, "a");
+    const yes = resolved(tree, DESTINATION);
     const no = unresolved(tree, "[a]");
     if (yes !== count)
         measured.push({
@@ -85,9 +90,9 @@ const measured = [];
 // INDEPENDENT: the same reference, with and without an unrelated prefix.
 {
     const tail = "[b]: /short\n\n[b]\n";
-    const alone = resolved(parse(tail), "b");
+    const alone = resolved(parse(tail), "/short");
     const prefix = `[a]: ${DESTINATION}\n\n${"[a]\n\n".repeat(ledger.contaminationReferences)}`;
-    const contaminated = resolved(parse(prefix + tail), "b");
+    const contaminated = resolved(parse(prefix + tail), "/short");
     if (alone !== contaminated)
         measured.push({
             source: "independent",

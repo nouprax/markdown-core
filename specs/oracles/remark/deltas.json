@@ -62,6 +62,12 @@
             "kind": "ast-shape",
             "summary": "mdast keeps an HTML comment as an `html` node holding the token as written. Markdown Core makes it a `Comment` whose literal is the bytes between `<!--` and `-->`: the inline token, and a flow HTML node that opens with `<!--` and whose end line holds only whitespace after the first `-->`.",
             "handling": "The comparison maps mdast's comment nodes to `Comment` with the delimiters removed, the rule the engine applies on its own side (`docs/specs/dialect/comments.md`); cmark owns the token and block boundaries, and this projection only keeps the two models in one shape where a comment appears."
+        },
+        {
+            "id": "reference-resolution-model",
+            "kind": "ast-shape",
+            "summary": "mdast keeps a link reference definition as a `definition` node where it was written and leaves `linkReference` and `imageReference` unresolved, carrying the label. Markdown Core consumes the definition into the parser's map and resolves every successful reference into the `Link` or `Image` it names (M2), as cmark does.",
+            "handling": "The comparison resolves mdast's references against its own definitions inside the projection -- the first definition of an identifier wins, as in both grammars -- into `Link`/`Image` carrying the definition's destination and title, drops the definition nodes, and leaves a reference with no definition as the prose both models make of it. The label bytes are compared through the resolved destination, so a reference that resolved to the wrong definition, or to none, still shows up as a difference."
         }
     ],
     "notDeltas": [

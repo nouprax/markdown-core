@@ -6,17 +6,21 @@
  * representation, tables, and references. This module maps mdast onto the same
  * comparison-only form `upstream-cmark.mjs` produces.
  *
- * One model difference is normalized rather than reported, because it is a
- * choice about AST shape rather than about what the Markdown means. The
- * reference model used to be a second: mdast kept definitions as nodes and
- * references unresolved while this repository resolved them into `Link`/`Image`
- * as cmark does, and this module projected one onto the other. Since
- * 2026-08-02 the two agree and nothing is projected.
+ * Two model differences are normalized rather than reported, because they are
+ * choices about AST shape rather than about what the Markdown means.
  *
  *   - mdast splits a directive's label into children; Markdown Core carries it
  *     as a `DirectiveLabel` field. The comparison tree nests node-valued
  *     fields, so both are compared by their content without changing AST
  *     ownership semantics.
+ *   - mdast keeps a link reference definition as a node and its references
+ *     unresolved; Markdown Core consumes the definition into the parser's map
+ *     and resolves every successful reference into the `Link` or `Image` it
+ *     names, as cmark does (M2, registered delta `reference-resolution-model`).
+ *     This module resolves mdast's references against mdast's own definitions
+ *     -- the first definition of an identifier wins in both grammars -- so a
+ *     reference that resolved to the wrong definition, or to none, still shows
+ *     up as a difference.
  */
 
 import { urlDestination } from "./upstream-cmark.mjs";
@@ -67,7 +71,8 @@ function splitSoftBreaks(value) {
 }
 
 function collectDefinitions(node, into = new Map()) {
-    if (node.type === "definition") into.set(node.identifier, node);
+    // The first definition of an identifier wins, in mdast as in CommonMark.
+    if (node.type === "definition" && !into.has(node.identifier)) into.set(node.identifier, node);
     for (const child of node.children ?? []) collectDefinitions(child, into);
     return into;
 }
@@ -92,39 +97,25 @@ function blockCommentBody(literal) {
 function convert(node, definitions, parentType = "root") {
     if (node.type === "text") return splitSoftBreaks(node.value);
 
-    // The two models now agree here, so nothing is projected away: a
-    // definition is a node where it was written, and a reference carries its
-    // label and form and no destination. This used to resolve remark's
-    // references and drop its definitions to reach this repository's older,
-    // cmark-inherited shape; the delta that described it is retired.
-    if (node.type === "definition") {
-        return [
-            {
-                kind: "ReferenceDefinition",
-                fields: {
-                    label: node.label ?? node.identifier ?? "",
-                    identifier: node.identifier ?? "",
-                    destination: node.url ?? "",
-                    title: node.title ?? ""
-                },
-                children: []
-            }
-        ];
-    }
+    // Registered shape delta `reference-resolution-model`: a definition is
+    // consumed and produces no node, and a reference that resolves is the
+    // `Link` or `Image` it names, carrying the definition's destination and
+    // title -- the shape this repository's parser, like cmark, produces (M2).
+    if (node.type === "definition") return [];
     if (node.type === "linkReference" || node.type === "imageReference") {
         // An undefined label is not a reference in either model: a bare
         // bracket is prose, which is the one axis Markdown's grammar settles
         // rather than either project.
-        if (!definitions.has(node.identifier)) {
+        const definition = definitions.get(node.identifier);
+        if (!definition) {
             return [{ kind: "Text", fields: { literal: node.label ?? "" }, children: [] }];
         }
         return [
             {
-                kind: node.type === "linkReference" ? "LinkReference" : "ImageReference",
+                kind: node.type === "linkReference" ? "Link" : "Image",
                 fields: {
-                    label: node.label ?? "",
-                    identifier: node.identifier ?? "",
-                    form: node.referenceType ?? "shortcut"
+                    dest: urlDestination(definition.url ?? ""),
+                    title: definition.title ?? "null"
                 },
                 children: (node.children ?? []).flatMap((child) => convert(child, definitions, node.type))
             }
@@ -268,9 +259,6 @@ export const MDAST_COMPARED = {
     Link: ["dest", "title"],
     Image: ["dest", "title"],
     TableRow: ["isHeader"],
-    ReferenceDefinition: ["label", "identifier", "destination", "title"],
-    LinkReference: ["label", "identifier", "form"],
-    ImageReference: ["label", "identifier", "form"],
     // §5.6: footnote label bytes used to be compared by NOBODY, on either
     // side. mdast's `label` is the authored spelling and so is this side's, so
     // there is something to compare as of Step 9b.2. `identifier` is NOT

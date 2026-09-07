@@ -35,8 +35,6 @@ bool markdown_core_node_can_contain_type(markdown_core_node *node, markdown_core
     case MARKDOWN_CORE_NODE_STRONG:
     case MARKDOWN_CORE_NODE_LINK:
     case MARKDOWN_CORE_NODE_IMAGE:
-    case MARKDOWN_CORE_NODE_LINK_REFERENCE:
-    case MARKDOWN_CORE_NODE_IMAGE_REFERENCE:
         return MARKDOWN_CORE_NODE_TYPE_INLINE_P(child_type);
 
     default:
@@ -82,16 +80,10 @@ static bool S_can_contain(markdown_core_node *node, markdown_core_node *child) {
     return markdown_core_node_can_contain_type(node, (markdown_core_node_type)child->type);
 }
 
-markdown_core_node *markdown_core_node_new_with_mem_and_ext(markdown_core_node_type type, markdown_core_mem *mem,
-                                                            const markdown_core_extension *extension) {
-    markdown_core_node *node = (markdown_core_node *)mem->calloc(1, sizeof(*node));
-    if (!node) {
-        return NULL;
-    }
-    markdown_core_strbuf_init(mem, &node->content, 0);
-    node->type = (uint16_t)type;
-    node->extension = extension;
-
+/* The type-specific data a node of `node->type` starts with, over a zeroed
+ * arm. A link or image starts without a resource and reads as `[a]()` does;
+ * only the parser creates one, for every occurrence it resolves. */
+static void S_init_node_as(markdown_core_node *node) {
     switch (node->type) {
     case MARKDOWN_CORE_NODE_HEADING:
         node->as.heading.level = 1;
@@ -108,6 +100,18 @@ markdown_core_node *markdown_core_node_new_with_mem_and_ext(markdown_core_node_t
     default:
         break;
     }
+}
+
+markdown_core_node *markdown_core_node_new_with_mem_and_ext(markdown_core_node_type type, markdown_core_mem *mem,
+                                                            const markdown_core_extension *extension) {
+    markdown_core_node *node = (markdown_core_node *)mem->calloc(1, sizeof(*node));
+    if (!node) {
+        return NULL;
+    }
+    markdown_core_strbuf_init(mem, &node->content, 0);
+    node->type = (uint16_t)type;
+    node->extension = extension;
+    S_init_node_as(node);
 
     if (node->extension && node->extension->opaque_alloc_func) {
         node->extension->opaque_alloc_func(node->extension, mem, node);
@@ -147,23 +151,12 @@ static void free_node_as(markdown_core_node *node) {
     case MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION:
         markdown_core_association_free(NODE_MEM(node), &node->as.association);
         break;
-    case MARKDOWN_CORE_NODE_LINK_REFERENCE:
-    case MARKDOWN_CORE_NODE_IMAGE_REFERENCE:
-        markdown_core_association_free(NODE_MEM(node), &node->as.reference.association);
-        break;
     case MARKDOWN_CORE_NODE_LINK:
     case MARKDOWN_CORE_NODE_IMAGE:
-        markdown_core_chunk_free(NODE_MEM(node), &node->as.link.url);
-        markdown_core_optional_chunk_free(NODE_MEM(node), &node->as.link.title);
-        break;
-    case MARKDOWN_CORE_NODE_REFERENCE_DEFINITION:
-        if (node->as.definition) {
-            markdown_core_association_free(NODE_MEM(node), &node->as.definition->association);
-            markdown_core_chunk_free(NODE_MEM(node), &node->as.definition->url);
-            markdown_core_optional_chunk_free(NODE_MEM(node), &node->as.definition->title);
-            NODE_MEM(node)->free(node->as.definition);
-            node->as.definition = NULL;
-        }
+        /* One holder fewer; a resource shared with other occurrences, or
+         * still held by the reference map, stays. */
+        markdown_core_resource_release(NODE_MEM(node), node->as.link.resource);
+        node->as.link.resource = NULL;
         break;
     default:
         break;
@@ -180,7 +173,7 @@ static void S_free_nodes(markdown_core_node *e) {
             e->user_data_free_func(NODE_MEM(e), e->user_data);
         }
 
-        if (e->as.opaque && e->extension && e->extension->opaque_free_func) {
+        if (e->opaque && e->extension && e->extension->opaque_free_func) {
             e->extension->opaque_free_func(e->extension, NODE_MEM(e), e);
         }
 
@@ -229,7 +222,13 @@ int markdown_core_node_set_type(markdown_core_node *node, markdown_core_node_typ
     node->type = (uint16_t)initial_type;
     free_node_as(node);
 
+    /* The new type starts as a new node of that type would, rather than
+     * reading the old arm's bytes as its own -- a heading's level is not a
+     * resource pointer. An extension's opaque data lives beside the arm, not
+     * in it, and stays with the node and its extension. */
+    memset(&node->as, 0, sizeof(node->as));
     node->type = (uint16_t)type;
+    S_init_node_as(node);
 
     return 1;
 }
@@ -268,12 +267,6 @@ const char *markdown_core_node_get_type_string(markdown_core_node *node) {
         return "thematic_break";
     case MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION:
         return "footnote_definition";
-    case MARKDOWN_CORE_NODE_REFERENCE_DEFINITION:
-        return "reference_definition";
-    case MARKDOWN_CORE_NODE_LINK_REFERENCE:
-        return "link_reference";
-    case MARKDOWN_CORE_NODE_IMAGE_REFERENCE:
-        return "image_reference";
     case MARKDOWN_CORE_NODE_TEXT:
         return "text";
     case MARKDOWN_CORE_NODE_SOFT_BREAK:
@@ -665,76 +658,35 @@ int markdown_core_node_set_fenced(markdown_core_node *node, int fenced, int leng
     }
 }
 
-const char *markdown_core_node_get_url(markdown_core_node *node) {
-    if (node == NULL) {
+markdown_core_resource *markdown_core_resource_new(markdown_core_mem *mem, markdown_core_chunk url,
+                                                   markdown_core_optional_chunk title) {
+    markdown_core_resource *resource = (markdown_core_resource *)mem->calloc(1, sizeof(*resource));
+    if (!resource) {
         return NULL;
     }
-
-    switch (node->type) {
-    case MARKDOWN_CORE_NODE_LINK:
-    case MARKDOWN_CORE_NODE_IMAGE:
-        return markdown_core_chunk_to_cstr(NODE_MEM(node), &node->as.link.url);
-    default:
-        break;
-    }
-
-    return NULL;
+    resource->url = url;
+    resource->title = title;
+    resource->holders = 1;
+    return resource;
 }
 
-int markdown_core_node_set_url(markdown_core_node *node, const char *url) {
-    if (node == NULL) {
-        return 0;
+void markdown_core_resource_retain(markdown_core_resource *resource) {
+    if (resource) {
+        resource->holders++;
     }
-
-    switch (node->type) {
-    case MARKDOWN_CORE_NODE_LINK:
-    case MARKDOWN_CORE_NODE_IMAGE:
-        return markdown_core_chunk_set_cstr(NODE_MEM(node), &node->as.link.url, url);
-    default:
-        break;
-    }
-
-    return 0;
 }
 
-const char *markdown_core_node_get_title(markdown_core_node *node) {
-    if (node == NULL) {
-        return NULL;
+void markdown_core_resource_release(markdown_core_mem *mem, markdown_core_resource *resource) {
+    if (!resource) {
+        return;
     }
-
-    switch (node->type) {
-    case MARKDOWN_CORE_NODE_LINK:
-    case MARKDOWN_CORE_NODE_IMAGE:
-        /* ABSENT IS NULL, for the reason `get_fence_info` states. */
-        if (!node->as.link.title.has_value) {
-            return NULL;
-        }
-        return markdown_core_chunk_to_cstr(NODE_MEM(node), &node->as.link.title.value);
-    default:
-        break;
+    assert(resource->holders > 0);
+    if (--resource->holders > 0) {
+        return;
     }
-
-    return NULL;
-}
-
-int markdown_core_node_set_title(markdown_core_node *node, const char *title) {
-    if (node == NULL) {
-        return 0;
-    }
-
-    switch (node->type) {
-    case MARKDOWN_CORE_NODE_LINK:
-    case MARKDOWN_CORE_NODE_IMAGE:
-        if (!markdown_core_chunk_set_cstr(NODE_MEM(node), &node->as.link.title.value, title)) {
-            return 0;
-        }
-        node->as.link.title.has_value = title != NULL;
-        return 1;
-    default:
-        break;
-    }
-
-    return 0;
+    markdown_core_chunk_free(mem, &resource->url);
+    markdown_core_optional_chunk_free(mem, &resource->title);
+    mem->free(resource);
 }
 
 int markdown_core_node_set_extension(markdown_core_node *node, const markdown_core_extension *extension) {

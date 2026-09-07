@@ -135,6 +135,41 @@ test("errors: allocation failure is terminal across the WASM boundary", () => {
     assert.deepEqual(frees, [8]);
 });
 
+test("references: every occurrence of one definition crosses the boundary once and is materialized once", () => {
+    // M2: the C tree shares one resource across every occurrence of a
+    // definition; the Wasm result writes its strings once and each later
+    // occurrence points at the same bytes, and the decoder reuses the value it
+    // built for the first. The string blob therefore stays near the source
+    // size where copying would multiply the destination by the occurrences.
+    const destination = `/${"u".repeat(1024)}`;
+    const count = 20_000;
+    const source = `[a]: ${destination}\n\n${"[a]\n\n".repeat(count)}`;
+    let stringsLength = -1;
+    const measuringNative = {
+        memory: native.memory,
+        malloc: native.malloc,
+        free: native.free,
+        es_parse: (...arguments_) => {
+            const result = native.es_parse(...arguments_);
+            stringsLength = new DataView(native.memory.buffer).getUint32(result + 60, true);
+            return result;
+        },
+        es_result_free: native.es_result_free
+    };
+    const document = parseDocumentWithNative(measuringNative, source);
+    const links = document.content.map((paragraph) => paragraph.content[0]);
+    assert.equal(links.length, count);
+    assert.deepEqual(links[0].dest, { kind: "url", value: destination });
+    assert.ok(
+        links.every((link) => link.kind === "link" && link.dest === links[0].dest),
+        "every occurrence materializes the one destination"
+    );
+    assert.ok(
+        stringsLength >= 0 && stringsLength < 2 * source.length,
+        `the string blob holds ${stringsLength} bytes for ${source.length} source bytes`
+    );
+});
+
 test("ownership: declarations are readonly without runtime freeze", () => {
     const document = Document.parse("text\n");
     assert.equal(Object.isFrozen(document), false);
@@ -236,32 +271,36 @@ test("robustness: the heap grows, and a document larger than the initial one par
 });
 
 test("ast: the decoder's reference, formula, list and empty-string arms are exercised", () => {
-    // Four decoder arms that no other suite reaches, and each is an ordinary
-    // language feature rather than a defensive branch: a reference's form, a
-    // formula's placement, an ordered list's flavour, and requirement 14's
-    // "written and empty" answer, which is the one a `null` would be confused
-    // with.
+    // Decoder arms that no other suite reaches, and each is an ordinary
+    // language feature rather than a defensive branch: a resolved reference's
+    // shared resource, a formula's placement, an ordered list's flavour, and
+    // requirement 14's "written and empty" answer, which is the one a `null`
+    // would be confused with.
     const document = Document.parse(
-        ['[foo]: /url "t"', "", "See [foo] and $$x$$ and [a]().", "", "3. one", "4. two", ""].join("\n")
+        ['[foo]: /url "t"', "", "See [foo] and [x][foo] and $$x$$ and [a]().", "", "3. one", "4. two", ""].join("\n")
     );
 
-    const [definition, paragraph, list] = document.content;
-    assert.equal(definition.kind, "referenceDefinition");
-    assert.equal(definition.label, "foo");
-    assert.equal(definition.destination, "/url");
-
-    const reference = paragraph.content.find((node) => node.kind === "linkReference");
-    assert.equal(reference.form, "shortcut");
-    assert.equal(reference.identifier, "foo");
+    // M2: the definition produces no node, and each reference is the link it
+    // names, with the definition's destination and title. Both occurrences
+    // read one resource, materialized once.
+    const [paragraph, list] = document.content;
+    const references = paragraph.content.filter((node) => node.kind === "link" && node.dest.value === "/url");
+    assert.equal(references.length, 2);
+    assert.deepEqual(references[0].dest, { kind: "url", value: "/url" });
+    assert.equal(references[0].title, "t");
+    assert.equal(references[0].dest, references[1].dest, "one definition materializes one destination");
 
     const formula = paragraph.content.find((node) => node.kind === "formula");
     assert.equal(formula.mode, "standalone");
     assert.equal(formula.literal, "x");
 
     // `[a]()` WROTE a destination and wrote nothing in it. Empty is not absent:
-    // the tagged value is the `url` branch holding the empty string.
-    const link = paragraph.content.find((node) => node.kind === "link");
-    assert.deepEqual(link.dest, { kind: "url", value: "" });
+    // the tagged value is the `url` branch holding the empty string. It is the
+    // paragraph's third link, after the two resolved references.
+    const links = paragraph.content.filter((node) => node.kind === "link");
+    assert.equal(links.length, 3);
+    assert.deepEqual(links[2].dest, { kind: "url", value: "" });
+    assert.equal(links[2].title, null);
 
     assert.equal(list.kind, "list");
     assert.equal(list.flavor, "ordered");
@@ -276,12 +315,10 @@ test("errors: malformed native values are rejected before they enter the AST", (
     // mismatch into a wrong document. Nothing proved any of them fires, so a
     // renumbering could have removed the check and stayed green.
     const decoder = new NodeDecoder(new Uint8Array(64));
-    assert.throws(() => decoder.referenceForm(9), /invalid reference form 9/u);
     assert.throws(() => decoder.placement(9), /invalid placement mode 9/u);
     assert.throws(() => decoder.listFlavor(9), /invalid list flavor 9/u);
     assert.throws(() => decoder.tableAlignment(9), /invalid table alignment 9/u);
     assert.throws(() => decoder.nullableBoolean(9, "checked"), /invalid checked 9/u);
-    assert.equal(decoder.referenceForm(3), "shortcut");
     assert.equal(decoder.placement(2), "standalone");
     assert.equal(decoder.listFlavor(2), "ordered");
     assert.equal(decoder.tableAlignment(0), "none");

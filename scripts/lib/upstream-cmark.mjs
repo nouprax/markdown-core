@@ -456,64 +456,10 @@ export function applyUpstreamFootnoteModel(root, fired) {
     return rewrite(root);
 }
 
-/**
- * Registered delta `reference-definition-node`: upstream consumes a link
- * reference definition into its map and leaves no node, and resolves each
- * reference into a `Link`/`Image` carrying a copy of the destination. This
- * repository keeps the definition where it was written and lets the reference
- * carry only its label.
- *
- * Applying upstream's model to this side is what makes the two comparable, and
- * it compares the thing that matters: the label is resolved against the
- * document's own definitions, so a reference that resolved to the wrong
- * destination, or to none, still shows up as a difference.
- */
-export function applyUpstreamReferenceModel(root, fired) {
-    const definitions = new Map();
-    const survey = (node) => {
-        if (node.kind === "ReferenceDefinition") {
-            fired?.add("reference-definition-node");
-            // GROUPED BY `identifier`, WHICH THE ENGINE STATES. Folding the raw
-            // label here instead would need the full Unicode case fold: `[SS]`
-            // defines the label `[\u1e9e]` refers to, and JavaScript has no
-            // full case fold — `toLowerCase()` maps \u1e9e to \u00df, not to
-            // `ss`, so the projection would resolve to the wrong definition on
-            // an input cmark gets right. The check is not weakened by trusting
-            // the key: a reference that resolved to the WRONG definition names
-            // that one here, and its destination is still compared; one that
-            // resolved to none stays `Text` where upstream has a `Link`.
-            const key = node.fields.identifier ?? "";
-            // The earliest definition of a label wins, in both models.
-            if (!definitions.has(key)) definitions.set(key, node.fields);
-        }
-        for (const child of node.children) survey(child);
-    };
-    survey(root);
-
-    const rewrite = (node) => {
-        node.children = node.children
-            .filter((child) => child.kind !== "ReferenceDefinition")
-            .map((child) => {
-                if (child.kind === "LinkReference" || child.kind === "ImageReference") {
-                    fired?.add("reference-definition-node");
-                    const found = definitions.get(child.fields.identifier ?? "");
-                    rewrite(child);
-                    return {
-                        kind: child.kind === "LinkReference" ? "Link" : "Image",
-                        fields: {
-                            dest: urlDestination(found?.destination ?? ""),
-                            title: found?.title ?? ""
-                        },
-                        children: child.children
-                    };
-                }
-                rewrite(child);
-                return child;
-            });
-        return node;
-    };
-    return rewrite(root);
-}
+/* No reference projection any more (M2): both sides consume a link reference
+ * definition into a map and resolve every reference into the `Link` or `Image`
+ * it names, so a reference that resolved to the wrong definition, or to none,
+ * shows up as a plain difference in `dest`, `title`, or kind. */
 
 export function render(node, indent = "") {
     const fields = Object.entries(node.fields)

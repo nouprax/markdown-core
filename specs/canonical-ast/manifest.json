@@ -26,7 +26,6 @@
             "DirectiveBlock",
             "DirectiveLabel",
             "FootnoteDefinition",
-            "ReferenceDefinition",
             "Text",
             "SoftBreak",
             "LineBreak",
@@ -39,8 +38,6 @@
             "Strikethrough",
             "Link",
             "Image",
-            "LinkReference",
-            "ImageReference",
             "Directive",
             "FootnoteReference"
         ],
@@ -76,9 +73,7 @@
             "directive.label.null",
             "directive.label.empty",
             "directive.label.populated",
-            "reference.form.full",
-            "reference.form.collapsed",
-            "reference.form.shortcut",
+            "reference.resolution.identical",
             "link.title.null",
             "link.title.empty",
             "link.title.value",
@@ -121,9 +116,8 @@
                     "CodeBlock",
                     "HTMLBlock",
                     "FootnoteDefinition",
-                    "ReferenceDefinition",
-                    "LinkReference",
-                    "ImageReference"
+                    "Link",
+                    "Image"
                 ],
                 "states": [
                     "list.flavor.bullet",
@@ -140,10 +134,7 @@
                     "scope.positive",
                     "children.empty",
                     "children.populated",
-                    "escaping.newline",
-                    "reference.form.full",
-                    "reference.form.collapsed",
-                    "reference.form.shortcut"
+                    "escaping.newline"
                 ],
                 "orders": ["document.source-order"]
             }
@@ -336,6 +327,24 @@
                     "children.populated"
                 ],
                 "orders": ["document.source-order", "inline.source-order"]
+            }
+        },
+        {
+            "name": "references",
+            "input": "references.md",
+            "expected": "references.ast",
+            "coverage": {
+                "kinds": ["Document", "Paragraph", "Link", "Image", "Text"],
+                "states": [
+                    "reference.resolution.identical",
+                    "destination.url.value",
+                    "link.title.value",
+                    "image.title.value",
+                    "scope.positive",
+                    "children.empty",
+                    "children.populated"
+                ],
+                "orders": ["document.source-order"]
             }
         }
     ]

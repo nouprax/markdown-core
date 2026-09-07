@@ -10,7 +10,6 @@
     "enums": {
         "PlacementMode": ["embedded", "standalone"],
         "ListFlavor": ["bullet", "ordered"],
-        "ReferenceForm": ["full", "collapsed", "shortcut"],
         "TableAlignment": ["none", "left", "center", "right"],
         "DirectiveAttribute": "a name/value pair of Strings"
     },
@@ -276,32 +275,6 @@
             "invariants": "label is non-empty and as written; identifier KEEPS the leading `^`, so a footnote and a link definition of one name cannot collide; block content"
         },
         {
-            "name": "ReferenceDefinition",
-            "fields": [
-                {
-                    "name": "label",
-                    "type": "String",
-                    "optional": false
-                },
-                {
-                    "name": "identifier",
-                    "type": "String",
-                    "optional": false
-                },
-                {
-                    "name": "destination",
-                    "type": "String",
-                    "optional": false
-                },
-                {
-                    "name": "title",
-                    "type": "String",
-                    "optional": true
-                }
-            ],
-            "invariants": "label is the bytes between the brackets as written, delimiters excluded, escapes and character references unresolved, whitespace uncollapsed, case unfolded; identifier is the match key -- full Unicode case fold, trimmed, internal whitespace collapsed -- and is compared with memcmp over its bytes; neither derives the other; destination is never absent, because a definition that could not build one is not produced at all; absent and empty title remain distinct; leaf"
-        },
-        {
             "name": "Text",
             "fields": [
                 {
@@ -423,7 +396,7 @@
                     "optional": false
                 }
             ],
-            "invariants": "`dest` is the tagged `Destination` value and is never absent: `[a]()` and `[a](<>)` wrote one and wrote nothing in it, so it is `url(\"\")`, and a link with no destination at all is a `LinkReference`; every `Link` owns the `url` branch; absent and empty title remain distinct; inline content"
+            "invariants": "`dest` is the tagged `Destination` value and is never absent: `[a]()` and `[a](<>)` wrote one and wrote nothing in it, so it is `url(\"\")`; a reference occurrence answers the destination its definition stated, and an unresolved reference is the inherited literal text; every `Link` owns the `url` branch; absent and empty title remain distinct; inline content"
         },
         {
             "name": "Image",
@@ -445,58 +418,6 @@
                 }
             ],
             "invariants": "`dest` is the tagged `Destination` value and is never absent, for the reason `Link.dest` is not; every `Image` owns the `url` branch; absent and empty title remain distinct; content is parsed alt-text inline content"
-        },
-        {
-            "name": "LinkReference",
-            "fields": [
-                {
-                    "name": "label",
-                    "type": "String",
-                    "optional": false
-                },
-                {
-                    "name": "identifier",
-                    "type": "String",
-                    "optional": false
-                },
-                {
-                    "name": "form",
-                    "type": "ReferenceForm",
-                    "optional": false
-                },
-                {
-                    "name": "content",
-                    "type": "[Markup]",
-                    "optional": false
-                }
-            ],
-            "invariants": "label is as written and identifier is the match key, exactly as on ReferenceDefinition; the node carries NO destination -- the destination is stated once, at the definition; form records which of the three spellings the source used, and all three resolve identically; inline content"
-        },
-        {
-            "name": "ImageReference",
-            "fields": [
-                {
-                    "name": "label",
-                    "type": "String",
-                    "optional": false
-                },
-                {
-                    "name": "identifier",
-                    "type": "String",
-                    "optional": false
-                },
-                {
-                    "name": "form",
-                    "type": "ReferenceForm",
-                    "optional": false
-                },
-                {
-                    "name": "content",
-                    "type": "[Markup]",
-                    "optional": false
-                }
-            ],
-            "invariants": "label is as written and identifier is the match key, exactly as on ReferenceDefinition; the node carries NO destination -- the destination is stated once, at the definition; form records which of the three spellings the source used, and all three resolve identically; content is parsed alt-text inline content"
         },
         {
             "name": "Directive",

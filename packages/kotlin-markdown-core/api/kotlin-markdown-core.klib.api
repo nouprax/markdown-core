@@ -40,18 +40,6 @@ final enum class com.nouprax.markdown.core/PlacementMode : kotlin/Enum<com.noupr
     final fun values(): kotlin/Array<com.nouprax.markdown.core/PlacementMode> // com.nouprax.markdown.core/PlacementMode.values|values#static(){}[0]
 }
 
-final enum class com.nouprax.markdown.core/ReferenceForm : kotlin/Enum<com.nouprax.markdown.core/ReferenceForm> { // com.nouprax.markdown.core/ReferenceForm|null[0]
-    enum entry COLLAPSED // com.nouprax.markdown.core/ReferenceForm.COLLAPSED|null[0]
-    enum entry FULL // com.nouprax.markdown.core/ReferenceForm.FULL|null[0]
-    enum entry SHORTCUT // com.nouprax.markdown.core/ReferenceForm.SHORTCUT|null[0]
-
-    final val entries // com.nouprax.markdown.core/ReferenceForm.entries|#static{}entries[0]
-        final fun <get-entries>(): kotlin.enums/EnumEntries<com.nouprax.markdown.core/ReferenceForm> // com.nouprax.markdown.core/ReferenceForm.entries.<get-entries>|<get-entries>#static(){}[0]
-
-    final fun valueOf(kotlin/String): com.nouprax.markdown.core/ReferenceForm // com.nouprax.markdown.core/ReferenceForm.valueOf|valueOf#static(kotlin.String){}[0]
-    final fun values(): kotlin/Array<com.nouprax.markdown.core/ReferenceForm> // com.nouprax.markdown.core/ReferenceForm.values|values#static(){}[0]
-}
-
 final enum class com.nouprax.markdown.core/TableAlignment : kotlin/Enum<com.nouprax.markdown.core/TableAlignment> { // com.nouprax.markdown.core/TableAlignment|null[0]
     enum entry CENTER // com.nouprax.markdown.core/TableAlignment.CENTER|null[0]
     enum entry LEFT // com.nouprax.markdown.core/TableAlignment.LEFT|null[0]
@@ -94,14 +82,11 @@ abstract interface <#A: kotlin/Any?> com.nouprax.markdown.core/Visitor { // com.
     abstract fun visitHTMLBlock(com.nouprax.markdown.core/HTMLBlock): #A // com.nouprax.markdown.core/Visitor.visitHTMLBlock|visitHTMLBlock(com.nouprax.markdown.core.HTMLBlock){}[0]
     abstract fun visitHeading(com.nouprax.markdown.core/Heading): #A // com.nouprax.markdown.core/Visitor.visitHeading|visitHeading(com.nouprax.markdown.core.Heading){}[0]
     abstract fun visitImage(com.nouprax.markdown.core/Image): #A // com.nouprax.markdown.core/Visitor.visitImage|visitImage(com.nouprax.markdown.core.Image){}[0]
-    abstract fun visitImageReference(com.nouprax.markdown.core/ImageReference): #A // com.nouprax.markdown.core/Visitor.visitImageReference|visitImageReference(com.nouprax.markdown.core.ImageReference){}[0]
     abstract fun visitLineBreak(com.nouprax.markdown.core/LineBreak): #A // com.nouprax.markdown.core/Visitor.visitLineBreak|visitLineBreak(com.nouprax.markdown.core.LineBreak){}[0]
     abstract fun visitLink(com.nouprax.markdown.core/Link): #A // com.nouprax.markdown.core/Visitor.visitLink|visitLink(com.nouprax.markdown.core.Link){}[0]
-    abstract fun visitLinkReference(com.nouprax.markdown.core/LinkReference): #A // com.nouprax.markdown.core/Visitor.visitLinkReference|visitLinkReference(com.nouprax.markdown.core.LinkReference){}[0]
     abstract fun visitList(com.nouprax.markdown.core/List): #A // com.nouprax.markdown.core/Visitor.visitList|visitList(com.nouprax.markdown.core.List){}[0]
     abstract fun visitListItem(com.nouprax.markdown.core/ListItem): #A // com.nouprax.markdown.core/Visitor.visitListItem|visitListItem(com.nouprax.markdown.core.ListItem){}[0]
     abstract fun visitParagraph(com.nouprax.markdown.core/Paragraph): #A // com.nouprax.markdown.core/Visitor.visitParagraph|visitParagraph(com.nouprax.markdown.core.Paragraph){}[0]
-    abstract fun visitReferenceDefinition(com.nouprax.markdown.core/ReferenceDefinition): #A // com.nouprax.markdown.core/Visitor.visitReferenceDefinition|visitReferenceDefinition(com.nouprax.markdown.core.ReferenceDefinition){}[0]
     abstract fun visitSoftBreak(com.nouprax.markdown.core/SoftBreak): #A // com.nouprax.markdown.core/Visitor.visitSoftBreak|visitSoftBreak(com.nouprax.markdown.core.SoftBreak){}[0]
     abstract fun visitStrikethrough(com.nouprax.markdown.core/Strikethrough): #A // com.nouprax.markdown.core/Visitor.visitStrikethrough|visitStrikethrough(com.nouprax.markdown.core.Strikethrough){}[0]
     abstract fun visitStrong(com.nouprax.markdown.core/Strong): #A // com.nouprax.markdown.core/Visitor.visitStrong|visitStrong(com.nouprax.markdown.core.Strong){}[0]
@@ -130,14 +115,11 @@ abstract interface com.nouprax.markdown.core/WalkingVisitor { // com.nouprax.mar
     abstract fun visitHTMLBlock(com.nouprax.markdown.core/HTMLBlock, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitHTMLBlock|visitHTMLBlock(com.nouprax.markdown.core.HTMLBlock;com.nouprax.markdown.core.WalkPhase){}[0]
     abstract fun visitHeading(com.nouprax.markdown.core/Heading, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitHeading|visitHeading(com.nouprax.markdown.core.Heading;com.nouprax.markdown.core.WalkPhase){}[0]
     abstract fun visitImage(com.nouprax.markdown.core/Image, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitImage|visitImage(com.nouprax.markdown.core.Image;com.nouprax.markdown.core.WalkPhase){}[0]
-    abstract fun visitImageReference(com.nouprax.markdown.core/ImageReference, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitImageReference|visitImageReference(com.nouprax.markdown.core.ImageReference;com.nouprax.markdown.core.WalkPhase){}[0]
     abstract fun visitLineBreak(com.nouprax.markdown.core/LineBreak, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitLineBreak|visitLineBreak(com.nouprax.markdown.core.LineBreak;com.nouprax.markdown.core.WalkPhase){}[0]
     abstract fun visitLink(com.nouprax.markdown.core/Link, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitLink|visitLink(com.nouprax.markdown.core.Link;com.nouprax.markdown.core.WalkPhase){}[0]
-    abstract fun visitLinkReference(com.nouprax.markdown.core/LinkReference, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitLinkReference|visitLinkReference(com.nouprax.markdown.core.LinkReference;com.nouprax.markdown.core.WalkPhase){}[0]
     abstract fun visitList(com.nouprax.markdown.core/List, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitList|visitList(com.nouprax.markdown.core.List;com.nouprax.markdown.core.WalkPhase){}[0]
     abstract fun visitListItem(com.nouprax.markdown.core/ListItem, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitListItem|visitListItem(com.nouprax.markdown.core.ListItem;com.nouprax.markdown.core.WalkPhase){}[0]
     abstract fun visitParagraph(com.nouprax.markdown.core/Paragraph, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitParagraph|visitParagraph(com.nouprax.markdown.core.Paragraph;com.nouprax.markdown.core.WalkPhase){}[0]
-    abstract fun visitReferenceDefinition(com.nouprax.markdown.core/ReferenceDefinition, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitReferenceDefinition|visitReferenceDefinition(com.nouprax.markdown.core.ReferenceDefinition;com.nouprax.markdown.core.WalkPhase){}[0]
     abstract fun visitSoftBreak(com.nouprax.markdown.core/SoftBreak, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitSoftBreak|visitSoftBreak(com.nouprax.markdown.core.SoftBreak;com.nouprax.markdown.core.WalkPhase){}[0]
     abstract fun visitStrikethrough(com.nouprax.markdown.core/Strikethrough, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitStrikethrough|visitStrikethrough(com.nouprax.markdown.core.Strikethrough;com.nouprax.markdown.core.WalkPhase){}[0]
     abstract fun visitStrong(com.nouprax.markdown.core/Strong, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitStrong|visitStrong(com.nouprax.markdown.core.Strong;com.nouprax.markdown.core.WalkPhase){}[0]
@@ -366,21 +348,6 @@ final class com.nouprax.markdown.core/Image : com.nouprax.markdown.core/Markup {
     final fun <#A1: kotlin/Any?> accept(com.nouprax.markdown.core/Visitor<#A1>): #A1 // com.nouprax.markdown.core/Image.accept|accept(com.nouprax.markdown.core.Visitor<0:0>){0§<kotlin.Any?>}[0]
 }
 
-final class com.nouprax.markdown.core/ImageReference : com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core/ImageReference|null[0]
-    final val content // com.nouprax.markdown.core/ImageReference.content|{}content[0]
-        final fun <get-content>(): kotlin.collections/List<com.nouprax.markdown.core/Markup> // com.nouprax.markdown.core/ImageReference.content.<get-content>|<get-content>(){}[0]
-    final val form // com.nouprax.markdown.core/ImageReference.form|{}form[0]
-        final fun <get-form>(): com.nouprax.markdown.core/ReferenceForm // com.nouprax.markdown.core/ImageReference.form.<get-form>|<get-form>(){}[0]
-    final val identifier // com.nouprax.markdown.core/ImageReference.identifier|{}identifier[0]
-        final fun <get-identifier>(): kotlin/String // com.nouprax.markdown.core/ImageReference.identifier.<get-identifier>|<get-identifier>(){}[0]
-    final val label // com.nouprax.markdown.core/ImageReference.label|{}label[0]
-        final fun <get-label>(): kotlin/String // com.nouprax.markdown.core/ImageReference.label.<get-label>|<get-label>(){}[0]
-    final val scope // com.nouprax.markdown.core/ImageReference.scope|{}scope[0]
-        final fun <get-scope>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/ImageReference.scope.<get-scope>|<get-scope>(){}[0]
-
-    final fun <#A1: kotlin/Any?> accept(com.nouprax.markdown.core/Visitor<#A1>): #A1 // com.nouprax.markdown.core/ImageReference.accept|accept(com.nouprax.markdown.core.Visitor<0:0>){0§<kotlin.Any?>}[0]
-}
-
 final class com.nouprax.markdown.core/LineBreak : com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core/LineBreak|null[0]
     final val scope // com.nouprax.markdown.core/LineBreak.scope|{}scope[0]
         final fun <get-scope>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/LineBreak.scope.<get-scope>|<get-scope>(){}[0]
@@ -399,21 +366,6 @@ final class com.nouprax.markdown.core/Link : com.nouprax.markdown.core/Markup { 
         final fun <get-title>(): kotlin/String? // com.nouprax.markdown.core/Link.title.<get-title>|<get-title>(){}[0]
 
     final fun <#A1: kotlin/Any?> accept(com.nouprax.markdown.core/Visitor<#A1>): #A1 // com.nouprax.markdown.core/Link.accept|accept(com.nouprax.markdown.core.Visitor<0:0>){0§<kotlin.Any?>}[0]
-}
-
-final class com.nouprax.markdown.core/LinkReference : com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core/LinkReference|null[0]
-    final val content // com.nouprax.markdown.core/LinkReference.content|{}content[0]
-        final fun <get-content>(): kotlin.collections/List<com.nouprax.markdown.core/Markup> // com.nouprax.markdown.core/LinkReference.content.<get-content>|<get-content>(){}[0]
-    final val form // com.nouprax.markdown.core/LinkReference.form|{}form[0]
-        final fun <get-form>(): com.nouprax.markdown.core/ReferenceForm // com.nouprax.markdown.core/LinkReference.form.<get-form>|<get-form>(){}[0]
-    final val identifier // com.nouprax.markdown.core/LinkReference.identifier|{}identifier[0]
-        final fun <get-identifier>(): kotlin/String // com.nouprax.markdown.core/LinkReference.identifier.<get-identifier>|<get-identifier>(){}[0]
-    final val label // com.nouprax.markdown.core/LinkReference.label|{}label[0]
-        final fun <get-label>(): kotlin/String // com.nouprax.markdown.core/LinkReference.label.<get-label>|<get-label>(){}[0]
-    final val scope // com.nouprax.markdown.core/LinkReference.scope|{}scope[0]
-        final fun <get-scope>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/LinkReference.scope.<get-scope>|<get-scope>(){}[0]
-
-    final fun <#A1: kotlin/Any?> accept(com.nouprax.markdown.core/Visitor<#A1>): #A1 // com.nouprax.markdown.core/LinkReference.accept|accept(com.nouprax.markdown.core.Visitor<0:0>){0§<kotlin.Any?>}[0]
 }
 
 final class com.nouprax.markdown.core/List : com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core/List|null[0]
@@ -474,21 +426,6 @@ final class com.nouprax.markdown.core/Position { // com.nouprax.markdown.core/Po
     final fun equals(kotlin/Any?): kotlin/Boolean // com.nouprax.markdown.core/Position.equals|equals(kotlin.Any?){}[0]
     final fun hashCode(): kotlin/Int // com.nouprax.markdown.core/Position.hashCode|hashCode(){}[0]
     final fun toString(): kotlin/String // com.nouprax.markdown.core/Position.toString|toString(){}[0]
-}
-
-final class com.nouprax.markdown.core/ReferenceDefinition : com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core/ReferenceDefinition|null[0]
-    final val destination // com.nouprax.markdown.core/ReferenceDefinition.destination|{}destination[0]
-        final fun <get-destination>(): kotlin/String // com.nouprax.markdown.core/ReferenceDefinition.destination.<get-destination>|<get-destination>(){}[0]
-    final val identifier // com.nouprax.markdown.core/ReferenceDefinition.identifier|{}identifier[0]
-        final fun <get-identifier>(): kotlin/String // com.nouprax.markdown.core/ReferenceDefinition.identifier.<get-identifier>|<get-identifier>(){}[0]
-    final val label // com.nouprax.markdown.core/ReferenceDefinition.label|{}label[0]
-        final fun <get-label>(): kotlin/String // com.nouprax.markdown.core/ReferenceDefinition.label.<get-label>|<get-label>(){}[0]
-    final val scope // com.nouprax.markdown.core/ReferenceDefinition.scope|{}scope[0]
-        final fun <get-scope>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/ReferenceDefinition.scope.<get-scope>|<get-scope>(){}[0]
-    final val title // com.nouprax.markdown.core/ReferenceDefinition.title|{}title[0]
-        final fun <get-title>(): kotlin/String? // com.nouprax.markdown.core/ReferenceDefinition.title.<get-title>|<get-title>(){}[0]
-
-    final fun <#A1: kotlin/Any?> accept(com.nouprax.markdown.core/Visitor<#A1>): #A1 // com.nouprax.markdown.core/ReferenceDefinition.accept|accept(com.nouprax.markdown.core.Visitor<0:0>){0§<kotlin.Any?>}[0]
 }
 
 final class com.nouprax.markdown.core/Scope { // com.nouprax.markdown.core/Scope|null[0]

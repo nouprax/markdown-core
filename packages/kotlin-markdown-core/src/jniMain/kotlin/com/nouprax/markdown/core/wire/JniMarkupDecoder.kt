@@ -90,32 +90,6 @@ private class JniTreeDecoder(
                 readChildren { consume(FootnoteDefinition(label, identifier, it, scope)) }
             }
 
-            JniNodeKind.REFERENCE_DEFINITION -> {
-                consume(
-                    ReferenceDefinition(
-                        reader.requiredString(),
-                        reader.requiredString(),
-                        reader.requiredString(),
-                        reader.string(),
-                        scope,
-                    ),
-                )
-            }
-
-            JniNodeKind.LINK_REFERENCE -> {
-                val label = reader.requiredString()
-                val identifier = reader.requiredString()
-                val form = referenceForm()
-                readChildren { consume(LinkReference(label, identifier, form, it, scope)) }
-            }
-
-            JniNodeKind.IMAGE_REFERENCE -> {
-                val label = reader.requiredString()
-                val identifier = reader.requiredString()
-                val form = referenceForm()
-                readChildren { consume(ImageReference(label, identifier, form, it, scope)) }
-            }
-
             JniNodeKind.TEXT -> {
                 consume(Text(reader.requiredString(), scope))
             }
@@ -157,15 +131,13 @@ private class JniTreeDecoder(
             }
 
             JniNodeKind.LINK -> {
-                val dest = destination()
-                val title = reader.string()
-                readChildren { consume(Link(dest, title, it, scope)) }
+                val resource = resource()
+                readChildren { consume(Link(resource.first, resource.second, it, scope)) }
             }
 
             JniNodeKind.IMAGE -> {
-                val dest = destination()
-                val title = reader.string()
-                readChildren { consume(Image(dest, title, it, scope)) }
+                val resource = resource()
+                readChildren { consume(Image(resource.first, resource.second, it, scope)) }
             }
 
             JniNodeKind.DIRECTIVE -> {
@@ -302,6 +274,24 @@ private class JniTreeDecoder(
         }
     }
 
+    /**
+     * Every occurrence of one reference definition shares one resource, and the
+     * payload sends it once: a resource ordinal leads, and only the first
+     * occurrence of an ordinal carries the destination and title, so a long
+     * destination referenced many times crosses the boundary once and is
+     * materialized once.
+     */
+    private val resources = ArrayList<Pair<Destination, String?>>()
+
+    private fun resource(): Pair<Destination, String?> {
+        val ordinal = reader.int()
+        if (ordinal in resources.indices) return resources[ordinal]
+        require(ordinal == resources.size) { "JNI payload names an unknown resource $ordinal" }
+        val resource = destination() to reader.string()
+        resources += resource
+        return resource
+    }
+
     /** The branch ordinal leads; only that branch's fields follow it. */
     private fun destination(): Destination =
         when (val rawValue = reader.int()) {
@@ -315,14 +305,6 @@ private class JniTreeDecoder(
             1 -> PlacementMode.EMBEDDED
             2 -> PlacementMode.STANDALONE
             else -> error("invalid native placement mode $rawValue")
-        }
-
-    private fun referenceForm(): ReferenceForm =
-        when (val rawValue = reader.int()) {
-            1 -> ReferenceForm.FULL
-            2 -> ReferenceForm.COLLAPSED
-            3 -> ReferenceForm.SHORTCUT
-            else -> error("unsupported native reference form $rawValue")
         }
 
     private fun tableAlignment(rawValue: Int): TableAlignment =

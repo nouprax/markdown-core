@@ -103,9 +103,12 @@ static void check_null_and_empty(void) {
         {"[a](/u \"t\")\n", MARKDOWN_CORE_KIND_LINK, "/u", true, "t"},
         {"![a]()\n", MARKDOWN_CORE_KIND_IMAGE, "", false, ""},
         {"![a](/s \"\")\n", MARKDOWN_CORE_KIND_IMAGE, "/s", true, ""},
-        {"[a]: <>\n", MARKDOWN_CORE_KIND_REFERENCE_DEFINITION, "", false, ""},
-        {"[a]: <> \"\"\n", MARKDOWN_CORE_KIND_REFERENCE_DEFINITION, "", true, ""},
-        {"[a]: /u \"t\"\n", MARKDOWN_CORE_KIND_REFERENCE_DEFINITION, "/u", true, "t"},
+        /* M2: a resolved reference answers what its definition stated,
+         * through the same accessors, and the definition is not a node. */
+        {"[a]: <>\n\n[a]\n", MARKDOWN_CORE_KIND_LINK, "", false, ""},
+        {"[a]: <> \"\"\n\n[a][]\n", MARKDOWN_CORE_KIND_LINK, "", true, ""},
+        {"[a]: /u \"t\"\n\n[x][a]\n", MARKDOWN_CORE_KIND_LINK, "/u", true, "t"},
+        {"![a][r]\n\n[r]: /s \"\"\n", MARKDOWN_CORE_KIND_IMAGE, "/s", true, ""},
     };
     static const struct {
         const char *source;
@@ -132,23 +135,16 @@ static void check_null_and_empty(void) {
             continue;
         }
         node = markdown_core_node_get_first_child(markdown_core_document_root(document));
-        if (CASES[index].kind != MARKDOWN_CORE_KIND_REFERENCE_DEFINITION) {
-            node = markdown_core_node_get_first_child(node);
-        }
+        node = markdown_core_node_get_first_child(node);
         check(markdown_core_node_get_kind(node) == CASES[index].kind, "requirement 14 case has the expected kind");
-        if (CASES[index].kind == MARKDOWN_CORE_KIND_REFERENCE_DEFINITION) {
-            read = markdown_core_node_definition_resource(node, &destination, &title);
-        } else {
-            /* M1: a link or image answers the tagged `Destination`, and every
-             * one the inherited grammar produces is the `url` branch, with the
-             * other branch's fields zeroed rather than left over. */
-            read = markdown_core_node_destination(node, &tagged) && markdown_core_node_title(node, &title);
-            check(read && tagged.kind == MARKDOWN_CORE_DESTINATION_URL,
-                  "a link or image destination is the url branch");
-            check(tagged.path.data == NULL && tagged.path.length == 0 && !tagged.anchor.has_value,
-                  "the cross branch's fields are zeroed on a url destination");
-            destination = tagged.url;
-        }
+        /* M1: a link or image answers the tagged `Destination`, and every one
+         * the inherited grammar produces is the `url` branch, with the other
+         * branch's fields zeroed rather than left over. */
+        read = markdown_core_node_destination(node, &tagged) && markdown_core_node_title(node, &title);
+        check(read && tagged.kind == MARKDOWN_CORE_DESTINATION_URL, "a link or image destination is the url branch");
+        check(tagged.path.data == NULL && tagged.path.length == 0 && !tagged.anchor.has_value,
+              "the cross branch's fields are zeroed on a url destination");
+        destination = tagged.url;
         check(read, "the resource accessor answers");
         /* A DESTINATION IS NEVER ABSENT. There is no `has_value` to test,
          * because the type does not offer one -- that IS the assertion. */
@@ -192,6 +188,57 @@ static void check_null_and_empty(void) {
         }
         markdown_core_document_free(document);
     }
+}
+
+/* M2: every occurrence that resolved through one definition shares one
+ * resource, and the identity says so; a direct link, a direct image and an
+ * autolink each own one, and every other kind has none. */
+static void check_resource_identity(void) {
+    static const char source[] = "[a][r] [r][] [r] ![i][r] [d](/r) <https://x.y> [none]\n\n[r]: /r\n";
+    markdown_core_document *document = markdown_core_document_parse((const uint8_t *)source, strlen(source), NULL);
+    const markdown_core_node *paragraph;
+    const markdown_core_node *child;
+    const markdown_core_resource *shared = NULL;
+    const markdown_core_resource *direct = NULL;
+    const markdown_core_resource *autolink = NULL;
+    int occurrences = 0;
+    int others = 0;
+    if (!document) {
+        check(false, "resource identity corpus parses");
+        return;
+    }
+    paragraph = markdown_core_node_get_first_child(markdown_core_document_root(document));
+    check(markdown_core_node_resource(markdown_core_document_root(document)) == NULL &&
+              markdown_core_node_resource(paragraph) == NULL && markdown_core_node_resource(NULL) == NULL,
+          "a kind with no destination has no resource");
+    for (child = markdown_core_node_get_first_child(paragraph); child;
+         child = markdown_core_node_get_next_sibling(child)) {
+        const markdown_core_resource *resource = markdown_core_node_resource(child);
+        markdown_core_node_kind kind = markdown_core_node_get_kind(child);
+        if (kind != MARKDOWN_CORE_KIND_LINK && kind != MARKDOWN_CORE_KIND_IMAGE) {
+            check(resource == NULL, "a text node has no resource");
+            others++;
+            continue;
+        }
+        check(resource != NULL, "every link and image answers a resource");
+        if (occurrences < 4) {
+            /* The three link forms and the image reference name one
+             * definition and share one resource. */
+            if (occurrences == 0) {
+                shared = resource;
+            }
+            check(resource == shared, "every occurrence of one definition shares its resource");
+        } else if (occurrences == 4) {
+            direct = resource;
+            check(direct != shared, "a direct link owns a resource of its own");
+        } else {
+            autolink = resource;
+            check(autolink != shared && autolink != direct, "an autolink owns a resource of its own");
+        }
+        occurrences++;
+    }
+    check(occurrences == 6 && others > 0, "the corpus holds four occurrences, a direct link and an autolink");
+    markdown_core_document_free(document);
 }
 
 static void check_directive_label_projection(void) {
@@ -354,6 +401,7 @@ int main(int argc, char **argv) {
     check_api();
     check_dialect_is_whole();
     check_null_and_empty();
+    check_resource_identity();
     check_directive_label_projection();
     for (i = 3; i < argc; i++) {
         check_fixture(fixture_dir, argv[i]);

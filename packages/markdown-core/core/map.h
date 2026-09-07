@@ -7,13 +7,19 @@
 extern "C" {
 #endif
 
-/* A record is a normalized LABEL and nothing else. It used to carry a `size`,
- * which was the number of bytes resolving against it copied into a node -- the
- * quantity D9's expansion budget charged. A reference that names its definition
- * copies nothing, so there is nothing to charge and no field to carry it. */
+struct markdown_core_resource;
+
+/* A record is a normalized LABEL and, for a link reference definition, the
+ * RESOURCE the definition stated -- destination and title -- owned once, here,
+ * and shared by every occurrence that resolves to it (M2). It used to carry a
+ * `size`, which was the number of bytes resolving against it copied into a
+ * node -- the quantity D9's expansion budget charged. A reference that shares
+ * its definition's resource copies nothing, so there is nothing to charge and
+ * no field to carry it. A footnote definition's record has no resource. */
 struct markdown_core_map_record {
     struct markdown_core_map_record *next;
     unsigned char *label;
+    struct markdown_core_resource *resource;
 };
 
 typedef struct markdown_core_map_record markdown_core_map_record;

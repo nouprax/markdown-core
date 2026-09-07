@@ -50,9 +50,6 @@ class AstTest {
                 "FootnoteReference",
                 "TableRow",
                 "TableCell",
-                "ReferenceDefinition",
-                "LinkReference",
-                "ImageReference",
             ),
             kinds,
         )

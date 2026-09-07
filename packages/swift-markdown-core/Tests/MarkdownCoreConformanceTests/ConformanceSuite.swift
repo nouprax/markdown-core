@@ -25,7 +25,7 @@ import Testing
             "LineBreak",
             "Code", "HTML", "Comment", "Formula", "Emphasis", "Strong",
             "Strikethrough", "Link", "Image", "Directive", "FootnoteReference",
-            "TableRow", "TableCell", "ReferenceDefinition", "LinkReference", "ImageReference",
+            "TableRow", "TableCell",
         ]
         #expect(kinds == expected)
         #expect(documents.allSatisfy { $0.scope.start == Position(line: 1, column: 1) })

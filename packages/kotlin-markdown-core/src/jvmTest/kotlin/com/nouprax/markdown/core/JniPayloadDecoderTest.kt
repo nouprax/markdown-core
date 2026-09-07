@@ -28,8 +28,8 @@ class JniPayloadDecoderTest {
     @Test
     fun malformedJniPayloadValuesAreRejectedBeforeTheyEnterTheAst() {
         assertFailsWith<IllegalStateException> { JniNodeKind.from(0) }
-        assertFailsWith<IllegalStateException> { JniNodeKind.from(34) }
-        assertEquals(JniNodeKind.COMMENT, JniNodeKind.from(33))
+        assertFailsWith<IllegalStateException> { JniNodeKind.from(31) }
+        assertEquals(JniNodeKind.COMMENT, JniNodeKind.from(30))
         assertFailsWith<IllegalArgumentException> {
             JniPayloadDecoder.decodeDocument("MKJ1".encodeToByteArray())
         }

@@ -35,13 +35,6 @@
             "kind": "deliberate-difference",
             "summary": "cmark can emit a Text node with an empty literal after hard-break processing. Markdown Core and mdast omit nodes that own no content.",
             "handling": "The shared normalizer drops empty Text nodes on both sides and records that the projection acted."
-        },
-        {
-            "id": "reference-definition-node",
-            "kind": "deliberate-difference",
-            "summary": "cmark consumes link reference definitions into a map and copies the resolved destination into Link/Image nodes. Markdown Core keeps source-faithful ReferenceDefinition and reference nodes.",
-            "handling": "The shared normalizer projects Markdown Core's source-faithful model into cmark's resolved model, preserving comparison of the selected definition, destination, title, and child content.",
-            "projected": true
         }
     ],
     "expectedDivergences": [

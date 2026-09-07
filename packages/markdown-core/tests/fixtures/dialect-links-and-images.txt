@@ -10,10 +10,11 @@ license: '[CC-BY-SA 4.0](http://creativecommons.org/licenses/by-sa/4.0/)'
 
 The examples of the
 [links and images module](../../../../docs/specs/dialect/links-and-images.md)
-whose behavior `M1` landed: the `Destination` value of every `Link` and
-`Image`, and the inherited and GFM link forms that produce its `url` branch.
-They are the module's examples in the module's order; the resolved-reference
-examples arrive with `M2` and the image-dimension examples with `O9`. The
+whose behavior `M1` and `M2` landed: the `Destination` value of every `Link`
+and `Image`, the resolved reference forms, and the inherited and GFM link
+forms that produce the `url` branch. They are the module's examples in the
+module's order; the reference-image example prints the `width` and `height`
+fields that `M7` lands, and the image-dimension examples arrive with `O9`. The
 expected dumps are the module's expected dumps in the dump grammar of today,
 which does not yet print the universal `anchor` and `attributes` fields that
 `M7` lands, so every line differs from the module's by exactly
@@ -50,6 +51,46 @@ Document scope=1:1..1:32 children=1
     ├── Text scope=1:22..1:22 literal=" " children=0
     └── Link scope=1:23..1:32 dest=url("/u)x") title=null children=1
         └── Text scope=1:24..1:24 literal="b" children=0
+````````````````````````````````
+
+## Resolved references
+
+Every successful full, collapsed, and shortcut form produces the `Link` its
+definition names, with the definition's destination and title and the
+occurrence's own scope; the definition produces no node, and a reference whose
+label resolves to no definition is the inherited literal text with its
+brackets:
+
+```````````````````````````````` example
+[text][r] [r][] [r] [text][none]
+
+[r]: /url "title"
+.
+Document scope=1:1..3:17 children=1
+└── Paragraph scope=1:1..1:32 children=6
+    ├── Link scope=1:1..1:9 dest=url("/url") title="title" children=1
+    │   └── Text scope=1:2..1:5 literal="text" children=0
+    ├── Text scope=1:10..1:10 literal=" " children=0
+    ├── Link scope=1:11..1:15 dest=url("/url") title="title" children=1
+    │   └── Text scope=1:12..1:12 literal="r" children=0
+    ├── Text scope=1:16..1:16 literal=" " children=0
+    ├── Link scope=1:17..1:19 dest=url("/url") title="title" children=1
+    │   └── Text scope=1:18..1:18 literal="r" children=0
+    └── Text scope=1:20..1:32 literal=" [text][none]" children=0
+````````````````````````````````
+
+The first definition of a label in source order wins among duplicates:
+
+```````````````````````````````` example
+[r]
+
+[r]: /first
+[r]: /second
+.
+Document scope=1:1..4:12 children=1
+└── Paragraph scope=1:1..1:3 children=1
+    └── Link scope=1:1..1:3 dest=url("/first") title=null children=1
+        └── Text scope=1:2..1:2 literal="r" children=0
 ````````````````````````````````
 
 ## Autolinks (extension)

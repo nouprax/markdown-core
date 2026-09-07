@@ -1,0 +1,19 @@
+Document scope=1:1..4:15 children=1
+└── Paragraph scope=1:1..1:69 children=11
+    ├── Link scope=1:1..1:20 dest=url("/url") title="title" children=1
+    │   └── Text scope=1:2..1:5 literal="text" children=0
+    ├── Text scope=1:21..1:21 literal=" " children=0
+    ├── Link scope=1:22..1:30 dest=url("/url") title="title" children=1
+    │   └── Text scope=1:23..1:26 literal="text" children=0
+    ├── Text scope=1:31..1:31 literal=" " children=0
+    ├── Link scope=1:32..1:36 dest=url("/url") title="title" children=1
+    │   └── Text scope=1:33..1:33 literal="r" children=0
+    ├── Text scope=1:37..1:37 literal=" " children=0
+    ├── Link scope=1:38..1:40 dest=url("/url") title="title" children=1
+    │   └── Text scope=1:39..1:39 literal="r" children=0
+    ├── Text scope=1:41..1:41 literal=" " children=0
+    ├── Image scope=1:42..1:59 dest=url("/i.png") title="t" children=1
+    │   └── Text scope=1:44..1:46 literal="alt" children=0
+    ├── Text scope=1:60..1:60 literal=" " children=0
+    └── Image scope=1:61..1:69 dest=url("/i.png") title="t" children=1
+        └── Text scope=1:63..1:65 literal="alt" children=0

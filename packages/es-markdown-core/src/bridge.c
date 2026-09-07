@@ -61,7 +61,19 @@ typedef struct es_source_node {
     int32_t scalar0;
     int64_t integer;
     markdown_core_optional_string strings[4];
+    /* For a link or image, the index of the first node reading through the
+     * same resource; ES_NO_INDEX otherwise. */
+    uint32_t resource_first;
 } es_source_node;
+
+/* Every occurrence of one reference definition reads through one resource in
+ * the C tree. This table remembers, per resource identity, the first node
+ * that read through it, so a destination and title cross the boundary once
+ * however often the definition is used. */
+typedef struct es_resource_slot {
+    const markdown_core_resource *resource;
+    uint32_t first;
+} es_resource_slot;
 
 typedef struct es_source_attribute {
     markdown_core_string name;
@@ -83,6 +95,9 @@ typedef struct es_build {
     uint8_t *alignments;
     size_t alignment_count;
     size_t alignment_capacity;
+    es_resource_slot *resources;
+    size_t resource_count;
+    size_t resource_capacity;
     size_t strings_length;
     es_build_failure failure;
 } es_build;
@@ -161,6 +176,7 @@ static uint32_t append_node(es_build *build, const markdown_core_node *node) {
     value.node = node;
     value.label_index = ES_NO_INDEX;
     value.aux_start = ES_NO_INDEX;
+    value.resource_first = ES_NO_INDEX;
     index = (uint32_t)build->node_count;
     build->nodes[build->node_count++] = value;
     return index;
@@ -196,6 +212,70 @@ static void append_alignment(es_build *build, markdown_core_table_alignment alig
         return;
     }
     build->alignments[build->alignment_count++] = (uint8_t)alignment;
+}
+
+static size_t hash_resource(const markdown_core_resource *resource) {
+    uint64_t bits = (uint64_t)(uintptr_t)resource;
+    bits ^= bits >> 33;
+    bits *= UINT64_C(0xff51afd7ed558ccd);
+    bits ^= bits >> 33;
+    bits *= UINT64_C(0xc4ceb9fe1a85ec53);
+    bits ^= bits >> 33;
+    return (size_t)bits;
+}
+
+/* The slot holding `resource`, or the empty slot it would take. The table is
+ * never more than half full, so the probe always ends. */
+static es_resource_slot *find_resource_slot(es_resource_slot *slots, size_t capacity,
+                                            const markdown_core_resource *resource) {
+    size_t position = hash_resource(resource) & (capacity - 1);
+    for (;;) {
+        es_resource_slot *slot = &slots[position];
+        if (slot->resource == NULL || slot->resource == resource) {
+            return slot;
+        }
+        position = (position + 1) & (capacity - 1);
+    }
+}
+
+static bool grow_resources(es_build *build) {
+    size_t capacity = build->resource_capacity == 0 ? 64 : build->resource_capacity * 2;
+    es_resource_slot *slots;
+    size_t index;
+    if (capacity < build->resource_capacity || capacity > SIZE_MAX / sizeof(*slots)) {
+        return false;
+    }
+    slots = (es_resource_slot *)calloc(capacity, sizeof(*slots));
+    if (slots == NULL) {
+        return false;
+    }
+    for (index = 0; index < build->resource_capacity; ++index) {
+        const es_resource_slot *source = &build->resources[index];
+        if (source->resource != NULL) {
+            *find_resource_slot(slots, capacity, source->resource) = *source;
+        }
+    }
+    free(build->resources);
+    build->resources = slots;
+    build->resource_capacity = capacity;
+    return true;
+}
+
+/* The index of the first node reading through `resource`, which is
+ * `node_index` itself the first time the resource is seen. */
+static uint32_t resource_first(es_build *build, const markdown_core_resource *resource, uint32_t node_index) {
+    es_resource_slot *slot;
+    if (build->resource_count + 1 > build->resource_capacity / 2 && !grow_resources(build)) {
+        build->failure = ES_BUILD_ALLOCATION;
+        return ES_NO_INDEX;
+    }
+    slot = find_resource_slot(build->resources, build->resource_capacity, resource);
+    if (slot->resource == NULL) {
+        slot->resource = resource;
+        slot->first = node_index;
+        build->resource_count++;
+    }
+    return slot->first;
 }
 
 static markdown_core_optional_string required_string(markdown_core_string value) {
@@ -415,35 +495,32 @@ static void collect_node_fields(es_build *build, size_t node_index) {
         record->strings[0] = required_string(first);
         record->strings[1] = required_string(second);
         break;
-    case MARKDOWN_CORE_KIND_REFERENCE_DEFINITION:
-        if (!markdown_core_node_association(node, &first, &second) ||
-            !markdown_core_node_definition_resource(node, &third, &optional_first)) {
-            build->failure = ES_BUILD_INTERNAL;
-            break;
-        }
-        record->strings[0] = required_string(first);
-        record->strings[1] = required_string(second);
-        record->strings[2] = required_string(third);
-        record->strings[3] = optional_first;
-        break;
-    case MARKDOWN_CORE_KIND_LINK_REFERENCE:
-    case MARKDOWN_CORE_KIND_IMAGE_REFERENCE: {
-        markdown_core_reference_form form = MARKDOWN_CORE_REFERENCE_SHORTCUT;
-        if (!markdown_core_node_association(node, &first, &second) || !markdown_core_node_reference_form(node, &form)) {
-            build->failure = ES_BUILD_INTERNAL;
-            break;
-        }
-        record->strings[0] = required_string(first);
-        record->strings[1] = required_string(second);
-        record->scalar0 = (int32_t)form;
-        break;
-    }
     case MARKDOWN_CORE_KIND_LINK:
     case MARKDOWN_CORE_KIND_IMAGE: {
         /* The tagged `Destination`: the branch is the scalar, its strings are
          * the first slots -- the url, or the path and the optional anchor --
-         * and the title is the third, so a slot never means two things. */
+         * and the title is the third, so a slot never means two things. The
+         * integer names the first node reading through the same resource:
+         * that node carries the strings, and every later occurrence has the
+         * same slot references copied at write time, so a resource crosses
+         * the boundary once and the decoder materializes it once. */
         markdown_core_destination destination;
+        const markdown_core_resource *resource = markdown_core_node_resource(node);
+        uint32_t first;
+        if (resource == NULL) {
+            build->failure = ES_BUILD_INTERNAL;
+            break;
+        }
+        first = resource_first(build, resource, (uint32_t)node_index);
+        if (build->failure != ES_BUILD_OK) {
+            break;
+        }
+        record->resource_first = first;
+        record->integer = (int64_t)first;
+        if (first != node_index) {
+            record->scalar0 = build->nodes[first].scalar0;
+            break;
+        }
         if (!markdown_core_node_destination(node, &destination) || !markdown_core_node_title(node, &optional_first)) {
             build->failure = ES_BUILD_INTERNAL;
             break;
@@ -497,6 +574,7 @@ static void free_build(es_build *build) {
     free(build->edges);
     free(build->attributes);
     free(build->alignments);
+    free(build->resources);
 }
 
 static uint8_t *error_result(markdown_core_error_code code, markdown_core_string message) {
@@ -603,6 +681,15 @@ static uint8_t *success_result(const es_build *build, es_build_failure *failure)
         put_i32(output, node_offset + ES_NODE_SCALAR0, source->scalar0);
         memset(output + node_offset + ES_NODE_RESERVED, 0, ES_NODE_I64 - ES_NODE_RESERVED);
         put_i64(output, node_offset + ES_NODE_I64, source->integer);
+        if (source->resource_first != ES_NO_INDEX && source->resource_first != index) {
+            /* A later occurrence of a resource: its destination and title
+             * were written with the first occurrence, so the record points
+             * at those bytes rather than carrying them again. */
+            size_t first_offset = nodes_offset + (size_t)source->resource_first * ES_NODE_SIZE;
+            memcpy(output + node_offset + ES_NODE_STRINGS, output + first_offset + ES_NODE_STRINGS, 3 * 8);
+            write_string_reference(output, node_offset + ES_NODE_STRINGS + 3 * 8, source->strings[3], &string_cursor);
+            continue;
+        }
         for (string_index = 0; string_index < 4; ++string_index) {
             write_string_reference(output, node_offset + ES_NODE_STRINGS + string_index * 8,
                                    source->strings[string_index], &string_cursor);

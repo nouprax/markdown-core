@@ -179,7 +179,6 @@ one class per branch, and ECMAScript as a discriminated union on `kind`.
 
 ```text
 ListFlavor = bullet | ordered
-ReferenceForm = full | collapsed | shortcut
 TableAlignment = none | left | center | right
 ```
 
@@ -209,7 +208,6 @@ and returns no document.
 | `DirectiveBlock` | `name: String`, `attributes: [DirectiveAttribute]?`, `label: DirectiveLabel?`, `content: [Markup]` | attributes preserves first-occurrence source order with unique names; label is a node-valued field whose scope spans its brackets and is never part of content; content is block; an absent attribute container and an empty one remain distinct, as do an absent label and an empty one |
 | `DirectiveLabel` | `content: [Markup]` | inline content; the scope spans the brackets, so an empty label is still a place |
 | `FootnoteDefinition` | `label: String`, `identifier: String`, `content: [Markup]` | `label` is non-empty and as written; `identifier` KEEPS the leading `^`, so a footnote and a link definition of one name cannot collide; block content |
-| `ReferenceDefinition` | `label: String`, `identifier: String`, `destination: String`, `title: String?` | `label` is the bytes between the brackets as written, delimiters excluded, escapes and character references unresolved, whitespace uncollapsed, case unfolded; `identifier` is the match key — full Unicode case fold, trimmed, internal whitespace collapsed — and is compared with memcmp over its bytes; neither derives the other; `destination` is never absent, because a definition that could not build one is not produced at all; absent and empty title remain distinct; leaf |
 | `Text` | `literal: String` | leaf |
 | `SoftBreak` | none | leaf |
 | `LineBreak` | none | leaf |
@@ -220,18 +218,19 @@ and returns no document.
 | `Emphasis` | `content: [Markup]` | inline content |
 | `Strong` | `content: [Markup]` | inline content |
 | `Strikethrough` | `content: [Markup]` | inline content |
-| `Link` | `dest: Destination`, `title: String?`, `content: [Markup]` | `dest` is the tagged `Destination` value and is never absent: `[a]()` and `[a](<>)` wrote one and wrote nothing in it, so it is `url("")`, and a link with no destination at all is a `LinkReference`; every `Link` owns the `url` branch; absent and empty title remain distinct; inline content |
+| `Link` | `dest: Destination`, `title: String?`, `content: [Markup]` | `dest` is the tagged `Destination` value and is never absent: `[a]()` and `[a](<>)` wrote one and wrote nothing in it, so it is `url("")`; a reference occurrence answers the destination its definition stated, and an unresolved reference is the inherited literal text; every `Link` owns the `url` branch; absent and empty title remain distinct; inline content |
 | `Image` | `dest: Destination`, `title: String?`, `content: [Markup]` | `dest` is never absent, for the reason `Link.dest` is not; every `Image` owns the `url` branch; absent and empty title remain distinct; content is parsed alt-text inline content |
-| `LinkReference` | `label: String`, `identifier: String`, `form: ReferenceForm`, `content: [Markup]` | `label` and `identifier` are exactly as on `ReferenceDefinition`; the node carries NO destination — the destination is stated once, at the definition; `form` records which of the three spellings the source used, and all three resolve identically; inline content |
-| `ImageReference` | `label: String`, `identifier: String`, `form: ReferenceForm`, `content: [Markup]` | as `LinkReference`; content is parsed alt-text inline content |
 | `Directive` | `name: String`, `attributes: [DirectiveAttribute]?`, `label: DirectiveLabel?` | attributes preserves first-occurrence source order with unique names; label is a node-valued field whose scope spans its brackets and is never a child/content element; an absent attribute container and an empty one remain distinct, as do an absent label and an empty one |
 | `FootnoteReference` | `label: String`, `identifier: String` | `label` is non-empty and as written; `identifier` KEEPS the leading `^`; no form — there is one footnote call syntax; leaf |
 
 Every row above also has the final inherited field `scope: Scope`; it is not
 repeated in the table. The `url` of a `Link` or `Image` destination, and
 every `title`, are the CommonMark-unescaped values with angle-bracket
-wrappers removed and no percent-encoding or normalization; an unresolved
-reference is the inherited literal text with its brackets.
+wrappers removed and no percent-encoding or normalization. A link reference
+definition produces no node: the parser consumes it, and every successful
+full, collapsed, shortcut, or autolink form is the `Link` or `Image` it names,
+with the definition's destination and title and its own occurrence scope. An
+unresolved reference is the inherited literal text with its brackets.
 
 ### Typed table ownership
 

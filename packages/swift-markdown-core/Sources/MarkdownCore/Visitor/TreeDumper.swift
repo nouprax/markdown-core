@@ -166,37 +166,6 @@ private struct DumpVisitor: MarkupVisitor {
         state.nested(node.content.count) { node.content.forEach(state.dump) }
     }
 
-    mutating func visit(_ node: ReferenceDefinition) {
-        state.line(
-            "ReferenceDefinition",
-            node,
-            fields: association(node.label, node.identifier) + [
-                "destination=\(jsonString(node.destination))",
-                "title=\(optionalString(node.title))",
-            ]
-        )
-    }
-
-    mutating func visit(_ node: LinkReference) {
-        state.line(
-            "LinkReference",
-            node,
-            fields: association(node.label, node.identifier) + ["form=\(formName(node.form))"],
-            children: node.content.count
-        )
-        state.nested(node.content.count) { node.content.forEach(state.dump) }
-    }
-
-    mutating func visit(_ node: ImageReference) {
-        state.line(
-            "ImageReference",
-            node,
-            fields: association(node.label, node.identifier) + ["form=\(formName(node.form))"],
-            children: node.content.count
-        )
-        state.nested(node.content.count) { node.content.forEach(state.dump) }
-    }
-
     mutating func visit(_ node: Text) {
         state.line("Text", node, fields: ["literal=\(jsonString(node.literal))"])
     }
@@ -288,14 +257,6 @@ private struct DumpVisitor: MarkupVisitor {
 
     private func association(_ label: String, _ identifier: String) -> [String] {
         ["label=\(jsonString(label))", "identifier=\(jsonString(identifier))"]
-    }
-
-    private func formName(_ form: ReferenceForm) -> String {
-        switch form {
-        case .full: "full"
-        case .collapsed: "collapsed"
-        case .shortcut: "shortcut"
-        }
     }
 
     private func directiveFields(_ name: String, _ attributes: [DirectiveAttribute]?) -> [String] {

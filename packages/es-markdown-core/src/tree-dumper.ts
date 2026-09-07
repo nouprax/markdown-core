@@ -20,8 +20,6 @@ import type { Link } from "./model/link.js";
 import type { List, ListItem } from "./model/list.js";
 import type { Markup } from "./model/markup.js";
 import type { Paragraph } from "./model/paragraph.js";
-import type { ReferenceDefinition } from "./model/reference-definition.js";
-import type { ImageReference, LinkReference } from "./model/reference.js";
 import type { SoftBreak } from "./model/soft-break.js";
 import type { Strikethrough } from "./model/strikethrough.js";
 import type { Strong } from "./model/strong.js";
@@ -90,16 +88,6 @@ class DumpState {
         visitDirectiveLabel: (node: DirectiveLabel) => this.container("DirectiveLabel", node, [], node.content),
         visitFootnoteDefinition: (node: FootnoteDefinition) =>
             this.container("FootnoteDefinition", node, association(node), node.content),
-        visitReferenceDefinition: (node: ReferenceDefinition) =>
-            this.line("ReferenceDefinition", node, [
-                ...association(node),
-                `destination=${jsonString(node.destination)}`,
-                `title=${optionalString(node.title)}`
-            ]),
-        visitLinkReference: (node: LinkReference) =>
-            this.container("LinkReference", node, [...association(node), `form=${node.form}`], node.content),
-        visitImageReference: (node: ImageReference) =>
-            this.container("ImageReference", node, [...association(node), `form=${node.form}`], node.content),
         visitText: (node: Text) => this.line("Text", node, [`literal=${jsonString(node.literal)}`]),
         visitSoftBreak: (node: SoftBreak) => this.line("SoftBreak", node),
         visitLineBreak: (node: LineBreak) => this.line("LineBreak", node),

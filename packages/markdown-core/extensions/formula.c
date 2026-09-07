@@ -47,7 +47,7 @@ static node_formula *get_formula(markdown_core_node *node) {
         return NULL;
     }
 
-    return (node_formula *)node->as.opaque;
+    return (node_formula *)node->opaque;
 }
 
 static int is_standalone_formula_node(markdown_core_node *node) {
@@ -111,13 +111,13 @@ static void formula_opaque_alloc(const markdown_core_extension *extension, markd
     /* A NULL payload is tolerated: every accessor goes through get_formula
      * and treats the node as formula-less. */
     if (is_formula_node(node)) {
-        node->as.opaque = mem->calloc(1, sizeof(node_formula));
+        node->opaque = mem->calloc(1, sizeof(node_formula));
     }
 }
 
 static void formula_opaque_free(const markdown_core_extension *extension, markdown_core_mem *mem,
                                 markdown_core_node *node) {
-    node_formula *formula = (node_formula *)node->as.opaque;
+    node_formula *formula = (node_formula *)node->opaque;
     if (!formula) {
         return;
     }
@@ -230,7 +230,7 @@ static markdown_core_node *try_opening_formula_block(const markdown_core_extensi
     }
 
     markdown_core_node_set_extension(node, extension);
-    node->as.opaque = parser->mem->calloc(1, sizeof(node_formula));
+    node->opaque = parser->mem->calloc(1, sizeof(node_formula));
 
     formula = get_formula(node);
     if (!formula) {

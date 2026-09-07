@@ -236,11 +236,21 @@ static MARKDOWN_CORE_INLINE markdown_core_node *make_autolink(subject *subj, int
         subj->oom = 1;
         return NULL;
     }
-    link->as.link.url = markdown_core_clean_autolink(subj, &url, is_email);
-    // No title line here: an autolink has no syntax for one, so the field is
-    // left as `make_simple` calloc'd it, which is absence. It used to be set to
-    // an empty title, and `extensions.txt` records both spellings of one
-    // construct on one line disagreeing about it three columns apart.
+    {
+        // No title here: an autolink has no syntax for one, so the resource is
+        // built with absence. It used to be set to an empty title, and
+        // `extensions.txt` records both spellings of one construct on one line
+        // disagreeing about it three columns apart.
+        markdown_core_chunk destination = markdown_core_clean_autolink(subj, &url, is_email);
+        link->as.link.resource =
+            markdown_core_resource_new(subj->mem, destination, markdown_core_optional_chunk_absent());
+        if (!link->as.link.resource) {
+            subj->oom = 1;
+            markdown_core_chunk_free(subj->mem, &destination);
+            markdown_core_node_free(link);
+            return NULL;
+        }
+    }
 
     // Both offsets, like every other column in this file. This was the one site
     // that turned a raw subject-buffer offset into a column without them, so an
@@ -1336,16 +1346,14 @@ static markdown_core_node *handle_close_bracket(markdown_core_parser *parser, su
     bufsize_t initial_pos, after_link_text_pos;
     bufsize_t endurl, starttitle, endtitle, endall;
     bufsize_t sps, n;
-    int matched_reference = 0;
-    markdown_core_reference_form form = MARKDOWN_CORE_REFERENCE_SHORTCUT;
+    /* The definition a reference resolved to, or NULL on the direct path. */
+    markdown_core_map_record *record = NULL;
     markdown_core_chunk url_chunk, title_chunk;
     /* SET HERE AND NOT ONLY ON THE INLINE-LINK PATH. A reference reaches `match`
-     * with `matched_reference` set and leaves it by `goto placed`, so the two
-     * uses below the label are unreachable with these unset -- but MSVC cannot
-     * follow that across the label and rejects the function under /WX with
-     * C4701, which is a Windows-only diagnostic no other host reports. Giving
-     * them the absent value costs nothing, says what the unset state means, and
-     * makes the `if (!inl)` arm's frees safe to read at a glance. */
+     * with `record` set and never reads these, but MSVC cannot follow that
+     * across the label and rejects the function under /WX with C4701, which
+     * is a Windows-only diagnostic no other host reports. Giving them the
+     * absent value costs nothing and says what the unset state means. */
     markdown_core_chunk url = MARKDOWN_CORE_CHUNK_EMPTY;
     markdown_core_optional_chunk title = {MARKDOWN_CORE_CHUNK_EMPTY, false};
     bracket *opener;
@@ -1422,23 +1430,18 @@ static markdown_core_node *handle_close_bracket(markdown_core_parser *parser, su
         subj->pos = initial_pos;
     }
 
-    /* THE FORM, decided here because this is the only place that still knows
-     * it. `[t][l]` is FULL, `[l][]` is COLLAPSED and `[l]` is SHORTCUT; all
-     * three resolve identically, so nothing downstream can recover which one
-     * the author wrote (Q3 keeps a footnote call out of this: there is one
-     * footnote syntax, so a form field would have one value). */
-    form = !found_label         ? MARKDOWN_CORE_REFERENCE_SHORTCUT
-           : raw_label.len == 0 ? MARKDOWN_CORE_REFERENCE_COLLAPSED
-                                : MARKDOWN_CORE_REFERENCE_FULL;
-
     if ((!found_label || raw_label.len == 0) && !opener->bracket_after) {
         markdown_core_chunk_free(subj->mem, &raw_label);
         raw_label = markdown_core_chunk_dup(&subj->input, opener->position, initial_pos - opener->position - 1);
         found_label = true;
     }
 
-    if (found_label && markdown_core_map_lookup(subj->refmap, &raw_label) != NULL) {
-        matched_reference = 1;
+    /* `[t][l]`, `[l][]` and `[l]` resolve identically and to the same node: the
+     * `Link` or `Image` the definition names (M2). Nothing records which of the
+     * three spellings the author wrote, and nothing downstream can recover it
+     * -- the module states one node for every successful form. */
+    if (found_label && (record = markdown_core_map_lookup(subj->refmap, &raw_label)) != NULL) {
+        markdown_core_chunk_free(subj->mem, &raw_label);
         goto match;
     }
     markdown_core_chunk_free(subj->mem, &raw_label);
@@ -1593,46 +1596,35 @@ noMatch:
     return make_str(subj, subj->pos - 1, subj->pos - 1, markdown_core_chunk_literal("]"));
 
 match:
-    if (matched_reference) {
-        /* A REFERENCE NAMES ITS DEFINITION AND CARRIES NO DESTINATION (§5.1).
-         * The destination is stated once, at the definition; copying it here is
-         * what made a small document with one long destination into a large
-         * tree, and the running budget that bounded that made whether a
-         * reference resolves depend on how many resolved before it (D9). With
-         * nothing copied there is nothing to bound. */
-        markdown_core_association association;
-        if (!markdown_core_association_init(subj->mem, &association, &raw_label, 0)) {
-            subj->oom = 1;
-            markdown_core_chunk_free(subj->mem, &raw_label);
-            pop_bracket(subj);
-            subj->pos = initial_pos;
-            return make_str(subj, subj->pos - 1, subj->pos - 1, markdown_core_chunk_literal("]"));
-        }
-        markdown_core_chunk_free(subj->mem, &raw_label);
-        inl = make_simple(subj->mem, is_image ? MARKDOWN_CORE_NODE_IMAGE_REFERENCE : MARKDOWN_CORE_NODE_LINK_REFERENCE);
-        if (!inl) {
-            subj->oom = 1;
-            markdown_core_association_free(subj->mem, &association);
-            pop_bracket(subj);
-            subj->pos = initial_pos;
-            return make_str(subj, subj->pos - 1, subj->pos - 1, markdown_core_chunk_literal("]"));
-        }
-        inl->as.reference.association = association;
-        inl->as.reference.form = form;
-        goto placed;
-    }
     inl = make_simple(subj->mem, is_image ? MARKDOWN_CORE_NODE_IMAGE : MARKDOWN_CORE_NODE_LINK);
+    if (inl && record) {
+        /* A RESOLVED REFERENCE IS THE LINK OR IMAGE IT NAMES (M2), and it reads
+         * its destination and title through the definition's resource, which
+         * the map owns once and every occurrence shares. Nothing is copied, so
+         * there is nothing to charge and no budget can make whether a reference
+         * resolves depend on how many resolved before it (D9). The occurrence
+         * keeps its own scope, below: the definition's range is never copied,
+         * unioned or substituted into it. */
+        assert(record->resource != NULL);
+        markdown_core_resource_retain(record->resource);
+        inl->as.link.resource = record->resource;
+    } else if (inl) {
+        inl->as.link.resource = markdown_core_resource_new(subj->mem, url, title);
+        if (!inl->as.link.resource) {
+            markdown_core_node_free(inl);
+            inl = NULL;
+        }
+    }
     if (!inl) {
         subj->oom = 1;
-        markdown_core_chunk_free(subj->mem, &url);
-        markdown_core_optional_chunk_free(subj->mem, &title);
+        if (!record) {
+            markdown_core_chunk_free(subj->mem, &url);
+            markdown_core_optional_chunk_free(subj->mem, &title);
+        }
         pop_bracket(subj);
         subj->pos = initial_pos;
         return make_str(subj, subj->pos - 1, subj->pos - 1, markdown_core_chunk_literal("]"));
     }
-    inl->as.link.url = url;
-    inl->as.link.title = title;
-placed:;
     /* REQUIREMENT 11b: the brackets, and whatever follows the closing one --
      * `(...)` with the destination and title, or `[label]` -- are the link's
      * markers. They were claimed CONTENT as they were read, because an
@@ -2006,8 +1998,10 @@ static void spnl(subject *subj) {
 // Return 0 if no reference found, otherwise position of subject
 // after reference is parsed.
 bufsize_t markdown_core_parse_reference_inline(markdown_core_mem *mem, markdown_core_chunk *input,
-                                               markdown_core_map *refmap, markdown_core_reference_parts *parts) {
+                                               markdown_core_map *refmap) {
     subject subj;
+    markdown_core_resource *resource;
+    int lost = 0;
 
     markdown_core_chunk lab;
     markdown_core_chunk url;
@@ -2072,15 +2066,24 @@ bufsize_t markdown_core_parse_reference_inline(markdown_core_mem *mem, markdown_
             return 0;
         }
     }
-    if (parts) {
-        parts->label = lab;
-        parts->url = url;
-        parts->title = title;
+    // The definition is consumed into the map, which owns its resource ONCE
+    // and lends it to every occurrence that resolves to the label (M2). The
+    // destination and title are cleaned here, the way a direct link's are, so
+    // a resolved occurrence and a direct one state the same values.
+    {
+        markdown_core_chunk clean_url = markdown_core_clean_url(mem, &url, &lost);
+        markdown_core_optional_chunk clean_title = markdown_core_clean_title(mem, &title, &lost);
+        resource = lost ? NULL : markdown_core_resource_new(mem, clean_url, clean_title);
+        if (!resource) {
+            markdown_core_chunk_free(mem, &clean_url);
+            markdown_core_optional_chunk_free(mem, &clean_title);
+            lost = 1;
+        }
     }
-    // The map holds LABELS ONLY: what a reference needs from it is whether the
-    // label is defined, and the destination is stated once, at the definition.
-    markdown_core_reference_create(refmap, &lab);
-    if (subj.oom && refmap) {
+    if (resource) {
+        markdown_core_reference_create(mem, refmap, &lab, resource);
+    }
+    if ((subj.oom || lost) && refmap) {
         refmap->oom = 1;
     }
     return subj.pos;

@@ -37,6 +37,21 @@ typedef struct jni_payload_stack {
     size_t capacity;
 } jni_payload_stack;
 
+/* Every occurrence of one reference definition reads through one resource in
+ * the C tree. This table numbers each distinct resource in the order the
+ * payload first meets it, so a destination and title cross the boundary once
+ * however often the definition is used. */
+typedef struct jni_payload_resource_slot {
+    const markdown_core_resource *resource;
+    int32_t ordinal;
+} jni_payload_resource_slot;
+
+typedef struct jni_payload_resources {
+    jni_payload_resource_slot *slots;
+    size_t count;
+    size_t capacity;
+} jni_payload_resources;
+
 static const uint8_t jni_payload_magic[] = {'M', 'K', 'J', '1'};
 static const uint8_t internal_error_bytes[] = "could not encode JNI AST payload";
 
@@ -155,6 +170,77 @@ static void push_action(jni_payload_buffer *buffer, jni_payload_stack *stack, jn
     stack->actions[stack->count++] = action;
 }
 
+static size_t hash_resource(const markdown_core_resource *resource) {
+    uint64_t bits = (uint64_t)(uintptr_t)resource;
+    bits ^= bits >> 33;
+    bits *= UINT64_C(0xff51afd7ed558ccd);
+    bits ^= bits >> 33;
+    bits *= UINT64_C(0xc4ceb9fe1a85ec53);
+    bits ^= bits >> 33;
+    return (size_t)bits;
+}
+
+/* The slot holding `resource`, or the empty slot it would take. The table is
+ * never more than half full, so the probe always ends. */
+static jni_payload_resource_slot *find_resource_slot(jni_payload_resource_slot *slots, size_t capacity,
+                                                     const markdown_core_resource *resource) {
+    size_t position = hash_resource(resource) & (capacity - 1);
+    for (;;) {
+        jni_payload_resource_slot *slot = &slots[position];
+        if (slot->resource == NULL || slot->resource == resource) {
+            return slot;
+        }
+        position = (position + 1) & (capacity - 1);
+    }
+}
+
+static bool grow_resources(jni_payload_resources *resources) {
+    size_t capacity = resources->capacity == 0 ? 64 : resources->capacity * 2;
+    jni_payload_resource_slot *slots;
+    size_t index;
+    if (capacity < resources->capacity || capacity > SIZE_MAX / sizeof(*slots)) {
+        return false;
+    }
+    slots = (jni_payload_resource_slot *)calloc(capacity, sizeof(*slots));
+    if (slots == NULL) {
+        return false;
+    }
+    for (index = 0; index < resources->capacity; ++index) {
+        const jni_payload_resource_slot *source = &resources->slots[index];
+        if (source->resource != NULL) {
+            *find_resource_slot(slots, capacity, source->resource) = *source;
+        }
+    }
+    free(resources->slots);
+    resources->slots = slots;
+    resources->capacity = capacity;
+    return true;
+}
+
+/* The ordinal of `resource` in first-sight order; `first_sight` says whether
+ * this call is the sight that assigned it. */
+static int32_t resource_ordinal(jni_payload_buffer *buffer, jni_payload_resources *resources,
+                                const markdown_core_resource *resource, bool *first_sight) {
+    jni_payload_resource_slot *slot;
+    *first_sight = false;
+    if (resources->count + 1 > resources->capacity / 2 && !grow_resources(resources)) {
+        buffer->failure = JNI_PAYLOAD_ALLOCATION;
+        return -1;
+    }
+    slot = find_resource_slot(resources->slots, resources->capacity, resource);
+    if (slot->resource == NULL) {
+        if (resources->count > INT32_MAX) {
+            buffer->failure = JNI_PAYLOAD_ALLOCATION;
+            return -1;
+        }
+        slot->resource = resource;
+        slot->ordinal = (int32_t)resources->count;
+        resources->count++;
+        *first_sight = true;
+    }
+    return slot->ordinal;
+}
+
 static void schedule_nodes(jni_payload_buffer *buffer, jni_payload_stack *stack, const markdown_core_node *node,
                            size_t count) {
     if (count > INT32_MAX) {
@@ -176,7 +262,8 @@ static void schedule_children(jni_payload_buffer *buffer, jni_payload_stack *sta
     schedule_nodes(buffer, stack, markdown_core_node_get_first_child(node), markdown_core_node_child_count(node));
 }
 
-static void write_node(jni_payload_buffer *buffer, jni_payload_stack *stack, const markdown_core_node *node) {
+static void write_node(jni_payload_buffer *buffer, jni_payload_stack *stack, jni_payload_resources *resources,
+                       const markdown_core_node *node) {
     markdown_core_node_kind kind = markdown_core_node_get_kind(node);
     markdown_core_string first = {0};
     markdown_core_string second = {0};
@@ -366,33 +453,28 @@ static void write_node(jni_payload_buffer *buffer, jni_payload_stack *stack, con
         put_string(buffer, first, true);
         put_string(buffer, second, true);
         break;
-    case MARKDOWN_CORE_KIND_REFERENCE_DEFINITION:
-        if (!markdown_core_node_association(node, &first, &second) ||
-            !markdown_core_node_definition_resource(node, &third, &optional_first)) {
-            buffer->failure = JNI_PAYLOAD_INTERNAL;
-            return;
-        }
-        put_string(buffer, first, true);
-        put_string(buffer, second, true);
-        put_string(buffer, third, true);
-        put_optional_string(buffer, optional_first);
-        break;
-    case MARKDOWN_CORE_KIND_LINK_REFERENCE:
-    case MARKDOWN_CORE_KIND_IMAGE_REFERENCE: {
-        markdown_core_reference_form form = MARKDOWN_CORE_REFERENCE_SHORTCUT;
-        if (!markdown_core_node_association(node, &first, &second) || !markdown_core_node_reference_form(node, &form)) {
-            buffer->failure = JNI_PAYLOAD_INTERNAL;
-            return;
-        }
-        put_string(buffer, first, true);
-        put_string(buffer, second, true);
-        put_i32(buffer, (int32_t)form);
-        schedule_children(buffer, stack, node);
-        break;
-    }
     case MARKDOWN_CORE_KIND_LINK:
     case MARKDOWN_CORE_KIND_IMAGE: {
+        /* The resource's ordinal leads. Only its first sight carries the
+         * destination and title; a later occurrence names the ordinal and
+         * nothing else, so the decoder materializes each resource once. */
         markdown_core_destination destination;
+        const markdown_core_resource *resource = markdown_core_node_resource(node);
+        bool first_sight = false;
+        int32_t ordinal;
+        if (resource == NULL) {
+            buffer->failure = JNI_PAYLOAD_INTERNAL;
+            return;
+        }
+        ordinal = resource_ordinal(buffer, resources, resource, &first_sight);
+        if (buffer->failure != JNI_PAYLOAD_OK) {
+            return;
+        }
+        put_i32(buffer, ordinal);
+        if (!first_sight) {
+            schedule_children(buffer, stack, node);
+            break;
+        }
         if (!markdown_core_node_destination(node, &destination) || !markdown_core_node_title(node, &optional_first)) {
             buffer->failure = JNI_PAYLOAD_INTERNAL;
             return;
@@ -433,6 +515,7 @@ static void write_node(jni_payload_buffer *buffer, jni_payload_stack *stack, con
 
 static void write_tree(jni_payload_buffer *buffer, const markdown_core_node *root) {
     jni_payload_stack stack = {0};
+    jni_payload_resources resources = {0};
     jni_payload_action root_action = {JNI_PAYLOAD_WRITE_NODE, root, 0};
     push_action(buffer, &stack, root_action);
     while (stack.count != 0 && buffer->failure == JNI_PAYLOAD_OK) {
@@ -442,7 +525,7 @@ static void write_tree(jni_payload_buffer *buffer, const markdown_core_node *roo
             if (action.node == NULL) {
                 buffer->failure = JNI_PAYLOAD_INTERNAL;
             } else {
-                write_node(buffer, &stack, action.node);
+                write_node(buffer, &stack, &resources, action.node);
             }
             break;
         case JNI_PAYLOAD_WRITE_SIBLINGS: {
@@ -473,6 +556,7 @@ static void write_tree(jni_payload_buffer *buffer, const markdown_core_node *roo
         }
     }
     free(stack.actions);
+    free(resources.slots);
 }
 
 bool markdown_core_kotlin_jni_encode(const uint8_t *source, size_t length, uint8_t **output, size_t *output_length) {

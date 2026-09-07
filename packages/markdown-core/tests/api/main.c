@@ -47,22 +47,17 @@ static markdown_core_node *parse_with_extensions(const char *source, size_t leng
 }
 
 static const markdown_core_node_type node_types[] = {
-    MARKDOWN_CORE_NODE_DOCUMENT,       MARKDOWN_CORE_NODE_BLOCK_QUOTE,    MARKDOWN_CORE_NODE_LIST,
-    MARKDOWN_CORE_NODE_LIST_ITEM,      MARKDOWN_CORE_NODE_CODE_BLOCK,     MARKDOWN_CORE_NODE_HTML_BLOCK,
-    MARKDOWN_CORE_NODE_COMMENT_BLOCK,  MARKDOWN_CORE_NODE_PARAGRAPH,      MARKDOWN_CORE_NODE_HEADING,
-    MARKDOWN_CORE_NODE_THEMATIC_BREAK, MARKDOWN_CORE_NODE_TEXT,           MARKDOWN_CORE_NODE_SOFT_BREAK,
-    MARKDOWN_CORE_NODE_LINE_BREAK,     MARKDOWN_CORE_NODE_CODE,           MARKDOWN_CORE_NODE_HTML,
-    MARKDOWN_CORE_NODE_COMMENT,        MARKDOWN_CORE_NODE_EMPHASIS,       MARKDOWN_CORE_NODE_STRONG,
-    MARKDOWN_CORE_NODE_LINK,           MARKDOWN_CORE_NODE_IMAGE,          MARKDOWN_CORE_NODE_REFERENCE_DEFINITION,
-    MARKDOWN_CORE_NODE_LINK_REFERENCE, MARKDOWN_CORE_NODE_IMAGE_REFERENCE};
-static const char *const node_type_names[] = {"document",       "block_quote",    "list",
-                                              "list_item",      "code_block",     "html_block",
-                                              "comment_block",  "paragraph",      "heading",
-                                              "thematic_break", "text",           "soft_break",
-                                              "line_break",     "code",           "html",
-                                              "comment",        "emphasis",       "strong",
-                                              "link",           "image",          "reference_definition",
-                                              "link_reference", "image_reference"};
+    MARKDOWN_CORE_NODE_DOCUMENT,       MARKDOWN_CORE_NODE_BLOCK_QUOTE, MARKDOWN_CORE_NODE_LIST,
+    MARKDOWN_CORE_NODE_LIST_ITEM,      MARKDOWN_CORE_NODE_CODE_BLOCK,  MARKDOWN_CORE_NODE_HTML_BLOCK,
+    MARKDOWN_CORE_NODE_COMMENT_BLOCK,  MARKDOWN_CORE_NODE_PARAGRAPH,   MARKDOWN_CORE_NODE_HEADING,
+    MARKDOWN_CORE_NODE_THEMATIC_BREAK, MARKDOWN_CORE_NODE_TEXT,        MARKDOWN_CORE_NODE_SOFT_BREAK,
+    MARKDOWN_CORE_NODE_LINE_BREAK,     MARKDOWN_CORE_NODE_CODE,        MARKDOWN_CORE_NODE_HTML,
+    MARKDOWN_CORE_NODE_COMMENT,        MARKDOWN_CORE_NODE_EMPHASIS,    MARKDOWN_CORE_NODE_STRONG,
+    MARKDOWN_CORE_NODE_LINK,           MARKDOWN_CORE_NODE_IMAGE};
+static const char *const node_type_names[] = {
+    "document",  "block_quote", "list",           "list_item", "code_block", "html_block", "comment_block",
+    "paragraph", "heading",     "thematic_break", "text",      "soft_break", "line_break", "code",
+    "html",      "comment",     "emphasis",       "strong",    "link",       "image"};
 static const int num_node_types = sizeof(node_types) / sizeof(*node_types);
 
 static void test_md_paragraph_text(test_batch_runner *runner, const char *markdown, const char *expected_text,
@@ -105,17 +100,15 @@ static void node_type_values(test_batch_runner *runner) {
                                                           MARKDOWN_CORE_NODE_TABLE_CELL,
                                                           MARKDOWN_CORE_NODE_FORMULA_BLOCK,
                                                           MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK,
-                                                          MARKDOWN_CORE_NODE_REFERENCE_DEFINITION,
                                                           MARKDOWN_CORE_NODE_COMMENT_BLOCK};
     static const markdown_core_node_type inline_types[] = {
-        MARKDOWN_CORE_NODE_TEXT,           MARKDOWN_CORE_NODE_SOFT_BREAK,
-        MARKDOWN_CORE_NODE_LINE_BREAK,     MARKDOWN_CORE_NODE_CODE,
-        MARKDOWN_CORE_NODE_HTML,           MARKDOWN_CORE_NODE_EMPHASIS,
-        MARKDOWN_CORE_NODE_STRONG,         MARKDOWN_CORE_NODE_LINK,
-        MARKDOWN_CORE_NODE_IMAGE,          MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE,
-        MARKDOWN_CORE_NODE_STRIKETHROUGH,  MARKDOWN_CORE_NODE_FORMULA,
-        MARKDOWN_CORE_NODE_DIRECTIVE,      MARKDOWN_CORE_NODE_DIRECTIVE_LABEL,
-        MARKDOWN_CORE_NODE_LINK_REFERENCE, MARKDOWN_CORE_NODE_IMAGE_REFERENCE,
+        MARKDOWN_CORE_NODE_TEXT,          MARKDOWN_CORE_NODE_SOFT_BREAK,
+        MARKDOWN_CORE_NODE_LINE_BREAK,    MARKDOWN_CORE_NODE_CODE,
+        MARKDOWN_CORE_NODE_HTML,          MARKDOWN_CORE_NODE_EMPHASIS,
+        MARKDOWN_CORE_NODE_STRONG,        MARKDOWN_CORE_NODE_LINK,
+        MARKDOWN_CORE_NODE_IMAGE,         MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE,
+        MARKDOWN_CORE_NODE_STRIKETHROUGH, MARKDOWN_CORE_NODE_FORMULA,
+        MARKDOWN_CORE_NODE_DIRECTIVE,     MARKDOWN_CORE_NODE_DIRECTIVE_LABEL,
         MARKDOWN_CORE_NODE_COMMENT};
 
     for (size_t i = 0; i < sizeof(block_types) / sizeof(*block_types); ++i) {
@@ -225,8 +218,16 @@ static void accessors(test_batch_runner *runner) {
     INT_EQ(runner, markdown_core_node_get_end_line(paragraph), 17, "get_end_line");
 
     markdown_core_node *link = markdown_core_node_first_child(paragraph);
-    STR_EQ(runner, markdown_core_node_get_url(link), "url", "get_url");
-    STR_EQ(runner, markdown_core_node_get_title(link), "title", "get_title");
+    markdown_core_destination destination;
+    markdown_core_optional_string title;
+    OK(runner,
+       markdown_core_node_destination(link, &destination) && destination.kind == MARKDOWN_CORE_DESTINATION_URL &&
+           destination.url.length == 3 && memcmp(destination.url.data, "url", 3) == 0,
+       "a parsed link's destination is read through the facade");
+    OK(runner,
+       markdown_core_node_title(link, &title) && title.has_value && title.value.length == 5 &&
+           memcmp(title.value.data, "title", 5) == 0,
+       "a parsed link's title is read through the facade");
 
     markdown_core_node *string = markdown_core_node_first_child(link);
     STR_EQ(runner, markdown_core_node_get_literal(string), "link", "get_literal string");
@@ -250,9 +251,6 @@ static void accessors(test_batch_runner *runner) {
 
     OK(runner, markdown_core_node_set_literal(html, "<div>HTML</div>\n"), "set_literal html");
 
-    OK(runner, markdown_core_node_set_url(link, "URL"), "set_url");
-    OK(runner, markdown_core_node_set_title(link, "TITLE"), "set_title");
-
     OK(runner, markdown_core_node_set_literal(string, "prefix-LINK"), "set_literal string");
 
     // Set literal to suffix of itself (issue #139).
@@ -272,8 +270,6 @@ static void accessors(test_batch_runner *runner) {
     STR_EQ(runner, markdown_core_node_get_literal(fenced), "FENCED\n", "set_literal fenced applied");
     STR_EQ(runner, markdown_core_node_get_fence_info(fenced), "LANG", "set_fence_info applied");
     STR_EQ(runner, markdown_core_node_get_literal(html), "<div>HTML</div>\n", "set_literal html applied");
-    STR_EQ(runner, markdown_core_node_get_url(link), "URL", "set_url applied");
-    STR_EQ(runner, markdown_core_node_get_title(link), "TITLE", "set_title applied");
     STR_EQ(runner, markdown_core_node_get_literal(string), "LINK", "set_literal suffix applied");
 
     // Getter errors
@@ -285,8 +281,6 @@ static void accessors(test_batch_runner *runner) {
     OK(runner, markdown_core_node_get_literal(ordered_list) == NULL, "get_literal error");
     OK(runner, markdown_core_node_get_fence_info(paragraph) == NULL, "get_fence_info error");
     INT_EQ(runner, markdown_core_node_get_fence_closed(paragraph), 0, "get_fence_closed error");
-    OK(runner, markdown_core_node_get_url(html) == NULL, "get_url error");
-    OK(runner, markdown_core_node_get_title(heading) == NULL, "get_title error");
 
     // Setter errors
 
@@ -296,8 +290,6 @@ static void accessors(test_batch_runner *runner) {
     OK(runner, !markdown_core_node_set_list_tight(fenced, 0), "set_list_tight error");
     OK(runner, !markdown_core_node_set_literal(ordered_list, "content\n"), "set_literal error");
     OK(runner, !markdown_core_node_set_fence_info(paragraph, "lang"), "set_fence_info error");
-    OK(runner, !markdown_core_node_set_url(html, "url"), "set_url error");
-    OK(runner, !markdown_core_node_set_title(heading, "title"), "set_title error");
 
     OK(runner, !markdown_core_node_set_heading_level(heading, 0), "set_heading_level too small");
     OK(runner, !markdown_core_node_set_heading_level(heading, 7), "set_heading_level too large");
@@ -758,16 +750,10 @@ void hierarchy(test_batch_runner *runner) {
     markdown_core_node_free(bquote1);
 
     unsigned int list_item_flag[] = {MARKDOWN_CORE_NODE_LIST_ITEM, 0};
-    unsigned int top_level_blocks[] = {MARKDOWN_CORE_NODE_BLOCK_QUOTE,
-                                       MARKDOWN_CORE_NODE_LIST,
-                                       MARKDOWN_CORE_NODE_CODE_BLOCK,
-                                       MARKDOWN_CORE_NODE_HTML_BLOCK,
-                                       MARKDOWN_CORE_NODE_COMMENT_BLOCK,
-                                       MARKDOWN_CORE_NODE_PARAGRAPH,
-                                       MARKDOWN_CORE_NODE_HEADING,
-                                       MARKDOWN_CORE_NODE_THEMATIC_BREAK,
-                                       MARKDOWN_CORE_NODE_REFERENCE_DEFINITION,
-                                       0};
+    unsigned int top_level_blocks[] = {
+        MARKDOWN_CORE_NODE_BLOCK_QUOTE, MARKDOWN_CORE_NODE_LIST,           MARKDOWN_CORE_NODE_CODE_BLOCK,
+        MARKDOWN_CORE_NODE_HTML_BLOCK,  MARKDOWN_CORE_NODE_COMMENT_BLOCK,  MARKDOWN_CORE_NODE_PARAGRAPH,
+        MARKDOWN_CORE_NODE_HEADING,     MARKDOWN_CORE_NODE_THEMATIC_BREAK, 0};
     unsigned int all_inlines[] = {MARKDOWN_CORE_NODE_TEXT,
                                   MARKDOWN_CORE_NODE_SOFT_BREAK,
                                   MARKDOWN_CORE_NODE_LINE_BREAK,
@@ -778,8 +764,6 @@ void hierarchy(test_batch_runner *runner) {
                                   MARKDOWN_CORE_NODE_STRONG,
                                   MARKDOWN_CORE_NODE_LINK,
                                   MARKDOWN_CORE_NODE_IMAGE,
-                                  MARKDOWN_CORE_NODE_LINK_REFERENCE,
-                                  MARKDOWN_CORE_NODE_IMAGE_REFERENCE,
                                   0};
 
     test_content(runner, MARKDOWN_CORE_NODE_DOCUMENT, top_level_blocks);
@@ -792,8 +776,6 @@ void hierarchy(test_batch_runner *runner) {
     test_content(runner, MARKDOWN_CORE_NODE_PARAGRAPH, all_inlines);
     test_content(runner, MARKDOWN_CORE_NODE_HEADING, all_inlines);
     test_content(runner, MARKDOWN_CORE_NODE_THEMATIC_BREAK, 0);
-    /* A link reference definition's body is a resource, not children. */
-    test_content(runner, MARKDOWN_CORE_NODE_REFERENCE_DEFINITION, 0);
     test_content(runner, MARKDOWN_CORE_NODE_TEXT, 0);
     test_content(runner, MARKDOWN_CORE_NODE_SOFT_BREAK, 0);
     test_content(runner, MARKDOWN_CORE_NODE_LINE_BREAK, 0);
@@ -804,8 +786,6 @@ void hierarchy(test_batch_runner *runner) {
     test_content(runner, MARKDOWN_CORE_NODE_STRONG, all_inlines);
     test_content(runner, MARKDOWN_CORE_NODE_LINK, all_inlines);
     test_content(runner, MARKDOWN_CORE_NODE_IMAGE, all_inlines);
-    test_content(runner, MARKDOWN_CORE_NODE_LINK_REFERENCE, all_inlines);
-    test_content(runner, MARKDOWN_CORE_NODE_IMAGE_REFERENCE, all_inlines);
 }
 
 static void test_content(test_batch_runner *runner, markdown_core_node_type type, unsigned int *allowed_content) {
@@ -1549,19 +1529,20 @@ static void source_pos_inlines(test_batch_runner *runner) {
                      "multiline emphasis scopes are as expected");
 }
 
-/* §5.6's G7: ONE accessor answers for all five reference kinds and refuses
- * every other node.
+/* §5.6's G7: ONE accessor answers for the footnote kinds and refuses every
+ * other node.
  *
- * The five differ in where the association lives -- a definition's is boxed
- * behind a pointer, a footnote's is inline in the union, a link reference's is
- * inside a wider struct -- which is exactly why this is a switch on the type
- * and not a common-initial-sequence read. A sixth kind that answered here
- * would be reading some other union arm as two chunks. */
+ * It answered for five kinds until M2: a link or image reference is now the
+ * `Link` or `Image` it names and carries no association, and the definition
+ * is consumed into the reference map. The two footnote kinds keep theirs
+ * until M4, and the accessor is still a switch on the type rather than a
+ * common-initial-sequence read: a third kind that answered here would be
+ * reading some other union arm as two chunks. */
 static void association_accessor(test_batch_runner *runner) {
-    /* An inline Link and an inline Image are in the corpus DELIBERATELY: they
-     * are the two kinds nearest to answering by accident, because their union
-     * arm is a pair of chunks too. Without them a sixth arm added to the
-     * switch kills nothing -- measured. */
+    /* Resolved references, an inline Link and an inline Image are in the
+     * corpus DELIBERATELY: a resolved reference is the kind nearest to
+     * answering by accident, because it used to, and a link's union arm is a
+     * pointer that must never be read as two chunks. */
     static const char markdown[] = "[a][ref] ![b][ref] [^n] [c](/inline) ![d](/i.png)\n"
                                    "\n"
                                    "[ref]: /r\n"
@@ -1575,12 +1556,13 @@ static void association_accessor(test_batch_runner *runner) {
     int answered = 0;
     int refused = 0;
     size_t seen = 0;
-    /* Five kinds answer. Everything else -- including the Paragraph, the Text
-     * children and the Document -- refuses. */
-    const markdown_core_node_kind carriers[] = {
-        MARKDOWN_CORE_KIND_REFERENCE_DEFINITION, MARKDOWN_CORE_KIND_LINK_REFERENCE, MARKDOWN_CORE_KIND_IMAGE_REFERENCE,
-        MARKDOWN_CORE_KIND_FOOTNOTE_DEFINITION, MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE};
+    /* Two kinds answer. Everything else -- the resolved references, the
+     * direct link and image, the Paragraph, the Text children and the
+     * Document -- refuses. */
+    const markdown_core_node_kind carriers[] = {MARKDOWN_CORE_KIND_FOOTNOTE_DEFINITION,
+                                                MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE};
     unsigned int found = 0;
+    int links = 0;
 
     document = markdown_core_document_parse((const uint8_t *)markdown, strlen(markdown), NULL);
     if (!document) {
@@ -1607,6 +1589,9 @@ static void association_accessor(test_batch_runner *runner) {
                     found |= 1u << index;
                 }
             }
+            if (kind == MARKDOWN_CORE_KIND_LINK || kind == MARKDOWN_CORE_KIND_IMAGE) {
+                links++;
+            }
             if (markdown_core_node_association(current, &label, &identifier)) {
                 answered++;
                 INT_EQ(runner, carries, 1, "kind %d answers the association accessor", (int)kind);
@@ -1624,9 +1609,95 @@ static void association_accessor(test_batch_runner *runner) {
             }
         }
     }
-    INT_EQ(runner, (int)found, 31, "all five reference kinds appear in the corpus");
-    INT_EQ(runner, answered, 5, "exactly five nodes answer");
+    INT_EQ(runner, (int)found, 3, "both footnote kinds appear in the corpus");
+    INT_EQ(runner, answered, 2, "exactly two nodes answer");
+    INT_EQ(runner, links, 4, "the two resolved references are the Link and Image they name");
     OK(runner, refused > 0 && seen == (size_t)(answered + refused), "every other node refuses");
+    markdown_core_document_free(document);
+}
+
+static void link_resource_lifecycle(test_batch_runner *runner) {
+    /* M2: a link or image reads its destination and title through a resource
+     * the parser creates -- one per direct link, image, or autolink, and one
+     * per definition, shared by every occurrence that resolves to it. Nothing
+     * else writes one: the engine's url and title setters left with the
+     * model. A node built by hand, or converted into a link, has no resource
+     * and is the link `[a]()` is -- the empty url and no title -- rather than
+     * reading another arm's bytes as a resource pointer. */
+    markdown_core_node *paragraph = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
+    markdown_core_node *link = markdown_core_node_new(MARKDOWN_CORE_NODE_LINK);
+    markdown_core_node *image = markdown_core_node_new(MARKDOWN_CORE_NODE_IMAGE);
+    markdown_core_node *converted = markdown_core_node_new(MARKDOWN_CORE_NODE_TEXT);
+    markdown_core_destination destination;
+    markdown_core_optional_string title;
+
+    OK(runner, markdown_core_node_append_child(paragraph, link), "hand-built link joins a paragraph");
+    OK(runner, markdown_core_node_append_child(paragraph, image), "hand-built image joins a paragraph");
+    OK(runner, markdown_core_node_append_child(paragraph, converted), "text joins a paragraph");
+
+    OK(runner, markdown_core_node_resource(link) == NULL, "a hand-built link reads through no resource");
+    OK(runner, markdown_core_node_destination(link, &destination), "the facade answers a hand-built link");
+    INT_EQ(runner, destination.kind, MARKDOWN_CORE_DESTINATION_URL, "a hand-built link is the url branch");
+    INT_EQ(runner, (int)destination.url.length, 0, "a hand-built link's url is empty");
+    OK(runner, markdown_core_node_title(link, &title) && !title.has_value, "a hand-built link's title is absent");
+    OK(runner, markdown_core_node_resource(image) == NULL, "a hand-built image reads through no resource");
+    OK(runner, markdown_core_node_title(image, &title) && !title.has_value, "a hand-built image's title is absent");
+
+    OK(runner, markdown_core_node_set_literal(converted, "~~"), "the text to convert has a literal");
+    OK(runner, markdown_core_node_set_type(converted, MARKDOWN_CORE_NODE_LINK), "set_type converts text into a link");
+    OK(runner, markdown_core_node_resource(converted) == NULL, "a converted link starts without a resource");
+    OK(runner, markdown_core_node_destination(converted, &destination) && destination.url.length == 0,
+       "a converted link starts with the empty url");
+    OK(runner, markdown_core_node_set_type(converted, MARKDOWN_CORE_NODE_TEXT), "set_type converts the link back");
+    OK(runner, !markdown_core_node_destination(converted, &destination), "a text node has no destination");
+    STR_EQ(runner, markdown_core_node_get_literal(converted), "", "converting back starts the literal empty");
+
+    markdown_core_node_free(paragraph);
+
+    /* Every occurrence of one definition reads one resource; a direct link
+     * with the same bytes owns its own. */
+    static const char markdown[] = "[a]: /shared \"t\"\n\n[a] [a] [d](/shared \"t\")\n";
+    markdown_core_node *doc = markdown_core_parse_document(markdown, sizeof(markdown) - 1, MARKDOWN_CORE_OPT_DEFAULT);
+    markdown_core_node *first = markdown_core_node_first_child(markdown_core_node_first_child(doc));
+    markdown_core_node *second = markdown_core_node_next(markdown_core_node_next(first));
+    markdown_core_node *direct = markdown_core_node_next(markdown_core_node_next(second));
+    OK(runner,
+       markdown_core_node_resource(first) != NULL &&
+           markdown_core_node_resource(first) == markdown_core_node_resource(second),
+       "two occurrences of one definition read one resource");
+    OK(runner,
+       markdown_core_node_resource(direct) != NULL &&
+           markdown_core_node_resource(direct) != markdown_core_node_resource(first),
+       "a direct link with the same bytes owns its own resource");
+    markdown_core_node_free(doc);
+}
+
+static void set_type_keeps_extension_data_beside_the_arm(test_batch_runner *runner) {
+    /* An extension's per-node data lives beside the type-specific arm, not in
+     * it. Converting a formula, whose extension owns such data, into a link
+     * therefore starts the link without a resource instead of reading the
+     * payload as one, the payload stays for the extension to free, and
+     * freeing the document releases each once. While the payload shared the
+     * arm's storage, the freed payload's bytes were read as a resource's
+     * holder count on the way out. */
+    static const char markdown[] = "$x$ tail\n";
+    markdown_core_error *error = NULL;
+    markdown_core_document *document =
+        markdown_core_document_parse((const uint8_t *)markdown, sizeof(markdown) - 1, &error);
+    markdown_core_node *formula;
+    markdown_core_destination destination;
+
+    OK(runner, document != NULL && error == NULL, "the formula document parses");
+    formula = markdown_core_node_first_child(markdown_core_node_first_child(document->root));
+    INT_EQ(runner, markdown_core_node_get_kind(formula), MARKDOWN_CORE_KIND_FORMULA,
+           "the paragraph opens with a formula");
+    OK(runner, formula->opaque != NULL, "the formula's extension owns per-node data");
+    OK(runner, markdown_core_node_set_type(formula, MARKDOWN_CORE_NODE_LINK),
+       "set_type converts the formula into a link");
+    OK(runner, formula->opaque != NULL, "the extension's data stays with the node");
+    OK(runner, markdown_core_node_resource(formula) == NULL, "the converted link starts without a resource");
+    OK(runner, markdown_core_node_destination(formula, &destination) && destination.url.length == 0,
+       "the converted link answers the empty url");
     markdown_core_document_free(document);
 }
 
@@ -1635,16 +1706,15 @@ static void ref_source_pos(test_batch_runner *runner) {
                                    "\n"
                                    "[reference]: https://github.com (GitHub)\n";
 
+    /* M2: the occurrence is the Link it names, with its own scope and the
+     * definition's destination and title; the definition produces no node. */
     test_facade_dump(runner, markdown,
-                     "Document scope=1:1..3:40 children=2\n"
-                     "├── Paragraph scope=1:1..1:28 children=3\n"
-                     "│   ├── Text scope=1:1..1:10 literal=\"Let's try \" children=0\n"
-                     "│   ├── LinkReference scope=1:11..1:21 label=\"reference\" "
-                     "identifier=\"reference\" form=shortcut children=1\n"
-                     "│   │   └── Text scope=1:12..1:20 literal=\"reference\" children=0\n"
-                     "│   └── Text scope=1:22..1:28 literal=\" links.\" children=0\n"
-                     "└── ReferenceDefinition scope=3:1..3:40 label=\"reference\" identifier=\"reference\" "
-                     "destination=\"https://github.com\" title=\"GitHub\" children=0\n",
+                     "Document scope=1:1..3:40 children=1\n"
+                     "└── Paragraph scope=1:1..1:28 children=3\n"
+                     "    ├── Text scope=1:1..1:10 literal=\"Let's try \" children=0\n"
+                     "    ├── Link scope=1:11..1:21 dest=url(\"https://github.com\") title=\"GitHub\" children=1\n"
+                     "    │   └── Text scope=1:12..1:20 literal=\"reference\" children=0\n"
+                     "    └── Text scope=1:22..1:28 literal=\" links.\" children=0\n",
                      "reference link scopes are as expected");
 }
 
@@ -1718,6 +1788,8 @@ int main(void) {
     source_pos(runner);
     source_pos_inlines(runner);
     ref_source_pos(runner);
+    link_resource_lifecycle(runner);
+    set_type_keeps_extension_data_beside_the_arm(runner);
     association_accessor(runner);
     autolink_source_pos(runner);
     strbuf_overflow(runner);

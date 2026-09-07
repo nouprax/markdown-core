@@ -69,13 +69,6 @@
             "handling": "The escaped-pipe witness is registered exactly."
         },
         {
-            "id": "reference-definition-node",
-            "kind": "deliberate-difference",
-            "summary": "cmark-gfm consumes reference definitions into a map. Markdown Core retains source-faithful ReferenceDefinition and reference nodes.",
-            "handling": "The normalizer projects Markdown Core's representation into the upstream resolved model while still comparing which definition, destination, title, and children were selected.",
-            "projected": true
-        },
-        {
             "id": "text-directive",
             "kind": "deliberate-difference",
             "summary": "The dialect's text directive claims a colon-led name, `:abc`, wherever the directives module admits one; CommonMark leaves the bytes as text.",

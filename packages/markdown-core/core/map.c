@@ -265,6 +265,9 @@ void markdown_core_map_free(markdown_core_map *map) {
     while (record) {
         markdown_core_map_record *next = record->next;
         map->mem->free(record->label);
+        /* The map's holder goes; a resource some node still reads through
+         * stays with that node, which is how the tree outlives the parser. */
+        markdown_core_resource_release(map->mem, record->resource);
         map->mem->free(record);
         record = next;
     }

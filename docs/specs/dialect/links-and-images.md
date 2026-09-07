@@ -138,11 +138,12 @@ Document scope=1:1..3:11 anchor=null attributes={} children=1
 ````````````````````````````````
 
 Two occurrences resolved through one definition share the definition's
-resource internally so that a long destination or title is stored once, and
-they have no shared consumer identity. The public AST has no
-`LinkReference`, `ImageReference`, `ReferenceDefinition`, or `ReferenceForm`
-once `M2` lands, and no reference is modeled as a `Citation` or through a
-document link registry.
+resource: the C tree stores a long destination or title once,
+`markdown_core_node_resource` answers one identity for both, and each binding
+materializes that resource once and lets every occurrence read the same
+value. The public AST has no `LinkReference`, `ImageReference`,
+`ReferenceDefinition`, or `ReferenceForm`, and no reference is modeled as a
+`Citation` or through a document link registry.
 
 ## The bracket procedure
 

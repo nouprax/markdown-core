@@ -5,6 +5,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class ApiTest {
@@ -119,29 +120,34 @@ class BindingMappingTest {
             ).joinToString("\n")
         val document = Document.parse(source)
 
-        val definition = assertIs<ReferenceDefinition>(document.content[0])
-        assertEquals("foo", definition.label)
-        assertEquals("/url", definition.destination)
-        assertEquals("t", definition.title)
-
-        val block = assertIs<DirectiveBlock>(document.content[1])
+        // M2: the definition produces no node, and every reference form is
+        // the Link or Image it names, with the definition's destination and
+        // title.
+        val block = assertIs<DirectiveBlock>(document.content[0])
         assertIs<DirectiveLabel>(assertNotNull(block.label))
         assertEquals(1, block.content.size)
         assertIs<Paragraph>(block.content.single())
         assertEquals("kind", block.attributes?.first()?.name)
 
-        val inlines = assertIs<Paragraph>(document.content[2]).content
-        val references = inlines.filterIsInstance<LinkReference>()
-        assertEquals(listOf(ReferenceForm.SHORTCUT, ReferenceForm.FULL), references.map { it.form })
-        assertEquals(ReferenceForm.SHORTCUT, inlines.filterIsInstance<ImageReference>().single().form)
+        val inlines = assertIs<Paragraph>(document.content[1]).content
+        val links = inlines.filterIsInstance<Link>()
+        assertEquals(2, links.size)
+        for (link in links) {
+            assertEquals("/url", assertIs<Destination.Url>(link.dest).value)
+            assertEquals("t", link.title)
+        }
+        assertSame(links[0].dest, links[1].dest, "one definition materializes one resource")
+        val image = inlines.filterIsInstance<Image>().single()
+        assertEquals("/url", assertIs<Destination.Url>(image.dest).value)
+        assertSame(links[0].dest, image.dest, "an image reference shares the definition's resource too")
         assertEquals(PlacementMode.STANDALONE, inlines.filterIsInstance<Formula>().single().mode)
 
         // Fully qualified: the model's `List` shadows `kotlin.collections.List`.
-        val list = assertIs<com.nouprax.markdown.core.List>(document.content[3])
+        val list = assertIs<com.nouprax.markdown.core.List>(document.content[2])
         assertEquals(ListFlavor.ORDERED, list.flavor)
         assertEquals(3, list.start)
 
-        val table = assertIs<Table>(document.content[4])
+        val table = assertIs<Table>(document.content[3])
         assertEquals(
             listOf(
                 TableAlignment.LEFT,
@@ -155,7 +161,7 @@ class BindingMappingTest {
         // The owning node keeps its label field separate from block content;
         // the per-node dumper deliberately emits both relations.
         val dump = document.dump()
-        for (fragment in listOf("ReferenceDefinition", "LinkReference", "ImageReference", "DirectiveLabel")) {
+        for (fragment in listOf("Link scope=", "Image scope=", "DirectiveLabel")) {
             assertTrue(dump.contains(fragment), "dump is missing $fragment")
         }
         assertEquals(listOf("Paragraph"), block.content.map { it::class.simpleName })
@@ -304,5 +310,20 @@ class RobustnessTest {
                     .content.size,
             )
         }
+    }
+
+    @Test
+    fun everyOccurrenceOfOneDefinitionMaterializesOneResource() {
+        // M2: the C tree shares one resource across every occurrence of a
+        // definition, the JNI payload sends it once, and both decoders reuse
+        // the one value they built for it.
+        val destination = "/" + "u".repeat(1024)
+        val count = 5_000
+        val document = Document.parse("[a]: $destination\n\n" + "[a]\n\n".repeat(count))
+        val links = document.content.map { assertIs<Link>(assertIs<Paragraph>(it).content.single()) }
+        assertEquals(count, links.size)
+        val first = links.first().dest
+        assertEquals(destination, assertIs<Destination.Url>(first).value)
+        assertTrue(links.all { it.dest === first }, "every occurrence materializes the one resource")
     }
 }
