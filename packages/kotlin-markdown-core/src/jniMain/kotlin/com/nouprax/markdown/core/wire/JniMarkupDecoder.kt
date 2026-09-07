@@ -135,6 +135,10 @@ private class JniTreeDecoder(
                 readChildren { consume(Strikethrough(it, scope, anchor, attributes)) }
             }
 
+            JniNodeKind.MARK -> {
+                readChildren { consume(Mark(it, scope, anchor, attributes)) }
+            }
+
             JniNodeKind.LINK -> {
                 val resource = resource()
                 readChildren { consume(Link(resource.first, resource.second, it, scope, anchor, attributes)) }

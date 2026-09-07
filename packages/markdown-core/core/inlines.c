@@ -23,8 +23,6 @@
 #define make_comment(subj, sc, ec, s) make_literal(subj, MARKDOWN_CORE_NODE_COMMENT, sc, ec, s)
 #define make_line_break(mem) make_simple(mem, MARKDOWN_CORE_NODE_LINE_BREAK)
 #define make_soft_break(mem) make_simple(mem, MARKDOWN_CORE_NODE_SOFT_BREAK)
-#define make_emphasis(mem) make_simple(mem, MARKDOWN_CORE_NODE_EMPHASIS)
-#define make_strong(mem) make_simple(mem, MARKDOWN_CORE_NODE_STRONG)
 
 #define MAXBACKTICKS 80
 
@@ -80,10 +78,10 @@ typedef struct subject {
     int oom;
 } subject;
 
-// "\r\n\\`&_*[]<!"
+// "\r\n\\`&_*=[]<!"
 static const int8_t BASE_SPECIAL_CHARS[256] = {
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0,
-    0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -96,7 +94,8 @@ static const int8_t BASE_SKIP_CHARS[256] = {0};
 
 static MARKDOWN_CORE_INLINE bool S_is_line_end_char(char c) { return (c == '\n' || c == '\r'); }
 
-static delimiter *S_insert_emph(subject *subj, delimiter *opener, delimiter *closer);
+static delimiter *S_insert_delimited_inline(subject *subj, delimiter *opener, delimiter *closer, bufsize_t use_delims,
+                                            markdown_core_node_type kind);
 
 static int parse_inline(markdown_core_parser *parser, subject *subj, markdown_core_node *parent, int options);
 
@@ -515,7 +514,7 @@ static markdown_core_node *handle_backticks(subject *subj, int options) {
     }
 }
 
-// Scan ***, **, or * and return number scanned, or 0.
+// Scan one maximal delimiter run and return its length.
 // Advances position.
 static int scan_delims(subject *subj, unsigned char c, bool *can_open, bool *can_close) {
     int numdelims = 0;
@@ -543,6 +542,9 @@ static int scan_delims(subject *subj, unsigned char c, bool *can_open, bool *can
 
     while (peek_char(subj) == c) {
         numdelims++;
+        if (subj->owner_parser) {
+            subj->owner_parser->delimiter_work++;
+        }
         advance(subj);
     }
 
@@ -626,13 +628,15 @@ static void pop_bracket(subject *subj) {
     subj->mem->free(b);
 }
 
-/** The two rules core owns, keyed by the byte that spells each of them. */
+/** Core delimiter rules, keyed by the byte that spells each of them. */
 static markdown_core_delimiter_rule core_delimiter_rule(unsigned char c) {
     switch (c) {
     case '*':
         return MARKDOWN_CORE_DELIM_RULE_EMPHASIS;
     case '_':
         return MARKDOWN_CORE_DELIM_RULE_UNDERSCORE;
+    case '=':
+        return MARKDOWN_CORE_DELIM_RULE_MARK;
     default:
         return MARKDOWN_CORE_DELIM_RULE_NONE;
     }
@@ -721,7 +725,9 @@ static markdown_core_node *handle_delim(subject *subj, unsigned char c) {
     contents = markdown_core_chunk_dup(&subj->input, subj->pos - numdelims, numdelims);
     inl_text = make_str(subj, subj->pos - numdelims, subj->pos - 1, contents);
 
-    if (inl_text && (can_open || can_close)) {
+    // A maximal run is one stack entry: it cannot match itself. Distinct
+    // runs have non-empty source between them, regardless of the final children.
+    if (inl_text && (can_open || can_close) && (c != '=' || numdelims >= 2)) {
         push_delimiter(subj, NULL, core_delimiter_rule(c), can_open, can_close, inl_text);
     }
 
@@ -777,10 +783,10 @@ static void process_emphasis(markdown_core_parser *parser, subject *subj, bufsiz
     int i;
 
     // initialize openers_bottom:
-    memset(&openers_bottom, 0, sizeof(openers_bottom));
     for (i = 0; i < 3; i++) {
-        openers_bottom[i][MARKDOWN_CORE_DELIM_RULE_EMPHASIS] = stack_bottom;
-        openers_bottom[i][MARKDOWN_CORE_DELIM_RULE_UNDERSCORE] = stack_bottom;
+        for (int rule = 0; rule < MARKDOWN_CORE_DELIM_RULE_COUNT; rule++) {
+            openers_bottom[i][rule] = stack_bottom;
+        }
     }
 
     // move back to first relevant delim.
@@ -809,11 +815,14 @@ static void process_emphasis(markdown_core_parser *parser, subject *subj, bufsiz
             opener_found = false;
             while (opener != NULL && opener->position >= stack_bottom &&
                    opener->position >= openers_bottom[closer->length % 3][closer->rule]) {
+                if (subj->owner_parser) {
+                    subj->owner_parser->delimiter_work++;
+                }
                 if (opener->can_open && opener->rule == closer->rule) {
                     // interior closer of size 2 can't match opener of size 1
                     // or of size 1 can't match 2
-                    if (!(closer->can_open || opener->can_close) || closer->length % 3 == 0 ||
-                        (opener->length + closer->length) % 3 != 0) {
+                    if (closer->rule == MARKDOWN_CORE_DELIM_RULE_MARK || !(closer->can_open || opener->can_close) ||
+                        closer->length % 3 == 0 || (opener->length + closer->length) % 3 != 0) {
                         opener_found = true;
                         break;
                     }
@@ -836,8 +845,19 @@ static void process_emphasis(markdown_core_parser *parser, subject *subj, bufsiz
                 closer = opener_found ? extension->insert_inline_from_delim(extension, parser, subj, opener, closer)
                                       : closer->next;
             } else if (closer->rule == MARKDOWN_CORE_DELIM_RULE_EMPHASIS ||
-                       closer->rule == MARKDOWN_CORE_DELIM_RULE_UNDERSCORE) {
-                closer = opener_found ? S_insert_emph(subj, opener, closer) : closer->next;
+                       closer->rule == MARKDOWN_CORE_DELIM_RULE_UNDERSCORE ||
+                       closer->rule == MARKDOWN_CORE_DELIM_RULE_MARK) {
+                if (opener_found) {
+                    bufsize_t used =
+                        (opener->inl_text->as.literal->len >= 2 && closer->inl_text->as.literal->len >= 2) ? 2 : 1;
+                    markdown_core_node_type kind =
+                        closer->rule == MARKDOWN_CORE_DELIM_RULE_MARK
+                            ? MARKDOWN_CORE_NODE_MARK
+                            : (used == 2 ? MARKDOWN_CORE_NODE_STRONG : MARKDOWN_CORE_NODE_EMPHASIS);
+                    closer = S_insert_delimited_inline(subj, opener, closer, used, kind);
+                } else {
+                    closer = closer->next;
+                }
             } else {
                 /* No rule owns it. Unreachable while every push names a rule,
                  * and it advances anyway: this is the arm whose absence was
@@ -865,17 +885,22 @@ static void process_emphasis(markdown_core_parser *parser, subject *subj, bufsiz
     }
 }
 
-static delimiter *S_insert_emph(subject *subj, delimiter *opener, delimiter *closer) {
+static delimiter *S_insert_delimited_inline(subject *subj, delimiter *opener, delimiter *closer, bufsize_t use_delims,
+                                            markdown_core_node_type kind) {
     delimiter *delim, *tmp_delim;
-    bufsize_t use_delims;
     markdown_core_node *opener_inl = opener->inl_text;
     markdown_core_node *closer_inl = closer->inl_text;
     bufsize_t opener_num_chars = opener_inl->as.literal->len;
     bufsize_t closer_num_chars = closer_inl->as.literal->len;
-    markdown_core_node *tmp, *tmpnext, *emph;
+    markdown_core_node *tmp, *tmpnext, *inline_node;
 
-    // calculate the actual number of characters used from this closer
-    use_delims = (closer_num_chars >= 2 && opener_num_chars >= 2) ? 2 : 1;
+    // Allocate before mutating either run. OOM leaves the source intact and
+    // aborts the shared parse transaction.
+    inline_node = make_simple(subj->mem, kind);
+    if (!inline_node) {
+        subj->oom = 1;
+        return closer->next;
+    }
 
     // remove used characters from associated inlines.
     opener_num_chars -= use_delims;
@@ -891,52 +916,45 @@ static delimiter *S_insert_emph(subject *subj, delimiter *opener, delimiter *clo
         delim = tmp_delim;
     }
 
-    // create new emph or strong, and splice it in to our inlines
-    // between the opener and closer
-    emph = use_delims == 1 ? make_emphasis(subj->mem) : make_strong(subj->mem);
-    if (!emph) {
-        /* Leave the (already shortened) literals in place unstyled; the
-         * sticky flag reports the loss. */
-        subj->oom = 1;
-        return closer->next;
-    }
-
     tmp = opener_inl->next;
     if (tmp && tmp != closer_inl) {
-        emph->first_child = tmp;
+        inline_node->first_child = tmp;
         tmp->prev = NULL;
 
         while (tmp && tmp != closer_inl) {
             tmpnext = tmp->next;
-            tmp->parent = emph;
+            if (subj->owner_parser) {
+                subj->owner_parser->delimiter_work++;
+            }
+            tmp->parent = inline_node;
             if (tmpnext == closer_inl) {
-                emph->last_child = tmp;
+                inline_node->last_child = tmp;
                 tmp->next = NULL;
             }
             tmp = tmpnext;
         }
     }
 
-    opener_inl->next = emph;
-    closer_inl->prev = emph;
-    emph->prev = opener_inl;
-    emph->next = closer_inl;
-    emph->parent = opener_inl->parent;
+    opener_inl->next = inline_node;
+    closer_inl->prev = inline_node;
+    inline_node->prev = opener_inl;
+    inline_node->next = closer_inl;
+    inline_node->parent = opener_inl->parent;
 
-    /* REQUIREMENT 11b: the delimiters the emphasis USED are now its markers.
+    /* REQUIREMENT 11b: the delimiters the inline USED are now its markers.
      * They were claimed CONTENT when they were read, because a `*` that matches
      * nothing is its own literal; this claim is later and wins. `position` is
      * the content offset one past the run, which is why the opener's used bytes
      * are counted back from it and the closer's forward from its own start. */
-    // The emphasis takes the delimiters ADJACENT TO ITS CONTENT -- the opener's
+    // The inline takes the delimiters ADJACENT TO ITS CONTENT -- the opener's
     // trailing `use_delims` and the closer's leading ones -- so what is left over
     // is the opener's LEADING bytes and the closer's TRAILING ones. Taking the
     // whole run's start and end gave two nodes one byte: `***a**` reported a
     // leftover Text spanning columns 1..3 and a Strong also starting at 1.
-    emph->start_line = opener_inl->start_line;
-    emph->end_line = closer_inl->end_line;
-    emph->start_column = opener_inl->start_column + (int)opener_num_chars;
-    emph->end_column = closer_inl->end_column - (int)closer_num_chars;
+    inline_node->start_line = opener_inl->start_line;
+    inline_node->end_line = closer_inl->end_line;
+    inline_node->start_column = opener_inl->start_column + (int)opener_num_chars;
+    inline_node->end_column = closer_inl->end_column - (int)closer_num_chars;
     // and a leftover that SURVIVES owns only the bytes it still carries. A
     // leftover with none is freed below, and writing its end first would put a
     // reversed range in the tree for the length of two statements -- true only
@@ -953,6 +971,8 @@ static delimiter *S_insert_emph(subject *subj, delimiter *opener, delimiter *clo
     if (opener_num_chars == 0) {
         markdown_core_node_free(opener_inl);
         remove_delimiter(subj, opener);
+    } else if (kind == MARKDOWN_CORE_NODE_MARK && opener_num_chars < 2) {
+        remove_delimiter(subj, opener); // A remaining single sign is only text.
     }
 
     // if closer has 0 characters, remove it and its associated inline
@@ -960,6 +980,10 @@ static delimiter *S_insert_emph(subject *subj, delimiter *opener, delimiter *clo
         // remove empty closer inline
         markdown_core_node_free(closer_inl);
         // remove closer from list
+        tmp_delim = closer->next;
+        remove_delimiter(subj, closer);
+        closer = tmp_delim;
+    } else if (kind == MARKDOWN_CORE_NODE_MARK && closer_num_chars < 2) {
         tmp_delim = closer->next;
         remove_delimiter(subj, closer);
         closer = tmp_delim;
@@ -1936,8 +1960,9 @@ static int parse_inline(markdown_core_parser *parser, subject *subj, markdown_co
         break;
     case '*':
     case '_':
-        /* A `*` or `_` run is CONTENT until it matches -- an unmatched one IS
-         * its own literal -- and `S_insert_emph` re-claims the bytes it uses.
+    case '=':
+        /* A `*`, `_`, or `=` run is CONTENT until it matches -- an unmatched one IS
+         * its own literal -- and `S_insert_delimited_inline` re-claims the bytes it uses.
          * Quotation marks, hyphens, and periods are not here: the dialect has
          * no smart punctuation, so they are ordinary text stored as written,
          * and the text arm below owns them like any other byte. */

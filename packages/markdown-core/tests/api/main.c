@@ -1713,13 +1713,11 @@ static void node_payload_lifecycle(test_batch_runner *runner) {
     INT_EQ(runner, sizeof(markdown_core_node_data), sizeof(void *),
            "all payload arms share one pointer-sized node slot");
     static const markdown_core_node_type extra_types[] = {
-        MARKDOWN_CORE_NODE_CROSS_LINK,      MARKDOWN_CORE_NODE_CITE,
-        MARKDOWN_CORE_NODE_CITATION,        MARKDOWN_CORE_NODE_FOOTNOTE,
-        MARKDOWN_CORE_NODE_SPECIMEN,        MARKDOWN_CORE_NODE_TABLE,
-        MARKDOWN_CORE_NODE_TABLE_ROW,       MARKDOWN_CORE_NODE_TABLE_CELL,
-        MARKDOWN_CORE_NODE_STRIKETHROUGH,   MARKDOWN_CORE_NODE_FORMULA,
-        MARKDOWN_CORE_NODE_FORMULA_BLOCK,   MARKDOWN_CORE_NODE_DIRECTIVE,
-        MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK, MARKDOWN_CORE_NODE_DIRECTIVE_LABEL,
+        MARKDOWN_CORE_NODE_MARK,          MARKDOWN_CORE_NODE_CROSS_LINK,      MARKDOWN_CORE_NODE_CITE,
+        MARKDOWN_CORE_NODE_CITATION,      MARKDOWN_CORE_NODE_FOOTNOTE,        MARKDOWN_CORE_NODE_SPECIMEN,
+        MARKDOWN_CORE_NODE_TABLE,         MARKDOWN_CORE_NODE_TABLE_ROW,       MARKDOWN_CORE_NODE_TABLE_CELL,
+        MARKDOWN_CORE_NODE_STRIKETHROUGH, MARKDOWN_CORE_NODE_FORMULA,         MARKDOWN_CORE_NODE_FORMULA_BLOCK,
+        MARKDOWN_CORE_NODE_DIRECTIVE,     MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK, MARKDOWN_CORE_NODE_DIRECTIVE_LABEL,
     };
     size_t extra_count = sizeof(extra_types) / sizeof(*extra_types);
     for (size_t i = 0; i < (size_t)num_node_types + extra_count; i++) {
@@ -2346,7 +2344,7 @@ static void universal_values(test_batch_runner *runner) {
 /* Count visited source positions as well as verifying values. Repeated failed
  * candidates share one extent, so they cannot rescan each other's suffixes. */
 typedef struct {
-    size_t cross_link, opaque;
+    size_t cross_link, opaque, delimiters;
 } inline_work;
 static markdown_core_node *record_inline_work(const markdown_core_extension *extension, markdown_core_parser *parser,
                                               markdown_core_node *root) {
@@ -2354,6 +2352,7 @@ static markdown_core_node *record_inline_work(const markdown_core_extension *ext
     inline_work *work = root->user_data;
     work->cross_link = parser->cross_link_scan_work;
     work->opaque = parser->opaque_scan_work;
+    work->delimiters = parser->delimiter_work;
     root->user_data = NULL;
     return root;
 }
@@ -2402,6 +2401,57 @@ static void cross_link_linear_work(test_batch_runner *runner) {
                work.cross_link);
             OK(runner, work.opaque <= 4 * (size_t)source.size,
                "opaque delimiter searches are linear: case=%zu size=%d work=%zu", c, source.size, work.opaque);
+            markdown_core_node_free(root);
+            markdown_core_strbuf_free(&source);
+        }
+    }
+}
+
+static void mark_linear_work(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    static const struct {
+        const char *left, *middle, *right;
+        size_t marks_per_unit;
+    } cases[] = {
+        {"=", "", "", 0},            // one maximal run: no empty mark
+        {"=", "x", "=", 0},          // pairwise nesting, checked separately
+        {"==a ", "", "", 0},         // unmatched openers
+        {" a==", "", "", 0},         // unmatched closers
+        {"==a* ", "", "", 0},        // failed searches across another rule
+        {"==a* ", "", " b==", 1},    // mixed nested runs
+        {"==a===b== ", "", "", 1},   // odd leftovers must never match
+        {"==*a*== ", "", "", 1},     // parsed child ownership
+        {"==a====b== ", "", "", 2},  // adjacent marks
+        {"[==a==](/u) ", "", "", 1}, // separate inline containers
+    };
+    for (size_t c = 0; c < sizeof(cases) / sizeof(*cases); c++) {
+        for (size_t count = 128; count <= 8192; count *= 2) {
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+            for (size_t i = 0; i < count; i++) {
+                markdown_core_strbuf_puts(&source, cases[c].left);
+            }
+            markdown_core_strbuf_puts(&source, cases[c].middle);
+            for (size_t i = 0; i < count; i++) {
+                markdown_core_strbuf_puts(&source, cases[c].right);
+            }
+            inline_work work = {0};
+            markdown_core_node *root = markdown_core_parse_document_with_mem(
+                (char *)source.ptr, source.size, MARKDOWN_CORE_DIALECT_OPTIONS, mem, measure_inline_work, &work);
+            OK(runner, root != NULL, "adversarial equals runs parse successfully");
+            OK(runner, work.delimiters > 0 && work.delimiters <= 8 * (size_t)source.size,
+               "shared delimiter work is linear: case=%zu size=%d work=%zu", c, source.size, work.delimiters);
+            size_t marks = 0;
+            markdown_core_iter *iter = markdown_core_iter_new(root);
+            markdown_core_event_type event;
+            while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+                if (event == MARKDOWN_CORE_EVENT_ENTER &&
+                    markdown_core_iter_get_node(iter)->kind == MARKDOWN_CORE_NODE_MARK) {
+                    marks++;
+                }
+            }
+            markdown_core_iter_free(iter);
+            size_t expected = c == 1 ? count / 2 : count * cases[c].marks_per_unit;
+            INT_EQ(runner, marks, expected, "pairwise matching preserves the semantic mark count");
             markdown_core_node_free(root);
             markdown_core_strbuf_free(&source);
         }
@@ -2505,6 +2555,7 @@ int main(void) {
     universal_values(runner);
     attribute_linear_work(runner);
     cross_link_linear_work(runner);
+    mark_linear_work(runner);
     cross_link_fields(runner);
     node_payload_lifecycle(runner);
     kind_conversion_containment(runner);

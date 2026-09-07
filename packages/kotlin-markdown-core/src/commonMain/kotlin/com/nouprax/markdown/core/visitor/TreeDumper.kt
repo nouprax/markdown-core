@@ -307,6 +307,10 @@ private class DumpVisitor(
         state.container("Strikethrough", node, children = node.content)
     }
 
+    override fun visitMark(node: Mark) {
+        state.container("Mark", node, children = node.content)
+    }
+
     override fun visitLink(node: Link) {
         state.container(
             "Link",

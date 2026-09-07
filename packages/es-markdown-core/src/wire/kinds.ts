@@ -28,7 +28,8 @@ export type NativeKind =
     | "tableCell"
     | "directiveLabel"
     | "comment"
-    | "crossLink";
+    | "crossLink"
+    | "mark";
 
 export const kinds: readonly (NativeKind | "none")[] = Object.freeze([
     "none",
@@ -61,5 +62,6 @@ export const kinds: readonly (NativeKind | "none")[] = Object.freeze([
     "tableCell",
     "directiveLabel",
     "comment",
-    "crossLink"
+    "crossLink",
+    "mark"
 ]);

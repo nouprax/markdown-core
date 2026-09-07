@@ -25,6 +25,7 @@ export type { Markup } from "./model/markup.js";
 export type { Paragraph } from "./model/paragraph.js";
 export type { SoftBreak } from "./model/soft-break.js";
 export type { Strikethrough } from "./model/strikethrough.js";
+export type { Mark } from "./model/mark.js";
 export type { Strong } from "./model/strong.js";
 export type { Table, TableCell, TableRow, TableColumn } from "./model/table.js";
 export type { Text } from "./model/text.js";

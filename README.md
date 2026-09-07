@@ -45,6 +45,11 @@ CommonMark base; quotation marks, hyphens, and periods are stored as written.
 `TreeDumper` and `dump()` produce a canonical debug representation for logs,
 tests, and debugging; dump text is not a persistence or interchange format.
 
+`==highlight==` produces `Mark` with parsed inline `content`, including nested
+emphasis, links, and other inline nodes. Matching consumes two equals signs
+at a time; unmatched signs remain text. Typed visitors and walking visitors
+include the `Mark` case, and its scope covers both delimiters and the body.
+
 Tables expose `columns: [TableColumn]` and three ordered row groups: `head`,
 `content`, and `foot`. Each column carries alignment and an optional relative
 width; each cell carries positive `rowspan`/`colspan` and its parsed `content`.

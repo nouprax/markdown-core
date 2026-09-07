@@ -33,6 +33,7 @@ internal enum class JniNodeKind(
     DIRECTIVE_LABEL(28),
     COMMENT(29),
     CROSS_LINK(30),
+    MARK(31),
     ;
 
     companion object {

@@ -98,6 +98,7 @@ abstract interface <#A: kotlin/Any?> com.nouprax.markdown.core/Visitor { // com.
     abstract fun visitLink(com.nouprax.markdown.core/Link): #A // com.nouprax.markdown.core/Visitor.visitLink|visitLink(com.nouprax.markdown.core.Link){}[0]
     abstract fun visitList(com.nouprax.markdown.core/List): #A // com.nouprax.markdown.core/Visitor.visitList|visitList(com.nouprax.markdown.core.List){}[0]
     abstract fun visitListItem(com.nouprax.markdown.core/ListItem): #A // com.nouprax.markdown.core/Visitor.visitListItem|visitListItem(com.nouprax.markdown.core.ListItem){}[0]
+    abstract fun visitMark(com.nouprax.markdown.core/Mark): #A // com.nouprax.markdown.core/Visitor.visitMark|visitMark(com.nouprax.markdown.core.Mark){}[0]
     abstract fun visitParagraph(com.nouprax.markdown.core/Paragraph): #A // com.nouprax.markdown.core/Visitor.visitParagraph|visitParagraph(com.nouprax.markdown.core.Paragraph){}[0]
     abstract fun visitSoftBreak(com.nouprax.markdown.core/SoftBreak): #A // com.nouprax.markdown.core/Visitor.visitSoftBreak|visitSoftBreak(com.nouprax.markdown.core.SoftBreak){}[0]
     abstract fun visitStrikethrough(com.nouprax.markdown.core/Strikethrough): #A // com.nouprax.markdown.core/Visitor.visitStrikethrough|visitStrikethrough(com.nouprax.markdown.core.Strikethrough){}[0]
@@ -133,6 +134,7 @@ abstract interface com.nouprax.markdown.core/WalkingVisitor { // com.nouprax.mar
     abstract fun visitLink(com.nouprax.markdown.core/Link, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitLink|visitLink(com.nouprax.markdown.core.Link;com.nouprax.markdown.core.WalkPhase){}[0]
     abstract fun visitList(com.nouprax.markdown.core/List, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitList|visitList(com.nouprax.markdown.core.List;com.nouprax.markdown.core.WalkPhase){}[0]
     abstract fun visitListItem(com.nouprax.markdown.core/ListItem, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitListItem|visitListItem(com.nouprax.markdown.core.ListItem;com.nouprax.markdown.core.WalkPhase){}[0]
+    abstract fun visitMark(com.nouprax.markdown.core/Mark, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitMark|visitMark(com.nouprax.markdown.core.Mark;com.nouprax.markdown.core.WalkPhase){}[0]
     abstract fun visitParagraph(com.nouprax.markdown.core/Paragraph, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitParagraph|visitParagraph(com.nouprax.markdown.core.Paragraph;com.nouprax.markdown.core.WalkPhase){}[0]
     abstract fun visitSoftBreak(com.nouprax.markdown.core/SoftBreak, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitSoftBreak|visitSoftBreak(com.nouprax.markdown.core.SoftBreak;com.nouprax.markdown.core.WalkPhase){}[0]
     abstract fun visitSpecimen(com.nouprax.markdown.core/Specimen, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitSpecimen|visitSpecimen(com.nouprax.markdown.core.Specimen;com.nouprax.markdown.core.WalkPhase){}[0]
@@ -699,6 +701,19 @@ final class com.nouprax.markdown.core/ListItem : com.nouprax.markdown.core/Marku
         final fun <get-tasked>(): kotlin/Boolean // com.nouprax.markdown.core/ListItem.tasked.<get-tasked>|<get-tasked>(){}[0]
 
     final fun <#A1: kotlin/Any?> accept(com.nouprax.markdown.core/Visitor<#A1>): #A1 // com.nouprax.markdown.core/ListItem.accept|accept(com.nouprax.markdown.core.Visitor<0:0>){0§<kotlin.Any?>}[0]
+}
+
+final class com.nouprax.markdown.core/Mark : com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core/Mark|null[0]
+    final val anchor // com.nouprax.markdown.core/Mark.anchor|{}anchor[0]
+        final fun <get-anchor>(): kotlin/String? // com.nouprax.markdown.core/Mark.anchor.<get-anchor>|<get-anchor>(){}[0]
+    final val attributes // com.nouprax.markdown.core/Mark.attributes|{}attributes[0]
+        final fun <get-attributes>(): com.nouprax.markdown.core/Attributes // com.nouprax.markdown.core/Mark.attributes.<get-attributes>|<get-attributes>(){}[0]
+    final val content // com.nouprax.markdown.core/Mark.content|{}content[0]
+        final fun <get-content>(): kotlin.collections/List<com.nouprax.markdown.core/Markup> // com.nouprax.markdown.core/Mark.content.<get-content>|<get-content>(){}[0]
+    final val scope // com.nouprax.markdown.core/Mark.scope|{}scope[0]
+        final fun <get-scope>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/Mark.scope.<get-scope>|<get-scope>(){}[0]
+
+    final fun <#A1: kotlin/Any?> accept(com.nouprax.markdown.core/Visitor<#A1>): #A1 // com.nouprax.markdown.core/Mark.accept|accept(com.nouprax.markdown.core.Visitor<0:0>){0§<kotlin.Any?>}[0]
 }
 
 final class com.nouprax.markdown.core/Metadata { // com.nouprax.markdown.core/Metadata|null[0]

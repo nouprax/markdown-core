@@ -54,6 +54,28 @@ test("api: walking dispatch is typed and preserves owned-field semantics", () =>
     assert.deepEqual(tableRowKinds, [1, 3]);
 });
 
+test("ast: marks retain typed content and walk both phases after native release", () => {
+    const mark = Document.parse("==a *b*==").content[0].content[0];
+    assert.equal(visit(mark, { ...kindVisitor, visitMark: (node) => node.content.length }), 2);
+    const events = [];
+    walk(
+        mark,
+        walkingVisitor((node, phase) => events.push(`${phase}:${node.kind}`))
+    );
+    assert.deepEqual(events, [
+        "entering:mark",
+        "entering:text",
+        "exiting:text",
+        "entering:emphasis",
+        "entering:text",
+        "exiting:text",
+        "exiting:emphasis",
+        "exiting:mark"
+    ]);
+    assert.equal(mark.content[1].content[0].literal, "b");
+    assert.deepEqual(mark.scope, { start: { line: 1, column: 1 }, end: { line: 1, column: 9 } });
+});
+
 test("api: the dialect has no switches, so a plain parse recognizes every feature", () => {
     // One witness per feature that used to sit behind a `ParseOptions`
     // field, and one for the substitution smart punctuation used to make.

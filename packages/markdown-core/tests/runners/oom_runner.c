@@ -98,6 +98,9 @@ static const char OOM_EXTENSION_EDGE_CORPUS[] = ":inline[label]{.a class=\"\" .b
                                                 "| :--- | ---: |\n"
                                                 "| a | b |\n";
 
+static const char OOM_MARK_CORPUS[] = "===a *b*=== ==c====d== ==[link](/u) <!--c-->==\n\n"
+                                      "| ==h== |\n| --- |\n| ==x\\|y== |\n\ncall[^n]\n\n[^n]: ==note==\n";
+
 typedef struct oom_case {
     const char *name;
     const char *source;
@@ -105,6 +108,7 @@ typedef struct oom_case {
 } oom_case;
 
 static const oom_case OOM_CASES[] = {
+    {"marks", OOM_MARK_CORPUS, sizeof(OOM_MARK_CORPUS) - 1},
     {"full-feature", OOM_CORPUS, sizeof(OOM_CORPUS) - 1},
     {"line-and-core", OOM_LINE_AND_CORE_CORPUS, sizeof(OOM_LINE_AND_CORE_CORPUS) - 1},
     {"extension-edges", OOM_EXTENSION_EDGE_CORPUS, sizeof(OOM_EXTENSION_EDGE_CORPUS) - 1},

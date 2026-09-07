@@ -25,6 +25,7 @@ import type { Markup } from "./model/markup.js";
 import type { Paragraph } from "./model/paragraph.js";
 import type { SoftBreak } from "./model/soft-break.js";
 import type { Strikethrough } from "./model/strikethrough.js";
+import type { Mark } from "./model/mark.js";
 import type { Strong } from "./model/strong.js";
 import type { Table, TableCell, TableRow } from "./model/table.js";
 import type { Text } from "./model/text.js";
@@ -161,6 +162,7 @@ class DumpState {
         visitEmphasis: (node: Emphasis) => this.container("Emphasis", node, [], node.content),
         visitStrong: (node: Strong) => this.container("Strong", node, [], node.content),
         visitStrikethrough: (node: Strikethrough) => this.container("Strikethrough", node, [], node.content),
+        visitMark: (node: Mark) => this.container("Mark", node, [], node.content),
         visitLink: (node: Link) =>
             this.container(
                 "Link",

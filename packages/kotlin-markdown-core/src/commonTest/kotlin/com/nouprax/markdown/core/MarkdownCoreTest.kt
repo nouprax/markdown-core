@@ -45,6 +45,30 @@ class ApiTest {
     }
 
     @Test
+    fun marksRetainTypedContentAndWalkBothPhasesAfterNativeRelease() {
+        val paragraph = Document.parse("==a *b*==").content.first() as Paragraph
+        val mark = paragraph.content.first() as Mark
+        val visitor = RecordingWalkingVisitor()
+        mark.walk(visitor)
+        assertEquals(
+            listOf(
+                "entering:Mark",
+                "entering:Text",
+                "exiting:Text",
+                "entering:Emphasis",
+                "entering:Text",
+                "exiting:Text",
+                "exiting:Emphasis",
+                "exiting:Mark",
+            ),
+            visitor.events,
+        )
+        assertEquals(2, mark.content.size)
+        assertEquals("b", ((mark.content[1] as Emphasis).content.first() as Text).literal)
+        assertEquals(Scope(Position(1, 1), Position(1, 9)), mark.scope)
+    }
+
+    @Test
     fun walkingVisitorIsTypedAndPreservesOwnedFieldSemantics() {
         val block = assertIs<DirectiveBlock>(Document.parse(":::note[Title]\nBody\n:::\n").content.single())
         val visitor = RecordingWalkingVisitor()

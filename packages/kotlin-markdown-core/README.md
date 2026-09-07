@@ -55,6 +55,11 @@ parsing and typed AST inspection, not rendering or mutation.
 Task items preserve their authored `marker`; `tasked` and `completed` are
 derived conveniences. Ordered lists expose their `variant` and `delimiter`.
 
+`==highlight==` produces `Mark` with parsed inline `content`, including nested
+emphasis, links, and other inline nodes. Matching consumes two equals signs
+at a time; unmatched signs remain text. Typed visitors and walking visitors
+include the `Mark` case, and its scope covers both delimiters and the body.
+
 ## Traverse and Inspect
 
 `Markup.accept(visitor)` dispatches exactly one node to an exhaustive typed

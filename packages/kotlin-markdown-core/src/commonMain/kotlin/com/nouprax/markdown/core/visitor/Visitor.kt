@@ -53,6 +53,8 @@ public interface Visitor<Result> {
 
     public fun visitStrikethrough(node: Strikethrough): Result
 
+    public fun visitMark(node: Mark): Result
+
     public fun visitLink(node: Link): Result
 
     public fun visitImage(node: Image): Result

@@ -118,14 +118,6 @@
     "corpus": ["specs/oracles/obsidian/corpus.md", "specs/oracles/obsidian/metadata-corpus.md"],
     "baselineGaps": [
         {
-            "id": "highlight",
-            "input": "before ==marked== after\n",
-            "oracleDigest": "5ea22a361e83540a9f5bf99a33a0357a381e0d8be61f2bc1dadb897d7d776f52",
-            "markdownCoreDigest": "5335abe78e63cc877879d4382dcf94ada44f68847e894cacd04bf10efcd8d484",
-            "requirement": "Recognize highlighted content instead of retaining the delimiter bytes as text.",
-            "closedBy": "Phase 2 — one OFM inline extension"
-        },
-        {
             "id": "comment-inline",
             "input": "before %%hidden%% after\n",
             "oracleDigest": "4632312c72b8bf43f132ba1d592ab74142a7f0c2bfd2fb101247734925a2a7fd",
@@ -220,8 +212,8 @@
     "modelDeltas": [
         {
             "id": "highlight-content-model",
-            "summary": "The oracle emits the complete highlight body as one Text child. The target Markdown Core AST parses it as inline content, like emphasis and strikethrough.",
-            "handling": "The comparison keeps children today so the basic plain-text witness agrees after recognition. Nested-format product fixtures are not projected through this oracle."
+            "summary": "The oracle emits the complete highlight body as one Text child. Markdown Core parses Mark.content as inline content, like emphasis and strikethrough.",
+            "handling": "The comparison retains children for plain-text recognition witnesses. A formatted-mark canary separately asserts the raw oracle Text and the product Text/Emphasis/Text children; nested-format product fixtures own that deliberate content-model difference."
         },
         {
             "id": "scope-model",

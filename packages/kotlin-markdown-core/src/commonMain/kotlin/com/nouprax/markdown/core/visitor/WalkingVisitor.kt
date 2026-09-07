@@ -153,6 +153,11 @@ public interface WalkingVisitor {
         phase: WalkPhase,
     )
 
+    public fun visitMark(
+        node: Mark,
+        phase: WalkPhase,
+    )
+
     public fun visitLink(
         node: Link,
         phase: WalkPhase,
@@ -454,6 +459,12 @@ private class WalkingDriver(
 
     override fun visitStrikethrough(node: Strikethrough) {
         visitor.visitStrikethrough(node, phase)
+        scheduleExit(node)
+        if (phase == WalkPhase.ENTERING) schedule(node.content)
+    }
+
+    override fun visitMark(node: Mark) {
+        visitor.visitMark(node, phase)
         scheduleExit(node)
         if (phase == WalkPhase.ENTERING) schedule(node.content)
     }

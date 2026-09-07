@@ -295,6 +295,10 @@ private struct DumpVisitor: MarkupVisitor {
         state.line("Strikethrough", node, children: node.content.count)
         state.nested(node.content.count) { node.content.forEach(state.dump) }
     }
+    mutating func visit(_ node: Mark) {
+        state.line("Mark", node, children: node.content.count)
+        state.nested(node.content.count) { node.content.forEach(state.dump) }
+    }
 
     mutating func visit(_ node: Link) {
         state.line(

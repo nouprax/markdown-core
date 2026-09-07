@@ -6,6 +6,12 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
+- Recognize `==highlight==` as `Mark(content)` on C, Swift, Kotlin, and ES.
+  Parse nested inline content through the shared delimiter stack, consume two
+  equals signs per match, and retain unmatched single signs as text. Scopes
+  cover the matched delimiters; code, formulas, HTML tokens, and cross links
+  keep their bodies opaque.
+
 - Recognize `[[...]]` and `![[...]]` as `CrossLink` on C, Swift, Kotlin and ES.
   Preserve raw paths, destination anchors and nullable labels, including escaped
   table pipes and authored empty labels. Formula bodies claim their bytes before

@@ -418,6 +418,17 @@
             "invariants": "inline content"
         },
         {
+            "name": "Mark",
+            "fields": [
+                {
+                    "name": "content",
+                    "type": "[Markup]",
+                    "optional": false
+                }
+            ],
+            "invariants": "inline content"
+        },
+        {
             "name": "Link",
             "fields": [
                 {

@@ -311,6 +311,7 @@ func markup(
     case MARKDOWN_CORE_KIND_EMPHASIS: Emphasis(from: node, content: relations.children)
     case MARKDOWN_CORE_KIND_STRONG: Strong(from: node, content: relations.children)
     case MARKDOWN_CORE_KIND_STRIKETHROUGH: Strikethrough(from: node, content: relations.children)
+    case MARKDOWN_CORE_KIND_MARK: Mark(from: node, content: relations.children)
     case MARKDOWN_CORE_KIND_LINK: Link(from: node, content: relations.children, resources: &resources)
     case MARKDOWN_CORE_KIND_IMAGE: Image(from: node, content: relations.children, resources: &resources)
     case MARKDOWN_CORE_KIND_DIRECTIVE: Directive(from: node, label: relations.label)

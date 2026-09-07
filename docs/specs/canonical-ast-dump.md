@@ -153,6 +153,7 @@ that the dump represents as nested descendants.
 | `Emphasis` | `anchor`, `attributes` |
 | `Strong` | `anchor`, `attributes` |
 | `Strikethrough` | `anchor`, `attributes` |
+| `Mark` | `anchor`, `attributes` |
 | `Link` | `anchor`, `attributes`, `dest`, `title` |
 | `Image` | `anchor`, `attributes`, `dest`, `title`, `width`, `height` |
 | `Directive` | `anchor`, `attributes`, `name` |

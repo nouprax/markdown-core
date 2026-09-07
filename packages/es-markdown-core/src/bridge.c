@@ -713,6 +713,7 @@ static void collect_node_fields(es_build *build, size_t node_index) {
     case MARKDOWN_CORE_KIND_LINE_BREAK:
     case MARKDOWN_CORE_KIND_EMPHASIS:
     case MARKDOWN_CORE_KIND_STRONG:
+    case MARKDOWN_CORE_KIND_MARK:
     case MARKDOWN_CORE_KIND_STRIKETHROUGH:
     case MARKDOWN_CORE_KIND_TABLE_ROW:
     case MARKDOWN_CORE_KIND_DIRECTIVE_LABEL:
