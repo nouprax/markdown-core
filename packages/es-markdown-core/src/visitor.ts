@@ -1,4 +1,4 @@
-import type { BlockQuote } from "./model/block-quote.js";
+import type { Callout } from "./model/callout.js";
 import type { CodeBlock } from "./model/code-block.js";
 import type { Code } from "./model/code.js";
 import type { Comment } from "./model/comment.js";
@@ -28,7 +28,7 @@ import type { ThematicBreak } from "./model/thematic-break.js";
 
 export interface Visitor<Result> {
     visitDocument(this: void, node: Document): Result;
-    visitBlockQuote(this: void, node: BlockQuote): Result;
+    visitCallout(this: void, node: Callout): Result;
     visitParagraph(this: void, node: Paragraph): Result;
     visitHeading(this: void, node: Heading): Result;
     visitThematicBreak(this: void, node: ThematicBreak): Result;
@@ -63,8 +63,8 @@ export function visit<Result>(node: Markup, visitor: Visitor<Result>): Result {
     switch (node.kind) {
         case "document":
             return visitor.visitDocument(node);
-        case "blockQuote":
-            return visitor.visitBlockQuote(node);
+        case "callout":
+            return visitor.visitCallout(node);
         case "paragraph":
             return visitor.visitParagraph(node);
         case "heading":

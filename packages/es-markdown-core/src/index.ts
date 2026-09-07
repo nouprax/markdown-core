@@ -1,6 +1,6 @@
 export { Document } from "./document.js";
-export type { BlockQuote } from "./model/block-quote.js";
 export type { CodeBlock } from "./model/code-block.js";
+export type { Callout } from "./model/callout.js";
 export type { Code } from "./model/code.js";
 export type { Comment } from "./model/comment.js";
 export type { DirectiveAttribute } from "./model/directive-attribute.js";

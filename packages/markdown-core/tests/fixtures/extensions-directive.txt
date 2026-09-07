@@ -931,7 +931,7 @@ quote as well.
 > after
 .
 Document scope=1:1..4:7 children=1
-└── BlockQuote scope=1:1..4:7 children=2
+└── Callout scope=1:1..4:7 variant=null collapsed=null children=2
     ├── DirectiveBlock scope=1:3..3:5 name="note" attributes=null children=1
     │   └── Paragraph scope=2:3..2:6 children=1
     │       └── Text scope=2:3..2:6 literal="body" children=0

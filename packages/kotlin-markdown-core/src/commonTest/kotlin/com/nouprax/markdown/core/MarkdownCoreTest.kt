@@ -97,6 +97,26 @@ class ErrorsTest {
 
 class BindingMappingTest {
     @Test
+    fun everyQuoteContainerIsAMetadataFreeCallout() {
+        // M3: the kind is `Callout`; the metadata rule that fills variant,
+        // collapsed, and title in lands with O8, so every callout reads as
+        // metadata-free and dumps its fields as such.
+        val document = Document.parse("> quote\n")
+        val callout = assertIs<Callout>(document.content.single())
+        assertEquals(null, callout.variant)
+        assertEquals(null, callout.collapsed)
+        assertEquals(null, callout.title)
+        assertEquals(1, callout.content.size)
+        assertEquals(
+            "Document scope=1:1..1:7 children=1\n" +
+                "└── Callout scope=1:1..1:7 variant=null collapsed=null children=1\n" +
+                "    └── Paragraph scope=1:3..1:7 children=1\n" +
+                "        └── Text scope=1:3..1:7 literal=\"quote\" children=0\n",
+            document.dump(),
+        )
+    }
+
+    @Test
     fun extendedKindsDecodeDumpAndWalk() {
         // One document verifies the extended node kinds and their semantic
         // fields through decode, dump, and traversal.

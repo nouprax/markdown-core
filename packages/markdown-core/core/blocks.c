@@ -1358,7 +1358,7 @@ static bool S_last_child_is_open(markdown_core_node *container) {
     return container->last_child && (container->last_child->flags & MARKDOWN_CORE_NODE__OPEN);
 }
 
-static bool parse_block_quote_prefix(markdown_core_parser *parser, markdown_core_chunk *input) {
+static bool parse_callout_prefix(markdown_core_parser *parser, markdown_core_chunk *input) {
     bool res = false;
     bufsize_t matched = 0;
 
@@ -1534,8 +1534,8 @@ static markdown_core_node *check_open_blocks(markdown_core_parser *parser, markd
         }
 
         switch (cont_type) {
-        case MARKDOWN_CORE_NODE_BLOCK_QUOTE:
-            if (!parse_block_quote_prefix(parser, input)) {
+        case MARKDOWN_CORE_NODE_CALLOUT:
+            if (!parse_callout_prefix(parser, input)) {
                 goto done;
             }
             break;
@@ -1646,7 +1646,7 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
             if (S_is_space_or_tab(peek_at(input, parser->offset))) {
                 S_advance_offset(parser, input, 1, true);
             }
-            *container = add_child(parser, *container, MARKDOWN_CORE_NODE_BLOCK_QUOTE, blockquote_startpos + 1);
+            *container = add_child(parser, *container, MARKDOWN_CORE_NODE_CALLOUT, blockquote_startpos + 1);
             if (!*container) {
                 return;
             }
@@ -1901,7 +1901,7 @@ static void add_text_to_container(markdown_core_parser *parser, markdown_core_no
     // on an empty list item.
     const markdown_core_node_type ctype = S_type(container);
     const bool last_line_blank =
-        (parser->blank && ctype != MARKDOWN_CORE_NODE_BLOCK_QUOTE && ctype != MARKDOWN_CORE_NODE_HEADING &&
+        (parser->blank && ctype != MARKDOWN_CORE_NODE_CALLOUT && ctype != MARKDOWN_CORE_NODE_HEADING &&
          ctype != MARKDOWN_CORE_NODE_THEMATIC_BREAK && !extension_accepts_lines(container) &&
          !(ctype == MARKDOWN_CORE_NODE_CODE_BLOCK && container->as.code.fenced) &&
          !(ctype == MARKDOWN_CORE_NODE_LIST_ITEM && container->first_child == NULL &&

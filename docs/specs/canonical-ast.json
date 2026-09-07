@@ -31,15 +31,30 @@
             "invariants": "block content"
         },
         {
-            "name": "BlockQuote",
+            "name": "Callout",
             "fields": [
+                {
+                    "name": "variant",
+                    "type": "String",
+                    "optional": true
+                },
+                {
+                    "name": "collapsed",
+                    "type": "Bool",
+                    "optional": true
+                },
+                {
+                    "name": "title",
+                    "type": "[Markup]",
+                    "optional": true
+                },
                 {
                     "name": "content",
                     "type": "[Markup]",
                     "optional": false
                 }
             ],
-            "invariants": "block content"
+            "invariants": "every `>` container; `variant` is the authored type as written or null when the container has no metadata line, and then `collapsed` and `title` are null; `collapsed` is null when no `+` or `-` fold marker was authored, false for `+` and true for `-`; `title` is a node-valued field of inline content visited before `content` and never counted among its children; a present title holds at least one node; block content"
         },
         {
             "name": "Paragraph",

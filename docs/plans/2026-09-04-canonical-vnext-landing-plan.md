@@ -209,7 +209,7 @@ and the manifest order.
 | Kind                                                                                               | Target fields in canonical order                                                                                  | Change                                           | Item         |
 | -------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ | ------------ |
 | `Document`                                                                                         | `content`, `metadata: Metadata?`, `footnotes: [Footnote]`                                                         | changed                                          | `M4`, `M7`   |
-| `Callout`                                                                                          | `variant: String?`, `fold: CalloutFold`, `title: [Markup]?`, `content`                                            | replaces `BlockQuote`                            | `M3`         |
+| `Callout`                                                                                          | `variant: String?`, `collapsed: Bool?`, `title: [Markup]?`, `content`                                            | replaces `BlockQuote`                            | `M3`         |
 | `Paragraph`, `ThematicBreak`, `HTMLBlock`, `FormulaBlock`                                          | as today                                                                                                          | unchanged                                        | —            |
 | `Heading`                                                                                          | `level`, `content`                                                                                                | unchanged; anchors use the inherited field       | —            |
 | `List`                                                                                             | `flavor`, `start`, `style: OrderedListStyle?`, `delimiter: OrderedListDelimiter?`, `tight`, `items`               | changed                                          | `M5`         |
@@ -252,7 +252,6 @@ value carries `scope` only.
 | `CitationReferent = bib(key, mode: BibMode) \| footnote(id)`, `BibMode`             | `M4`; `bib` first produced by `P7`                            |
 | `Citation(referent, prefix: [Markup], suffix: [Markup], scope)`                     | `M4`; scoped and traversed, not `Markup`                      |
 | `Footnote(id, content: [Markup], scope)`                                            | `M4`; document-owned, scoped and traversed, not `Markup`      |
-| `CalloutFold = none \| expanded \| collapsed`                                       | `M3`; `expanded` and `collapsed` first produced by `O8`       |
 | `OrderedListStyle`, `OrderedListDelimiter`                                          | `M5`; values beyond the inherited forms first by `P9a`, `P9b` |
 | `TableColumn(alignment: TableAlignment, relative: Double?)`                         | `M6`; `relative` first produced by `P11c`                     |
 | `Metadata`, `MetadataRecord`, `MetadataValue`, `MetadataScalar`, `MetadataListItem` | `M7`; first produced by `O6`                                  |
@@ -408,14 +407,16 @@ its behavior, with no separate publication step.
       holds on every surface. Manifest: the `reference.form.*` states are
       replaced by a case proving that a direct and a reference occurrence dump
       identically apart from scope. Requires `M1`.
-- [ ] **M3 — `Callout` replaces `BlockQuote`.** Rename the kind everywhere, add
-      `CalloutFold`, expose `variant`, `fold`, and `title` on every surface, and
-      give every `>` container `variant=null`, `fold=none`, and `title=null`
-      with unchanged content and scope; no alias or wrapper survives. The C node
-      type, facade accessor, dump, bindings, walkers, and every fixture
-      containing a quote regenerate. The Obsidian `universal-callout-container`
-      delta stays as the general projection of mdast `blockquote`. Manifest
-      states: `callout.variant.null`, `callout.fold.none`, `callout.title.null`.
+- [x] **M3 — `Callout` replaces `BlockQuote`.** Rename the kind everywhere,
+      expose `variant`, `collapsed`, and `title` on every surface, and give
+      every `>` container `variant=null`, `collapsed=null`, and `title=null`
+      with unchanged content and scope; no alias or wrapper survives. A present
+      title holds at least one node, so its first node is its presence on the
+      C facade and its count is its presence on the wire. The C node type,
+      facade accessor, dump, bindings, walkers, and every fixture containing a
+      quote regenerate. The Obsidian `universal-callout-container` delta stays
+      as the general projection of mdast `blockquote`. Manifest states:
+      `callout.variant.null`, `callout.collapsed.null`, `callout.title.null`.
       Requires `S0`.
 - [ ] **M4 — Citation and footnote model.** Replace `FootnoteReference` and
       `FootnoteDefinition` with inline `Cite(citations)`, the scoped
@@ -609,13 +610,13 @@ its behavior, with no separate publication step.
       type as written in `variant` with matching left to consumers, remove the
       metadata line from content before body blocks finalize, keep unknown and
       custom types, leave invalid or misplaced markers as content, and nest
-      through the inherited container recursion. Populate the `variant`, `fold`,
-      and `title` fields that `M3` declared on every surface, changing no
+      through the inherited container recursion. Populate the `variant`,
+      `collapsed`, and `title` fields that `M3` declared on every surface, changing no
       accessor or dump form; add fixtures for the module's table plus formatted
       titles, every built-in alias, nested combinations, lazy continuation,
       scopes, allocation failure, and adversarial depth, and canonical cases for
-      `callout.variant.value`, `callout.fold.expanded`,
-      `callout.fold.collapsed`, and `callout.title.populated`. An identifier
+      `callout.variant.value`, `callout.collapsed.false`,
+      `callout.collapsed.true`, and `callout.title.populated`. An identifier
       attached to a metadata-bearing callout is a cross-item case owned by
       whichever of `O8` and `O7` merges later, and a title that is one `%%`
       comment, non-null and holding one `Comment`, is a cross-item case owned by

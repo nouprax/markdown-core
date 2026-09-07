@@ -18,7 +18,7 @@ public enum WalkPhase: Sendable {
 /// distinct from the directive's `content`.
 public protocol MarkupWalkingVisitor {
     mutating func visit(_ node: Document, phase: WalkPhase)
-    mutating func visit(_ node: BlockQuote, phase: WalkPhase)
+    mutating func visit(_ node: Callout, phase: WalkPhase)
     mutating func visit(_ node: Paragraph, phase: WalkPhase)
     mutating func visit(_ node: Heading, phase: WalkPhase)
     mutating func visit(_ node: ThematicBreak, phase: WalkPhase)
@@ -109,11 +109,15 @@ private struct WalkingDriver<WalkingVisitor: MarkupWalkingVisitor>: MarkupVisito
         }
     }
 
-    mutating func visit(_ node: BlockQuote) {
+    mutating func visit(_ node: Callout) {
         visitor.visit(node, phase: phase)
         scheduleExit(node)
         if phase == .entering {
             for child in node.content.reversed() { actions.append(.enter(child)) }
+            // The title is a node-valued field, visited before the content.
+            if let title = node.title {
+                for child in title.reversed() { actions.append(.enter(child)) }
+            }
         }
     }
 

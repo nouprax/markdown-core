@@ -38,7 +38,21 @@ private class DumpState {
         children: Int = 0,
     ) {
         val fieldText = if (fields.isEmpty()) "" else " ${fields.joinToString(" ")}"
-        val text = "$kind ${scope(node.scope)}$fieldText children=$children"
+        emit("$kind ${scope(node.scope)}$fieldText children=$children")
+    }
+
+    /**
+     * A group line nests a node-valued list under its owner: `Kind children=N`
+     * with no scope and no fields. The caller opens the list's own nesting.
+     */
+    fun group(
+        kind: String,
+        children: Int,
+    ) {
+        emit("$kind children=$children")
+    }
+
+    private fun emit(text: String) {
         if (remainingNodes.isEmpty()) {
             lines += text
             return
@@ -71,8 +85,22 @@ private class DumpVisitor(
         state.container("Document", node, children = node.content)
     }
 
-    override fun visitBlockQuote(node: BlockQuote) {
-        state.container("BlockQuote", node, children = node.content)
+    override fun visitCallout(node: Callout) {
+        state.line(
+            "Callout",
+            node,
+            listOf("variant=${optionalString(node.variant)}", "collapsed=${node.collapsed ?: "null"}"),
+            node.content.size,
+        )
+        // A non-null title is a `Title` group before the content; a
+        // null one prints nothing. Neither is counted by `children`.
+        state.nested(node.content.size + (if (node.title == null) 0 else 1)) {
+            node.title?.let { title ->
+                state.group("Title", title.size)
+                state.nested(title.size) { title.forEach(state::dump) }
+            }
+            node.content.forEach(state::dump)
+        }
     }
 
     override fun visitParagraph(node: Paragraph) {

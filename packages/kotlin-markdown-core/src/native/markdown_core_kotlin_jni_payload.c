@@ -278,8 +278,36 @@ static void write_node(jni_payload_buffer *buffer, jni_payload_stack *stack, jni
     }
 
     switch (kind) {
+    case MARKDOWN_CORE_KIND_CALLOUT: {
+        /* The metadata leads, then the title -- a node-valued list sent before
+         * the content, as the walk visits it, whose count is its presence
+         * because a present title holds at least one node -- then the
+         * content. */
+        markdown_core_optional_bool collapsed;
+        const markdown_core_node *title;
+        const markdown_core_node *cursor;
+        size_t count = 0;
+        if (!markdown_core_node_callout_properties(node, &optional_first, &collapsed)) {
+            buffer->failure = JNI_PAYLOAD_INTERNAL;
+            return;
+        }
+        put_optional_string(buffer, optional_first);
+        put_u8(buffer, collapsed.has_value ? (collapsed.value ? 1 : 0) : UINT8_MAX);
+        title = markdown_core_node_callout_title(node);
+        for (cursor = title; cursor; cursor = markdown_core_node_get_next_sibling(cursor)) {
+            count++;
+        }
+        if (title != NULL) {
+            jni_payload_action children = {JNI_PAYLOAD_WRITE_CHILDREN, node, 0};
+            push_action(buffer, stack, children);
+            schedule_nodes(buffer, stack, title, count);
+        } else {
+            schedule_nodes(buffer, stack, NULL, 0);
+            schedule_children(buffer, stack, node);
+        }
+        break;
+    }
     case MARKDOWN_CORE_KIND_DOCUMENT:
-    case MARKDOWN_CORE_KIND_BLOCK_QUOTE:
     case MARKDOWN_CORE_KIND_PARAGRAPH:
     case MARKDOWN_CORE_KIND_EMPHASIS:
     case MARKDOWN_CORE_KIND_STRONG:

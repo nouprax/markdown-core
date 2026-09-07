@@ -1,4 +1,4 @@
-import type { BlockQuote } from "./model/block-quote.js";
+import type { Callout } from "./model/callout.js";
 import type { CodeBlock } from "./model/code-block.js";
 import type { Code } from "./model/code.js";
 import type { Comment } from "./model/comment.js";
@@ -48,7 +48,25 @@ class DumpState {
     /** Each callback emits exactly its node and chooses its children/fields. */
     private readonly visitor: Visitor<void> = {
         visitDocument: (node: Document) => this.container("Document", node, [], node.content),
-        visitBlockQuote: (node: BlockQuote) => this.container("BlockQuote", node, [], node.content),
+        visitCallout: (node: Callout) => {
+            this.line(
+                "Callout",
+                node,
+                [`variant=${optionalString(node.variant)}`, `collapsed=${node.collapsed ?? "null"}`],
+                node.content.length
+            );
+            // A non-null title is a `Title` group before the content; a null
+            // one prints nothing. Neither is counted by `children`.
+            this.nested(node.content.length + (node.title === null ? 0 : 1), () => {
+                if (node.title !== null) {
+                    this.group("Title", node.title.length);
+                    this.nested(node.title.length, () => {
+                        for (const child of node.title ?? []) this.dump(child);
+                    });
+                }
+                for (const child of node.content) this.dump(child);
+            });
+        },
         visitParagraph: (node: Paragraph) => this.container("Paragraph", node, [], node.content),
         visitHeading: (node: Heading) => this.container("Heading", node, [`level=${node.level}`], node.content),
         visitThematicBreak: (node: ThematicBreak) => this.line("ThematicBreak", node),
@@ -139,7 +157,18 @@ class DumpState {
 
     private line(kind: string, node: Markup, fields: readonly string[] = [], children = 0): void {
         const fieldText = fields.length === 0 ? "" : ` ${fields.join(" ")}`;
-        const text = `${kind} ${scope(node.scope)}${fieldText} children=${children}`;
+        this.emit(`${kind} ${scope(node.scope)}${fieldText} children=${children}`);
+    }
+
+    /**
+     * A group line nests a node-valued list under its owner: `Kind children=N`
+     * with no scope and no fields. The caller opens the list's own nesting.
+     */
+    private group(kind: string, children: number): void {
+        this.emit(`${kind} children=${children}`);
+    }
+
+    private emit(text: string): void {
         if (this.remainingNodes.length === 0) {
             this.lines.push(text);
             return;

@@ -21,7 +21,7 @@ class AstTest {
         assertEquals(
             setOf(
                 "Document",
-                "BlockQuote",
+                "Callout",
                 "Paragraph",
                 "Heading",
                 "ThematicBreak",

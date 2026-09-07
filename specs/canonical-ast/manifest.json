@@ -11,7 +11,7 @@
     "coverageRequirements": {
         "kinds": [
             "Document",
-            "BlockQuote",
+            "Callout",
             "Paragraph",
             "Heading",
             "ThematicBreak",
@@ -67,6 +67,9 @@
             "table.alignment.right",
             "tableRow.isHeader.false",
             "tableRow.isHeader.true",
+            "callout.variant.null",
+            "callout.collapsed.null",
+            "callout.title.null",
             "directive.attributes.null",
             "directive.attributes.empty",
             "directive.attributes.value",
@@ -108,7 +111,7 @@
                     "Document",
                     "Heading",
                     "Text",
-                    "BlockQuote",
+                    "Callout",
                     "Paragraph",
                     "ThematicBreak",
                     "List",
@@ -120,6 +123,9 @@
                     "Image"
                 ],
                 "states": [
+                    "callout.variant.null",
+                    "callout.collapsed.null",
+                    "callout.title.null",
                     "list.flavor.bullet",
                     "list.flavor.ordered",
                     "list.start.null",

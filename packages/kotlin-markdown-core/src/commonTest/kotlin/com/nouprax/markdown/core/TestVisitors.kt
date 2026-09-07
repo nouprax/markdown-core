@@ -3,7 +3,7 @@ package com.nouprax.markdown.core
 internal class KindVisitor : Visitor<String> {
     override fun visitDocument(node: Document): String = name(node)
 
-    override fun visitBlockQuote(node: BlockQuote): String = name(node)
+    override fun visitCallout(node: Callout): String = name(node)
 
     override fun visitParagraph(node: Paragraph): String = name(node)
 
@@ -67,7 +67,7 @@ internal class RecordingVisitor : Visitor<Unit> {
 
     override fun visitDocument(node: Document): Unit = record(node)
 
-    override fun visitBlockQuote(node: BlockQuote): Unit = record(node)
+    override fun visitCallout(node: Callout): Unit = record(node)
 
     override fun visitParagraph(node: Paragraph): Unit = record(node)
 
@@ -158,8 +158,8 @@ internal class RecordingWalkingVisitor(
         phase: WalkPhase,
     ): Unit = record(node, phase)
 
-    override fun visitBlockQuote(
-        node: BlockQuote,
+    override fun visitCallout(
+        node: Callout,
         phase: WalkPhase,
     ): Unit = record(node, phase)
 

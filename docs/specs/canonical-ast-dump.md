@@ -92,6 +92,14 @@ emits `DirectiveLabel children=0`, and a populated one emits the label followed
 by its inline children. This visual nesting does not redefine the typed AST,
 the `children` count, or the C child traversal contract.
 
+A callout's `title` is likewise a node-valued field, never callout content,
+and it is a list rather than a node: the callout-specific dump function nests
+it before the content as a GROUP line, `Title children=N`, with no
+scope and no fields, at the callout's nesting depth, and the title's inline
+nodes one level below it. A null title prints no line. `N` is the number of
+title nodes, never zero because a present title holds at least one node, and
+it is never counted by the callout's own `children`.
+
 ## Field order by record kind
 
 Fields appear after `scope` and before `children` in exactly this order:
@@ -103,7 +111,8 @@ that the dump represents as nested descendants.
 
 | Kind | Ordered fields between `scope` and `children` |
 | --- | --- |
-| `Document`, `BlockQuote`, `Paragraph`, `ThematicBreak`, `TableCell`, `DirectiveLabel`, `SoftBreak`, `LineBreak`, `Emphasis`, `Strong`, `Strikethrough` | none |
+| `Document`, `Paragraph`, `ThematicBreak`, `TableCell`, `DirectiveLabel`, `SoftBreak`, `LineBreak`, `Emphasis`, `Strong`, `Strikethrough` | none |
+| `Callout` | `variant`, `collapsed` |
 | `Heading` | `level` |
 | `List` | `flavor`, `start`, `tight` |
 | `ListItem` | `checked` |
@@ -162,8 +171,8 @@ item, so that the grammar has one answer before the first of them arrives:
 - Besides its structural children, a node prints these nested lines with the
   same connectors, in this order: `Document` prints its `Metadata` value when
   non-null, then the content, then one `Footnote` value per element of
-  `footnotes`; `Callout` prints a `CalloutTitle` group when `title` is
-  non-null, then the content; `Table` prints its `TableCaption` when non-null,
+  `footnotes`; `Callout` prints its `Title` group as today; `Table`
+  prints its `TableCaption` when non-null,
   then the `TableHead`, `TableBody`, and `TableFoot` groups holding the rows;
   `Definition` prints a `DefinitionTerm` group, then one `DefinitionBody`
   group per body; `Cite` prints one `Citation` value per item, each holding a

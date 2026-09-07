@@ -322,6 +322,29 @@ static void collect_topology(es_build *build, const markdown_core_node *root) {
             }
         }
 
+        if (kind == MARKDOWN_CORE_KIND_CALLOUT) {
+            /* The title is a node-valued list the callout owns beside its
+             * content: its nodes are records like any other, and the
+             * auxiliary range names them in the edge table; a present title
+             * holds at least one node, so the range's count is its presence. */
+            const markdown_core_node *title = markdown_core_node_callout_title(node);
+            if (title != NULL) {
+                build->nodes[cursor].aux_start = (uint32_t)build->edge_count;
+                for (; title != NULL && build->failure == ES_BUILD_OK;
+                     title = markdown_core_node_get_next_sibling(title)) {
+                    uint32_t title_index = append_node(build, title);
+                    if (title_index == ES_NO_INDEX) {
+                        break;
+                    }
+                    append_edge(build, title_index);
+                    build->nodes[cursor].aux_count++;
+                }
+                if (build->failure != ES_BUILD_OK) {
+                    break;
+                }
+            }
+        }
+
         count = markdown_core_node_child_count(node);
         if (count > UINT32_MAX || build->edge_count > UINT32_MAX - count) {
             build->failure = ES_BUILD_ALLOCATION;
@@ -360,8 +383,20 @@ static void collect_node_fields(es_build *build, size_t node_index) {
     markdown_core_optional_string optional_second = {0};
 
     switch (kind) {
+    case MARKDOWN_CORE_KIND_CALLOUT: {
+        /* The variant is the first slot and the fold marker the scalar, as
+         * a list item's checked state; the title relation was recorded with
+         * the topology. */
+        markdown_core_optional_bool collapsed;
+        if (!markdown_core_node_callout_properties(node, &optional_first, &collapsed)) {
+            build->failure = ES_BUILD_INTERNAL;
+            break;
+        }
+        record->strings[0] = optional_first;
+        record->scalar0 = collapsed.has_value ? (collapsed.value ? 1 : 0) : -1;
+        break;
+    }
     case MARKDOWN_CORE_KIND_DOCUMENT:
-    case MARKDOWN_CORE_KIND_BLOCK_QUOTE:
     case MARKDOWN_CORE_KIND_PARAGRAPH:
     case MARKDOWN_CORE_KIND_THEMATIC_BREAK:
     case MARKDOWN_CORE_KIND_SOFT_BREAK:

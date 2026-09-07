@@ -29,8 +29,8 @@ private class JniTreeDecoder(
                 readChildren { consume(Document(it, scope)) }
             }
 
-            JniNodeKind.BLOCK_QUOTE -> {
-                readChildren { consume(BlockQuote(it, scope)) }
+            JniNodeKind.CALLOUT -> {
+                readCallout(scope, consume)
             }
 
             JniNodeKind.PARAGRAPH -> {
@@ -165,6 +165,14 @@ private class JniTreeDecoder(
     private fun readChildren(consume: (kotlin.collections.List<Markup>) -> Unit) {
         val count = reader.int()
         require(count >= 0) { "invalid native child count" }
+        readNodes(count, consume)
+    }
+
+    /** Schedules `count` nodes and then the list they form, in payload order. */
+    private fun readNodes(
+        count: Int,
+        consume: (kotlin.collections.List<Markup>) -> Unit,
+    ) {
         val values = arrayOfNulls<Markup>(count)
         actions.addLast {
             consume(
@@ -217,6 +225,33 @@ private class JniTreeDecoder(
         readDirectiveRelations { label, children ->
             require(children.isEmpty()) { "inline directive contains block content" }
             consume(Directive(name, attributes, label, scope))
+        }
+    }
+
+    /**
+     * A callout's metadata leads, then its title -- a node-valued list that the
+     * payload sends before the content, as the walk visits it, and whose count
+     * is its presence because a present title holds at least one node -- and
+     * then the content. Every callout is metadata-free until O8.
+     */
+    private fun readCallout(
+        scope: Scope,
+        consume: (Markup) -> Unit,
+    ) {
+        val variant = reader.string()
+        val collapsed = reader.nullableBoolean()
+        val titleCount = reader.int()
+        require(titleCount >= 0) { "invalid native callout title count" }
+        if (titleCount == 0) {
+            readChildren { consume(Callout(variant, collapsed, null, it, scope)) }
+            return
+        }
+        var title: kotlin.collections.List<Markup>? = null
+        actions.addLast {
+            readChildren { children -> consume(Callout(variant, collapsed, requireNotNull(title), children, scope)) }
+        }
+        actions.addLast {
+            readNodes(titleCount) { title = it }
         }
     }
 

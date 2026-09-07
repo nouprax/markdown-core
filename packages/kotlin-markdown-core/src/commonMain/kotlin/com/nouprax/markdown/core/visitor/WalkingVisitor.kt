@@ -23,8 +23,8 @@ public interface WalkingVisitor {
         phase: WalkPhase,
     )
 
-    public fun visitBlockQuote(
-        node: BlockQuote,
+    public fun visitCallout(
+        node: Callout,
         phase: WalkPhase,
     )
 
@@ -229,10 +229,14 @@ private class WalkingDriver(
         if (phase == WalkPhase.ENTERING) schedule(node.content)
     }
 
-    override fun visitBlockQuote(node: BlockQuote) {
-        visitor.visitBlockQuote(node, phase)
+    override fun visitCallout(node: Callout) {
+        visitor.visitCallout(node, phase)
         scheduleExit(node)
-        if (phase == WalkPhase.ENTERING) schedule(node.content)
+        if (phase == WalkPhase.ENTERING) {
+            schedule(node.content)
+            // The title is a node-valued field, visited before the content.
+            node.title?.let(::schedule)
+        }
     }
 
     override fun visitParagraph(node: Paragraph) {

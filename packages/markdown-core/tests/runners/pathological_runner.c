@@ -291,7 +291,7 @@ static int case_nested_block_quotes(pc_context *context) {
     if (pc_parse(context) != 0) {
         return -1;
     }
-    if (pc_expect_count(context, MARKDOWN_CORE_KIND_BLOCK_QUOTE, 50000, "BlockQuote") != 0) {
+    if (pc_expect_count(context, MARKDOWN_CORE_KIND_CALLOUT, 50000, "Callout") != 0) {
         return -1;
     }
     return pc_expect_text(context, "a", 1);
@@ -393,7 +393,7 @@ static int case_empty_lines_in_deep_list_blockquote(pc_context *context) {
     *cursor = 0;
 
     if ((size_t)(cursor - context->input) != context->input_length || pc_parse(context) != 0 ||
-        pc_expect_count(context, MARKDOWN_CORE_KIND_BLOCK_QUOTE, 1, "BlockQuote") != 0 ||
+        pc_expect_count(context, MARKDOWN_CORE_KIND_CALLOUT, 1, "Callout") != 0 ||
         pc_expect_count(context, MARKDOWN_CORE_KIND_LIST, depth, "List") != 0 ||
         pc_expect_count(context, MARKDOWN_CORE_KIND_LIST_ITEM, depth, "ListItem") != 0) {
         return -1;
@@ -419,7 +419,7 @@ static int case_emphasis_in_deep_blockquote(pc_context *context) {
     }
     *cursor = 0;
 
-    if (pc_parse(context) != 0 || pc_expect_count(context, MARKDOWN_CORE_KIND_BLOCK_QUOTE, depth, "BlockQuote") != 0) {
+    if (pc_parse(context) != 0 || pc_expect_count(context, MARKDOWN_CORE_KIND_CALLOUT, depth, "Callout") != 0) {
         return -1;
     }
     return 0;

@@ -122,7 +122,7 @@ Document scope=1:1..6:4 anchor=null attributes={} children=2
 ^tbl
 .
 Document scope=1:1..9:4 anchor=null attributes={} children=2
-├── Callout scope=1:1..3:2 anchor="q" attributes={} variant=null fold=none children=1
+├── Callout scope=1:1..3:2 anchor="q" attributes={} variant=null collapsed=null children=1
 │   └── Paragraph scope=1:3..1:7 anchor=null attributes={} children=1
 │       └── Text scope=1:3..1:7 anchor=null attributes={} literal="quote" children=0
 └── Table scope=5:1..9:4 anchor="tbl" attributes={} columns=[none:null] children=2

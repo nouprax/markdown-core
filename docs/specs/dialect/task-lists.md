@@ -110,7 +110,7 @@ The rule applies inside any container:
 > - [ ] a
 .
 Document scope=1:1..1:9 anchor=null attributes={} children=1
-└── Callout scope=1:1..1:9 anchor=null attributes={} variant=null fold=none children=1
+└── Callout scope=1:1..1:9 anchor=null attributes={} variant=null collapsed=null children=1
     └── List scope=1:3..1:9 anchor=null attributes={} flavor=bullet start=null style=null delimiter=null tight=true children=1
         └── ListItem scope=1:3..1:9 anchor=null attributes={} marker=" " exampleLabel=null children=1
             └── Paragraph scope=1:9..1:9 anchor=null attributes={} children=1

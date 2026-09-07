@@ -24,7 +24,7 @@ test("conformance: public node schema is reachable", () => {
         new Set(kinds),
         new Set([
             "document",
-            "blockQuote",
+            "callout",
             "paragraph",
             "heading",
             "thematicBreak",

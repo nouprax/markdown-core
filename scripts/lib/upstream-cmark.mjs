@@ -31,7 +31,7 @@ const XML_KIND = {
     list: "List",
     item: "ListItem",
     tasklist: "ListItem",
-    block_quote: "BlockQuote",
+    block_quote: "Callout",
     thematic_break: "ThematicBreak",
     softbreak: "SoftBreak",
     linebreak: "LineBreak",
@@ -51,6 +51,7 @@ const XML_KIND = {
  * dumps instead, and the gap is recorded in specs/oracles/cmark-gfm/README.md.
  */
 const COMPARED = {
+    Callout: ["variant", "collapsed"],
     Heading: ["level"],
     List: ["flavor", "tight", "start"],
     ListItem: ["checked"],
@@ -116,6 +117,13 @@ export function parseUpstreamXml(xml) {
         if (name === "table_row") node.fields.isHeader = "false";
         if (name === "tasklist") node.fields.checked = attributes.completed === "true" ? "true" : "false";
         if (name === "item") node.fields.checked = "null";
+        // Every `>` container is a `Callout` (M3), and an inherited quote is
+        // metadata-free: cmark has no callout metadata to state, so the
+        // projection states the absence the canonical AST prints.
+        if (name === "block_quote") {
+            node.fields.variant = "null";
+            node.fields.collapsed = "null";
+        }
         // cmark states a link's or image's target as one string; the canonical
         // AST states it as the `url` branch of `Destination` (M1).
         if (name === "link" || name === "image") node.fields.dest = urlDestination(attributes.destination ?? "");

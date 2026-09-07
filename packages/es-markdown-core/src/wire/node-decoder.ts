@@ -231,6 +231,15 @@ export class NodeDecoder {
                 }
                 this.recordRelation(record, record.labelIndex, incoming, "label");
             }
+            if (record.kind === "callout" && record.auxiliaryCount !== 0) {
+                // The title's nodes are owned through the auxiliary range, as
+                // a directive's label is through its index; a present title
+                // holds at least one node, so the range's count is its presence.
+                this.range(record.auxiliaryStart, record.auxiliaryCount, this.layout.edgeCount, "callout title range");
+                for (let offset = 0; offset < record.auxiliaryCount; ++offset) {
+                    this.recordRelation(record, this.edge(record.auxiliaryStart + offset), incoming, "title");
+                }
+            }
         }
         if (incoming[0] !== 0) throw new Error("native result root has an incoming relation");
         for (let index = 1; index < incoming.length; ++index) {
@@ -260,7 +269,6 @@ export class NodeDecoder {
         const base = this.base(record);
         switch (record.kind) {
             case "document":
-            case "blockQuote":
             case "paragraph":
             case "emphasis":
             case "strong":
@@ -280,6 +288,8 @@ export class NodeDecoder {
                 this.flags(record, 0);
                 this.leaf(record);
                 return base as MarkupValue;
+            case "callout":
+                return this.callout(record);
             case "list":
                 return this.list(record);
             case "listItem":
@@ -358,6 +368,32 @@ export class NodeDecoder {
                 this.flags(record, 0);
                 return { ...base, content: this.content(record) } as MarkupValue;
         }
+    }
+
+    /**
+     * The variant is the first string slot and the fold marker the scalar; the
+     * auxiliary range names the title's nodes in the edge table, a node-valued
+     * list beside the content, and an empty range is no title because a
+     * present title holds at least one node.
+     */
+    private callout(record: NodeRecord): MarkupValueOf<"callout"> {
+        this.flags(record, 0);
+        let title: readonly Markup[] | null = null;
+        if (record.auxiliaryCount !== 0) {
+            this.range(record.auxiliaryStart, record.auxiliaryCount, this.layout.edgeCount, "callout title range");
+            title = Array.from({ length: record.auxiliaryCount }, (_, index) => {
+                const node = this.values[this.edge(record.auxiliaryStart + index)];
+                if (!node) throw new Error("native result callout title was not constructed");
+                return node;
+            });
+        }
+        return {
+            ...this.base(record, "callout"),
+            variant: this.string(record, 0),
+            collapsed: this.nullableBoolean(record.scalar0, "callout fold marker"),
+            title,
+            content: this.content(record)
+        };
     }
 
     private list(record: NodeRecord): MarkupValueOf<"list"> {

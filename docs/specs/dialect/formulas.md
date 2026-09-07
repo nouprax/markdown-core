@@ -209,7 +209,7 @@ closer is still a `FormulaBlock` holding every line after the opener:
 b
 .
 Document scope=1:1..4:1 anchor=null attributes={} children=2
-├── Callout scope=1:1..2:3 anchor=null attributes={} variant=null fold=none children=1
+├── Callout scope=1:1..2:3 anchor=null attributes={} variant=null collapsed=null children=1
 │   └── FormulaBlock scope=1:3..2:3 anchor=null attributes={} literal="a" children=0
 └── Paragraph scope=4:1..4:1 anchor=null attributes={} children=1
     └── Text scope=4:1..4:1 anchor=null attributes={} literal="b" children=0

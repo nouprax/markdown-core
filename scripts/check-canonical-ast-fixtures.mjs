@@ -54,7 +54,7 @@ function parentEdges(tree) {
     }
     return edges;
 }
-const BLOCK_CONTENT = new Set(["Document", "BlockQuote", "ListItem", "FootnoteDefinition", "DirectiveBlock"]);
+const BLOCK_CONTENT = new Set(["Document", "Callout", "ListItem", "FootnoteDefinition", "DirectiveBlock"]);
 const INLINE_CONTENT = new Set([
     "Paragraph",
     "Heading",
@@ -93,6 +93,13 @@ const stateValidators = {
     "table.alignment.right": (tree) => /^.*Table scope=.*alignments=\[[^\]]*right[^\]]*\]/m.test(tree),
     "tableRow.isHeader.false": (tree) => /^.*TableRow scope=.* isHeader=false /m.test(tree),
     "tableRow.isHeader.true": (tree) => /^.*TableRow scope=.* isHeader=true /m.test(tree),
+    // Every `>` container is a `Callout` (M3). Its metadata line arrives with
+    // O8; until then every callout is metadata-free, which these three states
+    // pin: no variant, no fold marker, and no `Title` group, which is
+    // the only way a title prints.
+    "callout.variant.null": (tree) => /^.*Callout scope=\S+ variant=null /m.test(tree),
+    "callout.collapsed.null": (tree) => /^.*Callout scope=.* collapsed=null /m.test(tree),
+    "callout.title.null": (tree) => /^.*Callout scope=/m.test(tree) && !/Title children=/.test(tree),
     "directive.attributes.null": (tree) => /^.*Directive(?:Block)? scope=.* attributes=null /m.test(tree),
     "directive.attributes.empty": (tree) => /^.*Directive(?:Block)? scope=.* attributes=\[\] /m.test(tree),
     "directive.attributes.value": (tree) => /^.*Directive(?:Block)? scope=.* attributes=\[.+\] /m.test(tree),

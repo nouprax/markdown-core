@@ -7,7 +7,7 @@
 public protocol MarkupVisitor {
     associatedtype Result
     mutating func visit(_ node: Document) -> Result
-    mutating func visit(_ node: BlockQuote) -> Result
+    mutating func visit(_ node: Callout) -> Result
     mutating func visit(_ node: Paragraph) -> Result
     mutating func visit(_ node: Heading) -> Result
     mutating func visit(_ node: ThematicBreak) -> Result
