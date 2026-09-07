@@ -75,6 +75,23 @@ import Testing
         #expect(try Document.parse("\"quotes\" -- ...\n").dump().contains("literal=\"\\\"quotes\\\" -- ...\""))
     }
 
+    @Test("marks retain typed content and walk both phases after native release")
+    func marks() throws {
+        let paragraph = try #require(Document.parse("==a *b*==").content.first as? Paragraph)
+        let mark = try #require(paragraph.content.first as? Mark)
+        var visitor = RecordingWalkingVisitor()
+        mark.walk(with: &visitor)
+        #expect(
+            visitor.events == [
+                "entering:Mark", "entering:Text", "exiting:Text", "entering:Emphasis",
+                "entering:Text", "exiting:Text", "exiting:Emphasis", "exiting:Mark",
+            ]
+        )
+        #expect(mark.content.count == 2)
+        #expect(((mark.content[1] as? Emphasis)?.content.first as? Text)?.literal == "b")
+        #expect(mark.scope == Scope(start: Position(line: 1, column: 1), end: Position(line: 1, column: 9)))
+    }
+
     @Test("walking dispatch is typed and preserves owned-field semantics")
     func walkingVisitor() throws {
         let block = try #require(
@@ -363,6 +380,7 @@ private struct KindVisitor: MarkupVisitor {
     mutating func visit(_ node: Emphasis) -> String { kindName(node) }
     mutating func visit(_ node: Strong) -> String { kindName(node) }
     mutating func visit(_ node: Strikethrough) -> String { kindName(node) }
+    mutating func visit(_ node: Mark) -> String { kindName(node) }
     mutating func visit(_ node: Link) -> String { kindName(node) }
     mutating func visit(_ node: Image) -> String { kindName(node) }
     mutating func visit(_ node: Directive) -> String { kindName(node) }
@@ -424,6 +442,7 @@ struct RecordingWalkingVisitor: MarkupWalkingVisitor {
     mutating func visit(_ node: Emphasis, phase: WalkPhase) { record(node, phase) }
     mutating func visit(_ node: Strong, phase: WalkPhase) { record(node, phase) }
     mutating func visit(_ node: Strikethrough, phase: WalkPhase) { record(node, phase) }
+    mutating func visit(_ node: Mark, phase: WalkPhase) { record(node, phase) }
     mutating func visit(_ node: Link, phase: WalkPhase) { record(node, phase) }
     mutating func visit(_ node: Image, phase: WalkPhase) { record(node, phase) }
     mutating func visit(_ node: Directive, phase: WalkPhase) { record(node, phase) }

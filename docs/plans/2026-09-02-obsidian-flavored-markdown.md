@@ -132,10 +132,12 @@ descriptor. The first bullet remains open until all four items land.
 - [ ] Make comments opaque during scanning and emit the same `Comment` node an
       HTML comment produces; nothing is stripped, so nothing can change where
       other delimiters bind.
-- [ ] Parse highlight children through the normal inline engine, with source
-      ownership by code, comments, and HTML tokens taking precedence. Paired
-      inline HTML tags do not create a suppressing region. The inline footnote
-      scanner creates one one-item `Cite` containing a `Citation` whose referent
+- [x] Parse highlight children through the normal inline engine, with source
+      ownership by code, formulas, HTML comments/tokens, and cross links taking
+      precedence. Paired inline HTML tags do not create a suppressing region.
+      The `%%` opacity composition follows in O3.
+- [ ] The inline footnote scanner creates one one-item `Cite` containing a
+      `Citation` whose referent
       is `CitationReferent.footnote(id)` and whose prefix and suffix are empty,
       plus one document-owned `Footnote`; it stores the parsed inline body
       directly in `Footnote.content` with no synthesized `Paragraph` and obtains

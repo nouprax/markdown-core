@@ -28,7 +28,9 @@
 //
 // The cross-link scanner recognizes complete [[ and ![[ before inherited bracket
 // handling. It follows autolinks and formulas, and precedes directives and the
-// final table.
+// final table. Marks are core delimiter rule C5 alongside emphasis: an earlier
+// scanner owns its whole span before the cursor can reach an equals run.
+// They need no descriptor and do not change this extension attach order.
 //
 // Every row is attached by every parse.  There is no mask and no name: the
 // dialect has no switches, so a table that could be attached in part would be

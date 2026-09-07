@@ -589,7 +589,7 @@ its behavior, with no separate publication step.
   boundaries and do not share a source-family umbrella descriptor. Cross-item cases
   with syntax not yet landed remain owned by their later items.
 
-- [ ] **O2 — Highlights.** Add `=` to the shared delimiter stack
+- [x] **O2 — Highlights.** Add `=` to the shared delimiter stack
       with pairwise run matching (two signs per match, a leftover single sign
       is text) and the non-empty rule, local pairing, and opaque
       code, formula, comment, HTML-token, and wikilink bytes; add the
@@ -600,6 +600,42 @@ its behavior, with no separate publication step.
       `O8`. The heading-text projection of `Mark` in generated anchors is a
       cross-item case owned by whichever of `O2` and `P3` merges later. Requires
       `O1`.
+
+  Implementation notes (2026-09-07): `Mark` is a core delimiter rule at C5.
+  It uses the same maximal-run scanner, pairing stack, inline-node construction,
+  and source extents as emphasis and strong, with two signs per match and no
+  rule of three. It has no payload beyond its content and universal fields, so
+  the existing facade accessors and exports cover it without new symbols. All
+  three bindings, their exhaustive and walking visitors, and both transports
+  carry the new kind. Fifteen package cases include nine currently exact module
+  examples; the canonical `marks` case also covers escaped table pipes and
+  document-owned footnote content. The existing package and canonical goldens
+  remain byte-identical. The `highlight` gap is retired and the formatted-body
+  content-model difference has an executable canary. `%%` opacity, callout
+  titles, generated heading anchors, and inserted-text composition remain with
+  O3, O8, P3, and I1 respectively.
+
+  Validation (2026-09-07): C correctness (70 tests) and conformance (2 tests),
+  ASan, UBSan, TSan, strict OOM, Swift and its external consumer, Kotlin
+  JVM/Native/Android-host and conformance, ES Node/browser and conformance,
+  the four oracle gates, and 400-input seed-1 fuzz runs for CommonMark, GFM,
+  and remark pass. The equals-run probes double from 128 through 8192 units
+  and bound scanner bytes, opener comparisons, and child moves by input size.
+  Position and reference-resolution ledgers remain unchanged. `pnpm verify`,
+  the Kotlin JVM surface audit, and the host release dry run pass, including
+  C, Swift, npm, Maven, and Android AAR artifacts. Full cross-host aggregation
+  remains the required CI check.
+
+  Shared requirement discrepancy found during O2: the dialect index specifies
+  `MARKDOWN_CORE_MAX_INLINE_DEPTH = 256`, but `blocks.c` only declares that
+  unused macro; the shared delimiter algorithm does not enforce it. The
+  pre-existing `pathological_nested_strong_emph` test requires tens of thousands
+  of nested emphasis/strong nodes. O2 preserves that shared behavior, and its
+  size-doubling probes measure work on both flat and deep input. A follow-up
+  must reconcile the global limit and inherited tests for every delimiter kind
+  through the shared algorithm; a Mark-only limit would create divergent
+  semantics. The normative limit is not changed or claimed as implemented here.
+
 - [ ] **O3 — Comments.** Scan `%%...%%` from the shared cursor
       with a linear closer search, classify block placement when both delimiters
       occupy their own lines and inline placement otherwise, keep the body
@@ -1050,7 +1086,8 @@ Sizes are rough review-effort estimates, not schedules.
   are re-registered by whichever model item changes them.
 - After `M7`, the Obsidian, inserted-text, and Pandoc tracks are independent.
   Inside a track, items that edit the same engine file are serialized or rebased
-  in order: `O2` through `O5` extend the extension `O1` creates; `O6`, `O7`, and
+  in order: `O2` through `O5` share inline integration points while retaining
+  their own semantic operations; `O6`, `O7`, and
   `O8` edit block finalization; `O9`, `P11b`, `P11c`, and `P11d` edit the table
   path; `P2a` through `P2d` share the attribute callers; `P5`, `P6`, and `P7`
   share the inline bracket and delimiter code; `P8` and `P10` share block

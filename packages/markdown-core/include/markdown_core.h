@@ -185,7 +185,8 @@ typedef enum markdown_core_node_kind {
      * placement. `markdown_core_node_literal` answers with the bytes between
      * the delimiters. */
     MARKDOWN_CORE_KIND_COMMENT,
-    MARKDOWN_CORE_KIND_CROSS_LINK
+    MARKDOWN_CORE_KIND_CROSS_LINK,
+    MARKDOWN_CORE_KIND_MARK
 } markdown_core_node_kind;
 
 typedef enum markdown_core_list_flavor {

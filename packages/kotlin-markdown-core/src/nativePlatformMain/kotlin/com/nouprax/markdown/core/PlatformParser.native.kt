@@ -37,6 +37,7 @@ import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_LINE_BREAK
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_LINK
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_LIST
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_LIST_ITEM
+import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_MARK
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_PARAGRAPH
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_SOFT_BREAK
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_STRIKETHROUGH
@@ -474,6 +475,10 @@ private class NativeTreeBuilder(
 
             MARKDOWN_CORE_KIND_STRIKETHROUGH -> {
                 Strikethrough(children, scope, anchor, attributes)
+            }
+
+            MARKDOWN_CORE_KIND_MARK -> {
+                Mark(children, scope, anchor, attributes)
             }
 
             MARKDOWN_CORE_KIND_LINK -> {

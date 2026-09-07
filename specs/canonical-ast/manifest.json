@@ -36,6 +36,7 @@
             "Emphasis",
             "Strong",
             "Strikethrough",
+            "Mark",
             "Link",
             "Image",
             "Directive",
@@ -415,6 +416,29 @@
                     "destination.cross.anchor.value"
                 ],
                 "orders": []
+            }
+        },
+        {
+            "name": "marks",
+            "input": "marks.md",
+            "expected": "marks.ast",
+            "coverage": {
+                "kinds": [
+                    "Document",
+                    "Paragraph",
+                    "Mark",
+                    "Text",
+                    "Emphasis",
+                    "Link",
+                    "CrossLink",
+                    "Comment",
+                    "Table",
+                    "TableRow",
+                    "TableCell",
+                    "Cite"
+                ],
+                "states": ["scope.positive", "children.empty", "children.populated"],
+                "orders": ["inline.source-order", "document.source-order"]
             }
         }
     ]

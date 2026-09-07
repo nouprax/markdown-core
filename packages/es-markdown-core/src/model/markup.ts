@@ -21,6 +21,7 @@ import type { List, ListItem } from "./list.js";
 import type { Paragraph } from "./paragraph.js";
 import type { SoftBreak } from "./soft-break.js";
 import type { Strikethrough } from "./strikethrough.js";
+import type { Mark } from "./mark.js";
 import type { Strong } from "./strong.js";
 import type { Table, TableCell, TableRow } from "./table.js";
 import type { Text } from "./text.js";
@@ -53,6 +54,7 @@ export type Markup =
     | Emphasis
     | Strong
     | Strikethrough
+    | Mark
     | Link
     | Image
     | Directive

@@ -53,6 +53,8 @@ internal class KindVisitor : Visitor<String> {
 
     override fun visitStrikethrough(node: Strikethrough): String = name(node)
 
+    override fun visitMark(node: Mark): String = name(node)
+
     override fun visitLink(node: Link): String = name(node)
 
     override fun visitImage(node: Image): String = name(node)
@@ -116,6 +118,8 @@ internal class RecordingVisitor : Visitor<Unit> {
     override fun visitStrong(node: Strong): Unit = record(node)
 
     override fun visitStrikethrough(node: Strikethrough): Unit = record(node)
+
+    override fun visitMark(node: Mark): Unit = record(node)
 
     override fun visitLink(node: Link): Unit = record(node)
 
@@ -290,6 +294,11 @@ internal class RecordingWalkingVisitor(
 
     override fun visitStrikethrough(
         node: Strikethrough,
+        phase: WalkPhase,
+    ): Unit = record(node, phase)
+
+    override fun visitMark(
+        node: Mark,
         phase: WalkPhase,
     ): Unit = record(node, phase)
 

@@ -45,6 +45,11 @@ in which every feature is always recognized: footnotes, tables,
 strikethrough, autolinks, task lists, formulas, and directives, on the
 CommonMark base. Quotation marks, hyphens, and periods are stored as written.
 
+`==highlight==` produces `Mark` with parsed inline `content`, including nested
+emphasis, links, and other inline nodes. Matching consumes two equals signs
+at a time; unmatched signs remain text. Typed visitors and walking visitors
+include the `Mark` case, and its scope covers both delimiters and the body.
+
 `Document.parse` returns a discriminated `Markup` union with source scopes and
 recursively readonly TypeScript properties. The JavaScript objects are not
 runtime-frozen. The package exposes parsing and typed AST inspection, not

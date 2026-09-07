@@ -24,6 +24,7 @@ import type { Markup } from "./model/markup.js";
 import type { Paragraph } from "./model/paragraph.js";
 import type { SoftBreak } from "./model/soft-break.js";
 import type { Strikethrough } from "./model/strikethrough.js";
+import type { Mark } from "./model/mark.js";
 import type { Strong } from "./model/strong.js";
 import type { Table, TableCell, TableRow } from "./model/table.js";
 import type { Text } from "./model/text.js";
@@ -67,6 +68,7 @@ export interface WalkingVisitor {
     visitEmphasis(this: void, node: Emphasis, phase: WalkPhase): void;
     visitStrong(this: void, node: Strong, phase: WalkPhase): void;
     visitStrikethrough(this: void, node: Strikethrough, phase: WalkPhase): void;
+    visitMark(this: void, node: Mark, phase: WalkPhase): void;
     visitLink(this: void, node: Link, phase: WalkPhase): void;
     visitImage(this: void, node: Image, phase: WalkPhase): void;
     visitDirective(this: void, node: Directive, phase: WalkPhase): void;
@@ -277,6 +279,11 @@ export function walk(root: Markup, walkingVisitor: WalkingVisitor): void {
         },
         visitStrikethrough: (node) => {
             walkingVisitor.visitStrikethrough(node, phase);
+            scheduleExit(node);
+            if (phase === "entering") schedule(node.content);
+        },
+        visitMark: (node) => {
+            walkingVisitor.visitMark(node, phase);
             scheduleExit(node);
             if (phase === "entering") schedule(node.content);
         },

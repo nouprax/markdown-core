@@ -485,6 +485,25 @@ for (const [input, expectedKind] of [
         process.exit(1);
     }
 }
+// O2: the content-model projection is intentional. The oracle keeps the
+// authored Markdown as one Text child; product fixtures own inline parsing.
+const formattedMarkInput = "==a *b* c==\n";
+const formattedMarkOracle = processor.runSync(processor.parse(formattedMarkInput), formattedMarkInput).children[0]
+    ?.children[0];
+const formattedMarkProduct = parseCanonicalDump(execFileSync(ours, [], { input: formattedMarkInput, encoding: "utf8" }))
+    .children[0]?.children[0];
+if (
+    formattedMarkOracle?.type !== "highlight" ||
+    formattedMarkOracle.children?.length !== 1 ||
+    formattedMarkOracle.children[0]?.type !== "text" ||
+    formattedMarkOracle.children[0]?.value !== "a *b* c" ||
+    formattedMarkProduct?.kind !== "Mark" ||
+    formattedMarkProduct.children.map((child) => child.kind).join(",") !== "Text,Emphasis,Text" ||
+    formattedMarkProduct.children[1]?.children[0]?.fields.literal !== "b"
+) {
+    throw new Error("obsidian parity: highlight-content-model canary failed");
+}
+
 const commentCanary = processor.runSync(processor.parse("%%hidden%%\n"), "%%hidden%%\n");
 if (commentCanary.children.length !== 0) {
     process.stderr.write("obsidian parity: oracle canary did not remove an Obsidian comment\n");
