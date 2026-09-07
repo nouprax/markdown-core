@@ -155,7 +155,8 @@ import Testing
                 == "Document scope=1:1..1:7 children=1\n"
                 + "└── Callout scope=1:1..1:7 variant=null fold=none children=1\n"
                 + "    └── Paragraph scope=1:3..1:7 children=1\n"
-                + "        └── Text scope=1:3..1:7 literal=\"quote\" children=0\n")
+                + "        └── Text scope=1:3..1:7 literal=\"quote\" children=0\n"
+        )
     }
 
     @Test("empty input maps to an empty document")
