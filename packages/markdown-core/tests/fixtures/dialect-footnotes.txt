@@ -17,7 +17,7 @@ the dump grammar of today, which does not yet print the universal `anchor` and
 module's by exactly ` anchor=null attributes={}` and by nothing else, and every
 `Citation`, `Footnote`, and group line is identical.
 
-A defined call is a one-item `Cite` whose `Citation` names the footnote by its normalized id with empty affixes, and every winning definition is a `Footnote` under `Document` after the content:
+A defined call is a one-item `Cite` whose `Citation` names the footnote by its normalized id with empty affixes, and every definition is a `Footnote` under `Document` after the content:
 
 ```````````````````````````````` example
 Text[^1] and more[^note].
@@ -109,7 +109,7 @@ Document scope=1:1..3:4 children=1
         └── Text scope=1:7..1:10 literal="kept" children=0
 ````````````````````````````````
 
-When two definitions share a key the first in source order wins; a later one is ordinary content whose leading `[^label]` is itself a call to the winner:
+When two definitions share a key the first in source order wins and every call resolves to it; a later one is still parsed as a definition, as cmark-gfm's block grammar parses it, and remains a `Footnote` after the winner with the same id:
 
 ```````````````````````````````` example
 [^a]
