@@ -312,25 +312,37 @@ bool markdown_core_node_heading_level(const markdown_core_node *node, int32_t *l
 }
 
 bool markdown_core_node_list_properties(const markdown_core_node *node, markdown_core_list_flavor *flavor,
-                                        markdown_core_optional_i64 *start, bool *tight) {
-    if (!node || node->type != MARKDOWN_CORE_NODE_LIST || !flavor || !start || !tight) {
+                                        markdown_core_optional_i64 *start, markdown_core_ordered_list_variant *variant,
+                                        markdown_core_ordered_list_delimiter *delimiter, bool *tight) {
+    if (!node || node->type != MARKDOWN_CORE_NODE_LIST || !flavor || !start || !variant || !delimiter || !tight) {
         return false;
     }
     *flavor = node->as.list.list_type == MARKDOWN_CORE_ORDERED_LIST ? MARKDOWN_CORE_LIST_FLAVOR_ORDERED
                                                                     : MARKDOWN_CORE_LIST_FLAVOR_BULLET;
     start->has_value = *flavor == MARKDOWN_CORE_LIST_FLAVOR_ORDERED;
     start->value = node->as.list.start;
+    variant->kind = MARKDOWN_CORE_ORDERED_LIST_VARIANT_DECIMAL;
+    variant->lowercased = false;
+    delimiter->kind = node->as.list.delimiter == MARKDOWN_CORE_PAREN_DELIM
+                          ? MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PARENTHESIS
+                          : MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PERIOD;
+    delimiter->closed = false;
     *tight = node->as.list.tight;
     return true;
 }
 
-bool markdown_core_node_list_item_checked(const markdown_core_node *node, markdown_core_optional_bool *checked) {
-    if (!node || node->type != MARKDOWN_CORE_NODE_LIST_ITEM || !checked) {
+bool markdown_core_node_list_item_properties(const markdown_core_node *node, markdown_core_optional_string *marker,
+                                              markdown_core_optional_string *example_label) {
+    if (!node || node->type != MARKDOWN_CORE_NODE_LIST_ITEM || !marker || !example_label) {
         return false;
     }
-    checked->has_value =
+    marker->has_value =
         node->extension && strcmp(markdown_core_node_get_type_string((markdown_core_node *)node), "tasklist") == 0;
-    checked->value = checked->has_value && node->as.list.checked;
+    marker->value.data = &node->as.list.task_marker;
+    marker->value.length = marker->has_value ? 1 : 0;
+    example_label->has_value = false;
+    example_label->value.data = NULL;
+    example_label->value.length = 0;
     return true;
 }
 
@@ -822,7 +834,9 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
     markdown_core_string a = {NULL, 0}, b = {NULL, 0}, c = {NULL, 0};
     markdown_core_optional_string oa = {false, {NULL, 0}}, ob = {false, {NULL, 0}};
     markdown_core_optional_i64 start;
-    markdown_core_optional_bool checked, collapsed;
+    markdown_core_optional_bool collapsed;
+    markdown_core_ordered_list_variant variant;
+    markdown_core_ordered_list_delimiter delimiter;
     markdown_core_list_flavor flavor;
     markdown_core_placement_mode mode;
     markdown_core_destination destination;
@@ -843,7 +857,7 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
         buffer_i64(buffer, level);
         break;
     case MARKDOWN_CORE_KIND_LIST:
-        markdown_core_node_list_properties(node, &flavor, &start, &x);
+        markdown_core_node_list_properties(node, &flavor, &start, &variant, &delimiter, &x);
         buffer_cstr(buffer, " flavor=");
         buffer_cstr(buffer, flavor == MARKDOWN_CORE_LIST_FLAVOR_ORDERED ? "ordered" : "bullet");
         buffer_cstr(buffer, " start=");
@@ -852,13 +866,41 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
         } else {
             buffer_cstr(buffer, "null");
         }
+        buffer_cstr(buffer, " variant=");
+        if (flavor == MARKDOWN_CORE_LIST_FLAVOR_BULLET) {
+            buffer_cstr(buffer, "null");
+        } else if (variant.kind == MARKDOWN_CORE_ORDERED_LIST_VARIANT_ALPHA ||
+                   variant.kind == MARKDOWN_CORE_ORDERED_LIST_VARIANT_ROMAN) {
+            buffer_cstr(buffer,
+                        variant.kind == MARKDOWN_CORE_ORDERED_LIST_VARIANT_ALPHA ? "alpha(lowercased" : "roman(lowercased");
+            buffer_cstr(buffer, variant.lowercased ? "=true)" : "=false)");
+        } else if (variant.kind == MARKDOWN_CORE_ORDERED_LIST_VARIANT_EXAMPLE) {
+            buffer_cstr(buffer, "example");
+        } else if (variant.kind == MARKDOWN_CORE_ORDERED_LIST_VARIANT_DEFAULT) {
+            buffer_cstr(buffer, "default");
+        } else {
+            buffer_cstr(buffer, "decimal");
+        }
+        buffer_cstr(buffer, " delimiter=");
+        if (flavor == MARKDOWN_CORE_LIST_FLAVOR_BULLET) {
+            buffer_cstr(buffer, "null");
+        } else {
+            if (delimiter.kind == MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PARENTHESIS) {
+                buffer_cstr(buffer, "parenthesis(closed");
+                buffer_cstr(buffer, "=false)");
+            } else {
+                buffer_cstr(buffer, "period");
+            }
+        }
         buffer_cstr(buffer, " tight=");
         buffer_cstr(buffer, x ? "true" : "false");
         break;
     case MARKDOWN_CORE_KIND_LIST_ITEM:
-        markdown_core_node_list_item_checked(node, &checked);
-        buffer_cstr(buffer, " checked=");
-        buffer_optional_bool(buffer, checked);
+        markdown_core_node_list_item_properties(node, &oa, &ob);
+        buffer_cstr(buffer, " marker=");
+        buffer_optional_string(buffer, oa);
+        buffer_cstr(buffer, " exampleLabel=");
+        buffer_optional_string(buffer, ob);
         break;
     case MARKDOWN_CORE_KIND_CODE_BLOCK:
         markdown_core_node_code_block_properties(node, &oa, &ob, &c, &x, &y);

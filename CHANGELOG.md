@@ -27,6 +27,11 @@ facade while removing renderer support and the caller-driven feed lifecycle.
   scanner now leaves an unopened closer to the base language, and the
   autolink scanner claims a colon that an address follows, as cmark-gfm
   links it.
+- Replace the lossy nullable task-list completion boolean with the authored
+  `ListItem.marker`, add the reserved `exampleLabel`, and expose completion
+  only as a derived binding convenience. Ordered lists now report their
+  authored decimal `variant` and `period` or `parenthesis(closed=false)` delimiter on every
+  public surface (M5).
 - Add the `Comment` kind on every surface (M0). An inline HTML comment token
   is a `Comment` whose literal is the bytes between `<!--` and `-->`, empty
   for `<!-->` and `<!--->`, and an HTML block that opens with `<!--` and whose

@@ -43,10 +43,10 @@
             "handling": "The nested witness is registered exactly so the gate continues checking both resolution and retention."
         },
         {
-            "id": "tasklist-checked-marker",
+            "id": "tasklist-authored-marker",
             "kind": "deliberate-difference",
             "summary": "cmark-gfm searches the whole line for `[x]`; Markdown Core reads only the marker the task-list scanner matched.",
-            "handling": "The exact unchecked-item witness is registered; removing `checked` from every comparison would hide real task-state drift."
+            "handling": "The exact unchecked-item witness is registered; normalizing `marker` back to a boolean would hide real task-state drift."
         },
         {
             "id": "empty-text-node",
@@ -103,7 +103,7 @@
             "note": "Only a literal source caret opens a call; decoded or escaped spellings remain ordinary text."
         },
         {
-            "id": "tasklist-checked-marker",
+            "id": "tasklist-authored-marker",
             "input": "- [ ] call me [x] later\n",
             "note": "The later literal `[x]` must not change the unchecked marker at the start of the item."
         },

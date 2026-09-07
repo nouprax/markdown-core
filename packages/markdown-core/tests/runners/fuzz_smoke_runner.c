@@ -23,7 +23,7 @@ static int traverse(const markdown_core_node *node) {
     const markdown_core_node *child;
     markdown_core_scope scope;
     markdown_core_string value;
-    markdown_core_optional_bool checked;
+    markdown_core_optional_string marker, example_label;
     int32_t level;
     bool flag;
 
@@ -39,7 +39,7 @@ static int traverse(const markdown_core_node *node) {
     }
     (void)markdown_core_node_literal(node, &value);
     (void)markdown_core_node_heading_level(node, &level);
-    (void)markdown_core_node_list_item_checked(node, &checked);
+    (void)markdown_core_node_list_item_properties(node, &marker, &example_label);
     (void)markdown_core_node_table_row_is_header(node, &flag);
     for (child = markdown_core_node_get_first_child(node); child; child = markdown_core_node_get_next_sibling(child)) {
         if (traverse(child) != 0) {

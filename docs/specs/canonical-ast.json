@@ -108,6 +108,16 @@
                     "optional": true
                 },
                 {
+                    "name": "variant",
+                    "type": "OrderedListVariant",
+                    "optional": true
+                },
+                {
+                    "name": "delimiter",
+                    "type": "OrderedListDelimiter",
+                    "optional": true
+                },
+                {
                     "name": "tight",
                     "type": "Bool",
                     "optional": false
@@ -124,8 +134,13 @@
             "name": "ListItem",
             "fields": [
                 {
-                    "name": "checked",
-                    "type": "Bool",
+                    "name": "marker",
+                    "type": "String",
+                    "optional": true
+                },
+                {
+                    "name": "exampleLabel",
+                    "type": "String",
                     "optional": true
                 },
                 {
@@ -134,7 +149,7 @@
                     "optional": false
                 }
             ],
-            "invariants": "`checked == null` means not a task item; block content"
+            "invariants": "`marker == null` means not a task item; `exampleLabel` is reserved for example lists; block content"
         },
         {
             "name": "CodeBlock",
@@ -541,6 +556,70 @@
                 }
             ],
             "dump": "Footnote scope=L:C..L:C id=\"...\" children=N"
+        },
+        "OrderedListDelimiter": {
+            "purpose": "The authored punctuation of an ordered marker: a period, parenthesis punctuation recording whether an opening parenthesis was authored, or the default marker form.",
+            "scoped": false,
+            "branches": [
+                {
+                    "name": "period",
+                    "fields": []
+                },
+                {
+                    "name": "parenthesis",
+                    "fields": [
+                        {
+                            "name": "closed",
+                            "type": "Bool",
+                            "optional": false
+                        }
+                    ]
+                },
+                {
+                    "name": "default",
+                    "fields": []
+                }
+            ],
+            "dump": "period, parenthesis(closed=true|false), or default"
+        },
+        "OrderedListVariant": {
+            "purpose": "The authored numbering system of an ordered marker, with authored case carried by alphabetic and Roman variants.",
+            "scoped": false,
+            "branches": [
+                {
+                    "name": "decimal",
+                    "fields": []
+                },
+                {
+                    "name": "alpha",
+                    "fields": [
+                        {
+                            "name": "lowercased",
+                            "type": "Bool",
+                            "optional": false
+                        }
+                    ]
+                },
+                {
+                    "name": "roman",
+                    "fields": [
+                        {
+                            "name": "lowercased",
+                            "type": "Bool",
+                            "optional": false
+                        }
+                    ]
+                },
+                {
+                    "name": "example",
+                    "fields": []
+                },
+                {
+                    "name": "default",
+                    "fields": []
+                }
+            ],
+            "dump": "decimal, alpha(lowercased=true|false), roman(lowercased=true|false), example, or default"
         }
     }
 }

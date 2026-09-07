@@ -146,6 +146,30 @@ typedef enum markdown_core_list_flavor {
     MARKDOWN_CORE_LIST_FLAVOR_ORDERED = 2
 } markdown_core_list_flavor;
 
+typedef enum markdown_core_ordered_list_variant_kind {
+    MARKDOWN_CORE_ORDERED_LIST_VARIANT_DECIMAL = 1,
+    MARKDOWN_CORE_ORDERED_LIST_VARIANT_ALPHA = 2,
+    MARKDOWN_CORE_ORDERED_LIST_VARIANT_ROMAN = 3,
+    MARKDOWN_CORE_ORDERED_LIST_VARIANT_EXAMPLE = 4,
+    MARKDOWN_CORE_ORDERED_LIST_VARIANT_DEFAULT = 5
+} markdown_core_ordered_list_variant_kind;
+
+typedef struct markdown_core_ordered_list_variant {
+    markdown_core_ordered_list_variant_kind kind;
+    bool lowercased;
+} markdown_core_ordered_list_variant;
+
+typedef enum markdown_core_ordered_list_delimiter_kind {
+    MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PERIOD = 1,
+    MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PARENTHESIS = 2,
+    MARKDOWN_CORE_ORDERED_LIST_DELIMITER_DEFAULT = 3
+} markdown_core_ordered_list_delimiter_kind;
+
+typedef struct markdown_core_ordered_list_delimiter {
+    markdown_core_ordered_list_delimiter_kind kind;
+    bool closed;
+} markdown_core_ordered_list_delimiter;
+
 typedef enum markdown_core_placement_mode {
     MARKDOWN_CORE_PLACEMENT_EMBEDDED = 1,
     MARKDOWN_CORE_PLACEMENT_STANDALONE = 2
@@ -224,9 +248,13 @@ MARKDOWN_CORE_API size_t markdown_core_node_child_count(const markdown_core_node
 MARKDOWN_CORE_API bool markdown_core_node_heading_level(const markdown_core_node *node, int32_t *level);
 MARKDOWN_CORE_API bool markdown_core_node_list_properties(const markdown_core_node *node,
                                                           markdown_core_list_flavor *flavor,
-                                                          markdown_core_optional_i64 *start, bool *tight);
-MARKDOWN_CORE_API bool markdown_core_node_list_item_checked(const markdown_core_node *node,
-                                                            markdown_core_optional_bool *checked);
+                                                          markdown_core_optional_i64 *start,
+                                                          markdown_core_ordered_list_variant *variant,
+                                                          markdown_core_ordered_list_delimiter *delimiter,
+                                                          bool *tight);
+MARKDOWN_CORE_API bool markdown_core_node_list_item_properties(const markdown_core_node *node,
+                                                               markdown_core_optional_string *marker,
+                                                               markdown_core_optional_string *example_label);
 /** `info` and `language` are OPTIONAL: a fence with nothing but whitespace
  * after it wrote no info string, and an indented block has no fence to write
  * one on. `language` is the info string's first word and is present exactly

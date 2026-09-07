@@ -460,26 +460,34 @@ static void write_node(jni_payload_buffer *buffer, jni_payload_stack *stack, jni
         break;
     case MARKDOWN_CORE_KIND_LIST: {
         markdown_core_list_flavor flavor;
+        markdown_core_ordered_list_variant variant;
+        markdown_core_ordered_list_delimiter delimiter;
         markdown_core_optional_i64 start;
         bool tight = false;
-        if (!markdown_core_node_list_properties(node, &flavor, &start, &tight)) {
+        if (!markdown_core_node_list_properties(node, &flavor, &start, &variant, &delimiter, &tight)) {
             buffer->failure = JNI_PAYLOAD_INTERNAL;
             return;
         }
         put_i32(buffer, (int32_t)flavor);
         put_i64(buffer, start.value);
         put_u8(buffer, start.has_value ? 1 : 0);
+        put_i32(buffer, start.has_value ? (int32_t)variant.kind : 0);
+        put_u8(buffer, variant.lowercased ? 1 : 0);
+        put_i32(buffer, start.has_value ? (int32_t)delimiter.kind : 0);
+        put_u8(buffer, delimiter.closed ? 1 : 0);
         put_u8(buffer, tight ? 1 : 0);
         schedule_children(buffer, stack, node);
         break;
     }
     case MARKDOWN_CORE_KIND_LIST_ITEM: {
-        markdown_core_optional_bool checked;
-        if (!markdown_core_node_list_item_checked(node, &checked)) {
+        markdown_core_optional_string marker;
+        markdown_core_optional_string example_label;
+        if (!markdown_core_node_list_item_properties(node, &marker, &example_label)) {
             buffer->failure = JNI_PAYLOAD_INTERNAL;
             return;
         }
-        put_u8(buffer, checked.has_value ? (checked.value ? 1 : 0) : UINT8_MAX);
+        put_optional_string(buffer, marker);
+        put_optional_string(buffer, example_label);
         schedule_children(buffer, stack, node);
         break;
     }

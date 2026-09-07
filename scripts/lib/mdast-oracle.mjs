@@ -136,9 +136,13 @@ function convert(node, definitions, parentType = "root") {
         fields.flavor = node.ordered ? "ordered" : "bullet";
         fields.tight = String(Boolean(!node.spread));
         fields.start = node.ordered ? String(node.start ?? 1) : "null";
+        fields.variant = node.ordered ? "decimal" : "null";
+        fields.delimiter = node.ordered ? "period" : "null";
     }
-    if (node.type === "listItem")
-        fields.checked = node.checked === null || node.checked === undefined ? "null" : String(node.checked);
+    if (node.type === "listItem") {
+        fields.marker = node.checked === null || node.checked === undefined ? "null" : node.checked ? '"x"' : '" "';
+        fields.exampleLabel = "null";
+    }
     // Registered shape delta `code-span-line-ending`: CommonMark says a code
     // span's line endings are spaces, and cmark applies that when it builds the
     // node, which this repository inherits. mdast keeps the line ending in the
@@ -262,8 +266,8 @@ export function fromMdast(tree) {
 export const MDAST_COMPARED = {
     Callout: ["variant", "collapsed"],
     Heading: ["level"],
-    List: ["flavor", "tight", "start"],
-    ListItem: ["checked"],
+    List: ["flavor", "start", "variant", "delimiter", "tight"],
+    ListItem: ["marker", "exampleLabel"],
     CodeBlock: ["info", "literal"],
     Code: ["literal"],
     Text: ["literal"],

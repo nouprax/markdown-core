@@ -1000,8 +1000,8 @@ A transitional finding names the landing-plan item that resolves it.
   under the module's grammar; end of input without a newline is undecided. Rule:
   the separator is space, tab, vertical tab, form feed, or a line ending; end of
   input counts as a line ending.
-- **OT-2** `:47-52` — A — `checked` and `isComplete` are two names for one
-  property. Rule: bindings expose exactly `isTask` and `isComplete`.
+- **OT-2** `:47-52` — A — `checked` and `completed` are two names for one
+  property. Rule: bindings expose exactly `tasked` and `completed`.
 - **OT-3** `:67-68` — D — "existing source-decoding contract" for invalid UTF-8
   versus the precondition. Rule: delete; a marker is one scalar of the
   caller-supplied UTF-8.
@@ -1369,10 +1369,10 @@ A transitional finding names the landing-plan item that resolves it.
 
 - **PL-1** `:40-41` — D — `start >= 1` while CommonMark accepts `0.`. Rule:
   `start >= 0`; `0.` and `0)` are valid decimal markers with value 0.
-- **PL-2** `:71-72` — D/B — "only the inherited decimal-period form"; `style`
+- **PL-2** `:71-72` — D/B — "only the inherited decimal-period form"; `variant`
   and `delimiter` for inherited lists unstated. Rule: with `fancyLists` off the
   inherited `N.` and `N)` markers are the only ordered markers, storing
-  `style=decimal` and `delimiter=period` or `oneParen`; `style=default` and
+  `variant=decimal` and `delimiter=period` or `parenthesis(closed=false)`; `variant=default` and
   `delimiter=default` are stored only for `#` markers under `fancyLists`.
 - **PL-3** `:78-79` — D — `startnum` off stores `start=1` for the inherited
   `5.`, changing inherited output with an option that defaults to off. Rule:
@@ -1389,9 +1389,9 @@ A transitional finding names the landing-plan item that resolves it.
   case requires at least two columns of whitespace or end of line after the `.`;
   the `p.` exception is not adopted.
 - **PL-7** `:61-62,66-67` — B — later markers must be classified against the
-  committed style, else `h. i. j.` splits at `i`. Rule: after the first item
-  commits a style, each later marker is read in that style first; `#` continues
-  any style; a marker unreadable in the committed style with the same delimiter
+  committed variant, else `h. i. j.` splits at `i`. Rule: after the first item
+  commits a variant, each later marker is read in that variant first; `#` continues
+  any variant; a marker unreadable in the committed variant with the same delimiter
   ends the list.
 - **PL-8** `:67-69` — A/D — "nested" and "equivalent" undefined; interaction
   with `fancyLists` off. Rule: with `fancyLists` on, an ordered list whose first
@@ -1426,8 +1426,8 @@ A transitional finding names the landing-plan item that resolves it.
   overflow; delete the sentence.
 - **PL-15** missing — B — paragraph interruption. Rule: only a marker with
   numeric value 1 may interrupt a paragraph; example markers never do.
-- **PL-16** `:54` — A — `#)` and `(#)`. Rule: `#)` stores `oneParen`, `(#)`
-  stores `twoParens`, and only `#.` stores `delimiter=default`.
+- **PL-16** `:54` — A — `#)` and `(#)`. Rule: `#)` stores `parenthesis(closed=false)`, `(#)`
+  stores `parenthesis(closed=true)`, and only `#.` stores `delimiter=default`.
 
 #### `pandoc/superscript-and-subscript.md`
 
@@ -1824,8 +1824,8 @@ and evidence.
       written. Closes OB-1 through OB-7, OK-1 through OK-9, decisions D-2 and
       D-7.
 - [x] **B6 — `obsidian/tasks.md`, `obsidian/properties.md`,
-      `obsidian/inherited-and-integration.md`:** the separator class, `isTask`
-      and `isComplete`, the UTF-8 sentence, option gating; the payload and
+      `obsidian/inherited-and-integration.md`:** the separator class, `tasked`
+      and `completed`, the UTF-8 sentence, option gating; the payload and
       line-ending grammar, keys, decoded lines, the scalar table, transactional
       wording, the toggle clause, the snapshot sentence, the limits pointer; the
       inherited delimiter grammar, the target table shape, the dimension range
@@ -1858,7 +1858,7 @@ and evidence.
       reservation from every enabled option, the lowercase mapping, categories,
       `base-N`, no diagnostics, footnote bodies, virtual definitions; `start >=
       0`, inherited markers off, `startnum` scope, `@` only in parentheses, the
-      Roman grammar, padding, committed style, nesting, `(N@)`, labels,
+      Roman grammar, padding, committed variant, nesting, `(N@)`, labels,
       `(@label)` placement, repeated labels, continuation columns, no overflow
       sentence, interruption, `#)` and `(#)`. Closes PH-1 through PH-7, PL-1
       through PL-16, decision D-3.

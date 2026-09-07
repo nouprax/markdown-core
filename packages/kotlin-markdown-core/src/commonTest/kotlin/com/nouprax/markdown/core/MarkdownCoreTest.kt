@@ -24,7 +24,7 @@ class ApiTest {
             listOf(
                 "~~x~~\n" to "Strikethrough scope=",
                 "www.example.com\n" to "Link scope=",
-                "- [x] task\n" to "checked=true",
+                "- [x] task\n" to "marker=\"x\"",
                 "ref[^a]\n\n[^a]: note\n" to "Cite scope=",
                 "\$x\$\n" to "Formula scope=",
                 ":badge[label]\n" to "Directive scope=",
@@ -305,9 +305,15 @@ class BindingMappingTest {
         assertEquals(null, assertIs<DirectiveBlock>(withNothing.content[2]).attributes)
 
         val checked = assertIs<com.nouprax.markdown.core.List>(withEverything.content[3])
-        assertEquals(true, checked.items.single().checked)
+        assertEquals("x", checked.items.single().marker)
+        assertEquals(true, checked.items.single().tasked)
+        assertEquals(true, checked.items.single().completed)
         val unchecked = assertIs<com.nouprax.markdown.core.List>(withNothing.content[3])
-        assertEquals(null, unchecked.items.single().checked)
+        assertEquals(null, unchecked.items.single().marker)
+        assertEquals(false, unchecked.items.single().tasked)
+        assertEquals(false, unchecked.items.single().completed)
+        val parenthesized = assertIs<com.nouprax.markdown.core.List>(Document.parse("1) item\n").content.single())
+        assertEquals(false, assertIs<OrderedListDelimiter.Parenthesis>(parenthesized.delimiter).closed)
     }
 
     @Test

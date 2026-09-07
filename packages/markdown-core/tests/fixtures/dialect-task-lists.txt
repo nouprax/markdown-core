@@ -1,0 +1,37 @@
+# Task lists
+
+## Inherited markers preserve their authored scalar
+
+```````````````````````````````` example
+- [ ] open
+- [x] done
+- [X] also done
+.
+Document scope=1:1..3:15 children=1
+└── List scope=1:1..3:15 flavor=bullet start=null variant=null delimiter=null tight=true children=3
+    ├── ListItem scope=1:1..1:10 marker=" " exampleLabel=null children=1
+    │   └── Paragraph scope=1:7..1:10 children=1
+    │       └── Text scope=1:7..1:10 literal="open" children=0
+    ├── ListItem scope=2:1..2:10 marker="x" exampleLabel=null children=1
+    │   └── Paragraph scope=2:7..2:10 children=1
+    │       └── Text scope=2:7..2:10 literal="done" children=0
+    └── ListItem scope=3:1..3:15 marker="X" exampleLabel=null children=1
+        └── Paragraph scope=3:7..3:15 children=1
+            └── Text scope=3:7..3:15 literal="also done" children=0
+````````````````````````````````
+
+## Only an initial marker is structural
+
+```````````````````````````````` example
+- a [x] b
+- [x]none
+.
+Document scope=1:1..2:9 children=1
+└── List scope=1:1..2:9 flavor=bullet start=null variant=null delimiter=null tight=true children=2
+    ├── ListItem scope=1:1..1:9 marker=null exampleLabel=null children=1
+    │   └── Paragraph scope=1:3..1:9 children=1
+    │       └── Text scope=1:3..1:9 literal="a [x] b" children=0
+    └── ListItem scope=2:1..2:9 marker=null exampleLabel=null children=1
+        └── Paragraph scope=2:3..2:9 children=1
+            └── Text scope=2:3..2:9 literal="[x]none" children=0
+````````````````````````````````

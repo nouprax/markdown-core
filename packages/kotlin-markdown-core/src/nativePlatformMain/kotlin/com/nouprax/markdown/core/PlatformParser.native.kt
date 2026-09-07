@@ -46,6 +46,12 @@ import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_TEXT
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_THEMATIC_BREAK
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_LIST_FLAVOR_BULLET
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_LIST_FLAVOR_ORDERED
+import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PARENTHESIS
+import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PERIOD
+import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_ORDERED_LIST_VARIANT_ALPHA
+import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_ORDERED_LIST_VARIANT_DEFAULT
+import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_ORDERED_LIST_VARIANT_EXAMPLE
+import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_ORDERED_LIST_VARIANT_ROMAN
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_PLACEMENT_EMBEDDED
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_PLACEMENT_STANDALONE
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_REFERENT_BIB
@@ -71,6 +77,8 @@ import com.nouprax.markdown.core.internal.capi.markdown_core_footnote_id
 import com.nouprax.markdown.core.internal.capi.markdown_core_footnote_next
 import com.nouprax.markdown.core.internal.capi.markdown_core_footnote_scope
 import com.nouprax.markdown.core.internal.capi.markdown_core_list_flavorVar
+import com.nouprax.markdown.core.internal.capi.markdown_core_ordered_list_delimiter
+import com.nouprax.markdown.core.internal.capi.markdown_core_ordered_list_variant
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_callout_properties
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_callout_title
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_child_count
@@ -86,7 +94,7 @@ import com.nouprax.markdown.core.internal.capi.markdown_core_node_get_first_chil
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_get_kind
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_get_next_sibling
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_heading_level
-import com.nouprax.markdown.core.internal.capi.markdown_core_node_list_item_checked
+import com.nouprax.markdown.core.internal.capi.markdown_core_node_list_item_properties
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_list_properties
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_literal
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_resource
@@ -334,7 +342,8 @@ private class NativeTreeBuilder(
             }
 
             MARKDOWN_CORE_KIND_LIST_ITEM -> {
-                ListItem(scratch.listItemChecked(node), children, scope)
+                val (marker, exampleLabel) = scratch.listItemProperties(node)
+                ListItem(marker, exampleLabel, children, scope)
             }
 
             MARKDOWN_CORE_KIND_CODE_BLOCK -> {
@@ -507,6 +516,8 @@ private class NativeScratch(
     private val integer = scope.alloc<IntVar>()
     private val count = scope.alloc<size_tVar>()
     private val listFlavor = scope.alloc<markdown_core_list_flavorVar>()
+    private val listVariant = scope.alloc<markdown_core_ordered_list_variant>()
+    private val listDelimiter = scope.alloc<markdown_core_ordered_list_delimiter>()
     private val placementMode = scope.alloc<markdown_core_placement_modeVar>()
     private val tableAlignment = scope.alloc<markdown_core_table_alignmentVar>()
     private val destination = scope.alloc<markdown_core_destination>()
@@ -522,7 +533,16 @@ private class NativeScratch(
         children: kotlin.collections.List<Markup>,
         scope: Scope,
     ): List {
-        require(markdown_core_node_list_properties(node, listFlavor.ptr, optionalLong.ptr, firstBoolean.ptr)) {
+        require(
+            markdown_core_node_list_properties(
+                node,
+                listFlavor.ptr,
+                optionalLong.ptr,
+                listVariant.ptr,
+                listDelimiter.ptr,
+                firstBoolean.ptr,
+            ),
+        ) {
             "invalid list node"
         }
         val flavor =
@@ -532,12 +552,36 @@ private class NativeScratch(
                 else -> error("unsupported native list flavor ${listFlavor.value}")
             }
         val items = children.immutableMap { requireNotNull(it as? ListItem) { "list contains a non-item node" } }
-        return List(flavor, optionalLong.value.takeIf { optionalLong.has_value }, firstBoolean.value, items, scope)
+        val variant =
+            when (listVariant.kind) {
+                MARKDOWN_CORE_ORDERED_LIST_VARIANT_ALPHA -> OrderedListVariant.Alpha(listVariant.lowercased)
+                MARKDOWN_CORE_ORDERED_LIST_VARIANT_ROMAN -> OrderedListVariant.Roman(listVariant.lowercased)
+                MARKDOWN_CORE_ORDERED_LIST_VARIANT_EXAMPLE -> OrderedListVariant.Example
+                MARKDOWN_CORE_ORDERED_LIST_VARIANT_DEFAULT -> OrderedListVariant.Default
+                else -> OrderedListVariant.Decimal
+            }.takeIf { optionalLong.has_value }
+        val delimiter = when (listDelimiter.kind) {
+            MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PERIOD -> OrderedListDelimiter.Period
+            MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PARENTHESIS ->
+                OrderedListDelimiter.Parenthesis(listDelimiter.closed)
+            else -> null
+        }.takeIf { optionalLong.has_value }
+        return List(
+            flavor,
+            optionalLong.value.takeIf { optionalLong.has_value },
+            variant,
+            delimiter,
+            firstBoolean.value,
+            items,
+            scope,
+        )
     }
 
-    fun listItemChecked(node: CPointer<markdown_core_node>): Boolean? {
-        require(markdown_core_node_list_item_checked(node, optionalBoolean.ptr)) { "invalid list item node" }
-        return optionalBoolean.value.takeIf { optionalBoolean.has_value }
+    fun listItemProperties(node: CPointer<markdown_core_node>): Pair<String?, String?> {
+        require(markdown_core_node_list_item_properties(node, firstOptionalString.ptr, secondOptionalString.ptr)) {
+            "invalid list item node"
+        }
+        return firstOptionalString.copyOptionalString() to secondOptionalString.copyOptionalString()
     }
 
     fun codeBlock(

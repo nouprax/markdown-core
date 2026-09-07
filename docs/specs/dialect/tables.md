@@ -624,7 +624,7 @@ Document scope=1:1..5:17 anchor=null attributes={} children=1
     │   │   │       ├── SoftBreak scope=2:18..2:18 anchor=null attributes={} children=0
     │   │   │       └── Text scope=3:3..3:7 anchor=null attributes={} literal="again" children=0
     │   │   └── TableCell scope=2:10..2:16 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │   │       └── List scope=2:11..2:13 anchor=null attributes={} flavor=bullet start=null style=null delimiter=null tight=true children=1
+    │   │       └── List scope=2:11..2:13 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
     │   │           └── ListItem scope=2:11..2:13 anchor=null attributes={} marker=null exampleLabel=null children=1
     │   │               └── Paragraph scope=2:13..2:13 anchor=null attributes={} children=1
     │   │                   └── Text scope=2:13..2:13 anchor=null attributes={} literal="i" children=0

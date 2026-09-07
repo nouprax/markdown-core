@@ -36,6 +36,8 @@ export type {
     CitationReferent,
     Destination,
     ListFlavor,
+    OrderedListDelimiter,
+    OrderedListVariant,
     PlacementMode,
     Position,
     Scope,

@@ -212,7 +212,7 @@ and the manifest order.
 | `Callout`                                                                                          | `variant: String?`, `collapsed: Bool?`, `title: [Markup]?`, `content`                                            | replaces `BlockQuote`                            | `M3`         |
 | `Paragraph`, `ThematicBreak`, `HTMLBlock`, `FormulaBlock`                                          | as today                                                                                                          | unchanged                                        | —            |
 | `Heading`                                                                                          | `level`, `content`                                                                                                | unchanged; anchors use the inherited field       | —            |
-| `List`                                                                                             | `flavor`, `start`, `style: OrderedListStyle?`, `delimiter: OrderedListDelimiter?`, `tight`, `items`               | changed                                          | `M5`         |
+| `List`                                                                                             | `flavor`, `start`, `variant: OrderedListVariant?`, `delimiter: OrderedListDelimiter?`, `tight`, `items`               | changed                                          | `M5`         |
 | `ListItem`                                                                                         | `marker: String?`, `exampleLabel: String?`, `content`                                                             | changed; `checked` removed                       | `M5`         |
 | `CodeBlock`                                                                                        | `info`, `language`, `literal`, `fenced`, `closed`                                                                 | unchanged; `info` and `language` stay as written | —            |
 | `Table`                                                                                            | `caption: TableCaption?`, `columns: [TableColumn]`, `head: [TableRow]`, `content: [TableRow]`, `foot: [TableRow]` | changed; `caption` arrives with its kind         | `M6`, `P11a` |
@@ -252,7 +252,7 @@ value carries `scope` only.
 | `CitationReferent = bib(key, mode: BibMode) \| footnote(id)`, `BibMode`             | `M4`; `bib` first produced by `P7`                            |
 | `Citation(referent, prefix: [Markup], suffix: [Markup], scope)`                     | `M4`; scoped and traversed, not `Markup`                      |
 | `Footnote(id, content: [Markup], scope)`                                            | `M4`; document-owned, scoped and traversed, not `Markup`      |
-| `OrderedListStyle`, `OrderedListDelimiter`                                          | `M5`; values beyond the inherited forms first by `P9a`, `P9b` |
+| `OrderedListVariant`, `OrderedListDelimiter`                                          | `M5`; values beyond the inherited forms first by `P9a`, `P9b` |
 | `TableColumn(alignment: TableAlignment, relative: Double?)`                         | `M6`; `relative` first produced by `P11c`                     |
 | `Metadata`, `MetadataRecord`, `MetadataValue`, `MetadataScalar`, `MetadataListItem` | `M7`; first produced by `O6`                                  |
 | `ReferenceForm`                                                                     | removed by `M2`                                               |
@@ -439,15 +439,15 @@ its behavior, with no separate publication step.
       `S0`.
 - [ ] **M5 — List and item facts.** Replace `ListItem.checked` with `marker:
       String?` (`" "`, `"x"`, and `"X"` under the inherited task-list rule,
-      `null` otherwise) and expose `isTask` and `isComplete` only as derived
-      binding conveniences; add `List.style` and `List.delimiter`, populated as
-      `decimal` with `period` or `oneParen` for inherited ordered lists and
+      `null` otherwise) and expose `tasked` and `completed` only as derived
+      binding conveniences; add `List.variant` and `List.delimiter`, populated as
+      `decimal` with `period` or `parenthesis(closed=false)` for inherited ordered lists and
       `null` for bullets; add `ListItem.exampleLabel` as `null`. Replace the
       task-list and list facade accessors, update the cmark-gfm and remark
       projections, and regenerate the list fixtures. Manifest states:
       `listItem.marker.null`, `listItem.marker.space`, `listItem.marker.value`,
-      `list.style.decimal`, `list.style.null`, `list.delimiter.period`,
-      `list.delimiter.oneParen`, `listItem.exampleLabel.null`. Requires `S0`.
+      `list.variant.decimal`, `list.variant.null`, `list.delimiter.period`,
+      `list.delimiter.parenthesis(closed=false)`, `listItem.exampleLabel.null`. Requires `S0`.
 - [ ] **M6 — One table model.** Emit `Table(columns, head, content, foot=[])`
       with `TableColumn(alignment, relative=null)` from the existing pipe-table
       path, remove `TableRow.isHeader`, add `TableCell.rowspan` and `colspan` as
@@ -816,15 +816,15 @@ its behavior, with no separate publication step.
 - [ ] **P9a — `fancy_lists`.** Generalize the ordered-marker operation for
       decimal, alphabetic, Roman, and `#` markers with period, one-paren, and
       two-paren delimiters, the capital-period two-space rule, `i` and `I`
-      disambiguation, same-style continuation, a new list on a style or
+      disambiguation, same-variant continuation, a new list on a variant or
       delimiter change, and the nested-start restriction; `List.start` is always
-      the first marker's value for every style, so `startnum` has no counterpart,
+      the first marker's value for every variant, so `startnum` has no counterpart,
       and a Roman numeral whose value exceeds the nine-digit decimal ceiling
       is ordinary text, the accumulation stopping at the ceiling so no run of
       any component can overflow the `int` that holds `List.start`.
       Remove the `fancy-list-and-startnum` gap. Requires `P0`, `M7`.
 - [ ] **P9b — `example_lists`.** Add `(@)`, `(@label)`, `(N@)`, and `(N@label)`
-      markers with `style=example`, a document-wide counter and label map as
+      markers with `variant=example`, a document-wide counter and label map as
       parser state, `ListItem.exampleLabel`, the `ExampleReference(label)` kind
       for `(@label)` occurrences anywhere in the document, with bare `@label`
       capture arriving in `P7`, the repeated-label and reset rules, four-space

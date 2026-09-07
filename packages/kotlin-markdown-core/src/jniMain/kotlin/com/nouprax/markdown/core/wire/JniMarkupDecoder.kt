@@ -51,8 +51,9 @@ private class JniTreeDecoder(
             }
 
             JniNodeKind.LIST_ITEM -> {
-                val checked = reader.nullableBoolean()
-                readChildren { consume(ListItem(checked, it, scope)) }
+                val marker = reader.string()
+                val exampleLabel = reader.string()
+                readChildren { consume(ListItem(marker, exampleLabel, it, scope)) }
             }
 
             JniNodeKind.CODE_BLOCK -> {
@@ -274,10 +275,31 @@ private class JniTreeDecoder(
             }
         val startValue = reader.long()
         val start = if (reader.boolean()) startValue else null
+        val variantKind = reader.int()
+        val variantLowercased = reader.boolean()
+        val variant =
+            when (variantKind) {
+                0 -> null
+                1 -> OrderedListVariant.Decimal
+                2 -> OrderedListVariant.Alpha(variantLowercased)
+                3 -> OrderedListVariant.Roman(variantLowercased)
+                4 -> OrderedListVariant.Example
+                5 -> OrderedListVariant.Default
+                else -> error("invalid native list variant $variantKind")
+            }
+        val delimiterKind = reader.int()
+        val delimiterClosed = reader.boolean()
+        val delimiter =
+            when (delimiterKind) {
+                0 -> null
+                1 -> OrderedListDelimiter.Period
+                2 -> OrderedListDelimiter.Parenthesis(delimiterClosed)
+                else -> error("invalid native list delimiter $delimiterKind")
+            }
         val tight = reader.boolean()
         readChildren { children ->
             val items = children.immutableMap { requireNotNull(it as? ListItem) { "list contains a non-item node" } }
-            consume(List(flavor, start, tight, items, scope))
+            consume(List(flavor, start, variant, delimiter, tight, items, scope))
         }
     }
 

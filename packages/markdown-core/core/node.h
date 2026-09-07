@@ -21,7 +21,10 @@ typedef struct {
     markdown_core_delim_type delimiter;
     unsigned char bullet_char;
     bool tight;
-    bool checked; // For task list extension
+    /* The authored task marker byte (' ', 'x', or 'X'), or NUL when this is
+     * not a task item.  Preserve spelling: completion is a derived consumer
+     * convenience, not the semantic value stored by the tree. */
+    unsigned char task_marker;
 } markdown_core_list;
 
 typedef struct {
