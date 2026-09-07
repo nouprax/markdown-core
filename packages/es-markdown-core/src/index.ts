@@ -4,6 +4,7 @@ export type { Callout } from "./model/callout.js";
 export type { Citation, Cite } from "./model/cite.js";
 export type { Code } from "./model/code.js";
 export type { Comment } from "./model/comment.js";
+export type { CrossLink } from "./model/cross-link.js";
 export type { DirectiveBlock } from "./model/directive-block.js";
 export type { DirectiveLabel } from "./model/directive-label.js";
 export type { Directive } from "./model/directive.js";

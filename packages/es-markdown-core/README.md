@@ -1,5 +1,11 @@
 # @nouprax/es-markdown-core
 
+Cross links (`[[Note#Heading|Label]]`) and embeds (`![[Image.png|100x145]]`)
+produce `CrossLink(embedded, dest, label)`. `dest` is a cross destination with
+raw path and optional anchor; the label is null when no separator was authored
+and an empty string for `[[Note|]]`. These are leaves with exhaustive visit and
+walk callbacks. Resolving files, rendering and transclusion belong to consumers.
+
 Immutable ECMAScript and TypeScript bindings for Markdown Core, backed by the
 same C parser compiled to WebAssembly.
 

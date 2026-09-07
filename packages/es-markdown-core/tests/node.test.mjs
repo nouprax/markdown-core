@@ -865,3 +865,28 @@ test("ast: dimensions belong to occurrences and universal attributes survive rel
     });
     assert.ok(directive.dump().includes('attributes={.a .a ."b}c" k="1" k="2"}'));
 });
+
+test("ast: cross links retain raw values after native release and reject wrong wire branches", () => {
+    const bytes = nativeResult("[[Note]] [[Note|]] ![[#^id|raw *label*]]\n");
+    const document = new NodeDecoder(bytes).decodeDocument();
+    const links = document.content[0].content.filter((node) => node.kind === "crossLink");
+    assert.deepEqual(
+        links.map((node) => [node.embedded, node.dest, node.label]),
+        [
+            [false, { kind: "cross", path: "Note", anchor: null }, null],
+            [false, { kind: "cross", path: "Note", anchor: null }, ""],
+            [true, { kind: "cross", path: "", anchor: "id" }, "raw *label*"]
+        ]
+    );
+    const events = [];
+    walk(
+        links[2],
+        walkingVisitor((node, phase) => events.push(`${phase}:${node.kind}`))
+    );
+    assert.deepEqual(events, ["entering:crossLink", "exiting:crossLink"]);
+    const malformed = bytes.slice();
+    new DataView(malformed.buffer).setInt32(findNode(malformed, kinds.indexOf("crossLink")) + 44, 1, true);
+    assert.throws(() => new NodeDecoder(malformed).decodeDocument(), /cross link requires a cross destination/u);
+    bytes.fill(0);
+    assert.equal(links[2].label, "raw *label*");
+});

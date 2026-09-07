@@ -41,6 +41,7 @@ public protocol MarkupWalkingVisitor {
     mutating func visit(_ node: Code, phase: WalkPhase)
     mutating func visit(_ node: HTML, phase: WalkPhase)
     mutating func visit(_ node: Comment, phase: WalkPhase)
+    mutating func visit(_ node: CrossLink, phase: WalkPhase)
     mutating func visit(_ node: Formula, phase: WalkPhase)
     mutating func visit(_ node: Emphasis, phase: WalkPhase)
     mutating func visit(_ node: Strong, phase: WalkPhase)
@@ -281,6 +282,11 @@ private struct WalkingDriver<WalkingVisitor: MarkupWalkingVisitor>: MarkupVisito
     }
 
     mutating func visit(_ node: HTML) {
+        visitor.visit(node, phase: phase)
+        scheduleExit(node)
+    }
+
+    mutating func visit(_ node: CrossLink) {
         visitor.visit(node, phase: phase)
         scheduleExit(node)
     }

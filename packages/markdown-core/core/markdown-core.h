@@ -88,6 +88,7 @@ typedef enum {
      * owning a prefix chain and a suffix chain of inline nodes beside its
      * referent. Inline-classed because it lives in inline content. */
     MARKDOWN_CORE_NODE_CITATION = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x0010,
+    MARKDOWN_CORE_NODE_CROSS_LINK = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x0011,
 } markdown_core_node_type;
 
 typedef enum { MARKDOWN_CORE_NO_LIST, MARKDOWN_CORE_BULLET_LIST, MARKDOWN_CORE_ORDERED_LIST } markdown_core_list_type;

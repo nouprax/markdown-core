@@ -112,13 +112,19 @@ does not define Pandoc `@key` syntax; the citations module does.
       links/images have identical semantic shapes, while only footnote citations
       retain a consumer-visible ID edge.
 
-## Phase 2 — one OFM inline extension
+## Phase 2 — inline features
 
-- [ ] Introduce one parser-owned OFM inline extension with scanners for wikilinks,
-      comments, highlights, and the inline footnote source form. All scanners use
-      the existing subject cursor, delimiter/bracket infrastructure, allocator,
-      source map, and extension attachment order.
-- [ ] Make `![[...]]` and `[[...]]` one scanner and one `CrossLink` payload. Split
+O1 introduces the cross-link descriptor and the shared wikilink/embed scanner.
+O2–O4 implement marks, comments, and inline footnotes through their respective
+semantic operations. Their source family does not define a runtime module or
+descriptor. The first bullet remains open until all four items land.
+
+- [ ] Implement cross links, comments, marks, and inline footnotes at their
+      feature boundaries, reusing each feature's existing semantic model and
+      operation. All scanners use the existing subject cursor,
+      delimiter/bracket infrastructure, allocator, source map, and extension
+      attachment order. Do not introduce an OFM umbrella extension.
+- [x] Make `![[...]]` and `[[...]]` one scanner and one `CrossLink` payload. Split
       path, optional anchor, and label value once while scanning, then construct
       one complete `Destination.cross`. Heading and block punctuation must not
       survive as a consumer discriminator. Do not rescan the completed literal
@@ -203,7 +209,7 @@ does not define Pandoc `@key` syntax; the citations module does.
       lowercase `x` with no surrounding spaces, in the shared image construction
       path. Keep wikilink label parameters raw until vault resolution
       establishes the embedded file kind.
-- [ ] Move wiki alias-pipe awareness into the shared table/inline boundary so
+- [x] Move wiki alias-pipe awareness into the shared table/inline boundary so
       `[[target\|label]]` and `![[image\|100]]` stay inside one cell. Do not add a
       table-only wikilink parser.
 - [ ] Preserve current GFM semantics for ordinary tables and task items that use

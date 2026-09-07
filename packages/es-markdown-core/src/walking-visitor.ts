@@ -3,6 +3,7 @@ import type { Citation, Cite } from "./model/cite.js";
 import type { CodeBlock } from "./model/code-block.js";
 import type { Code } from "./model/code.js";
 import type { Comment } from "./model/comment.js";
+import type { CrossLink } from "./model/cross-link.js";
 import type { DirectiveBlock } from "./model/directive-block.js";
 import type { DirectiveLabel } from "./model/directive-label.js";
 import type { Directive } from "./model/directive.js";
@@ -61,6 +62,7 @@ export interface WalkingVisitor {
     visitCode(this: void, node: Code, phase: WalkPhase): void;
     visitHTML(this: void, node: HTML, phase: WalkPhase): void;
     visitComment(this: void, node: Comment, phase: WalkPhase): void;
+    visitCrossLink(this: void, node: CrossLink, phase: WalkPhase): void;
     visitFormula(this: void, node: Formula, phase: WalkPhase): void;
     visitEmphasis(this: void, node: Emphasis, phase: WalkPhase): void;
     visitStrong(this: void, node: Strong, phase: WalkPhase): void;
@@ -249,6 +251,10 @@ export function walk(root: Markup, walkingVisitor: WalkingVisitor): void {
         },
         visitHTML: (node) => {
             walkingVisitor.visitHTML(node, phase);
+            scheduleExit(node);
+        },
+        visitCrossLink: (node) => {
+            walkingVisitor.visitCrossLink(node, phase);
             scheduleExit(node);
         },
         visitComment: (node) => {

@@ -306,6 +306,7 @@ func markup(
     case MARKDOWN_CORE_KIND_CODE: Code(from: node)
     case MARKDOWN_CORE_KIND_HTML: HTML(from: node)
     case MARKDOWN_CORE_KIND_COMMENT: Comment(from: node)
+    case MARKDOWN_CORE_KIND_CROSS_LINK: CrossLink(from: node)
     case MARKDOWN_CORE_KIND_FORMULA: Formula(from: node)
     case MARKDOWN_CORE_KIND_EMPHASIS: Emphasis(from: node, content: relations.children)
     case MARKDOWN_CORE_KIND_STRONG: Strong(from: node, content: relations.children)

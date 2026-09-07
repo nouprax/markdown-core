@@ -87,6 +87,15 @@ typedef struct {
     markdown_core_optional_i64 height;
 } markdown_core_link;
 
+/* One authored workspace reference. Each occurrence owns its raw strings;
+ * unlike resolved links, it has no resource shared with a definition. */
+typedef struct {
+    markdown_core_chunk path;
+    markdown_core_optional_chunk anchor;
+    markdown_core_optional_chunk label;
+    bool embedded;
+} markdown_core_cross_link;
+
 /* THE CITE (M4): a `Cite` owns its items as a chain of CITATION nodes beside
  * its children, which it never has. The chain is a node-valued field, not
  * content: the items are scoped values, not `Markup`. */
@@ -215,6 +224,7 @@ struct markdown_core_node {
         markdown_core_code code;
         markdown_core_heading heading;
         markdown_core_link link;
+        markdown_core_cross_link cross_link;
         markdown_core_cite cite;
         markdown_core_citation_item citation;
         markdown_core_footnote_value footnote;

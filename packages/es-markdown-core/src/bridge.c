@@ -825,6 +825,21 @@ static void collect_node_fields(es_build *build, size_t node_index) {
         record->strings[0] = required_string(first);
         break;
     }
+    case MARKDOWN_CORE_KIND_CROSS_LINK: {
+        markdown_core_destination destination;
+        bool embedded;
+        if (!markdown_core_node_destination(node, &destination) ||
+            !markdown_core_node_cross_link_properties(node, &embedded, &optional_first)) {
+            build->failure = ES_BUILD_INTERNAL;
+            break;
+        }
+        record->flags = embedded ? 1 : 0;
+        record->scalar0 = (int32_t)destination.kind;
+        record->strings[0] = required_string(destination.path);
+        record->strings[1] = destination.anchor;
+        record->strings[2] = optional_first;
+        break;
+    }
     case MARKDOWN_CORE_KIND_LINK:
     case MARKDOWN_CORE_KIND_IMAGE: {
         if (kind == MARKDOWN_CORE_KIND_IMAGE) {

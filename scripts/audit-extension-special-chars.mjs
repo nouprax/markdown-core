@@ -39,22 +39,18 @@
  * `set_byte_sets` call this reader matched nothing, skipped all four
  * extensions, printed no report and exited 0. A source-scanning audit with no
  * saw-nothing assertion is one refactor away from being a gate that cannot
- * fail. Every `create_*_extension` in this directory must be found and must
- * declare its sets.
+ * fail. The shared inventory pairs every descriptor definition with its
+ * CORE_EXTENSIONS[] entry, so every attached descriptor is audited.
  */
 
-import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import { readExtensionInventory } from "./lib/extension-inventory.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const extensionsDir = path.join(root, "packages/markdown-core/extensions");
 
-// The one declaration: three designated initialisers in one `static const`
-// descriptor. Before 3.4 it was one `set_byte_sets` call in a `create_*`
-// function; before 3.2 it was a run of `llist_append`s.
-const DESCRIPTOR = /const markdown_core_extension MARKDOWN_CORE_EXTENSION_\w+ = \{([\s\S]*?)\n\};/;
 const FIELD = (name) => new RegExp(`\\.${name}\\s*=\\s*("(?:\\\\.|[^"])*")`);
 const HOOK = /\.match_inline\s*=\s*(\w+)/;
 
@@ -99,8 +95,8 @@ const byteOf = (literal) => (literal in ESCAPES ? ESCAPES[literal] : literal.cha
 const spell = (byte) => (byte < 0x20 ? `0x${byte.toString(16).padStart(2, "0")}` : `'${String.fromCharCode(byte)}'`);
 
 /** The body of the extension's `match_inline` hook, found through the descriptor. */
-function matchBody(source, file) {
-    const hook = HOOK.exec(source);
+function matchBody(source, descriptor, file) {
+    const hook = HOOK.exec(descriptor);
     if (hook === null) return null;
     const start = source.search(new RegExp(`^static markdown_core_node \\*${hook[1]}\\(`, "m"));
     if (start < 0) throw new Error(`${file}: match_inline hook \`${hook[1]}\` is named but not defined here.`);
@@ -110,25 +106,17 @@ function matchBody(source, file) {
 
 const failures = [];
 const report = [];
-let declared = 0;
-for (const entry of fs
-    .readdirSync(extensionsDir)
-    .filter((name) => name.endsWith(".c"))
-    .sort()) {
-    const source = fs.readFileSync(path.join(extensionsDir, entry), "utf8");
-    const descriptor = DESCRIPTOR.exec(source);
-    if (descriptor === null) continue;
-
-    declared += 1;
+const { descriptors } = readExtensionInventory(extensionsDir);
+for (const { file: entry, source, body: descriptor } of descriptors) {
     const setOf = (name) => {
-        const match = FIELD(name).exec(descriptor[1]);
+        const match = FIELD(name).exec(descriptor);
         return match === null ? [] : bytesOf(match[1]);
     };
     const terminates = setOf("terminates_text");
     const dispatch = setOf("dispatch");
     const transparent = setOf("flanking_transparent");
 
-    const body = matchBody(source, entry);
+    const body = matchBody(source, descriptor, entry);
     if (body === null) {
         if (dispatch.length > 0) {
             failures.push(`${entry}: declares ${String(dispatch.length)} dispatch bytes and has no match_inline.`);
@@ -175,19 +163,6 @@ for (const entry of fs
     report.push(
         `  ${entry}: ${show("terminates", terminates)}  ${show("dispatch", dispatch)}  ` +
             `${show("transparent", transparent)}`
-    );
-}
-
-/* Every `*.c` in this directory that is an extension must have been read. A
- * source-scanning audit with no saw-nothing assertion is one refactor away from
- * a gate that cannot fail: it happened at 3.2, when the reader still looked for
- * `llist_append` calls, and it happened again at 3.4, when the descriptor
- * stopped being built by a `create_*` function. */
-const EXTENSION_FILES = 6;
-if (declared !== EXTENSION_FILES) {
-    failures.push(
-        `read ${String(declared)} extension descriptors and expected ${String(EXTENSION_FILES)}; ` +
-            "this audit is not reading what it thinks it is"
     );
 }
 

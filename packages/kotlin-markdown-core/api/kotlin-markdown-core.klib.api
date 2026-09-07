@@ -82,6 +82,7 @@ abstract interface <#A: kotlin/Any?> com.nouprax.markdown.core/Visitor { // com.
     abstract fun visitCode(com.nouprax.markdown.core/Code): #A // com.nouprax.markdown.core/Visitor.visitCode|visitCode(com.nouprax.markdown.core.Code){}[0]
     abstract fun visitCodeBlock(com.nouprax.markdown.core/CodeBlock): #A // com.nouprax.markdown.core/Visitor.visitCodeBlock|visitCodeBlock(com.nouprax.markdown.core.CodeBlock){}[0]
     abstract fun visitComment(com.nouprax.markdown.core/Comment): #A // com.nouprax.markdown.core/Visitor.visitComment|visitComment(com.nouprax.markdown.core.Comment){}[0]
+    abstract fun visitCrossLink(com.nouprax.markdown.core/CrossLink): #A // com.nouprax.markdown.core/Visitor.visitCrossLink|visitCrossLink(com.nouprax.markdown.core.CrossLink){}[0]
     abstract fun visitDirective(com.nouprax.markdown.core/Directive): #A // com.nouprax.markdown.core/Visitor.visitDirective|visitDirective(com.nouprax.markdown.core.Directive){}[0]
     abstract fun visitDirectiveBlock(com.nouprax.markdown.core/DirectiveBlock): #A // com.nouprax.markdown.core/Visitor.visitDirectiveBlock|visitDirectiveBlock(com.nouprax.markdown.core.DirectiveBlock){}[0]
     abstract fun visitDirectiveLabel(com.nouprax.markdown.core/DirectiveLabel): #A // com.nouprax.markdown.core/Visitor.visitDirectiveLabel|visitDirectiveLabel(com.nouprax.markdown.core.DirectiveLabel){}[0]
@@ -115,6 +116,7 @@ abstract interface com.nouprax.markdown.core/WalkingVisitor { // com.nouprax.mar
     abstract fun visitCode(com.nouprax.markdown.core/Code, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitCode|visitCode(com.nouprax.markdown.core.Code;com.nouprax.markdown.core.WalkPhase){}[0]
     abstract fun visitCodeBlock(com.nouprax.markdown.core/CodeBlock, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitCodeBlock|visitCodeBlock(com.nouprax.markdown.core.CodeBlock;com.nouprax.markdown.core.WalkPhase){}[0]
     abstract fun visitComment(com.nouprax.markdown.core/Comment, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitComment|visitComment(com.nouprax.markdown.core.Comment;com.nouprax.markdown.core.WalkPhase){}[0]
+    abstract fun visitCrossLink(com.nouprax.markdown.core/CrossLink, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitCrossLink|visitCrossLink(com.nouprax.markdown.core.CrossLink;com.nouprax.markdown.core.WalkPhase){}[0]
     abstract fun visitDirective(com.nouprax.markdown.core/Directive, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitDirective|visitDirective(com.nouprax.markdown.core.Directive;com.nouprax.markdown.core.WalkPhase){}[0]
     abstract fun visitDirectiveBlock(com.nouprax.markdown.core/DirectiveBlock, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitDirectiveBlock|visitDirectiveBlock(com.nouprax.markdown.core.DirectiveBlock;com.nouprax.markdown.core.WalkPhase){}[0]
     abstract fun visitDirectiveLabel(com.nouprax.markdown.core/DirectiveLabel, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitDirectiveLabel|visitDirectiveLabel(com.nouprax.markdown.core.DirectiveLabel;com.nouprax.markdown.core.WalkPhase){}[0]
@@ -430,6 +432,23 @@ final class com.nouprax.markdown.core/Comment : com.nouprax.markdown.core/Markup
         final fun <get-scope>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/Comment.scope.<get-scope>|<get-scope>(){}[0]
 
     final fun <#A1: kotlin/Any?> accept(com.nouprax.markdown.core/Visitor<#A1>): #A1 // com.nouprax.markdown.core/Comment.accept|accept(com.nouprax.markdown.core.Visitor<0:0>){0§<kotlin.Any?>}[0]
+}
+
+final class com.nouprax.markdown.core/CrossLink : com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core/CrossLink|null[0]
+    final val anchor // com.nouprax.markdown.core/CrossLink.anchor|{}anchor[0]
+        final fun <get-anchor>(): kotlin/String? // com.nouprax.markdown.core/CrossLink.anchor.<get-anchor>|<get-anchor>(){}[0]
+    final val attributes // com.nouprax.markdown.core/CrossLink.attributes|{}attributes[0]
+        final fun <get-attributes>(): com.nouprax.markdown.core/Attributes // com.nouprax.markdown.core/CrossLink.attributes.<get-attributes>|<get-attributes>(){}[0]
+    final val dest // com.nouprax.markdown.core/CrossLink.dest|{}dest[0]
+        final fun <get-dest>(): com.nouprax.markdown.core/Destination // com.nouprax.markdown.core/CrossLink.dest.<get-dest>|<get-dest>(){}[0]
+    final val embedded // com.nouprax.markdown.core/CrossLink.embedded|{}embedded[0]
+        final fun <get-embedded>(): kotlin/Boolean // com.nouprax.markdown.core/CrossLink.embedded.<get-embedded>|<get-embedded>(){}[0]
+    final val label // com.nouprax.markdown.core/CrossLink.label|{}label[0]
+        final fun <get-label>(): kotlin/String? // com.nouprax.markdown.core/CrossLink.label.<get-label>|<get-label>(){}[0]
+    final val scope // com.nouprax.markdown.core/CrossLink.scope|{}scope[0]
+        final fun <get-scope>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/CrossLink.scope.<get-scope>|<get-scope>(){}[0]
+
+    final fun <#A1: kotlin/Any?> accept(com.nouprax.markdown.core/Visitor<#A1>): #A1 // com.nouprax.markdown.core/CrossLink.accept|accept(com.nouprax.markdown.core.Visitor<0:0>){0§<kotlin.Any?>}[0]
 }
 
 final class com.nouprax.markdown.core/Directive : com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core/Directive|null[0]

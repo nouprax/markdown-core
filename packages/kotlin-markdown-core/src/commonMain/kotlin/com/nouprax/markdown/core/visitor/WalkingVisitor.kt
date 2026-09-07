@@ -123,6 +123,11 @@ public interface WalkingVisitor {
         phase: WalkPhase,
     )
 
+    public fun visitCrossLink(
+        node: CrossLink,
+        phase: WalkPhase,
+    )
+
     public fun visitComment(
         node: Comment,
         phase: WalkPhase,
@@ -417,6 +422,11 @@ private class WalkingDriver(
 
     override fun visitHTML(node: HTML) {
         visitor.visitHTML(node, phase)
+        scheduleExit(node)
+    }
+
+    override fun visitCrossLink(node: CrossLink) {
+        visitor.visitCrossLink(node, phase)
         scheduleExit(node)
     }
 

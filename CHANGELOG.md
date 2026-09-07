@@ -6,6 +6,11 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
+- Recognize `[[...]]` and `![[...]]` as `CrossLink` on C, Swift, Kotlin and ES.
+  Preserve raw paths, destination anchors and nullable labels, including escaped
+  table pipes and authored empty labels. Formula bodies claim their bytes before
+  later inline syntax, including a cross-link candidate containing a formula closer.
+
 - Add universal `anchor` and ordered `Attributes(classes, records)` to every
   node on C, Swift, Kotlin, and ES. Directives now use the one shared Pandoc
   attribute operation: the last ID wins, an empty final ID clears it, classes

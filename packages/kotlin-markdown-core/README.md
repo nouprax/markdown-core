@@ -1,5 +1,11 @@
 # Kotlin Markdown Core
 
+Cross links (`[[Note#Heading|Label]]`) and embeds (`![[Image.png|100x145]]`)
+produce `CrossLink(embedded, dest, label)`. `dest` is a cross destination with
+raw path and optional anchor; the label is null when no separator was authored
+and an empty string for `[[Note|]]`. These are leaves with exhaustive visit and
+walk callbacks. Resolving files, rendering and transclusion belong to consumers.
+
 Kotlin Multiplatform bindings for the immutable Markdown Core AST.
 
 ## Add the Dependency

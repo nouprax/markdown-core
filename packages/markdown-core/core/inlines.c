@@ -49,6 +49,9 @@ typedef struct subject {
     markdown_core_chunk input;
     markdown_core_attribute_parser attributes;
     unsigned flags;
+    bufsize_t opaque_end;
+    /* One plus the start of a suffix proven to contain no closer of a rule. */
+    bufsize_t opaque_failed_from[MARKDOWN_CORE_DELIM_RULE_COUNT];
     int line;
     bufsize_t pos;
     /* The block whose content buffer `input` is, and the parser that holds
@@ -307,6 +310,8 @@ static void subject_from_buf(markdown_core_parser *parser, markdown_core_mem *me
     e->mem = mem;
     e->input = *chunk;
     e->flags = 0;
+    e->opaque_end = 0;
+    memset(e->opaque_failed_from, 0, sizeof(e->opaque_failed_from));
     e->line = line_number;
     e->pos = 0;
     e->owner_parser = parser;
@@ -1903,6 +1908,13 @@ static int parse_inline(markdown_core_parser *parser, subject *subj, markdown_co
     if (c == 0) {
         return 0;
     }
+    if (subj->pos < subj->opaque_end) {
+        startpos = subj->pos;
+        subj->pos = subj->opaque_end;
+        new_inl = make_str(subj, startpos, subj->pos - 1,
+                           markdown_core_chunk_dup(&subj->input, startpos, subj->pos - startpos));
+        goto append;
+    }
     switch (c) {
     case '\r':
     case '\n':
@@ -1940,6 +1952,10 @@ static int parse_inline(markdown_core_parser *parser, subject *subj, markdown_co
         new_inl = handle_delim(subj, c);
         break;
     case '[':
+        new_inl = try_extensions(parser, parent, c, subj);
+        if (new_inl != NULL) {
+            break;
+        }
         advance(subj);
         /* CONTENT until it matches: an unmatched `[` IS its own literal, and
          * `handle_close_bracket` re-claims it MARKER for the link it opens. */
@@ -1998,6 +2014,7 @@ static int parse_inline(markdown_core_parser *parser, subject *subj, markdown_co
          * instead left the node covering eight columns and owning three, which
          * is what L5 measures. */
     }
+append:
     if (new_inl != NULL) {
         append_child(parent, new_inl);
     }
@@ -2146,6 +2163,29 @@ bufsize_t markdown_core_parse_reference_inline(markdown_core_mem *mem, markdown_
         refmap->oom = 1;
     }
     return subj.pos;
+}
+
+void markdown_core_inline_parser_set_opaque_body_end(markdown_core_inline_parser *parser, int end) {
+    parser->opaque_end = end;
+}
+
+int markdown_core_inline_parser_find_opaque_close(markdown_core_inline_parser *parser,
+                                                  markdown_core_delimiter_rule rule, int from,
+                                                  markdown_core_opaque_delimiter_scanner scan) {
+    if (parser->opaque_failed_from[rule] && from >= parser->opaque_failed_from[rule] - 1) {
+        return -1;
+    }
+    for (int at = from; at < parser->input.len;) {
+        bool closes = false;
+        int width = scan(parser->input.data, parser->input.len, at, rule, &closes);
+        parser->owner_parser->opaque_scan_work++;
+        if (closes) {
+            return at;
+        }
+        at += width;
+    }
+    parser->opaque_failed_from[rule] = from + 1;
+    return -1;
 }
 
 unsigned char markdown_core_inline_parser_peek_char(markdown_core_inline_parser *parser) { return peek_char(parser); }

@@ -43,6 +43,8 @@ internal class KindVisitor : Visitor<String> {
 
     override fun visitComment(node: Comment): String = name(node)
 
+    override fun visitCrossLink(node: CrossLink): String = name(node)
+
     override fun visitFormula(node: Formula): String = name(node)
 
     override fun visitEmphasis(node: Emphasis): String = name(node)
@@ -104,6 +106,8 @@ internal class RecordingVisitor : Visitor<Unit> {
     override fun visitHTML(node: HTML): Unit = record(node)
 
     override fun visitComment(node: Comment): Unit = record(node)
+
+    override fun visitCrossLink(node: CrossLink): Unit = record(node)
 
     override fun visitFormula(node: Formula): Unit = record(node)
 
@@ -261,6 +265,11 @@ internal class RecordingWalkingVisitor(
 
     override fun visitComment(
         node: Comment,
+        phase: WalkPhase,
+    ): Unit = record(node, phase)
+
+    override fun visitCrossLink(
+        node: CrossLink,
         phase: WalkPhase,
     ): Unit = record(node, phase)
 

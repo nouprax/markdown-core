@@ -450,6 +450,16 @@ export class NodeDecoder {
                     label: fields.label
                 } as MarkupValue;
             }
+            case "crossLink":
+                this.flags(record, 1);
+                this.leaf(record);
+                if (record.scalar0 !== 2) throw new Error("cross link requires a cross destination");
+                return {
+                    ...base,
+                    embedded: (record.flags & 1) !== 0,
+                    dest: this.destination(record),
+                    label: this.string(record, 2)
+                } as MarkupValue;
             case "link":
             case "image": {
                 this.flags(record, 0);

@@ -11,7 +11,7 @@ extern "C" {
 #include <stdbool.h>
 #include <stdint.h>
 
-/** The node types the six core extensions add, as COMPILE-TIME CONSTANTS.
+/** The node types the core extensions add, as COMPILE-TIME CONSTANTS.
  *
  * They used to be `markdown_core_node_type` globals assigned by runtime
  * registration in whatever order `core_extensions_registration` happened to

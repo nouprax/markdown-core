@@ -253,6 +253,7 @@ and returns no document.
 | `LineBreak` | none | leaf |
 | `Code` | `literal: String` | mode is `embedded`; leaf |
 | `HTML` | `literal: String` | raw HTML is preserved; an HTML comment token is a `Comment`; leaf |
+| `CrossLink` | `embedded: Bool`, `dest: Destination`, `label: String?` | inline leaf; cross destination and raw authored label; no separator means null |
 | `Comment` | `literal: String` | the one kind valid in both block and inline content, which the parent edge records; `literal` excludes the delimiters and keeps every byte between them; leaf |
 | `Formula` | `mode: PlacementMode`, `literal: String` | either mode; leaf |
 | `Emphasis` | `content: [Markup]` | inline content |
@@ -294,6 +295,11 @@ The [tables module](dialect/tables.md#logical-grid) defines placement, span
 occupancy, and group boundaries. `columns` is non-empty; a present `relative`
 is a positive finite authored width share. The caption field arrives with its
 kind and syntax in P11a.
+
+The dialect recognizes complete double-bracket cross links before inherited link
+and image bracket handling, including the inner reference of triple brackets.
+The exact affected CommonMark inputs are registered in `specs/oracles/cmark/`;
+remark directive labels may likewise contain cross links.
 
 ## Parsing
 

@@ -439,6 +439,20 @@
             "authority": "docs/specs/dialect/task-lists.md",
             "summary": "A task prefix is structural and removed before deciding the first block. An empty task item has no paragraph for an unindented following line to continue lazily; remark forms a paragraph before removing the prefix.",
             "why": "The normative task-prefix rule inherits block decisions from the remainder of the line. M7 expanded the directive/attribute fuzz corpus and exposed this existing language boundary; parser behavior is unchanged."
+        },
+        {
+            "id": "cross-link-in-directive-33",
+            "input": ":a[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[x]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]\n",
+            "authority": "Markdown Core dialect",
+            "summary": "O1 recognizes the innermost complete double brackets as a CrossLink, including inside a directive label.",
+            "why": "The cross-links module owns double bracket recognition; remark-directive owns only the directive envelope."
+        },
+        {
+            "id": "cross-link-in-directive-34",
+            "input": ":a[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[x]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]\n",
+            "authority": "Markdown Core dialect",
+            "summary": "O1 recognizes the innermost complete double brackets as a CrossLink, including inside a directive label.",
+            "why": "The cross-links module owns double bracket recognition; remark-directive owns only the directive envelope."
         }
     ],
     "baselineBacklog": [],

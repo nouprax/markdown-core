@@ -157,6 +157,13 @@ Document scope=1:1..1:10 anchor=null attributes={} children=1
     └── Text scope=1:1..1:10 anchor=null attributes={} literal="$5 and $a" children=0
 ````````````````````````````````
 
+Before dispatching later inline scanners, the shared cursor locates the closer
+and retains the intervening bytes as opaque delimiter-body text. Failed suffix
+searches are cached per delimiter rule within the inline container, so nested
+or unclosed opener runs do not repeatedly scan a suffix. The delimiter stack
+still constructs the formula. A malformed backtick pair releases its body to
+ordinary inline parsing.
+
 Delimiters are units on the shared delimiter stack; a closer matches the
 nearest unmatched opener of its own form. One formula of a form is open at a
 time: while an opener of a form is unmatched, a further opener of that form is

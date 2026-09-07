@@ -35,6 +35,12 @@
             "kind": "deliberate-difference",
             "summary": "cmark can emit a Text node with an empty literal after hard-break processing. Markdown Core and mdast omit nodes that own no content.",
             "handling": "The shared normalizer drops empty Text nodes on both sides and records that the projection acted."
+        },
+        {
+            "id": "cross-links",
+            "kind": "deliberate-difference",
+            "summary": "O1 recognizes complete [[...]] and ![[...]] as opaque CrossLink leaves before inherited bracket syntax.",
+            "handling": "Exact specification inputs only; dialect/cross-links.md and product fixtures own recognition and values."
         }
     ],
     "expectedDivergences": [
@@ -72,6 +78,21 @@
             "id": "refdef-title-rewind",
             "input": "[foo]: /url\n\"title\" ok\n\n[foo]\n",
             "note": "cmark resolves the final reference with title=\"title\" even though the title candidate was rewound into paragraph text; Markdown Core and micromark resolve it with no title."
+        },
+        {
+            "id": "cross-links",
+            "input": "[[[foo]]]\n\n[[[foo]]]: /url\n",
+            "note": "O1: the dialect cross-link scanner owns the complete inner double brackets."
+        },
+        {
+            "id": "cross-links",
+            "input": "[[*foo* bar]]\n\n[*foo* bar]: /url \"title\"\n",
+            "note": "O1: the dialect cross-link scanner owns the complete inner double brackets."
+        },
+        {
+            "id": "cross-links",
+            "input": "![[foo]]\n\n[[foo]]: /url \"title\"\n",
+            "note": "O1: the dialect cross-link scanner owns the complete inner double brackets."
         }
     ],
     "notDeltas": [],

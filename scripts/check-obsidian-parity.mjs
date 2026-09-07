@@ -621,6 +621,34 @@ for (const invalid of [
     }
 }
 
+for (const [input, label, dest, embedded] of [
+    ["[[Note]]\n", "null", crossDestination("Note", null), "false"],
+    ["[[Note|]]\n", "", crossDestination("Note", null), "false"],
+    [
+        "[[Folder/Note#Heading#Child|Display text]]\n",
+        "Display text",
+        crossDestination("Folder/Note", "Heading#Child"),
+        "false"
+    ],
+    ["![[Note#^block-id]]\n", "null", crossDestination("Note", "block-id"), "true"]
+]) {
+    const parsed = processor.runSync(processor.parse(input), input);
+    const oracle = fromMdast(parsed, new Set(), input).children[0]?.children[0];
+    const oursTree = fromMarkdownCore(parseCanonicalDump(execFileSync(ours, [], { input, encoding: "utf8" })), false);
+    const actual = oursTree.children[0]?.children[0];
+    for (const value of [oracle, actual]) {
+        if (
+            value?.kind !== "CrossLink" ||
+            value.fields.label !== label ||
+            value.fields.embedded !== embedded ||
+            JSON.stringify(value.fields.dest) !== JSON.stringify(dest) ||
+            value.children.length !== 0
+        ) {
+            throw new Error(`obsidian parity: cross-link projection canary failed for ${JSON.stringify(input)}`);
+        }
+    }
+}
+
 for (const [raw, expected] of [
     ['cross(path="Folder/Note", anchor="Heading one")', crossDestination("Folder/Note", "Heading one")],
     ['cross(path="Folder/Note",anchor="Heading one")', crossDestination("Folder/Note", "Heading one")],

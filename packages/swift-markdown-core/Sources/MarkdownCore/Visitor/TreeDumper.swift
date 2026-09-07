@@ -258,6 +258,17 @@ private struct DumpVisitor: MarkupVisitor {
         state.line("HTML", node, fields: ["literal=\(jsonString(node.literal))"])
     }
 
+    mutating func visit(_ node: CrossLink) {
+        state.line(
+            "CrossLink",
+            node,
+            fields: [
+                "embedded=\(node.embedded)", "dest=\(destinationString(node.dest))",
+                "label=\(optionalString(node.label))",
+            ]
+        )
+    }
+
     mutating func visit(_ node: Comment) {
         state.line("Comment", node, fields: ["literal=\(jsonString(node.literal))"])
     }

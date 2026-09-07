@@ -4,6 +4,7 @@ import type { Citation, Cite } from "./model/cite.js";
 import type { CodeBlock } from "./model/code-block.js";
 import type { Code } from "./model/code.js";
 import type { Comment } from "./model/comment.js";
+import type { CrossLink } from "./model/cross-link.js";
 import type { DirectiveBlock } from "./model/directive-block.js";
 import type { DirectiveLabel } from "./model/directive-label.js";
 import type { Directive } from "./model/directive.js";
@@ -148,6 +149,12 @@ class DumpState {
         visitLineBreak: (node: LineBreak) => this.line("LineBreak", node),
         visitCode: (node: Code) => this.line("Code", node, [`literal=${jsonString(node.literal)}`]),
         visitHTML: (node: HTML) => this.line("HTML", node, [`literal=${jsonString(node.literal)}`]),
+        visitCrossLink: (node: CrossLink) =>
+            this.line("CrossLink", node, [
+                `embedded=${String(node.embedded)}`,
+                `dest=${destination(node.dest)}`,
+                `label=${optionalString(node.label)}`
+            ]),
         visitComment: (node: Comment) => this.line("Comment", node, [`literal=${jsonString(node.literal)}`]),
         visitFormula: (node: Formula) =>
             this.line("Formula", node, [`mode=${node.mode}`, `literal=${jsonString(node.literal)}`]),

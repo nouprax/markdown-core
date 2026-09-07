@@ -21,6 +21,12 @@ dialect modes, and no caller composes a smaller language. `obsidian`,
 `pandoc`, `gfm`, and the like are names of sources, not of anything the
 parser accepts.
 
+Implementation boundaries follow feature semantics and ownership. Source
+families do not define runtime modules or extension descriptors: cross links,
+comments, marks, and footnotes use their own semantic operations and the shared
+parser infrastructure. A shared source is not a reason to combine them into an
+umbrella extension.
+
 The upstream tools are sources and evidence, never authorities over behavior:
 
 - A source defines which feature exists and what its common-case source form
@@ -81,7 +87,7 @@ that makes the row `present`.
 | resolved reference links and images | [links and images](dialect/links-and-images.md)                   | CommonMark                             | cmark                                | present                         |
 | universal anchor field              | [anchors](dialect/anchors.md)                                     | Pandoc, Obsidian                       | Pandoc                               | present                   |
 | universal attributes field          | [attributes](dialect/attributes.md)                               | Pandoc                                 | Pandoc                               | present                   |
-| cross links and embeds              | [cross links](dialect/cross-links.md)                             | Obsidian                               | remark-obsidian                      | missing, `O1`                   |
+| cross links and embeds              | [cross links](dialect/cross-links.md)                             | Obsidian                               | remark-obsidian                      | present                   |
 | marks                               | [marks](dialect/marks.md)                                         | Obsidian                               | remark-obsidian                      | missing, `O2`                   |
 | `%%` comments                       | [comments](dialect/comments.md)                                   | Obsidian                               | remark-obsidian                      | missing, `O3`                   |
 | inline footnotes                    | [footnotes](dialect/footnotes.md)                                 | Obsidian, Pandoc                       | none; product fixtures               | missing, `O4`                   |

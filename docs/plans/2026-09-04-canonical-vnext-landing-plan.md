@@ -185,6 +185,9 @@ lands the behavior amends that module in the same pull request.
   deletes `ParseOptions` and smart punctuation. The test tree keeps no layer
   selection either: the oracle gates parse the one language and register
   where it deliberately leaves an oracle's.
+- Runtime modules and extension descriptors follow feature semantics and
+  ownership. GFM, Obsidian, and Pandoc identify sources and oracle evidence;
+  they do not group unrelated features into implementation boundaries.
 - A comment is a `Comment` node and is never stripped: an HTML comment under the
   inherited grammar, and a `%%` comment. `stripHTMLComments` is removed,
   nothing strips anything, and a consumer that wants comments gone drops the
@@ -531,8 +534,8 @@ its behavior, with no separate publication step.
 
 ## Stage 2 — Obsidian track
 
-- [ ] **O1 — Wikilinks and embeds.** Create the parser-owned OFM inline
-      extension, its bit, and its reviewed attach-table position (before
+- [x] **O1 — Wikilinks and embeds.** Create the parser-owned cross-link inline
+      extension and its reviewed attach-table position (before
       `table`; the extension must see `[` and `!` before inherited bracket
       handling), always on, and public from this item. One
       scanner recognizes `[[...]]` and `![[...]]`, splits path, optional anchor,
@@ -556,6 +559,36 @@ its behavior, with no separate publication step.
       merges later. An attribute container following a complete `CrossLink`
       staying text beside bracketed spans is a cross-item case owned by
       whichever of `O1` and `P5` merges later. Requires `X0`, `M7`.
+
+  O1 validation (2026-09-07): 30 kinds across all 13 projection surfaces and
+  ten canonical cases pass. The 38 cross-link package examples include all 18
+  module examples, malformed boundaries, raw label/anchor states, all opaque
+  contexts available at O1, inherited link/image/directive/footnote composition,
+  aligned and pipe-optional tables, and authored UTF-8 byte scopes. Work-count
+  gates cover 128–8192 repeated units and bounded scanning of both wikilinks
+  and opaque formula bodies. Strict OOM sweeps every node and string allocation.
+
+  C correctness/conformance, ASan, UBSan, TSan, Swift and its external consumer,
+  Kotlin JVM/Native/Android-host and conformance, ES Node/browser and conformance,
+  four oracle gates, and 400-input seed-1 fuzz runs for CommonMark/GFM/remark
+  pass. `pnpm verify` and the host release dry run pass, including the C, Swift,
+  npm, Maven and Android AAR artifacts. Full cross-host aggregation remains the
+  required CI check.
+
+  Review notes: five inherited package examples now recognize their double
+  brackets (three CommonMark/GFM specification examples and two directive
+  boundaries). The corresponding CommonMark and remark inputs have exact
+  deliberate-difference entries. Four Obsidian wikilink gaps are retired, both
+  general model projections have canaries, and the pending Properties-list gap
+  digest changes because O1 recognizes its quoted wikilink before O6 claims the
+  envelope. Position and reference-resolution ledgers remain unchanged. The
+  table's existing escape contraction/source map is reused. Formula bodies now
+  claim their bytes before later scanners can swallow a closer; malformed
+  backtick pairs still release their bodies. Cross links have one always-attached
+  feature descriptor; marks, comments, and footnotes retain their own semantic
+  boundaries and do not share a source-family umbrella descriptor. Cross-item cases
+  with syntax not yet landed remain owned by their later items.
+
 - [ ] **O2 — Highlights.** Add `=` to the shared delimiter stack
       with pairwise run matching (two signs per match, a leftover single sign
       is text) and the non-empty rule, local pairing, and opaque

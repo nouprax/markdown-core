@@ -37,7 +37,8 @@ static void sweep_free(void *pointer) { free(pointer); }
 
 static markdown_core_mem sweep_mem = {sweep_calloc, sweep_realloc, sweep_free};
 
-static const char OOM_CORPUS[] = "# Heading *one*\n"
+static const char OOM_CORPUS[] = "[[Note]] [[Note|]] ![[#^block|alias]] [[a#Heading|label]]\n\n"
+                                 "# Heading *one*\n"
                                  "\n"
                                  "Paragraph with **strong**, _em_, `code`, [link](/url \"title\"), ![img](/i.png),\n"
                                  "a [ref][label], an <https://example.com/auto> autolink, www.example.com,\n"
