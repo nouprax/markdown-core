@@ -29,41 +29,6 @@ final enum class com.nouprax.markdown.core/ListFlavor : kotlin/Enum<com.nouprax.
     final fun values(): kotlin/Array<com.nouprax.markdown.core/ListFlavor> // com.nouprax.markdown.core/ListFlavor.values|values#static(){}[0]
 }
 
-sealed interface com.nouprax.markdown.core/OrderedListDelimiter { // com.nouprax.markdown.core/OrderedListDelimiter|null[0]
-    final object Default : com.nouprax.markdown.core/OrderedListDelimiter { // com.nouprax.markdown.core/OrderedListDelimiter.Default|null[0]
-    }
-
-    final class Parenthesis : com.nouprax.markdown.core/OrderedListDelimiter { // com.nouprax.markdown.core/OrderedListDelimiter.Parenthesis|null[0]
-        final val closed // com.nouprax.markdown.core/OrderedListDelimiter.Parenthesis.closed|{}closed[0]
-            final fun <get-closed>(): kotlin/Boolean // com.nouprax.markdown.core/OrderedListDelimiter.Parenthesis.closed.<get-closed>|<get-closed>(){}[0]
-    }
-
-    final object Period : com.nouprax.markdown.core/OrderedListDelimiter { // com.nouprax.markdown.core/OrderedListDelimiter.Period|null[0]
-    }
-}
-
-sealed interface com.nouprax.markdown.core/OrderedListVariant { // com.nouprax.markdown.core/OrderedListVariant|null[0]
-    final class Alpha : com.nouprax.markdown.core/OrderedListVariant { // com.nouprax.markdown.core/OrderedListVariant.Alpha|null[0]
-        final val lowercased // com.nouprax.markdown.core/OrderedListVariant.Alpha.lowercased|{}lowercased[0]
-            final fun <get-lowercased>(): kotlin/Boolean // com.nouprax.markdown.core/OrderedListVariant.Alpha.lowercased.<get-lowercased>|<get-lowercased>(){}[0]
-    }
-
-    final object Decimal : com.nouprax.markdown.core/OrderedListVariant { // com.nouprax.markdown.core/OrderedListVariant.Decimal|null[0]
-    }
-
-    final object Default : com.nouprax.markdown.core/OrderedListVariant { // com.nouprax.markdown.core/OrderedListVariant.Default|null[0]
-    }
-
-    final object Example : com.nouprax.markdown.core/OrderedListVariant { // com.nouprax.markdown.core/OrderedListVariant.Example|null[0]
-    }
-
-    final class Roman : com.nouprax.markdown.core/OrderedListVariant { // com.nouprax.markdown.core/OrderedListVariant.Roman|null[0]
-        final val lowercased // com.nouprax.markdown.core/OrderedListVariant.Roman.lowercased|{}lowercased[0]
-            final fun <get-lowercased>(): kotlin/Boolean // com.nouprax.markdown.core/OrderedListVariant.Roman.lowercased.<get-lowercased>|<get-lowercased>(){}[0]
-    }
-
-}
-
 final enum class com.nouprax.markdown.core/ParseErrorCode : kotlin/Enum<com.nouprax.markdown.core/ParseErrorCode> { // com.nouprax.markdown.core/ParseErrorCode|null[0]
     enum entry ALLOCATION_FAILED // com.nouprax.markdown.core/ParseErrorCode.ALLOCATION_FAILED|null[0]
     enum entry INTERNAL // com.nouprax.markdown.core/ParseErrorCode.INTERNAL|null[0]
@@ -211,6 +176,55 @@ sealed interface com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core
 
     abstract fun <#A1: kotlin/Any?> accept(com.nouprax.markdown.core/Visitor<#A1>): #A1 // com.nouprax.markdown.core/Markup.accept|accept(com.nouprax.markdown.core.Visitor<0:0>){0§<kotlin.Any?>}[0]
     open fun dump(): kotlin/String // com.nouprax.markdown.core/Markup.dump|dump(){}[0]
+}
+
+sealed interface com.nouprax.markdown.core/OrderedListDelimiter { // com.nouprax.markdown.core/OrderedListDelimiter|null[0]
+    final class Parenthesis : com.nouprax.markdown.core/OrderedListDelimiter { // com.nouprax.markdown.core/OrderedListDelimiter.Parenthesis|null[0]
+        final val closed // com.nouprax.markdown.core/OrderedListDelimiter.Parenthesis.closed|{}closed[0]
+            final fun <get-closed>(): kotlin/Boolean // com.nouprax.markdown.core/OrderedListDelimiter.Parenthesis.closed.<get-closed>|<get-closed>(){}[0]
+    }
+
+    final object Default : com.nouprax.markdown.core/OrderedListDelimiter { // com.nouprax.markdown.core/OrderedListDelimiter.Default|null[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // com.nouprax.markdown.core/OrderedListDelimiter.Default.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // com.nouprax.markdown.core/OrderedListDelimiter.Default.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // com.nouprax.markdown.core/OrderedListDelimiter.Default.toString|toString(){}[0]
+    }
+
+    final object Period : com.nouprax.markdown.core/OrderedListDelimiter { // com.nouprax.markdown.core/OrderedListDelimiter.Period|null[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // com.nouprax.markdown.core/OrderedListDelimiter.Period.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // com.nouprax.markdown.core/OrderedListDelimiter.Period.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // com.nouprax.markdown.core/OrderedListDelimiter.Period.toString|toString(){}[0]
+    }
+}
+
+sealed interface com.nouprax.markdown.core/OrderedListVariant { // com.nouprax.markdown.core/OrderedListVariant|null[0]
+    final class Alpha : com.nouprax.markdown.core/OrderedListVariant { // com.nouprax.markdown.core/OrderedListVariant.Alpha|null[0]
+        final val lowercased // com.nouprax.markdown.core/OrderedListVariant.Alpha.lowercased|{}lowercased[0]
+            final fun <get-lowercased>(): kotlin/Boolean // com.nouprax.markdown.core/OrderedListVariant.Alpha.lowercased.<get-lowercased>|<get-lowercased>(){}[0]
+    }
+
+    final class Roman : com.nouprax.markdown.core/OrderedListVariant { // com.nouprax.markdown.core/OrderedListVariant.Roman|null[0]
+        final val lowercased // com.nouprax.markdown.core/OrderedListVariant.Roman.lowercased|{}lowercased[0]
+            final fun <get-lowercased>(): kotlin/Boolean // com.nouprax.markdown.core/OrderedListVariant.Roman.lowercased.<get-lowercased>|<get-lowercased>(){}[0]
+    }
+
+    final object Decimal : com.nouprax.markdown.core/OrderedListVariant { // com.nouprax.markdown.core/OrderedListVariant.Decimal|null[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // com.nouprax.markdown.core/OrderedListVariant.Decimal.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // com.nouprax.markdown.core/OrderedListVariant.Decimal.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // com.nouprax.markdown.core/OrderedListVariant.Decimal.toString|toString(){}[0]
+    }
+
+    final object Default : com.nouprax.markdown.core/OrderedListVariant { // com.nouprax.markdown.core/OrderedListVariant.Default|null[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // com.nouprax.markdown.core/OrderedListVariant.Default.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // com.nouprax.markdown.core/OrderedListVariant.Default.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // com.nouprax.markdown.core/OrderedListVariant.Default.toString|toString(){}[0]
+    }
+
+    final object Example : com.nouprax.markdown.core/OrderedListVariant { // com.nouprax.markdown.core/OrderedListVariant.Example|null[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // com.nouprax.markdown.core/OrderedListVariant.Example.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // com.nouprax.markdown.core/OrderedListVariant.Example.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // com.nouprax.markdown.core/OrderedListVariant.Example.toString|toString(){}[0]
+    }
 }
 
 final class com.nouprax.markdown.core/Callout : com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core/Callout|null[0]

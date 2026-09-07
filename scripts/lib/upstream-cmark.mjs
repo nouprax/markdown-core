@@ -120,7 +120,7 @@ export function parseUpstreamXml(xml) {
         if (kind === "Cite") node.children.push(citationItem({}));
         if (name === "table_header") node.fields.isHeader = "true";
         if (name === "table_row") node.fields.isHeader = "false";
-        if (name === "tasklist") node.fields.marker = attributes.completed === "true" ? '"x"' : '" "';
+        if (name === "tasklist") node.fields.marker = attributes.completed === "true" ? "x" : " ";
         if (name === "item") {
             node.fields.marker = "null";
             node.fields.exampleLabel = "null";

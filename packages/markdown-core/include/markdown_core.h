@@ -250,8 +250,7 @@ MARKDOWN_CORE_API bool markdown_core_node_list_properties(const markdown_core_no
                                                           markdown_core_list_flavor *flavor,
                                                           markdown_core_optional_i64 *start,
                                                           markdown_core_ordered_list_variant *variant,
-                                                          markdown_core_ordered_list_delimiter *delimiter,
-                                                          bool *tight);
+                                                          markdown_core_ordered_list_delimiter *delimiter, bool *tight);
 MARKDOWN_CORE_API bool markdown_core_node_list_item_properties(const markdown_core_node *node,
                                                                markdown_core_optional_string *marker,
                                                                markdown_core_optional_string *example_label);

@@ -244,6 +244,9 @@ public abstract interface class com/nouprax/markdown/core/OrderedListDelimiter {
 
 public final class com/nouprax/markdown/core/OrderedListDelimiter$Default : com/nouprax/markdown/core/OrderedListDelimiter {
 	public static final field INSTANCE Lcom/nouprax/markdown/core/OrderedListDelimiter$Default;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
 }
 
 public final class com/nouprax/markdown/core/OrderedListDelimiter$Parenthesis : com/nouprax/markdown/core/OrderedListDelimiter {
@@ -252,6 +255,9 @@ public final class com/nouprax/markdown/core/OrderedListDelimiter$Parenthesis : 
 
 public final class com/nouprax/markdown/core/OrderedListDelimiter$Period : com/nouprax/markdown/core/OrderedListDelimiter {
 	public static final field INSTANCE Lcom/nouprax/markdown/core/OrderedListDelimiter$Period;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
 }
 
 public abstract interface class com/nouprax/markdown/core/OrderedListVariant {
@@ -263,14 +269,23 @@ public final class com/nouprax/markdown/core/OrderedListVariant$Alpha : com/noup
 
 public final class com/nouprax/markdown/core/OrderedListVariant$Decimal : com/nouprax/markdown/core/OrderedListVariant {
 	public static final field INSTANCE Lcom/nouprax/markdown/core/OrderedListVariant$Decimal;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
 }
 
 public final class com/nouprax/markdown/core/OrderedListVariant$Default : com/nouprax/markdown/core/OrderedListVariant {
 	public static final field INSTANCE Lcom/nouprax/markdown/core/OrderedListVariant$Default;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
 }
 
 public final class com/nouprax/markdown/core/OrderedListVariant$Example : com/nouprax/markdown/core/OrderedListVariant {
 	public static final field INSTANCE Lcom/nouprax/markdown/core/OrderedListVariant$Example;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
 }
 
 public final class com/nouprax/markdown/core/OrderedListVariant$Roman : com/nouprax/markdown/core/OrderedListVariant {
@@ -482,3 +497,4 @@ public abstract interface class com/nouprax/markdown/core/WalkingVisitor {
 public final class com/nouprax/markdown/core/WalkingVisitorKt {
 	public static final fun walk (Lcom/nouprax/markdown/core/Markup;Lcom/nouprax/markdown/core/WalkingVisitor;)V
 }
+

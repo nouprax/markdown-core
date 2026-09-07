@@ -564,11 +564,11 @@ static void collect_node_fields(es_build *build, size_t node_index) {
         }
         record->scalar0 = (int32_t)flavor;
         record->integer = start.value;
-        record->flags = (start.has_value ? 1u : 0u) | (tight ? 2u : 0u) |
-                        (start.has_value ? ((uint32_t)variant.kind << 2) | ((uint32_t)delimiter.kind << 5) |
-                                               (delimiter.closed ? (1u << 8) : 0u) |
-                                               (variant.lowercased ? (1u << 9) : 0u)
-                                         : 0u);
+        record->flags =
+            (start.has_value ? 1u : 0u) | (tight ? 2u : 0u) |
+            (start.has_value ? ((uint32_t)variant.kind << 2) | ((uint32_t)delimiter.kind << 5) |
+                                   (delimiter.closed ? (1u << 8) : 0u) | (variant.lowercased ? (1u << 9) : 0u)
+                             : 0u);
         break;
     }
     case MARKDOWN_CORE_KIND_LIST_ITEM: {

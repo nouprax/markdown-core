@@ -1,6 +1,7 @@
 import Foundation
 import MarkdownCore
 import Testing
+import struct Testing.Comment
 
 @Suite("conformance") struct ConformanceSuite {
     @Test("public node kinds are emitted by the per-node Swift dumper")

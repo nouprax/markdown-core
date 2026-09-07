@@ -347,6 +347,7 @@ private fun BibMode.token(): String =
 private fun PlacementMode.token(): String = name.lowercase()
 
 private fun ListFlavor.token(): String = name.lowercase()
+
 private fun OrderedListVariant.token(): String =
     when (this) {
         OrderedListVariant.Decimal -> "decimal"
@@ -355,6 +356,7 @@ private fun OrderedListVariant.token(): String =
         OrderedListVariant.Example -> "example"
         OrderedListVariant.Default -> "default"
     }
+
 private fun OrderedListDelimiter.token(): String =
     when (this) {
         OrderedListDelimiter.Period -> "period"

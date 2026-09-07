@@ -77,8 +77,6 @@ import com.nouprax.markdown.core.internal.capi.markdown_core_footnote_id
 import com.nouprax.markdown.core.internal.capi.markdown_core_footnote_next
 import com.nouprax.markdown.core.internal.capi.markdown_core_footnote_scope
 import com.nouprax.markdown.core.internal.capi.markdown_core_list_flavorVar
-import com.nouprax.markdown.core.internal.capi.markdown_core_ordered_list_delimiter
-import com.nouprax.markdown.core.internal.capi.markdown_core_ordered_list_variant
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_callout_properties
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_callout_title
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_child_count
@@ -106,6 +104,8 @@ import com.nouprax.markdown.core.internal.capi.markdown_core_node_title
 import com.nouprax.markdown.core.internal.capi.markdown_core_optional_bool
 import com.nouprax.markdown.core.internal.capi.markdown_core_optional_i64
 import com.nouprax.markdown.core.internal.capi.markdown_core_optional_string
+import com.nouprax.markdown.core.internal.capi.markdown_core_ordered_list_delimiter
+import com.nouprax.markdown.core.internal.capi.markdown_core_ordered_list_variant
 import com.nouprax.markdown.core.internal.capi.markdown_core_placement_modeVar
 import com.nouprax.markdown.core.internal.capi.markdown_core_referent
 import com.nouprax.markdown.core.internal.capi.markdown_core_scope
@@ -560,12 +560,20 @@ private class NativeScratch(
                 MARKDOWN_CORE_ORDERED_LIST_VARIANT_DEFAULT -> OrderedListVariant.Default
                 else -> OrderedListVariant.Decimal
             }.takeIf { optionalLong.has_value }
-        val delimiter = when (listDelimiter.kind) {
-            MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PERIOD -> OrderedListDelimiter.Period
-            MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PARENTHESIS ->
-                OrderedListDelimiter.Parenthesis(listDelimiter.closed)
-            else -> null
-        }.takeIf { optionalLong.has_value }
+        val delimiter =
+            when (listDelimiter.kind) {
+                MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PERIOD -> {
+                    OrderedListDelimiter.Period
+                }
+
+                MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PARENTHESIS -> {
+                    OrderedListDelimiter.Parenthesis(listDelimiter.closed)
+                }
+
+                else -> {
+                    null
+                }
+            }.takeIf { optionalLong.has_value }
         return List(
             flavor,
             optionalLong.value.takeIf { optionalLong.has_value },

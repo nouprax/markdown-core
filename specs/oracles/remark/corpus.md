@@ -336,3 +336,25 @@ Document scope=1:1..1:9 children=1
     └── Emphasis scope=1:3..1:9 children=1
         └── Text scope=1:4..1:8 literal=".foo." children=0
 ````````````````````````````````
+
+Ordered punctuation is absent from mdast; task markers compare as decoded
+values, including the space that denotes an incomplete task.
+
+```````````````````````````````` example
+1) outer
+   - [ ] open
+   - [x] done
+.
+Document scope=1:1..3:13 children=1
+└── List scope=1:1..3:13 flavor=ordered start=1 variant=decimal delimiter=parenthesis(closed=false) tight=true children=1
+    └── ListItem scope=1:1..3:13 marker=null exampleLabel=null children=2
+        ├── Paragraph scope=1:4..1:8 children=1
+        │   └── Text scope=1:4..1:8 literal="outer" children=0
+        └── List scope=2:4..3:13 flavor=bullet start=null variant=null delimiter=null tight=true children=2
+            ├── ListItem scope=2:4..2:13 marker=" " exampleLabel=null children=1
+            │   └── Paragraph scope=2:10..2:13 children=1
+            │       └── Text scope=2:10..2:13 literal="open" children=0
+            └── ListItem scope=3:4..3:13 marker="x" exampleLabel=null children=1
+                └── Paragraph scope=3:10..3:13 children=1
+                    └── Text scope=3:10..3:13 literal="done" children=0
+````````````````````````````````

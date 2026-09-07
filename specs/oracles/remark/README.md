@@ -11,6 +11,10 @@ an unregistered difference appears or a registered one stops reproducing.
 `scripts/fuzz-parity.mjs --oracle remark` reuses the same policy for seeded
 generated inputs.
 
+mdast does not retain ordered-list delimiter punctuation, so this oracle does
+not compare `List.delimiter`. The cmark oracle compares that field, and the
+canonical fixtures check the authored spelling in every binding.
+
 This oracle is corrective and supplementary, not a second oracle for the base
 language. Current cmark is the CommonMark oracle, cmark-gfm only the
 GFM-extension oracle, and a remark agreement can justify a reviewed delta

@@ -11,12 +11,17 @@ public data class Scope(
 )
 
 public enum class ListFlavor { BULLET, ORDERED }
+
 public sealed interface OrderedListVariant {
     public data object Decimal : OrderedListVariant
 
-    public class Alpha internal constructor(public val lowercased: Boolean) : OrderedListVariant
+    public class Alpha internal constructor(
+        public val lowercased: Boolean,
+    ) : OrderedListVariant
 
-    public class Roman internal constructor(public val lowercased: Boolean) : OrderedListVariant
+    public class Roman internal constructor(
+        public val lowercased: Boolean,
+    ) : OrderedListVariant
 
     public data object Example : OrderedListVariant
 
@@ -26,7 +31,9 @@ public sealed interface OrderedListVariant {
 public sealed interface OrderedListDelimiter {
     public data object Period : OrderedListDelimiter
 
-    public class Parenthesis internal constructor(public val closed: Boolean) : OrderedListDelimiter
+    public class Parenthesis internal constructor(
+        public val closed: Boolean,
+    ) : OrderedListDelimiter
 
     public data object Default : OrderedListDelimiter
 }

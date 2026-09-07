@@ -137,10 +137,9 @@ function convert(node, definitions, parentType = "root") {
         fields.tight = String(Boolean(!node.spread));
         fields.start = node.ordered ? String(node.start ?? 1) : "null";
         fields.variant = node.ordered ? "decimal" : "null";
-        fields.delimiter = node.ordered ? "period" : "null";
     }
     if (node.type === "listItem") {
-        fields.marker = node.checked === null || node.checked === undefined ? "null" : node.checked ? '"x"' : '" "';
+        fields.marker = node.checked === null || node.checked === undefined ? "null" : node.checked ? "x" : " ";
         fields.exampleLabel = "null";
     }
     // Registered shape delta `code-span-line-ending`: CommonMark says a code
@@ -266,7 +265,9 @@ export function fromMdast(tree) {
 export const MDAST_COMPARED = {
     Callout: ["variant", "collapsed"],
     Heading: ["level"],
-    List: ["flavor", "start", "variant", "delimiter", "tight"],
+    // mdast does not retain ordered-list punctuation. The cmark oracle and
+    // canonical fixtures cover delimiter spelling without inventing it here.
+    List: ["flavor", "start", "variant", "tight"],
     ListItem: ["marker", "exampleLabel"],
     CodeBlock: ["info", "literal"],
     Code: ["literal"],

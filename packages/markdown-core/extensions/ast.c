@@ -332,7 +332,7 @@ bool markdown_core_node_list_properties(const markdown_core_node *node, markdown
 }
 
 bool markdown_core_node_list_item_properties(const markdown_core_node *node, markdown_core_optional_string *marker,
-                                              markdown_core_optional_string *example_label) {
+                                             markdown_core_optional_string *example_label) {
     if (!node || node->type != MARKDOWN_CORE_NODE_LIST_ITEM || !marker || !example_label) {
         return false;
     }
@@ -871,8 +871,8 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
             buffer_cstr(buffer, "null");
         } else if (variant.kind == MARKDOWN_CORE_ORDERED_LIST_VARIANT_ALPHA ||
                    variant.kind == MARKDOWN_CORE_ORDERED_LIST_VARIANT_ROMAN) {
-            buffer_cstr(buffer,
-                        variant.kind == MARKDOWN_CORE_ORDERED_LIST_VARIANT_ALPHA ? "alpha(lowercased" : "roman(lowercased");
+            buffer_cstr(buffer, variant.kind == MARKDOWN_CORE_ORDERED_LIST_VARIANT_ALPHA ? "alpha(lowercased"
+                                                                                         : "roman(lowercased");
             buffer_cstr(buffer, variant.lowercased ? "=true)" : "=false)");
         } else if (variant.kind == MARKDOWN_CORE_ORDERED_LIST_VARIANT_EXAMPLE) {
             buffer_cstr(buffer, "example");
