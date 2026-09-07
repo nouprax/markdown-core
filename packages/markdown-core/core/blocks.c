@@ -1125,6 +1125,11 @@ static void lift_footnotes(markdown_core_parser *parser) {
     markdown_core_node *node = parser->root;
     markdown_core_node *last = NULL;
 
+    /* A parse that defined no footnote has nothing to lift, and a definition
+     * is a block, so the walk never descends into inline content. */
+    if (parser->footnote_defs->size == 0) {
+        return;
+    }
     while (node) {
         if (S_type(node) == MARKDOWN_CORE_NODE_FOOTNOTE) {
             if (count == capacity) {
@@ -1140,7 +1145,7 @@ static void lift_footnotes(markdown_core_parser *parser) {
             }
             found[count++] = node;
         }
-        if (node->first_child) {
+        if (node->first_child && MARKDOWN_CORE_NODE_BLOCK_P(node->first_child)) {
             node = node->first_child;
             continue;
         }
