@@ -59,6 +59,9 @@ typedef enum {
      * which is what containment checks and the inline parser ask. */
     MARKDOWN_CORE_NODE_COMMENT_BLOCK = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x0010,
 
+    /* A specimen definition: a document-owned citation value (P9b). */
+    MARKDOWN_CORE_NODE_SPECIMEN = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x0011,
+
     /* Inline */
     MARKDOWN_CORE_NODE_TEXT = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x0001,
     MARKDOWN_CORE_NODE_SOFT_BREAK = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x0002,

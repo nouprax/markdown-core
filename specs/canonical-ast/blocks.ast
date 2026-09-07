@@ -1,32 +1,36 @@
-Document scope=1:1..21:38 children=8
+Document scope=1:1..23:38 children=9
 ├── Heading scope=1:1..1:9 level=1 children=1
 │   └── Text scope=1:3..1:9 literal="Heading" children=0
 ├── Callout scope=3:1..3:7 variant=null collapsed=null children=1
 │   └── Paragraph scope=3:3..3:7 children=1
 │       └── Text scope=3:3..3:7 literal="Quote" children=0
 ├── ThematicBreak scope=5:1..6:0 children=0
-├── List scope=7:1..8:0 flavor=ordered start=3 tight=true children=1
-│   └── ListItem scope=7:1..8:0 checked=null children=1
+├── List scope=7:1..8:0 flavor=ordered start=3 variant=decimal delimiter=period tight=true children=1
+│   └── ListItem scope=7:1..8:0 marker=null children=1
 │       └── Paragraph scope=7:4..7:10 children=1
 │           └── Text scope=7:4..7:10 literal="ordered" children=0
-├── List scope=9:1..10:0 flavor=bullet start=null tight=true children=1
-│   └── ListItem scope=9:1..10:0 checked=true children=1
-│       └── Paragraph scope=9:7..9:10 children=1
-│           └── Text scope=9:7..9:10 literal="task" children=0
-├── CodeBlock scope=11:1..13:3 info="swift title=\"demo\"" language="swift" literal="let x = 1\n" fenced=true closed=true children=0
-├── HTMLBlock scope=15:1..15:22 literal="<section>raw</section>\n" children=0
-├── Paragraph scope=21:1..21:38 children=7
-│   ├── Link scope=21:1..21:9 dest=url("/destination") title="The title" children=1
-│   │   └── Text scope=21:2..21:2 literal="a" children=0
-│   ├── Text scope=21:10..21:10 literal=" " children=0
-│   ├── Link scope=21:11..21:18 dest=url("/destination") title="The title" children=1
-│   │   └── Text scope=21:12..21:15 literal="note" children=0
-│   ├── Text scope=21:19..21:19 literal=" " children=0
-│   ├── Link scope=21:20..21:25 dest=url("/destination") title="The title" children=1
-│   │   └── Text scope=21:21..21:24 literal="note" children=0
-│   ├── Text scope=21:26..21:26 literal=" " children=0
-│   └── Image scope=21:27..21:38 dest=url("/destination") title="The title" children=1
-│       └── Text scope=21:29..21:31 literal="alt" children=0
-└── Footnote scope=19:1..20:0 id="note" children=1
-    └── Paragraph scope=19:10..19:17 children=1
-        └── Text scope=19:10..19:17 literal="Footnote" children=0
+├── List scope=9:1..10:0 flavor=ordered start=1 variant=decimal delimiter=parenthesis(closed=false) tight=true children=1
+│   └── ListItem scope=9:1..10:0 marker=null children=1
+│       └── Paragraph scope=9:4..9:8 children=1
+│           └── Text scope=9:4..9:8 literal="paren" children=0
+├── List scope=11:1..12:0 flavor=bullet start=null variant=null delimiter=null tight=true children=1
+│   └── ListItem scope=11:1..12:0 marker="x" children=1
+│       └── Paragraph scope=11:7..11:10 children=1
+│           └── Text scope=11:7..11:10 literal="task" children=0
+├── CodeBlock scope=13:1..15:3 info="swift title=\"demo\"" language="swift" literal="let x = 1\n" fenced=true closed=true children=0
+├── HTMLBlock scope=17:1..17:22 literal="<section>raw</section>\n" children=0
+├── Paragraph scope=23:1..23:38 children=7
+│   ├── Link scope=23:1..23:9 dest=url("/destination") title="The title" children=1
+│   │   └── Text scope=23:2..23:2 literal="a" children=0
+│   ├── Text scope=23:10..23:10 literal=" " children=0
+│   ├── Link scope=23:11..23:18 dest=url("/destination") title="The title" children=1
+│   │   └── Text scope=23:12..23:15 literal="note" children=0
+│   ├── Text scope=23:19..23:19 literal=" " children=0
+│   ├── Link scope=23:20..23:25 dest=url("/destination") title="The title" children=1
+│   │   └── Text scope=23:21..23:24 literal="note" children=0
+│   ├── Text scope=23:26..23:26 literal=" " children=0
+│   └── Image scope=23:27..23:38 dest=url("/destination") title="The title" children=1
+│       └── Text scope=23:29..23:31 literal="alt" children=0
+└── Footnote scope=21:1..22:0 id="note" children=1
+    └── Paragraph scope=21:10..21:17 children=1
+        └── Text scope=21:10..21:17 literal="Footnote" children=0

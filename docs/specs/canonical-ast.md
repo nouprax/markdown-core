@@ -42,10 +42,15 @@ or semantics.
   layout, highlighting, and generated HTML are excluded.
 - Adjacent `Text` nodes in one content array are merged into one node spanning
   from the first's start to the last's end, and a `Text` node is never empty.
-- Besides `Markup`, exactly the scoped values `Citation`, `Footnote`,
+- Besides `Markup`, exactly the scoped values `Citation`, `Footnote`, `Specimen`,
   `Metadata`, and `MetadataRecord` carry a `scope`, because they are written;
   every other value is located by its owner's scope. Those values arrive with
   the landing items that add them.
+
+The remark oracle records `table-row-width-shape` for table representation:
+mdast retains ragged rows until HTML conversion, whereas this AST completes
+short rows and truncates long rows to the delimiter's column count. The
+comparison normalizes only mdast using each table's own width.
 
 ## Coordinates
 
@@ -180,17 +185,20 @@ one class per branch, and ECMAScript as a discriminated union on `kind`.
 ```text
 BibMode = normal | authorInText | suppressAuthor
 ListFlavor = bullet | ordered
+OrderedListVariant = decimal | alpha(lowercased: Bool) | roman(lowercased: Bool) | default
+OrderedListDelimiter = period | parenthesis(closed: Bool) | default
 TableAlignment = none | left | center | right
 ```
 
-### CitationReferent, Citation, and Footnote
+### CitationReferent, Citation, Footnote, and Specimen
 
 ```text
-CitationReferent = bib(key: String, mode: BibMode) | footnote(id: String)
+CitationReferent = bib(key: String, mode: BibMode) | footnote(id: String) | specimen(id: String)
 
 Citation(referent: CitationReferent, prefix: [Markup], suffix: [Markup], scope)
 
 Footnote(id: String, content: [Markup], scope)
+Specimen(id: String?, start: Int?, content: [Markup], scope)
 ```
 
 `CitationReferent` is a tagged value like `Destination`: no scope, and a
@@ -217,6 +225,17 @@ as value types outside their `Markup` unions, and `CitationReferent` as
 `Destination` is modeled: a Swift enum with associated values, a Kotlin sealed
 interface, and an ECMAScript discriminated union on `kind`.
 
+`Specimen` follows the same definition ownership as `Footnote`: it is reached
+only through `Document.specimens`, after content and footnotes in walks and
+dumps. Every definition remains present, including anonymous and duplicate
+ones. Its nullable `id` retains the authored label; a `specimen(id)` referent
+names the first equal non-null id. Its nullable `start` retains an effective
+explicit counter reset. A consumer derives displayed numbers in definition
+order; neither definitions nor references store that derived state. The C
+facade exposes `markdown_core_specimen` and its typed accessors. The model and
+transports support these values now; [specimen syntax](dialect/specimens.md)
+lands with `P9b`. Ordinary lists have no specimen variant or label field.
+
 ## Node inventory
 
 `content` and other collection fields below own their values. `inline content`
@@ -227,13 +246,13 @@ and returns no document.
 
 | Kind | Fields in canonical order | Nullability and invariants |
 | --- | --- | --- |
-| `Document` | `content: [Markup]`, `footnotes: [Footnote]` | block content; `footnotes` is the document-owned sequence of every footnote definition, ordered by scope start, a later definition of an id after the first, visited after `content`, and never counted among its children |
+| `Document` | `content: [Markup]`, `footnotes: [Footnote]`, `specimens: [Specimen]` | block content; visit content, then footnotes, then specimens; each definition sequence retains every definition in scope-start order and never counts as children |
 | `Callout` | `variant: String?`, `collapsed: Bool?`, `title: [Markup]?`, `content: [Markup]` | every `>` container; `variant` is the authored type as written, or null when the container has no metadata line, and then `collapsed` and `title` are null; `collapsed` is null when no `+` or `-` fold marker was authored, false for `+` and true for `-`; `title` is a node-valued field of inline content, visited before `content` and never counted among its children, and a present title holds at least one node; block content |
 | `Paragraph` | `content: [Markup]` | inline content |
 | `Heading` | `level: Int`, `content: [Markup]` | `level` is 1 through 6; inline content |
 | `ThematicBreak` | none | leaf |
-| `List` | `flavor: ListFlavor`, `start: Int?`, `tight: Bool`, `items: [ListItem]` | `start` is non-null only for ordered lists |
-| `ListItem` | `checked: Bool?`, `content: [Markup]` | `checked == null` means not a task item; block content |
+| `List` | `flavor: ListFlavor`, `start: Int?`, `variant: OrderedListVariant?`, `delimiter: OrderedListDelimiter?`, `tight: Bool`, `items: [ListItem]` | `start`, `variant`, and `delimiter` are non-null only for ordered lists |
+| `ListItem` | `marker: String?`, `content: [Markup]` | `marker == null` means not a task item; block content |
 | `CodeBlock` | `info: String?`, `language: String?`, `literal: String`, `fenced: Bool`, `closed: Bool` | `info` is the info string after escape and character-reference processing, stripped of leading and trailing spaces and tabs, and `null` when that is empty or the block is indented; `language` is the prefix of `info` before the first space or tab; `fenced` is true for a fenced block; `closed` is true if and only if a closing fence was found, and always for an indented block |
 | `HTMLBlock` | `literal: String` | raw HTML is preserved; a block that opens with `<!--` and whose end line holds only whitespace after the first `-->` is a `Comment` |
 | `FormulaBlock` | `literal: String` | a formula block is always standalone; see the note below |
@@ -327,10 +346,10 @@ are visited in canonical field order and arrays retain their stored order:
 complete AST walk as the named `label` field without becoming directive
 content or contributing to a `children` collection.
 
-The scoped values `Citation` and `Footnote` receive value callbacks and the
+The scoped values `Citation`, `Footnote`, and `Specimen` receive value callbacks and the
 walk descends into their markup arrays in declared field order: a `Cite`
 visits each `Citation`, whose `prefix` precedes its `suffix`, and `Document`
-visits `content` before `footnotes`, each `Footnote` descending into its
+visits `content`, `footnotes`, then `specimens`, each definition descending into its
 `content`. Unscoped values receive no callback and are not descended into.
 
 The walking visitor is exhaustive under the same rule as `Visitor`: every
@@ -362,3 +381,14 @@ import alias such as:
 ```kotlin
 import com.nouprax.markdown.core.List as MarkdownList
 ```
+
+The remark oracle's `list-tightness-shape` projection combines a list's
+`spread` with every direct item's `spread`, as mdast-util-to-hast does. Both
+sources of looseness must be false for `List.tight` to be true; nested lists
+are evaluated independently. The native `tight` value is compared unchanged.
+
+`task-marker-completion` compares absent, incomplete, and complete task states
+against boolean-only mdast and cmark-gfm XML. Those oracles cannot attest to
+`x` versus `X`; exact authored markers remain covered by canonical fixtures
+and binding tests. An unchecked marker followed by literal `[x]` still
+exposes the registered upstream task-state defect.

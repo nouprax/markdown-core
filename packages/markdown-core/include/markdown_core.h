@@ -146,6 +146,29 @@ typedef enum markdown_core_list_flavor {
     MARKDOWN_CORE_LIST_FLAVOR_ORDERED = 2
 } markdown_core_list_flavor;
 
+typedef enum markdown_core_ordered_list_variant_kind {
+    MARKDOWN_CORE_ORDERED_LIST_VARIANT_DECIMAL = 1,
+    MARKDOWN_CORE_ORDERED_LIST_VARIANT_ALPHA = 2,
+    MARKDOWN_CORE_ORDERED_LIST_VARIANT_ROMAN = 3,
+    MARKDOWN_CORE_ORDERED_LIST_VARIANT_DEFAULT = 4
+} markdown_core_ordered_list_variant_kind;
+
+typedef struct markdown_core_ordered_list_variant {
+    markdown_core_ordered_list_variant_kind kind;
+    bool lowercased;
+} markdown_core_ordered_list_variant;
+
+typedef enum markdown_core_ordered_list_delimiter_kind {
+    MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PERIOD = 1,
+    MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PARENTHESIS = 2,
+    MARKDOWN_CORE_ORDERED_LIST_DELIMITER_DEFAULT = 3
+} markdown_core_ordered_list_delimiter_kind;
+
+typedef struct markdown_core_ordered_list_delimiter {
+    markdown_core_ordered_list_delimiter_kind kind;
+    bool closed;
+} markdown_core_ordered_list_delimiter;
+
 typedef enum markdown_core_placement_mode {
     MARKDOWN_CORE_PLACEMENT_EMBEDDED = 1,
     MARKDOWN_CORE_PLACEMENT_STANDALONE = 2
@@ -224,9 +247,11 @@ MARKDOWN_CORE_API size_t markdown_core_node_child_count(const markdown_core_node
 MARKDOWN_CORE_API bool markdown_core_node_heading_level(const markdown_core_node *node, int32_t *level);
 MARKDOWN_CORE_API bool markdown_core_node_list_properties(const markdown_core_node *node,
                                                           markdown_core_list_flavor *flavor,
-                                                          markdown_core_optional_i64 *start, bool *tight);
-MARKDOWN_CORE_API bool markdown_core_node_list_item_checked(const markdown_core_node *node,
-                                                            markdown_core_optional_bool *checked);
+                                                          markdown_core_optional_i64 *start,
+                                                          markdown_core_ordered_list_variant *variant,
+                                                          markdown_core_ordered_list_delimiter *delimiter, bool *tight);
+MARKDOWN_CORE_API bool markdown_core_node_list_item_marker(const markdown_core_node *node,
+                                                           markdown_core_optional_string *marker);
 /** `info` and `language` are OPTIONAL: a fence with nothing but whitespace
  * after it wrote no info string, and an indented block has no fence to write
  * one on. `language` is the info string's first word and is present exactly
@@ -337,6 +362,7 @@ MARKDOWN_CORE_API const markdown_core_resource *markdown_core_node_resource(cons
  * valid only while the document is. */
 typedef struct markdown_core_citation markdown_core_citation;
 typedef struct markdown_core_footnote markdown_core_footnote;
+typedef struct markdown_core_specimen markdown_core_specimen;
 
 /** How a bibliographic citation is to be rendered (M4): `[@key]` is normal,
  * `@key` in running text names the author in text, and `-@key` suppresses
@@ -349,12 +375,13 @@ typedef enum markdown_core_bib_mode {
 
 typedef enum markdown_core_referent_kind {
     MARKDOWN_CORE_REFERENT_BIB = 1,
-    MARKDOWN_CORE_REFERENT_FOOTNOTE = 2
+    MARKDOWN_CORE_REFERENT_FOOTNOTE = 2,
+    MARKDOWN_CORE_REFERENT_SPECIMEN = 3
 } markdown_core_referent_kind;
 
 /** The tagged `CitationReferent` value (M4): a value, not a node, so it has
  * no scope, and a branch's fields exist only in that branch. `BIB` fills
- * `key` and `mode` and zeroes `id`; `FOOTNOTE` fills `id`, the `Footnote.id`
+ * `key` and `mode` and zeroes `id`; `FOOTNOTE` and `SPECIMEN` fill `id`, the definition id
  * the item names, and zeroes `key` and `mode`. Every referent is the
  * `FOOTNOTE` branch until `P7`. */
 typedef struct markdown_core_referent {
@@ -397,6 +424,18 @@ MARKDOWN_CORE_API bool markdown_core_footnote_id(const markdown_core_footnote *f
 /** The first node of the footnote's block content, the rest following by
  * `markdown_core_node_get_next_sibling`, or NULL when the content is empty. */
 MARKDOWN_CORE_API const markdown_core_node *markdown_core_footnote_content(const markdown_core_footnote *footnote);
+
+/** Specimens are document-owned scoped citation definitions, visited after
+ * footnotes and never counted as content children. The syntax first lands in
+ * P9b. An anonymous definition has no id, and an absent start means no
+ * explicit counter reset. Display numbers are not stored in the AST. */
+MARKDOWN_CORE_API const markdown_core_specimen *markdown_core_node_document_specimens(const markdown_core_node *node);
+MARKDOWN_CORE_API const markdown_core_specimen *markdown_core_specimen_next(const markdown_core_specimen *specimen);
+MARKDOWN_CORE_API markdown_core_scope markdown_core_specimen_scope(const markdown_core_specimen *specimen);
+MARKDOWN_CORE_API bool markdown_core_specimen_properties(const markdown_core_specimen *specimen,
+                                                         markdown_core_optional_string *id,
+                                                         markdown_core_optional_i64 *start);
+MARKDOWN_CORE_API const markdown_core_node *markdown_core_specimen_content(const markdown_core_specimen *specimen);
 
 /** Allocates the canonical file-tree dump. Free it with markdown_core_dump_free. */
 MARKDOWN_CORE_API bool markdown_core_document_dump(const markdown_core_document *document, uint8_t **output,

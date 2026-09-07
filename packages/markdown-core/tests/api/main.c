@@ -1459,42 +1459,43 @@ static void source_pos(test_batch_runner *runner) {
                                    "> 2. Yes, okay.\n"
                                    ">    ![ok](hi \"yes\")\n";
 
-    test_facade_dump(runner, markdown,
-                     "Document scope=1:1..10:20 children=3\n"
-                     "├── Heading scope=1:1..1:13 level=1 children=3\n"
-                     "│   ├── Text scope=1:3..1:5 literal=\"Hi \" children=0\n"
-                     "│   ├── Emphasis scope=1:6..1:12 children=1\n"
-                     "│   │   └── Text scope=1:7..1:11 literal=\"there\" children=0\n"
-                     "│   └── Text scope=1:13..1:13 literal=\".\" children=0\n"
-                     "├── Paragraph scope=3:1..4:42 children=8\n"
-                     "│   ├── Text scope=3:1..3:14 literal=\"Hello “ \" children=0\n"
-                     "│   ├── Link scope=3:15..3:37 dest=url(\"http://www.google.com\") "
-                     "title=null children=1\n"
-                     "│   │   └── Text scope=3:16..3:36 literal=\"http://www.google.com\" "
-                     "children=0\n"
-                     "│   ├── SoftBreak scope=3:38..3:38 children=0\n"
-                     "│   ├── Text scope=4:1..4:6 literal=\"there \" children=0\n"
-                     "│   ├── Code scope=4:7..4:10 literal=\"hi\" children=0\n"
-                     "│   ├── Text scope=4:11..4:14 literal=\" -- \" children=0\n"
-                     "│   ├── Link scope=4:15..4:41 dest=url(\"www.google.com\") title=\"ok\" "
-                     "children=1\n"
-                     "│   │   └── Text scope=4:16..4:19 literal=\"okay\" children=0\n"
-                     "│   └── Text scope=4:42..4:42 literal=\".\" children=0\n"
-                     "└── Callout scope=6:1..10:20 variant=null collapsed=null children=1\n"
-                     "    └── List scope=6:3..10:20 flavor=ordered start=1 tight=false children=2\n"
-                     "        ├── ListItem scope=6:3..8:1 checked=null children=1\n"
-                     "        │   └── Paragraph scope=6:6..7:10 children=3\n"
-                     "        │       ├── Text scope=6:6..6:10 literal=\"Okay.\" children=0\n"
-                     "        │       ├── SoftBreak scope=6:11..6:11 children=0\n"
-                     "        │       └── Text scope=7:6..7:10 literal=\"Sure.\" children=0\n"
-                     "        └── ListItem scope=9:3..10:20 checked=null children=1\n"
-                     "            └── Paragraph scope=9:6..10:20 children=3\n"
-                     "                ├── Text scope=9:6..9:15 literal=\"Yes, okay.\" children=0\n"
-                     "                ├── SoftBreak scope=9:16..9:16 children=0\n"
-                     "                └── Image scope=10:6..10:20 dest=url(\"hi\") title=\"yes\" "
-                     "children=1\n"
-                     "                    └── Text scope=10:8..10:9 literal=\"ok\" children=0\n",
-                     "scopes are as expected");
+    test_facade_dump(
+        runner, markdown,
+        "Document scope=1:1..10:20 children=3\n"
+        "├── Heading scope=1:1..1:13 level=1 children=3\n"
+        "│   ├── Text scope=1:3..1:5 literal=\"Hi \" children=0\n"
+        "│   ├── Emphasis scope=1:6..1:12 children=1\n"
+        "│   │   └── Text scope=1:7..1:11 literal=\"there\" children=0\n"
+        "│   └── Text scope=1:13..1:13 literal=\".\" children=0\n"
+        "├── Paragraph scope=3:1..4:42 children=8\n"
+        "│   ├── Text scope=3:1..3:14 literal=\"Hello “ \" children=0\n"
+        "│   ├── Link scope=3:15..3:37 dest=url(\"http://www.google.com\") "
+        "title=null children=1\n"
+        "│   │   └── Text scope=3:16..3:36 literal=\"http://www.google.com\" "
+        "children=0\n"
+        "│   ├── SoftBreak scope=3:38..3:38 children=0\n"
+        "│   ├── Text scope=4:1..4:6 literal=\"there \" children=0\n"
+        "│   ├── Code scope=4:7..4:10 literal=\"hi\" children=0\n"
+        "│   ├── Text scope=4:11..4:14 literal=\" -- \" children=0\n"
+        "│   ├── Link scope=4:15..4:41 dest=url(\"www.google.com\") title=\"ok\" "
+        "children=1\n"
+        "│   │   └── Text scope=4:16..4:19 literal=\"okay\" children=0\n"
+        "│   └── Text scope=4:42..4:42 literal=\".\" children=0\n"
+        "└── Callout scope=6:1..10:20 variant=null collapsed=null children=1\n"
+        "    └── List scope=6:3..10:20 flavor=ordered start=1 variant=decimal delimiter=period tight=false children=2\n"
+        "        ├── ListItem scope=6:3..8:1 marker=null children=1\n"
+        "        │   └── Paragraph scope=6:6..7:10 children=3\n"
+        "        │       ├── Text scope=6:6..6:10 literal=\"Okay.\" children=0\n"
+        "        │       ├── SoftBreak scope=6:11..6:11 children=0\n"
+        "        │       └── Text scope=7:6..7:10 literal=\"Sure.\" children=0\n"
+        "        └── ListItem scope=9:3..10:20 marker=null children=1\n"
+        "            └── Paragraph scope=9:6..10:20 children=3\n"
+        "                ├── Text scope=9:6..9:15 literal=\"Yes, okay.\" children=0\n"
+        "                ├── SoftBreak scope=9:16..9:16 children=0\n"
+        "                └── Image scope=10:6..10:20 dest=url(\"hi\") title=\"yes\" "
+        "children=1\n"
+        "                    └── Text scope=10:8..10:9 literal=\"ok\" children=0\n",
+        "scopes are as expected");
 }
 
 static void source_pos_inlines(test_batch_runner *runner) {
@@ -1673,6 +1674,129 @@ static void link_resource_lifecycle(test_batch_runner *runner) {
     markdown_core_node_free(doc);
 }
 
+static void *marker_to_free;
+static int marker_free_count;
+static void marker_test_free(void *pointer) {
+    if (pointer == marker_to_free && pointer != NULL) {
+        marker_free_count++;
+        marker_to_free = NULL;
+    }
+    free(pointer);
+}
+static markdown_core_mem marker_test_mem = {calloc, realloc, marker_test_free};
+
+static void task_marker_ownership(test_batch_runner *runner) {
+    char source[] = "- [ ] open\n- [X] done\n- ordinary\n";
+    markdown_core_document *document = markdown_core_document_parse((const uint8_t *)source, strlen(source), NULL);
+    OK(runner, document != NULL, "task marker ownership document parses");
+    if (!document) {
+        return;
+    }
+    memset(source, '?', sizeof(source) - 1);
+    markdown_core_node *item = markdown_core_node_first_child(markdown_core_node_first_child(document->root));
+    markdown_core_optional_string marker;
+    markdown_core_node_list_item_marker(item, &marker);
+    OK(runner, marker.has_value && marker.value.length == 1 && marker.value.data[0] == ' ',
+       "incomplete marker survives input reuse");
+    OK(runner, item->as.list.task_marker.value.alloc, "parsed task owns its marker bytes");
+    markdown_core_node_list_item_marker(item->next, &marker);
+    OK(runner, marker.has_value && marker.value.length == 1 && marker.value.data[0] == 'X',
+       "completed marker retains authored case");
+    markdown_core_node_list_item_marker(item->next->next, &marker);
+    OK(runner, !marker.has_value && marker.value.data == NULL && marker.value.length == 0,
+       "ordinary item has an absent marker");
+
+    /* O5's grammar is separate; the storage and facade already preserve a
+     * complete UTF-8 scalar without interpreting it as a completion bit. */
+    char custom[] = "🚀";
+    OK(runner, markdown_core_chunk_set_cstr(markdown_core_node_mem(item), &item->as.list.task_marker.value, custom),
+       "owned marker accepts UTF-8 bytes");
+    memset(custom, '?', sizeof(custom) - 1);
+    markdown_core_node_list_item_marker(item, &marker);
+    OK(runner, marker.has_value && marker.value.length == 4 && memcmp(marker.value.data, "🚀", 4) == 0,
+       "facade preserves the complete owned UTF-8 marker");
+    uint8_t *dump = NULL;
+    size_t length = 0;
+    OK(runner, markdown_core_document_dump(document, &dump, &length, NULL), "UTF-8 marker document dumps");
+    OK(runner, dump && strstr((const char *)dump, "marker=\"🚀\""), "dump preserves UTF-8 marker spelling");
+    markdown_core_dump_free(dump);
+    markdown_core_document_free(document);
+
+    item = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_LIST_ITEM, &marker_test_mem);
+    markdown_core_chunk bytes = markdown_core_chunk_literal("🚀");
+    OK(runner, markdown_core_chunk_to_cstr(&marker_test_mem, &bytes) != NULL, "custom marker allocates");
+    item->as.list.task_marker = markdown_core_optional_chunk_present(bytes);
+    marker_to_free = bytes.data;
+    marker_free_count = 0;
+    markdown_core_node_free(item);
+    INT_EQ(runner, marker_free_count, 1, "destroying an item frees its owned marker exactly once");
+}
+
+/* Specimen syntax lands with P9b. Build its reserved native values directly
+ * to test the shared document ownership and failure boundary independently. */
+static void specimen_values(test_batch_runner *runner) {
+    markdown_core_node *root = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_DOCUMENT, &marker_test_mem);
+    markdown_core_node *first = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_SPECIMEN, &marker_test_mem);
+    markdown_core_node *anonymous = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_SPECIMEN, &marker_test_mem);
+    markdown_core_node *body = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_PARAGRAPH, &marker_test_mem);
+    markdown_core_node *footnote = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_FOOTNOTE, &marker_test_mem);
+    markdown_core_chunk bytes = markdown_core_chunk_literal("étude");
+    markdown_core_optional_string id;
+    markdown_core_optional_i64 start;
+    OK(runner, markdown_core_chunk_to_cstr(&marker_test_mem, &bytes) != NULL, "specimen id allocates");
+    first->as.specimen.id = markdown_core_optional_chunk_present(bytes);
+    first->as.specimen.start = 5;
+    first->as.specimen.has_start = true;
+    first->next = anonymous;
+    anonymous->prev = first;
+    root->as.document.specimens = first;
+    root->as.document.footnotes = footnote;
+    OK(runner, markdown_core_node_append_child(first, body), "specimen owns block content");
+    const markdown_core_specimen *value = markdown_core_node_document_specimens(root);
+    OK(runner, markdown_core_specimen_properties(value, &id, &start), "specimen answers properties");
+    OK(runner, id.has_value && id.value.length == 6 && memcmp(id.value.data, "étude", 6) == 0,
+       "specimen label retains owned UTF-8 bytes");
+    OK(runner, start.has_value && start.value == 5, "specimen retains effective reset");
+    OK(runner, markdown_core_specimen_content(value) == body, "specimen retains its content relation");
+    value = markdown_core_specimen_next(value);
+    OK(runner, value && markdown_core_specimen_properties(value, &id, &start), "anonymous definition remains present");
+    OK(runner, !id.has_value && !start.has_value, "anonymous label and absent reset remain absent");
+    INT_EQ(runner, markdown_core_node_child_count(root), 0, "definitions are not document children");
+    OK(runner,
+       !markdown_core_specimen_properties(NULL, &id, &start) &&
+           !markdown_core_specimen_properties(value, NULL, &start) &&
+           !markdown_core_specimen_properties(value, &id, NULL) && markdown_core_node_document_specimens(body) == NULL,
+       "typed accessors reject missing values and incorrect owners");
+    markdown_core_node *citation = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_CITATION, &marker_test_mem);
+    citation->as.citation.referent = MARKDOWN_CORE_NODE_REFERENT_SPECIMEN;
+    OK(runner, markdown_core_chunk_set_cstr(&marker_test_mem, &citation->as.citation.value, "étude"),
+       "specimen reference owns its label");
+    markdown_core_referent referent;
+    OK(runner,
+       markdown_core_citation_referent((const markdown_core_citation *)citation, &referent) &&
+           referent.kind == MARKDOWN_CORE_REFERENT_SPECIMEN && referent.id.length == 6 && referent.key.data == NULL &&
+           referent.mode == 0,
+       "specimen reference uses only its own branch fields");
+    citation->as.citation.referent = 99;
+    OK(runner, !markdown_core_citation_referent((const markdown_core_citation *)citation, &referent),
+       "unknown referent cannot masquerade as a specimen");
+    markdown_core_node_free(citation);
+    markdown_core_document document = {0};
+    document.root = root;
+    uint8_t *dump = NULL;
+    size_t length = 0;
+    OK(runner, markdown_core_document_dump(&document, &dump, &length, NULL), "specimen document dumps");
+    OK(runner,
+       dump && strstr((const char *)dump, "id=\"étude\" start=5 children=1") &&
+           strstr((const char *)dump, "id=null start=null children=0"),
+       "dump carries only authored definition facts");
+    markdown_core_dump_free(dump);
+    marker_to_free = bytes.data;
+    marker_free_count = 0;
+    markdown_core_node_free(root);
+    INT_EQ(runner, marker_free_count, 1, "document frees its owned specimen label exactly once");
+}
+
 static void set_type_keeps_extension_data_beside_the_arm(test_batch_runner *runner) {
     /* An extension's per-node data lives beside the type-specific arm, not in
      * it. Converting a formula, whose extension owns such data, into a link
@@ -1790,6 +1914,8 @@ int main(void) {
     source_pos_inlines(runner);
     ref_source_pos(runner);
     link_resource_lifecycle(runner);
+    task_marker_ownership(runner);
+    specimen_values(runner);
     set_type_keeps_extension_data_beside_the_arm(runner);
     citation_and_footnote_values(runner);
     autolink_source_pos(runner);

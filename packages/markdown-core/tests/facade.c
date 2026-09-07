@@ -397,7 +397,7 @@ static void check_dialect_is_whole(void) {
         {"| a |\n| --- |\n| b |\n", "Table scope="},
         {"~~x~~\n", "Strikethrough scope="},
         {"www.example.com\n", "Link scope="},
-        {"- [x] task\n", "checked=true"},
+        {"- [x] task\n", "marker=\"x\""},
         {"ref[^a]\n\n[^a]: note\n", "Cite scope="},
         {"$x$\n", "Formula scope="},
         {":badge[label]\n", "Directive scope="},

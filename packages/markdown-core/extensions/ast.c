@@ -312,25 +312,22 @@ bool markdown_core_node_heading_level(const markdown_core_node *node, int32_t *l
 }
 
 bool markdown_core_node_list_properties(const markdown_core_node *node, markdown_core_list_flavor *flavor,
-                                        markdown_core_optional_i64 *start, bool *tight) {
-    if (!node || node->type != MARKDOWN_CORE_NODE_LIST || !flavor || !start || !tight) {
+                                        markdown_core_optional_i64 *start, markdown_core_ordered_list_variant *variant,
+                                        markdown_core_ordered_list_delimiter *delimiter, bool *tight) {
+    if (!node || node->type != MARKDOWN_CORE_NODE_LIST || !flavor || !start || !variant || !delimiter || !tight) {
         return false;
     }
     *flavor = node->as.list.list_type == MARKDOWN_CORE_ORDERED_LIST ? MARKDOWN_CORE_LIST_FLAVOR_ORDERED
                                                                     : MARKDOWN_CORE_LIST_FLAVOR_BULLET;
     start->has_value = *flavor == MARKDOWN_CORE_LIST_FLAVOR_ORDERED;
     start->value = node->as.list.start;
+    variant->kind = MARKDOWN_CORE_ORDERED_LIST_VARIANT_DECIMAL;
+    variant->lowercased = false;
+    delimiter->kind = node->as.list.delimiter == MARKDOWN_CORE_PAREN_DELIM
+                          ? MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PARENTHESIS
+                          : MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PERIOD;
+    delimiter->closed = false;
     *tight = node->as.list.tight;
-    return true;
-}
-
-bool markdown_core_node_list_item_checked(const markdown_core_node *node, markdown_core_optional_bool *checked) {
-    if (!node || node->type != MARKDOWN_CORE_NODE_LIST_ITEM || !checked) {
-        return false;
-    }
-    checked->has_value =
-        node->extension && strcmp(markdown_core_node_get_type_string((markdown_core_node *)node), "tasklist") == 0;
-    checked->value = checked->has_value && node->as.list.checked;
     return true;
 }
 
@@ -346,6 +343,14 @@ static void string_from_chunk(markdown_core_string *out, const markdown_core_chu
 static void optional_string_from_chunk(markdown_core_optional_string *out, const markdown_core_optional_chunk *chunk) {
     out->has_value = chunk->has_value;
     string_from_chunk(&out->value, &chunk->value);
+}
+
+bool markdown_core_node_list_item_marker(const markdown_core_node *node, markdown_core_optional_string *marker) {
+    if (!node || node->type != MARKDOWN_CORE_NODE_LIST_ITEM || !marker) {
+        return false;
+    }
+    optional_string_from_chunk(marker, &node->as.list.task_marker);
+    return true;
 }
 
 bool markdown_core_node_code_block_properties(const markdown_core_node *node, markdown_core_optional_string *info,
@@ -605,9 +610,14 @@ bool markdown_core_citation_referent(const markdown_core_citation *citation, mar
         referent->kind = MARKDOWN_CORE_REFERENT_BIB;
         string_from_chunk(&referent->key, &node->as.citation.value);
         referent->mode = (markdown_core_bib_mode)node->as.citation.mode;
-    } else {
-        referent->kind = MARKDOWN_CORE_REFERENT_FOOTNOTE;
+    } else if (node->as.citation.referent == MARKDOWN_CORE_NODE_REFERENT_FOOTNOTE ||
+               node->as.citation.referent == MARKDOWN_CORE_NODE_REFERENT_SPECIMEN) {
+        referent->kind = node->as.citation.referent == MARKDOWN_CORE_NODE_REFERENT_FOOTNOTE
+                             ? MARKDOWN_CORE_REFERENT_FOOTNOTE
+                             : MARKDOWN_CORE_REFERENT_SPECIMEN;
         string_from_chunk(&referent->id, &node->as.citation.value);
+    } else {
+        return false;
     }
     return true;
 }
@@ -648,6 +658,43 @@ bool markdown_core_footnote_id(const markdown_core_footnote *footnote, markdown_
 
 const markdown_core_node *markdown_core_footnote_content(const markdown_core_footnote *footnote) {
     const markdown_core_node *node = footnote_node(footnote);
+    return node ? node->first_child : NULL;
+}
+
+static const markdown_core_node *specimen_node(const markdown_core_specimen *specimen) {
+    const markdown_core_node *node = (const markdown_core_node *)specimen;
+    return node && node->type == MARKDOWN_CORE_NODE_SPECIMEN ? node : NULL;
+}
+
+const markdown_core_specimen *markdown_core_node_document_specimens(const markdown_core_node *node) {
+    return node && node->type == MARKDOWN_CORE_NODE_DOCUMENT
+               ? (const markdown_core_specimen *)node->as.document.specimens
+               : NULL;
+}
+
+const markdown_core_specimen *markdown_core_specimen_next(const markdown_core_specimen *specimen) {
+    const markdown_core_node *node = specimen_node(specimen);
+    return node ? (const markdown_core_specimen *)node->next : NULL;
+}
+
+markdown_core_scope markdown_core_specimen_scope(const markdown_core_specimen *specimen) {
+    return markdown_core_node_scope(specimen_node(specimen));
+}
+
+bool markdown_core_specimen_properties(const markdown_core_specimen *specimen, markdown_core_optional_string *id,
+                                       markdown_core_optional_i64 *start) {
+    const markdown_core_node *node = specimen_node(specimen);
+    if (!node || !id || !start) {
+        return false;
+    }
+    optional_string_from_chunk(id, &node->as.specimen.id);
+    start->has_value = node->as.specimen.has_start;
+    start->value = node->as.specimen.start;
+    return true;
+}
+
+const markdown_core_node *markdown_core_specimen_content(const markdown_core_specimen *specimen) {
+    const markdown_core_node *node = specimen_node(specimen);
     return node ? node->first_child : NULL;
 }
 
@@ -822,7 +869,9 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
     markdown_core_string a = {NULL, 0}, b = {NULL, 0}, c = {NULL, 0};
     markdown_core_optional_string oa = {false, {NULL, 0}}, ob = {false, {NULL, 0}};
     markdown_core_optional_i64 start;
-    markdown_core_optional_bool checked, collapsed;
+    markdown_core_optional_bool collapsed;
+    markdown_core_ordered_list_variant variant;
+    markdown_core_ordered_list_delimiter delimiter;
     markdown_core_list_flavor flavor;
     markdown_core_placement_mode mode;
     markdown_core_destination destination;
@@ -843,7 +892,7 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
         buffer_i64(buffer, level);
         break;
     case MARKDOWN_CORE_KIND_LIST:
-        markdown_core_node_list_properties(node, &flavor, &start, &x);
+        markdown_core_node_list_properties(node, &flavor, &start, &variant, &delimiter, &x);
         buffer_cstr(buffer, " flavor=");
         buffer_cstr(buffer, flavor == MARKDOWN_CORE_LIST_FLAVOR_ORDERED ? "ordered" : "bullet");
         buffer_cstr(buffer, " start=");
@@ -852,13 +901,39 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
         } else {
             buffer_cstr(buffer, "null");
         }
+        buffer_cstr(buffer, " variant=");
+        if (flavor == MARKDOWN_CORE_LIST_FLAVOR_BULLET) {
+            buffer_cstr(buffer, "null");
+        } else if (variant.kind == MARKDOWN_CORE_ORDERED_LIST_VARIANT_ALPHA ||
+                   variant.kind == MARKDOWN_CORE_ORDERED_LIST_VARIANT_ROMAN) {
+            buffer_cstr(buffer, variant.kind == MARKDOWN_CORE_ORDERED_LIST_VARIANT_ALPHA ? "alpha(lowercased"
+                                                                                         : "roman(lowercased");
+            buffer_cstr(buffer, variant.lowercased ? "=true)" : "=false)");
+        } else if (variant.kind == MARKDOWN_CORE_ORDERED_LIST_VARIANT_DEFAULT) {
+            buffer_cstr(buffer, "default");
+        } else {
+            buffer_cstr(buffer, "decimal");
+        }
+        buffer_cstr(buffer, " delimiter=");
+        if (flavor == MARKDOWN_CORE_LIST_FLAVOR_BULLET) {
+            buffer_cstr(buffer, "null");
+        } else {
+            if (delimiter.kind == MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PARENTHESIS) {
+                buffer_cstr(buffer, "parenthesis(closed");
+                buffer_cstr(buffer, delimiter.closed ? "=true)" : "=false)");
+            } else if (delimiter.kind == MARKDOWN_CORE_ORDERED_LIST_DELIMITER_DEFAULT) {
+                buffer_cstr(buffer, "default");
+            } else {
+                buffer_cstr(buffer, "period");
+            }
+        }
         buffer_cstr(buffer, " tight=");
         buffer_cstr(buffer, x ? "true" : "false");
         break;
     case MARKDOWN_CORE_KIND_LIST_ITEM:
-        markdown_core_node_list_item_checked(node, &checked);
-        buffer_cstr(buffer, " checked=");
-        buffer_optional_bool(buffer, checked);
+        markdown_core_node_list_item_marker(node, &oa);
+        buffer_cstr(buffer, " marker=");
+        buffer_optional_string(buffer, oa);
         break;
     case MARKDOWN_CORE_KIND_CODE_BLOCK:
         markdown_core_node_code_block_properties(node, &oa, &ob, &c, &x, &y);
@@ -1084,7 +1159,7 @@ static void buffer_referent(dump_buffer *buffer, markdown_core_referent referent
         buffer_cstr(buffer, bib_mode_name(referent.mode));
         buffer_cstr(buffer, ")");
     } else {
-        buffer_cstr(buffer, "footnote(id=");
+        buffer_cstr(buffer, referent.kind == MARKDOWN_CORE_REFERENT_SPECIMEN ? "specimen(id=" : "footnote(id=");
         buffer_json_string(buffer, referent.id);
         buffer_cstr(buffer, ")");
     }
@@ -1133,28 +1208,47 @@ static void dump_cite_nodes(dump_buffer *buffer, const markdown_core_node *node,
  * its block content one level below. The document's own `children` counts
  * the content alone. */
 static void dump_document_nodes(dump_buffer *buffer, const markdown_core_node *node, size_t depth, size_t child_count) {
-    const markdown_core_node *footnote = node->as.document.footnotes;
-    size_t remaining = child_count + chain_length(footnote);
+    const markdown_core_node *definitions[] = {node->as.document.footnotes, node->as.document.specimens};
+    size_t remaining = child_count;
+    for (size_t family = 0; family < 2; family++) {
+        remaining += chain_length(definitions[family]);
+    }
     dump_children(buffer, node, depth, remaining);
     remaining -= child_count;
-    for (; footnote; footnote = footnote->next) {
-        size_t content = markdown_core_node_child_count(footnote);
-        markdown_core_string id;
-        remaining--;
-        if (!ensure_more(buffer, depth)) {
-            return;
+    for (size_t family = 0; family < 2; family++) {
+        for (const markdown_core_node *definition = definitions[family]; definition; definition = definition->next) {
+            size_t content = markdown_core_node_child_count(definition);
+            remaining--;
+            if (!ensure_more(buffer, depth)) {
+                return;
+            }
+            buffer->more[depth] = remaining != 0;
+            dump_prefix(buffer, depth + 1);
+            buffer_cstr(buffer,
+                        definition->type == MARKDOWN_CORE_NODE_SPECIMEN ? "Specimen scope=" : "Footnote scope=");
+            buffer_scope(buffer, markdown_core_node_scope(definition));
+            buffer_cstr(buffer, " id=");
+            if (definition->type == MARKDOWN_CORE_NODE_SPECIMEN) {
+                markdown_core_optional_string id;
+                markdown_core_optional_i64 start;
+                markdown_core_specimen_properties((const markdown_core_specimen *)definition, &id, &start);
+                buffer_optional_string(buffer, id);
+                buffer_cstr(buffer, " start=");
+                if (start.has_value) {
+                    buffer_i64(buffer, start.value);
+                } else {
+                    buffer_cstr(buffer, "null");
+                }
+            } else {
+                markdown_core_string id;
+                markdown_core_footnote_id((const markdown_core_footnote *)definition, &id);
+                buffer_json_string(buffer, id);
+            }
+            buffer_cstr(buffer, " children=");
+            buffer_i64(buffer, (int64_t)content);
+            buffer_cstr(buffer, "\n");
+            dump_children(buffer, definition, depth + 1, content);
         }
-        buffer->more[depth] = remaining != 0;
-        dump_prefix(buffer, depth + 1);
-        buffer_cstr(buffer, "Footnote scope=");
-        buffer_scope(buffer, markdown_core_node_scope(footnote));
-        markdown_core_footnote_id((const markdown_core_footnote *)footnote, &id);
-        buffer_cstr(buffer, " id=");
-        buffer_json_string(buffer, id);
-        buffer_cstr(buffer, " children=");
-        buffer_i64(buffer, (int64_t)content);
-        buffer_cstr(buffer, "\n");
-        dump_children(buffer, footnote, depth + 1, content);
     }
 }
 

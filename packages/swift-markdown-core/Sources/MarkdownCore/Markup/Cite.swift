@@ -19,6 +19,8 @@ public enum CitationReferent: Sendable, Hashable {
     /// A footnote named by id: the normalized label without the caret, as
     /// ``Footnote/id`` states it.
     case footnote(id: String)
+    /// A labeled specimen definition owned by the document; first produced by P9b.
+    case specimen(id: String)
 }
 
 /// One item of a ``Cite``: a scoped value the cite owns, outside the markup
@@ -74,8 +76,12 @@ extension CitationReferent {
         switch referent.kind {
         case MARKDOWN_CORE_REFERENT_BIB:
             self = .bib(key: referent.key.requiredString, mode: BibMode(from: referent.mode))
-        default:
+        case MARKDOWN_CORE_REFERENT_FOOTNOTE:
             self = .footnote(id: referent.id.requiredString)
+        case MARKDOWN_CORE_REFERENT_SPECIMEN:
+            self = .specimen(id: referent.id.requiredString)
+        default:
+            preconditionFailure("Unsupported native citation referent")
         }
     }
 }

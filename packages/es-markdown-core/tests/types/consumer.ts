@@ -6,6 +6,7 @@ import {
     type Citation,
     type CitationReferent,
     type Footnote,
+    type Specimen,
     type Heading,
     type Markup,
     type Table,
@@ -68,6 +69,10 @@ const walkingVisitor: WalkingVisitor = {
     visitCitation(value: Citation, phase: WalkPhase) {
         const referent: CitationReferent = value.referent;
         void referent;
+        void phase;
+    },
+    visitSpecimen(value: Specimen, phase: WalkPhase) {
+        void value;
         void phase;
     },
     visitFootnote(value: Footnote, phase: WalkPhase) {

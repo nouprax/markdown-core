@@ -6,6 +6,8 @@
 
 3. ordered
 
+1) paren
+
 - [x] task
 
 ``` swift title="demo"

@@ -9,6 +9,7 @@ export type { DirectiveBlock } from "./model/directive-block.js";
 export type { DirectiveLabel } from "./model/directive-label.js";
 export type { Directive } from "./model/directive.js";
 export type { Emphasis } from "./model/emphasis.js";
+export type { Specimen } from "./model/specimen.js";
 export type { Footnote } from "./model/footnote.js";
 export type { FormulaBlock } from "./model/formula-block.js";
 export type { Formula } from "./model/formula.js";
@@ -36,6 +37,8 @@ export type {
     CitationReferent,
     Destination,
     ListFlavor,
+    OrderedListDelimiter,
+    OrderedListVariant,
     PlacementMode,
     Position,
     Scope,

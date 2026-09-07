@@ -69,3 +69,9 @@ scripts/init-environment.sh --install oracle-cmark-gfm # build the pinned oracle
 pnpm build:c
 pnpm check:gfm-parity                                  # add -- --verbose for every diff
 ```
+
+`task-marker-completion` compares absent, incomplete, and complete task states
+against boolean-only mdast and cmark-gfm XML. Those oracles cannot attest to
+`x` versus `X`; exact authored markers remain covered by canonical fixtures
+and binding tests. An unchecked marker followed by literal `[x]` still
+exposes the registered upstream task-state defect.

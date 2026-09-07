@@ -48,7 +48,7 @@ content-bearing kind, `items.count` for `List`, `cells.count` for `TableRow`,
 one for `header` plus `rows.count` for `Table`, `citations.count` for `Cite`,
 and zero for every leaf and for `Directive`. A directive's optional `label`
 is a separate Markup-valued field and is not included in that number, and
-neither is `Document.footnotes`.
+neither are `Document.footnotes` and `Document.specimens`.
 
 The dump deliberately carries no property or array-index edge labels. Each
 node kind's dump function decides which structural children and Markup-valued
@@ -115,8 +115,8 @@ that the dump represents as nested descendants.
 | `Document`, `Paragraph`, `ThematicBreak`, `TableCell`, `DirectiveLabel`, `SoftBreak`, `LineBreak`, `Emphasis`, `Strong`, `Strikethrough`, `Cite` | none |
 | `Callout` | `variant`, `collapsed` |
 | `Heading` | `level` |
-| `List` | `flavor`, `start`, `tight` |
-| `ListItem` | `checked` |
+| `List` | `flavor`, `start`, `variant`, `delimiter`, `tight` |
+| `ListItem` | `marker` |
 | `CodeBlock` | `info`, `language`, `literal`, `fenced`, `closed` |
 | `HTMLBlock` | `literal` |
 | `FormulaBlock` | `literal` |
@@ -203,7 +203,7 @@ item, so that the grammar has one answer before the first of them arrives:
   column prints as `columns=[left:0.25,none:null]`.
 - Besides its structural children, a node prints these nested lines with the
   same connectors, in this order: `Document` prints its `Metadata` value when
-  non-null, then the content, then its footnotes as today; `Table` prints its
+  non-null, then the content, then its footnotes and specimens as today; `Table` prints its
   `TableCaption` when non-null, then the `TableHead`, `TableBody`, and
   `TableFoot` groups holding the rows; `Definition` prints a `DefinitionTerm`
   group, then one `DefinitionBody` group per body.
@@ -218,3 +218,10 @@ item, so that the grammar has one answer before the first of them arrives:
 - Every scalar and enum keeps the encodings above; nothing is omitted because
   it is null, empty, or default, and an absent optional nested value prints
   no line.
+
+A document prints its specimen definitions after its footnotes, each as
+`Specimen scope=L:C..L:C id=<string or null> start=<integer or null> children=N`,
+followed by its block content. Definitions are scoped values; they never
+increase the document's `children` count. A specimen reference uses a `Cite`
+with a `Citation` whose referent prints `specimen(id="...")` and whose affix
+groups are empty. No resolved display number is printed.

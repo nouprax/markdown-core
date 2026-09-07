@@ -86,7 +86,7 @@ does not define Pandoc `@key` syntax; the citations module does.
       `anchor` field on every Markup kind; and `marker` on `ListItem`. Only the
       addressable kinds named by the block-identifier grammar receive a non-null
       anchor from that source rule.
-- [ ] Replace stored `checked: Bool?` with the authored `marker: String?`.
+- [x] Replace stored `checked: Bool?` with the authored `marker: String?`.
       Keep source compatibility only through a derived language convenience
       property when that does not duplicate wire state. Treat the public shape
       change as a major-version change rather than preserving two authorities.

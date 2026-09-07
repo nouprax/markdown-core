@@ -2,6 +2,9 @@ import Foundation
 import MarkdownCore
 import Testing
 
+// Testing macros refer to Comment without a module qualifier.
+private typealias Comment = Testing.Comment
+
 @Suite("conformance") struct ConformanceSuite {
     @Test("public node kinds are emitted by the per-node Swift dumper")
     func schemaReachability() throws {
@@ -39,8 +42,14 @@ import Testing
         let ordered = try #require(document.content[0] as? MarkdownCore.List)
         #expect(ordered.flavor == .ordered)
         #expect(ordered.start == 3)
+        #expect(ordered.variant == .decimal)
+        #expect(ordered.delimiter == .period)
+        let parenthesized = try #require(try Document.parse("1) item\n").content[0] as? MarkdownCore.List)
+        #expect(parenthesized.delimiter == .parenthesis(closed: false))
         let task = try #require(document.content[1] as? MarkdownCore.List)
-        #expect(task.items.first?.checked == true)
+        #expect(task.items.first?.marker == "x")
+        #expect(task.items.first?.tasked == true)
+        #expect(task.items.first?.completed == true)
         let table = try #require(document.content[2] as? Table)
         #expect(table.alignments == [.center])
         #expect(table.header.isHeader)

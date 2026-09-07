@@ -7,6 +7,7 @@ import cnames.structs.markdown_core_error
 import cnames.structs.markdown_core_footnote
 import cnames.structs.markdown_core_node
 import cnames.structs.markdown_core_resource
+import cnames.structs.markdown_core_specimen
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_BIB_MODE_AUTHOR_IN_TEXT
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_BIB_MODE_NORMAL
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_BIB_MODE_SUPPRESS_AUTHOR
@@ -46,10 +47,17 @@ import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_TEXT
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_THEMATIC_BREAK
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_LIST_FLAVOR_BULLET
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_LIST_FLAVOR_ORDERED
+import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_ORDERED_LIST_DELIMITER_DEFAULT
+import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PARENTHESIS
+import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PERIOD
+import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_ORDERED_LIST_VARIANT_ALPHA
+import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_ORDERED_LIST_VARIANT_DEFAULT
+import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_ORDERED_LIST_VARIANT_ROMAN
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_PLACEMENT_EMBEDDED
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_PLACEMENT_STANDALONE
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_REFERENT_BIB
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_REFERENT_FOOTNOTE
+import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_REFERENT_SPECIMEN
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_TABLE_ALIGNMENT_CENTER
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_TABLE_ALIGNMENT_LEFT
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_TABLE_ALIGNMENT_NONE
@@ -81,12 +89,13 @@ import com.nouprax.markdown.core.internal.capi.markdown_core_node_directive_attr
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_directive_label
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_directive_properties
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_document_footnotes
+import com.nouprax.markdown.core.internal.capi.markdown_core_node_document_specimens
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_formula_properties
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_get_first_child
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_get_kind
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_get_next_sibling
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_heading_level
-import com.nouprax.markdown.core.internal.capi.markdown_core_node_list_item_checked
+import com.nouprax.markdown.core.internal.capi.markdown_core_node_list_item_marker
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_list_properties
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_literal
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_resource
@@ -98,9 +107,15 @@ import com.nouprax.markdown.core.internal.capi.markdown_core_node_title
 import com.nouprax.markdown.core.internal.capi.markdown_core_optional_bool
 import com.nouprax.markdown.core.internal.capi.markdown_core_optional_i64
 import com.nouprax.markdown.core.internal.capi.markdown_core_optional_string
+import com.nouprax.markdown.core.internal.capi.markdown_core_ordered_list_delimiter
+import com.nouprax.markdown.core.internal.capi.markdown_core_ordered_list_variant
 import com.nouprax.markdown.core.internal.capi.markdown_core_placement_modeVar
 import com.nouprax.markdown.core.internal.capi.markdown_core_referent
 import com.nouprax.markdown.core.internal.capi.markdown_core_scope
+import com.nouprax.markdown.core.internal.capi.markdown_core_specimen_content
+import com.nouprax.markdown.core.internal.capi.markdown_core_specimen_next
+import com.nouprax.markdown.core.internal.capi.markdown_core_specimen_properties
+import com.nouprax.markdown.core.internal.capi.markdown_core_specimen_scope
 import com.nouprax.markdown.core.internal.capi.markdown_core_string
 import com.nouprax.markdown.core.internal.capi.markdown_core_table_alignmentVar
 import kotlinx.cinterop.BooleanVar
@@ -173,6 +188,8 @@ private data class NativeNodeRecord(
     /** The document's footnote records or the cite's citation records: a start and a count. */
     var valueStart: Int = 0,
     var valueCount: Int = 0,
+    var specimenStart: Int = 0,
+    var specimenCount: Int = 0,
 )
 
 /** One item a cite owns; its prefix and suffix nodes are recorded like children. */
@@ -191,6 +208,12 @@ private class NativeFootnoteRecord(
     val contentCount: Int,
 )
 
+private class NativeSpecimenRecord(
+    val pointer: CPointer<markdown_core_specimen>,
+    val contentStart: Int,
+    val contentCount: Int,
+)
+
 /** Copies the C tree iteratively while the immutable native document is alive. */
 private class NativeTreeBuilder(
     root: CPointer<markdown_core_node>,
@@ -199,6 +222,7 @@ private class NativeTreeBuilder(
     private val records = mutableListOf(NativeNodeRecord(root))
     private val citationRecords = mutableListOf<NativeCitationRecord>()
     private val footnoteRecords = mutableListOf<NativeFootnoteRecord>()
+    private val specimenRecords = mutableListOf<NativeSpecimenRecord>()
     private lateinit var built: Array<Markup?>
 
     /**
@@ -255,6 +279,15 @@ private class NativeTreeBuilder(
                         record.valueCount++
                         footnote = markdown_core_footnote_next(footnote)
                     }
+                    record.specimenStart = specimenRecords.size
+                    var specimen = markdown_core_node_document_specimens(record.pointer)
+                    while (specimen != null) {
+                        val contentStart = records.size
+                        val contentCount = recordChain(markdown_core_specimen_content(specimen))
+                        specimenRecords += NativeSpecimenRecord(specimen, contentStart, contentCount)
+                        record.specimenCount++
+                        specimen = markdown_core_specimen_next(specimen)
+                    }
                 }
 
                 MARKDOWN_CORE_KIND_CITE -> {
@@ -309,7 +342,7 @@ private class NativeTreeBuilder(
         val children = children(record)
         return when (kind) {
             MARKDOWN_CORE_KIND_DOCUMENT -> {
-                Document(children, footnotes(record), scope)
+                Document(children, footnotes(record), specimens(record), scope)
             }
 
             MARKDOWN_CORE_KIND_CALLOUT -> {
@@ -334,7 +367,7 @@ private class NativeTreeBuilder(
             }
 
             MARKDOWN_CORE_KIND_LIST_ITEM -> {
-                ListItem(scratch.listItemChecked(node), children, scope)
+                ListItem(scratch.listItemMarker(node), children, scope)
             }
 
             MARKDOWN_CORE_KIND_CODE_BLOCK -> {
@@ -455,6 +488,16 @@ private class NativeTreeBuilder(
             )
         }
 
+    private fun specimens(record: NativeNodeRecord): kotlin.collections.List<Specimen> =
+        immutableList(record.specimenCount) { offset ->
+            val specimen = specimenRecords[record.specimenStart + offset]
+            scratch.specimen(
+                specimen.pointer,
+                nodes(specimen.contentStart, specimen.contentCount, "specimen content"),
+                markdown_core_specimen_scope(specimen.pointer).toScope(),
+            )
+        }
+
     private fun citations(record: NativeNodeRecord): kotlin.collections.List<Citation> =
         immutableList(record.valueCount) { offset ->
             val citation = citationRecords[record.valueStart + offset]
@@ -492,6 +535,14 @@ private class NativeTreeBuilder(
     }
 }
 
+internal fun decodeNativeListDelimiter(value: markdown_core_ordered_list_delimiter): OrderedListDelimiter =
+    when (value.kind) {
+        MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PERIOD -> OrderedListDelimiter.Period
+        MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PARENTHESIS -> OrderedListDelimiter.Parenthesis(value.closed)
+        MARKDOWN_CORE_ORDERED_LIST_DELIMITER_DEFAULT -> OrderedListDelimiter.Default
+        else -> error("unsupported native list delimiter ${value.kind}")
+    }
+
 private class NativeScratch(
     scope: MemScope,
 ) {
@@ -507,6 +558,8 @@ private class NativeScratch(
     private val integer = scope.alloc<IntVar>()
     private val count = scope.alloc<size_tVar>()
     private val listFlavor = scope.alloc<markdown_core_list_flavorVar>()
+    private val listVariant = scope.alloc<markdown_core_ordered_list_variant>()
+    private val listDelimiter = scope.alloc<markdown_core_ordered_list_delimiter>()
     private val placementMode = scope.alloc<markdown_core_placement_modeVar>()
     private val tableAlignment = scope.alloc<markdown_core_table_alignmentVar>()
     private val destination = scope.alloc<markdown_core_destination>()
@@ -522,7 +575,16 @@ private class NativeScratch(
         children: kotlin.collections.List<Markup>,
         scope: Scope,
     ): List {
-        require(markdown_core_node_list_properties(node, listFlavor.ptr, optionalLong.ptr, firstBoolean.ptr)) {
+        require(
+            markdown_core_node_list_properties(
+                node,
+                listFlavor.ptr,
+                optionalLong.ptr,
+                listVariant.ptr,
+                listDelimiter.ptr,
+                firstBoolean.ptr,
+            ),
+        ) {
             "invalid list node"
         }
         val flavor =
@@ -532,12 +594,30 @@ private class NativeScratch(
                 else -> error("unsupported native list flavor ${listFlavor.value}")
             }
         val items = children.immutableMap { requireNotNull(it as? ListItem) { "list contains a non-item node" } }
-        return List(flavor, optionalLong.value.takeIf { optionalLong.has_value }, firstBoolean.value, items, scope)
+        val variant =
+            when (listVariant.kind) {
+                MARKDOWN_CORE_ORDERED_LIST_VARIANT_ALPHA -> OrderedListVariant.Alpha(listVariant.lowercased)
+                MARKDOWN_CORE_ORDERED_LIST_VARIANT_ROMAN -> OrderedListVariant.Roman(listVariant.lowercased)
+                MARKDOWN_CORE_ORDERED_LIST_VARIANT_DEFAULT -> OrderedListVariant.Default
+                else -> OrderedListVariant.Decimal
+            }.takeIf { optionalLong.has_value }
+        val delimiter = decodeNativeListDelimiter(listDelimiter).takeIf { optionalLong.has_value }
+        return List(
+            flavor,
+            optionalLong.value.takeIf { optionalLong.has_value },
+            variant,
+            delimiter,
+            firstBoolean.value,
+            items,
+            scope,
+        )
     }
 
-    fun listItemChecked(node: CPointer<markdown_core_node>): Boolean? {
-        require(markdown_core_node_list_item_checked(node, optionalBoolean.ptr)) { "invalid list item node" }
-        return optionalBoolean.value.takeIf { optionalBoolean.has_value }
+    fun listItemMarker(node: CPointer<markdown_core_node>): String? {
+        require(markdown_core_node_list_item_marker(node, firstOptionalString.ptr)) {
+            "invalid list item node"
+        }
+        return firstOptionalString.copyOptionalString()
     }
 
     fun codeBlock(
@@ -695,6 +775,24 @@ private class NativeScratch(
     }
 
     /** A branch's fields exist only in that branch, so only they are copied. */
+    fun specimen(
+        pointer: CPointer<markdown_core_specimen>,
+        content: kotlin.collections.List<Markup>,
+        scope: Scope,
+    ): Specimen {
+        require(
+            markdown_core_specimen_properties(pointer, firstOptionalString.ptr, optionalLong.ptr),
+        ) { "invalid specimen" }
+        return Specimen(
+            firstOptionalString.copyOptionalString(),
+            optionalLong.value.takeIf {
+                optionalLong.has_value
+            },
+            content,
+            scope,
+        )
+    }
+
     fun referent(citation: CPointer<markdown_core_citation>): CitationReferent {
         require(markdown_core_citation_referent(citation, referent.ptr)) { "invalid citation" }
         return when (referent.kind) {
@@ -704,6 +802,10 @@ private class NativeScratch(
 
             MARKDOWN_CORE_REFERENT_FOOTNOTE -> {
                 CitationReferent.Footnote(referent.id.copyString())
+            }
+
+            MARKDOWN_CORE_REFERENT_SPECIMEN -> {
+                CitationReferent.Specimen(referent.id.copyString())
             }
 
             else -> {

@@ -32,7 +32,8 @@ import {
     parseCanonicalDump,
     parseDestination,
     render,
-    renderDestination
+    renderDestination,
+    taskCompletion
 } from "./lib/upstream-cmark.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
@@ -74,6 +75,7 @@ function project(node) {
     const fields = {};
     for (const key of MDAST_COMPARED[node.kind] ?? []) {
         let value = node.fields[key];
+        if (node.kind === "ListItem" && key === "completed") value = taskCompletion(node.fields);
         // `dest` is a tagged value on both sides: the object the mdast mapping
         // built, or the dump's `url("...")` text. One spelling is compared.
         if (key === "dest") {

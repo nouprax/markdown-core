@@ -103,9 +103,9 @@ const ORACLES = {
         policy: "specs/oracles/cmark-gfm/deltas.json",
         gate: "scripts/check-upstream-parity.mjs",
         // Upstream reads a task item's checked state with a substring search
-        // for `[x]` over the whole line, so an unchecked item that acquires a
-        // literal `[x]` through recombination reproduces the registered
-        // `tasklist-checked-marker` difference — endlessly, and in inputs no
+        // for `[x]` or `[X]` over the whole line, so an unchecked item that acquires a
+        // literal completion marker through recombination reproduces the registered
+        // `tasklist-authored-marker` difference — endlessly, and in inputs no
         // registry entry can name in advance. Checked items are exercised by
         // the corpus gate, which reads the fixtures unrecombined. `"title" ok`
         // is the corpus's one title-then-junk line: recombined under any

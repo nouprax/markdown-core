@@ -309,6 +309,11 @@ internal class RecordingWalkingVisitor(
         phase: WalkPhase,
     ): Unit = record("Citation", phase)
 
+    override fun visitSpecimen(
+        value: Specimen,
+        phase: WalkPhase,
+    ): Unit = record("Specimen", phase)
+
     override fun visitFootnote(
         value: Footnote,
         phase: WalkPhase,

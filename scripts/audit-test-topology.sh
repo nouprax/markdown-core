@@ -62,6 +62,7 @@ for target_spec in \
     docs/specs/dialect/inserted-text.md \
     docs/specs/dialect/links-and-images.md \
     docs/specs/dialect/lists.md \
+    docs/specs/dialect/specimens.md \
     docs/specs/dialect/marks.md \
     docs/specs/dialect/properties.md \
     docs/specs/dialect/strikethrough.md \

@@ -450,8 +450,8 @@ Document scope=1:1..5:3 anchor=null attributes={} children=1
 └── DirectiveBlock scope=1:1..5:3 anchor=null attributes={.a} name=null children=2
     ├── Heading scope=2:1..2:3 anchor="h" attributes={} level=1 children=1
     │   └── Text scope=2:3..2:3 anchor=null attributes={} literal="h" children=0
-    └── List scope=4:1..4:3 anchor=null attributes={} flavor=bullet start=null style=null delimiter=null tight=true children=1
-        └── ListItem scope=4:1..4:3 anchor=null attributes={} marker=null exampleLabel=null children=1
+    └── List scope=4:1..4:3 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+        └── ListItem scope=4:1..4:3 anchor=null attributes={} marker=null children=1
             └── Paragraph scope=4:3..4:3 anchor=null attributes={} children=1
                 └── Text scope=4:3..4:3 anchor=null attributes={} literal="i" children=0
 ````````````````````````````````

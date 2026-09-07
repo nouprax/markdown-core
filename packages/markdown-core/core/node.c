@@ -23,6 +23,7 @@ bool markdown_core_node_can_contain_type(markdown_core_node *node, markdown_core
     case MARKDOWN_CORE_NODE_DOCUMENT:
     case MARKDOWN_CORE_NODE_CALLOUT:
     case MARKDOWN_CORE_NODE_FOOTNOTE:
+    case MARKDOWN_CORE_NODE_SPECIMEN:
     case MARKDOWN_CORE_NODE_LIST_ITEM:
         return MARKDOWN_CORE_NODE_TYPE_BLOCK_P(child_type) && child_type != MARKDOWN_CORE_NODE_LIST_ITEM;
 
@@ -135,6 +136,9 @@ markdown_core_node *markdown_core_node_new(markdown_core_node_type type) {
 
 static void free_node_as(markdown_core_node *node) {
     switch (node->type) {
+    case MARKDOWN_CORE_NODE_LIST_ITEM:
+        markdown_core_optional_chunk_free(NODE_MEM(node), &node->as.list.task_marker);
+        break;
     case MARKDOWN_CORE_NODE_CODE_BLOCK:
         markdown_core_optional_chunk_free(NODE_MEM(node), &node->as.code.info);
         markdown_core_chunk_free(NODE_MEM(node), &node->as.code.literal);
@@ -151,6 +155,9 @@ static void free_node_as(markdown_core_node *node) {
         /* The affix chains are freed by the walk in `S_free_nodes`, spliced
          * in beside the children; only the referent's bytes are the arm's. */
         markdown_core_chunk_free(NODE_MEM(node), &node->as.citation.value);
+        break;
+    case MARKDOWN_CORE_NODE_SPECIMEN:
+        markdown_core_optional_chunk_free(NODE_MEM(node), &node->as.specimen.id);
         break;
     case MARKDOWN_CORE_NODE_FOOTNOTE:
         markdown_core_chunk_free(NODE_MEM(node), &node->as.footnote.id);
@@ -211,6 +218,7 @@ static void S_free_nodes(markdown_core_node *e) {
             break;
         case MARKDOWN_CORE_NODE_DOCUMENT:
             S_splice_after(e, e->as.document.footnotes);
+            S_splice_after(e, e->as.document.specimens);
             break;
         default:
             break;
@@ -304,6 +312,8 @@ const char *markdown_core_node_get_type_string(markdown_core_node *node) {
         return "thematic_break";
     case MARKDOWN_CORE_NODE_FOOTNOTE:
         return "footnote";
+    case MARKDOWN_CORE_NODE_SPECIMEN:
+        return "specimen";
     case MARKDOWN_CORE_NODE_TEXT:
         return "text";
     case MARKDOWN_CORE_NODE_SOFT_BREAK:

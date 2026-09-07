@@ -51,8 +51,8 @@ private class JniTreeDecoder(
             }
 
             JniNodeKind.LIST_ITEM -> {
-                val checked = reader.nullableBoolean()
-                readChildren { consume(ListItem(checked, it, scope)) }
+                val marker = reader.string()
+                readChildren { consume(ListItem(marker, it, scope)) }
             }
 
             JniNodeKind.CODE_BLOCK -> {
@@ -190,24 +190,36 @@ private class JniTreeDecoder(
         consume: (Markup) -> Unit,
     ) {
         var content: kotlin.collections.List<Markup>? = null
+        var footnotes: kotlin.collections.List<Footnote>? = null
         actions.addLast {
-            val count = reader.int()
-            require(count >= 0) { "invalid native footnote count" }
-            val values = arrayOfNulls<Footnote>(count)
-            actions.addLast {
-                val footnotes =
-                    immutableList(count) { index ->
-                        requireNotNull(values[index]) { "JNI footnote was not decoded" }
-                    }
-                consume(Document(requireNotNull(content), footnotes, scope))
-            }
-            for (index in count - 1 downTo 0) {
-                actions.addLast { readFootnote { values[index] = it } }
+            readValues("specimen", ::readSpecimen) { specimens ->
+                consume(Document(requireNotNull(content), requireNotNull(footnotes), specimens, scope))
             }
         }
+        actions.addLast { readValues("footnote", ::readFootnote) { footnotes = it } }
+        actions.addLast { readChildren { content = it } }
+    }
+
+    private fun <T> readValues(
+        name: String,
+        read: ((T) -> Unit) -> Unit,
+        consume: (kotlin.collections.List<T>) -> Unit,
+    ) {
+        val count = reader.int()
+        require(count >= 0) { "invalid native $name count" }
+        val values = MutableList<T?>(count) { null }
         actions.addLast {
-            readChildren { content = it }
+            consume(immutableList(count) { requireNotNull(values[it]) { "JNI $name was not decoded" } })
         }
+        for (index in count - 1 downTo 0) actions.addLast { read { values[index] = it } }
+    }
+
+    private fun readSpecimen(consume: (Specimen) -> Unit) {
+        val scope = reader.scope()
+        val id = reader.string()
+        val startValue = reader.long()
+        val start = if (reader.boolean()) startValue else null
+        readChildren { consume(Specimen(id, start, it, scope)) }
     }
 
     private fun readFootnote(consume: (Footnote) -> Unit) {
@@ -243,6 +255,7 @@ private class JniTreeDecoder(
             when (val branch = reader.byte().toInt()) {
                 1 -> CitationReferent.Bib(reader.requiredString(), bibMode())
                 2 -> CitationReferent.Footnote(reader.requiredString())
+                3 -> CitationReferent.Specimen(reader.requiredString())
                 else -> error("invalid native citation referent $branch")
             }
         var prefix: kotlin.collections.List<Markup>? = null
@@ -274,10 +287,31 @@ private class JniTreeDecoder(
             }
         val startValue = reader.long()
         val start = if (reader.boolean()) startValue else null
+        val variantKind = reader.int()
+        val variantLowercased = reader.boolean()
+        val variant =
+            when (variantKind) {
+                0 -> null
+                1 -> OrderedListVariant.Decimal
+                2 -> OrderedListVariant.Alpha(variantLowercased)
+                3 -> OrderedListVariant.Roman(variantLowercased)
+                4 -> OrderedListVariant.Default
+                else -> error("invalid native list variant $variantKind")
+            }
+        val delimiterKind = reader.int()
+        val delimiterClosed = reader.boolean()
+        val delimiter =
+            when (delimiterKind) {
+                0 -> null
+                1 -> OrderedListDelimiter.Period
+                2 -> OrderedListDelimiter.Parenthesis(delimiterClosed)
+                3 -> OrderedListDelimiter.Default
+                else -> error("invalid native list delimiter $delimiterKind")
+            }
         val tight = reader.boolean()
         readChildren { children ->
             val items = children.immutableMap { requireNotNull(it as? ListItem) { "list contains a non-item node" } }
-            consume(List(flavor, start, tight, items, scope))
+            consume(List(flavor, start, variant, delimiter, tight, items, scope))
         }
     }
 

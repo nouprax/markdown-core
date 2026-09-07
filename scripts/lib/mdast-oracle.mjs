@@ -134,11 +134,13 @@ function convert(node, definitions, parentType = "root") {
     }
     if (node.type === "list") {
         fields.flavor = node.ordered ? "ordered" : "bullet";
-        fields.tight = String(Boolean(!node.spread));
+        fields.tight = String(!node.spread && !(node.children ?? []).some((item) => item.spread));
         fields.start = node.ordered ? String(node.start ?? 1) : "null";
+        fields.variant = node.ordered ? "decimal" : "null";
     }
-    if (node.type === "listItem")
-        fields.checked = node.checked === null || node.checked === undefined ? "null" : String(node.checked);
+    if (node.type === "listItem") {
+        fields.completed = node.checked === null || node.checked === undefined ? "null" : String(node.checked);
+    }
     // Registered shape delta `code-span-line-ending`: CommonMark says a code
     // span's line endings are spaces, and cmark applies that when it builds the
     // node, which this repository inherits. mdast keeps the line ending in the
@@ -188,6 +190,18 @@ function convert(node, definitions, parentType = "root") {
     }
 
     let children = (node.children ?? []).flatMap((child) => convert(child, definitions, node.type));
+    // mdast keeps ragged rows; mdast-util-to-hast applies the delimiter's
+    // column count when rendering. The canonical AST already applies that
+    // same rule. Normalize only the oracle, so bad native row widths remain
+    // visible, and use this table's own width at every nesting depth.
+    if (node.type === "table") {
+        const width = node.align.length;
+        for (const [index, row] of children.entries()) {
+            row.fields.isHeader = String(index === 0);
+            row.children = row.children.slice(0, width);
+            while (row.children.length < width) row.children.push({ kind: "TableCell", fields: {}, children: [] });
+        }
+    }
     // A directive's label becomes a nested `DirectiveLabel` in this comparison
     // tree. In the canonical AST it is a field, not directive content. mdast states it two
     // ways: for text and leaf directives it is the directive's own children,
@@ -241,17 +255,7 @@ export function dropEmptyText(node) {
 
 export function fromMdast(tree) {
     const definitions = collectDefinitions(tree);
-    const [root] = convert(tree, definitions);
-    // remark marks the first table row as a header by position, not by a flag.
-    // The walk covers the whole tree: a table nested in a block quote or a
-    // container directive is still a table, and only looking at the root's own
-    // children left those first rows marked as body rows.
-    const markHeaders = (node) => {
-        if (node.kind === "Table" && node.children.length) node.children[0].fields.isHeader = "true";
-        for (const child of node.children) markHeaders(child);
-    };
-    markHeaders(root);
-    return root;
+    return convert(tree, definitions)[0];
 }
 
 /**
@@ -262,8 +266,10 @@ export function fromMdast(tree) {
 export const MDAST_COMPARED = {
     Callout: ["variant", "collapsed"],
     Heading: ["level"],
-    List: ["flavor", "tight", "start"],
-    ListItem: ["checked"],
+    // mdast does not retain ordered-list punctuation. The cmark oracle and
+    // canonical fixtures cover delimiter spelling without inventing it here.
+    List: ["flavor", "start", "variant", "tight"],
+    ListItem: ["completed"],
     CodeBlock: ["info", "literal"],
     Code: ["literal"],
     Text: ["literal"],

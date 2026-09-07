@@ -83,9 +83,10 @@ private struct DumpVisitor: MarkupVisitor {
         // The footnotes are value lines after the content, each nesting its
         // own content; `children` counts the content alone.
         state.line("Document", node, children: node.content.count)
-        state.nested(node.content.count + node.footnotes.count) {
+        state.nested(node.content.count + node.footnotes.count + node.specimens.count) {
             node.content.forEach(state.dump)
             for footnote in node.footnotes { dumpFootnote(footnote) }
+            for specimen in node.specimens { dumpSpecimen(specimen) }
         }
     }
 
@@ -94,6 +95,16 @@ private struct DumpVisitor: MarkupVisitor {
             "Footnote",
             scope: value.scope,
             fields: ["id=\(jsonString(value.id))"],
+            children: value.content.count
+        )
+        state.nested(value.content.count) { value.content.forEach(state.dump) }
+    }
+
+    private func dumpSpecimen(_ value: Specimen) {
+        state.line(
+            "Specimen",
+            scope: value.scope,
+            fields: ["id=\(optionalString(value.id))", "start=\(value.start.map(String.init) ?? "null")"],
             children: value.content.count
         )
         state.nested(value.content.count) { value.content.forEach(state.dump) }
@@ -136,6 +147,8 @@ private struct DumpVisitor: MarkupVisitor {
             fields: [
                 "flavor=\(node.flavor.rawValue)",
                 "start=\(node.start.map(String.init) ?? "null")",
+                "variant=\(orderedListVariant(node.variant))",
+                "delimiter=\(orderedListDelimiter(node.delimiter))",
                 "tight=\(boolean(node.tight))",
             ],
             children: node.items.count
@@ -147,7 +160,7 @@ private struct DumpVisitor: MarkupVisitor {
         state.line(
             "ListItem",
             node,
-            fields: ["checked=\(node.checked.map(boolean) ?? "null")"],
+            fields: ["marker=\(optionalString(node.marker))"],
             children: node.content.count
         )
         state.nested(node.content.count) { node.content.forEach(state.dump) }
@@ -332,6 +345,7 @@ private func referentString(_ value: CitationReferent) -> String {
     switch value {
     case .bib(let key, let mode): "bib(key=\(jsonString(key)),mode=\(mode.rawValue))"
     case .footnote(let id): "footnote(id=\(jsonString(id)))"
+    case .specimen(let id): "specimen(id=\(jsonString(id)))"
     }
 }
 
@@ -340,6 +354,25 @@ private func destinationString(_ value: Destination) -> String {
     switch value {
     case .url(let url): "url(\(jsonString(url)))"
     case .cross(let path, let anchor): "cross(path=\(jsonString(path)),anchor=\(optionalString(anchor)))"
+    }
+}
+
+private func orderedListDelimiter(_ value: OrderedListDelimiter?) -> String {
+    switch value {
+    case .period: "period"
+    case .parenthesis(let closed): "parenthesis(closed=\(boolean(closed)))"
+    case .default: "default"
+    case nil: "null"
+    }
+}
+
+private func orderedListVariant(_ value: OrderedListVariant?) -> String {
+    switch value {
+    case .decimal: "decimal"
+    case .alpha(let lowercased): "alpha(lowercased=\(boolean(lowercased)))"
+    case .roman(let lowercased): "roman(lowercased=\(boolean(lowercased)))"
+    case .default: "default"
+    case nil: "null"
     }
 }
 

@@ -1,5 +1,10 @@
 # Pandoc Markdown extensions implementation plan
 
+> Specimen model update: historical example-list/ExampleReference proposals below
+> are superseded by [the specimen citation contract](../specs/dialect/specimens.md).
+> `ListItem.exampleLabel` and `OrderedListVariant.example` are retired.
+
+
 Status: proposed. This plan implements the Pandoc-derived modules of the
 [Markdown Core dialect](../specs/dialect.md) on the canonical parser and all
 public bindings. It does not add a monolithic Pandoc dialect and does not retain
@@ -75,7 +80,7 @@ selected Pandoc extension participates.
       discard source locations that Pandoc JSON does not expose and may translate
       representation-only constructors such as `Plain`; it may not erase
       recognition, content, order, anchors, attributes, list
-      style/start/delimiter, citation mode/affixes, heading anchors, table groups,
+      variant/start/delimiter, citation mode/affixes, heading anchors, table groups,
       column alignment/width, or cell spans.
 - [ ] Keep the corpus input-only. Product expected AST belongs in the C fixtures
       and `specs/canonical-ast/`; raw Pandoc JSON and projected Markdown Core
@@ -105,7 +110,7 @@ selected Pandoc extension participates.
       ordered `Record` values. Kinds without an enabled source rule retain
       `anchor=null` and `Attributes.empty`; do not create node-specific copies.
 - [ ] Add `Span`, `Superscript`, `Subscript`, `DefinitionList`,
-      `Definition`, and `ExampleReference`, plus the ordered-list style and
+      `Definition`, and `ExampleReference`, plus the ordered-list variant and
       delimiter values, `ListItem.exampleLabel`, heading anchors through the
       universal field, and the complete unified Table values defined by the
       module specs.
@@ -198,7 +203,7 @@ selected Pandoc extension participates.
       required on the opener, closing fences have no separate semantic node,
       nesting is unbounded and stack-safe as the dialect index requires, and
       contained blocks are parsed in place.
-- [ ] Generalize the ordered-list marker operation for Pandoc style, delimiter,
+- [ ] Generalize the ordered-list marker operation for Pandoc variant, delimiter,
       and starting-number facts. Preserve one List model and the ordinary list
       continuation algorithm; do not add a Pandoc-only list tree.
 - [ ] Add example-list numbering and label registration as document parser state.
@@ -210,7 +215,7 @@ selected Pandoc extension participates.
       item node or a reparse pass.
 
 - [ ] **Exit criterion:** container and list ownership is unambiguous, compact and loose
-      definitions share one algorithm, list style changes split at the specified
+      definitions share one algorithm, list variant changes split at the specified
       boundary, example resets/duplicates resolve deterministically, and OOM/nesting
       failures unwind through existing ownership paths.
 

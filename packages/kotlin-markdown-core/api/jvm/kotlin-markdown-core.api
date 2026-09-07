@@ -36,6 +36,10 @@ public final class com/nouprax/markdown/core/CitationReferent$Footnote : com/nou
 	public final fun getId ()Ljava/lang/String;
 }
 
+public final class com/nouprax/markdown/core/CitationReferent$Specimen : com/nouprax/markdown/core/CitationReferent {
+	public final fun getId ()Ljava/lang/String;
+}
+
 public final class com/nouprax/markdown/core/Cite : com/nouprax/markdown/core/Markup {
 	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
 	public fun dump ()Ljava/lang/String;
@@ -118,6 +122,7 @@ public final class com/nouprax/markdown/core/Document : com/nouprax/markdown/cor
 	public final fun getContent ()Ljava/util/List;
 	public final fun getFootnotes ()Ljava/util/List;
 	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+	public final fun getSpecimens ()Ljava/util/List;
 }
 
 public final class com/nouprax/markdown/core/Document$Companion {
@@ -201,11 +206,13 @@ public final class com/nouprax/markdown/core/Link : com/nouprax/markdown/core/Ma
 public final class com/nouprax/markdown/core/List : com/nouprax/markdown/core/Markup {
 	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
 	public fun dump ()Ljava/lang/String;
+	public final fun getDelimiter ()Lcom/nouprax/markdown/core/OrderedListDelimiter;
 	public final fun getFlavor ()Lcom/nouprax/markdown/core/ListFlavor;
 	public final fun getItems ()Ljava/util/List;
 	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 	public final fun getStart ()Ljava/lang/Long;
 	public final fun getTight ()Z
+	public final fun getVariant ()Lcom/nouprax/markdown/core/OrderedListVariant;
 }
 
 public final class com/nouprax/markdown/core/ListFlavor : java/lang/Enum {
@@ -219,9 +226,11 @@ public final class com/nouprax/markdown/core/ListFlavor : java/lang/Enum {
 public final class com/nouprax/markdown/core/ListItem : com/nouprax/markdown/core/Markup {
 	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
 	public fun dump ()Ljava/lang/String;
-	public final fun getChecked ()Ljava/lang/Boolean;
+	public final fun getCompleted ()Z
 	public final fun getContent ()Ljava/util/List;
+	public final fun getMarker ()Ljava/lang/String;
 	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+	public final fun getTasked ()Z
 }
 
 public abstract interface class com/nouprax/markdown/core/Markup {
@@ -232,6 +241,52 @@ public abstract interface class com/nouprax/markdown/core/Markup {
 
 public final class com/nouprax/markdown/core/Markup$DefaultImpls {
 	public static fun dump (Lcom/nouprax/markdown/core/Markup;)Ljava/lang/String;
+}
+
+public abstract interface class com/nouprax/markdown/core/OrderedListDelimiter {
+}
+
+public final class com/nouprax/markdown/core/OrderedListDelimiter$Default : com/nouprax/markdown/core/OrderedListDelimiter {
+	public static final field INSTANCE Lcom/nouprax/markdown/core/OrderedListDelimiter$Default;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/nouprax/markdown/core/OrderedListDelimiter$Parenthesis : com/nouprax/markdown/core/OrderedListDelimiter {
+	public final fun getClosed ()Z
+}
+
+public final class com/nouprax/markdown/core/OrderedListDelimiter$Period : com/nouprax/markdown/core/OrderedListDelimiter {
+	public static final field INSTANCE Lcom/nouprax/markdown/core/OrderedListDelimiter$Period;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class com/nouprax/markdown/core/OrderedListVariant {
+}
+
+public final class com/nouprax/markdown/core/OrderedListVariant$Alpha : com/nouprax/markdown/core/OrderedListVariant {
+	public final fun getLowercased ()Z
+}
+
+public final class com/nouprax/markdown/core/OrderedListVariant$Decimal : com/nouprax/markdown/core/OrderedListVariant {
+	public static final field INSTANCE Lcom/nouprax/markdown/core/OrderedListVariant$Decimal;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/nouprax/markdown/core/OrderedListVariant$Default : com/nouprax/markdown/core/OrderedListVariant {
+	public static final field INSTANCE Lcom/nouprax/markdown/core/OrderedListVariant$Default;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/nouprax/markdown/core/OrderedListVariant$Roman : com/nouprax/markdown/core/OrderedListVariant {
+	public final fun getLowercased ()Z
 }
 
 public final class com/nouprax/markdown/core/Paragraph : com/nouprax/markdown/core/Markup {
@@ -294,6 +349,13 @@ public final class com/nouprax/markdown/core/SoftBreak : com/nouprax/markdown/co
 	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
 	public fun dump ()Ljava/lang/String;
 	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+}
+
+public final class com/nouprax/markdown/core/Specimen {
+	public final fun getContent ()Ljava/util/List;
+	public final fun getId ()Ljava/lang/String;
+	public final fun getScope ()Lcom/nouprax/markdown/core/Scope;
+	public final fun getStart ()Ljava/lang/Long;
 }
 
 public final class com/nouprax/markdown/core/Strikethrough : com/nouprax/markdown/core/Markup {
@@ -427,6 +489,7 @@ public abstract interface class com/nouprax/markdown/core/WalkingVisitor {
 	public abstract fun visitListItem (Lcom/nouprax/markdown/core/ListItem;Lcom/nouprax/markdown/core/WalkPhase;)V
 	public abstract fun visitParagraph (Lcom/nouprax/markdown/core/Paragraph;Lcom/nouprax/markdown/core/WalkPhase;)V
 	public abstract fun visitSoftBreak (Lcom/nouprax/markdown/core/SoftBreak;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visitSpecimen (Lcom/nouprax/markdown/core/Specimen;Lcom/nouprax/markdown/core/WalkPhase;)V
 	public abstract fun visitStrikethrough (Lcom/nouprax/markdown/core/Strikethrough;Lcom/nouprax/markdown/core/WalkPhase;)V
 	public abstract fun visitStrong (Lcom/nouprax/markdown/core/Strong;Lcom/nouprax/markdown/core/WalkPhase;)V
 	public abstract fun visitTable (Lcom/nouprax/markdown/core/Table;Lcom/nouprax/markdown/core/WalkPhase;)V

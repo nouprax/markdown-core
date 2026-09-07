@@ -180,7 +180,7 @@ const modelProjections = [
         // Both spellings: most kinds take an `internal constructor`, the two
         // extension kinds take a plain one. A reader that knew only the first
         // reported them as missing.
-        declaration: (kind) => new RegExp(`public class ${kind}\\b[^\\n]*\\(`),
+        declaration: (kind) => new RegExp(`^public class ${kind}\\b[^\\n]*\\(`, "m"),
         field: /(?:public |override )?val ([A-Za-z]+)\s*:\s*([^\n]+?),?\s*$/gm,
         optional: (m) => m[2].trim().endsWith("?")
     }),
@@ -444,12 +444,22 @@ for (const { label, expect, actual } of kindSurfaces) {
  * leaving all three models required passed, measured. Requirement 14's whole
  * deliverable is that `null` and `""` are different facts, and a contract
  * nothing checks cannot carry that. */
+const modeledRecords = [
+    ...contract.kinds,
+    ...Object.entries(contract.values ?? {})
+        .filter(([, value]) => value.scoped)
+        .map(([name, value]) => ({ name, fields: value.fields }))
+];
+const modelFields = new Map(modeledRecords.map(({ name, fields }) => [name, fields.map((field) => field.name)]));
 const optionality = new Map(
-    contract.kinds.map((kind) => [kind.name, new Map(kind.fields.map((f) => [f.name, f.optional === true]))])
+    modeledRecords.map(({ name, fields }) => [
+        name,
+        new Map(fields.map((field) => [field.name, field.optional === true]))
+    ])
 );
 
 for (const { label, fieldsOf } of modelProjections) {
-    for (const [kind, expected] of kinds) {
+    for (const [kind, expected] of modelFields) {
         const declared = fieldsOf(kind);
         if (declared === null) {
             console.error(`${label}: no declaration for ${kind}`);
@@ -482,5 +492,5 @@ if (failed) {
 console.log(
     `AST-projection audit passed: ${String(kinds.size)} kinds over ` +
         `${String(kindSurfaces.length)} surfaces, the C dump's fields, the prose table, the dump grammar, and ` +
-        `${String(modelProjections.length)} models.`
+        `${String(modelProjections.length)} models including ${String(scopedValueNames.size)} scoped values.`
 );

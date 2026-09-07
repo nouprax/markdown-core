@@ -8,6 +8,7 @@ import type { DirectiveLabel } from "./model/directive-label.js";
 import type { Directive } from "./model/directive.js";
 import type { Document } from "./model/document.js";
 import type { Emphasis } from "./model/emphasis.js";
+import type { Specimen } from "./model/specimen.js";
 import type { Footnote } from "./model/footnote.js";
 import type { FormulaBlock } from "./model/formula-block.js";
 import type { Formula } from "./model/formula.js";
@@ -71,13 +72,15 @@ export interface WalkingVisitor {
     /** A value callback: a `Citation` is a scoped value, not a `Markup` kind. */
     visitCitation(this: void, value: Citation, phase: WalkPhase): void;
     /** A value callback: a `Footnote` is a scoped value, not a `Markup` kind. */
+    visitSpecimen(this: void, value: Specimen, phase: WalkPhase): void;
     visitFootnote(this: void, value: Footnote, phase: WalkPhase): void;
 }
 
 type WalkAction =
     | { readonly kind: "markup"; readonly node: Markup; readonly phase: WalkPhase }
     | { readonly kind: "citation"; readonly value: Citation; readonly phase: WalkPhase }
-    | { readonly kind: "footnote"; readonly value: Footnote; readonly phase: WalkPhase };
+    | { readonly kind: "footnote"; readonly value: Footnote; readonly phase: WalkPhase }
+    | { readonly kind: "specimen"; readonly value: Specimen; readonly phase: WalkPhase };
 
 /**
  * Walks `root` and all of its owned markup depth first.
@@ -110,6 +113,11 @@ export function walk(root: Markup, walkingVisitor: WalkingVisitor): void {
             actions.push({ kind: "footnote", value: footnotes[index]!, phase: "entering" });
         }
     };
+    const scheduleSpecimens = (specimens: readonly Specimen[]): void => {
+        for (let index = specimens.length - 1; index >= 0; index -= 1) {
+            actions.push({ kind: "specimen", value: specimens[index]!, phase: "entering" });
+        }
+    };
     const visitCitation = (value: Citation): void => {
         walkingVisitor.visitCitation(value, phase);
         if (phase === "entering") {
@@ -125,6 +133,13 @@ export function walk(root: Markup, walkingVisitor: WalkingVisitor): void {
             schedule(value.content);
         }
     };
+    const visitSpecimen = (value: Specimen): void => {
+        walkingVisitor.visitSpecimen(value, phase);
+        if (phase === "entering") {
+            actions.push({ kind: "specimen", value, phase: "exiting" });
+            schedule(value.content);
+        }
+    };
 
     // Each callback owns the schedule for that node kind. This is traversal
     // control flow, not a public iterator or a generic child projection.
@@ -134,6 +149,7 @@ export function walk(root: Markup, walkingVisitor: WalkingVisitor): void {
             scheduleExit(node);
             if (phase === "entering") {
                 // The footnotes are visited after the content.
+                scheduleSpecimens(node.specimens);
                 scheduleFootnotes(node.footnotes);
                 schedule(node.content);
             }
@@ -286,6 +302,7 @@ export function walk(root: Markup, walkingVisitor: WalkingVisitor): void {
         phase = action.phase;
         if (action.kind === "markup") visit(action.node, driver);
         else if (action.kind === "citation") visitCitation(action.value);
-        else visitFootnote(action.value);
+        else if (action.kind === "footnote") visitFootnote(action.value);
+        else visitSpecimen(action.value);
     }
 }

@@ -14,7 +14,7 @@ MARKDOWN_CORE_1.0 {
     markdown_core_node_child_count;
     markdown_core_node_heading_level;
     markdown_core_node_list_properties;
-    markdown_core_node_list_item_checked;
+    markdown_core_node_list_item_marker;
     markdown_core_node_code_block_properties;
     markdown_core_node_literal;
     markdown_core_node_formula_properties;
@@ -35,6 +35,11 @@ MARKDOWN_CORE_1.0 {
     markdown_core_citation_prefix;
     markdown_core_citation_suffix;
     markdown_core_node_document_footnotes;
+    markdown_core_node_document_specimens;
+    markdown_core_specimen_next;
+    markdown_core_specimen_scope;
+    markdown_core_specimen_properties;
+    markdown_core_specimen_content;
     markdown_core_footnote_next;
     markdown_core_footnote_scope;
     markdown_core_footnote_id;

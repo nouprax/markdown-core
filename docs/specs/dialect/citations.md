@@ -351,9 +351,8 @@ The tail is not claimed when it begins with `^`, or when its `]` is
 immediately followed by `(`, `[`, or a valid attribute container, in which
 case the bracket pair is decided by the bracket procedure on its own.
 
-A bare `@label` with no bracketed tail whose label is registered as an example
-label anywhere in the document is an `ExampleReference`
-rather than a `Cite`; the [lists](lists.md) module states that rule, and the
+A bare `@label` with no bracketed tail whose label is registered as a specimen
+label anywhere in the document is a `Cite` with a `specimen` referent; the [specimens](specimens.md) module states that rule, and the
 choice is finalized document-wide so parser order cannot change it.
 
 ## Non-normative notes
@@ -389,7 +388,7 @@ the bracketed rule. Affix child scopes cover visible authored content only.
 Every example of this module is a package fixture. Tests also cover every
 key punctuation scalar, repeated punctuation, braced keys with nesting,
 spacing after `[` and `;`, author-in-text tails with a `^` start and with a
-following `(`, `[`, or container, example labels before and after their
+following `(`, `[`, or container, specimen labels before and after their
 definitions, code, comments, HTML, and formulas, definitions with a leading
 `@`, a second key inside an item with and without a mode marker, exact
 group, item, and affix scopes, allocation failure, and adversarial runs of

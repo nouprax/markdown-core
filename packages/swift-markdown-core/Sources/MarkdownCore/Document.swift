@@ -35,6 +35,8 @@ public struct Document: Markup {
     /// The footnotes the document owns, ordered by scope start; never part of
     /// `content`.
     public let footnotes: [Footnote]
+    /// The specimen definitions, ordered by scope start and visited after footnotes.
+    public let specimens: [Specimen]
     /// Dispatches to the visitor's `Document` case.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 
@@ -76,12 +78,18 @@ private struct NativeNodeRecord {
     var title: [Int]?
     /// The document's footnotes, each with the records of its content.
     var footnotes: [NativeFootnoteRecord] = []
+    var specimens: [NativeSpecimenRecord] = []
     /// The cite's items, each with the records of its prefix and suffix.
     var citations: [NativeCitationRecord] = []
 }
 
 private struct NativeFootnoteRecord {
     let footnote: OpaquePointer
+    let content: [Int]
+}
+
+private struct NativeSpecimenRecord {
+    let specimen: OpaquePointer
     let content: [Int]
 }
 
@@ -98,6 +106,7 @@ struct NativeRelations {
     let label: DirectiveLabel?
     let title: [any Markup]?
     let footnotes: [Footnote]
+    let specimens: [Specimen]
     let citations: [Citation]
 }
 
@@ -163,6 +172,7 @@ private struct NativeTreeBuilder {
             }
         case MARKDOWN_CORE_KIND_DOCUMENT:
             recordFootnotes(of: node, at: recordIndex)
+            recordSpecimens(of: node, at: recordIndex)
         case MARKDOWN_CORE_KIND_CITE:
             recordCitations(of: node, at: recordIndex)
         default:
@@ -178,6 +188,15 @@ private struct NativeTreeBuilder {
             let content = recordChain(markdown_core_footnote_content(current))
             records[recordIndex].footnotes.append(NativeFootnoteRecord(footnote: current, content: content))
             footnote = markdown_core_footnote_next(current)
+        }
+    }
+
+    private mutating func recordSpecimens(of node: OpaquePointer, at recordIndex: Int) {
+        var specimen = markdown_core_node_document_specimens(node)
+        while let current = specimen {
+            let content = recordChain(markdown_core_specimen_content(current))
+            records[recordIndex].specimens.append(NativeSpecimenRecord(specimen: current, content: content))
+            specimen = markdown_core_specimen_next(current)
         }
     }
 
@@ -227,6 +246,9 @@ private struct NativeTreeBuilder {
                 footnotes: record.footnotes.map { footnote in
                     Footnote(from: footnote.footnote, content: nodes(footnote.content, "footnote content"))
                 },
+                specimens: record.specimens.map { specimen in
+                    Specimen(from: specimen.specimen, content: nodes(specimen.content, "specimen content"))
+                },
                 citations: record.citations.map { citation in
                     Citation(
                         from: citation.citation,
@@ -254,7 +276,12 @@ func markup(
 ) -> any Markup {
     switch markdown_core_node_get_kind(node) {
     case MARKDOWN_CORE_KIND_DOCUMENT:
-        Document(scope: Document.scope(from: node), content: relations.children, footnotes: relations.footnotes)
+        Document(
+            scope: Document.scope(from: node),
+            content: relations.children,
+            footnotes: relations.footnotes,
+            specimens: relations.specimens
+        )
     case MARKDOWN_CORE_KIND_CALLOUT: Callout(from: node, title: relations.title, content: relations.children)
     case MARKDOWN_CORE_KIND_PARAGRAPH: Paragraph(from: node, content: relations.children)
     case MARKDOWN_CORE_KIND_HEADING: Heading(from: node, content: relations.children)

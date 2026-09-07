@@ -95,14 +95,25 @@ private class DumpVisitor(
         // The footnotes are value lines after the content, each nesting its
         // own content; `children` counts the content alone.
         state.line("Document", node, children = node.content.size)
-        state.nested(node.content.size + node.footnotes.size) {
+        state.nested(node.content.size + node.footnotes.size + node.specimens.size) {
             node.content.forEach(state::dump)
             node.footnotes.forEach { footnote(it) }
+            node.specimens.forEach { specimen(it) }
         }
     }
 
     private fun footnote(value: Footnote) {
         state.line("Footnote", value.scope, listOf("id=${jsonString(value.id)}"), value.content.size)
+        state.nested(value.content.size) { value.content.forEach(state::dump) }
+    }
+
+    private fun specimen(value: Specimen) {
+        state.line(
+            "Specimen",
+            value.scope,
+            listOf("id=${optionalString(value.id)}", "start=${value.start ?: "null"}"),
+            value.content.size,
+        )
         state.nested(value.content.size) { value.content.forEach(state::dump) }
     }
 
@@ -143,6 +154,8 @@ private class DumpVisitor(
             listOf(
                 "flavor=${node.flavor.token()}",
                 "start=${node.start ?: "null"}",
+                "variant=${node.variant?.token() ?: "null"}",
+                "delimiter=${node.delimiter?.token() ?: "null"}",
                 "tight=${node.tight}",
             ),
             node.items,
@@ -150,7 +163,12 @@ private class DumpVisitor(
     }
 
     override fun visitListItem(node: ListItem) {
-        state.container("ListItem", node, listOf("checked=${node.checked ?: "null"}"), node.content)
+        state.container(
+            "ListItem",
+            node,
+            listOf("marker=${optionalString(node.marker)}"),
+            node.content,
+        )
     }
 
     override fun visitCodeBlock(node: CodeBlock) {
@@ -328,6 +346,7 @@ private fun referent(value: CitationReferent): String =
     when (value) {
         is CitationReferent.Bib -> "bib(key=${jsonString(value.key)},mode=${value.mode.token()})"
         is CitationReferent.Footnote -> "footnote(id=${jsonString(value.id)})"
+        is CitationReferent.Specimen -> "specimen(id=${jsonString(value.id)})"
     }
 
 private fun BibMode.token(): String =
@@ -340,6 +359,21 @@ private fun BibMode.token(): String =
 private fun PlacementMode.token(): String = name.lowercase()
 
 private fun ListFlavor.token(): String = name.lowercase()
+
+private fun OrderedListVariant.token(): String =
+    when (this) {
+        OrderedListVariant.Decimal -> "decimal"
+        is OrderedListVariant.Alpha -> "alpha(lowercased=$lowercased)"
+        is OrderedListVariant.Roman -> "roman(lowercased=$lowercased)"
+        OrderedListVariant.Default -> "default"
+    }
+
+private fun OrderedListDelimiter.token(): String =
+    when (this) {
+        OrderedListDelimiter.Period -> "period"
+        is OrderedListDelimiter.Parenthesis -> "parenthesis(closed=$closed)"
+        OrderedListDelimiter.Default -> "default"
+    }
 
 private fun TableAlignment.token(): String = name.lowercase()
 

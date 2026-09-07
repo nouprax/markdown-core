@@ -27,6 +27,17 @@ facade while removing renderer support and the caller-driven feed lifecycle.
   scanner now leaves an unopened closer to the base language, and the
   autolink scanner claims a colon that an address follows, as cmark-gfm
   links it.
+- Replace the lossy nullable task-list completion boolean with the authored
+  `ListItem.marker` as an owned UTF-8 string and expose completion
+  only as a derived binding convenience. Ordered lists now report their
+  authored decimal `variant` and `period` or `parenthesis(closed=false)` delimiter on every
+  public surface (M5).
+- Unify specimen definitions with the citation model: `Document.specimens`
+  owns `Specimen(id?, start?, content, scope)` values, and references use
+  `CitationReferent.specimen(id)`. All bindings, transports, dumps and walks
+  preserve the values; specimen syntax remains scheduled for P9b. Remove the
+  reserved example list variant and item label field. Alphabetic and Roman
+  variants retain `alpha(lowercased:)` and `roman(lowercased:)`.
 - Add the `Comment` kind on every surface (M0). An inline HTML comment token
   is a `Comment` whose literal is the bytes between `<!--` and `-->`, empty
   for `<!-->` and `<!--->`, and an HTML block that opens with `<!--` and whose

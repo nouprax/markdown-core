@@ -56,7 +56,7 @@ function parentEdges(tree) {
 }
 // A `Footnote` is a scoped value rather than a kind, and its content is block
 // content, so a comment nested under it is block-placed (M4).
-const BLOCK_CONTENT = new Set(["Document", "Callout", "ListItem", "Footnote", "DirectiveBlock"]);
+const BLOCK_CONTENT = new Set(["Document", "Callout", "ListItem", "Footnote", "Specimen", "DirectiveBlock"]);
 const INLINE_CONTENT = new Set([
     "Paragraph",
     "Heading",
@@ -78,9 +78,14 @@ const stateValidators = {
     "list.start.value": (tree) => /^.*List scope=.* start=-?\d+ /m.test(tree),
     "list.tight.false": (tree) => /^.*List scope=.* tight=false /m.test(tree),
     "list.tight.true": (tree) => /^.*List scope=.* tight=true /m.test(tree),
-    "listItem.checked.null": (tree) => /^.*ListItem scope=.* checked=null /m.test(tree),
-    "listItem.checked.false": (tree) => /^.*ListItem scope=.* checked=false /m.test(tree),
-    "listItem.checked.true": (tree) => /^.*ListItem scope=.* checked=true /m.test(tree),
+    "listItem.marker.null": (tree) => /^.*ListItem scope=.* marker=null /m.test(tree),
+    "listItem.marker.space": (tree) => /^.*ListItem scope=.* marker=" " /m.test(tree),
+    "listItem.marker.value": (tree) => /^.*ListItem scope=.* marker="[xX]" /m.test(tree),
+    "list.variant.decimal": (tree) => /^.*List scope=.* variant=decimal /m.test(tree),
+    "list.variant.null": (tree) => /^.*List scope=.* variant=null /m.test(tree),
+    "list.delimiter.period": (tree) => /^.*List scope=.* delimiter=period /m.test(tree),
+    "list.delimiter.parenthesis.unclosed": (tree) =>
+        /^.*List scope=.* delimiter=parenthesis\(closed=false\) /m.test(tree),
     "codeBlock.info.null": (tree) => /^.*CodeBlock scope=.* info=null /m.test(tree),
     "codeBlock.info.value": (tree) => /^.*CodeBlock scope=.* info="/m.test(tree),
     "codeBlock.language.null": (tree) => /^.*CodeBlock scope=.* language=null /m.test(tree),
@@ -168,6 +173,8 @@ const stateValidators = {
     "citation.referent.footnote": (tree) =>
         /^.*Citation scope=\S+ referent=footnote\(id="[^"]*"\) children=0$/m.test(tree),
     "citation.affix.empty": (tree) => /CitationPrefix children=0\n.*CitationSuffix children=0(?:\n|$)/.test(tree),
+    "document.specimens.empty": (tree) =>
+        tree.startsWith("Document scope=") && !/^(?:├──|└──) Specimen scope=/m.test(tree),
     "document.footnotes.empty": (tree) =>
         tree.startsWith("Document scope=") && !/^(?:├──|└──) Footnote scope=/m.test(tree),
     "document.footnotes.populated": (tree) => /^(?:├──|└──) Footnote scope=\S+ id="[^"]*" children=\d+$/m.test(tree)
