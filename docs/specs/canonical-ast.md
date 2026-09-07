@@ -33,7 +33,7 @@ or semantics.
 - Collections are ordered and read-only. Their order is source order unless a
   field below states otherwise.
 - `TableRow` and `TableCell` are scoped `Markup` kinds reached through typed
-  table properties. Being owned by `header`, `rows`, `cells`, and `content`
+  table properties. Being owned by `head`, `content`, `foot`, and `cells`
   does not make them non-node structural records.
 - `DirectiveLabel` is `Markup` owned by a directive's typed `label` field. It
   is not an element of the directive's `content` and is not exposed through a
@@ -256,9 +256,9 @@ and returns no document.
 | `CodeBlock` | `info: String?`, `language: String?`, `literal: String`, `fenced: Bool`, `closed: Bool` | `info` is the info string after escape and character-reference processing, stripped of leading and trailing spaces and tabs, and `null` when that is empty or the block is indented; `language` is the prefix of `info` before the first space or tab; `fenced` is true for a fenced block; `closed` is true if and only if a closing fence was found, and always for an indented block |
 | `HTMLBlock` | `literal: String` | raw HTML is preserved; a block that opens with `<!--` and whose end line holds only whitespace after the first `-->` is a `Comment` |
 | `FormulaBlock` | `literal: String` | a formula block is always standalone; see the note below |
-| `Table` | `alignments: [TableAlignment]`, `header: TableRow`, `rows: [TableRow]` | one alignment per column; header is non-optional; a row shorter than the delimiter row is completed with empty cells scoped at the row's end and a longer row is truncated, so every row has one cell per column |
-| `TableRow` | `isHeader: Bool`, `cells: [TableCell]` | `isHeader` is true only for `Table.header` and false for entries in `Table.rows` |
-| `TableCell` | `content: [Markup]` | inline content |
+| `Table` | `columns: [TableColumn]`, `head: [TableRow]`, `content: [TableRow]`, `foot: [TableRow]` | non-empty columns define the logical grid; groups retain stored order; pipe rows are completed or truncated to the column count |
+| `TableRow` | `cells: [TableCell]` | cells whose upper-left coordinate starts in this row, in logical order |
+| `TableCell` | `rowspan: Int`, `colspan: Int`, `content: [Markup]` | positive spans; inline or block content as parsed, with no Paragraph normalization |
 | `DirectiveBlock` | `name: String`, `attributes: [DirectiveAttribute]?`, `label: DirectiveLabel?`, `content: [Markup]` | attributes preserves first-occurrence source order with unique names; label is a node-valued field whose scope spans its brackets and is never part of content; content is block; an absent attribute container and an empty one remain distinct, as do an absent label and an empty one |
 | `DirectiveLabel` | `content: [Markup]` | inline content; the scope spans the brackets, so an empty label is still a place |
 | `Text` | `literal: String` | leaf |
@@ -288,15 +288,25 @@ unresolved reference is the inherited literal text with its brackets.
 ### Typed table ownership
 
 ```text
-Table(alignments, header: TableRow, rows: readonly TableRow[], scope)
-TableRow(isHeader, cells: readonly TableCell[], scope)
-TableCell(content: readonly Markup[], scope)
+Table(columns: [TableColumn], head: [TableRow], content: [TableRow], foot: [TableRow], scope)
+TableColumn(alignment: TableAlignment, relative: Double?)
+TableRow(cells: [TableCell], scope)
+TableCell(rowspan: Int, colspan: Int, content: [Markup], scope)
 ```
 
-These are all immutable `Markup` values. The typed edges preserve legal table
-shape without a generic public `children` property. `isHeader` mirrors and
-validates the owning edge: the value in `Table.header` is true and values in
-`Table.rows` are false.
+Tables, rows, and cells are immutable `Markup`; a column is an unscoped value.
+The C child chain contains the rows in head/content/foot order, partitioned by
+counts stored on the table. No row duplicates its owning group's identity.
+Bindings expose the three named arrays directly, and walkers traverse them in
+that order. Pipe tables produce one head row, body rows in `content`, empty
+`foot`, `relative=null`, and unit spans. Missing cells keep their scope at the
+row's end. Inherited cells keep their inline nodes directly; later block-cell
+syntax stores the parsed block sequence in the same `content` field.
+
+The [tables module](dialect/tables.md#logical-grid) defines placement, span
+occupancy, and group boundaries. `columns` is non-empty; a present `relative`
+is a positive finite authored width share. The caption field arrives with its
+kind and syntax in P11a.
 
 ## Parsing
 
@@ -341,7 +351,7 @@ language call-stack depth does not grow with AST depth.
 Walking does not expose an iterator or a generic child projection. Each
 node-kind traversal branch selects its own typed, owned relations. Relations
 are visited in canonical field order and arrays retain their stored order:
-`Table.header` precedes `Table.rows`, while `DirectiveBlock.label` precedes
+`Table.head`, `Table.content`, and `Table.foot` are visited in that order, while `DirectiveBlock.label` precedes
 `DirectiveBlock.content`. A directive label therefore participates in a
 complete AST walk as the named `label` field without becoming directive
 content or contributing to a `children` collection.

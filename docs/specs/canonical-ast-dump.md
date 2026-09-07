@@ -45,7 +45,7 @@ separated by exactly one space; a kind with no fields prints
 
 `children` counts the node's structural children: `content.count` for every
 content-bearing kind, `items.count` for `List`, `cells.count` for `TableRow`,
-one for `header` plus `rows.count` for `Table`, `citations.count` for `Cite`,
+`head.count + content.count + foot.count` for `Table`, `citations.count` for `Cite`,
 and zero for every leaf and for `Directive`. A directive's optional `label`
 is a separate Markup-valued field and is not included in that number, and
 neither are `Document.footnotes` and `Document.specimens`.
@@ -65,7 +65,7 @@ that owned output; they do not redefine every nested record as a child.
 - Integers use base-10 ASCII with no leading zero except zero itself.
 - Enums use their lowercase contract spelling without quotes.
 - Arrays use compact JSON punctuation with no spaces; enum elements inside
-  arrays are unquoted, as in `alignments=[none,left]`.
+  arrays are unquoted, as in `columns=[none:null,left:null]`.
 - Directive attributes are printed as their ordered name/value pairs. Each name
   keeps its first-occurrence source position; values use normal JSON string
   escaping.
@@ -101,6 +101,15 @@ nodes one level below it. A null title prints no line. `N` is the number of
 title nodes, never zero because a present title holds at least one node, and
 it is never counted by the callout's own `children`.
 
+A table prints its columns as compact `alignment:relative` values, for example
+`columns=[left:0.25,none:null]`. A double uses the shortest decimal that
+round-trips, using ordinary decimal notation for values in `[1e-6, 1e21)`
+and scientific notation otherwise (lowercase `e`, explicit `+` for a positive
+exponent, no exponent zero padding). Its rows always nest under three group lines, `TableHead`,
+`TableBody`, then `TableFoot`, including empty groups. The table's `children`
+counts their rows, not the group lines. A row prints no scalar fields; each
+cell prints `rowspan` then `colspan`, followed by its unchanged content.
+
 ## Field order by record kind
 
 Fields appear after `scope` and before `children` in exactly this order:
@@ -112,7 +121,7 @@ that the dump represents as nested descendants.
 
 | Kind | Ordered fields between `scope` and `children` |
 | --- | --- |
-| `Document`, `Paragraph`, `ThematicBreak`, `TableCell`, `DirectiveLabel`, `SoftBreak`, `LineBreak`, `Emphasis`, `Strong`, `Strikethrough`, `Cite` | none |
+| `Document`, `Paragraph`, `ThematicBreak`, `TableRow`, `DirectiveLabel`, `SoftBreak`, `LineBreak`, `Emphasis`, `Strong`, `Strikethrough`, `Cite` | none |
 | `Callout` | `variant`, `collapsed` |
 | `Heading` | `level` |
 | `List` | `flavor`, `start`, `variant`, `delimiter`, `tight` |
@@ -120,8 +129,8 @@ that the dump represents as nested descendants.
 | `CodeBlock` | `info`, `language`, `literal`, `fenced`, `closed` |
 | `HTMLBlock` | `literal` |
 | `FormulaBlock` | `literal` |
-| `Table` | `alignments` |
-| `TableRow` | `isHeader` |
+| `Table` | `columns` |
+| `TableCell` | `rowspan`, `colspan` |
 | `DirectiveBlock` | `name`, `attributes` |
 | `Text` | `literal` |
 | `Code` | `literal` |
@@ -199,13 +208,10 @@ item, so that the grammar has one answer before the first of them arrives:
 - Further tagged values print as `referent` does: `value=scalar(text("..."))`,
   `value=scalar(null)`, `value=scalar(bool(true))`,
   `value=scalar(number("1.50"))`, and `value=list([text("a"),number("1")])`.
-- A double prints as the shortest decimal that round-trips, and a table
-  column prints as `columns=[left:0.25,none:null]`.
 - Besides its structural children, a node prints these nested lines with the
   same connectors, in this order: `Document` prints its `Metadata` value when
   non-null, then the content, then its footnotes and specimens as today; `Table` prints its
-  `TableCaption` when non-null, then the `TableHead`, `TableBody`, and
-  `TableFoot` groups holding the rows; `Definition` prints a `DefinitionTerm`
+  `TableCaption` when non-null, then its existing row groups; `Definition` prints a `DefinitionTerm`
   group, then one `DefinitionBody` group per body.
 - Further value lines print as `Citation` and `Footnote` do:
   `Metadata scope=... children=N` and

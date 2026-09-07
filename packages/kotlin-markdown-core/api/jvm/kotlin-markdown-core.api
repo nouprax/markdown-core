@@ -375,9 +375,10 @@ public final class com/nouprax/markdown/core/Strong : com/nouprax/markdown/core/
 public final class com/nouprax/markdown/core/Table : com/nouprax/markdown/core/Markup {
 	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
 	public fun dump ()Ljava/lang/String;
-	public final fun getAlignments ()Ljava/util/List;
-	public final fun getHeader ()Lcom/nouprax/markdown/core/TableRow;
-	public final fun getRows ()Ljava/util/List;
+	public final fun getColumns ()Ljava/util/List;
+	public final fun getContent ()Ljava/util/List;
+	public final fun getFoot ()Ljava/util/List;
+	public final fun getHead ()Ljava/util/List;
 	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 }
 
@@ -394,8 +395,15 @@ public final class com/nouprax/markdown/core/TableAlignment : java/lang/Enum {
 public final class com/nouprax/markdown/core/TableCell : com/nouprax/markdown/core/Markup {
 	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
 	public fun dump ()Ljava/lang/String;
+	public final fun getColspan ()I
 	public final fun getContent ()Ljava/util/List;
+	public final fun getRowspan ()I
 	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+}
+
+public final class com/nouprax/markdown/core/TableColumn {
+	public final fun getAlignment ()Lcom/nouprax/markdown/core/TableAlignment;
+	public final fun getRelative ()Ljava/lang/Double;
 }
 
 public final class com/nouprax/markdown/core/TableRow : com/nouprax/markdown/core/Markup {
@@ -403,7 +411,6 @@ public final class com/nouprax/markdown/core/TableRow : com/nouprax/markdown/cor
 	public fun dump ()Ljava/lang/String;
 	public final fun getCells ()Ljava/util/List;
 	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
-	public final fun isHeader ()Z
 }
 
 public final class com/nouprax/markdown/core/Text : com/nouprax/markdown/core/Markup {

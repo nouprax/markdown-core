@@ -6,6 +6,10 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
+- Unify tables as columns plus head/content/foot row groups on C, Swift, Kotlin,
+  and ES. Remove row header flags, expose cell spans, and retain inline or block
+  cell content directly. Escaped pipes now retain authored content coordinates.
+
 Reconstruct the cmark-derived engine as the renamed, parser-only Markdown Core
 product. This line adds the repository parser extensions and immutable AST
 facade while removing renderer support and the caller-driven feed lifecycle.

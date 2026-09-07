@@ -48,10 +48,10 @@ test("api: walking dispatch is typed and preserves owned-field semantics", () =>
     walk(
         table,
         walkingVisitor((node, phase) => {
-            if (phase === "entering" && node.kind === "tableRow") tableRowKinds.push(node.isHeader);
+            if (phase === "entering" && node.kind === "tableRow") tableRowKinds.push(node.scope.start.line);
         })
     );
-    assert.deepEqual(tableRowKinds, [true, false]);
+    assert.deepEqual(tableRowKinds, [1, 3]);
 });
 
 test("api: the dialect has no switches, so a plain parse recognizes every feature", () => {
@@ -75,7 +75,10 @@ test("ast: typed fields are copied from the native result", () => {
     const document = Document.parse("3. item\n\n| a |\n| :-: |\n| b |\n");
     assert.equal(document.content[0].flavor, "ordered");
     assert.equal(document.content[0].start, 3);
-    assert.deepEqual(document.content[1].alignments, ["center"]);
+    assert.deepEqual(
+        document.content[1].columns.map((column) => column.alignment),
+        ["center"]
+    );
 });
 
 test("ast: every Markup exposes the canonical debug dump", () => {
@@ -667,4 +670,53 @@ test("ast: specimen definitions and references retain ownership, nulls and reset
     );
     assert.equal(events.filter((kind) => kind === "specimen").length, 2);
     assert.ok(events.indexOf("footnote") < events.indexOf("specimen"));
+});
+
+test("ast: table groups, column widths and spans survive the wire as owned facts", () => {
+    const source = "| h | i |\n| - | - |\n| b | c |\n| f | g |\n";
+    const bytes = nativeResult(source);
+    const view = new DataView(bytes.buffer);
+    const table = findNode(bytes, kinds.indexOf("table"));
+    // The third authored row becomes the foot group; no row-local tag exists.
+    view.setBigInt64(table + 48, 1n, true);
+    view.setBigInt64(table + 56, 1n, true);
+    const column = view.getUint32(52, true);
+    view.setUint32(column + 4, 1, true);
+    view.setFloat64(column + 8, 0.1, true);
+    const document = new NodeDecoder(bytes).decodeDocument();
+    const value = document.content[0];
+    assert.equal(value.head[0].cells[0].content[0].literal, "h");
+    assert.equal(value.content[0].cells[0].content[0].literal, "b");
+    assert.equal(value.foot[0].cells[0].content[0].literal, "f");
+    assert.deepEqual(value.columns, [
+        { alignment: "none", relative: 0.1 },
+        { alignment: "none", relative: null }
+    ]);
+    assert.ok(!("isHeader" in value.head[0]));
+    const visited = [];
+    walk(
+        value,
+        walkingVisitor((node, phase) => {
+            if (phase === "entering" && node.kind === "text") visited.push(node.literal);
+        })
+    );
+    assert.deepEqual(visited, ["h", "i", "b", "c", "f", "g"]);
+    assert.match(value.dump(), /columns=\[none:0.1,none:null\] children=3/);
+    assert.match(value.dump(), /TableFoot children=1/);
+    const row = findNode(bytes, kinds.indexOf("tableCell"));
+    const malformed = (change, pattern) => {
+        const copy = bytes.slice();
+        change(new DataView(copy.buffer));
+        assert.throws(() => new NodeDecoder(copy).decodeDocument(), pattern);
+    };
+    malformed((v) => v.setInt32(table + 44, -1, true), /row groups/);
+    malformed((v) => v.setBigInt64(table + 56, 2n, true), /row groups/);
+    malformed((v) => v.setBigInt64(row + 56, 0n, true), /spans/);
+    malformed((v) => v.setBigInt64(row + 48, -1n, true), /spans/);
+    malformed((v) => v.setFloat64(column + 8, Number.NaN, true), /column width/);
+    malformed((v) => v.setFloat64(column + 8, 0, true), /column width/);
+    malformed((v) => v.setUint32(column + 4, 2, true), /presence/);
+    bytes.fill(0);
+    assert.equal(value.columns[0].relative, 0.1);
+    assert.equal(value.foot[0].cells[0].content[0].literal, "f");
 });

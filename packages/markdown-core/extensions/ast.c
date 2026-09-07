@@ -423,48 +423,39 @@ bool markdown_core_node_formula_properties(const markdown_core_node *node, markd
     return true;
 }
 
-bool markdown_core_node_table_column_count(const markdown_core_node *node, size_t *count) {
-    if (!node || node->type != MARKDOWN_CORE_NODE_TABLE || !count) {
+bool markdown_core_node_table_properties(const markdown_core_node *node, size_t *column_count, size_t *head_count,
+                                         size_t *content_count, size_t *foot_count) {
+    if (!node || node->type != MARKDOWN_CORE_NODE_TABLE || !node->opaque || !column_count || !head_count ||
+        !content_count || !foot_count) {
         return false;
     }
-    *count = markdown_core_extensions_get_table_columns((markdown_core_node *)node);
+    const markdown_core_table *table = node->opaque;
+    *column_count = table->column_count;
+    *head_count = table->head_count;
+    *content_count = table->content_count;
+    *foot_count = table->foot_count;
     return true;
 }
 
-bool markdown_core_node_table_alignment_at(const markdown_core_node *node, size_t index,
-                                           markdown_core_table_alignment *alignment) {
-    uint16_t count;
-    uint8_t *alignments;
-    if (!node || node->type != MARKDOWN_CORE_NODE_TABLE || !alignment) {
+bool markdown_core_node_table_column_at(const markdown_core_node *node, size_t index,
+                                        markdown_core_table_column *column) {
+    if (!node || node->type != MARKDOWN_CORE_NODE_TABLE || !node->opaque || !column) {
         return false;
     }
-    count = markdown_core_extensions_get_table_columns((markdown_core_node *)node);
-    if (index >= count) {
+    const markdown_core_table *table = node->opaque;
+    if (index >= table->column_count) {
         return false;
     }
-    alignments = markdown_core_extensions_get_table_alignments((markdown_core_node *)node);
-    switch (alignments[index]) {
-    case 'l':
-        *alignment = MARKDOWN_CORE_TABLE_ALIGNMENT_LEFT;
-        break;
-    case 'c':
-        *alignment = MARKDOWN_CORE_TABLE_ALIGNMENT_CENTER;
-        break;
-    case 'r':
-        *alignment = MARKDOWN_CORE_TABLE_ALIGNMENT_RIGHT;
-        break;
-    default:
-        *alignment = MARKDOWN_CORE_TABLE_ALIGNMENT_NONE;
-        break;
-    }
+    *column = table->columns[index];
     return true;
 }
 
-bool markdown_core_node_table_row_is_header(const markdown_core_node *node, bool *is_header) {
-    if (!node || node->type != MARKDOWN_CORE_NODE_TABLE_ROW || !is_header) {
+bool markdown_core_node_table_cell_spans(const markdown_core_node *node, int64_t *rowspan, int64_t *colspan) {
+    if (!node || node->type != MARKDOWN_CORE_NODE_TABLE_CELL || !rowspan || !colspan) {
         return false;
     }
-    *is_header = markdown_core_extensions_get_table_row_is_header((markdown_core_node *)node) != 0;
+    *rowspan = node->as.table_cell.rowspan;
+    *colspan = node->as.table_cell.colspan;
     return true;
 }
 
@@ -865,6 +856,56 @@ static void buffer_optional_bool(dump_buffer *buffer, markdown_core_optional_boo
     }
 }
 
+/* Find the shortest significant digit sequence that round-trips. Use the
+ * process locale only inside snprintf/strtod, then emit ASCII digits with a
+ * fixed decimal/exponent policy, so locale never reaches the dump. Widths are
+ * finite and positive by the table contract. */
+static void buffer_double(dump_buffer *buffer, double value) {
+    char scientific[64], digits[18];
+    for (int precision = 0; precision < 17; precision++) {
+        snprintf(scientific, sizeof(scientific), "%.*e", precision, value);
+        if (strtod(scientific, NULL) == value) {
+            break;
+        }
+    }
+    char *exponent = strchr(scientific, 'e');
+    int power = (int)strtol(exponent + 1, NULL, 10);
+    size_t length = 0;
+    for (char *c = scientific; c < exponent; c++) {
+        if (*c >= '0' && *c <= '9') {
+            digits[length++] = *c;
+        }
+    }
+    while (length > 1 && digits[length - 1] == '0') {
+        length--;
+    }
+    if (power < -6 || power >= 21) {
+        buffer_bytes(buffer, (const uint8_t *)digits, 1);
+        if (length > 1) {
+            buffer_cstr(buffer, ".");
+            buffer_bytes(buffer, (const uint8_t *)digits + 1, length - 1);
+        }
+        buffer_cstr(buffer, "e");
+        if (power >= 0) {
+            buffer_cstr(buffer, "+");
+        }
+        buffer_i64(buffer, power);
+    } else if (power < 0) {
+        buffer_cstr(buffer, "0.");
+        for (int i = -1; i > power; i--) {
+            buffer_cstr(buffer, "0");
+        }
+        buffer_bytes(buffer, (const uint8_t *)digits, length);
+    } else {
+        for (int i = 0; i <= power || i < (int)length; i++) {
+            if (i == power + 1) {
+                buffer_cstr(buffer, ".");
+            }
+            buffer_bytes(buffer, (const uint8_t *)(i < (int)length ? &digits[i] : "0"), 1);
+        }
+    }
+}
+
 static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, markdown_core_node_kind kind) {
     markdown_core_string a = {NULL, 0}, b = {NULL, 0}, c = {NULL, 0};
     markdown_core_optional_string oa = {false, {NULL, 0}}, ob = {false, {NULL, 0}};
@@ -977,24 +1018,36 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
         buffer_cstr(buffer, " literal=");
         buffer_json_string(buffer, a);
         break;
-    case MARKDOWN_CORE_KIND_TABLE:
-        markdown_core_node_table_column_count(node, &count);
-        buffer_cstr(buffer, " alignments=[");
+    case MARKDOWN_CORE_KIND_TABLE: {
+        size_t head, content, foot;
+        markdown_core_node_table_properties(node, &count, &head, &content, &foot);
+        buffer_cstr(buffer, " columns=[");
         for (i = 0; i < count; i++) {
-            markdown_core_table_alignment alignment;
-            markdown_core_node_table_alignment_at(node, i, &alignment);
+            markdown_core_table_column column;
+            markdown_core_node_table_column_at(node, i, &column);
             if (i) {
                 buffer_cstr(buffer, ",");
             }
-            buffer_cstr(buffer, alignment_name(alignment));
+            buffer_cstr(buffer, alignment_name(column.alignment));
+            buffer_cstr(buffer, ":");
+            if (column.relative.has_value) {
+                buffer_double(buffer, column.relative.value);
+            } else {
+                buffer_cstr(buffer, "null");
+            }
         }
         buffer_cstr(buffer, "]");
         break;
-    case MARKDOWN_CORE_KIND_TABLE_ROW:
-        markdown_core_node_table_row_is_header(node, &x);
-        buffer_cstr(buffer, " isHeader=");
-        buffer_cstr(buffer, x ? "true" : "false");
+    }
+    case MARKDOWN_CORE_KIND_TABLE_CELL: {
+        int64_t rowspan, colspan;
+        markdown_core_node_table_cell_spans(node, &rowspan, &colspan);
+        buffer_cstr(buffer, " rowspan=");
+        buffer_i64(buffer, rowspan);
+        buffer_cstr(buffer, " colspan=");
+        buffer_i64(buffer, colspan);
         break;
+    }
     case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
     case MARKDOWN_CORE_KIND_DIRECTIVE:
         markdown_core_node_directive_properties(node, &a, &has_attributes, &count);
@@ -1118,6 +1171,22 @@ static void dump_callout_nodes(dump_buffer *buffer, const markdown_core_node *no
         }
     }
     dump_children(buffer, node, depth, remaining);
+}
+
+/* These group lines format the partition stored by the table. They are not
+ * nodes, and never change the table's structural child count. */
+static void dump_table_nodes(dump_buffer *buffer, const markdown_core_node *node, size_t depth) {
+    size_t columns, counts[3];
+    static const char *names[] = {"TableHead", "TableBody", "TableFoot"};
+    markdown_core_node_table_properties(node, &columns, &counts[0], &counts[1], &counts[2]);
+    const markdown_core_node *row = markdown_core_node_get_first_child(node);
+    for (size_t group = 0; group < 3; group++) {
+        dump_group_line(buffer, names[group], counts[group], depth, group < 2);
+        for (size_t i = 0; i < counts[group]; i++) {
+            dump_nested_node(buffer, row, depth + 1, i + 1 < counts[group]);
+            row = markdown_core_node_get_next_sibling(row);
+        }
+    }
 }
 
 static size_t chain_length(const markdown_core_node *first) {
@@ -1275,6 +1344,9 @@ static void dump_node(dump_buffer *buffer, const markdown_core_node *node, size_
      * emitted.  Generic child traversal never discovers fields. A directive
      * explicitly emits its label field before its independent content list. */
     switch (kind) {
+    case MARKDOWN_CORE_KIND_TABLE:
+        dump_table_nodes(buffer, node, depth);
+        break;
     case MARKDOWN_CORE_KIND_DIRECTIVE:
     case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
         dump_directive_nodes(buffer, node, depth, child_count);
@@ -1292,7 +1364,6 @@ static void dump_node(dump_buffer *buffer, const markdown_core_node *node, size_
     case MARKDOWN_CORE_KIND_HEADING:
     case MARKDOWN_CORE_KIND_LIST:
     case MARKDOWN_CORE_KIND_LIST_ITEM:
-    case MARKDOWN_CORE_KIND_TABLE:
     case MARKDOWN_CORE_KIND_TABLE_ROW:
     case MARKDOWN_CORE_KIND_TABLE_CELL:
     case MARKDOWN_CORE_KIND_DIRECTIVE_LABEL:

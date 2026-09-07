@@ -211,13 +211,16 @@ a
 b.| status |
 .
 Document scope=1:1..3:12 children=1
-└── Table scope=1:1..3:12 alignments=[none] children=2
-    ├── TableRow scope=1:1..1:1 isHeader=true children=1
-    │   └── TableCell scope=1:1..1:1 children=1
-    │       └── Text scope=1:1..1:1 literal="a" children=0
-    └── TableRow scope=3:1..3:12 isHeader=false children=1
-        └── TableCell scope=3:1..3:2 children=1
-            └── Text scope=3:1..3:2 literal="b." children=0
+└── Table scope=1:1..3:12 columns=[none:null] children=2
+    ├── TableHead children=1
+    │   └── TableRow scope=1:1..1:1 children=1
+    │       └── TableCell scope=1:1..1:1 rowspan=1 colspan=1 children=1
+    │           └── Text scope=1:1..1:1 literal="a" children=0
+    ├── TableBody children=1
+    │   └── TableRow scope=3:1..3:12 children=1
+    │       └── TableCell scope=3:1..3:2 rowspan=1 colspan=1 children=1
+    │           └── Text scope=3:1..3:2 literal="b." children=0
+    └── TableFoot children=0
 ````````````````````````````````
 
 A multi-line paragraph whose last line is a table header row: the split-off
@@ -236,12 +239,15 @@ lead \| text
 Document scope=1:1..3:9 children=2
 ├── Paragraph scope=1:1..1:12 children=1
 │   └── Text scope=1:1..1:12 literal="lead | text" children=0
-└── Table scope=2:1..3:9 alignments=[none,none] children=1
-    └── TableRow scope=2:1..2:9 isHeader=true children=2
-        ├── TableCell scope=2:2..2:4 children=1
-        │   └── Text scope=2:3..2:3 literal="a" children=0
-        └── TableCell scope=2:6..2:8 children=1
-            └── Text scope=2:7..2:7 literal="b" children=0
+└── Table scope=2:1..3:9 columns=[none:null,none:null] children=1
+    ├── TableHead children=1
+    │   └── TableRow scope=2:1..2:9 children=2
+    │       ├── TableCell scope=2:2..2:4 rowspan=1 colspan=1 children=1
+    │       │   └── Text scope=2:3..2:3 literal="a" children=0
+    │       └── TableCell scope=2:6..2:8 rowspan=1 colspan=1 children=1
+    │           └── Text scope=2:7..2:7 literal="b" children=0
+    ├── TableBody children=0
+    └── TableFoot children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
@@ -252,12 +258,15 @@ pre \\| lead
 Document scope=1:1..3:9 children=2
 ├── Paragraph scope=1:1..1:12 children=1
 │   └── Text scope=1:1..1:12 literal="pre \\| lead" children=0
-└── Table scope=2:1..3:9 alignments=[none,none] children=1
-    └── TableRow scope=2:1..2:9 isHeader=true children=2
-        ├── TableCell scope=2:2..2:4 children=1
-        │   └── Text scope=2:3..2:3 literal="a" children=0
-        └── TableCell scope=2:6..2:8 children=1
-            └── Text scope=2:7..2:7 literal="b" children=0
+└── Table scope=2:1..3:9 columns=[none:null,none:null] children=1
+    ├── TableHead children=1
+    │   └── TableRow scope=2:1..2:9 children=2
+    │       ├── TableCell scope=2:2..2:4 rowspan=1 colspan=1 children=1
+    │       │   └── Text scope=2:3..2:3 literal="a" children=0
+    │       └── TableCell scope=2:6..2:8 rowspan=1 colspan=1 children=1
+    │           └── Text scope=2:7..2:7 literal="b" children=0
+    ├── TableBody children=0
+    └── TableFoot children=0
 ````````````````````````````````
 
 A code span whose content spans a line. CommonMark treats the line ending as a
@@ -373,44 +382,50 @@ Ragged rows use their own table's width, including tables nested in containers.
 > | first | second | third | ignored |
 .
 Document scope=1:1..9:38 children=2
-├── Table scope=1:1..4:28 alignments=[none,none] children=3
-│   ├── TableRow scope=1:1..1:9 isHeader=true children=2
-│   │   ├── TableCell scope=1:2..1:4 children=1
-│   │   │   └── Text scope=1:3..1:3 literal="a" children=0
-│   │   └── TableCell scope=1:6..1:8 children=1
-│   │       └── Text scope=1:7..1:7 literal="b" children=0
-│   ├── TableRow scope=3:1..3:13 isHeader=false children=2
-│   │   ├── TableCell scope=3:1..3:13 children=1
-│   │   │   └── Directive scope=3:1..3:13 name="badge" attributes=null children=0
-│   │   │       └── DirectiveLabel scope=3:7..3:13 children=1
-│   │   │           └── Text scope=3:8..3:12 literal="short" children=0
-│   │   └── TableCell scope=3:13..3:13 children=0
-│   └── TableRow scope=4:1..4:28 isHeader=false children=2
-│       ├── TableCell scope=4:2..4:8 children=1
-│       │   └── Text scope=4:3..4:7 literal="first" children=0
-│       └── TableCell scope=4:10..4:17 children=1
-│           └── Text scope=4:11..4:16 literal="second" children=0
+├── Table scope=1:1..4:28 columns=[none:null,none:null] children=3
+│   ├── TableHead children=1
+│   │   └── TableRow scope=1:1..1:9 children=2
+│   │       ├── TableCell scope=1:2..1:4 rowspan=1 colspan=1 children=1
+│   │       │   └── Text scope=1:3..1:3 literal="a" children=0
+│   │       └── TableCell scope=1:6..1:8 rowspan=1 colspan=1 children=1
+│   │           └── Text scope=1:7..1:7 literal="b" children=0
+│   ├── TableBody children=2
+│   │   ├── TableRow scope=3:1..3:13 children=2
+│   │   │   ├── TableCell scope=3:1..3:13 rowspan=1 colspan=1 children=1
+│   │   │   │   └── Directive scope=3:1..3:13 name="badge" attributes=null children=0
+│   │   │   │       └── DirectiveLabel scope=3:7..3:13 children=1
+│   │   │   │           └── Text scope=3:8..3:12 literal="short" children=0
+│   │   │   └── TableCell scope=3:13..3:13 rowspan=1 colspan=1 children=0
+│   │   └── TableRow scope=4:1..4:28 children=2
+│   │       ├── TableCell scope=4:2..4:8 rowspan=1 colspan=1 children=1
+│   │       │   └── Text scope=4:3..4:7 literal="first" children=0
+│   │       └── TableCell scope=4:10..4:17 rowspan=1 colspan=1 children=1
+│   │           └── Text scope=4:11..4:16 literal="second" children=0
+│   └── TableFoot children=0
 └── Callout scope=6:1..9:38 variant=null collapsed=null children=1
-    └── Table scope=6:3..9:38 alignments=[none,none,none] children=3
-        ├── TableRow scope=6:3..6:15 isHeader=true children=3
-        │   ├── TableCell scope=6:4..6:6 children=1
-        │   │   └── Text scope=6:5..6:5 literal="a" children=0
-        │   ├── TableCell scope=6:8..6:10 children=1
-        │   │   └── Text scope=6:9..6:9 literal="b" children=0
-        │   └── TableCell scope=6:12..6:14 children=1
-        │       └── Text scope=6:13..6:13 literal="c" children=0
-        ├── TableRow scope=8:3..8:7 isHeader=false children=3
-        │   ├── TableCell scope=8:3..8:7 children=1
-        │   │   └── Text scope=8:3..8:7 literal="short" children=0
-        │   ├── TableCell scope=8:7..8:7 children=0
-        │   └── TableCell scope=8:7..8:7 children=0
-        └── TableRow scope=9:3..9:38 isHeader=false children=3
-            ├── TableCell scope=9:4..9:10 children=1
-            │   └── Text scope=9:5..9:9 literal="first" children=0
-            ├── TableCell scope=9:12..9:19 children=1
-            │   └── Text scope=9:13..9:18 literal="second" children=0
-            └── TableCell scope=9:21..9:27 children=1
-                └── Text scope=9:22..9:26 literal="third" children=0
+    └── Table scope=6:3..9:38 columns=[none:null,none:null,none:null] children=3
+        ├── TableHead children=1
+        │   └── TableRow scope=6:3..6:15 children=3
+        │       ├── TableCell scope=6:4..6:6 rowspan=1 colspan=1 children=1
+        │       │   └── Text scope=6:5..6:5 literal="a" children=0
+        │       ├── TableCell scope=6:8..6:10 rowspan=1 colspan=1 children=1
+        │       │   └── Text scope=6:9..6:9 literal="b" children=0
+        │       └── TableCell scope=6:12..6:14 rowspan=1 colspan=1 children=1
+        │           └── Text scope=6:13..6:13 literal="c" children=0
+        ├── TableBody children=2
+        │   ├── TableRow scope=8:3..8:7 children=3
+        │   │   ├── TableCell scope=8:3..8:7 rowspan=1 colspan=1 children=1
+        │   │   │   └── Text scope=8:3..8:7 literal="short" children=0
+        │   │   ├── TableCell scope=8:7..8:7 rowspan=1 colspan=1 children=0
+        │   │   └── TableCell scope=8:7..8:7 rowspan=1 colspan=1 children=0
+        │   └── TableRow scope=9:3..9:38 children=3
+        │       ├── TableCell scope=9:4..9:10 rowspan=1 colspan=1 children=1
+        │       │   └── Text scope=9:5..9:9 literal="first" children=0
+        │       ├── TableCell scope=9:12..9:19 rowspan=1 colspan=1 children=1
+        │       │   └── Text scope=9:13..9:18 literal="second" children=0
+        │       └── TableCell scope=9:21..9:27 rowspan=1 colspan=1 children=1
+        │           └── Text scope=9:22..9:26 literal="third" children=0
+        └── TableFoot children=0
 ````````````````````````````````
 
 List tightness includes separation inside an item, independently of nested list tightness.

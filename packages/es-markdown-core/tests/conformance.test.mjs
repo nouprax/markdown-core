@@ -73,21 +73,25 @@ test("conformance: fields, nullability, and typed table nodes map to JavaScript"
     assert.equal(document.content[1].items[0].marker, "x");
     assert.equal(document.content[1].items[0].tasked, true);
     assert.equal(document.content[1].items[0].completed, true);
-    assert.deepEqual(document.content[2].alignments, ["center"]);
-    assert.equal(document.content[2].header.isHeader, true);
-    assert.equal(document.content[2].rows[0].isHeader, false);
-    assert.equal(document.content[2].header.cells.length, 1);
-    assert.equal(document.content[2].header.cells[0].content[0].literal, "a");
-    assert.equal(document.content[2].rows[0].cells[0].content[0].literal, "b");
+    assert.deepEqual(
+        document.content[2].columns.map((column) => column.alignment),
+        ["center"]
+    );
+    assert.equal(document.content[2].head.length, 1);
+    assert.equal(document.content[2].content.length, 1);
+    assert.deepEqual(document.content[2].foot, []);
+    assert.equal(document.content[2].head[0].cells.length, 1);
+    assert.equal(document.content[2].head[0].cells[0].content[0].literal, "a");
+    assert.equal(document.content[2].content[0].cells[0].content[0].literal, "b");
     assert.equal(
-        visit(document.content[2].header, {
+        visit(document.content[2].head[0], {
             ...kindVisitor,
-            visitTableRow: (node) => (node.isHeader ? "header" : "row")
+            visitTableRow: () => "row"
         }),
-        "header"
+        "row"
     );
     assert.equal(
-        visit(document.content[2].header.cells[0], {
+        visit(document.content[2].head[0].cells[0], {
             ...kindVisitor,
             visitTableCell: () => "cell"
         }),

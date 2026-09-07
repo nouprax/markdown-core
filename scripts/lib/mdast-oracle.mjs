@@ -1,3 +1,4 @@
+import { tableGroups } from "./upstream-cmark.mjs";
 /**
  * mdast/remark normalization.
  *
@@ -182,7 +183,10 @@ function convert(node, definitions, parentType = "root") {
         return [{ kind: "Cite", fields: {}, children: [citationItem({ referent: `footnote(id=${id})` })] }];
     }
     if (node.type === "footnoteDefinition") fields.id = (node.identifier ?? node.label ?? "").toLowerCase();
-    if (node.type === "tableRow") fields.isHeader = "false";
+    if (node.type === "tableCell") {
+        fields.rowspan = "1";
+        fields.colspan = "1";
+    }
     if (node.type === "inlineMath" || node.type === "math") fields.literal = node.value ?? "";
     if (node.type === "textDirective" || node.type === "leafDirective" || node.type === "containerDirective") {
         fields.name = node.name ?? "";
@@ -196,11 +200,15 @@ function convert(node, definitions, parentType = "root") {
     // visible, and use this table's own width at every nesting depth.
     if (node.type === "table") {
         const width = node.align.length;
-        for (const [index, row] of children.entries()) {
-            row.fields.isHeader = String(index === 0);
+        for (const row of children) {
             row.children = row.children.slice(0, width);
-            while (row.children.length < width) row.children.push({ kind: "TableCell", fields: {}, children: [] });
+            while (row.children.length < width)
+                row.children.push({ kind: "TableCell", fields: { rowspan: "1", colspan: "1" }, children: [] });
         }
+    }
+    if (node.type === "table") {
+        fields.columns = `[${node.align.map((alignment) => `${alignment ?? "none"}:null`).join(",")}]`;
+        children = tableGroups(children);
     }
     // A directive's label becomes a nested `DirectiveLabel` in this comparison
     // tree. In the canonical AST it is a field, not directive content. mdast states it two
@@ -277,7 +285,8 @@ export const MDAST_COMPARED = {
     Comment: ["literal"],
     Link: ["dest", "title"],
     Image: ["dest", "title"],
-    TableRow: ["isHeader"],
+    Table: ["columns"],
+    TableCell: ["rowspan", "colspan"],
     // §5.6: footnote label bytes used to be compared by NOBODY, on either
     // side. mdast's `label` is the authored spelling and so is this side's, so
     // there is something to compare as of Step 9b.2. `identifier` is NOT

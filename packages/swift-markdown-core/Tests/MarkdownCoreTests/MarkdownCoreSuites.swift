@@ -54,8 +54,8 @@ import Testing
         let table = try #require(
             Document.parse("| a |\n| --- |\n| b |\n").content.first as? Table
         )
-        #expect(table.header.accept(&visitor) == "header")
-        #expect(table.header.cells[0].accept(&visitor) == "cell")
+        #expect(table.head[0].accept(&visitor) == "row")
+        #expect(table.head[0].cells[0].accept(&visitor) == "cell")
     }
 
     @Test("the dialect has no switches: every feature is recognised by a plain parse")
@@ -102,7 +102,7 @@ import Testing
         )
         var tableVisitor = RecordingWalkingVisitor()
         table.walk(with: &tableVisitor)
-        #expect(tableVisitor.tableRowKinds == [true, false])
+        #expect(tableVisitor.tableRowKinds == [1, 3])
     }
 }
 
@@ -363,7 +363,7 @@ private struct KindVisitor: MarkupVisitor {
     mutating func visit(_ node: Image) -> String { kindName(node) }
     mutating func visit(_ node: Directive) -> String { kindName(node) }
     mutating func visit(_ node: Cite) -> String { kindName(node) }
-    mutating func visit(_ node: TableRow) -> String { node.isHeader ? "header" : "row" }
+    mutating func visit(_ node: TableRow) -> String { "row" }
     mutating func visit(_ node: TableCell) -> String { "cell" }
 }
 
@@ -373,10 +373,10 @@ private func kindName(_ node: any Markup) -> String {
     String(describing: type(of: node))
 }
 
-private struct RecordingWalkingVisitor: MarkupWalkingVisitor {
+struct RecordingWalkingVisitor: MarkupWalkingVisitor {
     private let recordEvents: Bool
     var events: [String] = []
-    var tableRowKinds: [Bool] = []
+    var tableRowKinds: [Int] = []
     var entered = 0
     var exited = 0
 
@@ -425,7 +425,7 @@ private struct RecordingWalkingVisitor: MarkupWalkingVisitor {
     mutating func visit(_ node: Cite, phase: WalkPhase) { record(node, phase) }
     mutating func visit(_ node: TableRow, phase: WalkPhase) {
         record(node, phase)
-        if phase == .entering { tableRowKinds.append(node.isHeader) }
+        if phase == .entering { tableRowKinds.append(Int(node.scope.start.line)) }
     }
     mutating func visit(_ node: TableCell, phase: WalkPhase) { record(node, phase) }
     mutating func visit(_ value: Citation, phase: WalkPhase) { record("Citation", phase) }

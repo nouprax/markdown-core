@@ -50,3 +50,8 @@ the named `label` field, not as directive content.
 the canonical debug tree for a complete document or focused subtree. The
 text is intended for logs, snapshots, and debugging rather than persistence or
 data interchange.
+
+Tables expose `columns`, `head`, `content`, and `foot`. Each `TableColumn` has
+`alignment` and nullable `relative`; each `TableCell` has `rowspan`, `colspan`,
+and direct inline or block `content`. Rows carry their cells and scope; group
+ownership belongs to the table. Pipe tables have unit spans and no authored widths.

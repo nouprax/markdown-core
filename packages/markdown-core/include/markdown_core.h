@@ -169,6 +169,12 @@ typedef struct markdown_core_ordered_list_delimiter {
     bool closed;
 } markdown_core_ordered_list_delimiter;
 
+/** A positive authored width share, or absent when no width was authored. */
+typedef struct markdown_core_optional_double {
+    bool has_value;
+    double value;
+} markdown_core_optional_double;
+
 typedef enum markdown_core_placement_mode {
     MARKDOWN_CORE_PLACEMENT_EMBEDDED = 1,
     MARKDOWN_CORE_PLACEMENT_STANDALONE = 2
@@ -180,6 +186,11 @@ typedef enum markdown_core_table_alignment {
     MARKDOWN_CORE_TABLE_ALIGNMENT_CENTER = 2,
     MARKDOWN_CORE_TABLE_ALIGNMENT_RIGHT = 3
 } markdown_core_table_alignment;
+
+typedef struct markdown_core_table_column {
+    markdown_core_table_alignment alignment;
+    markdown_core_optional_double relative;
+} markdown_core_table_column;
 
 typedef struct markdown_core_optional_i64 {
     bool has_value;
@@ -268,10 +279,15 @@ MARKDOWN_CORE_API bool markdown_core_node_literal(const markdown_core_node *node
 MARKDOWN_CORE_API bool markdown_core_node_formula_properties(const markdown_core_node *node,
                                                              markdown_core_placement_mode *mode,
                                                              markdown_core_string *literal);
-MARKDOWN_CORE_API bool markdown_core_node_table_column_count(const markdown_core_node *node, size_t *count);
-MARKDOWN_CORE_API bool markdown_core_node_table_alignment_at(const markdown_core_node *node, size_t index,
-                                                             markdown_core_table_alignment *alignment);
-MARKDOWN_CORE_API bool markdown_core_node_table_row_is_header(const markdown_core_node *node, bool *is_header);
+/** The node's children are its rows, in head/content/foot order. These counts
+ * partition that single owned chain; row membership is a table fact. */
+MARKDOWN_CORE_API bool markdown_core_node_table_properties(const markdown_core_node *node, size_t *column_count,
+                                                           size_t *head_count, size_t *content_count,
+                                                           size_t *foot_count);
+MARKDOWN_CORE_API bool markdown_core_node_table_column_at(const markdown_core_node *node, size_t index,
+                                                          markdown_core_table_column *column);
+MARKDOWN_CORE_API bool markdown_core_node_table_cell_spans(const markdown_core_node *node, int64_t *rowspan,
+                                                           int64_t *colspan);
 /** A directive's properties. There is no `mode`: an inline `Directive` is
  * always embedded and a `DirectiveBlock` always standalone, so the value was
  * implied by the kind and four surfaces had to keep a constant in step (Q29). */

@@ -344,9 +344,9 @@ int markdown_core_parser_get_first_nonspace(markdown_core_parser *parser);
  * is the whole answer for content that is one line long, which is what all of
  * those are.
  */
-/** Copy the marks covering [from, from + length) of 'owner''s content onto
- * 'node', rebased so the first covers 'node''s own offset zero. Returns 1, or 0
- * when there is nothing to copy.
+/** Share the immutable marks covering [from, from + length) of 'owner''s
+ * content with 'node', with its content origin at 'from'. Returns 1, or 0
+ * when there is nothing to map. This does not allocate.
  *
  * For content that is a SLICE of another block's content and more than one line
  * long -- the paragraph a table was split out of -- where one mark would put
@@ -376,6 +376,25 @@ int markdown_core_parser_mark_content(markdown_core_parser *parser, markdown_cor
 MARKDOWN_CORE_EXPORT
 int markdown_core_parser_content_place(markdown_core_parser *parser, markdown_core_node *node, bufsize_t content_offset,
                                        int *line, int *column);
+
+/** Append a source run for content already assembled by a producer. Runs
+ * must be contiguous in the parser vector and have increasing content offsets.
+ * source_width is the authored width represented by each logical byte, and
+ * source_step is the source-column stride. Allocation failure marks the parse lost. */
+int markdown_core_parser_append_content_mark(markdown_core_parser *parser, markdown_core_node *node, bufsize_t offset,
+                                             int line, int column, int source_width, int source_step);
+/** Append the source runs covering a literal slice to a growing result map.
+ * Each source run is copied once; producers use adopt_content_marks for a
+ * read-only slice that needs no allocation. */
+int markdown_core_parser_append_content_marks(markdown_core_parser *parser, markdown_core_node *owner,
+                                              markdown_core_node *node, bufsize_t from, bufsize_t length,
+                                              bufsize_t offset);
+/** Project a logical inline range, including its Text literal mapping. */
+void markdown_core_inline_parser_place(markdown_core_inline_parser *parser, markdown_core_node *node, int from, int to);
+/** The inclusive end of the authored bytes represented by a content byte.
+ * Uses the same run lookup as content_place, which returns its start. */
+int markdown_core_parser_content_end_place(markdown_core_parser *parser, markdown_core_node *node, bufsize_t offset,
+                                           int *line, int *column);
 
 /** Return the absolute index of the first nonspace column coming after 'offset'
  * in the line currently being processed, counting tabs as multiple
@@ -535,7 +554,7 @@ int markdown_core_inline_parser_in_bracket(markdown_core_inline_parser *parser, 
  * child is MARKDOWN_CORE_NODE_TEXT.
  */
 MARKDOWN_CORE_EXPORT
-void markdown_core_node_unput(markdown_core_node *node, int n);
+void markdown_core_node_unput(markdown_core_parser *parser, markdown_core_node *node, int n);
 
 /** Get the character located at the current inline parsing offset
  */

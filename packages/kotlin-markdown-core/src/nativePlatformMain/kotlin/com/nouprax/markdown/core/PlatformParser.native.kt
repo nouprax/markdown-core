@@ -100,9 +100,9 @@ import com.nouprax.markdown.core.internal.capi.markdown_core_node_list_propertie
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_literal
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_resource
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_scope
-import com.nouprax.markdown.core.internal.capi.markdown_core_node_table_alignment_at
-import com.nouprax.markdown.core.internal.capi.markdown_core_node_table_column_count
-import com.nouprax.markdown.core.internal.capi.markdown_core_node_table_row_is_header
+import com.nouprax.markdown.core.internal.capi.markdown_core_node_table_cell_spans
+import com.nouprax.markdown.core.internal.capi.markdown_core_node_table_column_at
+import com.nouprax.markdown.core.internal.capi.markdown_core_node_table_properties
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_title
 import com.nouprax.markdown.core.internal.capi.markdown_core_optional_bool
 import com.nouprax.markdown.core.internal.capi.markdown_core_optional_i64
@@ -117,7 +117,7 @@ import com.nouprax.markdown.core.internal.capi.markdown_core_specimen_next
 import com.nouprax.markdown.core.internal.capi.markdown_core_specimen_properties
 import com.nouprax.markdown.core.internal.capi.markdown_core_specimen_scope
 import com.nouprax.markdown.core.internal.capi.markdown_core_string
-import com.nouprax.markdown.core.internal.capi.markdown_core_table_alignmentVar
+import com.nouprax.markdown.core.internal.capi.markdown_core_table_column
 import kotlinx.cinterop.BooleanVar
 import kotlinx.cinterop.CPointer
 import kotlinx.cinterop.CPointerVar
@@ -453,11 +453,11 @@ private class NativeTreeBuilder(
             }
 
             MARKDOWN_CORE_KIND_TABLE_ROW -> {
-                scratch.tableRow(node, children, scope)
+                scratch.tableRow(children, scope)
             }
 
             MARKDOWN_CORE_KIND_TABLE_CELL -> {
-                TableCell(children, scope)
+                scratch.tableCell(node, children, scope)
             }
 
             MARKDOWN_CORE_KIND_DIRECTIVE_LABEL -> {
@@ -561,7 +561,12 @@ private class NativeScratch(
     private val listVariant = scope.alloc<markdown_core_ordered_list_variant>()
     private val listDelimiter = scope.alloc<markdown_core_ordered_list_delimiter>()
     private val placementMode = scope.alloc<markdown_core_placement_modeVar>()
-    private val tableAlignment = scope.alloc<markdown_core_table_alignmentVar>()
+    private val tableColumn = scope.alloc<markdown_core_table_column>()
+    private val tableHead = scope.alloc<size_tVar>()
+    private val tableContent = scope.alloc<size_tVar>()
+    private val tableFoot = scope.alloc<size_tVar>()
+    private val tableRowspan = scope.alloc<kotlinx.cinterop.LongVar>()
+    private val tableColspan = scope.alloc<kotlinx.cinterop.LongVar>()
     private val destination = scope.alloc<markdown_core_destination>()
     private val referent = scope.alloc<markdown_core_referent>()
 
@@ -674,34 +679,56 @@ private class NativeScratch(
         children: kotlin.collections.List<Markup>,
         scope: Scope,
     ): Table {
-        require(markdown_core_node_table_column_count(node, count.ptr)) { "invalid table node" }
-        val alignments =
+        require(markdown_core_node_table_properties(node, count.ptr, tableHead.ptr, tableContent.ptr, tableFoot.ptr)) {
+            "invalid table node"
+        }
+        val columns =
             immutableList(count.value.checkedSize("table column count")) { index ->
-                require(markdown_core_node_table_alignment_at(node, index.toULong(), tableAlignment.ptr)) {
-                    "invalid table alignment"
-                }
-                when (tableAlignment.value) {
-                    MARKDOWN_CORE_TABLE_ALIGNMENT_NONE -> TableAlignment.NONE
-                    MARKDOWN_CORE_TABLE_ALIGNMENT_LEFT -> TableAlignment.LEFT
-                    MARKDOWN_CORE_TABLE_ALIGNMENT_CENTER -> TableAlignment.CENTER
-                    MARKDOWN_CORE_TABLE_ALIGNMENT_RIGHT -> TableAlignment.RIGHT
-                    else -> error("unsupported native table alignment ${tableAlignment.value}")
-                }
+                require(
+                    markdown_core_node_table_column_at(node, index.toULong(), tableColumn.ptr),
+                ) { "invalid table column" }
+                val alignment =
+                    when (tableColumn.alignment) {
+                        MARKDOWN_CORE_TABLE_ALIGNMENT_NONE -> TableAlignment.NONE
+                        MARKDOWN_CORE_TABLE_ALIGNMENT_LEFT -> TableAlignment.LEFT
+                        MARKDOWN_CORE_TABLE_ALIGNMENT_CENTER -> TableAlignment.CENTER
+                        MARKDOWN_CORE_TABLE_ALIGNMENT_RIGHT -> TableAlignment.RIGHT
+                        else -> error("unsupported native table alignment ${tableColumn.alignment}")
+                    }
+                TableColumn(alignment, tableColumn.relative.value.takeIf { tableColumn.relative.has_value })
             }
+        val head = tableHead.value.checkedSize("table head count")
+        val content = tableContent.value.checkedSize("table content count")
+        val foot = tableFoot.value.checkedSize("table foot count")
+        require(head.toLong() + content + foot == children.size.toLong()) { "invalid table row groups" }
         val rows = children.immutableMap { requireNotNull(it as? TableRow) { "table contains a non-row node" } }
-        val headers = rows.filter(TableRow::isHeader)
-        require(headers.size == 1) { "table must contain exactly one header row" }
-        return Table(alignments, headers.single(), rows.filterNot(TableRow::isHeader).immutableMap { it }, scope)
+        return Table(
+            columns,
+            immutableList(head) { rows[it] },
+            immutableList(content) { rows[head + it] },
+            immutableList(foot) { rows[head + content + it] },
+            scope,
+        )
     }
 
     fun tableRow(
-        node: CPointer<markdown_core_node>,
         children: kotlin.collections.List<Markup>,
         scope: Scope,
     ): TableRow {
-        require(markdown_core_node_table_row_is_header(node, firstBoolean.ptr)) { "invalid table row node" }
         val cells = children.immutableMap { requireNotNull(it as? TableCell) { "table row contains a non-cell node" } }
-        return TableRow(firstBoolean.value, cells, scope)
+        return TableRow(cells, scope)
+    }
+
+    fun tableCell(
+        node: CPointer<markdown_core_node>,
+        children: kotlin.collections.List<Markup>,
+        scope: Scope,
+    ): TableCell {
+        require(markdown_core_node_table_cell_spans(node, tableRowspan.ptr, tableColspan.ptr)) { "invalid table cell" }
+        require(tableRowspan.value in 1..Int.MAX_VALUE.toLong() && tableColspan.value in 1..Int.MAX_VALUE.toLong()) {
+            "invalid table cell spans"
+        }
+        return TableCell(tableRowspan.value.toInt(), tableColspan.value.toInt(), children, scope)
     }
 
     fun directiveBlock(

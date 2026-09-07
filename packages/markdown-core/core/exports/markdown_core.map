@@ -18,9 +18,9 @@ MARKDOWN_CORE_1.0 {
     markdown_core_node_code_block_properties;
     markdown_core_node_literal;
     markdown_core_node_formula_properties;
-    markdown_core_node_table_column_count;
-    markdown_core_node_table_alignment_at;
-    markdown_core_node_table_row_is_header;
+    markdown_core_node_table_properties;
+    markdown_core_node_table_column_at;
+    markdown_core_node_table_cell_spans;
     markdown_core_node_directive_properties;
     markdown_core_node_directive_attribute_at;
     markdown_core_node_directive_label;

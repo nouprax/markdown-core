@@ -23,11 +23,14 @@ Document scope=1:1..18:8 children=6
 │   ├── Text scope=11:7..11:7 literal=" " children=0
 │   └── Directive scope=11:8..11:17 name="empty" attributes=[] children=0
 │       └── DirectiveLabel scope=11:14..11:15 children=0
-├── Table scope=13:1..15:8 alignments=[none] children=2
-│   ├── TableRow scope=13:1..13:8 isHeader=true children=1
-│   │   └── TableCell scope=13:2..13:7 children=1
-│   │       └── Text scope=13:3..13:6 literal="none" children=0
-│   └── TableRow scope=15:1..15:8 isHeader=false children=1
-│       └── TableCell scope=15:2..15:7 children=1
-│           └── Text scope=15:3..15:6 literal="cell" children=0
+├── Table scope=13:1..15:8 columns=[none:null] children=2
+│   ├── TableHead children=1
+│   │   └── TableRow scope=13:1..13:8 children=1
+│   │       └── TableCell scope=13:2..13:7 rowspan=1 colspan=1 children=1
+│   │           └── Text scope=13:3..13:6 literal="none" children=0
+│   ├── TableBody children=1
+│   │   └── TableRow scope=15:1..15:8 children=1
+│   │       └── TableCell scope=15:2..15:7 rowspan=1 colspan=1 children=1
+│   │           └── Text scope=15:3..15:6 literal="cell" children=0
+│   └── TableFoot children=0
 └── CodeBlock scope=17:1..18:8 info="txt" language="txt" literal="unclosed\n" fenced=true closed=false children=0

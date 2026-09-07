@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include "table.h"
+#include "autolink.h"
 #include "formula.h"
 #include "directive.h"
 #include <stdlib.h>
@@ -1306,6 +1307,8 @@ static markdown_core_node *stray_delimiter_push(markdown_core_parser *parser,
         return NULL;
     }
     markdown_core_node_set_literal(node, "@");
+    int offset = markdown_core_inline_parser_get_offset(inline_parser);
+    markdown_core_inline_parser_place(inline_parser, node, offset - 1, offset - 1);
     markdown_core_inline_parser_push_delimiter(inline_parser, NULL, rule, 0, 1, node);
     return node;
 }
@@ -1886,6 +1889,116 @@ static void autolink_source_pos(test_batch_runner *runner) {
                      "email autolink scopes are as expected");
 }
 
+static void table_values(test_batch_runner *runner) {
+    const char source[] = "| a | b |\n| - | - |\n| c | d |\n| e | f |\n";
+    const markdown_core_extension *extensions[] = {&MARKDOWN_CORE_EXTENSION_TABLE};
+    markdown_core_node *root = parse_with_extensions(source, sizeof(source) - 1, 0, extensions, 1);
+    OK(runner, root != NULL, "table value fixture parses");
+    if (!root) {
+        return;
+    }
+    markdown_core_node *table = root->first_child;
+    markdown_core_table *properties = (markdown_core_table *)table->opaque;
+    properties->content_count = 1;
+    properties->foot_count = 1;
+    for (markdown_core_node *row = table->first_child; row; row = row->next) {
+        markdown_core_node *cell = row->first_child;
+        markdown_core_node_free(cell->next);
+        markdown_core_node_free(cell->first_child);
+        cell->as.table_cell.colspan = 2;
+        markdown_core_node *block = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
+        OK(runner, markdown_core_node_append_child(cell, block), "cell owns block content directly");
+        int64_t rowspan, colspan;
+        OK(runner, markdown_core_node_table_cell_spans(cell, &rowspan, &colspan) && rowspan == 1 && colspan == 2,
+           "facade retains non-unit spans");
+    }
+    size_t columns, head, content, foot;
+    OK(runner,
+       markdown_core_node_table_properties(table, &columns, &head, &content, &foot) && columns == 2 && head == 1 &&
+           content == 1 && foot == 1,
+       "all three row groups retain independent counts");
+    static const struct {
+        double width;
+        const char *dump;
+    } widths[] = {{0.1, "0.1"},
+                  {1e-6, "0.000001"},
+                  {1e-7, "1e-7"},
+                  {1e20, "100000000000000000000"},
+                  {1e21, "1e+21"},
+                  {5e-324, "5e-324"},
+                  {1.2345678901234567, "1.2345678901234567"}};
+    for (size_t i = 0; i < sizeof(widths) / sizeof(widths[0]); i++) {
+        properties->columns[0].relative = (markdown_core_optional_double){true, widths[i].width};
+        markdown_core_table_column column;
+        OK(runner,
+           markdown_core_node_table_column_at(table, 0, &column) && column.relative.has_value &&
+               column.relative.value == widths[i].width,
+           "column width is an authored double");
+        markdown_core_document document = {0};
+        document.root = root;
+        uint8_t *dump = NULL;
+        size_t length = 0;
+        char expected[128];
+        snprintf(expected, sizeof(expected), "columns=[none:%s,none:null] children=3", widths[i].dump);
+        OK(runner, markdown_core_document_dump(&document, &dump, &length, NULL), "table values dump");
+        OK(runner,
+           dump && strstr((const char *)dump, expected) && strstr((const char *)dump, "TableFoot children=1") &&
+               strstr((const char *)dump, "rowspan=1 colspan=2"),
+           "dump retains groups, spans, and canonical relative-width digits");
+        markdown_core_dump_free(dump);
+    }
+    markdown_core_node_free(root);
+}
+
+/* Many contractions followed by many address splits must retain one linear
+ * source map, rather than copying every unconsumed suffix for each link. */
+static int observed_source_marks;
+static markdown_core_node *observe_source_marks(const markdown_core_extension *extension, markdown_core_parser *parser,
+                                                markdown_core_node *root) {
+    (void)extension;
+    observed_source_marks = parser->line_marks_size;
+    return root;
+}
+
+static void table_source_map_growth(test_batch_runner *runner) {
+    static const markdown_core_extension observer = {.postprocess_func = observe_source_marks};
+    const markdown_core_extension *extensions[] = {&MARKDOWN_CORE_EXTENSION_TABLE, &MARKDOWN_CORE_EXTENSION_AUTOLINK,
+                                                   &observer};
+    const char *unit = "\\| &amp; user@example.com ";
+    size_t unit_length = strlen(unit);
+    for (size_t count = 256; count <= 4096; count *= 4) {
+        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(markdown_core_get_default_mem_allocator());
+        markdown_core_strbuf_puts(&source, "| h |\n| - |\n| ");
+        for (size_t i = 0; i < count; i++) {
+            markdown_core_strbuf_puts(&source, unit);
+        }
+        markdown_core_strbuf_puts(&source, "|\n");
+        observed_source_marks = 0;
+        markdown_core_node *root = parse_with_extensions((const char *)source.ptr, source.size, 0, extensions, 3);
+        OK(runner, root != NULL, "mapped table with %zu address splits parses", count);
+        if (root) {
+            // Every source byte may contribute only a bounded number of runs,
+            // even as the number of links and remaining runs both increase.
+            OK(runner, observed_source_marks > 0 && (size_t)observed_source_marks <= 16 * count + 16,
+               "source map storage is linear at %zu repeats (%d runs)", count, observed_source_marks);
+            markdown_core_node *table = root->first_child;
+            markdown_core_node *cell = table->first_child->next->first_child;
+            size_t links = 0;
+            for (markdown_core_node *node = cell->first_child; node; node = node->next) {
+                if (node->type != MARKDOWN_CORE_NODE_LINK) {
+                    continue;
+                }
+                INT_EQ(runner, node->start_column, 12 + links * unit_length, "address begins at its authored byte");
+                INT_EQ(runner, node->end_column, 27 + links * unit_length, "address ends at its authored byte");
+                links++;
+            }
+            INT_EQ(runner, links, count, "every address is retained");
+            markdown_core_node_free(root);
+        }
+        markdown_core_strbuf_free(&source);
+    }
+}
+
 int main(void) {
     int retval;
     test_batch_runner *runner = test_batch_runner_new();
@@ -1919,6 +2032,8 @@ int main(void) {
     set_type_keeps_extension_data_beside_the_arm(runner);
     citation_and_footnote_values(runner);
     autolink_source_pos(runner);
+    table_source_map_growth(runner);
+    table_values(runner);
     strbuf_overflow(runner);
     strbuf_failure_is_a_transaction(runner);
     stray_delimiter(runner);

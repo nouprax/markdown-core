@@ -94,12 +94,15 @@ x
 $$
 .
 Document scope=1:1..5:2 children=2
-├── Table scope=1:1..2:9 alignments=[none,none] children=1
-│   └── TableRow scope=1:1..1:9 isHeader=true children=2
-│       ├── TableCell scope=1:2..1:4 children=1
-│       │   └── Text scope=1:3..1:3 literal="a" children=0
-│       └── TableCell scope=1:6..1:8 children=1
-│           └── Text scope=1:7..1:7 literal="b" children=0
+├── Table scope=1:1..2:9 columns=[none:null,none:null] children=1
+│   ├── TableHead children=1
+│   │   └── TableRow scope=1:1..1:9 children=2
+│   │       ├── TableCell scope=1:2..1:4 rowspan=1 colspan=1 children=1
+│   │       │   └── Text scope=1:3..1:3 literal="a" children=0
+│   │       └── TableCell scope=1:6..1:8 rowspan=1 colspan=1 children=1
+│   │           └── Text scope=1:7..1:7 literal="b" children=0
+│   ├── TableBody children=0
+│   └── TableFoot children=0
 └── FormulaBlock scope=3:1..5:2 literal="x" children=0
 ````````````````````````````````
 
@@ -111,12 +114,15 @@ body
 :::
 .
 Document scope=1:1..5:3 children=2
-├── Table scope=1:1..2:9 alignments=[none,none] children=1
-│   └── TableRow scope=1:1..1:9 isHeader=true children=2
-│       ├── TableCell scope=1:2..1:4 children=1
-│       │   └── Text scope=1:3..1:3 literal="a" children=0
-│       └── TableCell scope=1:6..1:8 children=1
-│           └── Text scope=1:7..1:7 literal="b" children=0
+├── Table scope=1:1..2:9 columns=[none:null,none:null] children=1
+│   ├── TableHead children=1
+│   │   └── TableRow scope=1:1..1:9 children=2
+│   │       ├── TableCell scope=1:2..1:4 rowspan=1 colspan=1 children=1
+│   │       │   └── Text scope=1:3..1:3 literal="a" children=0
+│   │       └── TableCell scope=1:6..1:8 rowspan=1 colspan=1 children=1
+│   │           └── Text scope=1:7..1:7 literal="b" children=0
+│   ├── TableBody children=0
+│   └── TableFoot children=0
 └── DirectiveBlock scope=3:1..5:3 name="note" attributes=null children=1
     └── Paragraph scope=4:1..4:4 children=1
         └── Text scope=4:1..4:4 literal="body" children=0

@@ -94,12 +94,14 @@ const stateValidators = {
     "codeBlock.fenced.true": (tree) => /^.*CodeBlock scope=.* fenced=true /m.test(tree),
     "codeBlock.closed.false": (tree) => /^.*CodeBlock scope=.* closed=false /m.test(tree),
     "codeBlock.closed.true": (tree) => /^.*CodeBlock scope=.* closed=true /m.test(tree),
-    "table.alignment.none": (tree) => /^.*Table scope=.*alignments=\[[^\]]*none[^\]]*\]/m.test(tree),
-    "table.alignment.left": (tree) => /^.*Table scope=.*alignments=\[[^\]]*left[^\]]*\]/m.test(tree),
-    "table.alignment.center": (tree) => /^.*Table scope=.*alignments=\[[^\]]*center[^\]]*\]/m.test(tree),
-    "table.alignment.right": (tree) => /^.*Table scope=.*alignments=\[[^\]]*right[^\]]*\]/m.test(tree),
-    "tableRow.isHeader.false": (tree) => /^.*TableRow scope=.* isHeader=false /m.test(tree),
-    "tableRow.isHeader.true": (tree) => /^.*TableRow scope=.* isHeader=true /m.test(tree),
+    "table.column.relative.null": (tree) => /Table scope=.* columns=\[(?:[a-z]+:null)(?:,[a-z]+:null)*\]/.test(tree),
+    "tableCell.span.one": (tree) => /TableCell scope=.* rowspan=1 colspan=1 /.test(tree),
+    "tableCell.content.inline": (tree) =>
+        parentEdges(tree).some((edge) => edge.parent === "TableCell" && edge.kind === "Text"),
+    "table.alignment.none": (tree) => /^.*Table scope=.*columns=\[[^\]]*none[^\]]*\]/m.test(tree),
+    "table.alignment.left": (tree) => /^.*Table scope=.*columns=\[[^\]]*left[^\]]*\]/m.test(tree),
+    "table.alignment.center": (tree) => /^.*Table scope=.*columns=\[[^\]]*center[^\]]*\]/m.test(tree),
+    "table.alignment.right": (tree) => /^.*Table scope=.*columns=\[[^\]]*right[^\]]*\]/m.test(tree),
     // Every `>` container is a `Callout` (M3). Its metadata line arrives with
     // O8; until then every callout is metadata-free, which these three states
     // pin: no variant, no fold marker, and no `Title` group, which is
@@ -181,10 +183,8 @@ const stateValidators = {
 };
 const orderValidators = {
     "document.source-order": (tree) => tree.startsWith("Document scope="),
-    "table.header-rows-cells": (tree) =>
-        /Table scope=[\s\S]*TableRow scope=.*isHeader=true[\s\S]*TableCell scope=[\s\S]*TableRow scope=.*isHeader=false/.test(
-            tree
-        ),
+    "table.head-content-foot": (tree) =>
+        /TableHead children=\d+[\s\S]*TableBody children=\d+[\s\S]*TableFoot children=\d+/.test(tree),
     "directive.label-before-content": (tree) =>
         /DirectiveBlock scope=.* children=[1-9]\d*\n[\s\S]*DirectiveLabel scope=[\s\S]*Paragraph scope=/.test(tree),
     "directive.attributes.source-order": (tree) =>
@@ -264,7 +264,7 @@ const treeLine =
 // A group line nests a node-valued list under its owner with no scope and no
 // fields; the names are the dump grammar's.
 const groupLine = /^(?:(?:│ {3}| {4})*(?:├──|└──) )([A-Z][A-Za-z]+) children=\d+$/;
-const GROUPS = new Set(["Title", "CitationPrefix", "CitationSuffix"]);
+const GROUPS = new Set(["Title", "CitationPrefix", "CitationSuffix", "TableHead", "TableBody", "TableFoot"]);
 // A scoped value prints as a value line -- scope, its scalar fields, children
 // -- without being a kind (M4).
 const scopedValues = Object.fromEntries(

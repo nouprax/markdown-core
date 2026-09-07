@@ -12,6 +12,7 @@ private fun jniPayload(vararg parts: Any): ByteArray {
         when (part) {
             is String -> out += part.encodeToByteArray().toList()
             is Byte -> out += part
+            is Long -> repeat(8) { shift -> out += ((part shr (shift * 8)) and 0xff).toByte() }
             is Int -> repeat(4) { shift -> out += ((part shr (shift * 8)) and 0xff).toByte() }
             else -> error("unsupported payload part")
         }
@@ -20,6 +21,78 @@ private fun jniPayload(vararg parts: Any): ByteArray {
 }
 
 class JniPayloadDecoderTest {
+    @Test
+    fun tableWireCarriesGroupsWidthsAndSpans() {
+        fun payload(
+            head: Int = 1,
+            relative: Double = 0.25,
+            rowspan: Long = 1,
+        ): ByteArray {
+            val parts =
+                mutableListOf<Any>(
+                    "MKJ1",
+                    0.toByte(),
+                    1.toByte(),
+                    1,
+                    1,
+                    4,
+                    1,
+                    1,
+                    11.toByte(),
+                    1,
+                    1,
+                    4,
+                    1,
+                    2, // table, two columns
+                    1.toByte(),
+                    1.toByte(),
+                    relative.toBits(),
+                    0.toByte(),
+                    0.toByte(),
+                    head,
+                    1,
+                    1,
+                    3,
+                ) // group counts and total rows
+            repeat(3) { index ->
+                parts.addAll(
+                    listOf(
+                        26.toByte(),
+                        index + 1,
+                        1,
+                        index + 1,
+                        1,
+                        1,
+                        27.toByte(),
+                        index + 1,
+                        1,
+                        index + 1,
+                        1,
+                        rowspan,
+                        2L,
+                        0,
+                    ),
+                )
+            }
+            parts.addAll(listOf(0, 0)) // document definitions
+            return jniPayload(*parts.toTypedArray())
+        }
+        val bytes = payload()
+        val table = JniPayloadDecoder.decodeDocument(bytes).content.single() as Table
+        bytes.fill(0)
+        assertEquals(0.25, table.columns[0].relative)
+        assertEquals(null, table.columns[1].relative)
+        assertEquals(1, table.head.size)
+        assertEquals(1, table.content.size)
+        assertEquals(1, table.foot.size)
+        assertEquals(2, table.foot[0].cells[0].colspan)
+        assertTrue(table.dump().contains("TableFoot children=1"))
+        assertFailsWith<IllegalArgumentException> { JniPayloadDecoder.decodeDocument(payload(head = -1)) }
+        assertFailsWith<IllegalArgumentException> { JniPayloadDecoder.decodeDocument(payload(head = 2)) }
+        assertFailsWith<IllegalArgumentException> { JniPayloadDecoder.decodeDocument(payload(relative = Double.NaN)) }
+        assertFailsWith<IllegalArgumentException> { JniPayloadDecoder.decodeDocument(payload(rowspan = 0)) }
+    }
+
     @Test
     fun specimensShareCitationOwnershipWithoutListState() {
         val payload =

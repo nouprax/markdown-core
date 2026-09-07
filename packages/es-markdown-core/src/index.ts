@@ -26,7 +26,7 @@ export type { Paragraph } from "./model/paragraph.js";
 export type { SoftBreak } from "./model/soft-break.js";
 export type { Strikethrough } from "./model/strikethrough.js";
 export type { Strong } from "./model/strong.js";
-export type { Table, TableCell, TableRow } from "./model/table.js";
+export type { Table, TableCell, TableRow, TableColumn } from "./model/table.js";
 export type { Text } from "./model/text.js";
 export type { ThematicBreak } from "./model/thematic-break.js";
 export { ParseError } from "./parse-error.js";

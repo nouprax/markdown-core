@@ -131,10 +131,28 @@ static MARKDOWN_CORE_INLINE void S_place_inline(subject *subj, markdown_core_nod
         node->start_line = line;
         node->start_column = column;
     }
-    if (markdown_core_parser_content_place(subj->owner_parser, subj->owner, to, &line, &column)) {
+    if (markdown_core_parser_content_end_place(subj->owner_parser, subj->owner, to, &line, &column)) {
         node->end_line = line;
         node->end_column = column;
     }
+    if (node->type == MARKDOWN_CORE_NODE_TEXT && node->as.literal.len > 0 && subj->owner) {
+        /* Copied bytes take a view of the source map; a decoded source token
+         * maps each of its output bytes to that token's authored extent. */
+        if (node->as.literal.len == to - from + 1 &&
+            memcmp(node->as.literal.data, subj->input.data + from, (size_t)node->as.literal.len) == 0) {
+            markdown_core_parser_adopt_content_marks(subj->owner_parser, subj->owner, node, from, to - from + 1);
+        } else {
+            node->content_mark_count = 0;
+            node->content_mark_offset = 0;
+            markdown_core_parser_append_content_mark(subj->owner_parser, node, 0, node->start_line, node->start_column,
+                                                     node->end_column - node->start_column + 1, 0);
+        }
+    }
+}
+
+void markdown_core_inline_parser_place(markdown_core_inline_parser *parser, markdown_core_node *node, int from,
+                                       int to) {
+    S_place_inline(parser, node, from, to);
 }
 
 // Create an inline with a literal string value.
@@ -915,6 +933,7 @@ static delimiter *S_insert_emph(subject *subj, delimiter *opener, delimiter *clo
         opener_inl->end_column = opener_inl->start_column + (int)opener_num_chars - 1;
     }
     if (closer_num_chars > 0) {
+        closer_inl->content_mark_offset += (int)use_delims;
         closer_inl->start_column = closer_inl->end_column - (int)closer_num_chars + 1;
     }
 
@@ -2262,41 +2281,21 @@ int markdown_core_inline_parser_in_bracket(markdown_core_inline_parser *parser, 
     }
 }
 
-static void S_update_text_sourcepos(markdown_core_node *node) {
-    if (node->start_line == 0) {
-        return;
-    }
-
+static void S_update_text_sourcepos(markdown_core_parser *parser, markdown_core_node *node) {
     if (node->as.literal.len == 0) {
-        node->start_line = 0;
-        node->start_column = 0;
-        node->end_line = 0;
-        node->end_column = 0;
+        node->start_line = node->start_column = node->end_line = node->end_column = 0;
         return;
     }
-
-    int end_line = node->start_line;
-    int end_column = node->start_column - 1;
-    for (bufsize_t i = 0; i < node->as.literal.len; i++) {
-        if (node->as.literal.data[i] == '\n') {
-            end_line++;
-            end_column = 0;
-        } else {
-            end_column++;
-        }
-    }
-
-    node->end_line = end_line;
-    node->end_column = end_column;
+    markdown_core_parser_content_end_place(parser, node, node->as.literal.len - 1, &node->end_line, &node->end_column);
 }
 
-void markdown_core_node_unput(markdown_core_node *node, int n) {
+void markdown_core_node_unput(markdown_core_parser *parser, markdown_core_node *node, int n) {
     node = node->last_child;
     while (n > 0 && node && node->type == MARKDOWN_CORE_NODE_TEXT) {
         bufsize_t remove = node->as.literal.len < (bufsize_t)n ? node->as.literal.len : (bufsize_t)n;
         node->as.literal.len -= remove;
         n -= (int)remove;
-        S_update_text_sourcepos(node);
+        S_update_text_sourcepos(parser, node);
         node = node->prev;
     }
 }

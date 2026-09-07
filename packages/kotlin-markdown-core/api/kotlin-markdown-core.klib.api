@@ -579,12 +579,14 @@ final class com.nouprax.markdown.core/Strong : com.nouprax.markdown.core/Markup 
 }
 
 final class com.nouprax.markdown.core/Table : com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core/Table|null[0]
-    final val alignments // com.nouprax.markdown.core/Table.alignments|{}alignments[0]
-        final fun <get-alignments>(): kotlin.collections/List<com.nouprax.markdown.core/TableAlignment> // com.nouprax.markdown.core/Table.alignments.<get-alignments>|<get-alignments>(){}[0]
-    final val header // com.nouprax.markdown.core/Table.header|{}header[0]
-        final fun <get-header>(): com.nouprax.markdown.core/TableRow // com.nouprax.markdown.core/Table.header.<get-header>|<get-header>(){}[0]
-    final val rows // com.nouprax.markdown.core/Table.rows|{}rows[0]
-        final fun <get-rows>(): kotlin.collections/List<com.nouprax.markdown.core/TableRow> // com.nouprax.markdown.core/Table.rows.<get-rows>|<get-rows>(){}[0]
+    final val columns // com.nouprax.markdown.core/Table.columns|{}columns[0]
+        final fun <get-columns>(): kotlin.collections/List<com.nouprax.markdown.core/TableColumn> // com.nouprax.markdown.core/Table.columns.<get-columns>|<get-columns>(){}[0]
+    final val content // com.nouprax.markdown.core/Table.content|{}content[0]
+        final fun <get-content>(): kotlin.collections/List<com.nouprax.markdown.core/TableRow> // com.nouprax.markdown.core/Table.content.<get-content>|<get-content>(){}[0]
+    final val foot // com.nouprax.markdown.core/Table.foot|{}foot[0]
+        final fun <get-foot>(): kotlin.collections/List<com.nouprax.markdown.core/TableRow> // com.nouprax.markdown.core/Table.foot.<get-foot>|<get-foot>(){}[0]
+    final val head // com.nouprax.markdown.core/Table.head|{}head[0]
+        final fun <get-head>(): kotlin.collections/List<com.nouprax.markdown.core/TableRow> // com.nouprax.markdown.core/Table.head.<get-head>|<get-head>(){}[0]
     final val scope // com.nouprax.markdown.core/Table.scope|{}scope[0]
         final fun <get-scope>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/Table.scope.<get-scope>|<get-scope>(){}[0]
 
@@ -592,19 +594,28 @@ final class com.nouprax.markdown.core/Table : com.nouprax.markdown.core/Markup {
 }
 
 final class com.nouprax.markdown.core/TableCell : com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core/TableCell|null[0]
+    final val colspan // com.nouprax.markdown.core/TableCell.colspan|{}colspan[0]
+        final fun <get-colspan>(): kotlin/Int // com.nouprax.markdown.core/TableCell.colspan.<get-colspan>|<get-colspan>(){}[0]
     final val content // com.nouprax.markdown.core/TableCell.content|{}content[0]
         final fun <get-content>(): kotlin.collections/List<com.nouprax.markdown.core/Markup> // com.nouprax.markdown.core/TableCell.content.<get-content>|<get-content>(){}[0]
+    final val rowspan // com.nouprax.markdown.core/TableCell.rowspan|{}rowspan[0]
+        final fun <get-rowspan>(): kotlin/Int // com.nouprax.markdown.core/TableCell.rowspan.<get-rowspan>|<get-rowspan>(){}[0]
     final val scope // com.nouprax.markdown.core/TableCell.scope|{}scope[0]
         final fun <get-scope>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/TableCell.scope.<get-scope>|<get-scope>(){}[0]
 
     final fun <#A1: kotlin/Any?> accept(com.nouprax.markdown.core/Visitor<#A1>): #A1 // com.nouprax.markdown.core/TableCell.accept|accept(com.nouprax.markdown.core.Visitor<0:0>){0§<kotlin.Any?>}[0]
 }
 
+final class com.nouprax.markdown.core/TableColumn { // com.nouprax.markdown.core/TableColumn|null[0]
+    final val alignment // com.nouprax.markdown.core/TableColumn.alignment|{}alignment[0]
+        final fun <get-alignment>(): com.nouprax.markdown.core/TableAlignment // com.nouprax.markdown.core/TableColumn.alignment.<get-alignment>|<get-alignment>(){}[0]
+    final val relative // com.nouprax.markdown.core/TableColumn.relative|{}relative[0]
+        final fun <get-relative>(): kotlin/Double? // com.nouprax.markdown.core/TableColumn.relative.<get-relative>|<get-relative>(){}[0]
+}
+
 final class com.nouprax.markdown.core/TableRow : com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core/TableRow|null[0]
     final val cells // com.nouprax.markdown.core/TableRow.cells|{}cells[0]
         final fun <get-cells>(): kotlin.collections/List<com.nouprax.markdown.core/TableCell> // com.nouprax.markdown.core/TableRow.cells.<get-cells>|<get-cells>(){}[0]
-    final val isHeader // com.nouprax.markdown.core/TableRow.isHeader|{}isHeader[0]
-        final fun <get-isHeader>(): kotlin/Boolean // com.nouprax.markdown.core/TableRow.isHeader.<get-isHeader>|<get-isHeader>(){}[0]
     final val scope // com.nouprax.markdown.core/TableRow.scope|{}scope[0]
         final fun <get-scope>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/TableRow.scope.<get-scope>|<get-scope>(){}[0]
 

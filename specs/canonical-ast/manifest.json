@@ -64,12 +64,13 @@
             "codeBlock.fenced.true",
             "codeBlock.closed.false",
             "codeBlock.closed.true",
+            "table.column.relative.null",
+            "tableCell.span.one",
+            "tableCell.content.inline",
             "table.alignment.none",
             "table.alignment.left",
             "table.alignment.center",
             "table.alignment.right",
-            "tableRow.isHeader.false",
-            "tableRow.isHeader.true",
             "callout.variant.null",
             "callout.collapsed.null",
             "callout.title.null",
@@ -103,7 +104,7 @@
         ],
         "orders": [
             "document.source-order",
-            "table.header-rows-cells",
+            "table.head-content-foot",
             "directive.label-before-content",
             "directive.attributes.source-order",
             "inline.source-order",
@@ -195,8 +196,9 @@
                     "codeBlock.closed.false",
                     "codeBlock.closed.true",
                     "table.alignment.none",
-                    "tableRow.isHeader.false",
-                    "tableRow.isHeader.true",
+                    "table.column.relative.null",
+                    "tableCell.span.one",
+                    "tableCell.content.inline",
                     "directive.attributes.null",
                     "directive.attributes.empty",
                     "directive.label.null",
@@ -210,7 +212,7 @@
                     "escaping.empty-string",
                     "escaping.newline"
                 ],
-                "orders": ["document.source-order", "table.header-rows-cells", "inline.source-order"]
+                "orders": ["document.source-order", "table.head-content-foot", "inline.source-order"]
             }
         },
         {
@@ -302,8 +304,9 @@
                     "table.alignment.left",
                     "table.alignment.center",
                     "table.alignment.right",
-                    "tableRow.isHeader.false",
-                    "tableRow.isHeader.true",
+                    "table.column.relative.null",
+                    "tableCell.span.one",
+                    "tableCell.content.inline",
                     "directive.attributes.value",
                     "directive.label.populated",
                     "scope.positive",
@@ -314,7 +317,7 @@
                 ],
                 "orders": [
                     "document.source-order",
-                    "table.header-rows-cells",
+                    "table.head-content-foot",
                     "directive.label-before-content",
                     "directive.attributes.source-order"
                 ]

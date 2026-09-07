@@ -362,8 +362,9 @@ private class WalkingDriver(
         visitor.visitTable(node, phase)
         scheduleExit(node)
         if (phase == WalkPhase.ENTERING) {
-            schedule(node.rows)
-            actions += WalkAction.Node(node.header, ActionPhase.ENTER)
+            schedule(node.foot)
+            schedule(node.content)
+            schedule(node.head)
         }
     }
 

@@ -38,7 +38,7 @@ const visitor: Visitor<string> = {
     visitHTMLBlock: (node) => node.kind,
     visitFormulaBlock: (node) => node.kind,
     visitTable: (node) => node.kind,
-    visitTableRow: (node) => (node.isHeader ? "header" : "row"),
+    visitTableRow: () => "row",
     visitTableCell: (node) => node.kind,
     visitDirectiveBlock: (node) => node.kind,
     visitDirectiveLabel: (node) => node.kind,
@@ -89,8 +89,8 @@ document.scope.start.line = 2;
 document.dump = () => "replacement";
 
 declare const table: Table;
-const rowMarkup: Markup = table.header;
-const row: TableRow = table.header;
+const rowMarkup: Markup = table.head[0]!;
+const row: TableRow = table.head[0]!;
 const cellMarkup: Markup = row.cells[0]!;
 const cell: TableCell = row.cells[0]!;
 void rowMarkup;

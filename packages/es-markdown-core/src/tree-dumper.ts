@@ -108,11 +108,29 @@ class DumpState {
         visitFormulaBlock: (node: FormulaBlock) =>
             this.line("FormulaBlock", node, [`literal=${jsonString(node.literal)}`]),
         visitTable: (node: Table) => {
-            const children = [node.header, ...node.rows];
-            this.container("Table", node, [`alignments=[${node.alignments.join(",")}]`], children);
+            const columns = node.columns.map((column) => `${column.alignment}:${column.relative ?? "null"}`).join(",");
+            this.line(
+                "Table",
+                node,
+                [`columns=[${columns}]`],
+                node.head.length + node.content.length + node.foot.length
+            );
+            this.nested(3, () => {
+                for (const [name, rows] of [
+                    ["TableHead", node.head],
+                    ["TableBody", node.content],
+                    ["TableFoot", node.foot]
+                ] as const) {
+                    this.group(name, rows.length);
+                    this.nested(rows.length, () => {
+                        for (const row of rows) this.dump(row);
+                    });
+                }
+            });
         },
-        visitTableRow: (node: TableRow) => this.container("TableRow", node, [`isHeader=${node.isHeader}`], node.cells),
-        visitTableCell: (node: TableCell) => this.container("TableCell", node, [], node.content),
+        visitTableRow: (node: TableRow) => this.container("TableRow", node, [], node.cells),
+        visitTableCell: (node: TableCell) =>
+            this.container("TableCell", node, [`rowspan=${node.rowspan}`, `colspan=${node.colspan}`], node.content),
         visitDirectiveBlock: (node: DirectiveBlock) => {
             this.line("DirectiveBlock", node, directiveFields(node.name, node.attributes), node.content.length);
             this.nested(node.content.length + (node.label === null ? 0 : 1), () => {
