@@ -63,3 +63,8 @@ println(TreeDumper.dump(document.content.first()))
 On JDK 26 and later, JVM applications should launch with
 `--enable-native-access=ALL-UNNAMED` so the package-private JNI loader can load
 the bundled native library without a restricted-native-access warning.
+
+Tables expose `columns`, `head`, `content`, and `foot`. Each `TableColumn` has
+`alignment` and nullable `relative`; each `TableCell` has `rowspan`, `colspan`,
+and direct inline or block `content`. Rows carry their cells and scope; group
+ownership belongs to the table. Pipe tables have unit spans and no authored widths.

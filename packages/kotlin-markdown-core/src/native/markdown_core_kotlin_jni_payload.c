@@ -491,7 +491,7 @@ static void write_node(jni_payload_buffer *buffer, jni_payload_stack *stack, jni
     case MARKDOWN_CORE_KIND_EMPHASIS:
     case MARKDOWN_CORE_KIND_STRONG:
     case MARKDOWN_CORE_KIND_STRIKETHROUGH:
-    case MARKDOWN_CORE_KIND_TABLE_CELL:
+    case MARKDOWN_CORE_KIND_TABLE_ROW:
         schedule_children(buffer, stack, node);
         break;
     case MARKDOWN_CORE_KIND_HEADING: {
@@ -585,25 +585,33 @@ static void write_node(jni_payload_buffer *buffer, jni_payload_stack *stack, jni
         break;
     }
     case MARKDOWN_CORE_KIND_TABLE: {
-        size_t count = 0;
-        size_t index;
-        if (!markdown_core_node_table_column_count(node, &count)) {
+        size_t count, head, content, foot;
+        if (!markdown_core_node_table_properties(node, &count, &head, &content, &foot)) {
             buffer->failure = JNI_PAYLOAD_INTERNAL;
             return;
         }
-        if (count > INT32_MAX) {
+        if (count > INT32_MAX || head > INT32_MAX || content > INT32_MAX || foot > INT32_MAX) {
             buffer->failure = JNI_PAYLOAD_ALLOCATION;
             return;
         }
         put_i32(buffer, (int32_t)count);
-        for (index = 0; index < count; ++index) {
-            markdown_core_table_alignment alignment = MARKDOWN_CORE_TABLE_ALIGNMENT_NONE;
-            if (!markdown_core_node_table_alignment_at(node, index, &alignment)) {
+        for (size_t index = 0; index < count; ++index) {
+            markdown_core_table_column column;
+            if (!markdown_core_node_table_column_at(node, index, &column)) {
                 buffer->failure = JNI_PAYLOAD_INTERNAL;
                 return;
             }
-            put_u8(buffer, (uint8_t)alignment);
+            put_u8(buffer, (uint8_t)column.alignment);
+            put_u8(buffer, column.relative.has_value ? 1 : 0);
+            if (column.relative.has_value) {
+                int64_t bits;
+                memcpy(&bits, &column.relative.value, sizeof(bits));
+                put_i64(buffer, bits);
+            }
         }
+        put_i32(buffer, (int32_t)head);
+        put_i32(buffer, (int32_t)content);
+        put_i32(buffer, (int32_t)foot);
         schedule_children(buffer, stack, node);
         break;
     }
@@ -697,16 +705,18 @@ static void write_node(jni_payload_buffer *buffer, jni_payload_stack *stack, jni
         schedule_children(buffer, stack, node);
         break;
     }
-    case MARKDOWN_CORE_KIND_TABLE_ROW: {
-        bool header = false;
-        if (!markdown_core_node_table_row_is_header(node, &header)) {
+    case MARKDOWN_CORE_KIND_TABLE_CELL: {
+        int64_t rowspan, colspan;
+        if (!markdown_core_node_table_cell_spans(node, &rowspan, &colspan)) {
             buffer->failure = JNI_PAYLOAD_INTERNAL;
             return;
         }
-        put_u8(buffer, header ? 1 : 0);
+        put_i64(buffer, rowspan);
+        put_i64(buffer, colspan);
         schedule_children(buffer, stack, node);
         break;
     }
+
     default:
         buffer->failure = JNI_PAYLOAD_INTERNAL;
         break;

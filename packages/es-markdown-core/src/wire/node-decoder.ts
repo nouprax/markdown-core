@@ -33,6 +33,7 @@ const magic = [0x4d, 0x43, 0x42, 0x31] as const;
 export const transferHeaderSize = 64;
 const nodeSize = 96;
 const attributeSize = 16;
+const columnSize = 16;
 const noIndex = 0xffff_ffff;
 /**
  * The scoped values travel as records above the node-kind space (M4):
@@ -55,11 +56,11 @@ const header = {
     nodeCount: 24,
     edgeCount: 28,
     attributeCount: 32,
-    alignmentCount: 36,
+    columnCount: 36,
     nodesOffset: 40,
     edgesOffset: 44,
     attributesOffset: 48,
-    alignmentsOffset: 52,
+    columnsOffset: 52,
     stringsOffset: 56,
     stringsLength: 60
 } as const;
@@ -74,6 +75,7 @@ const nodeField = {
     auxiliaryStart: 36,
     auxiliaryCount: 40,
     scalar0: 44,
+    integer2: 48,
     integer: 56,
     strings: 64
 } as const;
@@ -86,11 +88,11 @@ interface ResultLayout {
     readonly nodeCount: number;
     readonly edgeCount: number;
     readonly attributeCount: number;
-    readonly alignmentCount: number;
+    readonly columnCount: number;
     readonly nodesOffset: number;
     readonly edgesOffset: number;
     readonly attributesOffset: number;
-    readonly alignmentsOffset: number;
+    readonly columnsOffset: number;
     readonly stringsOffset: number;
     readonly stringsLength: number;
 }
@@ -114,6 +116,7 @@ interface NodeRecord {
     readonly auxiliaryCount: number;
     readonly scalar0: number;
     readonly integer: bigint;
+    readonly integer2: bigint;
 }
 
 export class NodeDecoder {
@@ -173,30 +176,30 @@ export class NodeDecoder {
             nodeCount: this.uint(header.nodeCount),
             edgeCount: this.uint(header.edgeCount),
             attributeCount: this.uint(header.attributeCount),
-            alignmentCount: this.uint(header.alignmentCount),
+            columnCount: this.uint(header.columnCount),
             nodesOffset: this.uint(header.nodesOffset),
             edgesOffset: this.uint(header.edgesOffset),
             attributesOffset: this.uint(header.attributesOffset),
-            alignmentsOffset: this.uint(header.alignmentsOffset),
+            columnsOffset: this.uint(header.columnsOffset),
             stringsOffset: this.uint(header.stringsOffset),
             stringsLength: this.uint(header.stringsLength)
         };
         if (layout.nodeCount === 0) throw new Error("native result contains no document node");
         const expectedEdges = this.sectionEnd(transferHeaderSize, layout.nodeCount, nodeSize, "node table");
         const expectedAttributes = this.sectionEnd(expectedEdges, layout.edgeCount, 4, "edge table");
-        const expectedAlignments = this.sectionEnd(
+        const expectedColumns = this.sectionEnd(
             expectedAttributes,
             layout.attributeCount,
             attributeSize,
             "attribute table"
         );
-        const expectedStrings = this.sectionEnd(expectedAlignments, layout.alignmentCount, 1, "alignment table");
+        const expectedStrings = this.sectionEnd(expectedColumns, layout.columnCount, columnSize, "column table");
         const expectedEnd = this.sectionEnd(expectedStrings, layout.stringsLength, 1, "string blob");
         if (
             layout.nodesOffset !== transferHeaderSize ||
             layout.edgesOffset !== expectedEdges ||
             layout.attributesOffset !== expectedAttributes ||
-            layout.alignmentsOffset !== expectedAlignments ||
+            layout.columnsOffset !== expectedColumns ||
             layout.stringsOffset !== expectedStrings ||
             expectedEnd !== layout.totalSize
         ) {
@@ -238,6 +241,7 @@ export class NodeDecoder {
             auxiliaryStart: this.uint(offset + nodeField.auxiliaryStart),
             auxiliaryCount: this.uint(offset + nodeField.auxiliaryCount),
             scalar0: this.int(offset + nodeField.scalar0),
+            integer2: this.view.getBigInt64(offset + nodeField.integer2, true),
             integer: this.view.getBigInt64(offset + nodeField.integer, true)
         };
     }
@@ -413,9 +417,13 @@ export class NodeDecoder {
             }
             case "tableRow":
                 return this.tableRow(record);
-            case "tableCell":
+            case "tableCell": {
                 this.flags(record, 0);
-                return { ...base, content: this.content(record) } as MarkupValue;
+                const rowspan = this.safeInteger(record.integer, "table scalar");
+                const colspan = this.safeInteger(record.integer2, "table scalar");
+                if (rowspan < 1 || colspan < 1) throw new Error("invalid table cell spans");
+                return { ...base, rowspan, colspan, content: this.content(record) } as MarkupValue;
+            }
         }
     }
 
@@ -492,31 +500,48 @@ export class NodeDecoder {
 
     private table(record: NodeRecord): MarkupValueOf<"table"> {
         this.flags(record, 0);
-        this.range(record.auxiliaryStart, record.auxiliaryCount, this.layout.alignmentCount, "table alignment range");
-        const alignments = Array.from({ length: record.auxiliaryCount }, (_, index) =>
-            this.tableAlignment(this.bytes[this.layout.alignmentsOffset + record.auxiliaryStart + index]!)
-        );
-        const content = this.content(record);
-        if (!content.every((child): child is TableRow => child.kind === "tableRow")) {
+        this.range(record.auxiliaryStart, record.auxiliaryCount, this.layout.columnCount, "table column range");
+        if (record.auxiliaryCount === 0) throw new Error("table has no columns");
+        const columns = Array.from({ length: record.auxiliaryCount }, (_, index) => {
+            const offset = this.layout.columnsOffset + (record.auxiliaryStart + index) * columnSize;
+            const alignment = this.tableAlignment(this.uint(offset));
+            const present = this.uint(offset + 4);
+            if (present > 1) throw new Error("invalid table column width presence");
+            const value = this.view.getFloat64(offset + 8, true);
+            if (present && (!Number.isFinite(value) || value <= 0)) throw new Error("invalid table column width");
+            return { alignment, relative: present ? value : null };
+        });
+        const rows = this.content(record);
+        if (!rows.every((child): child is TableRow => child.kind === "tableRow")) {
             throw new Error("table contains a non-row node");
         }
-        const headers = content.filter((row) => row.isHeader);
-        if (headers.length !== 1) throw new Error(`table contains ${headers.length} header rows`);
+        const headCount = record.scalar0;
+        const contentCount = this.safeInteger(record.integer2, "table scalar");
+        const footCount = this.safeInteger(record.integer, "table scalar");
+        if (
+            headCount < 0 ||
+            contentCount < 0 ||
+            footCount < 0 ||
+            headCount + contentCount + footCount !== rows.length
+        ) {
+            throw new Error("invalid table row groups");
+        }
         return {
             ...this.base(record, "table"),
-            alignments,
-            header: headers[0]!,
-            rows: content.filter((row) => !row.isHeader)
+            columns,
+            head: rows.slice(0, headCount),
+            content: rows.slice(headCount, headCount + contentCount),
+            foot: rows.slice(headCount + contentCount)
         };
     }
 
     private tableRow(record: NodeRecord): Omit<TableRow, "dump"> {
-        this.flags(record, 1);
-        const content = this.content(record);
-        if (!content.every((child): child is TableCell => child.kind === "tableCell")) {
+        this.flags(record, 0);
+        const cells = this.content(record);
+        if (!cells.every((child): child is TableCell => child.kind === "tableCell")) {
             throw new Error("table row contains a non-cell node");
         }
-        return { ...this.base(record, "tableRow"), isHeader: record.flags !== 0, cells: content };
+        return { ...this.base(record, "tableRow"), cells };
     }
 
     private directiveFields(record: NodeRecord): {

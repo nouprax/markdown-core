@@ -248,6 +248,8 @@ markdown_core_add_test(spec_dialect_footnotes spec 120 spec_runner --spec
                        "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/dialect-footnotes.txt")
 markdown_core_add_test(spec_dialect_callouts spec 120 spec_runner --spec
                        "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/dialect-callouts.txt")
+markdown_core_add_test(spec_dialect_tables spec 120 spec_runner --spec
+                       "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/dialect-tables.txt")
 markdown_core_add_test(spec_dialect_lists spec 120 spec_runner --spec
                        "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/dialect-lists.txt")
 markdown_core_add_test(spec_dialect_task_lists spec 120 spec_runner --spec

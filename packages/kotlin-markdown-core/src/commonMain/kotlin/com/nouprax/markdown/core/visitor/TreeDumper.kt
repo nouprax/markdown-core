@@ -194,21 +194,27 @@ private class DumpVisitor(
     }
 
     override fun visitTable(node: Table) {
-        state.container(
-            "Table",
-            node,
-            listOf("alignments=[${node.alignments.joinToString(",") { it.token() }}]"),
-            listOf(node.header) + node.rows,
-        )
+        val columns =
+            node.columns.joinToString(
+                ",",
+            ) { "${it.alignment.token()}:${it.relative?.let(::decimal) ?: "null"}" }
+        state.line("Table", node, listOf("columns=[$columns]"), node.head.size + node.content.size + node.foot.size)
+        state.nested(3) {
+            for ((name, rows) in listOf(
+                "TableHead" to node.head,
+                "TableBody" to node.content,
+                "TableFoot" to node.foot,
+            )) {
+                state.group(name, rows.size)
+                state.nested(rows.size) { rows.forEach(state::dump) }
+            }
+        }
     }
 
-    override fun visitTableRow(node: TableRow) {
-        state.container("TableRow", node, listOf("isHeader=${node.isHeader}"), node.cells)
-    }
+    override fun visitTableRow(node: TableRow): Unit = state.container("TableRow", node, emptyList(), node.cells)
 
-    override fun visitTableCell(node: TableCell) {
-        state.container("TableCell", node, children = node.content)
-    }
+    override fun visitTableCell(node: TableCell): Unit =
+        state.container("TableCell", node, listOf("rowspan=${node.rowspan}", "colspan=${node.colspan}"), node.content)
 
     override fun visitDirectiveBlock(node: DirectiveBlock) {
         state.line(
@@ -422,3 +428,34 @@ private fun jsonString(value: String): String =
         }
         append('"')
     }
+
+/** Emit shortest round-trip digits with the same notation thresholds on every runtime. */
+private fun decimal(value: Double): String {
+    val parts = value.toString().lowercase().split('e')
+    val mantissa = parts[0].split('.')
+    var digits = mantissa.joinToString("")
+    var point = mantissa[0].length + if (parts.size == 2) parts[1].toInt() else 0
+    while (digits.startsWith('0')) {
+        digits = digits.drop(1)
+        point--
+    }
+    digits = digits.trimEnd('0')
+    // Some runtimes print two significant digits for subnormal values where
+    // one already round-trips. Test rounded prefixes, preserving the value.
+    for (length in 1 until digits.length) {
+        val rounded = digits.take(length).toLong() + if (digits[length] >= '5') 1 else 0
+        val candidate = rounded.toString()
+        if ((candidate + "e" + (point - length)).toDouble() == value) {
+            point += candidate.length - length
+            digits = candidate.trimEnd('0')
+            break
+        }
+    }
+    if (point <= -6 || point > 21) {
+        return digits.take(1) + (if (digits.length > 1) "." + digits.drop(1) else "") +
+            "e" + (if (point > 0) "+" else "") + (point - 1)
+    }
+    if (point <= 0) return "0." + "0".repeat(-point) + digits
+    if (point >= digits.length) return digits + "0".repeat(point - digits.length)
+    return digits.take(point) + "." + digits.drop(point)
+}

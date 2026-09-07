@@ -39,6 +39,13 @@ CommonMark base; quotation marks, hyphens, and periods are stored as written.
 `TreeDumper` and `dump()` produce a canonical debug representation for logs,
 tests, and debugging; dump text is not a persistence or interchange format.
 
+Tables expose `columns: [TableColumn]` and three ordered row groups: `head`,
+`content`, and `foot`. Each column carries alignment and an optional relative
+width; each cell carries positive `rowspan`/`colspan` and its parsed `content`.
+Pipe tables produce one head row, no foot rows, null widths, and unit spans.
+Their inline content stays directly in the cell. Walkers visit the three groups
+in that order. This replaces `alignments`, `header`, `rows`, and `isHeader`.
+
 ### Swift
 
 The root Swift package supports iOS 26 and macOS 26 or later and exports the

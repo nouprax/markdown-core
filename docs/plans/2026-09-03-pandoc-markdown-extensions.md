@@ -112,8 +112,10 @@ selected Pandoc extension participates.
 - [ ] Add `Span`, `Superscript`, `Subscript`, `DefinitionList`,
       `Definition`, and `ExampleReference`, plus the ordered-list variant and
       delimiter values, `ListItem.exampleLabel`, heading anchors through the
-      universal field, and the complete unified Table values defined by the
-      module specs.
+      universal field.
+- [x] Add the unified Table column values, head/content/foot groups, positive
+      cell spans, and general cell content (`M6`); caption and its kind land
+      with their first syntax producer in `P11a`.
 - [ ] Add the shared bibliography branch to `Cite`, `Citation`, and
       `CitationReferent`. Coordinate the same canonical change with the Obsidian
       footnote migration: Pandoc `@key` creates `CitationReferent.bib`, while

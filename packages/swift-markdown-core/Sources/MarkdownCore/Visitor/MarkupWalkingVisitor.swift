@@ -237,8 +237,9 @@ private struct WalkingDriver<WalkingVisitor: MarkupWalkingVisitor>: MarkupVisito
         visitor.visit(node, phase: phase)
         scheduleExit(node)
         if phase == .entering {
-            for row in node.rows.reversed() { actions.append(.enter(row)) }
-            actions.append(.enter(node.header))
+            for row in node.foot.reversed() { actions.append(.enter(row)) }
+            for row in node.content.reversed() { actions.append(.enter(row)) }
+            for row in node.head.reversed() { actions.append(.enter(row)) }
         }
     }
 

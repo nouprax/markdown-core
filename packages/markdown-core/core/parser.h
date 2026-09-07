@@ -12,26 +12,24 @@ extern "C" {
 
 #define MAX_LINK_LABEL_LENGTH 1000
 
-/* Where one source line's bytes landed in a block's content buffer.
- *
- * A block's content is the concatenation of the line slices `add_line` copies
- * into it, and the source column a slice starts at is NOT derivable from the
- * block's own `start_column`: the container prefix stripped from a
- * continuation line need not match the one stripped from the first, so
- * `"> foo\nbar"` strips two bytes then none. One mark per `add_line` call
- * records where the slice came from, and `markdown_core_parser_content_place`
- * reads them back.
- *
- * Marks are appended in parse order and only the deepest open block takes
- * lines, so one block's marks are the contiguous run
- * [node->content_mark, node->content_mark + node->content_mark_count). */
+/* Immutable runs map logical content bytes to authored byte intervals.
+ * Blocks append runs as lines arrive; transformed cells and decoded inline
+ * tokens append runs when assembled. Nodes retain index slices with an origin,
+ * so splitting a mapped Text shares its runs without copying a suffix. Text
+ * consolidation appends each contributing run once to one contiguous map.
+ * The parser owns all runs until the parse transaction ends. */
 typedef struct {
-    /* Offset in the owning block's content where this slice begins. */
+    /* Logical offset at which this run begins. */
     bufsize_t content_offset;
     /* The source line the slice was copied from, counted from 1. */
     int line;
     /* The BYTE column on that line the slice begins at, counted from 1. */
     int column;
+    /* Authored byte width represented by each logical byte in this run. */
+    int source_width;
+    /* Source columns advanced per logical byte: one for copied bytes,
+     * two for a contracted pipe escape, zero within a decoded token. */
+    int source_step;
 } markdown_core_line_mark;
 
 struct markdown_core_parser {
@@ -87,8 +85,7 @@ struct markdown_core_parser {
      * observe each other's characters. */
     int8_t special_chars[256];
     int8_t skip_chars[256];
-    /* The content-to-source map (see markdown_core_line_mark): one run per
-     * block that took lines, appended in parse order. It is read while the
+    /* The content-to-source map (see markdown_core_line_mark). It is read while the
      * parse is still running -- the block phase reads it as blocks close and
      * the inline phase reads it before the transaction returns -- and it is
      * released with the rest of the per-parse state. */

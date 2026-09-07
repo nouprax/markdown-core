@@ -187,11 +187,12 @@ struct markdown_core_node {
     int end_line;
     int end_column;
     int internal_offset;
-    /* This block's run in parser->line_marks -- the content-to-source map.
-     * `content_mark_count == 0` means the block took no lines, which is the
-     * state of every node that is not a block that accumulates content. */
+    /* This node's slice of parser-owned content-to-source runs. Zero count
+     * means there is no mapped content (for example, an empty cell). */
     int content_mark;
     int content_mark_count;
+    /* A slice reads immutable parser-owned marks at this content origin. */
+    int content_mark_offset;
     uint16_t type;
     markdown_core_node_internal_flags flags;
 
@@ -214,7 +215,9 @@ struct markdown_core_node {
         markdown_core_specimen_value specimen;
         markdown_core_document_value document;
         int html_block_type;
-        int cell_index; // For keeping track of TABLE_CELL table alignments
+        struct {
+            int64_t rowspan, colspan;
+        } table_cell;
     } as;
 };
 

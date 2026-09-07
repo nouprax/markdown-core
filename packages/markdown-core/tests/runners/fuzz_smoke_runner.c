@@ -40,7 +40,8 @@ static int traverse(const markdown_core_node *node) {
     (void)markdown_core_node_literal(node, &value);
     (void)markdown_core_node_heading_level(node, &level);
     (void)markdown_core_node_list_item_marker(node, &marker);
-    (void)markdown_core_node_table_row_is_header(node, &flag);
+    int64_t rowspan, colspan;
+    (void)markdown_core_node_table_cell_spans(node, &rowspan, &colspan);
     for (child = markdown_core_node_get_first_child(node); child; child = markdown_core_node_get_next_sibling(child)) {
         if (traverse(child) != 0) {
             return -1;

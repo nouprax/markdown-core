@@ -44,14 +44,15 @@ the two implementation plans are unchanged.
 
 ## How to use this plan
 
-- One checkbox below is one pull request, except the specification item `S0`,
-  which is the pull request that landed the dialect modules and this plan and is
-  ticked when it merges. Every pull request merges alone, leaves every existing
+- One checkbox below is one pull request. The specification item `S0` is the
+  pull request that landed the dialect modules and this plan.
+  Every pull request merges alone, leaves every existing
   fixture byte-identical unless the item says otherwise, and passes required CI
   including the release dry run. The three stage exit criteria are gates rather
   than pull requests: each is verified in the pull request of the last item of
   its stage, named beside it, and has nothing of its own to tick.
-- Tick the item when its pull request has merged. In that same pull request,
+- Tick the item in its implementing pull request once its work and validation
+  are complete, before merge. In that same pull request,
   tick the bullets it discharges in the owning implementation plan, flip the
   item's row of the feature table in
   [`docs/specs/dialect.md`](../specs/dialect.md) to `present`, and add the
@@ -59,7 +60,8 @@ the two implementation plans are unchanged.
   fixtures byte for byte; an item that lands part of a module adds the
   examples its behavior makes exact.
 - The written order is the default order. Any order that respects the `Requires`
-  column of the dependency table is valid: that column lists every direct merge
+  column of the dependency table is valid: prerequisites must already be merged,
+  and that column lists every direct merge
   prerequisite, an item's full requirement is the transitive closure of that
   column, and nothing outside that closure may block an item. Every feature
   track root requires `M7`, so every feature item may rely on the complete
@@ -290,8 +292,9 @@ its behavior, with no separate publication step.
       reserves, so the item that lands a module's behavior adds the module's
       examples to the package fixtures byte for byte as its first fixtures.
       Specification only; no engine change. This is the pull request that
-      carries this plan: tick it, and the audit's checklist with it, when it
-      merges.
+      carries this plan: tick it, and the audit's checklist with it, in that
+      pull request once the specification work and validation are complete,
+      before merge.
 - [x] **X0 — Remove the option surface and every layer selection.**
       Delete `ParseOptions` from the C facade, the installed CLI, and the
       Swift, Kotlin, and ES bindings, so `Document.parse(source)` is the only
@@ -436,7 +439,7 @@ its behavior, with no separate publication step.
       `document.footnotes.empty`, `document.footnotes.populated`,
       `document.content-before-footnotes`, `cite.items-in-order`. Requires `M2`,
       `S0`.
-- [ ] **M5 — List and item facts.** Replace `ListItem.checked` with `marker:
+- [x] **M5 — List and item facts.** Replace `ListItem.checked` with `marker:
       String?` (`" "`, `"x"`, and `"X"` under the inherited task-list rule,
       `null` otherwise) and expose `tasked` and `completed` only as derived
       binding conveniences; add `List.variant` and `List.delimiter`, populated as
@@ -451,7 +454,7 @@ its behavior, with no separate publication step.
       scope)`, `Document.specimens`, and the specimen referent and walk callback.
       Retire the reserved example list variant and item label. Definition
       ownership, copying and wire support land here; grammar remains in P9b.
-- [ ] **M6 — One table model.** Emit `Table(columns, head, content, foot=[])`
+- [x] **M6 — One table model.** Emit `Table(columns, head, content, foot=[])`
       with `TableColumn(alignment, relative=null)` from the existing pipe-table
       path, remove `TableRow.isHeader`, add `TableCell.rowspan` and `colspan` as
       `1`, and keep `TableCell.content` as `[Markup]` so inherited inline cells

@@ -7,6 +7,51 @@ import kotlin.test.assertTrue
 
 class AstTest {
     @Test
+    fun tableColumnWidthsUseCanonicalDecimals() {
+        val scope = Document.parse("x").scope
+        val widths =
+            listOf(
+                0.1 to "0.1",
+                1e-6 to "0.000001",
+                1e-7 to "1e-7",
+                1e20 to "100000000000000000000",
+                1e21 to "1e+21",
+                Double.MIN_VALUE to "5e-324",
+                1.2345678901234567 to "1.2345678901234567",
+            )
+        for ((width, expected) in widths) {
+            val table =
+                Table(listOf(TableColumn(TableAlignment.NONE, width)), emptyList(), emptyList(), emptyList(), scope)
+            assertTrue(table.dump().contains("columns=[none:$expected]"))
+        }
+    }
+
+    @Test
+    fun tablesPreserveGroupsSpansAndDirectBlockContent() {
+        val documents = listOf(Document.parse("# head"), Document.parse("body"), Document.parse("---"))
+        val rows = documents.map { TableRow(listOf(TableCell(1, 2, it.content, it.scope)), it.scope) }
+        val table =
+            Table(
+                listOf(TableColumn(TableAlignment.LEFT, 0.1), TableColumn(TableAlignment.NONE, null)),
+                listOf(rows[0]),
+                listOf(rows[1]),
+                listOf(rows[2]),
+                documents[0].scope,
+            )
+        assertTrue(table.head[0].cells[0].content[0] is Heading)
+        assertTrue(table.foot[0].cells[0].content[0] is ThematicBreak)
+        assertEquals(2, table.content[0].cells[0].colspan)
+        val visitor = RecordingWalkingVisitor()
+        table.walk(visitor)
+        assertEquals(
+            listOf("entering:Heading", "entering:Paragraph", "entering:ThematicBreak"),
+            visitor.events.filter { it in listOf("entering:Heading", "entering:Paragraph", "entering:ThematicBreak") },
+        )
+        assertTrue(table.dump().contains("columns=[left:0.1,none:null] children=3"))
+        assertTrue(table.dump().contains("TableFoot children=1"))
+    }
+
+    @Test
     fun publicSchemaIsEmittedByThePerNodeKotlinDumper() {
         val sources =
             listOf(
@@ -67,11 +112,14 @@ class AstTest {
         assertEquals(3, ordered.start)
         assertEquals("x", (document.content[1] as List).items.single().marker)
         val table = document.content[2] as Table
-        assertEquals(listOf(TableAlignment.CENTER), table.alignments)
-        assertTrue(table.header.isHeader)
-        assertTrue(table.rows.all { !it.isHeader })
+        assertEquals(listOf(TableAlignment.CENTER), table.columns.map { it.alignment })
+        assertEquals(1, table.head.size)
+        assertEquals(1, table.content.size)
+        assertTrue(table.foot.isEmpty())
         assertTrue(
-            table.header.cells
+            table.head
+                .single()
+                .cells
                 .single()
                 .scope.start.line > 0,
         )
@@ -91,12 +139,14 @@ class AstTest {
         val visitor = RecordingVisitor()
         document.accept(visitor)
         table.accept(visitor)
-        table.header.accept(visitor)
-        table.header.cells
+        table.head.single().accept(visitor)
+        table.head
+            .single()
+            .cells
             .single()
             .accept(visitor)
-        table.rows.single().accept(visitor)
-        table.rows
+        table.content.single().accept(visitor)
+        table.content
             .single()
             .cells
             .single()

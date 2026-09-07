@@ -83,30 +83,6 @@ typedef enum {
  */
 int markdown_core_core_extensions_attach(markdown_core_parser *parser);
 
-MARKDOWN_CORE_EXPORT
-uint16_t markdown_core_extensions_get_table_columns(markdown_core_node *node);
-
-/** Sets the number of columns for the table, returning 1 on success and 0 on error.
- */
-MARKDOWN_CORE_EXPORT
-int markdown_core_extensions_set_table_columns(markdown_core_node *node, uint16_t n_columns);
-
-MARKDOWN_CORE_EXPORT
-uint8_t *markdown_core_extensions_get_table_alignments(markdown_core_node *node);
-
-/** Sets the alignments for the table, returning 1 on success and 0 on error.
- */
-MARKDOWN_CORE_EXPORT
-int markdown_core_extensions_set_table_alignments(markdown_core_node *node, uint16_t ncols, uint8_t *alignments);
-
-MARKDOWN_CORE_EXPORT
-int markdown_core_extensions_get_table_row_is_header(markdown_core_node *node);
-
-/** Sets whether the node is a table header row, returning 1 on success and 0 on error.
- */
-MARKDOWN_CORE_EXPORT
-int markdown_core_extensions_set_table_row_is_header(markdown_core_node *node, int is_header);
-
 /** Returns the literal formula payload for formula extension nodes, or NULL on error.
  */
 MARKDOWN_CORE_EXPORT

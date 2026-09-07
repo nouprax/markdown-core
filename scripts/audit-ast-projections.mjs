@@ -447,7 +447,7 @@ for (const { label, expect, actual } of kindSurfaces) {
 const modeledRecords = [
     ...contract.kinds,
     ...Object.entries(contract.values ?? {})
-        .filter(([, value]) => value.scoped)
+        .filter(([, value]) => Array.isArray(value.fields))
         .map(([name, value]) => ({ name, fields: value.fields }))
 ];
 const modelFields = new Map(modeledRecords.map(({ name, fields }) => [name, fields.map((field) => field.name)]));

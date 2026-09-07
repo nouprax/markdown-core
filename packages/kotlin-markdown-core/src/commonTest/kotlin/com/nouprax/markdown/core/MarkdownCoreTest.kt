@@ -70,7 +70,7 @@ class ApiTest {
         val table = assertIs<Table>(Document.parse("| a |\n| --- |\n| b |\n").content.single())
         val tableVisitor = RecordingWalkingVisitor()
         table.walk(tableVisitor)
-        assertEquals(listOf(true, false), tableVisitor.tableRowKinds)
+        assertEquals(listOf(1, 3), tableVisitor.tableRowKinds)
     }
 }
 
@@ -175,7 +175,7 @@ class BindingMappingTest {
                 TableAlignment.RIGHT,
                 TableAlignment.NONE,
             ),
-            table.alignments,
+            table.columns.map { it.alignment },
         )
 
         // The owning node keeps its label field separate from block content;

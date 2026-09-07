@@ -83,11 +83,9 @@ int markdown_core_consolidate_text_nodes(markdown_core_node *root) {
     return markdown_core_consolidate_text_nodes_with_parser(NULL, root);
 }
 
-/* Consolidation frees every text node but the first of each run, and since
- * requirement 11b those nodes OWN REGIONS. `parser` is how the survivor takes
- * them: one node replacing another, roles kept, bounded by the freed node's own
- * lines. NULL is the public entry point's answer -- a caller outside a parse
- * has no region set to keep. */
+/* The surviving Text owns the concatenated literal and a concatenation of
+ * its operands' source runs. A caller outside a parse has no parser-owned
+ * map to retain and uses the public entry point with NULL. */
 int markdown_core_consolidate_text_nodes_with_parser(markdown_core_parser *parser, markdown_core_node *root) {
     if (root == NULL) {
         return 1;
@@ -113,15 +111,30 @@ int markdown_core_consolidate_text_nodes_with_parser(markdown_core_parser *parse
         }
 
         if (cur->next && cur->next->type == MARKDOWN_CORE_NODE_TEXT) {
+            markdown_core_node combined_map = {0};
+            if (parser &&
+                !markdown_core_parser_append_content_marks(parser, cur, &combined_map, 0, cur->as.literal.len, 0)) {
+                goto failed;
+            }
             markdown_core_strbuf_clear(&buf);
             markdown_core_strbuf_put(&buf, cur->as.literal.data, cur->as.literal.len);
+            if (buf.oom) {
+                goto failed;
+            }
             tmp = cur->next;
             while (tmp && tmp->type == MARKDOWN_CORE_NODE_TEXT) {
                 /* Bring `tmp` to its own EXIT before freeing it: two events
                  * now, where a suppressed EXIT used to make one enough. */
                 markdown_core_iter_next(iter); /* tmp ENTER */
                 markdown_core_iter_next(iter); /* tmp EXIT  */
+                if (parser && !markdown_core_parser_append_content_marks(parser, tmp, &combined_map, 0,
+                                                                         tmp->as.literal.len, buf.size)) {
+                    goto failed;
+                }
                 markdown_core_strbuf_put(&buf, tmp->as.literal.data, tmp->as.literal.len);
+                if (buf.oom) {
+                    goto failed;
+                }
                 // ONLY AN OPERAND THAT OWNS BYTES CAN SAY WHERE THE RUN ENDS.
                 // An empty one has no last byte to end at, and the empties in
                 // this tree carry a zeroed position rather than an honest one,
@@ -135,8 +148,6 @@ int markdown_core_consolidate_text_nodes_with_parser(markdown_core_parser *parse
                     cur->end_column = tmp->end_column;
                 }
                 next = tmp->next;
-                if (parser) {
-                }
                 markdown_core_node_free(tmp);
                 tmp = next;
             }
@@ -145,6 +156,11 @@ int markdown_core_consolidate_text_nodes_with_parser(markdown_core_parser *parse
              * `cur`'s EXIT: it recomputes the lookahead from the siblings that
              * survived, and it is what makes the drop below legal under the
              * rule rather than merely safe. */
+            if (parser) {
+                cur->content_mark = combined_map.content_mark;
+                cur->content_mark_count = combined_map.content_mark_count;
+                cur->content_mark_offset = 0;
+            }
             markdown_core_iter_reset(iter, cur, MARKDOWN_CORE_EVENT_EXIT);
             markdown_core_chunk_free(iter->mem, &cur->as.literal);
             cur->as.literal = markdown_core_chunk_buf_detach(&buf);
@@ -153,8 +169,7 @@ int markdown_core_consolidate_text_nodes_with_parser(markdown_core_parser *parse
                 // than absent. Report it and leave the node where it is: the
                 // drop below must only ever remove a node that is honestly
                 // empty, never one an allocation failure emptied.
-                ok = 0;
-                continue;
+                goto failed;
             }
         }
 
@@ -174,6 +189,10 @@ int markdown_core_consolidate_text_nodes_with_parser(markdown_core_parser *parse
         }
     }
 
+    goto done;
+failed:
+    ok = 0;
+done:
     markdown_core_strbuf_free(&buf);
     markdown_core_iter_free(iter);
     return ok;

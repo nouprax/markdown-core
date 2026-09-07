@@ -52,6 +52,17 @@ const verbose = process.argv.includes("--verbose");
 
 const ours = requireBinary(root, "build/cmake/packages/markdown-core/core/markdown-core", "pnpm build:c");
 
+// Dump groups have no scope of their own. Their rows/affixes still belong
+// geometrically to the nearest scoped owner, including across group boundaries.
+function* positionedChildren(node, nodePath) {
+    for (const [index, child] of node.children.entries()) {
+        const childPath = `${nodePath}.${String(index)}`;
+        const scope = readScope(child);
+        if (scope === null) yield* positionedChildren(child, childPath);
+        else if (!onLineZero(scope)) yield { child, childPath, scope };
+    }
+}
+
 const measured = [];
 let scanned = 0;
 let skipped = 0;
@@ -62,18 +73,14 @@ for (const example of fixtureCorpus(root)) {
         const parent = readScope(node);
         if (parent === null) continue;
 
-        // Positioned children only, in document order, with their own index
-        // kept so a finding names the node and not the survivor's rank.
-        const children = node.children
-            .map((child, index) => ({ child, index, scope: readScope(child) }))
-            .filter(({ scope }) => scope !== null && !onLineZero(scope));
+        const children = [...positionedChildren(node, nodePath)];
 
         if (!onLineZero(parent))
-            for (const { child, index, scope } of children) {
+            for (const { child, childPath, scope } of children) {
                 scanned += 1;
                 if (before(scope.start, parent.start) || before(parent.end, scope.end))
                     findings.push({
-                        nodePath: `${nodePath}.${String(index)}`,
+                        nodePath: childPath,
                         violation: "containment",
                         kind: child.kind,
                         scope: formatScope(scope),
@@ -91,7 +98,7 @@ for (const example of fixtureCorpus(root)) {
             // apart, so anything short of strictly-before shares a byte.
             if (!before(left.scope.end, right.scope.start))
                 findings.push({
-                    nodePath: `${nodePath}.${String(right.index)}`,
+                    nodePath: right.childPath,
                     violation: "sibling-overlap",
                     kind: right.child.kind,
                     scope: formatScope(right.scope),

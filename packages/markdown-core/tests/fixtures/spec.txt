@@ -3584,17 +3584,20 @@ right, or center alignment respectively.
 | baz | bim |
 .
 Document scope=1:1..3:13 children=1
-└── Table scope=1:1..3:13 alignments=[none,none] children=2
-    ├── TableRow scope=1:1..1:13 isHeader=true children=2
-    │   ├── TableCell scope=1:2..1:6 children=1
-    │   │   └── Text scope=1:3..1:5 literal="foo" children=0
-    │   └── TableCell scope=1:8..1:12 children=1
-    │       └── Text scope=1:9..1:11 literal="bar" children=0
-    └── TableRow scope=3:1..3:13 isHeader=false children=2
-        ├── TableCell scope=3:2..3:6 children=1
-        │   └── Text scope=3:3..3:5 literal="baz" children=0
-        └── TableCell scope=3:8..3:12 children=1
-            └── Text scope=3:9..3:11 literal="bim" children=0
+└── Table scope=1:1..3:13 columns=[none:null,none:null] children=2
+    ├── TableHead children=1
+    │   └── TableRow scope=1:1..1:13 children=2
+    │       ├── TableCell scope=1:2..1:6 rowspan=1 colspan=1 children=1
+    │       │   └── Text scope=1:3..1:5 literal="foo" children=0
+    │       └── TableCell scope=1:8..1:12 rowspan=1 colspan=1 children=1
+    │           └── Text scope=1:9..1:11 literal="bar" children=0
+    ├── TableBody children=1
+    │   └── TableRow scope=3:1..3:13 children=2
+    │       ├── TableCell scope=3:2..3:6 rowspan=1 colspan=1 children=1
+    │       │   └── Text scope=3:3..3:5 literal="baz" children=0
+    │       └── TableCell scope=3:8..3:12 rowspan=1 colspan=1 children=1
+    │           └── Text scope=3:9..3:11 literal="bim" children=0
+    └── TableFoot children=0
 ````````````````````````````````
 
 Cells in one column don't need to match length, though it's easier to read if
@@ -3606,17 +3609,20 @@ they are. Likewise, use of leading and trailing pipes may be inconsistent:
 bar | baz
 .
 Document scope=1:1..3:9 children=1
-└── Table scope=1:1..3:9 alignments=[center,right] children=2
-    ├── TableRow scope=1:1..1:16 isHeader=true children=2
-    │   ├── TableCell scope=1:2..1:6 children=1
-    │   │   └── Text scope=1:3..1:5 literal="abc" children=0
-    │   └── TableCell scope=1:8..1:15 children=1
-    │       └── Text scope=1:9..1:14 literal="defghi" children=0
-    └── TableRow scope=3:1..3:9 isHeader=false children=2
-        ├── TableCell scope=3:1..3:4 children=1
-        │   └── Text scope=3:1..3:3 literal="bar" children=0
-        └── TableCell scope=3:6..3:9 children=1
-            └── Text scope=3:7..3:9 literal="baz" children=0
+└── Table scope=1:1..3:9 columns=[center:null,right:null] children=2
+    ├── TableHead children=1
+    │   └── TableRow scope=1:1..1:16 children=2
+    │       ├── TableCell scope=1:2..1:6 rowspan=1 colspan=1 children=1
+    │       │   └── Text scope=1:3..1:5 literal="abc" children=0
+    │       └── TableCell scope=1:8..1:15 rowspan=1 colspan=1 children=1
+    │           └── Text scope=1:9..1:14 literal="defghi" children=0
+    ├── TableBody children=1
+    │   └── TableRow scope=3:1..3:9 children=2
+    │       ├── TableCell scope=3:1..3:4 rowspan=1 colspan=1 children=1
+    │       │   └── Text scope=3:1..3:3 literal="bar" children=0
+    │       └── TableCell scope=3:6..3:9 rowspan=1 colspan=1 children=1
+    │           └── Text scope=3:7..3:9 literal="baz" children=0
+    └── TableFoot children=0
 ````````````````````````````````
 
 Include a pipe in a cell's content by escaping it, including inside other
@@ -3629,21 +3635,24 @@ inline spans:
 | b **\|** im |
 .
 Document scope=1:1..4:15 children=1
-└── Table scope=1:1..4:15 alignments=[none] children=3
-    ├── TableRow scope=1:1..1:10 isHeader=true children=1
-    │   └── TableCell scope=1:2..1:9 children=1
-    │       └── Text scope=1:3..1:6 literal="f|oo" children=0
-    ├── TableRow scope=3:1..3:13 isHeader=false children=1
-    │   └── TableCell scope=3:2..3:12 children=3
-    │       ├── Text scope=3:3..3:4 literal="b " children=0
-    │       ├── Code scope=3:5..3:7 literal="|" children=0
-    │       └── Text scope=3:8..3:10 literal=" az" children=0
-    └── TableRow scope=4:1..4:15 isHeader=false children=1
-        └── TableCell scope=4:2..4:14 children=3
-            ├── Text scope=4:3..4:4 literal="b " children=0
-            ├── Strong scope=4:5..4:9 children=1
-            │   └── Text scope=4:7..4:7 literal="|" children=0
-            └── Text scope=4:10..4:12 literal=" im" children=0
+└── Table scope=1:1..4:15 columns=[none:null] children=3
+    ├── TableHead children=1
+    │   └── TableRow scope=1:1..1:10 children=1
+    │       └── TableCell scope=1:2..1:9 rowspan=1 colspan=1 children=1
+    │           └── Text scope=1:3..1:7 literal="f|oo" children=0
+    ├── TableBody children=2
+    │   ├── TableRow scope=3:1..3:13 children=1
+    │   │   └── TableCell scope=3:2..3:12 rowspan=1 colspan=1 children=3
+    │   │       ├── Text scope=3:3..3:4 literal="b " children=0
+    │   │       ├── Code scope=3:5..3:8 literal="|" children=0
+    │   │       └── Text scope=3:9..3:11 literal=" az" children=0
+    │   └── TableRow scope=4:1..4:15 children=1
+    │       └── TableCell scope=4:2..4:14 rowspan=1 colspan=1 children=3
+    │           ├── Text scope=4:3..4:4 literal="b " children=0
+    │           ├── Strong scope=4:5..4:10 children=1
+    │           │   └── Text scope=4:7..4:8 literal="|" children=0
+    │           └── Text scope=4:11..4:13 literal=" im" children=0
+    └── TableFoot children=0
 ````````````````````````````````
 
 The table is broken at the first empty line, or beginning of another
@@ -3656,17 +3665,20 @@ block-level structure:
 > bar
 .
 Document scope=1:1..4:5 children=2
-├── Table scope=1:1..3:13 alignments=[none,none] children=2
-│   ├── TableRow scope=1:1..1:13 isHeader=true children=2
-│   │   ├── TableCell scope=1:2..1:6 children=1
-│   │   │   └── Text scope=1:3..1:5 literal="abc" children=0
-│   │   └── TableCell scope=1:8..1:12 children=1
-│   │       └── Text scope=1:9..1:11 literal="def" children=0
-│   └── TableRow scope=3:1..3:13 isHeader=false children=2
-│       ├── TableCell scope=3:2..3:6 children=1
-│       │   └── Text scope=3:3..3:5 literal="bar" children=0
-│       └── TableCell scope=3:8..3:12 children=1
-│           └── Text scope=3:9..3:11 literal="baz" children=0
+├── Table scope=1:1..3:13 columns=[none:null,none:null] children=2
+│   ├── TableHead children=1
+│   │   └── TableRow scope=1:1..1:13 children=2
+│   │       ├── TableCell scope=1:2..1:6 rowspan=1 colspan=1 children=1
+│   │       │   └── Text scope=1:3..1:5 literal="abc" children=0
+│   │       └── TableCell scope=1:8..1:12 rowspan=1 colspan=1 children=1
+│   │           └── Text scope=1:9..1:11 literal="def" children=0
+│   ├── TableBody children=1
+│   │   └── TableRow scope=3:1..3:13 children=2
+│   │       ├── TableCell scope=3:2..3:6 rowspan=1 colspan=1 children=1
+│   │       │   └── Text scope=3:3..3:5 literal="bar" children=0
+│   │       └── TableCell scope=3:8..3:12 rowspan=1 colspan=1 children=1
+│   │           └── Text scope=3:9..3:11 literal="baz" children=0
+│   └── TableFoot children=0
 └── Callout scope=4:1..4:5 variant=null collapsed=null children=1
     └── Paragraph scope=4:3..4:5 children=1
         └── Text scope=4:3..4:5 literal="bar" children=0
@@ -3681,21 +3693,24 @@ bar
 bar
 .
 Document scope=1:1..6:3 children=2
-├── Table scope=1:1..4:3 alignments=[none,none] children=3
-│   ├── TableRow scope=1:1..1:13 isHeader=true children=2
-│   │   ├── TableCell scope=1:2..1:6 children=1
-│   │   │   └── Text scope=1:3..1:5 literal="abc" children=0
-│   │   └── TableCell scope=1:8..1:12 children=1
-│   │       └── Text scope=1:9..1:11 literal="def" children=0
-│   ├── TableRow scope=3:1..3:13 isHeader=false children=2
-│   │   ├── TableCell scope=3:2..3:6 children=1
-│   │   │   └── Text scope=3:3..3:5 literal="bar" children=0
-│   │   └── TableCell scope=3:8..3:12 children=1
-│   │       └── Text scope=3:9..3:11 literal="baz" children=0
-│   └── TableRow scope=4:1..4:3 isHeader=false children=2
-│       ├── TableCell scope=4:1..4:3 children=1
-│       │   └── Text scope=4:1..4:3 literal="bar" children=0
-│       └── TableCell scope=4:3..4:3 children=0
+├── Table scope=1:1..4:3 columns=[none:null,none:null] children=3
+│   ├── TableHead children=1
+│   │   └── TableRow scope=1:1..1:13 children=2
+│   │       ├── TableCell scope=1:2..1:6 rowspan=1 colspan=1 children=1
+│   │       │   └── Text scope=1:3..1:5 literal="abc" children=0
+│   │       └── TableCell scope=1:8..1:12 rowspan=1 colspan=1 children=1
+│   │           └── Text scope=1:9..1:11 literal="def" children=0
+│   ├── TableBody children=2
+│   │   ├── TableRow scope=3:1..3:13 children=2
+│   │   │   ├── TableCell scope=3:2..3:6 rowspan=1 colspan=1 children=1
+│   │   │   │   └── Text scope=3:3..3:5 literal="bar" children=0
+│   │   │   └── TableCell scope=3:8..3:12 rowspan=1 colspan=1 children=1
+│   │   │       └── Text scope=3:9..3:11 literal="baz" children=0
+│   │   └── TableRow scope=4:1..4:3 children=2
+│   │       ├── TableCell scope=4:1..4:3 rowspan=1 colspan=1 children=1
+│   │       │   └── Text scope=4:1..4:3 literal="bar" children=0
+│   │       └── TableCell scope=4:3..4:3 rowspan=1 colspan=1 children=0
+│   └── TableFoot children=0
 └── Paragraph scope=6:1..6:3 children=1
     └── Text scope=6:1..6:3 literal="bar" children=0
 ````````````````````````````````
@@ -3728,21 +3743,24 @@ cells are inserted.  If there are greater, the excess is ignored:
 | bar | baz | boo |
 .
 Document scope=1:1..4:19 children=1
-└── Table scope=1:1..4:19 alignments=[none,none] children=3
-    ├── TableRow scope=1:1..1:13 isHeader=true children=2
-    │   ├── TableCell scope=1:2..1:6 children=1
-    │   │   └── Text scope=1:3..1:5 literal="abc" children=0
-    │   └── TableCell scope=1:8..1:12 children=1
-    │       └── Text scope=1:9..1:11 literal="def" children=0
-    ├── TableRow scope=3:1..3:7 isHeader=false children=2
-    │   ├── TableCell scope=3:2..3:6 children=1
-    │   │   └── Text scope=3:3..3:5 literal="bar" children=0
-    │   └── TableCell scope=3:7..3:7 children=0
-    └── TableRow scope=4:1..4:19 isHeader=false children=2
-        ├── TableCell scope=4:2..4:6 children=1
-        │   └── Text scope=4:3..4:5 literal="bar" children=0
-        └── TableCell scope=4:8..4:12 children=1
-            └── Text scope=4:9..4:11 literal="baz" children=0
+└── Table scope=1:1..4:19 columns=[none:null,none:null] children=3
+    ├── TableHead children=1
+    │   └── TableRow scope=1:1..1:13 children=2
+    │       ├── TableCell scope=1:2..1:6 rowspan=1 colspan=1 children=1
+    │       │   └── Text scope=1:3..1:5 literal="abc" children=0
+    │       └── TableCell scope=1:8..1:12 rowspan=1 colspan=1 children=1
+    │           └── Text scope=1:9..1:11 literal="def" children=0
+    ├── TableBody children=2
+    │   ├── TableRow scope=3:1..3:7 children=2
+    │   │   ├── TableCell scope=3:2..3:6 rowspan=1 colspan=1 children=1
+    │   │   │   └── Text scope=3:3..3:5 literal="bar" children=0
+    │   │   └── TableCell scope=3:7..3:7 rowspan=1 colspan=1 children=0
+    │   └── TableRow scope=4:1..4:19 children=2
+    │       ├── TableCell scope=4:2..4:6 rowspan=1 colspan=1 children=1
+    │       │   └── Text scope=4:3..4:5 literal="bar" children=0
+    │       └── TableCell scope=4:8..4:12 rowspan=1 colspan=1 children=1
+    │           └── Text scope=4:9..4:11 literal="baz" children=0
+    └── TableFoot children=0
 ````````````````````````````````
 
 If there are no rows in the body, no `<tbody>` is generated in HTML output:
@@ -3752,12 +3770,15 @@ If there are no rows in the body, no `<tbody>` is generated in HTML output:
 | --- | --- |
 .
 Document scope=1:1..2:13 children=1
-└── Table scope=1:1..2:13 alignments=[none,none] children=1
-    └── TableRow scope=1:1..1:13 isHeader=true children=2
-        ├── TableCell scope=1:2..1:6 children=1
-        │   └── Text scope=1:3..1:5 literal="abc" children=0
-        └── TableCell scope=1:8..1:12 children=1
-            └── Text scope=1:9..1:11 literal="def" children=0
+└── Table scope=1:1..2:13 columns=[none:null,none:null] children=1
+    ├── TableHead children=1
+    │   └── TableRow scope=1:1..1:13 children=2
+    │       ├── TableCell scope=1:2..1:6 rowspan=1 colspan=1 children=1
+    │       │   └── Text scope=1:3..1:5 literal="abc" children=0
+    │       └── TableCell scope=1:8..1:12 rowspan=1 colspan=1 children=1
+    │           └── Text scope=1:9..1:11 literal="def" children=0
+    ├── TableBody children=0
+    └── TableFoot children=0
 ````````````````````````````````
 
 </div>
@@ -10629,9 +10650,9 @@ Backslash-escapes do not work inside email autolinks:
 Document scope=1:1..1:23 children=1
 └── Paragraph scope=1:1..1:23 children=3
     ├── Text scope=1:1..1:1 literal="<" children=0
-    ├── Link scope=1:2..1:21 dest=url("mailto:foo+@bar.example.com") title=null children=1
-    │   └── Text scope=1:2..1:21 literal="foo+@bar.example.com" children=0
-    └── Text scope=1:22..1:22 literal=">" children=0
+    ├── Link scope=1:2..1:22 dest=url("mailto:foo+@bar.example.com") title=null children=1
+    │   └── Text scope=1:2..1:22 literal="foo+@bar.example.com" children=0
+    └── Text scope=1:23..1:23 literal=">" children=0
 ````````````````````````````````
 
 

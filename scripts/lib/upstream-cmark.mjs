@@ -63,7 +63,7 @@ const COMPARED = {
     Comment: ["literal"],
     Link: ["dest", "title"],
     Image: ["dest", "title"],
-    TableRow: ["isHeader"]
+    TableCell: ["rowspan", "colspan"]
 };
 
 const LITERAL_BEARING = new Set(["text", "code", "code_block", "html_block", "html_inline"]);
@@ -88,7 +88,7 @@ function unescapeXml(text) {
  * `assertNoUnknownKinds` below is what catches that rather than letting it
  * silently mis-label.
  */
-export function parseUpstreamXml(xml) {
+export function parseUpstreamXml(xml, fired) {
     const body = xml.replace(/^[\s\S]*?<document[^>]*>/, "").replace(/<\/document>\s*$/, "");
     const root = { kind: "Document", fields: {}, children: [] };
     const stack = [root];
@@ -118,8 +118,10 @@ export function parseUpstreamXml(xml) {
         if (kind === undefined) kind = `?${name}`;
         const node = { kind, fields: attributes, children: [] };
         if (kind === "Cite") node.children.push(citationItem({}));
-        if (name === "table_header") node.fields.isHeader = "true";
-        if (name === "table_row") node.fields.isHeader = "false";
+        if (name === "table_cell") {
+            node.fields.rowspan = "1";
+            node.fields.colspan = "1";
+        }
         if (name === "item") {
             node.fields.completed = "null";
         }
@@ -138,7 +140,23 @@ export function parseUpstreamXml(xml) {
         if (!selfClose) stack.push(node);
         else if (node.pendingText !== undefined) node.fields.literal = "";
     }
+    const pending = [root];
+    while (pending.length) {
+        const node = pending.pop();
+        pending.push(...node.children);
+        if (node.kind === "Table") node.children = tableGroups(node.children, fired);
+    }
     return root;
+}
+
+/** The inherited pipe-table shape, used only to project external oracles. */
+export function tableGroups(rows, fired) {
+    fired?.add("table-row-groups");
+    return [
+        { kind: "TableHead", fields: {}, children: rows.slice(0, 1) },
+        { kind: "TableBody", fields: {}, children: rows.slice(1) },
+        { kind: "TableFoot", fields: {}, children: [] }
+    ];
 }
 
 /**

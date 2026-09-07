@@ -147,7 +147,9 @@ private class JniTreeDecoder(
             }
 
             JniNodeKind.TABLE_CELL -> {
-                readChildren { consume(TableCell(it, scope)) }
+                val rowspan = reader.long().toTableSpan()
+                val colspan = reader.long().toTableSpan()
+                readChildren { consume(TableCell(rowspan, colspan, it, scope)) }
             }
 
             JniNodeKind.DIRECTIVE_LABEL -> {
@@ -397,25 +399,46 @@ private class JniTreeDecoder(
         scope: Scope,
         consume: (Markup) -> Unit,
     ) {
-        val alignmentCount = reader.int()
-        require(alignmentCount >= 0) { "invalid native table alignment count" }
-        val alignments = immutableList(alignmentCount) { tableAlignment(reader.byte().toInt() and 0xff) }
+        val columnCount = reader.int()
+        require(columnCount > 0) { "invalid native table column count" }
+        val columns =
+            immutableList(columnCount) {
+                val alignment = tableAlignment(reader.byte().toInt() and 0xff)
+                val relative = if (reader.boolean()) Double.fromBits(reader.long()) else null
+                require(relative == null || (relative.isFinite() && relative > 0)) { "invalid table column width" }
+                TableColumn(alignment, relative)
+            }
+        val head = reader.int()
+        val content = reader.int()
+        val foot = reader.int()
+        require(head >= 0 && content >= 0 && foot >= 0) { "invalid table row groups" }
         readChildren { children ->
+            require(head.toLong() + content + foot == children.size.toLong()) { "invalid table row groups" }
             val rows = children.immutableMap { requireNotNull(it as? TableRow) { "table contains a non-row node" } }
-            val headers = rows.filter(TableRow::isHeader)
-            require(headers.size == 1) { "table must contain exactly one header row" }
-            consume(Table(alignments, headers.single(), rows.filterNot(TableRow::isHeader).immutableMap { it }, scope))
+            consume(
+                Table(
+                    columns,
+                    immutableList(head) { rows[it] },
+                    immutableList(content) { rows[head + it] },
+                    immutableList(foot) { rows[head + content + it] },
+                    scope,
+                ),
+            )
         }
+    }
+
+    private fun Long.toTableSpan(): Int {
+        require(this in 1..Int.MAX_VALUE.toLong()) { "invalid table cell span" }
+        return toInt()
     }
 
     private fun readTableRow(
         scope: Scope,
         consume: (Markup) -> Unit,
     ) {
-        val header = reader.boolean()
         readChildren { children ->
             val cells = children.immutableMap { requireNotNull(it as? TableCell) { "table row contains a non-cell" } }
-            consume(TableRow(header, cells, scope))
+            consume(TableRow(cells, scope))
         }
     }
 

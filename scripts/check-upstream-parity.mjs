@@ -125,7 +125,7 @@ const fired = new Set();
 
 function compare(input) {
     const upstreamTree = liftFootnotes(
-        normalize(projectHtmlComments(parseUpstreamXml(runUpstream(input)), fired), "upstream", fired),
+        normalize(projectHtmlComments(parseUpstreamXml(runUpstream(input), fired), fired), "upstream", fired),
         fired
     );
     // `footnote-resolution-model` is applied before `normalize`, which keeps
@@ -157,7 +157,8 @@ const PROJECTED_DELTAS = new Set([
     "footnote-definition-placement",
     "footnote-resolution-model",
     "empty-text-node",
-    "task-marker-completion"
+    "task-marker-completion",
+    "table-row-groups"
 ]);
 for (const delta of policy.deltas) {
     if (!PROJECTED_DELTAS.has(delta.id) && !(policy.expectedDivergences ?? []).some((e) => e.id === delta.id)) {

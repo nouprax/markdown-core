@@ -1,0 +1,411 @@
+# Pipe table model and authored positions
+
+```````````````````````````````` example
+| Left | Center | Right | None |
+| :--- | :----: | ----: | ---- |
+| a | *b* | `c` | d |
+.
+Document scope=1:1..3:21 children=1
+└── Table scope=1:1..3:21 columns=[left:null,center:null,right:null,none:null] children=2
+    ├── TableHead children=1
+    │   └── TableRow scope=1:1..1:32 children=4
+    │       ├── TableCell scope=1:2..1:7 rowspan=1 colspan=1 children=1
+    │       │   └── Text scope=1:3..1:6 literal="Left" children=0
+    │       ├── TableCell scope=1:9..1:16 rowspan=1 colspan=1 children=1
+    │       │   └── Text scope=1:10..1:15 literal="Center" children=0
+    │       ├── TableCell scope=1:18..1:24 rowspan=1 colspan=1 children=1
+    │       │   └── Text scope=1:19..1:23 literal="Right" children=0
+    │       └── TableCell scope=1:26..1:31 rowspan=1 colspan=1 children=1
+    │           └── Text scope=1:27..1:30 literal="None" children=0
+    ├── TableBody children=1
+    │   └── TableRow scope=3:1..3:21 children=4
+    │       ├── TableCell scope=3:2..3:4 rowspan=1 colspan=1 children=1
+    │       │   └── Text scope=3:3..3:3 literal="a" children=0
+    │       ├── TableCell scope=3:6..3:10 rowspan=1 colspan=1 children=1
+    │       │   └── Emphasis scope=3:7..3:9 children=1
+    │       │       └── Text scope=3:8..3:8 literal="b" children=0
+    │       ├── TableCell scope=3:12..3:16 rowspan=1 colspan=1 children=1
+    │       │   └── Code scope=3:13..3:15 literal="c" children=0
+    │       └── TableCell scope=3:18..3:20 rowspan=1 colspan=1 children=1
+    │           └── Text scope=3:19..3:19 literal="d" children=0
+    └── TableFoot children=0
+````````````````````````````````
+
+```````````````````````````````` example
+a | b
+--|--
+c | d
+.
+Document scope=1:1..3:5 children=1
+└── Table scope=1:1..3:5 columns=[none:null,none:null] children=2
+    ├── TableHead children=1
+    │   └── TableRow scope=1:1..1:5 children=2
+    │       ├── TableCell scope=1:1..1:2 rowspan=1 colspan=1 children=1
+    │       │   └── Text scope=1:1..1:1 literal="a" children=0
+    │       └── TableCell scope=1:4..1:5 rowspan=1 colspan=1 children=1
+    │           └── Text scope=1:5..1:5 literal="b" children=0
+    ├── TableBody children=1
+    │   └── TableRow scope=3:1..3:5 children=2
+    │       ├── TableCell scope=3:1..3:2 rowspan=1 colspan=1 children=1
+    │       │   └── Text scope=3:1..3:1 literal="c" children=0
+    │       └── TableCell scope=3:4..3:5 rowspan=1 colspan=1 children=1
+    │           └── Text scope=3:5..3:5 literal="d" children=0
+    └── TableFoot children=0
+````````````````````````````````
+
+```````````````````````````````` example
+para
+line
+a | b
+-|-
+c | d
+.
+Document scope=1:1..5:5 children=2
+├── Paragraph scope=1:1..2:4 children=3
+│   ├── Text scope=1:1..1:4 literal="para" children=0
+│   ├── SoftBreak scope=1:5..1:5 children=0
+│   └── Text scope=2:1..2:4 literal="line" children=0
+└── Table scope=3:1..5:5 columns=[none:null,none:null] children=2
+    ├── TableHead children=1
+    │   └── TableRow scope=3:1..3:5 children=2
+    │       ├── TableCell scope=3:1..3:2 rowspan=1 colspan=1 children=1
+    │       │   └── Text scope=3:1..3:1 literal="a" children=0
+    │       └── TableCell scope=3:4..3:5 rowspan=1 colspan=1 children=1
+    │           └── Text scope=3:5..3:5 literal="b" children=0
+    ├── TableBody children=1
+    │   └── TableRow scope=5:1..5:5 children=2
+    │       ├── TableCell scope=5:1..5:2 rowspan=1 colspan=1 children=1
+    │       │   └── Text scope=5:1..5:1 literal="c" children=0
+    │       └── TableCell scope=5:4..5:5 rowspan=1 colspan=1 children=1
+    │           └── Text scope=5:5..5:5 literal="d" children=0
+    └── TableFoot children=0
+````````````````````````````````
+
+```````````````````````````````` example
+| a | b |
+| - | - |
+no pipes
+| short |
+| x | y | extra |
+
+| z |
+.
+Document scope=1:1..7:5 children=2
+├── Table scope=1:1..5:17 columns=[none:null,none:null] children=4
+│   ├── TableHead children=1
+│   │   └── TableRow scope=1:1..1:9 children=2
+│   │       ├── TableCell scope=1:2..1:4 rowspan=1 colspan=1 children=1
+│   │       │   └── Text scope=1:3..1:3 literal="a" children=0
+│   │       └── TableCell scope=1:6..1:8 rowspan=1 colspan=1 children=1
+│   │           └── Text scope=1:7..1:7 literal="b" children=0
+│   ├── TableBody children=3
+│   │   ├── TableRow scope=3:1..3:8 children=2
+│   │   │   ├── TableCell scope=3:1..3:8 rowspan=1 colspan=1 children=1
+│   │   │   │   └── Text scope=3:1..3:8 literal="no pipes" children=0
+│   │   │   └── TableCell scope=3:8..3:8 rowspan=1 colspan=1 children=0
+│   │   ├── TableRow scope=4:1..4:9 children=2
+│   │   │   ├── TableCell scope=4:2..4:8 rowspan=1 colspan=1 children=1
+│   │   │   │   └── Text scope=4:3..4:7 literal="short" children=0
+│   │   │   └── TableCell scope=4:9..4:9 rowspan=1 colspan=1 children=0
+│   │   └── TableRow scope=5:1..5:17 children=2
+│   │       ├── TableCell scope=5:2..5:4 rowspan=1 colspan=1 children=1
+│   │       │   └── Text scope=5:3..5:3 literal="x" children=0
+│   │       └── TableCell scope=5:6..5:8 rowspan=1 colspan=1 children=1
+│   │           └── Text scope=5:7..5:7 literal="y" children=0
+│   └── TableFoot children=0
+└── Paragraph scope=7:1..7:5 children=1
+    └── Text scope=7:1..7:5 literal="| z |" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+| a |
+| - |
+| b |
+# h
+| c |
+.
+Document scope=1:1..5:5 children=3
+├── Table scope=1:1..3:5 columns=[none:null] children=2
+│   ├── TableHead children=1
+│   │   └── TableRow scope=1:1..1:5 children=1
+│   │       └── TableCell scope=1:2..1:4 rowspan=1 colspan=1 children=1
+│   │           └── Text scope=1:3..1:3 literal="a" children=0
+│   ├── TableBody children=1
+│   │   └── TableRow scope=3:1..3:5 children=1
+│   │       └── TableCell scope=3:2..3:4 rowspan=1 colspan=1 children=1
+│   │           └── Text scope=3:3..3:3 literal="b" children=0
+│   └── TableFoot children=0
+├── Heading scope=4:1..4:3 level=1 children=1
+│   └── Text scope=4:3..4:3 literal="h" children=0
+└── Paragraph scope=5:1..5:5 children=1
+    └── Text scope=5:1..5:5 literal="| c |" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+| a | b |
+| - | - |
+| x \| y | `c \| d` |
+.
+Document scope=1:1..3:21 children=1
+└── Table scope=1:1..3:21 columns=[none:null,none:null] children=2
+    ├── TableHead children=1
+    │   └── TableRow scope=1:1..1:9 children=2
+    │       ├── TableCell scope=1:2..1:4 rowspan=1 colspan=1 children=1
+    │       │   └── Text scope=1:3..1:3 literal="a" children=0
+    │       └── TableCell scope=1:6..1:8 rowspan=1 colspan=1 children=1
+    │           └── Text scope=1:7..1:7 literal="b" children=0
+    ├── TableBody children=1
+    │   └── TableRow scope=3:1..3:21 children=2
+    │       ├── TableCell scope=3:2..3:9 rowspan=1 colspan=1 children=1
+    │       │   └── Text scope=3:3..3:8 literal="x | y" children=0
+    │       └── TableCell scope=3:11..3:20 rowspan=1 colspan=1 children=1
+    │           └── Code scope=3:12..3:19 literal="c | d" children=0
+    └── TableFoot children=0
+````````````````````````````````
+
+```````````````````````````````` example
+| \| *after* | `\|` |
+| - | - |
+| [\|](url) | *x\|y* |
+.
+Document scope=1:1..3:22 children=1
+└── Table scope=1:1..3:22 columns=[none:null,none:null] children=2
+    ├── TableHead children=1
+    │   └── TableRow scope=1:1..1:21 children=2
+    │       ├── TableCell scope=1:2..1:13 rowspan=1 colspan=1 children=2
+    │       │   ├── Text scope=1:3..1:5 literal="| " children=0
+    │       │   └── Emphasis scope=1:6..1:12 children=1
+    │       │       └── Text scope=1:7..1:11 literal="after" children=0
+    │       └── TableCell scope=1:15..1:20 rowspan=1 colspan=1 children=1
+    │           └── Code scope=1:16..1:19 literal="|" children=0
+    ├── TableBody children=1
+    │   └── TableRow scope=3:1..3:22 children=2
+    │       ├── TableCell scope=3:2..3:12 rowspan=1 colspan=1 children=1
+    │       │   └── Link scope=3:3..3:11 dest=url("url") title=null children=1
+    │       │       └── Text scope=3:4..3:5 literal="|" children=0
+    │       └── TableCell scope=3:14..3:21 rowspan=1 colspan=1 children=1
+    │           └── Emphasis scope=3:15..3:20 children=1
+    │               └── Text scope=3:16..3:19 literal="x|y" children=0
+    └── TableFoot children=0
+````````````````````````````````
+
+```````````````````````````````` example
+lead
+another line
+| x\|y | `z\|w` |
+| - | - |
+| \| | \|\| |
+.
+Document scope=1:1..5:13 children=2
+├── Paragraph scope=1:1..2:12 children=3
+│   ├── Text scope=1:1..1:4 literal="lead" children=0
+│   ├── SoftBreak scope=1:5..1:5 children=0
+│   └── Text scope=2:1..2:12 literal="another line" children=0
+└── Table scope=3:1..5:13 columns=[none:null,none:null] children=2
+    ├── TableHead children=1
+    │   └── TableRow scope=3:1..3:17 children=2
+    │       ├── TableCell scope=3:2..3:7 rowspan=1 colspan=1 children=1
+    │       │   └── Text scope=3:3..3:6 literal="x|y" children=0
+    │       └── TableCell scope=3:9..3:16 rowspan=1 colspan=1 children=1
+    │           └── Code scope=3:10..3:15 literal="z|w" children=0
+    ├── TableBody children=1
+    │   └── TableRow scope=5:1..5:13 children=2
+    │       ├── TableCell scope=5:2..5:5 rowspan=1 colspan=1 children=1
+    │       │   └── Text scope=5:3..5:4 literal="|" children=0
+    │       └── TableCell scope=5:7..5:12 rowspan=1 colspan=1 children=1
+    │           └── Text scope=5:8..5:11 literal="||" children=0
+    └── TableFoot children=0
+````````````````````````````````
+
+```````````````````````````````` example
+> | 汉\|字 | 😀 |
+> | - | - |
+> | *汉\|字* | `😀\|` |
+
+- | x\|y | z |
+  | - | - |
+  | \| | short |
+.
+Document scope=1:1..7:16 children=2
+├── Callout scope=1:1..3:27 variant=null collapsed=null children=1
+│   └── Table scope=1:3..3:27 columns=[none:null,none:null] children=2
+│       ├── TableHead children=1
+│       │   └── TableRow scope=1:3..1:21 children=2
+│       │       ├── TableCell scope=1:4..1:13 rowspan=1 colspan=1 children=1
+│       │       │   └── Text scope=1:5..1:12 literal="汉|字" children=0
+│       │       └── TableCell scope=1:15..1:20 rowspan=1 colspan=1 children=1
+│       │           └── Text scope=1:16..1:19 literal="😀" children=0
+│       ├── TableBody children=1
+│       │   └── TableRow scope=3:3..3:27 children=2
+│       │       ├── TableCell scope=3:4..3:15 rowspan=1 colspan=1 children=1
+│       │       │   └── Emphasis scope=3:5..3:14 children=1
+│       │       │       └── Text scope=3:6..3:13 literal="汉|字" children=0
+│       │       └── TableCell scope=3:17..3:26 rowspan=1 colspan=1 children=1
+│       │           └── Code scope=3:18..3:25 literal="😀|" children=0
+│       └── TableFoot children=0
+└── List scope=5:1..7:16 flavor=bullet start=null variant=null delimiter=null tight=true children=1
+    └── ListItem scope=5:1..7:16 marker=null children=1
+        └── Table scope=5:3..7:16 columns=[none:null,none:null] children=2
+            ├── TableHead children=1
+            │   └── TableRow scope=5:3..5:14 children=2
+            │       ├── TableCell scope=5:4..5:9 rowspan=1 colspan=1 children=1
+            │       │   └── Text scope=5:5..5:8 literal="x|y" children=0
+            │       └── TableCell scope=5:11..5:13 rowspan=1 colspan=1 children=1
+            │           └── Text scope=5:12..5:12 literal="z" children=0
+            ├── TableBody children=1
+            │   └── TableRow scope=7:3..7:16 children=2
+            │       ├── TableCell scope=7:4..7:7 rowspan=1 colspan=1 children=1
+            │       │   └── Text scope=7:5..7:6 literal="|" children=0
+            │       └── TableCell scope=7:9..7:15 rowspan=1 colspan=1 children=1
+            │           └── Text scope=7:10..7:14 literal="short" children=0
+            └── TableFoot children=0
+````````````````````````````````
+
+```````````````````````````````` example
+| a | b | c |
+| - | - | - |
+||x|
+|x||
+|x|
+|→|→|→|
+.
+Document scope=1:1..6:7 children=1
+└── Table scope=1:1..6:7 columns=[none:null,none:null,none:null] children=5
+    ├── TableHead children=1
+    │   └── TableRow scope=1:1..1:13 children=3
+    │       ├── TableCell scope=1:2..1:4 rowspan=1 colspan=1 children=1
+    │       │   └── Text scope=1:3..1:3 literal="a" children=0
+    │       ├── TableCell scope=1:6..1:8 rowspan=1 colspan=1 children=1
+    │       │   └── Text scope=1:7..1:7 literal="b" children=0
+    │       └── TableCell scope=1:10..1:12 rowspan=1 colspan=1 children=1
+    │           └── Text scope=1:11..1:11 literal="c" children=0
+    ├── TableBody children=4
+    │   ├── TableRow scope=3:1..3:4 children=3
+    │   │   ├── TableCell scope=3:2..3:2 rowspan=1 colspan=1 children=0
+    │   │   ├── TableCell scope=3:3..3:3 rowspan=1 colspan=1 children=1
+    │   │   │   └── Text scope=3:3..3:3 literal="x" children=0
+    │   │   └── TableCell scope=3:4..3:4 rowspan=1 colspan=1 children=0
+    │   ├── TableRow scope=4:1..4:4 children=3
+    │   │   ├── TableCell scope=4:2..4:2 rowspan=1 colspan=1 children=1
+    │   │   │   └── Text scope=4:2..4:2 literal="x" children=0
+    │   │   ├── TableCell scope=4:4..4:4 rowspan=1 colspan=1 children=0
+    │   │   └── TableCell scope=4:4..4:4 rowspan=1 colspan=1 children=0
+    │   ├── TableRow scope=5:1..5:3 children=3
+    │   │   ├── TableCell scope=5:2..5:2 rowspan=1 colspan=1 children=1
+    │   │   │   └── Text scope=5:2..5:2 literal="x" children=0
+    │   │   ├── TableCell scope=5:3..5:3 rowspan=1 colspan=1 children=0
+    │   │   └── TableCell scope=5:3..5:3 rowspan=1 colspan=1 children=0
+    │   └── TableRow scope=6:1..6:7 children=3
+    │       ├── TableCell scope=6:2..6:2 rowspan=1 colspan=1 children=0
+    │       ├── TableCell scope=6:4..6:4 rowspan=1 colspan=1 children=0
+    │       └── TableCell scope=6:6..6:6 rowspan=1 colspan=1 children=0
+    └── TableFoot children=0
+````````````````````````````````
+
+```````````````````````````````` example
+| a |
+| - |
+.
+Document scope=1:1..2:5 children=1
+└── Table scope=1:1..2:5 columns=[none:null] children=1
+    ├── TableHead children=1
+    │   └── TableRow scope=1:1..1:5 children=1
+    │       └── TableCell scope=1:2..1:4 rowspan=1 colspan=1 children=1
+    │           └── Text scope=1:3..1:3 literal="a" children=0
+    ├── TableBody children=0
+    └── TableFoot children=0
+````````````````````````````````
+
+
+```````````````````````````````` example
+| a |
+| - |
+| \| user@example.com tail@example.org |
+| x\|&amp;user@example.com |
+| \| https://example.com |
+| **\|** ~~\|~~ :tag[\|] |
+.
+Document scope=1:1..6:26 children=1
+└── Table scope=1:1..6:26 columns=[none:null] children=5
+    ├── TableHead children=1
+    │   └── TableRow scope=1:1..1:5 children=1
+    │       └── TableCell scope=1:2..1:4 rowspan=1 colspan=1 children=1
+    │           └── Text scope=1:3..1:3 literal="a" children=0
+    ├── TableBody children=4
+    │   ├── TableRow scope=3:1..3:40 children=1
+    │   │   └── TableCell scope=3:2..3:39 rowspan=1 colspan=1 children=4
+    │   │       ├── Text scope=3:3..3:5 literal="| " children=0
+    │   │       ├── Link scope=3:6..3:21 dest=url("mailto:user@example.com") title=null children=1
+    │   │       │   └── Text scope=3:6..3:21 literal="user@example.com" children=0
+    │   │       ├── Text scope=3:22..3:22 literal=" " children=0
+    │   │       └── Link scope=3:23..3:38 dest=url("mailto:tail@example.org") title=null children=1
+    │   │           └── Text scope=3:23..3:38 literal="tail@example.org" children=0
+    │   ├── TableRow scope=4:1..4:28 children=1
+    │   │   └── TableCell scope=4:2..4:27 rowspan=1 colspan=1 children=2
+    │   │       ├── Text scope=4:3..4:10 literal="x|&" children=0
+    │   │       └── Link scope=4:11..4:26 dest=url("mailto:user@example.com") title=null children=1
+    │   │           └── Text scope=4:11..4:26 literal="user@example.com" children=0
+    │   ├── TableRow scope=5:1..5:26 children=1
+    │   │   └── TableCell scope=5:2..5:25 rowspan=1 colspan=1 children=2
+    │   │       ├── Text scope=5:3..5:5 literal="| " children=0
+    │   │       └── Link scope=5:6..5:24 dest=url("https://example.com") title=null children=1
+    │   │           └── Text scope=5:6..5:24 literal="https://example.com" children=0
+    │   └── TableRow scope=6:1..6:26 children=1
+    │       └── TableCell scope=6:2..6:25 rowspan=1 colspan=1 children=5
+    │           ├── Strong scope=6:3..6:8 children=1
+    │           │   └── Text scope=6:5..6:6 literal="|" children=0
+    │           ├── Text scope=6:9..6:9 literal=" " children=0
+    │           ├── Strikethrough scope=6:10..6:15 children=1
+    │           │   └── Text scope=6:12..6:13 literal="|" children=0
+    │           ├── Text scope=6:16..6:16 literal=" " children=0
+    │           └── Directive scope=6:17..6:24 name="tag" attributes=null children=0
+    │               └── DirectiveLabel scope=6:21..6:24 children=1
+    │                   └── Text scope=6:22..6:22 literal="|" children=0
+    └── TableFoot children=0
+````````````````````````````````
+
+```````````````````````````````` example
+> | h\|x |
+> | - |
+> | user@example.com\|x |
+> | 汉\|&commat;user@example.com |
+
+lead
+| user@example.com\|x |
+| - |
+| \| |
+.
+Document scope=1:1..9:6 children=3
+├── Callout scope=1:1..4:35 variant=null collapsed=null children=1
+│   └── Table scope=1:3..4:35 columns=[none:null] children=3
+│       ├── TableHead children=1
+│       │   └── TableRow scope=1:3..1:10 children=1
+│       │       └── TableCell scope=1:4..1:9 rowspan=1 colspan=1 children=1
+│       │           └── Text scope=1:5..1:8 literal="h|x" children=0
+│       ├── TableBody children=2
+│       │   ├── TableRow scope=3:3..3:25 children=1
+│       │   │   └── TableCell scope=3:4..3:24 rowspan=1 colspan=1 children=2
+│       │   │       ├── Link scope=3:5..3:20 dest=url("mailto:user@example.com") title=null children=1
+│       │   │       │   └── Text scope=3:5..3:20 literal="user@example.com" children=0
+│       │   │       └── Text scope=3:21..3:23 literal="|x" children=0
+│       │   └── TableRow scope=4:3..4:35 children=1
+│       │       └── TableCell scope=4:4..4:34 rowspan=1 colspan=1 children=2
+│       │           ├── Text scope=4:5..4:17 literal="汉|@" children=0
+│       │           └── Link scope=4:18..4:33 dest=url("mailto:user@example.com") title=null children=1
+│       │               └── Text scope=4:18..4:33 literal="user@example.com" children=0
+│       └── TableFoot children=0
+├── Paragraph scope=6:1..6:4 children=1
+│   └── Text scope=6:1..6:4 literal="lead" children=0
+└── Table scope=7:1..9:6 columns=[none:null] children=2
+    ├── TableHead children=1
+    │   └── TableRow scope=7:1..7:23 children=1
+    │       └── TableCell scope=7:2..7:22 rowspan=1 colspan=1 children=2
+    │           ├── Link scope=7:3..7:18 dest=url("mailto:user@example.com") title=null children=1
+    │           │   └── Text scope=7:3..7:18 literal="user@example.com" children=0
+    │           └── Text scope=7:19..7:21 literal="|x" children=0
+    ├── TableBody children=1
+    │   └── TableRow scope=9:1..9:6 children=1
+    │       └── TableCell scope=9:2..9:5 rowspan=1 colspan=1 children=1
+    │           └── Text scope=9:3..9:4 literal="|" children=0
+    └── TableFoot children=0
+````````````````````````````````

@@ -203,8 +203,9 @@ export function walk(root: Markup, walkingVisitor: WalkingVisitor): void {
             walkingVisitor.visitTable(node, phase);
             scheduleExit(node);
             if (phase === "entering") {
-                schedule(node.rows);
-                actions.push({ kind: "markup", node: node.header, phase: "entering" });
+                schedule(node.foot);
+                schedule(node.content);
+                schedule(node.head);
             }
         },
         visitTableRow: (node) => {

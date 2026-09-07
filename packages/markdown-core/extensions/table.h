@@ -2,6 +2,16 @@
 #define MARKDOWN_CORE_TABLE_H
 
 #include "markdown-core-extensions.h"
+#include "markdown_core.h"
+
+/* Children are one owned row chain; group counts partition it. The parser
+ * appends head, content, then foot rows in that order. */
+typedef struct {
+    size_t column_count;
+    markdown_core_table_column *columns;
+    size_t head_count, content_count, foot_count;
+    size_t autocompleted_cells;
+} markdown_core_table;
 
 /* C LINKAGE, AND WINDOWS IS THE ONLY PLACE THIS SHOWS. The Itanium ABI does not
  * mangle a variable at global scope, so `MARKDOWN_CORE_EXTENSION_*` resolves on

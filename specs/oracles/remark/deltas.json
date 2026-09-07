@@ -89,6 +89,13 @@
             "kind": "ast-shape",
             "summary": "Boolean-only oracles retain task completion but lose the authored marker spelling, including x versus X.",
             "handling": "Compare the three shared states: absent, incomplete and complete. Exact marker spelling remains covered by canonical fixtures and binding tests; the non-leading [x] witness still compares unequal completion states."
+        },
+        {
+            "id": "table-row-groups",
+            "kind": "ast-shape",
+            "summary": "The canonical table stores head/content/foot groups and positive cell spans; pipe tables have one head row and unit spans.",
+            "handling": "The oracle projection groups its first row as TableHead, its remaining rows as TableBody, and adds an empty TableFoot; cells gain rowspan=1 and colspan=1. Native table topology and spans are compared unchanged.",
+            "evidence": "docs/specs/dialect/tables.md; canonical table fixtures and existing pipe-table oracle corpus."
         }
     ],
     "notDeltas": [

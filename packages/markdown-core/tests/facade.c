@@ -463,6 +463,47 @@ static void check_api(void) {
     markdown_core_dump_free(NULL);
 }
 
+static void check_table_model(void) {
+    static const uint8_t input[] = "| h | center | right | plain |\n| :-- | :-: | --: | -- |\n| x\\|y | `\\|` | z |\n";
+    markdown_core_document *document = markdown_core_document_parse(input, sizeof(input) - 1, NULL);
+    check(document != NULL, "table parses");
+    if (!document) {
+        return;
+    }
+    const markdown_core_node *root = markdown_core_document_root(document);
+    const markdown_core_node *table = markdown_core_node_get_first_child(root);
+    size_t columns = 0, head = 0, content = 0, foot = 0;
+    check(markdown_core_node_table_properties(table, &columns, &head, &content, &foot), "table properties");
+    check(columns == 4 && head == 1 && content == 1 && foot == 0, "pipe table group partition");
+    check(markdown_core_node_child_count(table) == head + content + foot, "table rows have one structural owner");
+    const markdown_core_table_alignment expected[] = {
+        MARKDOWN_CORE_TABLE_ALIGNMENT_LEFT, MARKDOWN_CORE_TABLE_ALIGNMENT_CENTER, MARKDOWN_CORE_TABLE_ALIGNMENT_RIGHT,
+        MARKDOWN_CORE_TABLE_ALIGNMENT_NONE};
+    for (size_t i = 0; i < columns; i++) {
+        markdown_core_table_column column;
+        check(markdown_core_node_table_column_at(table, i, &column), "column value");
+        check(column.alignment == expected[i] && !column.relative.has_value, "column authored facts");
+    }
+    markdown_core_table_column column = {0};
+    check(!markdown_core_node_table_column_at(table, columns, &column), "column upper bound");
+    check(!markdown_core_node_table_column_at(table, 0, NULL), "column null output");
+    check(!markdown_core_node_table_properties(root, &columns, &head, &content, &foot), "table kind boundary");
+    check(!markdown_core_node_table_properties(table, NULL, &head, &content, &foot), "table null output");
+    const markdown_core_node *row = markdown_core_node_get_first_child(table);
+    for (; row; row = markdown_core_node_get_next_sibling(row)) {
+        check(markdown_core_node_child_count(row) == 4, "pipe rows have every logical column");
+        const markdown_core_node *cell = markdown_core_node_get_first_child(row);
+        for (; cell; cell = markdown_core_node_get_next_sibling(cell)) {
+            int64_t rowspan = 0, colspan = 0;
+            check(markdown_core_node_table_cell_spans(cell, &rowspan, &colspan), "cell spans");
+            check(rowspan == 1 && colspan == 1, "inherited unit spans");
+        }
+    }
+    int64_t rowspan, colspan;
+    check(!markdown_core_node_table_cell_spans(table, &rowspan, &colspan), "span kind boundary");
+    markdown_core_document_free(document);
+}
+
 int main(int argc, char **argv) {
     const char *fixture_dir;
     int i;
@@ -472,6 +513,7 @@ int main(int argc, char **argv) {
     }
     fixture_dir = argv[2];
     check_api();
+    check_table_model();
     check_dialect_is_whole();
     check_null_and_empty();
     check_resource_identity();

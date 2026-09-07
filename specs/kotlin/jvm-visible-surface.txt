@@ -15,7 +15,8 @@
 
 # `when` over an enum compiles to a lookup table in a nested class.
 JniTreeDecoder$WhenMappings
-DumpVisitor$WhenMappings
+TreeDumperKt$WhenMappings
+WalkingDriver$WhenMappings
 
 # File facades for top-level declarations. The class is public because the file
 # has top-level members; the members themselves are internal and name-mangled.
@@ -36,3 +37,12 @@ JniPayloadDecoder
 JniNodeKind
 JniNodeKind$Companion
 JniPayloadReader
+
+# Nested action records under the package-private WalkAction owner. javap
+# reports public nested bytecode, but the enclosing type and ActionPhase are
+# inaccessible to ordinary Java callers. These already exist in the M5
+# compiled surface; M6 reconciles the ledger while replacing the table model.
+WalkAction$Node
+WalkAction$CitationValue
+WalkAction$FootnoteValue
+WalkAction$SpecimenValue

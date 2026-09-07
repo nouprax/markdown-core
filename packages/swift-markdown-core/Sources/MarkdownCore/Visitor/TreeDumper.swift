@@ -189,12 +189,16 @@ private struct DumpVisitor: MarkupVisitor {
     }
 
     mutating func visit(_ node: Table) {
-        let alignments = node.alignments.map(\.rawValue).joined(separator: ",")
-        let count = 1 + node.rows.count
-        state.line("Table", node, fields: ["alignments=[\(alignments)]"], children: count)
-        state.nested(count) {
-            state.dump(node.header)
-            node.rows.forEach(state.dump)
+        let columns = node.columns.map { "\($0.alignment.rawValue):\($0.relative.map(decimal) ?? "null")" }.joined(
+            separator: ","
+        )
+        let count = node.head.count + node.content.count + node.foot.count
+        state.line("Table", node, fields: ["columns=[\(columns)]"], children: count)
+        state.nested(3) {
+            for (name, rows) in [("TableHead", node.head), ("TableBody", node.content), ("TableFoot", node.foot)] {
+                state.group(name, children: rows.count)
+                state.nested(rows.count) { rows.forEach(state.dump) }
+            }
         }
     }
 
@@ -314,14 +318,18 @@ private struct DumpVisitor: MarkupVisitor {
         state.line(
             "TableRow",
             node,
-            fields: ["isHeader=\(boolean(node.isHeader))"],
             children: node.cells.count
         )
         state.nested(node.cells.count) { node.cells.forEach(state.dump) }
     }
 
     mutating func visit(_ node: TableCell) {
-        state.line("TableCell", node, children: node.content.count)
+        state.line(
+            "TableCell",
+            node,
+            fields: ["rowspan=\(node.rowspan)", "colspan=\(node.colspan)"],
+            children: node.content.count
+        )
         state.nested(node.content.count) { node.content.forEach(state.dump) }
     }
 
@@ -398,4 +406,29 @@ private func jsonString(_ value: String) -> String {
         }
     }
     return result + "\""
+}
+
+/// Normalize the runtime's shortest round-trip digits to the dump's decimal
+/// notation in [1e-6, 1e21), scientific notation outside that interval.
+private func decimal(_ value: Double) -> String {
+    let parts = String(value).lowercased().split(separator: "e")
+    let mantissa = parts[0].split(separator: ".")
+    var digits = String(mantissa.joined())
+    let exponent = parts.count == 2 ? Int(parts[1]) : 0
+    guard let exponent else { preconditionFailure("invalid runtime double exponent") }
+    var point = mantissa[0].count + exponent
+    while digits.first == "0" {
+        digits.removeFirst()
+        point -= 1
+    }
+    while digits.last == "0" { digits.removeLast() }
+    if point <= -6 || point > 21 {
+        let tail = digits.dropFirst()
+        return String(digits.prefix(1)) + (tail.isEmpty ? "" : "." + tail) + "e" + (point > 0 ? "+" : "")
+            + String(point - 1)
+    }
+    if point <= 0 { return "0." + String(repeating: "0", count: -point) + digits }
+    if point >= digits.count { return digits + String(repeating: "0", count: point - digits.count) }
+    let index = digits.index(digits.startIndex, offsetBy: point)
+    return String(digits[..<index]) + "." + digits[index...]
 }

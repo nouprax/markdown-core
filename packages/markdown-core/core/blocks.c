@@ -277,43 +277,65 @@ static MARKDOWN_CORE_INLINE bool contains_inlines(markdown_core_node *node) {
  * `column` is a BYTE column counted from 1, which is what every position in
  * the tree is counted in; `parser->column` is not one, because it counts a tab
  * as the several columns it expands to. */
-static void S_record_content_mark(markdown_core_parser *parser, markdown_core_node *node, bufsize_t column) {
-    markdown_core_line_mark *mark;
-
-    if (parser->line_marks_size == parser->line_marks_alloc) {
-        /* One mark per line, so the doubling never has a realistic ceiling to
-         * reach; the guard is here because it is cheaper than reasoning about
-         * whether it can. */
-        bufsize_t alloc = parser->line_marks_alloc ? parser->line_marks_alloc * 2 : 64;
-        markdown_core_line_mark *grown;
-        if (parser->line_marks_alloc > (bufsize_t)(INT32_MAX / 2)) {
-            parser->oom = true;
-            return;
-        }
-        grown = (markdown_core_line_mark *)parser->mem->realloc(parser->line_marks,
-                                                                (size_t)alloc * sizeof(markdown_core_line_mark));
-        if (!grown) {
-            parser->oom = true;
-            return;
-        }
-        parser->line_marks = grown;
-        parser->line_marks_alloc = alloc;
+/* One vector owns all content/source runs. A run can start on the same
+ * source line as its predecessor when a transformation removes bytes. */
+static bool S_reserve_content_marks(markdown_core_parser *parser, bufsize_t count) {
+    if (count > INT32_MAX - parser->line_marks_size) {
+        parser->oom = true;
+        return false;
     }
+    bufsize_t needed = parser->line_marks_size + count;
+    if (needed <= parser->line_marks_alloc) {
+        return true;
+    }
+    bufsize_t capacity = parser->line_marks_alloc ? parser->line_marks_alloc : 64;
+    while (capacity < needed) {
+        capacity = capacity > INT32_MAX / 2 ? INT32_MAX : capacity * 2;
+    }
+    if ((size_t)capacity > SIZE_MAX / sizeof(markdown_core_line_mark)) {
+        parser->oom = true;
+        return false;
+    }
+    markdown_core_line_mark *grown = parser->mem->realloc(parser->line_marks, (size_t)capacity * sizeof(*grown));
+    if (!grown) {
+        parser->oom = true;
+        return false;
+    }
+    parser->line_marks = grown;
+    parser->line_marks_alloc = capacity;
+    return true;
+}
 
+int markdown_core_parser_append_content_mark(markdown_core_parser *parser, markdown_core_node *node, bufsize_t offset,
+                                             int line, int column, int source_width, int source_step) {
+    if (!parser || !node) {
+        return 0;
+    }
+    offset += node->content_mark_offset;
+    if (node->content_mark_count && node->content_mark + node->content_mark_count == parser->line_marks_size &&
+        parser->line_marks[parser->line_marks_size - 1].content_offset == offset) {
+        parser->line_marks[parser->line_marks_size - 1] =
+            (markdown_core_line_mark){offset, line, column, source_width, source_step};
+        return 1;
+    }
+    if (!S_reserve_content_marks(parser, 1)) {
+        return 0;
+    }
     if (node->content_mark_count == 0) {
-        node->content_mark = (int)parser->line_marks_size;
+        node->content_mark = parser->line_marks_size;
     } else {
-        /* A block's marks are contiguous because only the deepest open block
-         * takes lines and opening another one closes it. If that ever stops
-         * being true the run below stops describing this block, silently. */
-        assert(node->content_mark + node->content_mark_count == (int)parser->line_marks_size);
+        assert(node->content_mark + node->content_mark_count == parser->line_marks_size);
+        assert(parser->line_marks[parser->line_marks_size - 1].content_offset < offset);
     }
-
-    mark = &parser->line_marks[parser->line_marks_size++];
-    mark->content_offset = node->content.size;
-    mark->line = parser->line_number;
-    mark->column = (int)column;
+    assert(source_width >= 1);
+    markdown_core_line_mark *mark = &parser->line_marks[parser->line_marks_size++];
+    *mark = (markdown_core_line_mark){offset, line, column, source_width, source_step};
     node->content_mark_count++;
+    return 1;
+}
+
+static void S_record_content_mark(markdown_core_parser *parser, markdown_core_node *node, bufsize_t column) {
+    markdown_core_parser_append_content_mark(parser, node, node->content.size, parser->line_number, column, 1, 1);
 }
 
 static void add_line(markdown_core_node *node, markdown_core_chunk *ch, markdown_core_parser *parser) {
@@ -346,108 +368,70 @@ static void add_line(markdown_core_node *node, markdown_core_chunk *ch, markdown
     }
 }
 
-/* Declare that `node`'s content, which was SET rather than fed, begins at
- * (line, column) in the source -- and that it runs on from there without a
- * break.
- *
- * A block whose content the parser copied in line by line gets its marks from
- * `add_line`. A block whose content an extension HANDED it -- a table cell cut
- * out of a row, a directive's label -- has none, and every position inside it
- * then falls back to arithmetic on the block's own start column. One mark is
- * the whole answer for content that is one line long, which is what all of
- * those are.
- *
- * Returns false only when the mark could not be recorded, and the parse is
- * marked lost when that happens: a block with a WRONG map is worse than one
- * with none, because the fallback at least knows it is guessing. */
+/* Seed a map for one unchanged source line assembled by a producer rather
+ * than fed through add_line. Transformed content appends its own source runs;
+ * slices share their owner's runs through adopt_content_marks. A failed map
+ * allocation loses the parse transaction, just like a failed content buffer. */
 int markdown_core_parser_mark_content(markdown_core_parser *parser, markdown_core_node *node, int line, int column) {
-    markdown_core_line_mark *mark;
-
     if (!parser || !node) {
         return 0;
     }
-    if (parser->line_marks_size == parser->line_marks_alloc) {
-        bufsize_t alloc = parser->line_marks_alloc ? parser->line_marks_alloc * 2 : 64;
-        markdown_core_line_mark *grown;
-        if (parser->line_marks_alloc > (bufsize_t)(INT32_MAX / 2)) {
-            parser->oom = true;
-            return 0;
+    node->content_mark_count = 0;
+    node->content_mark_offset = 0;
+    return markdown_core_parser_append_content_mark(parser, node, 0, line, column, 1, 1);
+}
+
+/* Find the immutable run containing an offset, shared by slice and lookup. */
+static int S_content_mark_at(markdown_core_parser *parser, const markdown_core_node *node, bufsize_t offset) {
+    int lo = node->content_mark, hi = lo + node->content_mark_count - 1;
+    while (lo < hi) {
+        int mid = lo + (hi - lo + 1) / 2;
+        if (parser->line_marks[mid].content_offset <= offset) {
+            lo = mid;
+        } else {
+            hi = mid - 1;
         }
-        grown = (markdown_core_line_mark *)parser->mem->realloc(parser->line_marks,
-                                                                (size_t)alloc * sizeof(markdown_core_line_mark));
-        if (!grown) {
-            parser->oom = true;
-            return 0;
-        }
-        parser->line_marks = grown;
-        parser->line_marks_alloc = alloc;
     }
-    mark = &parser->line_marks[parser->line_marks_size];
-    mark->content_offset = 0;
-    mark->line = line;
-    mark->column = column;
-    node->content_mark = (int)parser->line_marks_size++;
-    node->content_mark_count = 1;
+    return lo;
+}
+
+/* A map slice is a view into parser-owned immutable runs. Neither the source
+ * nor the slice owns the vector; both end with the parse transaction. */
+int markdown_core_parser_adopt_content_marks(markdown_core_parser *parser, markdown_core_node *owner,
+                                             markdown_core_node *node, bufsize_t from, bufsize_t length) {
+    if (!parser || !owner || !node || !owner->content_mark_count || length <= 0) {
+        return 0;
+    }
+    from += owner->content_mark_offset;
+    int first = S_content_mark_at(parser, owner, from);
+    int last = S_content_mark_at(parser, owner, from + length - 1);
+    node->content_mark = first;
+    node->content_mark_count = last - first + 1;
+    node->content_mark_offset = from;
     return 1;
 }
 
-/* Copy the marks covering [from, from + length) of `owner`'s content onto
- * `node`, rebased so the first covers `node`'s own offset zero.
- *
- * For content that is a SLICE of another block's content and more than one line
- * long -- the paragraph a table was split out of -- where one mark would put
- * every line of it on the first line's row. The marks are COPIED and not
- * shared: two nodes naming one run is an alias, and an alias between two trees
- * is the shape §1 records six times.
- */
-int markdown_core_parser_adopt_content_marks(markdown_core_parser *parser, markdown_core_node *owner,
-                                             markdown_core_node *node, bufsize_t from, bufsize_t length) {
-    int first;
-    int last;
-    int i;
-    int count;
-
-    if (!parser || !owner || !node || owner->content_mark_count <= 0) {
+int markdown_core_parser_append_content_marks(markdown_core_parser *parser, markdown_core_node *owner,
+                                              markdown_core_node *node, bufsize_t from, bufsize_t length,
+                                              bufsize_t offset) {
+    if (length <= 0) {
+        return 1;
+    }
+    if (!owner->content_mark_count) {
+        parser->oom = true;
         return 0;
     }
-    first = owner->content_mark;
-    last = owner->content_mark + owner->content_mark_count - 1;
-    while (first < last && parser->line_marks[first + 1].content_offset <= from) {
-        first++;
-    }
-    while (last > first && parser->line_marks[last].content_offset >= from + length) {
-        last--;
-    }
-    count = last - first + 1;
-
-    while (parser->line_marks_size + count > parser->line_marks_alloc) {
-        bufsize_t alloc = parser->line_marks_alloc ? parser->line_marks_alloc * 2 : 64;
-        markdown_core_line_mark *grown;
-        if (parser->line_marks_alloc > (bufsize_t)(INT32_MAX / 2)) {
-            parser->oom = true;
+    from += owner->content_mark_offset;
+    int first = S_content_mark_at(parser, owner, from);
+    int last = S_content_mark_at(parser, owner, from + length - 1);
+    for (int i = first; i <= last; i++) {
+        markdown_core_line_mark mark = parser->line_marks[i];
+        bufsize_t start = mark.content_offset < from ? from : mark.content_offset;
+        mark.column += (start - mark.content_offset) * mark.source_step;
+        if (!markdown_core_parser_append_content_mark(parser, node, offset + start - from, mark.line, mark.column,
+                                                      mark.source_width, mark.source_step)) {
             return 0;
         }
-        grown = (markdown_core_line_mark *)parser->mem->realloc(parser->line_marks,
-                                                                (size_t)alloc * sizeof(markdown_core_line_mark));
-        if (!grown) {
-            parser->oom = true;
-            return 0;
-        }
-        parser->line_marks = grown;
-        parser->line_marks_alloc = alloc;
-    }
-
-    node->content_mark = (int)parser->line_marks_size;
-    node->content_mark_count = count;
-    for (i = 0; i < count; i++) {
-        markdown_core_line_mark copy = parser->line_marks[first + i];
-        if (copy.content_offset <= from) {
-            copy.column += (int)(from - copy.content_offset);
-            copy.content_offset = 0;
-        } else {
-            copy.content_offset -= from;
-        }
-        parser->line_marks[parser->line_marks_size++] = copy;
     }
     return 1;
 }
@@ -459,30 +443,30 @@ int markdown_core_parser_adopt_content_marks(markdown_core_parser *parser, markd
  * maintains: find the slice the offset falls in and add the distance from its
  * start. Binary search, so a caller that asks once per inline node pays
  * log(lines in the block) rather than re-walking it. */
-int markdown_core_parser_content_place(markdown_core_parser *parser, markdown_core_node *node, bufsize_t content_offset,
-                                       int *line, int *column) {
+static int S_content_place(markdown_core_parser *parser, markdown_core_node *node, bufsize_t content_offset, bool end,
+                           int *line, int *column) {
     const markdown_core_line_mark *mark;
-    int lo, hi;
 
     if (!parser || !node || node->content_mark_count <= 0 || content_offset < 0) {
         return 0;
     }
 
-    lo = node->content_mark;
-    hi = lo + node->content_mark_count - 1;
-    while (lo < hi) {
-        int mid = lo + (hi - lo + 1) / 2;
-        if (parser->line_marks[mid].content_offset <= content_offset) {
-            lo = mid;
-        } else {
-            hi = mid - 1;
-        }
-    }
-
-    mark = &parser->line_marks[lo];
+    content_offset += node->content_mark_offset;
+    mark = &parser->line_marks[S_content_mark_at(parser, node, content_offset)];
     *line = mark->line;
-    *column = mark->column + (int)(content_offset - mark->content_offset);
+    *column = mark->column + (int)(content_offset - mark->content_offset) * mark->source_step +
+              (end ? mark->source_width - 1 : 0);
     return 1;
+}
+
+int markdown_core_parser_content_place(markdown_core_parser *parser, markdown_core_node *node, bufsize_t offset,
+                                       int *line, int *column) {
+    return S_content_place(parser, node, offset, false, line, column);
+}
+
+int markdown_core_parser_content_end_place(markdown_core_parser *parser, markdown_core_node *node, bufsize_t offset,
+                                           int *line, int *column) {
+    return S_content_place(parser, node, offset, true, line, column);
 }
 
 /* Drop `dropped` bytes off the FRONT of `node`'s content, leaving `remaining`
@@ -491,37 +475,15 @@ int markdown_core_parser_content_place(markdown_core_parser *parser, markdown_co
  * landed inside keeps its line with its column advanced to the cut. */
 static void S_rebase_content_marks(markdown_core_parser *parser, markdown_core_node *node, bufsize_t dropped,
                                    bufsize_t remaining) {
-    int i;
-    int first = node->content_mark;
-    int last = node->content_mark + node->content_mark_count - 1;
-
     if (node->content_mark_count <= 0 || dropped <= 0) {
         return;
     }
-
     if (remaining <= 0) {
-        /* The cut took everything recorded so far, so no slice survives it and
-         * the run is EMPTY rather than one mark advanced past the end of its
-         * own line. Keeping the last mark here read as "the block starts on
-         * the last line it consumed", which is how a paragraph of nothing but
-         * reference definitions came to report a start_line four lines below
-         * where it was written -- and, through that, how the region set came
-         * to name a node it had already freed. */
         node->content_mark_count = 0;
+        node->content_mark_offset = 0;
         return;
     }
-
-    while (first < last && parser->line_marks[first + 1].content_offset <= dropped) {
-        first++;
-    }
-
-    parser->line_marks[first].column += (int)(dropped - parser->line_marks[first].content_offset);
-    parser->line_marks[first].content_offset = 0;
-    for (i = first + 1; i <= last; i++) {
-        parser->line_marks[i].content_offset -= dropped;
-    }
-    node->content_mark = first;
-    node->content_mark_count = last - first + 1;
+    markdown_core_parser_adopt_content_marks(parser, node, node, dropped, remaining);
 }
 
 static void remove_trailing_blank_lines(markdown_core_strbuf *ln) {

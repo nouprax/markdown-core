@@ -14,7 +14,7 @@
  * another Wasm call, a native object handle, or recursion in the decoder.
  */
 
-enum { ES_HEADER_SIZE = 64, ES_NODE_SIZE = 96, ES_ATTRIBUTE_SIZE = 16 };
+enum { ES_HEADER_SIZE = 64, ES_NODE_SIZE = 96, ES_ATTRIBUTE_SIZE = 16, ES_COLUMN_SIZE = 16 };
 static const uint32_t ES_NO_INDEX = UINT32_MAX;
 
 enum es_header_offset {
@@ -26,11 +26,11 @@ enum es_header_offset {
     ES_HEADER_NODE_COUNT = 24,
     ES_HEADER_EDGE_COUNT = 28,
     ES_HEADER_ATTRIBUTE_COUNT = 32,
-    ES_HEADER_ALIGNMENT_COUNT = 36,
+    ES_HEADER_COLUMN_COUNT = 36,
     ES_HEADER_NODES_OFFSET = 40,
     ES_HEADER_EDGES_OFFSET = 44,
     ES_HEADER_ATTRIBUTES_OFFSET = 48,
-    ES_HEADER_ALIGNMENTS_OFFSET = 52,
+    ES_HEADER_COLUMNS_OFFSET = 52,
     ES_HEADER_STRINGS_OFFSET = 56,
     ES_HEADER_STRINGS_LENGTH = 60
 };
@@ -45,7 +45,7 @@ enum es_node_offset {
     ES_NODE_AUX_START = 36,
     ES_NODE_AUX_COUNT = 40,
     ES_NODE_SCALAR0 = 44,
-    ES_NODE_RESERVED = 48,
+    ES_NODE_INTEGER2 = 48,
     ES_NODE_I64 = 56,
     ES_NODE_STRINGS = 64
 };
@@ -70,6 +70,7 @@ typedef struct es_source_node {
     uint32_t flags;
     int32_t scalar0;
     int64_t integer;
+    int64_t integer2;
     markdown_core_optional_string strings[4];
     /* For a link or image, the index of the first node reading through the
      * same resource; ES_NO_INDEX otherwise. */
@@ -102,9 +103,9 @@ typedef struct es_build {
     es_source_attribute *attributes;
     size_t attribute_count;
     size_t attribute_capacity;
-    uint8_t *alignments;
-    size_t alignment_count;
-    size_t alignment_capacity;
+    markdown_core_table_column *columns;
+    size_t column_count;
+    size_t column_capacity;
     es_resource_slot *resources;
     size_t resource_count;
     size_t resource_capacity;
@@ -243,14 +244,14 @@ static void append_attribute(es_build *build, markdown_core_string name, markdow
     build->attributes[build->attribute_count++] = attribute;
 }
 
-static void append_alignment(es_build *build, markdown_core_table_alignment alignment) {
-    if (build->failure != ES_BUILD_OK || build->alignment_count >= UINT32_MAX ||
-        !reserve_vector((void **)&build->alignments, &build->alignment_capacity, build->alignment_count + 1,
-                        sizeof(*build->alignments))) {
+static void append_column(es_build *build, markdown_core_table_column column) {
+    if (build->failure != ES_BUILD_OK || build->column_count >= UINT32_MAX ||
+        !reserve_vector((void **)&build->columns, &build->column_capacity, build->column_count + 1,
+                        sizeof(*build->columns))) {
         build->failure = ES_BUILD_ALLOCATION;
         return;
     }
-    build->alignments[build->alignment_count++] = (uint8_t)alignment;
+    build->columns[build->column_count++] = column;
 }
 
 static size_t hash_resource(const markdown_core_resource *resource) {
@@ -573,7 +574,7 @@ static void collect_node_fields(es_build *build, size_t node_index) {
     case MARKDOWN_CORE_KIND_EMPHASIS:
     case MARKDOWN_CORE_KIND_STRONG:
     case MARKDOWN_CORE_KIND_STRIKETHROUGH:
-    case MARKDOWN_CORE_KIND_TABLE_CELL:
+    case MARKDOWN_CORE_KIND_TABLE_ROW:
     case MARKDOWN_CORE_KIND_DIRECTIVE_LABEL:
         break;
     case MARKDOWN_CORE_KIND_HEADING:
@@ -654,22 +655,24 @@ static void collect_node_fields(es_build *build, size_t node_index) {
         break;
     }
     case MARKDOWN_CORE_KIND_TABLE: {
-        size_t count = 0;
-        size_t index;
-        if (!markdown_core_node_table_column_count(node, &count) || count > UINT32_MAX ||
-            build->alignment_count > UINT32_MAX - count) {
+        size_t count, head, content, foot;
+        if (!markdown_core_node_table_properties(node, &count, &head, &content, &foot) || count > UINT32_MAX ||
+            head > INT32_MAX || content > INT32_MAX || foot > INT32_MAX || build->column_count > UINT32_MAX - count) {
             build->failure = ES_BUILD_INTERNAL;
             break;
         }
-        record->aux_start = (uint32_t)build->alignment_count;
+        record->aux_start = (uint32_t)build->column_count;
         record->aux_count = (uint32_t)count;
-        for (index = 0; index < count; ++index) {
-            markdown_core_table_alignment alignment = MARKDOWN_CORE_TABLE_ALIGNMENT_NONE;
-            if (!markdown_core_node_table_alignment_at(node, index, &alignment)) {
+        record->scalar0 = (int32_t)head;
+        record->integer2 = (int64_t)content;
+        record->integer = (int64_t)foot;
+        for (size_t index = 0; index < count; ++index) {
+            markdown_core_table_column column;
+            if (!markdown_core_node_table_column_at(node, index, &column)) {
                 build->failure = ES_BUILD_INTERNAL;
                 break;
             }
-            append_alignment(build, alignment);
+            append_column(build, column);
         }
         break;
     }
@@ -736,15 +739,11 @@ static void collect_node_fields(es_build *build, size_t node_index) {
         record->strings[2] = optional_first;
         break;
     }
-    case MARKDOWN_CORE_KIND_TABLE_ROW: {
-        bool header = false;
-        if (!markdown_core_node_table_row_is_header(node, &header)) {
+    case MARKDOWN_CORE_KIND_TABLE_CELL:
+        if (!markdown_core_node_table_cell_spans(node, &record->integer, &record->integer2)) {
             build->failure = ES_BUILD_INTERNAL;
-            break;
         }
-        record->flags = header ? 1u : 0u;
         break;
-    }
     case MARKDOWN_CORE_KIND_NONE:
     default:
         build->failure = ES_BUILD_INTERNAL;
@@ -774,7 +773,7 @@ static void free_build(es_build *build) {
     free(build->nodes);
     free(build->edges);
     free(build->attributes);
-    free(build->alignments);
+    free(build->columns);
     free(build->resources);
 }
 
@@ -822,7 +821,7 @@ static uint8_t *success_result(const es_build *build, es_build_failure *failure)
     size_t nodes_offset = ES_HEADER_SIZE;
     size_t edges_offset;
     size_t attributes_offset;
-    size_t alignments_offset;
+    size_t columns_offset;
     size_t strings_offset;
     size_t total_size;
     size_t string_cursor;
@@ -832,8 +831,8 @@ static uint8_t *success_result(const es_build *build, es_build_failure *failure)
     *failure = ES_BUILD_OK;
     if (!section_end(nodes_offset, build->node_count, ES_NODE_SIZE, &edges_offset) ||
         !section_end(edges_offset, build->edge_count, sizeof(uint32_t), &attributes_offset) ||
-        !section_end(attributes_offset, build->attribute_count, ES_ATTRIBUTE_SIZE, &alignments_offset) ||
-        !section_end(alignments_offset, build->alignment_count, sizeof(uint8_t), &strings_offset)) {
+        !section_end(attributes_offset, build->attribute_count, ES_ATTRIBUTE_SIZE, &columns_offset) ||
+        !section_end(columns_offset, build->column_count, ES_COLUMN_SIZE, &strings_offset)) {
         *failure = ES_BUILD_ALLOCATION;
         return NULL;
     }
@@ -854,11 +853,11 @@ static uint8_t *success_result(const es_build *build, es_build_failure *failure)
     put_u32(output, ES_HEADER_NODE_COUNT, (uint32_t)build->node_count);
     put_u32(output, ES_HEADER_EDGE_COUNT, (uint32_t)build->edge_count);
     put_u32(output, ES_HEADER_ATTRIBUTE_COUNT, (uint32_t)build->attribute_count);
-    put_u32(output, ES_HEADER_ALIGNMENT_COUNT, (uint32_t)build->alignment_count);
+    put_u32(output, ES_HEADER_COLUMN_COUNT, (uint32_t)build->column_count);
     put_u32(output, ES_HEADER_NODES_OFFSET, (uint32_t)nodes_offset);
     put_u32(output, ES_HEADER_EDGES_OFFSET, (uint32_t)edges_offset);
     put_u32(output, ES_HEADER_ATTRIBUTES_OFFSET, (uint32_t)attributes_offset);
-    put_u32(output, ES_HEADER_ALIGNMENTS_OFFSET, (uint32_t)alignments_offset);
+    put_u32(output, ES_HEADER_COLUMNS_OFFSET, (uint32_t)columns_offset);
     put_u32(output, ES_HEADER_STRINGS_OFFSET, (uint32_t)strings_offset);
     put_u32(output, ES_HEADER_STRINGS_LENGTH, (uint32_t)build->strings_length);
 
@@ -883,7 +882,7 @@ static uint8_t *success_result(const es_build *build, es_build_failure *failure)
         put_u32(output, node_offset + ES_NODE_AUX_START, source->aux_start);
         put_u32(output, node_offset + ES_NODE_AUX_COUNT, source->aux_count);
         put_i32(output, node_offset + ES_NODE_SCALAR0, source->scalar0);
-        memset(output + node_offset + ES_NODE_RESERVED, 0, ES_NODE_I64 - ES_NODE_RESERVED);
+        put_i64(output, node_offset + ES_NODE_INTEGER2, source->integer2);
         put_i64(output, node_offset + ES_NODE_I64, source->integer);
         if (source->resource_first != ES_NO_INDEX && source->resource_first != index) {
             /* A later occurrence of a resource: its destination and title
@@ -909,8 +908,16 @@ static uint8_t *success_result(const es_build *build, es_build_failure *failure)
         write_string_reference(output, attribute_offset + 8, required_string(build->attributes[index].value),
                                &string_cursor);
     }
-    if (build->alignment_count != 0) {
-        memcpy(output + alignments_offset, build->alignments, build->alignment_count);
+    for (index = 0; index < build->column_count; ++index) {
+        size_t offset = columns_offset + index * ES_COLUMN_SIZE;
+        markdown_core_table_column column = build->columns[index];
+        int64_t bits = 0;
+        if (column.relative.has_value) {
+            memcpy(&bits, &column.relative.value, sizeof(bits));
+        }
+        put_u32(output, offset, (uint32_t)column.alignment);
+        put_u32(output, offset + 4, column.relative.has_value ? 1 : 0);
+        put_i64(output, offset + 8, bits);
     }
     if (string_cursor != total_size) {
         free(output);

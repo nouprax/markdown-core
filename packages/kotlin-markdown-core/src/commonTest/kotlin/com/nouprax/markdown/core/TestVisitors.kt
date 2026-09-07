@@ -23,7 +23,7 @@ internal class KindVisitor : Visitor<String> {
 
     override fun visitTable(node: Table): String = name(node)
 
-    override fun visitTableRow(node: TableRow): String = if (node.isHeader) "header" else "row"
+    override fun visitTableRow(node: TableRow): String = "row"
 
     override fun visitTableCell(node: TableCell): String = "cell"
 
@@ -132,7 +132,7 @@ internal class RecordingWalkingVisitor(
     private val recordEvents: Boolean = true,
 ) : WalkingVisitor {
     val events: MutableList<String> = mutableListOf()
-    val tableRowKinds: MutableList<Boolean> = mutableListOf()
+    val tableRowKinds: MutableList<Int> = mutableListOf()
     var entered: Int = 0
         private set
     var exited: Int = 0
@@ -216,7 +216,7 @@ internal class RecordingWalkingVisitor(
         phase: WalkPhase,
     ) {
         record(node, phase)
-        if (phase == WalkPhase.ENTERING) tableRowKinds += node.isHeader
+        if (phase == WalkPhase.ENTERING) tableRowKinds += node.scope.start.line
     }
 
     override fun visitTableCell(

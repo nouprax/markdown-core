@@ -12,85 +12,95 @@ public enum TableAlignment: String, Sendable {
     case right
 }
 
-/// A GFM table. Requires the `tables` extension.
+/// One logical column; no width is authored by a pipe table.
+public struct TableColumn: Sendable {
+    /// Alignment of this logical column.
+    public let alignment: TableAlignment
+    /// Positive finite authored width share, or nil when no width was authored.
+    public let relative: Double?
+}
+
+/// One table model for every table syntax. Rows belong to their named group.
 public struct Table: Markup {
-    /// One entry per column, from the delimiter row. A row may hold fewer
-    /// cells than this; the trailing columns are simply absent from it.
-    public let alignments: [TableAlignment]
-    /// The header row. A table cannot exist without one — the delimiter row is
-    /// what makes the line above it a header rather than a paragraph.
-    public let header: TableRow
-    /// The body rows, header excluded. Empty is a valid table.
-    public let rows: [TableRow]
-    /// Where it is. See ``Scope`` — boundaries, not a byte range.
+    /// The non-empty logical column grid.
+    public let columns: [TableColumn]
+    /// Header rows in stored order.
+    public let head: [TableRow]
+    /// Body rows in stored order.
+    public let content: [TableRow]
+    /// Footer rows in stored order.
+    public let foot: [TableRow]
+    /// Authored source extent. See ``Scope``.
     public let scope: Scope
 
-    /// Dispatches to the visitor's `Table` case.
+    /// Dispatches to this node kind's visitor callback.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 }
 
 extension Table {
     init(from node: OpaquePointer, children: [any Markup]) {
         var count = 0
-        markdown_core_node_table_column_count(node, &count)
-        let alignments = (0..<count).map { index in
-            var alignment = MARKDOWN_CORE_TABLE_ALIGNMENT_NONE
-            markdown_core_node_table_alignment_at(node, index, &alignment)
-            return TableAlignment(from: alignment)
+        var headCount = 0
+        var contentCount = 0
+        var footCount = 0
+        precondition(markdown_core_node_table_properties(node, &count, &headCount, &contentCount, &footCount))
+        let columns = (0..<count).map { index in
+            var column = markdown_core_table_column()
+            precondition(markdown_core_node_table_column_at(node, index, &column))
+            return TableColumn(
+                alignment: TableAlignment(from: column.alignment),
+                relative: column.relative.has_value ? column.relative.value : nil
+            )
         }
         let rows: [TableRow] = Self.typedChildren(children)
-        let headers = rows.filter(\.isHeader)
-        precondition(headers.count == 1, "table must contain exactly one header row")
+        precondition(headCount + contentCount + footCount == rows.count)
         self.init(
-            alignments: alignments,
-            header: headers[0],
-            rows: rows.filter { !$0.isHeader },
+            columns: columns,
+            head: Array(rows[..<headCount]),
+            content: Array(rows[headCount..<(headCount + contentCount)]),
+            foot: Array(rows[(headCount + contentCount)...]),
             scope: Self.scope(from: node)
         )
     }
 }
 
-/// One row of a ``Table``.
+/// Cells whose upper-left coordinate starts in this row, in logical order.
 public struct TableRow: Markup {
-    /// True only for the row reached through ``Table/header``, and false for
-    /// every entry in ``Table/rows``.
-    public let isHeader: Bool
-    /// The row's cells, in source order. A row may be short; it is not padded.
+    /// Cells starting in this row, in logical column order.
     public let cells: [TableCell]
-    /// Where it is. See ``Scope`` — boundaries, not a byte range.
+    /// Authored source extent. See ``Scope``.
     public let scope: Scope
 
-    /// Dispatches to the visitor's `TableRow` case.
+    /// Dispatches to this node kind's visitor callback.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 }
 
 extension TableRow {
     init(from node: OpaquePointer, children: [any Markup]) {
-        var header = false
-        markdown_core_node_table_row_is_header(node, &header)
-        let cells: [TableCell] = Self.typedChildren(children)
-        self.init(
-            isHeader: header,
-            cells: cells,
-            scope: Self.scope(from: node)
-        )
+        self.init(cells: Self.typedChildren(children), scope: Self.scope(from: node))
     }
 }
 
-/// One cell of a ``TableRow``.
+/// One cell; its spans are positive and cannot cross a row-group boundary.
 public struct TableCell: Markup {
-    /// The cell's inline content.
+    /// Number of rows occupied within this row group.
+    public let rowspan: Int
+    /// Number of logical columns occupied.
+    public let colspan: Int
+    /// Inline or block content as parsed, without paragraph normalization.
     public let content: [any Markup]
-    /// Where it is. A cell the parser completed to fill a short row has a
-    /// scope but no source behind it. See ``Scope``.
+    /// Authored source extent. See ``Scope``.
     public let scope: Scope
 
-    /// Dispatches to the visitor's `TableCell` case.
+    /// Dispatches to this node kind's visitor callback.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 }
 
 extension TableCell {
     init(from node: OpaquePointer, content: [any Markup]) {
-        self.init(content: content, scope: Self.scope(from: node))
+        var rowspan: Int64 = 0
+        var colspan: Int64 = 0
+        precondition(markdown_core_node_table_cell_spans(node, &rowspan, &colspan))
+        self.init(rowspan: Int(rowspan), colspan: Int(colspan), content: content, scope: Self.scope(from: node))
     }
 }

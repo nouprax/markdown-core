@@ -208,49 +208,59 @@
             "name": "Table",
             "fields": [
                 {
-                    "name": "alignments",
-                    "type": "[TableAlignment]",
+                    "name": "columns",
+                    "type": "[TableColumn]",
                     "optional": false
                 },
                 {
-                    "name": "header",
-                    "type": "TableRow",
+                    "name": "head",
+                    "type": "[TableRow]",
                     "optional": false
                 },
                 {
-                    "name": "rows",
+                    "name": "content",
+                    "type": "[TableRow]",
+                    "optional": false
+                },
+                {
+                    "name": "foot",
                     "type": "[TableRow]",
                     "optional": false
                 }
             ],
-            "invariants": "one alignment per column; header is non-optional"
+            "invariants": "non-empty columns define the logical grid; rows are owned exactly once in head/content/foot order; pipe tables have one head row, no foot rows, null relative widths, and unit spans; no span crosses a group boundary"
         },
         {
             "name": "TableRow",
             "fields": [
-                {
-                    "name": "isHeader",
-                    "type": "Bool",
-                    "optional": false
-                },
                 {
                     "name": "cells",
                     "type": "[TableCell]",
                     "optional": false
                 }
             ],
-            "invariants": "`isHeader` is true only for `Table.header` and false for entries in `Table.rows`"
+            "invariants": "cells whose upper-left coordinate starts in this row, in logical order; no row-local header state"
         },
         {
             "name": "TableCell",
             "fields": [
+                {
+                    "name": "rowspan",
+                    "type": "Int",
+                    "optional": false
+                },
+                {
+                    "name": "colspan",
+                    "type": "Int",
+                    "optional": false
+                },
                 {
                     "name": "content",
                     "type": "[Markup]",
                     "optional": false
                 }
             ],
-            "invariants": "inline content"
+            "invariants": "positive spans; inline or block content is stored as parsed without paragraph normalization"
         },
         {
             "name": "DirectiveBlock",
@@ -645,6 +655,23 @@
                 }
             ],
             "dump": "Specimen scope=L:C..L:C id=null start=null children=N"
+        },
+        "TableColumn": {
+            "purpose": "One logical table column, located by its table; alignment and optional positive finite authored width share. Pipe tables produce relative=null.",
+            "scoped": false,
+            "fields": [
+                {
+                    "name": "alignment",
+                    "type": "TableAlignment",
+                    "optional": false
+                },
+                {
+                    "name": "relative",
+                    "type": "Double",
+                    "optional": true
+                }
+            ],
+            "dump": "alignment:relative within the compact columns array"
         }
     }
 }

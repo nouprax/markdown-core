@@ -5,8 +5,8 @@ owns the one table model and every table syntax. Sources: cmark-gfm's table exte
 `simple_tables`, `multiline_tables`, and `grid_tables`. Executable oracles:
 cmark-gfm for pipe tables; the Pandoc 3.11 CLI for the other forms. Landing:
 the model with `M6`; captions with `P11a`; simple, multiline, and grid tables
-with `P11b`, `P11c`, and `P11d`. Until `M6` the current contract's `Table`,
-`TableRow`, and `TableCell` stand. The
+with `P11b`, `P11c`, and `P11d`. The unified table model and pipe syntax are present; captions and the other
+forms land with their named items. The
 [example format](../dialect.md#examples) is defined by the index.
 
 ## Model
