@@ -36,7 +36,7 @@ let package = Package(
                 "core/houdini_html_u.c", "core/markdown_core_ctype.c",
                 "core/linked_list.c", "extensions/core-extensions.c",
                 "extensions/ast.c", "extensions/table.c", "extensions/strikethrough.c",
-                "extensions/autolink.c", "extensions/formula.c", "extensions/ofm.c", "extensions/directive.c",
+                "extensions/autolink.c", "extensions/formula.c", "extensions/cross_link.c", "extensions/directive.c",
                 "extensions/ext_scanners.c", "extensions/tasklist.c",
             ],
             publicHeadersPath: "include",

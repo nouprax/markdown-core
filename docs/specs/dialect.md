@@ -21,6 +21,12 @@ dialect modes, and no caller composes a smaller language. `obsidian`,
 `pandoc`, `gfm`, and the like are names of sources, not of anything the
 parser accepts.
 
+Implementation boundaries follow feature semantics and ownership. Source
+families do not define runtime modules or extension descriptors: cross links,
+comments, marks, and footnotes use their own semantic operations and the shared
+parser infrastructure. A shared source is not a reason to combine them into an
+umbrella extension.
+
 The upstream tools are sources and evidence, never authorities over behavior:
 
 - A source defines which feature exists and what its common-case source form

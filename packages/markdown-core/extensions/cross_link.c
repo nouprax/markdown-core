@@ -1,4 +1,4 @@
-#include "ofm.h"
+#include "cross_link.h"
 #include "extension.h"
 #include "node.h"
 #include "parser.h"
@@ -20,7 +20,7 @@ static markdown_core_node *match(const markdown_core_extension *extension, markd
     bool part_empty = false, block_id = false;
     markdown_core_node *node;
     markdown_core_cross_link *cross;
-    parser->ofm_scan_work++;
+    parser->cross_link_scan_work++;
     if (input->len - start < opener_length) {
         return NULL;
     }
@@ -30,7 +30,7 @@ static markdown_core_node *match(const markdown_core_extension *extension, markd
     }
     for (i = body; i < input->len; i++) {
         unsigned char c = s[i];
-        parser->ofm_scan_work++;
+        parser->cross_link_scan_work++;
         if (c == '[' || c == '\n' || c == '\r') {
             return NULL;
         }
@@ -107,8 +107,8 @@ static const char *type_string(const markdown_core_extension *extension, markdow
     return "cross_link";
 }
 
-const markdown_core_extension MARKDOWN_CORE_EXTENSION_OFM = {
-    .name = "ofm",
+const markdown_core_extension MARKDOWN_CORE_EXTENSION_CROSS_LINK = {
+    .name = "cross_link",
     .match_inline = match,
     .get_type_string_func = type_string,
     .dispatch = "[!",

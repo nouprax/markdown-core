@@ -112,15 +112,18 @@ does not define Pandoc `@key` syntax; the citations module does.
       links/images have identical semantic shapes, while only footnote citations
       retain a consumer-visible ID edge.
 
-## Phase 2 — one OFM inline extension
+## Phase 2 — inline features
 
-O1 introduces the shared OFM descriptor and wikilink scanner. The first bullet
-remains open for the comment, highlight and inline-footnote scanners in O2–O4.
+O1 introduces the cross-link descriptor and the shared wikilink/embed scanner.
+O2–O4 implement marks, comments, and inline footnotes through their respective
+semantic operations. Their source family does not define a runtime module or
+descriptor. The first bullet remains open until all four items land.
 
-- [ ] Introduce one parser-owned OFM inline extension with scanners for wikilinks,
-      comments, highlights, and the inline footnote source form. All scanners use
-      the existing subject cursor, delimiter/bracket infrastructure, allocator,
-      source map, and extension attachment order.
+- [ ] Implement cross links, comments, marks, and inline footnotes at their
+      feature boundaries, reusing each feature's existing semantic model and
+      operation. All scanners use the existing subject cursor,
+      delimiter/bracket infrastructure, allocator, source map, and extension
+      attachment order. Do not introduce an OFM umbrella extension.
 - [x] Make `![[...]]` and `[[...]]` one scanner and one `CrossLink` payload. Split
       path, optional anchor, and label value once while scanning, then construct
       one complete `Destination.cross`. Heading and block punctuation must not

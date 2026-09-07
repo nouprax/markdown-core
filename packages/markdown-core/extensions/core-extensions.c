@@ -8,7 +8,7 @@
 #include "tasklist.h"
 #include "formula.h"
 #include "directive.h"
-#include "ofm.h"
+#include "cross_link.h"
 
 // THE attach order, and the only place in the library it is written down.
 // Before this table there were two of them -- `core/main.c` attached
@@ -26,16 +26,17 @@
 // `autolink` stays ahead of `directive` -- both claim ':', and a bare ':' far
 // more often begins a URL.
 //
-// OFM recognizes complete [[ and ![[ before inherited bracket handling. It
-// follows autolinks and formulas, and precedes directives and the final table.
+// The cross-link scanner recognizes complete [[ and ![[ before inherited bracket
+// handling. It follows autolinks and formulas, and precedes directives and the
+// final table.
 //
 // Every row is attached by every parse.  There is no mask and no name: the
 // dialect has no switches, so a table that could be attached in part would be
 // a second language nothing ships, and a name would be a registry nothing
 // reads.  A feature is public from the commit that adds its row.
 static const markdown_core_extension *const CORE_EXTENSIONS[] = {
-    &MARKDOWN_CORE_EXTENSION_STRIKETHROUGH, &MARKDOWN_CORE_EXTENSION_AUTOLINK, &MARKDOWN_CORE_EXTENSION_TASKLIST,
-    &MARKDOWN_CORE_EXTENSION_FORMULA,       &MARKDOWN_CORE_EXTENSION_OFM,      &MARKDOWN_CORE_EXTENSION_DIRECTIVE,
+    &MARKDOWN_CORE_EXTENSION_STRIKETHROUGH, &MARKDOWN_CORE_EXTENSION_AUTOLINK,   &MARKDOWN_CORE_EXTENSION_TASKLIST,
+    &MARKDOWN_CORE_EXTENSION_FORMULA,       &MARKDOWN_CORE_EXTENSION_CROSS_LINK, &MARKDOWN_CORE_EXTENSION_DIRECTIVE,
     &MARKDOWN_CORE_EXTENSION_TABLE};
 
 #define CORE_EXTENSION_COUNT (sizeof(CORE_EXTENSIONS) / sizeof(CORE_EXTENSIONS[0]))

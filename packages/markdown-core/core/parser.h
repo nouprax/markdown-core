@@ -76,8 +76,8 @@ struct markdown_core_parser {
      * one-shot transaction reports the whole parse as failed (NULL) instead of
      * returning a silently truncated document. */
     bool oom;
-    /* Bytes inspected by the OFM scanner, for deterministic complexity gates. */
-    size_t ofm_scan_work;
+    /* Bytes inspected by the cross-link scanner, for deterministic complexity gates. */
+    size_t cross_link_scan_work;
     size_t opaque_scan_work;
     markdown_core_llist *extensions;
     markdown_core_llist *inline_extensions;

@@ -2117,13 +2117,13 @@ static void universal_values(test_batch_runner *runner) {
 /* Count visited source positions as well as verifying values. Repeated failed
  * candidates share one extent, so they cannot rescan each other's suffixes. */
 typedef struct {
-    size_t ofm, opaque;
+    size_t cross_link, opaque;
 } inline_work;
 static markdown_core_node *record_inline_work(const markdown_core_extension *extension, markdown_core_parser *parser,
                                               markdown_core_node *root) {
     (void)extension;
     inline_work *work = root->user_data;
-    work->ofm = parser->ofm_scan_work;
+    work->cross_link = parser->cross_link_scan_work;
     work->opaque = parser->opaque_scan_work;
     root->user_data = NULL;
     return root;
@@ -2135,7 +2135,7 @@ static bool measure_inline_work(markdown_core_parser *parser, void *context) {
            markdown_core_parser_attach_extension(parser, &WORK_RECORDER);
 }
 
-static void ofm_linear_work(test_batch_runner *runner) {
+static void cross_link_linear_work(test_batch_runner *runner) {
     markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
     static const struct {
         const char *prefix, *unit, *suffix;
@@ -2168,8 +2168,9 @@ static void ofm_linear_work(test_batch_runner *runner) {
             markdown_core_node *root = markdown_core_parse_document_with_mem(
                 (char *)source.ptr, source.size, MARKDOWN_CORE_DIALECT_OPTIONS, mem, measure_inline_work, &work);
             OK(runner, root != NULL, "adversarial cross links parse successfully");
-            OK(runner, work.ofm <= 3 * (size_t)source.size, "OFM scans disjoint bodies: case=%zu size=%d work=%zu", c,
-               source.size, work.ofm);
+            OK(runner, work.cross_link <= 3 * (size_t)source.size,
+               "cross-link scanner inspects disjoint bodies: case=%zu size=%d work=%zu", c, source.size,
+               work.cross_link);
             OK(runner, work.opaque <= 4 * (size_t)source.size,
                "opaque delimiter searches are linear: case=%zu size=%d work=%zu", c, source.size, work.opaque);
             markdown_core_node_free(root);
@@ -2274,7 +2275,7 @@ int main(void) {
 
     universal_values(runner);
     attribute_linear_work(runner);
-    ofm_linear_work(runner);
+    cross_link_linear_work(runner);
     cross_link_fields(runner);
     version(runner);
     node_type_values(runner);

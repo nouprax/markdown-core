@@ -185,6 +185,9 @@ lands the behavior amends that module in the same pull request.
   deletes `ParseOptions` and smart punctuation. The test tree keeps no layer
   selection either: the oracle gates parse the one language and register
   where it deliberately leaves an oracle's.
+- Runtime modules and extension descriptors follow feature semantics and
+  ownership. GFM, Obsidian, and Pandoc identify sources and oracle evidence;
+  they do not group unrelated features into implementation boundaries.
 - A comment is a `Comment` node and is never stripped: an HTML comment under the
   inherited grammar, and a `%%` comment. `stripHTMLComments` is removed,
   nothing strips anything, and a consumer that wants comments gone drops the
@@ -531,7 +534,7 @@ its behavior, with no separate publication step.
 
 ## Stage 2 — Obsidian track
 
-- [x] **O1 — Wikilinks and embeds.** Create the parser-owned OFM inline
+- [x] **O1 — Wikilinks and embeds.** Create the parser-owned cross-link inline
       extension and its reviewed attach-table position (before
       `table`; the extension must see `[` and `!` before inherited bracket
       handling), always on, and public from this item. One
@@ -581,8 +584,9 @@ its behavior, with no separate publication step.
   envelope. Position and reference-resolution ledgers remain unchanged. The
   table's existing escape contraction/source map is reused. Formula bodies now
   claim their bytes before later scanners can swallow a closer; malformed
-  backtick pairs still release their bodies. X0 removed feature bits, so OFM
-  adds one always-attached descriptor without adding a switch. Cross-item cases
+  backtick pairs still release their bodies. Cross links have one always-attached
+  feature descriptor; marks, comments, and footnotes retain their own semantic
+  boundaries and do not share a source-family umbrella descriptor. Cross-item cases
   with syntax not yet landed remain owned by their later items.
 
 - [ ] **O2 — Highlights.** Add `=` to the shared delimiter stack

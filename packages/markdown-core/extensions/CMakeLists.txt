@@ -8,7 +8,7 @@ set(LIBRARY_SOURCES
     strikethrough.c
     autolink.c
     formula.c
-    ofm.c
+    cross_link.c
     directive.c
     ext_scanners.c
     ext_scanners.re
