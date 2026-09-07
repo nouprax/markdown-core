@@ -34,8 +34,18 @@ private final class DumpState {
         fields: [String] = [],
         children: Int = 0
     ) {
+        line(kind, scope: node.scope, fields: fields, children: children)
+    }
+
+    /// A value line has the node line's shape: a scoped value prints like a node.
+    func line(
+        _ kind: String,
+        scope: Scope,
+        fields: [String],
+        children: Int
+    ) {
         let fieldText = fields.isEmpty ? "" : " " + fields.joined(separator: " ")
-        emit("\(kind) \(scope(node.scope))\(fieldText) children=\(children)")
+        emit("\(kind) \(scopeString(scope))\(fieldText) children=\(children)")
     }
 
     /// A group line nests a node-valued list under its owner: `Kind children=N`
@@ -70,8 +80,23 @@ private struct DumpVisitor: MarkupVisitor {
     let state: DumpState
 
     mutating func visit(_ node: Document) {
+        // The footnotes are value lines after the content, each nesting its
+        // own content; `children` counts the content alone.
         state.line("Document", node, children: node.content.count)
-        state.nested(node.content.count) { node.content.forEach(state.dump) }
+        state.nested(node.content.count + node.footnotes.count) {
+            node.content.forEach(state.dump)
+            for footnote in node.footnotes { dumpFootnote(footnote) }
+        }
+    }
+
+    private func dumpFootnote(_ value: Footnote) {
+        state.line(
+            "Footnote",
+            scope: value.scope,
+            fields: ["id=\(jsonString(value.id))"],
+            children: value.content.count
+        )
+        state.nested(value.content.count) { value.content.forEach(state.dump) }
     }
 
     mutating func visit(_ node: Callout) {
@@ -178,16 +203,6 @@ private struct DumpVisitor: MarkupVisitor {
         state.nested(node.content.count) { node.content.forEach(state.dump) }
     }
 
-    mutating func visit(_ node: FootnoteDefinition) {
-        state.line(
-            "FootnoteDefinition",
-            node,
-            fields: association(node.label, node.identifier),
-            children: node.content.count
-        )
-        state.nested(node.content.count) { node.content.forEach(state.dump) }
-    }
-
     mutating func visit(_ node: Text) {
         state.line("Text", node, fields: ["literal=\(jsonString(node.literal))"])
     }
@@ -258,8 +273,28 @@ private struct DumpVisitor: MarkupVisitor {
         }
     }
 
-    mutating func visit(_ node: FootnoteReference) {
-        state.line("FootnoteReference", node, fields: association(node.label, node.identifier))
+    mutating func visit(_ node: Cite) {
+        // The items are value lines under the cite, and `children` counts
+        // them; each item's affixes are groups whose nodes nest below them.
+        state.line("Cite", node, children: node.citations.count)
+        state.nested(node.citations.count) {
+            for citation in node.citations { dumpCitation(citation) }
+        }
+    }
+
+    private func dumpCitation(_ value: Citation) {
+        state.line(
+            "Citation",
+            scope: value.scope,
+            fields: ["referent=\(referentString(value.referent))"],
+            children: 0
+        )
+        state.nested(2) {
+            state.group("CitationPrefix", children: value.prefix.count)
+            state.nested(value.prefix.count) { value.prefix.forEach(state.dump) }
+            state.group("CitationSuffix", children: value.suffix.count)
+            state.nested(value.suffix.count) { value.suffix.forEach(state.dump) }
+        }
     }
 
     mutating func visit(_ node: TableRow) {
@@ -277,10 +312,6 @@ private struct DumpVisitor: MarkupVisitor {
         state.nested(node.content.count) { node.content.forEach(state.dump) }
     }
 
-    private func association(_ label: String, _ identifier: String) -> [String] {
-        ["label=\(jsonString(label))", "identifier=\(jsonString(identifier))"]
-    }
-
     private func directiveFields(_ name: String, _ attributes: [DirectiveAttribute]?) -> [String] {
         guard let attributes else {
             return ["name=\(jsonString(name))", "attributes=null"]
@@ -290,11 +321,19 @@ private struct DumpVisitor: MarkupVisitor {
     }
 }
 
-private func scope(_ value: Scope) -> String {
+private func scopeString(_ value: Scope) -> String {
     "scope=\(value.start.line):\(value.start.column)..\(value.end.line):\(value.end.column)"
 }
 
 private func boolean(_ value: Bool) -> String { value ? "true" : "false" }
+
+/// A tagged value prints its branch and its named fields with no spaces.
+private func referentString(_ value: CitationReferent) -> String {
+    switch value {
+    case .bib(let key, let mode): "bib(key=\(jsonString(key)),mode=\(mode.rawValue))"
+    case .footnote(let id): "footnote(id=\(jsonString(id)))"
+    }
+}
 
 /// A tagged value prints its branch and its named fields with no spaces.
 private func destinationString(_ value: Destination) -> String {

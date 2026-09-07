@@ -7,6 +7,7 @@
 #include "node.h"
 #include "parser.h"
 #include "references.h"
+#include "map.h"
 #include "markdown-core.h"
 #include "houdini.h"
 #include "utf8.h"
@@ -1504,8 +1505,16 @@ noMatch:
             // Let's just rewind the subject's position:
             subj->pos = initial_pos;
 
-            markdown_core_node *fnref = make_simple(subj->mem, MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE);
-            if (!fnref) {
+            /* A defined call lowers to a one-item `Cite` (M4): the cluster
+             * covers `[^label]`, its one `Citation` covers `^label`, the
+             * referent names the footnote by the normalized label without the
+             * caret, and both affixes are empty. */
+            markdown_core_node *fnref = make_simple(subj->mem, MARKDOWN_CORE_NODE_CITE);
+            markdown_core_node *citation = fnref ? make_simple(subj->mem, MARKDOWN_CORE_NODE_CITATION) : NULL;
+            if (!fnref || !citation) {
+                if (fnref) {
+                    markdown_core_node_free(fnref);
+                }
                 subj->oom = 1;
                 pop_bracket(subj);
                 return make_str(subj, subj->pos - 1, subj->pos - 1, markdown_core_chunk_literal("]"));
@@ -1539,16 +1548,24 @@ noMatch:
             {
                 markdown_core_chunk label =
                     markdown_core_chunk_dup(&subj->input, opener->position + 1, initial_pos - opener->position - 2);
-                /* The identifier KEEPS the caret the label does not carry, so a
-                 * footnote and a link definition of one name cannot collide in
-                 * a consumer's single map (markdown_core_association). */
-                if (!markdown_core_association_init(subj->mem, &fnref->as.association, &label, '^')) {
+                int lost = 0;
+                /* The referent's id is the label under the map's own
+                 * normalization, without the caret: the key the winning
+                 * definition's `Footnote` carries. */
+                unsigned char *id = normalize_map_label(subj->mem, &label, &lost);
+                if (!id) {
                     subj->oom = 1;
+                    markdown_core_node_free(citation);
                     markdown_core_node_free(fnref);
                     pop_bracket(subj);
                     subj->pos = initial_pos;
                     return make_str(subj, subj->pos - 1, subj->pos - 1, markdown_core_chunk_literal("]"));
                 }
+                citation->as.citation.referent = MARKDOWN_CORE_NODE_REFERENT_FOOTNOTE;
+                citation->as.citation.value.data = id;
+                citation->as.citation.value.len = (bufsize_t)strlen((const char *)id);
+                citation->as.citation.value.alloc = 1;
+                fnref->as.cite.citations = citation;
             }
 
             // The call runs from its own '[' to its ']', and the two need not be
@@ -1557,6 +1574,11 @@ noMatch:
             S_place_inline(subj, fnref, opener->position - 1, initial_pos - 1);
             fnref->start_line = opener->inl_text->start_line;
             fnref->start_column = fnref_start_column;
+            /* The item covers `^label`: from the caret, one byte after the
+             * opener's bracket on the same line, to the byte before `]`. */
+            S_place_inline(subj, citation, opener->position, initial_pos - 2);
+            citation->start_line = fnref->start_line;
+            citation->start_column = fnref_start_column + 1;
 
             // we then replace the opener with this new fnref node, the net effect
             // being replacing the opening '[' text node with a `^footnote-ref]` node.
@@ -2017,7 +2039,6 @@ bufsize_t markdown_core_parse_reference_inline(markdown_core_mem *mem, markdown_
     if (!link_label(&subj, &lab) || lab.len == 0) {
         return 0;
     }
-
     // colon:
     if (peek_char(&subj) == ':') {
         advance(&subj);

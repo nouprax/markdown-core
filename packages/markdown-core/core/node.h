@@ -81,32 +81,51 @@ typedef struct {
     markdown_core_resource *resource;
 } markdown_core_link;
 
-/* THE ASSOCIATION a footnote definition or reference carries. TWO values, and
- * neither derives the other in either direction.
- *
- * `label` is the bytes between the delimiters exactly as written: escapes and
- * character references unresolved, whitespace uncollapsed, case unfolded.
- * `identifier` is the match key: full Unicode case fold, trim, collapse
- * internal whitespace -- and for a footnote it KEEPS its leading `^`, so that a
- * link definition and a footnote definition of the same name cannot collide in
- * a consumer's single map. That caret is a correction to mdast, which separates
- * the two namespaces only by node type and so cannot survive being flattened
- * onto a wire.
- *
- * NORMATIVE: `identifier` is compared with memcmp over its bytes. It is never
- * case mapped, never NFC/NFD normalized, never re-encoded, and never used as a
- * key in a language map whose `==` has an opinion about Unicode -- Swift's
- * `String ==` is canonical equivalence, which would collapse the NFC and NFD
- * spellings of `[cafe\u0301]` that this parser deliberately keeps apart.
- *
- * NEITHER derives the other. `raw -> key` needs the case-fold table; `key ->
- * raw` is impossible, because the fold is many-to-one and `[ss]` and
- * `[\u00df]` are two labels with one key. The producer computes the key at zero
- * marginal cost: it already builds one per occurrence for its own map. */
+/* THE CITE (M4): a `Cite` owns its items as a chain of CITATION nodes beside
+ * its children, which it never has. The chain is a node-valued field, not
+ * content: the items are scoped values, not `Markup`. */
 typedef struct {
-    markdown_core_chunk label;
-    markdown_core_chunk identifier;
-} markdown_core_association;
+    struct markdown_core_node *citations;
+} markdown_core_cite;
+
+/* THE REFERENT of one citation (M4): a tagged value. A `bib` referent, which
+ * the citations module first produces with P7, carries a key and a mode; a
+ * `footnote` referent carries the id of the `Footnote` it names. */
+typedef enum {
+    MARKDOWN_CORE_NODE_REFERENT_BIB = 1,
+    MARKDOWN_CORE_NODE_REFERENT_FOOTNOTE = 2
+} markdown_core_node_referent_kind;
+
+/* ONE ITEM of a cite (M4): the referent, and two affix chains the item owns
+ * beside its children, which it never has. `value` is the referent's key or
+ * id: for a footnote referent it is the label under the map's own
+ * normalization WITHOUT the caret, which is the `Footnote.id` it names,
+ * computed once per occurrence. NORMATIVE: an id is compared with memcmp over
+ * its bytes and is never case mapped, renormalized, or re-encoded. A chain is
+ * NULL when the affix is empty. */
+typedef struct {
+    markdown_core_node_referent_kind referent;
+    markdown_core_chunk value;
+    /* The bib mode as the public `markdown_core_bib_mode` numbers it; 0 for a
+     * footnote referent. */
+    int mode;
+    struct markdown_core_node *prefix;
+    struct markdown_core_node *suffix;
+} markdown_core_citation_item;
+
+/* A FOOTNOTE (M4): the id is the definition's label under the map's own
+ * normalization, without the caret, the key every call's referent names; the
+ * content is the node's children. */
+typedef struct {
+    markdown_core_chunk id;
+} markdown_core_footnote_value;
+
+/* THE DOCUMENT's own footnotes (M4): every footnote definition leaves the tree
+ * when the document finalizes and is chained here in ascending scope order, a
+ * node-valued field the root owns beside its content. */
+typedef struct {
+    struct markdown_core_node *footnotes;
+} markdown_core_document_value;
 
 /* A link reference definition is not a node (M2). The block phase reads it off
  * the front of the paragraph that held it into the parser's map, which owns
@@ -114,7 +133,9 @@ typedef struct {
  * `Image` it names, sharing that resource. This is the inherited grammar's
  * model: a definition exists to be referred to, an unreferenced one produces
  * nothing, and the first definition of a label in source order wins. A footnote
- * definition stays a node, because its body is flow content. */
+ * definition stays a node while it is parsed, because its body is flow
+ * content, and becomes a document-owned `Footnote` value when the document
+ * finalizes (M4). */
 
 enum markdown_core_node__internal_flags {
     MARKDOWN_CORE_NODE__OPEN = (1 << 0),
@@ -174,7 +195,10 @@ struct markdown_core_node {
         markdown_core_code code;
         markdown_core_heading heading;
         markdown_core_link link;
-        markdown_core_association association;
+        markdown_core_cite cite;
+        markdown_core_citation_item citation;
+        markdown_core_footnote_value footnote;
+        markdown_core_document_value document;
         int html_block_type;
         int cell_index; // For keeping track of TABLE_CELL table alignments
     } as;

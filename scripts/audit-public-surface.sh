@@ -158,8 +158,17 @@ grep -q 'public enum WalkPhase' \
     && grep -q 'public func walk<Visitor: MarkupWalkingVisitor>' \
         packages/swift-markdown-core/Sources/MarkdownCore/Visitor/MarkupWalkingVisitor.swift \
     || fail "Swift does not expose the typed walking visitor contract"
-test "$(awk '/public protocol MarkupWalkingVisitor/{inside=1; next} inside && /^}/{exit} inside && /mutating func visit/{count++} END{print count+0}' packages/swift-markdown-core/Sources/MarkdownCore/Visitor/MarkupWalkingVisitor.swift)" -eq "$kind_count" \
+# A walking visitor names every Markup kind through a `node` entry and every
+# scoped value of the contract (M4) through exactly one `value` entry; the two
+# are counted apart so a value entry can neither stand in for a kind nor go
+# missing.
+scoped_values=$(node -e 'const contract = JSON.parse(require("node:fs").readFileSync("docs/specs/canonical-ast.json", "utf8")); process.stdout.write(Object.entries(contract.values).filter(([, value]) => value.scoped).map(([name]) => name).join(" "))')
+test "$(awk '/public protocol MarkupWalkingVisitor/{inside=1; next} inside && /^}/{exit} inside && /mutating func visit\(_ node:/{count++} END{print count+0}' packages/swift-markdown-core/Sources/MarkdownCore/Visitor/MarkupWalkingVisitor.swift)" -eq "$kind_count" \
     || fail "Swift MarkupWalkingVisitor is not exhaustive over all $kind_count Markup kinds"
+for value in $scoped_values; do
+    test "$(grep -c "mutating func visit(_ value: $value, phase: WalkPhase)" packages/swift-markdown-core/Sources/MarkdownCore/Visitor/MarkupWalkingVisitor.swift)" -eq 1 \
+        || fail "Swift MarkupWalkingVisitor does not name the scoped value $value exactly once"
+done
 
 grep -q 'explicitApi()' packages/kotlin-markdown-core/build.gradle.kts \
     || fail "Kotlin explicit API mode is disabled"
@@ -192,8 +201,12 @@ grep -q 'public enum class WalkPhase' \
     && grep -q 'public fun Markup.walk(visitor: WalkingVisitor)' \
         packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/visitor/WalkingVisitor.kt \
     || fail "Kotlin does not expose the typed walking visitor contract"
-test "$(awk '/public interface WalkingVisitor/{inside=1; next} inside && /^}/{exit} inside && /public fun visit/{count++} END{print count+0}' packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/visitor/WalkingVisitor.kt)" -eq "$kind_count" \
+test "$(awk '/public interface WalkingVisitor/{inside=1; next} inside && /^}/{exit} inside && /^        node: /{count++} END{print count+0}' packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/visitor/WalkingVisitor.kt)" -eq "$kind_count" \
     || fail "Kotlin WalkingVisitor is not exhaustive over all $kind_count Markup kinds"
+for value in $scoped_values; do
+    test "$(awk -v value="$value" '/public interface WalkingVisitor/{inside=1; next} inside && /^}/{exit} inside && $0 == "    public fun visit" value "(" {found++} END{print found+0}' packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/visitor/WalkingVisitor.kt)" -eq 1 \
+        || fail "Kotlin WalkingVisitor does not name the scoped value $value exactly once"
+done
 grep -q '^headers = markdown_core.h$' \
     packages/kotlin-markdown-core/src/nativeInterop/cinterop/markdown_core_kotlin.def \
     && grep -q '^package = com.nouprax.markdown.core.internal.capi$' \
@@ -249,8 +262,12 @@ grep -q 'export type WalkPhase = "entering" | "exiting"' \
     && grep -q 'export function walk(root: Markup, walkingVisitor: WalkingVisitor)' \
         packages/es-markdown-core/src/walking-visitor.ts \
     || fail "ES does not expose the typed walking visitor contract"
-test "$(grep -c '^    visit[A-Z].*(this:' packages/es-markdown-core/src/walking-visitor.ts)" -eq "$kind_count" \
+test "$(grep -c '^    visit[A-Z].*(this: void, node:' packages/es-markdown-core/src/walking-visitor.ts)" -eq "$kind_count" \
     || fail "ES WalkingVisitor is not exhaustive over all $kind_count Markup kinds"
+for value in $scoped_values; do
+    test "$(grep -c "^    visit$value(this: void, value: $value, phase: WalkPhase): void;" packages/es-markdown-core/src/walking-visitor.ts)" -eq 1 \
+        || fail "ES WalkingVisitor does not name the scoped value $value exactly once"
+done
 
 node - packages/es-markdown-core/package.json packages/es-markdown-core/src/index.ts <<'NODE'
 import fs from "node:fs";

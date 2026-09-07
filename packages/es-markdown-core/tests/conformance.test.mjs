@@ -38,7 +38,6 @@ test("conformance: public node schema is reachable", () => {
             "tableCell",
             "directiveBlock",
             "directiveLabel",
-            "footnoteDefinition",
             "text",
             "softBreak",
             "lineBreak",
@@ -52,7 +51,7 @@ test("conformance: public node schema is reachable", () => {
             "link",
             "image",
             "directive",
-            "footnoteReference"
+            "cite"
         ])
     );
     assert.ok(documents.every((document) => document.scope.start.line === 1 && document.scope.start.column === 1));
@@ -128,9 +127,15 @@ for (const testCase of canonicalManifest.cases) {
 }
 
 function dumpKinds(dump) {
-    return dump
-        .trimEnd()
-        .split("\n")
-        .map((line) => line.replace(/^[│ ├└─]*/u, "").split(" ", 1)[0])
-        .map((name) => (name.startsWith("HTML") ? `html${name.slice(4)}` : name[0].toLowerCase() + name.slice(1)));
+    return (
+        dump
+            .trimEnd()
+            .split("\n")
+            // A group line has no scope and a value line names a scoped value,
+            // and neither is a kind (M4).
+            .filter((line) => / scope=/.test(line))
+            .map((line) => line.replace(/^[│ ├└─]*/u, "").split(" ", 1)[0])
+            .filter((name) => name !== "Citation" && name !== "Footnote")
+            .map((name) => (name.startsWith("HTML") ? `html${name.slice(4)}` : name[0].toLowerCase() + name.slice(1)))
+    );
 }

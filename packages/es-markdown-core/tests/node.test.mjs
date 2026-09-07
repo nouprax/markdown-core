@@ -5,6 +5,7 @@ import { Document, TreeDumper, visit, walk } from "../dist/index.js";
 // and it is observable without the source carrying anything for the test.
 import { native } from "../dist/runtime/native.js";
 import { parseDocumentWithNative } from "../dist/runtime/parser.js";
+import { kinds } from "../dist/wire/kinds.js";
 import { NodeDecoder } from "../dist/wire/node-decoder.js";
 import { kindVisitor } from "./visitor.mjs";
 
@@ -61,7 +62,7 @@ test("api: the dialect has no switches, so a plain parse recognizes every featur
         ["~~x~~\n", "Strikethrough scope="],
         ["www.example.com\n", "Link scope="],
         ["- [x] task\n", "checked=true"],
-        ["ref[^a]\n\n[^a]: note\n", "FootnoteReference scope="],
+        ["ref[^a]\n\n[^a]: note\n", "Cite scope="],
         ["$x$\n", "Formula scope="],
         [":badge[label]\n", "Directive scope="],
         ['"quotes" -- ...\n', 'literal="\\"quotes\\" -- ..."']
@@ -228,7 +229,7 @@ test("callouts: a title is decoded from the auxiliary range before the content a
     };
     node(0, 1, [1, 1, 1, 8], { 24: 0, 28: 1 });
     node(1, 2, [1, 1, 1, 8], { 24: 1, 28: 0, 36: 1, 40: 1, 44: 1, 64: stringsOffset, 68: 4 });
-    node(2, 14, [1, 10, 1, 10], { 64: stringsOffset + 4, 68: 1 });
+    node(2, 13, [1, 10, 1, 10], { 64: stringsOffset + 4, 68: 1 });
     view.setUint32(edgesOffset, 1, true);
     view.setUint32(edgesOffset + 4, 2, true);
     bytes.set(strings, stringsOffset);
@@ -318,12 +319,81 @@ test("robustness: uncapped list nesting remains traversable", () => {
 });
 
 function walkingVisitor(callback) {
-    return Object.fromEntries(Object.keys(kindVisitor).map((method) => [method, callback]));
+    return {
+        ...Object.fromEntries(Object.keys(kindVisitor).map((method) => [method, callback])),
+        // The scoped values have no `kind`; their callbacks report their names.
+        visitCitation: (value, phase) => callback({ kind: "citation", ...value }, phase),
+        visitFootnote: (value, phase) => callback({ kind: "footnote", ...value }, phase)
+    };
 }
 
 function nodeKindName(node) {
     return node.kind[0].toUpperCase() + node.kind.slice(1);
 }
+
+test("citations: an inherited call is a one-item cite and the document owns its footnotes", () => {
+    // M4: repeated calls share one footnote; the item names it by id with
+    // empty affixes; the footnote is a document-owned value after the
+    // content, never a child; the walk visits values through their own
+    // callbacks, the footnotes after the content.
+    const document = Document.parse("[^a] [^a]\n\n[^a]: once\n");
+    const [paragraph] = document.content;
+    const cite = paragraph.content[0];
+    assert.equal(cite.kind, "cite");
+    assert.equal(cite.citations.length, 1);
+    assert.deepEqual(cite.citations[0].referent, { kind: "footnote", id: "a" });
+    assert.deepEqual(cite.citations[0].prefix, []);
+    assert.deepEqual(cite.citations[0].suffix, []);
+    assert.deepEqual(cite.citations[0].scope, { start: { line: 1, column: 2 }, end: { line: 1, column: 3 } });
+    assert.equal(document.content.length, 1);
+    assert.equal(document.footnotes.length, 1);
+    assert.equal(document.footnotes[0].id, "a");
+    assert.equal(document.footnotes[0].content[0].kind, "paragraph");
+    assert.equal(
+        document.dump(),
+        "Document scope=1:1..3:10 children=1\n" +
+            "├── Paragraph scope=1:1..1:9 children=3\n" +
+            "│   ├── Cite scope=1:1..1:4 children=1\n" +
+            '│   │   └── Citation scope=1:2..1:3 referent=footnote(id="a") children=0\n' +
+            "│   │       ├── CitationPrefix children=0\n" +
+            "│   │       └── CitationSuffix children=0\n" +
+            '│   ├── Text scope=1:5..1:5 literal=" " children=0\n' +
+            "│   └── Cite scope=1:6..1:9 children=1\n" +
+            '│       └── Citation scope=1:7..1:8 referent=footnote(id="a") children=0\n' +
+            "│           ├── CitationPrefix children=0\n" +
+            "│           └── CitationSuffix children=0\n" +
+            '└── Footnote scope=3:1..3:10 id="a" children=1\n' +
+            "    └── Paragraph scope=3:7..3:10 children=1\n" +
+            '        └── Text scope=3:7..3:10 literal="once" children=0\n'
+    );
+    const events = [];
+    walk(
+        document,
+        walkingVisitor((node, phase) => events.push(`${phase}:${nodeKindName(node)}`))
+    );
+    assert.deepEqual(events, [
+        "entering:Document",
+        "entering:Paragraph",
+        "entering:Cite",
+        "entering:Citation",
+        "exiting:Citation",
+        "exiting:Cite",
+        "entering:Text",
+        "exiting:Text",
+        "entering:Cite",
+        "entering:Citation",
+        "exiting:Citation",
+        "exiting:Cite",
+        "exiting:Paragraph",
+        "entering:Footnote",
+        "entering:Paragraph",
+        "entering:Text",
+        "exiting:Text",
+        "exiting:Paragraph",
+        "exiting:Footnote",
+        "exiting:Document"
+    ]);
+});
 
 test("robustness: repeated parse and release remains stable", () => {
     for (let index = 0; index < 2_000; index += 1) {
@@ -432,7 +502,7 @@ test("errors: malformed native values are rejected before they enter the AST", (
     // generic child here would erase the structural distinction this wire
     // contract exists to preserve.
     const malformedDirective = nativeResult(":note[label]\n");
-    const directiveOffset = findNode(malformedDirective, 25);
+    const directiveOffset = findNode(malformedDirective, kinds.indexOf("directive"));
     const labelIndex = new DataView(malformedDirective.buffer).getUint32(directiveOffset + 32, true);
     const nodesOffset = new DataView(malformedDirective.buffer).getUint32(40, true);
     new DataView(malformedDirective.buffer).setUint32(nodesOffset + labelIndex * 96, 3, true);
@@ -442,7 +512,7 @@ test("errors: malformed native values are rejected before they enter the AST", (
     );
 
     const unknownKind = nativeResult("text\n");
-    new DataView(unknownKind.buffer).setUint32(findNode(unknownKind, 14), 99, true);
+    new DataView(unknownKind.buffer).setUint32(findNode(unknownKind, kinds.indexOf("text")), 99, true);
     assert.throws(() => new NodeDecoder(unknownKind).decodeDocument(), /unknown node kind 99/u);
 
     const badMagic = nativeResult("text\n");

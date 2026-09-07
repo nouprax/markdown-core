@@ -37,8 +37,18 @@ private class DumpState {
         fields: kotlin.collections.List<String> = emptyList(),
         children: Int = 0,
     ) {
+        line(kind, node.scope, fields, children)
+    }
+
+    /** A value line has the node line's shape: a scoped value prints like a node. */
+    fun line(
+        kind: String,
+        scope: Scope,
+        fields: kotlin.collections.List<String>,
+        children: Int,
+    ) {
         val fieldText = if (fields.isEmpty()) "" else " ${fields.joinToString(" ")}"
-        emit("$kind ${scope(node.scope)}$fieldText children=$children")
+        emit("$kind ${scope(scope)}$fieldText children=$children")
     }
 
     /**
@@ -82,7 +92,18 @@ private class DumpVisitor(
     private val state: DumpState,
 ) : Visitor<Unit> {
     override fun visitDocument(node: Document) {
-        state.container("Document", node, children = node.content)
+        // The footnotes are value lines after the content, each nesting its
+        // own content; `children` counts the content alone.
+        state.line("Document", node, children = node.content.size)
+        state.nested(node.content.size + node.footnotes.size) {
+            node.content.forEach(state::dump)
+            node.footnotes.forEach { footnote(it) }
+        }
+    }
+
+    private fun footnote(value: Footnote) {
+        state.line("Footnote", value.scope, listOf("id=${jsonString(value.id)}"), value.content.size)
+        state.nested(value.content.size) { value.content.forEach(state::dump) }
     }
 
     override fun visitCallout(node: Callout) {
@@ -188,10 +209,6 @@ private class DumpVisitor(
         state.container("DirectiveLabel", node, children = node.content)
     }
 
-    override fun visitFootnoteDefinition(node: FootnoteDefinition) {
-        state.container("FootnoteDefinition", node, association(node.label, node.identifier), node.content)
-    }
-
     override fun visitText(node: Text) {
         state.line("Text", node, listOf("literal=${jsonString(node.literal)}"))
     }
@@ -263,14 +280,22 @@ private class DumpVisitor(
         }
     }
 
-    override fun visitFootnoteReference(node: FootnoteReference) {
-        state.line("FootnoteReference", node, association(node.label, node.identifier))
+    override fun visitCite(node: Cite) {
+        // The items are value lines under the cite, and `children` counts
+        // them; each item's affixes are groups whose nodes nest below them.
+        state.line("Cite", node, children = node.citations.size)
+        state.nested(node.citations.size) { node.citations.forEach { citation(it) } }
     }
 
-    private fun association(
-        label: String,
-        identifier: String,
-    ): kotlin.collections.List<String> = listOf("label=${jsonString(label)}", "identifier=${jsonString(identifier)}")
+    private fun citation(value: Citation) {
+        state.line("Citation", value.scope, listOf("referent=${referent(value.referent)}"), 0)
+        state.nested(2) {
+            state.group("CitationPrefix", value.prefix.size)
+            state.nested(value.prefix.size) { value.prefix.forEach(state::dump) }
+            state.group("CitationSuffix", value.suffix.size)
+            state.nested(value.suffix.size) { value.suffix.forEach(state::dump) }
+        }
+    }
 
     private fun directiveFields(
         name: String,
@@ -297,6 +322,19 @@ private fun destination(value: Destination): String =
     when (value) {
         is Destination.Url -> "url(${jsonString(value.value)})"
         is Destination.Cross -> "cross(path=${jsonString(value.path)},anchor=${optionalString(value.anchor)})"
+    }
+
+private fun referent(value: CitationReferent): String =
+    when (value) {
+        is CitationReferent.Bib -> "bib(key=${jsonString(value.key)},mode=${value.mode.token()})"
+        is CitationReferent.Footnote -> "footnote(id=${jsonString(value.id)})"
+    }
+
+private fun BibMode.token(): String =
+    when (this) {
+        BibMode.NORMAL -> "normal"
+        BibMode.AUTHOR_IN_TEXT -> "authorInText"
+        BibMode.SUPPRESS_AUTHOR -> "suppressAuthor"
     }
 
 private fun PlacementMode.token(): String = name.lowercase()

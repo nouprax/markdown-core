@@ -25,7 +25,7 @@ class ApiTest {
                 "~~x~~\n" to "Strikethrough scope=",
                 "www.example.com\n" to "Link scope=",
                 "- [x] task\n" to "checked=true",
-                "ref[^a]\n\n[^a]: note\n" to "FootnoteReference scope=",
+                "ref[^a]\n\n[^a]: note\n" to "Cite scope=",
                 "\$x\$\n" to "Formula scope=",
                 ":badge[label]\n" to "Directive scope=",
                 "\"quotes\" -- ...\n" to "literal=\"\\\"quotes\\\" -- ...\"",
@@ -186,6 +186,58 @@ class BindingMappingTest {
         }
         assertEquals(listOf("Paragraph"), block.content.map { it::class.simpleName })
         assertEquals(listOf("Text"), assertNotNull(block.label).content.map { it::class.simpleName })
+    }
+
+    @Test
+    fun citationsAreValuesAndTheDocumentOwnsItsFootnotes() {
+        // M4: an inherited call is a one-item cite naming its footnote by id
+        // with empty affixes; the footnote is a value the document owns, never
+        // content, and the walk reaches it after the content. Repeated calls
+        // share one footnote: the first definition of an id is the one they
+        // resolve to, and a later definition of the same id is a footnote
+        // after it, as the inherited grammar parses it.
+        val document = Document.parse("[^a] [^a]\n\n[^a]: once\n\n[^a]: twice\n")
+        val cites = assertIs<Paragraph>(document.content.single()).content.filterIsInstance<Cite>()
+        assertEquals(2, cites.size)
+        for (cite in cites) {
+            val citation = cite.citations.single()
+            assertEquals("a", assertIs<CitationReferent.Footnote>(citation.referent).id)
+            assertEquals(emptyList(), citation.prefix)
+            assertEquals(emptyList(), citation.suffix)
+        }
+        assertEquals(listOf("a", "a"), document.footnotes.map { it.id })
+        val footnote = document.footnotes.first()
+        assertEquals(Scope(Position(3, 1), Position(4, 0)), footnote.scope)
+        assertEquals("once", assertIs<Text>(assertIs<Paragraph>(footnote.content.single()).content.single()).literal)
+        val later = document.footnotes.last()
+        assertEquals(Scope(Position(5, 1), Position(5, 11)), later.scope)
+        assertEquals("twice", assertIs<Text>(assertIs<Paragraph>(later.content.single()).content.single()).literal)
+        assertTrue(
+            document.dump().endsWith(
+                "└── Footnote scope=5:1..5:11 id=\"a\" children=1\n" +
+                    "    └── Paragraph scope=5:7..5:11 children=1\n" +
+                    "        └── Text scope=5:7..5:11 literal=\"twice\" children=0\n",
+            ),
+        )
+        assertTrue(document.dump().startsWith("Document scope=1:1..5:11 children=1\n"))
+
+        val visitor = RecordingWalkingVisitor()
+        document.walk(visitor)
+        val cite = listOf("entering:Cite", "entering:Citation", "exiting:Citation", "exiting:Cite")
+        val footnoteEvents =
+            listOf(
+                "entering:Footnote",
+                "entering:Paragraph",
+                "entering:Text",
+                "exiting:Text",
+                "exiting:Paragraph",
+                "exiting:Footnote",
+            )
+        assertEquals(
+            listOf("entering:Document", "entering:Paragraph") + cite + listOf("entering:Text", "exiting:Text") + cite +
+                listOf("exiting:Paragraph") + footnoteEvents + footnoteEvents + listOf("exiting:Document"),
+            visitor.events,
+        )
     }
 
     @Test

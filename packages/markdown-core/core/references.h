@@ -8,18 +8,6 @@
 extern "C" {
 #endif
 
-/* Build the association a footnote reference or definition carries, from the
- * label AS WRITTEN. `prefix` is prepended to the IDENTIFIER and not to the
- * label: it is `^` for the two footnote kinds, which is how a footnote and a
- * link definition of the same name stay apart in a consumer's single map (see
- * markdown_core_association in node.h).
- *
- * Returns 0 having allocated nothing on failure -- an association with half a
- * value is a node that lies, and there is no honest partial state. */
-int markdown_core_association_init(markdown_core_mem *mem, markdown_core_association *out,
-                                   const markdown_core_chunk *label, unsigned char prefix);
-void markdown_core_association_free(markdown_core_mem *mem, markdown_core_association *association);
-
 /* THE DEFINITION SETS. Both maps hold normalized labels; the reference map
  * also holds, per label, THE RESOURCE its winning definition stated (M2).
  *

@@ -4,10 +4,10 @@ Status: normative module of the [Markdown Core dialect](../dialect.md).
 Sources: cmark-gfm's footnote
 extension for the referenced form; Obsidian and Pandoc for the inline form.
 Executable oracles: cmark-gfm and remark for the referenced form; the inline
-form is product fixtures. Landing: the citation model with `M4`, the inline
-form with `O4`; until `M4` the current contract's `FootnoteReference` and
-`FootnoteDefinition` stand. The [example format](../dialect.md#examples) is
-defined by the index.
+form is product fixtures. Landing: the citation model landed with `M4`, and
+the inline form lands with `O4`; until then only the referenced form is
+recognized. The [example format](../dialect.md#examples) is defined by the
+index.
 
 ## The citation model
 
@@ -159,10 +159,12 @@ Document scope=1:1..3:4 anchor=null attributes={} children=1
         └── Text scope=1:7..1:10 anchor=null attributes={} literal="kept" children=0
 ````````````````````````````````
 
-When two definitions share a key, the first in source order wins; each later
-one is parsed in place as ordinary blocks, produces no `Footnote`, and calls
-resolve to the winner. Inside those blocks the leading `[^label]` is itself a
-call to the winner, because the label is defined, and the rest is text:
+When two definitions share a key, the first in source order wins: every call
+resolves to it. Each later one is still parsed as a definition, as cmark-gfm's
+block grammar parses it, and remains a `Footnote` after the winner in
+`Document.footnotes` with the same id, so nothing authored is lost; a consumer
+keying footnotes by id takes the first. cmark-gfm destroys the later
+definition instead, which is a registered delta of that oracle:
 
 ```````````````````````````````` example
 [^a]
@@ -171,21 +173,18 @@ call to the winner, because the label is defined, and the rest is text:
 
 [^a]: second
 .
-Document scope=1:1..5:12 anchor=null attributes={} children=2
+Document scope=1:1..5:12 anchor=null attributes={} children=1
 ├── Paragraph scope=1:1..1:4 anchor=null attributes={} children=1
 │   └── Cite scope=1:1..1:4 anchor=null attributes={} children=1
 │       └── Citation scope=1:2..1:3 referent=footnote(id="a") children=0
 │           ├── CitationPrefix children=0
 │           └── CitationSuffix children=0
-├── Paragraph scope=5:1..5:12 anchor=null attributes={} children=2
-│   ├── Cite scope=5:1..5:4 anchor=null attributes={} children=1
-│   │   └── Citation scope=5:2..5:3 referent=footnote(id="a") children=0
-│   │       ├── CitationPrefix children=0
-│   │       └── CitationSuffix children=0
-│   └── Text scope=5:5..5:12 anchor=null attributes={} literal=": second" children=0
-└── Footnote scope=3:1..4:0 id="a" children=1
-    └── Paragraph scope=3:7..3:11 anchor=null attributes={} children=1
-        └── Text scope=3:7..3:11 anchor=null attributes={} literal="first" children=0
+├── Footnote scope=3:1..4:0 id="a" children=1
+│   └── Paragraph scope=3:7..3:11 anchor=null attributes={} children=1
+│       └── Text scope=3:7..3:11 anchor=null attributes={} literal="first" children=0
+└── Footnote scope=5:1..5:12 id="a" children=1
+    └── Paragraph scope=5:7..5:12 anchor=null attributes={} children=1
+        └── Text scope=5:7..5:12 anchor=null attributes={} literal="second" children=0
 ````````````````````````````````
 
 A call whose label no definition defines is not a call: the brackets are
@@ -411,8 +410,8 @@ formulas, and cross links are opaque to both forms.
 ## Scopes
 
 For a referenced call, `Cite.scope` covers `[^label]` and `Citation.scope`
-covers `^label`; `Footnote.scope` covers the complete winning or unreferenced
-definition through its last continuation line. For an inline footnote,
+covers `^label`; `Footnote.scope` covers the complete definition through its
+last continuation line. For an inline footnote,
 `Cite.scope` and `Footnote.scope` cover `^[content]` and `Citation.scope`
 covers `content`; the body's descendants cover only their own bytes.
 

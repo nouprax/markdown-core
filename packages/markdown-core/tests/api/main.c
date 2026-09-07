@@ -85,31 +85,22 @@ static void version(test_batch_runner *runner) {
  * called the `create_*` functions, and nothing in the repository asserted a
  * single one of them. */
 static void node_type_values(test_batch_runner *runner) {
-    static const markdown_core_node_type block_types[] = {MARKDOWN_CORE_NODE_DOCUMENT,
-                                                          MARKDOWN_CORE_NODE_CALLOUT,
-                                                          MARKDOWN_CORE_NODE_LIST,
-                                                          MARKDOWN_CORE_NODE_LIST_ITEM,
-                                                          MARKDOWN_CORE_NODE_CODE_BLOCK,
-                                                          MARKDOWN_CORE_NODE_HTML_BLOCK,
-                                                          MARKDOWN_CORE_NODE_PARAGRAPH,
-                                                          MARKDOWN_CORE_NODE_HEADING,
-                                                          MARKDOWN_CORE_NODE_THEMATIC_BREAK,
-                                                          MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION,
-                                                          MARKDOWN_CORE_NODE_TABLE,
-                                                          MARKDOWN_CORE_NODE_TABLE_ROW,
-                                                          MARKDOWN_CORE_NODE_TABLE_CELL,
-                                                          MARKDOWN_CORE_NODE_FORMULA_BLOCK,
-                                                          MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK,
-                                                          MARKDOWN_CORE_NODE_COMMENT_BLOCK};
+    static const markdown_core_node_type block_types[] = {
+        MARKDOWN_CORE_NODE_DOCUMENT,     MARKDOWN_CORE_NODE_CALLOUT,       MARKDOWN_CORE_NODE_LIST,
+        MARKDOWN_CORE_NODE_LIST_ITEM,    MARKDOWN_CORE_NODE_CODE_BLOCK,    MARKDOWN_CORE_NODE_HTML_BLOCK,
+        MARKDOWN_CORE_NODE_PARAGRAPH,    MARKDOWN_CORE_NODE_HEADING,       MARKDOWN_CORE_NODE_THEMATIC_BREAK,
+        MARKDOWN_CORE_NODE_FOOTNOTE,     MARKDOWN_CORE_NODE_TABLE,         MARKDOWN_CORE_NODE_TABLE_ROW,
+        MARKDOWN_CORE_NODE_TABLE_CELL,   MARKDOWN_CORE_NODE_FORMULA_BLOCK, MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK,
+        MARKDOWN_CORE_NODE_COMMENT_BLOCK};
     static const markdown_core_node_type inline_types[] = {
         MARKDOWN_CORE_NODE_TEXT,          MARKDOWN_CORE_NODE_SOFT_BREAK,
         MARKDOWN_CORE_NODE_LINE_BREAK,    MARKDOWN_CORE_NODE_CODE,
         MARKDOWN_CORE_NODE_HTML,          MARKDOWN_CORE_NODE_EMPHASIS,
         MARKDOWN_CORE_NODE_STRONG,        MARKDOWN_CORE_NODE_LINK,
-        MARKDOWN_CORE_NODE_IMAGE,         MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE,
+        MARKDOWN_CORE_NODE_IMAGE,         MARKDOWN_CORE_NODE_CITE,
         MARKDOWN_CORE_NODE_STRIKETHROUGH, MARKDOWN_CORE_NODE_FORMULA,
         MARKDOWN_CORE_NODE_DIRECTIVE,     MARKDOWN_CORE_NODE_DIRECTIVE_LABEL,
-        MARKDOWN_CORE_NODE_COMMENT};
+        MARKDOWN_CORE_NODE_COMMENT,       MARKDOWN_CORE_NODE_CITATION};
 
     for (size_t i = 0; i < sizeof(block_types) / sizeof(*block_types); ++i) {
         INT_EQ(runner, block_types[i] & MARKDOWN_CORE_NODE_TYPE_MASK, MARKDOWN_CORE_NODE_TYPE_BLOCK,
@@ -1529,90 +1520,100 @@ static void source_pos_inlines(test_batch_runner *runner) {
                      "multiline emphasis scopes are as expected");
 }
 
-/* §5.6's G7: ONE accessor answers for the footnote kinds and refuses every
- * other node.
- *
- * It answered for five kinds until M2: a link or image reference is now the
- * `Link` or `Image` it names and carries no association, and the definition
- * is consumed into the reference map. The two footnote kinds keep theirs
- * until M4, and the accessor is still a switch on the type rather than a
- * common-initial-sequence read: a third kind that answered here would be
- * reading some other union arm as two chunks. */
-static void association_accessor(test_batch_runner *runner) {
-    /* Resolved references, an inline Link and an inline Image are in the
-     * corpus DELIBERATELY: a resolved reference is the kind nearest to
-     * answering by accident, because it used to, and a link's union arm is a
-     * pointer that must never be read as two chunks. */
-    static const char markdown[] = "[a][ref] ![b][ref] [^n] [c](/inline) ![d](/i.png)\n"
+/* THE CITATION MODEL's values (M4). A defined call is a one-item `Cite`
+ * whose `Citation` names the footnote by the normalized label without its
+ * caret and carries empty affixes; the document owns every winning or
+ * unreferenced definition as a `Footnote` in scope order and no definition
+ * remains a child; a losing duplicate is ordinary content in which the
+ * leading `[^label]` is a call to the winner; and every value accessor
+ * refuses a node that is not its owner and a value that is missing. */
+static void citation_and_footnote_values(test_batch_runner *runner) {
+    static const char markdown[] = "[^Note] [^b] [c](/inline)\n"
                                    "\n"
-                                   "[ref]: /r\n"
+                                   "[^note]: first\n"
                                    "\n"
-                                   "[^n]: note\n";
+                                   "[^note]: second\n"
+                                   "\n"
+                                   "[^b]: kept\n"
+                                   "\n"
+                                   "[^unused]: still here\n";
+    static const char *const ids[] = {"note", "note", "b", "unused"};
     markdown_core_document *document;
     const markdown_core_node *root;
-    const markdown_core_node *node;
-    markdown_core_string label = {NULL, 0};
-    markdown_core_string identifier = {NULL, 0};
-    int answered = 0;
-    int refused = 0;
-    size_t seen = 0;
-    /* Two kinds answer. Everything else -- the resolved references, the
-     * direct link and image, the Paragraph, the Text children and the
-     * Document -- refuses. */
-    const markdown_core_node_kind carriers[] = {MARKDOWN_CORE_KIND_FOOTNOTE_DEFINITION,
-                                                MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE};
-    unsigned int found = 0;
-    int links = 0;
+    const markdown_core_node *paragraph;
+    const markdown_core_node *cite;
+    const markdown_core_citation *item;
+    const markdown_core_footnote *footnote;
+    markdown_core_referent referent;
+    markdown_core_scope scope;
+    markdown_core_string id;
+    size_t count = 0;
 
     document = markdown_core_document_parse((const uint8_t *)markdown, strlen(markdown), NULL);
     if (!document) {
-        OK(runner, 0, "association corpus parses");
+        OK(runner, 0, "citation corpus parses");
         return;
     }
     root = markdown_core_document_root(document);
+    /* Every definition left the tree, the losing duplicate included: one
+     * paragraph remains. */
+    INT_EQ(runner, (int)markdown_core_node_child_count(root), 1, "no definition remains a child of the document");
+    paragraph = markdown_core_node_get_first_child(root);
+    cite = markdown_core_node_get_first_child(paragraph);
+    INT_EQ(runner, markdown_core_node_get_kind(cite), MARKDOWN_CORE_KIND_CITE, "a defined call is a Cite");
+    INT_EQ(runner, (int)markdown_core_node_child_count(cite), 0, "a cite has no children");
+    item = markdown_core_node_cite_citations(cite);
+    OK(runner, item != NULL, "a cite holds an item");
+    OK(runner, item != NULL && markdown_core_citation_next(item) == NULL, "an inherited call holds exactly one item");
+    OK(runner, markdown_core_citation_referent(item, &referent), "an item answers its referent");
+    INT_EQ(runner, referent.kind, MARKDOWN_CORE_REFERENT_FOOTNOTE, "an inherited call names a footnote");
+    OK(runner, referent.id.length == 4 && memcmp(referent.id.data, "note", 4) == 0,
+       "the id is the normalized label without the caret");
+    OK(runner, referent.key.length == 0 && referent.key.data == NULL && referent.mode == 0,
+       "the footnote branch zeroes the bib fields");
+    OK(runner, markdown_core_citation_prefix(item) == NULL && markdown_core_citation_suffix(item) == NULL,
+       "an inherited call has empty affixes");
+    scope = markdown_core_node_scope(cite);
+    OK(runner, scope.start.line == 1 && scope.start.column == 1 && scope.end.line == 1 && scope.end.column == 7,
+       "the cite covers the brackets");
+    scope = markdown_core_citation_scope(item);
+    OK(runner, scope.start.line == 1 && scope.start.column == 2 && scope.end.line == 1 && scope.end.column == 6,
+       "the item covers the caret and the label");
 
-    {
-        /* An explicit stack, because the walk must reach every node and the
-         * facade's traversal is the only one the accessor is public through. */
-        const markdown_core_node *stack[64];
-        size_t depth = 0;
-        stack[depth++] = root;
-        while (depth > 0) {
-            const markdown_core_node *current = stack[--depth];
-            markdown_core_node_kind kind = markdown_core_node_get_kind(current);
-            size_t index;
-            int carries = 0;
-            seen++;
-            for (index = 0; index < sizeof(carriers) / sizeof(carriers[0]); index++) {
-                if (kind == carriers[index]) {
-                    carries = 1;
-                    found |= 1u << index;
-                }
-            }
-            if (kind == MARKDOWN_CORE_KIND_LINK || kind == MARKDOWN_CORE_KIND_IMAGE) {
-                links++;
-            }
-            if (markdown_core_node_association(current, &label, &identifier)) {
-                answered++;
-                INT_EQ(runner, carries, 1, "kind %d answers the association accessor", (int)kind);
-                OK(runner, label.data != NULL && identifier.data != NULL && identifier.length > 0,
-                   "kind %d carries both halves", (int)kind);
-            } else {
-                refused++;
-                INT_EQ(runner, carries, 0, "kind %d refuses the association accessor", (int)kind);
-            }
-            for (node = markdown_core_node_get_first_child(current); node;
-                 node = markdown_core_node_get_next_sibling(node)) {
-                if (depth < sizeof(stack) / sizeof(stack[0])) {
-                    stack[depth++] = node;
-                }
-            }
-        }
+    OK(runner, markdown_core_node_get_next_sibling(paragraph) == NULL, "the paragraph is the only content");
+
+    for (footnote = markdown_core_node_document_footnotes(root); footnote;
+         footnote = markdown_core_footnote_next(footnote)) {
+        OK(runner, markdown_core_footnote_id(footnote, &id), "a footnote answers its id");
+        OK(runner, count < 4 && id.length == strlen(ids[count]) && memcmp(id.data, ids[count], id.length) == 0,
+           "footnote %zu carries the expected id", count);
+        count++;
     }
-    INT_EQ(runner, (int)found, 3, "both footnote kinds appear in the corpus");
-    INT_EQ(runner, answered, 2, "exactly two nodes answer");
-    INT_EQ(runner, links, 4, "the two resolved references are the Link and Image they name");
-    OK(runner, refused > 0 && seen == (size_t)(answered + refused), "every other node refuses");
+    INT_EQ(runner, (int)count, 4,
+           "the winner, its duplicate, the referenced, and the unreferenced definitions are footnotes");
+    footnote = markdown_core_node_document_footnotes(root);
+    scope = markdown_core_footnote_scope(footnote);
+    OK(runner, scope.start.line == 3 && scope.start.column == 1, "the first footnote is the winning definition");
+    scope = markdown_core_footnote_scope(markdown_core_footnote_next(footnote));
+    OK(runner, scope.start.line == 5 && scope.start.column == 1,
+       "a later definition of the same id is the footnote after the winner");
+    OK(runner,
+       markdown_core_footnote_content(footnote) != NULL &&
+           markdown_core_node_get_kind(markdown_core_footnote_content(footnote)) == MARKDOWN_CORE_KIND_PARAGRAPH,
+       "a footnote's content is its block content");
+
+    OK(runner,
+       markdown_core_node_cite_citations(paragraph) == NULL && markdown_core_node_document_footnotes(paragraph) == NULL,
+       "the owner accessors refuse other kinds");
+    OK(runner,
+       markdown_core_citation_next(NULL) == NULL && markdown_core_citation_prefix(NULL) == NULL &&
+           markdown_core_citation_suffix(NULL) == NULL && !markdown_core_citation_referent(NULL, &referent) &&
+           !markdown_core_citation_referent(item, NULL),
+       "the citation accessors refuse a missing value");
+    OK(runner,
+       markdown_core_footnote_next(NULL) == NULL && markdown_core_footnote_content(NULL) == NULL &&
+           !markdown_core_footnote_id(NULL, &id) && !markdown_core_footnote_id(footnote, NULL),
+       "the footnote accessors refuse a missing value");
     markdown_core_document_free(document);
 }
 
@@ -1790,7 +1791,7 @@ int main(void) {
     ref_source_pos(runner);
     link_resource_lifecycle(runner);
     set_type_keeps_extension_data_beside_the_arm(runner);
-    association_accessor(runner);
+    citation_and_footnote_values(runner);
     autolink_source_pos(runner);
     strbuf_overflow(runner);
     strbuf_failure_is_a_transaction(runner);

@@ -2,15 +2,21 @@
 
 package com.nouprax.markdown.core
 
+import cnames.structs.markdown_core_citation
 import cnames.structs.markdown_core_error
+import cnames.structs.markdown_core_footnote
 import cnames.structs.markdown_core_node
 import cnames.structs.markdown_core_resource
+import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_BIB_MODE_AUTHOR_IN_TEXT
+import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_BIB_MODE_NORMAL
+import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_BIB_MODE_SUPPRESS_AUTHOR
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_DESTINATION_CROSS
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_DESTINATION_URL
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_ERROR_ALLOCATION_FAILED
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_ERROR_INTERNAL
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_ERROR_INVALID_ARGUMENT
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_CALLOUT
+import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_CITE
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_CODE
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_CODE_BLOCK
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_COMMENT
@@ -19,8 +25,6 @@ import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_DIRECTIVE_BLOC
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_DIRECTIVE_LABEL
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_DOCUMENT
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_EMPHASIS
-import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_FOOTNOTE_DEFINITION
-import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_FORMULA
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_FORMULA_BLOCK
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_HEADING
@@ -44,10 +48,17 @@ import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_LIST_FLAVOR_BULLET
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_LIST_FLAVOR_ORDERED
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_PLACEMENT_EMBEDDED
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_PLACEMENT_STANDALONE
+import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_REFERENT_BIB
+import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_REFERENT_FOOTNOTE
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_TABLE_ALIGNMENT_CENTER
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_TABLE_ALIGNMENT_LEFT
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_TABLE_ALIGNMENT_NONE
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_TABLE_ALIGNMENT_RIGHT
+import com.nouprax.markdown.core.internal.capi.markdown_core_citation_next
+import com.nouprax.markdown.core.internal.capi.markdown_core_citation_prefix
+import com.nouprax.markdown.core.internal.capi.markdown_core_citation_referent
+import com.nouprax.markdown.core.internal.capi.markdown_core_citation_scope
+import com.nouprax.markdown.core.internal.capi.markdown_core_citation_suffix
 import com.nouprax.markdown.core.internal.capi.markdown_core_destination
 import com.nouprax.markdown.core.internal.capi.markdown_core_document_free
 import com.nouprax.markdown.core.internal.capi.markdown_core_document_parse
@@ -55,16 +66,21 @@ import com.nouprax.markdown.core.internal.capi.markdown_core_document_root
 import com.nouprax.markdown.core.internal.capi.markdown_core_error_free
 import com.nouprax.markdown.core.internal.capi.markdown_core_error_get_code
 import com.nouprax.markdown.core.internal.capi.markdown_core_error_get_message
+import com.nouprax.markdown.core.internal.capi.markdown_core_footnote_content
+import com.nouprax.markdown.core.internal.capi.markdown_core_footnote_id
+import com.nouprax.markdown.core.internal.capi.markdown_core_footnote_next
+import com.nouprax.markdown.core.internal.capi.markdown_core_footnote_scope
 import com.nouprax.markdown.core.internal.capi.markdown_core_list_flavorVar
-import com.nouprax.markdown.core.internal.capi.markdown_core_node_association
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_callout_properties
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_callout_title
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_child_count
+import com.nouprax.markdown.core.internal.capi.markdown_core_node_cite_citations
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_code_block_properties
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_destination
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_directive_attribute_at
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_directive_label
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_directive_properties
+import com.nouprax.markdown.core.internal.capi.markdown_core_node_document_footnotes
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_formula_properties
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_get_first_child
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_get_kind
@@ -83,11 +99,14 @@ import com.nouprax.markdown.core.internal.capi.markdown_core_optional_bool
 import com.nouprax.markdown.core.internal.capi.markdown_core_optional_i64
 import com.nouprax.markdown.core.internal.capi.markdown_core_optional_string
 import com.nouprax.markdown.core.internal.capi.markdown_core_placement_modeVar
+import com.nouprax.markdown.core.internal.capi.markdown_core_referent
+import com.nouprax.markdown.core.internal.capi.markdown_core_scope
 import com.nouprax.markdown.core.internal.capi.markdown_core_string
 import com.nouprax.markdown.core.internal.capi.markdown_core_table_alignmentVar
 import kotlinx.cinterop.BooleanVar
 import kotlinx.cinterop.CPointer
 import kotlinx.cinterop.CPointerVar
+import kotlinx.cinterop.CValue
 import kotlinx.cinterop.IntVar
 import kotlinx.cinterop.MemScope
 import kotlinx.cinterop.addressOf
@@ -151,6 +170,25 @@ private data class NativeNodeRecord(
     var labelIndex: Int = -1,
     var titleStart: Int = 0,
     var titleCount: Int = 0,
+    /** The document's footnote records or the cite's citation records: a start and a count. */
+    var valueStart: Int = 0,
+    var valueCount: Int = 0,
+)
+
+/** One item a cite owns; its prefix and suffix nodes are recorded like children. */
+private class NativeCitationRecord(
+    val pointer: CPointer<markdown_core_citation>,
+    val prefixStart: Int,
+    val prefixCount: Int,
+    val suffixStart: Int,
+    val suffixCount: Int,
+)
+
+/** One footnote the document owns; its content nodes are recorded like children. */
+private class NativeFootnoteRecord(
+    val pointer: CPointer<markdown_core_footnote>,
+    val contentStart: Int,
+    val contentCount: Int,
 )
 
 /** Copies the C tree iteratively while the immutable native document is alive. */
@@ -159,6 +197,8 @@ private class NativeTreeBuilder(
     private val scratch: NativeScratch,
 ) {
     private val records = mutableListOf(NativeNodeRecord(root))
+    private val citationRecords = mutableListOf<NativeCitationRecord>()
+    private val footnoteRecords = mutableListOf<NativeFootnoteRecord>()
     private lateinit var built: Array<Markup?>
 
     /**
@@ -199,13 +239,40 @@ private class NativeTreeBuilder(
                     // content; its nodes are recorded like children, and the
                     // record remembers which are the title's. A present title
                     // holds at least one node, so its count is its presence.
-                    var title = markdown_core_node_callout_title(record.pointer)
                     record.titleStart = records.size
-                    while (title != null) {
-                        records += NativeNodeRecord(title)
-                        record.titleCount++
-                        title = markdown_core_node_get_next_sibling(title)
+                    record.titleCount = recordChain(markdown_core_node_callout_title(record.pointer))
+                }
+
+                MARKDOWN_CORE_KIND_DOCUMENT -> {
+                    // The footnotes are values the document owns beside its
+                    // content (M4); each one's content is recorded like children.
+                    record.valueStart = footnoteRecords.size
+                    var footnote = markdown_core_node_document_footnotes(record.pointer)
+                    while (footnote != null) {
+                        val contentStart = records.size
+                        val contentCount = recordChain(markdown_core_footnote_content(footnote))
+                        footnoteRecords += NativeFootnoteRecord(footnote, contentStart, contentCount)
+                        record.valueCount++
+                        footnote = markdown_core_footnote_next(footnote)
                     }
+                }
+
+                MARKDOWN_CORE_KIND_CITE -> {
+                    // The items are values the cite owns (M4); each one's
+                    // prefix and suffix are recorded like children.
+                    record.valueStart = citationRecords.size
+                    var citation = markdown_core_node_cite_citations(record.pointer)
+                    while (citation != null) {
+                        val prefixStart = records.size
+                        val prefixCount = recordChain(markdown_core_citation_prefix(citation))
+                        val suffixStart = records.size
+                        val suffixCount = recordChain(markdown_core_citation_suffix(citation))
+                        citationRecords +=
+                            NativeCitationRecord(citation, prefixStart, prefixCount, suffixStart, suffixCount)
+                        record.valueCount++
+                        citation = markdown_core_citation_next(citation)
+                    }
+                    require(record.valueCount >= 1) { "native cite holds no citation" }
                 }
             }
             record.childStart = records.size
@@ -222,6 +289,18 @@ private class NativeTreeBuilder(
         }
     }
 
+    /** Records every node of a sibling chain a value owns and answers how many there were. */
+    private fun recordChain(first: CPointer<markdown_core_node>?): Int {
+        var count = 0
+        var node = first
+        while (node != null) {
+            records += NativeNodeRecord(node)
+            count++
+            node = markdown_core_node_get_next_sibling(node)
+        }
+        return count
+    }
+
     private fun materialize(index: Int): Markup {
         val record = records[index]
         val node = record.pointer
@@ -230,7 +309,7 @@ private class NativeTreeBuilder(
         val children = children(record)
         return when (kind) {
             MARKDOWN_CORE_KIND_DOCUMENT -> {
-                Document(children, scope)
+                Document(children, footnotes(record), scope)
             }
 
             MARKDOWN_CORE_KIND_CALLOUT -> {
@@ -278,11 +357,6 @@ private class NativeTreeBuilder(
 
             MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK -> {
                 scratch.directiveBlock(node, label(record), children, scope)
-            }
-
-            MARKDOWN_CORE_KIND_FOOTNOTE_DEFINITION -> {
-                val association = scratch.association(node)
-                FootnoteDefinition(association.first, association.second, children, scope)
             }
 
             MARKDOWN_CORE_KIND_TEXT -> {
@@ -340,10 +414,9 @@ private class NativeTreeBuilder(
                 scratch.directive(node, label(record), children, scope)
             }
 
-            MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE -> {
+            MARKDOWN_CORE_KIND_CITE -> {
                 requireLeaf(children, kind)
-                val association = scratch.association(node)
-                FootnoteReference(association.first, association.second, scope)
+                Cite(citations(record), scope)
             }
 
             MARKDOWN_CORE_KIND_TABLE_ROW -> {
@@ -365,16 +438,42 @@ private class NativeTreeBuilder(
     }
 
     private fun children(record: NativeNodeRecord): kotlin.collections.List<Markup> =
-        immutableList(record.childCount) { offset ->
-            requireNotNull(built[record.childStart + offset]) { "native child was not materialized" }
-        }
+        nodes(record.childStart, record.childCount, "child")
 
     private fun title(record: NativeNodeRecord): kotlin.collections.List<Markup>? {
         if (record.titleCount == 0) return null
-        return immutableList(record.titleCount) { offset ->
-            requireNotNull(built[record.titleStart + offset]) { "native callout title was not materialized" }
-        }
+        return nodes(record.titleStart, record.titleCount, "callout title")
     }
+
+    private fun footnotes(record: NativeNodeRecord): kotlin.collections.List<Footnote> =
+        immutableList(record.valueCount) { offset ->
+            val footnote = footnoteRecords[record.valueStart + offset]
+            Footnote(
+                scratch.footnoteId(footnote.pointer),
+                nodes(footnote.contentStart, footnote.contentCount, "footnote content"),
+                markdown_core_footnote_scope(footnote.pointer).toScope(),
+            )
+        }
+
+    private fun citations(record: NativeNodeRecord): kotlin.collections.List<Citation> =
+        immutableList(record.valueCount) { offset ->
+            val citation = citationRecords[record.valueStart + offset]
+            Citation(
+                scratch.referent(citation.pointer),
+                nodes(citation.prefixStart, citation.prefixCount, "citation prefix"),
+                nodes(citation.suffixStart, citation.suffixCount, "citation suffix"),
+                markdown_core_citation_scope(citation.pointer).toScope(),
+            )
+        }
+
+    private fun nodes(
+        start: Int,
+        count: Int,
+        what: String,
+    ): kotlin.collections.List<Markup> =
+        immutableList(count) { offset ->
+            requireNotNull(built[start + offset]) { "native $what was not materialized" }
+        }
 
     private fun label(record: NativeNodeRecord): DirectiveLabel? {
         if (record.labelIndex < 0) return null
@@ -383,10 +482,7 @@ private class NativeTreeBuilder(
         return value
     }
 
-    private fun nativeScope(node: CPointer<markdown_core_node>): Scope =
-        markdown_core_node_scope(node).useContents {
-            Scope(Position(start.line, start.column), Position(end.line, end.column))
-        }
+    private fun nativeScope(node: CPointer<markdown_core_node>): Scope = markdown_core_node_scope(node).toScope()
 
     private fun requireLeaf(
         children: kotlin.collections.List<Markup>,
@@ -414,6 +510,7 @@ private class NativeScratch(
     private val placementMode = scope.alloc<markdown_core_placement_modeVar>()
     private val tableAlignment = scope.alloc<markdown_core_table_alignmentVar>()
     private val destination = scope.alloc<markdown_core_destination>()
+    private val referent = scope.alloc<markdown_core_referent>()
 
     fun headingLevel(node: CPointer<markdown_core_node>): Int {
         require(markdown_core_node_heading_level(node, integer.ptr)) { "invalid heading node" }
@@ -597,11 +694,42 @@ private class NativeScratch(
         return firstOptionalString.copyOptionalString()
     }
 
-    fun association(node: CPointer<markdown_core_node>): Pair<String, String> {
-        require(markdown_core_node_association(node, firstString.ptr, secondString.ptr)) { "invalid association node" }
-        return firstString.copyString() to secondString.copyString()
+    /** A branch's fields exist only in that branch, so only they are copied. */
+    fun referent(citation: CPointer<markdown_core_citation>): CitationReferent {
+        require(markdown_core_citation_referent(citation, referent.ptr)) { "invalid citation" }
+        return when (referent.kind) {
+            MARKDOWN_CORE_REFERENT_BIB -> {
+                CitationReferent.Bib(referent.key.copyString(), bibMode())
+            }
+
+            MARKDOWN_CORE_REFERENT_FOOTNOTE -> {
+                CitationReferent.Footnote(referent.id.copyString())
+            }
+
+            else -> {
+                error("unsupported native referent kind ${referent.kind}")
+            }
+        }
+    }
+
+    private fun bibMode(): BibMode =
+        when (referent.mode) {
+            MARKDOWN_CORE_BIB_MODE_NORMAL -> BibMode.NORMAL
+            MARKDOWN_CORE_BIB_MODE_AUTHOR_IN_TEXT -> BibMode.AUTHOR_IN_TEXT
+            MARKDOWN_CORE_BIB_MODE_SUPPRESS_AUTHOR -> BibMode.SUPPRESS_AUTHOR
+            else -> error("unsupported native bib mode ${referent.mode}")
+        }
+
+    fun footnoteId(footnote: CPointer<markdown_core_footnote>): String {
+        require(markdown_core_footnote_id(footnote, firstString.ptr)) { "invalid footnote" }
+        return firstString.copyString()
     }
 }
+
+private fun CValue<markdown_core_scope>.toScope(): Scope =
+    useContents {
+        Scope(Position(start.line, start.column), Position(end.line, end.column))
+    }
 
 private fun markdown_core_optional_string.copyOptionalString(): String? = if (has_value) value.copyString() else null
 

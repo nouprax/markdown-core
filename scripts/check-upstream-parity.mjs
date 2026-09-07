@@ -23,7 +23,7 @@ import { readExamples, selectExamples } from "./lib/fixture-corpus.mjs";
 
 import {
     applyUpstreamFootnoteModel,
-    liftFootnoteDefinitions,
+    liftFootnotes,
     normalize,
     parseCanonicalDump,
     parseUpstreamXml,
@@ -124,13 +124,13 @@ function corpus() {
 const fired = new Set();
 
 function compare(input) {
-    const upstreamTree = liftFootnoteDefinitions(
+    const upstreamTree = liftFootnotes(
         normalize(projectHtmlComments(parseUpstreamXml(runUpstream(input)), fired), "upstream", fired),
         fired
     );
     // `footnote-resolution-model` is applied before `normalize`, which keeps
     // only the compared fields and so drops the labels the model reads.
-    const ourTree = liftFootnoteDefinitions(
+    const ourTree = liftFootnotes(
         normalize(applyUpstreamFootnoteModel(parseCanonicalDump(runOurs(input)), fired), "ours", fired),
         fired
     );

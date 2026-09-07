@@ -31,8 +31,6 @@ public interface Visitor<Result> {
 
     public fun visitDirectiveLabel(node: DirectiveLabel): Result
 
-    public fun visitFootnoteDefinition(node: FootnoteDefinition): Result
-
     public fun visitText(node: Text): Result
 
     public fun visitSoftBreak(node: SoftBreak): Result
@@ -59,5 +57,5 @@ public interface Visitor<Result> {
 
     public fun visitDirective(node: Directive): Result
 
-    public fun visitFootnoteReference(node: FootnoteReference): Result
+    public fun visitCite(node: Cite): Result
 }

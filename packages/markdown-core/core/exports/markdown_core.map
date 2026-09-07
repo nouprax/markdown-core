@@ -28,7 +28,17 @@ MARKDOWN_CORE_1.0 {
     markdown_core_node_callout_title;
     markdown_core_node_destination;
     markdown_core_node_title;
-    markdown_core_node_association;
+    markdown_core_node_cite_citations;
+    markdown_core_citation_next;
+    markdown_core_citation_scope;
+    markdown_core_citation_referent;
+    markdown_core_citation_prefix;
+    markdown_core_citation_suffix;
+    markdown_core_node_document_footnotes;
+    markdown_core_footnote_next;
+    markdown_core_footnote_scope;
+    markdown_core_footnote_id;
+    markdown_core_footnote_content;
     markdown_core_node_resource;
     markdown_core_document_dump;
     markdown_core_dump_free;

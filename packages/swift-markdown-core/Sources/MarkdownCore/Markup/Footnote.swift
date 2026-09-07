@@ -1,59 +1,30 @@
 import MarkdownCoreC
 
-/// A footnote definition.
+/// A footnote the document owns: a scoped value outside the markup union,
+/// reached through ``Document/footnotes`` and never an element of any content
+/// list.
 ///
-/// `identifier` keeps the leading `^` that `label` does not carry, so a footnote
-/// and a link definition of one name cannot collide in a consumer's single map.
-public struct FootnoteDefinition: Markup {
-    /// The source range, from the opening bracket.
+/// Repeated calls share one footnote, the first definition of an id wins, and
+/// a valid definition nobody calls is still a footnote. The walk reports it
+/// through the ``MarkupWalkingVisitor`` case that takes a `Footnote`, after
+/// the document's content.
+public struct Footnote: Sendable {
+    /// The source range, from the opening bracket of the definition.
     public let scope: Scope
+    /// The normalized label without the caret.
+    public let id: String
     /// The definition's block content.
     public let content: [any Markup]
-    /// The label as written, delimiters and caret excluded.
-    public let label: String
-    /// The match key, which keeps the caret.
-    public let identifier: String
-
-    /// Dispatches to the visitor's `FootnoteDefinition` case.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 }
 
-extension FootnoteDefinition {
-    init(from node: OpaquePointer, content: [any Markup]) {
-        var label = markdown_core_string()
-        var identifier = markdown_core_string()
-        markdown_core_node_association(node, &label, &identifier)
+extension Footnote {
+    init(from footnote: OpaquePointer, content: [any Markup]) {
+        var id = markdown_core_string()
+        markdown_core_footnote_id(footnote, &id)
         self.init(
-            scope: Self.scope(from: node),
-            content: content,
-            label: label.requiredString,
-            identifier: identifier.requiredString
-        )
-    }
-}
-
-/// A footnote call. There is one footnote syntax, so it carries no form.
-public struct FootnoteReference: Markup {
-    /// The source range, from the opening bracket to the closing one.
-    public let scope: Scope
-    /// The label as written, delimiters and caret excluded.
-    public let label: String
-    /// The match key, which keeps the caret.
-    public let identifier: String
-
-    /// Dispatches to the visitor's `FootnoteReference` case.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
-}
-
-extension FootnoteReference {
-    init(from node: OpaquePointer) {
-        var label = markdown_core_string()
-        var identifier = markdown_core_string()
-        markdown_core_node_association(node, &label, &identifier)
-        self.init(
-            scope: Self.scope(from: node),
-            label: label.requiredString,
-            identifier: identifier.requiredString
+            scope: Scope(from: markdown_core_footnote_scope(footnote)),
+            id: id.requiredString,
+            content: content
         )
     }
 }

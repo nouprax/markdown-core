@@ -22,9 +22,9 @@ extern "C" {
  * order-dependent (Q16).
  *
  * THE VALUES ARE EXACTLY THE ONES THE OLD REGISTRATION PRODUCED, measured
- * before the change: blocks continue from `MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION`
+ * before the change: blocks continue from `MARKDOWN_CORE_NODE_FOOTNOTE`
  * in the order table, table, table, formula, directive; inlines continue from
- * `MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE` in the order strikethrough, formula,
+ * `MARKDOWN_CORE_NODE_CITE` in the order strikethrough, formula,
  * directive, directive. Nothing outside the library can see a value -- the
  * export map is 32 facade functions and `local: *` -- but keeping them makes
  * this a structural change and nothing else.

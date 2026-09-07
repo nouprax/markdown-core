@@ -38,7 +38,10 @@ typedef enum {
     MARKDOWN_CORE_NODE_PARAGRAPH = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x0007,
     MARKDOWN_CORE_NODE_HEADING = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x0008,
     MARKDOWN_CORE_NODE_THEMATIC_BREAK = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x0009,
-    MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x000a,
+    /* A footnote definition (M4): a block container while it is parsed, and
+     * a document-owned `Footnote` value once the document finalizes, when
+     * every one leaves the tree for the root's own footnote chain. */
+    MARKDOWN_CORE_NODE_FOOTNOTE = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x000a,
     /* 0x000b through 0x000f are taken by the extension block types in
      * extensions/markdown-core-extensions.h, numbered when 0x000a was the last
      * core block. A new core block therefore starts at 0x0010 rather than at
@@ -66,15 +69,22 @@ typedef enum {
     MARKDOWN_CORE_NODE_STRONG = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x0007,
     MARKDOWN_CORE_NODE_LINK = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x0008,
     MARKDOWN_CORE_NODE_IMAGE = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x0009,
-    MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x000a,
-    /* 0x000b through 0x000e are the extension INLINE types; 0x000f is the next
-     * free value in that class. The block class had no such value -- its
+    /* A citation cluster (M4): the inline `Cite` kind, whose items are a
+     * chain of CITATION nodes it owns beside its children, which it never
+     * has. */
+    MARKDOWN_CORE_NODE_CITE = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x000a,
+    /* 0x000b through 0x000e are the extension INLINE types; the core values
+     * continue at 0x000f. The block class had no such value -- its
      * extensions run to 0x000f -- which is why its next core type starts at
      * 0x0010 and this one does not. The two classes are numbered
      * independently; the class bits are what separate them.
      *
      * An inline HTML comment token: `<!-- ... -->`, `<!-->` or `<!--->`. */
     MARKDOWN_CORE_NODE_COMMENT = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x000f,
+    /* One item of a `Cite` (M4): a scoped value, never a child of anything,
+     * owning a prefix chain and a suffix chain of inline nodes beside its
+     * referent. Inline-classed because it lives in inline content. */
+    MARKDOWN_CORE_NODE_CITATION = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x0010,
 } markdown_core_node_type;
 
 typedef enum { MARKDOWN_CORE_NO_LIST, MARKDOWN_CORE_BULLET_LIST, MARKDOWN_CORE_ORDERED_LIST } markdown_core_list_type;

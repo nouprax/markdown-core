@@ -1,3 +1,12 @@
+public final class com/nouprax/markdown/core/BibMode : java/lang/Enum {
+	public static final field AUTHOR_IN_TEXT Lcom/nouprax/markdown/core/BibMode;
+	public static final field NORMAL Lcom/nouprax/markdown/core/BibMode;
+	public static final field SUPPRESS_AUTHOR Lcom/nouprax/markdown/core/BibMode;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/nouprax/markdown/core/BibMode;
+	public static fun values ()[Lcom/nouprax/markdown/core/BibMode;
+}
+
 public final class com/nouprax/markdown/core/Callout : com/nouprax/markdown/core/Markup {
 	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
 	public fun dump ()Ljava/lang/String;
@@ -6,6 +15,32 @@ public final class com/nouprax/markdown/core/Callout : com/nouprax/markdown/core
 	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 	public final fun getTitle ()Ljava/util/List;
 	public final fun getVariant ()Ljava/lang/String;
+}
+
+public final class com/nouprax/markdown/core/Citation {
+	public final fun getPrefix ()Ljava/util/List;
+	public final fun getReferent ()Lcom/nouprax/markdown/core/CitationReferent;
+	public final fun getScope ()Lcom/nouprax/markdown/core/Scope;
+	public final fun getSuffix ()Ljava/util/List;
+}
+
+public abstract interface class com/nouprax/markdown/core/CitationReferent {
+}
+
+public final class com/nouprax/markdown/core/CitationReferent$Bib : com/nouprax/markdown/core/CitationReferent {
+	public final fun getKey ()Ljava/lang/String;
+	public final fun getMode ()Lcom/nouprax/markdown/core/BibMode;
+}
+
+public final class com/nouprax/markdown/core/CitationReferent$Footnote : com/nouprax/markdown/core/CitationReferent {
+	public final fun getId ()Ljava/lang/String;
+}
+
+public final class com/nouprax/markdown/core/Cite : com/nouprax/markdown/core/Markup {
+	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
+	public fun dump ()Ljava/lang/String;
+	public final fun getCitations ()Ljava/util/List;
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 }
 
 public final class com/nouprax/markdown/core/Code : com/nouprax/markdown/core/Markup {
@@ -81,6 +116,7 @@ public final class com/nouprax/markdown/core/Document : com/nouprax/markdown/cor
 	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
 	public fun dump ()Ljava/lang/String;
 	public final fun getContent ()Ljava/util/List;
+	public final fun getFootnotes ()Ljava/util/List;
 	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 }
 
@@ -95,21 +131,10 @@ public final class com/nouprax/markdown/core/Emphasis : com/nouprax/markdown/cor
 	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 }
 
-public final class com/nouprax/markdown/core/FootnoteDefinition : com/nouprax/markdown/core/Markup {
-	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
-	public fun dump ()Ljava/lang/String;
+public final class com/nouprax/markdown/core/Footnote {
 	public final fun getContent ()Ljava/util/List;
-	public final fun getIdentifier ()Ljava/lang/String;
-	public final fun getLabel ()Ljava/lang/String;
-	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
-}
-
-public final class com/nouprax/markdown/core/FootnoteReference : com/nouprax/markdown/core/Markup {
-	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
-	public fun dump ()Ljava/lang/String;
-	public final fun getIdentifier ()Ljava/lang/String;
-	public final fun getLabel ()Ljava/lang/String;
-	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+	public final fun getId ()Ljava/lang/String;
+	public final fun getScope ()Lcom/nouprax/markdown/core/Scope;
 }
 
 public final class com/nouprax/markdown/core/Formula : com/nouprax/markdown/core/Markup {
@@ -339,6 +364,7 @@ public final class com/nouprax/markdown/core/TreeDumper {
 
 public abstract interface class com/nouprax/markdown/core/Visitor {
 	public abstract fun visitCallout (Lcom/nouprax/markdown/core/Callout;)Ljava/lang/Object;
+	public abstract fun visitCite (Lcom/nouprax/markdown/core/Cite;)Ljava/lang/Object;
 	public abstract fun visitCode (Lcom/nouprax/markdown/core/Code;)Ljava/lang/Object;
 	public abstract fun visitCodeBlock (Lcom/nouprax/markdown/core/CodeBlock;)Ljava/lang/Object;
 	public abstract fun visitComment (Lcom/nouprax/markdown/core/Comment;)Ljava/lang/Object;
@@ -347,8 +373,6 @@ public abstract interface class com/nouprax/markdown/core/Visitor {
 	public abstract fun visitDirectiveLabel (Lcom/nouprax/markdown/core/DirectiveLabel;)Ljava/lang/Object;
 	public abstract fun visitDocument (Lcom/nouprax/markdown/core/Document;)Ljava/lang/Object;
 	public abstract fun visitEmphasis (Lcom/nouprax/markdown/core/Emphasis;)Ljava/lang/Object;
-	public abstract fun visitFootnoteDefinition (Lcom/nouprax/markdown/core/FootnoteDefinition;)Ljava/lang/Object;
-	public abstract fun visitFootnoteReference (Lcom/nouprax/markdown/core/FootnoteReference;)Ljava/lang/Object;
 	public abstract fun visitFormula (Lcom/nouprax/markdown/core/Formula;)Ljava/lang/Object;
 	public abstract fun visitFormulaBlock (Lcom/nouprax/markdown/core/FormulaBlock;)Ljava/lang/Object;
 	public abstract fun visitHTML (Lcom/nouprax/markdown/core/HTML;)Ljava/lang/Object;
@@ -380,6 +404,8 @@ public final class com/nouprax/markdown/core/WalkPhase : java/lang/Enum {
 
 public abstract interface class com/nouprax/markdown/core/WalkingVisitor {
 	public abstract fun visitCallout (Lcom/nouprax/markdown/core/Callout;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visitCitation (Lcom/nouprax/markdown/core/Citation;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visitCite (Lcom/nouprax/markdown/core/Cite;Lcom/nouprax/markdown/core/WalkPhase;)V
 	public abstract fun visitCode (Lcom/nouprax/markdown/core/Code;Lcom/nouprax/markdown/core/WalkPhase;)V
 	public abstract fun visitCodeBlock (Lcom/nouprax/markdown/core/CodeBlock;Lcom/nouprax/markdown/core/WalkPhase;)V
 	public abstract fun visitComment (Lcom/nouprax/markdown/core/Comment;Lcom/nouprax/markdown/core/WalkPhase;)V
@@ -388,8 +414,7 @@ public abstract interface class com/nouprax/markdown/core/WalkingVisitor {
 	public abstract fun visitDirectiveLabel (Lcom/nouprax/markdown/core/DirectiveLabel;Lcom/nouprax/markdown/core/WalkPhase;)V
 	public abstract fun visitDocument (Lcom/nouprax/markdown/core/Document;Lcom/nouprax/markdown/core/WalkPhase;)V
 	public abstract fun visitEmphasis (Lcom/nouprax/markdown/core/Emphasis;Lcom/nouprax/markdown/core/WalkPhase;)V
-	public abstract fun visitFootnoteDefinition (Lcom/nouprax/markdown/core/FootnoteDefinition;Lcom/nouprax/markdown/core/WalkPhase;)V
-	public abstract fun visitFootnoteReference (Lcom/nouprax/markdown/core/FootnoteReference;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visitFootnote (Lcom/nouprax/markdown/core/Footnote;Lcom/nouprax/markdown/core/WalkPhase;)V
 	public abstract fun visitFormula (Lcom/nouprax/markdown/core/Formula;Lcom/nouprax/markdown/core/WalkPhase;)V
 	public abstract fun visitFormulaBlock (Lcom/nouprax/markdown/core/FormulaBlock;Lcom/nouprax/markdown/core/WalkPhase;)V
 	public abstract fun visitHTML (Lcom/nouprax/markdown/core/HTML;Lcom/nouprax/markdown/core/WalkPhase;)V

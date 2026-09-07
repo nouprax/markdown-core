@@ -23,7 +23,7 @@
  *     up as a difference.
  */
 
-import { urlDestination } from "./upstream-cmark.mjs";
+import { citationItem, urlDestination } from "./upstream-cmark.mjs";
 
 const MDAST_KIND = {
     root: "Document",
@@ -46,8 +46,8 @@ const MDAST_KIND = {
     table: "Table",
     tableRow: "TableRow",
     tableCell: "TableCell",
-    footnoteReference: "FootnoteReference",
-    footnoteDefinition: "FootnoteDefinition",
+    footnoteReference: "Cite",
+    footnoteDefinition: "Footnote",
     textDirective: "Directive",
     leafDirective: "DirectiveBlock",
     containerDirective: "DirectiveBlock",
@@ -170,11 +170,16 @@ function convert(node, definitions, parentType = "root") {
         fields.dest = urlDestination(node.url ?? "");
         fields.title = node.title ?? "null";
     }
-    // §5.6: a footnote's label bytes were compared by nobody, on either side.
-    // mdast's `label` is the authored spelling and so is this side's.
-    if (node.type === "footnoteReference" || node.type === "footnoteDefinition") {
-        fields.label = node.label ?? node.identifier ?? "";
+    // The citation model (M4): a call is a one-item `Cite` whose `Citation`
+    // names the footnote by id and carries empty affix groups; a definition
+    // is a `Footnote` value. mdast's `identifier` is its normalized label,
+    // upper-cased by micromark's normalizer where this side's is case-folded,
+    // so the two meet in lower case.
+    if (node.type === "footnoteReference") {
+        const id = JSON.stringify((node.identifier ?? node.label ?? "").toLowerCase());
+        return [{ kind: "Cite", fields: {}, children: [citationItem({ referent: `footnote(id=${id})` })] }];
     }
+    if (node.type === "footnoteDefinition") fields.id = (node.identifier ?? node.label ?? "").toLowerCase();
     if (node.type === "tableRow") fields.isHeader = "false";
     if (node.type === "inlineMath" || node.type === "math") fields.literal = node.value ?? "";
     if (node.type === "textDirective" || node.type === "leafDirective" || node.type === "containerDirective") {
@@ -273,8 +278,8 @@ export const MDAST_COMPARED = {
     // compared for these two: this side keeps the leading `^` deliberately and
     // mdast does not (§5.2), which is a difference of one byte that would have
     // to be registered rather than checked.
-    FootnoteDefinition: ["label"],
-    FootnoteReference: ["label"],
+    Citation: ["referent"],
+    Footnote: ["id"],
     Directive: ["name", "attributes"],
     DirectiveBlock: ["name", "attributes"],
     Formula: ["literal"],

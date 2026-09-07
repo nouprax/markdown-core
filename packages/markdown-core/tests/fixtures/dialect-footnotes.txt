@@ -1,0 +1,214 @@
+---
+title: Footnotes module examples
+author: Dongyu Zhao
+version: 0.1
+date: '2026-09-07'
+license: '[CC-BY-SA 4.0](http://creativecommons.org/licenses/by-sa/4.0/)'
+...
+
+## Referenced footnotes
+
+The examples of the [footnotes module](../../../../docs/specs/dialect/footnotes.md)
+whose behavior `M4` landed: the citation model over the inherited referenced
+form. They are the module's examples in the module's order; the inline-form
+examples arrive with `O4`. The expected dumps are the module's expected dumps in
+the dump grammar of today, which does not yet print the universal `anchor` and
+`attributes` fields that `M7` lands, so every `Markup` line differs from the
+module's by exactly ` anchor=null attributes={}` and by nothing else, and every
+`Citation`, `Footnote`, and group line is identical.
+
+A defined call is a one-item `Cite` whose `Citation` names the footnote by its normalized id with empty affixes, and every definition is a `Footnote` under `Document` after the content:
+
+```````````````````````````````` example
+Text[^1] and more[^note].
+
+[^1]: The first note.
+[^note]: The second note.
+.
+Document scope=1:1..4:25 children=1
+├── Paragraph scope=1:1..1:25 children=5
+│   ├── Text scope=1:1..1:4 literal="Text" children=0
+│   ├── Cite scope=1:5..1:8 children=1
+│   │   └── Citation scope=1:6..1:7 referent=footnote(id="1") children=0
+│   │       ├── CitationPrefix children=0
+│   │       └── CitationSuffix children=0
+│   ├── Text scope=1:9..1:17 literal=" and more" children=0
+│   ├── Cite scope=1:18..1:24 children=1
+│   │   └── Citation scope=1:19..1:23 referent=footnote(id="note") children=0
+│   │       ├── CitationPrefix children=0
+│   │       └── CitationSuffix children=0
+│   └── Text scope=1:25..1:25 literal="." children=0
+├── Footnote scope=3:1..3:21 id="1" children=1
+│   └── Paragraph scope=3:7..3:21 children=1
+│       └── Text scope=3:7..3:21 literal="The first note." children=0
+└── Footnote scope=4:1..4:25 id="note" children=1
+    └── Paragraph scope=4:10..4:25 children=1
+        └── Text scope=4:10..4:25 literal="The second note." children=0
+````````````````````````````````
+
+Repeated calls share one `Footnote`; the body is never duplicated:
+
+```````````````````````````````` example
+[^a] [^a]
+
+[^a]: once
+.
+Document scope=1:1..3:10 children=1
+├── Paragraph scope=1:1..1:9 children=3
+│   ├── Cite scope=1:1..1:4 children=1
+│   │   └── Citation scope=1:2..1:3 referent=footnote(id="a") children=0
+│   │       ├── CitationPrefix children=0
+│   │       └── CitationSuffix children=0
+│   ├── Text scope=1:5..1:5 literal=" " children=0
+│   └── Cite scope=1:6..1:9 children=1
+│       └── Citation scope=1:7..1:8 referent=footnote(id="a") children=0
+│           ├── CitationPrefix children=0
+│           └── CitationSuffix children=0
+└── Footnote scope=3:1..3:10 id="a" children=1
+    └── Paragraph scope=3:7..3:10 children=1
+        └── Text scope=3:7..3:10 literal="once" children=0
+````````````````````````````````
+
+Continuation lines are indented at least four columns, and the content is block content parsed by the ordinary block parser:
+
+```````````````````````````````` example
+[^a]
+
+[^a]: first paragraph
+    continued
+
+    second paragraph
+.
+Document scope=1:1..6:20 children=1
+├── Paragraph scope=1:1..1:4 children=1
+│   └── Cite scope=1:1..1:4 children=1
+│       └── Citation scope=1:2..1:3 referent=footnote(id="a") children=0
+│           ├── CitationPrefix children=0
+│           └── CitationSuffix children=0
+└── Footnote scope=3:1..6:20 id="a" children=2
+    ├── Paragraph scope=3:7..4:13 children=3
+    │   ├── Text scope=3:7..3:21 literal="first paragraph" children=0
+    │   ├── SoftBreak scope=3:22..3:22 children=0
+    │   └── Text scope=4:5..4:13 literal="continued" children=0
+    └── Paragraph scope=6:5..6:20 children=1
+        └── Text scope=6:5..6:20 literal="second paragraph" children=0
+````````````````````````````````
+
+A valid definition that no call references is still a `Footnote`:
+
+```````````````````````````````` example
+[^a]: kept
+
+text
+.
+Document scope=1:1..3:4 children=1
+├── Paragraph scope=3:1..3:4 children=1
+│   └── Text scope=3:1..3:4 literal="text" children=0
+└── Footnote scope=1:1..2:0 id="a" children=1
+    └── Paragraph scope=1:7..1:10 children=1
+        └── Text scope=1:7..1:10 literal="kept" children=0
+````````````````````````````````
+
+When two definitions share a key the first in source order wins and every call resolves to it; a later one is still parsed as a definition, as cmark-gfm's block grammar parses it, and remains a `Footnote` after the winner with the same id:
+
+```````````````````````````````` example
+[^a]
+
+[^a]: first
+
+[^a]: second
+.
+Document scope=1:1..5:12 children=1
+├── Paragraph scope=1:1..1:4 children=1
+│   └── Cite scope=1:1..1:4 children=1
+│       └── Citation scope=1:2..1:3 referent=footnote(id="a") children=0
+│           ├── CitationPrefix children=0
+│           └── CitationSuffix children=0
+├── Footnote scope=3:1..4:0 id="a" children=1
+│   └── Paragraph scope=3:7..3:11 children=1
+│       └── Text scope=3:7..3:11 literal="first" children=0
+└── Footnote scope=5:1..5:12 id="a" children=1
+    └── Paragraph scope=5:7..5:12 children=1
+        └── Text scope=5:7..5:12 literal="second" children=0
+````````````````````````````````
+
+A call whose label no definition defines is not a call, and only a literal source caret opens a call:
+
+```````````````````````````````` example
+[^x] and [\^a] and [&#94;a]
+
+[^a]: note
+.
+Document scope=1:1..3:10 children=1
+├── Paragraph scope=1:1..1:27 children=1
+│   └── Text scope=1:1..1:27 literal="[^x] and [^a] and [^a]" children=0
+└── Footnote scope=3:1..3:10 id="a" children=1
+    └── Paragraph scope=3:7..3:10 children=1
+        └── Text scope=3:7..3:10 literal="note" children=0
+````````````````````````````````
+
+The key is case-folded, so a call and a definition that differ in case share one footnote, whose id is the normalized form:
+
+```````````````````````````````` example
+[^Note]
+
+[^note]: x
+.
+Document scope=1:1..3:10 children=1
+├── Paragraph scope=1:1..1:7 children=1
+│   └── Cite scope=1:1..1:7 children=1
+│       └── Citation scope=1:2..1:6 referent=footnote(id="note") children=0
+│           ├── CitationPrefix children=0
+│           └── CitationSuffix children=0
+└── Footnote scope=3:1..3:10 id="note" children=1
+    └── Paragraph scope=3:10..3:10 children=1
+        └── Text scope=3:10..3:10 literal="x" children=0
+````````````````````````````````
+
+A valid direct tail `(...)` is tested before the call; every other tail and every container after a defined call is text:
+
+```````````````````````````````` example
+[^a](u) [^a]{.x}
+
+[^a]: note
+.
+Document scope=1:1..3:10 children=1
+├── Paragraph scope=1:1..1:16 children=4
+│   ├── Link scope=1:1..1:7 dest=url("u") title=null children=1
+│   │   └── Text scope=1:2..1:3 literal="^a" children=0
+│   ├── Text scope=1:8..1:8 literal=" " children=0
+│   ├── Cite scope=1:9..1:12 children=1
+│   │   └── Citation scope=1:10..1:11 referent=footnote(id="a") children=0
+│   │       ├── CitationPrefix children=0
+│   │       └── CitationSuffix children=0
+│   └── Text scope=1:13..1:16 literal="{.x}" children=0
+└── Footnote scope=3:1..3:10 id="a" children=1
+    └── Paragraph scope=3:7..3:10 children=1
+        └── Text scope=3:7..3:10 literal="note" children=0
+````````````````````````````````
+
+A call inside a footnote's own content is an id edge, and a `[^label]:` line is never a link reference definition:
+
+```````````````````````````````` example
+[^a]
+
+[^a]: see [^b]
+[^b]: end
+.
+Document scope=1:1..4:9 children=1
+├── Paragraph scope=1:1..1:4 children=1
+│   └── Cite scope=1:1..1:4 children=1
+│       └── Citation scope=1:2..1:3 referent=footnote(id="a") children=0
+│           ├── CitationPrefix children=0
+│           └── CitationSuffix children=0
+├── Footnote scope=3:1..3:14 id="a" children=1
+│   └── Paragraph scope=3:7..3:14 children=2
+│       ├── Text scope=3:7..3:10 literal="see " children=0
+│       └── Cite scope=3:11..3:14 children=1
+│           └── Citation scope=3:12..3:13 referent=footnote(id="b") children=0
+│               ├── CitationPrefix children=0
+│               └── CitationSuffix children=0
+└── Footnote scope=4:1..4:9 id="b" children=1
+    └── Paragraph scope=4:7..4:9 children=1
+        └── Text scope=4:7..4:9 literal="end" children=0
+````````````````````````````````

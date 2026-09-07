@@ -102,6 +102,38 @@ facade while removing renderer support and the caller-driven feed lifecycle.
   gains `callout.variant.null`, `callout.collapsed.null`, and
   `callout.title.null`, and the base and callouts modules' metadata-free
   examples join the package fixture `dialect-callouts.txt`.
+- Replace `FootnoteReference` and `FootnoteDefinition` with the citation model
+  (M4). A footnote call is an inline `Cite` whose items are `Citation` values,
+  and a footnote definition is a `Footnote` value the document owns through
+  `Document.footnotes`, ordered by scope start and visited after the content;
+  neither value is a `Markup` kind, a cite is a leaf, and the document's
+  children count its content alone. An inherited `[^label]` call is a one-item
+  cite whose `Citation` carries the `footnote` referent, the normalized label
+  without the caret as its id, and empty prefix and suffix; the `bib` referent
+  and `BibMode` are declared on every surface and produced by nothing until
+  citations land with `P7`. Repeated calls share one footnote: the first
+  definition of an id is the one they resolve to, a later definition of the
+  same id is a footnote after it, a definition nobody calls is a footnote
+  too, and the inherited block and bracket grammars are unchanged.
+  `markdown_core_node_association` is removed; the C facade gains
+  `markdown_core_node_cite_citations`, `markdown_core_citation_next`,
+  `markdown_core_citation_scope`, `markdown_core_citation_referent`,
+  `markdown_core_citation_prefix`, `markdown_core_citation_suffix`,
+  `markdown_core_node_document_footnotes`, `markdown_core_footnote_next`,
+  `markdown_core_footnote_scope`, `markdown_core_footnote_id`, and
+  `markdown_core_footnote_content`. The dump prints a cite's items as
+  `Citation` value lines with `CitationPrefix` and `CitationSuffix` groups and
+  the document's footnotes as `Footnote` value lines after its content; every
+  binding's model, visitors, walkers, and dumpers replace the two kinds with
+  `Cite`, `Citation`, and `Footnote`, the walking visitors gain value callbacks
+  for the two, and the JNI payload and the Wasm result carry the values as
+  records. The cmark-gfm and remark projections lower upstream's footnote
+  nodes to the same model and lift both sides' footnotes into one order for
+  comparison, the manifest gains `citation.referent.footnote`,
+  `citation.affix.empty`, `document.footnotes.empty`,
+  `document.footnotes.populated`, `document.content-before-footnotes`, and
+  `cite.items-in-order`, and the footnotes module's referenced-form examples
+  join the package fixture `dialect-footnotes.txt`.
 - Open one formula of a form at a time. A formula opener is a delimiter only
   while no opener of its form is unmatched, and a closer only while one is, so
   a body runs from its opener to the first closer of its form and an opener

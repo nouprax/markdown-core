@@ -1,6 +1,7 @@
 export { Document } from "./document.js";
 export type { CodeBlock } from "./model/code-block.js";
 export type { Callout } from "./model/callout.js";
+export type { Citation, Cite } from "./model/cite.js";
 export type { Code } from "./model/code.js";
 export type { Comment } from "./model/comment.js";
 export type { DirectiveAttribute } from "./model/directive-attribute.js";
@@ -8,7 +9,7 @@ export type { DirectiveBlock } from "./model/directive-block.js";
 export type { DirectiveLabel } from "./model/directive-label.js";
 export type { Directive } from "./model/directive.js";
 export type { Emphasis } from "./model/emphasis.js";
-export type { FootnoteDefinition, FootnoteReference } from "./model/footnote.js";
+export type { Footnote } from "./model/footnote.js";
 export type { FormulaBlock } from "./model/formula-block.js";
 export type { Formula } from "./model/formula.js";
 export type { Heading } from "./model/heading.js";
@@ -30,7 +31,16 @@ export type { ThematicBreak } from "./model/thematic-break.js";
 export { ParseError } from "./parse-error.js";
 export type { ParseErrorCode } from "./parse-error.js";
 export { TreeDumper } from "./tree-dumper.js";
-export type { Destination, ListFlavor, PlacementMode, Position, Scope, TableAlignment } from "./values.js";
+export type {
+    BibMode,
+    CitationReferent,
+    Destination,
+    ListFlavor,
+    PlacementMode,
+    Position,
+    Scope,
+    TableAlignment
+} from "./values.js";
 export { visit } from "./visitor.js";
 export type { Visitor } from "./visitor.js";
 export { walk } from "./walking-visitor.js";

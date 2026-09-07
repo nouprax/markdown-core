@@ -3,6 +3,8 @@ package com.nouprax.markdown.core
 /** The immutable semantic root returned by a parse. */
 public class Document internal constructor(
     public val content: kotlin.collections.List<Markup>,
+    /** The footnotes the document owns, ordered by scope start; never part of [content]. */
+    public val footnotes: kotlin.collections.List<Footnote>,
     override val scope: Scope,
 ) : Markup {
     override fun <Result> accept(visitor: Visitor<Result>): Result = visitor.visitDocument(this)

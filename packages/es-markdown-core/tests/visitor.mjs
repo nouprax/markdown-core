@@ -14,7 +14,6 @@ export const kindVisitor = {
     visitTableCell: (node) => node.kind,
     visitDirectiveBlock: (node) => node.kind,
     visitDirectiveLabel: (node) => node.kind,
-    visitFootnoteDefinition: (node) => node.kind,
     visitText: (node) => node.kind,
     visitSoftBreak: (node) => node.kind,
     visitLineBreak: (node) => node.kind,
@@ -28,5 +27,5 @@ export const kindVisitor = {
     visitLink: (node) => node.kind,
     visitImage: (node) => node.kind,
     visitDirective: (node) => node.kind,
-    visitFootnoteReference: (node) => node.kind
+    visitCite: (node) => node.kind
 };

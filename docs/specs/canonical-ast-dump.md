@@ -45,9 +45,10 @@ separated by exactly one space; a kind with no fields prints
 
 `children` counts the node's structural children: `content.count` for every
 content-bearing kind, `items.count` for `List`, `cells.count` for `TableRow`,
-one for `header` plus `rows.count` for `Table`, and zero for every leaf and
-for `Directive`. A directive's optional `label` is a separate Markup-valued
-field and is not included in that number.
+one for `header` plus `rows.count` for `Table`, `citations.count` for `Cite`,
+and zero for every leaf and for `Directive`. A directive's optional `label`
+is a separate Markup-valued field and is not included in that number, and
+neither is `Document.footnotes`.
 
 The dump deliberately carries no property or array-index edge labels. Each
 node kind's dump function decides which structural children and Markup-valued
@@ -111,7 +112,7 @@ that the dump represents as nested descendants.
 
 | Kind | Ordered fields between `scope` and `children` |
 | --- | --- |
-| `Document`, `Paragraph`, `ThematicBreak`, `TableCell`, `DirectiveLabel`, `SoftBreak`, `LineBreak`, `Emphasis`, `Strong`, `Strikethrough` | none |
+| `Document`, `Paragraph`, `ThematicBreak`, `TableCell`, `DirectiveLabel`, `SoftBreak`, `LineBreak`, `Emphasis`, `Strong`, `Strikethrough`, `Cite` | none |
 | `Callout` | `variant`, `collapsed` |
 | `Heading` | `level` |
 | `List` | `flavor`, `start`, `tight` |
@@ -122,7 +123,6 @@ that the dump represents as nested descendants.
 | `Table` | `alignments` |
 | `TableRow` | `isHeader` |
 | `DirectiveBlock` | `name`, `attributes` |
-| `FootnoteDefinition` | `label`, `identifier` |
 | `Text` | `literal` |
 | `Code` | `literal` |
 | `HTML` | `literal` |
@@ -131,7 +131,6 @@ that the dump represents as nested descendants.
 | `Link` | `dest`, `title` |
 | `Image` | `dest`, `title` |
 | `Directive` | `name`, `attributes` |
-| `FootnoteReference` | `label`, `identifier` |
 
 Example:
 
@@ -149,6 +148,43 @@ implementations in the same reviewed change.
 `scripts/generate-canonical-ast-candidates.sh` writes C dump candidates below
 `build/canonical-ast-candidates/` for human review; tests never accept them.
 
+## Scoped values and groups
+
+A scoped value is written, so it has a scope, but it is not a `Markup` kind
+and never a child: the dump nests it under its owner with the same connectors
+as a child line, and it prints as a VALUE line,
+`Kind scope=L:C..L:C <fields> children=N`, without the universal fields. A
+GROUP line, `Kind children=N`, nests a node-valued list under its owner with
+no scope and no fields; its own `children` is the number of lines nested
+under it. Nested value and group lines are never counted by their owner.
+
+- A tagged value prints its branch and named fields with no spaces, as `dest`
+  does: `referent=bib(key="...",mode=normal)` and
+  `referent=footnote(id="...")`.
+- `Cite` prints one `Citation` value line per item, in source order, with
+  `referent` as its one field and a `children` of zero; each item nests a
+  `CitationPrefix` group and then a `CitationSuffix` group holding the affix
+  nodes, both printed even when empty. The cite's own `children` counts the
+  items.
+- `Document` prints its content, then one `Footnote` value line per element
+  of `footnotes`, in that order, each with `id` as its one field and a
+  `children` counting its content, which nests one level below it. The
+  document's own `children` counts the content alone.
+
+Example, for the source `[^a]` followed by a blank line and `[^a]: note`:
+
+```text
+Document scope=1:1..3:10 children=1
+├── Paragraph scope=1:1..1:4 children=1
+│   └── Cite scope=1:1..1:4 children=1
+│       └── Citation scope=1:2..1:3 referent=footnote(id="a") children=0
+│           ├── CitationPrefix children=0
+│           └── CitationSuffix children=0
+└── Footnote scope=3:1..3:10 id="a" children=1
+    └── Paragraph scope=3:7..3:10 children=1
+        └── Text scope=3:7..3:10 literal="note" children=0
+```
+
 ## Encodings reserved for the target model
 
 The dialect modules add fields and values that the table above does not print
@@ -160,52 +196,25 @@ item, so that the grammar has one answer before the first of them arrives:
   `attributes={...}`, where the braces hold the classes as `.name` and the
   records as `name="value"` in source order, separated by single spaces, and
   `Attributes.empty` prints as `attributes={}`.
-- A tagged value prints its branch and named fields with no spaces, as
-  `dest` does today: `referent=bib(key="...",mode=normal)`,
-  `referent=footnote(id="...")`,
-  `value=scalar(text("..."))`, `value=scalar(null)`,
-  `value=scalar(bool(true))`, `value=scalar(number("1.50"))`, and
-  `value=list([text("a"),number("1")])`.
+- Further tagged values print as `referent` does: `value=scalar(text("..."))`,
+  `value=scalar(null)`, `value=scalar(bool(true))`,
+  `value=scalar(number("1.50"))`, and `value=list([text("a"),number("1")])`.
 - A double prints as the shortest decimal that round-trips, and a table
   column prints as `columns=[left:0.25,none:null]`.
 - Besides its structural children, a node prints these nested lines with the
   same connectors, in this order: `Document` prints its `Metadata` value when
-  non-null, then the content, then one `Footnote` value per element of
-  `footnotes`; `Callout` prints its `Title` group as today; `Table`
-  prints its `TableCaption` when non-null,
-  then the `TableHead`, `TableBody`, and `TableFoot` groups holding the rows;
-  `Definition` prints a `DefinitionTerm` group, then one `DefinitionBody`
-  group per body; `Cite` prints one `Citation` value per item, each holding a
-  `CitationPrefix` and a `CitationSuffix` group; `Directive` and
-  `DirectiveBlock` print the `DirectiveLabel` as today.
-- A value line prints `Kind scope=L:C..L:C <fields> children=N` without the
-  universal fields: `Citation scope=... referent=... children=0`,
-  `Footnote scope=... id="..." children=N`, `Metadata scope=... children=N`,
-  and `MetadataRecord scope=... name="..." value=... children=0`. A group
-  line prints `Kind children=N` with no scope and no fields.
-- `children` keeps counting structural children: `content.count` for every
-  content-bearing kind, `items.count` for `List`, `cells.count` for
-  `TableRow`, `head.count + content.count + foot.count` for `Table`,
-  `definitions.count` for `DefinitionList`, the number of bodies for
-  `Definition`, `citations.count` for `Cite`, `records.count` for `Metadata`,
-  `content.count` for `Footnote`, and zero for every leaf, for `Directive`,
-  and for `Citation`. A group line's own `children` is the number of lines
-  nested under it. Nested title, caption, label, metadata, footnote, term,
-  prefix, suffix, and row-group lines are never counted by their owner.
+  non-null, then the content, then its footnotes as today; `Table` prints its
+  `TableCaption` when non-null, then the `TableHead`, `TableBody`, and
+  `TableFoot` groups holding the rows; `Definition` prints a `DefinitionTerm`
+  group, then one `DefinitionBody` group per body.
+- Further value lines print as `Citation` and `Footnote` do:
+  `Metadata scope=... children=N` and
+  `MetadataRecord scope=... name="..." value=... children=0`.
+- `children` keeps counting structural children: `head.count + content.count
+  + foot.count` for `Table`, `definitions.count` for `DefinitionList`, the
+  number of bodies for `Definition`, and `records.count` for `Metadata`;
+  nested caption, metadata, term, and row-group lines are never counted by
+  their owner.
 - Every scalar and enum keeps the encodings above; nothing is omitted because
   it is null, empty, or default, and an absent optional nested value prints
   no line.
-
-Example, for the source `[^a]` followed by a blank line and `[^a]: note`:
-
-```text
-Document scope=1:1..3:10 anchor=null attributes={} children=1
-├── Paragraph scope=1:1..1:4 anchor=null attributes={} children=1
-│   └── Cite scope=1:1..1:4 anchor=null attributes={} children=1
-│       └── Citation scope=1:2..1:3 referent=footnote(id="a") children=0
-│           ├── CitationPrefix children=0
-│           └── CitationSuffix children=0
-└── Footnote scope=3:1..3:10 id="a" children=1
-    └── Paragraph scope=3:7..3:10 anchor=null attributes={} children=1
-        └── Text scope=3:7..3:10 anchor=null attributes={} literal="note" children=0
-```

@@ -44,13 +44,14 @@ class JniPayloadDecoderTest {
                 "note",
                 1.toByte(),
                 1,
-                14.toByte(),
+                13.toByte(),
                 1,
                 10,
                 1,
                 10,
                 1,
                 "T",
+                0,
                 0,
             )
         val document = JniPayloadDecoder.decodeDocument(payload)
@@ -88,6 +89,108 @@ class JniPayloadDecoderTest {
     }
 
     @Test
+    fun aCiteCarriesItsItemsAndTheDocumentItsFootnotesAsValues() {
+        // The value paths of the wire (M4): a cite's items follow it as a
+        // counted list -- scope, referent branch and fields, prefix, suffix --
+        // and the document's footnotes follow its content the same way. No
+        // parse produces the `bib` branch or a non-empty affix until P7, so
+        // the payload is built by hand: a paragraph holding one cite whose
+        // item names bib key `k` in author-in-text mode with the prefix
+        // `see ` and the suffix `p. 3`, then one footnote `n` holding `note`.
+        val text: (Int, Int, Int, Int, String) -> Array<Any> = { l1, c1, l2, c2, literal ->
+            arrayOf(13.toByte(), l1, c1, l2, c2, literal.length, literal)
+        }
+        val payload =
+            jniPayload(
+                "MKJ1",
+                0.toByte(),
+                1.toByte(),
+                1,
+                1,
+                3,
+                9,
+                1,
+                3.toByte(),
+                1,
+                1,
+                1,
+                20,
+                1,
+                25.toByte(),
+                1,
+                1,
+                1,
+                20,
+                1,
+                1,
+                2,
+                1,
+                19,
+                1.toByte(),
+                1,
+                "k",
+                2,
+                1,
+                *text(1, 2, 1, 5, "see "),
+                1,
+                *text(1, 10, 1, 13, "p. 3"),
+                1,
+                3,
+                1,
+                3,
+                9,
+                1,
+                "n",
+                1,
+                3.toByte(),
+                3,
+                6,
+                3,
+                9,
+                1,
+                *text(3, 6, 3, 9, "note"),
+            )
+        val document = JniPayloadDecoder.decodeDocument(payload)
+        val cite = (document.content.single() as Paragraph).content.single() as Cite
+        val citation = cite.citations.single()
+        val referent = citation.referent as CitationReferent.Bib
+        assertEquals("k", referent.key)
+        assertEquals(BibMode.AUTHOR_IN_TEXT, referent.mode)
+        assertEquals("see ", (citation.prefix.single() as Text).literal)
+        assertEquals("p. 3", (citation.suffix.single() as Text).literal)
+        assertEquals("n", document.footnotes.single().id)
+        assertEquals(
+            "Document scope=1:1..3:9 children=1\n" +
+                "├── Paragraph scope=1:1..1:20 children=1\n" +
+                "│   └── Cite scope=1:1..1:20 children=1\n" +
+                "│       └── Citation scope=1:2..1:19 referent=bib(key=\"k\",mode=authorInText) children=0\n" +
+                "│           ├── CitationPrefix children=1\n" +
+                "│           │   └── Text scope=1:2..1:5 literal=\"see \" children=0\n" +
+                "│           └── CitationSuffix children=1\n" +
+                "│               └── Text scope=1:10..1:13 literal=\"p. 3\" children=0\n" +
+                "└── Footnote scope=3:1..3:9 id=\"n\" children=1\n" +
+                "    └── Paragraph scope=3:6..3:9 children=1\n" +
+                "        └── Text scope=3:6..3:9 literal=\"note\" children=0\n",
+            document.dump(),
+        )
+        val visitor = RecordingWalkingVisitor()
+        cite.walk(visitor)
+        assertEquals(
+            listOf(
+                "entering:Cite",
+                "entering:Citation",
+                "entering:Text",
+                "exiting:Text",
+                "entering:Text",
+                "exiting:Text",
+                "exiting:Citation",
+                "exiting:Cite",
+            ),
+            visitor.events,
+        )
+    }
+
+    @Test
     fun corruptedPayloadFailsInsteadOfProducingAPartialTree() {
         assertFailsWith<IllegalArgumentException> {
             JniPayloadDecoder.decodeDocument(byteArrayOf(0x4d, 0x4b, 0x4a))
@@ -97,8 +200,9 @@ class JniPayloadDecoderTest {
     @Test
     fun malformedJniPayloadValuesAreRejectedBeforeTheyEnterTheAst() {
         assertFailsWith<IllegalStateException> { JniNodeKind.from(0) }
-        assertFailsWith<IllegalStateException> { JniNodeKind.from(31) }
-        assertEquals(JniNodeKind.COMMENT, JniNodeKind.from(30))
+        assertFailsWith<IllegalStateException> { JniNodeKind.from(30) }
+        assertEquals(JniNodeKind.COMMENT, JniNodeKind.from(29))
+        assertEquals(JniNodeKind.CITE, JniNodeKind.from(25))
         assertFailsWith<IllegalArgumentException> {
             JniPayloadDecoder.decodeDocument("MKJ1".encodeToByteArray())
         }

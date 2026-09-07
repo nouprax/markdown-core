@@ -33,7 +33,6 @@ class AstTest {
                 "Table",
                 "DirectiveBlock",
                 "DirectiveLabel",
-                "FootnoteDefinition",
                 "Text",
                 "SoftBreak",
                 "LineBreak",
@@ -47,7 +46,7 @@ class AstTest {
                 "Link",
                 "Image",
                 "Directive",
-                "FootnoteReference",
+                "Cite",
                 "TableRow",
                 "TableCell",
             ),
@@ -119,10 +118,12 @@ class AstTest {
     }
 }
 
+/** The node lines of a dump: value lines (`Citation`, `Footnote`) and group lines are not kinds. */
 private fun dumpKinds(dump: String): kotlin.collections.List<String> =
     dump
         .lineSequence()
-        .filter(String::isNotEmpty)
+        .filter { it.contains(" scope=") }
         .map {
             it.trimStart('│', ' ', '├', '└', '─').substringBefore(' ')
-        }.toList()
+        }.filterNot { it == "Citation" || it == "Footnote" }
+        .toList()

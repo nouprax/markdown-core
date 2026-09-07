@@ -1,4 +1,5 @@
 import type { Callout } from "./model/callout.js";
+import type { Citation, Cite } from "./model/cite.js";
 import type { CodeBlock } from "./model/code-block.js";
 import type { Code } from "./model/code.js";
 import type { Comment } from "./model/comment.js";
@@ -8,7 +9,7 @@ import type { DirectiveLabel } from "./model/directive-label.js";
 import type { Directive } from "./model/directive.js";
 import type { Document } from "./model/document.js";
 import type { Emphasis } from "./model/emphasis.js";
-import type { FootnoteDefinition, FootnoteReference } from "./model/footnote.js";
+import type { Footnote } from "./model/footnote.js";
 import type { FormulaBlock } from "./model/formula-block.js";
 import type { Formula } from "./model/formula.js";
 import type { Heading } from "./model/heading.js";
@@ -26,7 +27,7 @@ import type { Strong } from "./model/strong.js";
 import type { Table, TableCell, TableRow } from "./model/table.js";
 import type { Text } from "./model/text.js";
 import type { ThematicBreak } from "./model/thematic-break.js";
-import type { Destination, Scope } from "./values.js";
+import type { CitationReferent, Destination, Scope } from "./values.js";
 import { visit, type Visitor } from "./visitor.js";
 
 /** Produces the canonical debug tree for immutable Markdown markup. */
@@ -47,7 +48,15 @@ class DumpState {
 
     /** Each callback emits exactly its node and chooses its children/fields. */
     private readonly visitor: Visitor<void> = {
-        visitDocument: (node: Document) => this.container("Document", node, [], node.content),
+        visitDocument: (node: Document) => {
+            // The footnotes are value lines after the content, never counted
+            // by the document's own `children`.
+            this.line("Document", node, [], node.content.length);
+            this.nested(node.content.length + node.footnotes.length, () => {
+                for (const child of node.content) this.dump(child);
+                for (const footnote of node.footnotes) this.footnote(footnote);
+            });
+        },
         visitCallout: (node: Callout) => {
             this.line(
                 "Callout",
@@ -104,8 +113,6 @@ class DumpState {
             });
         },
         visitDirectiveLabel: (node: DirectiveLabel) => this.container("DirectiveLabel", node, [], node.content),
-        visitFootnoteDefinition: (node: FootnoteDefinition) =>
-            this.container("FootnoteDefinition", node, association(node), node.content),
         visitText: (node: Text) => this.line("Text", node, [`literal=${jsonString(node.literal)}`]),
         visitSoftBreak: (node: SoftBreak) => this.line("SoftBreak", node),
         visitLineBreak: (node: LineBreak) => this.line("LineBreak", node),
@@ -137,7 +144,14 @@ class DumpState {
                 if (node.label !== null) this.dump(node.label);
             });
         },
-        visitFootnoteReference: (node: FootnoteReference) => this.line("FootnoteReference", node, association(node))
+        visitCite: (node: Cite) => {
+            // Each item is a value line whose affixes are groups; the cite's
+            // own `children` counts the items.
+            this.line("Cite", node, [], node.citations.length);
+            this.nested(node.citations.length, () => {
+                for (const item of node.citations) this.citation(item);
+            });
+        }
     };
 
     dump(node: Markup): void {
@@ -148,6 +162,27 @@ class DumpState {
         return `${this.lines.join("\n")}\n`;
     }
 
+    private citation(item: Citation): void {
+        this.valueLine("Citation", item.scope, [`referent=${referent(item.referent)}`], 0);
+        this.nested(2, () => {
+            this.group("CitationPrefix", item.prefix.length);
+            this.nested(item.prefix.length, () => {
+                for (const child of item.prefix) this.dump(child);
+            });
+            this.group("CitationSuffix", item.suffix.length);
+            this.nested(item.suffix.length, () => {
+                for (const child of item.suffix) this.dump(child);
+            });
+        });
+    }
+
+    private footnote(value: Footnote): void {
+        this.valueLine("Footnote", value.scope, [`id=${jsonString(value.id)}`], value.content.length);
+        this.nested(value.content.length, () => {
+            for (const child of value.content) this.dump(child);
+        });
+    }
+
     private container(kind: string, node: Markup, fields: readonly string[], children: readonly Markup[]): void {
         this.line(kind, node, fields, children.length);
         this.nested(children.length, () => {
@@ -156,8 +191,13 @@ class DumpState {
     }
 
     private line(kind: string, node: Markup, fields: readonly string[] = [], children = 0): void {
+        this.valueLine(kind, node.scope, fields, children);
+    }
+
+    /** A value line prints like a node line: scope, fields, `children`. */
+    private valueLine(kind: string, at: Scope, fields: readonly string[], children: number): void {
         const fieldText = fields.length === 0 ? "" : ` ${fields.join(" ")}`;
-        this.emit(`${kind} ${scope(node.scope)}${fieldText} children=${children}`);
+        this.emit(`${kind} ${scope(at)}${fieldText} children=${children}`);
     }
 
     /**
@@ -191,10 +231,6 @@ class DumpState {
     }
 }
 
-function association(node: { readonly label: string; readonly identifier: string }): readonly string[] {
-    return [`label=${jsonString(node.label)}`, `identifier=${jsonString(node.identifier)}`];
-}
-
 function directiveFields(name: string, attributes: readonly DirectiveAttribute[] | null): readonly string[] {
     if (attributes === null) return [`name=${jsonString(name)}`, "attributes=null"];
     const pairs = attributes.map((pair) => `${pair.name}=${jsonString(pair.value)}`).join(" ");
@@ -207,6 +243,13 @@ function scope(value: Scope): string {
 
 function optionalString(value: string | null): string {
     return value === null ? "null" : jsonString(value);
+}
+
+/** A tagged value prints its branch and its named fields with no spaces. */
+function referent(value: CitationReferent): string {
+    return value.kind === "bib"
+        ? `bib(key=${jsonString(value.key)},mode=${value.mode})`
+        : `footnote(id=${jsonString(value.id)})`;
 }
 
 /** A tagged value prints its branch and its named fields with no spaces. */

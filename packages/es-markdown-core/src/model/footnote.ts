@@ -1,19 +1,16 @@
-import type { MarkupBase } from "./base.js";
 import type { Markup } from "./markup.js";
+import type { Scope } from "../values.js";
 
 /**
- * A footnote definition. `identifier` KEEPS the leading `^` that `label` does
- * not carry, so a footnote and a link definition of one name cannot collide in
- * a consumer's single map.
+ * One element of `Document.footnotes`: a scoped value, not a `Markup` kind.
+ * It is written, so it has a scope, and it owns its content, but it is never
+ * a child of a node. `id` is the definition's label under the reference-label
+ * normalization without the caret, the id every `footnote` referent naming it
+ * carries, compared byte for byte.
  */
-export interface FootnoteDefinition extends MarkupBase<"footnoteDefinition"> {
-    readonly label: string;
-    readonly identifier: string;
+export interface Footnote {
+    readonly scope: Scope;
+    readonly id: string;
+    /** The parsed block content of the definition. */
     readonly content: readonly Markup[];
-}
-
-/** A footnote call. There is one footnote syntax, so it carries no form. */
-export interface FootnoteReference extends MarkupBase<"footnoteReference"> {
-    readonly label: string;
-    readonly identifier: string;
 }
