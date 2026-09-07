@@ -30,8 +30,14 @@ public struct ParseError: Error, Sendable {
 public struct Document: Markup {
     /// The whole document's boundaries. See ``Scope``.
     public let scope: Scope
+    /// The explicit anchor, absent when none was attached.
+    public let anchor: String?
+    /// Ordered classes and records, including duplicates.
+    public let attributes: Attributes
     /// The document's blocks. Block content, not inline.
     public let content: [any Markup]
+    /// Parsed Properties, absent until their syntax is implemented.
+    public let metadata: Metadata?
     /// The footnotes the document owns, ordered by scope start; never part of
     /// `content`.
     public let footnotes: [Footnote]
@@ -277,7 +283,7 @@ func markup(
     switch markdown_core_node_get_kind(node) {
     case MARKDOWN_CORE_KIND_DOCUMENT:
         Document(
-            scope: Document.scope(from: node),
+            from: node,
             content: relations.children,
             footnotes: relations.footnotes,
             specimens: relations.specimens
@@ -307,11 +313,24 @@ func markup(
     case MARKDOWN_CORE_KIND_LINK: Link(from: node, content: relations.children, resources: &resources)
     case MARKDOWN_CORE_KIND_IMAGE: Image(from: node, content: relations.children, resources: &resources)
     case MARKDOWN_CORE_KIND_DIRECTIVE: Directive(from: node, label: relations.label)
-    case MARKDOWN_CORE_KIND_CITE: Cite(scope: Cite.scope(from: node), citations: relations.citations)
+    case MARKDOWN_CORE_KIND_CITE: Cite(from: node, citations: relations.citations)
     case MARKDOWN_CORE_KIND_TABLE_ROW: TableRow(from: node, children: relations.children)
     case MARKDOWN_CORE_KIND_TABLE_CELL: TableCell(from: node, content: relations.children)
-    case MARKDOWN_CORE_KIND_DIRECTIVE_LABEL:
-        DirectiveLabel(scope: DirectiveLabel.scope(from: node), content: relations.children)
+    case MARKDOWN_CORE_KIND_DIRECTIVE_LABEL: DirectiveLabel(from: node, content: relations.children)
     default: preconditionFailure("native parser returned an unknown node kind")
+    }
+}
+
+extension Document {
+    init(from node: OpaquePointer, content: [any Markup], footnotes: [Footnote], specimens: [Specimen]) {
+        self.init(
+            scope: Self.scope(from: node),
+            anchor: markdown_core_node_anchor(node).string,
+            attributes: Attributes(from: node),
+            content: content,
+            metadata: markdown_core_node_document_metadata(node).map { Metadata(from: $0) },
+            footnotes: footnotes,
+            specimens: specimens
+        )
     }
 }

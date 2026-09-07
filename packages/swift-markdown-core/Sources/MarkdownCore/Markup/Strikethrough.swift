@@ -4,6 +4,10 @@ import MarkdownCoreC
 public struct Strikethrough: Markup {
     /// Where it is. See ``Scope`` — boundaries, not a byte range.
     public let scope: Scope
+    /// The explicit anchor, absent when none was attached.
+    public let anchor: String?
+    /// Ordered classes and records, including duplicates.
+    public let attributes: Attributes
     /// The struck-through inline content.
     public let content: [any Markup]
 
@@ -13,6 +17,11 @@ public struct Strikethrough: Markup {
 
 extension Strikethrough {
     init(from node: OpaquePointer, content: [any Markup]) {
-        self.init(scope: Self.scope(from: node), content: content)
+        self.init(
+            scope: Self.scope(from: node),
+            anchor: markdown_core_node_anchor(node).string,
+            attributes: Attributes(from: node),
+            content: content
+        )
     }
 }

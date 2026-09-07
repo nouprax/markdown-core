@@ -1,9 +1,9 @@
+import type { Attributes, Metadata, MetadataValue } from "./values.js";
 import type { Callout } from "./model/callout.js";
 import type { Citation, Cite } from "./model/cite.js";
 import type { CodeBlock } from "./model/code-block.js";
 import type { Code } from "./model/code.js";
 import type { Comment } from "./model/comment.js";
-import type { DirectiveAttribute } from "./model/directive-attribute.js";
 import type { DirectiveBlock } from "./model/directive-block.js";
 import type { DirectiveLabel } from "./model/directive-label.js";
 import type { Directive } from "./model/directive.js";
@@ -53,11 +53,15 @@ class DumpState {
             // The footnotes are value lines after the content, never counted
             // by the document's own `children`.
             this.line("Document", node, [], node.content.length);
-            this.nested(node.content.length + node.footnotes.length + node.specimens.length, () => {
-                for (const child of node.content) this.dump(child);
-                for (const footnote of node.footnotes) this.footnote(footnote);
-                for (const specimen of node.specimens) this.specimen(specimen);
-            });
+            this.nested(
+                node.content.length + node.footnotes.length + node.specimens.length + (node.metadata === null ? 0 : 1),
+                () => {
+                    if (node.metadata !== null) this.metadata(node.metadata);
+                    for (const child of node.content) this.dump(child);
+                    for (const footnote of node.footnotes) this.footnote(footnote);
+                    for (const specimen of node.specimens) this.specimen(specimen);
+                }
+            );
         },
         visitCallout: (node: Callout) => {
             this.line(
@@ -132,7 +136,7 @@ class DumpState {
         visitTableCell: (node: TableCell) =>
             this.container("TableCell", node, [`rowspan=${node.rowspan}`, `colspan=${node.colspan}`], node.content),
         visitDirectiveBlock: (node: DirectiveBlock) => {
-            this.line("DirectiveBlock", node, directiveFields(node.name, node.attributes), node.content.length);
+            this.line("DirectiveBlock", node, [`name=${jsonString(node.name)}`], node.content.length);
             this.nested(node.content.length + (node.label === null ? 0 : 1), () => {
                 if (node.label !== null) this.dump(node.label);
                 for (const child of node.content) this.dump(child);
@@ -161,11 +165,16 @@ class DumpState {
             this.container(
                 "Image",
                 node,
-                [`dest=${destination(node.dest)}`, `title=${optionalString(node.title)}`],
+                [
+                    `dest=${destination(node.dest)}`,
+                    `title=${optionalString(node.title)}`,
+                    `width=${node.width ?? "null"}`,
+                    `height=${node.height ?? "null"}`
+                ],
                 node.content
             ),
         visitDirective: (node: Directive) => {
-            this.line("Directive", node, directiveFields(node.name, node.attributes));
+            this.line("Directive", node, [`name=${jsonString(node.name)}`]);
             this.nested(node.label === null ? 0 : 1, () => {
                 if (node.label !== null) this.dump(node.label);
             });
@@ -202,6 +211,19 @@ class DumpState {
         });
     }
 
+    private metadata(value: Metadata): void {
+        this.valueLine("Metadata", value.scope, [], value.records.length);
+        this.nested(value.records.length, () => {
+            for (const record of value.records)
+                this.valueLine(
+                    "MetadataRecord",
+                    record.scope,
+                    [`name=${jsonString(record.name)}`, `value=${metadataValue(record.value)}`],
+                    0
+                );
+        });
+    }
+
     private footnote(value: Footnote): void {
         this.valueLine("Footnote", value.scope, [`id=${jsonString(value.id)}`], value.content.length);
         this.nested(value.content.length, () => {
@@ -229,7 +251,12 @@ class DumpState {
     }
 
     private line(kind: string, node: Markup, fields: readonly string[] = [], children = 0): void {
-        this.valueLine(kind, node.scope, fields, children);
+        this.valueLine(
+            kind,
+            node.scope,
+            [`anchor=${optionalString(node.anchor)}`, `attributes=${attributesString(node.attributes)}`, ...fields],
+            children
+        );
     }
 
     /** A value line prints like a node line: scope, fields, `children`. */
@@ -269,12 +296,6 @@ class DumpState {
     }
 }
 
-function directiveFields(name: string, attributes: readonly DirectiveAttribute[] | null): readonly string[] {
-    if (attributes === null) return [`name=${jsonString(name)}`, "attributes=null"];
-    const pairs = attributes.map((pair) => `${pair.name}=${jsonString(pair.value)}`).join(" ");
-    return [`name=${jsonString(name)}`, `attributes=[${pairs}]`];
-}
-
 function scope(value: Scope): string {
     return `scope=${value.start.line}:${value.start.column}..${value.end.line}:${value.end.column}`;
 }
@@ -309,4 +330,24 @@ function destination(value: Destination): string {
 
 function jsonString(value: string): string {
     return JSON.stringify(value);
+}
+
+function attributesString(value: Attributes): string {
+    return (
+        "{" +
+        [
+            ...value.classes.map(
+                (name) => "." + (/^[!-~]+$/u.test(name) && !/["\\{}[\]()=]/u.test(name) ? name : jsonString(name))
+            ),
+            ...value.records.map((record) => `${record.name}=${jsonString(record.value)}`)
+        ].join(" ") +
+        "}"
+    );
+}
+function metadataValue(value: MetadataValue): string {
+    if (value.kind === "list")
+        return "list([" + value.items.map((item) => `${item.kind}(${jsonString(item.value)})`).join(",") + "])";
+    const scalar = value.value;
+    if (scalar.kind === "null") return "scalar(null)";
+    return `scalar(${scalar.kind}(${scalar.kind === "bool" ? String(scalar.value) : jsonString(scalar.value)}))`;
 }

@@ -1,36 +1,38 @@
-Document scope=1:1..18:8 children=6
-├── CodeBlock scope=1:5..2:0 info=null language=null literal="indented\n" fenced=false closed=true children=0
-├── List scope=3:1..8:0 flavor=bullet start=null variant=null delimiter=null tight=false children=2
-│   ├── ListItem scope=3:1..4:0 marker=" " children=1
-│   │   └── Paragraph scope=3:7..3:15 children=1
-│   │       └── Text scope=3:7..3:15 literal="unchecked" children=0
-│   └── ListItem scope=5:1..8:0 marker=null children=2
-│       ├── Paragraph scope=5:3..5:11 children=1
-│       │   └── Text scope=5:3..5:11 literal="loose one" children=0
-│       └── Paragraph scope=7:3..7:11 children=1
-│           └── Text scope=7:3..7:11 literal="loose two" children=0
-├── Paragraph scope=9:1..9:40 children=5
-│   ├── Link scope=9:1..9:14 dest=url("/a") title=null children=1
-│   │   └── Text scope=9:2..9:9 literal="no title" children=0
-│   ├── Text scope=9:15..9:15 literal=" " children=0
-│   ├── Link scope=9:16..9:29 dest=url("/b") title="" children=1
-│   │   └── Text scope=9:17..9:21 literal="empty" children=0
-│   ├── Text scope=9:30..9:30 literal=" " children=0
-│   └── Image scope=9:31..9:40 dest=url("/i") title=null children=1
-│       └── Text scope=9:33..9:35 literal="alt" children=0
-├── Paragraph scope=11:1..11:17 children=3
-│   ├── Directive scope=11:1..11:6 name="plain" attributes=null children=0
-│   ├── Text scope=11:7..11:7 literal=" " children=0
-│   └── Directive scope=11:8..11:17 name="empty" attributes=[] children=0
-│       └── DirectiveLabel scope=11:14..11:15 children=0
-├── Table scope=13:1..15:8 columns=[none:null] children=2
+Document scope=1:1..18:8 anchor=null attributes={} children=6
+├── CodeBlock scope=1:5..2:0 anchor=null attributes={} info=null language=null literal="indented\n" fenced=false closed=true children=0
+├── List scope=3:1..8:0 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=false children=2
+│   ├── ListItem scope=3:1..4:0 anchor=null attributes={} marker=" " children=1
+│   │   └── Paragraph scope=3:7..3:15 anchor=null attributes={} children=1
+│   │       └── Text scope=3:7..3:15 anchor=null attributes={} literal="unchecked" children=0
+│   └── ListItem scope=5:1..8:0 anchor=null attributes={} marker=null children=2
+│       ├── Paragraph scope=5:3..5:11 anchor=null attributes={} children=1
+│       │   └── Text scope=5:3..5:11 anchor=null attributes={} literal="loose one" children=0
+│       └── Paragraph scope=7:3..7:11 anchor=null attributes={} children=1
+│           └── Text scope=7:3..7:11 anchor=null attributes={} literal="loose two" children=0
+├── Paragraph scope=9:1..9:40 anchor=null attributes={} children=5
+│   ├── Link scope=9:1..9:14 anchor=null attributes={} dest=url("/a") title=null children=1
+│   │   └── Text scope=9:2..9:9 anchor=null attributes={} literal="no title" children=0
+│   ├── Text scope=9:15..9:15 anchor=null attributes={} literal=" " children=0
+│   ├── Link scope=9:16..9:29 anchor=null attributes={} dest=url("/b") title="" children=1
+│   │   └── Text scope=9:17..9:21 anchor=null attributes={} literal="empty" children=0
+│   ├── Text scope=9:30..9:30 anchor=null attributes={} literal=" " children=0
+│   └── Image scope=9:31..9:40 anchor=null attributes={} dest=url("/i") title=null width=null height=null children=1
+│       └── Text scope=9:33..9:35 anchor=null attributes={} literal="alt" children=0
+├── Paragraph scope=11:1..11:54 anchor=null attributes={} children=5
+│   ├── Directive scope=11:1..11:6 anchor=null attributes={} name="plain" children=0
+│   ├── Text scope=11:7..11:7 anchor=null attributes={} literal=" " children=0
+│   ├── Directive scope=11:8..11:17 anchor=null attributes={} name="empty" children=0
+│   │   └── DirectiveLabel scope=11:14..11:15 anchor=null attributes={} children=0
+│   ├── Text scope=11:18..11:18 anchor=null attributes={} literal=" " children=0
+│   └── Directive scope=11:19..11:54 anchor="kept" attributes={.a .b .a k="1" k="2"} name="attrs" children=0
+├── Table scope=13:1..15:8 anchor=null attributes={} columns=[none:null] children=2
 │   ├── TableHead children=1
-│   │   └── TableRow scope=13:1..13:8 children=1
-│   │       └── TableCell scope=13:2..13:7 rowspan=1 colspan=1 children=1
-│   │           └── Text scope=13:3..13:6 literal="none" children=0
+│   │   └── TableRow scope=13:1..13:8 anchor=null attributes={} children=1
+│   │       └── TableCell scope=13:2..13:7 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │           └── Text scope=13:3..13:6 anchor=null attributes={} literal="none" children=0
 │   ├── TableBody children=1
-│   │   └── TableRow scope=15:1..15:8 children=1
-│   │       └── TableCell scope=15:2..15:7 rowspan=1 colspan=1 children=1
-│   │           └── Text scope=15:3..15:6 literal="cell" children=0
+│   │   └── TableRow scope=15:1..15:8 anchor=null attributes={} children=1
+│   │       └── TableCell scope=15:2..15:7 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │           └── Text scope=15:3..15:6 anchor=null attributes={} literal="cell" children=0
 │   └── TableFoot children=0
-└── CodeBlock scope=17:1..18:8 info="txt" language="txt" literal="unclosed\n" fenced=true closed=false children=0
+└── CodeBlock scope=17:1..18:8 anchor=null attributes={} info="txt" language="txt" literal="unclosed\n" fenced=true closed=false children=0

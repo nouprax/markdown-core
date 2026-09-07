@@ -12,6 +12,8 @@ extern "C" {
 #include "markdown-core-extension-api.h"
 #include "buffer.h"
 #include "chunk.h"
+#include "attributes.h"
+#include "metadata.h"
 
 typedef struct {
     markdown_core_list_type list_type;
@@ -81,6 +83,8 @@ typedef struct {
      * the same step that makes the node a link, and an allocation that could
      * not attach one frees the node. */
     markdown_core_resource *resource;
+    markdown_core_optional_i64 width;
+    markdown_core_optional_i64 height;
 } markdown_core_link;
 
 /* THE CITE (M4): a `Cite` owns its items as a chain of CITATION nodes beside
@@ -136,6 +140,7 @@ typedef struct {
  * when the document finalizes and is chained here in ascending scope order, a
  * node-valued field the root owns beside its content. */
 typedef struct {
+    markdown_core_metadata *metadata;
     struct markdown_core_node *footnotes;
     struct markdown_core_node *specimens;
 } markdown_core_document_value;
@@ -170,6 +175,7 @@ enum markdown_core_node__internal_flags {
 typedef uint16_t markdown_core_node_internal_flags;
 
 struct markdown_core_node {
+    markdown_core_attributes attributes;
     markdown_core_strbuf content;
 
     struct markdown_core_node *next;

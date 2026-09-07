@@ -207,3 +207,5 @@ int markdown_core_utf8proc_is_punctuation(int32_t uc) {
             (uc >= 71105 && uc <= 71113) || (uc >= 71233 && uc <= 71235) || (uc >= 74864 && uc <= 74868) ||
             uc == 92782 || uc == 92783 || uc == 92917 || (uc >= 92983 && uc <= 92987) || uc == 92996 || uc == 113823);
 }
+
+#include "unicode_categories.inc"

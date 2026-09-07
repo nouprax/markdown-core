@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import { tableGroups } from "./upstream-cmark.mjs";
 /**
  * mdast/remark normalization.
@@ -190,6 +191,7 @@ function convert(node, definitions, parentType = "root") {
     if (node.type === "inlineMath" || node.type === "math") fields.literal = node.value ?? "";
     if (node.type === "textDirective" || node.type === "leafDirective" || node.type === "containerDirective") {
         fields.name = node.name ?? "";
+        fields.anchor = node.attributes?.id || "null";
         fields.attributes = renderAttributes(node.attributes);
     }
 
@@ -235,21 +237,17 @@ function convert(node, definitions, parentType = "root") {
  * it from both comparison trees isolates the semantic content; the cmark and
  * cmark-gfm policies independently verify that this projection still acts.
  */
-/**
- * A directive's attribute block is most of its grammar — the name/value rules,
- * the `#id` and `.class` shorthands, quoting, and what makes a block malformed.
- * Comparing only the directive's name left all of that unjudged, which is how
- * the unquoted-value rules came to differ from the authority's without anything
- * noticing.
- *
- * mdast holds attributes as an insertion-ordered object. The canonical dump
- * prints the same first-occurrence order, so this comparison deliberately does
- * not normalize away an ordering defect.
- */
+/** Project remark's own normalized object into the shared value model.
+ * Its discarded duplicates cannot be reconstructed; those inputs remain
+ * registered grammar/normalization divergences instead of being hidden. */
 export function renderAttributes(attributes) {
-    const entries = Object.entries(attributes ?? {}).filter(([, value]) => value !== null && value !== undefined);
-    if (!entries.length) return "null";
-    return entries.map(([key, value]) => `${key}=${JSON.stringify(String(value))}`).join(" ");
+    const classes = String(attributes?.class ?? "")
+        .split(/[\t\n\v\f\r \p{Zs}]+/u)
+        .filter(Boolean);
+    const records = Object.entries(attributes ?? {})
+        .filter(([name, value]) => name !== "id" && name !== "class" && value != null)
+        .map(([name, value]) => ({ name, value: String(value) }));
+    return { classes, records };
 }
 
 export function dropEmptyText(node) {
@@ -295,8 +293,11 @@ export const MDAST_COMPARED = {
     // to be registered rather than checked.
     Citation: ["referent"],
     Footnote: ["id"],
-    Directive: ["name", "attributes"],
-    DirectiveBlock: ["name", "attributes"],
+    Directive: ["name"],
+    DirectiveBlock: ["name"],
     Formula: ["literal"],
     FormulaBlock: ["literal"]
 };
+
+const contract = JSON.parse(fs.readFileSync(new URL("../../docs/specs/canonical-ast.json", import.meta.url), "utf8"));
+for (const { name } of contract.kinds) MDAST_COMPARED[name] = ["anchor", "attributes", ...(MDAST_COMPARED[name] ?? [])];

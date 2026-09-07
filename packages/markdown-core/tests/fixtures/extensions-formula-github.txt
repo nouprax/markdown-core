@@ -15,11 +15,11 @@ payload handed to LaTeX/KaTeX.
 ```````````````````````````````` example
 Inline $x+y$ end.
 .
-Document scope=1:1..1:17 children=1
-└── Paragraph scope=1:1..1:17 children=3
-    ├── Text scope=1:1..1:7 literal="Inline " children=0
-    ├── Formula scope=1:8..1:12 mode=embedded literal="x+y" children=0
-    └── Text scope=1:13..1:17 literal=" end." children=0
+Document scope=1:1..1:17 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:17 anchor=null attributes={} children=3
+    ├── Text scope=1:1..1:7 anchor=null attributes={} literal="Inline " children=0
+    ├── Formula scope=1:8..1:12 anchor=null attributes={} mode=embedded literal="x+y" children=0
+    └── Text scope=1:13..1:17 anchor=null attributes={} literal=" end." children=0
 ````````````````````````````````
 
 Formula expressions parse as inline content inside table cells.
@@ -29,16 +29,16 @@ Formula expressions parse as inline content inside table cells.
 | --- |
 | $x+y$ |
 .
-Document scope=1:1..3:9 children=1
-└── Table scope=1:1..3:9 columns=[none:null] children=2
+Document scope=1:1..3:9 anchor=null attributes={} children=1
+└── Table scope=1:1..3:9 anchor=null attributes={} columns=[none:null] children=2
     ├── TableHead children=1
-    │   └── TableRow scope=1:1..1:8 children=1
-    │       └── TableCell scope=1:2..1:7 rowspan=1 colspan=1 children=1
-    │           └── Text scope=1:3..1:6 literal="expr" children=0
+    │   └── TableRow scope=1:1..1:8 anchor=null attributes={} children=1
+    │       └── TableCell scope=1:2..1:7 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │           └── Text scope=1:3..1:6 anchor=null attributes={} literal="expr" children=0
     ├── TableBody children=1
-    │   └── TableRow scope=3:1..3:9 children=1
-    │       └── TableCell scope=3:2..3:8 rowspan=1 colspan=1 children=1
-    │           └── Formula scope=3:3..3:7 mode=embedded literal="x+y" children=0
+    │   └── TableRow scope=3:1..3:9 anchor=null attributes={} children=1
+    │       └── TableCell scope=3:2..3:8 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │           └── Formula scope=3:3..3:7 anchor=null attributes={} mode=embedded literal="x+y" children=0
     └── TableFoot children=0
 ````````````````````````````````
 
@@ -48,21 +48,21 @@ bytes.
 ```````````````````````````````` example
 Inline $`x+y`$ end.
 .
-Document scope=1:1..1:19 children=1
-└── Paragraph scope=1:1..1:19 children=3
-    ├── Text scope=1:1..1:7 literal="Inline " children=0
-    ├── Formula scope=1:8..1:14 mode=embedded literal="x+y" children=0
-    └── Text scope=1:15..1:19 literal=" end." children=0
+Document scope=1:1..1:19 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:19 anchor=null attributes={} children=3
+    ├── Text scope=1:1..1:7 anchor=null attributes={} literal="Inline " children=0
+    ├── Formula scope=1:8..1:14 anchor=null attributes={} mode=embedded literal="x+y" children=0
+    └── Text scope=1:15..1:19 anchor=null attributes={} literal=" end." children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
 Escaped dollar $`\sqrt{\$4}`$ end.
 .
-Document scope=1:1..1:34 children=1
-└── Paragraph scope=1:1..1:34 children=3
-    ├── Text scope=1:1..1:15 literal="Escaped dollar " children=0
-    ├── Formula scope=1:16..1:29 mode=embedded literal="\\sqrt{\\$4}" children=0
-    └── Text scope=1:30..1:34 literal=" end." children=0
+Document scope=1:1..1:34 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:34 anchor=null attributes={} children=3
+    ├── Text scope=1:1..1:15 anchor=null attributes={} literal="Escaped dollar " children=0
+    ├── Formula scope=1:16..1:29 anchor=null attributes={} mode=embedded literal="\\sqrt{\\$4}" children=0
+    └── Text scope=1:30..1:34 anchor=null attributes={} literal=" end." children=0
 ````````````````````````````````
 
 Dollar formula delimiters do not open before whitespace.
@@ -70,9 +70,9 @@ Dollar formula delimiters do not open before whitespace.
 ```````````````````````````````` example
 Inline $ x$ end.
 .
-Document scope=1:1..1:16 children=1
-└── Paragraph scope=1:1..1:16 children=1
-    └── Text scope=1:1..1:16 literal="Inline $ x$ end." children=0
+Document scope=1:1..1:16 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:16 anchor=null attributes={} children=1
+    └── Text scope=1:1..1:16 anchor=null attributes={} literal="Inline $ x$ end." children=0
 ````````````````````````````````
 
 Dollar formula delimiters do not close after whitespace.
@@ -80,9 +80,9 @@ Dollar formula delimiters do not close after whitespace.
 ```````````````````````````````` example
 Inline $x $ end.
 .
-Document scope=1:1..1:16 children=1
-└── Paragraph scope=1:1..1:16 children=1
-    └── Text scope=1:1..1:16 literal="Inline $x $ end." children=0
+Document scope=1:1..1:16 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:16 anchor=null attributes={} children=1
+    └── Text scope=1:1..1:16 anchor=null attributes={} literal="Inline $x $ end." children=0
 ````````````````````````````````
 
 Dollar formula delimiters do not close before digits.
@@ -90,16 +90,16 @@ Dollar formula delimiters do not close before digits.
 ```````````````````````````````` example
 Value $300B and ~$100B.
 .
-Document scope=1:1..1:23 children=1
-└── Paragraph scope=1:1..1:23 children=1
-    └── Text scope=1:1..1:23 literal="Value $300B and ~$100B." children=0
+Document scope=1:1..1:23 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:23 anchor=null attributes={} children=1
+    └── Text scope=1:1..1:23 anchor=null attributes={} literal="Value $300B and ~$100B." children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
 $$x+y$$
 .
-Document scope=1:1..1:7 children=1
-└── FormulaBlock scope=1:1..1:7 literal="x+y" children=0
+Document scope=1:1..1:7 anchor=null attributes={} children=1
+└── FormulaBlock scope=1:1..1:7 anchor=null attributes={} literal="x+y" children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
@@ -107,8 +107,8 @@ $$
 x+y
 $$
 .
-Document scope=1:1..3:2 children=1
-└── FormulaBlock scope=1:1..3:2 literal="x+y" children=0
+Document scope=1:1..3:2 anchor=null attributes={} children=1
+└── FormulaBlock scope=1:1..3:2 anchor=null attributes={} literal="x+y" children=0
 ````````````````````````````````
 
 GitHub's ```formula fenced-code form is a formula block; the fence delimiters and
@@ -119,8 +119,8 @@ GitHub's ```formula fenced-code form is a formula block; the fence delimiters an
 x+y
 ```
 .
-Document scope=1:1..3:3 children=1
-└── FormulaBlock scope=1:1..3:3 literal="x+y" children=0
+Document scope=1:1..3:3 anchor=null attributes={} children=1
+└── FormulaBlock scope=1:1..3:3 anchor=null attributes={} literal="x+y" children=0
 ````````````````````````````````
 
 An unpaired dollar is ordinary punctuation for emphasis flanking: the
@@ -130,11 +130,11 @@ requires.
 ```````````````````````````````` example
 foo$_bar_
 .
-Document scope=1:1..1:9 children=1
-└── Paragraph scope=1:1..1:9 children=2
-    ├── Text scope=1:1..1:4 literal="foo$" children=0
-    └── Emphasis scope=1:5..1:9 children=1
-        └── Text scope=1:6..1:8 literal="bar" children=0
+Document scope=1:1..1:9 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:9 anchor=null attributes={} children=2
+    ├── Text scope=1:1..1:4 anchor=null attributes={} literal="foo$" children=0
+    └── Emphasis scope=1:5..1:9 anchor=null attributes={} children=1
+        └── Text scope=1:6..1:8 anchor=null attributes={} literal="bar" children=0
 ````````````````````````````````
 
 Inline math carries the code-span padding rule: when the content both begins
@@ -146,11 +146,11 @@ spans, which this parser already implemented there.
 ```````````````````````````````` example
 text $$ mid $$ text
 .
-Document scope=1:1..1:19 children=1
-└── Paragraph scope=1:1..1:19 children=3
-    ├── Text scope=1:1..1:5 literal="text " children=0
-    ├── Formula scope=1:6..1:14 mode=standalone literal="mid" children=0
-    └── Text scope=1:15..1:19 literal=" text" children=0
+Document scope=1:1..1:19 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:19 anchor=null attributes={} children=3
+    ├── Text scope=1:1..1:5 anchor=null attributes={} literal="text " children=0
+    ├── Formula scope=1:6..1:14 anchor=null attributes={} mode=standalone literal="mid" children=0
+    └── Text scope=1:15..1:19 anchor=null attributes={} literal=" text" children=0
 ````````````````````````````````
 
 Only one space is removed from each end, so interior padding is content.
@@ -158,11 +158,11 @@ Only one space is removed from each end, so interior padding is content.
 ```````````````````````````````` example
 text $$  x  $$ text
 .
-Document scope=1:1..1:19 children=1
-└── Paragraph scope=1:1..1:19 children=3
-    ├── Text scope=1:1..1:5 literal="text " children=0
-    ├── Formula scope=1:6..1:14 mode=standalone literal=" x " children=0
-    └── Text scope=1:15..1:19 literal=" text" children=0
+Document scope=1:1..1:19 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:19 anchor=null attributes={} children=3
+    ├── Text scope=1:1..1:5 anchor=null attributes={} literal="text " children=0
+    ├── Formula scope=1:6..1:14 anchor=null attributes={} mode=standalone literal=" x " children=0
+    └── Text scope=1:15..1:19 anchor=null attributes={} literal=" text" children=0
 ````````````````````````````````
 
 Content that is entirely spaces keeps them: the rule requires a non-space.
@@ -170,11 +170,11 @@ Content that is entirely spaces keeps them: the rule requires a non-space.
 ```````````````````````````````` example
 text $$ $$ text
 .
-Document scope=1:1..1:15 children=1
-└── Paragraph scope=1:1..1:15 children=3
-    ├── Text scope=1:1..1:5 literal="text " children=0
-    ├── Formula scope=1:6..1:10 mode=standalone literal=" " children=0
-    └── Text scope=1:11..1:15 literal=" text" children=0
+Document scope=1:1..1:15 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:15 anchor=null attributes={} children=3
+    ├── Text scope=1:1..1:5 anchor=null attributes={} literal="text " children=0
+    ├── Formula scope=1:6..1:10 anchor=null attributes={} mode=standalone literal=" " children=0
+    └── Text scope=1:11..1:15 anchor=null attributes={} literal=" text" children=0
 ````````````````````````````````
 
 Two spaces are still entirely spaces, so neither is removed. This is the case
@@ -184,11 +184,11 @@ content of a formula that is deliberately blank.
 ```````````````````````````````` example
 text $$  $$ text
 .
-Document scope=1:1..1:16 children=1
-└── Paragraph scope=1:1..1:16 children=3
-    ├── Text scope=1:1..1:5 literal="text " children=0
-    ├── Formula scope=1:6..1:11 mode=standalone literal="  " children=0
-    └── Text scope=1:12..1:16 literal=" text" children=0
+Document scope=1:1..1:16 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:16 anchor=null attributes={} children=3
+    ├── Text scope=1:1..1:5 anchor=null attributes={} literal="text " children=0
+    ├── Formula scope=1:6..1:11 anchor=null attributes={} mode=standalone literal="  " children=0
+    └── Text scope=1:12..1:16 anchor=null attributes={} literal=" text" children=0
 ````````````````````````````````
 
 A tab is not padding, so it is never the byte that gets stripped -- but it is
@@ -199,11 +199,11 @@ has content, and one space comes off each end.
 ```````````````````````````````` example
 text $$ 	 $$ text
 .
-Document scope=1:1..1:17 children=1
-└── Paragraph scope=1:1..1:17 children=3
-    ├── Text scope=1:1..1:5 literal="text " children=0
-    ├── Formula scope=1:6..1:12 mode=standalone literal="\t" children=0
-    └── Text scope=1:13..1:17 literal=" text" children=0
+Document scope=1:1..1:17 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:17 anchor=null attributes={} children=3
+    ├── Text scope=1:1..1:5 anchor=null attributes={} literal="text " children=0
+    ├── Formula scope=1:6..1:12 anchor=null attributes={} mode=standalone literal="\t" children=0
+    └── Text scope=1:13..1:17 anchor=null attributes={} literal=" text" children=0
 ````````````````````````````````
 
 The backtick form strips its backticks first, then the same rule applies.
@@ -211,11 +211,11 @@ The backtick form strips its backticks first, then the same rule applies.
 ```````````````````````````````` example
 text $`  k  `$ text
 .
-Document scope=1:1..1:19 children=1
-└── Paragraph scope=1:1..1:19 children=3
-    ├── Text scope=1:1..1:5 literal="text " children=0
-    ├── Formula scope=1:6..1:14 mode=embedded literal=" k " children=0
-    └── Text scope=1:15..1:19 literal=" text" children=0
+Document scope=1:1..1:19 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:19 anchor=null attributes={} children=3
+    ├── Text scope=1:1..1:5 anchor=null attributes={} literal="text " children=0
+    ├── Formula scope=1:6..1:14 anchor=null attributes={} mode=embedded literal=" k " children=0
+    └── Text scope=1:15..1:19 anchor=null attributes={} literal=" text" children=0
 ````````````````````````````````
 
 Content shorter than two characters cannot be padded on both sides, so it is
@@ -224,11 +224,11 @@ left alone.
 ```````````````````````````````` example
 text $$x$$ text
 .
-Document scope=1:1..1:15 children=1
-└── Paragraph scope=1:1..1:15 children=3
-    ├── Text scope=1:1..1:5 literal="text " children=0
-    ├── Formula scope=1:6..1:10 mode=standalone literal="x" children=0
-    └── Text scope=1:11..1:15 literal=" text" children=0
+Document scope=1:1..1:15 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:15 anchor=null attributes={} children=3
+    ├── Text scope=1:1..1:5 anchor=null attributes={} literal="text " children=0
+    ├── Formula scope=1:6..1:10 anchor=null attributes={} mode=standalone literal="x" children=0
+    └── Text scope=1:11..1:15 anchor=null attributes={} literal=" text" children=0
 ````````````````````````````````
 
 A line ending counts as a space for the rule, so inline math written across
@@ -239,11 +239,11 @@ text $$
 x
 $$ text
 .
-Document scope=1:1..3:7 children=1
-└── Paragraph scope=1:1..3:7 children=3
-    ├── Text scope=1:1..1:5 literal="text " children=0
-    ├── Formula scope=1:6..3:2 mode=standalone literal="x" children=0
-    └── Text scope=3:3..3:7 literal=" text" children=0
+Document scope=1:1..3:7 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..3:7 anchor=null attributes={} children=3
+    ├── Text scope=1:1..1:5 anchor=null attributes={} literal="text " children=0
+    ├── Formula scope=1:6..3:2 anchor=null attributes={} mode=standalone literal="x" children=0
+    └── Text scope=3:3..3:7 anchor=null attributes={} literal=" text" children=0
 ````````````````````````````````
 
 Padding is removed only when it is present on both sides, so a space on one
@@ -252,9 +252,9 @@ side alone is content.
 ```````````````````````````````` example
 text $$ mid$$ text
 .
-Document scope=1:1..1:18 children=1
-└── Paragraph scope=1:1..1:18 children=3
-    ├── Text scope=1:1..1:5 literal="text " children=0
-    ├── Formula scope=1:6..1:13 mode=standalone literal=" mid" children=0
-    └── Text scope=1:14..1:18 literal=" text" children=0
+Document scope=1:1..1:18 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:18 anchor=null attributes={} children=3
+    ├── Text scope=1:1..1:5 anchor=null attributes={} literal="text " children=0
+    ├── Formula scope=1:6..1:13 anchor=null attributes={} mode=standalone literal=" mid" children=0
+    └── Text scope=1:14..1:18 anchor=null attributes={} literal=" text" children=0
 ````````````````````````````````

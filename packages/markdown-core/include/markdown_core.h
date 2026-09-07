@@ -91,6 +91,52 @@ typedef struct markdown_core_scope {
     markdown_core_position end;
 } markdown_core_scope;
 
+/** Metadata is a scoped value, not Markup. It receives no visitor callbacks.
+ * Records and list items retain source order; number strings retain their exact
+ * spelling. Every returned handle and string borrows the document. */
+typedef struct markdown_core_metadata markdown_core_metadata;
+typedef struct markdown_core_metadata_record markdown_core_metadata_record;
+typedef enum markdown_core_metadata_value_kind {
+    MARKDOWN_CORE_METADATA_SCALAR = 1,
+    MARKDOWN_CORE_METADATA_LIST = 2
+} markdown_core_metadata_value_kind;
+typedef enum markdown_core_metadata_scalar_kind {
+    MARKDOWN_CORE_METADATA_NULL = 0,
+    MARKDOWN_CORE_METADATA_BOOL = 1,
+    MARKDOWN_CORE_METADATA_NUMBER = 2,
+    MARKDOWN_CORE_METADATA_TEXT = 3
+} markdown_core_metadata_scalar_kind;
+typedef struct markdown_core_metadata_scalar {
+    markdown_core_metadata_scalar_kind kind;
+    union {
+        bool boolean;
+        markdown_core_string string;
+    } value;
+} markdown_core_metadata_scalar;
+typedef enum markdown_core_metadata_list_item_kind {
+    MARKDOWN_CORE_METADATA_ITEM_NUMBER = 1,
+    MARKDOWN_CORE_METADATA_ITEM_TEXT = 2
+} markdown_core_metadata_list_item_kind;
+typedef struct markdown_core_metadata_list_item {
+    markdown_core_metadata_list_item_kind kind;
+    markdown_core_string value;
+} markdown_core_metadata_list_item;
+
+MARKDOWN_CORE_API const markdown_core_metadata *markdown_core_node_document_metadata(const markdown_core_node *node);
+MARKDOWN_CORE_API markdown_core_scope markdown_core_metadata_scope(const markdown_core_metadata *metadata);
+MARKDOWN_CORE_API size_t markdown_core_metadata_record_count(const markdown_core_metadata *metadata);
+MARKDOWN_CORE_API const markdown_core_metadata_record *
+markdown_core_metadata_record_at(const markdown_core_metadata *metadata, size_t index);
+MARKDOWN_CORE_API markdown_core_scope markdown_core_metadata_record_scope(const markdown_core_metadata_record *record);
+MARKDOWN_CORE_API markdown_core_string markdown_core_metadata_record_name(const markdown_core_metadata_record *record);
+MARKDOWN_CORE_API markdown_core_metadata_value_kind
+markdown_core_metadata_record_kind(const markdown_core_metadata_record *record);
+MARKDOWN_CORE_API bool markdown_core_metadata_record_scalar(const markdown_core_metadata_record *record,
+                                                            markdown_core_metadata_scalar *value);
+MARKDOWN_CORE_API size_t markdown_core_metadata_record_item_count(const markdown_core_metadata_record *record);
+MARKDOWN_CORE_API bool markdown_core_metadata_record_item_at(const markdown_core_metadata_record *record, size_t index,
+                                                             markdown_core_metadata_list_item *value);
+
 typedef enum markdown_core_error_code {
     MARKDOWN_CORE_ERROR_NONE = 0,
     MARKDOWN_CORE_ERROR_INVALID_ARGUMENT = 1,
@@ -292,14 +338,20 @@ MARKDOWN_CORE_API bool markdown_core_node_table_cell_spans(const markdown_core_n
  * always embedded and a `DirectiveBlock` always standalone, so the value was
  * implied by the kind and four surfaces had to keep a constant in step (Q29). */
 MARKDOWN_CORE_API bool markdown_core_node_directive_properties(const markdown_core_node *node,
-                                                               markdown_core_string *name, bool *has_attributes,
-                                                               size_t *attribute_count);
-/** Reads one unique directive attribute in first-occurrence source order. A
- * repeated non-class name updates the value in its original slot; repeated
- * `class` values accumulate there in source order. */
-MARKDOWN_CORE_API bool markdown_core_node_directive_attribute_at(const markdown_core_node *node, size_t index,
-                                                                 markdown_core_string *name,
-                                                                 markdown_core_string *value);
+                                                               markdown_core_string *name);
+/** Universal fields. Classes and records retain source order and duplicates.
+ * An out-of-range index returns false; absent attributes have zero counts. */
+MARKDOWN_CORE_API markdown_core_optional_string markdown_core_node_anchor(const markdown_core_node *node);
+MARKDOWN_CORE_API size_t markdown_core_node_attribute_class_count(const markdown_core_node *node);
+MARKDOWN_CORE_API bool markdown_core_node_attribute_class_at(const markdown_core_node *node, size_t index,
+                                                             markdown_core_string *value);
+MARKDOWN_CORE_API size_t markdown_core_node_attribute_record_count(const markdown_core_node *node);
+MARKDOWN_CORE_API bool markdown_core_node_attribute_record_at(const markdown_core_node *node, size_t index,
+                                                              markdown_core_string *name, markdown_core_string *value);
+/** Image dimensions are absent until O9 produces them. */
+MARKDOWN_CORE_API bool markdown_core_node_image_dimensions(const markdown_core_node *node,
+                                                           markdown_core_optional_i64 *width,
+                                                           markdown_core_optional_i64 *height);
 /** The directive's optional `DirectiveLabel` field. The returned node is not
  * a directive child; its own children are the label's inline content. NULL
  * means either no label or a non-directive input. */

@@ -116,28 +116,6 @@ const char *markdown_core_extensions_get_directive_name(markdown_core_node *node
 MARKDOWN_CORE_EXPORT
 int markdown_core_extensions_set_directive_name(markdown_core_node *node, const char *name);
 
-/** Whether the source wrote an attribute container at all. `:n` has none and
- * `:n{}` has an empty one; a count of zero cannot tell them apart.
- */
-MARKDOWN_CORE_EXPORT
-int markdown_core_extensions_directive_has_attributes(markdown_core_node *node);
-
-/** How many attributes the directive carries. Names are unique: `class` values
- * accumulate into one and every other repeat keeps its last value.
- */
-MARKDOWN_CORE_EXPORT
-size_t markdown_core_extensions_directive_attribute_count(markdown_core_node *node);
-
-/** Reads the attribute at `index`, in first-occurrence source order. A repeated
- * non-class name replaces the value in its original slot; repeated `class`
- * values accumulate there. Returns 1 on success and 0 when the node is not a
- * directive or the index is out of range. The bytes are BORROWED from the node
- * and are not NUL-terminated, which is why each comes with its length.
- */
-MARKDOWN_CORE_EXPORT
-int markdown_core_extensions_directive_attribute_at(markdown_core_node *node, size_t index, const char **name,
-                                                    size_t *name_length, const char **value, size_t *value_length);
-
 #ifdef __cplusplus
 }
 #endif

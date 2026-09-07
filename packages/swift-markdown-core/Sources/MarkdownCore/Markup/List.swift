@@ -37,6 +37,10 @@ public enum OrderedListDelimiter: Equatable, Sendable {
 public struct List: Markup {
     /// Where it is. See ``Scope`` — boundaries, not a byte range.
     public let scope: Scope
+    /// The explicit anchor, absent when none was attached.
+    public let anchor: String?
+    /// Ordered classes and records, including duplicates.
+    public let attributes: Attributes
     /// A list owns `ListItem`s and nothing else.
     public let items: [ListItem]
     /// Bulleted or numbered.
@@ -67,6 +71,8 @@ extension List {
         markdown_core_node_list_properties(node, &flavor, &start, &variant, &delimiter, &tight)
         self.init(
             scope: Self.scope(from: node),
+            anchor: markdown_core_node_anchor(node).string,
+            attributes: Attributes(from: node),
             items: Self.typedChildren(children),
             flavor: flavor == MARKDOWN_CORE_LIST_FLAVOR_ORDERED ? .ordered : .bullet,
             start: start.has_value ? start.value : nil,
@@ -99,6 +105,10 @@ extension List {
 public struct ListItem: Markup {
     /// Where it is. See ``Scope`` — boundaries, not a byte range.
     public let scope: Scope
+    /// The explicit anchor, absent when none was attached.
+    public let anchor: String?
+    /// Ordered classes and records, including duplicates.
+    public let attributes: Attributes
     /// The item's blocks. Block content, not inline.
     public let content: [any Markup]
     /// The authored task marker, or `nil` when this is not a task item.
@@ -119,6 +129,8 @@ extension ListItem {
         markdown_core_node_list_item_marker(node, &marker)
         self.init(
             scope: Self.scope(from: node),
+            anchor: markdown_core_node_anchor(node).string,
+            attributes: Attributes(from: node),
             content: content,
             marker: marker.string,
         )

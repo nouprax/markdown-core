@@ -13,11 +13,14 @@ import Testing
         let definition = Specimen(scope: scope, id: "étude", start: 5, content: parsed.content)
         let anonymous = Specimen(scope: scope, id: nil, start: nil, content: [])
         let citation = Citation(scope: scope, referent: .specimen(id: "étude"), prefix: [], suffix: [])
-        let cite = Cite(scope: scope, citations: [citation])
+        let cite = Cite(scope: scope, anchor: nil, attributes: .empty, citations: [citation])
         let footnote = Footnote(scope: scope, id: "n", content: [])
         let document = Document(
             scope: scope,
-            content: [Paragraph(scope: scope, content: [cite])],
+            anchor: nil,
+            attributes: .empty,
+            content: [Paragraph(scope: scope, anchor: nil, attributes: .empty, content: [cite])],
+            metadata: nil,
             footnotes: [footnote],
             specimens: [definition, anonymous]
         )
@@ -190,10 +193,10 @@ import Testing
         #expect(callout.content.count == 1)
         #expect(
             document.dump()
-                == "Document scope=1:1..1:7 children=1\n"
-                + "└── Callout scope=1:1..1:7 variant=null collapsed=null children=1\n"
-                + "    └── Paragraph scope=1:3..1:7 children=1\n"
-                + "        └── Text scope=1:3..1:7 literal=\"quote\" children=0\n"
+                == "Document scope=1:1..1:7 anchor=null attributes={} children=1\n"
+                + "└── Callout scope=1:1..1:7 anchor=null attributes={} variant=null collapsed=null children=1\n"
+                + "    └── Paragraph scope=1:3..1:7 anchor=null attributes={} children=1\n"
+                + "        └── Text scope=1:3..1:7 anchor=null attributes={} literal=\"quote\" children=0\n"
         )
     }
 
@@ -223,11 +226,11 @@ import Testing
         #expect(later.scope == Scope(start: Position(line: 5, column: 1), end: Position(line: 5, column: 11)))
         #expect(((later.content.first as? Paragraph)?.content.first as? Text)?.literal == "twice")
         let dump = document.dump()
-        #expect(dump.hasPrefix("Document scope=1:1..5:11 children=1\n"))
+        #expect(dump.hasPrefix("Document scope=1:1..5:11 anchor=null attributes={} children=1\n"))
         let tail = """
             └── Footnote scope=5:1..5:11 id="a" children=1
-                └── Paragraph scope=5:7..5:11 children=1
-                    └── Text scope=5:7..5:11 literal="twice" children=0
+                └── Paragraph scope=5:7..5:11 anchor=null attributes={} children=1
+                    └── Text scope=5:7..5:11 anchor=null attributes={} literal="twice" children=0
 
             """
         #expect(dump.hasSuffix(tail))
@@ -277,7 +280,7 @@ import Testing
         #expect((label.content.first as? Text)?.literal == "Title")
         #expect(block.content.count == 1)
         #expect(block.content.first is Paragraph)
-        #expect(block.attributes?.first?.name == "kind")
+        #expect(block.attributes.records.first?.name == "kind")
 
         #expect(block.content.allSatisfy { !($0 is DirectiveLabel) })
         #expect(label.content.count == 1)

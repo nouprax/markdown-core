@@ -101,7 +101,7 @@ selected Pandoc extension participates.
       `url` branch for ordinary links and images, and coordinate the same
       canonical change with Obsidian's `cross` branch and optional anchor; do
       not retain either old string as parallel compatibility state.
-- [ ] Add the universal nullable `anchor` field defined by
+- [x] Add the universal nullable `anchor` field defined by
       [`docs/specs/dialect/anchors.md`](../specs/dialect/anchors.md) and the
       non-null `attributes` field defined by
       [`docs/specs/dialect/attributes.md`](../specs/dialect/attributes.md) to
@@ -144,14 +144,14 @@ selected Pandoc extension participates.
 
 ## Phase 2 — one attribute operation and heading registry
 
-- [ ] Implement the shared attribute scanner and normalization operation once,
+- [x] Implement the shared attribute scanner and normalization operation once,
       to the grammar and semantics that the shared attributes contract states;
       the pinned Pandoc 3.11 reader is evidence for that contract, never its
       source of rules. Project the identifier into the owner anchor and the
       remaining components into classes and records. Remark and Pandoc modules
       contribute attachment sites only. No node owns a private parser or storage
       shape.
-- [ ] Replace the existing directive-only Remark attribute parser and pair-array
+- [x] Replace the existing directive-only Remark attribute parser and pair-array
       storage with the shared Pandoc operation. Update the directive fixtures and
       add every resulting Remark-oracle grammar difference to its fail-closed
       registry in that same commit; do not retain Remark shorthand, bare-name,

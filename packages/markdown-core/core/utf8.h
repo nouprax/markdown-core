@@ -26,6 +26,10 @@ int markdown_core_utf8proc_is_punctuation(int32_t uc);
 MARKDOWN_CORE_EXPORT
 int markdown_core_utf8proc_is_punctuation_or_symbol(int32_t uc);
 
+int markdown_core_utf8proc_is_letter(int32_t uc);
+int markdown_core_utf8proc_is_number(int32_t uc);
+int markdown_core_utf8proc_is_mark(int32_t uc);
+
 #ifdef __cplusplus
 }
 #endif

@@ -32,6 +32,10 @@ public struct Table: Markup {
     public let foot: [TableRow]
     /// Authored source extent. See ``Scope``.
     public let scope: Scope
+    /// The explicit anchor, absent when none was attached.
+    public let anchor: String?
+    /// Ordered classes and records, including duplicates.
+    public let attributes: Attributes
 
     /// Dispatches to this node kind's visitor callback.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
@@ -59,7 +63,9 @@ extension Table {
             head: Array(rows[..<headCount]),
             content: Array(rows[headCount..<(headCount + contentCount)]),
             foot: Array(rows[(headCount + contentCount)...]),
-            scope: Self.scope(from: node)
+            scope: Self.scope(from: node),
+            anchor: markdown_core_node_anchor(node).string,
+            attributes: Attributes(from: node)
         )
     }
 }
@@ -70,6 +76,10 @@ public struct TableRow: Markup {
     public let cells: [TableCell]
     /// Authored source extent. See ``Scope``.
     public let scope: Scope
+    /// The explicit anchor, absent when none was attached.
+    public let anchor: String?
+    /// Ordered classes and records, including duplicates.
+    public let attributes: Attributes
 
     /// Dispatches to this node kind's visitor callback.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
@@ -77,7 +87,12 @@ public struct TableRow: Markup {
 
 extension TableRow {
     init(from node: OpaquePointer, children: [any Markup]) {
-        self.init(cells: Self.typedChildren(children), scope: Self.scope(from: node))
+        self.init(
+            cells: Self.typedChildren(children),
+            scope: Self.scope(from: node),
+            anchor: markdown_core_node_anchor(node).string,
+            attributes: Attributes(from: node)
+        )
     }
 }
 
@@ -91,6 +106,10 @@ public struct TableCell: Markup {
     public let content: [any Markup]
     /// Authored source extent. See ``Scope``.
     public let scope: Scope
+    /// The explicit anchor, absent when none was attached.
+    public let anchor: String?
+    /// Ordered classes and records, including duplicates.
+    public let attributes: Attributes
 
     /// Dispatches to this node kind's visitor callback.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
@@ -101,6 +120,13 @@ extension TableCell {
         var rowspan: Int64 = 0
         var colspan: Int64 = 0
         precondition(markdown_core_node_table_cell_spans(node, &rowspan, &colspan))
-        self.init(rowspan: Int(rowspan), colspan: Int(colspan), content: content, scope: Self.scope(from: node))
+        self.init(
+            rowspan: Int(rowspan),
+            colspan: Int(colspan),
+            content: content,
+            scope: Self.scope(from: node),
+            anchor: markdown_core_node_anchor(node).string,
+            attributes: Attributes(from: node)
+        )
     }
 }

@@ -34,7 +34,13 @@ private final class DumpState {
         fields: [String] = [],
         children: Int = 0
     ) {
-        line(kind, scope: node.scope, fields: fields, children: children)
+        line(
+            kind,
+            scope: node.scope,
+            fields: ["anchor=\(optionalString(node.anchor))", "attributes=\(attributesString(node.attributes))"]
+                + fields,
+            children: children
+        )
     }
 
     /// A value line has the node line's shape: a scoped value prints like a node.
@@ -83,10 +89,26 @@ private struct DumpVisitor: MarkupVisitor {
         // The footnotes are value lines after the content, each nesting its
         // own content; `children` counts the content alone.
         state.line("Document", node, children: node.content.count)
-        state.nested(node.content.count + node.footnotes.count + node.specimens.count) {
+        state.nested(node.content.count + node.footnotes.count + node.specimens.count + (node.metadata == nil ? 0 : 1))
+        {
+            if let metadata = node.metadata { dumpMetadata(metadata) }
             node.content.forEach(state.dump)
             for footnote in node.footnotes { dumpFootnote(footnote) }
             for specimen in node.specimens { dumpSpecimen(specimen) }
+        }
+    }
+
+    private func dumpMetadata(_ value: Metadata) {
+        state.line("Metadata", scope: value.scope, fields: [], children: value.records.count)
+        state.nested(value.records.count) {
+            for record in value.records {
+                state.line(
+                    "MetadataRecord",
+                    scope: record.scope,
+                    fields: ["name=\(jsonString(record.name))", "value=\(metadataValue(record.value))"],
+                    children: 0
+                )
+            }
         }
     }
 
@@ -206,7 +228,7 @@ private struct DumpVisitor: MarkupVisitor {
         state.line(
             "DirectiveBlock",
             node,
-            fields: directiveFields(node.name, node.attributes),
+            fields: ["name=\(jsonString(node.name))"],
             children: node.content.count
         )
         state.nested(node.content.count + (node.label == nil ? 0 : 1)) {
@@ -277,14 +299,17 @@ private struct DumpVisitor: MarkupVisitor {
         state.line(
             "Image",
             node,
-            fields: ["dest=\(destinationString(node.dest))", "title=\(optionalString(node.title))"],
+            fields: [
+                "dest=\(destinationString(node.dest))", "title=\(optionalString(node.title))",
+                "width=\(node.width.map(String.init) ?? "null")", "height=\(node.height.map(String.init) ?? "null")",
+            ],
             children: node.content.count
         )
         state.nested(node.content.count) { node.content.forEach(state.dump) }
     }
 
     mutating func visit(_ node: Directive) {
-        state.line("Directive", node, fields: directiveFields(node.name, node.attributes))
+        state.line("Directive", node, fields: ["name=\(jsonString(node.name))"])
         state.nested(node.label == nil ? 0 : 1) {
             if let label = node.label { state.dump(label) }
         }
@@ -333,102 +358,4 @@ private struct DumpVisitor: MarkupVisitor {
         state.nested(node.content.count) { node.content.forEach(state.dump) }
     }
 
-    private func directiveFields(_ name: String, _ attributes: [DirectiveAttribute]?) -> [String] {
-        guard let attributes else {
-            return ["name=\(jsonString(name))", "attributes=null"]
-        }
-        let pairs = attributes.map { "\($0.name)=\(jsonString($0.value))" }.joined(separator: " ")
-        return ["name=\(jsonString(name))", "attributes=[\(pairs)]"]
-    }
-}
-
-private func scopeString(_ value: Scope) -> String {
-    "scope=\(value.start.line):\(value.start.column)..\(value.end.line):\(value.end.column)"
-}
-
-private func boolean(_ value: Bool) -> String { value ? "true" : "false" }
-
-/// A tagged value prints its branch and its named fields with no spaces.
-private func referentString(_ value: CitationReferent) -> String {
-    switch value {
-    case .bib(let key, let mode): "bib(key=\(jsonString(key)),mode=\(mode.rawValue))"
-    case .footnote(let id): "footnote(id=\(jsonString(id)))"
-    case .specimen(let id): "specimen(id=\(jsonString(id)))"
-    }
-}
-
-/// A tagged value prints its branch and its named fields with no spaces.
-private func destinationString(_ value: Destination) -> String {
-    switch value {
-    case .url(let url): "url(\(jsonString(url)))"
-    case .cross(let path, let anchor): "cross(path=\(jsonString(path)),anchor=\(optionalString(anchor)))"
-    }
-}
-
-private func orderedListDelimiter(_ value: OrderedListDelimiter?) -> String {
-    switch value {
-    case .period: "period"
-    case .parenthesis(let closed): "parenthesis(closed=\(boolean(closed)))"
-    case .default: "default"
-    case nil: "null"
-    }
-}
-
-private func orderedListVariant(_ value: OrderedListVariant?) -> String {
-    switch value {
-    case .decimal: "decimal"
-    case .alpha(let lowercased): "alpha(lowercased=\(boolean(lowercased)))"
-    case .roman(let lowercased): "roman(lowercased=\(boolean(lowercased)))"
-    case .default: "default"
-    case nil: "null"
-    }
-}
-
-private func optionalString(_ value: String?) -> String {
-    value.map(jsonString) ?? "null"
-}
-
-private func jsonString(_ value: String) -> String {
-    let hex = Array("0123456789abcdef")
-    var result = "\""
-    for scalar in value.unicodeScalars {
-        switch scalar.value {
-        case 0x22: result += "\\\""
-        case 0x5c: result += "\\\\"
-        case 0x08: result += "\\b"
-        case 0x0c: result += "\\f"
-        case 0x0a: result += "\\n"
-        case 0x0d: result += "\\r"
-        case 0x09: result += "\\t"
-        case 0..<0x20:
-            result += "\\u00\(hex[Int(scalar.value >> 4)])\(hex[Int(scalar.value & 0xf)])"
-        default: result.unicodeScalars.append(scalar)
-        }
-    }
-    return result + "\""
-}
-
-/// Normalize the runtime's shortest round-trip digits to the dump's decimal
-/// notation in [1e-6, 1e21), scientific notation outside that interval.
-private func decimal(_ value: Double) -> String {
-    let parts = String(value).lowercased().split(separator: "e")
-    let mantissa = parts[0].split(separator: ".")
-    var digits = String(mantissa.joined())
-    let exponent = parts.count == 2 ? Int(parts[1]) : 0
-    guard let exponent else { preconditionFailure("invalid runtime double exponent") }
-    var point = mantissa[0].count + exponent
-    while digits.first == "0" {
-        digits.removeFirst()
-        point -= 1
-    }
-    while digits.last == "0" { digits.removeLast() }
-    if point <= -6 || point > 21 {
-        let tail = digits.dropFirst()
-        return String(digits.prefix(1)) + (tail.isEmpty ? "" : "." + tail) + "e" + (point > 0 ? "+" : "")
-            + String(point - 1)
-    }
-    if point <= 0 { return "0." + String(repeating: "0", count: -point) + digits }
-    if point >= digits.count { return digits + String(repeating: "0", count: point - digits.count) }
-    let index = digits.index(digits.startIndex, offsetBy: point)
-    return String(digits[..<index]) + "." + digits[index...]
 }

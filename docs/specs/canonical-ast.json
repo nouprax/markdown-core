@@ -5,19 +5,13 @@
     "dumpGrammar": "docs/specs/canonical-ast-dump.md",
     "walk": {
         "phases": ["entering", "exiting"],
-        "order": "Depth first. A node enters, then its owned Markup-valued fields are visited in canonical field order with arrays retaining stored order, then the node exits. Relations remain named fields; the walk does not project them into generic children. Scoped values receive their own entering/exiting callbacks and traverse their owned Markup fields. Document visits content, footnotes, specimens in that order."
+        "order": "Depth first. A node enters, then its owned Markup-valued fields are visited in canonical field order with arrays retaining stored order, then the node exits. Relations remain named fields; the walk does not project them into generic children. Citation, Footnote, and Specimen receive their own entering/exiting callbacks and traverse their owned Markup fields. Metadata and MetadataRecord are data values and emit no visitor callbacks. Document visits content, footnotes, specimens in that order."
     },
     "enums": {
         "PlacementMode": ["embedded", "standalone"],
         "BibMode": ["normal", "authorInText", "suppressAuthor"],
         "ListFlavor": ["bullet", "ordered"],
-        "TableAlignment": ["none", "left", "center", "right"],
-        "DirectiveAttribute": "a name/value pair of Strings"
-    },
-    "inheritedField": {
-        "name": "scope",
-        "type": "Scope",
-        "optional": false
+        "TableAlignment": ["none", "left", "center", "right"]
     },
     "kinds": [
         {
@@ -27,6 +21,11 @@
                     "name": "content",
                     "type": "[Markup]",
                     "optional": false
+                },
+                {
+                    "name": "metadata",
+                    "type": "Metadata",
+                    "optional": true
                 },
                 {
                     "name": "footnotes",
@@ -271,11 +270,6 @@
                     "optional": false
                 },
                 {
-                    "name": "attributes",
-                    "type": "[DirectiveAttribute]",
-                    "optional": true
-                },
-                {
                     "name": "label",
                     "type": "DirectiveLabel",
                     "optional": true
@@ -286,7 +280,7 @@
                     "optional": false
                 }
             ],
-            "invariants": "attributes preserves first-occurrence source order with unique names; label is a node-valued field whose scope spans its brackets and is never part of content; content is block; an absent attribute container and an empty one remain distinct, as do an absent label and an empty one"
+            "invariants": "letter-first name; attributes use the inherited fields; label is a typed Markup field spanning its brackets, never content; absent and empty labels remain distinct; block content"
         },
         {
             "name": "DirectiveLabel",
@@ -437,6 +431,16 @@
                     "optional": true
                 },
                 {
+                    "name": "width",
+                    "type": "Int",
+                    "optional": true
+                },
+                {
+                    "name": "height",
+                    "type": "Int",
+                    "optional": true
+                },
+                {
                     "name": "content",
                     "type": "[Markup]",
                     "optional": false
@@ -453,17 +457,12 @@
                     "optional": false
                 },
                 {
-                    "name": "attributes",
-                    "type": "[DirectiveAttribute]",
-                    "optional": true
-                },
-                {
                     "name": "label",
                     "type": "DirectiveLabel",
                     "optional": true
                 }
             ],
-            "invariants": "attributes preserves first-occurrence source order with unique names; label is a node-valued field whose scope spans its brackets and is never a child/content element; an absent attribute container and an empty one remain distinct, as do an absent label and an empty one"
+            "invariants": "letter-first name; attributes use the inherited fields; label is a typed Markup field spanning its brackets, never content; absent and empty labels remain distinct; leaf"
         },
         {
             "name": "Cite",
@@ -672,6 +671,176 @@
                 }
             ],
             "dump": "alignment:relative within the compact columns array"
+        },
+        "Record": {
+            "scoped": false,
+            "fields": [
+                {
+                    "name": "name",
+                    "type": "String",
+                    "optional": false
+                },
+                {
+                    "name": "value",
+                    "type": "String",
+                    "optional": false
+                }
+            ],
+            "dump": "name=\"value\" within attributes"
+        },
+        "Attributes": {
+            "scoped": false,
+            "fields": [
+                {
+                    "name": "classes",
+                    "type": "[String]",
+                    "optional": false
+                },
+                {
+                    "name": "records",
+                    "type": "[Record]",
+                    "optional": false
+                }
+            ],
+            "dump": "{.class name=\"value\"}; both sequences preserve source order and duplicates"
+        },
+        "Metadata": {
+            "scoped": true,
+            "walk": false,
+            "fields": [
+                {
+                    "name": "records",
+                    "type": "[MetadataRecord]",
+                    "optional": false
+                }
+            ],
+            "dump": "Metadata scope=L:C..L:C children=N; nested before Document.content, absent emits no line"
+        },
+        "MetadataRecord": {
+            "scoped": true,
+            "walk": false,
+            "fields": [
+                {
+                    "name": "name",
+                    "type": "String",
+                    "optional": false
+                },
+                {
+                    "name": "value",
+                    "type": "MetadataValue",
+                    "optional": false
+                }
+            ],
+            "dump": "MetadataRecord scope=L:C..L:C name=\"...\" value=... children=0"
+        },
+        "MetadataValue": {
+            "scoped": false,
+            "branches": [
+                {
+                    "name": "scalar",
+                    "fields": [
+                        {
+                            "name": "value",
+                            "type": "MetadataScalar",
+                            "optional": false
+                        }
+                    ]
+                },
+                {
+                    "name": "list",
+                    "fields": [
+                        {
+                            "name": "items",
+                            "type": "[MetadataListItem]",
+                            "optional": false
+                        }
+                    ]
+                }
+            ],
+            "dump": "scalar(...) or list([...])"
+        },
+        "MetadataScalar": {
+            "scoped": false,
+            "branches": [
+                {
+                    "name": "null",
+                    "fields": []
+                },
+                {
+                    "name": "bool",
+                    "fields": [
+                        {
+                            "name": "value",
+                            "type": "Bool",
+                            "optional": false
+                        }
+                    ]
+                },
+                {
+                    "name": "number",
+                    "fields": [
+                        {
+                            "name": "value",
+                            "type": "String",
+                            "optional": false
+                        }
+                    ]
+                },
+                {
+                    "name": "text",
+                    "fields": [
+                        {
+                            "name": "value",
+                            "type": "String",
+                            "optional": false
+                        }
+                    ]
+                }
+            ],
+            "dump": "null, bool(true|false), number(\"lexeme\"), text(\"...\")"
+        },
+        "MetadataListItem": {
+            "scoped": false,
+            "branches": [
+                {
+                    "name": "number",
+                    "fields": [
+                        {
+                            "name": "value",
+                            "type": "String",
+                            "optional": false
+                        }
+                    ]
+                },
+                {
+                    "name": "text",
+                    "fields": [
+                        {
+                            "name": "value",
+                            "type": "String",
+                            "optional": false
+                        }
+                    ]
+                }
+            ],
+            "dump": "number(\"lexeme\") or text(\"...\")"
         }
-    }
+    },
+    "inheritedFields": [
+        {
+            "name": "scope",
+            "type": "Scope",
+            "optional": false
+        },
+        {
+            "name": "anchor",
+            "type": "String",
+            "optional": true
+        },
+        {
+            "name": "attributes",
+            "type": "Attributes",
+            "optional": false
+        }
+    ]
 }

@@ -141,7 +141,10 @@ const ORACLES = {
         // registered differences whose scope is wider than the one input each
         // entry names, which is what an input-keyed registry cannot express.
         gateArgs: [],
-        excludeFragments: ["$", "[^", "://"]
+        // An empty task prefix creates no paragraph here; remark can lazily
+        // continue the paragraph it forms before stripping that prefix.
+        // Recombination and truncation reproduce this registered boundary.
+        excludeFragments: ["$", "[^", "://", /^[\s>]*(?:[-*+]|\d+[.)])\s+\[[ xX]\][ \t\v\f]+$/]
     }
 };
 const oracle = ORACLES[oracleName];

@@ -11,9 +11,9 @@ where the two agree byte for byte.
 ```````````````````````````````` example
 "quotes" 'single' -- --- ---- ... a\"b
 .
-Document scope=1:1..1:38 children=1
-└── Paragraph scope=1:1..1:38 children=1
-    └── Text scope=1:1..1:38 literal="\"quotes\" 'single' -- --- ---- ... a\"b" children=0
+Document scope=1:1..1:38 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:38 anchor=null attributes={} children=1
+    └── Text scope=1:1..1:38 anchor=null attributes={} literal="\"quotes\" 'single' -- --- ---- ... a\"b" children=0
 ````````````````````````````````
 
 Quotes are never matched: an opening quote, a closing quote, and an apostrophe
@@ -23,38 +23,38 @@ are the same byte, stored as written.
 "Hello," said the spider.
 "'Shelob' is my name."
 .
-Document scope=1:1..2:22 children=1
-└── Paragraph scope=1:1..2:22 children=3
-    ├── Text scope=1:1..1:25 literal="\"Hello,\" said the spider." children=0
-    ├── SoftBreak scope=1:26..1:26 children=0
-    └── Text scope=2:1..2:22 literal="\"'Shelob' is my name.\"" children=0
+Document scope=1:1..2:22 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..2:22 anchor=null attributes={} children=3
+    ├── Text scope=1:1..1:25 anchor=null attributes={} literal="\"Hello,\" said the spider." children=0
+    ├── SoftBreak scope=1:26..1:26 anchor=null attributes={} children=0
+    └── Text scope=2:1..2:22 anchor=null attributes={} literal="\"'Shelob' is my name.\"" children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
 'A', 'B', and 'C' are letters.
 .
-Document scope=1:1..1:30 children=1
-└── Paragraph scope=1:1..1:30 children=1
-    └── Text scope=1:1..1:30 literal="'A', 'B', and 'C' are letters." children=0
+Document scope=1:1..1:30 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:30 anchor=null attributes={} children=1
+    └── Text scope=1:1..1:30 anchor=null attributes={} literal="'A', 'B', and 'C' are letters." children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
 'Oak,' 'elm,' and 'beech' are names of trees.
 So is 'pine.'
 .
-Document scope=1:1..2:13 children=1
-└── Paragraph scope=1:1..2:13 children=3
-    ├── Text scope=1:1..1:45 literal="'Oak,' 'elm,' and 'beech' are names of trees." children=0
-    ├── SoftBreak scope=1:46..1:46 children=0
-    └── Text scope=2:1..2:13 literal="So is 'pine.'" children=0
+Document scope=1:1..2:13 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..2:13 anchor=null attributes={} children=3
+    ├── Text scope=1:1..1:45 anchor=null attributes={} literal="'Oak,' 'elm,' and 'beech' are names of trees." children=0
+    ├── SoftBreak scope=1:46..1:46 anchor=null attributes={} children=0
+    └── Text scope=2:1..2:13 anchor=null attributes={} literal="So is 'pine.'" children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
 'He said, "I want to go."'
 .
-Document scope=1:1..1:26 children=1
-└── Paragraph scope=1:1..1:26 children=1
-    └── Text scope=1:1..1:26 literal="'He said, \"I want to go.\"'" children=0
+Document scope=1:1..1:26 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:26 anchor=null attributes={} children=1
+    └── Text scope=1:1..1:26 anchor=null attributes={} literal="'He said, \"I want to go.\"'" children=0
 ````````````````````````````````
 
 An apostrophe is the same byte:
@@ -62,22 +62,22 @@ An apostrophe is the same byte:
 ```````````````````````````````` example
 Were you alive in the 70's?
 .
-Document scope=1:1..1:27 children=1
-└── Paragraph scope=1:1..1:27 children=1
-    └── Text scope=1:1..1:27 literal="Were you alive in the 70's?" children=0
+Document scope=1:1..1:27 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:27 anchor=null attributes={} children=1
+    └── Text scope=1:1..1:27 anchor=null attributes={} literal="Were you alive in the 70's?" children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
 Here is some quoted '`code`' and a "[quoted link](url)".
 .
-Document scope=1:1..1:56 children=1
-└── Paragraph scope=1:1..1:56 children=5
-    ├── Text scope=1:1..1:21 literal="Here is some quoted '" children=0
-    ├── Code scope=1:22..1:27 literal="code" children=0
-    ├── Text scope=1:28..1:36 literal="' and a \"" children=0
-    ├── Link scope=1:37..1:54 dest=url("url") title=null children=1
-    │   └── Text scope=1:38..1:48 literal="quoted link" children=0
-    └── Text scope=1:55..1:56 literal="\"." children=0
+Document scope=1:1..1:56 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:56 anchor=null attributes={} children=5
+    ├── Text scope=1:1..1:21 anchor=null attributes={} literal="Here is some quoted '" children=0
+    ├── Code scope=1:22..1:27 anchor=null attributes={} literal="code" children=0
+    ├── Text scope=1:28..1:36 anchor=null attributes={} literal="' and a \"" children=0
+    ├── Link scope=1:37..1:54 anchor=null attributes={} dest=url("url") title=null children=1
+    │   └── Text scope=1:38..1:48 anchor=null attributes={} literal="quoted link" children=0
+    └── Text scope=1:55..1:56 anchor=null attributes={} literal="\"." children=0
 ````````````````````````````````
 
 A quote that cmark's smart mode would have read as an apostrophe by matching
@@ -86,9 +86,9 @@ stays as it was written:
 ```````````````````````````````` example
 'tis the season to be 'jolly'
 .
-Document scope=1:1..1:29 children=1
-└── Paragraph scope=1:1..1:29 children=1
-    └── Text scope=1:1..1:29 literal="'tis the season to be 'jolly'" children=0
+Document scope=1:1..1:29 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:29 anchor=null attributes={} children=1
+    └── Text scope=1:1..1:29 anchor=null attributes={} literal="'tis the season to be 'jolly'" children=0
 ````````````````````````````````
 
 Several apostrophes in one run of text stay apostrophes:
@@ -96,9 +96,9 @@ Several apostrophes in one run of text stay apostrophes:
 ```````````````````````````````` example
 'We'll use Jane's boat and John's truck,' Jenna said.
 .
-Document scope=1:1..1:53 children=1
-└── Paragraph scope=1:1..1:53 children=1
-    └── Text scope=1:1..1:53 literal="'We'll use Jane's boat and John's truck,' Jenna said." children=0
+Document scope=1:1..1:53 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:53 anchor=null attributes={} children=1
+    └── Text scope=1:1..1:53 anchor=null attributes={} literal="'We'll use Jane's boat and John's truck,' Jenna said." children=0
 ````````````````````````````````
 
 An unmatched double quote is a double quote:
@@ -108,11 +108,11 @@ An unmatched double quote is a double quote:
 
 "Second paragraph by same speaker, in fiction."
 .
-Document scope=1:1..3:47 children=2
-├── Paragraph scope=1:1..1:35 children=1
-│   └── Text scope=1:1..1:35 literal="\"A paragraph with no closing quote." children=0
-└── Paragraph scope=3:1..3:47 children=1
-    └── Text scope=3:1..3:47 literal="\"Second paragraph by same speaker, in fiction.\"" children=0
+Document scope=1:1..3:47 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:35 anchor=null attributes={} children=1
+│   └── Text scope=1:1..1:35 anchor=null attributes={} literal="\"A paragraph with no closing quote." children=0
+└── Paragraph scope=3:1..3:47 anchor=null attributes={} children=1
+    └── Text scope=3:1..3:47 anchor=null attributes={} literal="\"Second paragraph by same speaker, in fiction.\"" children=0
 ````````````````````````````````
 
 A quote after `]` or `)` is the same byte as anywhere else:
@@ -120,9 +120,9 @@ A quote after `]` or `)` is the same byte as anywhere else:
 ```````````````````````````````` example
 [a]'s b'
 .
-Document scope=1:1..1:8 children=1
-└── Paragraph scope=1:1..1:8 children=1
-    └── Text scope=1:1..1:8 literal="[a]'s b'" children=0
+Document scope=1:1..1:8 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:8 anchor=null attributes={} children=1
+    └── Text scope=1:1..1:8 anchor=null attributes={} literal="[a]'s b'" children=0
 ````````````````````````````````
 
 An escaped quote is the quote it escapes, exactly as an unescaped one is:
@@ -132,13 +132,13 @@ An escaped quote is the quote it escapes, exactly as an unescaped one is:
 This isn\'t either.
 5\'8\"
 .
-Document scope=1:1..3:6 children=1
-└── Paragraph scope=1:1..3:6 children=5
-    ├── Text scope=1:1..1:22 literal="\"This is not smart.\"" children=0
-    ├── SoftBreak scope=1:23..1:23 children=0
-    ├── Text scope=2:1..2:19 literal="This isn't either." children=0
-    ├── SoftBreak scope=2:20..2:20 children=0
-    └── Text scope=3:1..3:6 literal="5'8\"" children=0
+Document scope=1:1..3:6 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..3:6 anchor=null attributes={} children=5
+    ├── Text scope=1:1..1:22 anchor=null attributes={} literal="\"This is not smart.\"" children=0
+    ├── SoftBreak scope=1:23..1:23 anchor=null attributes={} children=0
+    ├── Text scope=2:1..2:19 anchor=null attributes={} literal="This isn't either." children=0
+    ├── SoftBreak scope=2:20..2:20 anchor=null attributes={} children=0
+    └── Text scope=3:1..3:6 anchor=null attributes={} literal="5'8\"" children=0
 ````````````````````````````````
 
 Hyphen runs of every length are hyphens:
@@ -150,17 +150,17 @@ em --- em
 en -- en
 2--3
 .
-Document scope=1:1..5:4 children=1
-└── Paragraph scope=1:1..5:4 children=9
-    ├── Text scope=1:1..1:21 literal="Some dashes:  em---em" children=0
-    ├── SoftBreak scope=1:22..1:22 children=0
-    ├── Text scope=2:1..2:6 literal="en--en" children=0
-    ├── SoftBreak scope=2:7..2:7 children=0
-    ├── Text scope=3:1..3:9 literal="em --- em" children=0
-    ├── SoftBreak scope=3:10..3:10 children=0
-    ├── Text scope=4:1..4:8 literal="en -- en" children=0
-    ├── SoftBreak scope=4:9..4:9 children=0
-    └── Text scope=5:1..5:4 literal="2--3" children=0
+Document scope=1:1..5:4 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..5:4 anchor=null attributes={} children=9
+    ├── Text scope=1:1..1:21 anchor=null attributes={} literal="Some dashes:  em---em" children=0
+    ├── SoftBreak scope=1:22..1:22 anchor=null attributes={} children=0
+    ├── Text scope=2:1..2:6 anchor=null attributes={} literal="en--en" children=0
+    ├── SoftBreak scope=2:7..2:7 anchor=null attributes={} children=0
+    ├── Text scope=3:1..3:9 anchor=null attributes={} literal="em --- em" children=0
+    ├── SoftBreak scope=3:10..3:10 anchor=null attributes={} children=0
+    ├── Text scope=4:1..4:8 anchor=null attributes={} literal="en -- en" children=0
+    ├── SoftBreak scope=4:9..4:9 anchor=null attributes={} children=0
+    └── Text scope=5:1..5:4 anchor=null attributes={} literal="2--3" children=0
 ````````````````````````````````
 
 The inputs cmark's smart mode splits into em and en dashes are stored whole:
@@ -177,27 +177,27 @@ eight--------
 nine---------
 thirteen-------------.
 .
-Document scope=1:1..10:22 children=1
-└── Paragraph scope=1:1..10:22 children=19
-    ├── Text scope=1:1..1:4 literal="one-" children=0
-    ├── SoftBreak scope=1:5..1:5 children=0
-    ├── Text scope=2:1..2:5 literal="two--" children=0
-    ├── SoftBreak scope=2:6..2:6 children=0
-    ├── Text scope=3:1..3:8 literal="three---" children=0
-    ├── SoftBreak scope=3:9..3:9 children=0
-    ├── Text scope=4:1..4:8 literal="four----" children=0
-    ├── SoftBreak scope=4:9..4:9 children=0
-    ├── Text scope=5:1..5:9 literal="five-----" children=0
-    ├── SoftBreak scope=5:10..5:10 children=0
-    ├── Text scope=6:1..6:9 literal="six------" children=0
-    ├── SoftBreak scope=6:10..6:10 children=0
-    ├── Text scope=7:1..7:12 literal="seven-------" children=0
-    ├── SoftBreak scope=7:13..7:13 children=0
-    ├── Text scope=8:1..8:13 literal="eight--------" children=0
-    ├── SoftBreak scope=8:14..8:14 children=0
-    ├── Text scope=9:1..9:13 literal="nine---------" children=0
-    ├── SoftBreak scope=9:14..9:14 children=0
-    └── Text scope=10:1..10:22 literal="thirteen-------------." children=0
+Document scope=1:1..10:22 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..10:22 anchor=null attributes={} children=19
+    ├── Text scope=1:1..1:4 anchor=null attributes={} literal="one-" children=0
+    ├── SoftBreak scope=1:5..1:5 anchor=null attributes={} children=0
+    ├── Text scope=2:1..2:5 anchor=null attributes={} literal="two--" children=0
+    ├── SoftBreak scope=2:6..2:6 anchor=null attributes={} children=0
+    ├── Text scope=3:1..3:8 anchor=null attributes={} literal="three---" children=0
+    ├── SoftBreak scope=3:9..3:9 anchor=null attributes={} children=0
+    ├── Text scope=4:1..4:8 anchor=null attributes={} literal="four----" children=0
+    ├── SoftBreak scope=4:9..4:9 anchor=null attributes={} children=0
+    ├── Text scope=5:1..5:9 anchor=null attributes={} literal="five-----" children=0
+    ├── SoftBreak scope=5:10..5:10 anchor=null attributes={} children=0
+    ├── Text scope=6:1..6:9 anchor=null attributes={} literal="six------" children=0
+    ├── SoftBreak scope=6:10..6:10 anchor=null attributes={} children=0
+    ├── Text scope=7:1..7:12 anchor=null attributes={} literal="seven-------" children=0
+    ├── SoftBreak scope=7:13..7:13 anchor=null attributes={} children=0
+    ├── Text scope=8:1..8:13 anchor=null attributes={} literal="eight--------" children=0
+    ├── SoftBreak scope=8:14..8:14 anchor=null attributes={} children=0
+    ├── Text scope=9:1..9:13 anchor=null attributes={} literal="nine---------" children=0
+    ├── SoftBreak scope=9:14..9:14 anchor=null attributes={} children=0
+    └── Text scope=10:1..10:22 anchor=null attributes={} literal="thirteen-------------." children=0
 ````````````````````````````````
 
 An escaped hyphen is a hyphen, exactly as an unescaped one is:
@@ -205,9 +205,9 @@ An escaped hyphen is a hyphen, exactly as an unescaped one is:
 ```````````````````````````````` example
 Escaped hyphens: \-- \-\-\-.
 .
-Document scope=1:1..1:28 children=1
-└── Paragraph scope=1:1..1:28 children=1
-    └── Text scope=1:1..1:28 literal="Escaped hyphens: -- ---." children=0
+Document scope=1:1..1:28 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:28 anchor=null attributes={} children=1
+    └── Text scope=1:1..1:28 anchor=null attributes={} literal="Escaped hyphens: -- ---." children=0
 ````````````````````````````````
 
 Three periods are three periods:
@@ -215,9 +215,9 @@ Three periods are three periods:
 ```````````````````````````````` example
 Ellipses...and...and....
 .
-Document scope=1:1..1:24 children=1
-└── Paragraph scope=1:1..1:24 children=1
-    └── Text scope=1:1..1:24 literal="Ellipses...and...and...." children=0
+Document scope=1:1..1:24 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:24 anchor=null attributes={} children=1
+    └── Text scope=1:1..1:24 anchor=null attributes={} literal="Ellipses...and...and...." children=0
 ````````````````````````````````
 
 An escaped period is a period, exactly as an unescaped one is:
@@ -225,7 +225,7 @@ An escaped period is a period, exactly as an unescaped one is:
 ```````````````````````````````` example
 No ellipses\.\.\.
 .
-Document scope=1:1..1:17 children=1
-└── Paragraph scope=1:1..1:17 children=1
-    └── Text scope=1:1..1:17 literal="No ellipses..." children=0
+Document scope=1:1..1:17 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:17 anchor=null attributes={} children=1
+    └── Text scope=1:1..1:17 anchor=null attributes={} literal="No ellipses..." children=0
 ````````````````````````````````

@@ -201,17 +201,19 @@
             "id": "properties-text-and-empty-values",
             "input": "---\ndate: 2026-09-03\nwhen: 2026-09-03T12:34:56\nyes-word: yes\nnothing: null\nempty-text: \"\"\nempty-list: []\n---\n",
             "oracleDigest": "98e8cba74bbca8623108e244a831571965947c4abbfa5bc02b88e40ced8a549f",
-            "markdownCoreDigest": "84fe3cf635d2ad8cb808cd072f329c365a31c56520248e9c896294296f88ea6b",
+            "markdownCoreDigest": "8353fdc0b63a2baed42facecd022fc037133c46cfc714a616ecc23e121f3dead",
             "requirement": "Keep dates, date-times, and YAML-1.1-only boolean words as text, and distinguish null, empty text, and an empty list.",
-            "closedBy": "Phase 3 — Properties, anchors, and callout containers"
+            "closedBy": "Phase 3 — Properties, anchors, and callout containers",
+            "digestChange": "M7: directive names now require a Unicode letter first, so numeric time and JSON number tails stay text before O6 claims the Properties envelope."
         },
         {
             "id": "properties-json-root",
             "input": "---\n{\"name\":\"value\",\"enabled\":true,\"count\":3}\n---\nAfter\n",
             "oracleDigest": "8d4b090a2738b2c6b08bc471097bdb295f88f976b6089cb5a9a7d22287d98225",
-            "markdownCoreDigest": "cc9dfa0781160dda3adb56eeed78bc91d4f9c5d7e840e52e31d6a7ef7f4abbf1",
+            "markdownCoreDigest": "3279c1ccdb4aaecb307c856b2570ee92225ee0d0e4c2de01b4b00e192ba8ffe1",
             "requirement": "Project a JSON root object through the same Metadata record and value model as YAML.",
-            "closedBy": "Phase 3 — Properties, anchors, and callout containers"
+            "closedBy": "Phase 3 — Properties, anchors, and callout containers",
+            "digestChange": "M7: directive names now require a Unicode letter first, so numeric time and JSON number tails stay text before O6 claims the Properties envelope."
         },
         {
             "id": "properties-explicit-empty",

@@ -8,6 +8,10 @@ import MarkdownCoreC
 public struct Link: Markup {
     /// Where it is, brackets and parentheses included. See ``Scope``.
     public let scope: Scope
+    /// The explicit anchor, absent when none was attached.
+    public let anchor: String?
+    /// Ordered classes and records, including duplicates.
+    public let attributes: Attributes
     /// The link text, as inline content.
     public let content: [any Markup]
     /// Required: `[a]()` and `[a](<>)` wrote a destination and wrote nothing
@@ -24,6 +28,13 @@ public struct Link: Markup {
 extension Link {
     init(from node: OpaquePointer, content: [any Markup], resources: inout [UnsafeRawPointer: SharedResource]) {
         let resource = SharedResource.shared(by: node, in: &resources)
-        self.init(scope: Self.scope(from: node), content: content, dest: resource.dest, title: resource.title)
+        self.init(
+            scope: Self.scope(from: node),
+            anchor: markdown_core_node_anchor(node).string,
+            attributes: Attributes(from: node),
+            content: content,
+            dest: resource.dest,
+            title: resource.title
+        )
     }
 }

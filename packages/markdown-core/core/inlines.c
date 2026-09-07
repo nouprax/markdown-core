@@ -47,6 +47,7 @@ typedef struct bracket {
 typedef struct subject {
     markdown_core_mem *mem;
     markdown_core_chunk input;
+    markdown_core_attribute_parser attributes;
     unsigned flags;
     int line;
     bufsize_t pos;
@@ -153,6 +154,20 @@ static MARKDOWN_CORE_INLINE void S_place_inline(subject *subj, markdown_core_nod
 void markdown_core_inline_parser_place(markdown_core_inline_parser *parser, markdown_core_node *node, int from,
                                        int to) {
     S_place_inline(parser, node, from, to);
+}
+
+int markdown_core_inline_parser_attributes(markdown_core_inline_parser *parser, bufsize_t start,
+                                           markdown_core_attributes *value, bufsize_t *end) {
+    if (!parser->attributes.mem) {
+        parser->attributes.mem = parser->mem;
+        parser->attributes.data = parser->input.data;
+        parser->attributes.length = parser->input.len;
+    }
+    int matched = markdown_core_attributes_parse(&parser->attributes, start, value, end);
+    if (parser->attributes.oom) {
+        parser->oom = 1;
+    }
+    return matched;
 }
 
 // Create an inline with a literal string value.
@@ -2006,6 +2021,7 @@ void markdown_core_parse_inlines(markdown_core_parser *parser, markdown_core_nod
                                           parent->start_column + parent->internal_offset);
     }
     subject_from_buf(parser, parser->mem, parent->start_line, &subj, &content, refmap);
+    memset(&subj.attributes, 0, sizeof(subj.attributes));
     subj.owner = parent;
     markdown_core_chunk_rtrim(&subj.input);
 
@@ -2021,6 +2037,9 @@ void markdown_core_parse_inlines(markdown_core_parser *parser, markdown_core_nod
         pop_bracket(&subj);
     }
 
+    if (subj.attributes.mem) {
+        markdown_core_attribute_parser_free(&subj.attributes);
+    }
     if (subj.oom) {
         parser->oom = true;
     }

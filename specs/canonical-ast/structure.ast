@@ -1,28 +1,28 @@
-Document scope=1:1..9:3 children=3
-├── Table scope=1:1..3:17 columns=[left:null,center:null,right:null] children=2
+Document scope=1:1..9:3 anchor=null attributes={} children=3
+├── Table scope=1:1..3:17 anchor=null attributes={} columns=[left:null,center:null,right:null] children=2
 │   ├── TableHead children=1
-│   │   └── TableRow scope=1:1..1:25 children=3
-│   │       ├── TableCell scope=1:2..1:7 rowspan=1 colspan=1 children=1
-│   │       │   └── Text scope=1:3..1:6 literal="left" children=0
-│   │       ├── TableCell scope=1:9..1:16 rowspan=1 colspan=1 children=1
-│   │       │   └── Text scope=1:10..1:15 literal="center" children=0
-│   │       └── TableCell scope=1:18..1:24 rowspan=1 colspan=1 children=1
-│   │           └── Text scope=1:19..1:23 literal="right" children=0
+│   │   └── TableRow scope=1:1..1:25 anchor=null attributes={} children=3
+│   │       ├── TableCell scope=1:2..1:7 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │       │   └── Text scope=1:3..1:6 anchor=null attributes={} literal="left" children=0
+│   │       ├── TableCell scope=1:9..1:16 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │       │   └── Text scope=1:10..1:15 anchor=null attributes={} literal="center" children=0
+│   │       └── TableCell scope=1:18..1:24 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │           └── Text scope=1:19..1:23 anchor=null attributes={} literal="right" children=0
 │   ├── TableBody children=1
-│   │   └── TableRow scope=3:1..3:17 children=3
-│   │       ├── TableCell scope=3:2..3:4 rowspan=1 colspan=1 children=1
-│   │       │   └── Text scope=3:3..3:3 literal="a" children=0
-│   │       ├── TableCell scope=3:6..3:12 rowspan=1 colspan=1 children=1
-│   │       │   └── Strong scope=3:7..3:11 children=1
-│   │       │       └── Text scope=3:9..3:9 literal="b" children=0
-│   │       └── TableCell scope=3:14..3:16 rowspan=1 colspan=1 children=1
-│   │           └── Text scope=3:15..3:15 literal="c" children=0
+│   │   └── TableRow scope=3:1..3:17 anchor=null attributes={} children=3
+│   │       ├── TableCell scope=3:2..3:4 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │       │   └── Text scope=3:3..3:3 anchor=null attributes={} literal="a" children=0
+│   │       ├── TableCell scope=3:6..3:12 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │       │   └── Strong scope=3:7..3:11 anchor=null attributes={} children=1
+│   │       │       └── Text scope=3:9..3:9 anchor=null attributes={} literal="b" children=0
+│   │       └── TableCell scope=3:14..3:16 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │           └── Text scope=3:15..3:15 anchor=null attributes={} literal="c" children=0
 │   └── TableFoot children=0
-├── DirectiveBlock scope=5:1..5:28 name="leaf" attributes=[id="identifier"] children=0
-│   └── DirectiveLabel scope=5:7..5:13 children=1
-│       └── Text scope=5:8..5:12 literal="Label" children=0
-└── DirectiveBlock scope=7:1..9:3 name="container" attributes=[properties="{\"tags\":[\"a\",null]}" metadata="{\"count\":9007199254740993}"] children=1
-    ├── DirectiveLabel scope=7:13..7:19 children=1
-    │   └── Text scope=7:14..7:18 literal="Title" children=0
-    └── Paragraph scope=8:1..8:4 children=1
-        └── Text scope=8:1..8:4 literal="Body" children=0
+├── DirectiveBlock scope=5:1..5:28 anchor="identifier" attributes={} name="leaf" children=0
+│   └── DirectiveLabel scope=5:7..5:13 anchor=null attributes={} children=1
+│       └── Text scope=5:8..5:12 anchor=null attributes={} literal="Label" children=0
+└── DirectiveBlock scope=7:1..9:3 anchor=null attributes={properties="{\"tags\":[\"a\",null]}" metadata="{\"count\":9007199254740993}"} name="container" children=1
+    ├── DirectiveLabel scope=7:13..7:19 anchor=null attributes={} children=1
+    │   └── Text scope=7:14..7:18 anchor=null attributes={} literal="Title" children=0
+    └── Paragraph scope=8:1..8:4 anchor=null attributes={} children=1
+        └── Text scope=8:1..8:4 anchor=null attributes={} literal="Body" children=0

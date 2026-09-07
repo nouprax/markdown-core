@@ -14,6 +14,8 @@ set(HEADERS
     node.h
     iterator.h
     chunk.h
+    attributes.h
+    metadata.h
     references.h
     map.h
     utf8.h
@@ -26,6 +28,7 @@ set(HEADERS
 set(LIBRARY_SOURCES
     markdown_core.c
     node.c
+    attributes.c
     iterator.c
     blocks.c
     inlines.c

@@ -2,7 +2,7 @@
     "schemaVersion": 1,
     "oracle": {
         "runner": "unified / remark",
-        "why": "The oracles below are micromark extensions, which emit a token stream rather than a tree. remark is the harness that runs them and turns the tokens into mdast, so it is what this gate executes \u2014 but the syntax decisions being compared are the extensions' own.",
+        "why": "The oracles below are micromark extensions, which emit a token stream rather than a tree. remark is the harness that runs them and turns the tokens into mdast, so it is what this gate executes — but the syntax decisions being compared are the extensions' own.",
         "authorities": {
             "directives": "micromark-extension-directive@4.0.0 for directive envelopes, labels, and attachment positions (run through remark-directive); the shared attribute member grammar is explicitly Pandoc-owned",
             "math": "micromark-extension-math@3.1.0",
@@ -11,8 +11,8 @@
         "astShapeFrom": "mdast-util-directive@3.1.0 and mdast-util-from-markdown; every `ast-shape` delta below originates here, not in the parser extensions.",
         "note": "Versions are pinned by pnpm-lock.yaml. This is a corrective and supplementary oracle: cmark remains the CommonMark oracle and cmark-gfm the GFM-extension oracle, while remark/mdast supplies independent evidence for directives, math, footnote representation, tables, and the reference-link model.",
         "notAnAuthorityFor": [
-            "Which construct wins when two extensions could claim the same line. That is decided by micromark's construct priority and by this repository's audited extension attachment order \u2014 each an artifact of its own architecture, not a rule either project specifies. Divergences of that kind are product grammar decisions rather than mdast parity deltas.",
-            "LaTeX-style math delimiters. micromark-extension-math implements `$` and `$$` only, so `\\(x\\)` and `\\[x\\]` reach remark as ordinary escaped brackets. It has no opinion there to compare against, which is why packages/markdown-core/tests/fixtures/extensions-formula-latex.txt is deliberately absent from the corpus below rather than present with six registered divergences. Registering them would read as `remark disagrees`, and it does not \u2014 it was never asked.",
+            "Which construct wins when two extensions could claim the same line. That is decided by micromark's construct priority and by this repository's audited extension attachment order — each an artifact of its own architecture, not a rule either project specifies. Divergences of that kind are product grammar decisions rather than mdast parity deltas.",
+            "LaTeX-style math delimiters. micromark-extension-math implements `$` and `$$` only, so `\\(x\\)` and `\\[x\\]` reach remark as ordinary escaped brackets. It has no opinion there to compare against, which is why packages/markdown-core/tests/fixtures/extensions-formula-latex.txt is deliberately absent from the corpus below rather than present with six registered divergences. Registering them would read as `remark disagrees`, and it does not — it was never asked.",
             "Whether an extension is on. The dialect has no switches and every parse attaches every extension, so what an input parses to with a scanner excluded is not a property of the product; no fixture and no gate asserts it.",
             "Attribute member grammar and consumer projection. Markdown Core deliberately uses the pinned Pandoc 3.11 grammar at every attachment site and projects IDs to the universal anchor and remaining values to shared classes and records; remark remains the evidence only for the directive envelope and attachment position, which the directives module states. New runtime differences caused by that planned migration must be registered when they begin reproducing."
         ]
@@ -22,7 +22,9 @@
         "specs/oracles/remark/corpus.md",
         "packages/markdown-core/tests/fixtures/extensions-directive.txt",
         "packages/markdown-core/tests/fixtures/extensions-formula-github.txt",
-        "packages/markdown-core/tests/fixtures/dialect-task-lists.txt"
+        "packages/markdown-core/tests/fixtures/dialect-task-lists.txt",
+        "packages/markdown-core/tests/fixtures/dialect-directives.txt",
+        "packages/markdown-core/tests/fixtures/dialect-attributes.txt"
     ],
     "deltas": [
         {
@@ -192,21 +194,266 @@
             "authority": "Pandoc 3.11 shared attribute grammar",
             "summary": "An unquoted directive attribute value retains these semicolonless character-reference spellings; micromark-extension-directive decodes them in HTML-attribute context.",
             "why": "Pandoc does not run character-reference decoding for unquoted attribute values. The same grammar applies at directive sites, so this is a deliberate shared-language boundary rather than implementation backlog."
+        },
+        {
+            "id": "shared-attributes-quoted-line-ending",
+            "input": ":note[label]{title=\"one\ntwo\"} tail\n",
+            "authority": "docs/specs/dialect/attributes.md and directives.md (M7)",
+            "summary": "Quoted line endings normalize to one ASCII space; remark preserves a newline.",
+            "why": "Directives are the first attachment site of the single Pandoc 3.11 attribute operation. The dialect owns normalization and the Unicode letter-first directive envelope; remark supplies independent evidence, not alternate parsing modes."
+        },
+        {
+            "id": "shared-attributes-bare-member-atomic",
+            "input": ":data[label]{muted dup=first dup=last unicode=中文😀 title=\"My Video\"}\n",
+            "authority": "docs/specs/dialect/attributes.md and directives.md (M7)",
+            "summary": "A bare name invalidates the entire container; remark accepts a valueless member and deduplicates assignments.",
+            "why": "Directives are the first attachment site of the single Pandoc 3.11 attribute operation. The dialect owns normalization and the Unicode letter-first directive envelope; remark supplies independent evidence, not alternate parsing modes."
+        },
+        {
+            "id": "shared-attributes-unmatched-quote-fallback",
+            "input": ":invalid{=value}\n:open{title=\"value}\n",
+            "authority": "docs/specs/dialect/attributes.md and directives.md (M7)",
+            "summary": "Without a matching quote the value follows the unquoted grammar; remark leaves this container literal.",
+            "why": "Directives are the first attachment site of the single Pandoc 3.11 attribute operation. The dialect owns normalization and the Unicode letter-first directive envelope; remark supplies independent evidence, not alternate parsing modes."
+        },
+        {
+            "id": "shared-attributes-shorthand-dots",
+            "input": ":id{#one.two}\n:class{.one.two}\n:colon{#one:two .three:four}\n",
+            "authority": "docs/specs/dialect/attributes.md and directives.md (M7)",
+            "summary": "Dots are name characters inside one ID or class, rather than successive remark shorthand members.",
+            "why": "Directives are the first attachment site of the single Pandoc 3.11 attribute operation. The dialect owns normalization and the Unicode letter-first directive envelope; remark supplies independent evidence, not alternate parsing modes."
+        },
+        {
+            "id": "shared-attributes-letter-first",
+            "input": ":1a[]\n",
+            "authority": "docs/specs/dialect/attributes.md and directives.md (M7)",
+            "summary": "A directive name begins with a Unicode letter, so a digit-first name is text.",
+            "why": "Directives are the first attachment site of the single Pandoc 3.11 attribute operation. The dialect owns normalization and the Unicode letter-first directive envelope; remark supplies independent evidence, not alternate parsing modes."
+        },
+        {
+            "id": "shared-attributes-unquoted-quote",
+            "input": ":n{a=b\"c\"}\n",
+            "authority": "docs/specs/dialect/attributes.md and directives.md (M7)",
+            "summary": "Quotes within an unquoted value are ordinary content.",
+            "why": "Directives are the first attachment site of the single Pandoc 3.11 attribute operation. The dialect owns normalization and the Unicode letter-first directive envelope; remark supplies independent evidence, not alternate parsing modes."
+        },
+        {
+            "id": "shared-attributes-class-dots",
+            "input": ":n{.a.b}\n",
+            "authority": "docs/specs/dialect/attributes.md and directives.md (M7)",
+            "summary": "A dotted class shorthand appends exactly one class.",
+            "why": "Directives are the first attachment site of the single Pandoc 3.11 attribute operation. The dialect owns normalization and the Unicode letter-first directive envelope; remark supplies independent evidence, not alternate parsing modes."
+        },
+        {
+            "id": "shared-attributes-adjacent-assignments",
+            "input": ":n{a=\"x\"b=1}\n",
+            "authority": "docs/specs/dialect/attributes.md and directives.md (M7)",
+            "summary": "A closed quoted value may be immediately followed by another assignment; spacing is optional.",
+            "why": "Directives are the first attachment site of the single Pandoc 3.11 attribute operation. The dialect owns normalization and the Unicode letter-first directive envelope; remark supplies independent evidence, not alternate parsing modes."
+        },
+        {
+            "id": "shared-attributes-bare-colon-name",
+            "input": ":x{a:b .c}\n",
+            "authority": "docs/specs/dialect/attributes.md and directives.md (M7)",
+            "summary": "A colon in a name does not make a bare name into an assignment; malformed containers attach nothing.",
+            "why": "Directives are the first attachment site of the single Pandoc 3.11 attribute operation. The dialect owns normalization and the Unicode letter-first directive envelope; remark supplies independent evidence, not alternate parsing modes."
+        },
+        {
+            "id": "shared-attributes-invalid-underscore-name",
+            "input": ":n{-a=1 _b=2}\n",
+            "authority": "docs/specs/dialect/attributes.md and directives.md (M7)",
+            "summary": "The special minus member is allowed, but an underscore-first assignment invalidates the whole container.",
+            "why": "Directives are the first attachment site of the single Pandoc 3.11 attribute operation. The dialect owns normalization and the Unicode letter-first directive envelope; remark supplies independent evidence, not alternate parsing modes."
+        },
+        {
+            "id": "shared-attributes-class-name-characters",
+            "input": ":n{.a&b .c$d}\n",
+            "authority": "docs/specs/dialect/attributes.md and directives.md (M7)",
+            "summary": "Class shorthands admit letters, numbers, hyphens, underscores, dots and colons; ampersands and dollar signs invalidate the container.",
+            "why": "Directives are the first attachment site of the single Pandoc 3.11 attribute operation. The dialect owns normalization and the Unicode letter-first directive envelope; remark supplies independent evidence, not alternate parsing modes."
+        },
+        {
+            "id": "shared-attributes-invalid-entity-shorthand",
+            "input": ":n{a=&amp; b=\"&amp; &#65; &#x41;\" .&amp; c=&notreal;}\n",
+            "authority": "docs/specs/dialect/attributes.md and directives.md (M7)",
+            "summary": "Character references are decoded only in quoted assignment values, never to repair an invalid class shorthand.",
+            "why": "Directives are the first attachment site of the single Pandoc 3.11 attribute operation. The dialect owns normalization and the Unicode letter-first directive envelope; remark supplies independent evidence, not alternate parsing modes."
+        },
+        {
+            "id": "shared-attributes-unquoted-entities",
+            "input": ":n{a=x&#125;y b=p&#32;q}\n",
+            "authority": "docs/specs/dialect/attributes.md and directives.md (M7)",
+            "summary": "Unquoted values preserve character-reference spellings, including encoded braces and spaces; remark decodes them.",
+            "why": "Directives are the first attachment site of the single Pandoc 3.11 attribute operation. The dialect owns normalization and the Unicode letter-first directive envelope; remark supplies independent evidence, not alternate parsing modes."
+        },
+        {
+            "id": "shared-attributes-empty-assignment",
+            "input": ":x{a=}t\n",
+            "authority": "docs/specs/dialect/attributes.md and directives.md (M7)",
+            "summary": "An empty assignment is valid immediately before the closing brace.",
+            "why": "Directives are the first attachment site of the single Pandoc 3.11 attribute operation. The dialect owns normalization and the Unicode letter-first directive envelope; remark supplies independent evidence, not alternate parsing modes."
+        },
+        {
+            "id": "shared-attributes-empty-assignment-space",
+            "input": ":x{a= }t\n",
+            "authority": "docs/specs/dialect/attributes.md and directives.md (M7)",
+            "summary": "An empty assignment remains valid before spaces and the closing brace.",
+            "why": "Directives are the first attachment site of the single Pandoc 3.11 attribute operation. The dialect owns normalization and the Unicode letter-first directive envelope; remark supplies independent evidence, not alternate parsing modes."
+        },
+        {
+            "id": "shared-attributes-empty-assignment-line",
+            "input": ":x{a=\n}t\n",
+            "authority": "docs/specs/dialect/attributes.md and directives.md (M7)",
+            "summary": "An empty assignment remains valid before one permitted line ending.",
+            "why": "Directives are the first attachment site of the single Pandoc 3.11 attribute operation. The dialect owns normalization and the Unicode letter-first directive envelope; remark supplies independent evidence, not alternate parsing modes."
+        },
+        {
+            "id": "shared-attributes-unquoted-less-than",
+            "input": ":x{a=b<c}t\n",
+            "authority": "docs/specs/dialect/attributes.md and directives.md (M7)",
+            "summary": "Less-than is ordinary unquoted attribute content.",
+            "why": "Directives are the first attachment site of the single Pandoc 3.11 attribute operation. The dialect owns normalization and the Unicode letter-first directive envelope; remark supplies independent evidence, not alternate parsing modes."
+        },
+        {
+            "id": "shared-attributes-unquoted-greater-than",
+            "input": ":x{a=b>c}t\n",
+            "authority": "docs/specs/dialect/attributes.md and directives.md (M7)",
+            "summary": "Greater-than is ordinary unquoted attribute content.",
+            "why": "Directives are the first attachment site of the single Pandoc 3.11 attribute operation. The dialect owns normalization and the Unicode letter-first directive envelope; remark supplies independent evidence, not alternate parsing modes."
+        },
+        {
+            "id": "shared-attributes-unquoted-equals",
+            "input": ":x{a=b=c}t\n",
+            "authority": "docs/specs/dialect/attributes.md and directives.md (M7)",
+            "summary": "Equals is ordinary content after the assignment separator.",
+            "why": "Directives are the first attachment site of the single Pandoc 3.11 attribute operation. The dialect owns normalization and the Unicode letter-first directive envelope; remark supplies independent evidence, not alternate parsing modes."
+        },
+        {
+            "id": "shared-attributes-unquoted-backtick",
+            "input": ":x{a=b`c}t\n",
+            "authority": "docs/specs/dialect/attributes.md and directives.md (M7)",
+            "summary": "Backticks are ordinary unquoted attribute content.",
+            "why": "Directives are the first attachment site of the single Pandoc 3.11 attribute operation. The dialect owns normalization and the Unicode letter-first directive envelope; remark supplies independent evidence, not alternate parsing modes."
+        },
+        {
+            "id": "shared-attributes-trailing-bare-member",
+            "input": ":x{a=b c}t\n",
+            "authority": "docs/specs/dialect/attributes.md and directives.md (M7)",
+            "summary": "A bare trailing member invalidates all preceding assignments atomically.",
+            "why": "Directives are the first attachment site of the single Pandoc 3.11 attribute operation. The dialect owns normalization and the Unicode letter-first directive envelope; remark supplies independent evidence, not alternate parsing modes."
+        },
+        {
+            "id": "shared-attributes-bare-member-after-line",
+            "input": ":x{a=\nb}t\n",
+            "authority": "docs/specs/dialect/attributes.md and directives.md (M7)",
+            "summary": "After an empty value and line ending, a bare member still invalidates the container.",
+            "why": "Directives are the first attachment site of the single Pandoc 3.11 attribute operation. The dialect owns normalization and the Unicode letter-first directive envelope; remark supplies independent evidence, not alternate parsing modes."
+        },
+        {
+            "id": "shared-attributes-unicode-directive-name",
+            "input": "12:30 :3d a:b :é\n",
+            "authority": "docs/specs/dialect/attributes.md and directives.md (M7)",
+            "summary": "Directive names accept non-ASCII Unicode letters and reject digit-first names, including the second half of a time.",
+            "why": "Directives are the first attachment site of the single Pandoc 3.11 attribute operation. The dialect owns normalization and the Unicode letter-first directive envelope; remark supplies independent evidence, not alternate parsing modes."
+        },
+        {
+            "id": "shared-attributes-normalization-order",
+            "input": ":n{#a#b}\n\n:n{-k=v}\n\n:n{.one.two #1}\n\n:n{k=\"a\\\"b&amp;c\" m=a&amp;b n= id=}\n\n:n{class=\"a b\" .a k=1 k=2}\n",
+            "authority": "docs/specs/dialect/attributes.md and directives.md (M7)",
+            "summary": "The shared grammar retains dotted names, permits adjacent ID and minus members, accepts empty assignments, and preserves duplicate classes and records in source order.",
+            "why": "Directives are the first attachment site of the single Pandoc 3.11 attribute operation. The dialect owns normalization and the Unicode letter-first directive envelope; remark supplies independent evidence, not alternate parsing modes."
+        },
+        {
+            "id": "shared-attributes-invalid-member-boundaries",
+            "input": ":n{.1} :n{disabled} :n{_k=v} :n{=} :n{#} :n{.}\n",
+            "authority": "docs/specs/dialect/attributes.md and directives.md (M7)",
+            "summary": "Class and assignment names begin with a letter; bare words are invalid. Invalid candidates attach no attributes.",
+            "why": "Directives are the first attachment site of the single Pandoc 3.11 attribute operation. The dialect owns normalization and the Unicode letter-first directive envelope; remark supplies independent evidence, not alternate parsing modes."
+        },
+        {
+            "id": "shared-attributes-single-quote-escapes",
+            "input": ":n{k='x\\'y&amp;z' q=\"\" u= v=}\n",
+            "authority": "docs/specs/dialect/attributes.md and directives.md (M7)",
+            "summary": "Single-quoted values decode punctuation escapes and references; empty assignments are allowed.",
+            "why": "Directives are the first attachment site of the single Pandoc 3.11 attribute operation. The dialect owns normalization and the Unicode letter-first directive envelope; remark supplies independent evidence, not alternate parsing modes."
+        },
+        {
+            "id": "shared-attributes-line-normalization",
+            "input": ":n{k=\"x\ny\"}\n",
+            "authority": "docs/specs/dialect/attributes.md and directives.md (M7)",
+            "summary": "A permitted quoted line ending becomes one ASCII space.",
+            "why": "Directives are the first attachment site of the single Pandoc 3.11 attribute operation. The dialect owns normalization and the Unicode letter-first directive envelope; remark supplies independent evidence, not alternate parsing modes."
+        },
+        {
+            "id": "shared-attributes-last-id-empty",
+            "input": ":n{#start id=last id=} :n{#x #y} :n{} :n\n",
+            "authority": "docs/specs/dialect/attributes.md and directives.md (M7)",
+            "summary": "The last ID wins and an empty final id clears it; absent, ID-only and empty containers have identical empty attributes.",
+            "why": "Directives are the first attachment site of the single Pandoc 3.11 attribute operation. The dialect owns normalization and the Unicode letter-first directive envelope; remark supplies independent evidence, not alternate parsing modes."
+        },
+        {
+            "id": "shared-attributes-unicode-whitespace",
+            "input": ":n{.a .b} :n{k=x y} :n{k=\"x y\"}\n",
+            "authority": "docs/specs/dialect/attributes.md and directives.md (M7)",
+            "summary": "Only SP, TAB and line endings separate members or terminate unquoted values. Class assignments split ASCII whitespace and Zs; U+2028, U+2029 and U+0085 remain content.",
+            "why": "Directives are the first attachment site of the single Pandoc 3.11 attribute operation. The dialect owns normalization and the Unicode letter-first directive envelope; remark supplies independent evidence, not alternate parsing modes."
+        },
+        {
+            "id": "shared-attributes-escaped-brace-and-quote",
+            "input": ":n{k=a\\}b v=a&amp;b} :n{k=\"a}b\"} :n{k=\"open}\n",
+            "authority": "docs/specs/dialect/attributes.md and directives.md (M7)",
+            "summary": "Escaped braces remain inside unquoted values, unquoted entities remain literal, and unmatched quotes fall back to unquoted content.",
+            "why": "Directives are the first attachment site of the single Pandoc 3.11 attribute operation. The dialect owns normalization and the Unicode letter-first directive envelope; remark supplies independent evidence, not alternate parsing modes."
+        },
+        {
+            "id": "shared-attributes-value-boundaries",
+            "input": ":n{k=\"a\"m=b} :n{a=<>`b=c} :n{k =v} :n{k= v=}\n",
+            "authority": "docs/specs/dialect/attributes.md and directives.md (M7)",
+            "summary": "Spacing between members is optional, unquoted punctuation is ordinary content, spaces before equals invalidate a member, and empty values are accepted.",
+            "why": "Directives are the first attachment site of the single Pandoc 3.11 attribute operation. The dialect owns normalization and the Unicode letter-first directive envelope; remark supplies independent evidence, not alternate parsing modes."
+        },
+        {
+            "id": "shared-attributes-block-duplicate-values",
+            "input": "::n[leaf]{#leaf .c k=1 k=2}\n\n:::n[container]{#box .c .c}\nbody\n:::\n",
+            "authority": "docs/specs/dialect/attributes.md and directives.md (M7)",
+            "summary": "Leaf and container directives use the same ordered normalized attributes; duplicate records and classes are retained.",
+            "why": "Directives are the first attachment site of the single Pandoc 3.11 attribute operation. The dialect owns normalization and the Unicode letter-first directive envelope; remark supplies independent evidence, not alternate parsing modes."
+        },
+        {
+            "id": "shared-attributes-nested-line-normalization",
+            "input": "> :n{k=\"x\n> y\"}\n\n- :n{class=\"a\n  b\"}\n",
+            "authority": "docs/specs/dialect/attributes.md and directives.md (M7)",
+            "summary": "Quoted line endings normalize after block prefixes have been removed, including inside callouts and list items.",
+            "why": "Directives are the first attachment site of the single Pandoc 3.11 attribute operation. The dialect owns normalization and the Unicode letter-first directive envelope; remark supplies independent evidence, not alternate parsing modes."
+        },
+        {
+            "id": "shared-attributes-unicode-name-categories",
+            "input": "12:30 :3d a:b :é :字 :á :😀 :Ⅳ :aⅣ :a- :a_\n",
+            "authority": "docs/specs/dialect/attributes.md and directives.md (M7)",
+            "summary": "Directive names use Unicode letter first, then letters, numbers and marks or internal hyphen/underscore; numeric-letter and symbol starts and trailing separators are rejected.",
+            "why": "Directives are the first attachment site of the single Pandoc 3.11 attribute operation. The dialect owns normalization and the Unicode letter-first directive envelope; remark supplies independent evidence, not alternate parsing modes."
+        },
+        {
+            "id": "task-prefix-before-block-content",
+            "input": "- [x]\t\noutside\n",
+            "authority": "docs/specs/dialect/task-lists.md",
+            "summary": "A task prefix is structural and removed before deciding the first block. An empty task item has no paragraph for an unindented following line to continue lazily; remark forms a paragraph before removing the prefix.",
+            "why": "The normative task-prefix rule inherits block decisions from the remainder of the line. M7 expanded the directive/attribute fuzz corpus and exposed this existing language boundary; parser behavior is unchanged."
         }
     ],
     "baselineBacklog": [],
-    "baselineBacklogNote": "Empty. Attribute member grammar is deliberately Pandoc-owned. The current directive implementation still has other Remark-shaped behavior; each new oracle difference must be added fail-closed in the same commit that migrates the runtime and fixtures, because a divergence cannot be registered before it reproduces.",
+    "baselineBacklogNote": "Empty. M7 migrated directives to the shared Pandoc attribute operation and the dialect Unicode name grammar. Every observed difference is registered by exact input above and must continue to reproduce.",
     "retiredBacklog": [
         {
             "input": "Inline \\\\(x+y\\\\) and \\(a+b\\).\n",
             "source": "packages/markdown-core/tests/fixtures/extensions-formula-layer-gates.txt",
-            "closedBy": "Step 6 \u2014 formula"
+            "closedBy": "Step 6 — formula"
         },
         {
             "input": "Display \\\\[x+y\\\\] and \\[a+b\\].\n",
             "source": "packages/markdown-core/tests/fixtures/extensions-formula-layer-gates.txt",
-            "closedBy": "Step 6 \u2014 formula"
+            "closedBy": "Step 6 — formula"
         }
     ],
-    "retiredBacklogNote": "Retired by Step 6, not by agreement. Both inputs are LaTeX-delimiter rows that the 1.0 baseline had filed under extensions-formula-github.txt, where this parity corpus reads them; the active C requirement fixture files them under extensions-formula-layer-gates.txt, which this corpus deliberately does not read. Two clauses of notAnAuthorityFor already cover them: remark has no opinion on `\\(x\\)` and `\\[x\\]`, and this gate runs one profile so it cannot judge a row whose whole assertion is what happens with the extension off. Under Q14 that is what these rows assert. They diverge from remark today and would still diverge if restored \u2014 which is why they are recorded here rather than deleted, and why the gate re-checks that they stay out. The layer-gates fixture named above was removed with the harness by X0; both inputs stay retired."
+    "retiredBacklogNote": "Retired by Step 6, not by agreement. Both inputs are LaTeX-delimiter rows that the 1.0 baseline had filed under extensions-formula-github.txt, where this parity corpus reads them; the active C requirement fixture files them under extensions-formula-layer-gates.txt, which this corpus deliberately does not read. Two clauses of notAnAuthorityFor already cover them: remark has no opinion on `\\(x\\)` and `\\[x\\]`, and this gate runs one profile so it cannot judge a row whose whole assertion is what happens with the extension off. Under Q14 that is what these rows assert. They diverge from remark today and would still diverge if restored — which is why they are recorded here rather than deleted, and why the gate re-checks that they stay out. The layer-gates fixture named above was removed with the harness by X0; both inputs stay retired."
 }

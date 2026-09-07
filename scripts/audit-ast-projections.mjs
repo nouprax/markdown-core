@@ -124,27 +124,29 @@ function projection({ label, directories, declaration, field, optional }) {
                 else files.push(full);
             }
         };
-        walk(absolute);
+        if (fs.statSync(absolute).isDirectory()) walk(absolute);
+        else files.push(absolute);
     }
-    return {
-        label,
-        fieldsOf(kind) {
-            for (const file of files) {
-                const text = fs.readFileSync(file, "utf8");
-                const match = text.match(declaration(kind));
-                if (!match) continue;
-                // Read to the end of the declaration's own block, so a later
-                // type in the same file cannot lend this one its fields.
-                const from = match.index;
-                const next = [...text.slice(from + 1).matchAll(/^(?:public |export )/gm)]
-                    .map((m) => m.index + from + 1)
-                    .find((index) => index > from + match[0].length);
-                const body = text.slice(from, next ?? text.length);
-                return new Map([...body.matchAll(field)].map((m) => [m[1], optional(m)]));
-            }
-            return null;
+    const fieldsOf = (kind) => {
+        for (const file of files) {
+            const text = fs.readFileSync(file, "utf8");
+            const match = text.match(declaration(kind));
+            if (!match) continue;
+            // Read to the end of the declaration's own block, so a later
+            // type in the same file cannot lend this one its fields.
+            const from = match.index;
+            const next = [...text.slice(from + 1).matchAll(/^(?:public |export )/gm)]
+                .map((m) => m.index + from + 1)
+                .find((index) => index > from + match[0].length);
+            const body = text.slice(from, next ?? text.length);
+            const own = new Map([...body.matchAll(field)].map((m) => [m[1], optional(m)]));
+            return /MarkupBase</.test(body) && kind !== "MarkupBase"
+                ? new Map([...fieldsOf("MarkupBase"), ...own])
+                : own;
         }
+        return null;
     };
+    return { label, fieldsOf };
 }
 
 /** SCREAMING_SNAKE for a PascalCase kind: `HTMLBlock` -> `HTML_BLOCK`. */
@@ -180,13 +182,13 @@ const modelProjections = [
         // Both spellings: most kinds take an `internal constructor`, the two
         // extension kinds take a plain one. A reader that knew only the first
         // reported them as missing.
-        declaration: (kind) => new RegExp(`^public class ${kind}\\b[^\\n]*\\(`, "m"),
+        declaration: (kind) => new RegExp(`^public (?:data )?class ${kind}\\b[^\\n]*\\(`, "m"),
         field: /(?:public |override )?val ([A-Za-z]+)\s*:\s*([^\n]+?),?\s*$/gm,
         optional: (m) => m[2].trim().endsWith("?")
     }),
     projection({
         label: "ES model",
-        directories: ["packages/es-markdown-core/src/model"],
+        directories: ["packages/es-markdown-core/src/model", "packages/es-markdown-core/src/values.ts"],
         // A kind with no fields is a type alias, not an interface — which is
         // the correct TypeScript for it, and reads as "declared with zero
         // fields", not as "missing".
@@ -216,6 +218,17 @@ const structural = (field) =>
     );
 
 let failed = false;
+
+{
+    const source = read("packages/markdown-core/extensions/ast.c");
+    const start = source.lastIndexOf("static void dump_node(");
+    const prefix = source.slice(start, source.indexOf("dump_fields(buffer, node, kind)", start));
+    const fields = [...prefix.matchAll(/buffer_cstr\(buffer, " ([A-Za-z]+)=/g)].map((match) => match[1]);
+    if (fields.join(",") !== contract.inheritedFields.map((field) => field.name).join(",")) {
+        console.error("C dump inherited field order differs from the contract");
+        failed = true;
+    }
+}
 
 // The prose's table is a second copy of the contract, in order.
 {
@@ -411,10 +424,13 @@ for (const { label, expect, actual } of kindSurfaces) {
 {
     const grammar = dumpGrammarDefinition();
     for (const [kind] of kinds) {
-        const expected = contract.kinds
-            .find((entry) => entry.name === kind)
-            .fields.filter((field) => !structural(field))
-            .map((field) => field.name);
+        const expected = [
+            ...contract.inheritedFields.filter((field) => field.name !== "scope").map((field) => field.name),
+            ...contract.kinds
+                .find((entry) => entry.name === kind)
+                .fields.filter((field) => !structural(field))
+                .map((field) => field.name)
+        ];
         const declared = grammar.get(kind);
         if (declared === undefined) {
             console.error(`${DUMP_PATH}: no field-order row for ${kind}`);
@@ -445,7 +461,7 @@ for (const { label, expect, actual } of kindSurfaces) {
  * deliverable is that `null` and `""` are different facts, and a contract
  * nothing checks cannot carry that. */
 const modeledRecords = [
-    ...contract.kinds,
+    ...contract.kinds.map((kind) => ({ ...kind, fields: [...contract.inheritedFields, ...kind.fields] })),
     ...Object.entries(contract.values ?? {})
         .filter(([, value]) => Array.isArray(value.fields))
         .map(([name, value]) => ({ name, fields: value.fields }))

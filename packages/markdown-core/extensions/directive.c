@@ -11,48 +11,18 @@
 #include <chunk.h>
 #include <markdown-core.h>
 #include <inlines.h>
-#include <map.h>
 #include <node.h>
 #include <parser.h>
-#include <houdini.h>
 #include <utf8.h>
 
 #include "ext_scanners.h"
 
-/* THE ATTRIBUTE LIST IS AN ORDERED MAP, because that is exactly what the
- * grammar asks for: a name appears once, `{a=1 b=2 a=3}` keeps `a=3` in its
- * first-written position, and `class` accumulates in source order.
- *
- * It used to be a linked list with one node per SOURCE OCCURRENCE, folded
- * afterwards by a hash pass that marked the losers inactive. That built what it
- * then had to throw away -- a directive of 1.4 million duplicate attributes
- * allocated 1.4 million nodes, hashed all of them, deactivated all but 64, and
- * sorted all 1.4 million anyway. Deduplicating on insert never builds them.
- *
- * CONTIGUOUS and not linked, which is what makes `attribute_at(i)` a subscript.
- * Linked, every consumer that reads attributes in order -- the dump and all
- * three bindings -- walked from the head per index and was quadratic: 269 s to
- * read a 6.8 MB directive. There is no `active` flag because there is nothing
- * inactive, and no `index` field because order is the array's. */
-typedef struct directive_attribute {
-    markdown_core_chunk name;
-    markdown_core_chunk value;
-} directive_attribute;
-
-typedef struct {
-    directive_attribute *items;
-    size_t count;
-    size_t capacity;
-} directive_attributes;
-
 typedef struct {
     markdown_core_chunk name;
-    directive_attributes attributes;
     markdown_core_node *label;
     int fence_length;
     int closed;
     int consume_line;
-    int has_attributes;
 } node_directive;
 
 typedef struct {
@@ -61,8 +31,7 @@ typedef struct {
     bufsize_t label_start;
     bufsize_t label_len;
     int has_label;
-    int has_attributes;
-    directive_attributes attributes;
+    markdown_core_attributes attributes;
     bufsize_t end;
     /* Set when attribute parsing failed from allocation loss rather than
      * invalid syntax; the caller flags the parser instead of silently
@@ -82,8 +51,6 @@ static node_directive *get_directive(markdown_core_node *node) {
     return (node_directive *)node->opaque;
 }
 
-static int ascii_is_space(unsigned char c) { return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f'; }
-
 static int ascii_is_line_space(unsigned char c) { return c == ' ' || c == '\t'; }
 
 static int is_line_end(const unsigned char *data, bufsize_t len, bufsize_t pos) {
@@ -98,62 +65,23 @@ static int has_only_spaces_until_line_end(const unsigned char *data, bufsize_t l
     return is_line_end(data, len, pos);
 }
 
-/* THE GRAMMAR IS APPLIED TO CODE POINTS, not bytes (Q8's oracle says so, and
- * `{中文=1}` is the row that proves it). An attribute name may not BEGIN with
- * punctuation -- a symbol counts, which is why `{a$b}` is malformed and `{:_a}`
- * is too -- and `markdown_core_utf8proc_is_punctuation` is already the
- * engine's answer to "is this code point punctuation", so there is no second
- * table here. From the second code point on, four punctuation marks are
- * ordinary name characters, which is why `{a:b}` is one name and
- * `{data-kind=ref}` is another. */
-static int name_cp(int32_t cp) {
-    return cp > 0x20 && !markdown_core_utf8proc_is_space(cp) && !markdown_core_utf8proc_is_punctuation(cp);
-}
-
-static int attr_name_start_cp(int32_t cp) { return name_cp(cp) || cp == '-' || cp == '_'; }
-
-static int attr_name_cp(int32_t cp) { return attr_name_start_cp(cp) || cp == '.' || cp == ':'; }
-
-/* Reads one code point at `pos`. A byte that is not valid UTF-8 decodes as
- * itself with length 1, which keeps a malformed name malformed rather than
- * ending the scan early on a continuation byte. */
-static bufsize_t next_cp(const unsigned char *data, bufsize_t len, bufsize_t pos, int32_t *cp) {
-    int consumed = markdown_core_utf8proc_iterate(data + pos, len - pos, cp);
-    if (consumed < 1) {
-        *cp = data[pos];
-        return 1;
-    }
-    return (bufsize_t)consumed;
-}
-
-/* A DIRECTIVE NAME IS CODE POINTS, not bytes -- the same sentence the
- * attribute grammar is written to, and the reason `scan_directive_name` is no
- * longer called. That generated scanner is `[A-Za-z0-9_-]+`, so `:café` was a
- * directive named `caf` followed by the text `é` and `::café` was not a
- * directive at all, while micromark reads both names whole. Its rule is one
- * line: a name character is any code point that is not whitespace and not
- * punctuation, plus `-` and `_` from the second on -- which is `name_cp` and
- * `attr_name_start_cp`, already here for attribute names.
- *
- * A name may CONTAIN a hyphen or underscore but may not begin or end with one.
- * The generated scanner had the trailing half nowhere and never had the
- * leading half: `:-a[]` and `:_a[]` were directives named `-a` and `_a`. */
-static int scan_name(unsigned char *data, bufsize_t len, bufsize_t pos, bufsize_t *name_start, bufsize_t *name_len) {
+/* Names use the dialect's Unicode letter/number/mark categories. */
+static int scan_name(const unsigned char *data, bufsize_t len, bufsize_t pos, bufsize_t *name_start,
+                     bufsize_t *name_len) {
     bufsize_t start = pos;
     int32_t cp;
-    bufsize_t width;
-
     if (pos >= len) {
         return 0;
     }
-    width = next_cp(data, len, pos, &cp);
-    if (!name_cp(cp)) {
+    int width = markdown_core_utf8proc_iterate(data + pos, len - pos, &cp);
+    if (!markdown_core_utf8proc_is_letter(cp)) {
         return 0;
     }
     pos += width;
     while (pos < len) {
-        width = next_cp(data, len, pos, &cp);
-        if (!attr_name_start_cp(cp)) {
+        width = markdown_core_utf8proc_iterate(data + pos, len - pos, &cp);
+        if (!(markdown_core_utf8proc_is_letter(cp) || markdown_core_utf8proc_is_number(cp) ||
+              markdown_core_utf8proc_is_mark(cp) || cp == '-' || cp == '_')) {
             break;
         }
         pos += width;
@@ -161,7 +89,6 @@ static int scan_name(unsigned char *data, bufsize_t len, bufsize_t pos, bufsize_
     if (data[pos - 1] == '-' || data[pos - 1] == '_') {
         return 0;
     }
-
     *name_start = start;
     *name_len = pos - start;
     return 1;
@@ -211,42 +138,6 @@ static int scan_label(const unsigned char *data, bufsize_t len, bufsize_t pos, b
     return 0;
 }
 
-static int scan_attributes_raw(const unsigned char *data, bufsize_t len, bufsize_t pos, bufsize_t *attr_start,
-                               bufsize_t *attr_len, bufsize_t *end) {
-    unsigned char quote = 0;
-    bufsize_t i;
-
-    if (pos >= len || data[pos] != '{') {
-        return 0;
-    }
-
-    i = pos + 1;
-    while (i < len) {
-        if (quote) {
-            if (data[i] == quote) {
-                quote = 0;
-            }
-            i++;
-            continue;
-        }
-
-        if (data[i] == '"' || data[i] == '\'') {
-            quote = data[i++];
-            continue;
-        }
-
-        if (data[i] == '}') {
-            *attr_start = pos + 1;
-            *attr_len = i - (pos + 1);
-            *end = i + 1;
-            return 1;
-        }
-
-        i++;
-    }
-    return 0;
-}
-
 static int set_chunk_bytes(markdown_core_mem *mem, markdown_core_chunk *chunk, const unsigned char *data,
                            bufsize_t len) {
     markdown_core_chunk_free(mem, chunk);
@@ -259,228 +150,6 @@ static int set_chunk_bytes(markdown_core_mem *mem, markdown_core_chunk *chunk, c
         chunk->len = 0;
         return 0;
     }
-    return 1;
-}
-
-static int replace_chunk_bytes(markdown_core_mem *mem, markdown_core_chunk *chunk, const unsigned char *data,
-                               bufsize_t len) {
-    unsigned char *copy = (unsigned char *)mem->calloc((size_t)len + 1, 1);
-    if (!copy) {
-        return 0;
-    }
-    if (len > 0) {
-        memcpy(copy, data, (size_t)len);
-    }
-    markdown_core_chunk_free(mem, chunk);
-    chunk->data = copy;
-    chunk->len = len;
-    chunk->alloc = 1;
-    return 1;
-}
-
-static void free_attribute_list(markdown_core_mem *mem, directive_attributes *attrs) {
-    size_t i;
-    if (!attrs) {
-        return;
-    }
-    for (i = 0; i < attrs->count; i++) {
-        markdown_core_chunk_free(mem, &attrs->items[i].name);
-        markdown_core_chunk_free(mem, &attrs->items[i].value);
-    }
-    mem->free(attrs->items);
-    attrs->items = NULL;
-    attrs->count = 0;
-    attrs->capacity = 0;
-}
-
-/* Scans an attribute name from `pos`. */
-static bufsize_t scan_attr_name(const unsigned char *data, bufsize_t len, bufsize_t pos) {
-    bufsize_t start = pos;
-    int first = 1;
-    while (pos < len) {
-        int32_t cp;
-        bufsize_t width = next_cp(data, len, pos, &cp);
-        if (first ? !attr_name_start_cp(cp) : !attr_name_cp(cp)) {
-            break;
-        }
-        first = 0;
-        pos += width;
-    }
-    return pos - start;
-}
-
-/* A SHORTHAND VALUE IS NOT A NAME, and reusing the name scanner for it was
- * wrong: `{.a&b}` is one class called `a&b`. The value ENDS at the next marker
- * or the block's end -- which is what makes `{.a.b}` two classes rather than
- * one called `a.b` -- and six characters REJECT it outright, taking the whole
- * block down with them, because a quote or an `=` there means the source meant
- * something else. Everything not in either set is a value character.
- *
- * Returns the length, or -1 for a malformed block. An empty value is malformed
- * too, which is `{#}` and `{.}`. */
-static int shorthand_value_rejects(unsigned char c) {
-    return c == '"' || c == '\'' || c == '<' || c == '=' || c == '>' || c == '`';
-}
-
-static int shorthand_value_ends(unsigned char c) { return c == '#' || c == '.' || c == '}' || ascii_is_space(c); }
-
-static bufsize_t scan_shorthand_value(const unsigned char *data, bufsize_t len, bufsize_t pos) {
-    bufsize_t start = pos;
-    while (pos < len && !shorthand_value_ends(data[pos])) {
-        if (shorthand_value_rejects(data[pos])) {
-            return -1;
-        }
-        pos++;
-    }
-    return pos == start ? -1 : pos - start;
-}
-
-/* The public setter reaches append_attribute with a name nobody scanned, so
- * the scanner's own rule is re-applied here rather than restated: a name is
- * valid exactly when scanning it consumes all of it. */
-static int attribute_name_is_valid(const unsigned char *name, bufsize_t name_len) {
-    return name_len > 0 && scan_attr_name(name, name_len, 0) == name_len;
-}
-
-/* Attribute names have one lookup representation. If its allocation fails,
- * the directive parse fails and the owning parser reports OOM. */
-typedef struct {
-    directive_attributes list;
-    /* Maps a name to its SLOT NUMBER PLUS ONE, not to a pointer: the entries
-     * are contiguous and move when the array grows, so a stored pointer would
-     * dangle on the next insert. Plus one because the map reports "absent" as
-     * a null value and slot zero is a real slot. */
-    markdown_core_key_index index;
-} attribute_builder;
-
-#define ATTRIBUTE_SLOT_NONE ((size_t)-1)
-
-static size_t attribute_find(attribute_builder *builder, const unsigned char *name, bufsize_t name_len) {
-    void *found = markdown_core_key_index_lookup(&builder->index, name, name_len);
-    return found ? (size_t)(uintptr_t)found - 1 : ATTRIBUTE_SLOT_NONE;
-}
-
-static int attribute_reserve(markdown_core_mem *mem, directive_attributes *attrs) {
-    size_t capacity;
-    directive_attribute *grown;
-    if (attrs->count < attrs->capacity) {
-        return 1;
-    }
-    if (attrs->capacity > SIZE_MAX / 2 || (attrs->capacity ? attrs->capacity * 2 : 8) > SIZE_MAX / sizeof(*grown)) {
-        return 0;
-    }
-    capacity = attrs->capacity ? attrs->capacity * 2 : 8;
-    grown = (directive_attribute *)mem->realloc(attrs->items, capacity * sizeof(*grown));
-    if (!grown) {
-        return 0;
-    }
-    attrs->items = grown;
-    attrs->capacity = capacity;
-    return 1;
-}
-
-static int attribute_name_is_class(const unsigned char *name, bufsize_t name_len) {
-    return name_len == 5 && memcmp(name, "class", 5) == 0;
-}
-
-/* `class` is the ONE name whose repeats accumulate, in source order, whether
- * they were written as `.x` or as `class=x`. Every other name keeps the last
- * value.
- *
- * The separator goes before every value once something has accumulated, an
- * empty one included: `{.a class="" .b}` is `class="a  b"`. An empty value at
- * the FRONT accumulates nothing, so it contributes no leading separator and
- * `{class="" .b}` is `class="b"`. Both are oracle rows; the rule is "join what
- * is there", not "join what was written" -- which is why the first value is
- * stored as it comes and only later ones are joined onto it. */
-static int attribute_accumulate_class(markdown_core_mem *mem, markdown_core_chunk *into, const unsigned char *value,
-                                      bufsize_t value_len) {
-    markdown_core_strbuf joined;
-    int stored;
-    markdown_core_strbuf_init(mem, &joined, into->len + value_len + 2);
-    markdown_core_strbuf_put(&joined, into->data, into->len);
-    if (joined.size > 0) {
-        markdown_core_strbuf_putc(&joined, ' ');
-    }
-    markdown_core_strbuf_put(&joined, value, value_len);
-    stored = !joined.oom && replace_chunk_bytes(mem, into, joined.ptr, joined.size);
-    markdown_core_strbuf_free(&joined);
-    return stored;
-}
-
-/* Q20: A VALUE IS DECODED, A NAME IS NOT. mdast-util-directive decodes exactly
- * three things -- an attribute's value and the `#id` and `.class` shorthand
- * values -- and this is where all three arrive. The decoder is the engine's one
- * entity decoder, the same call a link destination, a link title and a code
- * fence's info string already make; the alternative was a second entity rule
- * living in this file (§4.14.7c).
- *
- * It runs AFTER the raw scan, never during it, which is what makes
- * `{a=x&#125;y}` one attribute whose value contains a `}` rather than a block
- * that ended early. */
-static int upsert_attribute(markdown_core_mem *mem, attribute_builder *builder, const unsigned char *name,
-                            bufsize_t name_len, const unsigned char *value, bufsize_t value_len, int *oom) {
-    markdown_core_strbuf decoded;
-    directive_attribute *slot;
-    size_t at;
-    int stored;
-    if (!attribute_name_is_valid(name, name_len)) {
-        return 0;
-    }
-    markdown_core_strbuf_init(mem, &decoded, value_len + 1);
-    houdini_unescape_html_f(&decoded, value, value_len);
-    if (decoded.oom) {
-        markdown_core_strbuf_free(&decoded);
-        if (oom) {
-            *oom = 1;
-        }
-        return 0;
-    }
-
-    at = attribute_find(builder, name, name_len);
-    if (at != ATTRIBUTE_SLOT_NONE) {
-        slot = &builder->list.items[at];
-        stored = attribute_name_is_class(name, name_len)
-                     ? attribute_accumulate_class(mem, &slot->value, decoded.ptr, decoded.size)
-                     : replace_chunk_bytes(mem, &slot->value, decoded.ptr, decoded.size);
-        markdown_core_strbuf_free(&decoded);
-        if (!stored && oom) {
-            *oom = 1;
-        }
-        return stored;
-    }
-
-    if (!attribute_reserve(mem, &builder->list)) {
-        markdown_core_strbuf_free(&decoded);
-        if (oom) {
-            *oom = 1;
-        }
-        return 0;
-    }
-    slot = &builder->list.items[builder->list.count];
-    slot->name = markdown_core_chunk_literal("");
-    slot->value = markdown_core_chunk_literal("");
-    stored = replace_chunk_bytes(mem, &slot->name, name, name_len) &&
-             replace_chunk_bytes(mem, &slot->value, decoded.ptr, decoded.size);
-    markdown_core_strbuf_free(&decoded);
-    if (!stored) {
-        markdown_core_chunk_free(mem, &slot->name);
-        markdown_core_chunk_free(mem, &slot->value);
-        if (oom) {
-            *oom = 1;
-        }
-        return 0;
-    }
-    if (!markdown_core_key_index_insert(&builder->index, slot->name.data, slot->name.len,
-                                        (void *)(uintptr_t)(builder->list.count + 1), 0, NULL)) {
-        markdown_core_chunk_free(mem, &slot->name);
-        markdown_core_chunk_free(mem, &slot->value);
-        if (oom) {
-            *oom = 1;
-        }
-        return 0;
-    }
-    builder->list.count++;
     return 1;
 }
 
@@ -545,36 +214,6 @@ int markdown_core_extensions_set_directive_name(markdown_core_node *node, const 
     return 1;
 }
 
-int markdown_core_extensions_directive_has_attributes(markdown_core_node *node) {
-    node_directive *directive = get_directive(node);
-    return directive && directive->has_attributes;
-}
-
-static directive_attribute *attribute_at(node_directive *directive, size_t index) {
-    if (!directive || index >= directive->attributes.count) {
-        return NULL;
-    }
-    return &directive->attributes.items[index];
-}
-
-size_t markdown_core_extensions_directive_attribute_count(markdown_core_node *node) {
-    node_directive *directive = get_directive(node);
-    return directive ? directive->attributes.count : 0;
-}
-
-int markdown_core_extensions_directive_attribute_at(markdown_core_node *node, size_t index, const char **name,
-                                                    size_t *name_length, const char **value, size_t *value_length) {
-    directive_attribute *attr = attribute_at(get_directive(node), index);
-    if (!attr || !name || !name_length || !value || !value_length) {
-        return 0;
-    }
-    *name = (const char *)attr->name.data;
-    *name_length = (size_t)attr->name.len;
-    *value = (const char *)attr->value.data;
-    *value_length = (size_t)attr->value.len;
-    return 1;
-}
-
 static void directive_opaque_alloc(const markdown_core_extension *extension, markdown_core_mem *mem,
                                    markdown_core_node *node) {
     if (is_directive_node(node)) {
@@ -593,149 +232,16 @@ static void directive_opaque_free(const markdown_core_extension *extension, mark
         markdown_core_node_free(directive->label);
     }
     markdown_core_chunk_free(mem, &directive->name);
-    free_attribute_list(mem, &directive->attributes);
     mem->free(directive);
     node->opaque = NULL;
 }
 
-/* AN `=` PROMISES A VALUE. With none before the block ends the block is
- * malformed, because an empty value would otherwise be indistinguishable from
- * the valueless `{a}`, which means something else. `{a=}`, `{a= }` and an `=`
- * followed only by a line ending are all the same case.
- *
- * An unquoted value may not contain `<`, `>`, `=` or a backtick: reaching one
- * does not end the value, it makes the block malformed. A quoted value must be
- * separated from whatever follows by whitespace or the closing brace --
- * without that rule `{a="x"b=1}` lets the block run on and swallow the rest of
- * the paragraph. */
-static int unquoted_value_cp(unsigned char c) {
-    return !ascii_is_space(c) && c != '"' && c != '\'' && c != '<' && c != '>' && c != '=' && c != '`';
-}
-
-static int parse_attr_value(const unsigned char *data, bufsize_t len, bufsize_t *pos, const unsigned char **value,
-                            bufsize_t *value_len) {
-    bufsize_t start;
-    unsigned char quote;
-    while (*pos < len && ascii_is_space(data[*pos])) {
-        (*pos)++;
-    }
-    if (*pos >= len) {
-        return 0;
-    }
-    if (data[*pos] == '"' || data[*pos] == '\'') {
-        quote = data[(*pos)++];
-        start = *pos;
-        while (*pos < len && data[*pos] != quote) {
-            (*pos)++;
-        }
-        if (*pos >= len) {
-            return 0;
-        }
-        *value = data + start;
-        *value_len = *pos - start;
-        (*pos)++;
-        if (*pos < len && !ascii_is_space(data[*pos])) {
-            return 0;
-        }
-        return 1;
-    }
-    start = *pos;
-    while (*pos < len && unquoted_value_cp(data[*pos])) {
-        (*pos)++;
-    }
-    if (*pos < len && !ascii_is_space(data[*pos])) {
-        return 0;
-    }
-    *value = data + start;
-    *value_len = *pos - start;
-    return 1;
-}
-
-static int parse_attributes(markdown_core_mem *mem, const unsigned char *data, bufsize_t len,
-                            directive_attributes *result, int *oom) {
-    attribute_builder builder;
-    bufsize_t pos = 0;
-    int ok = 1;
-
-    memset(&builder, 0, sizeof(builder));
-    memset(result, 0, sizeof(*result));
-    if (!markdown_core_key_index_init(&builder.index, mem, 8)) {
-        if (oom) {
-            *oom = 1;
-        }
-        return 0;
-    }
-    while (pos < len) {
-        bufsize_t start;
-        bufsize_t name_len;
-        const unsigned char *value = (const unsigned char *)"";
-        bufsize_t value_len = 0;
-        while (pos < len && ascii_is_space(data[pos])) {
-            pos++;
-        }
-        if (pos >= len) {
-            break;
-        }
-        /* SHORTHAND. `#x` and `.x` are the `id` and `class` attributes
-         * written short. A marker with nothing after it is not an attribute
-         * and takes the whole block down with it, which is `{#}` and `{.}`. */
-        if (data[pos] == '#' || data[pos] == '.') {
-            const char *shorthand_name = data[pos] == '#' ? "id" : "class";
-            bufsize_t shorthand_len;
-            pos++;
-            shorthand_len = scan_shorthand_value(data, len, pos);
-            if (shorthand_len < 0) {
-                ok = 0;
-                break;
-            }
-            if (!upsert_attribute(mem, &builder, (const unsigned char *)shorthand_name,
-                                  (bufsize_t)strlen(shorthand_name), data + pos, shorthand_len, oom)) {
-                ok = 0;
-                break;
-            }
-            pos += shorthand_len;
-            continue;
-        }
-        start = pos;
-        name_len = scan_attr_name(data, len, pos);
-        pos += name_len;
-        if (name_len == 0) {
-            ok = 0;
-            break;
-        }
-        while (pos < len && ascii_is_space(data[pos])) {
-            pos++;
-        }
-        if (pos < len && data[pos] == '=') {
-            pos++;
-            if (!parse_attr_value(data, len, &pos, &value, &value_len)) {
-                ok = 0;
-                break;
-            }
-        }
-        if (!upsert_attribute(mem, &builder, data + start, name_len, value, value_len, oom)) {
-            ok = 0;
-            break;
-        }
-    }
-
-    markdown_core_key_index_free(&builder.index);
-    if (ok) {
-        *result = builder.list;
-        memset(&builder.list, 0, sizeof(builder.list));
-    }
-    free_attribute_list(mem, &builder.list);
-    return ok;
-}
-
 static void free_parsed_directive(markdown_core_mem *mem, parsed_directive *parsed) {
-    free_attribute_list(mem, &parsed->attributes);
+    markdown_core_attributes_free(mem, &parsed->attributes);
 }
 
 static int parse_directive_suffix(markdown_core_mem *mem, unsigned char *data, bufsize_t len, bufsize_t pos,
                                   parsed_directive *parsed) {
-    bufsize_t attr_start;
-    bufsize_t attr_len;
     memset(parsed, 0, sizeof(*parsed));
 
     if (!scan_name(data, len, pos, &parsed->name_start, &parsed->name_len)) {
@@ -752,9 +258,14 @@ static int parse_directive_suffix(markdown_core_mem *mem, unsigned char *data, b
     }
 
     if (pos < len && data[pos] == '{') {
-        parsed->has_attributes = 1;
-        if (!scan_attributes_raw(data, len, pos, &attr_start, &attr_len, &pos) ||
-            !parse_attributes(mem, data + attr_start, attr_len, &parsed->attributes, &parsed->oom)) {
+        markdown_core_attribute_parser attributes = {0};
+        attributes.mem = mem;
+        attributes.data = data;
+        attributes.length = len;
+        int matched = markdown_core_attributes_parse(&attributes, pos, &parsed->attributes, &pos);
+        parsed->oom = attributes.oom;
+        markdown_core_attribute_parser_free(&attributes);
+        if (!matched) {
             return 0;
         }
     }
@@ -823,12 +334,8 @@ static int apply_parsed_directive(const markdown_core_extension *extension, mark
     if (!set_chunk_bytes(mem, &directive->name, data + parsed->name_start, parsed->name_len)) {
         return 0;
     }
-    directive->has_attributes = parsed->has_attributes;
-
-    if (parsed->has_attributes) {
-        directive->attributes = parsed->attributes;
-        memset(&parsed->attributes, 0, sizeof(parsed->attributes));
-    }
+    node->attributes = parsed->attributes;
+    memset(&parsed->attributes, 0, sizeof(parsed->attributes));
 
     if (parsed->has_label) {
         /* THE LABEL'S SCOPE SPANS ITS BRACKETS. It used to span the content
@@ -907,8 +414,7 @@ static markdown_core_node *match_colon_directive(const markdown_core_extension *
     bufsize_t label_len = 0;
     bufsize_t label_open = 0;
     int has_label = 0;
-    directive_attributes attributes;
-    int has_attributes = 0;
+    markdown_core_attributes attributes;
     markdown_core_node *node;
     markdown_core_node *label_node = NULL;
     node_directive *directive;
@@ -951,30 +457,18 @@ static markdown_core_node *match_colon_directive(const markdown_core_extension *
     }
 
     if (pos < chunk->len && chunk->data[pos] == '{') {
-        bufsize_t attr_start;
-        bufsize_t attr_len;
-        bufsize_t attr_end;
-        int attr_oom = 0;
-        int closed = scan_attributes_raw(chunk->data, chunk->len, pos, &attr_start, &attr_len, &attr_end);
-        if (closed && parse_attributes(parser->mem, chunk->data + attr_start, attr_len, &attributes, &attr_oom)) {
-            has_attributes = 1;
-            pos = attr_end;
-        } else if (attr_oom) {
-            parser->oom = true;
-            return NULL;
-        }
+        markdown_core_inline_parser_attributes(inline_parser, pos, &attributes, &pos);
     }
 
     node = make_directive_node(extension, parser, chunk->data + name_start, name_len, start_line, start_column,
                                start_line, start_column);
     if (!node) {
-        free_attribute_list(parser->mem, &attributes);
+        markdown_core_attributes_free(parser->mem, &attributes);
         parser->oom = true;
         return NULL;
     }
     directive = get_directive(node);
-    directive->attributes = attributes;
-    directive->has_attributes = has_attributes;
+    node->attributes = attributes;
 
     if (has_label) {
         /* Consume to the `]` first and read the label's end back from the

@@ -66,10 +66,10 @@ $$
 x
 $$
 .
-Document scope=1:1..4:2 children=2
-├── Paragraph scope=1:1..1:4 children=1
-│   └── Text scope=1:1..1:4 literal="text" children=0
-└── FormulaBlock scope=2:1..4:2 literal="x" children=0
+Document scope=1:1..4:2 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:4 anchor=null attributes={} children=1
+│   └── Text scope=1:1..1:4 anchor=null attributes={} literal="text" children=0
+└── FormulaBlock scope=2:1..4:2 anchor=null attributes={} literal="x" children=0
 ````````````````````````````````
 
 ```````````````````````````````` example directive table
@@ -78,12 +78,12 @@ text
 body
 :::
 .
-Document scope=1:1..4:3 children=2
-├── Paragraph scope=1:1..1:4 children=1
-│   └── Text scope=1:1..1:4 literal="text" children=0
-└── DirectiveBlock scope=2:1..4:3 name="note" attributes=null children=1
-    └── Paragraph scope=3:1..3:4 children=1
-        └── Text scope=3:1..3:4 literal="body" children=0
+Document scope=1:1..4:3 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:4 anchor=null attributes={} children=1
+│   └── Text scope=1:1..1:4 anchor=null attributes={} literal="text" children=0
+└── DirectiveBlock scope=2:1..4:3 anchor=null attributes={} name="note" children=1
+    └── Paragraph scope=3:1..3:4 anchor=null attributes={} children=1
+        └── Text scope=3:1..3:4 anchor=null attributes={} literal="body" children=0
 ````````````````````````````````
 
 ```````````````````````````````` example formula table
@@ -93,17 +93,17 @@ $$
 x
 $$
 .
-Document scope=1:1..5:2 children=2
-├── Table scope=1:1..2:9 columns=[none:null,none:null] children=1
+Document scope=1:1..5:2 anchor=null attributes={} children=2
+├── Table scope=1:1..2:9 anchor=null attributes={} columns=[none:null,none:null] children=1
 │   ├── TableHead children=1
-│   │   └── TableRow scope=1:1..1:9 children=2
-│   │       ├── TableCell scope=1:2..1:4 rowspan=1 colspan=1 children=1
-│   │       │   └── Text scope=1:3..1:3 literal="a" children=0
-│   │       └── TableCell scope=1:6..1:8 rowspan=1 colspan=1 children=1
-│   │           └── Text scope=1:7..1:7 literal="b" children=0
+│   │   └── TableRow scope=1:1..1:9 anchor=null attributes={} children=2
+│   │       ├── TableCell scope=1:2..1:4 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │       │   └── Text scope=1:3..1:3 anchor=null attributes={} literal="a" children=0
+│   │       └── TableCell scope=1:6..1:8 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │           └── Text scope=1:7..1:7 anchor=null attributes={} literal="b" children=0
 │   ├── TableBody children=0
 │   └── TableFoot children=0
-└── FormulaBlock scope=3:1..5:2 literal="x" children=0
+└── FormulaBlock scope=3:1..5:2 anchor=null attributes={} literal="x" children=0
 ````````````````````````````````
 
 ```````````````````````````````` example directive table
@@ -113,19 +113,19 @@ Document scope=1:1..5:2 children=2
 body
 :::
 .
-Document scope=1:1..5:3 children=2
-├── Table scope=1:1..2:9 columns=[none:null,none:null] children=1
+Document scope=1:1..5:3 anchor=null attributes={} children=2
+├── Table scope=1:1..2:9 anchor=null attributes={} columns=[none:null,none:null] children=1
 │   ├── TableHead children=1
-│   │   └── TableRow scope=1:1..1:9 children=2
-│   │       ├── TableCell scope=1:2..1:4 rowspan=1 colspan=1 children=1
-│   │       │   └── Text scope=1:3..1:3 literal="a" children=0
-│   │       └── TableCell scope=1:6..1:8 rowspan=1 colspan=1 children=1
-│   │           └── Text scope=1:7..1:7 literal="b" children=0
+│   │   └── TableRow scope=1:1..1:9 anchor=null attributes={} children=2
+│   │       ├── TableCell scope=1:2..1:4 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │       │   └── Text scope=1:3..1:3 anchor=null attributes={} literal="a" children=0
+│   │       └── TableCell scope=1:6..1:8 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │           └── Text scope=1:7..1:7 anchor=null attributes={} literal="b" children=0
 │   ├── TableBody children=0
 │   └── TableFoot children=0
-└── DirectiveBlock scope=3:1..5:3 name="note" attributes=null children=1
-    └── Paragraph scope=4:1..4:4 children=1
-        └── Text scope=4:1..4:4 literal="body" children=0
+└── DirectiveBlock scope=3:1..5:3 anchor=null attributes={} name="note" children=1
+    └── Paragraph scope=4:1..4:4 anchor=null attributes={} children=1
+        └── Text scope=4:1..4:4 anchor=null attributes={} literal="body" children=0
 ````````````````````````````````
 
 ## A label's contents are its own, and nothing outside can reach into them
@@ -144,25 +144,25 @@ that, and they are kept because nothing else pins the interaction.
 ```````````````````````````````` example directive autolink
 :b[http://e.com]
 .
-Document scope=1:1..1:16 children=1
-└── Paragraph scope=1:1..1:16 children=1
-    └── Directive scope=1:1..1:16 name="b" attributes=null children=0
-        └── DirectiveLabel scope=1:3..1:16 children=1
-            └── Link scope=1:4..1:15 dest=url("http://e.com") title=null children=1
-                └── Text scope=1:4..1:15 literal="http://e.com" children=0
+Document scope=1:1..1:16 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:16 anchor=null attributes={} children=1
+    └── Directive scope=1:1..1:16 anchor=null attributes={} name="b" children=0
+        └── DirectiveLabel scope=1:3..1:16 anchor=null attributes={} children=1
+            └── Link scope=1:4..1:15 anchor=null attributes={} dest=url("http://e.com") title=null children=1
+                └── Text scope=1:4..1:15 anchor=null attributes={} literal="http://e.com" children=0
 ````````````````````````````````
 
 ```````````````````````````````` example directive autolink
 :b[a http://e.com b]
 .
-Document scope=1:1..1:20 children=1
-└── Paragraph scope=1:1..1:20 children=1
-    └── Directive scope=1:1..1:20 name="b" attributes=null children=0
-        └── DirectiveLabel scope=1:3..1:20 children=3
-            ├── Text scope=1:4..1:5 literal="a " children=0
-            ├── Link scope=1:6..1:17 dest=url("http://e.com") title=null children=1
-            │   └── Text scope=1:6..1:17 literal="http://e.com" children=0
-            └── Text scope=1:18..1:19 literal=" b" children=0
+Document scope=1:1..1:20 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:20 anchor=null attributes={} children=1
+    └── Directive scope=1:1..1:20 anchor=null attributes={} name="b" children=0
+        └── DirectiveLabel scope=1:3..1:20 anchor=null attributes={} children=3
+            ├── Text scope=1:4..1:5 anchor=null attributes={} literal="a " children=0
+            ├── Link scope=1:6..1:17 anchor=null attributes={} dest=url("http://e.com") title=null children=1
+            │   └── Text scope=1:6..1:17 anchor=null attributes={} literal="http://e.com" children=0
+            └── Text scope=1:18..1:19 anchor=null attributes={} literal=" b" children=0
 ````````````````````````````````
 
 The `www.` form goes through a second, identical scan and needs the same
@@ -173,13 +173,13 @@ puts a space in.
 ```````````````````````````````` example directive autolink
 :b[a www.e.com]
 .
-Document scope=1:1..1:15 children=1
-└── Paragraph scope=1:1..1:15 children=1
-    └── Directive scope=1:1..1:15 name="b" attributes=null children=0
-        └── DirectiveLabel scope=1:3..1:15 children=2
-            ├── Text scope=1:4..1:5 literal="a " children=0
-            └── Link scope=1:6..1:14 dest=url("http://www.e.com") title=null children=1
-                └── Text scope=1:6..1:14 literal="www.e.com" children=0
+Document scope=1:1..1:15 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:15 anchor=null attributes={} children=1
+    └── Directive scope=1:1..1:15 anchor=null attributes={} name="b" children=0
+        └── DirectiveLabel scope=1:3..1:15 anchor=null attributes={} children=2
+            ├── Text scope=1:4..1:5 anchor=null attributes={} literal="a " children=0
+            └── Link scope=1:6..1:14 anchor=null attributes={} dest=url("http://www.e.com") title=null children=1
+                └── Text scope=1:6..1:14 anchor=null attributes={} literal="www.e.com" children=0
 ````````````````````````````````
 
 Once the label has ended, its bracket is an ordinary URL character again --
@@ -189,14 +189,14 @@ paragraph's scan.
 ```````````````````````````````` example directive autolink
 :b[x] then http://e.com/a]b
 .
-Document scope=1:1..1:27 children=1
-└── Paragraph scope=1:1..1:27 children=3
-    ├── Directive scope=1:1..1:5 name="b" attributes=null children=0
-    │   └── DirectiveLabel scope=1:3..1:5 children=1
-    │       └── Text scope=1:4..1:4 literal="x" children=0
-    ├── Text scope=1:6..1:11 literal=" then " children=0
-    └── Link scope=1:12..1:27 dest=url("http://e.com/a]b") title=null children=1
-        └── Text scope=1:12..1:27 literal="http://e.com/a]b" children=0
+Document scope=1:1..1:27 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:27 anchor=null attributes={} children=3
+    ├── Directive scope=1:1..1:5 anchor=null attributes={} name="b" children=0
+    │   └── DirectiveLabel scope=1:3..1:5 anchor=null attributes={} children=1
+    │       └── Text scope=1:4..1:4 anchor=null attributes={} literal="x" children=0
+    ├── Text scope=1:6..1:11 anchor=null attributes={} literal=" then " children=0
+    └── Link scope=1:12..1:27 anchor=null attributes={} dest=url("http://e.com/a]b") title=null children=1
+        └── Text scope=1:12..1:27 anchor=null attributes={} literal="http://e.com/a]b" children=0
 ````````````````````````````````
 
 Strikethrough's `~~` is a delimiter and its content is NOT its own buffer, so a
@@ -207,12 +207,12 @@ behaviour comes from the label and not from some blanket rule about brackets.
 ```````````````````````````````` example strikethrough autolink
 ~~a http://e.com/x]y~~
 .
-Document scope=1:1..1:22 children=1
-└── Paragraph scope=1:1..1:22 children=1
-    └── Strikethrough scope=1:1..1:22 children=2
-        ├── Text scope=1:3..1:4 literal="a " children=0
-        └── Link scope=1:5..1:20 dest=url("http://e.com/x]y") title=null children=1
-            └── Text scope=1:5..1:20 literal="http://e.com/x]y" children=0
+Document scope=1:1..1:22 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:22 anchor=null attributes={} children=1
+    └── Strikethrough scope=1:1..1:22 anchor=null attributes={} children=2
+        ├── Text scope=1:3..1:4 anchor=null attributes={} literal="a " children=0
+        └── Link scope=1:5..1:20 anchor=null attributes={} dest=url("http://e.com/x]y") title=null children=1
+            └── Text scope=1:5..1:20 anchor=null attributes={} literal="http://e.com/x]y" children=0
 ````````````````````````````````
 
 Outside a label the same bracket is an ordinary character of the URL, and GFM
@@ -221,10 +221,10 @@ says so. Nothing is protected when nothing is open.
 ```````````````````````````````` example directive autolink
 see http://e.com/a]b now
 .
-Document scope=1:1..1:24 children=1
-└── Paragraph scope=1:1..1:24 children=3
-    ├── Text scope=1:1..1:4 literal="see " children=0
-    ├── Link scope=1:5..1:20 dest=url("http://e.com/a]b") title=null children=1
-    │   └── Text scope=1:5..1:20 literal="http://e.com/a]b" children=0
-    └── Text scope=1:21..1:24 literal=" now" children=0
+Document scope=1:1..1:24 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:24 anchor=null attributes={} children=3
+    ├── Text scope=1:1..1:4 anchor=null attributes={} literal="see " children=0
+    ├── Link scope=1:5..1:20 anchor=null attributes={} dest=url("http://e.com/a]b") title=null children=1
+    │   └── Text scope=1:5..1:20 anchor=null attributes={} literal="http://e.com/a]b" children=0
+    └── Text scope=1:21..1:24 anchor=null attributes={} literal=" now" children=0
 ````````````````````````````````

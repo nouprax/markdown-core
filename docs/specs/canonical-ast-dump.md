@@ -22,13 +22,13 @@ must traverse the typed immutable AST.
 The root line is:
 
 ```text
-Kind scope=L:C..L:C <fields> children=N
+Kind scope=L:C..L:C anchor=null attributes={} <fields> children=N
 ```
 
 Every descendant line is:
 
 ```text
-<ancestor-prefix><connector>Kind scope=L:C..L:C <fields> children=N
+<ancestor-prefix><connector>Kind scope=L:C..L:C anchor=null attributes={} <fields> children=N
 ```
 
 Connectors and prefixes are exact UTF-8:
@@ -41,14 +41,14 @@ Connectors and prefixes are exact UTF-8:
 Output uses LF line endings and ends with exactly one LF. There is no trailing
 whitespace and no color or terminal-dependent output. Tokens on a line are
 separated by exactly one space; a kind with no fields prints
-`Kind scope=L:C..L:C children=N`.
+`Kind scope=L:C..L:C anchor=null attributes={} children=N`.
 
 `children` counts the node's structural children: `content.count` for every
 content-bearing kind, `items.count` for `List`, `cells.count` for `TableRow`,
 `head.count + content.count + foot.count` for `Table`, `citations.count` for `Cite`,
 and zero for every leaf and for `Directive`. A directive's optional `label`
 is a separate Markup-valued field and is not included in that number, and
-neither are `Document.footnotes` and `Document.specimens`.
+neither are `Document.metadata`, `Document.footnotes` and `Document.specimens`.
 
 The dump deliberately carries no property or array-index edge labels. Each
 node kind's dump function decides which structural children and Markup-valued
@@ -66,16 +66,22 @@ that owned output; they do not redefine every nested record as a child.
 - Enums use their lowercase contract spelling without quotes.
 - Arrays use compact JSON punctuation with no spaces; enum elements inside
   arrays are unquoted, as in `columns=[none:null,left:null]`.
-- Directive attributes are printed as their ordered name/value pairs. Each name
-  keeps its first-occurrence source position; values use normal JSON string
-  escaping.
+- Universal attributes print as `{.class name="value"}`. Classes lead in
+  stored order, then records in stored order; duplicates are retained.
+  Empty attributes print `{}`. Record values use JSON string escaping.
+
+Class dump tokens use `.name` for non-empty printable ASCII strings excluding
+`"`, `\`, `{`, `}`, `[`, `]`, `(`, `)`, and `=`. Every other class uses `.`
+followed by a JSON string, for example `."a}b"` or `."中文"`. This escaping is
+only dump syntax; it never changes the stored class or the attribute grammar.
+
 - A tagged value prints its branch and its named fields with no spaces: a
   `Destination` prints as `dest=url("...")`, or as
   `dest=cross(path="...",anchor=null)` with `anchor` a string or `null`.
 - Every optional and default-bearing field is printed; fields are never
   omitted because they are null, empty, false, or default.
-- Scope is always printed immediately after the kind. Kind-specific fields
-  follow it, and `children` is always last.
+- The inherited fields `scope`, `anchor`, `attributes` lead in that order.
+  Kind-specific scalar fields follow; `children` is last.
 
 The dump prints the native C parser's public scope coordinates exactly, without
 normalizing or interpreting particular line/column combinations. The
@@ -121,25 +127,35 @@ that the dump represents as nested descendants.
 
 | Kind | Ordered fields between `scope` and `children` |
 | --- | --- |
-| `Document`, `Paragraph`, `ThematicBreak`, `TableRow`, `DirectiveLabel`, `SoftBreak`, `LineBreak`, `Emphasis`, `Strong`, `Strikethrough`, `Cite` | none |
-| `Callout` | `variant`, `collapsed` |
-| `Heading` | `level` |
-| `List` | `flavor`, `start`, `variant`, `delimiter`, `tight` |
-| `ListItem` | `marker` |
-| `CodeBlock` | `info`, `language`, `literal`, `fenced`, `closed` |
-| `HTMLBlock` | `literal` |
-| `FormulaBlock` | `literal` |
-| `Table` | `columns` |
-| `TableCell` | `rowspan`, `colspan` |
-| `DirectiveBlock` | `name`, `attributes` |
-| `Text` | `literal` |
-| `Code` | `literal` |
-| `HTML` | `literal` |
-| `Comment` | `literal` |
-| `Formula` | `mode`, `literal` |
-| `Link` | `dest`, `title` |
-| `Image` | `dest`, `title` |
-| `Directive` | `name`, `attributes` |
+| `Document` | `anchor`, `attributes` |
+| `Callout` | `anchor`, `attributes`, `variant`, `collapsed` |
+| `Paragraph` | `anchor`, `attributes` |
+| `Heading` | `anchor`, `attributes`, `level` |
+| `ThematicBreak` | `anchor`, `attributes` |
+| `List` | `anchor`, `attributes`, `flavor`, `start`, `variant`, `delimiter`, `tight` |
+| `ListItem` | `anchor`, `attributes`, `marker` |
+| `CodeBlock` | `anchor`, `attributes`, `info`, `language`, `literal`, `fenced`, `closed` |
+| `HTMLBlock` | `anchor`, `attributes`, `literal` |
+| `FormulaBlock` | `anchor`, `attributes`, `literal` |
+| `Table` | `anchor`, `attributes`, `columns` |
+| `TableRow` | `anchor`, `attributes` |
+| `TableCell` | `anchor`, `attributes`, `rowspan`, `colspan` |
+| `DirectiveBlock` | `anchor`, `attributes`, `name` |
+| `DirectiveLabel` | `anchor`, `attributes` |
+| `Text` | `anchor`, `attributes`, `literal` |
+| `SoftBreak` | `anchor`, `attributes` |
+| `LineBreak` | `anchor`, `attributes` |
+| `Code` | `anchor`, `attributes`, `literal` |
+| `HTML` | `anchor`, `attributes`, `literal` |
+| `Comment` | `anchor`, `attributes`, `literal` |
+| `Formula` | `anchor`, `attributes`, `mode`, `literal` |
+| `Emphasis` | `anchor`, `attributes` |
+| `Strong` | `anchor`, `attributes` |
+| `Strikethrough` | `anchor`, `attributes` |
+| `Link` | `anchor`, `attributes`, `dest`, `title` |
+| `Image` | `anchor`, `attributes`, `dest`, `title`, `width`, `height` |
+| `Directive` | `anchor`, `attributes`, `name` |
+| `Cite` | `anchor`, `attributes` |
 
 Example:
 
@@ -162,7 +178,7 @@ implementations in the same reviewed change.
 A scoped value is written, so it has a scope, but it is not a `Markup` kind
 and never a child: the dump nests it under its owner with the same connectors
 as a child line, and it prints as a VALUE line,
-`Kind scope=L:C..L:C <fields> children=N`, without the universal fields. A
+`Kind scope=L:C..L:C anchor=null attributes={} <fields> children=N`, without the universal fields. A
 GROUP line, `Kind children=N`, nests a node-valued list under its owner with
 no scope and no fields; its own `children` is the number of lines nested
 under it. Nested value and group lines are never counted by their owner.
@@ -231,3 +247,11 @@ followed by its block content. Definitions are scoped values; they never
 increase the document's `children` count. A specimen reference uses a `Cite`
 with a `Citation` whose referent prints `specimen(id="...")` and whose affix
 groups are empty. No resolved display number is printed.
+
+A present `Document.metadata` prints a `Metadata scope=L:C..L:C children=N`
+line before content, with N nested `MetadataRecord` lines. Each record prints
+`scope`, `name`, `value`, and `children=0`. Neither value has anchor or
+attributes. The value grammar is `scalar(null)`, `scalar(bool(true|false))`,
+`scalar(number("lexeme"))`, `scalar(text("..."))`, or
+`list([number("lexeme"),text("...")])`; lists may be empty. Null metadata
+emits no line, and no metadata contributes a document child or visitor event.

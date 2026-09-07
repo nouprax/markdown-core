@@ -2,7 +2,7 @@
     "schemaVersion": 1,
     "script": "scripts/audit-scope-containment.mjs",
     "subject": "Two geometric invariants over every fixture example: a child's extent lies inside its parent's, and no two siblings claim the same byte.",
-    "purpose": "Nine rows, two causes, and it was 58 before 0a.13, 45 before Step 10, 31 after it, 21 after 8.3 and 9 after Q44.\n\n   6  an autocompleted table cell overlapping the cell before it. Q44's COST, and the owner accepted it on 2026-08-23 with the reason that decides it: a scope is what a consumer follows to map a node back to the source, so a cell that completion invented should point AT the place it was completed -- the end of its row. That byte is also the previous cell's last. An empty range past it would need column len+1, which is off the line, and column 0 -- what it used to say -- is not a byte at all. Pointing at something beats pointing at nothing, and the overlap is registered here rather than hidden.\n   3  H14 (section 11.4) -- finalize reads an empty curline as end-of-input. Unowned by any step, and that is the honest state rather than a guess.\n\nThe sibling half is what earns this oracle. Containment alone cannot see the emphasis defect: ***a** gives a Text spanning columns 1..3 and a Strong starting at column 1, and both sit inside their paragraph, so the only statement that catches it is that two nodes claim one byte. That is exactly what it caught, and what 0a.13 then cleared: reverting the emphasis fix makes fourteen rows reappear here, and reverting only the ONE-LINE form of it that the plan originally named leaves SEVEN of the fourteen standing. Measured both ways. This cannot be an upstream comparison either -- cmark-gfm re-parents emphasis the same way and takes a link's start from the closing bracket the same way, so it would return agreement on exactly the rows that are wrong.\n\nNodes with no position are skipped, not judged. The run reports ZERO skipped child relations, where it used to skip the split-off table lead's.\n\nStep 10 cleared fourteen by making the inline phase read the content-to-source map. 8.3 cleared ten more, all a text run that began or ended with a backtick and reached one column past its own last byte. Q44 cleared eighteen and added six, which is the only time this ledger has gone up by design.\n\nM6 retains all nine prior findings with identical coordinates under the table row-group paths. The new table module fixtures add three more instances of the same Q44 empty/autocompleted-cell placement. Unscoped dump groups are transparent to geometric checks, so row containment and ordering remain checked across head/content/foot.",
+    "purpose": "Nine rows, two causes, and it was 58 before 0a.13, 45 before Step 10, 31 after it, 21 after 8.3 and 9 after Q44.\n\n   6  an autocompleted table cell overlapping the cell before it. Q44's COST, and the owner accepted it on 2026-08-23 with the reason that decides it: a scope is what a consumer follows to map a node back to the source, so a cell that completion invented should point AT the place it was completed -- the end of its row. That byte is also the previous cell's last. An empty range past it would need column len+1, which is off the line, and column 0 -- what it used to say -- is not a byte at all. Pointing at something beats pointing at nothing, and the overlap is registered here rather than hidden.\n   3  H14 (section 11.4) -- finalize reads an empty curline as end-of-input. Unowned by any step, and that is the honest state rather than a guess.\n\nThe sibling half is what earns this oracle. Containment alone cannot see the emphasis defect: ***a** gives a Text spanning columns 1..3 and a Strong starting at column 1, and both sit inside their paragraph, so the only statement that catches it is that two nodes claim one byte. That is exactly what it caught, and what 0a.13 then cleared: reverting the emphasis fix makes fourteen rows reappear here, and reverting only the ONE-LINE form of it that the plan originally named leaves SEVEN of the fourteen standing. Measured both ways. This cannot be an upstream comparison either -- cmark-gfm re-parents emphasis the same way and takes a link's start from the closing bracket the same way, so it would return agreement on exactly the rows that are wrong.\n\nNodes with no position are skipped, not judged. The run reports ZERO skipped child relations, where it used to skip the split-off table lead's.\n\nStep 10 cleared fourteen by making the inline phase read the content-to-source map. 8.3 cleared ten more, all a text run that began or ended with a backtick and reached one column past its own last byte. Q44 cleared eighteen and added six, which is the only time this ledger has gone up by design.\n\nM6 retains all nine prior findings with identical coordinates under the table row-group paths. The new table module fixtures add three more instances of the same Q44 empty/autocompleted-cell placement. Unscoped dump groups are transparent to geometric checks, so row containment and ordering remain checked across head/content/foot.\n\nM7 retains the Document root scope in the shared dump reader. The audit now observes root-level source relationships that were previously skipped: eleven additional existing heading/footnote overlaps bring the ledger to 23 findings. Document content and scoped-value collections are separate owned sequences and are checked separately for sibling ordering. No parser scope changed.",
     "corpus": "every example in packages/markdown-core/tests/fixtures/*.txt",
     "expected": [
         {
@@ -102,6 +102,129 @@
             ]
         },
         {
+            "source": "packages/markdown-core/tests/fixtures/regression.txt:534",
+            "input": "Hello world\n\n\n[^a]:[^b]:\n",
+            "findings": [
+                {
+                    "nodePath": "0.2",
+                    "violation": "sibling-overlap",
+                    "kind": "Footnote",
+                    "scope": "4:6..4:10",
+                    "previousKind": "Footnote",
+                    "previousScope": "4:1..4:10",
+                    "closedBy": "unassigned"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/regression.txt:660",
+            "input": "Ref [^dup].\n\n[^dup]: OUTER opens first\n\n    [^dup]: INNER closes first\n",
+            "findings": [
+                {
+                    "nodePath": "0.2",
+                    "violation": "sibling-overlap",
+                    "kind": "Footnote",
+                    "scope": "5:5..5:30",
+                    "previousKind": "Footnote",
+                    "previousScope": "3:1..5:30",
+                    "closedBy": "unassigned"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:760",
+            "input": "Foo\n---\nbar\n",
+            "findings": [
+                {
+                    "nodePath": "0.1",
+                    "violation": "sibling-overlap",
+                    "kind": "Paragraph",
+                    "scope": "3:1..3:3",
+                    "previousKind": "Heading",
+                    "previousScope": "1:1..3:3",
+                    "closedBy": "unassigned"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:1296",
+            "input": "`Foo\n----\n`\n\n<a title=\"a lot\n---\nof dashes\"/>\n",
+            "findings": [
+                {
+                    "nodePath": "0.1",
+                    "violation": "sibling-overlap",
+                    "kind": "Paragraph",
+                    "scope": "3:1..3:1",
+                    "previousKind": "Heading",
+                    "previousScope": "1:1..3:1",
+                    "closedBy": "unassigned"
+                },
+                {
+                    "nodePath": "0.3",
+                    "violation": "sibling-overlap",
+                    "kind": "Paragraph",
+                    "scope": "7:1..7:12",
+                    "previousKind": "Heading",
+                    "previousScope": "5:1..7:12",
+                    "closedBy": "unassigned"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:1381",
+            "input": "---\nFoo\n---\nBar\n---\nBaz\n",
+            "findings": [
+                {
+                    "nodePath": "0.2",
+                    "violation": "sibling-overlap",
+                    "kind": "Heading",
+                    "scope": "4:1..6:3",
+                    "previousKind": "Heading",
+                    "previousScope": "2:1..4:3",
+                    "closedBy": "unassigned"
+                },
+                {
+                    "nodePath": "0.3",
+                    "violation": "sibling-overlap",
+                    "kind": "Paragraph",
+                    "scope": "6:1..6:3",
+                    "previousKind": "Heading",
+                    "previousScope": "4:1..6:3",
+                    "closedBy": "unassigned"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:1497",
+            "input": "Foo\n\nbar\n---\nbaz\n",
+            "findings": [
+                {
+                    "nodePath": "0.2",
+                    "violation": "sibling-overlap",
+                    "kind": "Paragraph",
+                    "scope": "5:1..5:3",
+                    "previousKind": "Heading",
+                    "previousScope": "3:1..5:3",
+                    "closedBy": "unassigned"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:1714",
+            "input": "# Heading\n    foo\nHeading\n------\n    foo\n----\n",
+            "findings": [
+                {
+                    "nodePath": "0.3",
+                    "violation": "sibling-overlap",
+                    "kind": "CodeBlock",
+                    "scope": "5:5..5:7",
+                    "previousKind": "Heading",
+                    "previousScope": "3:1..5:7",
+                    "closedBy": "unassigned"
+                }
+            ]
+        },
+        {
             "source": "packages/markdown-core/tests/fixtures/spec.txt:1922",
             "input": "> ```\n> aaa\n\nbbb\n",
             "findings": [
@@ -114,6 +237,36 @@
                     "parentScope": "1:1..2:5",
                     "class": "child-ends-at-a-boundary-its-parent-does-not-reach",
                     "closedBy": "none -- upstream cmark-gfm reports the identical pair, byte for byte"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:2093",
+            "input": "foo\n---\n~~~\nbar\n~~~\n# baz\n",
+            "findings": [
+                {
+                    "nodePath": "0.1",
+                    "violation": "sibling-overlap",
+                    "kind": "CodeBlock",
+                    "scope": "3:1..5:3",
+                    "previousKind": "Heading",
+                    "previousScope": "1:1..3:3",
+                    "closedBy": "unassigned"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:3313",
+            "input": "[foo]: /url\nbar\n===\n[foo]\n",
+            "findings": [
+                {
+                    "nodePath": "0.1",
+                    "violation": "sibling-overlap",
+                    "kind": "Paragraph",
+                    "scope": "4:1..4:5",
+                    "previousKind": "Heading",
+                    "previousScope": "2:1..4:5",
+                    "closedBy": "unassigned"
                 }
             ]
         },

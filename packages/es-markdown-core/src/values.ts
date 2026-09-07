@@ -43,3 +43,32 @@ export type CitationReferent =
     | { readonly kind: "footnote"; readonly id: string }
     | { readonly kind: "specimen"; readonly id: string };
 export type TableAlignment = "none" | "left" | "center" | "right";
+
+export interface Record {
+    readonly name: string;
+    readonly value: string;
+}
+export interface Attributes {
+    readonly classes: readonly string[];
+    readonly records: readonly Record[];
+}
+export const Attributes: { readonly empty: Attributes } = { empty: { classes: [], records: [] } };
+export interface Metadata {
+    readonly records: readonly MetadataRecord[];
+    readonly scope: Scope;
+}
+export interface MetadataRecord {
+    readonly name: string;
+    readonly value: MetadataValue;
+    readonly scope: Scope;
+}
+export type MetadataValue =
+    | { readonly kind: "scalar"; readonly value: MetadataScalar }
+    | { readonly kind: "list"; readonly items: readonly MetadataListItem[] };
+export type MetadataScalar =
+    | { readonly kind: "null" }
+    | { readonly kind: "bool"; readonly value: boolean }
+    | { readonly kind: "number"; readonly value: string }
+    | { readonly kind: "text"; readonly value: string };
+export type MetadataListItem =
+    { readonly kind: "number"; readonly value: string } | { readonly kind: "text"; readonly value: string };

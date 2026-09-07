@@ -469,7 +469,7 @@ its behavior, with no separate publication step.
       and the kind together. Manifest states and orders:
       `table.column.relative.null`, `tableCell.span.one`,
       `tableCell.content.inline`, `table.head-content-foot`. Requires `S0`.
-- [ ] **M7 — Universal fields and the one attribute operation.** Add the
+- [x] **M7 — Universal fields and the one attribute operation.** Add the
       inherited `anchor: String?` and `attributes: Attributes` to every kind by
       turning the contract's single inherited field into an ordered set that the
       projection audit, the fixture checker, and the dump grammar understand;
@@ -503,6 +503,25 @@ its behavior, with no separate publication step.
       and Remark attribute conformance cases pass, no second attribute tokenizer
       remains, and size-doubling valid, duplicate, malformed, and unclosed
       containers are linear. Requires `M0` through `M6`.
+
+  M7 validation (2026-09-07): the 29-kind/13-surface projection audit and
+  nine canonical cases pass; C correctness/conformance, ASan, UBSan, TSan,
+  strict OOM, Swift, Kotlin JVM/Native/Android-host, ES Node/browser, all four
+  oracle gates, and 400-input seed-1 fuzz runs for CommonMark/GFM/remark pass.
+  The host release dry run builds and checks the C, Swift, npm and Maven
+  artifacts; full cross-host aggregation remains the required CI check.
+  Scanner work counts remain linear for size-doubling valid, duplicate,
+  malformed and unclosed containers. Metadata and image dimensions also have
+  synthetic value/transport tests while their syntax awaits O6/O9.
+
+  Ledger review: retaining root dump fields exposes eleven previously
+  unobserved root-level heading/footnote scope overlaps; the containment audit
+  checks Document's separate owned sequences independently. No parser scope
+  changed. Two Obsidian gap digests change because digit-first directive names
+  are now literal. The expanded remark corpus registers the shared-attribute
+  boundaries and an existing empty-task lazy-continuation difference. Original
+  fixture inputs are retained; new module and boundary cases are appended.
+
 - **Stage 1 exit criterion**, verified in the `M7` pull request: every surface
   compiles with exhaustive handling of the inventory kinds that exist so far,
   the projection audit proves kind and field parity, no fixture or document

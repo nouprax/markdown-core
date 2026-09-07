@@ -27,7 +27,8 @@ or semantics.
 ## Core rules
 
 - `Markup` is the only abstract AST node type.
-- Every `Markup` has a non-optional `scope: Scope`.
+- Every `Markup` has the ordered inherited fields `scope: Scope`,
+  `anchor: String?`, and non-null `attributes: Attributes`.
 - AST values are immutable after construction and own their strings and
   collections. No value retains a C node, document, allocator, or WASM handle.
 - Collections are ordered and read-only. Their order is source order unless a
@@ -123,41 +124,27 @@ other five kinds the placement is constant and therefore implied by the kind:
 
 | Type | Its one value, now implied by the kind |
 | --- | --- |
-| `Directive` | `embedded` |
-| `DirectiveBlock` | `standalone` |
-| `Code` | `embedded` |
-| `CodeBlock` | `standalone` |
-| `FormulaBlock` | `standalone` — `markdown_core_extensions_set_formula_mode` returns `false` and leaves the node unchanged for any other value |
+| `Directive` | `name: String`, `label: DirectiveLabel?` | letter-first name; attributes use the inherited fields; label is a typed Markup field spanning its brackets, never content; absent and empty labels remain distinct; leaf |
+| `DirectiveBlock` | `name: String`, `label: DirectiveLabel?`, `content: [Markup]` | letter-first name; attributes use the inherited fields; label is a typed Markup field spanning its brackets, never content; absent and empty labels remain distinct; block content |
+| `Code` | `literal: String` | mode is `embedded`; leaf |
+| `CodeBlock` | `info: String?`, `language: String?`, `literal: String`, `fenced: Bool`, `closed: Bool` | mode is `standalone`; `info` is the complete raw info string; `language` is its first non-whitespace token; indented blocks have `fenced=false, closed=true` |
+| `FormulaBlock` | `literal: String` | mode is `standalone` |
 
-### Directive attributes
+### Universal attributes and metadata
 
-This section describes the directive attribute model as implemented today.
-Landing item `M7` replaces it with the universal `anchor` and `attributes`
-fields of [`dialect/attributes.md`](dialect/attributes.md), which also states
-the one attribute grammar; until then this section stands.
+Every Markup carries the ordered inherited fields `scope: Scope`,
+`anchor: String?`, and `attributes: Attributes`. The
+[attributes module](dialect/attributes.md) owns the single grammar,
+normalization, and attachment operation. `Attributes(classes: [String],
+records: [Record])` is never null. `Record(name: String, value: String)`
+retains every assignment occurrence; classes retain every word occurrence.
+The last identifier wins and an empty final `id=` clears the anchor.
 
-Directive `attributes` is an optional ordered sequence of `DirectiveAttribute`
-pairs, each a `name: String` and a `value: String`. It preserves the source
-order of each name's first occurrence. A later occurrence updates that same
-slot instead of moving it; `class` accumulates there in source order. `null`
-means the source wrote no attribute container; an empty sequence means it
-wrote `{}`.
-
-Markdown source uses `{key=value}` attribute-list syntax. Bare attributes and
-unquoted, single-quoted or double-quoted values are supported. `#name` and
-`.name` are shorthand for `id` and `class`. `class` is the one name whose
-repeats accumulate, space-separated in source order, whether they were written
-as shorthand or as `class=`; every other name keeps its last value. Values that
-look like booleans or numbers remain strings.
-
-Attribute names have no HTML semantics and are never projected to HTML
-attributes. For example:
-
-```markdown
-:video[My video]{id=123 muted=true title="My Video"}
-```
-
-is exposed as `id="123"`, `muted="true"`, `title="My Video"`, in that order.
+`Document.metadata: Metadata?` and its scoped records use the
+[Properties value model](dialect/properties.md#model). Metadata is never
+Markup and has no visitor callbacks. O6 first produces it; until then it is
+null. `Image.width` and `Image.height` are nullable positive integers whose
+first syntax producer is O9.
 
 ### Destination
 
@@ -246,38 +233,38 @@ and returns no document.
 
 | Kind | Fields in canonical order | Nullability and invariants |
 | --- | --- | --- |
-| `Document` | `content: [Markup]`, `footnotes: [Footnote]`, `specimens: [Specimen]` | block content; visit content, then footnotes, then specimens; each definition sequence retains every definition in scope-start order and never counts as children |
-| `Callout` | `variant: String?`, `collapsed: Bool?`, `title: [Markup]?`, `content: [Markup]` | every `>` container; `variant` is the authored type as written, or null when the container has no metadata line, and then `collapsed` and `title` are null; `collapsed` is null when no `+` or `-` fold marker was authored, false for `+` and true for `-`; `title` is a node-valued field of inline content, visited before `content` and never counted among its children, and a present title holds at least one node; block content |
+| `Document` | `content: [Markup]`, `metadata: Metadata?`, `footnotes: [Footnote]`, `specimens: [Specimen]` | block content; document-owned footnotes and specimens each retain all definitions in scope-start order; visit content, then footnotes, then specimens; neither definition sequence counts as children |
+| `Callout` | `variant: String?`, `collapsed: Bool?`, `title: [Markup]?`, `content: [Markup]` | every `>` container; `variant` is the authored type as written or null when the container has no metadata line, and then `collapsed` and `title` are null; `collapsed` is null when no `+` or `-` fold marker was authored, false for `+` and true for `-`; `title` is a node-valued field of inline content visited before `content` and never counted among its children; a present title holds at least one node; block content |
 | `Paragraph` | `content: [Markup]` | inline content |
 | `Heading` | `level: Int`, `content: [Markup]` | `level` is 1 through 6; inline content |
 | `ThematicBreak` | none | leaf |
-| `List` | `flavor: ListFlavor`, `start: Int?`, `variant: OrderedListVariant?`, `delimiter: OrderedListDelimiter?`, `tight: Bool`, `items: [ListItem]` | `start`, `variant`, and `delimiter` are non-null only for ordered lists |
+| `List` | `flavor: ListFlavor`, `start: Int?`, `variant: OrderedListVariant?`, `delimiter: OrderedListDelimiter?`, `tight: Bool`, `items: [ListItem]` | `start` is non-null only for ordered lists |
 | `ListItem` | `marker: String?`, `content: [Markup]` | `marker == null` means not a task item; block content |
-| `CodeBlock` | `info: String?`, `language: String?`, `literal: String`, `fenced: Bool`, `closed: Bool` | `info` is the info string after escape and character-reference processing, stripped of leading and trailing spaces and tabs, and `null` when that is empty or the block is indented; `language` is the prefix of `info` before the first space or tab; `fenced` is true for a fenced block; `closed` is true if and only if a closing fence was found, and always for an indented block |
+| `CodeBlock` | `info: String?`, `language: String?`, `literal: String`, `fenced: Bool`, `closed: Bool` | mode is `standalone`; `info` is the complete raw info string; `language` is its first non-whitespace token; indented blocks have `fenced=false, closed=true` |
 | `HTMLBlock` | `literal: String` | raw HTML is preserved; a block that opens with `<!--` and whose end line holds only whitespace after the first `-->` is a `Comment` |
-| `FormulaBlock` | `literal: String` | a formula block is always standalone; see the note below |
-| `Table` | `columns: [TableColumn]`, `head: [TableRow]`, `content: [TableRow]`, `foot: [TableRow]` | non-empty columns define the logical grid; groups retain stored order; pipe rows are completed or truncated to the column count |
-| `TableRow` | `cells: [TableCell]` | cells whose upper-left coordinate starts in this row, in logical order |
-| `TableCell` | `rowspan: Int`, `colspan: Int`, `content: [Markup]` | positive spans; inline or block content as parsed, with no Paragraph normalization |
-| `DirectiveBlock` | `name: String`, `attributes: [DirectiveAttribute]?`, `label: DirectiveLabel?`, `content: [Markup]` | attributes preserves first-occurrence source order with unique names; label is a node-valued field whose scope spans its brackets and is never part of content; content is block; an absent attribute container and an empty one remain distinct, as do an absent label and an empty one |
+| `FormulaBlock` | `literal: String` | mode is `standalone` |
+| `Table` | `columns: [TableColumn]`, `head: [TableRow]`, `content: [TableRow]`, `foot: [TableRow]` | non-empty columns define the logical grid; rows are owned exactly once in head/content/foot order; pipe tables have one head row, no foot rows, null relative widths, and unit spans; no span crosses a group boundary |
+| `TableRow` | `cells: [TableCell]` | cells whose upper-left coordinate starts in this row, in logical order; no row-local header state |
+| `TableCell` | `rowspan: Int`, `colspan: Int`, `content: [Markup]` | positive spans; inline or block content is stored as parsed without paragraph normalization |
+| `DirectiveBlock` | `name: String`, `label: DirectiveLabel?`, `content: [Markup]` | letter-first name; attributes use the inherited fields; label is a typed Markup field spanning its brackets, never content; absent and empty labels remain distinct; block content |
 | `DirectiveLabel` | `content: [Markup]` | inline content; the scope spans the brackets, so an empty label is still a place |
 | `Text` | `literal: String` | leaf |
 | `SoftBreak` | none | leaf |
 | `LineBreak` | none | leaf |
-| `Code` | `literal: String` | leaf |
+| `Code` | `literal: String` | mode is `embedded`; leaf |
 | `HTML` | `literal: String` | raw HTML is preserved; an HTML comment token is a `Comment`; leaf |
 | `Comment` | `literal: String` | the one kind valid in both block and inline content, which the parent edge records; `literal` excludes the delimiters and keeps every byte between them; leaf |
-| `Formula` | `mode`, `literal: String` | either mode; leaf |
+| `Formula` | `mode: PlacementMode`, `literal: String` | either mode; leaf |
 | `Emphasis` | `content: [Markup]` | inline content |
 | `Strong` | `content: [Markup]` | inline content |
 | `Strikethrough` | `content: [Markup]` | inline content |
 | `Link` | `dest: Destination`, `title: String?`, `content: [Markup]` | `dest` is the tagged `Destination` value and is never absent: `[a]()` and `[a](<>)` wrote one and wrote nothing in it, so it is `url("")`; a reference occurrence answers the destination its definition stated, and an unresolved reference is the inherited literal text; every `Link` owns the `url` branch; absent and empty title remain distinct; inline content |
-| `Image` | `dest: Destination`, `title: String?`, `content: [Markup]` | `dest` is never absent, for the reason `Link.dest` is not; every `Image` owns the `url` branch; absent and empty title remain distinct; content is parsed alt-text inline content |
-| `Directive` | `name: String`, `attributes: [DirectiveAttribute]?`, `label: DirectiveLabel?` | attributes preserves first-occurrence source order with unique names; label is a node-valued field whose scope spans its brackets and is never a child/content element; an absent attribute container and an empty one remain distinct, as do an absent label and an empty one |
-| `Cite` | `citations: [Citation]` | one or more items in source order; every item has exactly one referent, and one cite never mixes referent families; an inherited `[^label]` call is one item with a `footnote` referent whose id is the normalized label without the caret, with empty affixes; its items are scoped values, never children, so it is a leaf |
+| `Image` | `dest: Destination`, `title: String?`, `width: Int?`, `height: Int?`, `content: [Markup]` | `dest` is the tagged `Destination` value and is never absent, for the reason `Link.dest` is not; every `Image` owns the `url` branch; absent and empty title remain distinct; content is parsed alt-text inline content |
+| `Directive` | `name: String`, `label: DirectiveLabel?` | letter-first name; attributes use the inherited fields; label is a typed Markup field spanning its brackets, never content; absent and empty labels remain distinct; leaf |
+| `Cite` | `citations: [Citation]` | one or more items in source order; every item has exactly one referent and one cite never mixes referent families; an inherited `[^label]` call is one item with a `footnote` referent whose id is the normalized label without the caret and with empty affixes; its items are scoped values, never children, so it is a leaf |
 
-Every row above also has the final inherited field `scope: Scope`; it is not
-repeated in the table. The `url` of a `Link` or `Image` destination, and
+Every row also has the ordered inherited fields `scope: Scope`,
+`anchor: String?`, and `attributes: Attributes`; they are not repeated in the table. The `url` of a `Link` or `Image` destination, and
 every `title`, are the CommonMark-unescaped values with angle-bracket
 wrappers removed and no percent-encoding or normalization. A link reference
 definition produces no node: the parser consumes it, and every successful
@@ -360,7 +347,8 @@ The scoped values `Citation`, `Footnote`, and `Specimen` receive value callbacks
 walk descends into their markup arrays in declared field order: a `Cite`
 visits each `Citation`, whose `prefix` precedes its `suffix`, and `Document`
 visits `content`, `footnotes`, then `specimens`, each definition descending into its
-`content`. Unscoped values receive no callback and are not descended into.
+`content`. Metadata and MetadataRecord carry scopes but no Markup edges, so
+they receive no visitor callbacks. Unscoped values are likewise not descended into.
 
 The walking visitor is exhaustive under the same rule as `Visitor`: every
 node-kind callback is required and there is no default, optional handler,
@@ -402,3 +390,16 @@ against boolean-only mdast and cmark-gfm XML. Those oracles cannot attest to
 `x` versus `X`; exact authored markers remain covered by canonical fixtures
 and binding tests. An unchecked marker followed by literal `[x]` still
 exposes the registered upstream task-state defect.
+
+M7's directive migration is checked by the exact-input differences in
+[`specs/oracles/remark/deltas.json`](../../specs/oracles/remark/deltas.json):
+Unicode letter-first names, dotted shorthands, bare-member rejection, empty
+assignments, adjacent members, quoted line-ending normalization, unquoted
+punctuation and entity preservation, unmatched-quote fallback, class splitting,
+and ordered duplicate retention. The comparison reads universal anchors and
+attributes on every Markup kind; it does not deduplicate the native values.
+
+The exact-input `task-prefix-before-block-content` remark delta records an
+empty task item's lack of a paragraph for lazy continuation, following the
+[task-list prefix rule](dialect/task-lists.md). The expanded M7 fuzz corpus
+exposed this pre-existing difference; task parsing is unchanged.

@@ -10,6 +10,8 @@ public class Cite internal constructor(
     /** Never empty: every cite is authored with at least one item. */
     public val citations: kotlin.collections.List<Citation>,
     override val scope: Scope,
+    override val anchor: String?,
+    override val attributes: Attributes,
 ) : Markup {
     override fun <Result> accept(visitor: Visitor<Result>): Result = visitor.visitCite(this)
 }

@@ -5,6 +5,7 @@
 #include "markdown-core.h"
 #include "markdown-core-extensions.h"
 #include "parser.h"
+#include "markdown_core.h"
 #include "cplusplus.h"
 #include "harness.h"
 
@@ -32,20 +33,11 @@ void test_cplusplus(test_batch_runner *runner) {
     {
         /* Reaches the attribute sequence from C++ -- what this case is for is
          * that the headers compile and link there, not the grammar. */
-        const char *name = nullptr;
-        const char *value = nullptr;
-        size_t name_length = 0;
-        size_t value_length = 0;
-        INT_EQ(runner, markdown_core_extensions_directive_has_attributes(directive), 1,
-               "directive reports an attribute container in C++");
-        INT_EQ(runner, (int)markdown_core_extensions_directive_attribute_count(directive), 3,
-               "directive attribute count in C++");
-        INT_EQ(
-            runner,
-            markdown_core_extensions_directive_attribute_at(directive, 0, &name, &name_length, &value, &value_length),
-            1, "directive attribute read in C++");
-        OK(runner, name_length == 5 && memcmp(name, "title", 5) == 0,
-           "directive attributes preserve first-occurrence source order in C++");
+        markdown_core_string name{}, value{};
+        INT_EQ(runner, (int)markdown_core_node_attribute_record_count(directive), 2, "universal records in C++");
+        OK(runner, markdown_core_node_attribute_record_at(directive, 0, &name, &value), "record readable in C++");
+        OK(runner, name.length == 5 && memcmp(name.data, "title", 5) == 0, "record order in C++");
+        OK(runner, markdown_core_node_anchor(directive).has_value, "anchor readable in C++");
     }
     markdown_core_node_free(document);
 }

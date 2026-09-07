@@ -22,11 +22,11 @@ An inline HTML comment token is a `Comment` whose literal is the bytes between
 ```````````````````````````````` example
 a <!-- b --> c
 .
-Document scope=1:1..1:14 children=1
-└── Paragraph scope=1:1..1:14 children=3
-    ├── Text scope=1:1..1:2 literal="a " children=0
-    ├── Comment scope=1:3..1:12 literal=" b " children=0
-    └── Text scope=1:13..1:14 literal=" c" children=0
+Document scope=1:1..1:14 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:14 anchor=null attributes={} children=3
+    ├── Text scope=1:1..1:2 anchor=null attributes={} literal="a " children=0
+    ├── Comment scope=1:3..1:12 anchor=null attributes={} literal=" b " children=0
+    └── Text scope=1:13..1:14 anchor=null attributes={} literal=" c" children=0
 ````````````````````````````````
 
 The tokens `<!-->` and `<!--->` are comments with an empty literal:
@@ -34,13 +34,13 @@ The tokens `<!-->` and `<!--->` are comments with an empty literal:
 ```````````````````````````````` example
 a <!--> b <!---> c
 .
-Document scope=1:1..1:18 children=1
-└── Paragraph scope=1:1..1:18 children=5
-    ├── Text scope=1:1..1:2 literal="a " children=0
-    ├── Comment scope=1:3..1:7 literal="" children=0
-    ├── Text scope=1:8..1:10 literal=" b " children=0
-    ├── Comment scope=1:11..1:16 literal="" children=0
-    └── Text scope=1:17..1:18 literal=" c" children=0
+Document scope=1:1..1:18 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:18 anchor=null attributes={} children=5
+    ├── Text scope=1:1..1:2 anchor=null attributes={} literal="a " children=0
+    ├── Comment scope=1:3..1:7 anchor=null attributes={} literal="" children=0
+    ├── Text scope=1:8..1:10 anchor=null attributes={} literal=" b " children=0
+    ├── Comment scope=1:11..1:16 anchor=null attributes={} literal="" children=0
+    └── Text scope=1:17..1:18 anchor=null attributes={} literal=" c" children=0
 ````````````````````````````````
 
 An HTML block that opens with `<!--` and whose end line holds only whitespace
@@ -55,9 +55,9 @@ opener line through its closer line:
 multi
 -->
 .
-Document scope=1:1..5:3 children=2
-├── Comment scope=1:1..1:10 literal=" c " children=0
-└── Comment scope=3:1..5:3 literal="\nmulti\n" children=0
+Document scope=1:1..5:3 anchor=null attributes={} children=2
+├── Comment scope=1:1..1:10 anchor=null attributes={} literal=" c " children=0
+└── Comment scope=3:1..5:3 anchor=null attributes={} literal="\nmulti\n" children=0
 ````````````````````````````````
 
 Every other HTML block, including one whose end line carries non-whitespace
@@ -66,6 +66,6 @@ after `-->`, stays `HTMLBlock` as written:
 ```````````````````````````````` example
 <!-- a --> b
 .
-Document scope=1:1..1:12 children=1
-└── HTMLBlock scope=1:1..1:12 literal="<!-- a --> b\n" children=0
+Document scope=1:1..1:12 anchor=null attributes={} children=1
+└── HTMLBlock scope=1:1..1:12 anchor=null attributes={} literal="<!-- a --> b\n" children=0
 ````````````````````````````````

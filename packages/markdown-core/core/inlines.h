@@ -6,6 +6,10 @@ extern "C" {
 #endif
 
 #include "references.h"
+#include "attributes.h"
+
+int markdown_core_inline_parser_attributes(markdown_core_inline_parser *parser, bufsize_t start,
+                                           markdown_core_attributes *value, bufsize_t *end);
 
 markdown_core_chunk markdown_core_clean_url(markdown_core_mem *mem, markdown_core_chunk *url, int *lost);
 markdown_core_optional_chunk markdown_core_clean_title(markdown_core_mem *mem, markdown_core_chunk *title, int *lost);

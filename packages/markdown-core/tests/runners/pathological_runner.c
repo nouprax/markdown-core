@@ -818,8 +818,6 @@ static int case_directive_long_label(pc_context *context) {
     const markdown_core_node *label_child;
     markdown_core_string name;
     markdown_core_string literal;
-    bool has_attributes = false;
-    size_t attribute_count = 0;
     char *expected = NULL;
 
     if (pc_build(context, ":long[", "a", 1500, "]") != 0) {
@@ -833,8 +831,8 @@ static int case_directive_long_label(pc_context *context) {
     }
     directive = pc_first_directive(context);
     if (markdown_core_node_get_kind(directive) != MARKDOWN_CORE_KIND_DIRECTIVE ||
-        !markdown_core_node_directive_properties(directive, &name, &has_attributes, &attribute_count) ||
-        name.length != 4 || memcmp(name.data, "long", 4) != 0 || has_attributes || attribute_count != 0) {
+        !markdown_core_node_directive_properties(directive, &name) || name.length != 4 ||
+        memcmp(name.data, "long", 4) != 0 || markdown_core_node_attribute_record_count(directive) != 0) {
         fprintf(stderr, "directive name/attribute properties are wrong\n");
         return -1;
     }
@@ -866,8 +864,6 @@ static int case_directive_long_attributes(pc_context *context) {
     markdown_core_string name;
     markdown_core_string attribute_name;
     markdown_core_string attribute_value;
-    bool has_attributes = false;
-    size_t attribute_count = 0;
     char *value;
     int result = -1;
 
@@ -881,8 +877,8 @@ static int case_directive_long_attributes(pc_context *context) {
         return -1;
     }
     directive = pc_first_directive(context);
-    if (!markdown_core_node_directive_properties(directive, &name, &has_attributes, &attribute_count) ||
-        name.length != 4 || memcmp(name.data, "long", 4) != 0 || !has_attributes || attribute_count != 1) {
+    if (!markdown_core_node_directive_properties(directive, &name) || name.length != 4 ||
+        memcmp(name.data, "long", 4) != 0 || markdown_core_node_attribute_record_count(directive) != 1) {
         fprintf(stderr, "directive name/attribute properties are wrong\n");
         return -1;
     }
@@ -893,7 +889,7 @@ static int case_directive_long_attributes(pc_context *context) {
     /* The value is compared where it lives. It used to be compared through a
      * rendered JSON string, which meant a 5000-byte value was also a test of
      * the escaper; Step 7 deleted that round-trip. */
-    if (markdown_core_node_directive_attribute_at(directive, 0, &attribute_name, &attribute_value) &&
+    if (markdown_core_node_attribute_record_at(directive, 0, &attribute_name, &attribute_value) &&
         attribute_name.length == 6 && memcmp(attribute_name.data, "data-x", 6) == 0 && attribute_value.length == 5000 &&
         memcmp(attribute_value.data, value, 5000) == 0) {
         result = 0;

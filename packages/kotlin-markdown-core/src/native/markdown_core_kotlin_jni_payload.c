@@ -433,6 +433,97 @@ static void write_citation(jni_payload_buffer *buffer, jni_payload_stack *stack,
     schedule_chain(buffer, stack, markdown_core_citation_prefix(action.citation));
 }
 
+static void write_attributes(jni_payload_buffer *buffer, const markdown_core_node *node) {
+    put_optional_string(buffer, markdown_core_node_anchor(node));
+    size_t classes = markdown_core_node_attribute_class_count(node),
+           records = markdown_core_node_attribute_record_count(node);
+    if (classes > INT32_MAX || records > INT32_MAX) {
+        buffer->failure = JNI_PAYLOAD_ALLOCATION;
+        return;
+    }
+    put_i32(buffer, (int32_t)classes);
+    for (size_t i = 0; i < classes; i++) {
+        markdown_core_string value;
+        if (!markdown_core_node_attribute_class_at(node, i, &value)) {
+            buffer->failure = JNI_PAYLOAD_INTERNAL;
+            return;
+        }
+        put_string(buffer, value, true);
+    }
+    put_i32(buffer, (int32_t)records);
+    for (size_t i = 0; i < records; i++) {
+        markdown_core_string name, value;
+        if (!markdown_core_node_attribute_record_at(node, i, &name, &value)) {
+            buffer->failure = JNI_PAYLOAD_INTERNAL;
+            return;
+        }
+        put_string(buffer, name, true);
+        put_string(buffer, value, true);
+    }
+}
+
+static void write_metadata(jni_payload_buffer *buffer, const markdown_core_metadata *metadata) {
+    put_u8(buffer, metadata ? 1 : 0);
+    if (!metadata) {
+        return;
+    }
+    put_scope(buffer, markdown_core_metadata_scope(metadata));
+    size_t count = markdown_core_metadata_record_count(metadata);
+    if (count > INT32_MAX) {
+        buffer->failure = JNI_PAYLOAD_ALLOCATION;
+        return;
+    }
+    put_i32(buffer, (int32_t)count);
+    for (size_t i = 0; i < count; i++) {
+        const markdown_core_metadata_record *record = markdown_core_metadata_record_at(metadata, i);
+        put_scope(buffer, markdown_core_metadata_record_scope(record));
+        put_string(buffer, markdown_core_metadata_record_name(record), true);
+        markdown_core_metadata_value_kind kind = markdown_core_metadata_record_kind(record);
+        put_u8(buffer, (uint8_t)kind);
+        if (kind == MARKDOWN_CORE_METADATA_SCALAR) {
+            markdown_core_metadata_scalar value;
+            if (!markdown_core_metadata_record_scalar(record, &value)) {
+                buffer->failure = JNI_PAYLOAD_INTERNAL;
+                return;
+            }
+            put_u8(buffer, (uint8_t)value.kind);
+            switch (value.kind) {
+            case MARKDOWN_CORE_METADATA_NULL:
+                break;
+            case MARKDOWN_CORE_METADATA_BOOL:
+                put_u8(buffer, value.value.boolean ? 1 : 0);
+                break;
+            case MARKDOWN_CORE_METADATA_NUMBER:
+            case MARKDOWN_CORE_METADATA_TEXT:
+                put_string(buffer, value.value.string, true);
+                break;
+            default:
+                buffer->failure = JNI_PAYLOAD_INTERNAL;
+                return;
+            }
+        } else if (kind == MARKDOWN_CORE_METADATA_LIST) {
+            size_t items = markdown_core_metadata_record_item_count(record);
+            if (items > INT32_MAX) {
+                buffer->failure = JNI_PAYLOAD_ALLOCATION;
+                return;
+            }
+            put_i32(buffer, (int32_t)items);
+            for (size_t j = 0; j < items; j++) {
+                markdown_core_metadata_list_item item;
+                if (!markdown_core_metadata_record_item_at(record, j, &item)) {
+                    buffer->failure = JNI_PAYLOAD_INTERNAL;
+                    return;
+                }
+                put_u8(buffer, (uint8_t)item.kind);
+                put_string(buffer, item.value, true);
+            }
+        } else {
+            buffer->failure = JNI_PAYLOAD_INTERNAL;
+            return;
+        }
+    }
+}
+
 static void write_node(jni_payload_buffer *buffer, jni_payload_stack *stack, jni_payload_resources *resources,
                        const markdown_core_node *node) {
     markdown_core_node_kind kind = markdown_core_node_get_kind(node);
@@ -444,6 +535,7 @@ static void write_node(jni_payload_buffer *buffer, jni_payload_stack *stack, jni
 
     put_u8(buffer, (uint8_t)kind);
     put_scope(buffer, markdown_core_node_scope(node));
+    write_attributes(buffer, node);
     if (buffer->failure != JNI_PAYLOAD_OK) {
         return;
     }
@@ -479,6 +571,7 @@ static void write_node(jni_payload_buffer *buffer, jni_payload_stack *stack, jni
         break;
     }
     case MARKDOWN_CORE_KIND_DOCUMENT: {
+        write_metadata(buffer, markdown_core_node_document_metadata(node));
         /* The content leads, as the walk visits it; the footnotes follow. */
         jni_payload_action footnotes = {.kind = JNI_PAYLOAD_WRITE_FOOTNOTES, .node = node};
         jni_payload_action specimens = {.kind = JNI_PAYLOAD_WRITE_SPECIMENS, .node = node};
@@ -619,30 +712,12 @@ static void write_node(jni_payload_buffer *buffer, jni_payload_stack *stack, jni
     case MARKDOWN_CORE_KIND_DIRECTIVE: {
         /* A label is a node-valued field, not directive content. Preserve that
          * boundary on the wire instead of flattening it into the child list. */
-        bool has_attributes = false;
-        const markdown_core_node *label;
-        size_t count = 0;
-        size_t index;
-        if (!markdown_core_node_directive_properties(node, &first, &has_attributes, &count)) {
+        if (!markdown_core_node_directive_properties(node, &first)) {
             buffer->failure = JNI_PAYLOAD_INTERNAL;
             return;
         }
         put_string(buffer, first, true);
-        put_u8(buffer, has_attributes ? 1 : 0);
-        if (count > INT32_MAX) {
-            buffer->failure = JNI_PAYLOAD_ALLOCATION;
-            return;
-        }
-        put_i32(buffer, has_attributes ? (int32_t)count : 0);
-        for (index = 0; has_attributes && index < count; ++index) {
-            if (!markdown_core_node_directive_attribute_at(node, index, &first, &second)) {
-                buffer->failure = JNI_PAYLOAD_INTERNAL;
-                return;
-            }
-            put_string(buffer, first, true);
-            put_string(buffer, second, true);
-        }
-        label = markdown_core_node_directive_label(node);
+        const markdown_core_node *label = markdown_core_node_directive_label(node);
         put_u8(buffer, label ? 1 : 0);
         if (label != NULL) {
             jni_payload_action children = {.kind = JNI_PAYLOAD_WRITE_CHILDREN, .node = node};
@@ -679,29 +754,43 @@ static void write_node(jni_payload_buffer *buffer, jni_payload_stack *stack, jni
             return;
         }
         put_i32(buffer, ordinal);
-        if (!first_sight) {
-            schedule_children(buffer, stack, node);
-            break;
+        if (first_sight) {
+            if (!markdown_core_node_destination(node, &destination) ||
+                !markdown_core_node_title(node, &optional_first)) {
+                buffer->failure = JNI_PAYLOAD_INTERNAL;
+                return;
+            }
+            /* The branch ordinal leads and only that branch's fields follow it. */
+            put_i32(buffer, (int32_t)destination.kind);
+            switch (destination.kind) {
+            case MARKDOWN_CORE_DESTINATION_URL:
+                put_string(buffer, destination.url, true);
+                break;
+            case MARKDOWN_CORE_DESTINATION_CROSS:
+                put_string(buffer, destination.path, true);
+                put_optional_string(buffer, destination.anchor);
+                break;
+            default:
+                buffer->failure = JNI_PAYLOAD_INTERNAL;
+                return;
+            }
+            put_optional_string(buffer, optional_first);
         }
-        if (!markdown_core_node_destination(node, &destination) || !markdown_core_node_title(node, &optional_first)) {
-            buffer->failure = JNI_PAYLOAD_INTERNAL;
-            return;
+        if (kind == MARKDOWN_CORE_KIND_IMAGE) {
+            markdown_core_optional_i64 width, height;
+            if (!markdown_core_node_image_dimensions(node, &width, &height)) {
+                buffer->failure = JNI_PAYLOAD_INTERNAL;
+                return;
+            }
+            put_u8(buffer, width.has_value ? 1 : 0);
+            if (width.has_value) {
+                put_i64(buffer, width.value);
+            }
+            put_u8(buffer, height.has_value ? 1 : 0);
+            if (height.has_value) {
+                put_i64(buffer, height.value);
+            }
         }
-        /* The branch ordinal leads and only that branch's fields follow it. */
-        put_i32(buffer, (int32_t)destination.kind);
-        switch (destination.kind) {
-        case MARKDOWN_CORE_DESTINATION_URL:
-            put_string(buffer, destination.url, true);
-            break;
-        case MARKDOWN_CORE_DESTINATION_CROSS:
-            put_string(buffer, destination.path, true);
-            put_optional_string(buffer, destination.anchor);
-            break;
-        default:
-            buffer->failure = JNI_PAYLOAD_INTERNAL;
-            return;
-        }
-        put_optional_string(buffer, optional_first);
         schedule_children(buffer, stack, node);
         break;
     }

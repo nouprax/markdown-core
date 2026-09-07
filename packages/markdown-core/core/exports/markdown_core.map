@@ -22,7 +22,6 @@ MARKDOWN_CORE_1.0 {
     markdown_core_node_table_column_at;
     markdown_core_node_table_cell_spans;
     markdown_core_node_directive_properties;
-    markdown_core_node_directive_attribute_at;
     markdown_core_node_directive_label;
     markdown_core_node_callout_properties;
     markdown_core_node_callout_title;
@@ -47,6 +46,22 @@ MARKDOWN_CORE_1.0 {
     markdown_core_node_resource;
     markdown_core_document_dump;
     markdown_core_dump_free;
+    markdown_core_metadata_record_at;
+    markdown_core_metadata_record_count;
+    markdown_core_metadata_record_item_at;
+    markdown_core_metadata_record_item_count;
+    markdown_core_metadata_record_kind;
+    markdown_core_metadata_record_name;
+    markdown_core_metadata_record_scalar;
+    markdown_core_metadata_record_scope;
+    markdown_core_metadata_scope;
+    markdown_core_node_anchor;
+    markdown_core_node_attribute_class_at;
+    markdown_core_node_attribute_class_count;
+    markdown_core_node_attribute_record_at;
+    markdown_core_node_attribute_record_count;
+    markdown_core_node_document_metadata;
+    markdown_core_node_image_dimensions;
   local:
     *;
 };

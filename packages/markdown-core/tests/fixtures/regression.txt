@@ -8,11 +8,11 @@ line1
 
 line2
 .
-Document scope=1:1..3:5 children=2
-├── Paragraph scope=1:1..1:5 children=1
-│   └── Text scope=1:1..1:5 literal="line1" children=0
-└── Paragraph scope=3:1..3:5 children=1
-    └── Text scope=3:1..3:5 literal="line2" children=0
+Document scope=1:1..3:5 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:5 anchor=null attributes={} children=1
+│   └── Text scope=1:1..1:5 anchor=null attributes={} literal="line1" children=0
+└── Paragraph scope=3:1..3:5 anchor=null attributes={} children=1
+    └── Text scope=3:1..3:5 anchor=null attributes={} literal="line2" children=0
 ````````````````````````````````
 
 Issue #114: markdown_core skipping first character in line
@@ -27,19 +27,19 @@ Repeatedly solving
 →
 - how techniques
 .
-Document scope=1:1..7:16 children=4
-├── Paragraph scope=1:1..1:18 children=1
-│   └── Text scope=1:1..1:18 literal="By taking it apart" children=0
-├── List scope=3:1..4:1 flavor=bullet start=null variant=null delimiter=null tight=true children=1
-│   └── ListItem scope=3:1..4:1 marker=null children=1
-│       └── Paragraph scope=3:3..3:23 children=1
-│           └── Text scope=3:3..3:23 literal="alternative solutions" children=0
-├── Paragraph scope=5:1..5:18 children=1
-│   └── Text scope=5:1..5:18 literal="Repeatedly solving" children=0
-└── List scope=7:1..7:16 flavor=bullet start=null variant=null delimiter=null tight=true children=1
-    └── ListItem scope=7:1..7:16 marker=null children=1
-        └── Paragraph scope=7:3..7:16 children=1
-            └── Text scope=7:3..7:16 literal="how techniques" children=0
+Document scope=1:1..7:16 anchor=null attributes={} children=4
+├── Paragraph scope=1:1..1:18 anchor=null attributes={} children=1
+│   └── Text scope=1:1..1:18 anchor=null attributes={} literal="By taking it apart" children=0
+├── List scope=3:1..4:1 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+│   └── ListItem scope=3:1..4:1 anchor=null attributes={} marker=null children=1
+│       └── Paragraph scope=3:3..3:23 anchor=null attributes={} children=1
+│           └── Text scope=3:3..3:23 anchor=null attributes={} literal="alternative solutions" children=0
+├── Paragraph scope=5:1..5:18 anchor=null attributes={} children=1
+│   └── Text scope=5:1..5:18 anchor=null attributes={} literal="Repeatedly solving" children=0
+└── List scope=7:1..7:16 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+    └── ListItem scope=7:1..7:16 anchor=null attributes={} marker=null children=1
+        └── Paragraph scope=7:3..7:16 anchor=null attributes={} children=1
+            └── Text scope=7:3..7:16 anchor=null attributes={} literal="how techniques" children=0
 ````````````````````````````````
 
 Issue jgm/CommonMark#430:  h2..h6 not recognized as block tags.
@@ -57,13 +57,13 @@ Issue jgm/CommonMark#430:  h2..h6 not recognized as block tags.
 
 <h6>lorem</h6>
 .
-Document scope=1:1..11:14 children=6
-├── HTMLBlock scope=1:1..1:14 literal="<h1>lorem</h1>\n" children=0
-├── HTMLBlock scope=3:1..3:14 literal="<h2>lorem</h2>\n" children=0
-├── HTMLBlock scope=5:1..5:14 literal="<h3>lorem</h3>\n" children=0
-├── HTMLBlock scope=7:1..7:14 literal="<h4>lorem</h4>\n" children=0
-├── HTMLBlock scope=9:1..9:14 literal="<h5>lorem</h5>\n" children=0
-└── HTMLBlock scope=11:1..11:14 literal="<h6>lorem</h6>\n" children=0
+Document scope=1:1..11:14 anchor=null attributes={} children=6
+├── HTMLBlock scope=1:1..1:14 anchor=null attributes={} literal="<h1>lorem</h1>\n" children=0
+├── HTMLBlock scope=3:1..3:14 anchor=null attributes={} literal="<h2>lorem</h2>\n" children=0
+├── HTMLBlock scope=5:1..5:14 anchor=null attributes={} literal="<h3>lorem</h3>\n" children=0
+├── HTMLBlock scope=7:1..7:14 anchor=null attributes={} literal="<h4>lorem</h4>\n" children=0
+├── HTMLBlock scope=9:1..9:14 anchor=null attributes={} literal="<h5>lorem</h5>\n" children=0
+└── HTMLBlock scope=11:1..11:14 anchor=null attributes={} literal="<h6>lorem</h6>\n" children=0
 ````````````````````````````````
 
 Issue jgm/commonmark.js#109 - tabs after setext header line
@@ -73,9 +73,9 @@ Issue jgm/commonmark.js#109 - tabs after setext header line
 hi
 --→
 .
-Document scope=1:1..2:3 children=1
-└── Heading scope=1:1..2:3 level=2 children=1
-    └── Text scope=1:1..1:2 literal="hi" children=0
+Document scope=1:1..2:3 anchor=null attributes={} children=1
+└── Heading scope=1:1..2:3 anchor=null attributes={} level=2 children=1
+    └── Text scope=1:1..1:2 anchor=null attributes={} literal="hi" children=0
 ````````````````````````````````
 
 Issue #177 - incorrect emphasis parsing
@@ -83,13 +83,13 @@ Issue #177 - incorrect emphasis parsing
 ```````````````````````````````` example
 a***b* c*
 .
-Document scope=1:1..1:9 children=1
-└── Paragraph scope=1:1..1:9 children=2
-    ├── Text scope=1:1..1:2 literal="a*" children=0
-    └── Emphasis scope=1:3..1:9 children=2
-        ├── Emphasis scope=1:4..1:6 children=1
-        │   └── Text scope=1:5..1:5 literal="b" children=0
-        └── Text scope=1:7..1:8 literal=" c" children=0
+Document scope=1:1..1:9 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:9 anchor=null attributes={} children=2
+    ├── Text scope=1:1..1:2 anchor=null attributes={} literal="a*" children=0
+    └── Emphasis scope=1:3..1:9 anchor=null attributes={} children=2
+        ├── Emphasis scope=1:4..1:6 anchor=null attributes={} children=1
+        │   └── Text scope=1:5..1:5 anchor=null attributes={} literal="b" children=0
+        └── Text scope=1:7..1:8 anchor=null attributes={} literal=" c" children=0
 ````````````````````````````````
 
 Issue #193 - unescaped left angle brackets in link destination
@@ -99,12 +99,12 @@ Issue #193 - unescaped left angle brackets in link destination
 
 [a]: <te<st>
 .
-Document scope=1:1..3:12 children=2
-├── Paragraph scope=1:1..1:3 children=1
-│   └── Text scope=1:1..1:3 literal="[a]" children=0
-└── Paragraph scope=3:1..3:12 children=2
-    ├── Text scope=3:1..3:8 literal="[a]: <te" children=0
-    └── HTML scope=3:9..3:12 literal="<st>" children=0
+Document scope=1:1..3:12 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:3 anchor=null attributes={} children=1
+│   └── Text scope=1:1..1:3 anchor=null attributes={} literal="[a]" children=0
+└── Paragraph scope=3:1..3:12 anchor=null attributes={} children=2
+    ├── Text scope=3:1..3:8 anchor=null attributes={} literal="[a]: <te" children=0
+    └── HTML scope=3:9..3:12 anchor=null attributes={} literal="<st>" children=0
 ````````````````````````````````
 
 A type-7 HTML block cannot interrupt a paragraph, including when the line is a
@@ -117,15 +117,15 @@ last matched container kind.
 <a href="bar">
 two
 .
-Document scope=1:1..3:3 children=1
-└── List scope=1:1..3:3 flavor=bullet start=null variant=null delimiter=null tight=true children=1
-    └── ListItem scope=1:1..3:3 marker=null children=1
-        └── Paragraph scope=1:3..3:3 children=5
-            ├── Text scope=1:3..1:5 literal="one" children=0
-            ├── SoftBreak scope=1:6..1:6 children=0
-            ├── HTML scope=2:1..2:14 literal="<a href=\"bar\">" children=0
-            ├── SoftBreak scope=2:15..2:15 children=0
-            └── Text scope=3:1..3:3 literal="two" children=0
+Document scope=1:1..3:3 anchor=null attributes={} children=1
+└── List scope=1:1..3:3 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+    └── ListItem scope=1:1..3:3 anchor=null attributes={} marker=null children=1
+        └── Paragraph scope=1:3..3:3 anchor=null attributes={} children=5
+            ├── Text scope=1:3..1:5 anchor=null attributes={} literal="one" children=0
+            ├── SoftBreak scope=1:6..1:6 anchor=null attributes={} children=0
+            ├── HTML scope=2:1..2:14 anchor=null attributes={} literal="<a href=\"bar\">" children=0
+            ├── SoftBreak scope=2:15..2:15 anchor=null attributes={} children=0
+            └── Text scope=3:1..3:3 anchor=null attributes={} literal="two" children=0
 ````````````````````````````````
 
 Issue #192 - escaped spaces in link destination
@@ -134,9 +134,9 @@ Issue #192 - escaped spaces in link destination
 ```````````````````````````````` example
 [a](te\ st)
 .
-Document scope=1:1..1:11 children=1
-└── Paragraph scope=1:1..1:11 children=1
-    └── Text scope=1:1..1:11 literal="[a](te\\ st)" children=0
+Document scope=1:1..1:11 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:11 anchor=null attributes={} children=1
+    └── Text scope=1:1..1:11 anchor=null attributes={} literal="[a](te\\ st)" children=0
 ````````````````````````````````
 
 Issue github/github#76615:  multiple delimiter combinations gets sketchy
@@ -159,61 +159,61 @@ ___`this`___
 ***this***  
 ___this___
 .
-Document scope=1:1..15:10 children=4
-├── Paragraph scope=1:1..3:16 children=5
-│   ├── Strikethrough scope=1:1..1:16 children=1
-│   │   └── Strong scope=1:3..1:14 children=1
-│   │       └── Emphasis scope=1:5..1:12 children=1
-│   │           └── Code scope=1:6..1:11 literal="this" children=0
-│   ├── LineBreak scope=1:19..1:19 children=0
-│   ├── Strikethrough scope=2:1..2:16 children=1
-│   │   └── Emphasis scope=2:3..2:14 children=1
-│   │       └── Strong scope=2:4..2:13 children=1
-│   │           └── Code scope=2:6..2:11 literal="this" children=0
-│   ├── LineBreak scope=2:19..2:19 children=0
-│   └── Strikethrough scope=3:1..3:16 children=1
-│       └── Emphasis scope=3:3..3:14 children=1
-│           └── Strong scope=3:4..3:13 children=1
-│               └── Code scope=3:6..3:11 literal="this" children=0
-├── Paragraph scope=5:1..7:12 children=5
-│   ├── Strong scope=5:1..5:12 children=1
-│   │   └── Emphasis scope=5:3..5:10 children=1
-│   │       └── Code scope=5:4..5:9 literal="this" children=0
-│   ├── LineBreak scope=5:15..5:15 children=0
-│   ├── Emphasis scope=6:1..6:12 children=1
-│   │   └── Strong scope=6:2..6:11 children=1
-│   │       └── Code scope=6:4..6:9 literal="this" children=0
-│   ├── LineBreak scope=6:15..6:15 children=0
-│   └── Emphasis scope=7:1..7:12 children=1
-│       └── Strong scope=7:2..7:11 children=1
-│           └── Code scope=7:4..7:9 literal="this" children=0
-├── Paragraph scope=9:1..11:14 children=5
-│   ├── Strikethrough scope=9:1..9:14 children=1
-│   │   └── Strong scope=9:3..9:12 children=1
-│   │       └── Emphasis scope=9:5..9:10 children=1
-│   │           └── Text scope=9:6..9:9 literal="this" children=0
-│   ├── LineBreak scope=9:17..9:17 children=0
-│   ├── Strikethrough scope=10:1..10:14 children=1
-│   │   └── Emphasis scope=10:3..10:12 children=1
-│   │       └── Strong scope=10:4..10:11 children=1
-│   │           └── Text scope=10:6..10:9 literal="this" children=0
-│   ├── LineBreak scope=10:17..10:17 children=0
-│   └── Strikethrough scope=11:1..11:14 children=1
-│       └── Emphasis scope=11:3..11:12 children=1
-│           └── Strong scope=11:4..11:11 children=1
-│               └── Text scope=11:6..11:9 literal="this" children=0
-└── Paragraph scope=13:1..15:10 children=5
-    ├── Strong scope=13:1..13:10 children=1
-    │   └── Emphasis scope=13:3..13:8 children=1
-    │       └── Text scope=13:4..13:7 literal="this" children=0
-    ├── LineBreak scope=13:13..13:13 children=0
-    ├── Emphasis scope=14:1..14:10 children=1
-    │   └── Strong scope=14:2..14:9 children=1
-    │       └── Text scope=14:4..14:7 literal="this" children=0
-    ├── LineBreak scope=14:13..14:13 children=0
-    └── Emphasis scope=15:1..15:10 children=1
-        └── Strong scope=15:2..15:9 children=1
-            └── Text scope=15:4..15:7 literal="this" children=0
+Document scope=1:1..15:10 anchor=null attributes={} children=4
+├── Paragraph scope=1:1..3:16 anchor=null attributes={} children=5
+│   ├── Strikethrough scope=1:1..1:16 anchor=null attributes={} children=1
+│   │   └── Strong scope=1:3..1:14 anchor=null attributes={} children=1
+│   │       └── Emphasis scope=1:5..1:12 anchor=null attributes={} children=1
+│   │           └── Code scope=1:6..1:11 anchor=null attributes={} literal="this" children=0
+│   ├── LineBreak scope=1:19..1:19 anchor=null attributes={} children=0
+│   ├── Strikethrough scope=2:1..2:16 anchor=null attributes={} children=1
+│   │   └── Emphasis scope=2:3..2:14 anchor=null attributes={} children=1
+│   │       └── Strong scope=2:4..2:13 anchor=null attributes={} children=1
+│   │           └── Code scope=2:6..2:11 anchor=null attributes={} literal="this" children=0
+│   ├── LineBreak scope=2:19..2:19 anchor=null attributes={} children=0
+│   └── Strikethrough scope=3:1..3:16 anchor=null attributes={} children=1
+│       └── Emphasis scope=3:3..3:14 anchor=null attributes={} children=1
+│           └── Strong scope=3:4..3:13 anchor=null attributes={} children=1
+│               └── Code scope=3:6..3:11 anchor=null attributes={} literal="this" children=0
+├── Paragraph scope=5:1..7:12 anchor=null attributes={} children=5
+│   ├── Strong scope=5:1..5:12 anchor=null attributes={} children=1
+│   │   └── Emphasis scope=5:3..5:10 anchor=null attributes={} children=1
+│   │       └── Code scope=5:4..5:9 anchor=null attributes={} literal="this" children=0
+│   ├── LineBreak scope=5:15..5:15 anchor=null attributes={} children=0
+│   ├── Emphasis scope=6:1..6:12 anchor=null attributes={} children=1
+│   │   └── Strong scope=6:2..6:11 anchor=null attributes={} children=1
+│   │       └── Code scope=6:4..6:9 anchor=null attributes={} literal="this" children=0
+│   ├── LineBreak scope=6:15..6:15 anchor=null attributes={} children=0
+│   └── Emphasis scope=7:1..7:12 anchor=null attributes={} children=1
+│       └── Strong scope=7:2..7:11 anchor=null attributes={} children=1
+│           └── Code scope=7:4..7:9 anchor=null attributes={} literal="this" children=0
+├── Paragraph scope=9:1..11:14 anchor=null attributes={} children=5
+│   ├── Strikethrough scope=9:1..9:14 anchor=null attributes={} children=1
+│   │   └── Strong scope=9:3..9:12 anchor=null attributes={} children=1
+│   │       └── Emphasis scope=9:5..9:10 anchor=null attributes={} children=1
+│   │           └── Text scope=9:6..9:9 anchor=null attributes={} literal="this" children=0
+│   ├── LineBreak scope=9:17..9:17 anchor=null attributes={} children=0
+│   ├── Strikethrough scope=10:1..10:14 anchor=null attributes={} children=1
+│   │   └── Emphasis scope=10:3..10:12 anchor=null attributes={} children=1
+│   │       └── Strong scope=10:4..10:11 anchor=null attributes={} children=1
+│   │           └── Text scope=10:6..10:9 anchor=null attributes={} literal="this" children=0
+│   ├── LineBreak scope=10:17..10:17 anchor=null attributes={} children=0
+│   └── Strikethrough scope=11:1..11:14 anchor=null attributes={} children=1
+│       └── Emphasis scope=11:3..11:12 anchor=null attributes={} children=1
+│           └── Strong scope=11:4..11:11 anchor=null attributes={} children=1
+│               └── Text scope=11:6..11:9 anchor=null attributes={} literal="this" children=0
+└── Paragraph scope=13:1..15:10 anchor=null attributes={} children=5
+    ├── Strong scope=13:1..13:10 anchor=null attributes={} children=1
+    │   └── Emphasis scope=13:3..13:8 anchor=null attributes={} children=1
+    │       └── Text scope=13:4..13:7 anchor=null attributes={} literal="this" children=0
+    ├── LineBreak scope=13:13..13:13 anchor=null attributes={} children=0
+    ├── Emphasis scope=14:1..14:10 anchor=null attributes={} children=1
+    │   └── Strong scope=14:2..14:9 anchor=null attributes={} children=1
+    │       └── Text scope=14:4..14:7 anchor=null attributes={} literal="this" children=0
+    ├── LineBreak scope=14:13..14:13 anchor=null attributes={} children=0
+    └── Emphasis scope=15:1..15:10 anchor=null attributes={} children=1
+        └── Strong scope=15:2..15:9 anchor=null attributes={} children=1
+            └── Text scope=15:4..15:7 anchor=null attributes={} literal="this" children=0
 ````````````````````````````````
 
 Issue #527 - meta tags in inline contexts
@@ -224,15 +224,15 @@ City:
   <meta itemprop="name" content="Springfield">
 </span>
 .
-Document scope=1:1..4:7 children=1
-└── Paragraph scope=1:1..4:7 children=7
-    ├── Text scope=1:1..1:5 literal="City:" children=0
-    ├── SoftBreak scope=1:6..1:6 children=0
-    ├── HTML scope=2:1..2:78 literal="<span itemprop=\"contentLocation\" itemscope itemtype=\"https://schema.org/City\">" children=0
-    ├── SoftBreak scope=2:79..2:79 children=0
-    ├── HTML scope=3:3..3:46 literal="<meta itemprop=\"name\" content=\"Springfield\">" children=0
-    ├── SoftBreak scope=3:47..3:47 children=0
-    └── HTML scope=4:1..4:7 literal="</span>" children=0
+Document scope=1:1..4:7 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..4:7 anchor=null attributes={} children=7
+    ├── Text scope=1:1..1:5 anchor=null attributes={} literal="City:" children=0
+    ├── SoftBreak scope=1:6..1:6 anchor=null attributes={} children=0
+    ├── HTML scope=2:1..2:78 anchor=null attributes={} literal="<span itemprop=\"contentLocation\" itemscope itemtype=\"https://schema.org/City\">" children=0
+    ├── SoftBreak scope=2:79..2:79 anchor=null attributes={} children=0
+    ├── HTML scope=3:3..3:46 anchor=null attributes={} literal="<meta itemprop=\"name\" content=\"Springfield\">" children=0
+    ├── SoftBreak scope=3:47..3:47 anchor=null attributes={} children=0
+    └── HTML scope=4:1..4:7 anchor=null attributes={} literal="</span>" children=0
 ````````````````````````````````
 
 markdown-core strikethrough rules
@@ -240,25 +240,25 @@ markdown-core strikethrough rules
 ```````````````````````````````` example strikethrough
 ~Hi~ Hello, world!
 .
-Document scope=1:1..1:18 children=1
-└── Paragraph scope=1:1..1:18 children=2
-    ├── Strikethrough scope=1:1..1:4 children=1
-    │   └── Text scope=1:2..1:3 literal="Hi" children=0
-    └── Text scope=1:5..1:18 literal=" Hello, world!" children=0
+Document scope=1:1..1:18 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:18 anchor=null attributes={} children=2
+    ├── Strikethrough scope=1:1..1:4 anchor=null attributes={} children=1
+    │   └── Text scope=1:2..1:3 anchor=null attributes={} literal="Hi" children=0
+    └── Text scope=1:5..1:18 anchor=null attributes={} literal=" Hello, world!" children=0
 ````````````````````````````````
 
 ```````````````````````````````` example strikethrough
 This ~text~ ~~is~~ ~~~curious~~~.
 .
-Document scope=1:1..1:33 children=1
-└── Paragraph scope=1:1..1:33 children=5
-    ├── Text scope=1:1..1:5 literal="This " children=0
-    ├── Strikethrough scope=1:6..1:11 children=1
-    │   └── Text scope=1:7..1:10 literal="text" children=0
-    ├── Text scope=1:12..1:12 literal=" " children=0
-    ├── Strikethrough scope=1:13..1:18 children=1
-    │   └── Text scope=1:15..1:16 literal="is" children=0
-    └── Text scope=1:19..1:33 literal=" ~~~curious~~~." children=0
+Document scope=1:1..1:33 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:33 anchor=null attributes={} children=5
+    ├── Text scope=1:1..1:5 anchor=null attributes={} literal="This " children=0
+    ├── Strikethrough scope=1:6..1:11 anchor=null attributes={} children=1
+    │   └── Text scope=1:7..1:10 anchor=null attributes={} literal="text" children=0
+    ├── Text scope=1:12..1:12 anchor=null attributes={} literal=" " children=0
+    ├── Strikethrough scope=1:13..1:18 anchor=null attributes={} children=1
+    │   └── Text scope=1:15..1:16 anchor=null attributes={} literal="is" children=0
+    └── Text scope=1:19..1:33 anchor=null attributes={} literal=" ~~~curious~~~." children=0
 ````````````````````````````````
 
 `~` should not be escaped in href — https://github.com/github/markup/issues/311
@@ -266,10 +266,10 @@ Document scope=1:1..1:33 children=1
 ```````````````````````````````` example
 [x](http://members.aon.at/~nkehrer/ibm_5110/emu5110.html)
 .
-Document scope=1:1..1:57 children=1
-└── Paragraph scope=1:1..1:57 children=1
-    └── Link scope=1:1..1:57 dest=url("http://members.aon.at/~nkehrer/ibm_5110/emu5110.html") title=null children=1
-        └── Text scope=1:2..1:2 literal="x" children=0
+Document scope=1:1..1:57 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:57 anchor=null attributes={} children=1
+    └── Link scope=1:1..1:57 anchor=null attributes={} dest=url("http://members.aon.at/~nkehrer/ibm_5110/emu5110.html") title=null children=1
+        └── Text scope=1:2..1:2 anchor=null attributes={} literal="x" children=0
 ````````````````````````````````
 
 Footnotes in tables
@@ -283,34 +283,34 @@ A footnote in a paragraph[^1]
 
 [^1]: a footnote
 .
-Document scope=1:1..7:16 children=2
-├── Paragraph scope=1:1..1:29 children=2
-│   ├── Text scope=1:1..1:25 literal="A footnote in a paragraph" children=0
-│   └── Cite scope=1:26..1:29 children=1
+Document scope=1:1..7:16 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:29 anchor=null attributes={} children=2
+│   ├── Text scope=1:1..1:25 anchor=null attributes={} literal="A footnote in a paragraph" children=0
+│   └── Cite scope=1:26..1:29 anchor=null attributes={} children=1
 │       └── Citation scope=1:27..1:28 referent=footnote(id="1") children=0
 │           ├── CitationPrefix children=0
 │           └── CitationSuffix children=0
-├── Table scope=3:1..5:23 columns=[none:null,none:null] children=2
+├── Table scope=3:1..5:23 anchor=null attributes={} columns=[none:null,none:null] children=2
 │   ├── TableHead children=1
-│   │   └── TableRow scope=3:1..3:23 children=2
-│   │       ├── TableCell scope=3:2..3:12 rowspan=1 colspan=1 children=1
-│   │       │   └── Text scope=3:3..3:9 literal="Column1" children=0
-│   │       └── TableCell scope=3:14..3:22 rowspan=1 colspan=1 children=1
-│   │           └── Text scope=3:15..3:21 literal="Column2" children=0
+│   │   └── TableRow scope=3:1..3:23 anchor=null attributes={} children=2
+│   │       ├── TableCell scope=3:2..3:12 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │       │   └── Text scope=3:3..3:9 anchor=null attributes={} literal="Column1" children=0
+│   │       └── TableCell scope=3:14..3:22 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │           └── Text scope=3:15..3:21 anchor=null attributes={} literal="Column2" children=0
 │   ├── TableBody children=1
-│   │   └── TableRow scope=5:1..5:23 children=2
-│   │       ├── TableCell scope=5:2..5:12 rowspan=1 colspan=1 children=2
-│   │       │   ├── Text scope=5:3..5:7 literal="foot " children=0
-│   │       │   └── Cite scope=5:8..5:11 children=1
+│   │   └── TableRow scope=5:1..5:23 anchor=null attributes={} children=2
+│   │       ├── TableCell scope=5:2..5:12 anchor=null attributes={} rowspan=1 colspan=1 children=2
+│   │       │   ├── Text scope=5:3..5:7 anchor=null attributes={} literal="foot " children=0
+│   │       │   └── Cite scope=5:8..5:11 anchor=null attributes={} children=1
 │   │       │       └── Citation scope=5:9..5:10 referent=footnote(id="1") children=0
 │   │       │           ├── CitationPrefix children=0
 │   │       │           └── CitationSuffix children=0
-│   │       └── TableCell scope=5:14..5:22 rowspan=1 colspan=1 children=1
-│   │           └── Text scope=5:15..5:18 literal="note" children=0
+│   │       └── TableCell scope=5:14..5:22 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │           └── Text scope=5:15..5:18 anchor=null attributes={} literal="note" children=0
 │   └── TableFoot children=0
 └── Footnote scope=7:1..7:16 id="1" children=1
-    └── Paragraph scope=7:7..7:16 children=1
-        └── Text scope=7:7..7:16 literal="a footnote" children=0
+    └── Paragraph scope=7:7..7:16 anchor=null attributes={} children=1
+        └── Text scope=7:7..7:16 anchor=null attributes={} literal="a footnote" children=0
 ````````````````````````````````
 
 Issue #527 - meta tags in inline contexts
@@ -321,15 +321,15 @@ City:
   <meta itemprop="name" content="Springfield">
 </span>
 .
-Document scope=1:1..4:7 children=1
-└── Paragraph scope=1:1..4:7 children=7
-    ├── Text scope=1:1..1:5 literal="City:" children=0
-    ├── SoftBreak scope=1:6..1:6 children=0
-    ├── HTML scope=2:1..2:78 literal="<span itemprop=\"contentLocation\" itemscope itemtype=\"https://schema.org/City\">" children=0
-    ├── SoftBreak scope=2:79..2:79 children=0
-    ├── HTML scope=3:3..3:46 literal="<meta itemprop=\"name\" content=\"Springfield\">" children=0
-    ├── SoftBreak scope=3:47..3:47 children=0
-    └── HTML scope=4:1..4:7 literal="</span>" children=0
+Document scope=1:1..4:7 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..4:7 anchor=null attributes={} children=7
+    ├── Text scope=1:1..1:5 anchor=null attributes={} literal="City:" children=0
+    ├── SoftBreak scope=1:6..1:6 anchor=null attributes={} children=0
+    ├── HTML scope=2:1..2:78 anchor=null attributes={} literal="<span itemprop=\"contentLocation\" itemscope itemtype=\"https://schema.org/City\">" children=0
+    ├── SoftBreak scope=2:79..2:79 anchor=null attributes={} children=0
+    ├── HTML scope=3:3..3:46 anchor=null attributes={} literal="<meta itemprop=\"name\" content=\"Springfield\">" children=0
+    ├── SoftBreak scope=3:47..3:47 anchor=null attributes={} children=0
+    └── HTML scope=4:1..4:7 anchor=null attributes={} literal="</span>" children=0
 ````````````````````````````````
 
 Issue #530 - link parsing corner cases
@@ -342,15 +342,15 @@ Issue #530 - link parsing corner cases
 [a](<b
 )
 .
-Document scope=1:1..6:1 children=3
-├── Paragraph scope=1:1..1:8 children=1
-│   └── Text scope=1:1..1:8 literal="[a](\\ b)" children=0
-├── Paragraph scope=3:1..3:8 children=1
-│   └── Text scope=3:1..3:8 literal="[a](<<b)" children=0
-└── Paragraph scope=5:1..6:1 children=3
-    ├── Text scope=5:1..5:6 literal="[a](<b" children=0
-    ├── SoftBreak scope=5:7..5:7 children=0
-    └── Text scope=6:1..6:1 literal=")" children=0
+Document scope=1:1..6:1 anchor=null attributes={} children=3
+├── Paragraph scope=1:1..1:8 anchor=null attributes={} children=1
+│   └── Text scope=1:1..1:8 anchor=null attributes={} literal="[a](\\ b)" children=0
+├── Paragraph scope=3:1..3:8 anchor=null attributes={} children=1
+│   └── Text scope=3:1..3:8 anchor=null attributes={} literal="[a](<<b)" children=0
+└── Paragraph scope=5:1..6:1 anchor=null attributes={} children=3
+    ├── Text scope=5:1..5:6 anchor=null attributes={} literal="[a](<b" children=0
+    ├── SoftBreak scope=5:7..5:7 anchor=null attributes={} children=0
+    └── Text scope=6:1..6:1 anchor=null attributes={} literal=")" children=0
 ````````````````````````````````
 
 Issue commonmark#526 - unescaped ( in link title
@@ -358,9 +358,9 @@ Issue commonmark#526 - unescaped ( in link title
 ```````````````````````````````` example
 [link](url ((title))
 .
-Document scope=1:1..1:20 children=1
-└── Paragraph scope=1:1..1:20 children=1
-    └── Text scope=1:1..1:20 literal="[link](url ((title))" children=0
+Document scope=1:1..1:20 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:20 anchor=null attributes={} children=1
+    └── Text scope=1:1..1:20 anchor=null attributes={} literal="[link](url ((title))" children=0
 ````````````````````````````````
 
 Issue commonamrk#517 - script, pre, style close tag without
@@ -373,10 +373,10 @@ opener.
 
 </style>
 .
-Document scope=1:1..5:8 children=3
-├── HTMLBlock scope=1:1..1:9 literal="</script>\n" children=0
-├── HTMLBlock scope=3:1..3:6 literal="</pre>\n" children=0
-└── HTMLBlock scope=5:1..5:8 literal="</style>\n" children=0
+Document scope=1:1..5:8 anchor=null attributes={} children=3
+├── HTMLBlock scope=1:1..1:9 anchor=null attributes={} literal="</script>\n" children=0
+├── HTMLBlock scope=3:1..3:6 anchor=null attributes={} literal="</pre>\n" children=0
+└── HTMLBlock scope=5:1..5:8 anchor=null attributes={} literal="</style>\n" children=0
 ````````````````````````````````
 
 Issue #289.
@@ -384,9 +384,9 @@ Issue #289.
 ```````````````````````````````` example
 [a](<b) c>
 .
-Document scope=1:1..1:10 children=1
-└── Paragraph scope=1:1..1:10 children=1
-    └── Text scope=1:1..1:10 literal="[a](<b) c>" children=0
+Document scope=1:1..1:10 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:10 anchor=null attributes={} children=1
+    └── Text scope=1:1..1:10 anchor=null attributes={} literal="[a](<b) c>" children=0
 ````````````````````````````````
 
 Pull request #128 - Buffer overread in tables extension
@@ -395,11 +395,11 @@ Pull request #128 - Buffer overread in tables extension
 |
 -|
 .
-Document scope=1:1..2:2 children=1
-└── Paragraph scope=1:1..2:2 children=3
-    ├── Text scope=1:1..1:1 literal="|" children=0
-    ├── SoftBreak scope=1:2..1:2 children=0
-    └── Text scope=2:1..2:2 literal="-|" children=0
+Document scope=1:1..2:2 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..2:2 anchor=null attributes={} children=3
+    ├── Text scope=1:1..1:1 anchor=null attributes={} literal="|" children=0
+    ├── SoftBreak scope=1:2..1:2 anchor=null attributes={} children=0
+    └── Text scope=2:1..2:2 anchor=null attributes={} literal="-|" children=0
 ````````````````````````````````
 
 Footnotes may be nested inside other footnotes.
@@ -411,20 +411,20 @@ This is some text. It has a citation.[^citation]
 
 [^citation]: This is a long winded parapgraph that also has another citation.[^another-citation]
 .
-Document scope=1:1..5:96 children=1
-├── Paragraph scope=1:1..1:48 children=2
-│   ├── Text scope=1:1..1:37 literal="This is some text. It has a citation." children=0
-│   └── Cite scope=1:38..1:48 children=1
+Document scope=1:1..5:96 anchor=null attributes={} children=1
+├── Paragraph scope=1:1..1:48 anchor=null attributes={} children=2
+│   ├── Text scope=1:1..1:37 anchor=null attributes={} literal="This is some text. It has a citation." children=0
+│   └── Cite scope=1:38..1:48 anchor=null attributes={} children=1
 │       └── Citation scope=1:39..1:47 referent=footnote(id="citation") children=0
 │           ├── CitationPrefix children=0
 │           └── CitationSuffix children=0
 ├── Footnote scope=3:1..4:0 id="another-citation" children=1
-│   └── Paragraph scope=3:22..3:40 children=1
-│       └── Text scope=3:22..3:40 literal="My second citation." children=0
+│   └── Paragraph scope=3:22..3:40 anchor=null attributes={} children=1
+│       └── Text scope=3:22..3:40 anchor=null attributes={} literal="My second citation." children=0
 └── Footnote scope=5:1..5:96 id="citation" children=1
-    └── Paragraph scope=5:14..5:96 children=2
-        ├── Text scope=5:14..5:77 literal="This is a long winded parapgraph that also has another citation." children=0
-        └── Cite scope=5:78..5:96 children=1
+    └── Paragraph scope=5:14..5:96 anchor=null attributes={} children=2
+        ├── Text scope=5:14..5:77 anchor=null attributes={} literal="This is a long winded parapgraph that also has another citation." children=0
+        └── Cite scope=5:78..5:96 anchor=null attributes={} children=1
             └── Citation scope=5:79..5:95 referent=footnote(id="another-citation") children=0
                 ├── CitationPrefix children=0
                 └── CitationSuffix children=0
@@ -439,24 +439,24 @@ This is some text. It has two footnotes references, side-by-side without any spa
 
 [^footnote2]: Goodbye.
 .
-Document scope=1:1..5:22 children=1
-├── Paragraph scope=1:1..1:150 children=4
-│   ├── Text scope=1:1..1:84 literal="This is some text. It has two footnotes references, side-by-side without any spaces," children=0
-│   ├── Cite scope=1:85..1:96 children=1
+Document scope=1:1..5:22 anchor=null attributes={} children=1
+├── Paragraph scope=1:1..1:150 anchor=null attributes={} children=4
+│   ├── Text scope=1:1..1:84 anchor=null attributes={} literal="This is some text. It has two footnotes references, side-by-side without any spaces," children=0
+│   ├── Cite scope=1:85..1:96 anchor=null attributes={} children=1
 │   │   └── Citation scope=1:86..1:95 referent=footnote(id="footnote1") children=0
 │   │       ├── CitationPrefix children=0
 │   │       └── CitationSuffix children=0
-│   ├── Cite scope=1:97..1:108 children=1
+│   ├── Cite scope=1:97..1:108 anchor=null attributes={} children=1
 │   │   └── Citation scope=1:98..1:107 referent=footnote(id="footnote2") children=0
 │   │       ├── CitationPrefix children=0
 │   │       └── CitationSuffix children=0
-│   └── Text scope=1:109..1:150 literal=" which are definitely not link references." children=0
+│   └── Text scope=1:109..1:150 anchor=null attributes={} literal=" which are definitely not link references." children=0
 ├── Footnote scope=3:1..4:0 id="footnote1" children=1
-│   └── Paragraph scope=3:15..3:20 children=1
-│       └── Text scope=3:15..3:20 literal="Hello." children=0
+│   └── Paragraph scope=3:15..3:20 anchor=null attributes={} children=1
+│       └── Text scope=3:15..3:20 anchor=null attributes={} literal="Hello." children=0
 └── Footnote scope=5:1..5:22 id="footnote2" children=1
-    └── Paragraph scope=5:15..5:22 children=1
-        └── Text scope=5:15..5:22 literal="Goodbye." children=0
+    └── Paragraph scope=5:15..5:22 anchor=null attributes={} children=1
+        └── Text scope=5:15..5:22 anchor=null attributes={} literal="Goodbye." children=0
 ````````````````````````````````
 
 Footnotes may begin with or have a 'w' or a '_' in their reference label.
@@ -470,29 +470,29 @@ It has another footnote that contains many different characters (the autolinker 
 
 [^widely-cited]: this renders properly.
 .
-Document scope=1:1..7:39 children=2
-├── Paragraph scope=1:1..1:196 children=4
-│   ├── Text scope=1:1..1:177 literal="This is some text. Sometimes the autolinker splits up text into multiple nodes, hoping it will find a hyperlink, so this text has a footnote whose reference label begins with a " children=0
-│   ├── Code scope=1:178..1:180 literal="w" children=0
-│   ├── Text scope=1:181..1:181 literal="." children=0
-│   └── Cite scope=1:182..1:196 children=1
+Document scope=1:1..7:39 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:196 anchor=null attributes={} children=4
+│   ├── Text scope=1:1..1:177 anchor=null attributes={} literal="This is some text. Sometimes the autolinker splits up text into multiple nodes, hoping it will find a hyperlink, so this text has a footnote whose reference label begins with a " children=0
+│   ├── Code scope=1:178..1:180 anchor=null attributes={} literal="w" children=0
+│   ├── Text scope=1:181..1:181 anchor=null attributes={} literal="." children=0
+│   └── Cite scope=1:182..1:196 anchor=null attributes={} children=1
 │       └── Citation scope=1:183..1:195 referent=footnote(id="widely-cited") children=0
 │           ├── CitationPrefix children=0
 │           └── CitationSuffix children=0
-├── Paragraph scope=3:1..3:155 children=4
-│   ├── Text scope=3:1..3:101 literal="It has another footnote that contains many different characters (the autolinker was also breaking on " children=0
-│   ├── Code scope=3:102..3:104 literal="_" children=0
-│   ├── Text scope=3:105..3:106 literal=")." children=0
-│   └── Cite scope=3:107..3:155 children=1
+├── Paragraph scope=3:1..3:155 anchor=null attributes={} children=4
+│   ├── Text scope=3:1..3:101 anchor=null attributes={} literal="It has another footnote that contains many different characters (the autolinker was also breaking on " children=0
+│   ├── Code scope=3:102..3:104 anchor=null attributes={} literal="_" children=0
+│   ├── Text scope=3:105..3:106 anchor=null attributes={} literal=")." children=0
+│   └── Cite scope=3:107..3:155 anchor=null attributes={} children=1
 │       └── Citation scope=3:108..3:154 referent=footnote(id="sphinx-of-black-quartz_judge-my-vow-0123456789") children=0
 │           ├── CitationPrefix children=0
 │           └── CitationSuffix children=0
 ├── Footnote scope=5:1..6:0 id="sphinx-of-black-quartz_judge-my-vow-0123456789" children=1
-│   └── Paragraph scope=5:52..5:64 children=1
-│       └── Text scope=5:52..5:64 literal="so does this." children=0
+│   └── Paragraph scope=5:52..5:64 anchor=null attributes={} children=1
+│       └── Text scope=5:52..5:64 anchor=null attributes={} literal="so does this." children=0
 └── Footnote scope=7:1..7:39 id="widely-cited" children=1
-    └── Paragraph scope=7:18..7:39 children=1
-        └── Text scope=7:18..7:39 literal="this renders properly." children=0
+    └── Paragraph scope=7:18..7:39 anchor=null attributes={} children=1
+        └── Text scope=7:18..7:39 anchor=null attributes={} literal="this renders properly." children=0
 ````````````````````````````````
 
 Footnotes interacting with strikethrough should not lead to a use-after-free.
@@ -504,12 +504,12 @@ registered `footnote-failed-call-interior` divergence.
 ```````````````````````````````` example footnotes autolink strikethrough table
 |Tot.....[^_a_]|
 .
-Document scope=1:1..1:16 children=1
-└── Paragraph scope=1:1..1:16 children=3
-    ├── Text scope=1:1..1:11 literal="|Tot.....[^" children=0
-    ├── Emphasis scope=1:12..1:14 children=1
-    │   └── Text scope=1:13..1:13 literal="a" children=0
-    └── Text scope=1:15..1:16 literal="]|" children=0
+Document scope=1:1..1:16 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:16 anchor=null attributes={} children=3
+    ├── Text scope=1:1..1:11 anchor=null attributes={} literal="|Tot.....[^" children=0
+    ├── Emphasis scope=1:12..1:14 anchor=null attributes={} children=1
+    │   └── Text scope=1:13..1:13 anchor=null attributes={} literal="a" children=0
+    └── Text scope=1:15..1:16 anchor=null attributes={} literal="]|" children=0
 ````````````````````````````````
 
 Footnotes interacting with strikethrough should not lead to a use-after-free, pt2.
@@ -518,12 +518,12 @@ Same rule as above, with a strikethrough as the interior.
 ```````````````````````````````` example footnotes autolink strikethrough table
 [^~~is~~1]
 .
-Document scope=1:1..1:10 children=1
-└── Paragraph scope=1:1..1:10 children=3
-    ├── Text scope=1:1..1:2 literal="[^" children=0
-    ├── Strikethrough scope=1:3..1:8 children=1
-    │   └── Text scope=1:5..1:6 literal="is" children=0
-    └── Text scope=1:9..1:10 literal="1]" children=0
+Document scope=1:1..1:10 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:10 anchor=null attributes={} children=3
+    ├── Text scope=1:1..1:2 anchor=null attributes={} literal="[^" children=0
+    ├── Strikethrough scope=1:3..1:8 anchor=null attributes={} children=1
+    │   └── Text scope=1:5..1:6 anchor=null attributes={} literal="is" children=0
+    └── Text scope=1:9..1:10 anchor=null attributes={} literal="1]" children=0
 ````````````````````````````````
 
 Adjacent unused footnote definitions should not lead to a use after free -- and
@@ -537,9 +537,9 @@ Hello world
 
 [^a]:[^b]:
 .
-Document scope=1:1..4:10 children=1
-├── Paragraph scope=1:1..1:11 children=1
-│   └── Text scope=1:1..1:11 literal="Hello world" children=0
+Document scope=1:1..4:10 anchor=null attributes={} children=1
+├── Paragraph scope=1:1..1:11 anchor=null attributes={} children=1
+│   └── Text scope=1:1..1:11 anchor=null attributes={} literal="Hello world" children=0
 ├── Footnote scope=4:1..4:10 id="a" children=0
 └── Footnote scope=4:6..4:10 id="b" children=0
 ````````````````````````````````
@@ -549,13 +549,13 @@ Issue #424 - emphasis before links
 ```````````````````````````````` example
 *text* [link](#section)
 .
-Document scope=1:1..1:23 children=1
-└── Paragraph scope=1:1..1:23 children=3
-    ├── Emphasis scope=1:1..1:6 children=1
-    │   └── Text scope=1:2..1:5 literal="text" children=0
-    ├── Text scope=1:7..1:7 literal=" " children=0
-    └── Link scope=1:8..1:23 dest=url("#section") title=null children=1
-        └── Text scope=1:9..1:12 literal="link" children=0
+Document scope=1:1..1:23 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:23 anchor=null attributes={} children=3
+    ├── Emphasis scope=1:1..1:6 anchor=null attributes={} children=1
+    │   └── Text scope=1:2..1:5 anchor=null attributes={} literal="text" children=0
+    ├── Text scope=1:7..1:7 anchor=null attributes={} literal=" " children=0
+    └── Link scope=1:8..1:23 anchor=null attributes={} dest=url("#section") title=null children=1
+        └── Text scope=1:9..1:12 anchor=null attributes={} literal="link" children=0
 ````````````````````````````````
 
 A footnote call whose label crosses a line ending keeps its bytes
@@ -564,11 +564,11 @@ A footnote call whose label crosses a line ending keeps its bytes
 x[^a
 b] tail
 .
-Document scope=1:1..2:7 children=1
-└── Paragraph scope=1:1..2:7 children=3
-    ├── Text scope=1:1..1:4 literal="x[^a" children=0
-    ├── SoftBreak scope=1:5..1:5 children=0
-    └── Text scope=2:1..2:7 literal="b] tail" children=0
+Document scope=1:1..2:7 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..2:7 anchor=null attributes={} children=3
+    ├── Text scope=1:1..1:4 anchor=null attributes={} literal="x[^a" children=0
+    ├── SoftBreak scope=1:5..1:5 anchor=null attributes={} children=0
+    └── Text scope=2:1..2:7 anchor=null attributes={} literal="b] tail" children=0
 ````````````````````````````````
 
 An entity-spelled caret is read out of the source, not out of a freed node.
@@ -582,12 +582,12 @@ x [&Hat;abcdefghij] y
 
 [^z]: note
 .
-Document scope=1:1..3:10 children=1
-├── Paragraph scope=1:1..1:21 children=1
-│   └── Text scope=1:1..1:21 literal="x [^abcdefghij] y" children=0
+Document scope=1:1..3:10 anchor=null attributes={} children=1
+├── Paragraph scope=1:1..1:21 anchor=null attributes={} children=1
+│   └── Text scope=1:1..1:21 anchor=null attributes={} literal="x [^abcdefghij] y" children=0
 └── Footnote scope=3:1..3:10 id="z" children=1
-    └── Paragraph scope=3:7..3:10 children=1
-        └── Text scope=3:7..3:10 literal="note" children=0
+    └── Paragraph scope=3:7..3:10 anchor=null attributes={} children=1
+        └── Text scope=3:7..3:10 anchor=null attributes={} literal="note" children=0
 ````````````````````````````````
 
 An escaped caret opens no call and does not manufacture a closing bracket. `\^`
@@ -598,9 +598,9 @@ came back as `[^^abc] x`, with a second caret invented, and before 0a.2 as
 ```````````````````````````````` example footnotes
 [\^abc] x
 .
-Document scope=1:1..1:9 children=1
-└── Paragraph scope=1:1..1:9 children=1
-    └── Text scope=1:1..1:9 literal="[^abc] x" children=0
+Document scope=1:1..1:9 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:9 anchor=null attributes={} children=1
+    └── Text scope=1:1..1:9 anchor=null attributes={} literal="[^abc] x" children=0
 ````````````````````````````````
 
 Recognition depends on the raw source byte and on nothing else, and a matching
@@ -632,27 +632,27 @@ a[&Hat;n] b
 
 [^n]: note
 .
-Document scope=1:1..13:10 children=6
-├── Paragraph scope=1:1..1:7 children=3
-│   ├── Text scope=1:1..1:1 literal="a" children=0
-│   ├── Cite scope=1:2..1:5 children=1
+Document scope=1:1..13:10 anchor=null attributes={} children=6
+├── Paragraph scope=1:1..1:7 anchor=null attributes={} children=3
+│   ├── Text scope=1:1..1:1 anchor=null attributes={} literal="a" children=0
+│   ├── Cite scope=1:2..1:5 anchor=null attributes={} children=1
 │   │   └── Citation scope=1:3..1:4 referent=footnote(id="n") children=0
 │   │       ├── CitationPrefix children=0
 │   │       └── CitationSuffix children=0
-│   └── Text scope=1:6..1:7 literal=" b" children=0
-├── Paragraph scope=3:1..3:8 children=1
-│   └── Text scope=3:1..3:8 literal="a[^n] b" children=0
-├── Paragraph scope=5:1..5:11 children=1
-│   └── Text scope=5:1..5:11 literal="a[^n] b" children=0
-├── Paragraph scope=7:1..7:12 children=1
-│   └── Text scope=7:1..7:12 literal="a[^n] b" children=0
-├── Paragraph scope=9:1..9:12 children=1
-│   └── Text scope=9:1..9:12 literal="a[^n] b" children=0
-├── Paragraph scope=11:1..11:11 children=1
-│   └── Text scope=11:1..11:11 literal="a[^n] b" children=0
+│   └── Text scope=1:6..1:7 anchor=null attributes={} literal=" b" children=0
+├── Paragraph scope=3:1..3:8 anchor=null attributes={} children=1
+│   └── Text scope=3:1..3:8 anchor=null attributes={} literal="a[^n] b" children=0
+├── Paragraph scope=5:1..5:11 anchor=null attributes={} children=1
+│   └── Text scope=5:1..5:11 anchor=null attributes={} literal="a[^n] b" children=0
+├── Paragraph scope=7:1..7:12 anchor=null attributes={} children=1
+│   └── Text scope=7:1..7:12 anchor=null attributes={} literal="a[^n] b" children=0
+├── Paragraph scope=9:1..9:12 anchor=null attributes={} children=1
+│   └── Text scope=9:1..9:12 anchor=null attributes={} literal="a[^n] b" children=0
+├── Paragraph scope=11:1..11:11 anchor=null attributes={} children=1
+│   └── Text scope=11:1..11:11 anchor=null attributes={} literal="a[^n] b" children=0
 └── Footnote scope=13:1..13:10 id="n" children=1
-    └── Paragraph scope=13:7..13:10 children=1
-        └── Text scope=13:7..13:10 literal="note" children=0
+    └── Paragraph scope=13:7..13:10 anchor=null attributes={} children=1
+        └── Text scope=13:7..13:10 anchor=null attributes={} literal="note" children=0
 ````````````````````````````````
 
 A footnote definition nested inside a duplicate of itself keeps both
@@ -664,20 +664,20 @@ Ref [^dup].
 
     [^dup]: INNER closes first
 .
-Document scope=1:1..5:30 children=1
-├── Paragraph scope=1:1..1:11 children=3
-│   ├── Text scope=1:1..1:4 literal="Ref " children=0
-│   ├── Cite scope=1:5..1:10 children=1
+Document scope=1:1..5:30 anchor=null attributes={} children=1
+├── Paragraph scope=1:1..1:11 anchor=null attributes={} children=3
+│   ├── Text scope=1:1..1:4 anchor=null attributes={} literal="Ref " children=0
+│   ├── Cite scope=1:5..1:10 anchor=null attributes={} children=1
 │   │   └── Citation scope=1:6..1:9 referent=footnote(id="dup") children=0
 │   │       ├── CitationPrefix children=0
 │   │       └── CitationSuffix children=0
-│   └── Text scope=1:11..1:11 literal="." children=0
+│   └── Text scope=1:11..1:11 anchor=null attributes={} literal="." children=0
 ├── Footnote scope=3:1..5:30 id="dup" children=1
-│   └── Paragraph scope=3:9..3:25 children=1
-│       └── Text scope=3:9..3:25 literal="OUTER opens first" children=0
+│   └── Paragraph scope=3:9..3:25 anchor=null attributes={} children=1
+│       └── Text scope=3:9..3:25 anchor=null attributes={} literal="OUTER opens first" children=0
 └── Footnote scope=5:5..5:30 id="dup" children=1
-    └── Paragraph scope=5:13..5:30 children=1
-        └── Text scope=5:13..5:30 literal="INNER closes first" children=0
+    └── Paragraph scope=5:13..5:30 anchor=null attributes={} children=1
+        └── Text scope=5:13..5:30 anchor=null attributes={} literal="INNER closes first" children=0
 ````````````````````````````````
 
 An autolink inside a block quote contains its own text. Its columns used to
@@ -690,13 +690,13 @@ oracle here.
 ```````````````````````````````` example autolink
 > see <https://x.example/> ok
 .
-Document scope=1:1..1:29 children=1
-└── Callout scope=1:1..1:29 variant=null collapsed=null children=1
-    └── Paragraph scope=1:3..1:29 children=3
-        ├── Text scope=1:3..1:6 literal="see " children=0
-        ├── Link scope=1:7..1:26 dest=url("https://x.example/") title=null children=1
-        │   └── Text scope=1:8..1:25 literal="https://x.example/" children=0
-        └── Text scope=1:27..1:29 literal=" ok" children=0
+Document scope=1:1..1:29 anchor=null attributes={} children=1
+└── Callout scope=1:1..1:29 anchor=null attributes={} variant=null collapsed=null children=1
+    └── Paragraph scope=1:3..1:29 anchor=null attributes={} children=3
+        ├── Text scope=1:3..1:6 anchor=null attributes={} literal="see " children=0
+        ├── Link scope=1:7..1:26 anchor=null attributes={} dest=url("https://x.example/") title=null children=1
+        │   └── Text scope=1:8..1:25 anchor=null attributes={} literal="https://x.example/" children=0
+        └── Text scope=1:27..1:29 anchor=null attributes={} literal=" ok" children=0
 ````````````````````````````````
 
 The same defect on a continuation line, where the missing term is the column
@@ -706,14 +706,14 @@ offset rather than the block offset.
 lead
 see <https://x.example/> ok
 .
-Document scope=1:1..2:27 children=1
-└── Paragraph scope=1:1..2:27 children=5
-    ├── Text scope=1:1..1:4 literal="lead" children=0
-    ├── SoftBreak scope=1:5..1:5 children=0
-    ├── Text scope=2:1..2:4 literal="see " children=0
-    ├── Link scope=2:5..2:24 dest=url("https://x.example/") title=null children=1
-    │   └── Text scope=2:6..2:23 literal="https://x.example/" children=0
-    └── Text scope=2:25..2:27 literal=" ok" children=0
+Document scope=1:1..2:27 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..2:27 anchor=null attributes={} children=5
+    ├── Text scope=1:1..1:4 anchor=null attributes={} literal="lead" children=0
+    ├── SoftBreak scope=1:5..1:5 anchor=null attributes={} children=0
+    ├── Text scope=2:1..2:4 anchor=null attributes={} literal="see " children=0
+    ├── Link scope=2:5..2:24 anchor=null attributes={} dest=url("https://x.example/") title=null children=1
+    │   └── Text scope=2:6..2:23 anchor=null attributes={} literal="https://x.example/" children=0
+    └── Text scope=2:25..2:27 anchor=null attributes={} literal=" ok" children=0
 ````````````````````````````````
 
 THIS EXAMPLE PINS A DEFECT (D27), and the row below is the wrong answer.
@@ -733,11 +733,11 @@ Unpinning this row is that step's gate.
 a <b
 c> d
 .
-Document scope=1:1..2:4 children=1
-└── Paragraph scope=1:1..2:4 children=3
-    ├── Text scope=1:1..1:2 literal="a " children=0
-    ├── HTML scope=1:3..2:2 literal="<b\nc>" children=0
-    └── Text scope=2:3..2:4 literal=" d" children=0
+Document scope=1:1..2:4 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..2:4 anchor=null attributes={} children=3
+    ├── Text scope=1:1..1:2 anchor=null attributes={} literal="a " children=0
+    ├── HTML scope=1:3..2:2 anchor=null attributes={} literal="<b\nc>" children=0
+    └── Text scope=2:3..2:4 anchor=null attributes={} literal=" d" children=0
 ````````````````````````````````
 
 A code span that crosses a line ending inside a block quote ends at a column of
@@ -750,12 +750,12 @@ this repository stays green, which is why this example exists.
 > a `x
 > y` b
 .
-Document scope=1:1..2:6 children=1
-└── Callout scope=1:1..2:6 variant=null collapsed=null children=1
-    └── Paragraph scope=1:3..2:6 children=3
-        ├── Text scope=1:3..1:4 literal="a " children=0
-        ├── Code scope=1:5..2:4 literal="x y" children=0
-        └── Text scope=2:5..2:6 literal=" b" children=0
+Document scope=1:1..2:6 anchor=null attributes={} children=1
+└── Callout scope=1:1..2:6 anchor=null attributes={} variant=null collapsed=null children=1
+    └── Paragraph scope=1:3..2:6 anchor=null attributes={} children=3
+        ├── Text scope=1:3..1:4 anchor=null attributes={} literal="a " children=0
+        ├── Code scope=1:5..2:4 anchor=null attributes={} literal="x y" children=0
+        └── Text scope=2:5..2:6 anchor=null attributes={} literal=" b" children=0
 ````````````````````````````````
 
 A definition's title candidate followed by non-whitespace is un-read: the
@@ -782,12 +782,12 @@ had to be written because no existing one could tell the two rules apart.
 
 [foo]
 .
-Document scope=1:1..4:5 children=2
-├── Paragraph scope=2:1..2:10 children=1
-│   └── Text scope=2:1..2:10 literal="\"title\" ok" children=0
-└── Paragraph scope=4:1..4:5 children=1
-    └── Link scope=4:1..4:5 dest=url("/url") title=null children=1
-        └── Text scope=4:2..4:4 literal="foo" children=0
+Document scope=1:1..4:5 anchor=null attributes={} children=2
+├── Paragraph scope=2:1..2:10 anchor=null attributes={} children=1
+│   └── Text scope=2:1..2:10 anchor=null attributes={} literal="\"title\" ok" children=0
+└── Paragraph scope=4:1..4:5 anchor=null attributes={} children=1
+    └── Link scope=4:1..4:5 anchor=null attributes={} dest=url("/url") title=null children=1
+        └── Text scope=4:2..4:4 anchor=null attributes={} literal="foo" children=0
 ````````````````````````````````
 
 A link begins at its own opening bracket. It used to take its start line from
@@ -801,13 +801,13 @@ no other witness in this repository: reverting it alone leaves `correctness`
 [a
 b](/u) tail
 .
-Document scope=1:1..2:11 children=1
-└── Paragraph scope=1:1..2:11 children=2
-    ├── Link scope=1:1..2:6 dest=url("/u") title=null children=3
-    │   ├── Text scope=1:2..1:2 literal="a" children=0
-    │   ├── SoftBreak scope=1:3..1:3 children=0
-    │   └── Text scope=2:1..2:1 literal="b" children=0
-    └── Text scope=2:7..2:11 literal=" tail" children=0
+Document scope=1:1..2:11 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..2:11 anchor=null attributes={} children=2
+    ├── Link scope=1:1..2:6 anchor=null attributes={} dest=url("/u") title=null children=3
+    │   ├── Text scope=1:2..1:2 anchor=null attributes={} literal="a" children=0
+    │   ├── SoftBreak scope=1:3..1:3 anchor=null attributes={} children=0
+    │   └── Text scope=2:1..2:1 anchor=null attributes={} literal="b" children=0
+    └── Text scope=2:7..2:11 anchor=null attributes={} literal=" tail" children=0
 ````````````````````````````````
 
 A reference definition consumed off the front of a paragraph leaves the
@@ -826,10 +826,10 @@ endings and leaving the column alone.
 > [a]: /x
 bar
 .
-Document scope=1:1..2:3 children=1
-└── Callout scope=1:1..2:3 variant=null collapsed=null children=1
-    └── Paragraph scope=2:1..2:3 children=1
-        └── Text scope=2:1..2:3 literal="bar" children=0
+Document scope=1:1..2:3 anchor=null attributes={} children=1
+└── Callout scope=1:1..2:3 anchor=null attributes={} variant=null collapsed=null children=1
+    └── Paragraph scope=2:1..2:3 anchor=null attributes={} children=1
+        └── Text scope=2:1..2:3 anchor=null attributes={} literal="bar" children=0
 ````````````````````````````````
 
 Two link reference definitions in one paragraph, the second one indented. The
@@ -846,7 +846,7 @@ one indented.
   [a]: /1
   [b]: /2
 .
-Document scope=1:1..2:9 children=0
+Document scope=1:1..2:9 anchor=null attributes={} children=0
 ````````````````````````````````
 
 Three link reference definitions and a paragraph, all in ONE region. Regions
@@ -865,9 +865,9 @@ indent breaks the merge.
 [c]: /3
 x
 .
-Document scope=1:1..4:1 children=1
-└── Paragraph scope=4:1..4:1 children=1
-    └── Text scope=4:1..4:1 literal="x" children=0
+Document scope=1:1..4:1 anchor=null attributes={} children=1
+└── Paragraph scope=4:1..4:1 anchor=null attributes={} children=1
+    └── Text scope=4:1..4:1 anchor=null attributes={} literal="x" children=0
 ````````````````````````````````
 
 A LABEL DEFINED TWICE. The first definition wins the label and the second one
@@ -883,10 +883,10 @@ cannot displace the winner.
 
 [a]
 .
-Document scope=1:1..4:3 children=1
-└── Paragraph scope=4:1..4:3 children=1
-    └── Link scope=4:1..4:3 dest=url("/1") title=null children=1
-        └── Text scope=4:2..4:2 literal="a" children=0
+Document scope=1:1..4:3 anchor=null attributes={} children=1
+└── Paragraph scope=4:1..4:3 anchor=null attributes={} children=1
+    └── Link scope=4:1..4:3 anchor=null attributes={} dest=url("/1") title=null children=1
+        └── Text scope=4:2..4:2 anchor=null attributes={} literal="a" children=0
 ````````````````````````````````
 
 AN UNRESOLVED FULL REFERENCE AND A NON-MATCHING TABLE DELIMITER STAY AS PROSE.
@@ -897,13 +897,13 @@ see [x][nope] here
 | a | b |
 | --- |
 .
-Document scope=1:1..3:7 children=1
-└── Paragraph scope=1:1..3:7 children=5
-    ├── Text scope=1:1..1:18 literal="see [x][nope] here" children=0
-    ├── SoftBreak scope=1:19..1:19 children=0
-    ├── Text scope=2:1..2:9 literal="| a | b |" children=0
-    ├── SoftBreak scope=2:10..2:10 children=0
-    └── Text scope=3:1..3:7 literal="| --- |" children=0
+Document scope=1:1..3:7 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..3:7 anchor=null attributes={} children=5
+    ├── Text scope=1:1..1:18 anchor=null attributes={} literal="see [x][nope] here" children=0
+    ├── SoftBreak scope=1:19..1:19 anchor=null attributes={} children=0
+    ├── Text scope=2:1..2:9 anchor=null attributes={} literal="| a | b |" children=0
+    ├── SoftBreak scope=2:10..2:10 anchor=null attributes={} children=0
+    └── Text scope=3:1..3:7 anchor=null attributes={} literal="| --- |" children=0
 ````````````````````````````````
 
 REQUIREMENT 14, EVERY ARM OF IT ON ONE PAGE. `null` means the source did not
@@ -929,34 +929,34 @@ these rows are the only gate there is.
 [k]: <> ""
 [l]: /u "t"
 .
-Document scope=1:1..7:11 children=2
-├── Paragraph scope=1:1..1:44 children=9
-│   ├── Link scope=1:1..1:5 dest=url("") title=null children=1
-│   │   └── Text scope=1:2..1:2 literal="a" children=0
-│   ├── Text scope=1:6..1:6 literal=" " children=0
-│   ├── Link scope=1:7..1:13 dest=url("") title=null children=1
-│   │   └── Text scope=1:8..1:8 literal="b" children=0
-│   ├── Text scope=1:14..1:14 literal=" " children=0
-│   ├── Link scope=1:15..1:21 dest=url("/u") title=null children=1
-│   │   └── Text scope=1:16..1:16 literal="c" children=0
-│   ├── Text scope=1:22..1:22 literal=" " children=0
-│   ├── Link scope=1:23..1:32 dest=url("/u") title="" children=1
-│   │   └── Text scope=1:24..1:24 literal="d" children=0
-│   ├── Text scope=1:33..1:33 literal=" " children=0
-│   └── Link scope=1:34..1:44 dest=url("/u") title="t" children=1
-│       └── Text scope=1:35..1:35 literal="e" children=0
-└── Paragraph scope=3:1..3:40 children=7
-    ├── Image scope=3:1..3:6 dest=url("") title=null children=1
-    │   └── Text scope=3:3..3:3 literal="f" children=0
-    ├── Text scope=3:7..3:7 literal=" " children=0
-    ├── Image scope=3:8..3:15 dest=url("") title=null children=1
-    │   └── Text scope=3:10..3:10 literal="g" children=0
-    ├── Text scope=3:16..3:16 literal=" " children=0
-    ├── Image scope=3:17..3:27 dest=url("/s") title="" children=1
-    │   └── Text scope=3:19..3:19 literal="h" children=0
-    ├── Text scope=3:28..3:28 literal=" " children=0
-    └── Image scope=3:29..3:40 dest=url("/s") title="t" children=1
-        └── Text scope=3:31..3:31 literal="i" children=0
+Document scope=1:1..7:11 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:44 anchor=null attributes={} children=9
+│   ├── Link scope=1:1..1:5 anchor=null attributes={} dest=url("") title=null children=1
+│   │   └── Text scope=1:2..1:2 anchor=null attributes={} literal="a" children=0
+│   ├── Text scope=1:6..1:6 anchor=null attributes={} literal=" " children=0
+│   ├── Link scope=1:7..1:13 anchor=null attributes={} dest=url("") title=null children=1
+│   │   └── Text scope=1:8..1:8 anchor=null attributes={} literal="b" children=0
+│   ├── Text scope=1:14..1:14 anchor=null attributes={} literal=" " children=0
+│   ├── Link scope=1:15..1:21 anchor=null attributes={} dest=url("/u") title=null children=1
+│   │   └── Text scope=1:16..1:16 anchor=null attributes={} literal="c" children=0
+│   ├── Text scope=1:22..1:22 anchor=null attributes={} literal=" " children=0
+│   ├── Link scope=1:23..1:32 anchor=null attributes={} dest=url("/u") title="" children=1
+│   │   └── Text scope=1:24..1:24 anchor=null attributes={} literal="d" children=0
+│   ├── Text scope=1:33..1:33 anchor=null attributes={} literal=" " children=0
+│   └── Link scope=1:34..1:44 anchor=null attributes={} dest=url("/u") title="t" children=1
+│       └── Text scope=1:35..1:35 anchor=null attributes={} literal="e" children=0
+└── Paragraph scope=3:1..3:40 anchor=null attributes={} children=7
+    ├── Image scope=3:1..3:6 anchor=null attributes={} dest=url("") title=null width=null height=null children=1
+    │   └── Text scope=3:3..3:3 anchor=null attributes={} literal="f" children=0
+    ├── Text scope=3:7..3:7 anchor=null attributes={} literal=" " children=0
+    ├── Image scope=3:8..3:15 anchor=null attributes={} dest=url("") title=null width=null height=null children=1
+    │   └── Text scope=3:10..3:10 anchor=null attributes={} literal="g" children=0
+    ├── Text scope=3:16..3:16 anchor=null attributes={} literal=" " children=0
+    ├── Image scope=3:17..3:27 anchor=null attributes={} dest=url("/s") title="" width=null height=null children=1
+    │   └── Text scope=3:19..3:19 anchor=null attributes={} literal="h" children=0
+    ├── Text scope=3:28..3:28 anchor=null attributes={} literal=" " children=0
+    └── Image scope=3:29..3:40 anchor=null attributes={} dest=url("/s") title="t" width=null height=null children=1
+        └── Text scope=3:31..3:31 anchor=null attributes={} literal="i" children=0
 ````````````````````````````````
 
 The autolink scanner owns a colon that an address follows, so the text
@@ -970,24 +970,24 @@ Inside a link nothing is linked; outside one the whole spelling is.
 
 Email me at:x@y.z or mailto:x@y.z, not word:name@nodot.
 .
-Document scope=1:1..3:55 children=2
-├── Paragraph scope=1:1..1:38 children=3
-│   ├── Link scope=1:1..1:16 dest=url("u") title=null children=3
-│   │   ├── Text scope=1:2..1:5 literal="foo:" children=0
-│   │   ├── Emphasis scope=1:6..1:8 children=1
-│   │   │   └── Text scope=1:7..1:7 literal="x" children=0
-│   │   └── Text scope=1:9..1:12 literal="@y.z" children=0
-│   ├── Text scope=1:17..1:21 literal=" and " children=0
-│   └── Link scope=1:22..1:38 dest=url("u") title=null children=1
-│       └── Text scope=1:23..1:34 literal="mailto:x@y.z" children=0
-└── Paragraph scope=3:1..3:55 children=7
-    ├── Text scope=3:1..3:12 literal="Email me at:" children=0
-    ├── Link scope=3:13..3:17 dest=url("mailto:x@y.z") title=null children=1
-    │   └── Text scope=3:13..3:17 literal="x@y.z" children=0
-    ├── Text scope=3:18..3:21 literal=" or " children=0
-    ├── Link scope=3:22..3:33 dest=url("mailto:x@y.z") title=null children=1
-    │   └── Text scope=3:22..3:33 literal="mailto:x@y.z" children=0
-    ├── Text scope=3:34..3:43 literal=", not word" children=0
-    ├── Directive scope=3:44..3:48 name="name" attributes=null children=0
-    └── Text scope=3:49..3:55 literal="@nodot." children=0
+Document scope=1:1..3:55 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:38 anchor=null attributes={} children=3
+│   ├── Link scope=1:1..1:16 anchor=null attributes={} dest=url("u") title=null children=3
+│   │   ├── Text scope=1:2..1:5 anchor=null attributes={} literal="foo:" children=0
+│   │   ├── Emphasis scope=1:6..1:8 anchor=null attributes={} children=1
+│   │   │   └── Text scope=1:7..1:7 anchor=null attributes={} literal="x" children=0
+│   │   └── Text scope=1:9..1:12 anchor=null attributes={} literal="@y.z" children=0
+│   ├── Text scope=1:17..1:21 anchor=null attributes={} literal=" and " children=0
+│   └── Link scope=1:22..1:38 anchor=null attributes={} dest=url("u") title=null children=1
+│       └── Text scope=1:23..1:34 anchor=null attributes={} literal="mailto:x@y.z" children=0
+└── Paragraph scope=3:1..3:55 anchor=null attributes={} children=7
+    ├── Text scope=3:1..3:12 anchor=null attributes={} literal="Email me at:" children=0
+    ├── Link scope=3:13..3:17 anchor=null attributes={} dest=url("mailto:x@y.z") title=null children=1
+    │   └── Text scope=3:13..3:17 anchor=null attributes={} literal="x@y.z" children=0
+    ├── Text scope=3:18..3:21 anchor=null attributes={} literal=" or " children=0
+    ├── Link scope=3:22..3:33 anchor=null attributes={} dest=url("mailto:x@y.z") title=null children=1
+    │   └── Text scope=3:22..3:33 anchor=null attributes={} literal="mailto:x@y.z" children=0
+    ├── Text scope=3:34..3:43 anchor=null attributes={} literal=", not word" children=0
+    ├── Directive scope=3:44..3:48 anchor=null attributes={} name="name" children=0
+    └── Text scope=3:49..3:55 anchor=null attributes={} literal="@nodot." children=0
 ````````````````````````````````

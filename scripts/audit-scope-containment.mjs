@@ -90,22 +90,33 @@ for (const example of fixtureCorpus(root)) {
             }
         else skipped += children.length;
 
-        for (let index = 1; index < children.length; index += 1) {
-            const left = children[index - 1];
-            const right = children[index];
-            scanned += 1;
-            // Closed byte intervals: adjacent siblings end and start one column
-            // apart, so anything short of strictly-before shares a byte.
-            if (!before(left.scope.end, right.scope.start))
-                findings.push({
-                    nodePath: right.childPath,
-                    violation: "sibling-overlap",
-                    kind: right.child.kind,
-                    scope: formatScope(right.scope),
-                    previousKind: left.child.kind,
-                    previousScope: formatScope(left.scope)
-                });
-        }
+        // Document content and its scoped value collections are separate
+        // ownership edges, printed in field order rather than source order.
+        const sequences =
+            node.kind === "Document"
+                ? [
+                      children.filter(({ child }) => !["Metadata", "Footnote", "Specimen"].includes(child.kind)),
+                      children.filter(({ child }) => child.kind === "Footnote"),
+                      children.filter(({ child }) => child.kind === "Specimen")
+                  ]
+                : [children];
+        for (const siblings of sequences)
+            for (let index = 1; index < siblings.length; index += 1) {
+                const left = siblings[index - 1];
+                const right = siblings[index];
+                scanned += 1;
+                // Closed byte intervals: adjacent siblings end and start one column
+                // apart, so anything short of strictly-before shares a byte.
+                if (!before(left.scope.end, right.scope.start))
+                    findings.push({
+                        nodePath: right.childPath,
+                        violation: "sibling-overlap",
+                        kind: right.child.kind,
+                        scope: formatScope(right.scope),
+                        previousKind: left.child.kind,
+                        previousScope: formatScope(left.scope)
+                    });
+            }
     }
     if (findings.length > 0) measured.push({ source: example.source, input: example.input, findings });
 }

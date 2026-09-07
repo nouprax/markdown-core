@@ -7,6 +7,10 @@ import MarkdownCoreC
 public struct Formula: Markup {
     /// Where it is. See ``Scope`` — boundaries, not a byte range.
     public let scope: Scope
+    /// The explicit anchor, absent when none was attached.
+    public let anchor: String?
+    /// Ordered classes and records, including duplicates.
+    public let attributes: Attributes
     /// Whether the author wrote it inside a line or on its own.
     public let mode: PlacementMode
     /// The formula's body, its delimiters excluded. One leading and one
@@ -25,6 +29,8 @@ extension Formula {
         markdown_core_node_formula_properties(node, &mode, &literal)
         self.init(
             scope: Self.scope(from: node),
+            anchor: markdown_core_node_anchor(node).string,
+            attributes: Attributes(from: node),
             mode: PlacementMode(from: mode),
             literal: literal.requiredString
         )
