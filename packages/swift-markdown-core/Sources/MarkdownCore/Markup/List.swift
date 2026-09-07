@@ -11,12 +11,34 @@ public enum ListFlavor: String, Sendable {
     case ordered
 }
 
+/// The numbering system authored for an ordered list.
 public enum OrderedListStyle: String, Sendable {
-    case decimal, lowerAlpha, upperAlpha, lowerRoman, upperRoman, example, `default`
+    /// ASCII decimal digits.
+    case decimal
+    /// Lowercase ASCII letters.
+    case lowerAlpha
+    /// Uppercase ASCII letters.
+    case upperAlpha
+    /// Lowercase Roman numerals.
+    case lowerRoman
+    /// Uppercase Roman numerals.
+    case upperRoman
+    /// A labeled example-list marker.
+    case example
+    /// A source marker that requests the default numbering style.
+    case `default`
 }
 
+/// The punctuation authored around an ordered-list marker.
 public enum OrderedListDelimiter: String, Sendable {
-    case period, oneParen, twoParens, `default`
+    /// A trailing period, as in `1.`.
+    case period
+    /// A trailing closing parenthesis, as in `1)`.
+    case oneParen
+    /// A pair of parentheses, as in `(1)`.
+    case twoParens
+    /// A source marker that requests the default delimiter.
+    case `default`
 }
 
 /// A bulleted or numbered list.
@@ -75,7 +97,10 @@ public struct ListItem: Markup {
     public let marker: String?
     /// The authored example-list label; reserved until example lists land.
     public let exampleLabel: String?
+    /// Whether this item authored a task marker.
     public var isTask: Bool { marker != nil }
+    /// Whether this item authored a completed or custom-state task marker.
+    /// Non-task items and the incomplete marker (`" "`) are not complete.
     public var isComplete: Bool { marker != nil && marker != " " }
 
     /// Dispatches to the visitor's `ListItem` case.
