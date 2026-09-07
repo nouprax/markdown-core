@@ -201,10 +201,12 @@ public final class com/nouprax/markdown/core/Link : com/nouprax/markdown/core/Ma
 public final class com/nouprax/markdown/core/List : com/nouprax/markdown/core/Markup {
 	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
 	public fun dump ()Ljava/lang/String;
+	public final fun getDelimiter ()Lcom/nouprax/markdown/core/OrderedListDelimiter;
 	public final fun getFlavor ()Lcom/nouprax/markdown/core/ListFlavor;
 	public final fun getItems ()Ljava/util/List;
 	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 	public final fun getStart ()Ljava/lang/Long;
+	public final fun getStyle ()Lcom/nouprax/markdown/core/OrderedListStyle;
 	public final fun getTight ()Z
 }
 
@@ -219,9 +221,12 @@ public final class com/nouprax/markdown/core/ListFlavor : java/lang/Enum {
 public final class com/nouprax/markdown/core/ListItem : com/nouprax/markdown/core/Markup {
 	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
 	public fun dump ()Ljava/lang/String;
-	public final fun getChecked ()Ljava/lang/Boolean;
 	public final fun getContent ()Ljava/util/List;
+	public final fun getExampleLabel ()Ljava/lang/String;
+	public final fun getMarker ()Ljava/lang/String;
 	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+	public final fun isComplete ()Z
+	public final fun isTask ()Z
 }
 
 public abstract interface class com/nouprax/markdown/core/Markup {
@@ -232,6 +237,29 @@ public abstract interface class com/nouprax/markdown/core/Markup {
 
 public final class com/nouprax/markdown/core/Markup$DefaultImpls {
 	public static fun dump (Lcom/nouprax/markdown/core/Markup;)Ljava/lang/String;
+}
+
+public final class com/nouprax/markdown/core/OrderedListDelimiter : java/lang/Enum {
+	public static final field DEFAULT Lcom/nouprax/markdown/core/OrderedListDelimiter;
+	public static final field ONE_PAREN Lcom/nouprax/markdown/core/OrderedListDelimiter;
+	public static final field PERIOD Lcom/nouprax/markdown/core/OrderedListDelimiter;
+	public static final field TWO_PARENS Lcom/nouprax/markdown/core/OrderedListDelimiter;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/nouprax/markdown/core/OrderedListDelimiter;
+	public static fun values ()[Lcom/nouprax/markdown/core/OrderedListDelimiter;
+}
+
+public final class com/nouprax/markdown/core/OrderedListStyle : java/lang/Enum {
+	public static final field DECIMAL Lcom/nouprax/markdown/core/OrderedListStyle;
+	public static final field DEFAULT Lcom/nouprax/markdown/core/OrderedListStyle;
+	public static final field EXAMPLE Lcom/nouprax/markdown/core/OrderedListStyle;
+	public static final field LOWER_ALPHA Lcom/nouprax/markdown/core/OrderedListStyle;
+	public static final field LOWER_ROMAN Lcom/nouprax/markdown/core/OrderedListStyle;
+	public static final field UPPER_ALPHA Lcom/nouprax/markdown/core/OrderedListStyle;
+	public static final field UPPER_ROMAN Lcom/nouprax/markdown/core/OrderedListStyle;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/nouprax/markdown/core/OrderedListStyle;
+	public static fun values ()[Lcom/nouprax/markdown/core/OrderedListStyle;
 }
 
 public final class com/nouprax/markdown/core/Paragraph : com/nouprax/markdown/core/Markup {

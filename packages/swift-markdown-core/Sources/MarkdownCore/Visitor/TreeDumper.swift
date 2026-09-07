@@ -136,6 +136,8 @@ private struct DumpVisitor: MarkupVisitor {
             fields: [
                 "flavor=\(node.flavor.rawValue)",
                 "start=\(node.start.map(String.init) ?? "null")",
+                "style=\(node.style?.rawValue ?? "null")",
+                "delimiter=\(node.delimiter?.rawValue ?? "null")",
                 "tight=\(boolean(node.tight))",
             ],
             children: node.items.count
@@ -147,7 +149,7 @@ private struct DumpVisitor: MarkupVisitor {
         state.line(
             "ListItem",
             node,
-            fields: ["checked=\(node.checked.map(boolean) ?? "null")"],
+            fields: ["marker=\(optionalString(node.marker))", "exampleLabel=\(optionalString(node.exampleLabel))"],
             children: node.content.count
         )
         state.nested(node.content.count) { node.content.forEach(state.dump) }

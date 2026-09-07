@@ -27,7 +27,7 @@ import Testing
         #expect(try Document.parse("| a |\n| --- |\n| b |\n").content.first is Table)
         #expect(try Document.parse("~~x~~\n").dump().contains("Strikethrough scope="))
         #expect(try Document.parse("www.example.com\n").dump().contains("Link scope="))
-        #expect(try Document.parse("- [x] task\n").dump().contains("checked=true"))
+        #expect(try Document.parse("- [x] task\n").dump().contains("marker=\"x\""))
         #expect(try Document.parse("ref[^a]\n\n[^a]: note\n").dump().contains("Cite scope="))
         #expect(try Document.parse("$x$\n").dump().contains("Formula scope="))
         #expect(try Document.parse(":badge[label]\n").dump().contains("Directive scope="))

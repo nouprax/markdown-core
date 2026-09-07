@@ -53,8 +53,8 @@ const XML_KIND = {
 const COMPARED = {
     Callout: ["variant", "collapsed"],
     Heading: ["level"],
-    List: ["flavor", "tight", "start"],
-    ListItem: ["checked"],
+    List: ["flavor", "start", "style", "delimiter", "tight"],
+    ListItem: ["marker", "exampleLabel"],
     CodeBlock: ["info", "literal"],
     Code: ["literal"],
     Text: ["literal"],
@@ -120,8 +120,11 @@ export function parseUpstreamXml(xml) {
         if (kind === "Cite") node.children.push(citationItem({}));
         if (name === "table_header") node.fields.isHeader = "true";
         if (name === "table_row") node.fields.isHeader = "false";
-        if (name === "tasklist") node.fields.checked = attributes.completed === "true" ? "true" : "false";
-        if (name === "item") node.fields.checked = "null";
+        if (name === "tasklist") node.fields.marker = attributes.completed === "true" ? '"x"' : '" "';
+        if (name === "item") {
+            node.fields.marker = "null";
+            node.fields.exampleLabel = "null";
+        }
         // Every `>` container is a `Callout` (M3), and an inherited quote is
         // metadata-free: cmark has no callout metadata to state, so the
         // projection states the absence the canonical AST prints.
@@ -342,6 +345,11 @@ export function normalize(node, side, fired) {
         let value = node.fields[key];
         if (side === "upstream") {
             if (node.kind === "List" && key === "flavor") value = node.fields.type;
+            if (node.kind === "List" && key === "style") value = node.fields.type === "ordered" ? "decimal" : "null";
+            if (node.kind === "List" && key === "delimiter") {
+                value =
+                    node.fields.type === "ordered" ? (node.fields.delim === "paren" ? "oneParen" : "period") : "null";
+            }
             if (node.kind === "List" && key === "tight") value = node.fields.tight ?? "false";
             if (node.kind === "CodeBlock" && key === "info") value = node.fields.info ?? "null";
         }

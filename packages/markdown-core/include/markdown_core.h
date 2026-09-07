@@ -146,6 +146,15 @@ typedef enum markdown_core_list_flavor {
     MARKDOWN_CORE_LIST_FLAVOR_ORDERED = 2
 } markdown_core_list_flavor;
 
+typedef enum markdown_core_ordered_list_style {
+    MARKDOWN_CORE_ORDERED_LIST_STYLE_DECIMAL = 1
+} markdown_core_ordered_list_style;
+
+typedef enum markdown_core_ordered_list_delimiter {
+    MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PERIOD = 1,
+    MARKDOWN_CORE_ORDERED_LIST_DELIMITER_ONE_PAREN = 2
+} markdown_core_ordered_list_delimiter;
+
 typedef enum markdown_core_placement_mode {
     MARKDOWN_CORE_PLACEMENT_EMBEDDED = 1,
     MARKDOWN_CORE_PLACEMENT_STANDALONE = 2
@@ -224,9 +233,13 @@ MARKDOWN_CORE_API size_t markdown_core_node_child_count(const markdown_core_node
 MARKDOWN_CORE_API bool markdown_core_node_heading_level(const markdown_core_node *node, int32_t *level);
 MARKDOWN_CORE_API bool markdown_core_node_list_properties(const markdown_core_node *node,
                                                           markdown_core_list_flavor *flavor,
-                                                          markdown_core_optional_i64 *start, bool *tight);
-MARKDOWN_CORE_API bool markdown_core_node_list_item_checked(const markdown_core_node *node,
-                                                            markdown_core_optional_bool *checked);
+                                                          markdown_core_optional_i64 *start,
+                                                          markdown_core_ordered_list_style *style,
+                                                          markdown_core_ordered_list_delimiter *delimiter,
+                                                          bool *tight);
+MARKDOWN_CORE_API bool markdown_core_node_list_item_properties(const markdown_core_node *node,
+                                                               markdown_core_optional_string *marker,
+                                                               markdown_core_optional_string *example_label);
 /** `info` and `language` are OPTIONAL: a fence with nothing but whitespace
  * after it wrote no info string, and an indented block has no fence to write
  * one on. `language` is the info string's first word and is present exactly

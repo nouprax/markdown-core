@@ -1,0 +1,61 @@
+# Lists
+
+## Inherited bullets and decimal delimiters
+
+```````````````````````````````` example
+- a
++ b
+* c
+
+3. d
+4. e
+
+1) f
+
+0. z
+.
+Document scope=1:1..10:4 children=6
+├── List scope=1:1..1:3 flavor=bullet start=null style=null delimiter=null tight=true children=1
+│   └── ListItem scope=1:1..1:3 marker=null exampleLabel=null children=1
+│       └── Paragraph scope=1:3..1:3 children=1
+│           └── Text scope=1:3..1:3 literal="a" children=0
+├── List scope=2:1..2:3 flavor=bullet start=null style=null delimiter=null tight=true children=1
+│   └── ListItem scope=2:1..2:3 marker=null exampleLabel=null children=1
+│       └── Paragraph scope=2:3..2:3 children=1
+│           └── Text scope=2:3..2:3 literal="b" children=0
+├── List scope=3:1..4:0 flavor=bullet start=null style=null delimiter=null tight=true children=1
+│   └── ListItem scope=3:1..4:0 marker=null exampleLabel=null children=1
+│       └── Paragraph scope=3:3..3:3 children=1
+│           └── Text scope=3:3..3:3 literal="c" children=0
+├── List scope=5:1..7:0 flavor=ordered start=3 style=decimal delimiter=period tight=true children=2
+│   ├── ListItem scope=5:1..5:4 marker=null exampleLabel=null children=1
+│   │   └── Paragraph scope=5:4..5:4 children=1
+│   │       └── Text scope=5:4..5:4 literal="d" children=0
+│   └── ListItem scope=6:1..7:0 marker=null exampleLabel=null children=1
+│       └── Paragraph scope=6:4..6:4 children=1
+│           └── Text scope=6:4..6:4 literal="e" children=0
+├── List scope=8:1..9:0 flavor=ordered start=1 style=decimal delimiter=oneParen tight=true children=1
+│   └── ListItem scope=8:1..9:0 marker=null exampleLabel=null children=1
+│       └── Paragraph scope=8:4..8:4 children=1
+│           └── Text scope=8:4..8:4 literal="f" children=0
+└── List scope=10:1..10:4 flavor=ordered start=0 style=decimal delimiter=period tight=true children=1
+    └── ListItem scope=10:1..10:4 marker=null exampleLabel=null children=1
+        └── Paragraph scope=10:4..10:4 children=1
+            └── Text scope=10:4..10:4 literal="z" children=0
+````````````````````````````````
+
+## The inherited decimal ceiling
+
+```````````````````````````````` example
+123456789. nine
+
+1234567890. ten
+.
+Document scope=1:1..3:15 children=2
+├── List scope=1:1..2:0 flavor=ordered start=123456789 style=decimal delimiter=period tight=true children=1
+│   └── ListItem scope=1:1..2:0 marker=null exampleLabel=null children=1
+│       └── Paragraph scope=1:12..1:15 children=1
+│           └── Text scope=1:12..1:15 literal="nine" children=0
+└── Paragraph scope=3:1..3:15 children=1
+    └── Text scope=3:1..3:15 literal="1234567890. ten" children=0
+````````````````````````````````

@@ -143,6 +143,8 @@ private class DumpVisitor(
             listOf(
                 "flavor=${node.flavor.token()}",
                 "start=${node.start ?: "null"}",
+                "style=${node.style?.token() ?: "null"}",
+                "delimiter=${node.delimiter?.token() ?: "null"}",
                 "tight=${node.tight}",
             ),
             node.items,
@@ -150,7 +152,12 @@ private class DumpVisitor(
     }
 
     override fun visitListItem(node: ListItem) {
-        state.container("ListItem", node, listOf("checked=${node.checked ?: "null"}"), node.content)
+        state.container(
+            "ListItem",
+            node,
+            listOf("marker=${optionalString(node.marker)}", "exampleLabel=${optionalString(node.exampleLabel)}"),
+            node.content,
+        )
     }
 
     override fun visitCodeBlock(node: CodeBlock) {
@@ -340,6 +347,9 @@ private fun BibMode.token(): String =
 private fun PlacementMode.token(): String = name.lowercase()
 
 private fun ListFlavor.token(): String = name.lowercase()
+private fun OrderedListStyle.token(): String = name.lowercase().replace("_alpha", "Alpha").replace("_roman", "Roman")
+private fun OrderedListDelimiter.token(): String =
+    name.lowercase().replace("_paren", "Paren").replace("_parens", "Parens")
 
 private fun TableAlignment.token(): String = name.lowercase()
 

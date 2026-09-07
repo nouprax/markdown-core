@@ -11,6 +11,22 @@ public data class Scope(
 )
 
 public enum class ListFlavor { BULLET, ORDERED }
+public enum class OrderedListStyle {
+    DECIMAL,
+    LOWER_ALPHA,
+    UPPER_ALPHA,
+    LOWER_ROMAN,
+    UPPER_ROMAN,
+    EXAMPLE,
+    DEFAULT,
+}
+
+public enum class OrderedListDelimiter {
+    PERIOD,
+    ONE_PAREN,
+    TWO_PARENS,
+    DEFAULT,
+}
 
 public enum class PlacementMode { EMBEDDED, STANDALONE }
 

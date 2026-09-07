@@ -61,7 +61,7 @@ test("api: the dialect has no switches, so a plain parse recognizes every featur
     for (const [source, witness] of [
         ["~~x~~\n", "Strikethrough scope="],
         ["www.example.com\n", "Link scope="],
-        ["- [x] task\n", "checked=true"],
+        ["- [x] task\n", 'marker="x"'],
         ["ref[^a]\n\n[^a]: note\n", "Cite scope="],
         ["$x$\n", "Formula scope="],
         [":badge[label]\n", "Directive scope="],

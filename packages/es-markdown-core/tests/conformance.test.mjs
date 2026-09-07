@@ -64,7 +64,7 @@ test("conformance: fields, nullability, and typed table nodes map to JavaScript"
     assert.equal(document.content[0].flavor, "ordered");
     assert.equal(document.content[0].start, 3);
     assert.equal(document.content[0].tight, true);
-    assert.equal(document.content[1].items[0].checked, true);
+    assert.equal(document.content[1].items[0].marker, "x");
     assert.deepEqual(document.content[2].alignments, ["center"]);
     assert.equal(document.content[2].header.isHeader, true);
     assert.equal(document.content[2].rows[0].isHeader, false);

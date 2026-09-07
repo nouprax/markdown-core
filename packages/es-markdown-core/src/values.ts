@@ -9,6 +9,9 @@ export interface Scope {
 }
 
 export type ListFlavor = "bullet" | "ordered";
+export type OrderedListStyle =
+    "decimal" | "lowerAlpha" | "upperAlpha" | "lowerRoman" | "upperRoman" | "example" | "default";
+export type OrderedListDelimiter = "period" | "oneParen" | "twoParens" | "default";
 /**
  * The target of a `Link` or `Image`: a tagged value, not a node, so it has no
  * scope and no children, and a branch's fields exist only in that branch.

@@ -51,8 +51,9 @@ private class JniTreeDecoder(
             }
 
             JniNodeKind.LIST_ITEM -> {
-                val checked = reader.nullableBoolean()
-                readChildren { consume(ListItem(checked, it, scope)) }
+                val marker = reader.string()
+                val exampleLabel = reader.string()
+                readChildren { consume(ListItem(marker, exampleLabel, it, scope)) }
             }
 
             JniNodeKind.CODE_BLOCK -> {
@@ -274,10 +275,18 @@ private class JniTreeDecoder(
             }
         val startValue = reader.long()
         val start = if (reader.boolean()) startValue else null
+        val style = if (reader.int() == 0) null else OrderedListStyle.DECIMAL
+        val delimiter =
+            when (val rawValue = reader.int()) {
+                0 -> null
+                1 -> OrderedListDelimiter.PERIOD
+                2 -> OrderedListDelimiter.ONE_PAREN
+                else -> error("invalid native list delimiter $rawValue")
+            }
         val tight = reader.boolean()
         readChildren { children ->
             val items = children.immutableMap { requireNotNull(it as? ListItem) { "list contains a non-item node" } }
-            consume(List(flavor, start, tight, items, scope))
+            consume(List(flavor, start, style, delimiter, tight, items, scope))
         }
     }
 

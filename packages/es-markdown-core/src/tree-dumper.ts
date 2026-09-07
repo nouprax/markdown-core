@@ -83,11 +83,22 @@ class DumpState {
             this.container(
                 "List",
                 node,
-                [`flavor=${node.flavor}`, `start=${node.start ?? "null"}`, `tight=${node.tight}`],
+                [
+                    `flavor=${node.flavor}`,
+                    `start=${node.start ?? "null"}`,
+                    `style=${node.style ?? "null"}`,
+                    `delimiter=${node.delimiter ?? "null"}`,
+                    `tight=${node.tight}`
+                ],
                 node.items
             ),
         visitListItem: (node: ListItem) =>
-            this.container("ListItem", node, [`checked=${node.checked ?? "null"}`], node.content),
+            this.container(
+                "ListItem",
+                node,
+                [`marker=${optionalString(node.marker)}`, `exampleLabel=${optionalString(node.exampleLabel)}`],
+                node.content
+            ),
         visitCodeBlock: (node: CodeBlock) =>
             this.line("CodeBlock", node, [
                 `info=${optionalString(node.info)}`,

@@ -40,7 +40,7 @@ import Testing
         #expect(ordered.flavor == .ordered)
         #expect(ordered.start == 3)
         let task = try #require(document.content[1] as? MarkdownCore.List)
-        #expect(task.items.first?.checked == true)
+        #expect(task.items.first?.marker == "x")
         let table = try #require(document.content[2] as? Table)
         #expect(table.alignments == [.center])
         #expect(table.header.isHeader)

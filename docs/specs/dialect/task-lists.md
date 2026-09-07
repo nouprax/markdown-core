@@ -4,8 +4,7 @@ Status: normative module of the [Markdown Core dialect](../dialect.md).
 Sources: cmark-gfm's task-list
 extension; Obsidian's custom task characters. Executable oracles: cmark-gfm
 for the inherited markers, `@quartz-community/remark-obsidian` for custom
-markers. Landing: the `marker` field with `M5`, custom markers with `O5`;
-until `M5` the current contract's `checked: Bool?` stands. The
+markers. Landing: the `marker` field landed with `M5`; custom markers land with `O5`. The
 [example format](../dialect.md#examples) is defined by the index.
 
 ## Model

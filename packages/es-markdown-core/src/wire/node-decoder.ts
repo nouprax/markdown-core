@@ -338,13 +338,22 @@ export class NodeDecoder {
                 return this.callout(record);
             case "list":
                 return this.list(record);
-            case "listItem":
+            case "listItem": {
                 this.flags(record, 0);
+                const marker = this.string(record, 0);
                 return {
                     ...base,
-                    checked: this.nullableBoolean(record.scalar0, "list item checked state"),
+                    marker,
+                    exampleLabel: this.string(record, 1),
+                    get isTask() {
+                        return marker !== null;
+                    },
+                    get isComplete() {
+                        return marker !== null && marker !== " ";
+                    },
                     content: this.content(record)
                 } as MarkupValue;
+            }
             case "codeBlock":
                 this.flags(record, 0b11);
                 this.leaf(record);
@@ -435,7 +444,7 @@ export class NodeDecoder {
     }
 
     private list(record: NodeRecord): MarkupValueOf<"list"> {
-        this.flags(record, 0b11);
+        this.flags(record, 0xff);
         const flavor = this.listFlavor(record.scalar0);
         const start = (record.flags & 1) === 0 ? null : this.safeInteger(record.integer, "list start");
         if (flavor === "bullet" && start !== null) throw new Error("native result gives a bullet list a start");
@@ -443,7 +452,20 @@ export class NodeDecoder {
         if (!children.every((child): child is ListItem => child.kind === "listItem")) {
             throw new Error("list contains a non-item node");
         }
-        return { ...this.base(record, "list"), flavor, start, tight: (record.flags & 2) !== 0, items: children };
+        const style = start === null ? null : ((record.flags >> 2) & 0x7) === 1 ? "decimal" : null;
+        const delimiterRaw = (record.flags >> 5) & 0x7;
+        const delimiter =
+            start === null ? null : delimiterRaw === 1 ? "period" : delimiterRaw === 2 ? "oneParen" : null;
+        if (start !== null && (style === null || delimiter === null)) throw new Error("invalid ordered list facts");
+        return {
+            ...this.base(record, "list"),
+            flavor,
+            start,
+            style,
+            delimiter,
+            tight: (record.flags & 2) !== 0,
+            items: children
+        };
     }
 
     private table(record: NodeRecord): MarkupValueOf<"table"> {

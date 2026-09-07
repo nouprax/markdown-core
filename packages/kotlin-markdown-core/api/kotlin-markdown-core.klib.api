@@ -29,6 +29,35 @@ final enum class com.nouprax.markdown.core/ListFlavor : kotlin/Enum<com.nouprax.
     final fun values(): kotlin/Array<com.nouprax.markdown.core/ListFlavor> // com.nouprax.markdown.core/ListFlavor.values|values#static(){}[0]
 }
 
+final enum class com.nouprax.markdown.core/OrderedListDelimiter : kotlin/Enum<com.nouprax.markdown.core/OrderedListDelimiter> { // com.nouprax.markdown.core/OrderedListDelimiter|null[0]
+    enum entry DEFAULT // com.nouprax.markdown.core/OrderedListDelimiter.DEFAULT|null[0]
+    enum entry ONE_PAREN // com.nouprax.markdown.core/OrderedListDelimiter.ONE_PAREN|null[0]
+    enum entry PERIOD // com.nouprax.markdown.core/OrderedListDelimiter.PERIOD|null[0]
+    enum entry TWO_PARENS // com.nouprax.markdown.core/OrderedListDelimiter.TWO_PARENS|null[0]
+
+    final val entries // com.nouprax.markdown.core/OrderedListDelimiter.entries|#static{}entries[0]
+        final fun <get-entries>(): kotlin.enums/EnumEntries<com.nouprax.markdown.core/OrderedListDelimiter> // com.nouprax.markdown.core/OrderedListDelimiter.entries.<get-entries>|<get-entries>#static(){}[0]
+
+    final fun valueOf(kotlin/String): com.nouprax.markdown.core/OrderedListDelimiter // com.nouprax.markdown.core/OrderedListDelimiter.valueOf|valueOf#static(kotlin.String){}[0]
+    final fun values(): kotlin/Array<com.nouprax.markdown.core/OrderedListDelimiter> // com.nouprax.markdown.core/OrderedListDelimiter.values|values#static(){}[0]
+}
+
+final enum class com.nouprax.markdown.core/OrderedListStyle : kotlin/Enum<com.nouprax.markdown.core/OrderedListStyle> { // com.nouprax.markdown.core/OrderedListStyle|null[0]
+    enum entry DECIMAL // com.nouprax.markdown.core/OrderedListStyle.DECIMAL|null[0]
+    enum entry DEFAULT // com.nouprax.markdown.core/OrderedListStyle.DEFAULT|null[0]
+    enum entry EXAMPLE // com.nouprax.markdown.core/OrderedListStyle.EXAMPLE|null[0]
+    enum entry LOWER_ALPHA // com.nouprax.markdown.core/OrderedListStyle.LOWER_ALPHA|null[0]
+    enum entry LOWER_ROMAN // com.nouprax.markdown.core/OrderedListStyle.LOWER_ROMAN|null[0]
+    enum entry UPPER_ALPHA // com.nouprax.markdown.core/OrderedListStyle.UPPER_ALPHA|null[0]
+    enum entry UPPER_ROMAN // com.nouprax.markdown.core/OrderedListStyle.UPPER_ROMAN|null[0]
+
+    final val entries // com.nouprax.markdown.core/OrderedListStyle.entries|#static{}entries[0]
+        final fun <get-entries>(): kotlin.enums/EnumEntries<com.nouprax.markdown.core/OrderedListStyle> // com.nouprax.markdown.core/OrderedListStyle.entries.<get-entries>|<get-entries>#static(){}[0]
+
+    final fun valueOf(kotlin/String): com.nouprax.markdown.core/OrderedListStyle // com.nouprax.markdown.core/OrderedListStyle.valueOf|valueOf#static(kotlin.String){}[0]
+    final fun values(): kotlin/Array<com.nouprax.markdown.core/OrderedListStyle> // com.nouprax.markdown.core/OrderedListStyle.values|values#static(){}[0]
+}
+
 final enum class com.nouprax.markdown.core/ParseErrorCode : kotlin/Enum<com.nouprax.markdown.core/ParseErrorCode> { // com.nouprax.markdown.core/ParseErrorCode|null[0]
     enum entry ALLOCATION_FAILED // com.nouprax.markdown.core/ParseErrorCode.ALLOCATION_FAILED|null[0]
     enum entry INTERNAL // com.nouprax.markdown.core/ParseErrorCode.INTERNAL|null[0]
@@ -408,6 +437,8 @@ final class com.nouprax.markdown.core/Link : com.nouprax.markdown.core/Markup { 
 }
 
 final class com.nouprax.markdown.core/List : com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core/List|null[0]
+    final val delimiter // com.nouprax.markdown.core/List.delimiter|{}delimiter[0]
+        final fun <get-delimiter>(): com.nouprax.markdown.core/OrderedListDelimiter? // com.nouprax.markdown.core/List.delimiter.<get-delimiter>|<get-delimiter>(){}[0]
     final val flavor // com.nouprax.markdown.core/List.flavor|{}flavor[0]
         final fun <get-flavor>(): com.nouprax.markdown.core/ListFlavor // com.nouprax.markdown.core/List.flavor.<get-flavor>|<get-flavor>(){}[0]
     final val items // com.nouprax.markdown.core/List.items|{}items[0]
@@ -416,6 +447,8 @@ final class com.nouprax.markdown.core/List : com.nouprax.markdown.core/Markup { 
         final fun <get-scope>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/List.scope.<get-scope>|<get-scope>(){}[0]
     final val start // com.nouprax.markdown.core/List.start|{}start[0]
         final fun <get-start>(): kotlin/Long? // com.nouprax.markdown.core/List.start.<get-start>|<get-start>(){}[0]
+    final val style // com.nouprax.markdown.core/List.style|{}style[0]
+        final fun <get-style>(): com.nouprax.markdown.core/OrderedListStyle? // com.nouprax.markdown.core/List.style.<get-style>|<get-style>(){}[0]
     final val tight // com.nouprax.markdown.core/List.tight|{}tight[0]
         final fun <get-tight>(): kotlin/Boolean // com.nouprax.markdown.core/List.tight.<get-tight>|<get-tight>(){}[0]
 
@@ -423,10 +456,16 @@ final class com.nouprax.markdown.core/List : com.nouprax.markdown.core/Markup { 
 }
 
 final class com.nouprax.markdown.core/ListItem : com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core/ListItem|null[0]
-    final val checked // com.nouprax.markdown.core/ListItem.checked|{}checked[0]
-        final fun <get-checked>(): kotlin/Boolean? // com.nouprax.markdown.core/ListItem.checked.<get-checked>|<get-checked>(){}[0]
     final val content // com.nouprax.markdown.core/ListItem.content|{}content[0]
         final fun <get-content>(): kotlin.collections/List<com.nouprax.markdown.core/Markup> // com.nouprax.markdown.core/ListItem.content.<get-content>|<get-content>(){}[0]
+    final val exampleLabel // com.nouprax.markdown.core/ListItem.exampleLabel|{}exampleLabel[0]
+        final fun <get-exampleLabel>(): kotlin/String? // com.nouprax.markdown.core/ListItem.exampleLabel.<get-exampleLabel>|<get-exampleLabel>(){}[0]
+    final val isComplete // com.nouprax.markdown.core/ListItem.isComplete|{}isComplete[0]
+        final fun <get-isComplete>(): kotlin/Boolean // com.nouprax.markdown.core/ListItem.isComplete.<get-isComplete>|<get-isComplete>(){}[0]
+    final val isTask // com.nouprax.markdown.core/ListItem.isTask|{}isTask[0]
+        final fun <get-isTask>(): kotlin/Boolean // com.nouprax.markdown.core/ListItem.isTask.<get-isTask>|<get-isTask>(){}[0]
+    final val marker // com.nouprax.markdown.core/ListItem.marker|{}marker[0]
+        final fun <get-marker>(): kotlin/String? // com.nouprax.markdown.core/ListItem.marker.<get-marker>|<get-marker>(){}[0]
     final val scope // com.nouprax.markdown.core/ListItem.scope|{}scope[0]
         final fun <get-scope>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/ListItem.scope.<get-scope>|<get-scope>(){}[0]
 
