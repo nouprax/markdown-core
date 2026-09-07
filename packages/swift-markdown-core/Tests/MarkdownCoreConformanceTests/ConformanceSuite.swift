@@ -1,7 +1,9 @@
 import Foundation
 import MarkdownCore
 import Testing
-import struct Testing.Comment
+
+// Testing macros refer to Comment without a module qualifier.
+private typealias Comment = Testing.Comment
 
 @Suite("conformance") struct ConformanceSuite {
     @Test("public node kinds are emitted by the per-node Swift dumper")
