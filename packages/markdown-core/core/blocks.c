@@ -637,14 +637,17 @@ static void S_convert_comment_block(markdown_core_parser *parser, markdown_core_
 
     body_start = open + 4;
     body_len = close > body_start ? close - body_start : 0;
-    /* The chunk is the detached content buffer, so it is owned and the body
-     * can be moved to its front in place. */
+    /* Keep ownership of the HTML literal across the kind change. Restore it
+     * on failure; on success the comment record takes it before trimming. */
     assert(literal->alloc);
     markdown_core_chunk owned_literal = *literal;
     *literal = (markdown_core_chunk)MARKDOWN_CORE_CHUNK_EMPTY;
-    if (!markdown_core_node_set_type(b, MARKDOWN_CORE_NODE_COMMENT_BLOCK)) {
+    markdown_core_node_set_kind_result result = markdown_core_node_set_kind(b, MARKDOWN_CORE_NODE_COMMENT_BLOCK);
+    if (result != MARKDOWN_CORE_NODE_SET_KIND_OK) {
         *literal = owned_literal;
-        parser->oom = true;
+        if (result == MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED) {
+            parser->oom = true;
+        }
         return;
     }
     *b->as.literal = owned_literal;
@@ -1731,8 +1734,12 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
 
             if (has_content) {
 
-                if (!markdown_core_node_set_type(*container, MARKDOWN_CORE_NODE_HEADING)) {
-                    parser->oom = true;
+                markdown_core_node_set_kind_result result =
+                    markdown_core_node_set_kind(*container, MARKDOWN_CORE_NODE_HEADING);
+                if (result != MARKDOWN_CORE_NODE_SET_KIND_OK) {
+                    if (result == MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED) {
+                        parser->oom = true;
+                    }
                     return;
                 }
                 (*container)->as.heading->level = lev;

@@ -295,7 +295,7 @@ static void S_splice_after(markdown_core_node *e, markdown_core_node *first) {
 }
 
 /* The node-valued fields join the same iterative free walk as content.
- * Type conversion uses a separate walk so its siblings remain untouched. */
+ * Kind conversion uses a separate walk so its siblings remain untouched. */
 static void S_splice_owned_fields(markdown_core_node *owner, markdown_core_node *after) {
     switch (owner->kind) {
     case MARKDOWN_CORE_NODE_CITE:
@@ -356,34 +356,34 @@ markdown_core_node_type markdown_core_node_get_type(markdown_core_node *node) {
     }
 }
 
-int markdown_core_node_set_type(markdown_core_node *node, markdown_core_node_type type) {
-    markdown_core_node_type initial_type = (markdown_core_node_type)node->kind;
-    if (type == initial_type) {
-        return 1;
+markdown_core_node_set_kind_result markdown_core_node_set_kind(markdown_core_node *node, markdown_core_node_type kind) {
+    markdown_core_node_type initial_kind = (markdown_core_node_type)node->kind;
+    if (kind == initial_kind) {
+        return MARKDOWN_CORE_NODE_SET_KIND_OK;
     }
-    node->kind = (uint16_t)type;
+    node->kind = (uint16_t)kind;
     bool allowed = S_can_contain(node->parent, node);
-    node->kind = (uint16_t)initial_type;
+    node->kind = (uint16_t)initial_kind;
     if (!allowed) {
-        return 0;
+        return MARKDOWN_CORE_NODE_SET_KIND_REJECTED;
     }
 
     /* Allocate before releasing anything. A failed conversion preserves the
-     * old type, fields, and owned subtrees, with stable node identity. */
-    size_t size = S_node_payload_size(type);
+     * old kind, data, and owned subtrees, with stable node identity. */
+    size_t size = S_node_payload_size(kind);
     markdown_core_node_data replacement = {.data = size ? NODE_MEM(node)->calloc(1, size) : NULL};
     if (size && !replacement.data) {
-        return 0;
+        return MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED;
     }
-    S_init_node_as(type, &replacement);
+    S_init_node_as(kind, &replacement);
     markdown_core_node fields = {0};
     S_splice_owned_fields(node, &fields);
     S_free_nodes(fields.next);
     free_node_as(node);
     node->as = replacement;
     node->node_data_allocation = replacement.data;
-    node->kind = (uint16_t)type;
-    return 1;
+    node->kind = (uint16_t)kind;
+    return MARKDOWN_CORE_NODE_SET_KIND_OK;
 }
 
 const char *markdown_core_node_get_type_string(markdown_core_node *node) {

@@ -57,8 +57,12 @@ static delimiter *insert(const markdown_core_extension *self, markdown_core_pars
         goto done;
     }
 
-    if (!markdown_core_node_set_type(strikethrough, MARKDOWN_CORE_NODE_STRIKETHROUGH)) {
-        parser->oom = true;
+    markdown_core_node_set_kind_result result =
+        markdown_core_node_set_kind(strikethrough, MARKDOWN_CORE_NODE_STRIKETHROUGH);
+    if (result != MARKDOWN_CORE_NODE_SET_KIND_OK) {
+        if (result == MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED) {
+            parser->oom = true;
+        }
         goto done;
     }
 

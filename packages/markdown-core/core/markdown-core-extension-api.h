@@ -490,16 +490,24 @@ void markdown_core_parser_advance_offset(markdown_core_parser *parser, const cha
 MARKDOWN_CORE_EXPORT
 int markdown_core_parser_attach_extension(markdown_core_parser *parser, const markdown_core_extension *extension);
 
-/** Change the type of 'node'.
+typedef enum {
+    MARKDOWN_CORE_NODE_SET_KIND_OK,
+    MARKDOWN_CORE_NODE_SET_KIND_REJECTED,
+    MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED,
+} markdown_core_node_set_kind_result;
+
+/** Change 'node' to the internal kind encoded by 'kind'.
  *
- * Return 1 on success, or 0 if containment rejects the type or allocation fails.
- * Failure leaves the old type and all of its owned fields unchanged.
+ * Return OK on success, REJECTED when parent containment disallows the change,
+ * or ALLOCATION_FAILED when replacement node data cannot be allocated.
+ * Either failure preserves the original kind, data, and tree links.
  *
- * What the old type owned is released, and the new type's data starts as a
- * new node of that type would. An extension's opaque data belongs to the
- * node and its extension, not to the type, and stays in place.
+ * A change releases values owned by the old kind and installs the new kind's
+ * defaults. Node identity and extension-owned opaque data are preserved.
+ * Setting the current kind succeeds without allocating or changing its data.
  */
-MARKDOWN_CORE_EXPORT int markdown_core_node_set_type(markdown_core_node *node, markdown_core_node_type type);
+MARKDOWN_CORE_EXPORT markdown_core_node_set_kind_result markdown_core_node_set_kind(markdown_core_node *node,
+                                                                                    markdown_core_node_type kind);
 
 /** Return the string content for all types of 'node'.
  *  The pointer stays valid as long as 'node' isn't freed.
