@@ -75,6 +75,10 @@ artifact producers；任何 producer 失败、取消、跳过或缺失都会阻�
 - 仓库级契约检查(`check:contracts`、`check:gradle-model`)与审计
   (`audit:tests`、`audit:packages`)属于 `verify` 链,不属于 correctness 测试
   路由。
+- 扩展审计共用 descriptor 定义与实际挂接表的清单，按标识逐项校验，不能写死
+  扩展数量。`scripts/tests/extension-inventory.test.mjs` 验证清单增长、缺失、重复、
+  同数量但标识不一致及无法读取的声明；它和扩展、源文件清单、AST 投影审计同时
+  进入本地 `verify` 与 CI repository health check。
 
 ## 2. Runner ownership
 
