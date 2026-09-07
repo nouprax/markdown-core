@@ -50,6 +50,11 @@ emphasis, links, and other inline nodes. Matching consumes two equals signs
 at a time; unmatched signs remain text. Typed visitors and walking visitors
 include the `Mark` case, and its scope covers both delimiters and the body.
 
+`%%comment%%` produces `Comment`, the kind an HTML comment already produces,
+inline or as a block when both `%%` fences stand on lines of their own under
+the same container prefixes. The body is opaque and stored as written, nothing
+is stripped, and a consumer that does not want comments drops the nodes.
+
 `Document.parse` returns a discriminated `Markup` union with source scopes and
 recursively readonly TypeScript properties. The JavaScript objects are not
 runtime-frozen. The package exposes parsing and typed AST inspection, not

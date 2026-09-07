@@ -636,7 +636,7 @@ its behavior, with no separate publication step.
   through the shared algorithm; a Mark-only limit would create divergent
   semantics. The normative limit is not changed or claimed as implemented here.
 
-- [ ] **O3 — Comments.** Scan `%%...%%` from the shared cursor
+- [x] **O3 — Comments.** Scan `%%...%%` from the shared cursor
       with a linear closer search, classify block placement when both delimiters
       occupy their own lines and inline placement otherwise, keep the body
       opaque, and emit the `Comment(literal)` kind that `M0` adds, never
@@ -648,6 +648,79 @@ its behavior, with no separate publication step.
       title that is one `%%` comment, whose `title` is non-null and holds one
       `Comment`, is a cross-item case owned by whichever of `O3` and `O8` merges
       later. Requires `O1`.
+
+  Implementation notes (2026-09-07): `%%` is one extension descriptor,
+  `comment`, attached between `formula` and `cross_link`, which places it at
+  inline step A5 and block step 4 at once. The inline scanner consumes its body
+  from the shared cursor and caches a failed closer search under a rule id of
+  its own, `MARKDOWN_CORE_DELIM_RULE_COMMENT`, so a run of signs that never
+  closes costs one scan of its suffix. The block form is the first block start
+  whose grammar reaches past its own line, and it decides before it opens:
+  `markdown_core_parser_lookahead_begin` in `blocks.c` walks the raw source
+  after the current line and matches the open containers' prefixes through the
+  one container-prefix operation `check_open_blocks` now shares
+  (`S_container_prefix_matches`), with list flags saved and restored, a list
+  item whose first child is the block about to be added accepting blank lines
+  as it will then, and extension containers asked through a new
+  side-effect-free `continues_block` hook that the directive extension
+  provides. A candidate that fails consumes nothing, so its line is paragraph
+  text and the parser never rewinds; a candidate that commits is a block the
+  parser then reads line by line exactly as the lookahead saw it, and the
+  core's `finalize` builds the block's literal because `Comment` is a core
+  kind. A per-line resume cache keeps the lookahead linear: two failed
+  candidates that reach one line have nested container chains, so the later
+  one resumes from the state the earlier one recorded, and recorded blank runs
+  are stepped over at once when the extra containers are lists and items;
+  footnote nesting is bounded by `MAX_FOOTNOTE_DEPTH`, and directive containers
+  cannot nest failing candidates because they add no prefix. The footnote
+  continuation test now asks for a line-ending byte rather than an LF
+  spelling, which changes nothing for `curline` and lets a lookahead line keep
+  its own terminator.
+
+  The module was amended in the three places its examples did not decide: the
+  closer is the same fence line as the opener, trailing spaces or tabs
+  included; the backslash escape takes one sign out of a run, so `\%%%a%%` is
+  the text `%` and the comment `a`, stated by a new module example; and a
+  block comment's scope includes the whitespace after either fence. A fence
+  line that could continue a paragraph lazily is a block start, and a
+  container's own closing line ends a candidate's scan. Forty-one package
+  cases include all fifteen module examples in order, the block-boundary
+  example printing `anchor=null` until `P3` generates the heading anchor, plus
+  adjacent, escaped, unmatched, and percent-run forms, Markdown-looking and
+  every-merged-extension bodies, comments inside every earlier opaque
+  construct, an HTML comment beside a `%%` comment, marks and cross links
+  beside comments, table cells with `\|`, footnote content, and every block
+  boundary: fence whitespace and indentation, blank runs, nested quotes and
+  items, failing candidates, lazy lines, Setext and thematic-break precedence,
+  directive closers, and tables. The marks module's `==%%c%%==` joins the
+  marks fixture, and the `comments` canonical case gains both `%%` forms. The
+  two Obsidian `comment-*` gaps are retired: the oracle's comment removal is
+  the registered `comment-removal` projection with a recognition canary, and
+  the corpus gains a comment-only paragraph and a quoted multi-line body. The
+  cmark corpus now selects the fixture's untagged HTML-comment examples; the
+  `%%` examples carry the `comment` tag. Position and reference-resolution
+  ledgers are unchanged. The callout-title composition stays with `O8`.
+
+  Validation (2026-09-07): the projection audit covers 31 kinds over 13
+  surfaces and 11 canonical cases. C correctness (74 tests, including the four
+  new pathological cases and the strict OOM sweep over a nested-container
+  comment corpus) and conformance (2 tests) pass, and so do the ASan, UBSan,
+  and TSan presets. The api harness bounds the inline scanner's work over
+  thirteen size-doubling shapes and the lookahead's visited lines plus matched
+  prefix bytes over five nested-container shapes, from 16 to 128 levels deep.
+  The four oracle gates pass: Obsidian over 20 inputs with 9 of 9 remaining
+  gaps reproduced, CommonMark 703 of 703, GFM 81 of 81, remark 149 of 149; and
+  400-input seed-1 fuzz runs for CommonMark, GFM, and remark agree. Position
+  places, scope containment, inline sourcepos, and reference-order ledgers
+  hold without an update. Prettier, eslint, clang-format 23.1.0, cmake-format,
+  the extension inventory, special-character, attach-order, source-list, AST
+  projection, canonical manifest, repository, and test topology audits pass.
+  The Swift, Kotlin, and ES suites, the release dry run, and the audits that
+  need those toolchains did not run in this environment, which has no Swift,
+  Emscripten, or Android SDK; this item changes no binding source, and the
+  shared canonical case gains only `Comment` lines every dumper already
+  prints. Full cross-host aggregation remains the required CI check.
+
 - [ ] **O4 — Inline footnotes.** Recognize `^[content]` inside the shared bracket algorithm,
       ahead of superscript, producing one one-item `Cite` with a `footnote`
       referent and one document-owned `Footnote` whose content is the parsed

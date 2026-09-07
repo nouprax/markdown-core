@@ -8,6 +8,7 @@
 #include "tasklist.h"
 #include "formula.h"
 #include "directive.h"
+#include "comment.h"
 #include "cross_link.h"
 
 // THE attach order, and the only place in the library it is written down.
@@ -32,14 +33,22 @@
 // scanner owns its whole span before the cursor can reach an equals run.
 // They need no descriptor and do not change this extension attach order.
 //
+// `comment` sits between `formula` and `cross_link`, and the one position
+// answers both of its forms: inline it is step A5, after the formula scanner
+// (A4) and before the cross link (A6), and as a block start it is step 4,
+// after the formula block (3) and before directives and tables. The three
+// dispatch on disjoint bytes, so what the order decides is only what happens
+// inside a body: a formula that opened first owns the `%%` in it, and a
+// comment that opened first owns the `[[` in it.
+//
 // Every row is attached by every parse.  There is no mask and no name: the
 // dialect has no switches, so a table that could be attached in part would be
 // a second language nothing ships, and a name would be a registry nothing
 // reads.  A feature is public from the commit that adds its row.
 static const markdown_core_extension *const CORE_EXTENSIONS[] = {
-    &MARKDOWN_CORE_EXTENSION_STRIKETHROUGH, &MARKDOWN_CORE_EXTENSION_AUTOLINK,   &MARKDOWN_CORE_EXTENSION_TASKLIST,
-    &MARKDOWN_CORE_EXTENSION_FORMULA,       &MARKDOWN_CORE_EXTENSION_CROSS_LINK, &MARKDOWN_CORE_EXTENSION_DIRECTIVE,
-    &MARKDOWN_CORE_EXTENSION_TABLE};
+    &MARKDOWN_CORE_EXTENSION_STRIKETHROUGH, &MARKDOWN_CORE_EXTENSION_AUTOLINK, &MARKDOWN_CORE_EXTENSION_TASKLIST,
+    &MARKDOWN_CORE_EXTENSION_FORMULA,       &MARKDOWN_CORE_EXTENSION_COMMENT,  &MARKDOWN_CORE_EXTENSION_CROSS_LINK,
+    &MARKDOWN_CORE_EXTENSION_DIRECTIVE,     &MARKDOWN_CORE_EXTENSION_TABLE};
 
 #define CORE_EXTENSION_COUNT (sizeof(CORE_EXTENSIONS) / sizeof(CORE_EXTENSIONS[0]))
 

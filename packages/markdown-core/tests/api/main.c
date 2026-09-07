@@ -2344,7 +2344,7 @@ static void universal_values(test_batch_runner *runner) {
 /* Count visited source positions as well as verifying values. Repeated failed
  * candidates share one extent, so they cannot rescan each other's suffixes. */
 typedef struct {
-    size_t cross_link, opaque, delimiters;
+    size_t cross_link, opaque, delimiters, comment, lookahead;
 } inline_work;
 static markdown_core_node *record_inline_work(const markdown_core_extension *extension, markdown_core_parser *parser,
                                               markdown_core_node *root) {
@@ -2353,6 +2353,8 @@ static markdown_core_node *record_inline_work(const markdown_core_extension *ext
     work->cross_link = parser->cross_link_scan_work;
     work->opaque = parser->opaque_scan_work;
     work->delimiters = parser->delimiter_work;
+    work->comment = parser->comment_scan_work;
+    work->lookahead = parser->block_lookahead_work;
     root->user_data = NULL;
     return root;
 }
@@ -2458,6 +2460,236 @@ static void mark_linear_work(test_batch_runner *runner) {
     }
 }
 
+static size_t count_kind(markdown_core_node *root, markdown_core_node_type kind) {
+    size_t found = 0;
+    markdown_core_iter *iter = markdown_core_iter_new(root);
+    markdown_core_event_type event;
+    while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+        if (event == MARKDOWN_CORE_EVENT_ENTER && markdown_core_iter_get_node(iter)->kind == kind) {
+            found++;
+        }
+    }
+    markdown_core_iter_free(iter);
+    return found;
+}
+
+/* O3: the inline `%%` scanner. Every failed closer search is cached under the
+ * comment's rule, so a run of signs that never closes, a body that crosses
+ * another construct's bytes, and a comment beside every earlier opaque
+ * construct all cost work proportional to the input. */
+static void comment_inline_linear_work(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    static const struct {
+        const char *prefix, *unit, *suffix;
+        size_t comments_per_unit; /* comments per unit, or 0 when the count is asserted separately */
+    } cases[] = {
+        {"", "%%a%% ", "", 1},                // closed comments
+        {"", "%%%%", "", 1},                  // adjacent empty comments
+        {"", "%", "", 0},                     // one maximal run: pairs close, at most one sign is text
+        {"", "%%%a", "", 0},                  // the leftover of each run opens the next candidate
+        {"%%", "a", "", 0},                   // one opener, one long failed search
+        {"", "%% a", "", 0},                  // openers whose closers are the next openers
+        {"", "\\%%a", "", 0},                 // escaped signs never open
+        {"", "$%%$ ", "", 0},                 // formula bodies own their signs
+        {"", "`%%` ", "", 0},                 // code spans own their signs
+        {"", "[[%%]] ", "", 0},               // cross links own their signs
+        {"", "%%[[a", "", 0},                 // comment bodies own brackets
+        {"", "==%%a%%== ", "", 1},            // marks around comments
+        {"", "%%a%%%%b%% <!-- c -->", "", 3}, // both grammars side by side, three Comment nodes
+    };
+    for (size_t c = 0; c < sizeof(cases) / sizeof(*cases); c++) {
+        for (size_t count = 128; count <= 8192; count *= 2) {
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+            markdown_core_strbuf_puts(&source, cases[c].prefix);
+            for (size_t i = 0; i < count; i++) {
+                markdown_core_strbuf_puts(&source, cases[c].unit);
+            }
+            markdown_core_strbuf_puts(&source, cases[c].suffix);
+            inline_work work = {0};
+            markdown_core_node *root = markdown_core_parse_document_with_mem(
+                (char *)source.ptr, source.size, MARKDOWN_CORE_DIALECT_OPTIONS, mem, measure_inline_work, &work);
+            OK(runner, root != NULL, "adversarial percent runs parse successfully");
+            OK(runner, work.comment + work.opaque <= 4 * (size_t)source.size,
+               "comment scanner work is linear: case=%zu size=%d comment=%zu opaque=%zu", c, source.size, work.comment,
+               work.opaque);
+            if (cases[c].comments_per_unit) {
+                INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_COMMENT), count * cases[c].comments_per_unit,
+                       "every closed comment is one Comment node");
+            }
+            markdown_core_node_free(root);
+            markdown_core_strbuf_free(&source);
+        }
+    }
+}
+
+/* O3: the block form's lookahead. A candidate scans forward under the open
+ * containers' prefixes; nested containers each carrying a candidate that never
+ * closes are the shape that would rescan every line once per container, and
+ * blank runs inside nested list items are the shape that would visit every
+ * blank line once per candidate. The recorded work counts lines visited and
+ * prefix bytes matched, and stays within a constant of the input size. */
+static void comment_block_linear_work(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    for (int shape = 0; shape < 5; shape++) {
+        for (size_t depth = 16; depth <= 128; depth *= 2) {
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+            size_t expected_comments = 0;
+            size_t expected_paragraphs = 0;
+            size_t i;
+            switch (shape) {
+            case 0: /* nested block quotes, each opening a candidate, no closer anywhere */
+                for (i = 1; i <= depth; i++) {
+                    for (size_t j = 0; j < i; j++) {
+                        markdown_core_strbuf_puts(&source, "> ");
+                    }
+                    markdown_core_strbuf_puts(&source, "%%\n");
+                }
+                expected_paragraphs = depth;
+                break;
+            case 1: /* nested block quotes whose deepest candidate closes; the outer ones cannot */
+                for (i = 1; i <= depth; i++) {
+                    for (size_t j = 0; j < i; j++) {
+                        markdown_core_strbuf_puts(&source, "> ");
+                    }
+                    markdown_core_strbuf_puts(&source, "%%\n");
+                }
+                for (size_t j = 0; j < depth; j++) {
+                    markdown_core_strbuf_puts(&source, "> ");
+                }
+                markdown_core_strbuf_puts(&source, "x\n");
+                for (size_t j = 0; j < depth; j++) {
+                    markdown_core_strbuf_puts(&source, "> ");
+                }
+                markdown_core_strbuf_puts(&source, "%%\n");
+                expected_comments = 1;
+                expected_paragraphs = depth - 1;
+                break;
+            case 2: /* nested list items, each opening a candidate, then a long blank run */
+                for (i = 1; i <= depth; i++) {
+                    for (size_t j = 1; j < i; j++) {
+                        markdown_core_strbuf_puts(&source, "  ");
+                    }
+                    markdown_core_strbuf_puts(&source, "- %%\n");
+                }
+                for (i = 0; i < depth * depth; i++) {
+                    markdown_core_strbuf_puts(&source, "\n");
+                }
+                expected_paragraphs = depth;
+                break;
+            case 3: /* nested list items with blank runs between non-blank continuation lines */
+                for (i = 1; i <= depth; i++) {
+                    for (size_t j = 1; j < i; j++) {
+                        markdown_core_strbuf_puts(&source, "  ");
+                    }
+                    markdown_core_strbuf_puts(&source, "- %%\n");
+                }
+                for (i = 0; i < depth; i++) {
+                    for (size_t j = 0; j < depth; j++) {
+                        markdown_core_strbuf_puts(&source, "\n");
+                    }
+                    for (size_t j = 0; j < depth; j++) {
+                        markdown_core_strbuf_puts(&source, "  ");
+                    }
+                    markdown_core_strbuf_puts(&source, "x\n");
+                }
+                expected_paragraphs = depth + depth;
+                break;
+            default: /* many candidates in sibling items: each scan ends at its item's end */
+                for (i = 0; i < depth * depth; i++) {
+                    markdown_core_strbuf_puts(&source, "- %%\n  a\n");
+                }
+                expected_paragraphs = depth * depth;
+                break;
+            }
+            inline_work work = {0};
+            markdown_core_node *root = markdown_core_parse_document_with_mem(
+                (char *)source.ptr, source.size, MARKDOWN_CORE_DIALECT_OPTIONS, mem, measure_inline_work, &work);
+            OK(runner, root != NULL, "nested block comment candidates parse successfully");
+            OK(runner, work.lookahead <= 4 * (size_t)source.size,
+               "block lookahead work is linear: shape=%d size=%d work=%zu", shape, source.size, work.lookahead);
+            INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_COMMENT_BLOCK), expected_comments,
+                   "only a closed candidate is a block comment: shape=%d depth=%zu", shape, depth);
+            INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_PARAGRAPH), expected_paragraphs,
+                   "a failed candidate's line is paragraph text: shape=%d depth=%zu", shape, depth);
+            markdown_core_node_free(root);
+            markdown_core_strbuf_free(&source);
+        }
+    }
+}
+
+static bool attach_dialect(markdown_core_parser *parser, void *context) {
+    (void)context;
+    return markdown_core_core_extensions_attach(parser) != 0;
+}
+
+/* O3: the `%%` forms produce the `Comment` kind M0 added, on the engine's own
+ * accessors, with the type strings and positions the HTML forms have. */
+static void percent_comment_nodes(test_batch_runner *runner) {
+    static const char markdown[] = "a %%b%% c %%%% %%x\r\ny%% d\r\n"
+                                   "\r\n"
+                                   "%%\r\n"
+                                   "  block\r\n"
+                                   "\r\n"
+                                   "%%\t\r\n"
+                                   "\r\n"
+                                   "> %%\r\n"
+                                   "> q\r\n"
+                                   "> %%\r\n"
+                                   "\r\n"
+                                   "%%\r\n"
+                                   "open\r\n";
+    /* The engine entry with the dialect attached: `%%` is an extension's
+     * syntax, unlike the HTML comment of `comment_nodes` above. */
+    markdown_core_node *doc =
+        markdown_core_parse_document_with_mem(markdown, sizeof(markdown) - 1, MARKDOWN_CORE_DIALECT_OPTIONS,
+                                              markdown_core_get_default_mem_allocator(), attach_dialect, NULL);
+    markdown_core_node *paragraph = markdown_core_node_first_child(doc);
+    markdown_core_node *text = markdown_core_node_first_child(paragraph);
+    markdown_core_node *comment = markdown_core_node_next(text);
+    markdown_core_node *empty = markdown_core_node_next(markdown_core_node_next(comment));
+    markdown_core_node *spanning = markdown_core_node_next(markdown_core_node_next(empty));
+    markdown_core_node *block = markdown_core_node_next(paragraph);
+    markdown_core_node *quote = markdown_core_node_next(block);
+    markdown_core_node *quoted = markdown_core_node_first_child(quote);
+    markdown_core_node *open = markdown_core_node_next(quote);
+
+    INT_EQ(runner, markdown_core_node_get_type(comment), MARKDOWN_CORE_NODE_COMMENT, "inline `%%` comment type");
+    STR_EQ(runner, markdown_core_node_get_type_string(comment), "comment", "inline `%%` comment type string");
+    STR_EQ(runner, markdown_core_node_get_literal(comment), "b", "inline literal excludes the delimiters");
+    INT_EQ(runner, markdown_core_node_get_start_column(comment), 3, "inline scope starts at the opener");
+    INT_EQ(runner, markdown_core_node_get_end_column(comment), 7, "inline scope ends at the closer");
+    INT_EQ(runner, markdown_core_node_get_type(empty), MARKDOWN_CORE_NODE_COMMENT, "`%%%%` is a comment");
+    STR_EQ(runner, markdown_core_node_get_literal(empty), "", "`%%%%` has an empty literal");
+    STR_EQ(runner, markdown_core_node_get_literal(spanning), "x\ny",
+           "a body spanning lines keeps one LF per line ending");
+    INT_EQ(runner, markdown_core_node_get_start_line(spanning), 1, "a spanning body starts on its opener line");
+    INT_EQ(runner, markdown_core_node_get_end_line(spanning), 2, "a spanning body ends on its closer line");
+    INT_EQ(runner, markdown_core_node_get_end_column(spanning), 3, "a spanning body ends at its closer");
+
+    INT_EQ(runner, markdown_core_node_get_type(block), MARKDOWN_CORE_NODE_COMMENT_BLOCK, "block `%%` comment type");
+    STR_EQ(runner, markdown_core_node_get_type_string(block), "comment_block", "block `%%` comment type string");
+    STR_EQ(runner, markdown_core_node_get_literal(block), "  block\n\n",
+           "block literal keeps indentation, blank lines, and LF line endings, and excludes both fences");
+    INT_EQ(runner, markdown_core_node_get_start_line(block), 4, "block starts on its opener line");
+    INT_EQ(runner, markdown_core_node_get_end_line(block), 7, "block ends on its closer line");
+    INT_EQ(runner, markdown_core_node_get_end_column(block), 3, "block ends at its closer line's last byte");
+    OK(runner, markdown_core_node_first_child(block) == NULL, "a block comment is a leaf");
+
+    INT_EQ(runner, markdown_core_node_get_type(quote), MARKDOWN_CORE_NODE_CALLOUT,
+           "the quoted form is inside its container");
+    INT_EQ(runner, markdown_core_node_get_type(quoted), MARKDOWN_CORE_NODE_COMMENT_BLOCK, "a quoted block comment");
+    STR_EQ(runner, markdown_core_node_get_literal(quoted), "q\n", "a quoted literal has its prefix removed");
+    INT_EQ(runner, markdown_core_node_get_start_column(quoted), 3, "a quoted block starts after the prefix");
+
+    INT_EQ(runner, markdown_core_node_get_type(open), MARKDOWN_CORE_NODE_PARAGRAPH,
+           "an unclosed candidate is a paragraph");
+    STR_EQ(runner, markdown_core_node_get_literal(markdown_core_node_first_child(open)), "%%",
+           "an unmatched opener is text");
+    OK(runner, markdown_core_node_next(open) == NULL, "nothing follows the unclosed candidate");
+
+    markdown_core_node_free(doc);
+}
+
 static void cross_link_fields(test_batch_runner *runner) {
     const char *source = "[[ Note ]] [[Note|]] ![[#^block|raw *label*]]";
     markdown_core_document *doc = markdown_core_document_parse((const uint8_t *)source, strlen(source), NULL);
@@ -2556,6 +2788,9 @@ int main(void) {
     attribute_linear_work(runner);
     cross_link_linear_work(runner);
     mark_linear_work(runner);
+    comment_inline_linear_work(runner);
+    comment_block_linear_work(runner);
+    percent_comment_nodes(runner);
     cross_link_fields(runner);
     node_payload_lifecycle(runner);
     kind_conversion_containment(runner);

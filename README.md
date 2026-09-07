@@ -50,6 +50,11 @@ emphasis, links, and other inline nodes. Matching consumes two equals signs
 at a time; unmatched signs remain text. Typed visitors and walking visitors
 include the `Mark` case, and its scope covers both delimiters and the body.
 
+`%%comment%%` produces `Comment`, the kind an HTML comment already produces,
+inline or as a block when both `%%` fences stand on lines of their own under
+the same container prefixes. The body is opaque and stored as written, nothing
+is stripped, and a consumer that does not want comments drops the nodes.
+
 Tables expose `columns: [TableColumn]` and three ordered row groups: `head`,
 `content`, and `foot`. Each column carries alignment and an optional relative
 width; each cell carries positive `rowspan`/`colspan` and its parsed `content`.

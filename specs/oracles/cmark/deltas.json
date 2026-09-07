@@ -112,7 +112,8 @@
         },
         {
             "file": "packages/markdown-core/tests/fixtures/dialect-comments.txt",
-            "note": "The comments module's HTML-comment examples: cmark owns the token and block boundaries, and the `html-comment-node` projection states the one model difference."
+            "selection": "untagged",
+            "note": "The comments module's HTML-comment examples: cmark owns the token and block boundaries, and the `html-comment-node` projection states the one model difference. The module's `%%` examples carry the `comment` tag; that syntax is Obsidian's, judged by remark-obsidian and the product fixtures, and cmark has no opinion on it."
         },
         {
             "file": "packages/markdown-core/tests/fixtures/dialect-links-and-images.txt",

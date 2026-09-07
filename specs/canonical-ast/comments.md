@@ -8,3 +8,15 @@ line
 -->
 
 <!-- a --> b
+
+before %%hidden%% after %%%% %%a%%%%b%% %%x
+y%%
+
+%%
+block
+comment
+%%
+
+> %%
+> quoted
+> %%

@@ -254,7 +254,7 @@ and returns no document.
 | `Code` | `literal: String` | mode is `embedded`; leaf |
 | `HTML` | `literal: String` | raw HTML is preserved; an HTML comment token is a `Comment`; leaf |
 | `CrossLink` | `embedded: Bool`, `dest: Destination`, `label: String?` | inline leaf; cross destination and raw authored label; no separator means null |
-| `Comment` | `literal: String` | the one kind valid in both block and inline content, which the parent edge records; `literal` excludes the delimiters and keeps every byte between them; leaf |
+| `Comment` | `literal: String` | an HTML comment or a `%%` comment, the one kind valid in both block and inline content, which the parent edge records; `literal` excludes the delimiters and keeps every byte between them; leaf |
 | `Formula` | `mode: PlacementMode`, `literal: String` | either mode; leaf |
 | `Emphasis` | `content: [Markup]` | inline content |
 | `Strong` | `content: [Markup]` | inline content |
@@ -310,8 +310,8 @@ and it takes no options. The parser recognizes the one dialect of
 `ParseOptions`, no profile, no preset, and no switch of any kind, on the C
 facade, the installed CLI, or any binding. Quotation marks, hyphen runs, and
 periods are stored as written; the parser has no smart punctuation. Nothing
-strips anything: an HTML comment is a `Comment` node, and a consumer that does
-not want comments drops the nodes.
+strips anything: an HTML comment and a `%%` comment are `Comment` nodes, and a
+consumer that does not want comments drops the nodes.
 
 A parse returns exactly the `Document` this document describes. The document
 does not retain source text, a normalized source copy, a line index, tokens,

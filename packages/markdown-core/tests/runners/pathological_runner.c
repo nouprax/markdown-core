@@ -486,6 +486,105 @@ static int case_unclosed_comment(pc_context *context) {
     return pc_expect_text_is_input(context);
 }
 
+/* O3: a run of percent signs is a run of empty comments, four signs each; only
+ * a leftover sign is text. */
+static int case_comment_percent_runs(pc_context *context) {
+    if (pc_build(context, NULL, "%", 300001, NULL) != 0 || pc_parse(context) != 0) {
+        return -1;
+    }
+    if (pc_expect_count(context, MARKDOWN_CORE_KIND_COMMENT, 75000, "Comment") != 0) {
+        return -1;
+    }
+    return pc_expect_text(context, "%", 1);
+}
+
+/* O3: one unclosed opener ahead of a long body is one failed closer search,
+ * and every later sign reuses its result. */
+static int case_comment_unclosed_body(pc_context *context) {
+    if (pc_build(context, "%%", "a%", 200000, NULL) != 0 || pc_parse(context) != 0) {
+        return -1;
+    }
+    if (pc_expect_count(context, MARKDOWN_CORE_KIND_COMMENT, 0, "Comment") != 0) {
+        return -1;
+    }
+    return pc_expect_text_is_input(context);
+}
+
+/* O3: nested block quotes each opening a block-comment candidate that never
+ * closes. Every candidate's lookahead runs to the end of the input; the resume
+ * cache keeps the total linear in the input, which is quadratic in the depth. */
+static int case_comment_nested_quote_candidates(pc_context *context) {
+    const size_t depth = 700;
+    size_t total = 0;
+    size_t i, j, at = 0;
+    for (i = 1; i <= depth; i++) {
+        total += 2 * i + 3;
+    }
+    context->input = (char *)malloc(total + 1);
+    if (!context->input) {
+        return -1;
+    }
+    for (i = 1; i <= depth; i++) {
+        for (j = 0; j < i; j++) {
+            context->input[at++] = '>';
+            context->input[at++] = ' ';
+        }
+        context->input[at++] = '%';
+        context->input[at++] = '%';
+        context->input[at++] = '\n';
+    }
+    context->input[at] = 0;
+    context->input_length = at;
+    if (pc_parse(context) != 0) {
+        return -1;
+    }
+    if (pc_expect_count(context, MARKDOWN_CORE_KIND_COMMENT, 0, "Comment") != 0 ||
+        pc_expect_count(context, MARKDOWN_CORE_KIND_CALLOUT, depth, "Callout") != 0 ||
+        pc_expect_count(context, MARKDOWN_CORE_KIND_PARAGRAPH, depth, "Paragraph") != 0) {
+        return -1;
+    }
+    return 0;
+}
+
+/* O3: nested list items each opening a candidate, followed by a run of blank
+ * lines longer than the input's structure. A candidate steps over a recorded
+ * blank run at once, so the run is not visited once per candidate. */
+static int case_comment_nested_item_blank_runs(pc_context *context) {
+    const size_t depth = 300;
+    const size_t blanks = 200000;
+    size_t total = 0;
+    size_t i, j, at = 0;
+    for (i = 1; i <= depth; i++) {
+        total += 2 * (i - 1) + 5;
+    }
+    total += blanks;
+    context->input = (char *)malloc(total + 1);
+    if (!context->input) {
+        return -1;
+    }
+    for (i = 1; i <= depth; i++) {
+        for (j = 1; j < i; j++) {
+            context->input[at++] = ' ';
+            context->input[at++] = ' ';
+        }
+        memcpy(context->input + at, "- %%\n", 5);
+        at += 5;
+    }
+    memset(context->input + at, '\n', blanks);
+    at += blanks;
+    context->input[at] = 0;
+    context->input_length = at;
+    if (pc_parse(context) != 0) {
+        return -1;
+    }
+    if (pc_expect_count(context, MARKDOWN_CORE_KIND_COMMENT, 0, "Comment") != 0 ||
+        pc_expect_count(context, MARKDOWN_CORE_KIND_LIST_ITEM, depth, "ListItem") != 0 ||
+        pc_expect_count(context, MARKDOWN_CORE_KIND_PARAGRAPH, depth, "Paragraph") != 0) {
+        return -1;
+    }
+    return 0;
+}
+
 static int case_tables(pc_context *context) {
     const markdown_core_node *root;
     const markdown_core_node *paragraph;
@@ -1021,6 +1120,10 @@ static const pc_case_entry PC_CASES[] = {
     {"unclosed_links_a", case_unclosed_links_a},
     {"unclosed_links_b", case_unclosed_links_b},
     {"unclosed_comment", case_unclosed_comment},
+    {"comment_percent_runs", case_comment_percent_runs},
+    {"comment_unclosed_body", case_comment_unclosed_body},
+    {"comment_nested_quote_candidates", case_comment_nested_quote_candidates},
+    {"comment_nested_item_blank_runs", case_comment_nested_item_blank_runs},
     {"tables", case_tables},
     {"reference_collisions", case_reference_collisions},
     {"reference_expansion_bound", case_reference_expansion_bound},

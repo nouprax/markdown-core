@@ -156,6 +156,18 @@ static void S_parser_dispose(markdown_core_parser *parser) {
     parser->line_marks = NULL;
     parser->line_marks_size = 0;
     parser->line_marks_alloc = 0;
+
+    /* The block-start lookahead's chain and resume cache are parser state of
+     * the same kind: indexed by open containers and source lines, owned by no
+     * node, and dead with the parse. */
+    parser->mem->free(parser->lookahead_chain);
+    parser->mem->free(parser->lookahead_chain_flags);
+    parser->mem->free(parser->lookahead_entries);
+    parser->lookahead_chain = NULL;
+    parser->lookahead_chain_flags = NULL;
+    parser->lookahead_chain_alloc = 0;
+    parser->lookahead_entries = NULL;
+    parser->lookahead_entries_alloc = 0;
 }
 
 static markdown_core_parser *S_parser_new(int options, markdown_core_mem *mem) {
@@ -173,6 +185,7 @@ static markdown_core_parser *S_parser_new(int options, markdown_core_mem *mem) {
     parser->options = options;
     markdown_core_strbuf_init(parser->mem, &parser->curline, 256);
     markdown_core_strbuf_init(parser->mem, &parser->line_scratch, 0);
+    markdown_core_strbuf_init(parser->mem, &parser->lookahead_last_line, 0);
 
     document = make_document(parser->mem);
     parser->refmap = markdown_core_reference_map_new(parser->mem);
@@ -183,7 +196,7 @@ static markdown_core_parser *S_parser_new(int options, markdown_core_mem *mem) {
     /* A transaction that could not build its initial structures is poisoned:
      * source processing becomes a no-op and the parse reports failure. */
     if (!parser->root || !parser->refmap || !parser->footnote_defs || parser->curline.oom || parser->line_scratch.oom ||
-        parser->root->content.oom) {
+        parser->lookahead_last_line.oom || parser->root->content.oom) {
         parser->oom = true;
     }
 
@@ -200,6 +213,7 @@ static void S_parser_free(markdown_core_parser *parser) {
     S_parser_dispose(parser);
     markdown_core_strbuf_free(&parser->curline);
     markdown_core_strbuf_free(&parser->line_scratch);
+    markdown_core_strbuf_free(&parser->lookahead_last_line);
     markdown_core_llist_free(parser->mem, parser->extensions);
     markdown_core_llist_free(parser->mem, parser->inline_extensions);
     mem->free(parser);
@@ -786,6 +800,21 @@ static markdown_core_node *finalize(markdown_core_parser *parser, markdown_core_
         break;
     }
 
+    case MARKDOWN_CORE_NODE_COMMENT_BLOCK:
+        /* O3: a `%%` block comment arrives here with its lines in `content`:
+         * the opener line contributed nothing, because the extension that
+         * opened it consumed the line, and the closer line is not there,
+         * because its matcher closed the block before the line could be
+         * added. The literal is those lines, indentation and line endings as
+         * written after container-prefix removal. An HTML block comment never
+         * takes this arm: it is finalized as the HTML block it was parsed as
+         * and retyped above. */
+        *b->as.literal = markdown_core_chunk_buf_detach(node_content);
+        if (!b->as.literal->data) {
+            parser->oom = true;
+        }
+        break;
+
     case MARKDOWN_CORE_NODE_LIST: // determine tight/loose status
         b->as.list->tight = true; // tight by default
         item = b->first_child;
@@ -1220,6 +1249,17 @@ static void S_parse_source(markdown_core_parser *parser, const unsigned char *so
         line_complete = eol == end || S_is_line_end_char(*eol);
         segment_length = (bufsize_t)(eol - cursor);
         if (line_complete) {
+            /* Where the next raw line begins, for a block start that must look
+             * past its own line before it opens (markdown_core_parser_lookahead_begin). */
+            const unsigned char *next = eol;
+            if (next < end && *next == '\r') {
+                next++;
+            }
+            if (next < end && *next == '\n') {
+                next++;
+            }
+            parser->lookahead_cursor = next;
+            parser->lookahead_end = end;
             if (parser->line_scratch.size > 0) {
                 if (!S_line_scratch_reserve(parser, segment_length)) {
                     return;
@@ -1256,6 +1296,8 @@ static void S_parse_source(markdown_core_parser *parser, const unsigned char *so
 
     /* A final NUL has no line terminator to trigger the completed line. */
     if (!parser->oom && parser->line_scratch.size > 0) {
+        parser->lookahead_cursor = end;
+        parser->lookahead_end = end;
         S_process_line(parser, parser->line_scratch.ptr, parser->line_scratch.size);
         markdown_core_strbuf_clear(&parser->line_scratch);
     }
@@ -1408,7 +1450,10 @@ static bool parse_footnote_definition_block_prefix(markdown_core_parser *parser,
     if (parser->indent >= 4) {
         S_advance_offset(parser, input, 4, true);
         return true;
-    } else if (input->len > 0 && (input->data[0] == '\n' || (input->data[0] == '\r' && input->data[1] == '\n'))) {
+    } else if (input->len > 0 && S_is_line_end_char((char)input->data[0])) {
+        /* An empty line. The line reader hands `curline` LF-terminated, and a
+         * lookahead line keeps its own terminator, CR included: the test is on
+         * the kind of the first byte, not its spelling. */
         return true;
     }
 
@@ -1416,16 +1461,18 @@ static bool parse_footnote_definition_block_prefix(markdown_core_parser *parser,
 }
 
 static bool parse_node_item_prefix(markdown_core_parser *parser, markdown_core_chunk *input,
-                                   markdown_core_node *container) {
+                                   markdown_core_node *container, bool child_pending) {
     bool res = false;
 
     if (parser->indent >= container->as.list->marker_offset + container->as.list->padding) {
         S_advance_offset(parser, input, container->as.list->marker_offset + container->as.list->padding, true);
         res = true;
-    } else if (parser->blank && container->first_child != NULL) {
+    } else if (parser->blank && (container->first_child != NULL || child_pending)) {
         // if container->first_child is NULL, then the opening line
         // of the list item was blank after the list marker; in this
-        // case, we are done with the list item.
+        // case, we are done with the list item. A lookahead asks on
+        // behalf of a child the current line is about to add, and the
+        // item then behaves as it will once that child exists.
         S_advance_offset(parser, input, parser->first_nonspace - parser->offset, false);
         res = true;
     }
@@ -1496,6 +1543,44 @@ static bool parse_html_block_prefix(markdown_core_parser *parser, markdown_core_
     return res;
 }
 
+/* ONE CONTAINER'S CLAIM ON THE LINE at the parser's cursor, for the kinds whose
+ * prefix the core knows: the block quote's `>`, the list item's indentation,
+ * the footnote definition's four columns, and the list's rule for consecutive
+ * blank lines. `check_open_blocks` asks it walking down the open spine, and
+ * the block-start lookahead asks the same question of the same containers on
+ * later lines, so a candidate's decision and the parse that follows it cannot
+ * disagree about which lines a container owns.
+ *
+ * Returns false when the line does not carry the container's prefix. `taken`
+ * is set when a list took the whole line: a second consecutive blank line at
+ * indentation zero cannot open a block, every closable descendant was closed
+ * by the first, and only a raw-line leaf still wants it. `joining` is the
+ * block a lookahead is about to add, or NULL in the real pass. */
+static bool S_container_prefix_matches(markdown_core_parser *parser, markdown_core_node *container,
+                                       markdown_core_chunk *input, const markdown_core_node *joining, bool *taken) {
+    switch (S_type(container)) {
+    case MARKDOWN_CORE_NODE_CALLOUT:
+        return parse_callout_prefix(parser, input);
+    case MARKDOWN_CORE_NODE_LIST:
+        if (parser->blank) {
+            if ((container->flags & MARKDOWN_CORE_NODE__LIST_LAST_LINE_BLANK) && parser->indent == 0) {
+                *taken = true;
+                return true;
+            }
+            container->flags |= MARKDOWN_CORE_NODE__LIST_LAST_LINE_BLANK;
+        } else {
+            container->flags &= ~MARKDOWN_CORE_NODE__LIST_LAST_LINE_BLANK;
+        }
+        return true;
+    case MARKDOWN_CORE_NODE_LIST_ITEM:
+        return parse_node_item_prefix(parser, input, container, joining == container);
+    case MARKDOWN_CORE_NODE_FOOTNOTE:
+        return parse_footnote_definition_block_prefix(parser, input, container);
+    default:
+        return true;
+    }
+}
+
 static bool parse_extension_block(markdown_core_parser *parser, markdown_core_node *container,
                                   markdown_core_chunk *input, bool *should_continue) {
     int matched;
@@ -1561,36 +1646,6 @@ static markdown_core_node *check_open_blocks(markdown_core_parser *parser, markd
         }
 
         switch (cont_type) {
-        case MARKDOWN_CORE_NODE_CALLOUT:
-            if (!parse_callout_prefix(parser, input)) {
-                goto done;
-            }
-            break;
-        case MARKDOWN_CORE_NODE_LIST:
-            /* A second consecutive blank line inside a deeply nested list
-             * cannot open a block and all closable descendants were already
-             * closed by the first. Returning NULL avoids walking the same
-             * nesting spine for every remaining blank line. Raw-line leaves
-             * still own the blank line, including extension-provided leaves. */
-            if (parser->blank) {
-                if ((container->flags & MARKDOWN_CORE_NODE__LIST_LAST_LINE_BLANK) && parser->indent == 0) {
-                    if (S_type(parser->current) == MARKDOWN_CORE_NODE_CODE_BLOCK ||
-                        S_type(parser->current) == MARKDOWN_CORE_NODE_HTML_BLOCK ||
-                        extension_accepts_lines(parser->current)) {
-                        add_line(parser->current, input, parser);
-                    }
-                    return NULL;
-                }
-                container->flags |= MARKDOWN_CORE_NODE__LIST_LAST_LINE_BLANK;
-            } else {
-                container->flags &= ~MARKDOWN_CORE_NODE__LIST_LAST_LINE_BLANK;
-            }
-            break;
-        case MARKDOWN_CORE_NODE_LIST_ITEM:
-            if (!parse_node_item_prefix(parser, input, container)) {
-                goto done;
-            }
-            break;
         case MARKDOWN_CORE_NODE_CODE_BLOCK:
             if (!parse_code_block_prefix(parser, input, container, &should_continue)) {
                 goto done;
@@ -1609,13 +1664,26 @@ static markdown_core_node *check_open_blocks(markdown_core_parser *parser, markd
                 goto done;
             }
             break;
-        case MARKDOWN_CORE_NODE_FOOTNOTE:
-            if (!parse_footnote_definition_block_prefix(parser, input, container)) {
+        default: {
+            bool taken = false;
+            if (!S_container_prefix_matches(parser, container, input, NULL, &taken)) {
                 goto done;
             }
+            /* A second consecutive blank line inside a deeply nested list
+             * cannot open a block and all closable descendants were already
+             * closed by the first. Returning NULL avoids walking the same
+             * nesting spine for every remaining blank line. Raw-line leaves
+             * still own the blank line, including extension-provided leaves. */
+            if (taken) {
+                if (S_type(parser->current) == MARKDOWN_CORE_NODE_CODE_BLOCK ||
+                    S_type(parser->current) == MARKDOWN_CORE_NODE_HTML_BLOCK ||
+                    extension_accepts_lines(parser->current)) {
+                    add_line(parser->current, input, parser);
+                }
+                return NULL;
+            }
             break;
-        default:
-            break;
+        }
         }
 
         /* Whatever this container's prefix consumed is that container's
@@ -1637,6 +1705,347 @@ done:
     }
 
     return container;
+}
+
+/* --- Block-start lookahead ---------------------------------------------------
+ *
+ * The block parser reads one line at a time and never rewinds. A block start
+ * whose grammar depends on a later line -- the `%%` block comment is a
+ * paragraph line unless a closer line follows under the same container
+ * prefixes -- therefore looks ahead here BEFORE it opens anything, so a
+ * candidate that fails consumes nothing, and one that succeeds is a block the
+ * parser then reads line by line exactly as the lookahead saw it.
+ *
+ * Exactness is the whole contract. Every later line is offered as the block
+ * parser will see it: the containers between the root and the block's parent
+ * are matched by `S_container_prefix_matches`, the operation `check_open_blocks`
+ * runs, through the same cursor fields, with the same list flags, which are
+ * saved and restored around the lookahead. A container an extension owns is
+ * asked through its `continues_block` hook, the side-effect-free form of its
+ * matcher. So a line the lookahead counts as carrying the prefixes is one
+ * the block parser will hand to the new block, and the first line it rejects
+ * is where the block parser will close the block's container.
+ *
+ * Linearity is the other contract, and it is why the cache exists. Two failed
+ * candidates whose scans reach the same line have nested chains: the later
+ * candidate's line lay inside the earlier one's scan, so every container open
+ * at the earlier candidate was still open, and the later one's chain extends
+ * it. The earlier scan therefore leaves, on every line it visited, the state
+ * after the deepest container it matched, and a later scan resumes from
+ * there: each (container, line) prefix is matched once per parse, and a line
+ * visited by a deeper scan costs the bytes of the containers it adds. Blank
+ * lines, which cost no bytes, are recorded as runs, and a scan whose extra
+ * containers are lists and list items -- the containers that accept every
+ * blank line -- steps over a recorded run at once. Footnote definitions
+ * accept a blank line by its shape, so a scan visits their blank lines one by
+ * one; their nesting is bounded by MAX_FOOTNOTE_DEPTH, so that visit count is
+ * a constant factor. A block quote rejects a blank line, so a scan below one
+ * ends at the run's first line. Deliberately nested failing candidates inside
+ * directive containers cannot be built: a `%%` line in an inner container is
+ * the outer candidate's closer, because the container adds no prefix. */
+
+static bool S_lookahead_reserve_chain(markdown_core_parser *parser, int depth) {
+    int capacity;
+    markdown_core_node **chain;
+    markdown_core_node_internal_flags *flags;
+
+    if (depth <= parser->lookahead_chain_alloc) {
+        return true;
+    }
+    capacity = parser->lookahead_chain_alloc ? parser->lookahead_chain_alloc : 16;
+    while (capacity < depth) {
+        capacity = capacity > INT_MAX / 2 ? INT_MAX : capacity * 2;
+    }
+    chain = parser->mem->realloc(parser->lookahead_chain, (size_t)capacity * sizeof(*chain));
+    if (!chain) {
+        parser->oom = true;
+        return false;
+    }
+    parser->lookahead_chain = chain;
+    flags = parser->mem->realloc(parser->lookahead_chain_flags, (size_t)capacity * sizeof(*flags));
+    if (!flags) {
+        parser->oom = true;
+        return false;
+    }
+    parser->lookahead_chain_flags = flags;
+    parser->lookahead_chain_alloc = capacity;
+    return true;
+}
+
+/* The cache entry of a source line, growing the cache to reach it. Lines are
+ * numbered from the first line any lookahead visited: candidates come in
+ * source order and each begins at the line after its own, so no lookahead
+ * asks about an earlier line. NULL when the cache could not grow, with the
+ * parse marked lost. */
+static markdown_core_lookahead_entry *S_lookahead_entry(markdown_core_parser *parser, int line) {
+    int index;
+
+    if (parser->lookahead_entries_alloc == 0) {
+        parser->lookahead_base_line = line;
+    }
+    index = line - parser->lookahead_base_line;
+    assert(index >= 0);
+    if (index < 0) {
+        /* Unreachable by the ordering argument above; a line before the base
+         * is matched without the cache rather than through it. */
+        return NULL;
+    }
+    if (index >= parser->lookahead_entries_alloc) {
+        int capacity = parser->lookahead_entries_alloc ? parser->lookahead_entries_alloc : 64;
+        markdown_core_lookahead_entry *entries;
+        while (capacity <= index) {
+            capacity = capacity > INT_MAX / 2 ? INT_MAX : capacity * 2;
+        }
+        if ((size_t)capacity > SIZE_MAX / sizeof(*entries)) {
+            parser->oom = true;
+            return NULL;
+        }
+        entries = parser->mem->realloc(parser->lookahead_entries, (size_t)capacity * sizeof(*entries));
+        if (!entries) {
+            parser->oom = true;
+            return NULL;
+        }
+        memset(entries + parser->lookahead_entries_alloc, 0,
+               (size_t)(capacity - parser->lookahead_entries_alloc) * sizeof(*entries));
+        parser->lookahead_entries = entries;
+        parser->lookahead_entries_alloc = capacity;
+    }
+    return &parser->lookahead_entries[index];
+}
+
+/* The blank run that began at `run_start` ends before `line`, which begins at `cursor`. */
+static void S_lookahead_close_run(markdown_core_block_lookahead *lookahead, int line, const unsigned char *cursor) {
+    if (lookahead->run_start) {
+        markdown_core_lookahead_entry *entry = S_lookahead_entry(lookahead->parser, lookahead->run_start);
+        if (entry) {
+            entry->run_end = line;
+            entry->run_end_cursor = cursor;
+        }
+        lookahead->run_start = 0;
+    }
+}
+
+/* Whether the containers chain[from .. depth) accept every blank line. */
+static bool S_lookahead_extras_accept_blank(const markdown_core_parser *parser, int from, int depth) {
+    int i;
+    for (i = from; i < depth; i++) {
+        markdown_core_node_type type = S_type(parser->lookahead_chain[i]);
+        if (type != MARKDOWN_CORE_NODE_LIST && type != MARKDOWN_CORE_NODE_LIST_ITEM) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool markdown_core_parser_lookahead_begin(markdown_core_parser *parser, markdown_core_node *parent_container,
+                                          markdown_core_node_type child, markdown_core_block_lookahead *lookahead) {
+    markdown_core_node *parent = parent_container;
+    markdown_core_node *node;
+    int depth = 0;
+    int i;
+
+    memset(lookahead, 0, sizeof(*lookahead));
+    /* The block joins the nearest open container that can hold it, which is
+     * where `add_child` backs up to when it is opened. */
+    while (parent->parent && !markdown_core_node_can_contain_type(parent, child)) {
+        parent = parent->parent;
+    }
+    for (node = parent; node; node = node->parent) {
+        depth++;
+    }
+    if (!S_lookahead_reserve_chain(parser, depth)) {
+        return false;
+    }
+    i = depth;
+    for (node = parent; node; node = node->parent) {
+        i--;
+        parser->lookahead_chain[i] = node;
+        parser->lookahead_chain_flags[i] = node->flags;
+    }
+
+    lookahead->parser = parser;
+    lookahead->parent = parent;
+    lookahead->depth = depth;
+    lookahead->cursor = parser->lookahead_cursor;
+    lookahead->line = parser->line_number + 1;
+    lookahead->saved_offset = parser->offset;
+    lookahead->saved_column = parser->column;
+    lookahead->saved_first_nonspace = parser->first_nonspace;
+    lookahead->saved_first_nonspace_column = parser->first_nonspace_column;
+    lookahead->saved_indent = parser->indent;
+    lookahead->saved_blank = parser->blank;
+    lookahead->saved_partially_consumed_tab = parser->partially_consumed_tab;
+    lookahead->active = true;
+    return true;
+}
+
+int markdown_core_parser_lookahead_next(markdown_core_block_lookahead *lookahead, markdown_core_chunk *line,
+                                        int *first_nonspace, int *indent, int *blank_lines) {
+    markdown_core_parser *parser = lookahead->parser;
+    const unsigned char *end = parser->lookahead_end;
+
+    *blank_lines = 0;
+    if (!lookahead->active) {
+        return 0;
+    }
+    while (lookahead->cursor && lookahead->cursor < end && !parser->oom) {
+        const unsigned char *start = lookahead->cursor;
+        const unsigned char *eol = start;
+        const unsigned char *next;
+        markdown_core_chunk input;
+        markdown_core_lookahead_entry *entry;
+        int this_line = lookahead->line;
+        int from = 1;
+        bufsize_t resumed_offset;
+        bool carried = true;
+        bool taken = false;
+        bool resumed = false;
+        bool blank;
+        int i;
+
+        while (eol < end && !S_is_line_end_char((char)*eol)) {
+            eol++;
+        }
+        next = eol;
+        if (next < end && *next == '\r') {
+            next++;
+        }
+        if (next < end && *next == '\n') {
+            next++;
+        }
+        parser->block_lookahead_work++;
+        if (next == end) {
+            /* The input's last line, normalized once: the matchers read a line
+             * through its terminator, and the source may not end in one. */
+            if (!parser->lookahead_last_line_ready) {
+                markdown_core_strbuf_set(&parser->lookahead_last_line, start, (bufsize_t)(eol - start));
+                markdown_core_strbuf_putc(&parser->lookahead_last_line, '\n');
+                if (parser->lookahead_last_line.oom) {
+                    parser->oom = true;
+                    return 0;
+                }
+                parser->lookahead_last_line_ready = true;
+            }
+            input.data = parser->lookahead_last_line.ptr;
+            input.len = parser->lookahead_last_line.size;
+        } else {
+            input.data = (unsigned char *)start;
+            input.len = (bufsize_t)(next - start);
+        }
+        input.alloc = 0;
+        lookahead->cursor = next;
+        lookahead->line = this_line + 1;
+
+        parser->offset = 0;
+        parser->column = 0;
+        parser->first_nonspace = 0;
+        parser->first_nonspace_column = 0;
+        parser->indent = 0;
+        parser->blank = false;
+        parser->partially_consumed_tab = false;
+
+        entry = S_lookahead_entry(parser, this_line);
+        if (!entry && parser->oom) {
+            return 0;
+        }
+        if (entry && entry->container && entry->depth < lookahead->depth &&
+            parser->lookahead_chain[entry->depth] == entry->container) {
+            resumed = true;
+            from = entry->depth + 1;
+            if (entry->taken) {
+                taken = true;
+            } else {
+                parser->offset = entry->offset;
+                parser->column = entry->column;
+                parser->partially_consumed_tab = entry->partially_consumed_tab;
+                parser->first_nonspace = parser->offset;
+                parser->first_nonspace_column = parser->column;
+            }
+        }
+        resumed_offset = parser->offset;
+        for (i = from; i < lookahead->depth && carried && !taken; i++) {
+            markdown_core_node *container = parser->lookahead_chain[i];
+            S_find_first_nonspace(parser, &input);
+            if (container->extension) {
+                carried = container->extension->continues_block &&
+                          container->extension->continues_block(container->extension, parser, input.data,
+                                                                (int)input.len, container) != 0;
+            } else {
+                carried = S_container_prefix_matches(parser, container, &input, lookahead->parent, &taken);
+            }
+        }
+        /* The work of this visit is the prefix bytes it had to match itself:
+         * what the resumed state did not already cover. */
+        parser->block_lookahead_work += (size_t)(parser->offset - resumed_offset);
+        if (!carried) {
+            S_lookahead_close_run(lookahead, this_line, start);
+            lookahead->active = false;
+            return 0;
+        }
+        if (!taken) {
+            S_find_first_nonspace(parser, &input);
+        }
+        blank = taken || parser->blank;
+
+        /* Record the deepest result for the scans that come after this one.
+         * A run an earlier scan recorded from this line stays until this scan
+         * closes its own, which ends where that one did. */
+        if (entry) {
+            entry->container = lookahead->parent;
+            entry->depth = lookahead->depth - 1;
+            entry->offset = parser->offset;
+            entry->column = parser->column;
+            entry->partially_consumed_tab = parser->partially_consumed_tab;
+            entry->taken = taken;
+            entry->blank = blank;
+        }
+
+        if (blank) {
+            *blank_lines += 1;
+            if (!lookahead->run_start) {
+                lookahead->run_start = this_line;
+            }
+            if (resumed && entry->run_end > this_line + 1 &&
+                S_lookahead_extras_accept_blank(parser, from, lookahead->depth)) {
+                *blank_lines += entry->run_end - this_line - 1;
+                lookahead->cursor = entry->run_end_cursor;
+                lookahead->line = entry->run_end;
+            }
+            continue;
+        }
+        S_lookahead_close_run(lookahead, this_line, start);
+        *line = input;
+        *first_nonspace = parser->first_nonspace;
+        *indent = parser->indent;
+        return 1;
+    }
+    S_lookahead_close_run(lookahead, lookahead->line, lookahead->cursor);
+    lookahead->active = false;
+    return 0;
+}
+
+void markdown_core_parser_lookahead_end(markdown_core_block_lookahead *lookahead) {
+    markdown_core_parser *parser = lookahead->parser;
+    int i;
+
+    if (!parser) {
+        return;
+    }
+    for (i = 0; i < lookahead->depth; i++) {
+        markdown_core_node *node = parser->lookahead_chain[i];
+        node->flags = (markdown_core_node_internal_flags)((node->flags & ~MARKDOWN_CORE_NODE__LIST_LAST_LINE_BLANK) |
+                                                          (parser->lookahead_chain_flags[i] &
+                                                           MARKDOWN_CORE_NODE__LIST_LAST_LINE_BLANK));
+    }
+    parser->offset = lookahead->saved_offset;
+    parser->column = lookahead->saved_column;
+    parser->first_nonspace = lookahead->saved_first_nonspace;
+    parser->first_nonspace_column = lookahead->saved_first_nonspace_column;
+    parser->indent = lookahead->saved_indent;
+    parser->blank = lookahead->saved_blank;
+    parser->partially_consumed_tab = lookahead->saved_partially_consumed_tab;
+    lookahead->active = false;
+    lookahead->parser = NULL;
 }
 
 static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **container, markdown_core_chunk *input,

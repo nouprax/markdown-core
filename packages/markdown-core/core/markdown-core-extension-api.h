@@ -147,6 +147,10 @@ typedef enum {
     MARKDOWN_CORE_DELIM_RULE_FORMULA_LATEX_INLINE,
     MARKDOWN_CORE_DELIM_RULE_FORMULA_LATEX_DISPLAY,
     MARKDOWN_CORE_DELIM_RULE_DIRECTIVE_LABEL,
+    /* A rule id also names an opaque-body search (see
+     * markdown_core_inline_parser_find_opaque_close): the `%%` comment pushes
+     * no delimiter, but its closer search caches its failures under this id. */
+    MARKDOWN_CORE_DELIM_RULE_COMMENT,
     MARKDOWN_CORE_DELIM_RULE_COUNT
 } markdown_core_delimiter_rule;
 
@@ -229,6 +233,24 @@ typedef delimiter *(*markdown_core_inline_from_delim_func)(const markdown_core_e
  */
 typedef int (*markdown_core_match_block_func)(const markdown_core_extension *extension, markdown_core_parser *parser,
                                               unsigned char *input, int len, markdown_core_node *container);
+
+/** Whether 'input' would continue 'container', asked AHEAD OF TIME.
+ *
+ *  A block start may look at the lines after its own before it opens (see
+ *  markdown_core_parser_lookahead_begin in the core), and it then asks every
+ *  open container whether each later line carries its prefix. That question
+ *  must leave no trace: 'last_block_matches' consumes the line, closes the
+ *  container on its fence and records state on the node, so it cannot be
+ *  asked speculatively. An extension that opens block CONTAINERS provides this
+ *  hook as the same test with none of those effects: 1 when 'input' continues
+ *  'container', 0 when it does not or is the container's own closing line. It
+ *  must not change the parser beyond the cursor fields the core resets, the
+ *  container, or any node. A container whose extension provides no hook ends
+ *  every lookahead at its next line.
+ */
+typedef int (*markdown_core_continues_block_func)(const markdown_core_extension *extension,
+                                                  markdown_core_parser *parser, const unsigned char *input, int len,
+                                                  markdown_core_node *container);
 
 typedef const char *(*markdown_core_get_type_string_func)(const markdown_core_extension *extension,
                                                           markdown_core_node *node);
