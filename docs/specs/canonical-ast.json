@@ -337,6 +337,27 @@
             "invariants": "raw HTML is preserved; an HTML comment token is a `Comment`; leaf"
         },
         {
+            "name": "CrossLink",
+            "fields": [
+                {
+                    "name": "embedded",
+                    "type": "Bool",
+                    "optional": false
+                },
+                {
+                    "name": "dest",
+                    "type": "Destination",
+                    "optional": false
+                },
+                {
+                    "name": "label",
+                    "type": "String",
+                    "optional": true
+                }
+            ],
+            "invariants": "inline leaf; dest is cross(path, anchor); raw label is null only when no separator was authored"
+        },
+        {
             "name": "Comment",
             "fields": [
                 {
@@ -478,7 +499,7 @@
     ],
     "values": {
         "Destination": {
-            "purpose": "A tagged value, not a node: it has no scope, children, anchor, or attributes, and a branch's fields exist only in that branch. Every Link and Image owns the url branch; the cross branch is the workspace address a CrossLink produces once O1 lands.",
+            "purpose": "A tagged value, not a node: it has no scope, children, anchor, or attributes, and a branch's fields exist only in that branch. Every Link and Image owns the url branch; the cross branch is the workspace address a CrossLink produces.",
             "branches": {
                 "url": [
                     {

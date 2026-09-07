@@ -358,6 +358,7 @@ private struct KindVisitor: MarkupVisitor {
     mutating func visit(_ node: Code) -> String { kindName(node) }
     mutating func visit(_ node: HTML) -> String { kindName(node) }
     mutating func visit(_ node: MarkdownCore.Comment) -> String { kindName(node) }
+    mutating func visit(_ node: MarkdownCore.CrossLink) -> String { kindName(node) }
     mutating func visit(_ node: Formula) -> String { kindName(node) }
     mutating func visit(_ node: Emphasis) -> String { kindName(node) }
     mutating func visit(_ node: Strong) -> String { kindName(node) }
@@ -418,6 +419,7 @@ struct RecordingWalkingVisitor: MarkupWalkingVisitor {
     mutating func visit(_ node: Code, phase: WalkPhase) { record(node, phase) }
     mutating func visit(_ node: HTML, phase: WalkPhase) { record(node, phase) }
     mutating func visit(_ node: MarkdownCore.Comment, phase: WalkPhase) { record(node, phase) }
+    mutating func visit(_ node: MarkdownCore.CrossLink, phase: WalkPhase) { record(node, phase) }
     mutating func visit(_ node: Formula, phase: WalkPhase) { record(node, phase) }
     mutating func visit(_ node: Emphasis, phase: WalkPhase) { record(node, phase) }
     mutating func visit(_ node: Strong, phase: WalkPhase) { record(node, phase) }

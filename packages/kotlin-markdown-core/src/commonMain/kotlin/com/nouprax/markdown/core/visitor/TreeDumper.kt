@@ -275,6 +275,18 @@ private class DumpVisitor(
         state.line("HTML", node, listOf("literal=${jsonString(node.literal)}"))
     }
 
+    override fun visitCrossLink(node: CrossLink) {
+        state.line(
+            "CrossLink",
+            node,
+            listOf(
+                "embedded=${node.embedded}",
+                "dest=${destination(node.dest)}",
+                "label=${optionalString(node.label)}",
+            ),
+        )
+    }
+
     override fun visitComment(node: Comment) {
         state.line("Comment", node, listOf("literal=${jsonString(node.literal)}"))
     }

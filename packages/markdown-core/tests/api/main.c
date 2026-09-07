@@ -2116,6 +2116,107 @@ static void universal_values(test_batch_runner *runner) {
 
 /* Count visited source positions as well as verifying values. Repeated failed
  * candidates share one extent, so they cannot rescan each other's suffixes. */
+typedef struct {
+    size_t ofm, opaque;
+} inline_work;
+static markdown_core_node *record_inline_work(const markdown_core_extension *extension, markdown_core_parser *parser,
+                                              markdown_core_node *root) {
+    (void)extension;
+    inline_work *work = root->user_data;
+    work->ofm = parser->ofm_scan_work;
+    work->opaque = parser->opaque_scan_work;
+    root->user_data = NULL;
+    return root;
+}
+static const markdown_core_extension WORK_RECORDER = {.name = "work-recorder", .postprocess_func = record_inline_work};
+static bool measure_inline_work(markdown_core_parser *parser, void *context) {
+    parser->root->user_data = context;
+    return markdown_core_core_extensions_attach(parser) &&
+           markdown_core_parser_attach_extension(parser, &WORK_RECORDER);
+}
+
+static void ofm_linear_work(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    static const struct {
+        const char *prefix, *unit, *suffix;
+    } cases[] = {
+        {"", "!", "[[a]]"},
+        {"", "[", "a]]"},
+        {"[[a]]", "]", ""},
+        {"[[a", "#h", "]]"},
+        {"[[", "^", "]]"},
+        {"[[a|", "|", "]]"},
+        {"![[", "a", ""},
+        {"![[", "a", "]"},
+        {"", "![[a[", "]]"},
+        {"", "[[a#|x]]", ""},
+        {"", "[[a\\|b]] ![[#^id|]] ", ""},
+        {"$", "![[a|", "$]]"},
+        {"", "$x ", ""},
+        {"\\\\(", "[[a|", "\\\\)]]"},
+        {"", "\\\\(a ", ""},
+    };
+    for (size_t c = 0; c < sizeof(cases) / sizeof(*cases); c++) {
+        for (size_t count = 128; count <= 8192; count *= 2) {
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+            markdown_core_strbuf_puts(&source, cases[c].prefix);
+            for (size_t i = 0; i < count; i++) {
+                markdown_core_strbuf_puts(&source, cases[c].unit);
+            }
+            markdown_core_strbuf_puts(&source, cases[c].suffix);
+            inline_work work = {0};
+            markdown_core_node *root = markdown_core_parse_document_with_mem(
+                (char *)source.ptr, source.size, MARKDOWN_CORE_DIALECT_OPTIONS, mem, measure_inline_work, &work);
+            OK(runner, root != NULL, "adversarial cross links parse successfully");
+            OK(runner, work.ofm <= 3 * (size_t)source.size, "OFM scans disjoint bodies: case=%zu size=%d work=%zu", c,
+               source.size, work.ofm);
+            OK(runner, work.opaque <= 4 * (size_t)source.size,
+               "opaque delimiter searches are linear: case=%zu size=%d work=%zu", c, source.size, work.opaque);
+            markdown_core_node_free(root);
+            markdown_core_strbuf_free(&source);
+        }
+    }
+}
+
+static void cross_link_fields(test_batch_runner *runner) {
+    const char *source = "[[ Note ]] [[Note|]] ![[#^block|raw *label*]]";
+    markdown_core_document *doc = markdown_core_document_parse((const uint8_t *)source, strlen(source), NULL);
+    OK(runner, doc != NULL, "cross links parse through facade");
+    const markdown_core_node *node = markdown_core_node_get_first_child(markdown_core_document_root(doc));
+    node = markdown_core_node_get_first_child(node);
+    markdown_core_destination dest;
+    markdown_core_optional_string label;
+    bool embedded = true;
+    OK(runner, markdown_core_node_destination(node, &dest) && dest.kind == MARKDOWN_CORE_DESTINATION_CROSS,
+       "cross links produce the cross destination branch");
+    OK(runner, dest.path.length == 6 && memcmp(dest.path.data, " Note ", 6) == 0 && !dest.anchor.has_value,
+       "path bytes are preserved and anchor is absent");
+    OK(runner, markdown_core_node_cross_link_properties(node, &embedded, &label) && !embedded && !label.has_value,
+       "no separator means absent label");
+    OK(runner, markdown_core_node_resource(node) == NULL && markdown_core_node_get_first_child(node) == NULL,
+       "a cross link is an occurrence-owned leaf");
+    OK(runner, !markdown_core_node_title(node, &label), "cross links have labels, not link titles");
+    node = markdown_core_node_get_next_sibling(markdown_core_node_get_next_sibling(node));
+    OK(runner,
+       markdown_core_node_cross_link_properties(node, &embedded, &label) && label.has_value && label.value.length == 0,
+       "an authored empty label remains present");
+    node = markdown_core_node_get_next_sibling(markdown_core_node_get_next_sibling(node));
+    OK(runner, markdown_core_node_cross_link_properties(node, &embedded, &label) && embedded,
+       "embed uses the same payload");
+    markdown_core_node_destination(node, &dest);
+    OK(runner,
+       dest.path.length == 0 && dest.anchor.has_value && dest.anchor.value.length == 5 &&
+           memcmp(dest.anchor.value.data, "block", 5) == 0,
+       "block punctuation is removed, current-document path is empty");
+    OK(runner,
+       !markdown_core_node_cross_link_properties(NULL, &embedded, &label) &&
+           !markdown_core_node_cross_link_properties(node, NULL, &label) &&
+           !markdown_core_node_cross_link_properties(node, &embedded, NULL) &&
+           !markdown_core_node_cross_link_properties(markdown_core_document_root(doc), &embedded, &label),
+       "cross-link facade rejects wrong kinds and missing outputs");
+    markdown_core_document_free(doc);
+}
+
 static void attribute_linear_work(test_batch_runner *runner) {
     markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
     static const struct {
@@ -2173,6 +2274,8 @@ int main(void) {
 
     universal_values(runner);
     attribute_linear_work(runner);
+    ofm_linear_work(runner);
+    cross_link_fields(runner);
     version(runner);
     node_type_values(runner);
     constructor(runner);

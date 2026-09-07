@@ -29,6 +29,7 @@ const extensions = [
     "strikethrough.c",
     "autolink.c",
     "formula.c",
+    "ofm.c",
     "directive.c",
     "ext_scanners.c",
     "tasklist.c"

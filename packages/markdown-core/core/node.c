@@ -179,6 +179,11 @@ static void free_node_as(markdown_core_node *node) {
     case MARKDOWN_CORE_NODE_COMMENT_BLOCK:
         markdown_core_chunk_free(NODE_MEM(node), &node->as.literal);
         break;
+    case MARKDOWN_CORE_NODE_CROSS_LINK:
+        markdown_core_chunk_free(NODE_MEM(node), &node->as.cross_link.path);
+        markdown_core_optional_chunk_free(NODE_MEM(node), &node->as.cross_link.anchor);
+        markdown_core_optional_chunk_free(NODE_MEM(node), &node->as.cross_link.label);
+        break;
     case MARKDOWN_CORE_NODE_CITATION:
         /* The affix chains are freed by the walk in `S_free_nodes`, spliced
          * in beside the children; only the referent's bytes are the arm's. */

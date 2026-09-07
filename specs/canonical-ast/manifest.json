@@ -30,6 +30,7 @@
             "LineBreak",
             "Code",
             "HTML",
+            "CrossLink",
             "Comment",
             "Formula",
             "Emphasis",
@@ -41,6 +42,15 @@
             "Cite"
         ],
         "states": [
+            "crossLink.embedded.false",
+            "crossLink.embedded.true",
+            "crossLink.label.null",
+            "crossLink.label.empty",
+            "crossLink.label.value",
+            "destination.cross.path",
+            "destination.cross.current-document",
+            "destination.cross.anchor.null",
+            "destination.cross.anchor.value",
             "placement.embedded",
             "placement.standalone",
             "list.flavor.bullet",
@@ -385,6 +395,26 @@
                     "children.populated"
                 ],
                 "orders": ["document.source-order"]
+            }
+        },
+        {
+            "name": "cross-links",
+            "input": "cross-links.md",
+            "expected": "cross-links.ast",
+            "coverage": {
+                "kinds": ["Document", "Paragraph", "CrossLink", "Text"],
+                "states": [
+                    "crossLink.embedded.false",
+                    "crossLink.embedded.true",
+                    "crossLink.label.null",
+                    "crossLink.label.empty",
+                    "crossLink.label.value",
+                    "destination.cross.path",
+                    "destination.cross.current-document",
+                    "destination.cross.anchor.null",
+                    "destination.cross.anchor.value"
+                ],
+                "orders": []
             }
         }
     ]

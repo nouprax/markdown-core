@@ -21,6 +21,7 @@ import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_CITE
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_CODE
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_CODE_BLOCK
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_COMMENT
+import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_CROSS_LINK
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_DIRECTIVE
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_DIRECTIVE_LABEL
@@ -108,6 +109,7 @@ import com.nouprax.markdown.core.internal.capi.markdown_core_node_callout_title
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_child_count
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_cite_citations
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_code_block_properties
+import com.nouprax.markdown.core.internal.capi.markdown_core_node_cross_link_properties
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_destination
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_directive_label
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_directive_properties
@@ -445,6 +447,12 @@ private class NativeTreeBuilder(
 
             MARKDOWN_CORE_KIND_HTML -> {
                 HTML(scratch.literal(node), scope, anchor, attributes).also { requireLeaf(children, kind) }
+            }
+
+            MARKDOWN_CORE_KIND_CROSS_LINK -> {
+                val fields = scratch.crossLink(node)
+                CrossLink(fields.first, scratch.destination(node), fields.second, scope, anchor, attributes)
+                    .also { requireLeaf(children, kind) }
             }
 
             MARKDOWN_CORE_KIND_COMMENT -> {
@@ -951,6 +959,13 @@ private class NativeScratch(
                 error("unsupported native destination kind ${destination.kind}")
             }
         }
+    }
+
+    fun crossLink(node: CPointer<markdown_core_node>): Pair<Boolean, String?> {
+        require(markdown_core_node_cross_link_properties(node, firstBoolean.ptr, firstOptionalString.ptr)) {
+            "invalid cross link"
+        }
+        return firstBoolean.value to firstOptionalString.copyOptionalString()
     }
 
     fun title(node: CPointer<markdown_core_node>): String? {

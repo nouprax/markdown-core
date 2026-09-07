@@ -281,7 +281,7 @@ static int case_nested_brackets(pc_context *context) {
     if (pc_expect_count(context, MARKDOWN_CORE_KIND_LINK, 0, "Link") != 0) {
         return -1;
     }
-    return pc_expect_text_is_input(context);
+    return pc_expect_count(context, MARKDOWN_CORE_KIND_CROSS_LINK, 1, "CrossLink");
 }
 
 static int case_nested_block_quotes(pc_context *context) {

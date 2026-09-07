@@ -114,11 +114,14 @@ does not define Pandoc `@key` syntax; the citations module does.
 
 ## Phase 2 — one OFM inline extension
 
+O1 introduces the shared OFM descriptor and wikilink scanner. The first bullet
+remains open for the comment, highlight and inline-footnote scanners in O2–O4.
+
 - [ ] Introduce one parser-owned OFM inline extension with scanners for wikilinks,
       comments, highlights, and the inline footnote source form. All scanners use
       the existing subject cursor, delimiter/bracket infrastructure, allocator,
       source map, and extension attachment order.
-- [ ] Make `![[...]]` and `[[...]]` one scanner and one `CrossLink` payload. Split
+- [x] Make `![[...]]` and `[[...]]` one scanner and one `CrossLink` payload. Split
       path, optional anchor, and label value once while scanning, then construct
       one complete `Destination.cross`. Heading and block punctuation must not
       survive as a consumer discriminator. Do not rescan the completed literal
@@ -203,7 +206,7 @@ does not define Pandoc `@key` syntax; the citations module does.
       lowercase `x` with no surrounding spaces, in the shared image construction
       path. Keep wikilink label parameters raw until vault resolution
       establishes the embedded file kind.
-- [ ] Move wiki alias-pipe awareness into the shared table/inline boundary so
+- [x] Move wiki alias-pipe awareness into the shared table/inline boundary so
       `[[target\|label]]` and `![[image\|100]]` stay inside one cell. Do not add a
       table-only wikilink parser.
 - [ ] Preserve current GFM semantics for ordinary tables and task items that use

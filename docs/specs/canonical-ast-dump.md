@@ -147,6 +147,7 @@ that the dump represents as nested descendants.
 | `LineBreak` | `anchor`, `attributes` |
 | `Code` | `anchor`, `attributes`, `literal` |
 | `HTML` | `anchor`, `attributes`, `literal` |
+| `CrossLink` | `anchor`, `attributes`, `embedded`, `dest`, `label` |
 | `Comment` | `anchor`, `attributes`, `literal` |
 | `Formula` | `anchor`, `attributes`, `mode`, `literal` |
 | `Emphasis` | `anchor`, `attributes` |

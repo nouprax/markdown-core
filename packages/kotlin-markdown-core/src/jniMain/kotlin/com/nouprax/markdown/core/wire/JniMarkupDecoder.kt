@@ -108,6 +108,13 @@ private class JniTreeDecoder(
                 consume(HTML(reader.requiredString(), scope, anchor, attributes))
             }
 
+            JniNodeKind.CROSS_LINK -> {
+                val embedded = reader.boolean()
+                val dest = destination()
+                require(dest is Destination.Cross) { "cross link requires a cross destination" }
+                consume(CrossLink(embedded, dest, reader.string(), scope, anchor, attributes))
+            }
+
             JniNodeKind.COMMENT -> {
                 consume(Comment(reader.requiredString(), scope, anchor, attributes))
             }

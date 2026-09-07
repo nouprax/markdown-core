@@ -32,7 +32,7 @@ import process from "node:process";
 import { readExamples } from "./fixture-corpus.mjs";
 
 /**
- * The thirteen kinds `markdown_core_node_kind_name` gives an inline node, and
+ * The inline kinds `markdown_core_node_kind_name` gives an inline node, and
  * the one scoped value that is placed like one, `Citation` (M4). Kept here
  * rather than derived, because the derivation would need the engine and the
  * point of these oracles is to judge the engine.
@@ -51,6 +51,7 @@ export const INLINE_KINDS = new Set([
     "Image",
     "Directive",
     "Cite",
+    "CrossLink",
     "Citation"
 ]);
 

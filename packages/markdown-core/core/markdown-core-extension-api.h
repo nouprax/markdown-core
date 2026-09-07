@@ -6,6 +6,7 @@ extern "C" {
 #endif
 
 #include "markdown-core.h"
+#include <stdbool.h>
 
 struct markdown_core_chunk;
 
@@ -576,6 +577,17 @@ int markdown_core_inline_parser_is_eof(markdown_core_inline_parser *parser);
  */
 MARKDOWN_CORE_EXPORT
 char *markdown_core_inline_parser_take_while(markdown_core_inline_parser *parser, markdown_core_inline_predicate pred);
+
+/* A delimiter scanner describes one lexical unit: its width and whether it
+ * closes this rule. The shared cursor caches failed suffix searches per rule,
+ * then treats a recognized body as raw text until the closing delimiter. The
+ * owning extension still constructs its node through the delimiter stack. */
+typedef int (*markdown_core_opaque_delimiter_scanner)(const unsigned char *data, int length, int offset,
+                                                      markdown_core_delimiter_rule rule, bool *closes);
+void markdown_core_inline_parser_set_opaque_body_end(markdown_core_inline_parser *parser, int end);
+int markdown_core_inline_parser_find_opaque_close(markdown_core_inline_parser *parser,
+                                                  markdown_core_delimiter_rule rule, int from,
+                                                  markdown_core_opaque_delimiter_scanner scan);
 
 /** Push a delimiter on the delimiter stack.
  * See <<http://spec.commonmark.org/0.24/#phase-2-inline-structure> for

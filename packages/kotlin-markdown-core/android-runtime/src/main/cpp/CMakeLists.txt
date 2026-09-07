@@ -30,6 +30,7 @@ add_library(
     "${MARKDOWN_CORE_EXTENSIONS_DIR}/strikethrough.c"
     "${MARKDOWN_CORE_EXTENSIONS_DIR}/autolink.c"
     "${MARKDOWN_CORE_EXTENSIONS_DIR}/formula.c"
+    "${MARKDOWN_CORE_EXTENSIONS_DIR}/ofm.c"
     "${MARKDOWN_CORE_EXTENSIONS_DIR}/directive.c"
     "${MARKDOWN_CORE_EXTENSIONS_DIR}/ext_scanners.c"
     "${MARKDOWN_CORE_EXTENSIONS_DIR}/tasklist.c"

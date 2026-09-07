@@ -22,6 +22,59 @@ private fun jniPayload(vararg parts: Any): ByteArray {
 
 class JniPayloadDecoderTest {
     @Test
+    fun crossLinksKeepOwnedValuesAndRejectWrongDestinationBranches() {
+        fun payload(branch: Int = 2): ByteArray =
+            jniPayload(
+                "MKJ1",
+                0.toByte(),
+                1.toByte(),
+                1,
+                1,
+                1,
+                8,
+                -1,
+                0,
+                0,
+                0.toByte(),
+                1,
+                3.toByte(),
+                1,
+                1,
+                1,
+                8,
+                -1,
+                0,
+                0,
+                1,
+                30.toByte(),
+                1,
+                1,
+                1,
+                8,
+                -1,
+                0,
+                0,
+                1.toByte(),
+                branch,
+                0,
+                2,
+                "id",
+                0,
+                0,
+                0,
+            )
+        val bytes = payload()
+        val document = JniPayloadDecoder.decodeDocument(bytes)
+        val link = assertIs<CrossLink>(assertIs<Paragraph>(document.content.single()).content.single())
+        assertTrue(link.embedded)
+        assertEquals("", link.label)
+        assertEquals("", assertIs<Destination.Cross>(link.dest).path)
+        bytes.fill(0)
+        assertEquals("id", assertIs<Destination.Cross>(link.dest).anchor)
+        assertFailsWith<IllegalArgumentException> { JniPayloadDecoder.decodeDocument(payload(1)) }
+    }
+
+    @Test
     fun metadataAndOccurrenceFieldsSurviveThePayloadLifetime() {
         fun string(value: String): Array<Any> = arrayOf(value.encodeToByteArray().size, value)
 
@@ -655,8 +708,9 @@ class JniPayloadDecoderTest {
     @Test
     fun malformedJniPayloadValuesAreRejectedBeforeTheyEnterTheAst() {
         assertFailsWith<IllegalStateException> { JniNodeKind.from(0) }
-        assertFailsWith<IllegalStateException> { JniNodeKind.from(30) }
+        assertFailsWith<IllegalStateException> { JniNodeKind.from(JniNodeKind.entries.maxOf { it.rawValue } + 1) }
         assertEquals(JniNodeKind.COMMENT, JniNodeKind.from(29))
+        assertEquals(JniNodeKind.CROSS_LINK, JniNodeKind.from(30))
         assertEquals(JniNodeKind.CITE, JniNodeKind.from(25))
         assertFailsWith<IllegalArgumentException> {
             JniPayloadDecoder.decodeDocument("MKJ1".encodeToByteArray())

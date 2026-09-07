@@ -20,6 +20,7 @@ export const kindVisitor = {
     visitCode: (node) => node.kind,
     visitHTML: (node) => node.kind,
     visitComment: (node) => node.kind,
+    visitCrossLink: (node) => node.kind,
     visitFormula: (node) => node.kind,
     visitEmphasis: (node) => node.kind,
     visitStrong: (node) => node.kind,

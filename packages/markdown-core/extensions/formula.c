@@ -279,10 +279,22 @@ static markdown_core_node *make_delimiter_text(markdown_core_parser *parser, mar
     return node;
 }
 
+static int scan_formula_closer(const unsigned char *data, int length, int at, markdown_core_delimiter_rule rule,
+                               bool *closes);
+
 static markdown_core_node *match_formula_delimiter(const markdown_core_extension *self, markdown_core_parser *parser,
                                                    markdown_core_inline_parser *inline_parser,
                                                    markdown_core_delimiter_rule rule, bufsize_t len, int can_open,
                                                    int can_close) {
+    if (can_open) {
+        int from = markdown_core_inline_parser_get_offset(inline_parser) + len;
+        int close = markdown_core_inline_parser_find_opaque_close(inline_parser, rule, from, scan_formula_closer);
+        markdown_core_chunk *input = markdown_core_inline_parser_get_chunk(inline_parser);
+        if (close >= 0 && (rule != FORMULA_DELIM_DOLLAR_INLINE || input->data[from] != '`' ||
+                           (close - from >= 2 && input->data[close - 1] == '`'))) {
+            markdown_core_inline_parser_set_opaque_body_end(inline_parser, close);
+        }
+    }
     markdown_core_node *node = make_delimiter_text(parser, inline_parser, len);
 
     if (!node) {
@@ -324,6 +336,34 @@ static bufsize_t scan_backslash_close(const unsigned char *data, bufsize_t len, 
     }
 
     return 0;
+}
+
+/* A body's delimiter units are recognized before any other inline syntax.
+ * Skipping paired dollars and escaped punctuation preserves delimiter spelling;
+ * code, links and extension tokens inside the body are never dispatched. */
+static int scan_formula_closer(const unsigned char *data, int length, int at, markdown_core_delimiter_rule rule,
+                               bool *closes) {
+    if (rule == FORMULA_DELIM_LATEX_BACKSLASH_INLINE || rule == FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY) {
+        unsigned char end = rule == FORMULA_DELIM_LATEX_BACKSLASH_INLINE ? ')' : ']';
+        int width = scan_backslash_close(data, length, at, end, 2);
+        if (width) {
+            *closes = true;
+            return width;
+        }
+    } else if (data[at] == '$') {
+        bool pair = at + 1 < length && data[at + 1] == '$';
+        if (rule == FORMULA_DELIM_DOLLAR_DISPLAY) {
+            *closes = pair;
+        } else if (!pair) {
+            *closes = at > 0 && !markdown_core_isspace(data[at - 1]) &&
+                      (at + 1 == length || !markdown_core_isdigit(data[at + 1]));
+        }
+        return pair ? 2 : 1;
+    }
+    if (data[at] == '\\' && at + 1 < length && markdown_core_ispunct(data[at + 1])) {
+        return 2;
+    }
+    return 1;
 }
 
 /* ONE OPEN FORMULA PER FORM. A delimiter of a form opens only while no opener

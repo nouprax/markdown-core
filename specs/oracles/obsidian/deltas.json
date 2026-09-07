@@ -118,38 +118,6 @@
     "corpus": ["specs/oracles/obsidian/corpus.md", "specs/oracles/obsidian/metadata-corpus.md"],
     "baselineGaps": [
         {
-            "id": "wikilink-basic",
-            "input": "[[Note]]\n",
-            "oracleDigest": "cb4fc6f6d6e1a17163aa578a588c1a9357c5e410f396f231df8151422035099a",
-            "markdownCoreDigest": "4c6fd8e27beca1ffe66a0aadb4cd1f68f3bc1f0bb5cce119cfef330ace76592e",
-            "requirement": "Recognize a wikilink and expose Destination.cross(path, anchor=null) instead of one literal Text node.",
-            "closedBy": "Phase 2 — one OFM inline extension"
-        },
-        {
-            "id": "wikilink-heading-label",
-            "input": "[[Folder/Note#Heading#Child|Display text]]\n",
-            "oracleDigest": "43056e57f3c9821b339b6c3a7ac16299999b89f6fea2367f5644c9cf6cb68dc4",
-            "markdownCoreDigest": "96dc467eb91188957bd03b0469c812f6365d01741b90a774e6f690975cfcc47c",
-            "requirement": "Preserve the vault path and complete anchor value in one Destination.cross value, plus the CrossLink label.",
-            "closedBy": "Phase 2 — one OFM inline extension"
-        },
-        {
-            "id": "wikilink-embed",
-            "input": "![[Image.png|100x145]]\n",
-            "oracleDigest": "9f86329d47932086711663f2c4eb7ac9117d2a4e5488c99b960c2be1f3c37c55",
-            "markdownCoreDigest": "b85827fe99d15228e9a5ac66dd2b97b351df3148dddd2b808bea82e526058a9c",
-            "requirement": "Recognize the shared wikilink form with embedded=true and preserve its label/size parameter.",
-            "closedBy": "Phase 2 — one OFM inline extension"
-        },
-        {
-            "id": "wikilink-block-embed",
-            "input": "![[Note#^block-id]]\n",
-            "oracleDigest": "49aad135db1c5c5143670e3c5f88f28982c8e71d6be3c19ddbfd748f33a1f84d",
-            "markdownCoreDigest": "c363cff78b07b6d440245f776863926540f01bf9ccb8dd33894d25d378e08dd8",
-            "requirement": "Recognize an embedded block reference and project it to the same Destination.cross.anchor field as a heading reference, without the #^ delimiter or a source-kind tag.",
-            "closedBy": "Phase 2 — one OFM inline extension"
-        },
-        {
             "id": "highlight",
             "input": "before ==marked== after\n",
             "oracleDigest": "5ea22a361e83540a9f5bf99a33a0357a381e0d8be61f2bc1dadb897d7d776f52",
@@ -193,9 +161,10 @@
             "id": "properties-list-and-arbitrary-name",
             "input": "---\naliases:\n  - Doggo\n  - \"[[Canis familiaris]]\"\nvalues: [1977, 3.14, text]\narbitrary user key: value\n---\nBody\n",
             "oracleDigest": "65e3c0449459fef4ad165a05a272c7bd202562e2b07dd5568f03d8b9135135dd",
-            "markdownCoreDigest": "0dfed670591ec23251681ef1746417a35d1b7089161aaf0eb56abcd8583885b0",
+            "markdownCoreDigest": "9c900ac05ff79e3f5db35abf5ebb2f293528ec0994af9dac074f62948c3a4439",
             "requirement": "Preserve an arbitrary name and ordered scalar list while retaining a quoted internal-link spelling as inert text.",
-            "closedBy": "Phase 3 — Properties, anchors, and callout containers"
+            "closedBy": "Phase 3 — Properties, anchors, and callout containers",
+            "digestChange": "O1: double brackets in the still-unimplemented Properties envelope now produce CrossLink. O6 will claim those bytes as inert metadata text."
         },
         {
             "id": "properties-text-and-empty-values",

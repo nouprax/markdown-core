@@ -91,6 +91,7 @@ class AstTest {
                 "| left | center |\n| :--- | :----: |\n| a | b |\n\n::leaf[Label]{id=value}\n\n:::container[Title]{kind=demo}\nBody\n:::\n",
                 "\$\$\ny\n\$\$\n",
                 "a <!-- b --> c\n\n<!-- block -->\n",
+                "[[Note]] ![[#^block|]]\n",
             )
         val documents = sources.map { Document.parse(it) }
         val kinds = documents.flatMap { dumpKinds(it.dump()) }.toSet()
@@ -115,6 +116,7 @@ class AstTest {
                 "Code",
                 "HTML",
                 "Comment",
+                "CrossLink",
                 "Formula",
                 "Emphasis",
                 "Strong",

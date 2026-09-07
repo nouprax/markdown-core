@@ -184,7 +184,8 @@ typedef enum markdown_core_node_kind {
      * inline content. Its parent edge records which; the node stores no
      * placement. `markdown_core_node_literal` answers with the bytes between
      * the delimiters. */
-    MARKDOWN_CORE_KIND_COMMENT
+    MARKDOWN_CORE_KIND_COMMENT,
+    MARKDOWN_CORE_KIND_CROSS_LINK
 } markdown_core_node_kind;
 
 typedef enum markdown_core_list_flavor {
@@ -370,11 +371,11 @@ MARKDOWN_CORE_API bool markdown_core_node_callout_properties(const markdown_core
  * children. A present title holds at least one node, so NULL means no title,
  * or a non-callout input. */
 MARKDOWN_CORE_API const markdown_core_node *markdown_core_node_callout_title(const markdown_core_node *node);
-/** The tagged `Destination` value of a `Link` or `Image` (M1): a value, not
+/** The tagged `Destination` value of a `Link`, `Image`, or `CrossLink`: a value, not
  * a node, so it has no scope and no children, and a branch's fields exist
  * only in that branch. `MARKDOWN_CORE_DESTINATION_URL` fills `url` and zeroes
  * `path` and `anchor`; `MARKDOWN_CORE_DESTINATION_CROSS`, the workspace
- * address a cross link produces once `O1` lands, fills `path` and `anchor`
+ * address a cross link produces, fills `path` and `anchor`
  * and zeroes `url`. Every `Link` and `Image` answers the `url` branch.
  *
  * A destination is REQUIRED (Q26, requirement 14): `[a]()` and `[a](<>)`
@@ -402,6 +403,10 @@ MARKDOWN_CORE_API bool markdown_core_node_destination(const markdown_core_node *
 /** The OPTIONAL title of a `Link` or `Image`: `[a](/u)` wrote no title and
  * `[a](/u "")` wrote an empty one, and the two stay different. Refuses every
  * other kind. */
+/** Raw authored cross-link fields. Returns false for other kinds or null outputs. */
+MARKDOWN_CORE_API bool markdown_core_node_cross_link_properties(const markdown_core_node *node, bool *embedded,
+                                                                markdown_core_optional_string *label);
+
 MARKDOWN_CORE_API bool markdown_core_node_title(const markdown_core_node *node, markdown_core_optional_string *title);
 
 /** The resource a `Link` or `Image` reads its destination and title from, as

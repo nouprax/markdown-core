@@ -196,6 +196,9 @@ markdown_core_node_kind markdown_core_node_get_kind(const markdown_core_node *no
     if (node->type == MARKDOWN_CORE_NODE_IMAGE) {
         return MARKDOWN_CORE_KIND_IMAGE;
     }
+    if (node->type == MARKDOWN_CORE_NODE_CROSS_LINK) {
+        return MARKDOWN_CORE_KIND_CROSS_LINK;
+    }
     if (node->type == MARKDOWN_CORE_NODE_CITE) {
         return MARKDOWN_CORE_KIND_CITE;
     }
@@ -262,9 +265,10 @@ const char *markdown_core_node_kind_name(markdown_core_node_kind kind) {
         "TableRow",
         "TableCell",
         "DirectiveLabel",
-        "Comment"};
+        "Comment",
+        "CrossLink"};
     /* clang-format on */
-    if (kind < MARKDOWN_CORE_KIND_NONE || kind > MARKDOWN_CORE_KIND_COMMENT) {
+    if (kind < MARKDOWN_CORE_KIND_NONE || kind > MARKDOWN_CORE_KIND_CROSS_LINK) {
         return "None";
     }
     return names[kind];
@@ -590,15 +594,28 @@ static const markdown_core_chunk empty_url = {(unsigned char *)"", 0, 0};
 static const markdown_core_optional_chunk absent_title = {{NULL, 0, 0}, false};
 
 bool markdown_core_node_destination(const markdown_core_node *node, markdown_core_destination *destination) {
-    if (!is_link(node) || !destination) {
+    if (!node || !destination || (!is_link(node) && node->type != MARKDOWN_CORE_NODE_CROSS_LINK)) {
         return false;
     }
-    /* Every link and image the inherited grammar produces is the `url`
-     * branch; the `cross` branch arrives with the cross links of `O1`. The
-     * other branch's fields are zeroed, not left over. */
     memset(destination, 0, sizeof(*destination));
+    if (node->type == MARKDOWN_CORE_NODE_CROSS_LINK) {
+        destination->kind = MARKDOWN_CORE_DESTINATION_CROSS;
+        string_from_chunk(&destination->path, &node->as.cross_link.path);
+        optional_string_from_chunk(&destination->anchor, &node->as.cross_link.anchor);
+        return true;
+    }
     destination->kind = MARKDOWN_CORE_DESTINATION_URL;
     string_from_chunk(&destination->url, node->as.link.resource ? &node->as.link.resource->url : &empty_url);
+    return true;
+}
+
+bool markdown_core_node_cross_link_properties(const markdown_core_node *node, bool *embedded,
+                                              markdown_core_optional_string *label) {
+    if (!node || node->type != MARKDOWN_CORE_NODE_CROSS_LINK || !embedded || !label) {
+        return false;
+    }
+    *embedded = node->as.cross_link.embedded;
+    optional_string_from_chunk(label, &node->as.cross_link.label);
     return true;
 }
 
@@ -1117,6 +1134,16 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
         buffer_cstr(buffer, " title=");
         buffer_optional_string(buffer, oa);
         break;
+    case MARKDOWN_CORE_KIND_CROSS_LINK: {
+        bool embedded;
+        markdown_core_node_cross_link_properties(node, &embedded, &oa);
+        markdown_core_node_destination(node, &destination);
+        buffer_cstr(buffer, embedded ? " embedded=true dest=" : " embedded=false dest=");
+        buffer_destination(buffer, destination);
+        buffer_cstr(buffer, " label=");
+        buffer_optional_string(buffer, oa);
+        break;
+    }
     case MARKDOWN_CORE_KIND_IMAGE: {
         markdown_core_node_destination(node, &destination);
         markdown_core_node_title(node, &oa);
@@ -1560,6 +1587,7 @@ static void dump_node(dump_buffer *buffer, const markdown_core_node *node, size_
     case MARKDOWN_CORE_KIND_HTML:
     case MARKDOWN_CORE_KIND_COMMENT:
     case MARKDOWN_CORE_KIND_FORMULA:
+    case MARKDOWN_CORE_KIND_CROSS_LINK:
     case MARKDOWN_CORE_KIND_NONE:
         break;
     }

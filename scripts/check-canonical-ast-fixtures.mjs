@@ -70,6 +70,15 @@ const INLINE_CONTENT = new Set([
 ]);
 
 const stateValidators = {
+    "crossLink.embedded.false": (tree) => /CrossLink scope=.* embedded=false /.test(tree),
+    "crossLink.embedded.true": (tree) => /CrossLink scope=.* embedded=true /.test(tree),
+    "crossLink.label.null": (tree) => /CrossLink scope=.* label=null /.test(tree),
+    "crossLink.label.empty": (tree) => /CrossLink scope=.* label="" /.test(tree),
+    "crossLink.label.value": (tree) => /CrossLink scope=.* label="[^"\n]+" /.test(tree),
+    "destination.cross.path": (tree) => / dest=cross\(path="[^"\n]+",anchor=/.test(tree),
+    "destination.cross.current-document": (tree) => / dest=cross\(path="",anchor="/.test(tree),
+    "destination.cross.anchor.null": (tree) => / dest=cross\(path="[^"\n]*",anchor=null\)/.test(tree),
+    "destination.cross.anchor.value": (tree) => / dest=cross\(path="[^"\n]*",anchor="[^"\n]+"\)/.test(tree),
     "placement.embedded": (tree) => / mode=embedded /.test(tree),
     "placement.standalone": (tree) => / mode=standalone /.test(tree),
     "list.flavor.bullet": (tree) => /^.*List scope=.* flavor=bullet /m.test(tree),

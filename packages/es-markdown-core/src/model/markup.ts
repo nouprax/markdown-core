@@ -3,6 +3,7 @@ import type { Cite } from "./cite.js";
 import type { CodeBlock } from "./code-block.js";
 import type { Code } from "./code.js";
 import type { Comment } from "./comment.js";
+import type { CrossLink } from "./cross-link.js";
 import type { DirectiveBlock } from "./directive-block.js";
 import type { DirectiveLabel } from "./directive-label.js";
 import type { Directive } from "./directive.js";
@@ -47,6 +48,7 @@ export type Markup =
     | Code
     | HTML
     | Comment
+    | CrossLink
     | Formula
     | Emphasis
     | Strong

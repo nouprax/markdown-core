@@ -25,6 +25,7 @@ MARKDOWN_CORE_1.0 {
     markdown_core_node_directive_label;
     markdown_core_node_callout_properties;
     markdown_core_node_callout_title;
+    markdown_core_node_cross_link_properties;
     markdown_core_node_destination;
     markdown_core_node_title;
     markdown_core_node_cite_citations;

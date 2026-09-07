@@ -736,6 +736,21 @@ static void write_node(jni_payload_buffer *buffer, jni_payload_stack *stack, jni
         /* The items are values the cite owns, not children. */
         write_citations(buffer, stack, node);
         break;
+    case MARKDOWN_CORE_KIND_CROSS_LINK: {
+        markdown_core_destination destination;
+        bool embedded;
+        if (!markdown_core_node_destination(node, &destination) ||
+            !markdown_core_node_cross_link_properties(node, &embedded, &optional_first)) {
+            buffer->failure = JNI_PAYLOAD_INTERNAL;
+            return;
+        }
+        put_u8(buffer, embedded ? 1 : 0);
+        put_i32(buffer, (int32_t)destination.kind);
+        put_string(buffer, destination.path, true);
+        put_optional_string(buffer, destination.anchor);
+        put_optional_string(buffer, optional_first);
+        break;
+    }
     case MARKDOWN_CORE_KIND_LINK:
     case MARKDOWN_CORE_KIND_IMAGE: {
         /* The resource's ordinal leads. Only its first sight carries the

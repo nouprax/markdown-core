@@ -18,6 +18,7 @@ private typealias Comment = Testing.Comment
                 + ":::container[Title]{kind=demo}\nBody\n:::\n",
             "$$\ny\n$$\n",
             "a <!-- b --> c\n\n<!-- block -->\n",
+            "[[Note]] ![[#^block|]]\n",
         ]
         let documents = try sources.map { try Document.parse($0) }
         let kinds = Set(documents.flatMap { dumpKinds($0.dump()) })
@@ -26,7 +27,7 @@ private typealias Comment = Testing.Comment
             "ListItem", "CodeBlock", "HTMLBlock", "FormulaBlock", "Table",
             "DirectiveBlock", "DirectiveLabel", "Text", "SoftBreak",
             "LineBreak",
-            "Code", "HTML", "Comment", "Formula", "Emphasis", "Strong",
+            "Code", "HTML", "Comment", "CrossLink", "Formula", "Emphasis", "Strong",
             "Strikethrough", "Link", "Image", "Directive", "Cite",
             "TableRow", "TableCell",
         ]

@@ -25,6 +25,7 @@ public protocol MarkupVisitor {
     mutating func visit(_ node: Code) -> Result
     mutating func visit(_ node: HTML) -> Result
     mutating func visit(_ node: Comment) -> Result
+    mutating func visit(_ node: CrossLink) -> Result
     mutating func visit(_ node: Formula) -> Result
     mutating func visit(_ node: Emphasis) -> Result
     mutating func visit(_ node: Strong) -> Result
