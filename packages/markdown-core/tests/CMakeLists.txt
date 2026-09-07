@@ -245,7 +245,7 @@ markdown_core_add_test(spec_dialect_comments spec 120 spec_runner --spec
 markdown_core_add_test(spec_dialect_links_and_images spec 120 spec_runner --spec
                        "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/dialect-links-and-images.txt")
 markdown_core_add_test(spec_dialect_footnotes spec 120 spec_runner --spec
-    ${CMAKE_CURRENT_SOURCE_DIR}/fixtures/dialect-footnotes.txt)
+                       "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/dialect-footnotes.txt")
 markdown_core_add_test(spec_dialect_callouts spec 120 spec_runner --spec
                        "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/dialect-callouts.txt")
 # pathological: adversarial inputs, one CTest test per case so timeouts and
