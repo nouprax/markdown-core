@@ -164,11 +164,13 @@ import Testing
         // M4: an inherited call is a one-item cite naming its footnote by id
         // with empty affixes; the footnote is a value the document owns, never
         // content, and the walk reaches it after the content. Repeated calls
-        // share one footnote, the first definition wins, and the loser is
-        // ordinary content whose leading call names the winner.
+        // share one footnote: the first definition of an id is the one they
+        // resolve to, and a later definition of the same id is a footnote
+        // after it, as the inherited grammar parses it.
         let document = try Document.parse("[^a] [^a]\n\n[^a]: once\n\n[^a]: twice\n")
         let cites = document.content.flatMap { ($0 as? Paragraph)?.content ?? [] }.compactMap { $0 as? Cite }
-        #expect(cites.count == 3)
+        #expect(document.content.count == 1)
+        #expect(cites.count == 2)
         for cite in cites {
             let citation = try #require(cite.citations.first)
             #expect(cite.citations.count == 1)
@@ -176,16 +178,18 @@ import Testing
             #expect(citation.prefix.isEmpty && citation.suffix.isEmpty)
         }
         let footnote = try #require(document.footnotes.first)
-        #expect(document.footnotes.count == 1)
-        #expect(footnote.id == "a")
+        let later = try #require(document.footnotes.last)
+        #expect(document.footnotes.map(\.id) == ["a", "a"])
         #expect(footnote.scope == Scope(start: Position(line: 3, column: 1), end: Position(line: 4, column: 0)))
         #expect(((footnote.content.first as? Paragraph)?.content.first as? Text)?.literal == "once")
+        #expect(later.scope == Scope(start: Position(line: 5, column: 1), end: Position(line: 5, column: 11)))
+        #expect(((later.content.first as? Paragraph)?.content.first as? Text)?.literal == "twice")
         let dump = document.dump()
-        #expect(dump.hasPrefix("Document scope=1:1..5:11 children=2\n"))
+        #expect(dump.hasPrefix("Document scope=1:1..5:11 children=1\n"))
         let tail = """
-            └── Footnote scope=3:1..4:0 id="a" children=1
-                └── Paragraph scope=3:7..3:10 children=1
-                    └── Text scope=3:7..3:10 literal="once" children=0
+            └── Footnote scope=5:1..5:11 id="a" children=1
+                └── Paragraph scope=5:7..5:11 children=1
+                    └── Text scope=5:7..5:11 literal="twice" children=0
 
             """
         #expect(dump.hasSuffix(tail))
@@ -197,9 +201,9 @@ import Testing
             "entering:Cite", "entering:Citation", "exiting:Citation", "exiting:Cite",
             "entering:Text", "exiting:Text",
             "entering:Cite", "entering:Citation", "exiting:Citation", "exiting:Cite",
-            "exiting:Paragraph", "entering:Paragraph",
-            "entering:Cite", "entering:Citation", "exiting:Citation", "exiting:Cite",
-            "entering:Text", "exiting:Text", "exiting:Paragraph",
+            "exiting:Paragraph",
+            "entering:Footnote", "entering:Paragraph", "entering:Text", "exiting:Text", "exiting:Paragraph",
+            "exiting:Footnote",
             "entering:Footnote", "entering:Paragraph", "entering:Text", "exiting:Text", "exiting:Paragraph",
             "exiting:Footnote", "exiting:Document",
         ]

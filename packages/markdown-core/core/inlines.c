@@ -1421,9 +1421,35 @@ static markdown_core_node *handle_close_bracket(markdown_core_parser *parser, su
         }
     }
 
-    /* THE SECOND ALTERNATIVE of the bracket procedure (links-and-images
-     * module): a `[^label]` whose label is defined is a footnote call,
-     * whatever follows the `]`, so it is tested before any reference tail. */
+    // Next, look for a following [link label] that matches in refmap.
+    // skip spaces
+    raw_label = markdown_core_chunk_literal("");
+    found_label = link_label(subj, &raw_label);
+    if (!found_label) {
+        // If we have a shortcut reference link, back up
+        // to before the spacse we skipped.
+        subj->pos = initial_pos;
+    }
+
+    if ((!found_label || raw_label.len == 0) && !opener->bracket_after) {
+        markdown_core_chunk_free(subj->mem, &raw_label);
+        raw_label = markdown_core_chunk_dup(&subj->input, opener->position, initial_pos - opener->position - 1);
+        found_label = true;
+    }
+
+    /* `[t][l]`, `[l][]` and `[l]` resolve identically and to the same node: the
+     * `Link` or `Image` the definition names (M2). Nothing records which of the
+     * three spellings the author wrote, and nothing downstream can recover it
+     * -- the module states one node for every successful form. */
+    if (found_label && (record = markdown_core_map_lookup(subj->refmap, &raw_label)) != NULL) {
+        markdown_core_chunk_free(subj->mem, &raw_label);
+        goto match;
+    }
+    markdown_core_chunk_free(subj->mem, &raw_label);
+    goto noMatch;
+
+noMatch:
+    // If we fall through to here, it means we didn't match a link.
     // What if we're a footnote link?
     if (parser->options & MARKDOWN_CORE_OPT_FOOTNOTES && opener->inl_text->next &&
         opener->inl_text->next->type == MARKDOWN_CORE_NODE_TEXT) {
@@ -1586,36 +1612,6 @@ static markdown_core_node *handle_close_bracket(markdown_core_parser *parser, su
             return NULL;
         }
     }
-
-    // Next, look for a following [link label] that matches in refmap.
-    // skip spaces
-    raw_label = markdown_core_chunk_literal("");
-    found_label = link_label(subj, &raw_label);
-    if (!found_label) {
-        // If we have a shortcut reference link, back up
-        // to before the spacse we skipped.
-        subj->pos = initial_pos;
-    }
-
-    if ((!found_label || raw_label.len == 0) && !opener->bracket_after) {
-        markdown_core_chunk_free(subj->mem, &raw_label);
-        raw_label = markdown_core_chunk_dup(&subj->input, opener->position, initial_pos - opener->position - 1);
-        found_label = true;
-    }
-
-    /* `[t][l]`, `[l][]` and `[l]` resolve identically and to the same node: the
-     * `Link` or `Image` the definition names (M2). Nothing records which of the
-     * three spellings the author wrote, and nothing downstream can recover it
-     * -- the module states one node for every successful form. */
-    if (found_label && (record = markdown_core_map_lookup(subj->refmap, &raw_label)) != NULL) {
-        markdown_core_chunk_free(subj->mem, &raw_label);
-        goto match;
-    }
-    markdown_core_chunk_free(subj->mem, &raw_label);
-    goto noMatch;
-
-noMatch:
-    // If we fall through to here, it means we didn't match a link.
 
     pop_bracket(subj); // remove this opener from delimiter list
     subj->pos = initial_pos;
@@ -2043,13 +2039,6 @@ bufsize_t markdown_core_parse_reference_inline(markdown_core_mem *mem, markdown_
     if (!link_label(&subj, &lab) || lab.len == 0) {
         return 0;
     }
-    /* A `[^label]:` line is never a link reference definition (footnotes
-     * module): the caret opens a footnote definition, and a line the block
-     * phase did not take as one -- a losing duplicate -- is content. */
-    if (lab.data[0] == '^') {
-        return 0;
-    }
-
     // colon:
     if (peek_char(&subj) == ':') {
         advance(&subj);

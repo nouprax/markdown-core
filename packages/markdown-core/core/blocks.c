@@ -1433,23 +1433,6 @@ static bool parse_callout_prefix(markdown_core_parser *parser, markdown_core_chu
     return res;
 }
 
-/* Whether the document already defines the label a definition line opens
- * (M4): the first definition of a label in source order wins, and a later one
- * opens no block -- its line is ordinary content, in which the leading
- * `[^label]` is itself a call to the winner. The label is read exactly as the
- * opening reads it, over a borrowed slice; the map normalizes. */
-static bool S_footnote_label_defined(markdown_core_parser *parser, markdown_core_chunk *input, bufsize_t first_nonspace,
-                                     bufsize_t matched) {
-    markdown_core_chunk label = markdown_core_chunk_dup(input, first_nonspace + 2, matched - 2);
-    while (label.len > 0 && label.data[label.len - 1] != ']') {
-        --label.len;
-    }
-    if (label.len > 0) {
-        --label.len;
-    }
-    return markdown_core_map_lookup(parser->footnote_defs, &label) != NULL;
-}
-
 static bool parse_footnote_definition_block_prefix(markdown_core_parser *parser, markdown_core_chunk *input,
                                                    markdown_core_node *container) {
     if (parser->indent >= 4) {
@@ -1796,8 +1779,7 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
             }
             S_advance_offset(parser, input, input->len - 1 - parser->offset, false);
         } else if (!indented && (parser->options & MARKDOWN_CORE_OPT_FOOTNOTES) && depth < MAX_FOOTNOTE_DEPTH &&
-                   (matched = scan_footnote_definition(input, parser->first_nonspace)) &&
-                   !S_footnote_label_defined(parser, input, parser->first_nonspace, matched)) {
+                   (matched = scan_footnote_definition(input, parser->first_nonspace))) {
             markdown_core_chunk c = markdown_core_chunk_dup(input, parser->first_nonspace + 2, matched - 2);
             unsigned char *id;
             int lost = 0;

@@ -205,12 +205,12 @@ each carries a `scope`, and each owns Markup, but neither is ever a child of
 a node. A `Citation` is reached only through `Cite.citations`, which holds at
 least one item in source order; its `prefix` and `suffix` are non-null inline
 content, empty when absent. A `Footnote` is reached only through
-`Document.footnotes`, which holds every winning or unreferenced definition
-ordered by scope start, wherever it was written; its `id` is the definition's
-label under the reference-label normalization without the caret, and its
-`content` is the parsed block content. A losing duplicate definition is
-ordinary content in which the leading `[^label]` is itself a call to the
-winner. The C facade answers the values through the opaque handles
+`Document.footnotes`, which holds every definition ordered by scope start,
+wherever it was written; its `id` is the definition's label under the
+reference-label normalization without the caret, and its `content` is the
+parsed block content. A later definition of an id already defined is a
+`Footnote` after the first, which every call resolves to, so a consumer
+keying footnotes by id takes the first. The C facade answers the values through the opaque handles
 `markdown_core_citation` and `markdown_core_footnote` and their accessors,
 never through `markdown_core_node`; Swift, Kotlin, and ECMAScript model them
 as value types outside their `Markup` unions, and `CitationReferent` as
@@ -227,7 +227,7 @@ and returns no document.
 
 | Kind | Fields in canonical order | Nullability and invariants |
 | --- | --- | --- |
-| `Document` | `content: [Markup]`, `footnotes: [Footnote]` | block content; `footnotes` is the document-owned sequence of every winning or unreferenced footnote definition, ordered by scope start, visited after `content`, and never counted among its children |
+| `Document` | `content: [Markup]`, `footnotes: [Footnote]` | block content; `footnotes` is the document-owned sequence of every footnote definition, ordered by scope start, a later definition of an id after the first, visited after `content`, and never counted among its children |
 | `Callout` | `variant: String?`, `collapsed: Bool?`, `title: [Markup]?`, `content: [Markup]` | every `>` container; `variant` is the authored type as written, or null when the container has no metadata line, and then `collapsed` and `title` are null; `collapsed` is null when no `+` or `-` fold marker was authored, false for `+` and true for `-`; `title` is a node-valued field of inline content, visited before `content` and never counted among its children, and a present title holds at least one node; block content |
 | `Paragraph` | `content: [Markup]` | inline content |
 | `Heading` | `level: Int`, `content: [Markup]` | `level` is 1 through 6; inline content |

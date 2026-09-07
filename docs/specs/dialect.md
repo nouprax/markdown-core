@@ -229,11 +229,11 @@ the next alternative runs from there.
 | A10  | text directive `:name[...]{...}`                                                                | scanner                                                               |
 | A11  | character reference                                                                             | scanner                                                               |
 | B1   | direct link and image tail, then an attribute container                                         | bracket close, first                                                  |
-| B2   | defined footnote call `[^label]`                                                                | bracket close                                                         |
-| B3   | resolving full and collapsed reference tails, then a container                                  | bracket close                                                         |
-| B4   | `[...]{attrs}` span                                                                             | bracket close                                                         |
-| B5   | `[@key...; ...]` cite group                                                                     | bracket close                                                         |
-| B6   | resolving shortcut reference                                                                    | bracket close, last                                                   |
+| B2   | resolving full and collapsed reference tails, then a container                                  | bracket close                                                         |
+| B3   | `[...]{attrs}` span                                                                             | bracket close                                                         |
+| B4   | `[@key...; ...]` cite group                                                                     | bracket close                                                         |
+| B5   | resolving shortcut reference                                                                    | bracket close                                                         |
+| B6   | defined footnote call `[^label]`                                                                | bracket close, last                                                   |
 | C1   | `*`, `_` emphasis and strong                                                                    | delimiter stack                                                       |
 | C2   | `~~` strikethrough                                                                              | delimiter stack                                                       |
 | C3   | `~` subscript                                                                                   | delimiter stack                                                       |

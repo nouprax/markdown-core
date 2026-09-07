@@ -428,8 +428,9 @@ its behavior, with no separate publication step.
       callbacks, dump form, and wire records. Inherited `[^label]` calls lower
       to a one-item `Cite` with empty affixes whose ID is the normalized label
       without the caret; repeated calls share one `Footnote`; a valid
-      unreferenced definition remains a `Footnote`; a losing duplicate keeps the
-      inherited content fallback. Remove `markdown_core_node_association` and
+      unreferenced definition remains a `Footnote`; a later definition of an id
+      already defined remains a `Footnote` after the first, as the inherited
+      grammar parses it. Remove `markdown_core_node_association` and
       add cite, citation, and footnote accessors; update the remark projection;
       only the `footnote` branch is produced until `P7`. Manifest states and
       orders: `citation.referent.footnote`, `citation.affix.empty`,

@@ -1537,12 +1537,11 @@ static void citation_and_footnote_values(test_batch_runner *runner) {
                                    "[^b]: kept\n"
                                    "\n"
                                    "[^unused]: still here\n";
-    static const char *const ids[] = {"note", "b", "unused"};
+    static const char *const ids[] = {"note", "note", "b", "unused"};
     markdown_core_document *document;
     const markdown_core_node *root;
     const markdown_core_node *paragraph;
     const markdown_core_node *cite;
-    const markdown_core_node *loser;
     const markdown_core_citation *item;
     const markdown_core_footnote *footnote;
     markdown_core_referent referent;
@@ -1556,9 +1555,9 @@ static void citation_and_footnote_values(test_batch_runner *runner) {
         return;
     }
     root = markdown_core_document_root(document);
-    /* The three definitions left the tree: two paragraphs remain, the second
-     * being the losing duplicate parsed as content. */
-    INT_EQ(runner, (int)markdown_core_node_child_count(root), 2, "no definition remains a child of the document");
+    /* Every definition left the tree, the losing duplicate included: one
+     * paragraph remains. */
+    INT_EQ(runner, (int)markdown_core_node_child_count(root), 1, "no definition remains a child of the document");
     paragraph = markdown_core_node_get_first_child(root);
     cite = markdown_core_node_get_first_child(paragraph);
     INT_EQ(runner, markdown_core_node_get_kind(cite), MARKDOWN_CORE_KIND_CITE, "a defined call is a Cite");
@@ -1581,23 +1580,22 @@ static void citation_and_footnote_values(test_batch_runner *runner) {
     OK(runner, scope.start.line == 1 && scope.start.column == 2 && scope.end.line == 1 && scope.end.column == 6,
        "the item covers the caret and the label");
 
-    loser = markdown_core_node_get_next_sibling(paragraph);
-    INT_EQ(runner, markdown_core_node_get_kind(loser), MARKDOWN_CORE_KIND_PARAGRAPH,
-           "a losing duplicate is ordinary content");
-    INT_EQ(runner, markdown_core_node_get_kind(markdown_core_node_get_first_child(loser)), MARKDOWN_CORE_KIND_CITE,
-           "the losing duplicate's leading call names the winner");
+    OK(runner, markdown_core_node_get_next_sibling(paragraph) == NULL, "the paragraph is the only content");
 
     for (footnote = markdown_core_node_document_footnotes(root); footnote;
          footnote = markdown_core_footnote_next(footnote)) {
         OK(runner, markdown_core_footnote_id(footnote, &id), "a footnote answers its id");
-        OK(runner, count < 3 && id.length == strlen(ids[count]) && memcmp(id.data, ids[count], id.length) == 0,
+        OK(runner, count < 4 && id.length == strlen(ids[count]) && memcmp(id.data, ids[count], id.length) == 0,
            "footnote %zu carries the expected id", count);
         count++;
     }
-    INT_EQ(runner, (int)count, 3, "the winner, the referenced, and the unreferenced definitions are footnotes");
+    INT_EQ(runner, (int)count, 4, "the winner, its duplicate, the referenced, and the unreferenced definitions are footnotes");
     footnote = markdown_core_node_document_footnotes(root);
     scope = markdown_core_footnote_scope(footnote);
     OK(runner, scope.start.line == 3 && scope.start.column == 1, "the first footnote is the winning definition");
+    scope = markdown_core_footnote_scope(markdown_core_footnote_next(footnote));
+    OK(runner, scope.start.line == 5 && scope.start.column == 1,
+       "a later definition of the same id is the footnote after the winner");
     OK(runner,
        markdown_core_footnote_content(footnote) != NULL &&
            markdown_core_node_get_kind(markdown_core_footnote_content(footnote)) == MARKDOWN_CORE_KIND_PARAGRAPH,

@@ -669,15 +669,12 @@ Document scope=1:1..5:30 children=1
 │   │       ├── CitationPrefix children=0
 │   │       └── CitationSuffix children=0
 │   └── Text scope=1:11..1:11 literal="." children=0
-└── Footnote scope=3:1..5:30 id="dup" children=2
-    ├── Paragraph scope=3:9..3:25 children=1
-    │   └── Text scope=3:9..3:25 literal="OUTER opens first" children=0
-    └── Paragraph scope=5:5..5:30 children=2
-        ├── Cite scope=5:5..5:10 children=1
-        │   └── Citation scope=5:6..5:9 referent=footnote(id="dup") children=0
-        │       ├── CitationPrefix children=0
-        │       └── CitationSuffix children=0
-        └── Text scope=5:11..5:30 literal=": INNER closes first" children=0
+├── Footnote scope=3:1..5:30 id="dup" children=1
+│   └── Paragraph scope=3:9..3:25 children=1
+│       └── Text scope=3:9..3:25 literal="OUTER opens first" children=0
+└── Footnote scope=5:5..5:30 id="dup" children=1
+    └── Paragraph scope=5:13..5:30 children=1
+        └── Text scope=5:13..5:30 literal="INNER closes first" children=0
 ````````````````````````````````
 
 An autolink inside a block quote contains its own text. Its columns used to

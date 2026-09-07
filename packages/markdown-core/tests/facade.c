@@ -283,9 +283,9 @@ static size_t count_occurrences(const char *text, const char *needle) {
 }
 
 static void check_citation_model(void) {
-    /* M4: repeated calls share one footnote, a losing duplicate is content
-     * whose leading call names the winner, and the dump nests each value
-     * under its owner: items under the cite, footnotes after the content. */
+    /* M4: repeated calls share one footnote, a later definition of the same
+     * id is a footnote after the winner, and the dump nests each value under
+     * its owner: items under the cite, footnotes after the content. */
     static const char source[] = "[^a] [^a]\n\n[^a]: once\n\n[^a]: twice\n";
     markdown_core_error *error = NULL;
     markdown_core_document *document = markdown_core_document_parse((const uint8_t *)source, strlen(source), &error);
@@ -298,15 +298,17 @@ static void check_citation_model(void) {
     check(markdown_core_document_dump(document, &dump, &length, &error), "citation corpus dumps");
     if (dump) {
         const char *text = (const char *)dump;
-        check(count_occurrences(text, "Cite scope=") == 3, "every defined call is a Cite");
-        check(count_occurrences(text, "referent=footnote(id=\"a\") children=0\n") == 3,
-              "every item names the one footnote");
-        check(count_occurrences(text, "CitationPrefix children=0\n") == 3 &&
-                  count_occurrences(text, "CitationSuffix children=0\n") == 3,
+        check(count_occurrences(text, "Cite scope=") == 2, "every defined call is a Cite");
+        check(count_occurrences(text, "referent=footnote(id=\"a\") children=0\n") == 2,
+              "every item names the footnote by id");
+        check(count_occurrences(text, "CitationPrefix children=0\n") == 2 &&
+                  count_occurrences(text, "CitationSuffix children=0\n") == 2,
               "an inherited call has empty affix groups");
-        check(count_occurrences(text, "Footnote scope=") == 1, "the first definition wins");
-        check(strstr(text, "\n└── Footnote scope=3:1..4:0 id=\"a\" children=1\n") != NULL,
-              "the footnote is nested last under the document");
+        check(count_occurrences(text, "Footnote scope=") == 2, "both definitions are footnotes");
+        check(strstr(text, "\n├── Footnote scope=3:1..4:0 id=\"a\" children=1\n") != NULL,
+              "the winning definition is the first footnote");
+        check(strstr(text, "\n└── Footnote scope=5:1..5:11 id=\"a\" children=1\n") != NULL,
+              "the later definition is the footnote after it, nested last under the document");
         markdown_core_dump_free(dump);
     }
     markdown_core_document_free(document);

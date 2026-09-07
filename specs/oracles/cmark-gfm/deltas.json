@@ -39,7 +39,7 @@
         {
             "id": "footnote-duplicate-definition",
             "kind": "deliberate-difference",
-            "summary": "For nested duplicate definitions cmark-gfm keeps the one that closes first and destroys the other. Markdown Core resolves in source-opening order and retains the loser as authored content.",
+            "summary": "For nested duplicate definitions cmark-gfm keeps the one that closes first and destroys the other. Markdown Core resolves calls to the definition that opens first and retains the loser as a footnote after the winner, with the same id.",
             "handling": "The nested witness is registered exactly so the gate continues checking both resolution and retention."
         },
         {

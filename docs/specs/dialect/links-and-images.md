@@ -154,22 +154,23 @@ alternative is text.
 
 1. A valid direct tail `(...)` produces `Link` or `Image`; a following
    container attaches.
-2. A `[^label]` whose label is defined is a footnote call
-   and produces a `Cite`, whatever else follows the `]`; the
-   [footnotes](footnotes.md) module states it.
-3. A full `[label]` or collapsed `[]` tail whose label resolves, explicitly or
+2. A full `[label]` or collapsed `[]` tail whose label resolves, explicitly or
    through a virtual heading definition, produces `Link` or `Image`; a
    following container attaches. A tail whose label does not resolve does
    not block the later alternatives.
-4. A valid attribute container beginning at the byte after `]` produces a
+3. A valid attribute container beginning at the byte after `]` produces a
    `Span`.
-5. A valid cite group produces a `Cite`.
-6. A shortcut reference whose label resolves, not followed by `[]` or by a
+4. A valid cite group produces a `Cite`.
+5. A shortcut reference whose label resolves, not followed by `[]` or by a
    link label, produces `Link` or `Image`; a following container belongs to
-   alternative 4, so none attaches here.
+   alternative 3, so none attaches here.
+6. A `[^label]` whose label is defined is a footnote call and produces a
+   `Cite`; the [footnotes](footnotes.md) module states it. As cmark-gfm
+   tests it, the call is the last alternative before the literal fallback, so
+   a reference tail or a shortcut reference that resolves wins over it.
 7. Otherwise the pair is the inherited literal text.
 
-For an image opener `![`, alternatives 4 through 6 yield a literal `!`
+For an image opener `![`, alternatives 3 through 6 yield a literal `!`
 followed by the node. A `[[` is claimed by the cross-link
 scanner before this procedure runs, and a text directive's label is claimed by
 the directive scanner; neither reaches this procedure. The modules named in

@@ -42,14 +42,6 @@ static void definition_create(markdown_core_mem *mem, markdown_core_map *map, ma
 
     map->records = record;
     map->size++;
-    /* A lookup may have indexed the map already -- the block phase asks
-     * whether a label is defined as each footnote definition opens (M4) --
-     * so a record added afterwards joins the index now. The slot keeps its
-     * first record, which is the source-order rule. */
-    if (map->prepared &&
-        !markdown_core_key_index_insert(&map->index, reflabel, (bufsize_t)strlen((char *)reflabel), record, 0, NULL)) {
-        map->oom = 1;
-    }
 }
 
 markdown_core_map *markdown_core_reference_map_new(markdown_core_mem *mem) { return markdown_core_map_new(mem); }

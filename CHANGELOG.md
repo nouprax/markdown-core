@@ -111,12 +111,10 @@ facade while removing renderer support and the caller-driven feed lifecycle.
   cite whose `Citation` carries the `footnote` referent, the normalized label
   without the caret as its id, and empty prefix and suffix; the `bib` referent
   and `BibMode` are declared on every surface and produced by nothing until
-  citations land with `P7`. Repeated calls share one footnote, the first
-  definition of an id wins, a losing duplicate is ordinary content whose
-  leading call names the winner, a valid definition nobody calls is still a
-  footnote, `[^label]:` is never a link reference definition, and a defined
-  footnote call is tested after a direct link tail and before a reference
-  tail, as the dialect's bracket procedure orders them.
+  citations land with `P7`. Repeated calls share one footnote: the first
+  definition of an id is the one they resolve to, a later definition of the
+  same id is a footnote after it, a definition nobody calls is a footnote
+  too, and the inherited block and bracket grammars are unchanged.
   `markdown_core_node_association` is removed; the C facade gains
   `markdown_core_node_cite_citations`, `markdown_core_citation_next`,
   `markdown_core_citation_scope`, `markdown_core_citation_referent`,
