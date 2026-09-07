@@ -137,96 +137,96 @@ markdown_core_node_kind markdown_core_node_get_kind(const markdown_core_node *no
     if (!node) {
         return MARKDOWN_CORE_KIND_NONE;
     }
-    if (node->type == MARKDOWN_CORE_NODE_DOCUMENT) {
+    if (node->kind == MARKDOWN_CORE_NODE_DOCUMENT) {
         return MARKDOWN_CORE_KIND_DOCUMENT;
     }
-    if (node->type == MARKDOWN_CORE_NODE_CALLOUT) {
+    if (node->kind == MARKDOWN_CORE_NODE_CALLOUT) {
         return MARKDOWN_CORE_KIND_CALLOUT;
     }
-    if (node->type == MARKDOWN_CORE_NODE_PARAGRAPH) {
+    if (node->kind == MARKDOWN_CORE_NODE_PARAGRAPH) {
         return MARKDOWN_CORE_KIND_PARAGRAPH;
     }
-    if (node->type == MARKDOWN_CORE_NODE_HEADING) {
+    if (node->kind == MARKDOWN_CORE_NODE_HEADING) {
         return MARKDOWN_CORE_KIND_HEADING;
     }
-    if (node->type == MARKDOWN_CORE_NODE_THEMATIC_BREAK) {
+    if (node->kind == MARKDOWN_CORE_NODE_THEMATIC_BREAK) {
         return MARKDOWN_CORE_KIND_THEMATIC_BREAK;
     }
-    if (node->type == MARKDOWN_CORE_NODE_LIST) {
+    if (node->kind == MARKDOWN_CORE_NODE_LIST) {
         return MARKDOWN_CORE_KIND_LIST;
     }
-    if (node->type == MARKDOWN_CORE_NODE_LIST_ITEM) {
+    if (node->kind == MARKDOWN_CORE_NODE_LIST_ITEM) {
         return MARKDOWN_CORE_KIND_LIST_ITEM;
     }
-    if (node->type == MARKDOWN_CORE_NODE_CODE_BLOCK) {
+    if (node->kind == MARKDOWN_CORE_NODE_CODE_BLOCK) {
         return MARKDOWN_CORE_KIND_CODE_BLOCK;
     }
-    if (node->type == MARKDOWN_CORE_NODE_HTML_BLOCK) {
+    if (node->kind == MARKDOWN_CORE_NODE_HTML_BLOCK) {
         return MARKDOWN_CORE_KIND_HTML_BLOCK;
     }
-    if (node->type == MARKDOWN_CORE_NODE_TEXT) {
+    if (node->kind == MARKDOWN_CORE_NODE_TEXT) {
         return MARKDOWN_CORE_KIND_TEXT;
     }
-    if (node->type == MARKDOWN_CORE_NODE_SOFT_BREAK) {
+    if (node->kind == MARKDOWN_CORE_NODE_SOFT_BREAK) {
         return MARKDOWN_CORE_KIND_SOFT_BREAK;
     }
-    if (node->type == MARKDOWN_CORE_NODE_LINE_BREAK) {
+    if (node->kind == MARKDOWN_CORE_NODE_LINE_BREAK) {
         return MARKDOWN_CORE_KIND_LINE_BREAK;
     }
-    if (node->type == MARKDOWN_CORE_NODE_CODE) {
+    if (node->kind == MARKDOWN_CORE_NODE_CODE) {
         return MARKDOWN_CORE_KIND_CODE;
     }
-    if (node->type == MARKDOWN_CORE_NODE_HTML) {
+    if (node->kind == MARKDOWN_CORE_NODE_HTML) {
         return MARKDOWN_CORE_KIND_HTML;
     }
     /* One public kind for both internal types: the parent edge says which
      * content a comment sits in, and the node stores no placement. */
-    if (node->type == MARKDOWN_CORE_NODE_COMMENT || node->type == MARKDOWN_CORE_NODE_COMMENT_BLOCK) {
+    if (node->kind == MARKDOWN_CORE_NODE_COMMENT || node->kind == MARKDOWN_CORE_NODE_COMMENT_BLOCK) {
         return MARKDOWN_CORE_KIND_COMMENT;
     }
-    if (node->type == MARKDOWN_CORE_NODE_EMPHASIS) {
+    if (node->kind == MARKDOWN_CORE_NODE_EMPHASIS) {
         return MARKDOWN_CORE_KIND_EMPHASIS;
     }
-    if (node->type == MARKDOWN_CORE_NODE_STRONG) {
+    if (node->kind == MARKDOWN_CORE_NODE_STRONG) {
         return MARKDOWN_CORE_KIND_STRONG;
     }
-    if (node->type == MARKDOWN_CORE_NODE_LINK) {
+    if (node->kind == MARKDOWN_CORE_NODE_LINK) {
         return MARKDOWN_CORE_KIND_LINK;
     }
-    if (node->type == MARKDOWN_CORE_NODE_IMAGE) {
+    if (node->kind == MARKDOWN_CORE_NODE_IMAGE) {
         return MARKDOWN_CORE_KIND_IMAGE;
     }
-    if (node->type == MARKDOWN_CORE_NODE_CROSS_LINK) {
+    if (node->kind == MARKDOWN_CORE_NODE_CROSS_LINK) {
         return MARKDOWN_CORE_KIND_CROSS_LINK;
     }
-    if (node->type == MARKDOWN_CORE_NODE_CITE) {
+    if (node->kind == MARKDOWN_CORE_NODE_CITE) {
         return MARKDOWN_CORE_KIND_CITE;
     }
-    if (node->type == MARKDOWN_CORE_NODE_TABLE) {
+    if (node->kind == MARKDOWN_CORE_NODE_TABLE) {
         return MARKDOWN_CORE_KIND_TABLE;
     }
-    if (node->type == MARKDOWN_CORE_NODE_TABLE_ROW) {
+    if (node->kind == MARKDOWN_CORE_NODE_TABLE_ROW) {
         return MARKDOWN_CORE_KIND_TABLE_ROW;
     }
-    if (node->type == MARKDOWN_CORE_NODE_TABLE_CELL) {
+    if (node->kind == MARKDOWN_CORE_NODE_TABLE_CELL) {
         return MARKDOWN_CORE_KIND_TABLE_CELL;
     }
-    if (node->type == MARKDOWN_CORE_NODE_STRIKETHROUGH) {
+    if (node->kind == MARKDOWN_CORE_NODE_STRIKETHROUGH) {
         return MARKDOWN_CORE_KIND_STRIKETHROUGH;
     }
-    if (node->type == MARKDOWN_CORE_NODE_FORMULA) {
+    if (node->kind == MARKDOWN_CORE_NODE_FORMULA) {
         return MARKDOWN_CORE_KIND_FORMULA;
     }
-    if (node->type == MARKDOWN_CORE_NODE_FORMULA_BLOCK) {
+    if (node->kind == MARKDOWN_CORE_NODE_FORMULA_BLOCK) {
         return MARKDOWN_CORE_KIND_FORMULA_BLOCK;
     }
-    if (node->type == MARKDOWN_CORE_NODE_DIRECTIVE) {
+    if (node->kind == MARKDOWN_CORE_NODE_DIRECTIVE) {
         return MARKDOWN_CORE_KIND_DIRECTIVE;
     }
-    if (node->type == MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK) {
+    if (node->kind == MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK) {
         return MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK;
     }
-    if (node->type == MARKDOWN_CORE_NODE_DIRECTIVE_LABEL) {
+    if (node->kind == MARKDOWN_CORE_NODE_DIRECTIVE_LABEL) {
         return MARKDOWN_CORE_KIND_DIRECTIVE_LABEL;
     }
     return MARKDOWN_CORE_KIND_NONE;
@@ -286,7 +286,7 @@ markdown_core_scope markdown_core_node_scope(const markdown_core_node *node) {
 }
 
 static bool is_directive(const markdown_core_node *node) {
-    return node && (node->type == MARKDOWN_CORE_NODE_DIRECTIVE || node->type == MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK);
+    return node && (node->kind == MARKDOWN_CORE_NODE_DIRECTIVE || node->kind == MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK);
 }
 
 const markdown_core_node *markdown_core_node_get_first_child(const markdown_core_node *node) {
@@ -308,30 +308,30 @@ size_t markdown_core_node_child_count(const markdown_core_node *node) {
 }
 
 bool markdown_core_node_heading_level(const markdown_core_node *node, int32_t *level) {
-    if (!node || node->type != MARKDOWN_CORE_NODE_HEADING || !level) {
+    if (!node || node->kind != MARKDOWN_CORE_NODE_HEADING || !level) {
         return false;
     }
-    *level = node->as.heading.level;
+    *level = node->as.heading->level;
     return true;
 }
 
 bool markdown_core_node_list_properties(const markdown_core_node *node, markdown_core_list_flavor *flavor,
                                         markdown_core_optional_i64 *start, markdown_core_ordered_list_variant *variant,
                                         markdown_core_ordered_list_delimiter *delimiter, bool *tight) {
-    if (!node || node->type != MARKDOWN_CORE_NODE_LIST || !flavor || !start || !variant || !delimiter || !tight) {
+    if (!node || node->kind != MARKDOWN_CORE_NODE_LIST || !flavor || !start || !variant || !delimiter || !tight) {
         return false;
     }
-    *flavor = node->as.list.list_type == MARKDOWN_CORE_ORDERED_LIST ? MARKDOWN_CORE_LIST_FLAVOR_ORDERED
-                                                                    : MARKDOWN_CORE_LIST_FLAVOR_BULLET;
+    *flavor = node->as.list->list_type == MARKDOWN_CORE_ORDERED_LIST ? MARKDOWN_CORE_LIST_FLAVOR_ORDERED
+                                                                     : MARKDOWN_CORE_LIST_FLAVOR_BULLET;
     start->has_value = *flavor == MARKDOWN_CORE_LIST_FLAVOR_ORDERED;
-    start->value = node->as.list.start;
+    start->value = node->as.list->start;
     variant->kind = MARKDOWN_CORE_ORDERED_LIST_VARIANT_DECIMAL;
     variant->lowercased = false;
-    delimiter->kind = node->as.list.delimiter == MARKDOWN_CORE_PAREN_DELIM
+    delimiter->kind = node->as.list->delimiter == MARKDOWN_CORE_PAREN_DELIM
                           ? MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PARENTHESIS
                           : MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PERIOD;
     delimiter->closed = false;
-    *tight = node->as.list.tight;
+    *tight = node->as.list->tight;
     return true;
 }
 
@@ -350,10 +350,10 @@ static void optional_string_from_chunk(markdown_core_optional_string *out, const
 }
 
 bool markdown_core_node_list_item_marker(const markdown_core_node *node, markdown_core_optional_string *marker) {
-    if (!node || node->type != MARKDOWN_CORE_NODE_LIST_ITEM || !marker) {
+    if (!node || node->kind != MARKDOWN_CORE_NODE_LIST_ITEM || !marker) {
         return false;
     }
-    optional_string_from_chunk(marker, &node->as.list.task_marker);
+    optional_string_from_chunk(marker, &node->as.list->task_marker);
     return true;
 }
 
@@ -362,11 +362,11 @@ bool markdown_core_node_code_block_properties(const markdown_core_node *node, ma
                                               bool *fenced, bool *closed) {
     size_t start = 0;
     size_t end;
-    if (!node || node->type != MARKDOWN_CORE_NODE_CODE_BLOCK || !info || !language || !literal || !fenced || !closed) {
+    if (!node || node->kind != MARKDOWN_CORE_NODE_CODE_BLOCK || !info || !language || !literal || !fenced || !closed) {
         return false;
     }
-    optional_string_from_chunk(info, &node->as.code.info);
-    string_from_chunk(literal, &node->as.code.literal);
+    optional_string_from_chunk(info, &node->as.code->info);
+    string_from_chunk(literal, &node->as.code->literal);
     /* `if (info->length == 0) info->data = NULL;` STOOD HERE, and it is the
      * fold requirement 14 names: the parse had already decided whether a fence
      * wrote an info string, and this line decided it again from a length. */
@@ -387,8 +387,8 @@ bool markdown_core_node_code_block_properties(const markdown_core_node *node, ma
         language->value.data = info->value.data + start;
         language->value.length = end - start;
     }
-    *fenced = node->as.code.fenced != 0;
-    *closed = !*fenced || node->as.code.fence_closed != 0;
+    *fenced = node->as.code->fenced != 0;
+    *closed = !*fenced || node->as.code->fence_closed != 0;
     return true;
 }
 
@@ -396,14 +396,16 @@ bool markdown_core_node_literal(const markdown_core_node *node, markdown_core_st
     if (!node || !literal) {
         return false;
     }
-    switch (node->type) {
+    switch (node->kind) {
     case MARKDOWN_CORE_NODE_HTML_BLOCK:
+        string_from_chunk(literal, &node->as.html_block->literal);
+        return true;
     case MARKDOWN_CORE_NODE_TEXT:
     case MARKDOWN_CORE_NODE_HTML:
     case MARKDOWN_CORE_NODE_CODE:
     case MARKDOWN_CORE_NODE_COMMENT:
     case MARKDOWN_CORE_NODE_COMMENT_BLOCK:
-        string_from_chunk(literal, &node->as.literal);
+        string_from_chunk(literal, node->as.literal);
         return true;
     default:
         return false;
@@ -415,7 +417,7 @@ bool markdown_core_node_formula_properties(const markdown_core_node *node, markd
     const char *value;
     markdown_core_formula_mode native_mode;
     if (!node || !mode || !literal ||
-        (node->type != MARKDOWN_CORE_NODE_FORMULA && node->type != MARKDOWN_CORE_NODE_FORMULA_BLOCK)) {
+        (node->kind != MARKDOWN_CORE_NODE_FORMULA && node->kind != MARKDOWN_CORE_NODE_FORMULA_BLOCK)) {
         return false;
     }
     native_mode = markdown_core_extensions_get_formula_mode((markdown_core_node *)node);
@@ -429,7 +431,7 @@ bool markdown_core_node_formula_properties(const markdown_core_node *node, markd
 
 bool markdown_core_node_table_properties(const markdown_core_node *node, size_t *column_count, size_t *head_count,
                                          size_t *content_count, size_t *foot_count) {
-    if (!node || node->type != MARKDOWN_CORE_NODE_TABLE || !node->opaque || !column_count || !head_count ||
+    if (!node || node->kind != MARKDOWN_CORE_NODE_TABLE || !node->opaque || !column_count || !head_count ||
         !content_count || !foot_count) {
         return false;
     }
@@ -443,7 +445,7 @@ bool markdown_core_node_table_properties(const markdown_core_node *node, size_t 
 
 bool markdown_core_node_table_column_at(const markdown_core_node *node, size_t index,
                                         markdown_core_table_column *column) {
-    if (!node || node->type != MARKDOWN_CORE_NODE_TABLE || !node->opaque || !column) {
+    if (!node || node->kind != MARKDOWN_CORE_NODE_TABLE || !node->opaque || !column) {
         return false;
     }
     const markdown_core_table *table = node->opaque;
@@ -455,11 +457,11 @@ bool markdown_core_node_table_column_at(const markdown_core_node *node, size_t i
 }
 
 bool markdown_core_node_table_cell_spans(const markdown_core_node *node, int64_t *rowspan, int64_t *colspan) {
-    if (!node || node->type != MARKDOWN_CORE_NODE_TABLE_CELL || !rowspan || !colspan) {
+    if (!node || node->kind != MARKDOWN_CORE_NODE_TABLE_CELL || !rowspan || !colspan) {
         return false;
     }
-    *rowspan = node->as.table_cell.rowspan;
-    *colspan = node->as.table_cell.colspan;
+    *rowspan = node->as.table_cell->rowspan;
+    *colspan = node->as.table_cell->colspan;
     return true;
 }
 
@@ -504,15 +506,15 @@ bool markdown_core_node_attribute_record_at(const markdown_core_node *node, size
 }
 bool markdown_core_node_image_dimensions(const markdown_core_node *node, markdown_core_optional_i64 *width,
                                          markdown_core_optional_i64 *height) {
-    if (!node || node->type != MARKDOWN_CORE_NODE_IMAGE || !width || !height) {
+    if (!node || node->kind != MARKDOWN_CORE_NODE_IMAGE || !width || !height) {
         return false;
     }
-    *width = node->as.link.width;
-    *height = node->as.link.height;
+    *width = node->as.link->width;
+    *height = node->as.link->height;
     return true;
 }
 const markdown_core_metadata *markdown_core_node_document_metadata(const markdown_core_node *node) {
-    return node && node->type == MARKDOWN_CORE_NODE_DOCUMENT ? node->as.document.metadata : NULL;
+    return node && node->kind == MARKDOWN_CORE_NODE_DOCUMENT ? node->as.document->metadata : NULL;
 }
 markdown_core_scope markdown_core_metadata_scope(const markdown_core_metadata *metadata) {
     return metadata ? metadata->scope : (markdown_core_scope){0};
@@ -558,7 +560,7 @@ const markdown_core_node *markdown_core_node_directive_label(const markdown_core
     return is_directive(node) ? markdown_core_directive_label((markdown_core_node *)node) : NULL;
 }
 
-static bool is_callout(const markdown_core_node *node) { return node && node->type == MARKDOWN_CORE_NODE_CALLOUT; }
+static bool is_callout(const markdown_core_node *node) { return node && node->kind == MARKDOWN_CORE_NODE_CALLOUT; }
 
 bool markdown_core_node_callout_properties(const markdown_core_node *node, markdown_core_optional_string *variant,
                                            markdown_core_optional_bool *collapsed) {
@@ -584,7 +586,7 @@ const markdown_core_node *markdown_core_node_callout_title(const markdown_core_n
 }
 
 static bool is_link(const markdown_core_node *node) {
-    return node && (node->type == MARKDOWN_CORE_NODE_LINK || node->type == MARKDOWN_CORE_NODE_IMAGE);
+    return node && (node->kind == MARKDOWN_CORE_NODE_LINK || node->kind == MARKDOWN_CORE_NODE_IMAGE);
 }
 
 /* Every link and image the parser produces reads through a resource, and
@@ -594,28 +596,28 @@ static const markdown_core_chunk empty_url = {(unsigned char *)"", 0, 0};
 static const markdown_core_optional_chunk absent_title = {{NULL, 0, 0}, false};
 
 bool markdown_core_node_destination(const markdown_core_node *node, markdown_core_destination *destination) {
-    if (!node || !destination || (!is_link(node) && node->type != MARKDOWN_CORE_NODE_CROSS_LINK)) {
+    if (!node || !destination || (!is_link(node) && node->kind != MARKDOWN_CORE_NODE_CROSS_LINK)) {
         return false;
     }
     memset(destination, 0, sizeof(*destination));
-    if (node->type == MARKDOWN_CORE_NODE_CROSS_LINK) {
+    if (node->kind == MARKDOWN_CORE_NODE_CROSS_LINK) {
         destination->kind = MARKDOWN_CORE_DESTINATION_CROSS;
-        string_from_chunk(&destination->path, &node->as.cross_link.path);
-        optional_string_from_chunk(&destination->anchor, &node->as.cross_link.anchor);
+        string_from_chunk(&destination->path, &node->as.cross_link->path);
+        optional_string_from_chunk(&destination->anchor, &node->as.cross_link->anchor);
         return true;
     }
     destination->kind = MARKDOWN_CORE_DESTINATION_URL;
-    string_from_chunk(&destination->url, node->as.link.resource ? &node->as.link.resource->url : &empty_url);
+    string_from_chunk(&destination->url, node->as.link->resource ? &node->as.link->resource->url : &empty_url);
     return true;
 }
 
 bool markdown_core_node_cross_link_properties(const markdown_core_node *node, bool *embedded,
                                               markdown_core_optional_string *label) {
-    if (!node || node->type != MARKDOWN_CORE_NODE_CROSS_LINK || !embedded || !label) {
+    if (!node || node->kind != MARKDOWN_CORE_NODE_CROSS_LINK || !embedded || !label) {
         return false;
     }
-    *embedded = node->as.cross_link.embedded;
-    optional_string_from_chunk(label, &node->as.cross_link.label);
+    *embedded = node->as.cross_link->embedded;
+    optional_string_from_chunk(label, &node->as.cross_link->label);
     return true;
 }
 
@@ -623,12 +625,12 @@ bool markdown_core_node_title(const markdown_core_node *node, markdown_core_opti
     if (!is_link(node) || !title) {
         return false;
     }
-    optional_string_from_chunk(title, node->as.link.resource ? &node->as.link.resource->title : &absent_title);
+    optional_string_from_chunk(title, node->as.link->resource ? &node->as.link->resource->title : &absent_title);
     return true;
 }
 
 const markdown_core_resource *markdown_core_node_resource(const markdown_core_node *node) {
-    return is_link(node) ? node->as.link.resource : NULL;
+    return is_link(node) ? node->as.link->resource : NULL;
 }
 
 /* THE VALUES (M4). A citation and a footnote are nodes inside the engine and
@@ -637,16 +639,16 @@ const markdown_core_resource *markdown_core_node_resource(const markdown_core_no
  * type rather than trusting the cast. */
 static const markdown_core_node *citation_node(const markdown_core_citation *citation) {
     const markdown_core_node *node = (const markdown_core_node *)citation;
-    return node && node->type == MARKDOWN_CORE_NODE_CITATION ? node : NULL;
+    return node && node->kind == MARKDOWN_CORE_NODE_CITATION ? node : NULL;
 }
 
 static const markdown_core_node *footnote_node(const markdown_core_footnote *footnote) {
     const markdown_core_node *node = (const markdown_core_node *)footnote;
-    return node && node->type == MARKDOWN_CORE_NODE_FOOTNOTE ? node : NULL;
+    return node && node->kind == MARKDOWN_CORE_NODE_FOOTNOTE ? node : NULL;
 }
 
 const markdown_core_citation *markdown_core_node_cite_citations(const markdown_core_node *node) {
-    return node && node->type == MARKDOWN_CORE_NODE_CITE ? (const markdown_core_citation *)node->as.cite.citations
+    return node && node->kind == MARKDOWN_CORE_NODE_CITE ? (const markdown_core_citation *)node->as.cite->citations
                                                          : NULL;
 }
 
@@ -665,16 +667,16 @@ bool markdown_core_citation_referent(const markdown_core_citation *citation, mar
         return false;
     }
     memset(referent, 0, sizeof(*referent));
-    if (node->as.citation.referent == MARKDOWN_CORE_NODE_REFERENT_BIB) {
+    if (node->as.citation->referent == MARKDOWN_CORE_NODE_REFERENT_BIB) {
         referent->kind = MARKDOWN_CORE_REFERENT_BIB;
-        string_from_chunk(&referent->key, &node->as.citation.value);
-        referent->mode = (markdown_core_bib_mode)node->as.citation.mode;
-    } else if (node->as.citation.referent == MARKDOWN_CORE_NODE_REFERENT_FOOTNOTE ||
-               node->as.citation.referent == MARKDOWN_CORE_NODE_REFERENT_SPECIMEN) {
-        referent->kind = node->as.citation.referent == MARKDOWN_CORE_NODE_REFERENT_FOOTNOTE
+        string_from_chunk(&referent->key, &node->as.citation->value);
+        referent->mode = (markdown_core_bib_mode)node->as.citation->mode;
+    } else if (node->as.citation->referent == MARKDOWN_CORE_NODE_REFERENT_FOOTNOTE ||
+               node->as.citation->referent == MARKDOWN_CORE_NODE_REFERENT_SPECIMEN) {
+        referent->kind = node->as.citation->referent == MARKDOWN_CORE_NODE_REFERENT_FOOTNOTE
                              ? MARKDOWN_CORE_REFERENT_FOOTNOTE
                              : MARKDOWN_CORE_REFERENT_SPECIMEN;
-        string_from_chunk(&referent->id, &node->as.citation.value);
+        string_from_chunk(&referent->id, &node->as.citation->value);
     } else {
         return false;
     }
@@ -683,17 +685,17 @@ bool markdown_core_citation_referent(const markdown_core_citation *citation, mar
 
 const markdown_core_node *markdown_core_citation_prefix(const markdown_core_citation *citation) {
     const markdown_core_node *node = citation_node(citation);
-    return node ? node->as.citation.prefix : NULL;
+    return node ? node->as.citation->prefix : NULL;
 }
 
 const markdown_core_node *markdown_core_citation_suffix(const markdown_core_citation *citation) {
     const markdown_core_node *node = citation_node(citation);
-    return node ? node->as.citation.suffix : NULL;
+    return node ? node->as.citation->suffix : NULL;
 }
 
 const markdown_core_footnote *markdown_core_node_document_footnotes(const markdown_core_node *node) {
-    return node && node->type == MARKDOWN_CORE_NODE_DOCUMENT
-               ? (const markdown_core_footnote *)node->as.document.footnotes
+    return node && node->kind == MARKDOWN_CORE_NODE_DOCUMENT
+               ? (const markdown_core_footnote *)node->as.document->footnotes
                : NULL;
 }
 
@@ -711,7 +713,7 @@ bool markdown_core_footnote_id(const markdown_core_footnote *footnote, markdown_
     if (!node || !id) {
         return false;
     }
-    string_from_chunk(id, &node->as.footnote.id);
+    string_from_chunk(id, &node->as.footnote->id);
     return true;
 }
 
@@ -722,12 +724,12 @@ const markdown_core_node *markdown_core_footnote_content(const markdown_core_foo
 
 static const markdown_core_node *specimen_node(const markdown_core_specimen *specimen) {
     const markdown_core_node *node = (const markdown_core_node *)specimen;
-    return node && node->type == MARKDOWN_CORE_NODE_SPECIMEN ? node : NULL;
+    return node && node->kind == MARKDOWN_CORE_NODE_SPECIMEN ? node : NULL;
 }
 
 const markdown_core_specimen *markdown_core_node_document_specimens(const markdown_core_node *node) {
-    return node && node->type == MARKDOWN_CORE_NODE_DOCUMENT
-               ? (const markdown_core_specimen *)node->as.document.specimens
+    return node && node->kind == MARKDOWN_CORE_NODE_DOCUMENT
+               ? (const markdown_core_specimen *)node->as.document->specimens
                : NULL;
 }
 
@@ -746,9 +748,9 @@ bool markdown_core_specimen_properties(const markdown_core_specimen *specimen, m
     if (!node || !id || !start) {
         return false;
     }
-    optional_string_from_chunk(id, &node->as.specimen.id);
-    start->has_value = node->as.specimen.has_start;
-    start->value = node->as.specimen.start;
+    optional_string_from_chunk(id, &node->as.specimen->id);
+    start->has_value = node->as.specimen->has_start;
+    start->value = node->as.specimen->start;
     return true;
 }
 
@@ -1333,7 +1335,7 @@ static void dump_affix_group(dump_buffer *buffer, const char *name, const markdo
  * its affixes are groups, not children -- and then a `CitationPrefix` and a
  * `CitationSuffix` group. The cite's own `children` counts the items. */
 static void dump_cite_nodes(dump_buffer *buffer, const markdown_core_node *node, size_t depth, size_t item_count) {
-    const markdown_core_node *item = node->as.cite.citations;
+    const markdown_core_node *item = node->as.cite->citations;
     size_t remaining = item_count;
     for (; item; item = item->next) {
         markdown_core_referent referent;
@@ -1349,8 +1351,8 @@ static void dump_cite_nodes(dump_buffer *buffer, const markdown_core_node *node,
         buffer_cstr(buffer, " referent=");
         buffer_referent(buffer, referent);
         buffer_cstr(buffer, " children=0\n");
-        dump_affix_group(buffer, "CitationPrefix", item->as.citation.prefix, depth + 1, true);
-        dump_affix_group(buffer, "CitationSuffix", item->as.citation.suffix, depth + 1, false);
+        dump_affix_group(buffer, "CitationPrefix", item->as.citation->prefix, depth + 1, true);
+        dump_affix_group(buffer, "CitationSuffix", item->as.citation->suffix, depth + 1, false);
     }
 }
 
@@ -1439,7 +1441,7 @@ static void dump_metadata(dump_buffer *buffer, const markdown_core_metadata *met
  * its block content one level below. The document's own `children` counts
  * the content alone. */
 static void dump_document_nodes(dump_buffer *buffer, const markdown_core_node *node, size_t depth, size_t child_count) {
-    const markdown_core_node *definitions[] = {node->as.document.footnotes, node->as.document.specimens};
+    const markdown_core_node *definitions[] = {node->as.document->footnotes, node->as.document->specimens};
     size_t remaining = child_count;
     for (size_t family = 0; family < 2; family++) {
         remaining += chain_length(definitions[family]);
@@ -1460,10 +1462,10 @@ static void dump_document_nodes(dump_buffer *buffer, const markdown_core_node *n
             buffer->more[depth] = remaining != 0;
             dump_prefix(buffer, depth + 1);
             buffer_cstr(buffer,
-                        definition->type == MARKDOWN_CORE_NODE_SPECIMEN ? "Specimen scope=" : "Footnote scope=");
+                        definition->kind == MARKDOWN_CORE_NODE_SPECIMEN ? "Specimen scope=" : "Footnote scope=");
             buffer_scope(buffer, markdown_core_node_scope(definition));
             buffer_cstr(buffer, " id=");
-            if (definition->type == MARKDOWN_CORE_NODE_SPECIMEN) {
+            if (definition->kind == MARKDOWN_CORE_NODE_SPECIMEN) {
                 markdown_core_optional_string id;
                 markdown_core_optional_i64 start;
                 markdown_core_specimen_properties((const markdown_core_specimen *)definition, &id, &start);
@@ -1492,7 +1494,7 @@ static void dump_node(dump_buffer *buffer, const markdown_core_node *node, size_
     markdown_core_scope scope = markdown_core_node_scope(node);
     /* `children` counts structural children: a cite's are its items. */
     size_t child_count =
-        kind == MARKDOWN_CORE_KIND_CITE ? chain_length(node->as.cite.citations) : markdown_core_node_child_count(node);
+        kind == MARKDOWN_CORE_KIND_CITE ? chain_length(node->as.cite->citations) : markdown_core_node_child_count(node);
     if (kind == MARKDOWN_CORE_KIND_NONE) {
         buffer->failed = true;
         return;

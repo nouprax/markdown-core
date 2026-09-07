@@ -189,7 +189,7 @@ static void set_sourcepos_from_range(markdown_core_parser *parser, markdown_core
     markdown_core_parser_content_place(parser, source, (bufsize_t)start, &node->start_line, &node->start_column);
     markdown_core_parser_content_end_place(parser, source, (bufsize_t)(start + len - 1), &node->end_line,
                                            &node->end_column);
-    if (node->type == MARKDOWN_CORE_NODE_TEXT) {
+    if (node->kind == MARKDOWN_CORE_NODE_TEXT) {
         markdown_core_parser_adopt_content_marks(parser, source, node, (bufsize_t)start, (bufsize_t)len);
     }
 }
@@ -241,9 +241,9 @@ static markdown_core_node *www_match(markdown_core_parser *parser, markdown_core
     markdown_core_strbuf_put(&buf, data, (bufsize_t)link_end);
     {
         markdown_core_chunk url = markdown_core_chunk_buf_detach(&buf);
-        node->as.link.resource =
+        node->as.link->resource =
             url.data ? markdown_core_resource_new(parser->mem, url, markdown_core_optional_chunk_absent()) : NULL;
-        if (!node->as.link.resource) {
+        if (!node->as.link->resource) {
             markdown_core_chunk_free(parser->mem, &url);
             parser->oom = true;
         }
@@ -255,7 +255,7 @@ static markdown_core_node *www_match(markdown_core_parser *parser, markdown_core
         markdown_core_node_free(node);
         return NULL;
     }
-    text->as.literal = markdown_core_chunk_dup(chunk, (bufsize_t)max_rewind, (bufsize_t)link_end);
+    *text->as.literal = markdown_core_chunk_dup(chunk, (bufsize_t)max_rewind, (bufsize_t)link_end);
     markdown_core_node_append_child(node, text);
 
     markdown_core_inline_parser_place(inline_parser, node, (int)max_rewind, (int)(max_rewind + link_end - 1));
@@ -315,8 +315,8 @@ static markdown_core_node *url_match(markdown_core_parser *parser, markdown_core
     }
 
     markdown_core_chunk url = markdown_core_chunk_dup(chunk, max_rewind - rewind, (bufsize_t)(link_end + rewind));
-    node->as.link.resource = markdown_core_resource_new(parser->mem, url, markdown_core_optional_chunk_absent());
-    if (!node->as.link.resource) {
+    node->as.link->resource = markdown_core_resource_new(parser->mem, url, markdown_core_optional_chunk_absent());
+    if (!node->as.link->resource) {
         parser->oom = true;
     }
 
@@ -326,7 +326,7 @@ static markdown_core_node *url_match(markdown_core_parser *parser, markdown_core
         markdown_core_node_free(node);
         return NULL;
     }
-    text->as.literal = url;
+    *text->as.literal = url;
     markdown_core_node_append_child(node, text);
 
     markdown_core_inline_parser_place(inline_parser, node, max_rewind - rewind, (int)(max_rewind + link_end - 1));
@@ -452,11 +452,11 @@ static void postprocess_text(markdown_core_parser *parser, markdown_core_node *t
     // create references to it. Later, `markdown_core_chunk_to_cstr` is used to convert
     // the references into allocated buffers. The detached buffer is freed before we
     // return.
-    markdown_core_chunk detached_chunk = text->as.literal;
-    text->as.literal = markdown_core_chunk_dup(&detached_chunk, 0, detached_chunk.len);
+    markdown_core_chunk detached_chunk = *text->as.literal;
+    *text->as.literal = markdown_core_chunk_dup(&detached_chunk, 0, detached_chunk.len);
 
-    uint8_t *data = text->as.literal.data;
-    size_t remaining = text->as.literal.len;
+    uint8_t *data = text->as.literal->data;
+    size_t remaining = text->as.literal->len;
 
     while (true) {
         size_t link_end;
@@ -568,9 +568,9 @@ static void postprocess_text(markdown_core_parser *parser, markdown_core_node *t
         markdown_core_strbuf_put(&buf, data + start + offset + max_rewind - rewind, (bufsize_t)(link_end + rewind));
         {
             markdown_core_chunk url = markdown_core_chunk_buf_detach(&buf);
-            link_node->as.link.resource =
+            link_node->as.link->resource =
                 url.data ? markdown_core_resource_new(parser->mem, url, markdown_core_optional_chunk_absent()) : NULL;
-            if (!link_node->as.link.resource) {
+            if (!link_node->as.link->resource) {
                 markdown_core_chunk_free(parser->mem, &url);
                 parser->oom = true;
             }
@@ -590,7 +590,7 @@ static void postprocess_text(markdown_core_parser *parser, markdown_core_node *t
             parser->oom = true;
             markdown_core_chunk_set_cstr(parser->mem, &email, NULL);
         }
-        link_text->as.literal = email;
+        *link_text->as.literal = email;
         set_sourcepos_from_range(parser, link_text, &source_map, link_start, link_len);
         markdown_core_node_append_child(link_node, link_text);
 
@@ -601,15 +601,15 @@ static void postprocess_text(markdown_core_parser *parser, markdown_core_node *t
             parser->oom = true;
             break;
         }
-        post->as.literal = markdown_core_chunk_dup(&detached_chunk, (bufsize_t)post_start, (bufsize_t)post_len);
+        *post->as.literal = markdown_core_chunk_dup(&detached_chunk, (bufsize_t)post_start, (bufsize_t)post_len);
         set_sourcepos_from_range(parser, post, &source_map, post_start, post_len);
 
         markdown_core_node_insert_after(link_node, post);
 
-        text->as.literal = markdown_core_chunk_dup(&detached_chunk, (bufsize_t)prefix_start, (bufsize_t)prefix_len);
-        if (!markdown_core_chunk_to_cstr(parser->mem, &text->as.literal)) {
+        *text->as.literal = markdown_core_chunk_dup(&detached_chunk, (bufsize_t)prefix_start, (bufsize_t)prefix_len);
+        if (!markdown_core_chunk_to_cstr(parser->mem, text->as.literal)) {
             parser->oom = true;
-            markdown_core_chunk_set_cstr(parser->mem, &text->as.literal, NULL);
+            markdown_core_chunk_set_cstr(parser->mem, text->as.literal, NULL);
         }
         set_sourcepos_from_range(parser, text, &source_map, prefix_start, prefix_len);
 
@@ -635,17 +635,17 @@ static void postprocess_text(markdown_core_parser *parser, markdown_core_node *t
     // Only ever reached when the split ran at least once -- `postprocess`
     // consolidates before it iterates, and consolidation now drops an empty
     // `TEXT`, so the node this function is handed always owned bytes on entry.
-    if (text->as.literal.len == 0) {
+    if (text->as.literal->len == 0) {
         markdown_core_node_free(text);
         markdown_core_chunk_free(parser->mem, &detached_chunk);
         return;
     }
 
     // Convert the reference to allocated memory.
-    assert(!text->as.literal.alloc);
-    if (!markdown_core_chunk_to_cstr(parser->mem, &text->as.literal)) {
+    assert(!text->as.literal->alloc);
+    if (!markdown_core_chunk_to_cstr(parser->mem, text->as.literal)) {
         parser->oom = true;
-        markdown_core_chunk_set_cstr(parser->mem, &text->as.literal, NULL);
+        markdown_core_chunk_set_cstr(parser->mem, text->as.literal, NULL);
     }
 
     // Free the detached buffer.
@@ -671,13 +671,13 @@ static markdown_core_node *postprocess(const markdown_core_extension *ext, markd
     while ((ev = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
         node = markdown_core_iter_get_node(iter);
         if (in_link) {
-            if (ev == MARKDOWN_CORE_EVENT_EXIT && node->type == MARKDOWN_CORE_NODE_LINK) {
+            if (ev == MARKDOWN_CORE_EVENT_EXIT && node->kind == MARKDOWN_CORE_NODE_LINK) {
                 in_link = false;
             }
             continue;
         }
 
-        if (ev == MARKDOWN_CORE_EVENT_ENTER && node->type == MARKDOWN_CORE_NODE_LINK) {
+        if (ev == MARKDOWN_CORE_EVENT_ENTER && node->kind == MARKDOWN_CORE_NODE_LINK) {
             in_link = true;
             continue;
         }
@@ -689,7 +689,7 @@ static markdown_core_node *postprocess(const markdown_core_extension *ext, markd
          * `TEXT`'s EXIT was suppressed and ENTER's lookahead was that same
          * sibling. Doing it at ENTER once the contract is total makes the walk
          * descend into the autolinks it just created. */
-        if (ev == MARKDOWN_CORE_EVENT_EXIT && node->type == MARKDOWN_CORE_NODE_TEXT) {
+        if (ev == MARKDOWN_CORE_EVENT_EXIT && node->kind == MARKDOWN_CORE_NODE_TEXT) {
             postprocess_text(parser, node);
         }
     }

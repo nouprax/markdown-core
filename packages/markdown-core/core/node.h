@@ -183,6 +183,38 @@ enum markdown_core_node__internal_flags {
 
 typedef uint16_t markdown_core_node_internal_flags;
 
+/* HTML recognition state and the eventual literal have one owner throughout
+ * the block lifecycle. They never overlay or replace each other's storage. */
+typedef struct {
+    markdown_core_chunk literal;
+    int block_type;
+} markdown_core_html_block;
+
+typedef struct {
+    int64_t rowspan, colspan;
+} markdown_core_table_cell;
+
+/* Every arm points to the kind's ordinary typed record. Construction places
+ * the record after an aligned node allocation header; a kind with no fields
+ * has no record. Retyping keeps node identity stable and installs a separately
+ * allocated replacement. The common node layout never depends on record size. */
+typedef union {
+    void *data;
+    markdown_core_chunk *literal;
+    markdown_core_list *list;
+    markdown_core_code *code;
+    markdown_core_heading *heading;
+    markdown_core_link *link;
+    markdown_core_cross_link *cross_link;
+    markdown_core_cite *cite;
+    markdown_core_citation_item *citation;
+    markdown_core_footnote_value *footnote;
+    markdown_core_specimen_value *specimen;
+    markdown_core_document_value *document;
+    markdown_core_html_block *html_block;
+    markdown_core_table_cell *table_cell;
+} markdown_core_node_data;
+
 struct markdown_core_node {
     markdown_core_attributes attributes;
     markdown_core_strbuf content;
@@ -208,33 +240,18 @@ struct markdown_core_node {
     int content_mark_count;
     /* A slice reads immutable parser-owned marks at this content origin. */
     int content_mark_offset;
-    uint16_t type;
+    uint16_t kind;
     markdown_core_node_internal_flags flags;
 
     const markdown_core_extension *extension;
-    /* Per-node data an extension owns, allocated by its opaque_alloc_func and
-     * freed by its opaque_free_func. It lives beside the type-specific arm,
-     * never in it: it belongs to the node and its extension, not to the type,
-     * so a type change reinitializes the arm and leaves it in place. */
+    /* Extension-owned data, allocated by opaque_alloc_func and released by
+     * opaque_free_func. It survives kind changes independently of `as`. */
     void *opaque;
 
-    union {
-        markdown_core_chunk literal;
-        markdown_core_list list;
-        markdown_core_code code;
-        markdown_core_heading heading;
-        markdown_core_link link;
-        markdown_core_cross_link cross_link;
-        markdown_core_cite cite;
-        markdown_core_citation_item citation;
-        markdown_core_footnote_value footnote;
-        markdown_core_specimen_value specimen;
-        markdown_core_document_value document;
-        int html_block_type;
-        struct {
-            int64_t rowspan, colspan;
-        } table_cell;
-    } as;
+    /* Owns a replacement record, when present. The initial record belongs to
+     * the node allocation instead. `as` is the typed view in either case. */
+    void *node_data_allocation;
+    markdown_core_node_data as;
 };
 
 static MARKDOWN_CORE_INLINE markdown_core_mem *markdown_core_node_mem(markdown_core_node *node) {
@@ -256,7 +273,7 @@ static MARKDOWN_CORE_INLINE bool MARKDOWN_CORE_NODE_TYPE_BLOCK_P(markdown_core_n
 }
 
 static MARKDOWN_CORE_INLINE bool MARKDOWN_CORE_NODE_BLOCK_P(markdown_core_node *node) {
-    return node != NULL && MARKDOWN_CORE_NODE_TYPE_BLOCK_P((markdown_core_node_type)node->type);
+    return node != NULL && MARKDOWN_CORE_NODE_TYPE_BLOCK_P((markdown_core_node_type)node->kind);
 }
 
 static MARKDOWN_CORE_INLINE bool MARKDOWN_CORE_NODE_TYPE_INLINE_P(markdown_core_node_type node_type) {
@@ -264,7 +281,7 @@ static MARKDOWN_CORE_INLINE bool MARKDOWN_CORE_NODE_TYPE_INLINE_P(markdown_core_
 }
 
 static MARKDOWN_CORE_INLINE bool MARKDOWN_CORE_NODE_INLINE_P(markdown_core_node *node) {
-    return node != NULL && MARKDOWN_CORE_NODE_TYPE_INLINE_P((markdown_core_node_type)node->type);
+    return node != NULL && MARKDOWN_CORE_NODE_TYPE_INLINE_P((markdown_core_node_type)node->kind);
 }
 
 MARKDOWN_CORE_EXPORT bool markdown_core_node_can_contain_type(markdown_core_node *node,

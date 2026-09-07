@@ -52,11 +52,17 @@ static delimiter *insert(const markdown_core_extension *self, markdown_core_pars
 
     strikethrough = markdown_core_delimiter_node(opener);
 
-    if (markdown_core_delimiter_node(opener)->as.literal.len != markdown_core_delimiter_node(closer)->as.literal.len) {
+    if (markdown_core_delimiter_node(opener)->as.literal->len !=
+        markdown_core_delimiter_node(closer)->as.literal->len) {
         goto done;
     }
 
-    if (!markdown_core_node_set_type(strikethrough, MARKDOWN_CORE_NODE_STRIKETHROUGH)) {
+    markdown_core_node_set_kind_result result =
+        markdown_core_node_set_kind(strikethrough, MARKDOWN_CORE_NODE_STRIKETHROUGH);
+    if (result != MARKDOWN_CORE_NODE_SET_KIND_OK) {
+        if (result == MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED) {
+            parser->oom = true;
+        }
         goto done;
     }
 
@@ -74,7 +80,7 @@ static delimiter *insert(const markdown_core_extension *self, markdown_core_pars
     }
 
     strikethrough->end_column =
-        markdown_core_delimiter_node(closer)->start_column + markdown_core_delimiter_node(closer)->as.literal.len - 1;
+        markdown_core_delimiter_node(closer)->start_column + markdown_core_delimiter_node(closer)->as.literal->len - 1;
     /* REQUIREMENT 11b: both tilde runs are the strikethrough's markers. The
      * opener's node IS the strikethrough -- it was retyped in place -- so its
      * own claim would otherwise read CONTENT, and the closer's node is freed on
@@ -95,12 +101,12 @@ done:
 }
 
 static const char *get_type_string(const markdown_core_extension *extension, markdown_core_node *node) {
-    return node->type == MARKDOWN_CORE_NODE_STRIKETHROUGH ? "strikethrough" : "<unknown>";
+    return node->kind == MARKDOWN_CORE_NODE_STRIKETHROUGH ? "strikethrough" : "<unknown>";
 }
 
 static int can_contain(const markdown_core_extension *extension, markdown_core_node *node,
                        markdown_core_node_type child_type) {
-    if (node->type != MARKDOWN_CORE_NODE_STRIKETHROUGH) {
+    if (node->kind != MARKDOWN_CORE_NODE_STRIKETHROUGH) {
         return false;
     }
 

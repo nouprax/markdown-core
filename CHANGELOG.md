@@ -98,7 +98,7 @@ facade while removing renderer support and the caller-driven feed lifecycle.
   is re-derived around it. Only the parser writes a resource: the engine's
   `markdown_core_node_get_url`, `set_url`, `get_title`, and `set_title` are
   removed, a destination and title are read through the facade, a link built
-  through the engine API or converted with `markdown_core_node_set_type` is
+  through the engine API or converted with `markdown_core_node_set_kind` is
   the link `[a]()` is, and an extension's per-node data lives beside the
   type-specific arm rather than in it. `LinkReference`, `ImageReference`,
   `ReferenceDefinition`, and `ReferenceForm` leave every surface with their

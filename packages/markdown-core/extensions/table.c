@@ -56,8 +56,8 @@ static void free_node_table(markdown_core_mem *mem, markdown_core_table *table) 
 }
 
 static void init_cell(markdown_core_node *node) {
-    node->as.table_cell.rowspan = 1;
-    node->as.table_cell.colspan = 1;
+    node->as.table_cell->rowspan = 1;
+    node->as.table_cell->colspan = 1;
 }
 
 static markdown_core_node *new_cell(markdown_core_parser *parser, markdown_core_node *row, int column) {
@@ -310,32 +310,10 @@ static void try_inserting_table_header_paragraph(markdown_core_parser *parser, m
     }
 }
 
-// A decline is NULL. `core/blocks.c` offers each attached extension a turn at
-// this line in attach order and stops at the first non-NULL answer, so
-// returning `parent_container` when nothing was opened takes away every later
-// extension's turn -- and this function used to do that on every path,
-// including "there is no table here". Enabling tables then changed the parse of
-// input containing no table at all: a directive or formula block could not
-// interrupt a paragraph.
-//
-// TWO KINDS OF `return parent_container` BELOW MUST STAY, and both say
-// something this one does not:
-//
-//   the four allocation failures AFTER markdown_core_node_set_type succeeds.
-//   The paragraph has already become a TABLE by then, so the container really
-//   was opened; answering NULL would leave a retyped node behind and tell the
-//   caller nothing happened. They set parser->oom and the parse is abandoned.
-//
-//   the final return, which is the genuine opening path.
-//
-// D8 turned SIX wrong declines in this function from `return parent_container`
-// into `return NULL`. Step 3a deleted the arena and with it one of the six --
-// the retry that re-parsed both rows because the arena's pop had just freed
-// them, and whose mismatch answered NULL. FIVE remain. The line is gone; the
-// property is not, and `extensions-conflicts.txt` is what re-proves it.
-//
-// `table` is the only extension with this shape; directive and formula already
-// answer NULL on every decline.
+/* Return NULL when the syntax does not match or the parent rejects the table
+ * kind, so later extensions can try the same line. Once the paragraph becomes
+ * a table, return that container even if a later allocation fails; parser->oom
+ * then aborts the parse and destruction releases the partially built table. */
 static markdown_core_node *try_opening_table_header(const markdown_core_extension *self, markdown_core_parser *parser,
                                                     markdown_core_node *parent_container, unsigned char *input,
                                                     int len) {
@@ -376,7 +354,11 @@ static markdown_core_node *try_opening_table_header(const markdown_core_extensio
         return NULL;
     }
 
-    if (!markdown_core_node_set_type(parent_container, MARKDOWN_CORE_NODE_TABLE)) {
+    markdown_core_node_set_kind_result result = markdown_core_node_set_kind(parent_container, MARKDOWN_CORE_NODE_TABLE);
+    if (result != MARKDOWN_CORE_NODE_SET_KIND_OK) {
+        if (result == MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED) {
+            parser->oom = true;
+        }
         free_table_row(parser->mem, header_row);
         free_table_row(parser->mem, delimiter_row);
         return NULL;
@@ -395,14 +377,9 @@ static markdown_core_node *try_opening_table_header(const markdown_core_extensio
         }
     }
 
-    /* The paragraph is already rewritten into a table node here.  On
-     * allocation failure the half-converted node stays behind with a NULL
-     * payload -- every table helper tolerates that -- and the sticky flag
-     * makes the parse fail, so nothing downstream trusts the node. */
+    /* Table data belongs to the extension. Its cleanup accepts partial
+     * initialization when an allocation fails after the kind change. */
     markdown_core_node_set_extension(parent_container, self);
-    // From here down the node IS a table, so every remaining
-    // `return parent_container` means "opened, then failed" rather than
-    // "declined". Do not turn these into NULL with the six above it.
     parent_container->opaque = parser->mem->calloc(1, sizeof(markdown_core_table));
     if (!parent_container->opaque) {
         parser->oom = true;
@@ -586,11 +563,11 @@ static int matches(const markdown_core_extension *self, markdown_core_parser *pa
 }
 
 static const char *get_type_string(const markdown_core_extension *self, markdown_core_node *node) {
-    if (node->type == MARKDOWN_CORE_NODE_TABLE) {
+    if (node->kind == MARKDOWN_CORE_NODE_TABLE) {
         return "table";
-    } else if (node->type == MARKDOWN_CORE_NODE_TABLE_ROW) {
+    } else if (node->kind == MARKDOWN_CORE_NODE_TABLE_ROW) {
         return "table_row";
-    } else if (node->type == MARKDOWN_CORE_NODE_TABLE_CELL) {
+    } else if (node->kind == MARKDOWN_CORE_NODE_TABLE_CELL) {
         return "table_cell";
     }
 
@@ -599,32 +576,32 @@ static const char *get_type_string(const markdown_core_extension *self, markdown
 
 static int can_contain(const markdown_core_extension *extension, markdown_core_node *node,
                        markdown_core_node_type child_type) {
-    if (node->type == MARKDOWN_CORE_NODE_TABLE) {
+    if (node->kind == MARKDOWN_CORE_NODE_TABLE) {
         return child_type == MARKDOWN_CORE_NODE_TABLE_ROW;
-    } else if (node->type == MARKDOWN_CORE_NODE_TABLE_ROW) {
+    } else if (node->kind == MARKDOWN_CORE_NODE_TABLE_ROW) {
         return child_type == MARKDOWN_CORE_NODE_TABLE_CELL;
-    } else if (node->type == MARKDOWN_CORE_NODE_TABLE_CELL) {
+    } else if (node->kind == MARKDOWN_CORE_NODE_TABLE_CELL) {
         return MARKDOWN_CORE_NODE_TYPE_INLINE_P(child_type) || MARKDOWN_CORE_NODE_TYPE_BLOCK_P(child_type);
     }
     return false;
 }
 
 static int contains_inlines(const markdown_core_extension *extension, markdown_core_node *node) {
-    return node->type == MARKDOWN_CORE_NODE_TABLE_CELL;
+    return node->kind == MARKDOWN_CORE_NODE_TABLE_CELL;
 }
 
 static void opaque_alloc(const markdown_core_extension *self, markdown_core_mem *mem, markdown_core_node *node) {
     /* A NULL payload makes the table facade accessors fail; no incomplete
      * table is returned by a successful parse. */
-    if (node->type == MARKDOWN_CORE_NODE_TABLE) {
+    if (node->kind == MARKDOWN_CORE_NODE_TABLE) {
         node->opaque = mem->calloc(1, sizeof(markdown_core_table));
-    } else if (node->type == MARKDOWN_CORE_NODE_TABLE_CELL) {
+    } else if (node->kind == MARKDOWN_CORE_NODE_TABLE_CELL) {
         init_cell(node);
     }
 }
 
 static void opaque_free(const markdown_core_extension *self, markdown_core_mem *mem, markdown_core_node *node) {
-    if (node->type == MARKDOWN_CORE_NODE_TABLE) {
+    if (node->kind == MARKDOWN_CORE_NODE_TABLE) {
         free_node_table(mem, node->opaque);
     }
 }

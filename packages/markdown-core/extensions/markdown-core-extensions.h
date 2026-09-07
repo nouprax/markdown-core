@@ -33,7 +33,7 @@ extern "C" {
  * that is not a style choice. An anonymous enum is a DISTINCT type from
  * `markdown_core_node_type`, so `markdown_core_node_get_type(n) ==
  * MARKDOWN_CORE_NODE_TABLE` compares two different enumeration types and
- * `markdown_core_node_set_type(n, MARKDOWN_CORE_NODE_STRIKETHROUGH)` converts
+ * `markdown_core_node_set_kind(n, MARKDOWN_CORE_NODE_STRIKETHROUGH)` converts
  * between them. GCC rejects both under `-Wenum-compare` and
  * `-Wenum-conversion`, which `-Wall` turns on; clang says nothing about either
  * unless `-Wanon-enum-enum-conversion` is asked for by name, which no warning

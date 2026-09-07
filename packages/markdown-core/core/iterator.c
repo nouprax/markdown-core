@@ -106,32 +106,32 @@ int markdown_core_consolidate_text_nodes_with_parser(markdown_core_parser *parse
      * happened to be safe; with the contract total it is a use-after-free. */
     while ((ev_type = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
         cur = markdown_core_iter_get_node(iter);
-        if (ev_type != MARKDOWN_CORE_EVENT_EXIT || cur->type != MARKDOWN_CORE_NODE_TEXT) {
+        if (ev_type != MARKDOWN_CORE_EVENT_EXIT || cur->kind != MARKDOWN_CORE_NODE_TEXT) {
             continue;
         }
 
-        if (cur->next && cur->next->type == MARKDOWN_CORE_NODE_TEXT) {
+        if (cur->next && cur->next->kind == MARKDOWN_CORE_NODE_TEXT) {
             markdown_core_node combined_map = {0};
             if (parser &&
-                !markdown_core_parser_append_content_marks(parser, cur, &combined_map, 0, cur->as.literal.len, 0)) {
+                !markdown_core_parser_append_content_marks(parser, cur, &combined_map, 0, cur->as.literal->len, 0)) {
                 goto failed;
             }
             markdown_core_strbuf_clear(&buf);
-            markdown_core_strbuf_put(&buf, cur->as.literal.data, cur->as.literal.len);
+            markdown_core_strbuf_put(&buf, cur->as.literal->data, cur->as.literal->len);
             if (buf.oom) {
                 goto failed;
             }
             tmp = cur->next;
-            while (tmp && tmp->type == MARKDOWN_CORE_NODE_TEXT) {
+            while (tmp && tmp->kind == MARKDOWN_CORE_NODE_TEXT) {
                 /* Bring `tmp` to its own EXIT before freeing it: two events
                  * now, where a suppressed EXIT used to make one enough. */
                 markdown_core_iter_next(iter); /* tmp ENTER */
                 markdown_core_iter_next(iter); /* tmp EXIT  */
                 if (parser && !markdown_core_parser_append_content_marks(parser, tmp, &combined_map, 0,
-                                                                         tmp->as.literal.len, buf.size)) {
+                                                                         tmp->as.literal->len, buf.size)) {
                     goto failed;
                 }
-                markdown_core_strbuf_put(&buf, tmp->as.literal.data, tmp->as.literal.len);
+                markdown_core_strbuf_put(&buf, tmp->as.literal->data, tmp->as.literal->len);
                 if (buf.oom) {
                     goto failed;
                 }
@@ -143,7 +143,7 @@ int markdown_core_consolidate_text_nodes_with_parser(markdown_core_parser *parse
                 // used to carry the column forward and leave the line behind,
                 // which is why a merged run crossing a line ending reported the
                 // first operand's line with the last operand's column.
-                if (tmp->as.literal.len > 0) {
+                if (tmp->as.literal->len > 0) {
                     cur->end_line = tmp->end_line;
                     cur->end_column = tmp->end_column;
                 }
@@ -162,9 +162,9 @@ int markdown_core_consolidate_text_nodes_with_parser(markdown_core_parser *parse
                 cur->content_mark_offset = 0;
             }
             markdown_core_iter_reset(iter, cur, MARKDOWN_CORE_EVENT_EXIT);
-            markdown_core_chunk_free(iter->mem, &cur->as.literal);
-            cur->as.literal = markdown_core_chunk_buf_detach(&buf);
-            if (!cur->as.literal.data) {
+            markdown_core_chunk_free(iter->mem, cur->as.literal);
+            *cur->as.literal = markdown_core_chunk_buf_detach(&buf);
+            if (!cur->as.literal->data) {
                 // The buffer was poisoned, so this run's bytes are LOST rather
                 // than absent. Report it and leave the node where it is: the
                 // drop below must only ever remove a node that is honestly
@@ -183,8 +183,8 @@ int markdown_core_consolidate_text_nodes_with_parser(markdown_core_parser *parse
         // Freeing here is legal because `cur`'s EXIT is current -- Step 5's
         // mutation rule -- so `iter->next` already names a node outside this
         // one's subtree.
-        if (cur->as.literal.len == 0) {
-            markdown_core_chunk_free(iter->mem, &cur->as.literal);
+        if (cur->as.literal->len == 0) {
+            markdown_core_chunk_free(iter->mem, cur->as.literal);
             markdown_core_node_free(cur);
         }
     }

@@ -33,9 +33,9 @@ typedef struct markdown_core_chunk {
  * NULL data and is still PRESENT, and under the no-fallback ruling that parse
  * fails rather than quietly reporting absence.
  *
- * It costs eight bytes on `markdown_core_code`, which is the widest arm of
- * `node.as`, and therefore eight bytes on every node in the document. That is
- * measured, not estimated, and section 4.14.14 states the number. */
+ * The presence bit belongs to the typed payload that uses this field. The
+ * node stores a payload pointer, so this representation does not increase
+ * the size of unrelated node kinds. */
 typedef struct markdown_core_optional_chunk {
     markdown_core_chunk value;
     bool has_value;

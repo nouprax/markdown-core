@@ -79,7 +79,7 @@ static markdown_core_node *match(const markdown_core_extension *extension, markd
         parser->oom = true;
         return NULL;
     }
-    cross = &node->as.cross_link;
+    cross = node->as.cross_link;
     cross->embedded = embedded;
     cross->path = markdown_core_chunk_dup(input, body, (hash >= 0 ? hash : target_end) - body);
     if (hash >= 0) {

@@ -124,10 +124,10 @@ static void constructor(test_batch_runner *runner) {
         INT_EQ(runner, markdown_core_node_get_type(node), type, "get_type %d", type);
         STR_EQ(runner, markdown_core_node_get_type_string(node), node_type_names[i], "get_type_string %d", type);
 
-        switch (node->type) {
+        switch (node->kind) {
         case MARKDOWN_CORE_NODE_HEADING:
             INT_EQ(runner, markdown_core_node_get_heading_level(node), 1, "default heading level is 1");
-            node->as.heading.level = 1;
+            node->as.heading->level = 1;
             break;
 
         case MARKDOWN_CORE_NODE_LIST:
@@ -583,7 +583,7 @@ static void iterator(test_batch_runner *runner) {
 
     while ((ev_type = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
         cur = markdown_core_iter_get_node(iter);
-        if (cur->type == MARKDOWN_CORE_NODE_PARAGRAPH && ev_type == MARKDOWN_CORE_EVENT_ENTER) {
+        if (cur->kind == MARKDOWN_CORE_NODE_PARAGRAPH && ev_type == MARKDOWN_CORE_EVENT_ENTER) {
             parnodes += 1;
         }
     }
@@ -615,8 +615,8 @@ static void iterator_delete(test_batch_runner *runner) {
         // suppressed `CODE`'s EXIT. A test that frees at ENTER is a test
         // asserting the suppression list.
         if (ev_type == MARKDOWN_CORE_EVENT_EXIT &&
-            (node->type == MARKDOWN_CORE_NODE_LIST || node->type == MARKDOWN_CORE_NODE_EMPHASIS ||
-             node->type == MARKDOWN_CORE_NODE_CODE)) {
+            (node->kind == MARKDOWN_CORE_NODE_LIST || node->kind == MARKDOWN_CORE_NODE_EMPHASIS ||
+             node->kind == MARKDOWN_CORE_NODE_CODE)) {
             markdown_core_node_free(node);
         }
     }
@@ -1646,11 +1646,13 @@ static void link_resource_lifecycle(test_batch_runner *runner) {
     OK(runner, markdown_core_node_title(image, &title) && !title.has_value, "a hand-built image's title is absent");
 
     OK(runner, markdown_core_node_set_literal(converted, "~~"), "the text to convert has a literal");
-    OK(runner, markdown_core_node_set_type(converted, MARKDOWN_CORE_NODE_LINK), "set_type converts text into a link");
+    INT_EQ(runner, markdown_core_node_set_kind(converted, MARKDOWN_CORE_NODE_LINK), MARKDOWN_CORE_NODE_SET_KIND_OK,
+           "set_kind converts text into a link");
     OK(runner, markdown_core_node_resource(converted) == NULL, "a converted link starts without a resource");
     OK(runner, markdown_core_node_destination(converted, &destination) && destination.url.length == 0,
        "a converted link starts with the empty url");
-    OK(runner, markdown_core_node_set_type(converted, MARKDOWN_CORE_NODE_TEXT), "set_type converts the link back");
+    INT_EQ(runner, markdown_core_node_set_kind(converted, MARKDOWN_CORE_NODE_TEXT), MARKDOWN_CORE_NODE_SET_KIND_OK,
+           "set_kind converts the link back");
     OK(runner, !markdown_core_node_destination(converted, &destination), "a text node has no destination");
     STR_EQ(runner, markdown_core_node_get_literal(converted), "", "converting back starts the literal empty");
 
@@ -1672,6 +1674,238 @@ static void link_resource_lifecycle(test_batch_runner *runner) {
            markdown_core_node_resource(direct) != markdown_core_node_resource(first),
        "a direct link with the same bytes owns its own resource");
     markdown_core_node_free(doc);
+}
+
+static size_t payload_allocations, payload_fail_at, payload_live;
+static void *payload_test_calloc(size_t count, size_t size) {
+    if (++payload_allocations == payload_fail_at) {
+        return NULL;
+    }
+    void *pointer = calloc(count, size);
+    payload_live += pointer != NULL;
+    return pointer;
+}
+static void *payload_test_realloc(void *pointer, size_t size) {
+    if (++payload_allocations == payload_fail_at) {
+        return NULL;
+    }
+    bool new_allocation = pointer == NULL;
+    void *result = realloc(pointer, size);
+    payload_live += result != NULL && new_allocation;
+    return result;
+}
+static void payload_test_free(void *pointer) {
+    payload_live -= pointer != NULL;
+    free(pointer);
+}
+static markdown_core_mem payload_test_mem = {payload_test_calloc, payload_test_realloc, payload_test_free};
+
+typedef struct {
+    char prefix;
+    long double value;
+} payload_float_alignment;
+typedef struct {
+    char prefix;
+    int64_t value;
+} payload_integer_alignment;
+
+static void node_payload_lifecycle(test_batch_runner *runner) {
+    INT_EQ(runner, sizeof(markdown_core_node_data), sizeof(void *),
+           "all payload arms share one pointer-sized node slot");
+    static const markdown_core_node_type extra_types[] = {
+        MARKDOWN_CORE_NODE_CROSS_LINK,      MARKDOWN_CORE_NODE_CITE,
+        MARKDOWN_CORE_NODE_CITATION,        MARKDOWN_CORE_NODE_FOOTNOTE,
+        MARKDOWN_CORE_NODE_SPECIMEN,        MARKDOWN_CORE_NODE_TABLE,
+        MARKDOWN_CORE_NODE_TABLE_ROW,       MARKDOWN_CORE_NODE_TABLE_CELL,
+        MARKDOWN_CORE_NODE_STRIKETHROUGH,   MARKDOWN_CORE_NODE_FORMULA,
+        MARKDOWN_CORE_NODE_FORMULA_BLOCK,   MARKDOWN_CORE_NODE_DIRECTIVE,
+        MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK, MARKDOWN_CORE_NODE_DIRECTIVE_LABEL,
+    };
+    size_t extra_count = sizeof(extra_types) / sizeof(*extra_types);
+    for (size_t i = 0; i < (size_t)num_node_types + extra_count; i++) {
+        markdown_core_node_type type = i < (size_t)num_node_types ? node_types[i] : extra_types[i - num_node_types];
+        payload_allocations = payload_fail_at = 0;
+        markdown_core_node *node = markdown_core_node_new_with_mem(type, &payload_test_mem);
+        OK(runner, node != NULL, "type %u constructs with its default fields", (unsigned)type);
+        size_t total = payload_allocations;
+        INT_EQ(runner, total, 1, "node and initial typed record have one allocation for every kind");
+        if (node->as.data) {
+            OK(runner,
+               (uintptr_t)node->as.data % offsetof(payload_float_alignment, value) == 0 &&
+                   (uintptr_t)node->as.data % offsetof(payload_integer_alignment, value) == 0,
+               "initial typed record has scalar alignment");
+        }
+        markdown_core_node_free(node);
+        INT_EQ(runner, payload_live, 0, "type %u releases every constructor allocation", (unsigned)type);
+        for (size_t fail = 1; fail <= total; fail++) {
+            payload_allocations = 0;
+            payload_fail_at = fail;
+            node = markdown_core_node_new_with_mem(type, &payload_test_mem);
+            OK(runner, node == NULL, "type %u never publishes a partial payload", (unsigned)type);
+            if (node) {
+                markdown_core_node_free(node);
+            }
+            INT_EQ(runner, payload_live, 0, "failed constructor releases all acquired allocations");
+        }
+    }
+    payload_fail_at = 0;
+    markdown_core_node *parent = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_PARAGRAPH, &payload_test_mem);
+    markdown_core_node *text = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_TEXT, &payload_test_mem);
+    OK(runner, markdown_core_node_append_child(parent, text), "text joins its parent");
+    OK(runner, markdown_core_node_set_literal(text, "retained"), "text owns a literal");
+    markdown_core_chunk *original_payload = text->as.literal;
+    size_t before = payload_live;
+    payload_fail_at = payload_allocations + 1;
+    INT_EQ(runner, markdown_core_node_set_kind(text, MARKDOWN_CORE_NODE_TEXT), MARKDOWN_CORE_NODE_SET_KIND_OK,
+           "setting the current kind preserves its data without allocation");
+    INT_EQ(runner, payload_allocations + 1, payload_fail_at, "setting the current kind allocates nothing");
+    INT_EQ(runner, markdown_core_node_set_kind(text, MARKDOWN_CORE_NODE_LINK),
+           MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED, "conversion reports replacement allocation failure");
+    OK(runner,
+       text->kind == MARKDOWN_CORE_NODE_TEXT && text->as.literal == original_payload && text->parent == parent &&
+           parent->first_child == text,
+       "failed kind conversion preserves data, identity, and tree links");
+    STR_EQ(runner, markdown_core_node_get_literal(text), "retained", "failed retyping retains owned bytes");
+    INT_EQ(runner, payload_live, before, "failed retyping neither frees nor leaks an allocation");
+    payload_fail_at = 0;
+    INT_EQ(runner, markdown_core_node_set_kind(text, MARKDOWN_CORE_NODE_LINK), MARKDOWN_CORE_NODE_SET_KIND_OK,
+           "successful kind conversion installs new defaults");
+    OK(runner, text->as.link && !text->as.link->resource, "converted link has a payload and no resource");
+    size_t attempts = payload_allocations;
+    markdown_core_link *original_link = text->as.link;
+    payload_fail_at = attempts + 1;
+    INT_EQ(runner, markdown_core_node_set_kind(text, MARKDOWN_CORE_NODE_CODE_BLOCK),
+           MARKDOWN_CORE_NODE_SET_KIND_REJECTED, "containment rejects a block in a paragraph");
+    INT_EQ(runner, payload_allocations, attempts, "invalid containment allocates nothing");
+    OK(runner,
+       text->kind == MARKDOWN_CORE_NODE_LINK && text->as.link == original_link && text->parent == parent &&
+           parent->first_child == text,
+       "containment rejection preserves kind, data, identity, and tree links");
+    payload_fail_at = 0;
+    OK(runner,
+       markdown_core_node_set_kind(text, MARKDOWN_CORE_NODE_STRONG) == MARKDOWN_CORE_NODE_SET_KIND_OK && !text->as.data,
+       "a fieldless kind releases the old payload without creating an empty record");
+
+    markdown_core_node *empty = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_EMPHASIS, &payload_test_mem);
+    OK(runner, markdown_core_node_append_child(parent, empty), "a fieldless node joins the parent");
+    INT_EQ(runner, markdown_core_node_set_kind(empty, MARKDOWN_CORE_NODE_CROSS_LINK), MARKDOWN_CORE_NODE_SET_KIND_OK,
+           "a node constructed without fields acquires an owned replacement record");
+    markdown_core_destination destination;
+    markdown_core_optional_string label;
+    bool embedded;
+    OK(runner,
+       markdown_core_node_destination(empty, &destination) && destination.path.length == 0 &&
+           !destination.anchor.has_value && markdown_core_node_cross_link_properties(empty, &embedded, &label) &&
+           !embedded && !label.has_value,
+       "converted cross link establishes ordinary empty and absent defaults");
+
+    markdown_core_node *cite = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_CITE, &payload_test_mem);
+    markdown_core_node *item = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_CITATION, &payload_test_mem);
+    markdown_core_node *prefix = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_TEXT, &payload_test_mem);
+    OK(runner, markdown_core_node_append_child(parent, cite), "cite joins its parent");
+    cite->as.cite->citations = item;
+    item->as.citation->prefix = prefix;
+    OK(runner, markdown_core_node_set_literal(prefix, "prefix"), "citation owns an affix subtree");
+    payload_fail_at = payload_allocations + 1;
+    before = payload_live;
+    OK(runner,
+       markdown_core_node_set_kind(cite, MARKDOWN_CORE_NODE_TEXT) == MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED &&
+           cite->as.cite->citations == item && item->as.citation->prefix == prefix,
+       "failed retyping preserves node-valued fields");
+    INT_EQ(runner, payload_live, before, "failed retyping leaves the owned subtree alive");
+    payload_fail_at = 0;
+    INT_EQ(runner, markdown_core_node_set_kind(cite, MARKDOWN_CORE_NODE_TEXT), MARKDOWN_CORE_NODE_SET_KIND_OK,
+           "kind conversion releases the old owned subtrees");
+    markdown_core_node_free(parent);
+    INT_EQ(runner, payload_live, 0, "conversion and destruction release payloads, fields, and affixes exactly once");
+}
+
+typedef struct {
+    markdown_core_node_type rejected_kind;
+    size_t rejections;
+} conversion_policy;
+
+static int conversion_can_contain(const markdown_core_extension *extension, markdown_core_node *node,
+                                  markdown_core_node_type child_kind) {
+    conversion_policy *policy = node->user_data;
+    (void)extension;
+    if (child_kind == policy->rejected_kind) {
+        policy->rejections++;
+        return false;
+    }
+    return node->kind == MARKDOWN_CORE_NODE_DOCUMENT
+               ? MARKDOWN_CORE_NODE_TYPE_BLOCK_P(child_kind) && child_kind != MARKDOWN_CORE_NODE_LIST_ITEM
+               : node->kind == MARKDOWN_CORE_NODE_PARAGRAPH && MARKDOWN_CORE_NODE_TYPE_INLINE_P(child_kind);
+}
+
+/* Apply the same parent policy before the built-in delimiter matcher runs. */
+static markdown_core_node *conversion_match_inline(const markdown_core_extension *extension,
+                                                   markdown_core_parser *parser, markdown_core_node *parent,
+                                                   unsigned char character,
+                                                   markdown_core_inline_parser *inline_parser) {
+    (void)character;
+    (void)inline_parser;
+    parent->extension = extension;
+    parent->user_data = parser->root->user_data;
+    return NULL;
+}
+
+static const markdown_core_extension CONVERSION_POLICY = {
+    .name = "conversion-policy",
+    .can_contain_func = conversion_can_contain,
+    .match_inline = conversion_match_inline,
+    .dispatch = "~",
+};
+
+static bool configure_conversion_policy(markdown_core_parser *parser, void *context) {
+    parser->root->extension = &CONVERSION_POLICY;
+    parser->root->user_data = context;
+    return markdown_core_parser_attach_extension(parser, &CONVERSION_POLICY) &&
+           markdown_core_core_extensions_attach(parser);
+}
+
+static void kind_conversion_containment(test_batch_runner *runner) {
+    static const struct {
+        markdown_core_node_type rejected_kind, retained_kind;
+        const char *source, *retained_literal;
+    } cases[] = {
+        {MARKDOWN_CORE_NODE_TABLE, MARKDOWN_CORE_NODE_PARAGRAPH, "| h |\n| - |\n", "| h |\n| - |"},
+        {MARKDOWN_CORE_NODE_HEADING, MARKDOWN_CORE_NODE_PARAGRAPH, "heading\n===\n", "heading\n==="},
+        {MARKDOWN_CORE_NODE_COMMENT_BLOCK, MARKDOWN_CORE_NODE_HTML_BLOCK, "<!-- body -->\n", "<!-- body -->\n"},
+        {MARKDOWN_CORE_NODE_STRIKETHROUGH, MARKDOWN_CORE_NODE_PARAGRAPH, "~~text~~\n", "~~text~~"},
+    };
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    for (size_t i = 0; i < sizeof(cases) / sizeof(*cases); i++) {
+        conversion_policy policy = {cases[i].rejected_kind, 0};
+        markdown_core_node *root = markdown_core_parse_document_with_mem(cases[i].source, strlen(cases[i].source),
+                                                                         MARKDOWN_CORE_DIALECT_OPTIONS, mem,
+                                                                         configure_conversion_policy, &policy);
+        OK(runner, policy.rejections > 0, "case %zu exercises parent containment rejection", i);
+        OK(runner, root != NULL, "case %zu declines conversion without failing the parse", i);
+        if (!root) {
+            continue;
+        }
+        markdown_core_node *block = root->first_child;
+        OK(runner, block && block->kind == cases[i].retained_kind && !block->next,
+           "case %zu retains the original block", i);
+        markdown_core_strbuf literal = MARKDOWN_CORE_BUF_INIT(mem);
+        if (block && block->kind == MARKDOWN_CORE_NODE_HTML_BLOCK) {
+            markdown_core_strbuf_puts(&literal, markdown_core_node_get_literal(block));
+        } else if (block) {
+            for (markdown_core_node *child = block->first_child; child; child = child->next) {
+                OK(runner, child->kind == MARKDOWN_CORE_NODE_TEXT || child->kind == MARKDOWN_CORE_NODE_SOFT_BREAK,
+                   "case %zu retains text and line breaks", i);
+                if (child->kind == MARKDOWN_CORE_NODE_TEXT) {
+                    markdown_core_strbuf_puts(&literal, markdown_core_node_get_literal(child));
+                } else if (child->kind == MARKDOWN_CORE_NODE_SOFT_BREAK) {
+                    markdown_core_strbuf_putc(&literal, '\n');
+                }
+            }
+        }
+        STR_EQ(runner, (char *)literal.ptr, cases[i].retained_literal, "case %zu preserves authored content", i);
+        markdown_core_strbuf_free(&literal);
+        markdown_core_node_free(root);
+    }
 }
 
 static void *marker_to_free;
@@ -1698,7 +1932,7 @@ static void task_marker_ownership(test_batch_runner *runner) {
     markdown_core_node_list_item_marker(item, &marker);
     OK(runner, marker.has_value && marker.value.length == 1 && marker.value.data[0] == ' ',
        "incomplete marker survives input reuse");
-    OK(runner, item->as.list.task_marker.value.alloc, "parsed task owns its marker bytes");
+    OK(runner, item->as.list->task_marker.value.alloc, "parsed task owns its marker bytes");
     markdown_core_node_list_item_marker(item->next, &marker);
     OK(runner, marker.has_value && marker.value.length == 1 && marker.value.data[0] == 'X',
        "completed marker retains authored case");
@@ -1709,7 +1943,7 @@ static void task_marker_ownership(test_batch_runner *runner) {
     /* O5's grammar is separate; the storage and facade already preserve a
      * complete UTF-8 scalar without interpreting it as a completion bit. */
     char custom[] = "🚀";
-    OK(runner, markdown_core_chunk_set_cstr(markdown_core_node_mem(item), &item->as.list.task_marker.value, custom),
+    OK(runner, markdown_core_chunk_set_cstr(markdown_core_node_mem(item), &item->as.list->task_marker.value, custom),
        "owned marker accepts UTF-8 bytes");
     memset(custom, '?', sizeof(custom) - 1);
     markdown_core_node_list_item_marker(item, &marker);
@@ -1725,7 +1959,7 @@ static void task_marker_ownership(test_batch_runner *runner) {
     item = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_LIST_ITEM, &marker_test_mem);
     markdown_core_chunk bytes = markdown_core_chunk_literal("🚀");
     OK(runner, markdown_core_chunk_to_cstr(&marker_test_mem, &bytes) != NULL, "custom marker allocates");
-    item->as.list.task_marker = markdown_core_optional_chunk_present(bytes);
+    item->as.list->task_marker = markdown_core_optional_chunk_present(bytes);
     marker_to_free = bytes.data;
     marker_free_count = 0;
     markdown_core_node_free(item);
@@ -1744,13 +1978,13 @@ static void specimen_values(test_batch_runner *runner) {
     markdown_core_optional_string id;
     markdown_core_optional_i64 start;
     OK(runner, markdown_core_chunk_to_cstr(&marker_test_mem, &bytes) != NULL, "specimen id allocates");
-    first->as.specimen.id = markdown_core_optional_chunk_present(bytes);
-    first->as.specimen.start = 5;
-    first->as.specimen.has_start = true;
+    first->as.specimen->id = markdown_core_optional_chunk_present(bytes);
+    first->as.specimen->start = 5;
+    first->as.specimen->has_start = true;
     first->next = anonymous;
     anonymous->prev = first;
-    root->as.document.specimens = first;
-    root->as.document.footnotes = footnote;
+    root->as.document->specimens = first;
+    root->as.document->footnotes = footnote;
     OK(runner, markdown_core_node_append_child(first, body), "specimen owns block content");
     const markdown_core_specimen *value = markdown_core_node_document_specimens(root);
     OK(runner, markdown_core_specimen_properties(value, &id, &start), "specimen answers properties");
@@ -1768,8 +2002,8 @@ static void specimen_values(test_batch_runner *runner) {
            !markdown_core_specimen_properties(value, &id, NULL) && markdown_core_node_document_specimens(body) == NULL,
        "typed accessors reject missing values and incorrect owners");
     markdown_core_node *citation = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_CITATION, &marker_test_mem);
-    citation->as.citation.referent = MARKDOWN_CORE_NODE_REFERENT_SPECIMEN;
-    OK(runner, markdown_core_chunk_set_cstr(&marker_test_mem, &citation->as.citation.value, "étude"),
+    citation->as.citation->referent = MARKDOWN_CORE_NODE_REFERENT_SPECIMEN;
+    OK(runner, markdown_core_chunk_set_cstr(&marker_test_mem, &citation->as.citation->value, "étude"),
        "specimen reference owns its label");
     markdown_core_referent referent;
     OK(runner,
@@ -1777,7 +2011,7 @@ static void specimen_values(test_batch_runner *runner) {
            referent.kind == MARKDOWN_CORE_REFERENT_SPECIMEN && referent.id.length == 6 && referent.key.data == NULL &&
            referent.mode == 0,
        "specimen reference uses only its own branch fields");
-    citation->as.citation.referent = 99;
+    citation->as.citation->referent = 99;
     OK(runner, !markdown_core_citation_referent((const markdown_core_citation *)citation, &referent),
        "unknown referent cannot masquerade as a specimen");
     markdown_core_node_free(citation);
@@ -1797,14 +2031,9 @@ static void specimen_values(test_batch_runner *runner) {
     INT_EQ(runner, marker_free_count, 1, "document frees its owned specimen label exactly once");
 }
 
-static void set_type_keeps_extension_data_beside_the_arm(test_batch_runner *runner) {
-    /* An extension's per-node data lives beside the type-specific arm, not in
-     * it. Converting a formula, whose extension owns such data, into a link
-     * therefore starts the link without a resource instead of reading the
-     * payload as one, the payload stays for the extension to free, and
-     * freeing the document releases each once. While the payload shared the
-     * arm's storage, the freed payload's bytes were read as a resource's
-     * holder count on the way out. */
+static void set_kind_keeps_extension_data_beside_the_arm(test_batch_runner *runner) {
+    /* Converting a formula to a link installs default link data and preserves
+     * the extension's opaque data. Destruction releases both exactly once. */
     static const char markdown[] = "$x$ tail\n";
     markdown_core_error *error = NULL;
     markdown_core_document *document =
@@ -1817,8 +2046,8 @@ static void set_type_keeps_extension_data_beside_the_arm(test_batch_runner *runn
     INT_EQ(runner, markdown_core_node_get_kind(formula), MARKDOWN_CORE_KIND_FORMULA,
            "the paragraph opens with a formula");
     OK(runner, formula->opaque != NULL, "the formula's extension owns per-node data");
-    OK(runner, markdown_core_node_set_type(formula, MARKDOWN_CORE_NODE_LINK),
-       "set_type converts the formula into a link");
+    INT_EQ(runner, markdown_core_node_set_kind(formula, MARKDOWN_CORE_NODE_LINK), MARKDOWN_CORE_NODE_SET_KIND_OK,
+           "set_kind converts the formula into a link");
     OK(runner, formula->opaque != NULL, "the extension's data stays with the node");
     OK(runner, markdown_core_node_resource(formula) == NULL, "the converted link starts without a resource");
     OK(runner, markdown_core_node_destination(formula, &destination) && destination.url.length == 0,
@@ -1907,7 +2136,7 @@ static void table_values(test_batch_runner *runner) {
         markdown_core_node *cell = row->first_child;
         markdown_core_node_free(cell->next);
         markdown_core_node_free(cell->first_child);
-        cell->as.table_cell.colspan = 2;
+        cell->as.table_cell->colspan = 2;
         markdown_core_node *block = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
         OK(runner, markdown_core_node_append_child(cell, block), "cell owns block content directly");
         int64_t rowspan, colspan;
@@ -1987,7 +2216,7 @@ static void table_source_map_growth(test_batch_runner *runner) {
             markdown_core_node *cell = table->first_child->next->first_child;
             size_t links = 0;
             for (markdown_core_node *node = cell->first_child; node; node = node->next) {
-                if (node->type != MARKDOWN_CORE_NODE_LINK) {
+                if (node->kind != MARKDOWN_CORE_NODE_LINK) {
                     continue;
                 }
                 INT_EQ(runner, node->start_column, 12 + links * unit_length, "address begins at its authored byte");
@@ -2016,7 +2245,7 @@ static void universal_values(test_batch_runner *runner) {
     metadata->scope = (markdown_core_scope){{1, 1}, {1, 4}};
     metadata->count = 6;
     metadata->records = calloc(metadata->count, sizeof(*metadata->records));
-    root->as.document.metadata = metadata;
+    root->as.document->metadata = metadata;
     for (size_t i = 0; i < metadata->count; i++) {
         markdown_core_metadata_record *r = &metadata->records[i];
         r->scope = metadata->scope;
@@ -2096,8 +2325,8 @@ static void universal_values(test_batch_runner *runner) {
     }
     OK(runner, !markdown_core_metadata_record_at(metadata, 6), "metadata record bounds checked");
     markdown_core_node *image = root->first_child->first_child;
-    image->as.link.width = (markdown_core_optional_i64){true, 640};
-    image->as.link.height = (markdown_core_optional_i64){true, 480};
+    image->as.link->width = (markdown_core_optional_i64){true, 640};
+    image->as.link->height = (markdown_core_optional_i64){true, 480};
     markdown_core_optional_i64 width, height;
     OK(runner, markdown_core_node_image_dimensions(image, &width, &height), "image dimensions accessible");
     OK(runner, width.has_value && width.value == 640 && height.has_value && height.value == 480,
@@ -2277,6 +2506,8 @@ int main(void) {
     attribute_linear_work(runner);
     cross_link_linear_work(runner);
     cross_link_fields(runner);
+    node_payload_lifecycle(runner);
+    kind_conversion_containment(runner);
     version(runner);
     node_type_values(runner);
     constructor(runner);
@@ -2303,7 +2534,7 @@ int main(void) {
     link_resource_lifecycle(runner);
     task_marker_ownership(runner);
     specimen_values(runner);
-    set_type_keeps_extension_data_beside_the_arm(runner);
+    set_kind_keeps_extension_data_beside_the_arm(runner);
     citation_and_footnote_values(runner);
     autolink_source_pos(runner);
     table_source_map_growth(runner);

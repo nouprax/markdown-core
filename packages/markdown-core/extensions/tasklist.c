@@ -14,9 +14,9 @@ static const char *get_type_string(const markdown_core_extension *extension, mar
 static bool parse_node_item_prefix(markdown_core_parser *parser, const char *input, markdown_core_node *container) {
     bool res = false;
 
-    if (parser->indent >= container->as.list.marker_offset + container->as.list.padding) {
+    if (parser->indent >= container->as.list->marker_offset + container->as.list->padding) {
         markdown_core_parser_advance_offset(parser, input,
-                                            container->as.list.marker_offset + container->as.list.padding, true);
+                                            container->as.list->marker_offset + container->as.list->padding, true);
         res = true;
     } else if (parser->blank && container->first_child != NULL) {
         // if container->first_child is NULL, then the opening line
@@ -35,7 +35,7 @@ static int matches(const markdown_core_extension *self, markdown_core_parser *pa
 
 static int can_contain(const markdown_core_extension *extension, markdown_core_node *node,
                        markdown_core_node_type child_type) {
-    return (node->type == MARKDOWN_CORE_NODE_LIST_ITEM) ? 1 : 0;
+    return (node->kind == MARKDOWN_CORE_NODE_LIST_ITEM) ? 1 : 0;
 }
 
 static markdown_core_node *open_tasklist_item(const markdown_core_extension *self, int indented,
@@ -65,8 +65,8 @@ static markdown_core_node *open_tasklist_item(const markdown_core_extension *sel
         parser->oom = true;
         return NULL;
     }
-    markdown_core_optional_chunk_free(parser->mem, &parent_container->as.list.task_marker);
-    parent_container->as.list.task_marker = markdown_core_optional_chunk_present(marker);
+    markdown_core_optional_chunk_free(parser->mem, &parent_container->as.list->task_marker);
+    parent_container->as.list->task_marker = markdown_core_optional_chunk_present(marker);
     markdown_core_node_set_extension(parent_container, self);
     markdown_core_parser_advance_offset(parser, (char *)input, 3, false);
 
