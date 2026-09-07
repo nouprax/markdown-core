@@ -1589,7 +1589,8 @@ static void citation_and_footnote_values(test_batch_runner *runner) {
            "footnote %zu carries the expected id", count);
         count++;
     }
-    INT_EQ(runner, (int)count, 4, "the winner, its duplicate, the referenced, and the unreferenced definitions are footnotes");
+    INT_EQ(runner, (int)count, 4,
+           "the winner, its duplicate, the referenced, and the unreferenced definitions are footnotes");
     footnote = markdown_core_node_document_footnotes(root);
     scope = markdown_core_footnote_scope(footnote);
     OK(runner, scope.start.line == 3 && scope.start.column == 1, "the first footnote is the winning definition");

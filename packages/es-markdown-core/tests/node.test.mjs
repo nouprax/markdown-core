@@ -5,6 +5,7 @@ import { Document, TreeDumper, visit, walk } from "../dist/index.js";
 // and it is observable without the source carrying anything for the test.
 import { native } from "../dist/runtime/native.js";
 import { parseDocumentWithNative } from "../dist/runtime/parser.js";
+import { kinds } from "../dist/wire/kinds.js";
 import { NodeDecoder } from "../dist/wire/node-decoder.js";
 import { kindVisitor } from "./visitor.mjs";
 
@@ -501,7 +502,7 @@ test("errors: malformed native values are rejected before they enter the AST", (
     // generic child here would erase the structural distinction this wire
     // contract exists to preserve.
     const malformedDirective = nativeResult(":note[label]\n");
-    const directiveOffset = findNode(malformedDirective, 25);
+    const directiveOffset = findNode(malformedDirective, kinds.indexOf("directive"));
     const labelIndex = new DataView(malformedDirective.buffer).getUint32(directiveOffset + 32, true);
     const nodesOffset = new DataView(malformedDirective.buffer).getUint32(40, true);
     new DataView(malformedDirective.buffer).setUint32(nodesOffset + labelIndex * 96, 3, true);
@@ -511,7 +512,7 @@ test("errors: malformed native values are rejected before they enter the AST", (
     );
 
     const unknownKind = nativeResult("text\n");
-    new DataView(unknownKind.buffer).setUint32(findNode(unknownKind, 14), 99, true);
+    new DataView(unknownKind.buffer).setUint32(findNode(unknownKind, kinds.indexOf("text")), 99, true);
     assert.throws(() => new NodeDecoder(unknownKind).decodeDocument(), /unknown node kind 99/u);
 
     const badMagic = nativeResult("text\n");
