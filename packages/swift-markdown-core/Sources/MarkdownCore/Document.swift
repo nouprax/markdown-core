@@ -252,22 +252,21 @@ func markup(
     relations: NativeRelations,
     resources: inout [UnsafeRawPointer: SharedResource]
 ) -> any Markup {
-    let children = relations.children
     switch markdown_core_node_get_kind(node) {
     case MARKDOWN_CORE_KIND_DOCUMENT:
-        Document(scope: Document.scope(from: node), content: children, footnotes: relations.footnotes)
-    case MARKDOWN_CORE_KIND_CALLOUT: Callout(from: node, title: relations.title, content: children)
-    case MARKDOWN_CORE_KIND_PARAGRAPH: Paragraph(from: node, content: children)
-    case MARKDOWN_CORE_KIND_HEADING: Heading(from: node, content: children)
+        Document(scope: Document.scope(from: node), content: relations.children, footnotes: relations.footnotes)
+    case MARKDOWN_CORE_KIND_CALLOUT: Callout(from: node, title: relations.title, content: relations.children)
+    case MARKDOWN_CORE_KIND_PARAGRAPH: Paragraph(from: node, content: relations.children)
+    case MARKDOWN_CORE_KIND_HEADING: Heading(from: node, content: relations.children)
     case MARKDOWN_CORE_KIND_THEMATIC_BREAK: ThematicBreak(from: node)
-    case MARKDOWN_CORE_KIND_LIST: List(from: node, children: children)
-    case MARKDOWN_CORE_KIND_LIST_ITEM: ListItem(from: node, content: children)
+    case MARKDOWN_CORE_KIND_LIST: List(from: node, children: relations.children)
+    case MARKDOWN_CORE_KIND_LIST_ITEM: ListItem(from: node, content: relations.children)
     case MARKDOWN_CORE_KIND_CODE_BLOCK: CodeBlock(from: node)
     case MARKDOWN_CORE_KIND_HTML_BLOCK: HTMLBlock(from: node)
     case MARKDOWN_CORE_KIND_FORMULA_BLOCK: FormulaBlock(from: node)
-    case MARKDOWN_CORE_KIND_TABLE: Table(from: node, children: children)
+    case MARKDOWN_CORE_KIND_TABLE: Table(from: node, children: relations.children)
     case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
-        DirectiveBlock(from: node, label: relations.label, content: children)
+        DirectiveBlock(from: node, label: relations.label, content: relations.children)
     case MARKDOWN_CORE_KIND_TEXT: Text(from: node)
     case MARKDOWN_CORE_KIND_SOFT_BREAK: SoftBreak(from: node)
     case MARKDOWN_CORE_KIND_LINE_BREAK: LineBreak(from: node)
@@ -275,17 +274,17 @@ func markup(
     case MARKDOWN_CORE_KIND_HTML: HTML(from: node)
     case MARKDOWN_CORE_KIND_COMMENT: Comment(from: node)
     case MARKDOWN_CORE_KIND_FORMULA: Formula(from: node)
-    case MARKDOWN_CORE_KIND_EMPHASIS: Emphasis(from: node, content: children)
-    case MARKDOWN_CORE_KIND_STRONG: Strong(from: node, content: children)
-    case MARKDOWN_CORE_KIND_STRIKETHROUGH: Strikethrough(from: node, content: children)
-    case MARKDOWN_CORE_KIND_LINK: Link(from: node, content: children, resources: &resources)
-    case MARKDOWN_CORE_KIND_IMAGE: Image(from: node, content: children, resources: &resources)
+    case MARKDOWN_CORE_KIND_EMPHASIS: Emphasis(from: node, content: relations.children)
+    case MARKDOWN_CORE_KIND_STRONG: Strong(from: node, content: relations.children)
+    case MARKDOWN_CORE_KIND_STRIKETHROUGH: Strikethrough(from: node, content: relations.children)
+    case MARKDOWN_CORE_KIND_LINK: Link(from: node, content: relations.children, resources: &resources)
+    case MARKDOWN_CORE_KIND_IMAGE: Image(from: node, content: relations.children, resources: &resources)
     case MARKDOWN_CORE_KIND_DIRECTIVE: Directive(from: node, label: relations.label)
     case MARKDOWN_CORE_KIND_CITE: Cite(scope: Cite.scope(from: node), citations: relations.citations)
-    case MARKDOWN_CORE_KIND_TABLE_ROW: TableRow(from: node, children: children)
-    case MARKDOWN_CORE_KIND_TABLE_CELL: TableCell(from: node, content: children)
+    case MARKDOWN_CORE_KIND_TABLE_ROW: TableRow(from: node, children: relations.children)
+    case MARKDOWN_CORE_KIND_TABLE_CELL: TableCell(from: node, content: relations.children)
     case MARKDOWN_CORE_KIND_DIRECTIVE_LABEL:
-        DirectiveLabel(scope: DirectiveLabel.scope(from: node), content: children)
+        DirectiveLabel(scope: DirectiveLabel.scope(from: node), content: relations.children)
     default: preconditionFailure("native parser returned an unknown node kind")
     }
 }
