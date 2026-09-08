@@ -7,9 +7,10 @@ results do not establish conformance to this corrected target.
 
 Source: [Obsidian Properties](https://help.obsidian.md/properties), including
 its property types, property format, and JSON properties sections (checked
-2026-09-08). YAML supplies the storage syntax. The pinned `yaml` 2.9.0
-Document/CST oracle supplies syntax evidence; it does not define the product's
-feature set or identify Obsidian's internal implementation. Landing is owned by
+2026-09-08). This module specifies a bounded Properties format using the
+documented field notation. It does not import the YAML specification. The
+pinned `yaml` 2.9.0 Document/CST oracle supplies comparison evidence; it does
+not define the product's feature set or identify Obsidian's internal implementation. Landing is owned by
 [O6](../../plans/2026-09-04-canonical-vnext-landing-plan.md).
 The [example format](../dialect.md#examples) is defined by the index.
 
@@ -24,23 +25,38 @@ links remain quoted text. `aliases` is an ordinary property name, independent
 of YAML alias syntax. Nested property objects and Markdown inside values do
 not add AST structure.
 
-O6 does not implement general YAML object construction. Anchor declarations,
-alias references, explicit tags, merge keys, complex keys, and nested values
+Metadata is not parsed as a complete YAML document. Anchor declarations,
+alias references, explicit tags, merge keys, complex keys, nested values,
+general YAML flow mappings, multiline scalar folding, and block scalars
 are outside its supported source domain. Their owning source members remain
 `comment(String)` without interpretation or expansion. Quoted occurrences of
 those characters remain ordinary text. This boundary is this repository's
 Properties contract; the documentation's UI limitations do not prove that
 Obsidian's underlying YAML parser rejects the same input.
 
-YAML syntax decoding and Properties projection have separate responsibilities.
-Evaluate a maintained C-compatible vendored parser for quoting, escapes,
-indentation, scalar decoding, collections, and source positions. The core
-producer owns the exact envelope, ordered projection, duplicate handling,
-comment retention, and recovery of neighboring members. A library must fit
-those requirements, including allocator/OOM and all binding targets, before
-adoption; its accepted language must not automatically become data. The task
-does not require a handwritten YAML parser, an alias registry, an expansion
-budget, or a second fallback decoder. Parser choice remains an O6 deliverable.
+The shared core producer recognizes the supported property forms directly.
+The general YAML parser selection/vendoring workstream is withdrawn. One
+member scanner and value decoder own the exact envelope, ordered data,
+duplicates, comment retention, source scopes and recovery. Implement only the
+syntax needed for the property types below; a complete YAML parse followed by
+filtering is outside this task. The public value model does not require YAML
+syntax nodes, aliases, tag resolution, folding, or expansion budgets.
+
+The supported fields and functions are:
+
+| Properties feature | Parser representation |
+| --- | --- |
+| Text, URL, quoted internal link | Atomic single-line text; no Markdown parsing |
+| Number | Exact numeric spelling |
+| Checkbox | Boolean, or null for an empty value |
+| Date and date-time | Text; interpretation and vault-assigned types belong to consumers |
+| List | Flat ordered text/number items, including quoted links |
+| Tags, aliases, cssclasses | Ordinary named properties using the same values |
+| JSON properties | A root JSON object with the same permitted value domain |
+
+Property names remain user-defined and unique. Obsidian's default and Publish
+property names are examples, not a fixed whitelist, and do not cause special
+parsing, publication, styling, or vault behavior.
 
 ## Model
 
@@ -122,9 +138,9 @@ Scalar values:
 - `number` holds the complete decoded ASCII spelling of the number, never a
   host integer or float; integers, decimals, and exponents keep their exact
   spelling on every surface.
-- `text` holds the decoded single-line string after YAML quoting, escapes,
-  and folding. Date and date-time spellings are text; whether a name is a
-  Date property is vault state that the source cannot express. Text is atomic:
+- `text` holds a plain or quoted string authored on one source line, with
+  quote escapes decoded and no decoded line break. Date and date-time
+  spellings are text; whether a name is a Date property is vault state that the source cannot express. Text is atomic:
   `title: "**Draft**"`, `tag: "#topic"`, and `link: "[[Episode IV]]"` keep
   those strings with no inline children, and no other dialect feature is
   recognized inside a value.
@@ -243,20 +259,32 @@ Document scope=1:1..3:3 anchor=null attributes={} children=2
     └── Text scope=3:1..3:3 anchor=null attributes={} literal="..." children=0
 ````````````````````````````````
 
-## YAML projection
+## Supported Properties syntax
 
-The payload is an ordered sequence of recoverable source members. Each data
-member uses YAML 1.2.2 scalar, sequence, and mapping syntax; the payload itself
-need not be a valid YAML document. Directives and document indicators are
-comments and never change the decoding schema. A member containing a byte
-outside YAML's `c-printable` set is retained as a comment. Plain scalars in
-value position resolve as JSON scalars with a string fallback: exactly `null`
+The envelope contains recoverable property members rather than a YAML document.
+A property line has a name, a colon, and a value separated as `name: value`;
+an empty value is null. Names and text may be plain or single-/double-quoted
+on one source line. Quote escaping permits literal text; it does not enable
+multiline YAML folding. Lists contain flat text/number items, written as `- `
+lines under a property or as a bracketed comma-separated list. Separation and
+`#` comments are retained according to the rules below.
+
+The documented JSON alternative uses a root object, quoted JSON keys, colons,
+JSON scalar values and flat arrays in the same value domain. It does not admit
+general YAML flow-map forms such as `{draft, title: Note}` or key-only pairs.
+A member using a different source form remains a comment even if a YAML
+library would construct a supported scalar from it. Literal/folded block
+scalars (`|`, `>`) and multiline quoted/plain scalar continuations remain
+comments. Supporting the resulting value type never implies supporting every
+YAML spelling of that value.
+
+Plain values resolve only through this module's scalar rules: exactly `null`
 is null; exactly `true` and `false` are booleans; a scalar matching
-`^-?(0|[1-9][0-9]*)(\.[0-9]*)?([eE][-+]?[0-9]+)?$` is a number; every other
-valid plain scalar and every quoted scalar is text. YAML 1.1 booleans,
-timestamps, infinities, base prefixes, underscores, and leading plus signs
-resolve to text. A JSON object as the root payload decodes through the same
-operation.
+`^-?(0|[1-9][0-9]*)(\.[0-9]*)?([eE][-+]?[0-9]+)?$` is a number; other
+supported plain text and every quoted string are text. Dates, timestamps,
+YAML 1.1 boolean spellings, base prefixes, underscores, and leading plus signs
+do not trigger YAML type resolution. The existing exact-number representation
+is a repository invariant, not a requirement to interpret generic YAML values.
 
 A key is directly authored if and only if it is a plain, single-quoted, or
 double-quoted scalar carrying no tag, anchor, or explicit-key indicator; any
@@ -311,21 +339,21 @@ body is parsed once by the ordinary block parser. Only an absent or unclosed
 envelope leaves the source to inherited Markdown. Allocation failure remains a
 parse failure, never a comment or a Markdown fallback.
 
-A block member begins on a nonblank source line and owns its indented
-continuations; an indentless sequence is part of its owning value. A new member
-at the same or smaller indentation ends the preceding member. Quoted and flow
-values retain continuation lines and their closing delimiters. A directly
-authored mapping key at the member's indentation is a recovery boundary even
-when the preceding quote or flow value was not closed. Flow punctuation inside
-block plain keys and values remains text; it never starts a collection or
-extends member ownership. An invalid member is
-never reparsed at an interior colon. Flow root mappings use their comma-delimited
-members, with nested collections and quoted commas kept in their owning member;
-a JSON root object uses this same mapping operation.
+A property line owns its indented continuations and flat list items, including
+an indentless list. Comment-only and blank lines between list entries do not
+split the list. A new property at the same or smaller indentation ends the
+preceding member. Unsupported scalar continuations remain with their owning
+member as retained source. Plain punctuation never opens a collection in the
+middle of a text value. Bracketed lists and JSON objects keep quoted commas
+and balanced nested source together for retention, even when nested values
+are unsupported. Recovery after an unfinished construct resumes at the next
+direct property boundary and never reparses an interior colon as a new name.
+JSON members are separated at their outer commas; each member independently
+retains data or source.
 
 Each member either commits one data record and its authored YAML comments, or
 commits its original source as a comment. A scalar or sequence root, explicit
-null, malformed YAML, unsupported key, nested value, anchor, tag, alias, merge, and a
+null, unsupported syntax, key or nested value, anchor, tag, alias, merge, and a
 duplicate decoded name all use the comment branch. Recovery does not split a
 valid record into partly interpreted values. Independently decoded members on
 either side remain data. A data record precedes comments inside or after its
@@ -369,19 +397,21 @@ closing fence is outside it, and the scope never covers the body. Each
 `MetadataRecord.scope` starts at the first byte of its key, quotes included,
 and ends at the last non-whitespace byte of the value's last owned line,
 excluding trailing comments, flow separators, and the line ending; an empty
-value ends at the colon. A key-only flow pair, when decoded as an empty
-value by the syntax parser, ends at its key's last byte. `Document.scope` covers the complete source, and
-each body block covers only its own occurrence.
+value ends at the colon. Unsupported key-only pairs have no record scope.
+`Document.scope` covers the complete source, and each body block covers only its own occurrence.
 
 ## Oracle
 
 The gate must apply the envelope grammar above, then use pinned `yaml` 2.9.0
-Document/CST parsing to witness syntax only within the supported Properties
-domain. JSON scalar resolution with a string fallback and ordered mapping
-pairs preserve names and numeric spelling without building a JavaScript
+Document/CST parsing to compare only inputs already inside this module's
+specified Properties grammar. Successful YAML parsing does not admit an input
+into that grammar. JSON scalar resolution with a string fallback and ordered
+mapping pairs preserve names and numeric spelling without building a JavaScript
 object. Library support for aliases, tags, merge keys, or nested values is not
 an additional conformance requirement. The previous alias-resolution and
-tagged-empty-null success canaries must be removed during O6 migration.
+tagged-empty-null, scalar-folding, and general YAML mapping success canaries
+must be removed during O6 migration. The pinned package remains test tooling;
+it is not a runtime dependency or implementation-selection requirement.
 
 The comparison projects away metadata comment cases. Product fixtures own raw
 source retention, duplicates, unsupported members, recovery after malformed
@@ -397,14 +427,15 @@ rework. Official Properties examples cover text, quoted links, number,
 checkbox/empty, date/date-time, list, tags, ordinary `aliases`, and JSON roots.
 Tests also cover absent/empty/populated metadata; BOM and LF/CR/CRLF; closing at
 EOF; names, duplicate decoded names, exact numbers, quoting and escapes,
-single-line decoded text, block/flow lists, list comments at any permitted
+single-source-line text, flat lists, list comments at any permitted
 indentation, and metadata/record/body scopes.
 
 Mixed inputs must preserve each valid property on either side of malformed or
 unsupported source. Anchor declarations, aliases (including missing/cyclic
 spellings), explicit tags, merge keys, complex keys, nested objects/lists,
-multiline decoded text, and boolean/null list items remain comments. They must
-not trigger reference resolution, expansion, or additional public types.
+general YAML mappings/key-only pairs, block scalars, multiline scalar
+continuations (even if they would fold to one line), and boolean/null list
+items remain comments. They must not trigger reference resolution, expansion, or additional public types.
 Quoting those spellings keeps them ordinary strings. Strict envelope-negative
 cases and container opacity keep their existing coverage.
 
@@ -412,5 +443,5 @@ All transports must agree on ordered data/comments and source-independent
 ownership. Size-doubling probes must bound member scanning and source lookup,
 including long strings/lists and repeated unsupported syntax. Peak live-memory
 and allocation-failure checks must prove that temporary decoding state is
-released and no partial document is published. Parser integration must pass
+released and no partial document is published. The Properties producer must pass
 the repository's C, Swift, Kotlin/JNI/Native, and ES/Wasm validation gates.

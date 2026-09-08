@@ -1,11 +1,13 @@
 # Obsidian parser oracles
 
-Properties status (2026-09-08): the user corrected O6 to follow the documented
-Obsidian Properties approach. The [landing plan](../../../docs/plans/2026-09-04-canonical-vnext-landing-plan.md)
+Properties status (2026-09-08): O6 supports only the specified Obsidian
+Properties fields and forms. Metadata is not a complete YAML document. The [landing plan](../../../docs/plans/2026-09-04-canonical-vnext-landing-plan.md)
 reopens implementation and oracle migration. The existing runner/corpus still
 exercise the superseded alias/tag projection; green checks and closed old gaps
-do not prove the revised target. YAML library acceptance is syntax evidence,
-not a product feature checklist.
+do not prove the revised target. The general YAML parser selection/vendoring
+task is withdrawn. The pinned package remains test tooling for inputs already
+inside the supported Properties grammar; YAML acceptance cannot define that
+grammar or justify additional syntax.
 
 This oracle runs `@quartz-community/remark-obsidian@0.2.4` through the same
 unified/remark parser family already used by the repository. The package is
@@ -55,12 +57,15 @@ line-oriented envelope scanner and passes only the bytes between a valid pair
 of fences to the YAML oracle. A package-specific frontmatter recognizer is
 neither an authority nor an intermediate normalization layer.
 
-For the corrected O6 target, `yaml` witnesses supported YAML/JSON syntax
-through ordered mapping pairs and CST tokens. The Properties projection keeps
+For the corrected O6 target, input selection follows the Properties module
+before `yaml` compares ordered pairs and CST tokens. Single-line property
+values, flat lists, and the documented JSON alternative form that intersection. The Properties projection keeps
 direct scalar names, exact numeric spellings, atomic scalar values, and flat
 text/number lists. It does not construct a generic YAML object graph or resolve
-aliases/tags. The runner's old alias and tagged-empty-null success canaries,
-corpus entries, and legacy delta need migration with the replacement producer.
+aliases/tags. The runner's old alias, tagged-empty-null, multiline-folding and
+general YAML mapping success canaries and corpus entries need migration with
+the bounded Properties producer. JSON objects keep JSON key/value syntax;
+YAML key-only flow pairs are outside this task.
 
 The official help documents property types and source forms. Its nested-value
 UI limitation does not establish that Obsidian's underlying YAML parser rejects

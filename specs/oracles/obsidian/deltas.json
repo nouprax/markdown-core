@@ -112,13 +112,13 @@
             "keepSourceTokens": true,
             "uniqueKeys": false
         },
-        "authorityBoundary": "Obsidian Properties documentation owns the product domain and documented YAML/JSON forms. The repository owns the exact envelope, ordered data/comment model, exact-number representation, and user-directed member-level recovery. A YAML parser supplies syntax evidence only; its alias, tag, merge, or nested-object support does not extend the Properties contract. Unsupported source and ... remain metadata comments. The current runner/corpus still require the O6 goal-correction migration.",
+        "authorityBoundary": "The Properties module lists supported Obsidian fields and source forms: single-line property values, flat lists and the documented JSON object alternative. Metadata is not a complete YAML document. Select inputs within that grammar before invoking the pinned YAML comparison package; library acceptance, including general mappings or scalar folding, never broadens the target. The repository owns ordered data/comment retention, exact numbers, envelope and member recovery. The current runner/corpus still require migration.",
         "goalCorrection": {
             "date": "2026-09-08",
             "plan": "docs/plans/2026-09-04-canonical-vnext-landing-plan.md",
             "status": "pending implementation and oracle migration",
-            "scope": "Obsidian-style atomic Properties using YAML/JSON syntax; retain unsupported source members as comments. Remove alias expansion and explicit-tag resolution from required data projection.",
-            "evidenceBoundary": "Existing green checks, baselineGaps, and tagged-null/alias canaries describe the superseded implementation and do not prove completion of corrected O6."
+            "scope": "Implement only the specified Obsidian Properties fields and forms, with custom property names and ordered data/comment retention. Remove complete-YAML parsing, alias/tag resolution, general flow mappings, multiline scalar folding, and the general YAML parser selection/vendoring task.",
+            "evidenceBoundary": "The pinned YAML package is test tooling for the explicit syntax intersection, not a runtime dependency or source of additional requirements. Existing green checks, baselineGaps and legacy alias/tag/folding canaries do not prove completion of the bounded Properties target."
         }
     },
     "claim": "For the documented constructs the selected package actually parses, Markdown Core must converge on the same semantic recognition except for explicit, general AST-model deltas. The official Obsidian documentation, not this package, owns the language contract.",

@@ -104,9 +104,9 @@ does not define Pandoc `@key` syntax; the citations module does.
       parse option, no preset, no CLI `--profile obsidian`, and no layer
       selection in the test tree. Keep the inherited grammar stable, but make the
       canonical `BlockQuote` to `Callout` rename universal. Add only the engine
-      bit each module needs; do not add a second Markdown parser. A vendored
-      YAML syntax dependency for Properties remains inside the one core
-      producer and is evaluated under O6.
+      bit each module needs; do not add a second Markdown parser. Properties
+      has a bounded source grammar under O6; it does not add a general YAML
+      parser or dependency.
 
 - [ ] **Exit criterion:** all public surfaces compile with exhaustive handling, the
       canonical schema audit proves kind/field parity, and fixtures can express every
@@ -164,15 +164,17 @@ descriptor. O4 completes the shared feature-boundary implementation bullet.
       the decoded document after an optional BOM. A complete envelope always
       attaches metadata; only a missing or malformed envelope leaves its bytes
       to inherited Markdown. Allocation failure remains terminal.
-- [ ] Rework Properties under the user-corrected O6 goal: use YAML/JSON
-      syntax to populate the documented Obsidian property domain, with ordered
+- [ ] Rework Properties under the user-corrected O6 goal: recognize only the
+      specified Obsidian property forms, including its JSON alternative, with ordered
       `comment(String)` and `data(MetadataRecord)` cases. Preserve exact
       numbers, decoded names, atomic text and flat lists. Retain unsupported
       source and valid neighboring members independently. Remove alias
       expansion, anchor transactions, explicit tag resolution, and full YAML
       compatibility from the task goals; `aliases` remains an ordinary key.
-      Evaluate a maintained vendored YAML syntax parser against source
-      retention, member recovery, allocator/OOM and all target builds.
+      Remove the YAML parser selection/vendoring task. Simplify to one
+      Properties producer, including single-line text and flat lists; retain
+      general YAML mapping forms and multiline scalar constructs as comments.
+      Verify source retention, member recovery, allocator/OOM and all builds.
 - [ ] Verify source-faithful metadata and record scopes with the replacement
       syntax producer before parsing the remaining body. Decoded values keep
       their authored ranges. Metadata comments are never Markup.

@@ -821,13 +821,14 @@ its behavior, with no separate publication step.
   protect the general coordinate invariant.
 
 - [ ] **O6 — Obsidian-style Properties.** Deliver the documented Properties
-      value domain using YAML/JSON source syntax. The product is a sequence of
-      metadata name/value pairs: single-line text, exact numbers, booleans,
+      fields and functions through a bounded Properties format. The product
+      is a sequence of metadata name/value pairs: single-line text, exact numbers, booleans,
       empty/null values, and flat text/number lists. Dates, date-times, URLs,
       and quoted internal links remain atomic text in this parser-only AST;
       vault-assigned property types and presentation belong to consumers.
       `tags`, `aliases`, and `cssclasses` remain ordinary property names.
-      Requires `O1`.
+      Custom names remain supported: the official page permits arbitrary
+      property names; its default names are not a whitelist. Requires `O1`.
 
       Goal correction (2026-09-08, user-directed): follow
       [Obsidian Properties](https://help.obsidian.md/properties), which defines
@@ -838,6 +839,10 @@ its behavior, with no separate publication step.
       Source members using those unsupported constructs remain metadata
       comments. This is the repository's bounded Properties contract, not a
       claim that Obsidian's underlying YAML parser rejects those constructs.
+      Metadata is not a complete YAML document to parse and then filter.
+      Support only the property forms described by the module, including the
+      documented JSON object alternative. General YAML flow mappings, key-only
+      pairs, multiline scalar folding and block scalars are outside the task.
       The previous completed status and YAML-feature checklist are withdrawn.
 
       Preserve the user-directed ordered model:
@@ -851,37 +856,36 @@ its behavior, with no separate publication step.
       Markdown. Allocation failure fails the parse. Metadata comments never
       become `Comment` markup. Retain source scopes and parse the body once.
 
-      Separate YAML syntax decoding from the Properties projection. Evaluate
-      vendoring a maintained C-compatible YAML parser before replacing the
-      current handwritten decoder. Record version/license, source ranges and
-      raw retention, scalar decoding, malformed-member recovery, allocator/OOM
-      integration, and C/Swift/Kotlin/Wasm build costs. Parser reuse must not
-      force whole-envelope rejection or alias expansion. Use one syntax path
-      and one projection; do not keep the current decoder as a parallel
-      fallback or implement additional YAML machinery to satisfy an oracle.
-      No dependency choice or Obsidian internal library is assumed by this
-      goal correction; selection requires implementation evidence.
+      Implement the bounded Properties grammar directly in the shared core
+      producer. Remove the general YAML parser selection/vendoring workstream.
+      The format borrows property notation without importing YAML's full
+      syntax or semantics. Keep one member scanner and one value decoder for
+      the supported fields, with explicit ownership, recovery and OOM behavior;
+      remove superseded mechanisms rather than retaining a general YAML path
+      behind the restricted result model.
 
       Remaining work and acceptance:
 
-      - [ ] Select and document the syntax implementation against the above
-            boundaries; remove the superseded handwritten YAML mechanisms,
-            including alias cloning, binding transactions, and their expansion
-            budget. Any parser adaptation must have a source-ownership or
-            recovery requirement, not merely a convenient failing example.
-      - [ ] Preserve documented YAML properties and JSON roots, quoted names
-            and values, exact number spelling, supported block/flow lists,
+      - [ ] Simplify the existing producer to the specified Properties forms.
+            Remove alias cloning, binding transactions, explicit tag handling,
+            multiline scalar folding, general YAML mapping forms, and their
+            supporting budgets/state. Do not introduce a general YAML parser
+            dependency or keep a second parser as fallback.
+      - [ ] Preserve supported property lines and JSON roots, single-line
+            quoted names and values, exact numbers, and flat lists,
             comment indentation, uniqueness, metadata/body scopes, and the
             first-successful-member rule through one shared producer.
-      - [ ] Reclassify anchor/alias/tag/merge/nested-value examples as retained
-            source. Retain adjacent valid data and never interpret a failed
-            member's interior as another property. Keep `aliases: [Name]` as
+      - [ ] Reclassify anchor/alias/tag/merge/nested-value, general YAML
+            mapping, and multiline scalar examples as retained source. Retain
+            adjacent valid data and never interpret a failed member's interior
+            as another property. Keep `aliases: [Name]` as
             ordinary data. Test malformed and unsupported syntax separately.
       - [ ] Synchronize the C facade, Swift, Kotlin/JNI/Native, ES/Wasm,
             canonical fixtures, package fixtures, and Properties oracle with
             the corrected contract. The pinned YAML package witnesses syntax
-            only within that domain. Retire alias-expansion and tagged-null
-            success canaries; a library's wider support is not a coverage gap.
+            only within that domain. Retire alias-expansion, tagged-null,
+            general mapping and scalar-folding success canaries; a library's
+            wider support is not a coverage gap.
       - [ ] Re-run semantic, source-retention, complexity, OOM, binding,
             conformance, oracle, and release gates on the replacement. Do not
             mark O6 complete on the strength of the superseded implementation's
