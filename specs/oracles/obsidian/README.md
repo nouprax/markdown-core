@@ -1,5 +1,13 @@
 # Obsidian parser oracles
 
+Metadata status (2026-09-08): the [Properties module](../../../docs/specs/dialect/properties.md)
+owns ten fixed fields, selected scalar/array/list forms, and bare literal `|`
+for `abstract` and `comment`. Unknown names and unsupported input are ignored.
+Metadata directly stores ten optional named values and the envelope scope.
+This is a user-defined format borrowing Obsidian/Pandoc notation, not full
+compatibility with either application or YAML. The pinned package remains
+comparison tooling for the valid intersection.
+
 This oracle runs `@quartz-community/remark-obsidian@0.2.4` through the same
 unified/remark parser family already used by the repository. The package is
 exact-pinned in `package.json` and integrity-pinned in `pnpm-lock.yaml`.
@@ -40,30 +48,22 @@ dimensions are absent from the direct parser comparison and therefore stay
 under official-example product fixtures. Inherited HTML behavior remains owned
 by the cmark oracle; the dialect adds no Obsidian-specific HTML suppression.
 
-The Properties page is the source for beginning-of-file placement, the
-three-hyphen fence form, the supported consumer domain, and the absence of
-Markdown and nested Properties values; `docs/specs/dialect/properties.md`
-states the rule. The harness therefore owns one exact,
-line-oriented envelope scanner and passes only the bytes between a valid pair
-of fences to the YAML oracle. A package-specific frontmatter recognizer is
-neither an authority nor an intermediate normalization layer.
+The Properties module owns the exact leading `---` envelope and the bounded
+member grammar. Only a complete first envelope attaches, even when every member
+is ignored. The body is parsed after its closing fence; `...` does not close it.
+The oracle scanner recognizes that envelope and submits its payload to the
+pinned Document/CST parser. It checks only supported names and source forms:
+single-line direct scalars, flat text/number arrays and block lists, and bare literal
+prose on the two designated fields. Source checks exclude anchors, aliases,
+tags, nested values, JSON root objects, general flow mappings, and
+folded/multiline scalars. There is no metadata bracket index.
 
-`yaml` parses one document with JSON scalar resolution plus a plain-string
-fallback, duplicate checking disabled at composition time, and source tokens
-enabled. The Properties projection then walks the ordered mapping pairs,
-decodes each directly authored scalar key as text, checks uniqueness in that
-decoded string namespace, retains number payloads from scalar source, resolves
-aliases on the node graph, and accepts only the contract's scalar and
-text/number-list domain. It never calls `toJS()` or materializes a root
-JavaScript object. Empty, whitespace-only, and comment-only payloads all
-produce a document with no content node and therefore the same non-null empty
-metadata array; comments remain presentation bytes rather than records.
-
-Package-only syntax never enlarges the target language. Parser errors,
-unsupported tags or node kinds, duplicate decoded names, unresolved or cyclic
-aliases, YAML stream/document indicators (including `...`), and unsupported
-values make the tentative Properties candidate fail. Only the exact outer
-`---` line terminates Properties.
+Oracle inputs outside that intersection fail the comparison precondition;
+product fixtures separately verify whole-member skipping and valid-neighbor
+recovery. The gate has no Obsidian runtime and does not claim which parser the
+application uses. Pandoc requires valid YAML and interprets strings as Markdown;
+this product's ignored-input rule and atomic text model are local decisions.
+No general YAML dependency is added to the shared core or bindings.
 
 The corpus contains inputs only. It deliberately has no Markdown Core expected
 AST blocks; product goldens belong to the C fixture and shared canonical AST
@@ -89,18 +89,15 @@ runs oracle canaries before comparison, parses the same corpus with both
 implementations, and compares a scope-free semantic tree. Scope correctness
 remains owned by product fixtures because the two parsers use different
 coordinate models. The Properties canaries additionally require every emitted
-record to retain ordered, in-envelope CST range evidence. Its corpus covers
-integer-looking keys in non-JavaScript order, exact large/decimal/exponent/
-negative-zero number spellings, quoted key decoding, aliases, and strict
-projection failures. Product fixtures remain the rule for canonical
-binding-coordinate scopes, allocation failure, and parser-wide resource
-limits.
+metadata envelope to retain its complete range. The corpus covers
+all recognized names, exact large/decimal/exponent/negative-zero numeric text,
+quoted name decoding, single strings and both list spellings, literal prose,
+and empty metadata. Product fixtures own binding-coordinate scopes, ignored
+syntax, malformed recovery, bounded field state and allocation failures.
 
 For successful Properties inputs, the normalized semantic root contains a
-`metadata` field: `null` means absent, while an array (including an empty
-array) contains ordered `{name, value}` records using the tagged scalar/list
-shape from `docs/specs/dialect/properties.md`. The current implementation's missing
-field is deliberately normalized to `null`, so every target gap remains
-visible. When `Document.metadata` is implemented, its canonical debug field
-must expose the same compact JSON value for this gate; that dump change lands
-atomically with the public model and cross-binding fixtures.
+`metadata` object with the ten optional named fields. A null metadata object
+means no envelope; an object with ten null fields means an empty envelope.
+Tagged scalar/list values distinguish a present null scalar from a missing
+field. The gate reads the direct fields from canonical dumps and compares
+both projections in fixed model order. Source field order is not retained.

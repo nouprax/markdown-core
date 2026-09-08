@@ -1,36 +1,34 @@
-# Obsidian Properties oracle corpus
+# Selected metadata syntax oracle corpus
 
-These are successful documented Properties forms, not Markdown Core goldens.
-The parity gate recognizes the exact Obsidian envelope, decodes its payload
-through the pinned source-preserving YAML document oracle, and parses only the
-remaining body through the Obsidian Markdown oracle. The corpus exercises
-decoded values, exact scalar sources, mapping-pair order, aliases, and empty
-document states. Binding-coordinate scopes, allocation failures, and global
-resource limits stay in package-owned fixtures as required by the normative
-spec.
+These inputs are within Markdown Core's fixed-field metadata grammar and the
+pinned YAML Document/CST oracle's valid intersection. They compare decoded
+values, exact numeric spellings, named field assignment and literal prose. They do not
+claim complete Obsidian, Pandoc or YAML compatibility. Recovery, ignored input,
+allocation failures and binding coordinates are tested by product fixtures.
 
 ## Scalar records and body separation
 
 ```````````````````````````````` example
 ---
 title: Galactic handbook
-draft: false
-rating: 4.5
-empty:
+subtitle: A guide
+state: false
+time: 4.5
+comment:
 ---
 # Body
 .
 ````````````````````````````````
 
-## Lists, arbitrary names, and inert internal-link text
+## Lists and inert internal-link text
 
 ```````````````````````````````` example
 ---
-aliases:
+authors:
   - Doggo
   - "[[Canis familiaris]]"
-values: [1977, 3.14, text]
-arbitrary user key: value
+keywords: [1977, 3.14, text]
+name: value
 ---
 Body
 .
@@ -41,20 +39,22 @@ Body
 ```````````````````````````````` example
 ---
 date: 2026-09-03
-when: 2026-09-03T12:34:56
-yes-word: yes
-nothing: null
-empty-text: ""
-empty-list: []
+time: 2026-09-03T12:34:56
+state: yes
+comment: null
+abstract: ""
+keywords: []
 ---
 .
 ````````````````````````````````
 
-## JSON root mapping
+## Quoted field names
 
 ```````````````````````````````` example
 ---
-{"name":"value","enabled":true,"count":3}
+"name": value
+"state": true
+"time": 3
 ---
 After
 .
@@ -77,19 +77,16 @@ After
 .
 ````````````````````````````````
 
-## Source-faithful names, numbers, order, and aliases
+## Exact numbers and decoded field names
 
 ```````````````````````````````` example
 ---
-zeta: last
-1: &large 9007199254740993
-1.0: 1.0
-1e2: 1e2
--0: -0
-~: tilde
-true: boolean-name
-"escaped\u0020name": *large
-numbers: [9007199254740993, 1.0, 1e2, -0]
+name: 9007199254740993
+time: 1.0
+state: 1e2
+date: -0
+"tit\u006ce": text
+keywords: [9007199254740993, 1.0, 1e2, -0]
 ---
 .
 ````````````````````````````````
@@ -98,10 +95,37 @@ numbers: [9007199254740993, 1.0, 1e2, -0]
 
 ```````````````````````````````` example
 ---
-first: one
+name: one
 ---
 ---
 second: two
+---
+.
+````````````````````````````````
+
+## Literal prose
+
+```````````````````````````````` example
+---
+abstract: |
+  First paragraph.
+
+  Second paragraph.
+comment: |
+  # literal
+  name: inside
+state: ready
+---
+Body
+.
+````````````````````````````````
+
+## Authors and keywords as single strings
+
+```````````````````````````````` example
+---
+authors: Ada
+keywords: language
 ---
 .
 ````````````````````````````````

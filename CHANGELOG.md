@@ -6,6 +6,16 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
+- Land O6 as document-owned metadata with ten direct optional fields: `name`,
+  `title`, `subtitle`, `time`, `date`, `authors`, `keywords`, `abstract`, `state`,
+  and `comment`. Ignore unknown names, unnamed text, comments, invalid values
+  and later duplicates while preserving valid neighboring fields. Authors and
+  keywords accept single strings, bracketed arrays and block lists; abstract
+  and comment accept single-line text and `: |` literal prose. Preserve exact
+  numeric text and the complete envelope scope across C, Swift, Kotlin and ES.
+  Metadata stays outside Markup and visitors. Remove the metadata collection,
+  record wrappers, per-field scopes, JSON root parser and source indexes.
+
 - Recognize one authored Unicode scalar as a task marker on C, Swift, Kotlin,
   and ES, including `?`, `✓` and `🚀`. Consume the entire SP/TAB/VT/FF separator
   run before deciding the first block, and inspect only an item's opening
@@ -44,7 +54,7 @@ promised to remain compatible between releases.
   the same empty value. Directive names begin with a Unicode letter.
 - Add document-owned Metadata values and optional image width/height across
   the facade and transports. Properties syntax and image dimension syntax
-  follow in O6 and O9; parsed metadata and dimensions remain absent for now.
+  follow in O6 and O9; O6 now produces metadata, while dimensions await O9.
 
 - Unify tables as columns plus head/content/foot row groups on C, Swift, Kotlin,
   and ES. Remove row header flags, expose cell spans, and retain inline or block

@@ -10,6 +10,33 @@ import kotlin.test.assertTrue
 
 class ApiTest {
     @Test
+    fun propertiesKeepRecognizedFieldsAndLiteralProse() {
+        val source =
+            "---\r\nname: 9007199254740993\r\nnot YAML\r\n...\r\nunknown: ignored\r\n" +
+                "comment: *x\r\nname: duplicate\r\nabstract: |\r\n  first\r\n\r\n  second\r\n" +
+                "comment: |\r\n  # prose\r\n---\r\nbody\r\n"
+        val document = Document.parse(source)
+        val metadata = assertNotNull(document.metadata)
+        assertEquals(
+            listOf(
+                MetadataValue.Scalar(MetadataScalar.Number("9007199254740993")),
+                MetadataValue.Scalar(MetadataScalar.Text("first\n\nsecond\n")),
+                MetadataValue.Scalar(MetadataScalar.Text("# prose\n")),
+            ),
+            listOf(metadata.name, metadata.`abstract`, metadata.comment),
+        )
+        assertEquals(14, metadata.scope.end.line)
+        assertEquals(
+            15,
+            document.content[0]
+                .scope.start.line,
+        )
+        val empty = assertNotNull(Document.parse("---\nunknown: 1\nfree text\n---").metadata)
+        assertEquals(Metadata(scope = empty.scope), empty)
+        assertEquals(null, Document.parse("---\nname: 1\n").metadata)
+    }
+
+    @Test
     fun taskMarkersPreserveScalarsAndDeriveCompletion() {
         for (marker in listOf(" ", "x", "X", "?", "é", "✓", "🚀", "́", "]")) {
             val item = assertIs<List>(Document.parse("- [$marker] body\n").content.single()).items.single()

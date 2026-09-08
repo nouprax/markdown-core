@@ -240,6 +240,8 @@ markdown_core_add_test(extensions_conflicts extensions 120 spec_runner --spec
 
 # spec: the examples of each dialect module whose behavior has landed, byte for
 # byte in the dump grammar of today; one fixture per module.
+markdown_core_add_test(spec_dialect_properties spec 120 spec_runner --spec
+                       "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/dialect-properties.txt")
 markdown_core_add_test(spec_dialect_marks spec 120 spec_runner --spec
                        "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/dialect-marks.txt")
 markdown_core_add_test(spec_dialect_cross_links spec 120 spec_runner --spec
@@ -322,6 +324,8 @@ markdown_core_add_test(
     fuzz_smoke_runner
     --corpus
     "${MARKDOWN_CORE_TESTS_SOURCE_DIR}/core/afl_test_cases/test.md"
+    --corpus
+    "${MARKDOWN_CORE_TESTS_SOURCE_DIR}/core/afl_test_cases/properties.md"
     --corpus
     "${MARKDOWN_CORE_CANONICAL_AST_DIR}/blocks.md"
     --corpus

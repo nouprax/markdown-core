@@ -23,10 +23,17 @@ Every Markup value also exposes `anchor` and `attributes`. Attributes contain
 ordered `classes` and ordered `records` (`name`, `value`), with duplicates
 preserved. Directives populate these fields through the shared Pandoc braced
 attribute grammar; an absent or empty container produces empty attributes.
-`Document.metadata` exposes scoped Metadata records and tagged scalar/list
-values, with numbers stored as decimal text. `Image.width` and `Image.height`
-are optional integers. Metadata and dimensions remain absent until their
-syntax lands in O6 and O9.
+`Document.metadata` holds the first complete `---` envelope at the start of a
+document. Metadata directly exposes ten optional fields:
+`name`, `title`, `subtitle`, `time`, `date`, `authors`, `keywords`, `abstract`,
+`state`, and `comment`. Unknown names, unnamed text, comments, invalid values,
+and later duplicates are ignored; valid neighboring fields survive. `authors`
+and `keywords` accept a single string, a bracketed array, or a block list.
+`abstract` and `comment` accept single-line text and indented multiline text
+with `: |`. Metadata stays outside Markup children and visitor callbacks.
+Numbers retain exact decimal strings. Missing fields are null; an authored null
+is a present scalar value. No field order or individual field scope is stored.
+`Image.width` and `Image.height` remain absent until O9.
 
 ## Parse Markdown
 

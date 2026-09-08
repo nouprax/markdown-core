@@ -34,7 +34,7 @@ parallel and every merge leaves `main` releasable.
 | #192 extension module contracts               | specs  | The Obsidian module set, the Pandoc module set, the shared attributes, citation, and inserted-text contracts, Remark directive attachment, the Pandoc and Obsidian oracle pins, and the two implementation plans. |
 | #193 anchors and destinations                 | specs  | The universal `Markup.anchor` field, the tagged `Destination` value on `Link`, `Image`, and `CrossLink`, and the simplified `Attributes` shape.                                                                 |
 | #194 Obsidian Properties                      | specs  | `Document.metadata`, the shared metadata value model, the Properties envelope, and the `yaml@2.9.0` oracle.                                                                                                     |
-| #196 Properties corrections                   | specs  | Mapping keys are textual names, explicit null roots are rejected, and the oracle canaries were tightened.                                                                                                       |
+| #196 Properties corrections                   | specs  | Textual mapping keys and tightened oracle canaries; the original null-root rejection is superseded by O6 member skipping.                                                                                                       |
 
 The inserted-text contract is the one specification that no existing plan
 sequences; it is landed here as its own track. The dialect rewrite of `S0`
@@ -230,7 +230,7 @@ and the manifest order.
 | `Definition`                                                                                       | `term: [Markup]`, `content: [[Markup]]`, `compact: Bool`                                                          | new                                              | `P10`        |
 | `Text`, `SoftBreak`, `LineBreak`, `Code`, `HTML`, `Formula`, `Emphasis`, `Strong`, `Strikethrough` | as today                                                                                                          | unchanged                                        | —            |
 | `Link`                                                                                             | `dest: Destination`, `title`, `content`                                                                           | changed                                          | `M1`         |
-| `Image`                                                                                            | `dest: Destination`, `title`, `width: Int?`, `height: Int?`, `content`                                            | changed                                          | `M1`, `M7`   |
+| `Image`                                                                                            | `dest: Destination`, `title`, `width: Int?`, `hten: Int?`, `content`                                            | changed                                          | `M1`, `M7`   |
 | `Directive`                                                                                        | `name`, `label`                                                                                                   | changed; attributes move to the inherited field  | `M7`         |
 | `CrossLink`                                                                                        | `embedded: Bool`, `dest: Destination`, `label: String?`                                                           | new                                              | `O1`         |
 | `Mark`                                                                                             | `content`                                                                                                         | new                                              | `O2`         |
@@ -258,7 +258,7 @@ value carries `scope` only.
 | `Footnote(id, content: [Markup], scope)`                                            | `M4`; document-owned, scoped and traversed, not `Markup`      |
 | `OrderedListVariant`, `OrderedListDelimiter`                                          | `M5`; values beyond the inherited forms first by `P9a`, `P9b` |
 | `TableColumn(alignment: TableAlignment, relative: Double?)`                         | `M6`; `relative` first produced by `P11c`                     |
-| `Metadata`, `MetadataRecord`, `MetadataValue`, `MetadataScalar`, `MetadataListItem` | `M7`; first produced by `O6`                                  |
+| `Metadata`, `MetadataValue`, `MetadataScalar`, `MetadataListItem` | `M7`; first produced by `O6`                                  |
 | `ReferenceForm`                                                                     | removed by `M2`                                               |
 | `DirectiveAttribute`                                                                | removed by `M7`                                               |
 
@@ -483,8 +483,8 @@ its behavior, with no separate publication step.
       turning the contract's single inherited field into an ordered set that the
       projection audit, the fixture checker, and the dump grammar understand;
       add `Document.metadata: Metadata?` with the metadata value types; add
-      `Image.width` and `Image.height` as `null`. Add facade accessors for the
-      anchor, classes, records, metadata records, and dimensions, and carry the
+      `Image.width` and `Image.hten` as `null`. Add facade accessors for the
+      anchor, classes, records, metadata fields, and dimensions, and carry the
       values through the JNI and Wasm transports. Implement the shared Pandoc
       3.11 braced-attribute scanner and normalization once in the C core (the
       last ID wins and an empty final `id=` clears it; `.class` and `class=`
@@ -742,7 +742,7 @@ its behavior, with no separate publication step.
   inherited and inline forms use one citation constructor. A successful inline
   close places its Footnote directly in the document value field, and both
   forms register in one parser collection. Finalization visits only those
-  values, orders source starts with eight stable byte passes, reserves all
+  values, orders source starts with ten stable byte passes, reserves all
   authored ids, and assigns `inline-N` / `inline-N-K`. It completes document
   ownership and discards the index before consolidation and mutable extension
   passes. Those phases visit document footnotes through their live owner slots.
@@ -820,22 +820,71 @@ its behavior, with no separate publication step.
   cursor partition tests and 1,728 marker-replacement/indentation combinations
   protect the general coordinate invariant.
 
-- [ ] **O6 — Properties.** Recognize at most one exact `---`
-      envelope at the beginning of the decoded document after an optional BOM,
-      scan it transactionally, decode the payload once as a YAML 1.2.2 document
-      with JSON scalar resolution and a plain-string fallback, and project one
-      root mapping into ordered `Metadata` records with textual key names, exact
-      number lexemes, text and number lists, aliases resolved acyclically within
-      budget, the allowed standard tags, and JSON root objects. Reject nested
-      values, duplicates after decoding, stream indicators including `...`, and
-      every other unsupported form by returning all bytes to inherited parsing;
-      record `Metadata.scope` and each record scope; parse the body once after
-      the closing fence. This is the largest C component of the track and still
-      lands as one item, because the envelope scan, the YAML decoding, and the
-      projection are one decoding operation; no partial decoder merges. Fixtures
-      own the module's own cases and the shared metadata cases; remove the eight
-      `properties-*` gaps, whose oracle projection now reads the real field.
+- [x] **O6 — Fixed metadata fields and literal prose.** The user-directed
+      contract of 2026-09-08 recognizes exactly `name`, `title`, `subtitle`,
+      `time`, `date`, `authors`, `keywords`, `abstract`, `state`, and `comment`.
+      `Metadata` exposes these ten optional values directly, with only the
+      complete envelope's `scope`. Remove `Metadata.content`, the record
+      wrapper, retained field order, per-field scopes and all source indexes.
+      The [Properties module](../specs/dialect/properties.md) owns the grammar.
       Requires `O1`.
+
+      Keep scalar and flat-list value semantics, including exact numeric text.
+      `authors` and `keywords` accept single text, bracketed arrays and block
+      lists on following lines; `authors: - Ada` is text `"- Ada"`.
+      `abstract` and `comment` accept single-line text and bare `: |`
+      indented prose, preserving internal blank lines with default clipping.
+      Missing fields differ from present null scalars, empty text and empty
+      lists. Ignore unnamed text, unknown fields, comments, `...`, invalid
+      values and later duplicates; the first successful occurrence wins.
+      Only an absent or unclosed envelope falls back to Markdown.
+
+      The parser assigns valid members directly to their named destination;
+      field presence supplies duplicate detection. Unsupported members are
+      skipped once at their owned boundary. A bracketed value owns all lines
+      until it closes, irrespective of indentation or field-looking contents;
+      an unclosed collection consumes the remaining metadata payload up to
+      the closing `---`. No JSON root objects, full YAML
+      parser, anchors, aliases, tags, nested values, folding or literal modifiers
+      are supported. Arrays remain field values. C, Swift, Kotlin/JNI/Native
+      and ES/Wasm expose the same direct-field model and preserve ownership.
+      The dump prints all ten fields in fixed model order, with no nested
+      metadata records or visitor callbacks.
+
+      Acceptance:
+
+      - [x] Core recognizes ten fields, literal prose, first-successful
+            assignment, whole-member recovery and original body coordinates.
+      - [x] Every binding, public contract, dump and ABI snapshot exposes the
+            direct fields; superseded collection and record APIs are removed.
+      - [x] Fixtures cover missing/explicit-null/empty/list values, ignored
+            input, duplicate recovery, literal indentation and owned cleanup.
+      - [x] Complexity and OOM gates verify disjoint source decoding, flat-list
+            scaling and punctuation-independent text allocation.
+      - [x] The pinned YAML oracle compares only the selected valid grammar;
+            unsupported syntax is not a missing feature.
+
+  Status: direct-field replacement is implemented in PR #216. Both review
+  findings are addressed: metadata builds no source index, and the root/package
+  READMEs and changelog describe the direct-field model. Allocation tests from
+  64 KiB to 1 MiB verify identical peak live bytes for equal-length plain,
+  quoted, literal and list-item text with or without brackets. Fixtures verify
+  source-order independence, absent versus explicit-null values, ignored root
+  objects, and subsequent valid field lines. Further review corrections keep
+  balanced collections opaque and skip an unclosed collection to the envelope's
+  closing fence. A dash is a list marker only at the start of a following line;
+  on the field line it remains ordinary scalar text.
+
+  Direct-field host validation (2026-09-08): C correctness 76/76 and conformance 2/2;
+  ASan, UBSan and TSan 76/76 each, including OOM sweeps; Swift tests, packed
+  consumer and conformance; Kotlin JVM, macOS Native and Android host tests
+  and conformance; ES Node/browser, packed consumer and conformance;
+  `pnpm verify`; metadata/Obsidian parity (32 inputs); host release dry run,
+  including ABI checks and Maven publication validation. Full Linux/macOS
+  release aggregation remains in CI. Boundary corrections were revalidated
+  with C correctness/conformance, all three sanitizer suites, shared conformance
+  across Swift/Kotlin/ES, the metadata oracle, and `pnpm verify`.
+
 - [ ] **O7 — Block identifiers.** Attach `^block-id`
       during block finalization through one operation for paragraph suffixes,
       structured-block follower lines with the required blank-line boundaries,
@@ -873,11 +922,11 @@ its behavior, with no separate publication step.
       whichever of `O8` and `O3` merges later. Requires `O1`, `O2`.
 - [ ] **O9 — Image dimensions.** Parse the complete
       `W`, `WxH`, `alt|W`, and `alt|WxH` alt-label suffixes in the shared image
-      construction path into `width` and `height`, keep the whole label as alt
+      construction path into `width` and `hten`, keep the whole label as alt
       content on any malformed suffix, and leave `CrossLink.label` raw.
       Fixtures cover every valid and invalid dimension form and formatted alt
       content. An image carrying both a typed dimension suffix and a `width` or
-      `height` attribute record, each retained independently, is a cross-item
+      `hten` attribute record, each retained independently, is a cross-item
       case owned by whichever of `O9` and `P2d` merges later. Requires `O1`.
 - [ ] **O10 — Obsidian evidence closure.** Add the integration fixtures for
       every pairwise opaque-context interaction, OFM and CommonMark constructs
@@ -952,7 +1001,7 @@ its behavior, with no separate publication step.
       extend `pathological_reference_expansion_bound` and its transport and
       decoder counterparts so a long definition anchor, class list, or record
       referenced many times is stored once on every surface; keep `width` and
-      `height` unit strings as records. Audit every Link, Image, Heading, Code,
+      `hten` unit strings as records. Audit every Link, Image, Heading, Code,
       CodeBlock, directive, and reference-definition caller and delete repair
       passes made obsolete by the shared operation. Two cross-item cases are
       owned by whichever item merges later: a link tail claiming the container
@@ -961,7 +1010,7 @@ its behavior, with no separate publication step.
       `link-and-image-attributes` and `pandoc-reference-attribute-merge` gaps.
       An explicit ID from this syntax reserved before heading synthesis is a
       cross-item case owned by whichever of `P2d` and `P3` merges later, and an
-      image carrying both a typed dimension suffix and a `width` or `height`
+      image carrying both a typed dimension suffix and a `width` or `hten`
       attribute record, each retained independently, is a cross-item case owned
       by whichever of `P2d` and `O9` merges later. Requires `P0`, `M7`.
 - [ ] **P3 — `auto_anchors`.** Build one document anchor registry that reserves

@@ -5,6 +5,7 @@ package com.nouprax.markdown.core
 import cnames.structs.markdown_core_citation
 import cnames.structs.markdown_core_error
 import cnames.structs.markdown_core_footnote
+import cnames.structs.markdown_core_metadata_value
 import cnames.structs.markdown_core_node
 import cnames.structs.markdown_core_resource
 import cnames.structs.markdown_core_specimen
@@ -89,17 +90,23 @@ import com.nouprax.markdown.core.internal.capi.markdown_core_footnote_id
 import com.nouprax.markdown.core.internal.capi.markdown_core_footnote_next
 import com.nouprax.markdown.core.internal.capi.markdown_core_footnote_scope
 import com.nouprax.markdown.core.internal.capi.markdown_core_list_flavorVar
+import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_abstract
+import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_authors
+import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_comment
+import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_date
+import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_keywords
 import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_list_item
-import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_record_at
-import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_record_count
-import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_record_item_at
-import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_record_item_count
-import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_record_kind
-import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_record_name
-import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_record_scalar
-import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_record_scope
+import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_name
 import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_scalar
 import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_scope
+import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_state
+import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_subtitle
+import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_time
+import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_title
+import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_value_get_kind
+import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_value_item_at
+import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_value_item_count
+import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_value_scalar
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_anchor
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_attribute_class_at
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_attribute_class_count
@@ -866,87 +873,96 @@ private class NativeScratch(
 
     fun metadata(node: CPointer<markdown_core_node>): Metadata? {
         val metadata = markdown_core_node_document_metadata(node) ?: return null
-        val records =
-            immutableList(markdown_core_metadata_record_count(metadata).checkedSize("metadata count")) { index ->
-                val record = requireNotNull(markdown_core_metadata_record_at(metadata, index.toULong()))
-                val name = markdown_core_metadata_record_name(record).useContents { copyString() }
-                val value =
-                    when (markdown_core_metadata_record_kind(record)) {
-                        MARKDOWN_CORE_METADATA_SCALAR -> {
-                            require(
-                                markdown_core_metadata_record_scalar(record, metadataScalar.ptr),
-                            ) { "invalid metadata scalar" }
-                            MetadataValue.Scalar(
-                                when (metadataScalar.kind) {
-                                    MARKDOWN_CORE_METADATA_NULL -> {
-                                        MetadataScalar.Null
-                                    }
+        return Metadata(
+            name = metadataValue(markdown_core_metadata_name(metadata)),
+            title = metadataValue(markdown_core_metadata_title(metadata)),
+            subtitle = metadataValue(markdown_core_metadata_subtitle(metadata)),
+            time = metadataValue(markdown_core_metadata_time(metadata)),
+            date = metadataValue(markdown_core_metadata_date(metadata)),
+            authors = metadataValue(markdown_core_metadata_authors(metadata)),
+            keywords = metadataValue(markdown_core_metadata_keywords(metadata)),
+            `abstract` = metadataValue(markdown_core_metadata_abstract(metadata)),
+            state = metadataValue(markdown_core_metadata_state(metadata)),
+            comment = metadataValue(markdown_core_metadata_comment(metadata)),
+            scope = markdown_core_metadata_scope(metadata).toScope(),
+        )
+    }
 
-                                    MARKDOWN_CORE_METADATA_BOOL -> {
-                                        MetadataScalar.Bool(metadataScalar.value.boolean)
-                                    }
+    private fun metadataValue(record: CPointer<markdown_core_metadata_value>?): MetadataValue? {
+        if (record == null) return null
+        return when (markdown_core_metadata_value_get_kind(record)) {
+            MARKDOWN_CORE_METADATA_SCALAR -> {
+                require(
+                    markdown_core_metadata_value_scalar(record, metadataScalar.ptr),
+                ) { "invalid metadata scalar" }
+                MetadataValue.Scalar(
+                    when (metadataScalar.kind) {
+                        MARKDOWN_CORE_METADATA_NULL -> {
+                            MetadataScalar.Null
+                        }
 
-                                    MARKDOWN_CORE_METADATA_NUMBER -> {
-                                        MetadataScalar.Number(
-                                            metadataScalar.value.string.copyString(),
-                                        )
-                                    }
+                        MARKDOWN_CORE_METADATA_BOOL -> {
+                            MetadataScalar.Bool(metadataScalar.value.boolean)
+                        }
 
-                                    MARKDOWN_CORE_METADATA_TEXT -> {
-                                        MetadataScalar.Text(
-                                            metadataScalar.value.string.copyString(),
-                                        )
-                                    }
-
-                                    else -> {
-                                        error("invalid metadata scalar kind")
-                                    }
-                                },
+                        MARKDOWN_CORE_METADATA_NUMBER -> {
+                            MetadataScalar.Number(
+                                metadataScalar.value.string.copyString(),
                             )
                         }
 
-                        MARKDOWN_CORE_METADATA_LIST -> {
-                            MetadataValue.List(
-                                immutableList(
-                                    markdown_core_metadata_record_item_count(record).checkedSize("metadata list count"),
-                                ) { itemIndex ->
-                                    require(
-                                        markdown_core_metadata_record_item_at(
-                                            record,
-                                            itemIndex.toULong(),
-                                            metadataItem.ptr,
-                                        ),
-                                    ) {
-                                        "invalid metadata item"
-                                    }
-                                    when (metadataItem.kind) {
-                                        MARKDOWN_CORE_METADATA_ITEM_NUMBER -> {
-                                            MetadataListItem.Number(
-                                                metadataItem.value.copyString(),
-                                            )
-                                        }
-
-                                        MARKDOWN_CORE_METADATA_ITEM_TEXT -> {
-                                            MetadataListItem.Text(
-                                                metadataItem.value.copyString(),
-                                            )
-                                        }
-
-                                        else -> {
-                                            error("invalid metadata item kind")
-                                        }
-                                    }
-                                },
+                        MARKDOWN_CORE_METADATA_TEXT -> {
+                            MetadataScalar.Text(
+                                metadataScalar.value.string.copyString(),
                             )
                         }
 
                         else -> {
-                            error("invalid metadata value kind")
+                            error("invalid metadata scalar kind")
                         }
-                    }
-                MetadataRecord(name, value, markdown_core_metadata_record_scope(record).toScope())
+                    },
+                )
             }
-        return Metadata(records, markdown_core_metadata_scope(metadata).toScope())
+
+            MARKDOWN_CORE_METADATA_LIST -> {
+                MetadataValue.List(
+                    immutableList(
+                        markdown_core_metadata_value_item_count(record).checkedSize("metadata list count"),
+                    ) { itemIndex ->
+                        require(
+                            markdown_core_metadata_value_item_at(
+                                record,
+                                itemIndex.toULong(),
+                                metadataItem.ptr,
+                            ),
+                        ) {
+                            "invalid metadata item"
+                        }
+                        when (metadataItem.kind) {
+                            MARKDOWN_CORE_METADATA_ITEM_NUMBER -> {
+                                MetadataListItem.Number(
+                                    metadataItem.value.copyString(),
+                                )
+                            }
+
+                            MARKDOWN_CORE_METADATA_ITEM_TEXT -> {
+                                MetadataListItem.Text(
+                                    metadataItem.value.copyString(),
+                                )
+                            }
+
+                            else -> {
+                                error("invalid metadata item kind")
+                            }
+                        }
+                    },
+                )
+            }
+
+            else -> {
+                error("invalid metadata value kind")
+            }
+        }
     }
 
     fun destination(node: CPointer<markdown_core_node>): Destination {

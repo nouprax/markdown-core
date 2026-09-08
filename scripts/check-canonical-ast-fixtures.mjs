@@ -131,6 +131,15 @@ const stateValidators = {
     "markup.attributes.empty": (tree) => / attributes=\{\} /.test(tree),
     "markup.attributes.classes": (tree) => / attributes=\{\./.test(tree),
     "markup.attributes.records": (tree) => / attributes=\{[^}]*[A-Za-z]+="/.test(tree),
+    "document.metadata.present": (tree) => /Metadata scope=/.test(tree),
+    "document.metadata.empty": (tree) => /Metadata scope=\S+(?: [a-z]+=null){10} children=0/.test(tree),
+    "metadata.fields.populated": (tree) => /Metadata scope=.*=(?:scalar|list)\(/.test(tree),
+    "metadata.scalar.null": (tree) => /Metadata scope=.*[a-z]=scalar\(null\)/.test(tree),
+    "metadata.scalar.bool": (tree) => /Metadata scope=.*[a-z]=scalar\(bool\(/.test(tree),
+    "metadata.scalar.number": (tree) => /Metadata scope=.*[a-z]=scalar\(number\(/.test(tree),
+    "metadata.scalar.text": (tree) => /Metadata scope=.*[a-z]=scalar\(text\(/.test(tree),
+    "metadata.list.empty": (tree) => /Metadata scope=.*[a-z]=list\(\[\]\)/.test(tree),
+    "metadata.list.populated": (tree) => /Metadata scope=.*[a-z]=list\(\[(?:text|number)\(/.test(tree),
     "document.metadata.null": (tree) => !/Metadata scope=/.test(tree),
     "image.dimensions.null": (tree) => /Image scope=.* width=null height=null /.test(tree),
     // The dump visualizes the DirectiveLabel field as a nested Markup node:
@@ -382,10 +391,17 @@ for (const testCase of manifest.cases ?? []) {
         // because a directive's label was a COUNT in the dump rather than a
         // node; Step 7 made it a node and the exception became a lie.
         const kindNames = new Set(contract.kinds.map((kind) => kind.name));
-        const isNodeValuedField = (type) =>
-            [...type.matchAll(/[A-Za-z]+/g)].some(
-                (word) => word[0] === "Markup" || kindNames.has(word[0]) || word[0] in scopedValues
-            );
+        const isNodeValuedField = (type, seen = new Set()) =>
+            [...type.matchAll(/[A-Za-z]+/g)].some(([name]) => {
+                if (name === "Markup" || kindNames.has(name) || name in scopedValues) return true;
+                if (seen.has(name)) return false;
+                const value = contract.values[name];
+                if (!Array.isArray(value?.branches)) return false;
+                const next = new Set([...seen, name]);
+                return value.branches.some((branch) =>
+                    branch.fields.some((field) => isNodeValuedField(field.type, next))
+                );
+            });
         const dumpFields = Object.fromEntries(
             [...contract.kinds, ...Object.entries(scopedValues).map(([name, fields]) => ({ name, fields }))].map(
                 (kind) => [

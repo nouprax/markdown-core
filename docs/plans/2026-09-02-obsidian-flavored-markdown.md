@@ -19,10 +19,12 @@ quoted block has `variant=null`, `title=null`, and `fold=none`, while `[!type]`
 populates that same node model. Every successful reference link or image is
 resolved before the public AST is finalized and is indistinguishable from its
 direct counterpart; source definitions and reference forms remain
-parser-internal. One valid beginning-of-file Properties block populates optional
-`Document.metadata` as ordered, out-of-band records. Property names remain an
-open string domain; vault conventions such as `aliases` do not become parser
-keywords or link-resolution results.
+parser-internal. One complete beginning-of-file Properties envelope populates optional
+`Document.metadata` with ten direct optional fields. The fixed field set is `name`,
+`title`, `subtitle`, `time`, `date`, `authors`, `keywords`, `abstract`, `state`,
+and `comment`. Unrecognized or invalid input is ignored. Only `abstract` and
+`comment` additionally accept indented literal prose with `: |`.
+
 
 The modules are independent extensions of one language, not a preset and not a
 full Obsidian parser dialect. They preserve inherited cmark/CommonMark
@@ -66,7 +68,7 @@ does not define Pandoc `@key` syntax; the citations module does.
       inline source forms must lower to the same one-item resolved consumer model;
       retain none of the source-shaped kinds as aliases.
 - [x] Add optional `Document.metadata` and the document-owned `Metadata`,
-      ordered `MetadataRecord`, `MetadataValue`, `MetadataScalar`, and
+      `MetadataValue`, `MetadataScalar`, and
       `MetadataListItem` values (`M7`; Properties syntax remains O6).
       Preserve exact record-name case and source order, distinguish absent from
       explicitly empty metadata, retain number payloads as exact strings, and
@@ -104,7 +106,9 @@ does not define Pandoc `@key` syntax; the citations module does.
       parse option, no preset, no CLI `--profile obsidian`, and no layer
       selection in the test tree. Keep the inherited grammar stable, but make the
       canonical `BlockQuote` to `Callout` rename universal. Add only the engine
-      bit each module needs; do not add a second parser.
+      bit each module needs; do not add a second Markdown parser. Properties
+      has a bounded source grammar under O6; it does not add a general YAML
+      parser or dependency.
 
 - [ ] **Exit criterion:** all public surfaces compile with exhaustive handling, the
       canonical schema audit proves kind/field parity, and fixtures can express every
@@ -158,21 +162,21 @@ descriptor. O4 completes the shared feature-boundary implementation bullet.
 
 ## Phase 3 — Properties, anchors, and callout containers
 
-- [ ] Recognize at most one exact `---` Properties envelope at the beginning of
-      the decoded document, after an optional BOM and before inherited block
-      parsing. Commit only a complete valid candidate, remove it from
-      `Document.content`, and return every byte to inherited Markdown on any
-      envelope, YAML, or projection failure.
-- [ ] Decode the payload once as a YAML 1.2.2 document using JSON scalar
-      resolution with a plain-string fallback, then project one top-level
-      mapping into the shared metadata values. Accept arbitrary unique non-empty
-      string names and the documented scalar/list domain; retain dates and
-      quoted wikilinks as inert text and reject nested values, duplicate names,
-      unsupported tags, YAML stream/document indicators including `...`, cycles,
-      and resource-limit violations.
-- [ ] Record source-faithful metadata and record scopes before parsing the
-      remaining body. Decoding and alias expansion must never extend a record
-      scope to another source occurrence or manufacture an expanded range.
+- [x] Recognize at most one exact `---` Properties envelope at the beginning of
+      the decoded document after an optional BOM. A complete envelope always
+      attaches metadata; only a missing or unclosed envelope leaves its bytes
+      to inherited Markdown. Allocation failure remains terminal.
+- [x] Rework Properties under the user-corrected O6 goal: recognize the ten
+      fixed fields and selected scalar, bracketed-array and block-list forms.
+      Store the ten named fields directly, retaining only the envelope scope.
+      Ignore unknown names, unnamed text, comments, invalid members and
+      duplicates; retain valid neighbors. Add bare `: |` only for
+      `abstract` and `comment`, preserving internal newlines and blank lines.
+      Remove alias expansion, anchor transactions, explicit tags, multiline
+      folding, the comment/data wrapper, and any full YAML parser workstream.
+      Verify member recovery, literal indentation, allocator/OOM and bindings.
+- [x] Verify metadata/body scopes and native value ownership on every
+      surface. Metadata values never enter Markup or visitor callbacks.
 
 - [ ] Add block identifiers during block finalization, when ownership is known.
       One attachment operation handles paragraph suffixes, structured-block
@@ -188,14 +192,15 @@ descriptor. O4 completes the shared feature-boundary implementation bullet.
 - [ ] Use the same container recursion for nested callouts. Unknown/custom types
       remain metadata-bearing callouts; alias-to-style mapping stays outside the
       parser.
-- [ ] Cover absent/empty/populated Properties, arbitrary names, every value
-      branch, JSON roots, strict fences, malformed transactional fallback, and
-      Properties/body scope boundaries alongside metadata-free, title-only,
-      empty-body, formatted-title, nested, invalid-position, mixed-case,
-      custom-type, and whole-structured-block identifier cases.
+- [x] Revalidate absent/empty/populated Properties, documented property
+      values, the ten field names, arrays and block lists, strict fences, ignored unsupported
+      input, literal prose, and Properties/body scope boundaries against corrected O6.
+- [ ] Cover metadata-free, title-only, empty-body, formatted-title, nested,
+      invalid-position, mixed-case, custom-type, and whole-structured-block
+      identifier cases.
 
-- [ ] **Exit criterion:** one valid Properties block yields metadata and no body
-      node, every invalid candidate falls back without partial records, every
+- [ ] **Exit criterion:** one complete Properties envelope yields metadata and no body
+      node, unsupported members are ignored while valid neighbors remain records, incomplete envelopes remain Markdown, and every
       block identifier has exactly one owner, no valid marker survives as
       visible text, every `>` container is a `Callout`, and plain and
       marker-bearing states satisfy their field invariants; nested
@@ -240,13 +245,12 @@ descriptor. O4 completes the shared feature-boundary implementation bullet.
       evidence for recognition, precedence, and fallback, which the dialect
       modules own, and their source-shaped definition/reference nodes do not
       override the consumer AST contract.
-- [x] Extend the Obsidian parity gate with the exact module-owned envelope
-      scanner and exact-pinned `yaml@2.9.0` Document/node parsing with CST source
-      tokens. Project mapping pairs without a JavaScript object intermediary so
-      empty/comment-only documents, key shape, decoded-name uniqueness, source
-      order, exact number spelling, aliases, and supported values are executable
-      evidence. Keep binding-coordinate scopes, allocation failure, and shared
-      resource limits under product fixtures.
+- [x] Update the existing exact-envelope / `yaml@2.9.0` Document/CST
+      oracle to the corrected Properties domain. Compare ordered mapping
+      pairs, decoded names, exact numbers and supported values without a
+      JavaScript object intermediary. Remove alias/tag success requirements;
+      wider YAML acceptance does not extend the product. Product fixtures own
+      ignored input, literal prose, member recovery, scopes, resource bounds and OOM.
 - [ ] Keep official-only requirements—callouts, block identifiers, inline
       footnote recognition, the
       `Cite`/`Citation`/`CitationReferent`/`Footnote` projection,

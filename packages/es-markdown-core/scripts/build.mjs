@@ -10,6 +10,7 @@ const core = [
     "markdown_core.c",
     "node.c",
     "attributes.c",
+    "metadata.c",
     "iterator.c",
     "blocks.c",
     "inlines.c",

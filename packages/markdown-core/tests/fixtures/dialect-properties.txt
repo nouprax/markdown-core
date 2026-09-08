@@ -1,0 +1,1515 @@
+# Properties: recognized fields, ignored unsupported input, and literal prose
+
+## Input boundary
+
+```````````````````````````````` example
+---
+title: Note
+tags: [a, b]
+---
+Body
+.
+Document scope=1:1..5:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..4:3 name=null title=scalar(text("Note")) subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+└── Paragraph scope=5:1..5:4 anchor=null attributes={} children=1
+    └── Text scope=5:1..5:4 anchor=null attributes={} literal="Body" children=0
+````````````````````````````````
+
+## Input boundary
+
+```````````````````````````````` example
+---
+tags:
+  - project
+aliases: ["Alt name"]
+cssclasses: wide
+link: "[[Episode IV]]"
+---
+.
+Document scope=1:1..7:3 anchor=null attributes={} children=0
+└── Metadata scope=1:1..7:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+````````````````````````````````
+
+## Input boundary
+
+```````````````````````````````` example
+---
+n: null
+e:
+b: true
+i: 12
+f: 1.50
+d: 2024-01-01
+s: "**Draft**"
+---
+.
+Document scope=1:1..9:3 anchor=null attributes={} children=0
+└── Metadata scope=1:1..9:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+````````````````````````````````
+
+## Input boundary
+
+```````````````````````````````` example
+---
+l:
+  - a
+  - 1
+m: []
+---
+.
+Document scope=1:1..6:3 anchor=null attributes={} children=0
+└── Metadata scope=1:1..6:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+````````````````````````````````
+
+## Input boundary
+
+```````````````````````````````` example
+---
+---
+.
+Document scope=1:1..2:3 anchor=null attributes={} children=0
+└── Metadata scope=1:1..2:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+````````````````````````````````
+
+## Input boundary
+
+```````````````````````````````` example
+---
+# just a comment
+---
+body
+.
+Document scope=1:1..4:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..3:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+└── Paragraph scope=4:1..4:4 anchor=null attributes={} children=1
+    └── Text scope=4:1..4:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Input boundary
+
+```````````````````````````````` example
+
+---
+a: 1
+---
+.
+Document scope=1:1..4:3 anchor=null attributes={} children=2
+├── ThematicBreak scope=2:1..2:3 anchor=null attributes={} children=0
+└── Heading scope=3:1..4:3 anchor=null attributes={} level=2 children=1
+    └── Text scope=3:1..3:4 anchor=null attributes={} literal="a: 1" children=0
+````````````````````````````````
+
+## Input boundary
+
+```````````````````````````````` example
+---
+a: 1
+...
+.
+Document scope=1:1..3:3 anchor=null attributes={} children=2
+├── ThematicBreak scope=1:1..1:3 anchor=null attributes={} children=0
+└── Paragraph scope=2:1..3:3 anchor=null attributes={} children=3
+    ├── Text scope=2:1..2:4 anchor=null attributes={} literal="a: 1" children=0
+    ├── SoftBreak scope=2:5..2:5 anchor=null attributes={} children=0
+    └── Text scope=3:1..3:3 anchor=null attributes={} literal="..." children=0
+````````````````````````````````
+
+## Input boundary
+
+```````````````````````````````` example
+---
+"1": a
+1.0: b
+true: c
+~: d
+---
+.
+Document scope=1:1..6:3 anchor=null attributes={} children=0
+└── Metadata scope=1:1..6:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+````````````````````````````````
+
+## Input boundary
+
+```````````````````````````````` example
+---
+x: &a 1
+y: *a
+z: !!str 1
+---
+.
+Document scope=1:1..5:3 anchor=null attributes={} children=0
+└── Metadata scope=1:1..5:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+````````````````````````````````
+
+## Input boundary
+
+```````````````````````````````` example
+---
+title: Note
+not YAML
+...
+key: [a, {b: c}]
+count: 2
+---
+body
+.
+Document scope=1:1..8:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..7:3 name=null title=scalar(text("Note")) subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+└── Paragraph scope=8:1..8:4 anchor=null attributes={} children=1
+    └── Text scope=8:1..8:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Input boundary
+
+```````````````````````````````` example
+---
+null-value: null
+empty:
+bool-value: false
+number: 9007199254740993
+negative-zero: -0
+exponent: 1.0e+12
+text: ""
+list: [one, 2, "[[link]]", "%%comment%%"]
+empty-list: []
+syntax: "**bold** ==mark== $formula$ ^[note] <!--comment-->"
+# source comment
+...
+---
+body
+.
+Document scope=1:1..15:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..14:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+└── Paragraph scope=15:1..15:4 anchor=null attributes={} children=1
+    └── Text scope=15:1..15:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Input boundary
+
+```````````````````````````````` example
+---
+before: first
+not YAML
+broken: [unclosed
+after-broken: 2
+nested: {key: value}
+list-bool: [true]
+list-null: [null]
+list-nested: [[a]]
+list-map: [{a: b}]
+after: last
+---
+body
+.
+Document scope=1:1..13:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..12:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+└── Paragraph scope=13:1..13:4 anchor=null attributes={} children=1
+    └── Text scope=13:1..13:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Input boundary
+
+```````````````````````````````` example
+---
+"1": first
+1: second
+1.0: distinct
+true: bool name
+~: tilde name
+"": empty name
+"multi\nline": bad name
+[complex, key]: value
+? explicit
+: value
+!tag key: value
+&a key: value
+*alias: value
+last: present
+---
+body
+.
+Document scope=1:1..17:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..16:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+└── Paragraph scope=17:1..17:4 anchor=null attributes={} children=1
+    └── Text scope=17:1..17:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Input boundary
+
+```````````````````````````````` example
+---
+tilde: ~
+yes: yes
+plus: +1
+hex: 0x10
+leading-zero: 01
+infinity: .inf
+date: 2026-09-08
+quoted: "true"
+folded: 'one
+  two'
+continued: "one\
+  two"
+unicode: "\x41\u4e2d\U0001f600\N\_\L\P"
+null-tag: !!null null
+empty-tag: !!null
+bool-tag: !!bool false
+int-tag: !!int -12
+float-tag: !!float 1.50
+str-tag: !!str true
+uri-tag: !<tag:yaml.org,2002:str> 1
+bad-bool: !!bool yes
+bad-int: !!int 1.5
+unknown: !custom one
+last: present
+---
+body
+.
+Document scope=1:1..27:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..26:3 name=null title=null subtitle=null time=null date=scalar(text("2026-09-08")) authors=null keywords=null abstract=null state=null comment=null children=0
+└── Paragraph scope=27:1..27:4 anchor=null attributes={} children=1
+    └── Text scope=27:1..27:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Input boundary
+
+```````````````````````````````` example
+---
+folded: >-
+  one
+  two
+literal: |-
+  one
+with-newline: |
+  one
+blank-fold: >-
+  one
+
+  two
+explicit: >2- # header comment
+  first
+  second
+last: present
+---
+body
+.
+Document scope=1:1..18:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..17:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+└── Paragraph scope=18:1..18:4 anchor=null attributes={} children=1
+    └── Text scope=18:1..18:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Input boundary
+
+```````````````````````````````` example
+---
+block:
+  - one # item comment
+  # between items
+  - 2
+indentless:
+- three
+- 4
+flow: [
+  one, # flow comment
+  2
+]
+empty-tag: !!seq []
+last: present
+---
+body
+.
+Document scope=1:1..16:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..15:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+└── Paragraph scope=16:1..16:4 anchor=null attributes={} children=1
+    └── Text scope=16:1..16:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Input boundary
+
+```````````````````````````````` example
+---
+base: &a 9007199254740993
+copy: *a
+list: &l [*a, &b text, *b]
+list-copy: *l
+bad: &a [true]
+after-bad: *a
+cycle: &a [*a]
+after-cycle: *a
+undefined: *missing
+next: &a replacement
+last: *a
+---
+body
+.
+Document scope=1:1..14:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..13:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+└── Paragraph scope=14:1..14:4 anchor=null attributes={} children=1
+    └── Text scope=14:1..14:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Input boundary
+
+```````````````````````````````` example
+---
+{"a":1,"nested":{"b":2},"after": [3,"x"],"a":4,"last":false}
+---
+body
+.
+Document scope=1:1..4:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..3:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+└── Paragraph scope=4:1..4:4 anchor=null attributes={} children=1
+    └── Text scope=4:1..4:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Input boundary
+
+```````````````````````````````` example
+---
+{
+  name: don't,
+  quoted: "a,b:c", # inline
+  list: [x, y],
+  unsupported: [false],
+  last: null
+}
+---
+body
+.
+Document scope=1:1..10:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..9:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+└── Paragraph scope=10:1..10:4 anchor=null attributes={} children=1
+    └── Text scope=10:1..10:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Input boundary
+
+```````````````````````````````` example
+---
+before: 1
+...
+... # doc end
+%YAML 1.2
+%TAG !e! tag:example.com,2000:app/
+--- extra
+----
+after: 2
+---
+body
+.
+Document scope=1:1..11:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..10:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+└── Paragraph scope=11:1..11:4 anchor=null attributes={} children=1
+    └── Text scope=11:1..11:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Input boundary
+
+```````````````````````````````` example
+---
+{
+before: one
+{
+after: two
+---
+body
+.
+Document scope=1:1..7:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..6:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+└── Paragraph scope=7:1..7:4 anchor=null attributes={} children=1
+    └── Text scope=7:1..7:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Input boundary
+
+```````````````````````````````` example
+---
+a: |-
+  "[
+{b: 2}
+c: 3
+---
+body
+.
+Document scope=1:1..7:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..6:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+└── Paragraph scope=7:1..7:4 anchor=null attributes={} children=1
+    └── Text scope=7:1..7:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Input boundary
+
+```````````````````````````````` example
+---
+a: !!null ""
+b: !!null ''
+---
+body
+.
+Document scope=1:1..5:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..4:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+└── Paragraph scope=5:1..5:4 anchor=null attributes={} children=1
+    └── Text scope=5:1..5:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Input boundary
+
+```````````````````````````````` example
+---
+a: 1
+bad: "unclosed
+next: 2
+bad-single: 'unclosed
+last: 3
+---
+body
+.
+Document scope=1:1..8:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..7:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+└── Paragraph scope=8:1..8:4 anchor=null attributes={} children=1
+    └── Text scope=8:1..8:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Input boundary
+
+```````````````````````````````` example
+---
+中文: 世界
+"🚀 name": "🌕"
+question?: yes
+path/to.key: value
+---
+body
+.
+Document scope=1:1..7:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..6:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+└── Paragraph scope=7:1..7:4 anchor=null attributes={} children=1
+    └── Text scope=7:1..7:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Input boundary
+
+```````````````````````````````` example
+---
+first: one
+---
+---
+second: two
+---
+.
+Document scope=1:1..6:3 anchor=null attributes={} children=2
+├── Metadata scope=1:1..3:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+├── ThematicBreak scope=4:1..4:3 anchor=null attributes={} children=0
+└── Heading scope=5:1..6:3 anchor=null attributes={} level=2 children=1
+    └── Text scope=5:1..5:11 anchor=null attributes={} literal="second: two" children=0
+````````````````````````````````
+
+## Input boundary
+
+```````````````````````````````` example
+---
+a: &x first
+a: &x second
+b: *x
+---
+body
+.
+Document scope=1:1..6:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..5:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+└── Paragraph scope=6:1..6:4 anchor=null attributes={} children=1
+    └── Text scope=6:1..6:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Input boundary
+
+```````````````````````````````` example
+---
+a: http://example.com/#part
+b: a:b
+c: "a: b"
+bad: a: b
+last: present
+---
+body
+.
+Document scope=1:1..8:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..7:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+└── Paragraph scope=8:1..8:4 anchor=null attributes={} children=1
+    └── Text scope=8:1..8:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Input boundary
+
+```````````````````````````````` example
+---
+ # one
+→# two
+# three
+---
+body
+.
+Document scope=1:1..6:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..5:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+└── Paragraph scope=6:1..6:4 anchor=null attributes={} children=1
+    └── Text scope=6:1..6:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Input boundary
+
+```````````````````````````````` example
+---
+ 
+→
+
+---
+.
+Document scope=1:1..5:3 anchor=null attributes={} children=0
+└── Metadata scope=1:1..5:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+````````````````````````````````
+
+## Input boundary
+
+```````````````````````````````` example
+---
+!!map
+a: 1
+b: two
+---
+body
+.
+Document scope=1:1..6:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..5:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+└── Paragraph scope=6:1..6:4 anchor=null attributes={} children=1
+    └── Text scope=6:1..6:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Input boundary
+
+```````````````````````````````` example
+---
+!<tag:yaml.org,2002:map> {a: 1, b: two}
+---
+body
+.
+Document scope=1:1..4:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..3:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+└── Paragraph scope=4:1..4:4 anchor=null attributes={} children=1
+    └── Text scope=4:1..4:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Input boundary
+
+```````````````````````````````` example
+﻿---
+a: 1
+---
+body
+.
+Document scope=1:1..4:4 anchor=null attributes={} children=1
+├── Metadata scope=1:4..3:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+└── Paragraph scope=4:1..4:4 anchor=null attributes={} children=1
+    └── Text scope=4:1..4:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Input boundary
+
+```````````````````````````````` example
+--- 
+a: 1
+---
+.
+Document scope=1:1..3:3 anchor=null attributes={} children=2
+├── ThematicBreak scope=1:1..1:4 anchor=null attributes={} children=0
+└── Heading scope=2:1..3:3 anchor=null attributes={} level=2 children=1
+    └── Text scope=2:1..2:4 anchor=null attributes={} literal="a: 1" children=0
+````````````````````````````````
+
+## Input boundary
+
+```````````````````````````````` example
+ ---
+a: 1
+---
+.
+Document scope=1:1..3:3 anchor=null attributes={} children=2
+├── ThematicBreak scope=1:2..1:4 anchor=null attributes={} children=0
+└── Heading scope=2:1..3:3 anchor=null attributes={} level=2 children=1
+    └── Text scope=2:1..2:4 anchor=null attributes={} literal="a: 1" children=0
+````````````````````````````````
+
+## Input boundary
+
+```````````````````````````````` example
+---yaml
+a: 1
+---
+.
+Document scope=1:1..3:3 anchor=null attributes={} children=1
+└── Heading scope=1:1..3:3 anchor=null attributes={} level=2 children=3
+    ├── Text scope=1:1..1:7 anchor=null attributes={} literal="---yaml" children=0
+    ├── SoftBreak scope=1:8..1:8 anchor=null attributes={} children=0
+    └── Text scope=2:1..2:4 anchor=null attributes={} literal="a: 1" children=0
+````````````````````````````````
+
+## Input boundary
+
+```````````````````````````````` example
+----
+a: 1
+---
+.
+Document scope=1:1..3:3 anchor=null attributes={} children=2
+├── ThematicBreak scope=1:1..1:4 anchor=null attributes={} children=0
+└── Heading scope=2:1..3:3 anchor=null attributes={} level=2 children=1
+    └── Text scope=2:1..2:4 anchor=null attributes={} literal="a: 1" children=0
+````````````````````````````````
+
+## Input boundary
+
+```````````````````````````````` example
+---
+a: 1
+...
+.
+Document scope=1:1..3:3 anchor=null attributes={} children=2
+├── ThematicBreak scope=1:1..1:3 anchor=null attributes={} children=0
+└── Paragraph scope=2:1..3:3 anchor=null attributes={} children=3
+    ├── Text scope=2:1..2:4 anchor=null attributes={} literal="a: 1" children=0
+    ├── SoftBreak scope=2:5..2:5 anchor=null attributes={} children=0
+    └── Text scope=3:1..3:3 anchor=null attributes={} literal="..." children=0
+````````````````````````````````
+
+## Input boundary
+
+```````````````````````````````` example
+---
+a: 1
+--
+.
+Document scope=1:1..3:2 anchor=null attributes={} children=2
+├── ThematicBreak scope=1:1..1:3 anchor=null attributes={} children=0
+└── Heading scope=2:1..3:2 anchor=null attributes={} level=2 children=1
+    └── Text scope=2:1..2:4 anchor=null attributes={} literal="a: 1" children=0
+````````````````````````````````
+
+## Input boundary
+
+```````````````````````````````` example
+---
+a: 1
+--- 
+.
+Document scope=1:1..3:4 anchor=null attributes={} children=2
+├── ThematicBreak scope=1:1..1:3 anchor=null attributes={} children=0
+└── Heading scope=2:1..3:4 anchor=null attributes={} level=2 children=1
+    └── Text scope=2:1..2:4 anchor=null attributes={} literal="a: 1" children=0
+````````````````````````````````
+
+## Input boundary
+
+```````````````````````````````` example
+> ---
+> a: 1
+> ---
+
+- ---
+  a: 1
+  ---
+.
+Document scope=1:1..7:5 anchor=null attributes={} children=3
+├── Callout scope=1:1..3:5 anchor=null attributes={} variant=null collapsed=null children=2
+│   ├── ThematicBreak scope=1:3..1:5 anchor=null attributes={} children=0
+│   └── Heading scope=2:3..4:0 anchor=null attributes={} level=2 children=1
+│       └── Text scope=2:3..2:6 anchor=null attributes={} literal="a: 1" children=0
+├── ThematicBreak scope=5:1..5:5 anchor=null attributes={} children=0
+└── Heading scope=6:3..7:5 anchor=null attributes={} level=2 children=1
+    └── Text scope=6:3..6:6 anchor=null attributes={} literal="a: 1" children=0
+````````````````````````````````
+
+## Input boundary
+
+```````````````````````````````` example
+```
+---
+a: 1
+---
+```
+
+<!--
+---
+a: 1
+---
+-->
+
+$$
+---
+a: 1
+---
+$$
+
+%%
+---
+a: 1
+---
+%%
+
+`--- a: 1 ---` [[--- a: 1 ---]]
+.
+Document scope=1:1..25:31 anchor=null attributes={} children=5
+├── CodeBlock scope=1:1..5:3 anchor=null attributes={} info=null language=null literal="---\na: 1\n---\n" fenced=true closed=true children=0
+├── Comment scope=7:1..11:3 anchor=null attributes={} literal="\n---\na: 1\n---\n" children=0
+├── FormulaBlock scope=13:1..17:2 anchor=null attributes={} literal="---\na: 1\n---" children=0
+├── Comment scope=19:1..23:2 anchor=null attributes={} literal="---\na: 1\n---\n" children=0
+└── Paragraph scope=25:1..25:31 anchor=null attributes={} children=3
+    ├── Code scope=25:1..25:14 anchor=null attributes={} literal="--- a: 1 ---" children=0
+    ├── Text scope=25:15..25:15 anchor=null attributes={} literal=" " children=0
+    └── CrossLink scope=25:16..25:31 anchor=null attributes={} embedded=false dest=cross(path="--- a: 1 ---",anchor=null) label=null children=0
+````````````````````````````````
+
+
+## Input boundary
+
+```````````````````````````````` example
+---
+bad: [
+{good: "hello
+world: text
+"}
+last: kept
+---
+.
+Document scope=1:1..7:3 anchor=null attributes={} children=0
+└── Metadata scope=1:1..7:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+````````````````````````````````
+
+## Input boundary
+
+```````````````````````````````` example
+---
+→bad: 1
+quoted: "one
+→two"
+flow: [
+→one,
+→two]
+good: "one
+ →two"
+{root: "one
+→two"}
+last: kept
+---
+.
+Document scope=1:1..13:3 anchor=null attributes={} children=0
+└── Metadata scope=1:1..13:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+````````````````````````````````
+
+## Input boundary
+
+```````````````````````````````` example
+---
+a: x[
+b[c: 2
+text: word [ literal
+not YAML
+folded[key: >-
+  keep { [ ' punctuation
+{
+  # before
+  list: [
+    # item
+    one # inline
+  ], # after
+  # end
+  last: 3
+}
+block:
+- text [
+after: 4
+---
+body
+.
+Document scope=1:1..21:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..20:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+└── Paragraph scope=21:1..21:4 anchor=null attributes={} children=1
+    └── Text scope=21:1..21:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Input boundary
+
+```````````````````````````````` example
+---
+{good: x, b[c]: 2, nested: {value: 3}, after: 4}
+plain: text [
+- separate source sequence
+pending: &items
+# value comment
+  !!seq [
+  one,
+  two
+]
+bad: [
+x[y: 5
+last: 6
+---
+.
+Document scope=1:1..14:3 anchor=null attributes={} children=0
+└── Metadata scope=1:1..14:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+````````````````````````````````
+
+## Recognized field semantics
+
+```````````````````````````````` example
+---
+name: Note
+time: 12:34
+date: 2026-09-08
+authors: [Ada, Lin]
+keywords: [one, 2]
+abstract: Summary
+state: draft
+comment: Note
+---
+body
+.
+Document scope=1:1..11:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..10:3 name=scalar(text("Note")) title=null subtitle=null time=scalar(text("12:34")) date=scalar(text("2026-09-08")) authors=list([text("Ada"),text("Lin")]) keywords=list([text("one"),number("2")]) abstract=scalar(text("Summary")) state=scalar(text("draft")) comment=scalar(text("Note")) children=0
+└── Paragraph scope=11:1..11:4 anchor=null attributes={} children=1
+    └── Text scope=11:1..11:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Recognized field semantics
+
+```````````````````````````````` example
+---
+name: null
+time:
+date: ""
+state: false
+keywords: []
+authors: [9007199254740993, 1.50, -0, 1e2]
+---
+body
+.
+Document scope=1:1..9:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..8:3 name=scalar(null) title=null subtitle=null time=scalar(null) date=scalar(text("")) authors=list([number("9007199254740993"),number("1.50"),number("-0"),number("1e2")]) keywords=list([]) abstract=null state=scalar(bool(false)) comment=null children=0
+└── Paragraph scope=9:1..9:4 anchor=null attributes={} children=1
+    └── Text scope=9:1..9:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Recognized field semantics
+
+```````````````````````````````` example
+---
+name: 9007199254740993
+unknown: ignored
+free text
+...
+# ignored
+state: true
+name: duplicate
+---
+body
+.
+Document scope=1:1..10:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..9:3 name=scalar(number("9007199254740993")) title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=scalar(bool(true)) comment=null children=0
+└── Paragraph scope=10:1..10:4 anchor=null attributes={} children=1
+    └── Text scope=10:1..10:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Recognized field semantics
+
+```````````````````````````````` example
+---
+abstract: |
+  first paragraph
+
+    indented
+  last
+
+comment: |
+  # literal
+  ---
+  name: still prose
+state: ready
+---
+body
+.
+Document scope=1:1..14:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..13:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=scalar(text("first paragraph\n\n  indented\nlast\n")) state=scalar(text("ready")) comment=scalar(text("# literal\n---\nname: still prose\n")) children=0
+└── Paragraph scope=14:1..14:4 anchor=null attributes={} children=1
+    └── Text scope=14:1..14:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Recognized field semantics
+
+```````````````````````````````` example
+---
+abstract: |
+comment: |
+
+name: next
+---
+body
+.
+Document scope=1:1..7:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..6:3 name=scalar(text("next")) title=null subtitle=null time=null date=null authors=null keywords=null abstract=scalar(text("")) state=null comment=scalar(text("")) children=0
+└── Paragraph scope=7:1..7:4 anchor=null attributes={} children=1
+    └── Text scope=7:1..7:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Recognized field semantics
+
+```````````````````````````````` example
+---
+abstract: |
+
+  first
+
+  second
+
+
+state: done
+---
+body
+.
+Document scope=1:1..11:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..10:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=scalar(text("\nfirst\n\nsecond\n")) state=scalar(text("done")) comment=null children=0
+└── Paragraph scope=11:1..11:4 anchor=null attributes={} children=1
+    └── Text scope=11:1..11:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Recognized field semantics
+
+```````````````````````````````` example
+---
+  abstract: |
+    indented key
+      deeper
+  state: ready
+---
+body
+.
+Document scope=1:1..7:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..6:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=scalar(text("indented key\n  deeper\n")) state=scalar(text("ready")) comment=null children=0
+└── Paragraph scope=7:1..7:4 anchor=null attributes={} children=1
+    └── Text scope=7:1..7:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Recognized field semantics
+
+```````````````````````````````` example
+---
+abstract: |
+    first
+  invalid indent
+abstract: valid
+comment: |
+→bad indent
+comment: valid
+---
+body
+.
+Document scope=1:1..10:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..9:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=scalar(text("valid")) state=null comment=scalar(text("")) children=0
+└── Paragraph scope=10:1..10:4 anchor=null attributes={} children=1
+    └── Text scope=10:1..10:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Recognized field semantics
+
+```````````````````````````````` example
+---
+authors:
+- Ada
+# middle
+- Lin
+keywords:
+  - one
+ →# middle
+  - 2
+state: next
+---
+body
+.
+Document scope=1:1..12:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..11:3 name=null title=null subtitle=null time=null date=null authors=list([text("Ada"),text("Lin")]) keywords=list([text("one"),number("2")]) abstract=null state=scalar(text("next")) comment=null children=0
+└── Paragraph scope=12:1..12:4 anchor=null attributes={} children=1
+    └── Text scope=12:1..12:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Recognized field semantics
+
+```````````````````````````````` example
+---
+authors: [one, 2,]
+keywords: ["[[Note]]", "#tag", "*a", "&a"]
+---
+body
+.
+Document scope=1:1..5:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..4:3 name=null title=null subtitle=null time=null date=null authors=list([text("one"),number("2")]) keywords=list([text("[[Note]]"),text("#tag"),text("*a"),text("&a")]) abstract=null state=null comment=null children=0
+└── Paragraph scope=5:1..5:4 anchor=null attributes={} children=1
+    └── Text scope=5:1..5:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Recognized field semantics
+
+```````````````````````````````` example
+---
+name: x[
+unknown[key: 1
+state: word { [ literal
+comment: plain ] }, # ignored
+---
+body
+.
+Document scope=1:1..7:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..6:3 name=scalar(text("x[")) title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=scalar(text("word { [ literal")) comment=scalar(text("plain ] },")) children=0
+└── Paragraph scope=7:1..7:4 anchor=null attributes={} children=1
+    └── Text scope=7:1..7:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Recognized field semantics
+
+```````````````````````````````` example
+---
+{"name":"Note","time":9007199254740993,"authors":["Ada",2],"state":true}
+---
+body
+.
+Document scope=1:1..4:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..3:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+└── Paragraph scope=4:1..4:4 anchor=null attributes={} children=1
+    └── Text scope=4:1..4:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Recognized field semantics
+
+```````````````````````````````` example
+---
+{draft, title: Note, "name":"kept", "keywords":[true], "authors":["Ada",2], "state":false}
+---
+body
+.
+Document scope=1:1..4:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..3:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+└── Paragraph scope=4:1..4:4 anchor=null attributes={} children=1
+    └── Text scope=4:1..4:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Recognized field semantics
+
+```````````````````````````````` example
+---
+{"name":"\uD83D\uDE80", "time":1., "date":01, "authors":["Ada",], "state":true}
+---
+body
+.
+Document scope=1:1..4:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..3:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+└── Paragraph scope=4:1..4:4 anchor=null attributes={} children=1
+    └── Text scope=4:1..4:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Recognized field semantics
+
+```````````````````````````````` example
+---
+"na\u006de": "\uD83D\uDE80"
+name: duplicate
+'state': 'it''s ready'
+---
+body
+.
+Document scope=1:1..6:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..5:3 name=scalar(text("🚀")) title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=scalar(text("it's ready")) comment=null children=0
+└── Paragraph scope=6:1..6:4 anchor=null attributes={} children=1
+    └── Text scope=6:1..6:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Recognized field semantics
+
+```````````````````````````````` example
+---
+name: "*reference"
+comment: "&anchor"
+state: "!!str 1"
+---
+body
+.
+Document scope=1:1..6:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..5:3 name=scalar(text("*reference")) title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=scalar(text("!!str 1")) comment=scalar(text("&anchor")) children=0
+└── Paragraph scope=6:1..6:4 anchor=null attributes={} children=1
+    └── Text scope=6:1..6:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Recognized field semantics
+
+```````````````````````````````` example
+---
+name: &a value
+time: *a
+date: !!str today
+authors: [*a]
+keywords: &k [one]
+abstract: !custom text
+comment: *k
+state: ready
+---
+body
+.
+Document scope=1:1..11:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..10:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=scalar(text("ready")) comment=null children=0
+└── Paragraph scope=11:1..11:4 anchor=null attributes={} children=1
+    └── Text scope=11:1..11:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Recognized field semantics
+
+```````````````````````````````` example
+---
+name: &a value
+name: recovered
+abstract: >-
+  folded
+abstract: |
+  literal
+comment: |+
+  unsupported
+comment: valid
+---
+body
+.
+Document scope=1:1..12:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..11:3 name=scalar(text("recovered")) title=null subtitle=null time=null date=null authors=null keywords=null abstract=scalar(text("literal\n")) state=null comment=scalar(text("valid")) children=0
+└── Paragraph scope=12:1..12:4 anchor=null attributes={} children=1
+    └── Text scope=12:1..12:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Recognized field semantics
+
+```````````````````````````````` example
+---
+authors: [one, {nested: value}]
+authors: [kept]
+keywords:
+  - one
+  - [nested]
+keywords: []
+---
+body
+.
+Document scope=1:1..9:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..8:3 name=null title=null subtitle=null time=null date=null authors=list([text("kept")]) keywords=list([]) abstract=null state=null comment=null children=0
+└── Paragraph scope=9:1..9:4 anchor=null attributes={} children=1
+    └── Text scope=9:1..9:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Recognized field semantics
+
+```````````````````````````````` example
+---
+name: "two
+  lines"
+time: one
+  two
+abstract: |2
+  explicit indent
+comment: |-
+  strip
+state: ready
+---
+body
+.
+Document scope=1:1..12:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..11:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=scalar(text("ready")) comment=null children=0
+└── Paragraph scope=12:1..12:4 anchor=null attributes={} children=1
+    └── Text scope=12:1..12:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Recognized field semantics
+
+```````````````````````````````` example
+---
+name: "escaped\nline"
+comment: "escaped\rline"
+state: "bad\x41"
+name: valid
+comment: valid
+state: valid
+---
+body
+.
+Document scope=1:1..9:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..8:3 name=scalar(text("valid")) title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=scalar(text("valid")) comment=scalar(text("valid")) children=0
+└── Paragraph scope=9:1..9:4 anchor=null attributes={} children=1
+    └── Text scope=9:1..9:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Recognized field semantics
+
+```````````````````````````````` example
+---
+name: {}
+time: [null]
+date: [false]
+authors: [[one]]
+keywords: [true]
+abstract: >
+  text
+comment: !!str x
+state: [false]
+---
+body
+.
+Document scope=1:1..12:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..11:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+└── Paragraph scope=12:1..12:4 anchor=null attributes={} children=1
+    └── Text scope=12:1..12:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Recognized field semantics
+
+```````````````````````````````` example
+---
+Name: wrong case
+"NAME": wrong case
+"name ": whitespace
+"": empty
+<<: *merge
+"<<": literal unknown
+name: right
+---
+body
+.
+Document scope=1:1..10:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..9:3 name=scalar(text("right")) title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+└── Paragraph scope=10:1..10:4 anchor=null attributes={} children=1
+    └── Text scope=10:1..10:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Unsupported root objects stay opaque
+
+```````````````````````````````` example
+---
+{
+"name": "valid",
+"comment": {"nested": ["a", "b"]},
+"state": true
+}
+---
+body
+.
+Document scope=1:1..8:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..7:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+└── Paragraph scope=8:1..8:4 anchor=null attributes={} children=1
+    └── Text scope=8:1..8:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Recognized field semantics
+
+```````````````````````````````` example
+---
+abstract: |
+  body { [ ' "
+{"name":"after","state":true}
+---
+body
+.
+Document scope=1:1..6:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..5:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=scalar(text("body { [ ' \"\n")) state=null comment=null children=0
+└── Paragraph scope=6:1..6:4 anchor=null attributes={} children=1
+    └── Text scope=6:1..6:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Unclosed collections own the remaining payload
+
+```````````````````````````````` example
+---
+name: [
+  unfinished
+state: true
+comment: done
+---
+body
+.
+Document scope=1:1..7:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..6:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+└── Paragraph scope=7:1..7:4 anchor=null attributes={} children=1
+    └── Text scope=7:1..7:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Recognized field semantics
+
+```````````````````````````````` example
+---
+authors:
+- a
+→
+→# comment
+- b
+state: ready
+---
+body
+.
+Document scope=1:1..9:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..8:3 name=null title=null subtitle=null time=null date=null authors=list([text("a"),text("b")]) keywords=null abstract=null state=scalar(text("ready")) comment=null children=0
+└── Paragraph scope=9:1..9:4 anchor=null attributes={} children=1
+    └── Text scope=9:1..9:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Normative module example
+
+```````````````````````````````` example
+---
+name: Note
+authors: [Ada, Lin]
+unknown: ignored
+free text
+state: draft
+---
+Body
+.
+Document scope=1:1..8:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..7:3 name=scalar(text("Note")) title=null subtitle=null time=null date=null authors=list([text("Ada"),text("Lin")]) keywords=null abstract=null state=scalar(text("draft")) comment=null children=0
+└── Paragraph scope=8:1..8:4 anchor=null attributes={} children=1
+    └── Text scope=8:1..8:4 anchor=null attributes={} literal="Body" children=0
+````````````````````````````````
+
+## Normative module example
+
+```````````````````````````````` example
+---
+...
+# ignored
+---
+body
+.
+Document scope=1:1..5:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..4:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+└── Paragraph scope=5:1..5:4 anchor=null attributes={} children=1
+    └── Text scope=5:1..5:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Normative module example
+
+```````````````````````````````` example
+---
+abstract: |
+  First paragraph.
+
+  Second paragraph.
+comment: |
+  # literal text
+  name: still prose
+state: ready
+---
+Body
+.
+Document scope=1:1..11:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..10:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=scalar(text("First paragraph.\n\nSecond paragraph.\n")) state=scalar(text("ready")) comment=scalar(text("# literal text\nname: still prose\n")) children=0
+└── Paragraph scope=11:1..11:4 anchor=null attributes={} children=1
+    └── Text scope=11:1..11:4 anchor=null attributes={} literal="Body" children=0
+````````````````````````````````
+
+## Fixed-field and text/list forms
+
+```````````````````````````````` example
+---
+title: A title
+subtitle: A subtitle
+name: A name
+---
+body
+.
+Document scope=1:1..6:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..5:3 name=scalar(text("A name")) title=scalar(text("A title")) subtitle=scalar(text("A subtitle")) time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+└── Paragraph scope=6:1..6:4 anchor=null attributes={} children=1
+    └── Text scope=6:1..6:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Fixed-field and text/list forms
+
+```````````````````````````````` example
+---
+authors: Ada
+keywords: language
+---
+body
+.
+Document scope=1:1..5:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..4:3 name=null title=null subtitle=null time=null date=null authors=scalar(text("Ada")) keywords=scalar(text("language")) abstract=null state=null comment=null children=0
+└── Paragraph scope=5:1..5:4 anchor=null attributes={} children=1
+    └── Text scope=5:1..5:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Fixed-field and text/list forms
+
+```````````````````````````````` example
+---
+authors: [Ada, Lin]
+keywords: [language, design]
+---
+body
+.
+Document scope=1:1..5:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..4:3 name=null title=null subtitle=null time=null date=null authors=list([text("Ada"),text("Lin")]) keywords=list([text("language"),text("design")]) abstract=null state=null comment=null children=0
+└── Paragraph scope=5:1..5:4 anchor=null attributes={} children=1
+    └── Text scope=5:1..5:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Fixed-field and text/list forms
+
+```````````````````````````````` example
+---
+authors:
+- Ada
+- Lin
+keywords:
+  - language
+  - design
+---
+body
+.
+Document scope=1:1..9:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..8:3 name=null title=null subtitle=null time=null date=null authors=list([text("Ada"),text("Lin")]) keywords=list([text("language"),text("design")]) abstract=null state=null comment=null children=0
+└── Paragraph scope=9:1..9:4 anchor=null attributes={} children=1
+    └── Text scope=9:1..9:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Fixed-field and text/list forms
+
+```````````````````````````````` example
+---
+abstract: |
+  before
+→
+  after
+state: ready
+---
+body
+.
+Document scope=1:1..8:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..7:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=scalar(text("before\n\nafter\n")) state=scalar(text("ready")) comment=null children=0
+└── Paragraph scope=8:1..8:4 anchor=null attributes={} children=1
+    └── Text scope=8:1..8:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Fixed-field and text/list forms
+
+```````````````````````````````` example
+---
+abstract: |#bad
+  text
+abstract: valid
+name: "text"#bad
+name: valid
+---
+body
+.
+Document scope=1:1..8:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..7:3 name=scalar(text("valid")) title=null subtitle=null time=null date=null authors=null keywords=null abstract=scalar(text("valid")) state=null comment=null children=0
+└── Paragraph scope=8:1..8:4 anchor=null attributes={} children=1
+    └── Text scope=8:1..8:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````

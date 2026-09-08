@@ -103,6 +103,8 @@ struct markdown_core_parser {
      * the linearity gates of both. */
     size_t comment_scan_work;
     size_t block_lookahead_work;
+    /* Properties work: source ranges decoded once at their owning boundary. */
+    size_t metadata_decoded_bytes;
     /* THE SOURCE AFTER THE LINE BEING PROCESSED. `S_parse_source` sets the
      * cursor to the first byte of the next raw line before it hands each line
      * to `S_process_line`, so a block start whose grammar needs a later line --

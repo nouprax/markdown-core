@@ -56,8 +56,9 @@ private final class DumpState {
 
     /// A group line nests a node-valued list under its owner: `Kind children=N`
     /// with no scope and no fields. The caller opens the list's own nesting.
-    func group(_ kind: String, children: Int) {
-        emit("\(kind) children=\(children)")
+    func group(_ kind: String, children: Int, fields: [String] = []) {
+        let fieldText = fields.isEmpty ? "" : " " + fields.joined(separator: " ")
+        emit("\(kind)\(fieldText) children=\(children)")
     }
 
     private func emit(_ text: String) {
@@ -96,40 +97,6 @@ private struct DumpVisitor: MarkupVisitor {
             for footnote in node.footnotes { dumpFootnote(footnote) }
             for specimen in node.specimens { dumpSpecimen(specimen) }
         }
-    }
-
-    private func dumpMetadata(_ value: Metadata) {
-        state.line("Metadata", scope: value.scope, fields: [], children: value.records.count)
-        state.nested(value.records.count) {
-            for record in value.records {
-                state.line(
-                    "MetadataRecord",
-                    scope: record.scope,
-                    fields: ["name=\(jsonString(record.name))", "value=\(metadataValue(record.value))"],
-                    children: 0
-                )
-            }
-        }
-    }
-
-    private func dumpFootnote(_ value: Footnote) {
-        state.line(
-            "Footnote",
-            scope: value.scope,
-            fields: ["id=\(jsonString(value.id))"],
-            children: value.content.count
-        )
-        state.nested(value.content.count) { value.content.forEach(state.dump) }
-    }
-
-    private func dumpSpecimen(_ value: Specimen) {
-        state.line(
-            "Specimen",
-            scope: value.scope,
-            fields: ["id=\(optionalString(value.id))", "start=\(value.start.map(String.init) ?? "null")"],
-            children: value.content.count
-        )
-        state.nested(value.content.count) { value.content.forEach(state.dump) }
     }
 
     mutating func visit(_ node: Callout) {
@@ -339,21 +306,6 @@ private struct DumpVisitor: MarkupVisitor {
         }
     }
 
-    private func dumpCitation(_ value: Citation) {
-        state.line(
-            "Citation",
-            scope: value.scope,
-            fields: ["referent=\(referentString(value.referent))"],
-            children: 0
-        )
-        state.nested(2) {
-            state.group("CitationPrefix", children: value.prefix.count)
-            state.nested(value.prefix.count) { value.prefix.forEach(state.dump) }
-            state.group("CitationSuffix", children: value.suffix.count)
-            state.nested(value.suffix.count) { value.suffix.forEach(state.dump) }
-        }
-    }
-
     mutating func visit(_ node: TableRow) {
         state.line(
             "TableRow",
@@ -373,4 +325,62 @@ private struct DumpVisitor: MarkupVisitor {
         state.nested(node.content.count) { node.content.forEach(state.dump) }
     }
 
+}
+
+// Owned values have their own dump shape and do not participate in Markup visitation.
+extension DumpVisitor {
+    fileprivate func dumpMetadata(_ value: Metadata) {
+        state.line(
+            "Metadata",
+            scope: value.scope,
+            fields: [
+                "name=\(value.name.map(metadataValue) ?? "null")",
+                "title=\(value.title.map(metadataValue) ?? "null")",
+                "subtitle=\(value.subtitle.map(metadataValue) ?? "null")",
+                "time=\(value.time.map(metadataValue) ?? "null")",
+                "date=\(value.date.map(metadataValue) ?? "null")",
+                "authors=\(value.authors.map(metadataValue) ?? "null")",
+                "keywords=\(value.keywords.map(metadataValue) ?? "null")",
+                "abstract=\(value.abstract.map(metadataValue) ?? "null")",
+                "state=\(value.state.map(metadataValue) ?? "null")",
+                "comment=\(value.comment.map(metadataValue) ?? "null")",
+            ],
+            children: 0
+        )
+    }
+
+    fileprivate func dumpFootnote(_ value: Footnote) {
+        state.line(
+            "Footnote",
+            scope: value.scope,
+            fields: ["id=\(jsonString(value.id))"],
+            children: value.content.count
+        )
+        state.nested(value.content.count) { value.content.forEach(state.dump) }
+    }
+
+    fileprivate func dumpSpecimen(_ value: Specimen) {
+        state.line(
+            "Specimen",
+            scope: value.scope,
+            fields: ["id=\(optionalString(value.id))", "start=\(value.start.map(String.init) ?? "null")"],
+            children: value.content.count
+        )
+        state.nested(value.content.count) { value.content.forEach(state.dump) }
+    }
+
+    fileprivate func dumpCitation(_ value: Citation) {
+        state.line(
+            "Citation",
+            scope: value.scope,
+            fields: ["referent=\(referentString(value.referent))"],
+            children: 0
+        )
+        state.nested(2) {
+            state.group("CitationPrefix", children: value.prefix.count)
+            state.nested(value.prefix.count) { value.prefix.forEach(state.dump) }
+            state.group("CitationSuffix", children: value.suffix.count)
+            state.nested(value.suffix.count) { value.suffix.forEach(state.dump) }
+        }
+    }
 }

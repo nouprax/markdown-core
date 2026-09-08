@@ -37,6 +37,13 @@ static void sweep_free(void *pointer) { free(pointer); }
 
 static markdown_core_mem sweep_mem = {sweep_calloc, sweep_realloc, sweep_free};
 
+static const char OOM_PROPERTIES_CORPUS[] =
+    "---\n# ignored\nname: \"large\\u0020text\"\nunknown: *a\nauthors: [1, \"two\", three]\n"
+    "keywords: [true]\nkeywords: [\"\\uD83D\\uDE80\"]\nname: duplicate\n...\nnot YAML\n"
+    "abstract: |\n  one\n\n  two\ncomment: &a [true]\ncomment: |\n  prose\nstate: true\n---\nbody\n";
+static const char OOM_PROPERTIES_ARRAY_CORPUS[] = "---\nname: x[\nauthors: [\"two\", 3]\nabstract: {nested: 1}\n"
+                                                  "date: 4\ncomment: \"bad\\q\"\nkeywords: []\nstate: ready\n---\n";
+
 static const char OOM_CORPUS[] = "[[Note]] [[Note|]] ![[#^block|alias]] [[a#Heading|label]]\n\n"
                                  "Setext heading\n---\n\n"
                                  "# Heading *one*\n"
@@ -148,6 +155,8 @@ typedef struct oom_case {
 } oom_case;
 
 static const oom_case OOM_CASES[] = {
+    {"properties", OOM_PROPERTIES_CORPUS, sizeof(OOM_PROPERTIES_CORPUS) - 1},
+    {"properties flow", OOM_PROPERTIES_ARRAY_CORPUS, sizeof(OOM_PROPERTIES_ARRAY_CORPUS) - 1},
     {"task markers", OOM_TASK_CORPUS, sizeof(OOM_TASK_CORPUS) - 1},
     {"inline footnotes", OOM_INLINE_FOOTNOTE_CORPUS, sizeof(OOM_INLINE_FOOTNOTE_CORPUS) - 1},
     {"comments", OOM_COMMENT_CORPUS, sizeof(OOM_COMMENT_CORPUS) - 1},

@@ -106,7 +106,7 @@ that settled it.
   in #191.
 - `Citation`, `Footnote`, and `Specimen` are scoped values with callbacks;
   `TableCaption`, `Definition`, and `DefinitionList` are `Markup` kinds;
-  `Metadata` and `MetadataRecord` are scoped values without callbacks;
+  `Metadata` carries an envelope scope and direct fields without callbacks;
   `TableColumn`, `Destination`, `CitationReferent`, and `Attributes` are
   unscoped values. Scope ground rule.
 - A bare `@label` with no bracketed tail naming a registered specimen label is

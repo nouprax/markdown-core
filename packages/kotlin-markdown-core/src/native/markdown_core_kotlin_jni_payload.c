@@ -462,66 +462,71 @@ static void write_attributes(jni_payload_buffer *buffer, const markdown_core_nod
     }
 }
 
+static void write_metadata_value(jni_payload_buffer *buffer, const markdown_core_metadata_value *record) {
+    put_u8(buffer, record ? 1 : 0);
+    if (!record) {
+        return;
+    }
+    markdown_core_metadata_value_kind kind = markdown_core_metadata_value_get_kind(record);
+    put_u8(buffer, (uint8_t)kind);
+    if (kind == MARKDOWN_CORE_METADATA_SCALAR) {
+        markdown_core_metadata_scalar value;
+        if (!markdown_core_metadata_value_scalar(record, &value)) {
+            buffer->failure = JNI_PAYLOAD_INTERNAL;
+            return;
+        }
+        put_u8(buffer, (uint8_t)value.kind);
+        switch (value.kind) {
+        case MARKDOWN_CORE_METADATA_NULL:
+            break;
+        case MARKDOWN_CORE_METADATA_BOOL:
+            put_u8(buffer, value.value.boolean ? 1 : 0);
+            break;
+        case MARKDOWN_CORE_METADATA_NUMBER:
+        case MARKDOWN_CORE_METADATA_TEXT:
+            put_string(buffer, value.value.string, true);
+            break;
+        default:
+            buffer->failure = JNI_PAYLOAD_INTERNAL;
+            return;
+        }
+    } else if (kind == MARKDOWN_CORE_METADATA_LIST) {
+        size_t items = markdown_core_metadata_value_item_count(record);
+        if (items > INT32_MAX) {
+            buffer->failure = JNI_PAYLOAD_ALLOCATION;
+            return;
+        }
+        put_i32(buffer, (int32_t)items);
+        for (size_t j = 0; j < items; j++) {
+            markdown_core_metadata_list_item item;
+            if (!markdown_core_metadata_value_item_at(record, j, &item)) {
+                buffer->failure = JNI_PAYLOAD_INTERNAL;
+                return;
+            }
+            put_u8(buffer, (uint8_t)item.kind);
+            put_string(buffer, item.value, true);
+        }
+    } else {
+        buffer->failure = JNI_PAYLOAD_INTERNAL;
+        return;
+    }
+}
 static void write_metadata(jni_payload_buffer *buffer, const markdown_core_metadata *metadata) {
     put_u8(buffer, metadata ? 1 : 0);
     if (!metadata) {
         return;
     }
     put_scope(buffer, markdown_core_metadata_scope(metadata));
-    size_t count = markdown_core_metadata_record_count(metadata);
-    if (count > INT32_MAX) {
-        buffer->failure = JNI_PAYLOAD_ALLOCATION;
-        return;
-    }
-    put_i32(buffer, (int32_t)count);
-    for (size_t i = 0; i < count; i++) {
-        const markdown_core_metadata_record *record = markdown_core_metadata_record_at(metadata, i);
-        put_scope(buffer, markdown_core_metadata_record_scope(record));
-        put_string(buffer, markdown_core_metadata_record_name(record), true);
-        markdown_core_metadata_value_kind kind = markdown_core_metadata_record_kind(record);
-        put_u8(buffer, (uint8_t)kind);
-        if (kind == MARKDOWN_CORE_METADATA_SCALAR) {
-            markdown_core_metadata_scalar value;
-            if (!markdown_core_metadata_record_scalar(record, &value)) {
-                buffer->failure = JNI_PAYLOAD_INTERNAL;
-                return;
-            }
-            put_u8(buffer, (uint8_t)value.kind);
-            switch (value.kind) {
-            case MARKDOWN_CORE_METADATA_NULL:
-                break;
-            case MARKDOWN_CORE_METADATA_BOOL:
-                put_u8(buffer, value.value.boolean ? 1 : 0);
-                break;
-            case MARKDOWN_CORE_METADATA_NUMBER:
-            case MARKDOWN_CORE_METADATA_TEXT:
-                put_string(buffer, value.value.string, true);
-                break;
-            default:
-                buffer->failure = JNI_PAYLOAD_INTERNAL;
-                return;
-            }
-        } else if (kind == MARKDOWN_CORE_METADATA_LIST) {
-            size_t items = markdown_core_metadata_record_item_count(record);
-            if (items > INT32_MAX) {
-                buffer->failure = JNI_PAYLOAD_ALLOCATION;
-                return;
-            }
-            put_i32(buffer, (int32_t)items);
-            for (size_t j = 0; j < items; j++) {
-                markdown_core_metadata_list_item item;
-                if (!markdown_core_metadata_record_item_at(record, j, &item)) {
-                    buffer->failure = JNI_PAYLOAD_INTERNAL;
-                    return;
-                }
-                put_u8(buffer, (uint8_t)item.kind);
-                put_string(buffer, item.value, true);
-            }
-        } else {
-            buffer->failure = JNI_PAYLOAD_INTERNAL;
-            return;
-        }
-    }
+    write_metadata_value(buffer, markdown_core_metadata_name(metadata));
+    write_metadata_value(buffer, markdown_core_metadata_title(metadata));
+    write_metadata_value(buffer, markdown_core_metadata_subtitle(metadata));
+    write_metadata_value(buffer, markdown_core_metadata_time(metadata));
+    write_metadata_value(buffer, markdown_core_metadata_date(metadata));
+    write_metadata_value(buffer, markdown_core_metadata_authors(metadata));
+    write_metadata_value(buffer, markdown_core_metadata_keywords(metadata));
+    write_metadata_value(buffer, markdown_core_metadata_abstract(metadata));
+    write_metadata_value(buffer, markdown_core_metadata_state(metadata));
+    write_metadata_value(buffer, markdown_core_metadata_comment(metadata));
 }
 
 static void write_node(jni_payload_buffer *buffer, jni_payload_stack *stack, jni_payload_resources *resources,

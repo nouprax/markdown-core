@@ -1,0 +1,4 @@
+Document scope=1:1..29:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..28:3 name=scalar(text("x[")) title=null subtitle=null time=scalar(number("3")) date=null authors=list([text("text ["),text("second")]) keywords=list([text("one"),number("2")]) abstract=scalar(text("keep { [ ' punctuation\n\nname: literal\n")) state=scalar(text("ready")) comment=scalar(text("# prose\n---\n")) children=0
+└── Paragraph scope=29:1..29:4 anchor=null attributes={} children=1
+    └── Text scope=29:1..29:4 anchor=null attributes={} literal="body" children=0

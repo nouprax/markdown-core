@@ -94,38 +94,35 @@ class JniPayloadDecoderTest {
                 0,
                 1.toByte(),
                 *scope(),
-                6, // metadata and six ordered records
-                *scope(),
-                *string("key"),
+                1.toByte(), // name: explicit null
                 1.toByte(),
                 0.toByte(),
-                *scope(),
-                *string("key"),
+                1.toByte(), // title: boolean
                 1.toByte(),
                 scalarKind,
                 1.toByte(),
-                *scope(),
-                *string("n"),
+                1.toByte(), // subtitle: exact number
                 1.toByte(),
                 2.toByte(),
                 *string("9007199254740993"),
-                *scope(),
-                *string("s"),
+                1.toByte(), // time: text
                 1.toByte(),
                 3.toByte(),
                 *string("中文\nquoted"),
-                *scope(),
-                *string("empty"),
+                1.toByte(), // date: empty list
                 2.toByte(),
                 0,
-                *scope(),
-                *string("list"),
+                1.toByte(), // authors: list
                 2.toByte(),
                 2,
                 1.toByte(),
                 *string("1.25"),
                 2.toByte(),
                 *string(""),
+                0.toByte(), // keywords, abstract, state, comment absent
+                0.toByte(),
+                0.toByte(),
+                0.toByte(),
                 2, // two image occurrences sharing one resource
                 23.toByte(),
                 *scope(),
@@ -162,19 +159,18 @@ class JniPayloadDecoderTest {
         val bytes = payload()
         val document = JniPayloadDecoder.decodeDocument(bytes)
         bytes.fill(0)
-        val records = document.metadata!!.records
-        assertEquals(6, records.size)
-        assertEquals("key", records[0].name)
-        assertEquals("key", records[1].name)
-        assertEquals(MetadataScalar.Null, assertIs<MetadataValue.Scalar>(records[0].value).value)
-        assertEquals(MetadataScalar.Bool(true), assertIs<MetadataValue.Scalar>(records[1].value).value)
-        assertEquals(MetadataScalar.Number("9007199254740993"), assertIs<MetadataValue.Scalar>(records[2].value).value)
-        assertEquals(MetadataScalar.Text("中文\nquoted"), assertIs<MetadataValue.Scalar>(records[3].value).value)
-        assertEquals(emptyList(), assertIs<MetadataValue.List>(records[4].value).items)
+        val metadata = document.metadata!!
+        assertEquals(MetadataScalar.Null, assertIs<MetadataValue.Scalar>(metadata.name).value)
+        assertEquals(MetadataScalar.Bool(true), assertIs<MetadataValue.Scalar>(metadata.title).value)
+        assertEquals(MetadataScalar.Number("9007199254740993"), assertIs<MetadataValue.Scalar>(metadata.subtitle).value)
+        assertEquals(MetadataScalar.Text("中文\nquoted"), assertIs<MetadataValue.Scalar>(metadata.time).value)
+        assertEquals(emptyList(), assertIs<MetadataValue.List>(metadata.date).items)
         assertEquals(
             listOf(MetadataListItem.Number("1.25"), MetadataListItem.Text("")),
-            assertIs<MetadataValue.List>(records[5].value).items,
+            assertIs<MetadataValue.List>(metadata.authors).items,
         )
+        assertEquals(null, metadata.keywords)
+        assertEquals(null, metadata.comment)
         val first = document.content[0] as Image
         val second = document.content[1] as Image
         assertTrue(first.dest === second.dest)
@@ -183,7 +179,7 @@ class JniPayloadDecoderTest {
         assertEquals("first", first.anchor)
         assertEquals(listOf("a", "a"), first.attributes.classes)
         assertEquals(listOf(Record("k", "1"), Record("k", "2")), first.attributes.records)
-        assertTrue(document.dump().contains("value=scalar(number(\"9007199254740993\"))"))
+        assertTrue(document.dump().contains("subtitle=scalar(number(\"9007199254740993\"))"))
         val visitor = RecordingWalkingVisitor()
         document.walk(visitor)
         assertTrue(visitor.events.none { it.contains("Metadata") })

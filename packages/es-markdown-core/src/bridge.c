@@ -65,7 +65,7 @@ enum {
     ES_KIND_FOOTNOTE = 0x101,
     ES_KIND_SPECIMEN = 0x102,
     ES_KIND_METADATA = 0x103,
-    ES_KIND_METADATA_RECORD = 0x104
+    ES_KIND_METADATA_VALUE = 0x104
 };
 
 typedef struct es_source_node {
@@ -76,7 +76,7 @@ typedef struct es_source_node {
     const markdown_core_footnote *footnote;
     const markdown_core_specimen *specimen;
     const markdown_core_metadata *metadata;
-    const markdown_core_metadata_record *metadata_record;
+    const markdown_core_metadata_value *metadata_value;
     markdown_core_optional_string anchor;
     uint32_t class_start, class_count, record_start, record_count, metadata_index;
     uint32_t width, height;
@@ -376,26 +376,33 @@ static size_t append_chain(es_build *build, const markdown_core_node *first) {
 static void collect_value_topology(es_build *build, size_t cursor) {
     const markdown_core_metadata *metadata = build->nodes[cursor].metadata;
     if (metadata) {
-        size_t count = markdown_core_metadata_record_count(metadata);
+        /* Wire edges carry present field values in fixed contract order. */
+        const markdown_core_metadata_value *values[] = {
+            markdown_core_metadata_name(metadata),     markdown_core_metadata_title(metadata),
+            markdown_core_metadata_subtitle(metadata), markdown_core_metadata_time(metadata),
+            markdown_core_metadata_date(metadata),     markdown_core_metadata_authors(metadata),
+            markdown_core_metadata_keywords(metadata), markdown_core_metadata_abstract(metadata),
+            markdown_core_metadata_state(metadata),    markdown_core_metadata_comment(metadata),
+        };
         build->nodes[cursor].child_start = (uint32_t)build->edge_count;
-        if (count > UINT32_MAX) {
-            build->failure = ES_BUILD_ALLOCATION;
-            return;
-        }
-        for (size_t i = 0; i < count && build->failure == ES_BUILD_OK; i++) {
+        for (size_t i = 0; i < sizeof(values) / sizeof(*values) && build->failure == ES_BUILD_OK; i++) {
+            if (!values[i]) {
+                continue;
+            }
             es_source_node value = {0};
-            value.wire_kind = ES_KIND_METADATA_RECORD;
-            value.metadata_record = markdown_core_metadata_record_at(metadata, i);
+            value.wire_kind = ES_KIND_METADATA_VALUE;
+            value.metadata_value = values[i];
             uint32_t index = append_record(build, value);
             if (index == ES_NO_INDEX) {
                 return;
             }
             append_edge(build, index);
+            build->nodes[cursor].flags |= 1u << i;
             build->nodes[cursor].child_count++;
         }
         return;
     }
-    if (build->nodes[cursor].metadata_record) {
+    if (build->nodes[cursor].metadata_value) {
         return;
     }
     const markdown_core_citation *citation = build->nodes[cursor].citation;
@@ -564,13 +571,12 @@ static void collect_value_fields(es_build *build, es_source_node *record) {
     if (record->metadata) {
         return;
     }
-    if (record->metadata_record) {
-        const markdown_core_metadata_record *metadata = record->metadata_record;
-        record->strings[0] = required_string(markdown_core_metadata_record_name(metadata));
-        record->scalar0 = (int32_t)markdown_core_metadata_record_kind(metadata);
+    if (record->metadata_value) {
+        const markdown_core_metadata_value *metadata = record->metadata_value;
+        record->scalar0 = (int32_t)markdown_core_metadata_value_get_kind(metadata);
         if (record->scalar0 == MARKDOWN_CORE_METADATA_SCALAR) {
             markdown_core_metadata_scalar value;
-            if (!markdown_core_metadata_record_scalar(metadata, &value)) {
+            if (!markdown_core_metadata_value_scalar(metadata, &value)) {
                 build->failure = ES_BUILD_INTERNAL;
                 return;
             }
@@ -584,7 +590,7 @@ static void collect_value_fields(es_build *build, es_source_node *record) {
                 return;
             }
         } else if (record->scalar0 == MARKDOWN_CORE_METADATA_LIST) {
-            size_t count = markdown_core_metadata_record_item_count(metadata);
+            size_t count = markdown_core_metadata_value_item_count(metadata);
             if (count > UINT32_MAX) {
                 build->failure = ES_BUILD_ALLOCATION;
                 return;
@@ -593,7 +599,7 @@ static void collect_value_fields(es_build *build, es_source_node *record) {
             record->aux_count = (uint32_t)count;
             for (size_t i = 0; i < count; i++) {
                 markdown_core_metadata_list_item item;
-                if (!markdown_core_metadata_record_item_at(metadata, i, &item)) {
+                if (!markdown_core_metadata_value_item_at(metadata, i, &item)) {
                     build->failure = ES_BUILD_INTERNAL;
                     return;
                 }
@@ -1022,7 +1028,7 @@ static uint8_t *success_result(const es_build *build, es_build_failure *failure)
                                     : source->footnote ? markdown_core_footnote_scope(source->footnote)
                                     : source->specimen ? markdown_core_specimen_scope(source->specimen)
                                     : source->metadata ? markdown_core_metadata_scope(source->metadata)
-                                                       : markdown_core_metadata_record_scope(source->metadata_record);
+                                                       : (markdown_core_scope){0};
         size_t node_offset = nodes_offset + index * ES_NODE_SIZE;
         size_t string_index;
         put_u32(output, node_offset + ES_NODE_KIND, source->wire_kind);

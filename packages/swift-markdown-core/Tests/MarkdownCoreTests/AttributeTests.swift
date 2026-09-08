@@ -3,6 +3,26 @@ import Testing
 @testable import MarkdownCore
 
 extension APISuite {
+    @Test("Properties keep recognized fields and literal prose after native release")
+    func propertiesContent() throws {
+        let source =
+            "---\r\nname: 9007199254740993\r\nnot YAML\r\n...\r\nunknown: ignored\r\n"
+            + "comment: *x\r\nname: duplicate\r\nabstract: |\r\n  first\r\n\r\n  second\r\n"
+            + "comment: |\r\n  # prose\r\n---\r\nbody\r\n"
+        let document = try Document.parse(source)
+        let metadata = try #require(document.metadata)
+        #expect(
+            [metadata.name, metadata.abstract, metadata.comment] == [
+                .scalar(.number("9007199254740993")), .scalar(.text("first\n\nsecond\n")), .scalar(.text("# prose\n")),
+            ]
+        )
+        #expect(metadata.scope.end.line == 14)
+        #expect(document.content[0].scope.start.line == 15)
+        let empty = try #require(Document.parse("---\nunknown: 1\nfree text\n---").metadata)
+        #expect(empty == Metadata(scope: empty.scope))
+        #expect(try Document.parse("---\nname: 1\n").metadata == nil)
+    }
+
     @Test("universal attributes retain ordered values after native document release")
     func universalAttributes() throws {
         let parsed = try Document.parse(":n{#id .a class=\"a b}c\" k=1 k=2}")
@@ -23,7 +43,12 @@ extension APISuite {
             .scalar(.text("中文\nquoted")), .list([]), .list([.number("1.25"), .text("")]),
         ]
         let metadata = Metadata(
-            records: values.map { MetadataRecord(name: "key", value: $0, scope: parsed.scope) },
+            name: values[0],
+            title: values[1],
+            subtitle: values[2],
+            time: values[3],
+            date: values[4],
+            authors: values[5],
             scope: parsed.scope
         )
         let document = Document(
@@ -35,9 +60,15 @@ extension APISuite {
             footnotes: [],
             specimens: []
         )
-        #expect(document.metadata?.records.map(\.value) == values)
-        #expect(document.dump().contains("value=scalar(number(\"9007199254740993\"))"))
-        #expect(document.dump().contains("value=list([])"))
+        #expect(
+            [
+                document.metadata?.name, document.metadata?.title, document.metadata?.subtitle,
+                document.metadata?.time, document.metadata?.date, document.metadata?.authors,
+            ]
+                == values
+        )
+        #expect(document.dump().contains("subtitle=scalar(number(\"9007199254740993\"))"))
+        #expect(document.dump().contains("date=list([])"))
         var visitor = RecordingWalkingVisitor()
         document.walk(with: &visitor)
         #expect(!visitor.events.contains { $0.contains("Metadata") })

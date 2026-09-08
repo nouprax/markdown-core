@@ -3,7 +3,6 @@ import {
     Attributes,
     type Record,
     type Metadata,
-    type MetadataRecord,
     type MetadataValue,
     type MetadataScalar,
     type MetadataListItem,
@@ -129,8 +128,19 @@ const record: Record = { name: "k", value: "1" };
 const scalar: MetadataScalar = { kind: "number", value: "9007199254740993" };
 const listItem: MetadataListItem = { kind: "text", value: "" };
 const metadataValue: MetadataValue = { kind: "scalar", value: scalar };
-const metadataRecord: MetadataRecord = { name: "k", value: metadataValue, scope: document.scope };
-const metadata: Metadata = { records: [metadataRecord], scope: document.scope };
+const metadata: Metadata = {
+    name: metadataValue,
+    title: null,
+    subtitle: null,
+    time: null,
+    date: null,
+    authors: null,
+    keywords: null,
+    abstract: null,
+    state: null,
+    comment: null,
+    scope: document.scope
+};
 const parsedMetadata: Metadata | null = document.metadata;
 void [anchor, attributes, empty, record, listItem, metadata, parsedMetadata];
 declare const image: Image;
@@ -138,8 +148,8 @@ const dimensions: readonly (number | null)[] = [image.width, image.height];
 void dimensions;
 // @ts-expect-error inherited attributes are recursively readonly
 attributes.classes[0] = "replacement";
-// @ts-expect-error metadata collections are recursively readonly
-metadata.records[0] = metadataRecord;
+// @ts-expect-error metadata fields are readonly
+metadata.name = metadataValue;
 // @ts-expect-error an attribute record is a value, not Markup
 const recordMarkup: Markup = record;
 void recordMarkup;

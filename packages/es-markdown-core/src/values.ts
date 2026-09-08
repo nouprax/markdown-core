@@ -54,12 +54,16 @@ export interface Attributes {
 }
 export const Attributes: { readonly empty: Attributes } = { empty: { classes: [], records: [] } };
 export interface Metadata {
-    readonly records: readonly MetadataRecord[];
-    readonly scope: Scope;
-}
-export interface MetadataRecord {
-    readonly name: string;
-    readonly value: MetadataValue;
+    readonly name: MetadataValue | null;
+    readonly title: MetadataValue | null;
+    readonly subtitle: MetadataValue | null;
+    readonly time: MetadataValue | null;
+    readonly date: MetadataValue | null;
+    readonly authors: MetadataValue | null;
+    readonly keywords: MetadataValue | null;
+    readonly abstract: MetadataValue | null;
+    readonly state: MetadataValue | null;
+    readonly comment: MetadataValue | null;
     readonly scope: Scope;
 }
 export type MetadataValue =
