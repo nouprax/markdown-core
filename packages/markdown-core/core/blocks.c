@@ -2419,14 +2419,16 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
 }
 
 /* Step 14, after every ordinary block opener has declined the line. The
- * preceding block has finalized under this same parent. The shared lookahead
- * proves a following blank line belongs to that parent, not an outer one. */
+ * preceding block has finalized under this same parent. Its scope must reach
+ * the preceding nonblank content, including definitions no longer in the
+ * tree. The shared lookahead proves a following blank line belongs to that
+ * parent, not an outer one. */
 static bool S_attach_identifier_line(markdown_core_parser *parser, markdown_core_node *parent,
                                      markdown_core_chunk *input) {
     markdown_core_node *owner = parent->last_child;
     block_identifier candidate;
     if (parser->indent >= CODE_INDENT || input->data[parser->first_nonspace] != '#' || !owner ||
-        owner->attributes.anchor.len ||
+        owner->attributes.anchor.len || owner->end_line < parser->last_nonblank_line ||
         (S_type(owner) != MARKDOWN_CORE_NODE_LIST && S_type(owner) != MARKDOWN_CORE_NODE_CALLOUT &&
          S_type(owner) != MARKDOWN_CORE_NODE_TABLE) ||
         !S_scan_block_identifier(parser, input->data + parser->first_nonspace, input->len - parser->first_nonspace,
@@ -2631,6 +2633,9 @@ static void S_process_line(markdown_core_parser *parser, const unsigned char *bu
     add_text_to_container(parser, container, last_matched_container, &input);
 
 finished:
+    if (!parser->blank) {
+        parser->last_nonblank_line = parser->line_number;
+    }
     /* M0: measured from `curline`, not from `input`. The two share their
      * bytes, but `chop_trailing_hashtags` shortens `input` to an ATX
      * heading's content before the line is added, and a block that ends on

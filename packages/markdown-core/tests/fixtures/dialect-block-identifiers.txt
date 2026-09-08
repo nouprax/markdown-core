@@ -902,3 +902,275 @@ Document scope=1:1..6:6 anchor=null attributes={} children=3
     └── Link scope=6:1..6:6 anchor=null attributes={} dest=url("/url") title=null children=1
         └── Text scope=6:2..6:5 anchor=null attributes={} literal="link" children=0
 ````````````````````````````````
+
+## reference-gap-list
+
+```````````````````````````````` example
+- a
+
+[ref]: /x
+
+#list#
+
+[ref]
+.
+Document scope=1:1..7:5 anchor=null attributes={} children=3
+├── List scope=1:1..2:0 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+│   └── ListItem scope=1:1..2:0 anchor=null attributes={} marker=null children=1
+│       └── Paragraph scope=1:3..1:3 anchor=null attributes={} children=1
+│           └── Text scope=1:3..1:3 anchor=null attributes={} literal="a" children=0
+├── Paragraph scope=5:1..5:6 anchor=null attributes={} children=1
+│   └── Text scope=5:1..5:6 anchor=null attributes={} literal="#list#" children=0
+└── Paragraph scope=7:1..7:5 anchor=null attributes={} children=1
+    └── Link scope=7:1..7:5 anchor=null attributes={} dest=url("/x") title=null children=1
+        └── Text scope=7:2..7:4 anchor=null attributes={} literal="ref" children=0
+````````````````````````````````
+
+## reference-gap-callout
+
+```````````````````````````````` example
+> a
+
+[ref]: /x
+
+#quote#
+
+[ref]
+.
+Document scope=1:1..7:5 anchor=null attributes={} children=3
+├── Callout scope=1:1..1:3 anchor=null attributes={} variant=null collapsed=null children=1
+│   └── Paragraph scope=1:3..1:3 anchor=null attributes={} children=1
+│       └── Text scope=1:3..1:3 anchor=null attributes={} literal="a" children=0
+├── Paragraph scope=5:1..5:7 anchor=null attributes={} children=1
+│   └── Text scope=5:1..5:7 anchor=null attributes={} literal="#quote#" children=0
+└── Paragraph scope=7:1..7:5 anchor=null attributes={} children=1
+    └── Link scope=7:1..7:5 anchor=null attributes={} dest=url("/x") title=null children=1
+        └── Text scope=7:2..7:4 anchor=null attributes={} literal="ref" children=0
+````````````````````````````````
+
+## reference-gap-table
+
+```````````````````````````````` example
+| h |
+| - |
+
+[ref]: /x
+
+#table#
+
+[ref]
+.
+Document scope=1:1..8:5 anchor=null attributes={} children=3
+├── Table scope=1:1..2:5 anchor=null attributes={} columns=[none:null] children=1
+│   ├── TableHead children=1
+│   │   └── TableRow scope=1:1..1:5 anchor=null attributes={} children=1
+│   │       └── TableCell scope=1:2..1:4 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │           └── Text scope=1:3..1:3 anchor=null attributes={} literal="h" children=0
+│   ├── TableBody children=0
+│   └── TableFoot children=0
+├── Paragraph scope=6:1..6:7 anchor=null attributes={} children=1
+│   └── Text scope=6:1..6:7 anchor=null attributes={} literal="#table#" children=0
+└── Paragraph scope=8:1..8:5 anchor=null attributes={} children=1
+    └── Link scope=8:1..8:5 anchor=null attributes={} dest=url("/x") title=null children=1
+        └── Text scope=8:2..8:4 anchor=null attributes={} literal="ref" children=0
+````````````````````````````````
+
+## reference-gap-nested-list
+
+```````````````````````````````` example
+> - a
+>
+> [ref]: /x
+>
+> #list#
+>
+> [ref]
+.
+Document scope=1:1..7:7 anchor=null attributes={} children=1
+└── Callout scope=1:1..7:7 anchor=null attributes={} variant=null collapsed=null children=3
+    ├── List scope=1:3..2:1 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+    │   └── ListItem scope=1:3..2:1 anchor=null attributes={} marker=null children=1
+    │       └── Paragraph scope=1:5..1:5 anchor=null attributes={} children=1
+    │           └── Text scope=1:5..1:5 anchor=null attributes={} literal="a" children=0
+    ├── Paragraph scope=5:3..5:8 anchor=null attributes={} children=1
+    │   └── Text scope=5:3..5:8 anchor=null attributes={} literal="#list#" children=0
+    └── Paragraph scope=7:3..7:7 anchor=null attributes={} children=1
+        └── Link scope=7:3..7:7 anchor=null attributes={} dest=url("/x") title=null children=1
+            └── Text scope=7:4..7:6 anchor=null attributes={} literal="ref" children=0
+````````````````````````````````
+
+## reference-gap-nested-callout
+
+```````````````````````````````` example
+- > a
+
+  [ref]: /x
+
+  #quote#
+
+  [ref]
+.
+Document scope=1:1..7:7 anchor=null attributes={} children=1
+└── List scope=1:1..7:7 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=false children=1
+    └── ListItem scope=1:1..7:7 anchor=null attributes={} marker=null children=3
+        ├── Callout scope=1:3..1:5 anchor=null attributes={} variant=null collapsed=null children=1
+        │   └── Paragraph scope=1:5..1:5 anchor=null attributes={} children=1
+        │       └── Text scope=1:5..1:5 anchor=null attributes={} literal="a" children=0
+        ├── Paragraph scope=5:3..5:9 anchor=null attributes={} children=1
+        │   └── Text scope=5:3..5:9 anchor=null attributes={} literal="#quote#" children=0
+        └── Paragraph scope=7:3..7:7 anchor=null attributes={} children=1
+            └── Link scope=7:3..7:7 anchor=null attributes={} dest=url("/x") title=null children=1
+                └── Text scope=7:4..7:6 anchor=null attributes={} literal="ref" children=0
+````````````````````````````````
+
+## reference-gap-directive
+
+```````````````````````````````` example
+:::box
+| h |
+| - |
+
+[ref]: /x
+
+#table#
+
+[ref]
+:::
+.
+Document scope=1:1..10:3 anchor=null attributes={} children=1
+└── DirectiveBlock scope=1:1..10:3 anchor=null attributes={} name="box" children=3
+    ├── Table scope=2:1..3:5 anchor=null attributes={} columns=[none:null] children=1
+    │   ├── TableHead children=1
+    │   │   └── TableRow scope=2:1..2:5 anchor=null attributes={} children=1
+    │   │       └── TableCell scope=2:2..2:4 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │   │           └── Text scope=2:3..2:3 anchor=null attributes={} literal="h" children=0
+    │   ├── TableBody children=0
+    │   └── TableFoot children=0
+    ├── Paragraph scope=7:1..7:7 anchor=null attributes={} children=1
+    │   └── Text scope=7:1..7:7 anchor=null attributes={} literal="#table#" children=0
+    └── Paragraph scope=9:1..9:5 anchor=null attributes={} children=1
+        └── Link scope=9:1..9:5 anchor=null attributes={} dest=url("/x") title=null children=1
+            └── Text scope=9:2..9:4 anchor=null attributes={} literal="ref" children=0
+````````````````````````````````
+
+## reference-inside-list
+
+```````````````````````````````` example
+- a
+
+  [ref]: /x
+
+#list#
+
+[ref]
+.
+Document scope=1:1..7:5 anchor=null attributes={} children=2
+├── List scope=1:1..5:6 anchor="list" attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+│   └── ListItem scope=1:1..4:0 anchor=null attributes={} marker=null children=1
+│       └── Paragraph scope=1:3..1:3 anchor=null attributes={} children=1
+│           └── Text scope=1:3..1:3 anchor=null attributes={} literal="a" children=0
+└── Paragraph scope=7:1..7:5 anchor=null attributes={} children=1
+    └── Link scope=7:1..7:5 anchor=null attributes={} dest=url("/x") title=null children=1
+        └── Text scope=7:2..7:4 anchor=null attributes={} literal="ref" children=0
+````````````````````````````````
+
+## reference-inside-callout
+
+```````````````````````````````` example
+> a
+>
+> [ref]: /x
+
+#quote#
+
+[ref]
+.
+Document scope=1:1..7:5 anchor=null attributes={} children=2
+├── Callout scope=1:1..5:7 anchor="quote" attributes={} variant=null collapsed=null children=1
+│   └── Paragraph scope=1:3..1:3 anchor=null attributes={} children=1
+│       └── Text scope=1:3..1:3 anchor=null attributes={} literal="a" children=0
+└── Paragraph scope=7:1..7:5 anchor=null attributes={} children=1
+    └── Link scope=7:1..7:5 anchor=null attributes={} dest=url("/x") title=null children=1
+        └── Text scope=7:2..7:4 anchor=null attributes={} literal="ref" children=0
+````````````````````````````````
+
+## reference-before-new-owner
+
+```````````````````````````````` example
+- a
+
+[ref]: /x
+
+> b
+
+#quote#
+
+[ref]
+.
+Document scope=1:1..9:5 anchor=null attributes={} children=3
+├── List scope=1:1..2:0 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+│   └── ListItem scope=1:1..2:0 anchor=null attributes={} marker=null children=1
+│       └── Paragraph scope=1:3..1:3 anchor=null attributes={} children=1
+│           └── Text scope=1:3..1:3 anchor=null attributes={} literal="a" children=0
+├── Callout scope=5:1..7:7 anchor="quote" attributes={} variant=null collapsed=null children=1
+│   └── Paragraph scope=5:3..5:3 anchor=null attributes={} children=1
+│       └── Text scope=5:3..5:3 anchor=null attributes={} literal="b" children=0
+└── Paragraph scope=9:1..9:5 anchor=null attributes={} children=1
+    └── Link scope=9:1..9:5 anchor=null attributes={} dest=url("/x") title=null children=1
+        └── Text scope=9:2..9:4 anchor=null attributes={} literal="ref" children=0
+````````````````````````````````
+
+## reference-gap-eof
+
+```````````````````````````````` example
+- a
+
+[ref]: /x
+
+#list#
+.
+Document scope=1:1..5:6 anchor=null attributes={} children=2
+├── List scope=1:1..2:0 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+│   └── ListItem scope=1:1..2:0 anchor=null attributes={} marker=null children=1
+│       └── Paragraph scope=1:3..1:3 anchor=null attributes={} children=1
+│           └── Text scope=1:3..1:3 anchor=null attributes={} literal="a" children=0
+└── Paragraph scope=5:1..5:6 anchor=null attributes={} children=1
+    └── Text scope=5:1..5:6 anchor=null attributes={} literal="#list#" children=0
+````````````````````````````````
+
+## reference-definition-before-paragraph-anchor
+
+```````````````````````````````` example
+[ref]: /x
+#id#
+
+[ref]
+.
+Document scope=1:1..4:5 anchor=null attributes={} children=2
+├── Paragraph scope=2:1..2:4 anchor=null attributes={} children=1
+│   └── Text scope=2:1..2:4 anchor=null attributes={} literal="#id#" children=0
+└── Paragraph scope=4:1..4:5 anchor=null attributes={} children=1
+    └── Link scope=4:1..4:5 anchor=null attributes={} dest=url("/x") title=null children=1
+        └── Text scope=4:2..4:4 anchor=null attributes={} literal="ref" children=0
+````````````````````````````````
+
+## footnote-gap-list
+
+```````````````````````````````` example
+- a
+
+[^ref]: note
+
+#list#
+.
+Document scope=1:1..5:6 anchor=null attributes={} children=2
+├── List scope=1:1..2:0 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+│   └── ListItem scope=1:1..2:0 anchor=null attributes={} marker=null children=1
+│       └── Paragraph scope=1:3..1:3 anchor=null attributes={} children=1
+│           └── Text scope=1:3..1:3 anchor=null attributes={} literal="a" children=0
+├── Paragraph scope=5:1..5:6 anchor=null attributes={} children=1
+│   └── Text scope=5:1..5:6 anchor=null attributes={} literal="#list#" children=0
+└── Footnote scope=3:1..4:0 id="ref" children=1
+    └── Paragraph scope=3:9..3:12 anchor=null attributes={} children=1
+        └── Text scope=3:9..3:12 anchor=null attributes={} literal="note" children=0
+````````````````````````````````

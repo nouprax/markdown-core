@@ -92,6 +92,10 @@ struct markdown_core_parser {
     markdown_core_strbuf curline;
     /* See the documentation for markdown_core_parser_get_last_line_length() in markdown_core.h */
     bufsize_t last_line_length;
+    /* Last processed line with content after container prefixes. Unlike the
+     * surviving block tree, this boundary retains reference-definition lines
+     * even when paragraph finalization consumes their entire node. */
+    int last_nonblank_line;
     /* Scratch for a source line containing NUL bytes; curline holds the
      * normalized line currently being parsed. */
     markdown_core_strbuf line_scratch;

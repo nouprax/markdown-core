@@ -92,8 +92,10 @@ blank lines and followed by one or more blank lines or the end of the
 document, attaches to the last block before those blank lines when that block
 is a `List`, `Callout`, or `Table`. The line, the blank lines, and the owner
 are direct content of the same container; for nested lists the owner is the
-outermost list at that level. The line produces no node, and the owner's
-scope extends over it:
+outermost list at that level. A reference definition between the owner and
+the identifier interrupts this adjacency even though the definition produces
+no node; a definition inside the owner does not. The line produces no node,
+and the owner's scope extends over it:
 
 ```````````````````````````````` example
 - a

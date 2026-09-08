@@ -3424,6 +3424,11 @@ static void block_identifier_linear_work(test_batch_runner *runner) {
         {"", "- item\n\n#id#\nnext\n\n", "", 0, 0},
         {"- item\n\n#id#\n", "\n", "next", 0, 1},
         {"", "lead #id#\n| h |\n| - |\n\n", "", 1, 0},
+        {"", "- item\n\n[ref]: /x\n\n#id#\n\n", "", 0, 0},
+        {"", "> - item\n>\n> [ref]: /x\n>\n> #id#\n>\n", "", 0, 0},
+        {"- item\n\n[ref]: /x\n", "\n", "#id#", 0, 0},
+        {"- item\n\n", "[ref]: /x\n\n", "#id#", 0, 0},
+        {"- item\n\n", "\n", "#id#", 0, 1},
     };
     for (size_t c = 0; c < sizeof(cases) / sizeof(*cases); c++) {
         for (size_t count = 128; count <= 8192; count *= 2) {
