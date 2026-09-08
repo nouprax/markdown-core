@@ -98,6 +98,14 @@ static const char OOM_EXTENSION_EDGE_CORPUS[] = ":inline[label]{.a class=\"\" .b
                                                 "| :--- | ---: |\n"
                                                 "| a | b |\n";
 
+/* Nested values, field owners, all reserved suffixes, and unsuccessful
+ * candidates must remain one all-or-nothing ownership transaction. */
+static const char OOM_INLINE_FOOTNOTE_CORPUS[] =
+    "^[a ^[b [^x]] www.example.com] :d[^[label]] ^[] ^[ \t ] ^[open\n\n"
+    "[outer ^[[inner](u)]](v) ^[==mark== %%comment%%]\n\n"
+    "[^inline-1]: reserved\n[^inline-1-1]: suffix\n[^inline-1-2]: suffix\n[^x]: ^[nested [^x]]\n\n"
+    "^[http://example.com] :d[^[www.example.com]] ^[outer :d[^[inner]]]\n";
+
 static const char OOM_MARK_CORPUS[] = "===a *b*=== ==c====d== ==[link](/u) <!--c-->==\n\n"
                                       "| ==h== |\n| --- |\n| ==x\\|y== |\n\ncall[^n]\n\n[^n]: ==note==\n";
 
@@ -135,6 +143,7 @@ typedef struct oom_case {
 } oom_case;
 
 static const oom_case OOM_CASES[] = {
+    {"inline footnotes", OOM_INLINE_FOOTNOTE_CORPUS, sizeof(OOM_INLINE_FOOTNOTE_CORPUS) - 1},
     {"comments", OOM_COMMENT_CORPUS, sizeof(OOM_COMMENT_CORPUS) - 1},
     {"marks", OOM_MARK_CORPUS, sizeof(OOM_MARK_CORPUS) - 1},
     {"full-feature", OOM_CORPUS, sizeof(OOM_CORPUS) - 1},

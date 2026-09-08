@@ -79,7 +79,7 @@ endif()
 if(MARKDOWN_CORE_SHARED)
     set(MARKDOWN_CORE_TEST_LIBRARIES libmarkdown-core-extensions)
 else()
-    set(MARKDOWN_CORE_TEST_LIBRARIES libmarkdown-core-extensions_static libmarkdown-core_static)
+    set(MARKDOWN_CORE_TEST_LIBRARIES libmarkdown-core-public-static)
 endif()
 
 # Shared native test support: fixture loading, byte comparison, deterministic
@@ -109,7 +109,7 @@ if(MARKDOWN_CORE_STATIC)
     target_include_directories(
         oom_runner PRIVATE "${MARKDOWN_CORE_CORE_SOURCE_DIR}" "${MARKDOWN_CORE_CORE_BINARY_DIR}"
                            "${MARKDOWN_CORE_EXTENSIONS_SOURCE_DIR}" "${MARKDOWN_CORE_EXTENSIONS_BINARY_DIR}")
-    target_link_libraries(oom_runner libmarkdown-core-extensions_static libmarkdown-core_static)
+    target_link_libraries(oom_runner libmarkdown-core-public-static)
 endif()
 markdown_core_add_runner(entity_runner runners/entity_runner.c)
 markdown_core_add_runner(dump_cli_runner runners/dump_cli_runner.c)
@@ -331,6 +331,8 @@ markdown_core_add_test(
     "${MARKDOWN_CORE_CANONICAL_AST_DIR}/formulas.md"
     --corpus
     "${MARKDOWN_CORE_CANONICAL_AST_DIR}/inlines.md"
+    --corpus
+    "${MARKDOWN_CORE_CANONICAL_AST_DIR}/inline-footnotes.md"
     --corpus
     "${MARKDOWN_CORE_CANONICAL_AST_DIR}/marks.md"
     --corpus

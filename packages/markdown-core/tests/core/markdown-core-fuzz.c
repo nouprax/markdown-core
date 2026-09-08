@@ -8,18 +8,12 @@
 
 int LLVMFuzzerInitialize(int *argc, char ***argv) { return 0; }
 
-static bool attach_core_extensions(markdown_core_parser *parser, void *context) {
-    (void)context;
-    return markdown_core_core_extensions_attach(parser) != 0;
-}
-
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
-    /* The whole input is Markdown, parsed as the one dialect: the engine
-     * configuration `markdown-core-extensions.h` states. The dialect has no
+    /* The whole input is Markdown, parsed as the one dialect: the engine always
+     * attaches every extension. The dialect has no
      * switches, so there is no configuration prefix to fuzz. */
-    markdown_core_node *doc =
-        markdown_core_parse_document_with_mem((const char *)data, size, MARKDOWN_CORE_DIALECT_OPTIONS,
-                                              markdown_core_get_default_mem_allocator(), attach_core_extensions, NULL);
+    markdown_core_node *doc = markdown_core_parse_document_with_mem(
+        (const char *)data, size, markdown_core_get_default_mem_allocator(), NULL, NULL);
     if (!doc) {
         return 0;
     }

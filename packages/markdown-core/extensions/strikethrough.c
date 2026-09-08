@@ -34,8 +34,7 @@ static markdown_core_node *match(const markdown_core_extension *self, markdown_c
         return NULL;
     }
 
-    if ((left_flanking || right_flanking) &&
-        (delims == 2 || (!(parser->options & MARKDOWN_CORE_OPT_STRIKETHROUGH_DOUBLE_TILDE) && delims == 1))) {
+    if ((left_flanking || right_flanking) && (delims == 1 || delims == 2)) {
         markdown_core_inline_parser_push_delimiter(inline_parser, self, MARKDOWN_CORE_DELIM_RULE_STRIKETHROUGH,
                                                    left_flanking, right_flanking, res);
     }

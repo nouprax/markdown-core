@@ -196,7 +196,9 @@ under it. Nested value and group lines are never counted by their owner.
 - `Document` prints its content, then one `Footnote` value line per element
   of `footnotes`, in that order, each with `id` as its one field and a
   `children` counting its content, which nests one level below it. The
-  document's own `children` counts the content alone.
+  document's own `children` counts the content alone. An inline footnote nests
+  its inline body directly under the value line; no `Paragraph` is synthesized.
+  Referenced and inline values share scope-start order.
 
 Example, for the source `[^a]` followed by a blank line and `[^a]: note`:
 

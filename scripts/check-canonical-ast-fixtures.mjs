@@ -54,9 +54,9 @@ function parentEdges(tree) {
     }
     return edges;
 }
-// A `Footnote` is a scoped value rather than a kind, and its content is block
-// content, so a comment nested under it is block-placed (M4).
-const BLOCK_CONTENT = new Set(["Document", "Callout", "ListItem", "Footnote", "Specimen", "DirectiveBlock"]);
+// A direct Footnote child can be inline or block content, so that parent
+// alone cannot witness a comment placement. Use unambiguous content owners.
+const BLOCK_CONTENT = new Set(["Document", "Callout", "ListItem", "Specimen", "DirectiveBlock"]);
 const INLINE_CONTENT = new Set([
     "Paragraph",
     "Heading",
@@ -191,6 +191,10 @@ const stateValidators = {
     "citation.affix.empty": (tree) => /CitationPrefix children=0\n.*CitationSuffix children=0(?:\n|$)/.test(tree),
     "document.specimens.empty": (tree) =>
         tree.startsWith("Document scope=") && !/^(?:├──|└──) Specimen scope=/m.test(tree),
+    "footnote.content.inline": (tree) =>
+        parentEdges(tree).some((edge) => edge.parent === "Footnote" && edge.kind === "Text"),
+    "footnote.content.block": (tree) =>
+        parentEdges(tree).some((edge) => edge.parent === "Footnote" && edge.kind === "Paragraph"),
     "document.footnotes.empty": (tree) =>
         tree.startsWith("Document scope=") && !/^(?:├──|└──) Footnote scope=/m.test(tree),
     "document.footnotes.populated": (tree) => /^(?:├──|└──) Footnote scope=\S+ id="[^"]*" children=\d+$/m.test(tree)

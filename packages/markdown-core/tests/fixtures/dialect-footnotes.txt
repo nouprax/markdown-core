@@ -8,14 +8,9 @@ license: '[CC-BY-SA 4.0](http://creativecommons.org/licenses/by-sa/4.0/)'
 
 ## Referenced footnotes
 
-The examples of the [footnotes module](../../../../docs/specs/dialect/footnotes.md)
-whose behavior `M4` landed: the citation model over the inherited referenced
-form. They are the module's examples in the module's order; the inline-form
-examples arrive with `O4`. The expected dumps are the module's expected dumps in
-the dump grammar of today, which does not yet print the universal `anchor` and
-`attributes` fields that `M7` lands, so every `Markup` line differs from the
-module's by exactly ` anchor=null attributes={}` and by nothing else, and every
-`Citation`, `Footnote`, and group line is identical.
+Every example of the [footnotes module](../../../../docs/specs/dialect/footnotes.md)
+is retained byte for byte, followed by the O4 conformance boundaries. Referenced
+and inline forms share the same citation and document footnote model.
 
 A defined call is a one-item `Cite` whose `Citation` names the footnote by its normalized id with empty affixes, and every definition is a `Footnote` under `Document` after the content:
 
@@ -211,4 +206,783 @@ Document scope=1:1..4:9 anchor=null attributes={} children=1
 └── Footnote scope=4:1..4:9 id="b" children=1
     └── Paragraph scope=4:7..4:9 anchor=null attributes={} children=1
         └── Text scope=4:7..4:9 anchor=null attributes={} literal="end" children=0
+````````````````````````````````
+
+## Inline footnotes
+
+
+
+An unescaped `^` immediately followed by `[` pushes an inline-footnote opener onto the shared
+bracket stack at inline step A7. Every recognized inline footnote creates one
+`Footnote` whose content is the parsed inline body and one one-item `Cite`
+with referent `footnote(id)` and empty affixes:
+
+```````````````````````````````` example
+text^[an inline note]
+.
+Document scope=1:1..1:21 anchor=null attributes={} children=1
+├── Paragraph scope=1:1..1:21 anchor=null attributes={} children=2
+│   ├── Text scope=1:1..1:4 anchor=null attributes={} literal="text" children=0
+│   └── Cite scope=1:5..1:21 anchor=null attributes={} children=1
+│       └── Citation scope=1:7..1:20 referent=footnote(id="inline-1") children=0
+│           ├── CitationPrefix children=0
+│           └── CitationSuffix children=0
+└── Footnote scope=1:5..1:21 id="inline-1" children=1
+    └── Text scope=1:7..1:20 anchor=null attributes={} literal="an inline note" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+^[a *b*]
+.
+Document scope=1:1..1:8 anchor=null attributes={} children=1
+├── Paragraph scope=1:1..1:8 anchor=null attributes={} children=1
+│   └── Cite scope=1:1..1:8 anchor=null attributes={} children=1
+│       └── Citation scope=1:3..1:7 referent=footnote(id="inline-1") children=0
+│           ├── CitationPrefix children=0
+│           └── CitationSuffix children=0
+└── Footnote scope=1:1..1:8 id="inline-1" children=2
+    ├── Text scope=1:3..1:4 anchor=null attributes={} literal="a " children=0
+    └── Emphasis scope=1:5..1:7 anchor=null attributes={} children=1
+        └── Text scope=1:6..1:6 anchor=null attributes={} literal="b" children=0
+````````````````````````````````
+
+The `]` that matches the opener closes the footnote without attempting any
+link, reference, span, cite, or attribute tail, so `^[a](b)` is a `Cite`
+followed by text `(b)`. At one `^`, the inline footnote wins over a `[^label]`
+call and over superscript, so `^[^1]` is a footnote whose body is text `^1`:
+
+```````````````````````````````` example
+^[a](b) ^[^1]
+.
+Document scope=1:1..1:13 anchor=null attributes={} children=1
+├── Paragraph scope=1:1..1:13 anchor=null attributes={} children=3
+│   ├── Cite scope=1:1..1:4 anchor=null attributes={} children=1
+│   │   └── Citation scope=1:3..1:3 referent=footnote(id="inline-1") children=0
+│   │       ├── CitationPrefix children=0
+│   │       └── CitationSuffix children=0
+│   ├── Text scope=1:5..1:8 anchor=null attributes={} literal="(b) " children=0
+│   └── Cite scope=1:9..1:13 anchor=null attributes={} children=1
+│       └── Citation scope=1:11..1:12 referent=footnote(id="inline-2") children=0
+│           ├── CitationPrefix children=0
+│           └── CitationSuffix children=0
+├── Footnote scope=1:1..1:4 id="inline-1" children=1
+│   └── Text scope=1:3..1:3 anchor=null attributes={} literal="a" children=0
+└── Footnote scope=1:9..1:13 id="inline-2" children=1
+    └── Text scope=1:11..1:12 anchor=null attributes={} literal="^1" children=0
+````````````````````````````````
+
+Inside the body, a link opener is closed by its own `]` and tail, and a
+footnote opener inside a link label is closed by the first `]`. Ids are
+assigned once, during document finalization, after every authored id is
+known. Let `A` be the ids of every `Footnote` produced from a winning or
+unreferenced definition. Inline footnotes are numbered in ascending order of
+the start position of their `^[`, an outer footnote before one nested in its
+body; the `N`-th receives `inline-N` when that string is not in `A` and not
+already assigned, otherwise `inline-N-K` for the smallest `K` of at least 1
+in neither set. The value carries no authored meaning; consumers compare and
+copy ids and never display them:
+
+```````````````````````````````` example
+^[a ^[b] c]
+.
+Document scope=1:1..1:11 anchor=null attributes={} children=1
+├── Paragraph scope=1:1..1:11 anchor=null attributes={} children=1
+│   └── Cite scope=1:1..1:11 anchor=null attributes={} children=1
+│       └── Citation scope=1:3..1:10 referent=footnote(id="inline-1") children=0
+│           ├── CitationPrefix children=0
+│           └── CitationSuffix children=0
+├── Footnote scope=1:1..1:11 id="inline-1" children=3
+│   ├── Text scope=1:3..1:4 anchor=null attributes={} literal="a " children=0
+│   ├── Cite scope=1:5..1:8 anchor=null attributes={} children=1
+│   │   └── Citation scope=1:7..1:7 referent=footnote(id="inline-2") children=0
+│   │       ├── CitationPrefix children=0
+│   │       └── CitationSuffix children=0
+│   └── Text scope=1:9..1:10 anchor=null attributes={} literal=" c" children=0
+└── Footnote scope=1:5..1:8 id="inline-2" children=1
+    └── Text scope=1:7..1:7 anchor=null attributes={} literal="b" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+[^inline-1] ^[b]
+
+[^inline-1]: authored
+.
+Document scope=1:1..3:21 anchor=null attributes={} children=1
+├── Paragraph scope=1:1..1:16 anchor=null attributes={} children=3
+│   ├── Cite scope=1:1..1:11 anchor=null attributes={} children=1
+│   │   └── Citation scope=1:2..1:10 referent=footnote(id="inline-1") children=0
+│   │       ├── CitationPrefix children=0
+│   │       └── CitationSuffix children=0
+│   ├── Text scope=1:12..1:12 anchor=null attributes={} literal=" " children=0
+│   └── Cite scope=1:13..1:16 anchor=null attributes={} children=1
+│       └── Citation scope=1:15..1:15 referent=footnote(id="inline-1-1") children=0
+│           ├── CitationPrefix children=0
+│           └── CitationSuffix children=0
+├── Footnote scope=1:13..1:16 id="inline-1-1" children=1
+│   └── Text scope=1:15..1:15 anchor=null attributes={} literal="b" children=0
+└── Footnote scope=3:1..3:21 id="inline-1" children=1
+    └── Paragraph scope=3:14..3:21 anchor=null attributes={} children=1
+        └── Text scope=3:14..3:21 anchor=null attributes={} literal="authored" children=0
+````````````````````````````````
+
+A body that is empty or consists only of spaces and tabs is invalid; the
+opener is text. `\^[` never opens:
+
+```````````````````````````````` example
+^[] ^[ ] \^[a]
+.
+Document scope=1:1..1:14 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:14 anchor=null attributes={} children=1
+    └── Text scope=1:1..1:14 anchor=null attributes={} literal="^[] ^[ ] ^[a]" children=0
+````````````````````````````````
+
+
+Escaped brackets and literal caret spellings:
+
+```````````````````````````````` example
+^[a \] b \[ c] \^[x] \\^[y] &#94;[z]
+.
+Document scope=1:1..1:36 anchor=null attributes={} children=1
+├── Paragraph scope=1:1..1:36 anchor=null attributes={} children=4
+│   ├── Cite scope=1:1..1:14 anchor=null attributes={} children=1
+│   │   └── Citation scope=1:3..1:13 referent=footnote(id="inline-1") children=0
+│   │       ├── CitationPrefix children=0
+│   │       └── CitationSuffix children=0
+│   ├── Text scope=1:15..1:23 anchor=null attributes={} literal=" ^[x] \\" children=0
+│   ├── Cite scope=1:24..1:27 anchor=null attributes={} children=1
+│   │   └── Citation scope=1:26..1:26 referent=footnote(id="inline-2") children=0
+│   │       ├── CitationPrefix children=0
+│   │       └── CitationSuffix children=0
+│   └── Text scope=1:28..1:36 anchor=null attributes={} literal=" ^[z]" children=0
+├── Footnote scope=1:1..1:14 id="inline-1" children=1
+│   └── Text scope=1:3..1:13 anchor=null attributes={} literal="a ] b [ c" children=0
+└── Footnote scope=1:24..1:27 id="inline-2" children=1
+    └── Text scope=1:26..1:26 anchor=null attributes={} literal="y" children=0
+````````````````````````````````
+
+Empty, tab-only, unmatched and nested failed candidates:
+
+```````````````````````````````` example
+^[] ^[ 	 ] ^[open *em*
+
+^[a [b] c] ^[a ^[] b]
+.
+Document scope=1:1..3:21 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:22 anchor=null attributes={} children=2
+│   ├── Text scope=1:1..1:18 anchor=null attributes={} literal="^[] ^[ \t ] ^[open " children=0
+│   └── Emphasis scope=1:19..1:22 anchor=null attributes={} children=1
+│       └── Text scope=1:20..1:21 anchor=null attributes={} literal="em" children=0
+├── Paragraph scope=3:1..3:21 anchor=null attributes={} children=3
+│   ├── Cite scope=3:1..3:10 anchor=null attributes={} children=1
+│   │   └── Citation scope=3:3..3:9 referent=footnote(id="inline-1") children=0
+│   │       ├── CitationPrefix children=0
+│   │       └── CitationSuffix children=0
+│   ├── Text scope=3:11..3:11 anchor=null attributes={} literal=" " children=0
+│   └── Cite scope=3:12..3:21 anchor=null attributes={} children=1
+│       └── Citation scope=3:14..3:20 referent=footnote(id="inline-2") children=0
+│           ├── CitationPrefix children=0
+│           └── CitationSuffix children=0
+├── Footnote scope=3:1..3:10 id="inline-1" children=1
+│   └── Text scope=3:3..3:9 anchor=null attributes={} literal="a [b] c" children=0
+└── Footnote scope=3:12..3:21 id="inline-2" children=1
+    └── Text scope=3:14..3:20 anchor=null attributes={} literal="a ^[] b" children=0
+````````````````````````````````
+
+Unresolved calls do not allocate ids; generated ids do not define calls:
+
+```````````````````````````````` example
+[^missing] [^inline-1] ^[first [^missing]] ^[second]
+.
+Document scope=1:1..1:52 anchor=null attributes={} children=1
+├── Paragraph scope=1:1..1:52 anchor=null attributes={} children=4
+│   ├── Text scope=1:1..1:23 anchor=null attributes={} literal="[^missing] [^inline-1] " children=0
+│   ├── Cite scope=1:24..1:42 anchor=null attributes={} children=1
+│   │   └── Citation scope=1:26..1:41 referent=footnote(id="inline-1") children=0
+│   │       ├── CitationPrefix children=0
+│   │       └── CitationSuffix children=0
+│   ├── Text scope=1:43..1:43 anchor=null attributes={} literal=" " children=0
+│   └── Cite scope=1:44..1:52 anchor=null attributes={} children=1
+│       └── Citation scope=1:46..1:51 referent=footnote(id="inline-2") children=0
+│           ├── CitationPrefix children=0
+│           └── CitationSuffix children=0
+├── Footnote scope=1:24..1:42 id="inline-1" children=1
+│   └── Text scope=1:26..1:41 anchor=null attributes={} literal="first [^missing]" children=0
+└── Footnote scope=1:44..1:52 id="inline-2" children=1
+    └── Text scope=1:46..1:51 anchor=null attributes={} literal="second" children=0
+````````````````````````````````
+
+Normalized authored ids reserve all suffixes, including duplicates:
+
+```````````````````````````````` example
+^[a] ^[b]
+
+[^INLINE-1]: one
+[^inline-1-1]: suffix one
+[^inline-1-3]: suffix three
+[^inline-2]: two
+[^inline-1]: duplicate
+.
+Document scope=1:1..7:22 anchor=null attributes={} children=1
+├── Paragraph scope=1:1..1:9 anchor=null attributes={} children=3
+│   ├── Cite scope=1:1..1:4 anchor=null attributes={} children=1
+│   │   └── Citation scope=1:3..1:3 referent=footnote(id="inline-1-2") children=0
+│   │       ├── CitationPrefix children=0
+│   │       └── CitationSuffix children=0
+│   ├── Text scope=1:5..1:5 anchor=null attributes={} literal=" " children=0
+│   └── Cite scope=1:6..1:9 anchor=null attributes={} children=1
+│       └── Citation scope=1:8..1:8 referent=footnote(id="inline-2-1") children=0
+│           ├── CitationPrefix children=0
+│           └── CitationSuffix children=0
+├── Footnote scope=1:1..1:4 id="inline-1-2" children=1
+│   └── Text scope=1:3..1:3 anchor=null attributes={} literal="a" children=0
+├── Footnote scope=1:6..1:9 id="inline-2-1" children=1
+│   └── Text scope=1:8..1:8 anchor=null attributes={} literal="b" children=0
+├── Footnote scope=3:1..3:16 id="inline-1" children=1
+│   └── Paragraph scope=3:14..3:16 anchor=null attributes={} children=1
+│       └── Text scope=3:14..3:16 anchor=null attributes={} literal="one" children=0
+├── Footnote scope=4:1..4:25 id="inline-1-1" children=1
+│   └── Paragraph scope=4:16..4:25 anchor=null attributes={} children=1
+│       └── Text scope=4:16..4:25 anchor=null attributes={} literal="suffix one" children=0
+├── Footnote scope=5:1..5:27 id="inline-1-3" children=1
+│   └── Paragraph scope=5:16..5:27 anchor=null attributes={} children=1
+│       └── Text scope=5:16..5:27 anchor=null attributes={} literal="suffix three" children=0
+├── Footnote scope=6:1..6:16 id="inline-2" children=1
+│   └── Paragraph scope=6:14..6:16 anchor=null attributes={} children=1
+│       └── Text scope=6:14..6:16 anchor=null attributes={} literal="two" children=0
+└── Footnote scope=7:1..7:22 id="inline-1" children=1
+    └── Paragraph scope=7:14..7:22 anchor=null attributes={} children=1
+        └── Text scope=7:14..7:22 anchor=null attributes={} literal="duplicate" children=0
+````````````````````````````````
+
+Referenced and nested inline notes form id edges, including semantic cycles:
+
+```````````````````````````````` example
+[^a] ^[top [^a]]
+
+[^a]: ^[nested [^a]] [^b]
+[^b]: [^a]
+.
+Document scope=1:1..4:10 anchor=null attributes={} children=1
+├── Paragraph scope=1:1..1:16 anchor=null attributes={} children=3
+│   ├── Cite scope=1:1..1:4 anchor=null attributes={} children=1
+│   │   └── Citation scope=1:2..1:3 referent=footnote(id="a") children=0
+│   │       ├── CitationPrefix children=0
+│   │       └── CitationSuffix children=0
+│   ├── Text scope=1:5..1:5 anchor=null attributes={} literal=" " children=0
+│   └── Cite scope=1:6..1:16 anchor=null attributes={} children=1
+│       └── Citation scope=1:8..1:15 referent=footnote(id="inline-1") children=0
+│           ├── CitationPrefix children=0
+│           └── CitationSuffix children=0
+├── Footnote scope=1:6..1:16 id="inline-1" children=2
+│   ├── Text scope=1:8..1:11 anchor=null attributes={} literal="top " children=0
+│   └── Cite scope=1:12..1:15 anchor=null attributes={} children=1
+│       └── Citation scope=1:13..1:14 referent=footnote(id="a") children=0
+│           ├── CitationPrefix children=0
+│           └── CitationSuffix children=0
+├── Footnote scope=3:1..3:25 id="a" children=1
+│   └── Paragraph scope=3:7..3:25 anchor=null attributes={} children=3
+│       ├── Cite scope=3:7..3:20 anchor=null attributes={} children=1
+│       │   └── Citation scope=3:9..3:19 referent=footnote(id="inline-2") children=0
+│       │       ├── CitationPrefix children=0
+│       │       └── CitationSuffix children=0
+│       ├── Text scope=3:21..3:21 anchor=null attributes={} literal=" " children=0
+│       └── Cite scope=3:22..3:25 anchor=null attributes={} children=1
+│           └── Citation scope=3:23..3:24 referent=footnote(id="b") children=0
+│               ├── CitationPrefix children=0
+│               └── CitationSuffix children=0
+├── Footnote scope=3:7..3:20 id="inline-2" children=2
+│   ├── Text scope=3:9..3:15 anchor=null attributes={} literal="nested " children=0
+│   └── Cite scope=3:16..3:19 anchor=null attributes={} children=1
+│       └── Citation scope=3:17..3:18 referent=footnote(id="a") children=0
+│           ├── CitationPrefix children=0
+│           └── CitationSuffix children=0
+└── Footnote scope=4:1..4:10 id="b" children=1
+    └── Paragraph scope=4:7..4:10 anchor=null attributes={} children=1
+        └── Cite scope=4:7..4:10 anchor=null attributes={} children=1
+            └── Citation scope=4:8..4:9 referent=footnote(id="a") children=0
+                ├── CitationPrefix children=0
+                └── CitationSuffix children=0
+````````````````````````````````
+
+Both bodies retain independent link and delimiter boundaries:
+
+```````````````````````````````` example
+[outer ^[[inner](u)]](v) *before ^[*inside*] after* ^[x *open] outside*
+.
+Document scope=1:1..1:71 anchor=null attributes={} children=1
+├── Paragraph scope=1:1..1:71 anchor=null attributes={} children=6
+│   ├── Link scope=1:1..1:24 anchor=null attributes={} dest=url("v") title=null children=2
+│   │   ├── Text scope=1:2..1:7 anchor=null attributes={} literal="outer " children=0
+│   │   └── Cite scope=1:8..1:20 anchor=null attributes={} children=1
+│   │       └── Citation scope=1:10..1:19 referent=footnote(id="inline-1") children=0
+│   │           ├── CitationPrefix children=0
+│   │           └── CitationSuffix children=0
+│   ├── Text scope=1:25..1:25 anchor=null attributes={} literal=" " children=0
+│   ├── Emphasis scope=1:26..1:51 anchor=null attributes={} children=3
+│   │   ├── Text scope=1:27..1:33 anchor=null attributes={} literal="before " children=0
+│   │   ├── Cite scope=1:34..1:44 anchor=null attributes={} children=1
+│   │   │   └── Citation scope=1:36..1:43 referent=footnote(id="inline-2") children=0
+│   │   │       ├── CitationPrefix children=0
+│   │   │       └── CitationSuffix children=0
+│   │   └── Text scope=1:45..1:50 anchor=null attributes={} literal=" after" children=0
+│   ├── Text scope=1:52..1:52 anchor=null attributes={} literal=" " children=0
+│   ├── Cite scope=1:53..1:62 anchor=null attributes={} children=1
+│   │   └── Citation scope=1:55..1:61 referent=footnote(id="inline-3") children=0
+│   │       ├── CitationPrefix children=0
+│   │       └── CitationSuffix children=0
+│   └── Text scope=1:63..1:71 anchor=null attributes={} literal=" outside*" children=0
+├── Footnote scope=1:8..1:20 id="inline-1" children=1
+│   └── Link scope=1:10..1:19 anchor=null attributes={} dest=url("u") title=null children=1
+│       └── Text scope=1:11..1:15 anchor=null attributes={} literal="inner" children=0
+├── Footnote scope=1:34..1:44 id="inline-2" children=1
+│   └── Emphasis scope=1:36..1:43 anchor=null attributes={} children=1
+│       └── Text scope=1:37..1:42 anchor=null attributes={} literal="inside" children=0
+└── Footnote scope=1:53..1:62 id="inline-3" children=1
+    └── Text scope=1:55..1:61 anchor=null attributes={} literal="x *open" children=0
+````````````````````````````````
+
+Footnote tail is text and bracket bodies take precedence:
+
+```````````````````````````````` example
+^[a](b) ^[a][ref] ^[a]{.x} ^[^a] ^[[x](u)]
+
+[ref]: /r
+[^a]: note
+.
+Document scope=1:1..4:10 anchor=null attributes={} children=1
+├── Paragraph scope=1:1..1:42 anchor=null attributes={} children=10
+│   ├── Cite scope=1:1..1:4 anchor=null attributes={} children=1
+│   │   └── Citation scope=1:3..1:3 referent=footnote(id="inline-1") children=0
+│   │       ├── CitationPrefix children=0
+│   │       └── CitationSuffix children=0
+│   ├── Text scope=1:5..1:8 anchor=null attributes={} literal="(b) " children=0
+│   ├── Cite scope=1:9..1:12 anchor=null attributes={} children=1
+│   │   └── Citation scope=1:11..1:11 referent=footnote(id="inline-2") children=0
+│   │       ├── CitationPrefix children=0
+│   │       └── CitationSuffix children=0
+│   ├── Link scope=1:13..1:17 anchor=null attributes={} dest=url("/r") title=null children=1
+│   │   └── Text scope=1:14..1:16 anchor=null attributes={} literal="ref" children=0
+│   ├── Text scope=1:18..1:18 anchor=null attributes={} literal=" " children=0
+│   ├── Cite scope=1:19..1:22 anchor=null attributes={} children=1
+│   │   └── Citation scope=1:21..1:21 referent=footnote(id="inline-3") children=0
+│   │       ├── CitationPrefix children=0
+│   │       └── CitationSuffix children=0
+│   ├── Text scope=1:23..1:27 anchor=null attributes={} literal="{.x} " children=0
+│   ├── Cite scope=1:28..1:32 anchor=null attributes={} children=1
+│   │   └── Citation scope=1:30..1:31 referent=footnote(id="inline-4") children=0
+│   │       ├── CitationPrefix children=0
+│   │       └── CitationSuffix children=0
+│   ├── Text scope=1:33..1:33 anchor=null attributes={} literal=" " children=0
+│   └── Cite scope=1:34..1:42 anchor=null attributes={} children=1
+│       └── Citation scope=1:36..1:41 referent=footnote(id="inline-5") children=0
+│           ├── CitationPrefix children=0
+│           └── CitationSuffix children=0
+├── Footnote scope=1:1..1:4 id="inline-1" children=1
+│   └── Text scope=1:3..1:3 anchor=null attributes={} literal="a" children=0
+├── Footnote scope=1:9..1:12 id="inline-2" children=1
+│   └── Text scope=1:11..1:11 anchor=null attributes={} literal="a" children=0
+├── Footnote scope=1:19..1:22 id="inline-3" children=1
+│   └── Text scope=1:21..1:21 anchor=null attributes={} literal="a" children=0
+├── Footnote scope=1:28..1:32 id="inline-4" children=1
+│   └── Text scope=1:30..1:31 anchor=null attributes={} literal="^a" children=0
+├── Footnote scope=1:34..1:42 id="inline-5" children=1
+│   └── Link scope=1:36..1:41 anchor=null attributes={} dest=url("u") title=null children=1
+│       └── Text scope=1:37..1:37 anchor=null attributes={} literal="x" children=0
+└── Footnote scope=4:1..4:10 id="a" children=1
+    └── Paragraph scope=4:7..4:10 anchor=null attributes={} children=1
+        └── Text scope=4:7..4:10 anchor=null attributes={} literal="note" children=0
+````````````````````````````````
+
+All opaque token bodies suppress footnote recognition:
+
+```````````````````````````````` example
+`^[code]` $^[formula]$ <!-- ^[html] --> <i data-x="^[token]">^[live]</i> %%^[comment]%% [[^[wiki]]] ![[^[embed]]]
+.
+Document scope=1:1..1:113 anchor=null attributes={} children=1
+├── Paragraph scope=1:1..1:113 anchor=null attributes={} children=16
+│   ├── Code scope=1:1..1:9 anchor=null attributes={} literal="^[code]" children=0
+│   ├── Text scope=1:10..1:10 anchor=null attributes={} literal=" " children=0
+│   ├── Formula scope=1:11..1:22 anchor=null attributes={} mode=embedded literal="^[formula]" children=0
+│   ├── Text scope=1:23..1:23 anchor=null attributes={} literal=" " children=0
+│   ├── Comment scope=1:24..1:39 anchor=null attributes={} literal=" ^[html] " children=0
+│   ├── Text scope=1:40..1:40 anchor=null attributes={} literal=" " children=0
+│   ├── HTML scope=1:41..1:61 anchor=null attributes={} literal="<i data-x=\"^[token]\">" children=0
+│   ├── Cite scope=1:62..1:68 anchor=null attributes={} children=1
+│   │   └── Citation scope=1:64..1:67 referent=footnote(id="inline-1") children=0
+│   │       ├── CitationPrefix children=0
+│   │       └── CitationSuffix children=0
+│   ├── HTML scope=1:69..1:72 anchor=null attributes={} literal="</i>" children=0
+│   ├── Text scope=1:73..1:73 anchor=null attributes={} literal=" " children=0
+│   ├── Comment scope=1:74..1:87 anchor=null attributes={} literal="^[comment]" children=0
+│   ├── Text scope=1:88..1:90 anchor=null attributes={} literal=" [[" children=0
+│   ├── Cite scope=1:91..1:97 anchor=null attributes={} children=1
+│   │   └── Citation scope=1:93..1:96 referent=footnote(id="inline-2") children=0
+│   │       ├── CitationPrefix children=0
+│   │       └── CitationSuffix children=0
+│   ├── Text scope=1:98..1:103 anchor=null attributes={} literal="]] ![[" children=0
+│   ├── Cite scope=1:104..1:111 anchor=null attributes={} children=1
+│   │   └── Citation scope=1:106..1:110 referent=footnote(id="inline-3") children=0
+│   │       ├── CitationPrefix children=0
+│   │       └── CitationSuffix children=0
+│   └── Text scope=1:112..1:113 anchor=null attributes={} literal="]]" children=0
+├── Footnote scope=1:62..1:68 id="inline-1" children=1
+│   └── Text scope=1:64..1:67 anchor=null attributes={} literal="live" children=0
+├── Footnote scope=1:91..1:97 id="inline-2" children=1
+│   └── Text scope=1:93..1:96 anchor=null attributes={} literal="wiki" children=0
+└── Footnote scope=1:104..1:111 id="inline-3" children=1
+    └── Text scope=1:106..1:110 anchor=null attributes={} literal="embed" children=0
+````````````````````````````````
+
+Parsed inline bodies keep opaque nodes, markup, and autolink postprocessing:
+
+```````````````````````````````` example
+^[==mark== %%comment%% `code` $math$ [[Note]] www.example.com user@example.com]
+.
+Document scope=1:1..1:79 anchor=null attributes={} children=1
+├── Paragraph scope=1:1..1:79 anchor=null attributes={} children=1
+│   └── Cite scope=1:1..1:79 anchor=null attributes={} children=1
+│       └── Citation scope=1:3..1:78 referent=footnote(id="inline-1") children=0
+│           ├── CitationPrefix children=0
+│           └── CitationSuffix children=0
+└── Footnote scope=1:1..1:79 id="inline-1" children=13
+    ├── Mark scope=1:3..1:10 anchor=null attributes={} children=1
+    │   └── Text scope=1:5..1:8 anchor=null attributes={} literal="mark" children=0
+    ├── Text scope=1:11..1:11 anchor=null attributes={} literal=" " children=0
+    ├── Comment scope=1:12..1:22 anchor=null attributes={} literal="comment" children=0
+    ├── Text scope=1:23..1:23 anchor=null attributes={} literal=" " children=0
+    ├── Code scope=1:24..1:29 anchor=null attributes={} literal="code" children=0
+    ├── Text scope=1:30..1:30 anchor=null attributes={} literal=" " children=0
+    ├── Formula scope=1:31..1:36 anchor=null attributes={} mode=embedded literal="math" children=0
+    ├── Text scope=1:37..1:37 anchor=null attributes={} literal=" " children=0
+    ├── CrossLink scope=1:38..1:45 anchor=null attributes={} embedded=false dest=cross(path="Note",anchor=null) label=null children=0
+    ├── Text scope=1:46..1:46 anchor=null attributes={} literal=" " children=0
+    ├── Link scope=1:47..1:61 anchor=null attributes={} dest=url("http://www.example.com") title=null children=1
+    │   └── Text scope=1:47..1:61 anchor=null attributes={} literal="www.example.com" children=0
+    ├── Text scope=1:62..1:62 anchor=null attributes={} literal=" " children=0
+    └── Link scope=1:63..1:78 anchor=null attributes={} dest=url("mailto:user@example.com") title=null children=1
+        └── Text scope=1:63..1:78 anchor=null attributes={} literal="user@example.com" children=0
+````````````````````````````````
+
+Comment closer and code closer cannot close an inline note:
+
+```````````````````````````````` example
+^[a %%]%% b `]` c $]$ d <i data-x="]"> e]
+.
+Document scope=1:1..1:41 anchor=null attributes={} children=1
+├── Paragraph scope=1:1..1:41 anchor=null attributes={} children=1
+│   └── Cite scope=1:1..1:41 anchor=null attributes={} children=1
+│       └── Citation scope=1:3..1:40 referent=footnote(id="inline-1") children=0
+│           ├── CitationPrefix children=0
+│           └── CitationSuffix children=0
+└── Footnote scope=1:1..1:41 id="inline-1" children=9
+    ├── Text scope=1:3..1:4 anchor=null attributes={} literal="a " children=0
+    ├── Comment scope=1:5..1:9 anchor=null attributes={} literal="]" children=0
+    ├── Text scope=1:10..1:12 anchor=null attributes={} literal=" b " children=0
+    ├── Code scope=1:13..1:15 anchor=null attributes={} literal="]" children=0
+    ├── Text scope=1:16..1:18 anchor=null attributes={} literal=" c " children=0
+    ├── Formula scope=1:19..1:21 anchor=null attributes={} mode=embedded literal="]" children=0
+    ├── Text scope=1:22..1:24 anchor=null attributes={} literal=" d " children=0
+    ├── HTML scope=1:25..1:38 anchor=null attributes={} literal="<i data-x=\"]\">" children=0
+    └── Text scope=1:39..1:40 anchor=null attributes={} literal=" e" children=0
+````````````````````````````````
+
+Table source map preserves physical columns across escaped pipes:
+
+```````````````````````````````` example
+| x | y |
+| - | - |
+| ^[a\|b] | ^[中 *文*] |
+.
+Document scope=1:1..3:26 anchor=null attributes={} children=1
+├── Table scope=1:1..3:26 anchor=null attributes={} columns=[none:null,none:null] children=2
+│   ├── TableHead children=1
+│   │   └── TableRow scope=1:1..1:9 anchor=null attributes={} children=2
+│   │       ├── TableCell scope=1:2..1:4 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │       │   └── Text scope=1:3..1:3 anchor=null attributes={} literal="x" children=0
+│   │       └── TableCell scope=1:6..1:8 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │           └── Text scope=1:7..1:7 anchor=null attributes={} literal="y" children=0
+│   ├── TableBody children=1
+│   │   └── TableRow scope=3:1..3:26 anchor=null attributes={} children=2
+│   │       ├── TableCell scope=3:2..3:10 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │       │   └── Cite scope=3:3..3:9 anchor=null attributes={} children=1
+│   │       │       └── Citation scope=3:5..3:8 referent=footnote(id="inline-1") children=0
+│   │       │           ├── CitationPrefix children=0
+│   │       │           └── CitationSuffix children=0
+│   │       └── TableCell scope=3:12..3:25 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │           └── Cite scope=3:13..3:24 anchor=null attributes={} children=1
+│   │               └── Citation scope=3:15..3:23 referent=footnote(id="inline-2") children=0
+│   │                   ├── CitationPrefix children=0
+│   │                   └── CitationSuffix children=0
+│   └── TableFoot children=0
+├── Footnote scope=3:3..3:9 id="inline-1" children=1
+│   └── Text scope=3:5..3:8 anchor=null attributes={} literal="a|b" children=0
+└── Footnote scope=3:13..3:24 id="inline-2" children=2
+    ├── Text scope=3:15..3:18 anchor=null attributes={} literal="中 " children=0
+    └── Emphasis scope=3:19..3:23 anchor=null attributes={} children=1
+        └── Text scope=3:20..3:22 anchor=null attributes={} literal="文" children=0
+````````````````````````````````
+
+Multiline bodies use container source positions:
+
+```````````````````````````````` example
+> before^[first
+> second] after
+
+- ^[list
+  continued]
+.
+Document scope=1:1..5:12 anchor=null attributes={} children=2
+├── Callout scope=1:1..2:15 anchor=null attributes={} variant=null collapsed=null children=1
+│   └── Paragraph scope=1:3..2:15 anchor=null attributes={} children=3
+│       ├── Text scope=1:3..1:8 anchor=null attributes={} literal="before" children=0
+│       ├── Cite scope=1:9..2:9 anchor=null attributes={} children=1
+│       │   └── Citation scope=1:11..2:8 referent=footnote(id="inline-1") children=0
+│       │       ├── CitationPrefix children=0
+│       │       └── CitationSuffix children=0
+│       └── Text scope=2:10..2:15 anchor=null attributes={} literal=" after" children=0
+├── List scope=4:1..5:12 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+│   └── ListItem scope=4:1..5:12 anchor=null attributes={} marker=null children=1
+│       └── Paragraph scope=4:3..5:12 anchor=null attributes={} children=1
+│           └── Cite scope=4:3..5:12 anchor=null attributes={} children=1
+│               └── Citation scope=4:5..5:11 referent=footnote(id="inline-2") children=0
+│                   ├── CitationPrefix children=0
+│                   └── CitationSuffix children=0
+├── Footnote scope=1:9..2:9 id="inline-1" children=3
+│   ├── Text scope=1:11..1:15 anchor=null attributes={} literal="first" children=0
+│   ├── SoftBreak scope=1:16..1:16 anchor=null attributes={} children=0
+│   └── Text scope=2:3..2:8 anchor=null attributes={} literal="second" children=0
+└── Footnote scope=4:3..5:12 id="inline-2" children=3
+    ├── Text scope=4:5..4:8 anchor=null attributes={} literal="list" children=0
+    ├── SoftBreak scope=4:9..4:9 anchor=null attributes={} children=0
+    └── Text scope=5:3..5:11 anchor=null attributes={} literal="continued" children=0
+````````````````````````````````
+
+Detached directive label fields are ordered with structural content:
+
+```````````````````````````````` example
+:a[^[first]] ^[second]
+
+:::note[^[third]]
+^[fourth]
+:::
+.
+Document scope=1:1..5:3 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:22 anchor=null attributes={} children=3
+│   ├── Directive scope=1:1..1:12 anchor=null attributes={} name="a" children=0
+│   │   └── DirectiveLabel scope=1:3..1:12 anchor=null attributes={} children=1
+│   │       └── Cite scope=1:4..1:11 anchor=null attributes={} children=1
+│   │           └── Citation scope=1:6..1:10 referent=footnote(id="inline-1") children=0
+│   │               ├── CitationPrefix children=0
+│   │               └── CitationSuffix children=0
+│   ├── Text scope=1:13..1:13 anchor=null attributes={} literal=" " children=0
+│   └── Cite scope=1:14..1:22 anchor=null attributes={} children=1
+│       └── Citation scope=1:16..1:21 referent=footnote(id="inline-2") children=0
+│           ├── CitationPrefix children=0
+│           └── CitationSuffix children=0
+├── DirectiveBlock scope=3:1..5:3 anchor=null attributes={} name="note" children=1
+│   ├── DirectiveLabel scope=3:8..3:17 anchor=null attributes={} children=1
+│   │   └── Cite scope=3:9..3:16 anchor=null attributes={} children=1
+│   │       └── Citation scope=3:11..3:15 referent=footnote(id="inline-3") children=0
+│   │           ├── CitationPrefix children=0
+│   │           └── CitationSuffix children=0
+│   └── Paragraph scope=4:1..4:9 anchor=null attributes={} children=1
+│       └── Cite scope=4:1..4:9 anchor=null attributes={} children=1
+│           └── Citation scope=4:3..4:8 referent=footnote(id="inline-4") children=0
+│               ├── CitationPrefix children=0
+│               └── CitationSuffix children=0
+├── Footnote scope=1:4..1:11 id="inline-1" children=1
+│   └── Text scope=1:6..1:10 anchor=null attributes={} literal="first" children=0
+├── Footnote scope=1:14..1:22 id="inline-2" children=1
+│   └── Text scope=1:16..1:21 anchor=null attributes={} literal="second" children=0
+├── Footnote scope=3:9..3:16 id="inline-3" children=1
+│   └── Text scope=3:11..3:15 anchor=null attributes={} literal="third" children=0
+└── Footnote scope=4:1..4:9 id="inline-4" children=1
+    └── Text scope=4:3..4:8 anchor=null attributes={} literal="fourth" children=0
+````````````````````````````````
+
+Nested note survives an unmatched outer opener:
+
+```````````````````````````````` example
+^[unclosed ^[closed]
+.
+Document scope=1:1..1:20 anchor=null attributes={} children=1
+├── Paragraph scope=1:1..1:20 anchor=null attributes={} children=2
+│   ├── Text scope=1:1..1:11 anchor=null attributes={} literal="^[unclosed " children=0
+│   └── Cite scope=1:12..1:20 anchor=null attributes={} children=1
+│       └── Citation scope=1:14..1:19 referent=footnote(id="inline-1") children=0
+│           ├── CitationPrefix children=0
+│           └── CitationSuffix children=0
+└── Footnote scope=1:12..1:20 id="inline-1" children=1
+    └── Text scope=1:14..1:19 anchor=null attributes={} literal="closed" children=0
+````````````````````````````````
+
+Whitespace and decoded empty-looking content:
+
+```````````````````````````````` example
+^[
+] ^[&#32;] ^[\ ]
+.
+Document scope=1:1..2:16 anchor=null attributes={} children=1
+├── Paragraph scope=1:1..2:16 anchor=null attributes={} children=5
+│   ├── Cite scope=1:1..2:1 anchor=null attributes={} children=1
+│   │   └── Citation scope=1:3..1:3 referent=footnote(id="inline-1") children=0
+│   │       ├── CitationPrefix children=0
+│   │       └── CitationSuffix children=0
+│   ├── Text scope=2:2..2:2 anchor=null attributes={} literal=" " children=0
+│   ├── Cite scope=2:3..2:10 anchor=null attributes={} children=1
+│   │   └── Citation scope=2:5..2:9 referent=footnote(id="inline-2") children=0
+│   │       ├── CitationPrefix children=0
+│   │       └── CitationSuffix children=0
+│   ├── Text scope=2:11..2:11 anchor=null attributes={} literal=" " children=0
+│   └── Cite scope=2:12..2:16 anchor=null attributes={} children=1
+│       └── Citation scope=2:14..2:15 referent=footnote(id="inline-3") children=0
+│           ├── CitationPrefix children=0
+│           └── CitationSuffix children=0
+├── Footnote scope=1:1..2:1 id="inline-1" children=1
+│   └── SoftBreak scope=1:3..1:3 anchor=null attributes={} children=0
+├── Footnote scope=2:3..2:10 id="inline-2" children=1
+│   └── Text scope=2:5..2:9 anchor=null attributes={} literal=" " children=0
+└── Footnote scope=2:12..2:16 id="inline-3" children=1
+    └── Text scope=2:14..2:15 anchor=null attributes={} literal="\\ " children=0
+````````````````````````````````
+
+Inline opener owns the bracket before a wikilink:
+
+```````````````````````````````` example
+^[[[note]]] ^[[x]]
+.
+Document scope=1:1..1:18 anchor=null attributes={} children=1
+├── Paragraph scope=1:1..1:18 anchor=null attributes={} children=3
+│   ├── Cite scope=1:1..1:11 anchor=null attributes={} children=1
+│   │   └── Citation scope=1:3..1:10 referent=footnote(id="inline-1") children=0
+│   │       ├── CitationPrefix children=0
+│   │       └── CitationSuffix children=0
+│   ├── Text scope=1:12..1:12 anchor=null attributes={} literal=" " children=0
+│   └── Cite scope=1:13..1:18 anchor=null attributes={} children=1
+│       └── Citation scope=1:15..1:17 referent=footnote(id="inline-2") children=0
+│           ├── CitationPrefix children=0
+│           └── CitationSuffix children=0
+├── Footnote scope=1:1..1:11 id="inline-1" children=1
+│   └── CrossLink scope=1:3..1:10 anchor=null attributes={} embedded=false dest=cross(path="note",anchor=null) label=null children=0
+└── Footnote scope=1:13..1:18 id="inline-2" children=1
+    └── Text scope=1:15..1:17 anchor=null attributes={} literal="[x]" children=0
+````````````````````````````````
+
+Bare URL forms respect the inline-footnote body boundary:
+
+```````````````````````````````` example
+^[see http://example.com] ^[https://example.com/a?q=1] ^[ftp://example.com/a] ^[www.example.com/a]
+.
+Document scope=1:1..1:98 anchor=null attributes={} children=1
+├── Paragraph scope=1:1..1:98 anchor=null attributes={} children=7
+│   ├── Cite scope=1:1..1:25 anchor=null attributes={} children=1
+│   │   └── Citation scope=1:3..1:24 referent=footnote(id="inline-1") children=0
+│   │       ├── CitationPrefix children=0
+│   │       └── CitationSuffix children=0
+│   ├── Text scope=1:26..1:26 anchor=null attributes={} literal=" " children=0
+│   ├── Cite scope=1:27..1:54 anchor=null attributes={} children=1
+│   │   └── Citation scope=1:29..1:53 referent=footnote(id="inline-2") children=0
+│   │       ├── CitationPrefix children=0
+│   │       └── CitationSuffix children=0
+│   ├── Text scope=1:55..1:55 anchor=null attributes={} literal=" " children=0
+│   ├── Cite scope=1:56..1:77 anchor=null attributes={} children=1
+│   │   └── Citation scope=1:58..1:76 referent=footnote(id="inline-3") children=0
+│   │       ├── CitationPrefix children=0
+│   │       └── CitationSuffix children=0
+│   ├── Text scope=1:78..1:78 anchor=null attributes={} literal=" " children=0
+│   └── Cite scope=1:79..1:98 anchor=null attributes={} children=1
+│       └── Citation scope=1:81..1:97 referent=footnote(id="inline-4") children=0
+│           ├── CitationPrefix children=0
+│           └── CitationSuffix children=0
+├── Footnote scope=1:1..1:25 id="inline-1" children=2
+│   ├── Text scope=1:3..1:6 anchor=null attributes={} literal="see " children=0
+│   └── Link scope=1:7..1:24 anchor=null attributes={} dest=url("http://example.com") title=null children=1
+│       └── Text scope=1:7..1:24 anchor=null attributes={} literal="http://example.com" children=0
+├── Footnote scope=1:27..1:54 id="inline-2" children=1
+│   └── Link scope=1:29..1:53 anchor=null attributes={} dest=url("https://example.com/a?q=1") title=null children=1
+│       └── Text scope=1:29..1:53 anchor=null attributes={} literal="https://example.com/a?q=1" children=0
+├── Footnote scope=1:56..1:77 id="inline-3" children=1
+│   └── Link scope=1:58..1:76 anchor=null attributes={} dest=url("ftp://example.com/a") title=null children=1
+│       └── Text scope=1:58..1:76 anchor=null attributes={} literal="ftp://example.com/a" children=0
+└── Footnote scope=1:79..1:98 id="inline-4" children=1
+    └── Link scope=1:81..1:97 anchor=null attributes={} dest=url("http://www.example.com/a") title=null children=1
+        └── Text scope=1:81..1:97 anchor=null attributes={} literal="www.example.com/a" children=0
+````````````````````````````````
+
+Escaped closers stay in the URL; ordinary URL punctuation remains unchanged:
+
+```````````````````````````````` example
+^[http://example.com/a\]b] http://example.com/a] ^[http://example.com/a\\] tail
+.
+Document scope=1:1..1:79 anchor=null attributes={} children=1
+├── Paragraph scope=1:1..1:79 anchor=null attributes={} children=6
+│   ├── Cite scope=1:1..1:26 anchor=null attributes={} children=1
+│   │   └── Citation scope=1:3..1:25 referent=footnote(id="inline-1") children=0
+│   │       ├── CitationPrefix children=0
+│   │       └── CitationSuffix children=0
+│   ├── Text scope=1:27..1:27 anchor=null attributes={} literal=" " children=0
+│   ├── Link scope=1:28..1:48 anchor=null attributes={} dest=url("http://example.com/a]") title=null children=1
+│   │   └── Text scope=1:28..1:48 anchor=null attributes={} literal="http://example.com/a]" children=0
+│   ├── Text scope=1:49..1:49 anchor=null attributes={} literal=" " children=0
+│   ├── Cite scope=1:50..1:74 anchor=null attributes={} children=1
+│   │   └── Citation scope=1:52..1:73 referent=footnote(id="inline-2") children=0
+│   │       ├── CitationPrefix children=0
+│   │       └── CitationSuffix children=0
+│   └── Text scope=1:75..1:79 anchor=null attributes={} literal=" tail" children=0
+├── Footnote scope=1:1..1:26 id="inline-1" children=1
+│   └── Link scope=1:3..1:25 anchor=null attributes={} dest=url("http://example.com/a\\]b") title=null children=1
+│       └── Text scope=1:3..1:25 anchor=null attributes={} literal="http://example.com/a\\]b" children=0
+└── Footnote scope=1:50..1:74 id="inline-2" children=1
+    └── Link scope=1:52..1:73 anchor=null attributes={} dest=url("http://example.com/a\\\\") title=null children=1
+        └── Text scope=1:52..1:73 anchor=null attributes={} literal="http://example.com/a\\\\" children=0
+````````````````````````````````
+
+Footnote bodies in nested notes and deferred directive labels allow bare URLs:
+
+```````````````````````````````` example
+^[before ^[http://example.com] after] :d[^[www.example.com]]
+.
+Document scope=1:1..1:60 anchor=null attributes={} children=1
+├── Paragraph scope=1:1..1:60 anchor=null attributes={} children=3
+│   ├── Cite scope=1:1..1:37 anchor=null attributes={} children=1
+│   │   └── Citation scope=1:3..1:36 referent=footnote(id="inline-1") children=0
+│   │       ├── CitationPrefix children=0
+│   │       └── CitationSuffix children=0
+│   ├── Text scope=1:38..1:38 anchor=null attributes={} literal=" " children=0
+│   └── Directive scope=1:39..1:60 anchor=null attributes={} name="d" children=0
+│       └── DirectiveLabel scope=1:41..1:60 anchor=null attributes={} children=1
+│           └── Cite scope=1:42..1:59 anchor=null attributes={} children=1
+│               └── Citation scope=1:44..1:58 referent=footnote(id="inline-3") children=0
+│                   ├── CitationPrefix children=0
+│                   └── CitationSuffix children=0
+├── Footnote scope=1:1..1:37 id="inline-1" children=3
+│   ├── Text scope=1:3..1:9 anchor=null attributes={} literal="before " children=0
+│   ├── Cite scope=1:10..1:30 anchor=null attributes={} children=1
+│   │   └── Citation scope=1:12..1:29 referent=footnote(id="inline-2") children=0
+│   │       ├── CitationPrefix children=0
+│   │       └── CitationSuffix children=0
+│   └── Text scope=1:31..1:36 anchor=null attributes={} literal=" after" children=0
+├── Footnote scope=1:10..1:30 id="inline-2" children=1
+│   └── Link scope=1:12..1:29 anchor=null attributes={} dest=url("http://example.com") title=null children=1
+│       └── Text scope=1:12..1:29 anchor=null attributes={} literal="http://example.com" children=0
+└── Footnote scope=1:42..1:59 id="inline-3" children=1
+    └── Link scope=1:44..1:58 anchor=null attributes={} dest=url("http://www.example.com") title=null children=1
+        └── Text scope=1:44..1:58 anchor=null attributes={} literal="www.example.com" children=0
+````````````````````````````````
+
+Literal caret runs end exactly where a footnote opener starts:
+
+```````````````````````````````` example
+^^^^text^^word^^^[note]^^end^
+.
+Document scope=1:1..1:29 anchor=null attributes={} children=1
+├── Paragraph scope=1:1..1:29 anchor=null attributes={} children=3
+│   ├── Text scope=1:1..1:16 anchor=null attributes={} literal="^^^^text^^word^^" children=0
+│   ├── Cite scope=1:17..1:23 anchor=null attributes={} children=1
+│   │   └── Citation scope=1:19..1:22 referent=footnote(id="inline-1") children=0
+│   │       ├── CitationPrefix children=0
+│   │       └── CitationSuffix children=0
+│   └── Text scope=1:24..1:29 anchor=null attributes={} literal="^^end^" children=0
+└── Footnote scope=1:17..1:23 id="inline-1" children=1
+    └── Text scope=1:19..1:22 anchor=null attributes={} literal="note" children=0
 ````````````````````````````````

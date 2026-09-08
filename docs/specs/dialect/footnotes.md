@@ -5,8 +5,7 @@ Sources: cmark-gfm's footnote
 extension for the referenced form; Obsidian and Pandoc for the inline form.
 Executable oracles: cmark-gfm and remark for the referenced form; the inline
 form is product fixtures. Landing: the citation model landed with `M4`, and
-the inline form lands with `O4`; until then only the referenced form is
-recognized. The [example format](../dialect.md#examples) is defined by the
+the inline form landed with `O4`; both forms are always recognized. The [example format](../dialect.md#examples) is defined by the
 index.
 
 ## The citation model
@@ -311,6 +310,11 @@ Document scope=1:1..1:8 anchor=null attributes={} children=1
     └── Emphasis scope=1:5..1:7 anchor=null attributes={} children=1
         └── Text scope=1:6..1:6 anchor=null attributes={} literal="b" children=0
 ````````````````````````````````
+
+The body is an independent inline context, so bare URLs and `www.` links
+are recognized even at its first byte. Their scanner leaves the body's first
+unescaped `]` for the shared bracket procedure; `^[http://example.com]`
+therefore contains a link to `http://example.com` and ends at that bracket.
 
 The `]` that matches the opener closes the footnote without attempting any
 link, reference, span, cite, or attribute tail, so `^[a](b)` is a `Cite`

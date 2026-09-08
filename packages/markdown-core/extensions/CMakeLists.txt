@@ -95,10 +95,10 @@ if(MARKDOWN_CORE_STATIC OR MARKDOWN_CORE_SHARED)
 
 endif()
 
-# The internal static targets remain useful to repository-owned tools and
-# bindings. Consumers get one complete archive containing both the parser
-# engine and every supported extension, with no second link dependency.
-if(MARKDOWN_CORE_STATIC)
+# All static consumers, including internal tests and the CLI, use one complete
+# archive. The parser always attaches the dialect, so splitting its mutually
+# dependent engine and extensions into ordered archives is not a link contract.
+if(MARKDOWN_CORE_STATIC OR MARKDOWN_CORE_SHARED)
     add_library(${PUBLIC_STATIC_LIBRARY} STATIC ${MARKDOWN_CORE_ENGINE_SOURCES} ${LIBRARY_SOURCES})
     target_compile_definitions(${PUBLIC_STATIC_LIBRARY} PUBLIC MARKDOWN_CORE_STATIC_DEFINE
                                                                MARKDOWN_CORE_EXTENSIONS_STATIC_DEFINE)
@@ -112,7 +112,9 @@ if(MARKDOWN_CORE_STATIC)
         PRIVATE ${MARKDOWN_CORE_CORE_SOURCE_DIR} ${MARKDOWN_CORE_CORE_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR}
         PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../include>
                $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
-    list(APPEND MARKDOWN_CORE_INSTALL ${PUBLIC_STATIC_LIBRARY})
+    if(MARKDOWN_CORE_STATIC)
+        list(APPEND MARKDOWN_CORE_INSTALL ${PUBLIC_STATIC_LIBRARY})
+    endif()
     if(NOT MARKDOWN_CORE_SHARED)
         set(MARKDOWN_CORE_EXPORT_TARGET ${PUBLIC_STATIC_LIBRARY})
     endif()

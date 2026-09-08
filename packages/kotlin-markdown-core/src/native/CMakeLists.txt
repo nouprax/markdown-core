@@ -6,7 +6,7 @@ if(MARKDOWN_CORE_KOTLIN_JNI)
                                                                 ${CMAKE_SOURCE_DIR}/packages/markdown-core/include)
     target_compile_definitions(markdown_core_kotlin_jni PRIVATE MARKDOWN_CORE_STATIC_DEFINE
                                                                 MARKDOWN_CORE_EXTENSIONS_STATIC_DEFINE)
-    target_link_libraries(markdown_core_kotlin_jni PRIVATE libmarkdown-core-extensions_static libmarkdown-core_static)
+    target_link_libraries(markdown_core_kotlin_jni PRIVATE libmarkdown-core-public-static)
     set_target_properties(
         markdown_core_kotlin_jni
         PROPERTIES OUTPUT_NAME markdown_core_kotlin

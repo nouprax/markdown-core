@@ -50,6 +50,12 @@ emphasis, links, and other inline nodes. Matching consumes two equals signs
 at a time; unmatched signs remain text. Typed visitors and walking visitors
 include the `Mark` case, and its scope covers both delimiters and the body.
 
+`^[inline note]` produces a one-item `Cite` and a document-owned `Footnote`
+whose content holds the parsed inline body directly. Referenced definitions and
+inline notes share `Document.footnotes` in source order. Generated `inline-N`
+ids avoid every authored id; nested calls remain id edges and can be visited
+without following semantic cycles.
+
 `%%comment%%` produces `Comment`, the kind an HTML comment already produces,
 inline or as a block when both `%%` fences stand on lines of their own under
 the same container prefixes. The body is opaque and stored as written, nothing

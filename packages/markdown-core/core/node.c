@@ -23,10 +23,13 @@ bool markdown_core_node_can_contain_type(markdown_core_node *node, markdown_core
     switch (node->kind) {
     case MARKDOWN_CORE_NODE_DOCUMENT:
     case MARKDOWN_CORE_NODE_CALLOUT:
-    case MARKDOWN_CORE_NODE_FOOTNOTE:
     case MARKDOWN_CORE_NODE_SPECIMEN:
     case MARKDOWN_CORE_NODE_LIST_ITEM:
         return MARKDOWN_CORE_NODE_TYPE_BLOCK_P(child_type) && child_type != MARKDOWN_CORE_NODE_LIST_ITEM;
+
+    case MARKDOWN_CORE_NODE_FOOTNOTE:
+        return (MARKDOWN_CORE_NODE_TYPE_BLOCK_P(child_type) && child_type != MARKDOWN_CORE_NODE_LIST_ITEM) ||
+               MARKDOWN_CORE_NODE_TYPE_INLINE_P(child_type);
 
     case MARKDOWN_CORE_NODE_LIST:
         return child_type == MARKDOWN_CORE_NODE_LIST_ITEM;

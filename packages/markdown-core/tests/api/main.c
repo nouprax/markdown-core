@@ -22,13 +22,13 @@
 
 #define UTF8_REPL "\xEF\xBF\xBD"
 
-typedef struct extension_setup {
+typedef struct probe_setup {
     const markdown_core_extension *const *extensions;
     size_t count;
-} extension_setup;
+} probe_setup;
 
-static bool attach_extensions(markdown_core_parser *parser, void *context) {
-    const extension_setup *setup = (const extension_setup *)context;
+static bool attach_probes(markdown_core_parser *parser, void *context) {
+    const probe_setup *setup = (const probe_setup *)context;
     size_t i;
 
     for (i = 0; i < setup->count; i++) {
@@ -39,12 +39,11 @@ static bool attach_extensions(markdown_core_parser *parser, void *context) {
     return true;
 }
 
-static markdown_core_node *parse_with_extensions(const char *source, size_t length, int options,
-                                                 const markdown_core_extension *const *extensions,
-                                                 size_t extension_count) {
-    extension_setup setup = {extensions, extension_count};
-    return markdown_core_parse_document_with_mem(source, length, options, markdown_core_get_default_mem_allocator(),
-                                                 attach_extensions, &setup);
+static markdown_core_node *parse_with_probes(const char *source, size_t length,
+                                             const markdown_core_extension *const *extensions, size_t extension_count) {
+    probe_setup setup = {extensions, extension_count};
+    return markdown_core_parse_document_with_mem(source, length, markdown_core_get_default_mem_allocator(),
+                                                 attach_probes, &setup);
 }
 
 static const markdown_core_node_type node_types[] = {
@@ -64,11 +63,10 @@ static const int num_node_types = sizeof(node_types) / sizeof(*node_types);
 static void test_md_paragraph_text(test_batch_runner *runner, const char *markdown, const char *expected_text,
                                    const char *msg);
 
-static void test_md_paragraph_text_options(test_batch_runner *runner, const char *markdown, size_t markdown_length,
-                                           int options, const char *expected_text, const char *msg);
+static void test_md_paragraph_bytes(test_batch_runner *runner, const char *markdown, size_t markdown_length,
+                                    const char *expected_text, const char *msg);
 
-static markdown_core_node *parse_with_formula_extension(const char *markdown);
-static markdown_core_node *parse_with_directive_extension(const char *markdown);
+static markdown_core_node *parse(const char *source);
 
 static void test_content(test_batch_runner *runner, markdown_core_node_type type, unsigned int *allowed_content);
 
@@ -166,7 +164,7 @@ static void accessors(test_batch_runner *runner) {
                                    "\n"
                                    "[link](url 'title')\n";
 
-    markdown_core_node *doc = markdown_core_parse_document(markdown, sizeof(markdown) - 1, MARKDOWN_CORE_OPT_DEFAULT);
+    markdown_core_node *doc = markdown_core_parse_document(markdown, sizeof(markdown) - 1);
 
     // Getters
 
@@ -195,8 +193,7 @@ static void accessors(test_batch_runner *runner) {
 
     static const char unclosed_markdown[] = "``` lang\n"
                                             "unclosed\n";
-    markdown_core_node *unclosed_doc =
-        markdown_core_parse_document(unclosed_markdown, sizeof(unclosed_markdown) - 1, MARKDOWN_CORE_OPT_DEFAULT);
+    markdown_core_node *unclosed_doc = markdown_core_parse_document(unclosed_markdown, sizeof(unclosed_markdown) - 1);
     markdown_core_node *unclosed = markdown_core_node_first_child(unclosed_doc);
     INT_EQ(runner, markdown_core_node_get_fence_closed(unclosed), 0, "get_fence_closed unclosed fenced code");
     markdown_core_node_free(unclosed_doc);
@@ -291,51 +288,11 @@ static void accessors(test_batch_runner *runner) {
     markdown_core_node_free(doc);
 }
 
-static markdown_core_node *parse_with_formula_extension_options(const char *markdown, int options) {
-    const markdown_core_extension *formula = &MARKDOWN_CORE_EXTENSION_FORMULA;
-    return parse_with_extensions(markdown, strlen(markdown), options, &formula, 1);
-}
+static markdown_core_node *parse(const char *source) { return markdown_core_parse_document(source, strlen(source)); }
 
-static markdown_core_node *parse_with_formula_extension(const char *markdown) {
-    return parse_with_formula_extension_options(markdown, MARKDOWN_CORE_OPT_DEFAULT);
-}
-
-static markdown_core_node *parse_with_dollar_formula_extension(const char *markdown) {
-    return parse_with_formula_extension_options(markdown, MARKDOWN_CORE_OPT_DEFAULT);
-}
-
-static markdown_core_node *parse_with_directive_extension(const char *markdown) {
-    const markdown_core_extension *directive = &MARKDOWN_CORE_EXTENSION_DIRECTIVE;
-    return parse_with_extensions(markdown, strlen(markdown), MARKDOWN_CORE_OPT_DEFAULT, &directive, 1);
-}
-
-/* ATTACHING THE EXTENSION IS THE ONLY GATE (Q14, Step 6). These two assertions
- * used to say the opposite -- "dollar formula delimiters require opt-in" -- and
- * they passed because `MARKDOWN_CORE_OPT_DOLLAR_FORMULA_DELIMITERS` existed and
- * this parser did not set it. There is no such option now, so a parser with the
- * extension attached parses the syntax and a parser without it does not, and
- * nothing in between is expressible. */
 static void formula_extension_accessors(test_batch_runner *runner) {
-    markdown_core_node *doc = markdown_core_parse_document("Inline $x+y$ end.\n", 18, MARKDOWN_CORE_OPT_DEFAULT);
+    markdown_core_node *doc = parse("Inline $x+y$ end.\n");
     markdown_core_node *paragraph = markdown_core_node_first_child(doc);
-    markdown_core_node *text = markdown_core_node_first_child(paragraph);
-
-    INT_EQ(runner, markdown_core_node_get_type(text), MARKDOWN_CORE_NODE_TEXT,
-           "without the extension attached, dollar syntax is ordinary text");
-    STR_EQ(runner, markdown_core_node_get_literal(text), "Inline $x+y$ end.",
-           "and the text keeps every byte the author wrote");
-    markdown_core_node_free(doc);
-
-    doc = parse_with_formula_extension("Inline $x+y$ end.\n");
-    paragraph = markdown_core_node_first_child(doc);
-    OK(runner,
-       markdown_core_node_get_type(markdown_core_node_next(markdown_core_node_first_child(paragraph))) ==
-           MARKDOWN_CORE_NODE_FORMULA,
-       "attaching the extension is the whole gate");
-    markdown_core_node_free(doc);
-
-    doc = parse_with_dollar_formula_extension("Inline $x+y$ end.\n");
-    paragraph = markdown_core_node_first_child(doc);
     markdown_core_node *formula = markdown_core_node_next(markdown_core_node_first_child(paragraph));
 
     STR_EQ(runner, markdown_core_node_get_type_string(formula), "formula", "formula type string");
@@ -359,7 +316,7 @@ static void formula_extension_accessors(test_batch_runner *runner) {
            "get formula mode rejects non-formula nodes");
     markdown_core_node_free(doc);
 
-    doc = parse_with_dollar_formula_extension("$$x+y$$\n");
+    doc = parse("$$x+y$$\n");
     formula = markdown_core_node_first_child(doc);
     STR_EQ(runner, markdown_core_node_get_type_string(formula), "formula_block",
            "standalone formula block type string");
@@ -368,7 +325,7 @@ static void formula_extension_accessors(test_batch_runner *runner) {
            "formula block mode is standalone");
     markdown_core_node_free(doc);
 
-    doc = parse_with_dollar_formula_extension("Display $$a+b$$ end.\n");
+    doc = parse("Display $$a+b$$ end.\n");
     paragraph = markdown_core_node_first_child(doc);
     formula = markdown_core_node_next(markdown_core_node_first_child(paragraph));
     STR_EQ(runner, markdown_core_node_get_type_string(formula), "formula", "standalone formula inline type string");
@@ -377,7 +334,7 @@ static void formula_extension_accessors(test_batch_runner *runner) {
            "formula inline mode is standalone");
     markdown_core_node_free(doc);
 
-    doc = parse_with_formula_extension_options("Inline \\\\(x+y\\\\) end.\n", MARKDOWN_CORE_OPT_DEFAULT);
+    doc = parse("Inline \\\\(x+y\\\\) end.\n");
     paragraph = markdown_core_node_first_child(doc);
     formula = markdown_core_node_next(markdown_core_node_first_child(paragraph));
     STR_EQ(runner, markdown_core_node_get_type_string(formula), "formula", "LaTeX embedded formula inline type string");
@@ -387,7 +344,7 @@ static void formula_extension_accessors(test_batch_runner *runner) {
            "LaTeX formula inline mode is embedded");
     markdown_core_node_free(doc);
 
-    doc = parse_with_formula_extension_options("Display \\\\[x+y\\\\] end.\n", MARKDOWN_CORE_OPT_DEFAULT);
+    doc = parse("Display \\\\[x+y\\\\] end.\n");
     paragraph = markdown_core_node_first_child(doc);
     formula = markdown_core_node_next(markdown_core_node_first_child(paragraph));
     STR_EQ(runner, markdown_core_node_get_type_string(formula), "formula",
@@ -398,7 +355,7 @@ static void formula_extension_accessors(test_batch_runner *runner) {
            "LaTeX formula inline mode is standalone");
     markdown_core_node_free(doc);
 
-    doc = parse_with_formula_extension_options("\\\\[x+y\\\\]\n", MARKDOWN_CORE_OPT_DEFAULT);
+    doc = parse("\\\\[x+y\\\\]\n");
     formula = markdown_core_node_first_child(doc);
     STR_EQ(runner, markdown_core_node_get_type_string(formula), "formula_block",
            "LaTeX standalone formula block type string");
@@ -408,7 +365,7 @@ static void formula_extension_accessors(test_batch_runner *runner) {
            "LaTeX formula block mode is standalone");
     markdown_core_node_free(doc);
 
-    doc = parse_with_formula_extension("```formula\nx+y\n```\n");
+    doc = parse("```formula\nx+y\n```\n");
     formula = markdown_core_node_first_child(doc);
     STR_EQ(runner, markdown_core_node_get_type_string(formula), "formula_block",
            "formula fence becomes standalone block");
@@ -435,9 +392,8 @@ static void directive_extension_accessors(test_batch_runner *runner) {
      * with one. `class` is also the one name whose repeats accumulate now, so
      * the three of them are one value rather than the last one. The sequence
      * keeps the first occurrence of each name in source order. */
-    markdown_core_node *doc =
-        parse_with_directive_extension(":a[]{id=first muted=true title=\"My Video\" bare= dup=first dup=last "
-                                       "class=red class=green class=blue id=123}\n");
+    markdown_core_node *doc = parse(":a[]{id=first muted=true title=\"My Video\" bare= dup=first dup=last "
+                                    "class=red class=green class=blue id=123}\n");
     markdown_core_node *paragraph = markdown_core_node_first_child(doc);
     markdown_core_node *directive = markdown_core_node_first_child(paragraph);
     markdown_core_node *label = markdown_core_directive_label(directive);
@@ -493,7 +449,7 @@ static void directive_extension_accessors(test_batch_runner *runner) {
     /* A block directive has two independent node-valued relations: `label`
      * and block content. The ordinary cmark iterator follows only the content
      * child tree; callers can start a separate walk at the label field root. */
-    doc = parse_with_directive_extension(":::note[Title]\nBody\n:::\n");
+    doc = parse(":::note[Title]\nBody\n:::\n");
     directive = markdown_core_node_first_child(doc);
     label = markdown_core_directive_label(directive);
     paragraph = markdown_core_node_first_child(directive);
@@ -546,7 +502,7 @@ static void directive_extension_accessors(test_batch_runner *runner) {
     markdown_core_node_free(doc);
 
     /* Missing and authored-empty containers have the same public value. */
-    doc = parse_with_directive_extension(":plain[] :empty{}\n");
+    doc = parse(":plain[] :empty{}\n");
     paragraph = markdown_core_node_first_child(doc);
     directive = markdown_core_node_first_child(paragraph);
     for (int i = 0; i < 2; i++) {
@@ -575,7 +531,7 @@ static void node_check(test_batch_runner *runner) {
 }
 
 static void iterator(test_batch_runner *runner) {
-    markdown_core_node *doc = markdown_core_parse_document("> a *b*\n\nc", 10, MARKDOWN_CORE_OPT_DEFAULT);
+    markdown_core_node *doc = markdown_core_parse_document("> a *b*\n\nc", 10);
     int parnodes = 0;
     markdown_core_event_type ev_type;
     markdown_core_iter *iter = markdown_core_iter_new(doc);
@@ -603,7 +559,7 @@ static void iterator_delete(test_batch_runner *runner) {
                              "\n"
                              "* item1\n"
                              "* item2\n";
-    markdown_core_node *doc = markdown_core_parse_document(md, sizeof(md) - 1, MARKDOWN_CORE_OPT_DEFAULT);
+    markdown_core_node *doc = markdown_core_parse_document(md, sizeof(md) - 1);
     markdown_core_iter *iter = markdown_core_iter_new(doc);
     markdown_core_event_type ev_type;
 
@@ -816,13 +772,12 @@ static void utf8(test_batch_runner *runner) {
 
     // Test string containing null character
     static const char string_with_null[] = "((((\0))))";
-    test_md_paragraph_text_options(runner, string_with_null, sizeof(string_with_null) - 1, MARKDOWN_CORE_OPT_DEFAULT,
-                                   "((((" UTF8_REPL "))))", "utf8 with U+0000");
+    test_md_paragraph_bytes(runner, string_with_null, sizeof(string_with_null) - 1, "((((" UTF8_REPL "))))",
+                            "utf8 with U+0000");
 
     // Test NUL followed by newline
     static const char string_with_nul_lf[] = "```\n\0\n```\n";
-    markdown_core_node *doc =
-        markdown_core_parse_document(string_with_nul_lf, sizeof(string_with_nul_lf) - 1, MARKDOWN_CORE_OPT_DEFAULT);
+    markdown_core_node *doc = markdown_core_parse_document(string_with_nul_lf, sizeof(string_with_nul_lf) - 1);
     markdown_core_node *code_block = markdown_core_node_first_child(doc);
     INT_EQ(runner, markdown_core_node_get_type(code_block), MARKDOWN_CORE_NODE_CODE_BLOCK,
            "utf8 with \\0\\n parses a code block");
@@ -831,7 +786,7 @@ static void utf8(test_batch_runner *runner) {
 
     // Test byte-order marker
     static const char string_with_bom[] = "\xef\xbb\xbf# Hello\n";
-    doc = markdown_core_parse_document(string_with_bom, sizeof(string_with_bom) - 1, MARKDOWN_CORE_OPT_DEFAULT);
+    doc = markdown_core_parse_document(string_with_bom, sizeof(string_with_bom) - 1);
     markdown_core_node *heading = markdown_core_node_first_child(doc);
     INT_EQ(runner, markdown_core_node_get_type(heading), MARKDOWN_CORE_NODE_HEADING, "utf8 with BOM parses a heading");
     STR_EQ(runner, markdown_core_node_get_literal(markdown_core_node_first_child(heading)), "Hello", "utf8 with BOM");
@@ -851,8 +806,7 @@ static void line_endings(test_batch_runner *runner) {
     // Test list with different line endings
     static const char list_with_endings[] = "- a\n- b\r\n- c\r- d";
     static const char *const expected_items[] = {"a", "b", "c", "d"};
-    markdown_core_node *doc =
-        markdown_core_parse_document(list_with_endings, sizeof(list_with_endings) - 1, MARKDOWN_CORE_OPT_DEFAULT);
+    markdown_core_node *doc = markdown_core_parse_document(list_with_endings, sizeof(list_with_endings) - 1);
     markdown_core_node *list = markdown_core_node_first_child(doc);
     markdown_core_node *item = markdown_core_node_first_child(list);
     INT_EQ(runner, markdown_core_node_get_type(list), MARKDOWN_CORE_NODE_LIST,
@@ -869,10 +823,9 @@ static void line_endings(test_batch_runner *runner) {
     OK(runner, item == NULL, "list has exactly four items");
     markdown_core_node_free(doc);
 
-    // OPT_HARDBREAKS/OPT_NOBREAKS only changed the retired renderers; in the
-    // AST a CRLF line ending is always a SoftBreak between the two texts.
+    // A CRLF line ending is a SoftBreak between the two texts.
     static const char crlf_lines[] = "line\r\nline\r\n";
-    doc = markdown_core_parse_document(crlf_lines, sizeof(crlf_lines) - 1, MARKDOWN_CORE_OPT_DEFAULT);
+    doc = markdown_core_parse_document(crlf_lines, sizeof(crlf_lines) - 1);
     markdown_core_node *paragraph = markdown_core_node_first_child(doc);
     markdown_core_node *middle = markdown_core_node_next(markdown_core_node_first_child(paragraph));
     STR_EQ(runner, markdown_core_node_get_literal(markdown_core_node_first_child(paragraph)), "line",
@@ -884,7 +837,7 @@ static void line_endings(test_batch_runner *runner) {
     markdown_core_node_free(doc);
 
     static const char no_line_ending[] = "```\nline\n```";
-    doc = markdown_core_parse_document(no_line_ending, sizeof(no_line_ending) - 1, MARKDOWN_CORE_OPT_DEFAULT);
+    doc = markdown_core_parse_document(no_line_ending, sizeof(no_line_ending) - 1);
     markdown_core_node *code_block = markdown_core_node_first_child(doc);
     INT_EQ(runner, markdown_core_node_get_type(code_block), MARKDOWN_CORE_NODE_CODE_BLOCK,
            "fenced code block with no final newline parses");
@@ -931,7 +884,7 @@ static void comment_nodes(test_batch_runner *runner) {
                                    "\n"
                                    "<!-->\n";
 
-    markdown_core_node *doc = markdown_core_parse_document(markdown, sizeof(markdown) - 1, MARKDOWN_CORE_OPT_DEFAULT);
+    markdown_core_node *doc = markdown_core_parse_document(markdown, sizeof(markdown) - 1);
     markdown_core_node *paragraph = markdown_core_node_first_child(doc);
     markdown_core_node *text = markdown_core_node_first_child(paragraph);
     markdown_core_node *comment = markdown_core_node_next(text);
@@ -972,7 +925,7 @@ static void comment_nodes(test_batch_runner *runner) {
 
     markdown_core_node_free(doc);
 
-    doc = markdown_core_parse_document("a <!--> b <!---> c <!----> d\n", 29, MARKDOWN_CORE_OPT_DEFAULT);
+    doc = markdown_core_parse_document("a <!--> b <!---> c <!----> d\n", 29);
     paragraph = markdown_core_node_first_child(doc);
     empty = markdown_core_node_next(markdown_core_node_first_child(paragraph));
     INT_EQ(runner, markdown_core_node_get_type(empty), MARKDOWN_CORE_NODE_COMMENT, "`<!-->` is an inline comment");
@@ -997,7 +950,7 @@ static void comment_nodes(test_batch_runner *runner) {
         static const char crlf[] = "a <!--x\r\ny--> b\r\n\r\n<!--\r\nx\r\n-->\r\n\r\n```\r\nx\r\n```\r\n";
         static const char cr[] = "a <!--x\ry--> b\r\r<!--\rx\r-->\r";
         markdown_core_node *code;
-        doc = markdown_core_parse_document(crlf, sizeof(crlf) - 1, MARKDOWN_CORE_OPT_DEFAULT);
+        doc = markdown_core_parse_document(crlf, sizeof(crlf) - 1);
         paragraph = markdown_core_node_first_child(doc);
         comment = markdown_core_node_next(markdown_core_node_first_child(paragraph));
         block_comment = markdown_core_node_next(paragraph);
@@ -1016,7 +969,7 @@ static void comment_nodes(test_batch_runner *runner) {
         STR_EQ(runner, markdown_core_node_get_literal(code), "x\n", "CRLF inside a code block is stored as LF too");
         markdown_core_node_free(doc);
 
-        doc = markdown_core_parse_document(cr, sizeof(cr) - 1, MARKDOWN_CORE_OPT_DEFAULT);
+        doc = markdown_core_parse_document(cr, sizeof(cr) - 1);
         paragraph = markdown_core_node_first_child(doc);
         comment = markdown_core_node_next(markdown_core_node_first_child(paragraph));
         block_comment = markdown_core_node_next(paragraph);
@@ -1034,9 +987,9 @@ static void comment_nodes(test_batch_runner *runner) {
  * Text literals equal `expected_text`.  This replaces the retired
  * markdown_to_html comparisons: AST literals carry raw bytes, without HTML
  * escaping. */
-static void test_md_paragraph_text_options(test_batch_runner *runner, const char *markdown, size_t markdown_length,
-                                           int options, const char *expected_text, const char *msg) {
-    markdown_core_node *doc = markdown_core_parse_document(markdown, markdown_length, options);
+static void test_md_paragraph_bytes(test_batch_runner *runner, const char *markdown, size_t markdown_length,
+                                    const char *expected_text, const char *msg) {
+    markdown_core_node *doc = markdown_core_parse_document(markdown, markdown_length);
     markdown_core_node *paragraph = markdown_core_node_first_child(doc);
     char text[4096] = "";
     size_t length = 0;
@@ -1071,12 +1024,12 @@ static void test_md_paragraph_text_options(test_batch_runner *runner, const char
 
 static void test_md_paragraph_text(test_batch_runner *runner, const char *markdown, const char *expected_text,
                                    const char *msg) {
-    test_md_paragraph_text_options(runner, markdown, strlen(markdown), MARKDOWN_CORE_OPT_DEFAULT, expected_text, msg);
+    test_md_paragraph_bytes(runner, markdown, strlen(markdown), expected_text, msg);
 }
 
 static void test_crlf_line_ending(test_batch_runner *runner) {
     const char *source = "line1\r\nline2\r\n";
-    markdown_core_node *document = markdown_core_parse_document(source, strlen(source), MARKDOWN_CORE_OPT_DEFAULT);
+    markdown_core_node *document = markdown_core_parse_document(source, strlen(source));
     OK(runner, document->first_child->next == NULL, "document has one paragraph");
     markdown_core_node_free(document);
 }
@@ -1096,7 +1049,7 @@ static void test_pathological_parse_completion(test_batch_runner *runner, const 
         memcpy(input + i * pattern_length, pattern, pattern_length);
     }
 
-    document = markdown_core_parse_document(input, input_length, MARKDOWN_CORE_OPT_DEFAULT);
+    document = markdown_core_parse_document(input, input_length);
     OK(runner, document != NULL, "%s (parse succeeds)", msg);
     markdown_core_node_free(document);
     free(input);
@@ -1142,24 +1095,24 @@ static void test_facade_dump(test_batch_runner *runner, const char *markdown, co
 // here". Enabling tables then stopped a directive block from interrupting a
 // paragraph.
 //
-// THIS TEST SETS THE ATTACH ORDER ITSELF, and that is the point.
-// packages/markdown-core/tests/fixtures/extensions-conflicts.txt covers the
-// same property end to end, but only while the product's own attach order still
-// puts `table` first; the moment that order changes the fixture passes whether
-// or not the defect is present. This one keeps failing.
+// The parse always uses the dialect's fixed order.
 static void extension_decline_yields_turn(test_batch_runner *runner) {
-    static const char *const markdown = "text\n:::note\nbody\n:::\n";
-    const markdown_core_extension *table = &MARKDOWN_CORE_EXTENSION_TABLE;
-    const markdown_core_extension *directive = &MARKDOWN_CORE_EXTENSION_DIRECTIVE;
-    const markdown_core_extension *extensions[] = {table, directive};
+    /* Test the decline contract directly, so the fixed attach order cannot
+     * hide a table matcher that wrongly returns its unchanged parent. */
+    markdown_core_parser parser = {0};
+    parser.mem = markdown_core_get_default_mem_allocator();
+    markdown_core_node *candidate = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
+    markdown_core_strbuf_puts(&candidate->content, "text\n");
+    unsigned char line[] = ":::note\n";
+    OK(runner,
+       MARKDOWN_CORE_EXTENSION_TABLE.try_opening_block(&MARKDOWN_CORE_EXTENSION_TABLE, 0, &parser, candidate, line,
+                                                       sizeof(line) - 1) == NULL,
+       "a non-table line yields no block, independently of attach order");
+    markdown_core_node_free(candidate);
 
-    OK(runner, table && directive, "table and directive extensions are available");
-    if (!table || !directive) {
-        return;
-    }
-    markdown_core_node *doc = parse_with_extensions(markdown, strlen(markdown), MARKDOWN_CORE_OPT_DEFAULT, extensions,
-                                                    sizeof(extensions) / sizeof(extensions[0]));
-    OK(runner, doc != NULL, "table and directive extensions attach in the requested test order");
+    static const char *const markdown = "text\n:::note\nbody\n:::\n";
+    markdown_core_node *doc = parse(markdown);
+    OK(runner, doc != NULL, "the full dialect parses the extension conflict");
     if (!doc) {
         return;
     }
@@ -1168,7 +1121,7 @@ static void extension_decline_yields_turn(test_batch_runner *runner) {
     markdown_core_node *block = paragraph ? markdown_core_node_next(paragraph) : NULL;
     INT_EQ(runner, markdown_core_node_get_type(paragraph), MARKDOWN_CORE_NODE_PARAGRAPH,
            "the lead paragraph survives table declining");
-    OK(runner, block != NULL, "an extension attached after table still gets its turn");
+    OK(runner, block != NULL, "the directive interrupts the ordinary paragraph");
     STR_EQ(runner, block ? markdown_core_node_get_type_string(block) : "", "directive_block",
            "a declining table does not swallow the directive block");
     markdown_core_node_free(doc);
@@ -1203,7 +1156,7 @@ static void iterator_contract_is_total(test_batch_runner *runner) {
                              "a `code` b <span>html</span> c\\\n"
                              "d\n"
                              "e\n";
-    markdown_core_node *doc = markdown_core_parse_document(md, sizeof(md) - 1, MARKDOWN_CORE_OPT_DEFAULT);
+    markdown_core_node *doc = markdown_core_parse_document(md, sizeof(md) - 1);
     markdown_core_iter *iter = markdown_core_iter_new(doc);
     markdown_core_node *stack[64];
     size_t depth = 0, enters = 0, exits = 0, mismatched = 0, overflow = 0;
@@ -1332,8 +1285,7 @@ static const markdown_core_extension STRAY_UNNAMED = {
 static void stray_delimiter_parse(test_batch_runner *runner, const markdown_core_extension *extension,
                                   const char *what) {
     const char *input = "a @ b @ c\n";
-    markdown_core_node *document =
-        parse_with_extensions(input, strlen(input), MARKDOWN_CORE_OPT_DEFAULT, &extension, 1);
+    markdown_core_node *document = parse_with_probes(input, strlen(input), &extension, 1);
 
     OK(runner, document != NULL, "a delimiter with %s still finishes the parse", what);
     markdown_core_node_free(document);
@@ -1661,7 +1613,7 @@ static void link_resource_lifecycle(test_batch_runner *runner) {
     /* Every occurrence of one definition reads one resource; a direct link
      * with the same bytes owns its own. */
     static const char markdown[] = "[a]: /shared \"t\"\n\n[a] [a] [d](/shared \"t\")\n";
-    markdown_core_node *doc = markdown_core_parse_document(markdown, sizeof(markdown) - 1, MARKDOWN_CORE_OPT_DEFAULT);
+    markdown_core_node *doc = markdown_core_parse_document(markdown, sizeof(markdown) - 1);
     markdown_core_node *first = markdown_core_node_first_child(markdown_core_node_first_child(doc));
     markdown_core_node *second = markdown_core_node_next(markdown_core_node_next(first));
     markdown_core_node *direct = markdown_core_node_next(markdown_core_node_next(second));
@@ -1836,7 +1788,8 @@ static int conversion_can_contain(const markdown_core_extension *extension, mark
                : node->kind == MARKDOWN_CORE_NODE_PARAGRAPH && MARKDOWN_CORE_NODE_TYPE_INLINE_P(child_kind);
 }
 
-/* Apply the same parent policy before the built-in delimiter matcher runs. */
+/* A literal ! lets this probe set the parent policy before the following
+ * delimiter, with every production extension still in its fixed order. */
 static markdown_core_node *conversion_match_inline(const markdown_core_extension *extension,
                                                    markdown_core_parser *parser, markdown_core_node *parent,
                                                    unsigned char character,
@@ -1852,14 +1805,13 @@ static const markdown_core_extension CONVERSION_POLICY = {
     .name = "conversion-policy",
     .can_contain_func = conversion_can_contain,
     .match_inline = conversion_match_inline,
-    .dispatch = "~",
+    .dispatch = "!",
 };
 
 static bool configure_conversion_policy(markdown_core_parser *parser, void *context) {
     parser->root->extension = &CONVERSION_POLICY;
     parser->root->user_data = context;
-    return markdown_core_parser_attach_extension(parser, &CONVERSION_POLICY) &&
-           markdown_core_core_extensions_attach(parser);
+    return markdown_core_parser_attach_extension(parser, &CONVERSION_POLICY);
 }
 
 static void kind_conversion_containment(test_batch_runner *runner) {
@@ -1870,13 +1822,12 @@ static void kind_conversion_containment(test_batch_runner *runner) {
         {MARKDOWN_CORE_NODE_TABLE, MARKDOWN_CORE_NODE_PARAGRAPH, "| h |\n| - |\n", "| h |\n| - |"},
         {MARKDOWN_CORE_NODE_HEADING, MARKDOWN_CORE_NODE_PARAGRAPH, "heading\n===\n", "heading\n==="},
         {MARKDOWN_CORE_NODE_COMMENT_BLOCK, MARKDOWN_CORE_NODE_HTML_BLOCK, "<!-- body -->\n", "<!-- body -->\n"},
-        {MARKDOWN_CORE_NODE_STRIKETHROUGH, MARKDOWN_CORE_NODE_PARAGRAPH, "~~text~~\n", "~~text~~"},
+        {MARKDOWN_CORE_NODE_STRIKETHROUGH, MARKDOWN_CORE_NODE_PARAGRAPH, "!~~text~~\n", "!~~text~~"},
     };
     markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
     for (size_t i = 0; i < sizeof(cases) / sizeof(*cases); i++) {
         conversion_policy policy = {cases[i].rejected_kind, 0};
-        markdown_core_node *root = markdown_core_parse_document_with_mem(cases[i].source, strlen(cases[i].source),
-                                                                         MARKDOWN_CORE_DIALECT_OPTIONS, mem,
+        markdown_core_node *root = markdown_core_parse_document_with_mem(cases[i].source, strlen(cases[i].source), mem,
                                                                          configure_conversion_policy, &policy);
         OK(runner, policy.rejections > 0, "case %zu exercises parent containment rejection", i);
         OK(runner, root != NULL, "case %zu declines conversion without failing the parse", i);
@@ -2120,8 +2071,7 @@ static void autolink_source_pos(test_batch_runner *runner) {
 
 static void table_values(test_batch_runner *runner) {
     const char source[] = "| a | b |\n| - | - |\n| c | d |\n| e | f |\n";
-    const markdown_core_extension *extensions[] = {&MARKDOWN_CORE_EXTENSION_TABLE};
-    markdown_core_node *root = parse_with_extensions(source, sizeof(source) - 1, 0, extensions, 1);
+    markdown_core_node *root = markdown_core_parse_document(source, sizeof(source) - 1);
     OK(runner, root != NULL, "table value fixture parses");
     if (!root) {
         return;
@@ -2191,8 +2141,7 @@ static markdown_core_node *observe_source_marks(const markdown_core_extension *e
 
 static void table_source_map_growth(test_batch_runner *runner) {
     static const markdown_core_extension observer = {.postprocess_func = observe_source_marks};
-    const markdown_core_extension *extensions[] = {&MARKDOWN_CORE_EXTENSION_TABLE, &MARKDOWN_CORE_EXTENSION_AUTOLINK,
-                                                   &observer};
+    const markdown_core_extension *extensions[] = {&observer};
     const char *unit = "\\| &amp; user@example.com ";
     size_t unit_length = strlen(unit);
     for (size_t count = 256; count <= 4096; count *= 4) {
@@ -2203,7 +2152,7 @@ static void table_source_map_growth(test_batch_runner *runner) {
         }
         markdown_core_strbuf_puts(&source, "|\n");
         observed_source_marks = 0;
-        markdown_core_node *root = parse_with_extensions((const char *)source.ptr, source.size, 0, extensions, 3);
+        markdown_core_node *root = parse_with_probes((const char *)source.ptr, source.size, extensions, 1);
         OK(runner, root != NULL, "mapped table with %zu address splits parses", count);
         if (root) {
             // Every source byte may contribute only a bounded number of runs,
@@ -2344,25 +2293,37 @@ static void universal_values(test_batch_runner *runner) {
 /* Count visited source positions as well as verifying values. Repeated failed
  * candidates share one extent, so they cannot rescan each other's suffixes. */
 typedef struct {
-    size_t cross_link, opaque, delimiters, comment, lookahead;
+    size_t cross_link, opaque, delimiters, comment, lookahead, footnote_body;
+    size_t registered_footnotes;
+    bool footnote_collection_allocated, footnotes_owned;
 } inline_work;
 static markdown_core_node *record_inline_work(const markdown_core_extension *extension, markdown_core_parser *parser,
                                               markdown_core_node *root) {
     (void)extension;
     inline_work *work = root->user_data;
+    if (!work) {
+        return root;
+    }
     work->cross_link = parser->cross_link_scan_work;
     work->opaque = parser->opaque_scan_work;
     work->delimiters = parser->delimiter_work;
     work->comment = parser->comment_scan_work;
     work->lookahead = parser->block_lookahead_work;
+    work->footnote_body = parser->footnote_body_work;
+    work->registered_footnotes = parser->footnote_registration_work;
+    work->footnote_collection_allocated = parser->footnotes.values != NULL;
+    work->footnotes_owned = true;
+    for (markdown_core_node *note = root->as.document->footnotes; note; note = note->next) {
+        work->footnotes_owned &=
+            note->kind == MARKDOWN_CORE_NODE_FOOTNOTE && note->parent == NULL && note->as.footnote->id.data != NULL;
+    }
     root->user_data = NULL;
     return root;
 }
 static const markdown_core_extension WORK_RECORDER = {.name = "work-recorder", .postprocess_func = record_inline_work};
 static bool measure_inline_work(markdown_core_parser *parser, void *context) {
     parser->root->user_data = context;
-    return markdown_core_core_extensions_attach(parser) &&
-           markdown_core_parser_attach_extension(parser, &WORK_RECORDER);
+    return markdown_core_parser_attach_extension(parser, &WORK_RECORDER);
 }
 
 static void cross_link_linear_work(test_batch_runner *runner) {
@@ -2395,8 +2356,8 @@ static void cross_link_linear_work(test_batch_runner *runner) {
             }
             markdown_core_strbuf_puts(&source, cases[c].suffix);
             inline_work work = {0};
-            markdown_core_node *root = markdown_core_parse_document_with_mem(
-                (char *)source.ptr, source.size, MARKDOWN_CORE_DIALECT_OPTIONS, mem, measure_inline_work, &work);
+            markdown_core_node *root =
+                markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
             OK(runner, root != NULL, "adversarial cross links parse successfully");
             OK(runner, work.cross_link <= 3 * (size_t)source.size,
                "cross-link scanner inspects disjoint bodies: case=%zu size=%d work=%zu", c, source.size,
@@ -2406,6 +2367,218 @@ static void cross_link_linear_work(test_batch_runner *runner) {
             markdown_core_node_free(root);
             markdown_core_strbuf_free(&source);
         }
+    }
+}
+
+/* Nested bodies are never rescanned for emptiness and close in one bracket
+ * operation. The document order follows opening positions, not close order. */
+static void inline_footnote_linear_work(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    static const struct {
+        const char *left, *middle, *right;
+        int notes_per_unit;
+    } cases[] = {
+        {"^", "", "", 0},        {"[", "x", "]", 0},      {"^[", "x", "]", 1},  {"^[", "", "", 0},
+        {"]", "", "", 0},        {"^[ \t ] ", "", "", 0}, {"^[a] ", "", "", 1}, {"^[a [x](u) ", "z", " b]", 1},
+        {"^[a ", "^[]", "]", 1},
+    };
+    for (size_t c = 0; c < sizeof(cases) / sizeof(*cases); c++) {
+        for (size_t count = 128; count <= 8192; count *= 2) {
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+            for (size_t i = 0; i < count; i++) {
+                markdown_core_strbuf_puts(&source, cases[c].left);
+            }
+            markdown_core_strbuf_puts(&source, cases[c].middle);
+            for (size_t i = 0; i < count; i++) {
+                markdown_core_strbuf_puts(&source, cases[c].right);
+            }
+            inline_work work = {0};
+            markdown_core_node *root = markdown_core_parse_document_with_mem(
+                (const char *)source.ptr, (size_t)source.size, mem, measure_inline_work, &work);
+            OK(runner, root != NULL, "adversarial inline footnotes parse");
+            OK(runner, work.footnote_body <= (size_t)source.size,
+               "nonblank evidence inspects disjoint source ranges: case=%zu size=%d work=%zu", c, source.size,
+               work.footnote_body);
+            INT_EQ(runner, work.registered_footnotes, count * cases[c].notes_per_unit,
+                   "all committed notes are registered before finalization");
+            OK(runner, work.footnotes_owned, "postprocessors receive resolved document-owned footnotes");
+            OK(runner, !work.footnote_collection_allocated,
+               "parse-time footnote edges are discarded before postprocessing");
+            if (root) {
+                size_t actual = 0;
+                int previous_column = 0;
+                for (markdown_core_node *note = root->as.document->footnotes; note; note = note->next) {
+                    char expected[40];
+                    snprintf(expected, sizeof(expected), "inline-%zu", ++actual);
+                    STR_EQ(runner, (const char *)note->as.footnote->id.data, expected, "ids follow source order");
+                    OK(runner, note->start_column > previous_column && note->parent == NULL,
+                       "document owns each value once in increasing source order");
+                    previous_column = note->start_column;
+                }
+                INT_EQ(runner, actual, count * cases[c].notes_per_unit, "all and only completed notes are retained");
+                markdown_core_node_free(root);
+            }
+            markdown_core_strbuf_free(&source);
+        }
+    }
+    for (size_t count = 128; count <= 4096; count *= 2) {
+        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+        markdown_core_strbuf_puts(&source, "^[x]\n\n[^inline-1]: reserved\n");
+        for (size_t i = 1; i <= count; i++) {
+            char definition[64];
+            snprintf(definition, sizeof(definition), "[^inline-1-%zu]: reserved\n", i);
+            markdown_core_strbuf_puts(&source, definition);
+        }
+        markdown_core_node *root =
+            markdown_core_parse_document_with_mem((const char *)source.ptr, (size_t)source.size, mem, NULL, NULL);
+        OK(runner, root != NULL, "long authored suffix sets parse");
+        if (root) {
+            char expected[40];
+            snprintf(expected, sizeof(expected), "inline-1-%zu", count + 1);
+            STR_EQ(runner, (const char *)root->as.document->footnotes->as.footnote->id.data, expected,
+                   "generated ids skip the complete authored suffix set");
+            markdown_core_node_free(root);
+        }
+        markdown_core_strbuf_free(&source);
+    }
+}
+
+/* Definitions, closing brackets, and deferred fields commit in different
+ * orders. All must already be registered before finalization, including
+ * notes whose enclosing candidate fails or becomes a link or image. */
+static void footnote_registration(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    static const struct {
+        const char *source;
+        size_t count;
+        const char *ids[6];
+    } cases[] = {
+        {"^[outer ^[inner]] :d[^[label]] ^[last]\n\n[^inline-1]: ^[body]\n",
+         6,
+         {"inline-1-1", "inline-2", "inline-3", "inline-4", "inline-1", "inline-5"}},
+        {"^[unclosed ^[inner]", 1, {"inline-1"}},
+        {"[^a]: ^[body]\n\n[^a ^[x]] [^[link]](u) ![^[image]](v)\n",
+         5,
+         {"a", "inline-1", "inline-2", "inline-3", "inline-4"}},
+        {"`^[code]` $^[formula]$ %%^[comment]%% <!-- ^[html] --> <i data-x=\"^[token]\">\n", 0, {NULL}},
+        {"[[^[target]]]\n", 1, {"inline-1"}},
+        {"[^a]: first\n[^a]: duplicate\n", 2, {"a", "a"}},
+    };
+    for (size_t c = 0; c < sizeof(cases) / sizeof(*cases); c++) {
+        inline_work work = {0};
+        markdown_core_node *root = markdown_core_parse_document_with_mem(cases[c].source, strlen(cases[c].source), mem,
+                                                                         measure_inline_work, &work);
+        OK(runner, root != NULL, "footnote registration boundaries parse: case=%zu", c);
+        INT_EQ(runner, work.registered_footnotes, cases[c].count, "only committed notes enter the parser collection");
+        OK(runner, work.footnotes_owned, "postprocessors receive resolved document-owned footnotes");
+        if (root) {
+            size_t actual = 0;
+            for (markdown_core_node *note = root->as.document->footnotes; note; note = note->next) {
+                if (actual < cases[c].count) {
+                    STR_EQ(runner, (const char *)note->as.footnote->id.data, cases[c].ids[actual],
+                           "finalization orders committed notes by source start");
+                }
+                actual++;
+            }
+            INT_EQ(runner, actual, cases[c].count, "each registered note becomes one document value");
+            markdown_core_node_free(root);
+        }
+    }
+}
+
+typedef struct {
+    size_t removed;
+    bool resolved, index_released;
+} footnote_postprocess_probe;
+
+static markdown_core_node *remove_footnotes(const markdown_core_extension *extension, markdown_core_parser *parser,
+                                            markdown_core_node *root) {
+    (void)extension;
+    if (root->kind != MARKDOWN_CORE_NODE_DOCUMENT) {
+        return root;
+    }
+    footnote_postprocess_probe *probe = root->user_data;
+    probe->index_released =
+        parser->footnotes.values == NULL && parser->footnotes.count == 0 && parser->footnotes.last_inline == NULL;
+    probe->resolved = true;
+    while (root->as.document->footnotes) {
+        markdown_core_node *note = root->as.document->footnotes;
+        probe->resolved &= note->parent == NULL && note->as.footnote->id.data != NULL;
+        root->as.document->footnotes = note->next;
+        markdown_core_node_free(note);
+        probe->removed++;
+    }
+    root->user_data = NULL;
+    return root;
+}
+
+static bool observe_footnote_removal(markdown_core_parser *parser, void *context) {
+    static const markdown_core_extension probe = {.name = "remove-footnotes", .postprocess_func = remove_footnotes};
+    parser->root->user_data = context;
+    return markdown_core_parser_attach_extension(parser, &probe);
+}
+
+static void footnote_postprocessing(test_batch_runner *runner) {
+    static const char source[] = "^[outer ^[inner]] :d[^[label]]\n\n[^n]: ^[body]\n";
+    footnote_postprocess_probe probe = {0};
+    markdown_core_node *root = markdown_core_parse_document_with_mem(
+        source, sizeof(source) - 1, markdown_core_get_default_mem_allocator(), observe_footnote_removal, &probe);
+    OK(runner, root != NULL, "postprocessing may remove document footnotes without stale parser pointers");
+    INT_EQ(runner, probe.removed, 5, "postprocessor receives all authored and inline values");
+    OK(runner, probe.resolved && probe.index_released, "ids and ownership are final before mutable callbacks run");
+    if (root) {
+        markdown_core_node *cite = root->first_child->first_child;
+        OK(runner, !root->as.document->footnotes && !cite->first_child,
+           "Cite has no transient structural body before or after postprocessing");
+        STR_EQ(runner, (const char *)cite->as.cite->citations->as.citation->value.data, "inline-1",
+               "citation ids survive deletion of their document value");
+        markdown_core_node *note = markdown_core_node_new(MARKDOWN_CORE_NODE_FOOTNOTE);
+        OK(runner, !markdown_core_node_append_child(cite, note), "Cite containment rejects a Footnote child");
+        markdown_core_node_free(note);
+        markdown_core_node_free(root);
+    }
+}
+
+static size_t text_allocation_calls;
+static void *count_text_calloc(size_t count, size_t size) {
+    text_allocation_calls++;
+    return calloc(count, size);
+}
+static void *count_text_realloc(void *pointer, size_t size) {
+    text_allocation_calls++;
+    return realloc(pointer, size);
+}
+
+/* A literal caret is ordinary text. Allocation work must equal an ordinary
+ * text span of the same length, even when every byte is a caret. */
+static void literal_caret_allocations(test_batch_runner *runner) {
+    markdown_core_mem mem = {count_text_calloc, count_text_realloc, free};
+    for (size_t count = 1024; count <= 1048576; count *= 2) {
+        char *source = malloc(count);
+        size_t ordinary_allocations = 0;
+        for (size_t shape = 0; shape < 3; shape++) {
+            for (size_t i = 0; i < count; i++) {
+                source[i] = shape == 0 || (shape == 2 && i % 2) ? 'a' : '^';
+            }
+            text_allocation_calls = 0;
+            markdown_core_node *root = markdown_core_parse_document_with_mem(source, count, &mem, NULL, NULL);
+            OK(runner, root != NULL, "ordinary text and caret spans parse at %zu bytes", count);
+            if (shape == 0) {
+                ordinary_allocations = text_allocation_calls;
+            } else {
+                INT_EQ(runner, text_allocation_calls, ordinary_allocations,
+                       "literal carets allocate only for their text span");
+            }
+            if (root) {
+                markdown_core_node *text = root->first_child->first_child;
+                OK(runner,
+                   !text->next && text->as.literal->len == (bufsize_t)count &&
+                       memcmp(text->as.literal->data, source, count) == 0,
+                   "one Text retains every literal byte");
+                markdown_core_node_free(root);
+            }
+        }
+        free(source);
     }
 }
 
@@ -2437,8 +2610,8 @@ static void mark_linear_work(test_batch_runner *runner) {
                 markdown_core_strbuf_puts(&source, cases[c].right);
             }
             inline_work work = {0};
-            markdown_core_node *root = markdown_core_parse_document_with_mem(
-                (char *)source.ptr, source.size, MARKDOWN_CORE_DIALECT_OPTIONS, mem, measure_inline_work, &work);
+            markdown_core_node *root =
+                markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
             OK(runner, root != NULL, "adversarial equals runs parse successfully");
             OK(runner, work.delimiters > 0 && work.delimiters <= 8 * (size_t)source.size,
                "shared delimiter work is linear: case=%zu size=%d work=%zu", c, source.size, work.delimiters);
@@ -2506,8 +2679,8 @@ static void comment_inline_linear_work(test_batch_runner *runner) {
             }
             markdown_core_strbuf_puts(&source, cases[c].suffix);
             inline_work work = {0};
-            markdown_core_node *root = markdown_core_parse_document_with_mem(
-                (char *)source.ptr, source.size, MARKDOWN_CORE_DIALECT_OPTIONS, mem, measure_inline_work, &work);
+            markdown_core_node *root =
+                markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
             OK(runner, root != NULL, "adversarial percent runs parse successfully");
             OK(runner, work.comment + work.opaque <= 4 * (size_t)source.size,
                "comment scanner work is linear: case=%zu size=%d comment=%zu opaque=%zu", c, source.size, work.comment,
@@ -2602,8 +2775,8 @@ static void comment_block_linear_work(test_batch_runner *runner) {
                 break;
             }
             inline_work work = {0};
-            markdown_core_node *root = markdown_core_parse_document_with_mem(
-                (char *)source.ptr, source.size, MARKDOWN_CORE_DIALECT_OPTIONS, mem, measure_inline_work, &work);
+            markdown_core_node *root =
+                markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
             OK(runner, root != NULL, "nested block comment candidates parse successfully");
             OK(runner, work.lookahead <= 4 * (size_t)source.size,
                "block lookahead work is linear: shape=%d size=%d work=%zu", shape, source.size, work.lookahead);
@@ -2615,11 +2788,6 @@ static void comment_block_linear_work(test_batch_runner *runner) {
             markdown_core_strbuf_free(&source);
         }
     }
-}
-
-static bool attach_dialect(markdown_core_parser *parser, void *context) {
-    (void)context;
-    return markdown_core_core_extensions_attach(parser) != 0;
 }
 
 /* O3: the `%%` forms produce the `Comment` kind M0 added, on the engine's own
@@ -2640,9 +2808,8 @@ static void percent_comment_nodes(test_batch_runner *runner) {
                                    "open\r\n";
     /* The engine entry with the dialect attached: `%%` is an extension's
      * syntax, unlike the HTML comment of `comment_nodes` above. */
-    markdown_core_node *doc =
-        markdown_core_parse_document_with_mem(markdown, sizeof(markdown) - 1, MARKDOWN_CORE_DIALECT_OPTIONS,
-                                              markdown_core_get_default_mem_allocator(), attach_dialect, NULL);
+    markdown_core_node *doc = markdown_core_parse_document_with_mem(
+        markdown, sizeof(markdown) - 1, markdown_core_get_default_mem_allocator(), NULL, NULL);
     markdown_core_node *paragraph = markdown_core_node_first_child(doc);
     markdown_core_node *text = markdown_core_node_first_child(paragraph);
     markdown_core_node *comment = markdown_core_node_next(text);
@@ -2787,6 +2954,10 @@ int main(void) {
     universal_values(runner);
     attribute_linear_work(runner);
     cross_link_linear_work(runner);
+    inline_footnote_linear_work(runner);
+    footnote_registration(runner);
+    footnote_postprocessing(runner);
+    literal_caret_allocations(runner);
     mark_linear_work(runner);
     comment_inline_linear_work(runner);
     comment_block_linear_work(runner);

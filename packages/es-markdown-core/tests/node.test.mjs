@@ -359,6 +359,52 @@ function nodeKindName(node) {
     return node.kind[0].toUpperCase() + node.kind.slice(1);
 }
 
+test("ast: inline footnotes keep direct content, source ids and finite visitation", () => {
+    const document = Document.parse("^[^[x]]\n\n[^inline-1]: authored\n");
+    assert.deepEqual(
+        document.footnotes.map((note) => note.id),
+        ["inline-1-1", "inline-2", "inline-1"]
+    );
+    assert.deepEqual(
+        document.footnotes.map((note) => note.content[0].kind),
+        ["cite", "text", "paragraph"]
+    );
+    const outer = document.content[0].content[0];
+    assert.deepEqual(outer.citations[0].referent, { kind: "footnote", id: "inline-1-1" });
+    assert.deepEqual(document.footnotes[0].content[0].citations[0].referent, { kind: "footnote", id: "inline-2" });
+    const events = [];
+    walk(
+        document,
+        walkingVisitor((node, phase) => events.push(`${phase}:${nodeKindName(node)}`))
+    );
+    assert.deepEqual(events, [
+        "entering:Document",
+        "entering:Paragraph",
+        "entering:Cite",
+        "entering:Citation",
+        "exiting:Citation",
+        "exiting:Cite",
+        "exiting:Paragraph",
+        "entering:Footnote",
+        "entering:Cite",
+        "entering:Citation",
+        "exiting:Citation",
+        "exiting:Cite",
+        "exiting:Footnote",
+        "entering:Footnote",
+        "entering:Text",
+        "exiting:Text",
+        "exiting:Footnote",
+        "entering:Footnote",
+        "entering:Paragraph",
+        "entering:Text",
+        "exiting:Text",
+        "exiting:Paragraph",
+        "exiting:Footnote",
+        "exiting:Document"
+    ]);
+});
+
 test("ast: an inherited call is a one-item cite and the document owns its footnotes", () => {
     // M4: repeated calls share one footnote; the item names it by id with
     // empty affixes; the footnote is a document-owned value after the

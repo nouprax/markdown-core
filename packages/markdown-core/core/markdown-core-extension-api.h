@@ -577,6 +577,13 @@ void markdown_core_inline_parser_set_offset(markdown_core_inline_parser *parser,
 MARKDOWN_CORE_EXPORT
 struct markdown_core_chunk *markdown_core_inline_parser_get_chunk(markdown_core_inline_parser *parser);
 
+/** The surrounding bracket's closing byte, or zero outside brackets.
+ * Bare token scanners preserve an unescaped closer for the shared algorithm. */
+unsigned char markdown_core_inline_parser_closing_bracket(markdown_core_inline_parser *parser);
+
+/** The start of the current independent inline body (subject or footnote). */
+int markdown_core_inline_parser_context_start(markdown_core_inline_parser *parser);
+
 /** Returns 1 if the inline parser is currently in a bracket; pass 1 for 'image'
  * if you want to know about an image-type bracket, 0 for link-type. */
 MARKDOWN_CORE_EXPORT

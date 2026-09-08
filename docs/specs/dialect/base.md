@@ -37,10 +37,6 @@ off, and no gate does either: the cmark oracle is compared with the one
 language over the inputs it judges, and each place the dialect leaves
 CommonMark is registered against those inputs in `specs/oracles/cmark/`.
 
-The engine's `MARKDOWN_CORE_OPT_LIBERAL_HTML_TAG` and
-`MARKDOWN_CORE_OPT_STRIKETHROUGH_DOUBLE_TILDE` bits are set by nothing and
-have no dialect meaning; the second is removed by `P6`.
-
 ## Kinds of the base language
 
 The base language produces these kinds of

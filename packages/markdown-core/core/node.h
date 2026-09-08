@@ -129,9 +129,11 @@ typedef struct {
     struct markdown_core_node *suffix;
 } markdown_core_citation_item;
 
-/* A FOOTNOTE (M4): the id is the definition's label under the map's own
- * normalization, without the caret, the key every call's referent names; the
- * content is the node's children. */
+/* A FOOTNOTE: content is the node's children, block or inline. A definition
+ * has its normalized authored id. A committed inline body is owned directly
+ * by Document.footnotes. Before tree transforms, finalization assigns its id
+ * and copies that id to the Citation owned by its Cite. The Citation refers
+ * to the Footnote by id; neither the Cite nor the Citation owns its body. */
 typedef struct {
     markdown_core_chunk id;
 } markdown_core_footnote_value;
@@ -145,9 +147,10 @@ typedef struct {
     bool has_start;
 } markdown_core_specimen_value;
 
-/* THE DOCUMENT's own footnotes (M4): every footnote definition leaves the tree
- * when the document finalizes and is chained here in ascending scope order, a
- * node-valued field the root owns beside its content. */
+/* THE DOCUMENT's own footnotes (M4): committed inline bodies enter this
+ * node-valued field immediately. Before tree transforms, finalization moves
+ * authored definitions out of the block tree and orders all values by scope.
+ * The root owns this chain beside its content. */
 typedef struct {
     markdown_core_metadata *metadata;
     struct markdown_core_node *footnotes;

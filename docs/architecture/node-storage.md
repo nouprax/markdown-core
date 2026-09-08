@@ -47,3 +47,42 @@ Tests protect the pointer-sized union, constructor allocation failures,
 transactional kind conversion, containment rejection in parser conversions,
 owned subtree release, and whole-parse OOM propagation. Platform builds verify
 native alignment, and sanitizer suites exercise the same ownership paths.
+
+Inline footnotes use the existing Footnote data record and one-item Cite.
+A successful close transfers the parsed inline body directly to
+Document.footnotes. A Cite never has a Footnote child: its Citation names the
+value by id. Authored definitions remain in the block tree until their bodies
+have been parsed. In both cases the document already owns the node, including
+on parse failure.
+
+Both forms register in one parser collection when their syntax commits. Its
+entries borrow the Footnote and, for an inline form, its Citation. Failed
+candidates never register. Inline parsing cannot retract a committed note:
+referenced-call conversion may discard parsed label content, but its defined
+label cannot contain `]`, so it cannot enclose a completed inline footnote.
+The document's inline-value chain is also the work queue for deferred directive
+labels in those bodies; newly produced notes append to it and are processed
+once by the same field parser.
+
+Finalization processes only the F registered values, with no tree walk to
+discover footnotes. Registration order differs from source order: definitions
+precede inline parsing, nested bodies close inside out, and directive labels
+parse after the main tree. Eight stable byte passes over the two 32-bit source
+coordinates bound ordering work by O(F). All authored ids are reserved before
+inline ids are assigned. Collision probes consume disjoint authored-id
+namespaces, so their total is bounded by F plus the authored-id count.
+After every allocation succeeds, finalization moves the values into one
+source-ordered document chain and discards the parser collection.
+
+Consolidation and extension postprocessing begin only after finalization.
+Their common tree-phase walker visits Document.footnotes and extension-owned
+fields from their live owner slots. Callbacks receive resolved ids and the
+completed ownership model; removing a document value cannot leave a pointer
+in a parser index. OOM cleanup uses the document's existing ownership graph,
+and semantic reference cycles never become object cycles.
+
+The bracket scanner tracks the most recent non-SP/TAB byte over disjoint
+consumed token ranges, so rejecting empty bodies never rescans nested bodies.
+Only `^[` terminates an ordinary text run; other carets incur the same
+allocation work as other text. Bare autolinks use the enclosing inline
+context's start and closing delimiter, preserving the footnote boundary.

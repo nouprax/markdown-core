@@ -535,7 +535,7 @@
             "dump": "url(\"...\") or cross(path=\"...\",anchor=null)"
         },
         "CitationReferent": {
-            "purpose": "A tagged value, not a node: it has no scope, and a branch's fields exist only in that branch. The bib branch is first produced by the citations module with P7; every inherited footnote call produces the footnote branch, whose id names the Footnote in Document.footnotes with the equal id. The specimen branch names the first Specimen in Document.specimens with the equal non-null id; syntax production lands with P9b.",
+            "purpose": "A tagged value, not a node: it has no scope, and a branch's fields exist only in that branch. The bib branch is first produced by the citations module with P7; every referenced or inline footnote call produces the footnote branch, whose id names the Footnote in Document.footnotes with the equal id. The specimen branch names the first Specimen in Document.specimens with the equal non-null id; syntax production lands with P9b.",
             "branches": {
                 "bib": [
                     {
@@ -589,7 +589,7 @@
             "dump": "Citation scope=L:C..L:C referent=... children=0, then a CitationPrefix and a CitationSuffix group"
         },
         "Footnote": {
-            "purpose": "One element of Document.footnotes: a scoped value, not a Markup kind, because it is written. Its id is the definition's label under the reference-label normalization without the caret, and its content is the parsed block content of a referenced definition or, once O4 lands, the inline body of an inline footnote.",
+            "purpose": "One element of Document.footnotes: a scoped value, not a Markup kind, because it is written. A referenced definition keeps its normalized label as id and its parsed block content. An inline footnote keeps its parsed inline body directly and receives inline-N, de-collided with -K against all authored ids, in scope-start order at document finalization. Both forms share Document.footnotes in scope-start order.",
             "scoped": true,
             "fields": [
                 {

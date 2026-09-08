@@ -190,9 +190,9 @@ Specimen(id: String?, start: Int?, content: [Markup], scope)
 
 `CitationReferent` is a tagged value like `Destination`: no scope, and a
 branch's fields exist only in that branch. The `bib` branch is first produced
-by the [citations](dialect/citations.md) module with `P7`; every inherited
-`[^label]` call produces the `footnote` branch, whose `id` names the
-`Footnote` in `Document.footnotes` with the equal id.
+by the [citations](dialect/citations.md) module with `P7`; every referenced
+`[^label]` call and inline `^[content]` note produce the `footnote` branch,
+whose `id` names the `Footnote` in `Document.footnotes` with the equal id.
 
 `Citation` and `Footnote` are scoped values, not `Markup` kinds, as the
 [footnotes](dialect/footnotes.md) module defines them: they are written, so
@@ -200,11 +200,15 @@ each carries a `scope`, and each owns Markup, but neither is ever a child of
 a node. A `Citation` is reached only through `Cite.citations`, which holds at
 least one item in source order; its `prefix` and `suffix` are non-null inline
 content, empty when absent. A `Footnote` is reached only through
-`Document.footnotes`, which holds every definition ordered by scope start,
-wherever it was written; its `id` is the definition's label under the
-reference-label normalization without the caret, and its `content` is the
-parsed block content. A later definition of an id already defined is a
-`Footnote` after the first, which every call resolves to, so a consumer
+`Document.footnotes`, which holds every referenced definition and inline note
+ordered by scope start, wherever it was written. A referenced definition keeps
+its normalized label without the caret as `id` and its parsed block content.
+An inline note keeps its parsed inline body directly, without a `Paragraph`.
+Its id is `inline-N` for the N-th inline opener in source order (outer before
+nested), with the smallest free `-K` suffix when necessary. All authored ids
+are reserved before ids are assigned during document finalization. Nested
+citations are id edges, including semantic cycles, never object references.
+A later definition of an id already defined is a `Footnote` after the first, which every call resolves to, so a consumer
 keying footnotes by id takes the first. The C facade answers the values through the opaque handles
 `markdown_core_citation` and `markdown_core_footnote` and their accessors,
 never through `markdown_core_node`; Swift, Kotlin, and ECMAScript model them
@@ -233,7 +237,7 @@ and returns no document.
 
 | Kind | Fields in canonical order | Nullability and invariants |
 | --- | --- | --- |
-| `Document` | `content: [Markup]`, `metadata: Metadata?`, `footnotes: [Footnote]`, `specimens: [Specimen]` | block content; document-owned footnotes and specimens each retain all definitions in scope-start order; visit content, then footnotes, then specimens; neither definition sequence counts as children |
+| `Document` | `content: [Markup]`, `metadata: Metadata?`, `footnotes: [Footnote]`, `specimens: [Specimen]` | block content; document-owned footnotes and specimens retain their values in scope-start order; visit content, then footnotes, then specimens; neither definition sequence counts as children |
 | `Callout` | `variant: String?`, `collapsed: Bool?`, `title: [Markup]?`, `content: [Markup]` | every `>` container; `variant` is the authored type as written or null when the container has no metadata line, and then `collapsed` and `title` are null; `collapsed` is null when no `+` or `-` fold marker was authored, false for `+` and true for `-`; `title` is a node-valued field of inline content visited before `content` and never counted among its children; a present title holds at least one node; block content |
 | `Paragraph` | `content: [Markup]` | inline content |
 | `Heading` | `level: Int`, `content: [Markup]` | `level` is 1 through 6; inline content |
