@@ -276,7 +276,7 @@ static void try_inserting_table_header_paragraph(markdown_core_parser *parser, m
     while (first < last && markdown_core_isspace(parent_string[first])) {
         first++;
     }
-    while (last > first && markdown_core_isspace(parent_string[last - 1])) {
+    while (last > first && (parent_string[last - 1] == '\n' || parent_string[last - 1] == '\r')) {
         last--;
     }
     markdown_core_strbuf_put(&paragraph->content, parent_string + first, last - first);
@@ -306,6 +306,12 @@ static void try_inserting_table_header_paragraph(markdown_core_parser *parser, m
         // markdown_core_node_free, not mem->free: the node owns a content
         // buffer by now, and freeing the struct alone leaks it.
         parser->oom = true;
+        markdown_core_node_free(paragraph);
+        return;
+    }
+    /* A table split completes this paragraph just as a later block start
+     * would: reference definitions and anchor attachment share finalization. */
+    if (!markdown_core_parser_finalize_paragraph(parser, paragraph)) {
         markdown_core_node_free(paragraph);
     }
 }

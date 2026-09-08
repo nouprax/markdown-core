@@ -141,6 +141,35 @@
     },
     "cases": [
         {
+            "name": "block-identifiers",
+            "input": "block-identifiers.md",
+            "expected": "block-identifiers.ast",
+            "coverage": {
+                "kinds": [
+                    "Document",
+                    "Paragraph",
+                    "List",
+                    "ListItem",
+                    "Callout",
+                    "Table",
+                    "TableRow",
+                    "TableCell",
+                    "Text",
+                    "CrossLink",
+                    "SoftBreak",
+                    "Formula"
+                ],
+                "states": [
+                    "markup.anchor.null",
+                    "markup.anchor.value",
+                    "scope.positive",
+                    "children.empty",
+                    "children.populated"
+                ],
+                "orders": ["document.source-order"]
+            }
+        },
+        {
             "name": "blocks",
             "input": "blocks.md",
             "expected": "blocks.ast",

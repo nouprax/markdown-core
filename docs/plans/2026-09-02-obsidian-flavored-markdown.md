@@ -178,11 +178,12 @@ descriptor. O4 completes the shared feature-boundary implementation bullet.
 - [x] Verify metadata/body scopes and native value ownership on every
       surface. Metadata values never enter Markup or visitor callbacks.
 
-- [ ] Add block identifiers during block finalization, when ownership is known.
-      One attachment operation handles paragraph suffixes, structured-block
-      follower lines, and list-item suffixes. It writes the stripped identifier
-      into the owned block's universal anchor and removes the marker from visible
-      content; it does not record an Obsidian or block discriminator.
+- [x] Add `#anchor-id#` block identifiers during block finalization, when
+      ownership is known. One attachment operation handles paragraph suffixes,
+      structured-block follower lines, and list-item suffixes. It writes the
+      identifier without either `#` delimiter into the owned block's universal
+      anchor and removes the complete marker from visible content; it does not
+      record an Obsidian or block discriminator.
 - [ ] Construct `Callout` for every `>` container through the existing block
       algorithm. Default `variant` and `title` to null and `fold` to `none`.
 - [ ] When the first content line has a valid marker, store its source type

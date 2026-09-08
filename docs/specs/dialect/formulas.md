@@ -66,10 +66,12 @@ Document scope=1:1..1:11 anchor=null attributes={} children=1
     └── Text scope=1:10..1:11 anchor=null attributes={} literal=" y" children=0
 ````````````````````````````````
 
-A paragraph whose sole inline child is a standalone `Formula` is replaced by
-a `FormulaBlock` with the same literal and the paragraph's scope. This is the
-one post-pass of the module; it is bounded to paragraphs with exactly one
-child and never changes a paragraph with other content:
+A paragraph with no anchor or attributes whose sole inline child is a
+standalone `Formula` is replaced by a `FormulaBlock` with the same literal and
+the paragraph's scope. A paragraph that declares an anchor or attributes
+retains that ownership and its inline formula. This is the one post-pass of
+the module; it is bounded to anonymous paragraphs with exactly one child and
+never changes a paragraph with other content:
 
 ```````````````````````````````` example
 $$a+b$$

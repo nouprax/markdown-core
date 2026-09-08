@@ -94,9 +94,12 @@ that settled it.
 - `startnum` has no counterpart. Pandoc's switch exists because Pandoc's
   default ignores start numbers; CommonMark already honors them, so
   `List.start` is always the first marker's value for every style.
-- The own-line block identifier `text` then `^id` on the next line is a
-  paragraph suffix. Obsidian writes an identifier at the end of its block,
-  and that source form is one paragraph.
+- Block identifiers use `#anchor-id#` for declarations, with both `#`
+  delimiters excluded from `Markup.anchor`; the former `^block-id` declaration
+  spelling follows the ordinary inline grammar. Cross-link references retain
+  their `#^id` spelling. The own-line block identifier `text` then `#id#` on
+  the next line is a paragraph suffix, preserving Obsidian's end-of-block
+  attachment model. Product syntax ruling on 2026-09-08.
 - Pipe-table rows shorter than the delimiter row are completed with empty
   cells and longer rows are truncated, with cmark-gfm's scopes. GFM source
   and the implemented engine.

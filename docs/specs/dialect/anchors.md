@@ -4,8 +4,8 @@ Status: normative module of the [Markdown Core dialect](../dialect.md). It
 owns the universal `Markup.anchor` field, the document anchor registry,
 automatic heading anchors, and implicit heading references. Sources: Pandoc's
 attribute identifiers, `auto_identifiers` with `gfm_auto_identifiers`, and
-`implicit_header_references`; Obsidian's block identifiers populate the same
-field under the [block identifiers](block-identifiers.md) module. Executable
+`implicit_header_references`; Obsidian-derived block identifiers populate the
+same field under the [block identifiers](block-identifiers.md) module. Executable
 oracle: the Pandoc 3.11 CLI under `specs/oracles/pandoc/`. Landing: the field
 with `M7`, automatic anchors with `P3`, implicit heading references with `P4`.
 The [example format](../dialect.md#examples) is defined by the index.
@@ -29,7 +29,7 @@ one consumer fact:
 | ------------------------------------------- | -------------- |
 | attribute `{#foo}` or `{id=foo}`            | `anchor="foo"` |
 | automatic heading anchor for `# Foo`        | `anchor="foo"` |
-| block identifier `^foo`                     | `anchor="foo"` |
+| block identifier `#foo#`                    | `anchor="foo"` |
 
 There is no heading, block, or fragment discriminator. The reference side of a
 link never populates its own `anchor`: `Link`, `CrossLink`, `Cite`, and a

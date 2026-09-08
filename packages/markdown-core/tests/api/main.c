@@ -2738,7 +2738,7 @@ static void universal_values(test_batch_runner *runner) {
 /* Count visited source positions as well as verifying values. Repeated failed
  * candidates share one extent, so they cannot rescan each other's suffixes. */
 typedef struct {
-    size_t cross_link, opaque, delimiters, comment, lookahead, footnote_body;
+    size_t cross_link, opaque, delimiters, comment, lookahead, footnote_body, block_identifier;
     size_t registered_footnotes;
     bool footnote_collection_allocated, footnotes_owned;
 } inline_work;
@@ -2754,6 +2754,7 @@ static markdown_core_node *record_inline_work(const markdown_core_extension *ext
     work->delimiters = parser->delimiter_work;
     work->comment = parser->comment_scan_work;
     work->lookahead = parser->block_lookahead_work;
+    work->block_identifier = parser->block_identifier_work;
     work->footnote_body = parser->footnote_body_work;
     work->registered_footnotes = parser->footnote_registration_work;
     work->footnote_collection_allocated = parser->footnotes.values != NULL;
@@ -3392,6 +3393,120 @@ static void attribute_linear_work(test_batch_runner *runner) {
     }
 }
 
+static size_t count_anchors(markdown_core_node *root) {
+    size_t count = 0;
+    markdown_core_iter *iter = markdown_core_iter_new(root);
+    markdown_core_event_type event;
+    while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+        if (event == MARKDOWN_CORE_EVENT_ENTER && markdown_core_iter_get_node(iter)->attributes.anchor.len) {
+            count++;
+        }
+    }
+    markdown_core_iter_free(iter);
+    return count;
+}
+
+static void block_identifier_linear_work(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    static const struct {
+        const char *prefix, *unit, *suffix;
+        size_t anchors_per_unit, anchors_at_end;
+    } cases[] = {
+        {"text #", "a", "#", 0, 1},
+        {"text #", "a", "_#", 0, 0},
+        {"text ", "#", "", 0, 0},
+        {"text ", "#a# ", "#last#", 0, 1},
+        {"text ", "#a# ", "invalid", 0, 0},
+        {"", "text #id#\n\n", "", 1, 0},
+        {"text\n", "#id#\n", "", 0, 1},
+        {"text\n", "    #id#\n", "", 0, 0},
+        {"", "> quote\n\n#id#\n\n", "", 1, 0},
+        {"", "- item\n\n#id#\nnext\n\n", "", 0, 0},
+        {"- item\n\n#id#\n", "\n", "next", 0, 1},
+        {"", "lead #id#\n| h |\n| - |\n\n", "", 1, 0},
+    };
+    for (size_t c = 0; c < sizeof(cases) / sizeof(*cases); c++) {
+        for (size_t count = 128; count <= 8192; count *= 2) {
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+            markdown_core_strbuf_puts(&source, cases[c].prefix);
+            for (size_t i = 0; i < count; i++) {
+                markdown_core_strbuf_puts(&source, cases[c].unit);
+            }
+            markdown_core_strbuf_puts(&source, cases[c].suffix);
+            inline_work work = {0};
+            markdown_core_node *root = markdown_core_parse_document_with_mem((const char *)source.ptr, source.size, mem,
+                                                                             measure_inline_work, &work);
+            OK(runner, root != NULL, "block identifier adversary parses: case=%zu count=%zu", c, count);
+            INT_EQ(runner, count_anchors(root), count * cases[c].anchors_per_unit + cases[c].anchors_at_end,
+                   "every placement and fallback retains its semantics: case=%zu count=%zu", c, count);
+            OK(runner, work.block_identifier + work.lookahead <= 4 * (size_t)source.size,
+               "identifier and boundary work is linear: case=%zu bytes=%d scanner=%zu lookahead=%zu", c, source.size,
+               work.block_identifier, work.lookahead);
+            markdown_core_node_free(root);
+            markdown_core_strbuf_free(&source);
+        }
+    }
+}
+
+static markdown_core_node *seed_anchor(const markdown_core_extension *extension, int indented,
+                                       markdown_core_parser *parser, markdown_core_node *parent, unsigned char *input,
+                                       int length) {
+    (void)extension;
+    (void)indented;
+    (void)parent;
+    (void)input;
+    (void)length;
+    markdown_core_node *owner = parser->current;
+    if (parser->blank && owner->kind == MARKDOWN_CORE_NODE_PARAGRAPH) {
+        if (owner->parent->kind == MARKDOWN_CORE_NODE_LIST_ITEM) {
+            owner = owner->parent;
+        }
+        if (!markdown_core_chunk_set_cstr(parser->mem, &owner->attributes.anchor, "existing")) {
+            parser->oom = true;
+        }
+    }
+    return NULL;
+}
+
+static void block_identifier_ownership(test_batch_runner *runner) {
+    static const markdown_core_extension seed = {.name = "preexisting-anchor", .try_opening_block = seed_anchor};
+    const markdown_core_extension *probes[] = {&seed};
+    const char *sources[] = {"text #candidate#\n\n", "- text #candidate#\n\n"};
+    for (size_t i = 0; i < sizeof(sources) / sizeof(*sources); i++) {
+        markdown_core_node *root = parse_with_probes(sources[i], strlen(sources[i]), probes, 1);
+        markdown_core_node *owner = root->first_child;
+        if (owner->kind == MARKDOWN_CORE_NODE_LIST) {
+            owner = owner->first_child;
+        }
+        STR_EQ(runner, (const char *)owner->attributes.anchor.data, "existing", "an existing anchor is never replaced");
+        markdown_core_node *paragraph = owner->kind == MARKDOWN_CORE_NODE_PARAGRAPH ? owner : owner->first_child;
+        STR_EQ(runner, markdown_core_node_get_literal(paragraph->first_child), "text #candidate#",
+               "a refused attachment keeps the complete marker visible");
+        INT_EQ(runner, count_anchors(root), 1, "a refused item anchor is not transferred to its paragraph");
+        markdown_core_node_free(root);
+    }
+    const char *endings[] = {"\n", "\r\n", "\r"};
+    for (size_t i = 0; i < sizeof(endings) / sizeof(*endings); i++) {
+        for (int final_newline = 0; final_newline <= 1; final_newline++) {
+            char source[80];
+            snprintf(source, sizeof(source), "- text #item#%s%s#list#%s", endings[i], endings[i],
+                     final_newline ? endings[i] : "");
+            markdown_core_node *root = markdown_core_parse_document(source, strlen(source));
+            markdown_core_node *list = root->first_child;
+            markdown_core_node *item = list->first_child;
+            memset(source, 'x', strlen(source));
+            STR_EQ(runner, (const char *)list->attributes.anchor.data, "list",
+                   "detached EOF identifier owns its bytes");
+            STR_EQ(runner, (const char *)item->attributes.anchor.data, "item", "item identifier owns its bytes");
+            OK(runner, list->attributes.anchor.alloc && item->attributes.anchor.alloc, "anchors are owned chunks");
+            INT_EQ(runner, list->end_line, 3, "detached line belongs to the list scope for every line ending");
+            INT_EQ(runner, list->end_column, 6, "list scope includes the closing hash at EOF");
+            INT_EQ(runner, item->first_child->first_child->end_column, 6, "text scope ends before the separator");
+            markdown_core_node_free(root);
+        }
+    }
+}
+
 int main(void) {
     int retval;
     test_batch_runner *runner = test_batch_runner_new();
@@ -3401,6 +3516,8 @@ int main(void) {
     properties_source_boundaries(runner);
     properties_member_work(runner);
     properties_text_memory(runner);
+    block_identifier_linear_work(runner);
+    block_identifier_ownership(runner);
     attribute_linear_work(runner);
     cross_link_linear_work(runner);
     inline_footnote_linear_work(runner);

@@ -30,7 +30,15 @@ typedef struct {
     /* Source columns advanced per logical byte: one for copied bytes,
      * two for a contracted pipe escape, zero within a decoded token. */
     int source_step;
+    /* Virtual indentation after container prefixes, before block content was
+     * stripped. Slices retain this line provenance, including table leads;
+     * synthetic inline runs use zero because they never finalize as blocks. */
+    int indent;
 } markdown_core_line_mark;
+
+/* Finalize the semantics of an already positioned, attached paragraph. False
+ * means reference definitions consumed all content and the caller removes it. */
+bool markdown_core_parser_finalize_paragraph(struct markdown_core_parser *parser, struct markdown_core_node *node);
 
 /* Parse-time edges used only to assign document-local ids. Every footnote
  * is already owned by the document, either in its block tree or value field.
@@ -105,6 +113,8 @@ struct markdown_core_parser {
     size_t block_lookahead_work;
     /* Properties work: source ranges decoded once at their owning boundary. */
     size_t metadata_decoded_bytes;
+    /* Bytes examined by the shared block-identifier suffix scanner. */
+    size_t block_identifier_work;
     /* THE SOURCE AFTER THE LINE BEING PROCESSED. `S_parse_source` sets the
      * cursor to the first byte of the next raw line before it hands each line
      * to `S_process_line`, so a block start whose grammar needs a later line --
