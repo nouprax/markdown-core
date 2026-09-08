@@ -6,6 +6,13 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
+- Land O6 Properties as document-owned ordered metadata content. Supported YAML
+  members become data records; comments, non-YAML text, `...`, duplicates, and
+  unsupported or over-budget members retain source in the comment value case.
+  Valid neighboring data survives. Replace `Metadata.records` with `content`
+  across C, Swift, Kotlin, and ES, preserve exact numbers and record scopes, and
+  keep metadata outside Markup children and visitors.
+
 - Recognize one authored Unicode scalar as a task marker on C, Swift, Kotlin,
   and ES, including `?`, `✓` and `🚀`. Consume the entire SP/TAB/VT/FF separator
   run before deciding the first block, and inspect only an item's opening
@@ -44,7 +51,7 @@ promised to remain compatible between releases.
   the same empty value. Directive names begin with a Unicode letter.
 - Add document-owned Metadata values and optional image width/height across
   the facade and transports. Properties syntax and image dimension syntax
-  follow in O6 and O9; parsed metadata and dimensions remain absent for now.
+  follow in O6 and O9; O6 now produces metadata, while dimensions await O9.
 
 - Unify tables as columns plus head/content/foot row groups on C, Swift, Kotlin,
   and ES. Remove row header flags, expose cell spans, and retain inline or block

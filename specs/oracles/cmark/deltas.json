@@ -41,6 +41,12 @@
             "kind": "deliberate-difference",
             "summary": "O1 recognizes complete [[...]] and ![[...]] as opaque CrossLink leaves before inherited bracket syntax.",
             "handling": "Exact specification inputs only; dialect/cross-links.md and product fixtures own recognition and values."
+        },
+        {
+            "id": "properties-envelope",
+            "kind": "deliberate-difference",
+            "summary": "O6 attaches a complete beginning-of-file --- envelope as Metadata. Unsupported payload members stay metadata comments; CommonMark parses the fences and payload as body blocks.",
+            "handling": "Keyed to both affected pinned CommonMark examples; member recovery, exact data, and source retention are checked by the Properties fixtures and YAML data oracle."
         }
     ],
     "expectedDivergences": [
@@ -93,6 +99,16 @@
             "id": "cross-links",
             "input": "![[foo]]\n\n[[foo]]: /url \"title\"\n",
             "note": "O1: the dialect cross-link scanner owns the complete inner double brackets."
+        },
+        {
+            "id": "properties-envelope",
+            "input": "---\nFoo\n---\nBar\n---\nBaz\n",
+            "note": "O6: complete first envelope owns its source; any unsupported payload is a metadata comment."
+        },
+        {
+            "id": "properties-envelope",
+            "input": "---\n---\n",
+            "note": "O6: complete first envelope owns its source; any unsupported payload is a metadata comment."
         }
     ],
     "notDeltas": [],

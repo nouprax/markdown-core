@@ -92,7 +92,7 @@ that makes the row `present`.
 | `%%` comments                       | [comments](dialect/comments.md)                                   | Obsidian                               | remark-obsidian                      | present                         |
 | inline footnotes                    | [footnotes](dialect/footnotes.md)                                 | Obsidian, Pandoc                       | none; product fixtures               | present                   |
 | task markers                        | [task lists](dialect/task-lists.md)                               | Obsidian                               | remark-obsidian                      | present                         |
-| properties                          | [properties](dialect/properties.md)                               | Obsidian                               | `yaml`                               | missing, `O6`                   |
+| properties                          | [properties](dialect/properties.md)                               | Obsidian                               | `yaml`                               | present, `O6`                   |
 | block identifiers                   | [block identifiers](dialect/block-identifiers.md)                 | Obsidian                               | none; product fixtures               | missing, `O7`                   |
 | callouts                            | [callouts](dialect/callouts.md)                                   | Obsidian                               | none; product fixtures               | partial, `O8`                   |
 | image dimensions                    | [links and images](dialect/links-and-images.md)                   | Obsidian                               | none; product fixtures               | missing, `O9`                   |
@@ -338,8 +338,8 @@ dialect. Changing one is a behavior change.
 | decimal list marker and example counter digits                    | 9             | a longer digit run is not a marker                                                     |
 | Roman list marker value                                           | 999999999     | a numeral of greater value, whatever its components, is not a marker; the line is ordinary content |
 | image dimension value                                             | 2147483647    | a larger value yields no dimensions; the whole label stays alt content                 |
-| properties alias expansion                                        | 1048576 bytes | a payload whose expanded alias occurrences exceed the budget invalidates the candidate |
-| properties records per block                                      | 65536         | a payload with more top-level records invalidates the candidate                        |
+| properties alias expansion                                        | 1048576 bytes | a member exceeding the remaining expansion budget is retained as a metadata comment |
+| properties records per block                                      | 65536         | members beyond the data-record limit are retained as metadata comments                        |
 | autocompleted pipe-table cells per table (`MAX_AUTOCOMPLETED_CELLS`) | 524288     | once the synthesized empty cells exceed it, the next line is not a row and ends the table |
 | pipe-table cells per row                                          | 65535         | a header or delimiter row with more cells is not a table; a body row with more cells ends the table before it |
 

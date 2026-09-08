@@ -192,6 +192,34 @@ sealed interface com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core
     open fun dump(): kotlin/String // com.nouprax.markdown.core/Markup.dump|dump(){}[0]
 }
 
+sealed interface com.nouprax.markdown.core/MetadataContent { // com.nouprax.markdown.core/MetadataContent|null[0]
+    final class Comment : com.nouprax.markdown.core/MetadataContent { // com.nouprax.markdown.core/MetadataContent.Comment|null[0]
+        constructor <init>(kotlin/String) // com.nouprax.markdown.core/MetadataContent.Comment.<init>|<init>(kotlin.String){}[0]
+
+        final val value // com.nouprax.markdown.core/MetadataContent.Comment.value|{}value[0]
+            final fun <get-value>(): kotlin/String // com.nouprax.markdown.core/MetadataContent.Comment.value.<get-value>|<get-value>(){}[0]
+
+        final fun component1(): kotlin/String // com.nouprax.markdown.core/MetadataContent.Comment.component1|component1(){}[0]
+        final fun copy(kotlin/String = ...): com.nouprax.markdown.core/MetadataContent.Comment // com.nouprax.markdown.core/MetadataContent.Comment.copy|copy(kotlin.String){}[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // com.nouprax.markdown.core/MetadataContent.Comment.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // com.nouprax.markdown.core/MetadataContent.Comment.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // com.nouprax.markdown.core/MetadataContent.Comment.toString|toString(){}[0]
+    }
+
+    final class Data : com.nouprax.markdown.core/MetadataContent { // com.nouprax.markdown.core/MetadataContent.Data|null[0]
+        constructor <init>(com.nouprax.markdown.core/MetadataRecord) // com.nouprax.markdown.core/MetadataContent.Data.<init>|<init>(com.nouprax.markdown.core.MetadataRecord){}[0]
+
+        final val record // com.nouprax.markdown.core/MetadataContent.Data.record|{}record[0]
+            final fun <get-record>(): com.nouprax.markdown.core/MetadataRecord // com.nouprax.markdown.core/MetadataContent.Data.record.<get-record>|<get-record>(){}[0]
+
+        final fun component1(): com.nouprax.markdown.core/MetadataRecord // com.nouprax.markdown.core/MetadataContent.Data.component1|component1(){}[0]
+        final fun copy(com.nouprax.markdown.core/MetadataRecord = ...): com.nouprax.markdown.core/MetadataContent.Data // com.nouprax.markdown.core/MetadataContent.Data.copy|copy(com.nouprax.markdown.core.MetadataRecord){}[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // com.nouprax.markdown.core/MetadataContent.Data.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // com.nouprax.markdown.core/MetadataContent.Data.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // com.nouprax.markdown.core/MetadataContent.Data.toString|toString(){}[0]
+    }
+}
+
 sealed interface com.nouprax.markdown.core/MetadataListItem { // com.nouprax.markdown.core/MetadataListItem|null[0]
     final class Number : com.nouprax.markdown.core/MetadataListItem { // com.nouprax.markdown.core/MetadataListItem.Number|null[0]
         constructor <init>(kotlin/String) // com.nouprax.markdown.core/MetadataListItem.Number.<init>|<init>(kotlin.String){}[0]
@@ -717,10 +745,10 @@ final class com.nouprax.markdown.core/Mark : com.nouprax.markdown.core/Markup { 
 }
 
 final class com.nouprax.markdown.core/Metadata { // com.nouprax.markdown.core/Metadata|null[0]
-    constructor <init>(kotlin.collections/List<com.nouprax.markdown.core/MetadataRecord>, com.nouprax.markdown.core/Scope) // com.nouprax.markdown.core/Metadata.<init>|<init>(kotlin.collections.List<com.nouprax.markdown.core.MetadataRecord>;com.nouprax.markdown.core.Scope){}[0]
+    constructor <init>(kotlin.collections/List<com.nouprax.markdown.core/MetadataContent>, com.nouprax.markdown.core/Scope) // com.nouprax.markdown.core/Metadata.<init>|<init>(kotlin.collections.List<com.nouprax.markdown.core.MetadataContent>;com.nouprax.markdown.core.Scope){}[0]
 
-    final val records // com.nouprax.markdown.core/Metadata.records|{}records[0]
-        final fun <get-records>(): kotlin.collections/List<com.nouprax.markdown.core/MetadataRecord> // com.nouprax.markdown.core/Metadata.records.<get-records>|<get-records>(){}[0]
+    final val content // com.nouprax.markdown.core/Metadata.content|{}content[0]
+        final fun <get-content>(): kotlin.collections/List<com.nouprax.markdown.core/MetadataContent> // com.nouprax.markdown.core/Metadata.content.<get-content>|<get-content>(){}[0]
     final val scope // com.nouprax.markdown.core/Metadata.scope|{}scope[0]
         final fun <get-scope>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/Metadata.scope.<get-scope>|<get-scope>(){}[0]
 }

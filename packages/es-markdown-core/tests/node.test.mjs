@@ -872,7 +872,7 @@ test("ast: metadata preserves tags, decimal text, duplicate keys and owned lists
     assert.throws(() => new NodeDecoder(bad).decodeDocument(), /metadata scalar/);
     bytes.fill(0);
     assert.deepEqual(
-        document.metadata.records.map((record) => record.value),
+        document.metadata.content.map((content) => content.record.value),
         [
             { kind: "scalar", value: { kind: "null" } },
             { kind: "scalar", value: { kind: "bool", value: true } },
@@ -889,7 +889,7 @@ test("ast: metadata preserves tags, decimal text, duplicate keys and owned lists
         ]
     );
     assert.deepEqual(
-        document.metadata.records.slice(0, 2).map((record) => record.name),
+        document.metadata.content.slice(0, 2).map((content) => content.record.name),
         ["key", "key"]
     );
     assert.match(document.dump(), /value=scalar\(number\("9007199254740993"\)\)/);
@@ -957,4 +957,33 @@ test("ast: cross links retain raw values after native release and reject wrong w
     assert.throws(() => new NodeDecoder(malformed).decodeDocument(), /cross link requires a cross destination/u);
     bytes.fill(0);
     assert.equal(links[2].label, "raw *label*");
+});
+
+test("ast: Properties retain mixed data and source, independent of Markup walking", () => {
+    const source =
+        "---\r\na: &x 9007199254740993\r\nnot YAML\r\n...\r\nbad: &x [true]\r\nb: *x\r\na: duplicate\r\n# note\r\n---\r\nbody\r\n";
+    const document = Document.parse(source);
+    const content = document.metadata.content;
+    assert.deepEqual(
+        content.map((item) => item.kind),
+        ["data", "comment", "comment", "comment", "data", "comment", "comment"]
+    );
+    assert.equal(content[0].record.value.value.value, "9007199254740993");
+    assert.equal(content[4].record.value.value.value, "9007199254740993");
+    assert.equal(content[1].value, "not YAML");
+    assert.equal(content[2].value, "...");
+    assert.equal(content[3].value, "bad: &x [true]");
+    assert.equal(document.content[0].scope.start.line, 10);
+    assert.equal(document.metadata.scope.end.line, 9);
+    const events = [];
+    walk(
+        document,
+        walkingVisitor((node, phase) => {
+            if (phase === "entering") events.push(node.kind);
+        })
+    );
+    assert.deepEqual(events, ["document", "paragraph", "text"]);
+    assert.equal(Document.parse("---\n---").metadata.content.length, 0);
+    assert.equal(Document.parse("---\na: 1\n").metadata, null);
+    assert.match(document.dump(), /MetadataContent value=comment\("\.\.\."\)/);
 });

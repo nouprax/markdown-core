@@ -400,16 +400,18 @@ function parseMetadataValue(text) {
         end = pattern.lastIndex;
     }
     if (end !== body.length) throw new Error("invalid metadata list item");
-    return { kind: "list", items };
+    return { kind: "list", values: items };
 }
 function parseMetadataDump(node) {
     const metadata = node.children.filter((child) => child.kind === "Metadata");
     if (!metadata.length) return null;
     if (metadata.length !== 1) throw new Error("multiple metadata values");
-    return metadata[0].children.map((record) => {
-        if (record.kind !== "MetadataRecord") throw new Error("invalid metadata record");
-        return { name: record.fields.name, value: parseMetadataValue(record.fields.value) };
-    });
+    return metadata[0].children
+        .filter((item) => item.kind !== "MetadataContent")
+        .map((record) => {
+            if (record.kind !== "MetadataRecord") throw new Error("invalid metadata record");
+            return { name: record.fields.name, value: parseMetadataValue(record.fields.value) };
+        });
 }
 
 // O3: the `comment-removal` projection. The oracle removes a `%%` comment
@@ -710,6 +712,40 @@ for (const [raw, expected] of [
         process.exit(1);
     }
 }
+// O6 projects retained comment values away for YAML data parity. Recovery is a
+// dialect rule witnessed directly, independently of the YAML document oracle.
+const retainedProperties = parseCanonicalDump(
+    execFileSync(ours, [], {
+        input: "---\nbefore: 1\nnot YAML\n...\nbad: [true]\nafter: 2\n---\nbody\n",
+        encoding: "utf8"
+    })
+);
+const retainedMetadata = retainedProperties.children.find((item) => item.kind === "Metadata");
+if (
+    JSON.stringify(retainedMetadata?.children.map((item) => item.kind)) !==
+        '["MetadataRecord","MetadataContent","MetadataContent","MetadataContent","MetadataRecord"]' ||
+    JSON.stringify(parseMetadataDump(retainedProperties)?.map((record) => record.name)) !== '["before","after"]' ||
+    retainedProperties.children.some((item) => item.kind === "Comment")
+) {
+    throw new Error("obsidian parity: metadata comment retention and member recovery canary failed");
+}
+
+for (const empty of ['""', "''"]) {
+    const input = `---\nvalue: !!null ${empty}\n---\n`;
+    const oracle = parseAllDocuments(`value: !!null ${empty}\n`, {
+        schema: "json",
+        customTags: jsonScalarsWithStringFallback,
+        logLevel: "silent"
+    });
+    const product = parseMetadataDump(parseCanonicalDump(execFileSync(ours, [], { input, encoding: "utf8" })));
+    if (
+        !oracle[0]?.warnings.length ||
+        JSON.stringify(product) !== '[{"name":"value","value":{"kind":"scalar","value":{"kind":"null"}}}]'
+    ) {
+        throw new Error("obsidian parity: tagged empty null boundary changed");
+    }
+}
+
 const metadataDumpCanary = [{ name: "x", value: { kind: "scalar", value: { kind: "text", value: "a b" } } }];
 const capturedMetadata = parseCanonicalDump(
     'Document scope=1:1..3:3 anchor=null attributes={} children=0\n└── Metadata scope=1:1..3:3 children=1\n    └── MetadataRecord scope=2:1..2:8 name="x" value=scalar(text("a b")) children=0\n'

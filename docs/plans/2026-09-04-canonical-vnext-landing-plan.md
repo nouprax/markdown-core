@@ -34,7 +34,7 @@ parallel and every merge leaves `main` releasable.
 | #192 extension module contracts               | specs  | The Obsidian module set, the Pandoc module set, the shared attributes, citation, and inserted-text contracts, Remark directive attachment, the Pandoc and Obsidian oracle pins, and the two implementation plans. |
 | #193 anchors and destinations                 | specs  | The universal `Markup.anchor` field, the tagged `Destination` value on `Link`, `Image`, and `CrossLink`, and the simplified `Attributes` shape.                                                                 |
 | #194 Obsidian Properties                      | specs  | `Document.metadata`, the shared metadata value model, the Properties envelope, and the `yaml@2.9.0` oracle.                                                                                                     |
-| #196 Properties corrections                   | specs  | Mapping keys are textual names, explicit null roots are rejected, and the oracle canaries were tightened.                                                                                                       |
+| #196 Properties corrections                   | specs  | Textual mapping keys and tightened oracle canaries; the original null-root rejection is superseded by O6 comment retention.                                                                                                       |
 
 The inserted-text contract is the one specification that no existing plan
 sequences; it is landed here as its own track. The dialect rewrite of `S0`
@@ -258,7 +258,7 @@ value carries `scope` only.
 | `Footnote(id, content: [Markup], scope)`                                            | `M4`; document-owned, scoped and traversed, not `Markup`      |
 | `OrderedListVariant`, `OrderedListDelimiter`                                          | `M5`; values beyond the inherited forms first by `P9a`, `P9b` |
 | `TableColumn(alignment: TableAlignment, relative: Double?)`                         | `M6`; `relative` first produced by `P11c`                     |
-| `Metadata`, `MetadataRecord`, `MetadataValue`, `MetadataScalar`, `MetadataListItem` | `M7`; first produced by `O6`                                  |
+| `Metadata`, `MetadataContent`, `MetadataRecord`, `MetadataValue`, `MetadataScalar`, `MetadataListItem` | `M7`; first produced by `O6`                                  |
 | `ReferenceForm`                                                                     | removed by `M2`                                               |
 | `DirectiveAttribute`                                                                | removed by `M7`                                               |
 
@@ -820,22 +820,64 @@ its behavior, with no separate publication step.
   cursor partition tests and 1,728 marker-replacement/indentation combinations
   protect the general coordinate invariant.
 
-- [ ] **O6 — Properties.** Recognize at most one exact `---`
-      envelope at the beginning of the decoded document after an optional BOM,
-      scan it transactionally, decode the payload once as a YAML 1.2.2 document
-      with JSON scalar resolution and a plain-string fallback, and project one
-      root mapping into ordered `Metadata` records with textual key names, exact
-      number lexemes, text and number lists, aliases resolved acyclically within
-      budget, the allowed standard tags, and JSON root objects. Reject nested
-      values, duplicates after decoding, stream indicators including `...`, and
-      every other unsupported form by returning all bytes to inherited parsing;
-      record `Metadata.scope` and each record scope; parse the body once after
-      the closing fence. This is the largest C component of the track and still
-      lands as one item, because the envelope scan, the YAML decoding, and the
-      projection are one decoding operation; no partial decoder merges. Fixtures
-      own the module's own cases and the shared metadata cases; remove the eight
-      `properties-*` gaps, whose oracle projection now reads the real field.
-      Requires `O1`.
+- [x] **O6 — Properties.** Recognize at most one exact `---` envelope at the
+      beginning of the decoded document after an optional BOM. A complete
+      envelope always becomes `Document.metadata`, with ordered
+      `Metadata.content: [MetadataContent]` where
+      `MetadataContent = comment(String) | data(MetadataRecord)`. Decode each
+      source member once using the Properties module's YAML rules, retaining
+      textual names, exact number lexemes, supported lists, bounded acyclic
+      aliases, standard tags, and JSON root objects. Non-YAML text, `...`, YAML
+      comments, unsupported members, later duplicate names, and members that
+      exceed projection budgets become comment values in place. Valid members
+      before and after remain data. Comments are never `Comment` markup.
+      Only an absent or unclosed envelope returns bytes to inherited parsing;
+      allocation failure fails the parse. Record envelope and data scopes and
+      parse the body once after the closing fence. Update the C facade, all
+      bindings/transports, canonical contract and dump together; remove the
+      superseded records-only model. Fixtures own recovery, source retention,
+      rollback, scopes, resource limits, opacity, and allocation failure. Close
+      the eight `properties-*` gaps using real metadata data projection and
+      document the comment-retention projection. Requires `O1`.
+
+      Design correction (2026-09-08): user-directed member-level retention
+      replaces the previous whole-envelope rejection contract. No partial
+      decoder or records-only compatibility path is a completed O6.
+
+  Implementation (2026-09-08): the core decoder owns the envelope and emits
+  ordered data/comment values directly. Block and flow members share the value
+  decoder, name index, anchor transactions, and document-owned cleanup. One
+  delimiter index bounds recovery over unfinished roots, and one line index
+  supplies scopes and continuation indentation without rescanning long flow
+  prefixes. Work-count tests cover disjoint member decoding and single-line
+  lists through 65,536 elements; limit tests cover 65,537 source members and
+  the exact alias budget. Strict OOM probes exercise data, retained comments,
+  alias cloning, and rollback. C, Swift, Kotlin/JNI/Native, and ES/Wasm expose
+  the content enum without a records-only compatibility path or visitor kind.
+  The Properties module, canonical model/dump/coverage manifest, package and
+  canonical fixtures, public API snapshots, source lists, and release inputs
+  now describe the same operation. All eight Properties oracle gaps are
+  removed; comment projection and decoded tagged-empty null have explicit
+  model deltas and executable canaries.
+
+  Position evidence: the containment ledger remains at 26 rows. Claiming the
+  first envelope removes an inherited heading-overlap finding; the new
+  container-opacity fixture exposes one existing Callout/Setext containment
+  finding. An isolated build of the pre-O6 commit produces the identical dump
+  for that container source. This item records that inherited finding rather
+  than changing unrelated block finalization.
+
+  Validation (2026-09-08): all 56 Properties fixtures, C correctness (76 tests),
+  C conformance (2 tests), and the full correctness suite under ASan, UBSan,
+  and TSan pass. Swift macOS correctness, external consumer, and conformance;
+  Kotlin JVM, macOS arm64, and Android-host correctness/conformance; and ES
+  Node, browser, conformance, type/packaged-consumer checks pass. Public/API and
+  source-list audits, all four oracle gates, three 300-input deterministic
+  differential fuzz runs (seed 1), position ledgers, `pnpm verify`, and the
+  host release dry run pass. Full cross-host release aggregation remains the
+  required CI gate; Linux and device/simulator execution are not claimed by
+  these host results.
+
 - [ ] **O7 — Block identifiers.** Attach `^block-id`
       during block finalization through one operation for paragraph suffixes,
       structured-block follower lines with the required blank-line boundaries,

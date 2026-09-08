@@ -65,7 +65,8 @@ enum {
     ES_KIND_FOOTNOTE = 0x101,
     ES_KIND_SPECIMEN = 0x102,
     ES_KIND_METADATA = 0x103,
-    ES_KIND_METADATA_RECORD = 0x104
+    ES_KIND_METADATA_RECORD = 0x104,
+    ES_KIND_METADATA_COMMENT = 0x105
 };
 
 typedef struct es_source_node {
@@ -77,6 +78,7 @@ typedef struct es_source_node {
     const markdown_core_specimen *specimen;
     const markdown_core_metadata *metadata;
     const markdown_core_metadata_record *metadata_record;
+    const markdown_core_metadata_content *metadata_comment;
     markdown_core_optional_string anchor;
     uint32_t class_start, class_count, record_start, record_count, metadata_index;
     uint32_t width, height;
@@ -376,7 +378,7 @@ static size_t append_chain(es_build *build, const markdown_core_node *first) {
 static void collect_value_topology(es_build *build, size_t cursor) {
     const markdown_core_metadata *metadata = build->nodes[cursor].metadata;
     if (metadata) {
-        size_t count = markdown_core_metadata_record_count(metadata);
+        size_t count = markdown_core_metadata_content_count(metadata);
         build->nodes[cursor].child_start = (uint32_t)build->edge_count;
         if (count > UINT32_MAX) {
             build->failure = ES_BUILD_ALLOCATION;
@@ -384,8 +386,14 @@ static void collect_value_topology(es_build *build, size_t cursor) {
         }
         for (size_t i = 0; i < count && build->failure == ES_BUILD_OK; i++) {
             es_source_node value = {0};
-            value.wire_kind = ES_KIND_METADATA_RECORD;
-            value.metadata_record = markdown_core_metadata_record_at(metadata, i);
+            const markdown_core_metadata_content *content = markdown_core_metadata_content_at(metadata, i);
+            if (markdown_core_metadata_content_get_kind(content) == MARKDOWN_CORE_METADATA_COMMENT) {
+                value.wire_kind = ES_KIND_METADATA_COMMENT;
+                value.metadata_comment = content;
+            } else {
+                value.wire_kind = ES_KIND_METADATA_RECORD;
+                value.metadata_record = markdown_core_metadata_content_data(content);
+            }
             uint32_t index = append_record(build, value);
             if (index == ES_NO_INDEX) {
                 return;
@@ -395,7 +403,7 @@ static void collect_value_topology(es_build *build, size_t cursor) {
         }
         return;
     }
-    if (build->nodes[cursor].metadata_record) {
+    if (build->nodes[cursor].metadata_record || build->nodes[cursor].metadata_comment) {
         return;
     }
     const markdown_core_citation *citation = build->nodes[cursor].citation;
@@ -562,6 +570,11 @@ static void collect_topology(es_build *build, const markdown_core_node *root) {
  * id is the first string. */
 static void collect_value_fields(es_build *build, es_source_node *record) {
     if (record->metadata) {
+        return;
+    }
+    if (record->metadata_comment) {
+        record->strings[0] = required_string(markdown_core_metadata_content_comment(record->metadata_comment));
+        count_string(build, record->strings[0]);
         return;
     }
     if (record->metadata_record) {
@@ -1022,7 +1035,9 @@ static uint8_t *success_result(const es_build *build, es_build_failure *failure)
                                     : source->footnote ? markdown_core_footnote_scope(source->footnote)
                                     : source->specimen ? markdown_core_specimen_scope(source->specimen)
                                     : source->metadata ? markdown_core_metadata_scope(source->metadata)
-                                                       : markdown_core_metadata_record_scope(source->metadata_record);
+                                    : source->metadata_record
+                                        ? markdown_core_metadata_record_scope(source->metadata_record)
+                                        : (markdown_core_scope){0};
         size_t node_offset = nodes_offset + index * ES_NODE_SIZE;
         size_t string_index;
         put_u32(output, node_offset + ES_NODE_KIND, source->wire_kind);

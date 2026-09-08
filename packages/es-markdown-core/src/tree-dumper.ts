@@ -221,15 +221,21 @@ class DumpState {
     }
 
     private metadata(value: Metadata): void {
-        this.valueLine("Metadata", value.scope, [], value.records.length);
-        this.nested(value.records.length, () => {
-            for (const record of value.records)
-                this.valueLine(
-                    "MetadataRecord",
-                    record.scope,
-                    [`name=${jsonString(record.name)}`, `value=${metadataValue(record.value)}`],
-                    0
-                );
+        this.valueLine("Metadata", value.scope, [], value.content.length);
+        this.nested(value.content.length, () => {
+            for (const content of value.content) {
+                if (content.kind === "comment") {
+                    this.emit(`MetadataContent value=comment(${jsonString(content.value)}) children=0`);
+                } else {
+                    const record = content.record;
+                    this.valueLine(
+                        "MetadataRecord",
+                        record.scope,
+                        [`name=${jsonString(record.name)}`, `value=${metadataValue(record.value)}`],
+                        0
+                    );
+                }
+            }
         });
     }
 

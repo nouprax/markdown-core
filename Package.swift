@@ -15,7 +15,8 @@ let package = Package(
             name: "MarkdownCoreC",
             path: "packages/markdown-core",
             sources: [
-                "core/markdown_core.c", "core/node.c", "core/attributes.c", "core/iterator.c", "core/blocks.c",
+                "core/markdown_core.c", "core/node.c", "core/attributes.c", "core/metadata.c", "core/iterator.c",
+                "core/blocks.c",
                 "core/inlines.c", "core/scanners.c", "core/utf8.c", "core/buffer.c",
                 "core/references.c", "core/map.c",
                 "core/houdini_html_u.c", "core/markdown_core_ctype.c",

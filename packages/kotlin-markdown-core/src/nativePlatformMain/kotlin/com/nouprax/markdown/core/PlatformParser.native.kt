@@ -50,6 +50,8 @@ import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_THEMATIC_BREAK
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_LIST_FLAVOR_BULLET
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_LIST_FLAVOR_ORDERED
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_METADATA_BOOL
+import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_METADATA_COMMENT
+import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_METADATA_DATA
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_METADATA_ITEM_NUMBER
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_METADATA_ITEM_TEXT
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_METADATA_LIST
@@ -89,9 +91,12 @@ import com.nouprax.markdown.core.internal.capi.markdown_core_footnote_id
 import com.nouprax.markdown.core.internal.capi.markdown_core_footnote_next
 import com.nouprax.markdown.core.internal.capi.markdown_core_footnote_scope
 import com.nouprax.markdown.core.internal.capi.markdown_core_list_flavorVar
+import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_content_at
+import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_content_comment
+import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_content_count
+import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_content_data
+import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_content_get_kind
 import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_list_item
-import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_record_at
-import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_record_count
 import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_record_item_at
 import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_record_item_count
 import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_record_kind
@@ -866,9 +871,19 @@ private class NativeScratch(
 
     fun metadata(node: CPointer<markdown_core_node>): Metadata? {
         val metadata = markdown_core_node_document_metadata(node) ?: return null
-        val records =
-            immutableList(markdown_core_metadata_record_count(metadata).checkedSize("metadata count")) { index ->
-                val record = requireNotNull(markdown_core_metadata_record_at(metadata, index.toULong()))
+        val content =
+            immutableList(markdown_core_metadata_content_count(metadata).checkedSize("metadata count")) { index ->
+                val content = requireNotNull(markdown_core_metadata_content_at(metadata, index.toULong()))
+                when (markdown_core_metadata_content_get_kind(content)) {
+                    MARKDOWN_CORE_METADATA_COMMENT -> return@immutableList MetadataContent.Comment(
+                        markdown_core_metadata_content_comment(content).useContents { copyString() },
+                    )
+
+                    MARKDOWN_CORE_METADATA_DATA -> Unit
+
+                    else -> error("invalid metadata content kind")
+                }
+                val record = requireNotNull(markdown_core_metadata_content_data(content))
                 val name = markdown_core_metadata_record_name(record).useContents { copyString() }
                 val value =
                     when (markdown_core_metadata_record_kind(record)) {
@@ -944,9 +959,9 @@ private class NativeScratch(
                             error("invalid metadata value kind")
                         }
                     }
-                MetadataRecord(name, value, markdown_core_metadata_record_scope(record).toScope())
+                MetadataContent.Data(MetadataRecord(name, value, markdown_core_metadata_record_scope(record).toScope()))
             }
-        return Metadata(records, markdown_core_metadata_scope(metadata).toScope())
+        return Metadata(content, markdown_core_metadata_scope(metadata).toScope())
     }
 
     fun destination(node: CPointer<markdown_core_node>): Destination {

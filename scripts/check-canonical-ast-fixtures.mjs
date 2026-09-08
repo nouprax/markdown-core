@@ -131,6 +131,16 @@ const stateValidators = {
     "markup.attributes.empty": (tree) => / attributes=\{\} /.test(tree),
     "markup.attributes.classes": (tree) => / attributes=\{\./.test(tree),
     "markup.attributes.records": (tree) => / attributes=\{[^}]*[A-Za-z]+="/.test(tree),
+    "document.metadata.present": (tree) => /Metadata scope=/.test(tree),
+    "document.metadata.empty": (tree) => /Metadata scope=.* children=0/.test(tree),
+    "metadata.content.data": (tree) => /MetadataRecord scope=/.test(tree),
+    "metadata.content.comment": (tree) => /MetadataContent value=comment\(/.test(tree),
+    "metadata.scalar.null": (tree) => /MetadataRecord .*value=scalar\(null\)/.test(tree),
+    "metadata.scalar.bool": (tree) => /MetadataRecord .*value=scalar\(bool\(/.test(tree),
+    "metadata.scalar.number": (tree) => /MetadataRecord .*value=scalar\(number\(/.test(tree),
+    "metadata.scalar.text": (tree) => /MetadataRecord .*value=scalar\(text\(/.test(tree),
+    "metadata.list.empty": (tree) => /MetadataRecord .*value=list\(\[\]\)/.test(tree),
+    "metadata.list.populated": (tree) => /MetadataRecord .*value=list\(\[(?:text|number)\(/.test(tree),
     "document.metadata.null": (tree) => !/Metadata scope=/.test(tree),
     "image.dimensions.null": (tree) => /Image scope=.* width=null height=null /.test(tree),
     // The dump visualizes the DirectiveLabel field as a nested Markup node:
@@ -348,10 +358,26 @@ for (const testCase of manifest.cases ?? []) {
 
     const lines = tree.slice(0, -1).split("\n");
     const actualKinds = new Set();
+    const metadataCommentsOwned = parentEdges(tree)
+        .filter((edge) => edge.kind === "MetadataContent")
+        .every((edge) => edge.parent === "Metadata");
     for (const [index, line] of lines.entries()) {
         const group = line.match(groupLine);
         if (group !== null) {
             if (!GROUPS.has(group[1])) failures.push(`${testCase.expected}:${index + 1} names an unknown group`);
+            continue;
+        }
+        const metadataComment = line.match(
+            /^(?:(?:│ {3}| {4})*(?:├──|└──) )MetadataContent value=comment\(("(?:\\.|[^"\\])*")\) children=0$/
+        );
+        if (metadataComment !== null) {
+            JSON.parse(metadataComment[1]);
+            if (
+                !contract.values.MetadataContent?.branches.some((branch) => branch.name === "comment") ||
+                !metadataCommentsOwned
+            ) {
+                failures.push(`${testCase.expected}:${index + 1} has invalid metadata comment ownership`);
+            }
             continue;
         }
         const match = line.match(treeLine);
@@ -382,10 +408,17 @@ for (const testCase of manifest.cases ?? []) {
         // because a directive's label was a COUNT in the dump rather than a
         // node; Step 7 made it a node and the exception became a lie.
         const kindNames = new Set(contract.kinds.map((kind) => kind.name));
-        const isNodeValuedField = (type) =>
-            [...type.matchAll(/[A-Za-z]+/g)].some(
-                (word) => word[0] === "Markup" || kindNames.has(word[0]) || word[0] in scopedValues
-            );
+        const isNodeValuedField = (type, seen = new Set()) =>
+            [...type.matchAll(/[A-Za-z]+/g)].some(([name]) => {
+                if (name === "Markup" || kindNames.has(name) || name in scopedValues) return true;
+                if (seen.has(name)) return false;
+                const value = contract.values[name];
+                if (!Array.isArray(value?.branches)) return false;
+                const next = new Set([...seen, name]);
+                return value.branches.some((branch) =>
+                    branch.fields.some((field) => isNodeValuedField(field.type, next))
+                );
+            });
         const dumpFields = Object.fromEntries(
             [...contract.kinds, ...Object.entries(scopedValues).map(([name, fields]) => ({ name, fields }))].map(
                 (kind) => [

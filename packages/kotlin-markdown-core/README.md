@@ -30,10 +30,13 @@ Every Markup value also exposes `anchor` and `attributes`. Attributes contain
 ordered `classes` and ordered `records` (`name`, `value`), with duplicates
 preserved. Directives populate these fields through the shared Pandoc braced
 attribute grammar; an absent or empty container produces empty attributes.
-`Document.metadata` exposes scoped Metadata records and tagged scalar/list
-values, with numbers stored as decimal text. `Image.width` and `Image.height`
-are optional integers. Metadata and dimensions remain absent until their
-syntax lands in O6 and O9.
+`Document.metadata` holds the first complete `---` envelope at the start of a
+document. Its ordered `content` contains `data(MetadataRecord)` and
+`comment(String)` cases: supported YAML properties become data, while comments,
+non-YAML text, `...`, and unsupported members retain their source. Valid
+properties before and after a failed member survive. Metadata stays outside
+Markup children and visitor callbacks. Numbers retain exact decimal strings.
+`Image.width` and `Image.height` remain absent until O9.
 
 ## Parse Markdown
 

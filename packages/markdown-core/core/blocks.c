@@ -1176,7 +1176,8 @@ static bool S_line_scratch_reserve(markdown_core_parser *parser, int64_t add) {
 }
 
 static void S_parse_source(markdown_core_parser *parser, const unsigned char *source, size_t length) {
-    const unsigned char *cursor = source;
+    size_t metadata_length = markdown_core_metadata_parse(parser, source, length);
+    const unsigned char *cursor = source + metadata_length;
     const unsigned char *end = source + length;
     static const uint8_t repl[] = {239, 191, 189};
 

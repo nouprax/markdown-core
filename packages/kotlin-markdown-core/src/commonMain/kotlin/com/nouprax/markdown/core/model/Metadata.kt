@@ -2,10 +2,21 @@ package com.nouprax.markdown.core
 
 /** Scoped Properties values; they are never Markup or visitor events. */
 public class Metadata(
-    records: kotlin.collections.List<MetadataRecord>,
+    content: kotlin.collections.List<MetadataContent>,
     public val scope: Scope,
 ) {
-    public val records: kotlin.collections.List<MetadataRecord> = records.immutableMap { it }
+    public val content: kotlin.collections.List<MetadataContent> = content.immutableMap { it }
+}
+
+/** Metadata content is a value; neither branch is Markup or receives visitor callbacks. */
+public sealed interface MetadataContent {
+    public data class Comment(
+        public val value: String,
+    ) : MetadataContent
+
+    public data class Data(
+        public val record: MetadataRecord,
+    ) : MetadataContent
 }
 
 public data class MetadataRecord(

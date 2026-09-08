@@ -468,14 +468,21 @@ static void write_metadata(jni_payload_buffer *buffer, const markdown_core_metad
         return;
     }
     put_scope(buffer, markdown_core_metadata_scope(metadata));
-    size_t count = markdown_core_metadata_record_count(metadata);
+    size_t count = markdown_core_metadata_content_count(metadata);
     if (count > INT32_MAX) {
         buffer->failure = JNI_PAYLOAD_ALLOCATION;
         return;
     }
     put_i32(buffer, (int32_t)count);
     for (size_t i = 0; i < count; i++) {
-        const markdown_core_metadata_record *record = markdown_core_metadata_record_at(metadata, i);
+        const markdown_core_metadata_content *content = markdown_core_metadata_content_at(metadata, i);
+        markdown_core_metadata_content_kind content_kind = markdown_core_metadata_content_get_kind(content);
+        put_u8(buffer, (uint8_t)content_kind);
+        if (content_kind == MARKDOWN_CORE_METADATA_COMMENT) {
+            put_string(buffer, markdown_core_metadata_content_comment(content), true);
+            continue;
+        }
+        const markdown_core_metadata_record *record = markdown_core_metadata_content_data(content);
         put_scope(buffer, markdown_core_metadata_record_scope(record));
         put_string(buffer, markdown_core_metadata_record_name(record), true);
         markdown_core_metadata_value_kind kind = markdown_core_metadata_record_kind(record);

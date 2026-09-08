@@ -57,13 +57,21 @@ aliases on the node graph, and accepts only the contract's scalar and
 text/number-list domain. It never calls `toJS()` or materializes a root
 JavaScript object. Empty, whitespace-only, and comment-only payloads all
 produce a document with no content node and therefore the same non-null empty
-metadata array; comments remain presentation bytes rather than records.
+metadata array on the oracle side. Product `Metadata.content` retains comments;
+the `metadata-comment-retention` projection removes comment cases only for data
+comparison. Direct canaries verify retained source and recovery of later data.
 
-Package-only syntax never enlarges the target language. Parser errors,
-unsupported tags or node kinds, duplicate decoded names, unresolved or cyclic
-aliases, YAML stream/document indicators (including `...`), and unsupported
-values make the tentative Properties candidate fail. Only the exact outer
-`---` line terminates Properties.
+The YAML document oracle judges supported data. Syntax errors, unsupported tags
+or values, duplicate names, invalid aliases, and stream indicators place an
+input outside that intersection. O6 retains those source members as metadata
+comments and keeps valid neighboring records. Only the exact outer `---` line
+closes the envelope; an absent or incomplete envelope falls back to Markdown.
+Product fixtures own recovery and projection limits.
+
+The module resolves explicitly tagged empty decoded scalars to null, including
+`!!null ""` and `!!null ''`. The pinned YAML parser reports a tag-resolution
+warning for quoted spellings. The `metadata-tagged-empty-null` projection has
+oracle and product canaries; product fixtures own those null values.
 
 The corpus contains inputs only. It deliberately has no Markdown Core expected
 AST blocks; product goldens belong to the C fixture and shared canonical AST
@@ -99,8 +107,6 @@ limits.
 For successful Properties inputs, the normalized semantic root contains a
 `metadata` field: `null` means absent, while an array (including an empty
 array) contains ordered `{name, value}` records using the tagged scalar/list
-shape from `docs/specs/dialect/properties.md`. The current implementation's missing
-field is deliberately normalized to `null`, so every target gap remains
-visible. When `Document.metadata` is implemented, its canonical debug field
-must expose the same compact JSON value for this gate; that dump change lands
-atomically with the public model and cross-binding fixtures.
+shape from `docs/specs/dialect/properties.md`. The gate reads the real Metadata
+field from canonical dumps, projects comment cases away, and compares its data
+records directly. All eight original Properties gaps close in O6.

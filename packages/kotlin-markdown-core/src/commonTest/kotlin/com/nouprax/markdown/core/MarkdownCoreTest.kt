@@ -10,6 +10,39 @@ import kotlin.test.assertTrue
 
 class ApiTest {
     @Test
+    fun propertiesContentPreservesSourceAndRecoversData() {
+        val source =
+            "---\r\na: &x 9007199254740993\r\nnot YAML\r\n...\r\n" +
+                "bad: &x [true]\r\nb: *x\r\na: duplicate\r\n# note\r\n---\r\nbody\r\n"
+        val document = Document.parse(source)
+        val metadata = assertNotNull(document.metadata)
+        val records = metadata.content.filterIsInstance<MetadataContent.Data>().map { it.record }
+        assertEquals(listOf("a", "b"), records.map { it.name })
+        assertEquals(
+            listOf(
+                MetadataValue.Scalar(MetadataScalar.Number("9007199254740993")),
+                MetadataValue.Scalar(MetadataScalar.Number("9007199254740993")),
+            ),
+            records.map {
+                it.value
+            },
+        )
+        assertEquals(MetadataContent.Comment("not YAML"), metadata.content[1])
+        assertEquals(MetadataContent.Comment("..."), metadata.content[2])
+        assertEquals(MetadataContent.Comment("bad: &x [true]"), metadata.content[3])
+        assertEquals(MetadataContent.Comment("a: duplicate"), metadata.content[5])
+        assertEquals(9, metadata.scope.end.line)
+        assertEquals(
+            10,
+            document.content[0]
+                .scope.start.line,
+        )
+        assertEquals(emptyList(), Document.parse("---\n---").metadata?.content)
+        assertEquals(null, Document.parse("---\na: 1\n").metadata)
+        assertTrue(document.dump().contains("MetadataContent value=comment(\"...\")"))
+    }
+
+    @Test
     fun taskMarkersPreserveScalarsAndDeriveCompletion() {
         for (marker in listOf(" ", "x", "X", "?", "é", "✓", "🚀", "́", "]")) {
             val item = assertIs<List>(Document.parse("- [$marker] body\n").content.single()).items.single()

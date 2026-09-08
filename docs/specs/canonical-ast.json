@@ -741,8 +741,8 @@
             "walk": false,
             "fields": [
                 {
-                    "name": "records",
-                    "type": "[MetadataRecord]",
+                    "name": "content",
+                    "type": "[MetadataContent]",
                     "optional": false
                 }
             ],
@@ -856,6 +856,33 @@
                 }
             ],
             "dump": "number(\"lexeme\") or text(\"...\")"
+        },
+        "MetadataContent": {
+            "scoped": false,
+            "walk": false,
+            "branches": [
+                {
+                    "name": "comment",
+                    "fields": [
+                        {
+                            "name": "value",
+                            "type": "String",
+                            "optional": false
+                        }
+                    ]
+                },
+                {
+                    "name": "data",
+                    "fields": [
+                        {
+                            "name": "record",
+                            "type": "MetadataRecord",
+                            "optional": false
+                        }
+                    ]
+                }
+            ],
+            "dump": "comment prints MetadataContent value=comment(\"...\") children=0; data prints its MetadataRecord"
         }
     },
     "inheritedFields": [

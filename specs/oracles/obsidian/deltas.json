@@ -116,75 +116,7 @@
     },
     "claim": "For the documented constructs the selected package actually parses, Markdown Core must converge on the same semantic recognition except for explicit, general AST-model deltas. The official Obsidian documentation, not this package, owns the language contract.",
     "corpus": ["specs/oracles/obsidian/corpus.md", "specs/oracles/obsidian/metadata-corpus.md"],
-    "baselineGaps": [
-        {
-            "id": "properties-scalars-and-body",
-            "input": "---\ntitle: Galactic handbook\ndraft: false\nrating: 4.5\nempty:\n---\n# Body\n",
-            "oracleDigest": "c44a4535d90ed71c8bd6122d83f9e337001c73be29f1483ab156892c62d033fd",
-            "markdownCoreDigest": "7c02aa75bd6f81d63aaffdbdabc8ff0a1d089b3bfd8f91ea2589a16d8312de2d",
-            "requirement": "Attach ordered scalar records to Document.metadata and parse only the post-fence heading into Document.content.",
-            "closedBy": "Phase 3 — Properties, anchors, and callout containers"
-        },
-        {
-            "id": "properties-list-and-arbitrary-name",
-            "input": "---\naliases:\n  - Doggo\n  - \"[[Canis familiaris]]\"\nvalues: [1977, 3.14, text]\narbitrary user key: value\n---\nBody\n",
-            "oracleDigest": "65e3c0449459fef4ad165a05a272c7bd202562e2b07dd5568f03d8b9135135dd",
-            "markdownCoreDigest": "9c900ac05ff79e3f5db35abf5ebb2f293528ec0994af9dac074f62948c3a4439",
-            "requirement": "Preserve an arbitrary name and ordered scalar list while retaining a quoted internal-link spelling as inert text.",
-            "closedBy": "Phase 3 — Properties, anchors, and callout containers",
-            "digestChange": "O1: double brackets in the still-unimplemented Properties envelope now produce CrossLink. O6 will claim those bytes as inert metadata text."
-        },
-        {
-            "id": "properties-text-and-empty-values",
-            "input": "---\ndate: 2026-09-03\nwhen: 2026-09-03T12:34:56\nyes-word: yes\nnothing: null\nempty-text: \"\"\nempty-list: []\n---\n",
-            "oracleDigest": "98e8cba74bbca8623108e244a831571965947c4abbfa5bc02b88e40ced8a549f",
-            "markdownCoreDigest": "8353fdc0b63a2baed42facecd022fc037133c46cfc714a616ecc23e121f3dead",
-            "requirement": "Keep dates, date-times, and YAML-1.1-only boolean words as text, and distinguish null, empty text, and an empty list.",
-            "closedBy": "Phase 3 — Properties, anchors, and callout containers",
-            "digestChange": "M7: directive names now require a Unicode letter first, so numeric time and JSON number tails stay text before O6 claims the Properties envelope."
-        },
-        {
-            "id": "properties-json-root",
-            "input": "---\n{\"name\":\"value\",\"enabled\":true,\"count\":3}\n---\nAfter\n",
-            "oracleDigest": "8d4b090a2738b2c6b08bc471097bdb295f88f976b6089cb5a9a7d22287d98225",
-            "markdownCoreDigest": "3279c1ccdb4aaecb307c856b2570ee92225ee0d0e4c2de01b4b00e192ba8ffe1",
-            "requirement": "Project a JSON root object through the same Metadata record and value model as YAML.",
-            "closedBy": "Phase 3 — Properties, anchors, and callout containers",
-            "digestChange": "M7: directive names now require a Unicode letter first, so numeric time and JSON number tails stay text before O6 claims the Properties envelope."
-        },
-        {
-            "id": "properties-explicit-empty",
-            "input": "---\n---\n",
-            "oracleDigest": "3208f09528f5eb1b583fddaf9ca445a9b3db458fd0b4c82c186355b0f3ec48d0",
-            "markdownCoreDigest": "38f3b3567b48d32467e8cb72dca42919ecdc64c79369cd67d8f455cb6060f544",
-            "requirement": "Distinguish an explicitly authored empty Metadata value from absent metadata and emit no body nodes.",
-            "closedBy": "Phase 3 — Properties, anchors, and callout containers"
-        },
-        {
-            "id": "properties-comment-only",
-            "input": "---\n# Maintainer note\n---\n",
-            "oracleDigest": "3208f09528f5eb1b583fddaf9ca445a9b3db458fd0b4c82c186355b0f3ec48d0",
-            "markdownCoreDigest": "9af02ec0f77ad6525b7981d6c92f586c023dd454009962a0cc77718005102f66",
-            "requirement": "Recognize a comment-only Properties block as explicitly authored empty Metadata while emitting no comment record or body node.",
-            "closedBy": "Phase 3 — Properties, anchors, and callout containers"
-        },
-        {
-            "id": "properties-source-faithful-values",
-            "input": "---\nzeta: last\n1: &large 9007199254740993\n1.0: 1.0\n1e2: 1e2\n-0: -0\n~: tilde\ntrue: boolean-name\n\"escaped\\u0020name\": *large\nnumbers: [9007199254740993, 1.0, 1e2, -0]\n---\n",
-            "oracleDigest": "66a0fcc8a3a1d9e0e6a495f063f0c02576a2e82f76b65d464b75857a20043213",
-            "markdownCoreDigest": "9c3e03bd1b7a35275c3115195ec9d37026f003e08846f0084c80b48dfe3c4f67",
-            "requirement": "Preserve source order and decoded key text independently of host-object enumeration or YAML scalar resolution, retain every numeric source lexeme, and resolve aliases without precision loss.",
-            "closedBy": "Phase 3 — Properties, anchors, and callout containers"
-        },
-        {
-            "id": "properties-first-block-only",
-            "input": "---\nfirst: one\n---\n---\nsecond: two\n---\n",
-            "oracleDigest": "013c47a06e3f380dca536f60a2146c391eacb986aba8592d7cbfb5511c1c79fa",
-            "markdownCoreDigest": "9be8b466d01dfd4a10f43a4d5e7d05ae6a8c1f00266c8c8fd62b9c4b7128827d",
-            "requirement": "Attach only the first Properties block and leave a later fence sequence in the ordinary Markdown body.",
-            "closedBy": "Phase 3 — Properties, anchors, and callout containers"
-        }
-    ],
+    "baselineGaps": [],
     "modelDeltas": [
         {
             "id": "comment-removal",
@@ -220,6 +152,16 @@
             "id": "universal-callout-container",
             "summary": "mdast names every inherited > container blockquote, while the canonical AST uses Callout for both metadata-free and metadata-bearing quoted containers (M3).",
             "handling": "The semantic projection maps mdast blockquote to Callout. The inherited source grammar remains owned by CommonMark; official product fixtures own optional Obsidian metadata."
+        },
+        {
+            "id": "metadata-comment-retention",
+            "summary": "O6 stores YAML comments and unsupported source members in Metadata.content as comment values, retaining data members on either side. Only an incomplete envelope falls back to Markdown.",
+            "handling": "The YAML data comparison projects away MetadataContent comment cases; direct product canaries and package fixtures verify retained source, recovery, and body separation. Invalid complete payloads are outside the YAML document oracle intersection."
+        },
+        {
+            "id": "metadata-tagged-empty-null",
+            "summary": "The module resolves an explicitly tagged empty decoded scalar to null, including both quoted empty spellings. yaml@2.9.0 emits a tag-resolution warning for those quoted forms.",
+            "handling": "A canary requires the pinned oracle warning and product null projection. Quoted empty tagged nulls stay in product conformance fixtures rather than the successful YAML document corpus."
         }
     ],
     "notAnAuthorityFor": [

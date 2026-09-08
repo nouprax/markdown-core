@@ -51,4 +51,12 @@ export { walk } from "./walking-visitor.js";
 export type { WalkingVisitor, WalkPhase } from "./walking-visitor.js";
 
 export { Attributes } from "./values.js";
-export type { Record, Metadata, MetadataRecord, MetadataValue, MetadataScalar, MetadataListItem } from "./values.js";
+export type {
+    Record,
+    Metadata,
+    MetadataRecord,
+    MetadataContent,
+    MetadataValue,
+    MetadataScalar,
+    MetadataListItem
+} from "./values.js";

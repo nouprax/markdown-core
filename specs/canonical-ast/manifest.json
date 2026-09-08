@@ -91,6 +91,16 @@
             "markup.attributes.empty",
             "markup.attributes.classes",
             "markup.attributes.records",
+            "document.metadata.present",
+            "document.metadata.empty",
+            "metadata.content.data",
+            "metadata.content.comment",
+            "metadata.scalar.null",
+            "metadata.scalar.bool",
+            "metadata.scalar.number",
+            "metadata.scalar.text",
+            "metadata.list.empty",
+            "metadata.list.populated",
             "document.metadata.null",
             "image.dimensions.null",
             "directive.label.null",
@@ -476,6 +486,36 @@
                     "listItem.marker.custom",
                     "codeBlock.fenced.false"
                 ],
+                "orders": []
+            }
+        },
+        {
+            "name": "properties",
+            "input": "properties.md",
+            "expected": "properties.ast",
+            "coverage": {
+                "kinds": ["Document", "Paragraph", "Text"],
+                "states": [
+                    "document.metadata.present",
+                    "metadata.content.data",
+                    "metadata.content.comment",
+                    "metadata.scalar.null",
+                    "metadata.scalar.bool",
+                    "metadata.scalar.number",
+                    "metadata.scalar.text",
+                    "metadata.list.empty",
+                    "metadata.list.populated"
+                ],
+                "orders": []
+            }
+        },
+        {
+            "name": "properties-empty",
+            "input": "properties-empty.md",
+            "expected": "properties-empty.ast",
+            "coverage": {
+                "kinds": ["Document"],
+                "states": ["document.metadata.present", "document.metadata.empty"],
                 "orders": []
             }
         }

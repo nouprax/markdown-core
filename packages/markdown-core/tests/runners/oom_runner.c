@@ -37,6 +37,13 @@ static void sweep_free(void *pointer) { free(pointer); }
 
 static markdown_core_mem sweep_mem = {sweep_calloc, sweep_realloc, sweep_free};
 
+static const char OOM_PROPERTIES_CORPUS[] =
+    "---\n# retained\nname: &a \"large\\u0020text\"\ncopy: *a\nlist: &l [1, \"two\", &b three, *b]\n"
+    "copy-list: *l\nbad: &a [true]\nafter-bad: *a\nname: duplicate\n...\nnot YAML\n"
+    "quoted: 'one\n  two'\nblock: >-\n  one\n  two\nlast: !!str 1\n---\nbody\n";
+static const char OOM_PROPERTIES_FLOW_CORPUS[] =
+    "---\n{a: 1, b: [two, 3], c: {nested: value}, d: 4, e: \"bad\\q\"}\n---\n";
+
 static const char OOM_CORPUS[] = "[[Note]] [[Note|]] ![[#^block|alias]] [[a#Heading|label]]\n\n"
                                  "Setext heading\n---\n\n"
                                  "# Heading *one*\n"
@@ -148,6 +155,8 @@ typedef struct oom_case {
 } oom_case;
 
 static const oom_case OOM_CASES[] = {
+    {"properties", OOM_PROPERTIES_CORPUS, sizeof(OOM_PROPERTIES_CORPUS) - 1},
+    {"properties flow", OOM_PROPERTIES_FLOW_CORPUS, sizeof(OOM_PROPERTIES_FLOW_CORPUS) - 1},
     {"task markers", OOM_TASK_CORPUS, sizeof(OOM_TASK_CORPUS) - 1},
     {"inline footnotes", OOM_INLINE_FOOTNOTE_CORPUS, sizeof(OOM_INLINE_FOOTNOTE_CORPUS) - 1},
     {"comments", OOM_COMMENT_CORPUS, sizeof(OOM_COMMENT_CORPUS) - 1},

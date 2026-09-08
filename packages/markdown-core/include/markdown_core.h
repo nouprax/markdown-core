@@ -96,6 +96,11 @@ typedef struct markdown_core_scope {
  * spelling. Every returned handle and string borrows the document. */
 typedef struct markdown_core_metadata markdown_core_metadata;
 typedef struct markdown_core_metadata_record markdown_core_metadata_record;
+typedef struct markdown_core_metadata_content markdown_core_metadata_content;
+typedef enum markdown_core_metadata_content_kind {
+    MARKDOWN_CORE_METADATA_COMMENT = 1,
+    MARKDOWN_CORE_METADATA_DATA = 2
+} markdown_core_metadata_content_kind;
 typedef enum markdown_core_metadata_value_kind {
     MARKDOWN_CORE_METADATA_SCALAR = 1,
     MARKDOWN_CORE_METADATA_LIST = 2
@@ -124,9 +129,15 @@ typedef struct markdown_core_metadata_list_item {
 
 MARKDOWN_CORE_API const markdown_core_metadata *markdown_core_node_document_metadata(const markdown_core_node *node);
 MARKDOWN_CORE_API markdown_core_scope markdown_core_metadata_scope(const markdown_core_metadata *metadata);
-MARKDOWN_CORE_API size_t markdown_core_metadata_record_count(const markdown_core_metadata *metadata);
+MARKDOWN_CORE_API size_t markdown_core_metadata_content_count(const markdown_core_metadata *metadata);
+MARKDOWN_CORE_API const markdown_core_metadata_content *
+markdown_core_metadata_content_at(const markdown_core_metadata *metadata, size_t index);
+MARKDOWN_CORE_API markdown_core_metadata_content_kind
+markdown_core_metadata_content_get_kind(const markdown_core_metadata_content *content);
+MARKDOWN_CORE_API markdown_core_string
+markdown_core_metadata_content_comment(const markdown_core_metadata_content *content);
 MARKDOWN_CORE_API const markdown_core_metadata_record *
-markdown_core_metadata_record_at(const markdown_core_metadata *metadata, size_t index);
+markdown_core_metadata_content_data(const markdown_core_metadata_content *content);
 MARKDOWN_CORE_API markdown_core_scope markdown_core_metadata_record_scope(const markdown_core_metadata_record *record);
 MARKDOWN_CORE_API markdown_core_string markdown_core_metadata_record_name(const markdown_core_metadata_record *record);
 MARKDOWN_CORE_API markdown_core_metadata_value_kind

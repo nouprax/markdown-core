@@ -47,8 +47,11 @@ MARKDOWN_CORE_1.0 {
     markdown_core_node_resource;
     markdown_core_document_dump;
     markdown_core_dump_free;
-    markdown_core_metadata_record_at;
-    markdown_core_metadata_record_count;
+    markdown_core_metadata_content_at;
+    markdown_core_metadata_content_comment;
+    markdown_core_metadata_content_count;
+    markdown_core_metadata_content_data;
+    markdown_core_metadata_content_get_kind;
     markdown_core_metadata_record_item_at;
     markdown_core_metadata_record_item_count;
     markdown_core_metadata_record_kind;

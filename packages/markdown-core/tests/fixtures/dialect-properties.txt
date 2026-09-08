@@ -1,0 +1,980 @@
+# Properties: ordered data and retained source
+
+## Module example
+
+```````````````````````````````` example
+---
+title: Note
+tags: [a, b]
+---
+Body
+.
+Document scope=1:1..5:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..4:3 children=2
+│   ├── MetadataRecord scope=2:1..2:11 name="title" value=scalar(text("Note")) children=0
+│   └── MetadataRecord scope=3:1..3:12 name="tags" value=list([text("a"),text("b")]) children=0
+└── Paragraph scope=5:1..5:4 anchor=null attributes={} children=1
+    └── Text scope=5:1..5:4 anchor=null attributes={} literal="Body" children=0
+````````````````````````````````
+
+## Module example
+
+```````````````````````````````` example
+---
+tags:
+  - project
+aliases: ["Alt name"]
+cssclasses: wide
+link: "[[Episode IV]]"
+---
+.
+Document scope=1:1..7:3 anchor=null attributes={} children=0
+└── Metadata scope=1:1..7:3 children=4
+    ├── MetadataRecord scope=2:1..3:11 name="tags" value=list([text("project")]) children=0
+    ├── MetadataRecord scope=4:1..4:21 name="aliases" value=list([text("Alt name")]) children=0
+    ├── MetadataRecord scope=5:1..5:16 name="cssclasses" value=scalar(text("wide")) children=0
+    └── MetadataRecord scope=6:1..6:22 name="link" value=scalar(text("[[Episode IV]]")) children=0
+````````````````````````````````
+
+## Module example
+
+```````````````````````````````` example
+---
+n: null
+e:
+b: true
+i: 12
+f: 1.50
+d: 2024-01-01
+s: "**Draft**"
+---
+.
+Document scope=1:1..9:3 anchor=null attributes={} children=0
+└── Metadata scope=1:1..9:3 children=7
+    ├── MetadataRecord scope=2:1..2:7 name="n" value=scalar(null) children=0
+    ├── MetadataRecord scope=3:1..3:2 name="e" value=scalar(null) children=0
+    ├── MetadataRecord scope=4:1..4:7 name="b" value=scalar(bool(true)) children=0
+    ├── MetadataRecord scope=5:1..5:5 name="i" value=scalar(number("12")) children=0
+    ├── MetadataRecord scope=6:1..6:7 name="f" value=scalar(number("1.50")) children=0
+    ├── MetadataRecord scope=7:1..7:13 name="d" value=scalar(text("2024-01-01")) children=0
+    └── MetadataRecord scope=8:1..8:14 name="s" value=scalar(text("**Draft**")) children=0
+````````````````````````````````
+
+## Module example
+
+```````````````````````````````` example
+---
+l:
+  - a
+  - 1
+m: []
+---
+.
+Document scope=1:1..6:3 anchor=null attributes={} children=0
+└── Metadata scope=1:1..6:3 children=2
+    ├── MetadataRecord scope=2:1..4:5 name="l" value=list([text("a"),number("1")]) children=0
+    └── MetadataRecord scope=5:1..5:5 name="m" value=list([]) children=0
+````````````````````````````````
+
+## Module example
+
+```````````````````````````````` example
+---
+---
+.
+Document scope=1:1..2:3 anchor=null attributes={} children=0
+└── Metadata scope=1:1..2:3 children=0
+````````````````````````````````
+
+## Module example
+
+```````````````````````````````` example
+---
+# just a comment
+---
+body
+.
+Document scope=1:1..4:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..3:3 children=1
+│   └── MetadataContent value=comment("# just a comment") children=0
+└── Paragraph scope=4:1..4:4 anchor=null attributes={} children=1
+    └── Text scope=4:1..4:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Module example
+
+```````````````````````````````` example
+
+---
+a: 1
+---
+.
+Document scope=1:1..4:3 anchor=null attributes={} children=2
+├── ThematicBreak scope=2:1..2:3 anchor=null attributes={} children=0
+└── Heading scope=3:1..4:3 anchor=null attributes={} level=2 children=1
+    └── Text scope=3:1..3:4 anchor=null attributes={} literal="a: 1" children=0
+````````````````````````````````
+
+## Module example
+
+```````````````````````````````` example
+---
+a: 1
+...
+.
+Document scope=1:1..3:3 anchor=null attributes={} children=2
+├── ThematicBreak scope=1:1..1:3 anchor=null attributes={} children=0
+└── Paragraph scope=2:1..3:3 anchor=null attributes={} children=3
+    ├── Text scope=2:1..2:4 anchor=null attributes={} literal="a: 1" children=0
+    ├── SoftBreak scope=2:5..2:5 anchor=null attributes={} children=0
+    └── Text scope=3:1..3:3 anchor=null attributes={} literal="..." children=0
+````````````````````````````````
+
+## Module example
+
+```````````````````````````````` example
+---
+"1": a
+1.0: b
+true: c
+~: d
+---
+.
+Document scope=1:1..6:3 anchor=null attributes={} children=0
+└── Metadata scope=1:1..6:3 children=4
+    ├── MetadataRecord scope=2:1..2:6 name="1" value=scalar(text("a")) children=0
+    ├── MetadataRecord scope=3:1..3:6 name="1.0" value=scalar(text("b")) children=0
+    ├── MetadataRecord scope=4:1..4:7 name="true" value=scalar(text("c")) children=0
+    └── MetadataRecord scope=5:1..5:4 name="~" value=scalar(text("d")) children=0
+````````````````````````````````
+
+## Module example
+
+```````````````````````````````` example
+---
+x: &a 1
+y: *a
+z: !!str 1
+---
+.
+Document scope=1:1..5:3 anchor=null attributes={} children=0
+└── Metadata scope=1:1..5:3 children=3
+    ├── MetadataRecord scope=2:1..2:7 name="x" value=scalar(number("1")) children=0
+    ├── MetadataRecord scope=3:1..3:5 name="y" value=scalar(number("1")) children=0
+    └── MetadataRecord scope=4:1..4:10 name="z" value=scalar(text("1")) children=0
+````````````````````````````````
+
+## Module example
+
+```````````````````````````````` example
+---
+title: Note
+not YAML
+...
+key: [a, {b: c}]
+count: 2
+---
+body
+.
+Document scope=1:1..8:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..7:3 children=5
+│   ├── MetadataRecord scope=2:1..2:11 name="title" value=scalar(text("Note")) children=0
+│   ├── MetadataContent value=comment("not YAML") children=0
+│   ├── MetadataContent value=comment("...") children=0
+│   ├── MetadataContent value=comment("key: [a, {b: c}]") children=0
+│   └── MetadataRecord scope=6:1..6:8 name="count" value=scalar(number("2")) children=0
+└── Paragraph scope=8:1..8:4 anchor=null attributes={} children=1
+    └── Text scope=8:1..8:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## All branches and metadata opacity
+
+```````````````````````````````` example
+---
+null-value: null
+empty:
+bool-value: false
+number: 9007199254740993
+negative-zero: -0
+exponent: 1.0e+12
+text: ""
+list: [one, 2, "[[link]]", "%%comment%%"]
+empty-list: []
+syntax: "**bold** ==mark== $formula$ ^[note] <!--comment-->"
+# source comment
+...
+---
+body
+.
+Document scope=1:1..15:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..14:3 children=12
+│   ├── MetadataRecord scope=2:1..2:16 name="null-value" value=scalar(null) children=0
+│   ├── MetadataRecord scope=3:1..3:6 name="empty" value=scalar(null) children=0
+│   ├── MetadataRecord scope=4:1..4:17 name="bool-value" value=scalar(bool(false)) children=0
+│   ├── MetadataRecord scope=5:1..5:24 name="number" value=scalar(number("9007199254740993")) children=0
+│   ├── MetadataRecord scope=6:1..6:17 name="negative-zero" value=scalar(number("-0")) children=0
+│   ├── MetadataRecord scope=7:1..7:17 name="exponent" value=scalar(number("1.0e+12")) children=0
+│   ├── MetadataRecord scope=8:1..8:8 name="text" value=scalar(text("")) children=0
+│   ├── MetadataRecord scope=9:1..9:41 name="list" value=list([text("one"),number("2"),text("[[link]]"),text("%%comment%%")]) children=0
+│   ├── MetadataRecord scope=10:1..10:14 name="empty-list" value=list([]) children=0
+│   ├── MetadataRecord scope=11:1..11:60 name="syntax" value=scalar(text("**bold** ==mark== $formula$ ^[note] <!--comment-->")) children=0
+│   ├── MetadataContent value=comment("# source comment") children=0
+│   └── MetadataContent value=comment("...") children=0
+└── Paragraph scope=15:1..15:4 anchor=null attributes={} children=1
+    └── Text scope=15:1..15:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Failed members preserve adjacent data
+
+```````````````````````````````` example
+---
+before: first
+not YAML
+broken: [unclosed
+after-broken: 2
+nested: {key: value}
+list-bool: [true]
+list-null: [null]
+list-nested: [[a]]
+list-map: [{a: b}]
+after: last
+---
+body
+.
+Document scope=1:1..13:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..12:3 children=10
+│   ├── MetadataRecord scope=2:1..2:13 name="before" value=scalar(text("first")) children=0
+│   ├── MetadataContent value=comment("not YAML") children=0
+│   ├── MetadataContent value=comment("broken: [unclosed") children=0
+│   ├── MetadataRecord scope=5:1..5:15 name="after-broken" value=scalar(number("2")) children=0
+│   ├── MetadataContent value=comment("nested: {key: value}") children=0
+│   ├── MetadataContent value=comment("list-bool: [true]") children=0
+│   ├── MetadataContent value=comment("list-null: [null]") children=0
+│   ├── MetadataContent value=comment("list-nested: [[a]]") children=0
+│   ├── MetadataContent value=comment("list-map: [{a: b}]") children=0
+│   └── MetadataRecord scope=11:1..11:11 name="after" value=scalar(text("last")) children=0
+└── Paragraph scope=13:1..13:4 anchor=null attributes={} children=1
+    └── Text scope=13:1..13:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Duplicate textual names and failed names
+
+```````````````````````````````` example
+---
+"1": first
+1: second
+1.0: distinct
+true: bool name
+~: tilde name
+"": empty name
+"multi\nline": bad name
+[complex, key]: value
+? explicit
+: value
+!tag key: value
+&a key: value
+*alias: value
+last: present
+---
+body
+.
+Document scope=1:1..17:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..16:3 children=14
+│   ├── MetadataRecord scope=2:1..2:10 name="1" value=scalar(text("first")) children=0
+│   ├── MetadataContent value=comment("1: second") children=0
+│   ├── MetadataRecord scope=4:1..4:13 name="1.0" value=scalar(text("distinct")) children=0
+│   ├── MetadataRecord scope=5:1..5:15 name="true" value=scalar(text("bool name")) children=0
+│   ├── MetadataRecord scope=6:1..6:13 name="~" value=scalar(text("tilde name")) children=0
+│   ├── MetadataContent value=comment("\"\": empty name") children=0
+│   ├── MetadataContent value=comment("\"multi\\nline\": bad name") children=0
+│   ├── MetadataContent value=comment("[complex, key]: value") children=0
+│   ├── MetadataContent value=comment("? explicit") children=0
+│   ├── MetadataContent value=comment(": value") children=0
+│   ├── MetadataContent value=comment("!tag key: value") children=0
+│   ├── MetadataContent value=comment("&a key: value") children=0
+│   ├── MetadataContent value=comment("*alias: value") children=0
+│   └── MetadataRecord scope=15:1..15:13 name="last" value=scalar(text("present")) children=0
+└── Paragraph scope=17:1..17:4 anchor=null attributes={} children=1
+    └── Text scope=17:1..17:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Scalar resolution, quoted folds, escapes and tags
+
+```````````````````````````````` example
+---
+tilde: ~
+yes: yes
+plus: +1
+hex: 0x10
+leading-zero: 01
+infinity: .inf
+date: 2026-09-08
+quoted: "true"
+folded: 'one
+  two'
+continued: "one\
+  two"
+unicode: "\x41\u4e2d\U0001f600\N\_\L\P"
+null-tag: !!null null
+empty-tag: !!null
+bool-tag: !!bool false
+int-tag: !!int -12
+float-tag: !!float 1.50
+str-tag: !!str true
+uri-tag: !<tag:yaml.org,2002:str> 1
+bad-bool: !!bool yes
+bad-int: !!int 1.5
+unknown: !custom one
+last: present
+---
+body
+.
+Document scope=1:1..27:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..26:3 children=22
+│   ├── MetadataRecord scope=2:1..2:8 name="tilde" value=scalar(text("~")) children=0
+│   ├── MetadataRecord scope=3:1..3:8 name="yes" value=scalar(text("yes")) children=0
+│   ├── MetadataRecord scope=4:1..4:8 name="plus" value=scalar(text("+1")) children=0
+│   ├── MetadataRecord scope=5:1..5:9 name="hex" value=scalar(text("0x10")) children=0
+│   ├── MetadataRecord scope=6:1..6:16 name="leading-zero" value=scalar(text("01")) children=0
+│   ├── MetadataRecord scope=7:1..7:14 name="infinity" value=scalar(text(".inf")) children=0
+│   ├── MetadataRecord scope=8:1..8:16 name="date" value=scalar(text("2026-09-08")) children=0
+│   ├── MetadataRecord scope=9:1..9:14 name="quoted" value=scalar(text("true")) children=0
+│   ├── MetadataRecord scope=10:1..11:6 name="folded" value=scalar(text("one two")) children=0
+│   ├── MetadataRecord scope=12:1..13:6 name="continued" value=scalar(text("onetwo")) children=0
+│   ├── MetadataRecord scope=14:1..14:39 name="unicode" value=scalar(text("A中😀   ")) children=0
+│   ├── MetadataRecord scope=15:1..15:21 name="null-tag" value=scalar(null) children=0
+│   ├── MetadataRecord scope=16:1..16:17 name="empty-tag" value=scalar(null) children=0
+│   ├── MetadataRecord scope=17:1..17:22 name="bool-tag" value=scalar(bool(false)) children=0
+│   ├── MetadataRecord scope=18:1..18:18 name="int-tag" value=scalar(number("-12")) children=0
+│   ├── MetadataRecord scope=19:1..19:23 name="float-tag" value=scalar(number("1.50")) children=0
+│   ├── MetadataRecord scope=20:1..20:19 name="str-tag" value=scalar(text("true")) children=0
+│   ├── MetadataRecord scope=21:1..21:35 name="uri-tag" value=scalar(text("1")) children=0
+│   ├── MetadataContent value=comment("bad-bool: !!bool yes") children=0
+│   ├── MetadataContent value=comment("bad-int: !!int 1.5") children=0
+│   ├── MetadataContent value=comment("unknown: !custom one") children=0
+│   └── MetadataRecord scope=25:1..25:13 name="last" value=scalar(text("present")) children=0
+└── Paragraph scope=27:1..27:4 anchor=null attributes={} children=1
+    └── Text scope=27:1..27:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Block scalar folding and chomping
+
+```````````````````````````````` example
+---
+folded: >-
+  one
+  two
+literal: |-
+  one
+with-newline: |
+  one
+blank-fold: >-
+  one
+
+  two
+explicit: >2- # header comment
+  first
+  second
+last: present
+---
+body
+.
+Document scope=1:1..18:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..17:3 children=7
+│   ├── MetadataRecord scope=2:1..4:5 name="folded" value=scalar(text("one two")) children=0
+│   ├── MetadataRecord scope=5:1..6:5 name="literal" value=scalar(text("one")) children=0
+│   ├── MetadataContent value=comment("with-newline: |\n  one") children=0
+│   ├── MetadataContent value=comment("blank-fold: >-\n  one\n\n  two") children=0
+│   ├── MetadataRecord scope=13:1..15:8 name="explicit" value=scalar(text("first second")) children=0
+│   ├── MetadataContent value=comment("# header comment") children=0
+│   └── MetadataRecord scope=16:1..16:13 name="last" value=scalar(text("present")) children=0
+└── Paragraph scope=18:1..18:4 anchor=null attributes={} children=1
+    └── Text scope=18:1..18:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Lists, multiline flow, indentation and comments
+
+```````````````````````````````` example
+---
+block:
+  - one # item comment
+  # between items
+  - 2
+indentless:
+- three
+- 4
+flow: [
+  one, # flow comment
+  2
+]
+empty-tag: !!seq []
+last: present
+---
+body
+.
+Document scope=1:1..16:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..15:3 children=8
+│   ├── MetadataRecord scope=2:1..5:5 name="block" value=list([text("one"),number("2")]) children=0
+│   ├── MetadataContent value=comment("# item comment") children=0
+│   ├── MetadataContent value=comment("# between items") children=0
+│   ├── MetadataRecord scope=6:1..8:3 name="indentless" value=list([text("three"),number("4")]) children=0
+│   ├── MetadataRecord scope=9:1..12:1 name="flow" value=list([text("one"),number("2")]) children=0
+│   ├── MetadataContent value=comment("# flow comment") children=0
+│   ├── MetadataRecord scope=13:1..13:19 name="empty-tag" value=list([]) children=0
+│   └── MetadataRecord scope=14:1..14:13 name="last" value=scalar(text("present")) children=0
+└── Paragraph scope=16:1..16:4 anchor=null attributes={} children=1
+    └── Text scope=16:1..16:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Aliases, shadow rollback and cycle detection
+
+```````````````````````````````` example
+---
+base: &a 9007199254740993
+copy: *a
+list: &l [*a, &b text, *b]
+list-copy: *l
+bad: &a [true]
+after-bad: *a
+cycle: &a [*a]
+after-cycle: *a
+undefined: *missing
+next: &a replacement
+last: *a
+---
+body
+.
+Document scope=1:1..14:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..13:3 children=11
+│   ├── MetadataRecord scope=2:1..2:25 name="base" value=scalar(number("9007199254740993")) children=0
+│   ├── MetadataRecord scope=3:1..3:8 name="copy" value=scalar(number("9007199254740993")) children=0
+│   ├── MetadataRecord scope=4:1..4:26 name="list" value=list([number("9007199254740993"),text("text"),text("text")]) children=0
+│   ├── MetadataRecord scope=5:1..5:13 name="list-copy" value=list([number("9007199254740993"),text("text"),text("text")]) children=0
+│   ├── MetadataContent value=comment("bad: &a [true]") children=0
+│   ├── MetadataRecord scope=7:1..7:13 name="after-bad" value=scalar(number("9007199254740993")) children=0
+│   ├── MetadataContent value=comment("cycle: &a [*a]") children=0
+│   ├── MetadataRecord scope=9:1..9:15 name="after-cycle" value=scalar(number("9007199254740993")) children=0
+│   ├── MetadataContent value=comment("undefined: *missing") children=0
+│   ├── MetadataRecord scope=11:1..11:20 name="next" value=scalar(text("replacement")) children=0
+│   └── MetadataRecord scope=12:1..12:8 name="last" value=scalar(text("replacement")) children=0
+└── Paragraph scope=14:1..14:4 anchor=null attributes={} children=1
+    └── Text scope=14:1..14:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## JSON root members share scalar and list projection
+
+```````````````````````````````` example
+---
+{"a":1,"nested":{"b":2},"after": [3,"x"],"a":4,"last":false}
+---
+body
+.
+Document scope=1:1..4:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..3:3 children=5
+│   ├── MetadataRecord scope=2:2..2:6 name="a" value=scalar(number("1")) children=0
+│   ├── MetadataContent value=comment("\"nested\":{\"b\":2}") children=0
+│   ├── MetadataRecord scope=2:25..2:40 name="after" value=list([number("3"),text("x")]) children=0
+│   ├── MetadataContent value=comment("\"a\":4") children=0
+│   └── MetadataRecord scope=2:48..2:59 name="last" value=scalar(bool(false)) children=0
+└── Paragraph scope=4:1..4:4 anchor=null attributes={} children=1
+    └── Text scope=4:1..4:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Flow mappings retain comments and quote punctuation
+
+```````````````````````````````` example
+---
+{
+  name: don't,
+  quoted: "a,b:c", # inline
+  list: [x, y],
+  unsupported: [false],
+  last: null
+}
+---
+body
+.
+Document scope=1:1..10:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..9:3 children=6
+│   ├── MetadataRecord scope=3:3..3:13 name="name" value=scalar(text("don't")) children=0
+│   ├── MetadataRecord scope=4:3..4:17 name="quoted" value=scalar(text("a,b:c")) children=0
+│   ├── MetadataContent value=comment("# inline") children=0
+│   ├── MetadataRecord scope=5:3..5:14 name="list" value=list([text("x"),text("y")]) children=0
+│   ├── MetadataContent value=comment("unsupported: [false]") children=0
+│   └── MetadataRecord scope=7:3..7:12 name="last" value=scalar(null) children=0
+└── Paragraph scope=10:1..10:4 anchor=null attributes={} children=1
+    └── Text scope=10:1..10:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Indicators are comments and never delimiters
+
+```````````````````````````````` example
+---
+before: 1
+...
+... # doc end
+%YAML 1.2
+%TAG !e! tag:example.com,2000:app/
+--- extra
+----
+after: 2
+---
+body
+.
+Document scope=1:1..11:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..10:3 children=8
+│   ├── MetadataRecord scope=2:1..2:9 name="before" value=scalar(number("1")) children=0
+│   ├── MetadataContent value=comment("...") children=0
+│   ├── MetadataContent value=comment("... # doc end") children=0
+│   ├── MetadataContent value=comment("%YAML 1.2") children=0
+│   ├── MetadataContent value=comment("%TAG !e! tag:example.com,2000:app/") children=0
+│   ├── MetadataContent value=comment("--- extra") children=0
+│   ├── MetadataContent value=comment("----") children=0
+│   └── MetadataRecord scope=9:1..9:8 name="after" value=scalar(number("2")) children=0
+└── Paragraph scope=11:1..11:4 anchor=null attributes={} children=1
+    └── Text scope=11:1..11:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Unclosed root recovery
+
+```````````````````````````````` example
+---
+{
+before: one
+{
+after: two
+---
+body
+.
+Document scope=1:1..7:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..6:3 children=4
+│   ├── MetadataContent value=comment("{") children=0
+│   ├── MetadataRecord scope=3:1..3:11 name="before" value=scalar(text("one")) children=0
+│   ├── MetadataContent value=comment("{") children=0
+│   └── MetadataRecord scope=5:1..5:10 name="after" value=scalar(text("two")) children=0
+└── Paragraph scope=7:1..7:4 anchor=null attributes={} children=1
+    └── Text scope=7:1..7:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Block scalar owns quote and bracket source
+
+```````````````````````````````` example
+---
+a: |-
+  "[
+{b: 2}
+c: 3
+---
+body
+.
+Document scope=1:1..7:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..6:3 children=3
+│   ├── MetadataRecord scope=2:1..3:4 name="a" value=scalar(text("\"[")) children=0
+│   ├── MetadataRecord scope=4:2..4:5 name="b" value=scalar(number("2")) children=0
+│   └── MetadataRecord scope=5:1..5:4 name="c" value=scalar(number("3")) children=0
+└── Paragraph scope=7:1..7:4 anchor=null attributes={} children=1
+    └── Text scope=7:1..7:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Tagged empty nulls
+
+```````````````````````````````` example
+---
+a: !!null ""
+b: !!null ''
+---
+body
+.
+Document scope=1:1..5:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..4:3 children=2
+│   ├── MetadataRecord scope=2:1..2:12 name="a" value=scalar(null) children=0
+│   └── MetadataRecord scope=3:1..3:12 name="b" value=scalar(null) children=0
+└── Paragraph scope=5:1..5:4 anchor=null attributes={} children=1
+    └── Text scope=5:1..5:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Unclosed quote recovery
+
+```````````````````````````````` example
+---
+a: 1
+bad: "unclosed
+next: 2
+bad-single: 'unclosed
+last: 3
+---
+body
+.
+Document scope=1:1..8:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..7:3 children=5
+│   ├── MetadataRecord scope=2:1..2:4 name="a" value=scalar(number("1")) children=0
+│   ├── MetadataContent value=comment("bad: \"unclosed") children=0
+│   ├── MetadataRecord scope=4:1..4:7 name="next" value=scalar(number("2")) children=0
+│   ├── MetadataContent value=comment("bad-single: 'unclosed") children=0
+│   └── MetadataRecord scope=6:1..6:7 name="last" value=scalar(number("3")) children=0
+└── Paragraph scope=8:1..8:4 anchor=null attributes={} children=1
+    └── Text scope=8:1..8:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Unicode source and punctuation names
+
+```````````````````````````````` example
+---
+中文: 世界
+"🚀 name": "🌕"
+question?: yes
+path/to.key: value
+---
+body
+.
+Document scope=1:1..7:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..6:3 children=4
+│   ├── MetadataRecord scope=2:1..2:14 name="中文" value=scalar(text("世界")) children=0
+│   ├── MetadataRecord scope=3:1..3:19 name="🚀 name" value=scalar(text("🌕")) children=0
+│   ├── MetadataRecord scope=4:1..4:14 name="question?" value=scalar(text("yes")) children=0
+│   └── MetadataRecord scope=5:1..5:18 name="path/to.key" value=scalar(text("value")) children=0
+└── Paragraph scope=7:1..7:4 anchor=null attributes={} children=1
+    └── Text scope=7:1..7:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Later envelopes stay Markdown
+
+```````````````````````````````` example
+---
+first: one
+---
+---
+second: two
+---
+.
+Document scope=1:1..6:3 anchor=null attributes={} children=2
+├── Metadata scope=1:1..3:3 children=1
+│   └── MetadataRecord scope=2:1..2:10 name="first" value=scalar(text("one")) children=0
+├── ThematicBreak scope=4:1..4:3 anchor=null attributes={} children=0
+└── Heading scope=5:1..6:3 anchor=null attributes={} level=2 children=1
+    └── Text scope=5:1..5:11 anchor=null attributes={} literal="second: two" children=0
+````````````````````````````````
+
+## Alias rollback on duplicate name
+
+```````````````````````````````` example
+---
+a: &x first
+a: &x second
+b: *x
+---
+body
+.
+Document scope=1:1..6:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..5:3 children=3
+│   ├── MetadataRecord scope=2:1..2:11 name="a" value=scalar(text("first")) children=0
+│   ├── MetadataContent value=comment("a: &x second") children=0
+│   └── MetadataRecord scope=4:1..4:5 name="b" value=scalar(text("first")) children=0
+└── Paragraph scope=6:1..6:4 anchor=null attributes={} children=1
+    └── Text scope=6:1..6:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Plain and quoted colon boundaries
+
+```````````````````````````````` example
+---
+a: http://example.com/#part
+b: a:b
+c: "a: b"
+bad: a: b
+last: present
+---
+body
+.
+Document scope=1:1..8:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..7:3 children=5
+│   ├── MetadataRecord scope=2:1..2:27 name="a" value=scalar(text("http://example.com/#part")) children=0
+│   ├── MetadataRecord scope=3:1..3:6 name="b" value=scalar(text("a:b")) children=0
+│   ├── MetadataRecord scope=4:1..4:9 name="c" value=scalar(text("a: b")) children=0
+│   ├── MetadataContent value=comment("bad: a: b") children=0
+│   └── MetadataRecord scope=6:1..6:13 name="last" value=scalar(text("present")) children=0
+└── Paragraph scope=8:1..8:4 anchor=null attributes={} children=1
+    └── Text scope=8:1..8:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Comment-only payload
+
+```````````````````````````````` example
+---
+ # one
+	# two
+# three
+---
+body
+.
+Document scope=1:1..6:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..5:3 children=3
+│   ├── MetadataContent value=comment(" # one") children=0
+│   ├── MetadataContent value=comment("\t# two") children=0
+│   └── MetadataContent value=comment("# three") children=0
+└── Paragraph scope=6:1..6:4 anchor=null attributes={} children=1
+    └── Text scope=6:1..6:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Whitespace-only payload
+
+```````````````````````````````` example
+---
+ 
+	
+
+---
+.
+Document scope=1:1..5:3 anchor=null attributes={} children=0
+└── Metadata scope=1:1..5:3 children=0
+````````````````````````````````
+
+## Explicit root map tag
+
+```````````````````````````````` example
+---
+!!map
+a: 1
+b: two
+---
+body
+.
+Document scope=1:1..6:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..5:3 children=2
+│   ├── MetadataRecord scope=3:1..3:4 name="a" value=scalar(number("1")) children=0
+│   └── MetadataRecord scope=4:1..4:6 name="b" value=scalar(text("two")) children=0
+└── Paragraph scope=6:1..6:4 anchor=null attributes={} children=1
+    └── Text scope=6:1..6:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Verbatim root map tag
+
+```````````````````````````````` example
+---
+!<tag:yaml.org,2002:map> {a: 1, b: two}
+---
+body
+.
+Document scope=1:1..4:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..3:3 children=2
+│   ├── MetadataRecord scope=2:27..2:30 name="a" value=scalar(number("1")) children=0
+│   └── MetadataRecord scope=2:33..2:38 name="b" value=scalar(text("two")) children=0
+└── Paragraph scope=4:1..4:4 anchor=null attributes={} children=1
+    └── Text scope=4:1..4:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## BOM envelope
+
+```````````````````````````````` example
+﻿---
+a: 1
+---
+body
+.
+Document scope=1:1..4:4 anchor=null attributes={} children=1
+├── Metadata scope=1:4..3:3 children=1
+│   └── MetadataRecord scope=2:1..2:4 name="a" value=scalar(number("1")) children=0
+└── Paragraph scope=4:1..4:4 anchor=null attributes={} children=1
+    └── Text scope=4:1..4:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Trailing opener whitespace
+
+```````````````````````````````` example
+--- 
+a: 1
+---
+.
+Document scope=1:1..3:3 anchor=null attributes={} children=2
+├── ThematicBreak scope=1:1..1:4 anchor=null attributes={} children=0
+└── Heading scope=2:1..3:3 anchor=null attributes={} level=2 children=1
+    └── Text scope=2:1..2:4 anchor=null attributes={} literal="a: 1" children=0
+````````````````````````````````
+
+## Indented opener
+
+```````````````````````````````` example
+ ---
+a: 1
+---
+.
+Document scope=1:1..3:3 anchor=null attributes={} children=2
+├── ThematicBreak scope=1:2..1:4 anchor=null attributes={} children=0
+└── Heading scope=2:1..3:3 anchor=null attributes={} level=2 children=1
+    └── Text scope=2:1..2:4 anchor=null attributes={} literal="a: 1" children=0
+````````````````````````````````
+
+## Info opener
+
+```````````````````````````````` example
+---yaml
+a: 1
+---
+.
+Document scope=1:1..3:3 anchor=null attributes={} children=1
+└── Heading scope=1:1..3:3 anchor=null attributes={} level=2 children=3
+    ├── Text scope=1:1..1:7 anchor=null attributes={} literal="---yaml" children=0
+    ├── SoftBreak scope=1:8..1:8 anchor=null attributes={} children=0
+    └── Text scope=2:1..2:4 anchor=null attributes={} literal="a: 1" children=0
+````````````````````````````````
+
+## Long opener
+
+```````````````````````````````` example
+----
+a: 1
+---
+.
+Document scope=1:1..3:3 anchor=null attributes={} children=2
+├── ThematicBreak scope=1:1..1:4 anchor=null attributes={} children=0
+└── Heading scope=2:1..3:3 anchor=null attributes={} level=2 children=1
+    └── Text scope=2:1..2:4 anchor=null attributes={} literal="a: 1" children=0
+````````````````````````````````
+
+## Missing closer
+
+```````````````````````````````` example
+---
+a: 1
+...
+.
+Document scope=1:1..3:3 anchor=null attributes={} children=2
+├── ThematicBreak scope=1:1..1:3 anchor=null attributes={} children=0
+└── Paragraph scope=2:1..3:3 anchor=null attributes={} children=3
+    ├── Text scope=2:1..2:4 anchor=null attributes={} literal="a: 1" children=0
+    ├── SoftBreak scope=2:5..2:5 anchor=null attributes={} children=0
+    └── Text scope=3:1..3:3 anchor=null attributes={} literal="..." children=0
+````````````````````````````````
+
+## Short closer
+
+```````````````````````````````` example
+---
+a: 1
+--
+.
+Document scope=1:1..3:2 anchor=null attributes={} children=2
+├── ThematicBreak scope=1:1..1:3 anchor=null attributes={} children=0
+└── Heading scope=2:1..3:2 anchor=null attributes={} level=2 children=1
+    └── Text scope=2:1..2:4 anchor=null attributes={} literal="a: 1" children=0
+````````````````````````````````
+
+## Trailing closer whitespace
+
+```````````````````````````````` example
+---
+a: 1
+--- 
+.
+Document scope=1:1..3:4 anchor=null attributes={} children=2
+├── ThematicBreak scope=1:1..1:3 anchor=null attributes={} children=0
+└── Heading scope=2:1..3:4 anchor=null attributes={} level=2 children=1
+    └── Text scope=2:1..2:4 anchor=null attributes={} literal="a: 1" children=0
+````````````````````````````````
+
+## Properties-shaped source in containers
+
+```````````````````````````````` example
+> ---
+> a: 1
+> ---
+
+- ---
+  a: 1
+  ---
+.
+Document scope=1:1..7:5 anchor=null attributes={} children=3
+├── Callout scope=1:1..3:5 anchor=null attributes={} variant=null collapsed=null children=2
+│   ├── ThematicBreak scope=1:3..1:5 anchor=null attributes={} children=0
+│   └── Heading scope=2:3..4:0 anchor=null attributes={} level=2 children=1
+│       └── Text scope=2:3..2:6 anchor=null attributes={} literal="a: 1" children=0
+├── ThematicBreak scope=5:1..5:5 anchor=null attributes={} children=0
+└── Heading scope=6:3..7:5 anchor=null attributes={} level=2 children=1
+    └── Text scope=6:3..6:6 anchor=null attributes={} literal="a: 1" children=0
+````````````````````````````````
+
+## Opaque markup contexts
+
+```````````````````````````````` example
+```
+---
+a: 1
+---
+```
+
+<!--
+---
+a: 1
+---
+-->
+
+$$
+---
+a: 1
+---
+$$
+
+%%
+---
+a: 1
+---
+%%
+
+`--- a: 1 ---` [[--- a: 1 ---]]
+.
+Document scope=1:1..25:31 anchor=null attributes={} children=5
+├── CodeBlock scope=1:1..5:3 anchor=null attributes={} info=null language=null literal="---\na: 1\n---\n" fenced=true closed=true children=0
+├── Comment scope=7:1..11:3 anchor=null attributes={} literal="\n---\na: 1\n---\n" children=0
+├── FormulaBlock scope=13:1..17:2 anchor=null attributes={} literal="---\na: 1\n---" children=0
+├── Comment scope=19:1..23:2 anchor=null attributes={} literal="---\na: 1\n---\n" children=0
+└── Paragraph scope=25:1..25:31 anchor=null attributes={} children=3
+    ├── Code scope=25:1..25:14 anchor=null attributes={} literal="--- a: 1 ---" children=0
+    ├── Text scope=25:15..25:15 anchor=null attributes={} literal=" " children=0
+    └── CrossLink scope=25:16..25:31 anchor=null attributes={} embedded=false dest=cross(path="--- a: 1 ---",anchor=null) label=null children=0
+````````````````````````````````
+
+
+## A recovered root object owns its quoted continuation after an unfinished block value
+
+```````````````````````````````` example
+---
+bad: [
+{good: "hello
+world: text
+"}
+last: kept
+---
+.
+Document scope=1:1..7:3 anchor=null attributes={} children=0
+└── Metadata scope=1:1..7:3 children=3
+    ├── MetadataContent value=comment("bad: [") children=0
+    ├── MetadataRecord scope=3:2..5:1 name="good" value=scalar(text("hello world: text ")) children=0
+    └── MetadataRecord scope=6:1..6:10 name="last" value=scalar(text("kept")) children=0
+````````````````````````````````
+
+## Tabs separate tokens only after required indentation; invalid neighbors remain source
+
+```````````````````````````````` example
+---
+	bad: 1
+quoted: "one
+	two"
+flow: [
+	one,
+	two]
+good: "one
+ 	two"
+{root: "one
+	two"}
+last: kept
+---
+.
+Document scope=1:1..13:3 anchor=null attributes={} children=0
+└── Metadata scope=1:1..13:3 children=6
+    ├── MetadataContent value=comment("\tbad: 1") children=0
+    ├── MetadataContent value=comment("quoted: \"one\n\ttwo\"") children=0
+    ├── MetadataContent value=comment("flow: [\n\tone,\n\ttwo]") children=0
+    ├── MetadataRecord scope=8:1..9:6 name="good" value=scalar(text("one two")) children=0
+    ├── MetadataRecord scope=10:2..11:5 name="root" value=scalar(text("one two")) children=0
+    └── MetadataRecord scope=12:1..12:10 name="last" value=scalar(text("kept")) children=0
+````````````````````````````````

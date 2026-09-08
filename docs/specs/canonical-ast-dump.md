@@ -238,7 +238,7 @@ item, so that the grammar has one answer before the first of them arrives:
   `MetadataRecord scope=... name="..." value=... children=0`.
 - `children` keeps counting structural children: `head.count + content.count
   + foot.count` for `Table`, `definitions.count` for `DefinitionList`, the
-  number of bodies for `Definition`, and `records.count` for `Metadata`;
+  number of bodies for `Definition`, and `content.count` for `Metadata`;
   nested caption, metadata, term, and row-group lines are never counted by
   their owner.
 - Every scalar and enum keeps the encodings above; nothing is omitted because
@@ -253,7 +253,10 @@ with a `Citation` whose referent prints `specimen(id="...")` and whose affix
 groups are empty. No resolved display number is printed.
 
 A present `Document.metadata` prints a `Metadata scope=L:C..L:C children=N`
-line before content, with N nested `MetadataRecord` lines. Each record prints
+line before content, with N nested content cases. A `data` case prints its
+`MetadataRecord` line. A `comment` case prints
+`MetadataContent value=comment("...") children=0` without scope, anchor, or
+attributes; it is never a `Comment` markup node. Each record prints
 `scope`, `name`, `value`, and `children=0`. Neither value has anchor or
 attributes. The value grammar is `scalar(null)`, `scalar(bool(true|false))`,
 `scalar(number("lexeme"))`, `scalar(text("..."))`, or

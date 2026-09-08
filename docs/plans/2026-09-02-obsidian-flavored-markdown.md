@@ -19,8 +19,8 @@ quoted block has `variant=null`, `title=null`, and `fold=none`, while `[!type]`
 populates that same node model. Every successful reference link or image is
 resolved before the public AST is finalized and is indistinguishable from its
 direct counterpart; source definitions and reference forms remain
-parser-internal. One valid beginning-of-file Properties block populates optional
-`Document.metadata` as ordered, out-of-band records. Property names remain an
+parser-internal. One complete beginning-of-file Properties envelope populates optional
+`Document.metadata` as ordered, out-of-band data and comment values. Property names remain an
 open string domain; vault conventions such as `aliases` do not become parser
 keywords or link-resolution results.
 
@@ -158,19 +158,18 @@ descriptor. O4 completes the shared feature-boundary implementation bullet.
 
 ## Phase 3 — Properties, anchors, and callout containers
 
-- [ ] Recognize at most one exact `---` Properties envelope at the beginning of
-      the decoded document, after an optional BOM and before inherited block
-      parsing. Commit only a complete valid candidate, remove it from
-      `Document.content`, and return every byte to inherited Markdown on any
-      envelope, YAML, or projection failure.
-- [ ] Decode the payload once as a YAML 1.2.2 document using JSON scalar
-      resolution with a plain-string fallback, then project one top-level
-      mapping into the shared metadata values. Accept arbitrary unique non-empty
-      string names and the documented scalar/list domain; retain dates and
-      quoted wikilinks as inert text and reject nested values, duplicate names,
-      unsupported tags, YAML stream/document indicators including `...`, cycles,
-      and resource-limit violations.
-- [ ] Record source-faithful metadata and record scopes before parsing the
+- [x] Recognize at most one exact `---` Properties envelope at the beginning of
+      the decoded document after an optional BOM. A complete envelope always
+      attaches metadata; only a missing or malformed envelope leaves its bytes
+      to inherited Markdown. Allocation failure remains terminal.
+- [x] Decode source members once into ordered `Metadata.content` cases:
+      `comment(String)` or `data(MetadataRecord)`. Retain supported YAML data
+      with exact numbers, decoded textual names, standard tags, JSON roots, and
+      bounded acyclic aliases. Preserve YAML comments, non-YAML fragments,
+      `...`, unsupported members, later duplicates, and over-budget members as
+      comment values. Keep good members before and after failures, and roll back
+      failed anchor bindings. Metadata comments are never Markup.
+- [x] Record source-faithful metadata and record scopes before parsing the
       remaining body. Decoding and alias expansion must never extend a record
       scope to another source occurrence or manufacture an expanded range.
 
@@ -188,14 +187,16 @@ descriptor. O4 completes the shared feature-boundary implementation bullet.
 - [ ] Use the same container recursion for nested callouts. Unknown/custom types
       remain metadata-bearing callouts; alias-to-style mapping stays outside the
       parser.
-- [ ] Cover absent/empty/populated Properties, arbitrary names, every value
-      branch, JSON roots, strict fences, malformed transactional fallback, and
-      Properties/body scope boundaries alongside metadata-free, title-only,
-      empty-body, formatted-title, nested, invalid-position, mixed-case,
-      custom-type, and whole-structured-block identifier cases.
+- [x] Cover absent/empty/populated Properties, arbitrary names, every value
+      branch, JSON roots, strict fences, member-level comment retention, and
+      Properties/body scope boundaries.
+- [ ] Cover metadata-free, title-only, empty-body, formatted-title, nested,
+      invalid-position, mixed-case, custom-type, and whole-structured-block
+      identifier cases.
 
-- [ ] **Exit criterion:** one valid Properties block yields metadata and no body
-      node, every invalid candidate falls back without partial records, every
+- [ ] **Exit criterion:** one complete Properties envelope yields metadata and no body
+      node, unsupported members remain metadata comments while valid neighbors stay
+      data, incomplete envelopes remain Markdown, and every
       block identifier has exactly one owner, no valid marker survives as
       visible text, every `>` container is a `Callout`, and plain and
       marker-bearing states satisfy their field invariants; nested
