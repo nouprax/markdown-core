@@ -2304,6 +2304,57 @@ static void properties_values(test_batch_runner *runner) {
         markdown_core_document_free(document);
     }
 }
+static void properties_source_boundaries(test_batch_runner *runner) {
+    const char *punctuation = "[]{},#";
+    for (const char *c = punctuation; *c; c++) {
+        char source[128], name[] = {'b', *c, 'c', 0}, text[] = {'x', *c, 0};
+        snprintf(source, sizeof(source), "---\na: x%c\nb%cc: 2\nnot YAML\nlast: 3\n---\n", *c, *c);
+        markdown_core_document *document = markdown_core_document_parse((const uint8_t *)source, strlen(source), NULL);
+        const markdown_core_metadata *metadata =
+            markdown_core_node_document_metadata(markdown_core_document_root(document));
+        OK(runner, metadata && markdown_core_metadata_content_count(metadata) == 4,
+           "block plain punctuation %c does not change member ownership", *c);
+        const markdown_core_metadata_record *a =
+            markdown_core_metadata_content_data(markdown_core_metadata_content_at(metadata, 0));
+        const markdown_core_metadata_record *b =
+            markdown_core_metadata_content_data(markdown_core_metadata_content_at(metadata, 1));
+        markdown_core_metadata_scalar value;
+        OK(runner,
+           a && markdown_core_metadata_record_scalar(a, &value) && value.kind == MARKDOWN_CORE_METADATA_TEXT &&
+               value.value.string.length == 2 && !memcmp(value.value.string.data, text, 2),
+           "block value retains punctuation %c as text", *c);
+        markdown_core_string key = markdown_core_metadata_record_name(b);
+        OK(runner, key.length == 3 && !memcmp(key.data, name, 3), "block key retains punctuation %c", *c);
+        markdown_core_document_free(document);
+    }
+    const char *source = "---\n{\n  # before\n  a: [\n \t# in list\n    one # inline\n  ] # after\n  # end\n}\n---\n";
+    const char *comments[] = {"  # before", " \t# in list", "# inline", "# after", "  # end"};
+    const char *endings[] = {"\n", "\r", "\r\n"};
+    for (size_t ending = 0; ending < 3; ending++) {
+        markdown_core_strbuf input = MARKDOWN_CORE_BUF_INIT(markdown_core_get_default_mem_allocator());
+        for (const char *c = source; *c; c++) {
+            if (*c == '\n') {
+                markdown_core_strbuf_puts(&input, endings[ending]);
+            } else {
+                markdown_core_strbuf_putc(&input, *c);
+            }
+        }
+        markdown_core_document *document = markdown_core_document_parse(input.ptr, input.size, NULL);
+        const markdown_core_metadata *metadata =
+            markdown_core_node_document_metadata(markdown_core_document_root(document));
+        OK(runner, metadata && markdown_core_metadata_content_count(metadata) == 6,
+           "flow comments and the list retain source order for line ending %zu", ending);
+        for (size_t i = 0; i < 5; i++) {
+            markdown_core_string comment =
+                markdown_core_metadata_content_comment(markdown_core_metadata_content_at(metadata, i ? i + 1 : 0));
+            OK(runner, comment.length == strlen(comments[i]) && !memcmp(comment.data, comments[i], comment.length),
+               "standalone indentation and inline hash boundary survive at comment %zu", i);
+        }
+        markdown_core_document_free(document);
+        markdown_core_strbuf_free(&input);
+    }
+}
+
 static size_t properties_decoded_bytes, properties_line_lookup_work;
 static markdown_core_node *observe_properties(const markdown_core_extension *extension, markdown_core_parser *parser,
                                               markdown_core_node *root) {
@@ -2315,8 +2366,12 @@ static markdown_core_node *observe_properties(const markdown_core_extension *ext
 static void properties_member_work(test_batch_runner *runner) {
     static const markdown_core_extension observer = {.postprocess_func = observe_properties};
     const markdown_core_extension *extensions[] = {&observer};
-    const char *units[] = {"broken: [\\\"\nnext: 1\n", "# comment\nnot YAML\n...\n", "x: &a [true]\ny: *a\n",
-                           "{bad: [true], good: 1}\n", "{\nnext: 1\n"};
+    const char *units[] = {"broken: [\\\"\nnext: 1\n",
+                           "# comment\nnot YAML\n...\n",
+                           "x: &a [true]\ny: *a\n",
+                           "{bad: [true], good: 1}\n",
+                           "{\nnext: 1\n",
+                           "a: x[\nb[c: 2\nnot YAML\n"};
     for (size_t shape = 0; shape < sizeof(units) / sizeof(*units); shape++) {
         for (size_t count = 128; count <= 8192; count *= 2) {
             markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(markdown_core_get_default_mem_allocator());
@@ -3200,6 +3255,7 @@ int main(void) {
 
     universal_values(runner);
     properties_values(runner);
+    properties_source_boundaries(runner);
     properties_member_work(runner);
     properties_alias_budget(runner);
     attribute_linear_work(runner);

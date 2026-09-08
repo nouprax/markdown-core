@@ -42,7 +42,7 @@ static const char OOM_PROPERTIES_CORPUS[] =
     "copy-list: *l\nbad: &a [true]\nafter-bad: *a\nname: duplicate\n...\nnot YAML\n"
     "quoted: 'one\n  two'\nblock: >-\n  one\n  two\nlast: !!str 1\n---\nbody\n";
 static const char OOM_PROPERTIES_FLOW_CORPUS[] =
-    "---\n{a: 1, b: [two, 3], c: {nested: value}, d: 4, e: \"bad\\q\"}\n---\n";
+    "---\na: x[\nb[c: 2\n{\n  # retained\n  a: 1, b: [two, 3], c: {nested: value}, d: 4, e: \"bad\\q\"}\n---\n";
 
 static const char OOM_CORPUS[] = "[[Note]] [[Note|]] ![[#^block|alias]] [[a#Heading|label]]\n\n"
                                  "Setext heading\n---\n\n"

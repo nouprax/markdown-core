@@ -867,7 +867,7 @@ its behavior, with no separate publication step.
   for that container source. This item records that inherited finding rather
   than changing unrelated block finalization.
 
-  Validation (2026-09-08): all 56 Properties fixtures, C correctness (76 tests),
+  Validation (2026-09-08): all 47 Properties fixtures, C correctness (76 tests),
   C conformance (2 tests), and the full correctness suite under ASan, UBSan,
   and TSan pass. Swift macOS correctness, external consumer, and conformance;
   Kotlin JVM, macOS arm64, and Android-host correctness/conformance; and ES
@@ -877,6 +877,15 @@ its behavior, with no separate publication step.
   host release dry run pass. Full cross-host release aggregation remains the
   required CI gate; Linux and device/simulator execution are not claimed by
   these host results.
+  Review follow-up: one block-key scanner now recognizes plain punctuation
+  for both recovery and scalar headers. Member boundaries track the actual
+  value form, so brackets or quotes inside block plain scalars cannot create
+  flow or quote ownership. Comment ranges use the source-line index to retain
+  standalone indentation while inline comments still start at `#`. The shared
+  canonical boundary fixture exercises all transports; C tests cover every
+  flow punctuation character, LF/CR/CRLF, space/tab comment prefixes, source
+  retention, and disjoint decoding work. The pinned YAML oracle independently
+  witnesses valid plain-key/value/header punctuation.
 
 - [ ] **O7 — Block identifiers.** Attach `^block-id`
       during block finalization through one operation for paragraph suffixes,

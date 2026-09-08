@@ -304,7 +304,9 @@ continuations; an indentless sequence is part of its owning value. A new member
 at the same or smaller indentation ends the preceding member. Quoted and flow
 values retain continuation lines and their closing delimiters. A directly
 authored mapping key at the member's indentation is a recovery boundary even
-when the preceding quote or flow value was not closed. An invalid member is
+when the preceding quote or flow value was not closed. Flow punctuation inside
+block plain keys and values remains text; it never starts a collection or
+extends member ownership. An invalid member is
 never reparsed at an interior colon. Flow root mappings use their comma-delimited
 members, with nested collections and quoted commas kept in their owning member;
 a JSON root object uses this same mapping operation.

@@ -48,6 +48,13 @@ typedef struct {
 
 static bool space(unsigned char c) { return c == ' ' || c == '\t'; }
 static bool newline(unsigned char c) { return c == '\r' || c == '\n'; }
+static bool plain_start(const unsigned char *s, size_t start, size_t end) {
+    if (start == end || space(s[start]) || strchr(",[]{}#&*!|>'\"%@`", s[start])) {
+        return false;
+    }
+    return !((s[start] == '-' || s[start] == '?' || s[start] == ':') &&
+             (start + 1 == end || space(s[start + 1]) || newline(s[start + 1])));
+}
 static size_t line_end(const unsigned char *s, size_t p, size_t end) {
     while (p < end && !newline(s[p])) {
         p++;
@@ -176,6 +183,10 @@ static void comment(properties *p, size_t start, size_t end) {
     }
 }
 static bool remember_comment(decoder *d, size_t start, size_t end) {
+    source_line line = d->owner->lines[line_index(d->owner, start)];
+    if (line.content == start) {
+        start = line.start;
+    }
     if (!grow(d->owner, (void **)&d->comments, &d->comment_capacity, d->comment_count + 1, sizeof(*d->comments))) {
         return false;
     }
@@ -353,10 +364,7 @@ static bool plain(decoder *d, bool flow, bool key, int indent, markdown_core_str
         *value = copy(d->owner, s + start, 0);
         return value->data != NULL;
     }
-    unsigned char first = s[start];
-    if (space(first) || strchr(",[]{}#&*!|>'\"%@`", first) ||
-        ((first == '-' || first == '?' || first == ':') &&
-         (start + 1 == d->end || space(s[start + 1]) || newline(s[start + 1])))) {
+    if (!plain_start(s, start, d->end)) {
         return false;
     }
     markdown_core_strbuf buf = MARKDOWN_CORE_BUF_INIT(d->owner->parser->mem);
@@ -984,29 +992,46 @@ static void flow_mapping(properties *p, size_t start, size_t end) {
     }
     p->parser->mem->free(d.comments);
 }
-static bool root_key(const unsigned char *s, size_t start, size_t end) {
-    unsigned char quote = 0;
-    for (size_t i = start; i < end; i++) {
-        unsigned char c = s[i];
-        if (quote) {
-            if (quote == '"' && c == '\\' && i + 1 < end) {
-                i++;
+/* Return the byte after a directly authored block key's colon. The same
+ * lexical rule serves recovery and block-scalar headers. Flow punctuation is
+ * ordinary content inside a block plain key; only a separated # is a comment. */
+static size_t block_key_end(const unsigned char *s, size_t start, size_t end) {
+    if (start == end) {
+        return 0;
+    }
+    if (s[start] == '\'' || s[start] == '"') {
+        unsigned char quote = s[start++];
+        bool closed = false;
+        while (start < end) {
+            unsigned char c = s[start++];
+            if (quote == '"' && c == '\\' && start < end) {
+                start++;
             } else if (c == quote) {
-                if (quote == '\'' && i + 1 < end && s[i + 1] == '\'') {
-                    i++;
+                if (quote == '\'' && start < end && s[start] == '\'') {
+                    start++;
                 } else {
-                    quote = 0;
+                    closed = true;
+                    break;
                 }
             }
-        } else if (i == start && (c == '\'' || c == '"')) {
-            quote = c;
-        } else if (c == ':' && (i + 1 == end || space(s[i + 1]))) {
-            return true;
-        } else if (strchr("[]{}#", c)) {
-            return false;
+        }
+        while (start < end && space(s[start])) {
+            start++;
+        }
+        return closed && start < end && s[start] == ':' && (start + 1 == end || space(s[start + 1])) ? start + 1 : 0;
+    }
+    if (!plain_start(s, start, end)) {
+        return 0;
+    }
+    for (size_t i = start; i < end; i++) {
+        if (s[i] == ':' && (i + 1 == end || space(s[i + 1]))) {
+            return i + 1;
+        }
+        if (s[i] == '#' && (i == start || space(s[i - 1]))) {
+            return 0;
         }
     }
-    return false;
+    return 0;
 }
 
 /* A block scalar's indentation owns its body, including bytes that resemble
@@ -1023,32 +1048,8 @@ static bool block_scalar_header(const unsigned char *s, size_t start, size_t end
     if (s[cursor] == '-' && cursor + 1 < end && space(s[cursor + 1])) {
         cursor++;
     } else {
-        unsigned char quote = 0;
-        bool colon = false;
-        size_t key_start = cursor;
-        for (; cursor < end; cursor++) {
-            unsigned char c = s[cursor];
-            if (quote) {
-                if (quote == '"' && c == '\\' && cursor + 1 < end) {
-                    cursor++;
-                } else if (c == quote) {
-                    if (quote == '\'' && cursor + 1 < end && s[cursor + 1] == '\'') {
-                        cursor++;
-                    } else {
-                        quote = 0;
-                    }
-                }
-            } else if (cursor == key_start && (c == '\'' || c == '"')) {
-                quote = c;
-            } else if (c == ':' && cursor + 1 < end && space(s[cursor + 1])) {
-                colon = true;
-                cursor++;
-                break;
-            } else if (strchr("[]{}#", c)) {
-                return false;
-            }
-        }
-        if (!colon) {
+        cursor = block_key_end(s, cursor, end);
+        if (!cursor) {
             return false;
         }
     }
@@ -1076,10 +1077,10 @@ static bool block_scalar_header(const unsigned char *s, size_t start, size_t end
     return cursor == end || s[cursor] == '#';
 }
 static size_t block_boundary(const unsigned char *s, size_t start, size_t end, size_t indent) {
+    enum { VALUE_PREFIX, VALUE_SCALAR, VALUE_QUOTED, VALUE_SEQUENCE, VALUE_FLOW } form = VALUE_PREFIX;
     size_t cursor = start, depth = 0;
     unsigned char quote = 0;
     bool first = true;
-    bool scalar_body = block_scalar_header(s, start, line_end(s, start, end));
     while (cursor < end) {
         size_t e = line_end(s, cursor, end), nonspace = cursor;
         while (nonspace < e && s[nonspace] == ' ') {
@@ -1088,12 +1089,40 @@ static size_t block_boundary(const unsigned char *s, size_t start, size_t end, s
         if (!first && nonspace < e && nonspace - cursor <= indent) {
             bool list_line =
                 nonspace - cursor == indent && s[nonspace] == '-' && (nonspace + 1 == e || space(s[nonspace + 1]));
-            if (!list_line && ((!depth && !quote) || root_key(s, nonspace, e) || s[nonspace] == '{')) {
+            bool recovery_key = block_key_end(s, nonspace, e) || s[nonspace] == '{';
+            bool continuation = ((form == VALUE_PREFIX || form == VALUE_SEQUENCE) && list_line) ||
+                                (form == VALUE_PREFIX && s[nonspace] == '#') || ((depth || quote) && !recovery_key);
+            if (!continuation) {
                 return cursor;
             }
         }
-        for (size_t i = cursor; !scalar_body && i < e; i++) {
+        size_t token = first ? block_key_end(s, nonspace, e) : 0;
+        for (size_t i = token ? token : nonspace; i < e; i++) {
             unsigned char c = s[i];
+            if (form == VALUE_PREFIX) {
+                if (space(c)) {
+                    continue;
+                }
+                if (c == '#') {
+                    break;
+                }
+                if (c == '&' || c == '!') {
+                    while (i + 1 < e && !space(s[i + 1])) {
+                        i++;
+                    }
+                    continue;
+                }
+                /* Only the value's node token can open a flow collection.
+                 * Brackets and quotes within block plain scalars, including
+                 * block sequence items, never extend the root member. */
+                form = c == '[' || c == '{'                          ? VALUE_FLOW
+                       : c == '\'' || c == '"'                       ? VALUE_QUOTED
+                       : c == '-' && (i + 1 == e || space(s[i + 1])) ? VALUE_SEQUENCE
+                                                                     : VALUE_SCALAR;
+            }
+            if (form != VALUE_FLOW && form != VALUE_QUOTED) {
+                break;
+            }
             if (quote) {
                 if (quote == '"' && c == '\\' && i + 1 < e) {
                     i++;
@@ -1102,6 +1131,9 @@ static size_t block_boundary(const unsigned char *s, size_t start, size_t end, s
                         i++;
                     } else {
                         quote = 0;
+                        if (form == VALUE_QUOTED) {
+                            form = VALUE_SCALAR;
+                        }
                     }
                 }
             } else if ((c == '\'' || c == '"') && (i == nonspace || space(s[i - 1]) || strchr(":,[{?", s[i - 1]))) {
@@ -1111,7 +1143,9 @@ static size_t block_boundary(const unsigned char *s, size_t start, size_t end, s
             } else if (c == '[' || c == '{') {
                 depth++;
             } else if ((c == ']' || c == '}') && depth) {
-                depth--;
+                if (!--depth) {
+                    form = VALUE_SCALAR;
+                }
             }
         }
         first = false;
@@ -1171,7 +1205,7 @@ static void index_flows(properties *p, size_t start, size_t end) {
         }
         if (i == line_start && quote) {
             size_t e = line_end(s, i, end);
-            if (!(count && p->flows[stack[count - 1]].root_context) && (root_key(s, i, e) || s[i] == '{')) {
+            if (!(count && p->flows[stack[count - 1]].root_context) && (block_key_end(s, i, e) || s[i] == '{')) {
                 quote = 0;
             }
         }
@@ -1240,7 +1274,11 @@ static void payload(properties *p, size_t start, size_t end) {
         while (first < e && s[first] == ' ') {
             first++;
         }
-        if (first == e || s[first] == '#' || s[first] == '%' ||
+        size_t content = first;
+        while (content < e && space(s[content])) {
+            content++;
+        }
+        if (content == e || s[content] == '#' || s[first] == '%' ||
             (e - first >= 3 && memcmp(s + first, "...", 3) == 0 && (e == first + 3 || space(s[first + 3])))) {
             comment(p, cursor, e);
             cursor = next_line(s, e, end);

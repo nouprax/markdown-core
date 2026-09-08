@@ -518,6 +518,23 @@
                 "states": ["document.metadata.present", "document.metadata.empty"],
                 "orders": []
             }
+        },
+        {
+            "name": "properties-boundaries",
+            "input": "properties-boundaries.md",
+            "expected": "properties-boundaries.ast",
+            "coverage": {
+                "kinds": ["Document", "Paragraph", "Text"],
+                "states": [
+                    "document.metadata.present",
+                    "metadata.content.data",
+                    "metadata.content.comment",
+                    "metadata.scalar.number",
+                    "metadata.scalar.text",
+                    "metadata.list.populated"
+                ],
+                "orders": []
+            }
         }
     ]
 }

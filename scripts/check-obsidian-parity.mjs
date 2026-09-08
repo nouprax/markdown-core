@@ -712,6 +712,18 @@ for (const [raw, expected] of [
         process.exit(1);
     }
 }
+// Block plain scalars keep flow punctuation as text, including in keys and
+// before a following block-scalar header. Witness the same data in the pinned
+// YAML oracle and in the real core decoder, rather than only a dump golden.
+for (const punctuation of ["[", "]", "{", "}", ",", "#", "'", '"']) {
+    const input = `---\na: text ${punctuation} literal\nb${punctuation}c: 2\nfolded${punctuation}key: >-\n  body [ { ' literal\nlast: 3\n---\n`;
+    const oracle = parseProperties(input).metadata;
+    const product = parseMetadataDump(parseCanonicalDump(execFileSync(ours, [], { input, encoding: "utf8" })));
+    if (JSON.stringify(product) !== JSON.stringify(oracle)) {
+        throw new Error(`obsidian parity: block plain punctuation ${punctuation} changed metadata ownership`);
+    }
+}
+
 // O6 projects retained comment values away for YAML data parity. Recovery is a
 // dialect rule witnessed directly, independently of the YAML document oracle.
 const retainedProperties = parseCanonicalDump(
