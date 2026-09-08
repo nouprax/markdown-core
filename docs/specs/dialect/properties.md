@@ -130,8 +130,9 @@ recognition and uniqueness use decoded names without case conversion.
   decoded CR/LF. Dates, times, URLs and quoted links remain text.
 - Lists contain only text and number scalars. They may be bracketed,
   comma-separated lists (an optional trailing comma is allowed), or `- ` items
-  below a field. Indentless lists are accepted; comment-only and blank lines
-  between items do not split them. Empty lists are distinct from null.
+  on following lines. A dash on the field line is ordinary text:
+  `authors: - Ada` is the string `"- Ada"`. Indentless lists are accepted;
+  comment-only and blank lines between items do not split them. Empty lists are distinct from null.
 
 A single-quoted string escapes a quote by doubling it. Double-quoted strings
 support these escapes: `\"`, `\\`, `\/`, `\b`, `\f`, `\n`, `\r`, `\t`, and
@@ -191,11 +192,14 @@ Document scope=1:1..11:4 anchor=null attributes={} children=1
 ## Ownership, recovery, and scopes
 
 A property owns its indented continuations and flat list items. A new member
-at the same or smaller indentation ends it. Quoted commas and balanced nested
-source stay with their owning bracketed member, even when its value is
-unsupported. An unfinished construct recovers at the next independent field
-boundary. Interior colons are never retried as a different field. Each valid
-member assigns its named field; each invalid member is skipped as a whole.
+at the same or smaller indentation ends it unless a bracketed value is still
+open. All source inside that collection stays with its owner, including
+field-looking lines at column one, quoted commas and unsupported nested
+values. If the collection never closes, the remaining payload is ignored up
+to the metadata's closing `---`; no later field is recovered from its interior.
+Brackets in ordinary plain, quoted or literal text do not open a collection.
+Interior colons are never retried as a different field. Each valid member
+assigns its named field; each invalid member is skipped as a whole.
 
 `Metadata.scope` starts at the opening fence's first hyphen and ends at the
 closing fence's third hyphen. The body keeps its original source coordinates.
@@ -217,9 +221,10 @@ There is no recursive value expansion or per-member suffix retry.
 The pinned `yaml@2.9.0` Document/CST oracle compares only this grammar's valid
 intersection, including bare literal prose. It is test tooling, not a runtime
 dependency or authority for extra syntax. It must reject out-of-domain oracle
-inputs; direct core fixtures test that the product ignores those members and
-continues. Exact numeric spelling and the envelope range remain oracle
-evidence. Pandoc Markdown parsing of string values is outside this AST model.
+inputs. Direct core fixtures test the product's own rules for ignoring
+unsupported members and retaining field-line dash text, which is outside
+the YAML oracle's domain. Exact numeric spelling and the envelope range remain
+oracle evidence. Pandoc Markdown parsing of string values is outside this AST model.
 
 Fixtures cover all ten names, quoted names, duplicates and retry after an
 invalid occurrence, empty metadata, ignored content, literal indentation and

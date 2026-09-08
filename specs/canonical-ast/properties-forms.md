@@ -1,8 +1,8 @@
 ---
 title: A title
 subtitle: A subtitle
-authors: Ada
-keywords: language
+authors: - Ada
+keywords: - language
 abstract: |
   first
 

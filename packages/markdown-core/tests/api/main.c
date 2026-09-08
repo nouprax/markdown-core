@@ -2359,6 +2359,61 @@ static void properties_source_boundaries(test_batch_runner *runner) {
            "unsupported member %zu is ignored without consuming the next valid field or reserving its name", i);
         markdown_core_document_free(doc);
     }
+    const char *dash_text = "---\nauthors: - Ada\n- ignored\nauthors: [Lin]\nkeywords: - language # note\n"
+                            "title: -\n---\nbody\n";
+    markdown_core_document *dash_doc =
+        markdown_core_document_parse((const uint8_t *)dash_text, strlen(dash_text), NULL);
+    const markdown_core_metadata *dash_metadata =
+        markdown_core_node_document_metadata(markdown_core_document_root(dash_doc));
+    const markdown_core_metadata_value *dash_values[] = {markdown_core_metadata_authors(dash_metadata),
+                                                         markdown_core_metadata_keywords(dash_metadata),
+                                                         markdown_core_metadata_title(dash_metadata)};
+    const char *dash_expected[] = {"- Ada", "- language", "-"};
+    INT_EQ(runner, metadata_populated_count(dash_metadata), 3, "field-line dashes assign text fields once");
+    for (size_t i = 0; i < sizeof(dash_values) / sizeof(*dash_values); i++) {
+        markdown_core_metadata_scalar value;
+        OK(runner,
+           markdown_core_metadata_value_scalar(dash_values[i], &value) && value.kind == MARKDOWN_CORE_METADATA_TEXT &&
+               value.value.string.length == strlen(dash_expected[i]) &&
+               !memcmp(value.value.string.data, dash_expected[i], strlen(dash_expected[i])),
+           "a field-line dash stays text, distinct from a following-line list marker");
+    }
+    markdown_core_document_free(dash_doc);
+    const struct {
+        const char *source;
+        bool closed;
+    } bracketed[] = {{"authors: [\nstate: true\n]\n", true},
+                     {"authors: [\n# ]\nstate: true\n]\n", true},
+                     {"authors: [\n\"state: true ]\",\n[one]\n]\n", true},
+                     {"authors: [\n{\nstate: true\n}\n]\n", true},
+                     {"unknown: [\nstate: true\n]\n", true},
+                     {"{\nstate: true\n}\n", true},
+                     {"authors: [\nstate: true\n", false},
+                     {"authors: [\n}\nstate: true\n", false},
+                     {"{\n]\nstate: true\n", false},
+                     {"authors: [\n\"unterminated\n]\nstate: false\n", false},
+                     {"unknown: [\n...\nstate: true\n", false},
+                     {"{\nstate: true\n", false}};
+    for (size_t i = 0; i < sizeof(bracketed) / sizeof(*bracketed); i++) {
+        char source[256];
+        snprintf(source, sizeof(source), "---\nname: kept\n%sstate: ready\n---\nbody\n", bracketed[i].source);
+        markdown_core_document *doc = markdown_core_document_parse((const uint8_t *)source, strlen(source), NULL);
+        const markdown_core_node *root = markdown_core_document_root(doc);
+        const markdown_core_metadata *metadata = markdown_core_node_document_metadata(root);
+        const markdown_core_metadata_value *state = markdown_core_metadata_state(metadata);
+        markdown_core_metadata_scalar value;
+        INT_EQ(runner, metadata_populated_count(metadata), bracketed[i].closed ? 2 : 1,
+               "bracketed member %zu keeps its interior opaque", i);
+        OK(runner,
+           bracketed[i].closed
+               ? markdown_core_metadata_value_scalar(state, &value) && value.kind == MARKDOWN_CORE_METADATA_TEXT &&
+                     value.value.string.length == 5 && !memcmp(value.value.string.data, "ready", 5)
+               : state == NULL,
+           "only a closed bracketed member allows the next independent field");
+        INT_EQ(runner, markdown_core_node_scope(markdown_core_node_get_first_child(root)).start.line,
+               markdown_core_metadata_scope(metadata).end.line + 1, "the closing fence always separates the body");
+        markdown_core_document_free(doc);
+    }
     const char *source =
         "---\n{\"name\":\"ignored\"}\nname: \"\\uD83D\\uDE80\"\nauthors: [Ada, 2]\nstate: false\n---\n";
     markdown_core_document *doc = markdown_core_document_parse((const uint8_t *)source, strlen(source), NULL);
@@ -2395,19 +2450,24 @@ static markdown_core_node *observe_properties(const markdown_core_extension *ext
 static void properties_member_work(test_batch_runner *runner) {
     static const markdown_core_extension observer = {.postprocess_func = observe_properties};
     const markdown_core_extension *extensions[] = {&observer};
-    const char *units[] = {"authors: [\\\"\nunknown: 1\n",
-                           "# comment\nnot YAML\n...\n",
-                           "abstract: &a [true]\ncomment: *a\n",
-                           "{bad: [true], unknown: 1}\n",
-                           "{\nunknown: 1\n",
-                           "unknown: x[\nb[c: 2\nnot YAML\n",
-                           "name: duplicate\n"};
+    const struct {
+        const char *source;
+        bool final_field;
+    } units[] = {{"authors: [\\\"\nunknown: 1\n", false},
+                 {"# comment\nnot YAML\n...\n", true},
+                 {"abstract: &a [true]\ncomment: *a\n", true},
+                 {"{bad: [true], unknown: 1}\n", true},
+                 {"{\nunknown: 1\n", false},
+                 {"unknown: x[\nb[c: 2\nnot YAML\n", true},
+                 {"name: duplicate\n", true},
+                 {"authors: [\nstate: true\n]\n", true},
+                 {"{\nstate: true\n}\n", true}};
     for (size_t shape = 0; shape < sizeof(units) / sizeof(*units); shape++) {
         for (size_t count = 128; count <= 8192; count *= 2) {
             markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(markdown_core_get_default_mem_allocator());
             markdown_core_strbuf_puts(&source, "---\n");
             for (size_t i = 0; i < count; i++) {
-                markdown_core_strbuf_puts(&source, units[shape]);
+                markdown_core_strbuf_puts(&source, units[shape].source);
             }
             markdown_core_strbuf_puts(&source, "state: kept\n---\nbody\n");
             markdown_core_node *root = parse_with_probes((const char *)source.ptr, source.size, extensions, 1);
@@ -2415,7 +2475,15 @@ static void properties_member_work(test_batch_runner *runner) {
             OK(runner, properties_decoded_bytes <= (size_t)source.size, "disjoint members never retry a failed suffix");
             if (root) {
                 markdown_core_metadata *metadata = root->as.document->metadata;
-                OK(runner, markdown_core_metadata_state(metadata) != NULL, "recovery reaches the final field");
+                const markdown_core_metadata_value *state = markdown_core_metadata_state(metadata);
+                markdown_core_metadata_scalar value;
+                OK(runner,
+                   units[shape].final_field
+                       ? markdown_core_metadata_value_scalar(state, &value) &&
+                             value.kind == MARKDOWN_CORE_METADATA_TEXT && value.value.string.length == 4 &&
+                             !memcmp(value.value.string.data, "kept", 4)
+                       : state == NULL,
+                   "member ownership governs whether the final field is independent");
                 OK(runner, metadata_populated_count(metadata) <= 10, "only named fields can be assigned");
                 markdown_core_node_free(root);
             }

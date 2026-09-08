@@ -1,5 +1,11 @@
 ---
 {"title":"ignored"}
+authors: [
+state: true
+]
+{
+subtitle: hidden
+}
 name: x[
 unknown[key: 2
 not YAML
@@ -17,5 +23,7 @@ comment: |
   # prose
   ---
 state: ready
+date: [
+subtitle: still hidden
 ---
 body

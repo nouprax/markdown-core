@@ -831,7 +831,8 @@ its behavior, with no separate publication step.
 
       Keep scalar and flat-list value semantics, including exact numeric text.
       `authors` and `keywords` accept single text, bracketed arrays and block
-      lists. `abstract` and `comment` accept single-line text and bare `: |`
+      lists on following lines; `authors: - Ada` is text `"- Ada"`.
+      `abstract` and `comment` accept single-line text and bare `: |`
       indented prose, preserving internal blank lines with default clipping.
       Missing fields differ from present null scalars, empty text and empty
       lists. Ignore unnamed text, unknown fields, comments, `...`, invalid
@@ -840,7 +841,10 @@ its behavior, with no separate publication step.
 
       The parser assigns valid members directly to their named destination;
       field presence supplies duplicate detection. Unsupported members are
-      skipped once at their owned boundary. No JSON root objects, full YAML
+      skipped once at their owned boundary. A bracketed value owns all lines
+      until it closes, irrespective of indentation or field-looking contents;
+      an unclosed collection consumes the remaining metadata payload up to
+      the closing `---`. No JSON root objects, full YAML
       parser, anchors, aliases, tags, nested values, folding or literal modifiers
       are supported. Arrays remain field values. C, Swift, Kotlin/JNI/Native
       and ES/Wasm expose the same direct-field model and preserve ownership.
@@ -866,15 +870,20 @@ its behavior, with no separate publication step.
   64 KiB to 1 MiB verify identical peak live bytes for equal-length plain,
   quoted, literal and list-item text with or without brackets. Fixtures verify
   source-order independence, absent versus explicit-null values, ignored root
-  objects, and subsequent valid field lines.
+  objects, and subsequent valid field lines. Further review corrections keep
+  balanced collections opaque and skip an unclosed collection to the envelope's
+  closing fence. A dash is a list marker only at the start of a following line;
+  on the field line it remains ordinary scalar text.
 
-  Fresh host validation (2026-09-08): C correctness 76/76 and conformance 2/2;
+  Direct-field host validation (2026-09-08): C correctness 76/76 and conformance 2/2;
   ASan, UBSan and TSan 76/76 each, including OOM sweeps; Swift tests, packed
   consumer and conformance; Kotlin JVM, macOS Native and Android host tests
   and conformance; ES Node/browser, packed consumer and conformance;
   `pnpm verify`; metadata/Obsidian parity (32 inputs); host release dry run,
   including ABI checks and Maven publication validation. Full Linux/macOS
-  release aggregation remains in CI.
+  release aggregation remains in CI. Boundary corrections were revalidated
+  with C correctness/conformance, all three sanitizer suites, shared conformance
+  across Swift/Kotlin/ES, the metadata oracle, and `pnpm verify`.
 
 - [ ] **O7 — Block identifiers.** Attach `^block-id`
       during block finalization through one operation for paragraph suffixes,

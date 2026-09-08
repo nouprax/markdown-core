@@ -30,7 +30,7 @@ static bool plain_start(const unsigned char *s, size_t start, size_t end) {
     if (start == end || space(s[start]) || strchr(",[]{}#&*!|>'\"%@`", s[start])) {
         return false;
     }
-    return !((s[start] == '-' || s[start] == '?' || s[start] == ':') &&
+    return !((s[start] == '?' || s[start] == ':') &&
              (start + 1 == end || space(s[start + 1]) || newline(s[start + 1])));
 }
 static size_t line_end(const unsigned char *s, size_t p, size_t end) {
@@ -547,8 +547,8 @@ static bool field(decoder *d) {
         if (!literal(d, start, &value)) {
             goto failed;
         }
-    } else if (d->pos < d->end &&
-               (s[d->pos] == '[' || (s[d->pos] == '-' && d->pos + 1 < d->end && space(s[d->pos + 1])))) {
+    } else if (d->pos < d->end && (s[d->pos] == '[' || (d->pos > value_line_end && s[d->pos] == '-' &&
+                                                        d->pos + 1 < d->end && space(s[d->pos + 1])))) {
         if (!sequence(d, &value)) {
             goto failed;
         }
@@ -612,8 +612,8 @@ static size_t block_key_end(const unsigned char *s, size_t start, size_t end) {
 }
 
 static size_t block_boundary(const unsigned char *s, size_t start, size_t end, size_t indent) {
-    enum { VALUE_PREFIX, VALUE_SCALAR, VALUE_QUOTED, VALUE_SEQUENCE, VALUE_FLOW } form = VALUE_PREFIX;
-    size_t cursor = start, depth = 0;
+    enum { VALUE_PREFIX, VALUE_SCALAR, VALUE_QUOTED, VALUE_SEQUENCE, VALUE_BRACKETED } form = VALUE_PREFIX;
+    size_t cursor = start, array_depth = 0, object_depth = 0;
     unsigned char quote = 0;
     bool first = true;
     while (cursor < end) {
@@ -632,7 +632,7 @@ static size_t block_boundary(const unsigned char *s, size_t start, size_t end, s
             bool separation = content == e || s[content] == '#';
             bool continuation = content == e ||
                                 ((form == VALUE_PREFIX || form == VALUE_SEQUENCE) && (list_line || separation)) ||
-                                ((depth || quote) && !recovery_key);
+                                array_depth != 0 || object_depth != 0 || (quote && !recovery_key);
             if (!continuation) {
                 return cursor;
             }
@@ -647,15 +647,15 @@ static size_t block_boundary(const unsigned char *s, size_t start, size_t end, s
                 if (c == '#') {
                     break;
                 }
-                /* Only the value's node token can open a flow collection.
+                /* Only the value's first token can open a bracketed collection.
                  * Brackets and quotes within block plain scalars, including
                  * block sequence items, never extend the root member. */
-                form = c == '[' || c == '{'                          ? VALUE_FLOW
-                       : c == '\'' || c == '"'                       ? VALUE_QUOTED
-                       : c == '-' && (i + 1 == e || space(s[i + 1])) ? VALUE_SEQUENCE
-                                                                     : VALUE_SCALAR;
+                form = c == '[' || c == '{'                                    ? VALUE_BRACKETED
+                       : c == '\'' || c == '"'                                 ? VALUE_QUOTED
+                       : !first && c == '-' && (i + 1 == e || space(s[i + 1])) ? VALUE_SEQUENCE
+                                                                               : VALUE_SCALAR;
             }
-            if (form != VALUE_FLOW && form != VALUE_QUOTED) {
+            if (form != VALUE_BRACKETED && form != VALUE_QUOTED) {
                 break;
             }
             if (quote) {
@@ -675,10 +675,18 @@ static size_t block_boundary(const unsigned char *s, size_t start, size_t end, s
                 quote = c;
             } else if (c == '#' && (i == nonspace || space(s[i - 1]))) {
                 break;
-            } else if (c == '[' || c == '{') {
-                depth++;
-            } else if ((c == ']' || c == '}') && depth) {
-                if (!--depth) {
+            } else if (c == '[') {
+                array_depth++;
+            } else if (c == '{') {
+                object_depth++;
+            } else if (c == ']' || c == '}') {
+                /* A mismatched closer cannot release an unfinished member.
+                 * These counters only bound ownership; nested values are not decoded. */
+                size_t *depth = c == ']' ? &array_depth : &object_depth;
+                if (*depth) {
+                    --*depth;
+                }
+                if (!array_depth && !object_depth) {
                     form = VALUE_SCALAR;
                 }
             }

@@ -543,6 +543,7 @@ if (
 ) {
     throw new Error("oracle lost metadata envelope range evidence");
 }
+// These inputs are outside the YAML comparison domain; product rules may differ.
 for (const invalid of [
     "null",
     "name: one\nname: two",
@@ -554,6 +555,8 @@ for (const invalid of [
     "comment: |-\n  text",
     "comment: |2\n  text",
     "authors: [true, null]",
+    "authors: - Ada",
+    "keywords: - text",
     "[a, b]: value",
     "name: &anchor value",
     "name: *missing",
@@ -636,6 +639,23 @@ for (const punctuation of ["[", "]", "{", "}", ",", "#", "'", '"']) {
     const product = parseMetadataDump(parseCanonicalDump(execFileSync(ours, [], { input, encoding: "utf8" })));
     if (JSON.stringify(product) !== JSON.stringify(oracle))
         throw new Error("plain punctuation changed member ownership");
+}
+// Field-line dash text belongs to our grammar, even though it is invalid YAML.
+const dashFields = parseMetadataDump(
+    parseCanonicalDump(
+        execFileSync(ours, [], {
+            input: "---\nauthors: - Ada\nkeywords: - language\n---\n",
+            encoding: "utf8"
+        })
+    )
+);
+for (const [name, expected] of [
+    ["authors", "- Ada"],
+    ["keywords", "- language"]
+]) {
+    const value = dashFields[name];
+    if (value?.kind !== "scalar" || value.value.kind !== "text" || value.value.value !== expected)
+        throw new Error("field-line dash text was ignored or interpreted as a list");
 }
 // Recovery belongs to the product grammar; malformed YAML is outside the document oracle.
 const recoveredProperties = parseCanonicalDump(

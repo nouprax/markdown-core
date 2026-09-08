@@ -1,4 +1,4 @@
 Document scope=1:1..13:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..12:3 name=null title=scalar(text("A title")) subtitle=scalar(text("A subtitle")) time=null date=null authors=scalar(text("Ada")) keywords=scalar(text("language")) abstract=scalar(text("first\n\nsecond\n")) state=null comment=scalar(text("# prose\n")) children=0
+├── Metadata scope=1:1..12:3 name=null title=scalar(text("A title")) subtitle=scalar(text("A subtitle")) time=null date=null authors=scalar(text("- Ada")) keywords=scalar(text("- language")) abstract=scalar(text("first\n\nsecond\n")) state=null comment=scalar(text("# prose\n")) children=0
 └── Paragraph scope=13:1..13:4 anchor=null attributes={} children=1
     └── Text scope=13:1..13:4 anchor=null attributes={} literal="body" children=0

@@ -1289,7 +1289,7 @@ Document scope=1:1..10:4 anchor=null attributes={} children=1
     └── Text scope=10:1..10:4 anchor=null attributes={} literal="body" children=0
 ````````````````````````````````
 
-## Recognized field semantics
+## Unsupported root objects stay opaque
 
 ```````````````````````````````` example
 ---
@@ -1302,7 +1302,7 @@ Document scope=1:1..10:4 anchor=null attributes={} children=1
 body
 .
 Document scope=1:1..8:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..7:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=scalar(bool(true)) comment=null children=0
+├── Metadata scope=1:1..7:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
 └── Paragraph scope=8:1..8:4 anchor=null attributes={} children=1
     └── Text scope=8:1..8:4 anchor=null attributes={} literal="body" children=0
 ````````````````````````````````
@@ -1323,7 +1323,7 @@ Document scope=1:1..6:4 anchor=null attributes={} children=1
     └── Text scope=6:1..6:4 anchor=null attributes={} literal="body" children=0
 ````````````````````````````````
 
-## Recognized field semantics
+## Unclosed collections own the remaining payload
 
 ```````````````````````````````` example
 ---
@@ -1335,7 +1335,7 @@ comment: done
 body
 .
 Document scope=1:1..7:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..6:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=scalar(bool(true)) comment=scalar(text("done")) children=0
+├── Metadata scope=1:1..6:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
 └── Paragraph scope=7:1..7:4 anchor=null attributes={} children=1
     └── Text scope=7:1..7:4 anchor=null attributes={} literal="body" children=0
 ````````````````````````````````
