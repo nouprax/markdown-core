@@ -316,9 +316,7 @@ static void try_inserting_table_header_paragraph(markdown_core_parser *parser, m
     }
     /* A table split completes this paragraph just as a later block start
      * would: reference definitions and anchor attachment share finalization. */
-    if (!markdown_core_parser_finalize_paragraph(parser, paragraph)) {
-        markdown_core_node_free(paragraph);
-    }
+    markdown_core_parser_finalize_paragraph(parser, paragraph);
 }
 
 /* Return NULL when the syntax does not match or the parent rejects the table

@@ -557,14 +557,14 @@ static bool S_ends_with_blank_line(markdown_core_node *node) {
     }
 }
 
-/* THE DEFINITION IS NOT A NODE (M2). A link reference definition read off the
+/* A definition has no semantic node (M2). A link reference definition read off the
  * front of `b`'s content goes into the parser's map, which owns the resource it
  * states once, and every reference that resolves to it is the `Link` or
  * `Image` it names, sharing that resource. This is the inherited grammar's
- * model, and it is why nothing here has to remember where the definition was
- * written: the bytes are consumed, the block's remaining content is rebased
- * onto where it was written, and an invalid definition is not consumed at all,
- * so its bytes stay the paragraph text they were. */
+ * model: the bytes are consumed and remaining content is rebased onto where
+ * it was written. An invalid definition stays paragraph text. A paragraph
+ * consumed entirely by definitions retains its position in the block tree
+ * until anchor decisions finish; semantic cleanup then removes it. */
 // returns true if content remains after link defs are resolved.
 static bool resolve_reference_link_definitions(markdown_core_parser *parser, markdown_core_node *b) {
     bufsize_t pos;
@@ -785,20 +785,17 @@ static void S_attach_paragraph_identifier(markdown_core_parser *parser, markdown
     }
 }
 
-bool markdown_core_parser_finalize_paragraph(markdown_core_parser *parser, markdown_core_node *paragraph) {
+void markdown_core_parser_finalize_paragraph(markdown_core_parser *parser, markdown_core_node *paragraph) {
     if (!resolve_reference_link_definitions(parser, paragraph)) {
-        return false;
+        paragraph->flags |= MARKDOWN_CORE_NODE__REFERENCE_DEFINITION_ONLY;
+        return;
     }
     S_attach_paragraph_identifier(parser, paragraph);
-    return true;
 }
 
 static markdown_core_node *finalize(markdown_core_parser *parser, markdown_core_node *b) {
     bufsize_t pos;
-    markdown_core_node *item;
-    markdown_core_node *subitem;
     markdown_core_node *parent;
-    bool has_content;
 
     parent = b->parent;
     assert(b->flags & MARKDOWN_CORE_NODE__OPEN); // shouldn't call finalize on closed blocks
@@ -844,14 +841,9 @@ static markdown_core_node *finalize(markdown_core_parser *parser, markdown_core_
     markdown_core_strbuf *node_content = &b->content;
 
     switch (S_type(b)) {
-    case MARKDOWN_CORE_NODE_PARAGRAPH: {
-        has_content = markdown_core_parser_finalize_paragraph(parser, b);
-        if (!has_content) {
-            // remove blank node (former reference def)
-            markdown_core_node_free(b);
-        }
+    case MARKDOWN_CORE_NODE_PARAGRAPH:
+        markdown_core_parser_finalize_paragraph(parser, b);
         break;
-    }
 
     case MARKDOWN_CORE_NODE_CODE_BLOCK:
         if (!b->as.code->fenced) { // indented code
@@ -935,34 +927,6 @@ static markdown_core_node *finalize(markdown_core_parser *parser, markdown_core_
         if (!b->as.literal->data) {
             parser->oom = true;
         }
-        break;
-
-    case MARKDOWN_CORE_NODE_LIST: // determine tight/loose status
-        b->as.list->tight = true; // tight by default
-        item = b->first_child;
-
-        while (item) {
-            // check for non-final non-empty list item ending with blank line:
-            if (S_last_line_blank(item) && item->next) {
-                b->as.list->tight = false;
-                break;
-            }
-            // recurse into children of list item, to see if there are
-            // spaces between them:
-            subitem = item->first_child;
-            while (subitem) {
-                if ((item->next || subitem->next) && S_ends_with_blank_line(subitem)) {
-                    b->as.list->tight = false;
-                    break;
-                }
-                subitem = subitem->next;
-            }
-            if (!(b->as.list->tight)) {
-                break;
-            }
-            item = item->next;
-        }
-
         break;
 
     default:
@@ -1240,6 +1204,51 @@ static int lists_match(markdown_core_list *list_data, markdown_core_list *item_d
             list_data->bullet_char == item_data->bullet_char);
 }
 
+/* List layout depends on semantic children, after definitions are removed.
+ * Some openers close a list before its unmatched item finishes, so deriving
+ * layout when that list's source scope closes observes incomplete children. */
+static void S_finalize_list(markdown_core_node *list) {
+    list->as.list->tight = true;
+    for (markdown_core_node *item = list->first_child; item; item = item->next) {
+        if (S_last_line_blank(item) && item->next) {
+            list->as.list->tight = false;
+            return;
+        }
+        for (markdown_core_node *child = item->first_child; child; child = child->next) {
+            if ((item->next || child->next) && S_ends_with_blank_line(child)) {
+                list->as.list->tight = false;
+                return;
+            }
+        }
+    }
+}
+
+/* Block syntax and all anchor decisions finish before definitions disappear.
+ * Walk in postorder so list layout sees the cleaned children. Each tree edge
+ * is followed at most once in each direction, with no recursion or extra allocation;
+ * the document owns every pending definition even if parsing fails earlier. */
+static void S_complete_block_tree(markdown_core_node *root) {
+    markdown_core_node *node = root;
+    while (node->first_child) {
+        node = node->first_child;
+    }
+    while (node) {
+        markdown_core_node *parent = node->parent;
+        markdown_core_node *next = node->next;
+        if (node->flags & MARKDOWN_CORE_NODE__REFERENCE_DEFINITION_ONLY) {
+            markdown_core_node_free(node);
+        } else if (S_type(node) == MARKDOWN_CORE_NODE_LIST) {
+            S_finalize_list(node);
+        }
+        node = next ? next : parent;
+        if (next) {
+            while (node->first_child) {
+                node = node->first_child;
+            }
+        }
+    }
+}
+
 static markdown_core_node *finalize_document(markdown_core_parser *parser) {
     while (parser->current != parser->root) {
         parser->current = finalize(parser, parser->current);
@@ -1247,6 +1256,7 @@ static markdown_core_node *finalize_document(markdown_core_parser *parser) {
 
     finalize(parser, parser->root);
 
+    S_complete_block_tree(parser->root);
     process_inlines(parser, parser->refmap);
 
     return parser->root;
@@ -1675,17 +1685,14 @@ static bool parse_extension_block(markdown_core_parser *parser, markdown_core_no
      *
      * `parser->current` is the deepest open block and `container` is on the
      * path from the root to it, so walking up through `finalize` reaches it.
-     * `finalize` frees a node only in its PARAGRAPH case and returns the
-     * parent either way, so the loop is safe across a paragraph that was
-     * nothing but reference definitions. */
+     * Definition-only paragraphs stay attached until block parsing completes;
+     * no block can disappear while it is still on the open spine. */
     *should_continue = false;
     while (parser->current != container) {
         parser->current = finalize(parser, parser->current);
         assert(parser->current != NULL);
     }
-    /* `container` carries an extension-minted type, never PARAGRAPH, so it
-     * survives its own finalize and can still be positioned. That is the one
-     * lifetime invariant this path rests on. */
+    /* A block survives its own finalization and can still be positioned. */
     assert(S_type(container) != MARKDOWN_CORE_NODE_PARAGRAPH);
     parser->current = finalize(parser, container);
     S_set_end_to_current_line(parser, container);
@@ -2419,16 +2426,16 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
 }
 
 /* Step 14, after every ordinary block opener has declined the line. The
- * preceding block has finalized under this same parent. Its scope must reach
- * the preceding nonblank content, including definitions no longer in the
- * tree. The shared lookahead proves a following blank line belongs to that
- * parent, not an outer one. */
+ * preceding block has finalized under this same parent. Definition-only
+ * paragraphs still occupy their source position until block parsing ends.
+ * The shared lookahead proves a following blank line belongs to that parent,
+ * not an outer one. */
 static bool S_attach_identifier_line(markdown_core_parser *parser, markdown_core_node *parent,
                                      markdown_core_chunk *input) {
     markdown_core_node *owner = parent->last_child;
     block_identifier candidate;
     if (parser->indent >= CODE_INDENT || input->data[parser->first_nonspace] != '#' || !owner ||
-        owner->attributes.anchor.len || owner->end_line < parser->last_nonblank_line ||
+        owner->attributes.anchor.len ||
         (S_type(owner) != MARKDOWN_CORE_NODE_LIST && S_type(owner) != MARKDOWN_CORE_NODE_CALLOUT &&
          S_type(owner) != MARKDOWN_CORE_NODE_TABLE) ||
         !S_scan_block_identifier(parser, input->data + parser->first_nonspace, input->len - parser->first_nonspace,
@@ -2633,9 +2640,6 @@ static void S_process_line(markdown_core_parser *parser, const unsigned char *bu
     add_text_to_container(parser, container, last_matched_container, &input);
 
 finished:
-    if (!parser->blank) {
-        parser->last_nonblank_line = parser->line_number;
-    }
     /* M0: measured from `curline`, not from `input`. The two share their
      * bytes, but `chop_trailing_hashtags` shortens `input` to an ATX
      * heading's content before the line is added, and a block that ends on

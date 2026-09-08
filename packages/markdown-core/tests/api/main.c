@@ -3473,6 +3473,50 @@ static markdown_core_node *seed_anchor(const markdown_core_extension *extension,
     return NULL;
 }
 
+static markdown_core_node *observe_definition_before_anchor(const markdown_core_extension *extension, int indented,
+                                                            markdown_core_parser *parser, markdown_core_node *parent,
+                                                            unsigned char *input, int length) {
+    (void)extension;
+    (void)indented;
+    if (length - parser->first_nonspace >= 6 && memcmp(input + parser->first_nonspace, "#list#", 6) == 0) {
+        markdown_core_node *previous = parent->last_child;
+        *(bool *)parser->root->user_data = previous && previous->kind == MARKDOWN_CORE_NODE_PARAGRAPH &&
+                                           !(previous->flags & MARKDOWN_CORE_NODE__OPEN) && previous->content.size == 0;
+    }
+    return NULL;
+}
+
+static bool observe_reference_definition_lifetime(markdown_core_parser *parser, void *context) {
+    static const markdown_core_extension observer = {.name = "reference-definition-lifetime",
+                                                     .try_opening_block = observe_definition_before_anchor};
+    parser->root->user_data = context;
+    return markdown_core_parser_attach_extension(parser, &observer);
+}
+
+static void reference_definition_lifetime(test_batch_runner *runner) {
+    const char source[] = "- a\n\n[ref]: /x\n\n#list#\n\n[ref]\n";
+    bool retained_at_anchor = false;
+    markdown_core_node *root =
+        markdown_core_parse_document_with_mem(source, sizeof(source) - 1, markdown_core_get_default_mem_allocator(),
+                                              observe_reference_definition_lifetime, &retained_at_anchor);
+    OK(runner, root != NULL, "deferred reference definition parses");
+    OK(runner, retained_at_anchor, "the finalized definition remains a sibling when anchor syntax is reached");
+    if (root) {
+        markdown_core_node *marker = root->first_child ? root->first_child->next : NULL;
+        OK(runner,
+           marker && marker->kind == MARKDOWN_CORE_NODE_PARAGRAPH && marker->first_child &&
+               marker->first_child->kind == MARKDOWN_CORE_NODE_TEXT &&
+               strcmp(markdown_core_node_get_literal(marker->first_child), "#list#") == 0,
+           "definition cleanup leaves the marker's paragraph as the next semantic sibling");
+        OK(runner,
+           marker && marker->next && marker->next->first_child &&
+               marker->next->first_child->kind == MARKDOWN_CORE_NODE_LINK && !marker->next->next,
+           "the definition resolves links without leaking a paragraph into the completed tree");
+        root->user_data = NULL;
+        markdown_core_node_free(root);
+    }
+}
+
 static void block_identifier_ownership(test_batch_runner *runner) {
     static const markdown_core_extension seed = {.name = "preexisting-anchor", .try_opening_block = seed_anchor};
     const markdown_core_extension *probes[] = {&seed};
@@ -3523,6 +3567,7 @@ int main(void) {
     properties_text_memory(runner);
     block_identifier_linear_work(runner);
     block_identifier_ownership(runner);
+    reference_definition_lifetime(runner);
     attribute_linear_work(runner);
     cross_link_linear_work(runner);
     inline_footnote_linear_work(runner);

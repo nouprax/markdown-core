@@ -162,6 +162,7 @@ static const char OOM_BLOCK_IDENTIFIER_CORPUS[] =
     "[c]: /c\nlead [c] #lead-ref#\n| h |\n| - |\n\n"
     "- blocked\n\n[gap]: /x\n\n#gap#\n\n[gap]\n\n"
     "> - nested\n>\n> [gap]: /x\n>\n> #gap#\n>\n\n"
+    "- #empty#\n\n  [inside]: /x\n\n> next\n\n#next#\n\n"
     "[^n]: text #note#\n\ntext \\#escape#\n\n$$x$$ #formula#\n\n> last\n\n#end#";
 
 static const oom_case OOM_CASES[] = {
