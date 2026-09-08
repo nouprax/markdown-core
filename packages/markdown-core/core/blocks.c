@@ -134,6 +134,8 @@ int markdown_core_parser_attach_extension(markdown_core_parser *parser, const ma
 }
 
 static void S_parser_dispose(markdown_core_parser *parser) {
+    /* This index never owns nodes and is never read during destruction. */
+    parser->mem->free(parser->footnotes.values);
     if (parser->root) {
         markdown_core_node_free(parser->root);
     }
@@ -2151,6 +2153,10 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
             (*container)->as.footnote->id.data = id;
             (*container)->as.footnote->id.len = (bufsize_t)strlen((const char *)id);
             (*container)->as.footnote->id.alloc = 1;
+            if (!markdown_core_parser_register_footnote(parser, *container)) {
+                markdown_core_chunk_free(parser->mem, &c);
+                return;
+            }
 
             /* The document defines this label from here on.
              *
@@ -2525,48 +2531,29 @@ static int S_apply_tree_phase(markdown_core_parser *parser, markdown_core_node *
     return phase(parser, root_slot, context);
 }
 
-/* Collect before mutating: inline bodies and authored definitions have the
- * same lifetime through all tree phases, including extension-owned fields.
- * Structural traversal order differs from source order for those fields, so
- * order the F values by their fixed-width source coordinates in O(F) work;
- * no body is rescanned or reparsed. */
-typedef struct {
-    markdown_core_node **values;
-    size_t count;
-    size_t capacity;
-} footnote_collection;
-
-static int collect_footnotes(markdown_core_parser *parser, markdown_core_node **root_slot, void *context) {
-    footnote_collection *collection = context;
-    markdown_core_node *root = *root_slot;
-    markdown_core_node *node = root;
-    while (node) {
-        if (node->kind == MARKDOWN_CORE_NODE_FOOTNOTE) {
-            if (collection->count == collection->capacity) {
-                size_t capacity = collection->capacity ? collection->capacity * 2 : 8;
-                markdown_core_node **values;
-                if (capacity > SIZE_MAX / sizeof(*values)) {
-                    return 0;
-                }
-                values = parser->mem->realloc(collection->values, capacity * sizeof(*values));
-                if (!values) {
-                    return 0;
-                }
-                collection->values = values;
-                collection->capacity = capacity;
-            }
-            collection->values[collection->count++] = node;
+/* Both producers register only committed syntax. Body ownership remains in
+ * the structural tree through consolidation and all extension phases. No
+ * final tree walk is needed to discover footnotes. */
+bool markdown_core_parser_register_footnote(markdown_core_parser *parser, markdown_core_node *footnote) {
+    markdown_core_footnote_collection *collection = &parser->footnotes;
+    assert(footnote && footnote->kind == MARKDOWN_CORE_NODE_FOOTNOTE && footnote->parent);
+    if (collection->count == collection->capacity) {
+        size_t capacity = collection->capacity ? collection->capacity * 2 : 8;
+        markdown_core_node **values;
+        if (capacity > SIZE_MAX / sizeof(*values)) {
+            parser->oom = true;
+            return false;
         }
-        if (node->first_child) {
-            node = node->first_child;
-            continue;
+        values = parser->mem->realloc(collection->values, capacity * sizeof(*values));
+        if (!values) {
+            parser->oom = true;
+            return false;
         }
-        while (node != root && !node->next) {
-            node = node->parent;
-        }
-        node = node == root ? NULL : node->next;
+        collection->values = values;
+        collection->capacity = capacity;
     }
-    return 1;
+    collection->values[collection->count++] = footnote;
+    return true;
 }
 
 static uint64_t footnote_source_key(const markdown_core_node *node) {
@@ -2576,7 +2563,7 @@ static uint64_t footnote_source_key(const markdown_core_node *node) {
 /* Eight stable byte passes order the two nonnegative 32-bit coordinates.
  * This bound holds for every source shape on every libc; there is no
  * comparison-sort worst case or input-size-dependent alternate path. */
-static int order_footnotes(markdown_core_mem *mem, footnote_collection *collection) {
+static int order_footnotes(markdown_core_mem *mem, markdown_core_footnote_collection *collection) {
     markdown_core_node **scratch = mem->calloc(collection->count, sizeof(*scratch));
     markdown_core_node **source = collection->values;
     markdown_core_node **target = scratch;
@@ -2612,29 +2599,26 @@ static int order_footnotes(markdown_core_mem *mem, footnote_collection *collecti
  * inline-M never share suffix candidates when N != M. Thus total probes are
  * bounded by F plus the authored-id count, including adversarial suffix runs. */
 static void finalize_footnotes(markdown_core_parser *parser) {
-    footnote_collection collection = {0};
+    markdown_core_footnote_collection *collection = &parser->footnotes;
     markdown_core_key_index ids = {0};
     size_t index, ordinal = 0;
     markdown_core_node *last = NULL;
-    if (!S_apply_tree_phase(parser, &parser->root, collect_footnotes, &collection)) {
-        goto failed;
-    }
-    if (!collection.count) {
+    if (!collection->count) {
         goto done;
     }
-    if (!order_footnotes(parser->mem, &collection) ||
-        !markdown_core_key_index_init(&ids, parser->mem, collection.count)) {
+    if (!order_footnotes(parser->mem, collection) ||
+        !markdown_core_key_index_init(&ids, parser->mem, collection->count)) {
         goto failed;
     }
-    for (index = 0; index < collection.count; index++) {
-        markdown_core_node *footnote = collection.values[index];
+    for (index = 0; index < collection->count; index++) {
+        markdown_core_node *footnote = collection->values[index];
         markdown_core_chunk *id = &footnote->as.footnote->id;
         if (id->data && !markdown_core_key_index_insert(&ids, id->data, id->len, footnote, 0, NULL)) {
             goto failed;
         }
     }
-    for (index = 0; index < collection.count; index++) {
-        markdown_core_node *footnote = collection.values[index];
+    for (index = 0; index < collection->count; index++) {
+        markdown_core_node *footnote = collection->values[index];
         markdown_core_chunk *id = &footnote->as.footnote->id;
         if (!id->data) {
             /* Each decimal size_t takes at most 3 * sizeof(size_t) bytes. */
@@ -2656,8 +2640,8 @@ static void finalize_footnotes(markdown_core_parser *parser) {
         }
     }
     /* No allocation or fallible work remains once ownership starts moving. */
-    for (index = 0; index < collection.count; index++) {
-        markdown_core_node *footnote = collection.values[index];
+    for (index = 0; index < collection->count; index++) {
+        markdown_core_node *footnote = collection->values[index];
         markdown_core_node_unlink(footnote);
         footnote->prev = last;
         if (last) {
@@ -2672,7 +2656,6 @@ failed:
     parser->oom = true;
 done:
     markdown_core_key_index_free(&ids);
-    parser->mem->free(collection.values);
 }
 
 static int S_consolidate_tree(markdown_core_parser *parser, markdown_core_node **root_slot, void *context) {

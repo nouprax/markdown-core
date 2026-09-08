@@ -1460,6 +1460,9 @@ static markdown_core_node *close_inline_footnote(markdown_core_parser *parser, s
      * Document.footnotes; no temporary pointer survives in the public tree. */
     append_child(cite, footnote);
     markdown_core_node_insert_before(opener->inl_text, cite);
+    if (!markdown_core_parser_register_footnote(parser, footnote)) {
+        subj->oom = 1;
+    }
     markdown_core_node_free(opener->inl_text);
     subj->no_link_openers = opener->outer_no_link_openers;
     pop_bracket(subj);
@@ -1671,6 +1674,9 @@ noMatch:
             // the opener->inl_text->next.
             //
             // therefore, here we walk thru the list and free them all up
+            /* A valid definition label contains no ']'; a completed inline
+             * footnote necessarily does. This label therefore cannot own a
+             * committed Footnote from the parser collection. */
             markdown_core_node *next_node;
             markdown_core_node *current_node = opener->inl_text->next;
             while (current_node) {

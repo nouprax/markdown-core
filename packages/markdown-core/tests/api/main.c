@@ -2345,17 +2345,29 @@ static void universal_values(test_batch_runner *runner) {
  * candidates share one extent, so they cannot rescan each other's suffixes. */
 typedef struct {
     size_t cross_link, opaque, delimiters, comment, lookahead, footnote_body;
+    size_t registered_footnotes;
+    bool footnote_collection_allocated, footnotes_owned;
 } inline_work;
 static markdown_core_node *record_inline_work(const markdown_core_extension *extension, markdown_core_parser *parser,
                                               markdown_core_node *root) {
     (void)extension;
     inline_work *work = root->user_data;
+    if (!work) {
+        return root;
+    }
     work->cross_link = parser->cross_link_scan_work;
     work->opaque = parser->opaque_scan_work;
     work->delimiters = parser->delimiter_work;
     work->comment = parser->comment_scan_work;
     work->lookahead = parser->block_lookahead_work;
     work->footnote_body = parser->footnote_body_work;
+    work->registered_footnotes = parser->footnotes.count;
+    work->footnote_collection_allocated = parser->footnotes.values != NULL;
+    work->footnotes_owned = true;
+    for (size_t i = 0; i < parser->footnotes.count; i++) {
+        markdown_core_node *note = parser->footnotes.values[i];
+        work->footnotes_owned &= note->kind == MARKDOWN_CORE_NODE_FOOTNOTE && note->parent != NULL;
+    }
     root->user_data = NULL;
     return root;
 }
@@ -2440,6 +2452,11 @@ static void inline_footnote_linear_work(test_batch_runner *runner) {
             OK(runner, work.footnote_body <= (size_t)source.size,
                "nonblank evidence inspects disjoint source ranges: case=%zu size=%d work=%zu", c, source.size,
                work.footnote_body);
+            INT_EQ(runner, work.registered_footnotes, count * cases[c].notes_per_unit,
+                   "all committed notes are registered before finalization");
+            OK(runner, work.footnotes_owned, "registered notes retain their structural owners through postprocessing");
+            OK(runner, work.footnote_collection_allocated == (cases[c].notes_per_unit != 0),
+               "failed candidates allocate no footnote collection");
             if (root) {
                 size_t actual = 0;
                 int previous_column = 0;
@@ -2476,6 +2493,49 @@ static void inline_footnote_linear_work(test_batch_runner *runner) {
             markdown_core_node_free(root);
         }
         markdown_core_strbuf_free(&source);
+    }
+}
+
+/* Definitions, closing brackets, and deferred fields commit in different
+ * orders. All must already be registered before finalization, including
+ * notes whose enclosing candidate fails or becomes a link or image. */
+static void footnote_registration(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    static const struct {
+        const char *source;
+        size_t count;
+        const char *ids[6];
+    } cases[] = {
+        {"^[outer ^[inner]] :d[^[label]] ^[last]\n\n[^inline-1]: ^[body]\n",
+         6,
+         {"inline-1-1", "inline-2", "inline-3", "inline-4", "inline-1", "inline-5"}},
+        {"^[unclosed ^[inner]", 1, {"inline-1"}},
+        {"[^a]: ^[body]\n\n[^a ^[x]] [^[link]](u) ![^[image]](v)\n",
+         5,
+         {"a", "inline-1", "inline-2", "inline-3", "inline-4"}},
+        {"`^[code]` $^[formula]$ %%^[comment]%% <!-- ^[html] --> <i data-x=\"^[token]\">\n", 0, {NULL}},
+        {"[[^[target]]]\n", 1, {"inline-1"}},
+        {"[^a]: first\n[^a]: duplicate\n", 2, {"a", "a"}},
+    };
+    for (size_t c = 0; c < sizeof(cases) / sizeof(*cases); c++) {
+        inline_work work = {0};
+        markdown_core_node *root = markdown_core_parse_document_with_mem(
+            cases[c].source, strlen(cases[c].source), MARKDOWN_CORE_DIALECT_OPTIONS, mem, measure_inline_work, &work);
+        OK(runner, root != NULL, "footnote registration boundaries parse: case=%zu", c);
+        INT_EQ(runner, work.registered_footnotes, cases[c].count, "only committed notes enter the parser collection");
+        OK(runner, work.footnotes_owned, "postprocessing preserves registered footnotes and their owners");
+        if (root) {
+            size_t actual = 0;
+            for (markdown_core_node *note = root->as.document->footnotes; note; note = note->next) {
+                if (actual < cases[c].count) {
+                    STR_EQ(runner, (const char *)note->as.footnote->id.data, cases[c].ids[actual],
+                           "finalization orders committed notes by source start");
+                }
+                actual++;
+            }
+            INT_EQ(runner, actual, cases[c].count, "each registered note becomes one document value");
+            markdown_core_node_free(root);
+        }
     }
 }
 
@@ -2858,6 +2918,7 @@ int main(void) {
     attribute_linear_work(runner);
     cross_link_linear_work(runner);
     inline_footnote_linear_work(runner);
+    footnote_registration(runner);
     mark_linear_work(runner);
     comment_inline_linear_work(runner);
     comment_block_linear_work(runner);

@@ -32,6 +32,17 @@ typedef struct {
     int source_step;
 } markdown_core_line_mark;
 
+/* The committed footnotes of one parse. Entries borrow nodes from their
+ * structural owners until finalization transfers them to Document.footnotes.
+ * Registration order is parse order, not source order. Failed candidates
+ * never enter this collection; a failed parse discards the index without
+ * reading its entries. */
+typedef struct {
+    struct markdown_core_node **values;
+    size_t count;
+    size_t capacity;
+} markdown_core_footnote_collection;
+
 struct markdown_core_parser {
     struct markdown_core_mem *mem;
     /* A hashtable of urls in the current document for cross-references */
@@ -40,6 +51,7 @@ struct markdown_core_parser {
      * block phase fills it as each definition opens; the inline phase reads it
      * to decide whether a `[^label]` is a call at all. */
     struct markdown_core_map *footnote_defs;
+    markdown_core_footnote_collection footnotes;
     /* The root node of the parser, always a MARKDOWN_CORE_NODE_DOCUMENT */
     struct markdown_core_node *root;
     /* The last open block after a line is fully processed */
@@ -199,6 +211,11 @@ bool markdown_core_parser_lookahead_begin(markdown_core_parser *parser, struct m
 int markdown_core_parser_lookahead_next(markdown_core_block_lookahead *lookahead, markdown_core_chunk *line,
                                         int *first_nonspace, int *indent, int *blank_lines);
 void markdown_core_parser_lookahead_end(markdown_core_block_lookahead *lookahead);
+
+/* Register once when footnote syntax commits, while the node has a tree
+ * owner. Successful later phases may move this node but cannot retract the
+ * footnote. Allocation failure marks the whole parse failed. */
+bool markdown_core_parser_register_footnote(markdown_core_parser *parser, struct markdown_core_node *footnote);
 
 /* The engine has one parse operation. `setup`, when present, configures the
  * fresh parser before any source is read; extension attachment belongs there.

@@ -53,14 +53,27 @@ During parsing, the Cite owns its Footnote as a structural child; the
 Footnote owns the parsed inline body directly. Referenced definitions remain
 at their block positions through the same phases. This temporary ownership
 keeps consolidation, autolinking, extension-owned label traversal, and failure
-cleanup on the ordinary tree algorithms without a second body registry.
+cleanup on the ordinary tree algorithms.
 
-Document finalization collects both forms from all owned trees before making
-any mutation. It orders the F values by source start with eight stable byte
-passes over their two 32-bit coordinates, bounding ordering work by O(F). It
-reserves all authored ids in the shared key index and assigns inline ids in
-that order. Collision probes across all inline ordinals consume disjoint authored
-id namespaces, so their total is bounded by F plus the authored-id count.
+The parser registers both forms in one borrowed collection when their syntax
+commits: when an authored definition opens and when a valid inline body closes.
+Failed candidates never enter the collection. A committed Footnote cannot be
+retracted by later successful parsing or postprocessing: enclosing inline
+constructs retain its body, opacity is decided before body parsing, and
+directive labels are parsed from their surviving owners. Referenced-call
+conversion can discard parsed label content, but its defined label cannot
+contain `]`, so it cannot enclose a completed inline footnote. The collection
+owns no nodes; parse failure discards its storage without reading any entries.
+
+Document finalization processes only the F registered values, with no tree
+walk to discover footnotes. Registration order differs from source order:
+definitions precede inline parsing, nested bodies close inside out, and
+directive labels parse after the main tree. Finalization orders the values
+by source start with eight stable byte passes over their two 32-bit coordinates,
+bounding ordering work by O(F). It reserves all authored ids in the shared key
+index and assigns inline ids in that order. Collision probes across all inline
+ordinals consume disjoint authored id namespaces, so their total is bounded by
+F plus the authored-id count.
 Only after all allocations succeed does it transfer every Footnote into the
 document's one value chain. A returned Cite has no structural child and owns
 only Citation values naming ids; semantic cycles never become object cycles.

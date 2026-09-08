@@ -735,10 +735,13 @@ its behavior, with no separate publication step.
   on the shared bracket stack; its matching close consumes no tail. The
   inherited and inline forms use one citation constructor. An inline Cite
   owns its pending Footnote body through consolidation and extension passes;
-  the final document operation collects both forms, including directive label
-  fields, orders them by source start with eight stable byte passes, reserves
-  all authored ids, and assigns `inline-N` / `inline-N-K` before transferring
-  ownership. No public field, kind, export, or transport layout changes.
+  both forms register in one borrowed parser collection when their syntax
+  commits, including notes in deferred directive labels. Finalization visits
+  only the registered values, orders them by source start with eight stable
+  byte passes, reserves all authored ids, and assigns `inline-N` / `inline-N-K`
+  before transferring ownership. Failed candidates never register; all later
+  successful phases retain committed notes. No public field, kind, export, or
+  transport layout changes.
   Nonblank-body evidence visits disjoint consumed token ranges, and nested
   bodies are neither rescanned nor reparsed. Package coverage now includes all
   module examples plus malformed, nested, collision, semantic-cycle, opacity,
@@ -751,7 +754,9 @@ its behavior, with no separate publication step.
   JVM/Native/Android-host and conformance, ES Node/browser and conformance,
   all four oracle gates, and 400-input seed-1 fuzz runs for CommonMark, GFM,
   and remark pass. The bracket probes double from 128 to 8192 units; authored
-  suffix-collision sets double to 4096. Existing golden ASTs remain exact.
+  suffix-collision sets double to 4096. Postprocess probes verify the collection
+  is complete before finalization, retains structural owners, and allocates
+  nothing for failed candidates. Existing golden ASTs remain exact.
   Position-place and external-position ledgers and the reference-resolution
   ledger remain unchanged. The containment ledger adds two reviewed nested
   footnote overlaps: the values retain their original, enclosing source
