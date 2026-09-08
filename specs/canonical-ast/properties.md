@@ -1,15 +1,15 @@
 ---
-# retained
+# ignored
 name: "Note"
-null-value:
-bool-value: true
-number: 9007199254740993
-empty-text: ""
-list: [one, 2]
-empty-list: []
+comment:
+state: true
+time: 9007199254740993
+abstract: ""
+authors: [one, 2]
+keywords: []
 ...
-bad: [true]
+unknown: [true]
 name: duplicate
-after: last
+date: 2026-09-08
 ---
 body

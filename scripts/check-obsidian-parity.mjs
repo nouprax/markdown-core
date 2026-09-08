@@ -106,15 +106,18 @@ const yamlStringFallback = {
     stringify: ({ value }) => JSON.stringify(value)
 };
 
-const yamlScalarTags = new Set([
-    "tag:yaml.org,2002:str",
-    "tag:yaml.org,2002:null",
-    "tag:yaml.org,2002:bool",
-    "tag:yaml.org,2002:int",
-    "tag:yaml.org,2002:float"
+const metadataFields = new Set([
+    "name",
+    "title",
+    "subtitle",
+    "time",
+    "date",
+    "authors",
+    "keywords",
+    "abstract",
+    "state",
+    "comment"
 ]);
-const yamlMapTags = new Set(["tag:yaml.org,2002:map"]);
-const yamlSequenceTags = new Set(["tag:yaml.org,2002:seq"]);
 
 function jsonScalarsWithStringFallback(tags) {
     const unresolved = tags.findIndex((tag) => tag.tag === "");
@@ -122,90 +125,63 @@ function jsonScalarsWithStringFallback(tags) {
     return [...tags.slice(0, unresolved), yamlStringFallback, ...tags.slice(unresolved + 1)];
 }
 
-function assertSupportedTag(node, allowed) {
-    if (node.tag !== undefined && !allowed.has(node.tag)) {
-        throw new Error(`unsupported Properties YAML tag: ${node.tag}`);
+function assertDirectNode(node) {
+    if (node && (isAlias(node) || node.anchor !== undefined || node.tag !== undefined)) {
+        throw new Error("anchor, alias or tag is outside the metadata grammar");
     }
 }
 
-function resolveMetadataAlias(node, context, project) {
-    if (!isAlias(node)) return project(node, context);
-    if (context.activeAliases.has(node)) throw new Error("cyclic Properties alias");
-    const resolved = node.resolve(context.document);
-    if (resolved === undefined) throw new Error(`undefined Properties alias: ${node.source}`);
-    context.activeAliases.add(node);
-    try {
-        return project(resolved, context);
-    } finally {
-        context.activeAliases.delete(node);
+function singleLineScalar(node) {
+    assertDirectNode(node);
+    if (!isScalar(node) || !["PLAIN", "QUOTE_SINGLE", "QUOTE_DOUBLE"].includes(node.type)) {
+        throw new Error("unsupported single-line scalar form");
     }
+    const raw = node.srcToken?.source ?? "";
+    if (/[\r\n]/.test(raw) || (typeof node.value === "string" && /[\r\n]/.test(node.value))) {
+        throw new Error("multiline scalar is outside the single-line grammar");
+    }
+    if (node.type === "QUOTE_DOUBLE") JSON.parse(raw); // Only JSON escapes, no YAML escape repertoire.
 }
 
-function projectMetadataScalar(node, context) {
-    return resolveMetadataAlias(node, context, (resolved) => {
-        if (!isScalar(resolved)) throw new Error("Properties value is not a scalar");
-        assertSupportedTag(resolved, yamlScalarTags);
-
-        const value = resolved.value;
-        if (resolved.type === "PLAIN" && resolved.source === "" && value === "") return { kind: "null" };
-        if (resolved.tag === "tag:yaml.org,2002:str") {
-            if (typeof value !== "string" || /[\r\n]/.test(value)) {
-                throw new Error("Properties text is multiline");
-            }
-            return { kind: "text", value };
+function projectMetadataScalar(node, allowLiteral = false) {
+    assertDirectNode(node);
+    if (allowLiteral && isScalar(node) && node.type === "BLOCK_LITERAL") {
+        if (node.srcToken?.props?.find((token) => token.type === "block-scalar-header")?.source !== "|") {
+            throw new Error("only bare literal | is supported");
         }
-        if (resolved.tag === "tag:yaml.org,2002:null") return { kind: "null" };
-        if (resolved.tag === "tag:yaml.org,2002:bool") {
-            if (typeof value !== "boolean") throw new Error("invalid Properties boolean");
-            return { kind: "bool", value };
-        }
-        if (
-            resolved.tag === "tag:yaml.org,2002:int" ||
-            resolved.tag === "tag:yaml.org,2002:float" ||
-            typeof value === "number" ||
-            typeof value === "bigint"
-        ) {
-            if (typeof value === "number" && !Number.isFinite(value)) {
-                throw new Error("non-finite Properties number");
-            }
-            if (typeof resolved.source !== "string") throw new Error("Properties number has no source lexeme");
-            return { kind: "number", value: resolved.source };
-        }
-        if (value === null) return { kind: "null" };
-        if (typeof value === "boolean") return { kind: "bool", value };
-        if (typeof value === "string" && !/[\r\n]/.test(value)) return { kind: "text", value };
-        throw new Error(`unsupported Properties scalar: ${Object.prototype.toString.call(value)}`);
-    });
+        return { kind: "text", value: node.value };
+    }
+    singleLineScalar(node);
+    const value = node.value;
+    if (node.type === "PLAIN" && node.source === "" && value === "") return { kind: "null" };
+    if (value === null) return { kind: "null" };
+    if (typeof value === "boolean") return { kind: "bool", value };
+    if (typeof value === "number" || typeof value === "bigint") return { kind: "number", value: node.source };
+    if (typeof value === "string") return { kind: "text", value };
+    throw new Error("unsupported metadata scalar");
 }
 
-function projectMetadataValue(node, context) {
+function projectMetadataValue(node, name) {
+    assertDirectNode(node);
     if (node === null) return { kind: "scalar", value: { kind: "null" } };
-    return resolveMetadataAlias(node, context, (resolved) => {
-        if (!isSeq(resolved)) return { kind: "scalar", value: projectMetadataScalar(resolved, context) };
-        assertSupportedTag(resolved, yamlSequenceTags);
-        const values = resolved.items.map((item) => {
-            if (item === null) throw new Error("Properties lists contain no empty items");
-            const value = projectMetadataScalar(item, context);
-            if (value.kind !== "number" && value.kind !== "text") {
-                throw new Error("Properties lists contain only text and number items");
-            }
+    if (!isSeq(node)) {
+        return { kind: "scalar", value: projectMetadataScalar(node, name === "abstract" || name === "comment") };
+    }
+    return {
+        kind: "list",
+        values: node.items.map((item) => {
+            if (item === null) throw new Error("empty list item");
+            const value = projectMetadataScalar(item);
+            if (value.kind !== "text" && value.kind !== "number") throw new Error("unsupported list item");
             return value;
-        });
-        return { kind: "list", values };
-    });
+        })
+    };
 }
 
 function propertyName(node) {
-    if (!isScalar(node)) throw new Error("Properties name is not a directly authored scalar");
-    assertSupportedTag(node, yamlScalarTags);
-    if (node.type !== "PLAIN" && node.type !== "QUOTE_SINGLE" && node.type !== "QUOTE_DOUBLE") {
-        throw new Error("Properties name uses an unsupported scalar style");
-    }
-    const name = node.source;
-    if (typeof name !== "string" || name.length === 0 || /[\r\n]/.test(name)) {
-        throw new Error("Properties name is empty or multiline");
-    }
-    return name;
+    singleLineScalar(node);
+    if (!metadataFields.has(node.source)) throw new Error("unknown metadata field");
+    return node.source;
 }
 
 function cstRange(value, range = { start: Infinity, end: -Infinity }) {
@@ -221,7 +197,7 @@ function cstRange(value, range = { start: Infinity, end: -Infinity }) {
     return range;
 }
 
-function projectMetadata(document, payloadStart) {
+function projectMetadata(document, payloadStart, payload) {
     if (document.errors.length > 0 || document.warnings.length > 0) {
         throw new Error(document.errors[0]?.message ?? document.warnings[0]?.message ?? "invalid Properties YAML");
     }
@@ -230,17 +206,20 @@ function projectMetadata(document, payloadStart) {
     }
     if (document.contents === null) return { records: [], recordRanges: [] };
     if (!isMap(document.contents)) throw new Error("Properties payload is not a top-level mapping");
-    assertSupportedTag(document.contents, yamlMapTags);
-
-    const context = { document, activeAliases: new Set() };
+    assertDirectNode(document.contents);
+    // A YAML flow map is in the comparison domain only when its source is JSON.
+    if (document.contents.flow) JSON.parse(payload);
     const names = new Set();
     const records = [];
     const recordRanges = [];
     for (const pair of document.contents.items) {
+        if (pair.srcToken?.start?.some((token) => token.type === "explicit-key-ind")) {
+            throw new Error("explicit keys are unsupported");
+        }
         const name = propertyName(pair.key);
         if (names.has(name)) throw new Error(`duplicate Properties name: ${name}`);
         names.add(name);
-        records.push({ name, value: projectMetadataValue(pair.value, context) });
+        records.push({ name, value: projectMetadataValue(pair.value, name) });
 
         const relative = cstRange(pair.srcToken);
         if (!Number.isFinite(relative.start) || !Number.isFinite(relative.end)) {
@@ -304,7 +283,7 @@ function parseProperties(source) {
     const projected =
         documents.length === 0
             ? { records: [], recordRanges: [] }
-            : projectMetadata(documents[0], envelope.payloadStart);
+            : projectMetadata(documents[0], envelope.payloadStart, payload);
     return {
         content: source.slice(envelope.bodyStart),
         metadata: projected.records,
@@ -406,12 +385,10 @@ function parseMetadataDump(node) {
     const metadata = node.children.filter((child) => child.kind === "Metadata");
     if (!metadata.length) return null;
     if (metadata.length !== 1) throw new Error("multiple metadata values");
-    return metadata[0].children
-        .filter((item) => item.kind !== "MetadataContent")
-        .map((record) => {
-            if (record.kind !== "MetadataRecord") throw new Error("invalid metadata record");
-            return { name: record.fields.name, value: parseMetadataValue(record.fields.value) };
-        });
+    return metadata[0].children.map((record) => {
+        if (record.kind !== "MetadataRecord") throw new Error("invalid metadata record");
+        return { name: record.fields.name, value: parseMetadataValue(record.fields.value) };
+    });
 }
 
 // O3: the `comment-removal` projection. The oracle removes a `%%` comment
@@ -548,73 +525,33 @@ if (taskCanary.children[0]?.children?.[0]?.data?.taskChar !== "?") {
 }
 
 const propertiesCanary = parseProperties(
-    '---\nArbitrary Name: value\nenabled: true\nitems: [one, "[[Two]]"]\ndate: 2026-09-03\n---\n# Body\n'
+    '---\nname: Note\ntitle: Title\nsubtitle: Subtitle\nstate: true\nauthors: [Ada, "[[Lin]]"]\ndate: 2026-09-08\n---\n# Body\n'
 );
 if (
     propertiesCanary.content !== "# Body\n" ||
-    JSON.stringify(propertiesCanary.metadata) !==
-        JSON.stringify([
-            { name: "Arbitrary Name", value: { kind: "scalar", value: { kind: "text", value: "value" } } },
-            { name: "enabled", value: { kind: "scalar", value: { kind: "bool", value: true } } },
-            {
-                name: "items",
-                value: {
-                    kind: "list",
-                    values: [
-                        { kind: "text", value: "one" },
-                        { kind: "text", value: "[[Two]]" }
-                    ]
-                }
-            },
-            { name: "date", value: { kind: "scalar", value: { kind: "text", value: "2026-09-03" } } }
-        ])
+    JSON.stringify(propertiesCanary.metadata?.map((record) => record.name)) !==
+        '["name","title","subtitle","state","authors","date"]'
 ) {
-    process.stderr.write("obsidian parity: Properties oracle canary produced the wrong semantic value\n");
-    process.exit(1);
+    throw new Error("fixed metadata field oracle canary failed");
 }
 for (const nonHeader of ["text\n---\nname: value\n---\n", "---yaml\nname: value\n---\n", "--- \nname: value\n---\n"]) {
-    if (parseProperties(nonHeader).metadata !== null) {
-        process.stderr.write("obsidian parity: Properties oracle accepted a non-header candidate\n");
-        process.exit(1);
-    }
+    if (parseProperties(nonHeader).metadata !== null) throw new Error("oracle accepted a non-header candidate");
 }
-for (const emptyProperties of [
-    "\uFEFF---\n---\n",
-    "---\n   \n---\n",
-    "---\n# note\n---\n",
-    "---\n#\n---\n",
-    "---\n  #\n---\n",
-    "---\n# first\n\t# second\n---\n",
-    "---\r\n#\r\n---\r\n"
-]) {
-    if (JSON.stringify(parseProperties(emptyProperties).metadata) !== "[]") {
-        process.stderr.write(
-            `obsidian parity: Properties oracle rejected empty metadata ${JSON.stringify(emptyProperties)}\n`
-        );
-        process.exit(1);
-    }
+for (const emptyProperties of ["\uFEFF---\n---\n", "---\n   \n---\n", "---\n# note\n---\n", "---\r\n#\r\n---\r\n"]) {
+    if (JSON.stringify(parseProperties(emptyProperties).metadata) !== "[]")
+        throw new Error("oracle rejected empty metadata");
 }
 const sourceFaithfulProperties = parseProperties(
-    '---\nzeta: last\n1: &large 9007199254740993\n1.0: 1.0\n1e2: 1e2\n-0: -0\n~: tilde\ntrue: boolean\n"escaped\\u0020name": *large\n---\n'
+    '---\nname: 9007199254740993\ntime: 1.0\nstate: 1e2\ndate: -0\n"tit\\u006ce": "text"\n---\n'
 );
 if (
-    JSON.stringify(sourceFaithfulProperties.metadata?.map((record) => record.name)) !==
-    '["zeta","1","1.0","1e2","-0","~","true","escaped name"]'
+    JSON.stringify(sourceFaithfulProperties.metadata?.slice(0, 4).map((record) => record.value.value.value)) !==
+        '["9007199254740993","1.0","1e2","-0"]' ||
+    sourceFaithfulProperties.metadata[4].name !== "title"
 ) {
-    process.stderr.write("obsidian parity: Properties oracle did not preserve decoded names in source order\n");
-    process.exit(1);
+    throw new Error("oracle lost exact numeric spelling or decoded names");
 }
-if (
-    JSON.stringify(
-        sourceFaithfulProperties.metadata
-            ?.filter((record) => ["1", "1.0", "1e2", "-0", "escaped name"].includes(record.name))
-            .map((record) => record.value.value.value)
-    ) !== '["9007199254740993","1.0","1e2","-0","9007199254740993"]'
-) {
-    process.stderr.write("obsidian parity: Properties oracle lost exact numeric or alias value evidence\n");
-    process.exit(1);
-}
-const rangedSource = "---\nfirst: one\nitems:\n  - two\n  - 3.0\n---\nBody\n";
+const rangedSource = "---\nname: one\nauthors:\n  - two\n  - 3.0\n---\nBody\n";
 const rangedProperties = parseProperties(rangedSource);
 const rangedClosing = rangedSource.lastIndexOf("---\n");
 if (
@@ -627,49 +564,54 @@ if (
             end > rangedClosing ||
             start >= end ||
             (index > 0 && start < ranges[index - 1][1]) ||
-            !rangedSource.slice(start, end).includes(index === 0 ? "first" : "items")
+            !rangedSource.slice(start, end).includes(index === 0 ? "name" : "authors")
     )
 ) {
-    process.stderr.write("obsidian parity: Properties oracle lost source-token range evidence\n");
-    process.exit(1);
-}
-const taggedProperties = parseProperties("---\ntext: !!str 1\nnumber: !!float 1.0\n---\n").metadata;
-if (
-    JSON.stringify(taggedProperties) !==
-    '[{"name":"text","value":{"kind":"scalar","value":{"kind":"text","value":"1"}}},{"name":"number","value":{"kind":"scalar","value":{"kind":"number","value":"1.0"}}}]'
-) {
-    process.stderr.write("obsidian parity: Properties oracle lost supported standard scalar tags\n");
-    process.exit(1);
+    throw new Error("oracle lost source-token range evidence");
 }
 for (const invalid of [
-    "---\nnull\n---\n",
-    "---\nname: one\nname: two\n---\n",
-    '---\n"1": quoted\n1: plain\n---\n',
-    "---\n- one\n- two\n---\n",
-    "---\nname:\n  nested: value\n---\n",
-    "---\nname: |\n  two lines\n---\n",
-    "---\nitems: [true, null]\n---\n",
-    "---\n[a, b]: value\n---\n",
-    "---\nfirst: &name value\n*name: alias key\n---\n",
-    "---\nname: !application value\n---\n",
-    "---\nname: *missing\n---\n",
-    "---\nname: &loop [*loop]\n---\n",
-    "---\n...\n---\n",
-    "---\nfirst: one\n...\n---\n",
-    "---\nfirst: one\n...\nsecond: two\n---\n"
+    "null",
+    "name: one\nname: two",
+    "unknown: value",
+    "- one\n- two",
+    "name:\n  nested: value",
+    "name: |\n  text",
+    "abstract: >-\n  text",
+    "comment: |-\n  text",
+    "comment: |2\n  text",
+    "authors: [true, null]",
+    "[a, b]: value",
+    "name: &anchor value",
+    "name: *missing",
+    "name: !!str 1",
+    "name: !application value",
+    "name: &loop [*loop]",
+    "name: one\n  two",
+    "name: 'one\n  two'",
+    "{draft, name: Note}",
+    '!!map {"name": "value"}',
+    'name: "bad\\x41"',
+    "...",
+    "name: one\n..."
 ]) {
-    let rejected = false;
+    let outsideDomain = false;
     try {
-        parseProperties(invalid);
+        parseProperties(`---\n${invalid}\n---\n`);
     } catch {
-        rejected = true;
+        outsideDomain = true;
     }
-    if (!rejected) {
-        process.stderr.write(
-            `obsidian parity: Properties oracle accepted invalid projection ${JSON.stringify(invalid)}\n`
-        );
-        process.exit(1);
-    }
+    if (!outsideDomain) throw new Error(`oracle comparison admitted out-of-domain input ${JSON.stringify(invalid)}`);
+}
+// Literal prose is compared as atomic text, including blank lines and hashes.
+for (const payload of [
+    "abstract: |\n  one\n\n  two\n\ncomment: |\n  # prose\nstate: ready\n",
+    "abstract: |\n\n  first\n    deeper\n\ncomment: |\n\n",
+    "  abstract: |\n    one\n      two\n  state: ready\n"
+]) {
+    const input = `---\n${payload}---\n`;
+    const oracle = parseProperties(input).metadata;
+    const product = parseMetadataDump(parseCanonicalDump(execFileSync(ours, [], { input, encoding: "utf8" })));
+    if (JSON.stringify(product) !== JSON.stringify(oracle)) throw new Error("literal prose oracle mismatch");
 }
 
 for (const [input, label, dest, embedded] of [
@@ -712,50 +654,27 @@ for (const [raw, expected] of [
         process.exit(1);
     }
 }
-// Block plain scalars keep flow punctuation as text, including in keys and
-// before a following block-scalar header. Witness the same data in the pinned
-// YAML oracle and in the real core decoder, rather than only a dump golden.
+// Plain punctuation is inert inside text. Literal contents never open nested fields.
 for (const punctuation of ["[", "]", "{", "}", ",", "#", "'", '"']) {
-    const input = `---\na: text ${punctuation} literal\nb${punctuation}c: 2\nfolded${punctuation}key: >-\n  body [ { ' literal\nlast: 3\n---\n`;
+    const input = `---\nname: text ${punctuation} literal\nabstract: |\n  body [ { ' literal\nstate: 3\n---\n`;
     const oracle = parseProperties(input).metadata;
     const product = parseMetadataDump(parseCanonicalDump(execFileSync(ours, [], { input, encoding: "utf8" })));
-    if (JSON.stringify(product) !== JSON.stringify(oracle)) {
-        throw new Error(`obsidian parity: block plain punctuation ${punctuation} changed metadata ownership`);
-    }
+    if (JSON.stringify(product) !== JSON.stringify(oracle))
+        throw new Error("plain punctuation changed member ownership");
 }
-
-// O6 projects retained comment values away for YAML data parity. Recovery is a
-// dialect rule witnessed directly, independently of the YAML document oracle.
-const retainedProperties = parseCanonicalDump(
+// Recovery belongs to the product grammar; malformed YAML is outside the document oracle.
+const recoveredProperties = parseCanonicalDump(
     execFileSync(ours, [], {
-        input: "---\nbefore: 1\nnot YAML\n...\nbad: [true]\nafter: 2\n---\nbody\n",
+        input: "---\nname: 1\nnot YAML\n...\nunknown: 3\nauthors: [true]\nstate: 2\n---\nbody\n",
         encoding: "utf8"
     })
 );
-const retainedMetadata = retainedProperties.children.find((item) => item.kind === "Metadata");
+const recoveredMetadata = recoveredProperties.children.find((item) => item.kind === "Metadata");
 if (
-    JSON.stringify(retainedMetadata?.children.map((item) => item.kind)) !==
-        '["MetadataRecord","MetadataContent","MetadataContent","MetadataContent","MetadataRecord"]' ||
-    JSON.stringify(parseMetadataDump(retainedProperties)?.map((record) => record.name)) !== '["before","after"]' ||
-    retainedProperties.children.some((item) => item.kind === "Comment")
+    JSON.stringify(recoveredMetadata?.children.map((item) => item.kind)) !== '["MetadataRecord","MetadataRecord"]' ||
+    JSON.stringify(parseMetadataDump(recoveredProperties)?.map((record) => record.name)) !== '["name","state"]'
 ) {
-    throw new Error("obsidian parity: metadata comment retention and member recovery canary failed");
-}
-
-for (const empty of ['""', "''"]) {
-    const input = `---\nvalue: !!null ${empty}\n---\n`;
-    const oracle = parseAllDocuments(`value: !!null ${empty}\n`, {
-        schema: "json",
-        customTags: jsonScalarsWithStringFallback,
-        logLevel: "silent"
-    });
-    const product = parseMetadataDump(parseCanonicalDump(execFileSync(ours, [], { input, encoding: "utf8" })));
-    if (
-        !oracle[0]?.warnings.length ||
-        JSON.stringify(product) !== '[{"name":"value","value":{"kind":"scalar","value":{"kind":"null"}}}]'
-    ) {
-        throw new Error("obsidian parity: tagged empty null boundary changed");
-    }
+    throw new Error("ignored metadata members leaked into the AST or consumed valid neighbors");
 }
 
 const metadataDumpCanary = [{ name: "x", value: { kind: "scalar", value: { kind: "text", value: "a b" } } }];

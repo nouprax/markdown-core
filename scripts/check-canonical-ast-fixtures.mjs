@@ -133,8 +133,7 @@ const stateValidators = {
     "markup.attributes.records": (tree) => / attributes=\{[^}]*[A-Za-z]+="/.test(tree),
     "document.metadata.present": (tree) => /Metadata scope=/.test(tree),
     "document.metadata.empty": (tree) => /Metadata scope=.* children=0/.test(tree),
-    "metadata.content.data": (tree) => /MetadataRecord scope=/.test(tree),
-    "metadata.content.comment": (tree) => /MetadataContent value=comment\(/.test(tree),
+    "metadata.content.populated": (tree) => /MetadataRecord scope=/.test(tree),
     "metadata.scalar.null": (tree) => /MetadataRecord .*value=scalar\(null\)/.test(tree),
     "metadata.scalar.bool": (tree) => /MetadataRecord .*value=scalar\(bool\(/.test(tree),
     "metadata.scalar.number": (tree) => /MetadataRecord .*value=scalar\(number\(/.test(tree),
@@ -358,26 +357,10 @@ for (const testCase of manifest.cases ?? []) {
 
     const lines = tree.slice(0, -1).split("\n");
     const actualKinds = new Set();
-    const metadataCommentsOwned = parentEdges(tree)
-        .filter((edge) => edge.kind === "MetadataContent")
-        .every((edge) => edge.parent === "Metadata");
     for (const [index, line] of lines.entries()) {
         const group = line.match(groupLine);
         if (group !== null) {
             if (!GROUPS.has(group[1])) failures.push(`${testCase.expected}:${index + 1} names an unknown group`);
-            continue;
-        }
-        const metadataComment = line.match(
-            /^(?:(?:│ {3}| {4})*(?:├──|└──) )MetadataContent value=comment\(("(?:\\.|[^"\\])*")\) children=0$/
-        );
-        if (metadataComment !== null) {
-            JSON.parse(metadataComment[1]);
-            if (
-                !contract.values.MetadataContent?.branches.some((branch) => branch.name === "comment") ||
-                !metadataCommentsOwned
-            ) {
-                failures.push(`${testCase.expected}:${index + 1} has invalid metadata comment ownership`);
-            }
             continue;
         }
         const match = line.match(treeLine);

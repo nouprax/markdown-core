@@ -318,31 +318,6 @@ public final class com/nouprax/markdown/core/Metadata {
 	public final fun getScope ()Lcom/nouprax/markdown/core/Scope;
 }
 
-public abstract interface class com/nouprax/markdown/core/MetadataContent {
-}
-
-public final class com/nouprax/markdown/core/MetadataContent$Comment : com/nouprax/markdown/core/MetadataContent {
-	public fun <init> (Ljava/lang/String;)V
-	public final fun component1 ()Ljava/lang/String;
-	public final fun copy (Ljava/lang/String;)Lcom/nouprax/markdown/core/MetadataContent$Comment;
-	public static synthetic fun copy$default (Lcom/nouprax/markdown/core/MetadataContent$Comment;Ljava/lang/String;ILjava/lang/Object;)Lcom/nouprax/markdown/core/MetadataContent$Comment;
-	public fun equals (Ljava/lang/Object;)Z
-	public final fun getValue ()Ljava/lang/String;
-	public fun hashCode ()I
-	public fun toString ()Ljava/lang/String;
-}
-
-public final class com/nouprax/markdown/core/MetadataContent$Data : com/nouprax/markdown/core/MetadataContent {
-	public fun <init> (Lcom/nouprax/markdown/core/MetadataRecord;)V
-	public final fun component1 ()Lcom/nouprax/markdown/core/MetadataRecord;
-	public final fun copy (Lcom/nouprax/markdown/core/MetadataRecord;)Lcom/nouprax/markdown/core/MetadataContent$Data;
-	public static synthetic fun copy$default (Lcom/nouprax/markdown/core/MetadataContent$Data;Lcom/nouprax/markdown/core/MetadataRecord;ILjava/lang/Object;)Lcom/nouprax/markdown/core/MetadataContent$Data;
-	public fun equals (Ljava/lang/Object;)Z
-	public final fun getRecord ()Lcom/nouprax/markdown/core/MetadataRecord;
-	public fun hashCode ()I
-	public fun toString ()Ljava/lang/String;
-}
-
 public abstract interface class com/nouprax/markdown/core/MetadataListItem {
 }
 

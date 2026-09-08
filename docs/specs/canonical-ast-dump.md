@@ -253,10 +253,7 @@ with a `Citation` whose referent prints `specimen(id="...")` and whose affix
 groups are empty. No resolved display number is printed.
 
 A present `Document.metadata` prints a `Metadata scope=L:C..L:C children=N`
-line before content, with N nested content cases. A `data` case prints its
-`MetadataRecord` line. A `comment` case prints
-`MetadataContent value=comment("...") children=0` without scope, anchor, or
-attributes; it is never a `Comment` markup node. Each record prints
+line before content, with N nested `MetadataRecord` lines. Each record prints
 `scope`, `name`, `value`, and `children=0`. Neither value has anchor or
 attributes. The value grammar is `scalar(null)`, `scalar(bool(true|false))`,
 `scalar(number("lexeme"))`, `scalar(text("..."))`, or

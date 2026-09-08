@@ -332,18 +332,13 @@ extension DumpVisitor {
     fileprivate func dumpMetadata(_ value: Metadata) {
         state.line("Metadata", scope: value.scope, fields: [], children: value.content.count)
         state.nested(value.content.count) {
-            for content in value.content {
-                switch content {
-                case .comment(let text):
-                    state.group("MetadataContent", children: 0, fields: ["value=comment(\(jsonString(text)))"])
-                case .data(let record):
-                    state.line(
-                        "MetadataRecord",
-                        scope: record.scope,
-                        fields: ["name=\(jsonString(record.name))", "value=\(metadataValue(record.value))"],
-                        children: 0
-                    )
-                }
+            for record in value.content {
+                state.line(
+                    "MetadataRecord",
+                    scope: record.scope,
+                    fields: ["name=\(jsonString(record.name))", "value=\(metadataValue(record.value))"],
+                    children: 0
+                )
             }
         }
     }

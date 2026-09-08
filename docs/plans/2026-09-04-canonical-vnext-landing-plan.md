@@ -34,7 +34,7 @@ parallel and every merge leaves `main` releasable.
 | #192 extension module contracts               | specs  | The Obsidian module set, the Pandoc module set, the shared attributes, citation, and inserted-text contracts, Remark directive attachment, the Pandoc and Obsidian oracle pins, and the two implementation plans. |
 | #193 anchors and destinations                 | specs  | The universal `Markup.anchor` field, the tagged `Destination` value on `Link`, `Image`, and `CrossLink`, and the simplified `Attributes` shape.                                                                 |
 | #194 Obsidian Properties                      | specs  | `Document.metadata`, the shared metadata value model, the Properties envelope, and the `yaml@2.9.0` oracle.                                                                                                     |
-| #196 Properties corrections                   | specs  | Textual mapping keys and tightened oracle canaries; the original null-root rejection is superseded by O6 comment retention.                                                                                                       |
+| #196 Properties corrections                   | specs  | Textual mapping keys and tightened oracle canaries; the original null-root rejection is superseded by O6 member skipping.                                                                                                       |
 
 The inserted-text contract is the one specification that no existing plan
 sequences; it is landed here as its own track. The dialect rewrite of `S0`
@@ -230,7 +230,7 @@ and the manifest order.
 | `Definition`                                                                                       | `term: [Markup]`, `content: [[Markup]]`, `compact: Bool`                                                          | new                                              | `P10`        |
 | `Text`, `SoftBreak`, `LineBreak`, `Code`, `HTML`, `Formula`, `Emphasis`, `Strong`, `Strikethrough` | as today                                                                                                          | unchanged                                        | —            |
 | `Link`                                                                                             | `dest: Destination`, `title`, `content`                                                                           | changed                                          | `M1`         |
-| `Image`                                                                                            | `dest: Destination`, `title`, `width: Int?`, `height: Int?`, `content`                                            | changed                                          | `M1`, `M7`   |
+| `Image`                                                                                            | `dest: Destination`, `title`, `width: Int?`, `hten: Int?`, `content`                                            | changed                                          | `M1`, `M7`   |
 | `Directive`                                                                                        | `name`, `label`                                                                                                   | changed; attributes move to the inherited field  | `M7`         |
 | `CrossLink`                                                                                        | `embedded: Bool`, `dest: Destination`, `label: String?`                                                           | new                                              | `O1`         |
 | `Mark`                                                                                             | `content`                                                                                                         | new                                              | `O2`         |
@@ -258,7 +258,7 @@ value carries `scope` only.
 | `Footnote(id, content: [Markup], scope)`                                            | `M4`; document-owned, scoped and traversed, not `Markup`      |
 | `OrderedListVariant`, `OrderedListDelimiter`                                          | `M5`; values beyond the inherited forms first by `P9a`, `P9b` |
 | `TableColumn(alignment: TableAlignment, relative: Double?)`                         | `M6`; `relative` first produced by `P11c`                     |
-| `Metadata`, `MetadataContent`, `MetadataRecord`, `MetadataValue`, `MetadataScalar`, `MetadataListItem` | `M7`; first produced by `O6`                                  |
+| `Metadata`, `MetadataRecord`, `MetadataValue`, `MetadataScalar`, `MetadataListItem` | `M7`; first produced by `O6`                                  |
 | `ReferenceForm`                                                                     | removed by `M2`                                               |
 | `DirectiveAttribute`                                                                | removed by `M7`                                               |
 
@@ -483,7 +483,7 @@ its behavior, with no separate publication step.
       turning the contract's single inherited field into an ordered set that the
       projection audit, the fixture checker, and the dump grammar understand;
       add `Document.metadata: Metadata?` with the metadata value types; add
-      `Image.width` and `Image.height` as `null`. Add facade accessors for the
+      `Image.width` and `Image.hten` as `null`. Add facade accessors for the
       anchor, classes, records, metadata records, and dimensions, and carry the
       values through the JNI and Wasm transports. Implement the shared Pandoc
       3.11 braced-attribute scanner and normalization once in the C core (the
@@ -742,7 +742,7 @@ its behavior, with no separate publication step.
   inherited and inline forms use one citation constructor. A successful inline
   close places its Footnote directly in the document value field, and both
   forms register in one parser collection. Finalization visits only those
-  values, orders source starts with eight stable byte passes, reserves all
+  values, orders source starts with ten stable byte passes, reserves all
   authored ids, and assigns `inline-N` / `inline-N-K`. It completes document
   ownership and discards the index before consolidation and mutable extension
   passes. Those phases visit document footnotes through their live owner slots.
@@ -820,84 +820,65 @@ its behavior, with no separate publication step.
   cursor partition tests and 1,728 marker-replacement/indentation combinations
   protect the general coordinate invariant.
 
-- [ ] **O6 — Obsidian-style Properties.** Deliver the documented Properties
-      fields and functions through a bounded Properties format. The product
-      is a sequence of metadata name/value pairs: single-line text, exact numbers, booleans,
-      empty/null values, and flat text/number lists. Dates, date-times, URLs,
-      and quoted internal links remain atomic text in this parser-only AST;
-      vault-assigned property types and presentation belong to consumers.
-      `tags`, `aliases`, and `cssclasses` remain ordinary property names.
-      Custom names remain supported: the official page permits arbitrary
-      property names; its default names are not a whitelist. Requires `O1`.
+- [x] **O6 — Fixed metadata fields and literal prose.** The user-directed
+      contract of 2026-09-08 recognizes only `name`, `time`, `date`, `authors`,
+      `keywords`, `abstract`, `state`, `comment`, `title`, and `subtitle`.
+      Field names are exact and case-sensitive. Scalars, exact numeric text, flat lists, and JSON member
+      syntax use the [Properties module](../specs/dialect/properties.md).
+      `authors` and `keywords` accept single text, bracketed arrays and block lists.
+      `abstract: |` and `comment: |` additionally collect indented literal text,
+      retaining internal line breaks and blank lines with default clipping.
+      This borrows selected Obsidian/Pandoc notation, not full YAML semantics.
+      Requires `O1`.
 
-      Goal correction (2026-09-08, user-directed): follow
-      [Obsidian Properties](https://help.obsidian.md/properties), which defines
-      the property types, YAML storage, and JSON object spelling. Full YAML
-      conformance, alias expansion, anchor binding/shadowing, explicit tag
-      resolution, merge keys, and arbitrary nested objects are not O6 goals.
-      Their presence in a YAML library does not create a product requirement.
-      Source members using those unsupported constructs remain metadata
-      comments. This is the repository's bounded Properties contract, not a
-      claim that Obsidian's underlying YAML parser rejects those constructs.
-      Metadata is not a complete YAML document to parse and then filter.
-      Support only the property forms described by the module, including the
-      documented JSON object alternative. General YAML flow mappings, key-only
-      pairs, multiline scalar folding and block scalars are outside the task.
-      The previous completed status and YAML-feature checklist are withdrawn.
+      `Metadata.content` is now `[MetadataRecord]`. Ignore unnamed text,
+      unknown fields, YAML comments, `...`, unsupported/invalid values, and
+      later duplicates. The first successful occurrence reserves a name.
+      Remove the superseded comment/data wrapper on every surface; the named
+      `comment` field is ordinary data. A complete exact leading `---` envelope
+      always attaches metadata, including empty content. Only an absent or
+      unclosed envelope falls back to Markdown. Keep metadata/record/body
+      scopes and strict allocation failure behavior.
 
-      Preserve the user-directed ordered model:
-      `Metadata.content: [MetadataContent]`, where
-      `MetadataContent = comment(String) | data(MetadataRecord)`. Recognize at
-      most one exact leading `---` envelope after an optional BOM. A complete
-      envelope always becomes `Document.metadata`; non-YAML text, `...`, YAML
-      comments, unsupported members, and later duplicate names retain their
-      source as comments. Keep each valid member before and after a failed
-      member as data. Only an absent or unclosed envelope returns bytes to
-      Markdown. Allocation failure fails the parse. Metadata comments never
-      become `Comment` markup. Retain source scopes and parse the body once.
+      Use one bounded core producer. Remove anchors, alias expansion,
+      explicit tags, merge/complex keys, nested values, general flow mappings,
+      multiline folding, and their auxiliary state. Only bare literal `|`
+      on the two prose fields is added; no folding/chomping/indent flags or
+      runtime YAML dependency. The fixed field set bounds duplicate tracking
+      and committed records to ten. Failed members are skipped once at their
+      owning boundary, without retrying their interiors.
 
-      Implement the bounded Properties grammar directly in the shared core
-      producer. Remove the general YAML parser selection/vendoring workstream.
-      The format borrows property notation without importing YAML's full
-      syntax or semantics. Keep one member scanner and one value decoder for
-      the supported fields, with explicit ownership, recovery and OOM behavior;
-      remove superseded mechanisms rather than retaining a general YAML path
-      behind the restricted result model.
+      Acceptance for this replacement:
 
-      Remaining work and acceptance:
+      - [x] Core implements the ten fields, bare literal prose, whole-member
+            skipping, first-successful uniqueness, exact numbers and body scopes.
+      - [x] C facade, Swift, Kotlin/JNI/Native, ES/Wasm, canonical model and dumps
+            all directly expose ordered records, with complete owned cleanup.
+      - [x] Semantic and shared fixtures cover ignored content, field whitelist,
+            literal indentation/blank lines/line endings, JSON restrictions,
+            list comment separation, malformed recovery, and duplicates.
+      - [x] Complexity and OOM gates prove bounded record state, disjoint member
+            decoding, flat list scaling, and whole-parse allocation failure.
+      - [x] The pinned YAML oracle is limited to the selected valid intersection.
+            Out-of-domain inputs are tested as ignored product input, never as
+            missing YAML features. Alias/tag/folding success canaries are removed.
+      - [x] Fresh core, sanitizer, binding, conformance, oracle and release gates
+            pass; prior validation does not establish this replacement's status.
 
-      - [ ] Simplify the existing producer to the specified Properties forms.
-            Remove alias cloning, binding transactions, explicit tag handling,
-            multiline scalar folding, general YAML mapping forms, and their
-            supporting budgets/state. Do not introduce a general YAML parser
-            dependency or keep a second parser as fallback.
-      - [ ] Preserve supported property lines and JSON roots, single-line
-            quoted names and values, exact numbers, and flat lists,
-            comment indentation, uniqueness, metadata/body scopes, and the
-            first-successful-member rule through one shared producer.
-      - [ ] Reclassify anchor/alias/tag/merge/nested-value, general YAML
-            mapping, and multiline scalar examples as retained source. Retain
-            adjacent valid data and never interpret a failed member's interior
-            as another property. Keep `aliases: [Name]` as
-            ordinary data. Test malformed and unsupported syntax separately.
-      - [ ] Synchronize the C facade, Swift, Kotlin/JNI/Native, ES/Wasm,
-            canonical fixtures, package fixtures, and Properties oracle with
-            the corrected contract. The pinned YAML package witnesses syntax
-            only within that domain. Retire alias-expansion, tagged-null,
-            general mapping and scalar-folding success canaries; a library's
-            wider support is not a coverage gap.
-      - [ ] Re-run semantic, source-retention, complexity, OOM, binding,
-            conformance, oracle, and release gates on the replacement. Do not
-            mark O6 complete on the strength of the superseded implementation's
-            passing tests or closed oracle gaps.
+  Status: implemented in PR #216 with the corrected fixed-field contract.
+  Alias expansion and rollback are removed; ignored comments cannot split
+  indentless lists; key-only flow pairs are ignored. All existing review threads
+  are resolved. The public metadata content wrapper is removed on every surface.
 
-  Status: PR #216 is an implementation draft requiring this rework. The
-  envelope and ordered public value model remain useful work. The earlier
-  handwritten decoder and its tests demonstrate the superseded scope, not
-  completion of this goal. The four outstanding review findings must be
-  reassessed against the replacement; a goal edit does not resolve them.
-  Prior host validation and the 26-row containment ledger remain historical
-  evidence for that revision only; the replacement needs fresh evidence.
+  Fresh host validation (2026-09-08): C correctness 76/76 and conformance 2/2;
+  ASan, UBSan and TSan correctness 76/76 each; Swift tests/consumer and
+  conformance; Kotlin JVM, macOS Native and Android host tests/conformance;
+  ES Node/browser tests, packaging and conformance; `pnpm verify`; all four
+  oracle gates (metadata/Obsidian corpus: 32 inputs); 300 seeded fuzz inputs
+  each for CommonMark, GFM and remark; host release dry run, including packed
+  consumers and Maven publication validation. Canonical fixtures now have 18
+  cases. Position ledgers are unchanged: containment 26, places 0, inline 43,
+  reference order 0. Full Linux/macOS release aggregation remains in CI.
 
 - [ ] **O7 — Block identifiers.** Attach `^block-id`
       during block finalization through one operation for paragraph suffixes,
@@ -936,11 +917,11 @@ its behavior, with no separate publication step.
       whichever of `O8` and `O3` merges later. Requires `O1`, `O2`.
 - [ ] **O9 — Image dimensions.** Parse the complete
       `W`, `WxH`, `alt|W`, and `alt|WxH` alt-label suffixes in the shared image
-      construction path into `width` and `height`, keep the whole label as alt
+      construction path into `width` and `hten`, keep the whole label as alt
       content on any malformed suffix, and leave `CrossLink.label` raw.
       Fixtures cover every valid and invalid dimension form and formatted alt
       content. An image carrying both a typed dimension suffix and a `width` or
-      `height` attribute record, each retained independently, is a cross-item
+      `hten` attribute record, each retained independently, is a cross-item
       case owned by whichever of `O9` and `P2d` merges later. Requires `O1`.
 - [ ] **O10 — Obsidian evidence closure.** Add the integration fixtures for
       every pairwise opaque-context interaction, OFM and CommonMark constructs
@@ -1015,7 +996,7 @@ its behavior, with no separate publication step.
       extend `pathological_reference_expansion_bound` and its transport and
       decoder counterparts so a long definition anchor, class list, or record
       referenced many times is stored once on every surface; keep `width` and
-      `height` unit strings as records. Audit every Link, Image, Heading, Code,
+      `hten` unit strings as records. Audit every Link, Image, Heading, Code,
       CodeBlock, directive, and reference-definition caller and delete repair
       passes made obsolete by the shared operation. Two cross-item cases are
       owned by whichever item merges later: a link tail claiming the container
@@ -1024,7 +1005,7 @@ its behavior, with no separate publication step.
       `link-and-image-attributes` and `pandoc-reference-attribute-merge` gaps.
       An explicit ID from this syntax reserved before heading synthesis is a
       cross-item case owned by whichever of `P2d` and `P3` merges later, and an
-      image carrying both a typed dimension suffix and a `width` or `height`
+      image carrying both a typed dimension suffix and a `width` or `hten`
       attribute record, each retained independently, is a cross-item case owned
       by whichever of `P2d` and `O9` merges later. Requires `P0`, `M7`.
 - [ ] **P3 — `auto_anchors`.** Build one document anchor registry that reserves

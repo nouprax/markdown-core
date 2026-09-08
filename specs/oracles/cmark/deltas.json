@@ -45,8 +45,8 @@
         {
             "id": "properties-envelope",
             "kind": "deliberate-difference",
-            "summary": "O6 attaches a complete beginning-of-file --- envelope as Metadata. Unsupported payload members stay metadata comments; CommonMark parses the fences and payload as body blocks.",
-            "handling": "Keyed to both affected pinned CommonMark examples; member recovery, exact data, and source retention are checked by the Properties fixtures and YAML data oracle."
+            "summary": "O6 attaches a complete beginning-of-file --- envelope as Metadata. Unsupported payload members are ignored; CommonMark parses the fences and payload as body blocks.",
+            "handling": "Keyed to both affected pinned CommonMark examples; member recovery, exact data, and body separation are checked by the Properties fixtures and YAML data oracle."
         }
     ],
     "expectedDivergences": [

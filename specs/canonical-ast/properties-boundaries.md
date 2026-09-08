@@ -1,21 +1,22 @@
 ---
-a: x[
-b[c: 2
-text: word [ literal
+name: x[
+unknown[key: 2
 not YAML
-folded[key: >-
+abstract: |
   keep { [ ' punctuation
+
+  name: literal
 {
-  # before
-  list: [
-    # item
-    one # inline
-  ], # after
-  # end
-  last: 3
+  "keywords": ["one", 2],
+  "time": 3
 }
-block:
+authors:
 - text [
-after: 4
+# skipped
+- second
+comment: |
+  # prose
+  ---
+state: ready
 ---
 body

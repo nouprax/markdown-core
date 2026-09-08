@@ -2,22 +2,15 @@ import MarkdownCoreC
 
 /// Properties are values, never Markup or visitor events.
 public struct Metadata: Sendable, Hashable {
-    /// Data and uninterpreted source fragments in authored order.
-    public let content: [MetadataContent]
+    /// Recognized fields in authored order.
+    public let content: [MetadataRecord]
     /// The source extent of this value.
     public let scope: Scope
     /// Creates metadata with its ordered content and source extent.
-    public init(content: [MetadataContent], scope: Scope) {
+    public init(content: [MetadataRecord], scope: Scope) {
         self.content = content
         self.scope = scope
     }
-}
-/// An interpreted property or source retained without interpretation; never Markup.
-public enum MetadataContent: Sendable, Hashable {
-    /// Authored source that is a comment or cannot be represented as property data.
-    case comment(String)
-    /// One named property.
-    case data(MetadataRecord)
 }
 /// One named Properties value, with its own source extent.
 public struct MetadataRecord: Sendable, Hashable {
@@ -64,25 +57,14 @@ extension Metadata {
     init(from metadata: OpaquePointer) {
         self.init(
             content: (0..<markdown_core_metadata_content_count(metadata)).map { index in
-                guard let content = markdown_core_metadata_content_at(metadata, index) else {
+                guard let record = markdown_core_metadata_content_at(metadata, index) else {
                     preconditionFailure("Metadata content count is inconsistent")
                 }
-                switch markdown_core_metadata_content_get_kind(content) {
-                case MARKDOWN_CORE_METADATA_COMMENT:
-                    return .comment(markdown_core_metadata_content_comment(content).requiredString)
-                case MARKDOWN_CORE_METADATA_DATA:
-                    guard let record = markdown_core_metadata_content_data(content) else {
-                        preconditionFailure("Metadata data is missing its record")
-                    }
-                    return .data(
-                        MetadataRecord(
-                            name: markdown_core_metadata_record_name(record).requiredString,
-                            value: MetadataValue(from: record),
-                            scope: Scope(from: markdown_core_metadata_record_scope(record))
-                        )
-                    )
-                default: preconditionFailure("Unsupported metadata content")
-                }
+                return MetadataRecord(
+                    name: markdown_core_metadata_record_name(record).requiredString,
+                    value: MetadataValue(from: record),
+                    scope: Scope(from: markdown_core_metadata_record_scope(record))
+                )
             },
             scope: Scope(from: markdown_core_metadata_scope(metadata))
         )

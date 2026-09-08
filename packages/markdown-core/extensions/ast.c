@@ -518,20 +518,9 @@ markdown_core_scope markdown_core_metadata_scope(const markdown_core_metadata *m
 size_t markdown_core_metadata_content_count(const markdown_core_metadata *metadata) {
     return metadata ? metadata->count : 0;
 }
-const markdown_core_metadata_content *markdown_core_metadata_content_at(const markdown_core_metadata *metadata,
-                                                                        size_t index) {
+const markdown_core_metadata_record *markdown_core_metadata_content_at(const markdown_core_metadata *metadata,
+                                                                       size_t index) {
     return metadata && index < metadata->count ? &metadata->content[index] : NULL;
-}
-markdown_core_metadata_content_kind
-markdown_core_metadata_content_get_kind(const markdown_core_metadata_content *content) {
-    return content ? content->kind : 0;
-}
-markdown_core_string markdown_core_metadata_content_comment(const markdown_core_metadata_content *content) {
-    return content && content->kind == MARKDOWN_CORE_METADATA_COMMENT ? content->as.comment : (markdown_core_string){0};
-}
-const markdown_core_metadata_record *
-markdown_core_metadata_content_data(const markdown_core_metadata_content *content) {
-    return content && content->kind == MARKDOWN_CORE_METADATA_DATA ? &content->as.data : NULL;
 }
 markdown_core_scope markdown_core_metadata_record_scope(const markdown_core_metadata_record *record) {
     return record ? record->scope : (markdown_core_scope){0};
@@ -1430,16 +1419,9 @@ static void dump_metadata(dump_buffer *buffer, const markdown_core_metadata *met
     buffer_i64(buffer, (int64_t)count);
     buffer_cstr(buffer, "\n");
     for (size_t i = 0; i < count; i++) {
-        const markdown_core_metadata_content *content = markdown_core_metadata_content_at(metadata, i);
+        const markdown_core_metadata_record *record = markdown_core_metadata_content_at(metadata, i);
         buffer->more[depth + 1] = i + 1 < count;
         dump_prefix(buffer, depth + 2);
-        if (markdown_core_metadata_content_get_kind(content) == MARKDOWN_CORE_METADATA_COMMENT) {
-            buffer_cstr(buffer, "MetadataContent value=comment(");
-            buffer_json_string(buffer, markdown_core_metadata_content_comment(content));
-            buffer_cstr(buffer, ") children=0\n");
-            continue;
-        }
-        const markdown_core_metadata_record *record = markdown_core_metadata_content_data(content);
         buffer_cstr(buffer, "MetadataRecord scope=");
         buffer_scope(buffer, markdown_core_metadata_record_scope(record));
         buffer_cstr(buffer, " name=");

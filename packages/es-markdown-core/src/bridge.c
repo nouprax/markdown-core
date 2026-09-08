@@ -65,8 +65,7 @@ enum {
     ES_KIND_FOOTNOTE = 0x101,
     ES_KIND_SPECIMEN = 0x102,
     ES_KIND_METADATA = 0x103,
-    ES_KIND_METADATA_RECORD = 0x104,
-    ES_KIND_METADATA_COMMENT = 0x105
+    ES_KIND_METADATA_RECORD = 0x104
 };
 
 typedef struct es_source_node {
@@ -78,7 +77,6 @@ typedef struct es_source_node {
     const markdown_core_specimen *specimen;
     const markdown_core_metadata *metadata;
     const markdown_core_metadata_record *metadata_record;
-    const markdown_core_metadata_content *metadata_comment;
     markdown_core_optional_string anchor;
     uint32_t class_start, class_count, record_start, record_count, metadata_index;
     uint32_t width, height;
@@ -386,14 +384,8 @@ static void collect_value_topology(es_build *build, size_t cursor) {
         }
         for (size_t i = 0; i < count && build->failure == ES_BUILD_OK; i++) {
             es_source_node value = {0};
-            const markdown_core_metadata_content *content = markdown_core_metadata_content_at(metadata, i);
-            if (markdown_core_metadata_content_get_kind(content) == MARKDOWN_CORE_METADATA_COMMENT) {
-                value.wire_kind = ES_KIND_METADATA_COMMENT;
-                value.metadata_comment = content;
-            } else {
-                value.wire_kind = ES_KIND_METADATA_RECORD;
-                value.metadata_record = markdown_core_metadata_content_data(content);
-            }
+            value.wire_kind = ES_KIND_METADATA_RECORD;
+            value.metadata_record = markdown_core_metadata_content_at(metadata, i);
             uint32_t index = append_record(build, value);
             if (index == ES_NO_INDEX) {
                 return;
@@ -403,7 +395,7 @@ static void collect_value_topology(es_build *build, size_t cursor) {
         }
         return;
     }
-    if (build->nodes[cursor].metadata_record || build->nodes[cursor].metadata_comment) {
+    if (build->nodes[cursor].metadata_record) {
         return;
     }
     const markdown_core_citation *citation = build->nodes[cursor].citation;
@@ -570,11 +562,6 @@ static void collect_topology(es_build *build, const markdown_core_node *root) {
  * id is the first string. */
 static void collect_value_fields(es_build *build, es_source_node *record) {
     if (record->metadata) {
-        return;
-    }
-    if (record->metadata_comment) {
-        record->strings[0] = required_string(markdown_core_metadata_content_comment(record->metadata_comment));
-        count_string(build, record->strings[0]);
         return;
     }
     if (record->metadata_record) {

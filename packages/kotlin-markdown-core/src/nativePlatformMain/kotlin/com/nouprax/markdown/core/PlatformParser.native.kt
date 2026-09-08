@@ -50,8 +50,6 @@ import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_THEMATIC_BREAK
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_LIST_FLAVOR_BULLET
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_LIST_FLAVOR_ORDERED
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_METADATA_BOOL
-import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_METADATA_COMMENT
-import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_METADATA_DATA
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_METADATA_ITEM_NUMBER
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_METADATA_ITEM_TEXT
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_METADATA_LIST
@@ -92,10 +90,7 @@ import com.nouprax.markdown.core.internal.capi.markdown_core_footnote_next
 import com.nouprax.markdown.core.internal.capi.markdown_core_footnote_scope
 import com.nouprax.markdown.core.internal.capi.markdown_core_list_flavorVar
 import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_content_at
-import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_content_comment
 import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_content_count
-import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_content_data
-import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_content_get_kind
 import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_list_item
 import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_record_item_at
 import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_record_item_count
@@ -873,17 +868,7 @@ private class NativeScratch(
         val metadata = markdown_core_node_document_metadata(node) ?: return null
         val content =
             immutableList(markdown_core_metadata_content_count(metadata).checkedSize("metadata count")) { index ->
-                val content = requireNotNull(markdown_core_metadata_content_at(metadata, index.toULong()))
-                when (markdown_core_metadata_content_get_kind(content)) {
-                    MARKDOWN_CORE_METADATA_COMMENT -> return@immutableList MetadataContent.Comment(
-                        markdown_core_metadata_content_comment(content).useContents { copyString() },
-                    )
-
-                    MARKDOWN_CORE_METADATA_DATA -> Unit
-
-                    else -> error("invalid metadata content kind")
-                }
-                val record = requireNotNull(markdown_core_metadata_content_data(content))
+                val record = requireNotNull(markdown_core_metadata_content_at(metadata, index.toULong()))
                 val name = markdown_core_metadata_record_name(record).useContents { copyString() }
                 val value =
                     when (markdown_core_metadata_record_kind(record)) {
@@ -959,7 +944,7 @@ private class NativeScratch(
                             error("invalid metadata value kind")
                         }
                     }
-                MetadataContent.Data(MetadataRecord(name, value, markdown_core_metadata_record_scope(record).toScope()))
+                MetadataRecord(name, value, markdown_core_metadata_record_scope(record).toScope())
             }
         return Metadata(content, markdown_core_metadata_scope(metadata).toScope())
     }

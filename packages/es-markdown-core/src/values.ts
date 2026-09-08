@@ -54,12 +54,9 @@ export interface Attributes {
 }
 export const Attributes: { readonly empty: Attributes } = { empty: { classes: [], records: [] } };
 export interface Metadata {
-    readonly content: readonly MetadataContent[];
+    readonly content: readonly MetadataRecord[];
     readonly scope: Scope;
 }
-/** Ordered Properties content, independent of Markup and its visitors. */
-export type MetadataContent =
-    { readonly kind: "comment"; readonly value: string } | { readonly kind: "data"; readonly record: MetadataRecord };
 export interface MetadataRecord {
     readonly name: string;
     readonly value: MetadataValue;

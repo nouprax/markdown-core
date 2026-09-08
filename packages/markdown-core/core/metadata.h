@@ -25,17 +25,9 @@ struct markdown_core_metadata_record {
     markdown_core_metadata_value value;
 };
 
-struct markdown_core_metadata_content {
-    markdown_core_metadata_content_kind kind;
-    union {
-        markdown_core_string comment;
-        markdown_core_metadata_record data;
-    } as;
-};
-
 struct markdown_core_metadata {
     markdown_core_scope scope;
-    markdown_core_metadata_content *content;
+    markdown_core_metadata_record *content;
     size_t count;
 };
 

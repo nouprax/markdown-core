@@ -131,10 +131,7 @@ const listItem: MetadataListItem = { kind: "text", value: "" };
 const metadataValue: MetadataValue = { kind: "scalar", value: scalar };
 const metadataRecord: MetadataRecord = { name: "k", value: metadataValue, scope: document.scope };
 const metadata: Metadata = {
-    content: [
-        { kind: "data", record: metadataRecord },
-        { kind: "comment", value: "..." }
-    ],
+    content: [metadataRecord],
     scope: document.scope
 };
 const parsedMetadata: Metadata | null = document.metadata;

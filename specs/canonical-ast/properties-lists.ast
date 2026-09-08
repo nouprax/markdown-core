@@ -1,0 +1,7 @@
+Document scope=1:1..9:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..8:3 children=3
+│   ├── MetadataRecord scope=2:1..2:19 name="authors" value=list([text("Ada"),text("Lin")]) children=0
+│   ├── MetadataRecord scope=3:1..6:10 name="keywords" value=list([text("language"),text("design")]) children=0
+│   └── MetadataRecord scope=7:1..7:17 name="title" value=scalar(text("List forms")) children=0
+└── Paragraph scope=9:1..9:4 anchor=null attributes={} children=1
+    └── Text scope=9:1..9:4 anchor=null attributes={} literal="body" children=0

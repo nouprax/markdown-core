@@ -95,35 +95,29 @@ class JniPayloadDecoderTest {
                 1.toByte(),
                 *scope(),
                 6, // metadata and six ordered records
-                2.toByte(), // data
                 *scope(),
                 *string("key"),
                 1.toByte(),
                 0.toByte(),
-                2.toByte(), // data
                 *scope(),
                 *string("key"),
                 1.toByte(),
                 scalarKind,
                 1.toByte(),
-                2.toByte(), // data
                 *scope(),
                 *string("n"),
                 1.toByte(),
                 2.toByte(),
                 *string("9007199254740993"),
-                2.toByte(), // data
                 *scope(),
                 *string("s"),
                 1.toByte(),
                 3.toByte(),
                 *string("中文\nquoted"),
-                2.toByte(), // data
                 *scope(),
                 *string("empty"),
                 2.toByte(),
                 0,
-                2.toByte(), // data
                 *scope(),
                 *string("list"),
                 2.toByte(),
@@ -168,7 +162,7 @@ class JniPayloadDecoderTest {
         val bytes = payload()
         val document = JniPayloadDecoder.decodeDocument(bytes)
         bytes.fill(0)
-        val records = document.metadata!!.content.map { assertIs<MetadataContent.Data>(it).record }
+        val records = document.metadata!!.content
         assertEquals(6, records.size)
         assertEquals("key", records[0].name)
         assertEquals("key", records[1].name)

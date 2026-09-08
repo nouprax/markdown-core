@@ -20,9 +20,11 @@ populates that same node model. Every successful reference link or image is
 resolved before the public AST is finalized and is indistinguishable from its
 direct counterpart; source definitions and reference forms remain
 parser-internal. One complete beginning-of-file Properties envelope populates optional
-`Document.metadata` as ordered, out-of-band data and comment values. Property names remain an
-open string domain; vault conventions such as `aliases` do not become parser
-keywords or link-resolution results.
+`Document.metadata` as ordered scoped records. The fixed field set is `name`,
+`title`, `subtitle`, `time`, `date`, `authors`, `keywords`, `abstract`, `state`,
+and `comment`. Unrecognized or invalid input is ignored. Only `abstract` and
+`comment` additionally accept indented literal prose with `: |`.
+
 
 The modules are independent extensions of one language, not a preset and not a
 full Obsidian parser dialect. They preserve inherited cmark/CommonMark
@@ -164,20 +166,16 @@ descriptor. O4 completes the shared feature-boundary implementation bullet.
       the decoded document after an optional BOM. A complete envelope always
       attaches metadata; only a missing or malformed envelope leaves its bytes
       to inherited Markdown. Allocation failure remains terminal.
-- [ ] Rework Properties under the user-corrected O6 goal: recognize only the
-      specified Obsidian property forms, including its JSON alternative, with ordered
-      `comment(String)` and `data(MetadataRecord)` cases. Preserve exact
-      numbers, decoded names, atomic text and flat lists. Retain unsupported
-      source and valid neighboring members independently. Remove alias
-      expansion, anchor transactions, explicit tag resolution, and full YAML
-      compatibility from the task goals; `aliases` remains an ordinary key.
-      Remove the YAML parser selection/vendoring task. Simplify to one
-      Properties producer, including single-line text and flat lists; retain
-      general YAML mapping forms and multiline scalar constructs as comments.
-      Verify source retention, member recovery, allocator/OOM and all builds.
-- [ ] Verify source-faithful metadata and record scopes with the replacement
-      syntax producer before parsing the remaining body. Decoded values keep
-      their authored ranges. Metadata comments are never Markup.
+- [x] Rework Properties under the user-corrected O6 goal: recognize the ten
+      fixed fields and selected scalar/list/JSON forms. Store ordered scoped
+      records directly. Ignore unknown names, unnamed text, comments, invalid
+      members and duplicates; retain valid neighbors. Add bare `: |` only for
+      `abstract` and `comment`, preserving internal newlines and blank lines.
+      Remove alias expansion, anchor transactions, explicit tags, multiline
+      folding, the comment/data wrapper, and any full YAML parser workstream.
+      Verify member recovery, literal indentation, allocator/OOM and bindings.
+- [x] Verify metadata/record/body scopes and native value ownership on every
+      surface. Metadata values never enter Markup or visitor callbacks.
 
 - [ ] Add block identifiers during block finalization, when ownership is known.
       One attachment operation handles paragraph suffixes, structured-block
@@ -193,16 +191,15 @@ descriptor. O4 completes the shared feature-boundary implementation bullet.
 - [ ] Use the same container recursion for nested callouts. Unknown/custom types
       remain metadata-bearing callouts; alias-to-style mapping stays outside the
       parser.
-- [ ] Revalidate absent/empty/populated Properties, documented property
-      types, arbitrary names, JSON roots, strict fences, unsupported-source
-      retention, and Properties/body scope boundaries against corrected O6.
+- [x] Revalidate absent/empty/populated Properties, documented property
+      values, the ten field names, JSON roots, strict fences, ignored unsupported
+      input, literal prose, and Properties/body scope boundaries against corrected O6.
 - [ ] Cover metadata-free, title-only, empty-body, formatted-title, nested,
       invalid-position, mixed-case, custom-type, and whole-structured-block
       identifier cases.
 
 - [ ] **Exit criterion:** one complete Properties envelope yields metadata and no body
-      node, unsupported members remain metadata comments while valid neighbors stay
-      data, incomplete envelopes remain Markdown, and every
+      node, unsupported members are ignored while valid neighbors remain records, incomplete envelopes remain Markdown, and every
       block identifier has exactly one owner, no valid marker survives as
       visible text, every `>` container is a `Callout`, and plain and
       marker-bearing states satisfy their field invariants; nested
@@ -247,12 +244,12 @@ descriptor. O4 completes the shared feature-boundary implementation bullet.
       evidence for recognition, precedence, and fallback, which the dialect
       modules own, and their source-shaped definition/reference nodes do not
       override the consumer AST contract.
-- [ ] Update the existing exact-envelope / `yaml@2.9.0` Document/CST
+- [x] Update the existing exact-envelope / `yaml@2.9.0` Document/CST
       oracle to the corrected Properties domain. Compare ordered mapping
       pairs, decoded names, exact numbers and supported values without a
       JavaScript object intermediary. Remove alias/tag success requirements;
       wider YAML acceptance does not extend the product. Product fixtures own
-      comment retention, member recovery, scopes, resource bounds and OOM.
+      ignored input, literal prose, member recovery, scopes, resource bounds and OOM.
 - [ ] Keep official-only requirements—callouts, block identifiers, inline
       footnote recognition, the
       `Cite`/`Citation`/`CitationReferent`/`Footnote` projection,

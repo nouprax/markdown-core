@@ -93,8 +93,7 @@
             "markup.attributes.records",
             "document.metadata.present",
             "document.metadata.empty",
-            "metadata.content.data",
-            "metadata.content.comment",
+            "metadata.content.populated",
             "metadata.scalar.null",
             "metadata.scalar.bool",
             "metadata.scalar.number",
@@ -497,8 +496,7 @@
                 "kinds": ["Document", "Paragraph", "Text"],
                 "states": [
                     "document.metadata.present",
-                    "metadata.content.data",
-                    "metadata.content.comment",
+                    "metadata.content.populated",
                     "metadata.scalar.null",
                     "metadata.scalar.bool",
                     "metadata.scalar.number",
@@ -527,12 +525,31 @@
                 "kinds": ["Document", "Paragraph", "Text"],
                 "states": [
                     "document.metadata.present",
-                    "metadata.content.data",
-                    "metadata.content.comment",
+                    "metadata.content.populated",
                     "metadata.scalar.number",
                     "metadata.scalar.text",
                     "metadata.list.populated"
                 ],
+                "orders": []
+            }
+        },
+        {
+            "name": "properties-forms",
+            "input": "properties-forms.md",
+            "expected": "properties-forms.ast",
+            "coverage": {
+                "kinds": ["Document", "Paragraph", "Text"],
+                "states": ["document.metadata.present", "metadata.content.populated", "metadata.scalar.text"],
+                "orders": []
+            }
+        },
+        {
+            "name": "properties-lists",
+            "input": "properties-lists.md",
+            "expected": "properties-lists.ast",
+            "coverage": {
+                "kinds": ["Document", "Paragraph", "Text"],
+                "states": ["document.metadata.present", "metadata.content.populated", "metadata.list.populated"],
                 "orders": []
             }
         }

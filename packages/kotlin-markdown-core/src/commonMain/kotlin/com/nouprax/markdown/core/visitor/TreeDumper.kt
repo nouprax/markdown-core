@@ -113,22 +113,13 @@ private class DumpVisitor(
     private fun metadata(value: Metadata) {
         state.line("Metadata", value.scope, emptyList(), value.content.size)
         state.nested(value.content.size) {
-            value.content.forEach { content ->
-                when (content) {
-                    is MetadataContent.Comment -> {
-                        state.group("MetadataContent value=comment(${jsonString(content.value)})", 0)
-                    }
-
-                    is MetadataContent.Data -> {
-                        val record = content.record
-                        state.line(
-                            "MetadataRecord",
-                            record.scope,
-                            listOf("name=${jsonString(record.name)}", "value=${metadataValue(record.value)}"),
-                            0,
-                        )
-                    }
-                }
+            value.content.forEach { record ->
+                state.line(
+                    "MetadataRecord",
+                    record.scope,
+                    listOf("name=${jsonString(record.name)}", "value=${metadataValue(record.value)}"),
+                    0,
+                )
             }
         }
     }

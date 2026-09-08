@@ -41,17 +41,16 @@ const noIndex = 0xffff_ffff;
  * a footnote's content is its child range, a cite's items are its child
  * range, and the document's definitions are its auxiliary range.
  */
-type ValueKind = "citation" | "footnote" | "specimen" | "metadata" | "metadataRecord" | "metadataComment";
+type ValueKind = "citation" | "footnote" | "specimen" | "metadata" | "metadataRecord";
 const valueKindBase = 0x100;
 const valueKinds: readonly ValueKind[] = Object.freeze([
     "citation",
     "footnote",
     "specimen",
     "metadata",
-    "metadataRecord",
-    "metadataComment"
+    "metadataRecord"
 ]);
-type Decoded = Markup | Citation | Footnote | Specimen | Metadata | MetadataRecord | { metadataComment: string };
+type Decoded = Markup | Citation | Footnote | Specimen | Metadata | MetadataRecord;
 const isMarkup = (value: Decoded): value is Markup => "kind" in value;
 
 const header = {
@@ -158,11 +157,7 @@ export class NodeDecoder {
             else if (record.kind === "specimen") values[index] = this.specimen(record);
             else if (record.kind === "metadata") values[index] = this.metadata(record);
             else if (record.kind === "metadataRecord") values[index] = this.metadataRecord(record);
-            else if (record.kind === "metadataComment") {
-                this.flags(record, 0);
-                this.leaf(record);
-                values[index] = { metadataComment: this.requiredString(record, 0) };
-            } else values[index] = this.markup(this.value(record));
+            else values[index] = this.markup(this.value(record));
         }
         const document = values[0];
         if (document === undefined || !isMarkup(document) || document.kind !== "document") {
@@ -356,8 +351,7 @@ export class NodeDecoder {
             kind === "footnote" ||
             kind === "specimen" ||
             kind === "metadata" ||
-            kind === "metadataRecord" ||
-            kind === "metadataComment"
+            kind === "metadataRecord"
         ) {
             throw new Error(`native result places a ${kind} value where a node belongs`);
         }
@@ -854,10 +848,9 @@ export class NodeDecoder {
         return {
             scope: record.scope,
             content: this.edgeRange(record.childStart, record.childCount, "metadata content").map((value) => {
-                if ("metadataComment" in value) return { kind: "comment" as const, value: value.metadataComment };
                 if ("kind" in value || !("name" in value) || !("value" in value))
                     throw new Error("invalid metadata content");
-                return { kind: "data" as const, record: value };
+                return value;
             })
         };
     }

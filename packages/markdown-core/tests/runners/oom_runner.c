@@ -38,11 +38,12 @@ static void sweep_free(void *pointer) { free(pointer); }
 static markdown_core_mem sweep_mem = {sweep_calloc, sweep_realloc, sweep_free};
 
 static const char OOM_PROPERTIES_CORPUS[] =
-    "---\n# retained\nname: &a \"large\\u0020text\"\ncopy: *a\nlist: &l [1, \"two\", &b three, *b]\n"
-    "copy-list: *l\nbad: &a [true]\nafter-bad: *a\nname: duplicate\n...\nnot YAML\n"
-    "quoted: 'one\n  two'\nblock: >-\n  one\n  two\nlast: !!str 1\n---\nbody\n";
+    "---\n# ignored\nname: \"large\\u0020text\"\nunknown: *a\nauthors: [1, \"two\", three]\n"
+    "keywords: [true]\nkeywords: [\"\\uD83D\\uDE80\"]\nname: duplicate\n...\nnot YAML\n"
+    "abstract: |\n  one\n\n  two\ncomment: &a [true]\ncomment: |\n  prose\nstate: true\n---\nbody\n";
 static const char OOM_PROPERTIES_FLOW_CORPUS[] =
-    "---\na: x[\nb[c: 2\n{\n  # retained\n  a: 1, b: [two, 3], c: {nested: value}, d: 4, e: \"bad\\q\"}\n---\n";
+    "---\nname: x[\nb[c: 2\n{\"time\": 1, \"authors\": [\"two\", 3], \"abstract\": {\"nested\": 1},"
+    "\"date\": 4, \"comment\": \"bad\\q\", \"keywords\": []}\n---\n";
 
 static const char OOM_CORPUS[] = "[[Note]] [[Note|]] ![[#^block|alias]] [[a#Heading|label]]\n\n"
                                  "Setext heading\n---\n\n"

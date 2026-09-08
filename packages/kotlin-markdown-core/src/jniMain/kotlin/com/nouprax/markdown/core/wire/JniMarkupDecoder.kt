@@ -443,11 +443,6 @@ private class JniTreeDecoder(
         val scope = reader.scope()
         val content =
             immutableList(count("metadata content")) {
-                when (val kind = reader.byte().toInt()) {
-                    1 -> return@immutableList MetadataContent.Comment(reader.requiredString())
-                    2 -> Unit
-                    else -> error("invalid native metadata content $kind")
-                }
                 val recordScope = reader.scope()
                 val name = reader.requiredString()
                 val value =
@@ -480,7 +475,7 @@ private class JniTreeDecoder(
                             error("invalid native metadata value $branch")
                         }
                     }
-                MetadataContent.Data(MetadataRecord(name, value, recordScope))
+                MetadataRecord(name, value, recordScope)
             }
         return Metadata(content, scope)
     }

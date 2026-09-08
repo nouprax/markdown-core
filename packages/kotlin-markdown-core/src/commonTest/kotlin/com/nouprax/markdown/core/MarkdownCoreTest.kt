@@ -10,36 +10,30 @@ import kotlin.test.assertTrue
 
 class ApiTest {
     @Test
-    fun propertiesContentPreservesSourceAndRecoversData() {
+    fun propertiesKeepRecognizedFieldsAndLiteralProse() {
         val source =
-            "---\r\na: &x 9007199254740993\r\nnot YAML\r\n...\r\n" +
-                "bad: &x [true]\r\nb: *x\r\na: duplicate\r\n# note\r\n---\r\nbody\r\n"
+            "---\r\nname: 9007199254740993\r\nnot YAML\r\n...\r\nunknown: ignored\r\n" +
+                "comment: *x\r\nname: duplicate\r\nabstract: |\r\n  first\r\n\r\n  second\r\n" +
+                "comment: |\r\n  # prose\r\n---\r\nbody\r\n"
         val document = Document.parse(source)
         val metadata = assertNotNull(document.metadata)
-        val records = metadata.content.filterIsInstance<MetadataContent.Data>().map { it.record }
-        assertEquals(listOf("a", "b"), records.map { it.name })
+        assertEquals(listOf("name", "abstract", "comment"), metadata.content.map { it.name })
         assertEquals(
             listOf(
                 MetadataValue.Scalar(MetadataScalar.Number("9007199254740993")),
-                MetadataValue.Scalar(MetadataScalar.Number("9007199254740993")),
+                MetadataValue.Scalar(MetadataScalar.Text("first\n\nsecond\n")),
+                MetadataValue.Scalar(MetadataScalar.Text("# prose\n")),
             ),
-            records.map {
-                it.value
-            },
+            metadata.content.map { it.value },
         )
-        assertEquals(MetadataContent.Comment("not YAML"), metadata.content[1])
-        assertEquals(MetadataContent.Comment("..."), metadata.content[2])
-        assertEquals(MetadataContent.Comment("bad: &x [true]"), metadata.content[3])
-        assertEquals(MetadataContent.Comment("a: duplicate"), metadata.content[5])
-        assertEquals(9, metadata.scope.end.line)
+        assertEquals(14, metadata.scope.end.line)
         assertEquals(
-            10,
+            15,
             document.content[0]
                 .scope.start.line,
         )
-        assertEquals(emptyList(), Document.parse("---\n---").metadata?.content)
-        assertEquals(null, Document.parse("---\na: 1\n").metadata)
-        assertTrue(document.dump().contains("MetadataContent value=comment(\"...\")"))
+        assertEquals(emptyList(), Document.parse("---\nunknown: 1\nfree text\n---").metadata?.content)
+        assertEquals(null, Document.parse("---\nname: 1\n").metadata)
     }
 
     @Test

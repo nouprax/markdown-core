@@ -140,7 +140,7 @@ records: [Record])` is never null. `Record(name: String, value: String)`
 retains every assignment occurrence; classes retain every word occurrence.
 The last identifier wins and an empty final `id=` clears the anchor.
 
-`Document.metadata: Metadata?`, its ordered `MetadataContent` data/comment cases, and scoped data records use the
+`Document.metadata: Metadata?`, its ordered scoped `MetadataRecord` values use the
 [Properties value model](dialect/properties.md#model). Metadata is never
 Markup and has no visitor callbacks. O6 first produces it; until then it is
 null. `Image.width` and `Image.height` are nullable positive integers whose
@@ -429,4 +429,4 @@ O6 adds the `properties-envelope` CommonMark delta: a complete first `---`
 envelope becomes metadata even when its payload is not YAML. The pinned
 CommonMark examples `---\n---\n` and `---\nFoo\n---\nBar\n---\nBaz\n`
 therefore produce metadata in place of the initial body blocks. Unsupported
-members remain `MetadataContent.comment` values, independent of Markup.
+members are ignored and never enter Markup.
