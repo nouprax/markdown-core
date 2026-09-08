@@ -11,15 +11,15 @@ extension APISuite {
             + "comment: |\r\n  # prose\r\n---\r\nbody\r\n"
         let document = try Document.parse(source)
         let metadata = try #require(document.metadata)
-        #expect(metadata.content.map(\.name) == ["name", "abstract", "comment"])
         #expect(
-            metadata.content.map(\.value) == [
+            [metadata.name, metadata.abstract, metadata.comment] == [
                 .scalar(.number("9007199254740993")), .scalar(.text("first\n\nsecond\n")), .scalar(.text("# prose\n")),
             ]
         )
         #expect(metadata.scope.end.line == 14)
         #expect(document.content[0].scope.start.line == 15)
-        #expect(try Document.parse("---\nunknown: 1\nfree text\n---").metadata?.content == [])
+        let empty = try #require(Document.parse("---\nunknown: 1\nfree text\n---").metadata)
+        #expect(empty == Metadata(scope: empty.scope))
         #expect(try Document.parse("---\nname: 1\n").metadata == nil)
     }
 
@@ -43,7 +43,12 @@ extension APISuite {
             .scalar(.text("中文\nquoted")), .list([]), .list([.number("1.25"), .text("")]),
         ]
         let metadata = Metadata(
-            content: values.map { MetadataRecord(name: "key", value: $0, scope: parsed.scope) },
+            name: values[0],
+            title: values[1],
+            subtitle: values[2],
+            time: values[3],
+            date: values[4],
+            authors: values[5],
             scope: parsed.scope
         )
         let document = Document(
@@ -56,11 +61,14 @@ extension APISuite {
             specimens: []
         )
         #expect(
-            document.metadata?.content.map(\.value)
+            [
+                document.metadata?.name, document.metadata?.title, document.metadata?.subtitle,
+                document.metadata?.time, document.metadata?.date, document.metadata?.authors,
+            ]
                 == values
         )
-        #expect(document.dump().contains("value=scalar(number(\"9007199254740993\"))"))
-        #expect(document.dump().contains("value=list([])"))
+        #expect(document.dump().contains("subtitle=scalar(number(\"9007199254740993\"))"))
+        #expect(document.dump().contains("date=list([])"))
         var visitor = RecordingWalkingVisitor()
         document.walk(with: &visitor)
         #expect(!visitor.events.contains { $0.contains("Metadata") })

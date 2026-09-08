@@ -20,7 +20,7 @@ populates that same node model. Every successful reference link or image is
 resolved before the public AST is finalized and is indistinguishable from its
 direct counterpart; source definitions and reference forms remain
 parser-internal. One complete beginning-of-file Properties envelope populates optional
-`Document.metadata` as ordered scoped records. The fixed field set is `name`,
+`Document.metadata` with ten direct optional fields. The fixed field set is `name`,
 `title`, `subtitle`, `time`, `date`, `authors`, `keywords`, `abstract`, `state`,
 and `comment`. Unrecognized or invalid input is ignored. Only `abstract` and
 `comment` additionally accept indented literal prose with `: |`.
@@ -68,7 +68,7 @@ does not define Pandoc `@key` syntax; the citations module does.
       inline source forms must lower to the same one-item resolved consumer model;
       retain none of the source-shaped kinds as aliases.
 - [x] Add optional `Document.metadata` and the document-owned `Metadata`,
-      ordered `MetadataRecord`, `MetadataValue`, `MetadataScalar`, and
+      `MetadataValue`, `MetadataScalar`, and
       `MetadataListItem` values (`M7`; Properties syntax remains O6).
       Preserve exact record-name case and source order, distinguish absent from
       explicitly empty metadata, retain number payloads as exact strings, and
@@ -164,17 +164,18 @@ descriptor. O4 completes the shared feature-boundary implementation bullet.
 
 - [x] Recognize at most one exact `---` Properties envelope at the beginning of
       the decoded document after an optional BOM. A complete envelope always
-      attaches metadata; only a missing or malformed envelope leaves its bytes
+      attaches metadata; only a missing or unclosed envelope leaves its bytes
       to inherited Markdown. Allocation failure remains terminal.
 - [x] Rework Properties under the user-corrected O6 goal: recognize the ten
-      fixed fields and selected scalar/list/JSON forms. Store ordered scoped
-      records directly. Ignore unknown names, unnamed text, comments, invalid
-      members and duplicates; retain valid neighbors. Add bare `: |` only for
+      fixed fields and selected scalar, bracketed-array and block-list forms.
+      Store the ten named fields directly, retaining only the envelope scope.
+      Ignore unknown names, unnamed text, comments, invalid members and
+      duplicates; retain valid neighbors. Add bare `: |` only for
       `abstract` and `comment`, preserving internal newlines and blank lines.
       Remove alias expansion, anchor transactions, explicit tags, multiline
       folding, the comment/data wrapper, and any full YAML parser workstream.
       Verify member recovery, literal indentation, allocator/OOM and bindings.
-- [x] Verify metadata/record/body scopes and native value ownership on every
+- [x] Verify metadata/body scopes and native value ownership on every
       surface. Metadata values never enter Markup or visitor callbacks.
 
 - [ ] Add block identifiers during block finalization, when ownership is known.
@@ -192,7 +193,7 @@ descriptor. O4 completes the shared feature-boundary implementation bullet.
       remain metadata-bearing callouts; alias-to-style mapping stays outside the
       parser.
 - [x] Revalidate absent/empty/populated Properties, documented property
-      values, the ten field names, JSON roots, strict fences, ignored unsupported
+      values, the ten field names, arrays and block lists, strict fences, ignored unsupported
       input, literal prose, and Properties/body scope boundaries against corrected O6.
 - [ ] Cover metadata-free, title-only, empty-body, formatted-title, nested,
       invalid-position, mixed-case, custom-type, and whole-structured-block

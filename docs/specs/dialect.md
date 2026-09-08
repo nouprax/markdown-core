@@ -376,7 +376,7 @@ one-based lines, one-based byte columns, inclusive ends, tabs as one byte, the
 a scope that never includes the line ending that terminates its last line,
 except that `SoftBreak` and `LineBreak` cover the line-ending bytes they
 stand for. Every `Markup` carries a scope. Besides `Markup`, exactly `Citation`,
-`Footnote`, `Metadata`, and `MetadataRecord` carry a scope, because they are
+`Footnote`, `Specimen`, and `Metadata` carry a scope, because they are
 written; every other value is located by its owner's scope and has none.
 
 Delimiters belong to the node they delimit: a scope covers the opening and

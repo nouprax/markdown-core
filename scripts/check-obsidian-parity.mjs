@@ -184,34 +184,19 @@ function propertyName(node) {
     return node.source;
 }
 
-function cstRange(value, range = { start: Infinity, end: -Infinity }) {
-    if (Array.isArray(value)) {
-        for (const item of value) cstRange(item, range);
-    } else if (value !== null && typeof value === "object") {
-        if (Number.isInteger(value.offset) && typeof value.source === "string") {
-            range.start = Math.min(range.start, value.offset);
-            range.end = Math.max(range.end, value.offset + value.source.length);
-        }
-        for (const child of Object.values(value)) cstRange(child, range);
-    }
-    return range;
-}
-
-function projectMetadata(document, payloadStart, payload) {
+function projectMetadata(document) {
     if (document.errors.length > 0 || document.warnings.length > 0) {
         throw new Error(document.errors[0]?.message ?? document.warnings[0]?.message ?? "invalid Properties YAML");
     }
     if (document.directives.docStart || document.directives.docEnd || document.directives.yaml.explicit) {
         throw new Error("Properties payload contains a YAML stream or document indicator");
     }
-    if (document.contents === null) return { records: [], recordRanges: [] };
+    const fields = Object.fromEntries([...metadataFields].map((name) => [name, null]));
+    if (document.contents === null) return fields;
     if (!isMap(document.contents)) throw new Error("Properties payload is not a top-level mapping");
     assertDirectNode(document.contents);
-    // A YAML flow map is in the comparison domain only when its source is JSON.
-    if (document.contents.flow) JSON.parse(payload);
+    if (document.contents.flow) throw new Error("metadata supports field lines, not root objects");
     const names = new Set();
-    const records = [];
-    const recordRanges = [];
     for (const pair of document.contents.items) {
         if (pair.srcToken?.start?.some((token) => token.type === "explicit-key-ind")) {
             throw new Error("explicit keys are unsupported");
@@ -219,15 +204,9 @@ function projectMetadata(document, payloadStart, payload) {
         const name = propertyName(pair.key);
         if (names.has(name)) throw new Error(`duplicate Properties name: ${name}`);
         names.add(name);
-        records.push({ name, value: projectMetadataValue(pair.value, name) });
-
-        const relative = cstRange(pair.srcToken);
-        if (!Number.isFinite(relative.start) || !Number.isFinite(relative.end)) {
-            throw new Error(`Properties record has no source range: ${name}`);
-        }
-        recordRanges.push([payloadStart + relative.start, payloadStart + relative.end]);
+        fields[name] = projectMetadataValue(pair.value, name);
     }
-    return { records, recordRanges };
+    return fields;
 }
 
 function sourceLine(source, start) {
@@ -280,17 +259,13 @@ function parseProperties(source) {
         logLevel: "silent"
     });
     if (documents.length > 1) throw new Error("Properties payload contains multiple YAML documents");
-    const projected =
-        documents.length === 0
-            ? { records: [], recordRanges: [] }
-            : projectMetadata(documents[0], envelope.payloadStart, payload);
     return {
         content: source.slice(envelope.bodyStart),
-        metadata: projected.records,
-        evidence: {
-            metadataRange: [envelope.start, envelope.metadataEnd],
-            recordRanges: projected.recordRanges
-        }
+        metadata:
+            documents.length === 0
+                ? Object.fromEntries([...metadataFields].map((name) => [name, null]))
+                : projectMetadata(documents[0]),
+        evidence: { metadataRange: [envelope.start, envelope.metadataEnd] }
     };
 }
 
@@ -385,10 +360,14 @@ function parseMetadataDump(node) {
     const metadata = node.children.filter((child) => child.kind === "Metadata");
     if (!metadata.length) return null;
     if (metadata.length !== 1) throw new Error("multiple metadata values");
-    return metadata[0].children.map((record) => {
-        if (record.kind !== "MetadataRecord") throw new Error("invalid metadata record");
-        return { name: record.fields.name, value: parseMetadataValue(record.fields.value) };
-    });
+    if (metadata[0].children.length) throw new Error("metadata has no child records");
+    return Object.fromEntries(
+        [...metadataFields].map((name) => {
+            const value = metadata[0].fields[name];
+            if (value === undefined) throw new Error(`missing metadata field ${name}`);
+            return [name, value === null || value === "null" ? null : parseMetadataValue(value)];
+        })
+    );
 }
 
 // O3: the `comment-removal` projection. The oracle removes a `%%` comment
@@ -529,8 +508,11 @@ const propertiesCanary = parseProperties(
 );
 if (
     propertiesCanary.content !== "# Body\n" ||
-    JSON.stringify(propertiesCanary.metadata?.map((record) => record.name)) !==
-        '["name","title","subtitle","state","authors","date"]'
+    JSON.stringify(
+        Object.keys(propertiesCanary.metadata)
+            .filter((name) => propertiesCanary.metadata[name] !== null)
+            .sort()
+    ) !== '["authors","date","name","state","subtitle","title"]'
 ) {
     throw new Error("fixed metadata field oracle canary failed");
 }
@@ -538,16 +520,17 @@ for (const nonHeader of ["text\n---\nname: value\n---\n", "---yaml\nname: value\
     if (parseProperties(nonHeader).metadata !== null) throw new Error("oracle accepted a non-header candidate");
 }
 for (const emptyProperties of ["\uFEFF---\n---\n", "---\n   \n---\n", "---\n# note\n---\n", "---\r\n#\r\n---\r\n"]) {
-    if (JSON.stringify(parseProperties(emptyProperties).metadata) !== "[]")
+    if (Object.values(parseProperties(emptyProperties).metadata).some((value) => value !== null))
         throw new Error("oracle rejected empty metadata");
 }
 const sourceFaithfulProperties = parseProperties(
     '---\nname: 9007199254740993\ntime: 1.0\nstate: 1e2\ndate: -0\n"tit\\u006ce": "text"\n---\n'
 );
 if (
-    JSON.stringify(sourceFaithfulProperties.metadata?.slice(0, 4).map((record) => record.value.value.value)) !==
-        '["9007199254740993","1.0","1e2","-0"]' ||
-    sourceFaithfulProperties.metadata[4].name !== "title"
+    JSON.stringify(
+        ["name", "time", "state", "date"].map((name) => sourceFaithfulProperties.metadata[name].value.value)
+    ) !== '["9007199254740993","1.0","1e2","-0"]' ||
+    sourceFaithfulProperties.metadata.title.value.value !== "text"
 ) {
     throw new Error("oracle lost exact numeric spelling or decoded names");
 }
@@ -556,18 +539,9 @@ const rangedProperties = parseProperties(rangedSource);
 const rangedClosing = rangedSource.lastIndexOf("---\n");
 if (
     rangedProperties.evidence?.metadataRange[0] !== 0 ||
-    rangedProperties.evidence.metadataRange[1] !== rangedClosing + 3 ||
-    rangedProperties.evidence.recordRanges.length !== 2 ||
-    rangedProperties.evidence.recordRanges.some(
-        ([start, end], index, ranges) =>
-            start < 4 ||
-            end > rangedClosing ||
-            start >= end ||
-            (index > 0 && start < ranges[index - 1][1]) ||
-            !rangedSource.slice(start, end).includes(index === 0 ? "name" : "authors")
-    )
+    rangedProperties.evidence.metadataRange[1] !== rangedClosing + 3
 ) {
-    throw new Error("oracle lost source-token range evidence");
+    throw new Error("oracle lost metadata envelope range evidence");
 }
 for (const invalid of [
     "null",
@@ -588,6 +562,7 @@ for (const invalid of [
     "name: &loop [*loop]",
     "name: one\n  two",
     "name: 'one\n  two'",
+    '{"name": "value"}',
     "{draft, name: Note}",
     '!!map {"name": "value"}',
     'name: "bad\\x41"',
@@ -670,19 +645,28 @@ const recoveredProperties = parseCanonicalDump(
     })
 );
 const recoveredMetadata = recoveredProperties.children.find((item) => item.kind === "Metadata");
+const recoveredFields = parseMetadataDump(recoveredProperties);
 if (
-    JSON.stringify(recoveredMetadata?.children.map((item) => item.kind)) !== '["MetadataRecord","MetadataRecord"]' ||
-    JSON.stringify(parseMetadataDump(recoveredProperties)?.map((record) => record.name)) !== '["name","state"]'
+    recoveredMetadata?.children.length !== 0 ||
+    JSON.stringify(
+        Object.keys(recoveredFields)
+            .filter((name) => recoveredFields[name] !== null)
+            .sort()
+    ) !== '["name","state"]'
 ) {
     throw new Error("ignored metadata members leaked into the AST or consumed valid neighbors");
 }
-
-const metadataDumpCanary = [{ name: "x", value: { kind: "scalar", value: { kind: "text", value: "a b" } } }];
+const metadataDumpCanary = Object.fromEntries(
+    [...metadataFields].map((name) => [
+        name,
+        name === "name" ? { kind: "scalar", value: { kind: "text", value: "a b" } } : null
+    ])
+);
 const capturedMetadata = parseCanonicalDump(
-    'Document scope=1:1..3:3 anchor=null attributes={} children=0\n└── Metadata scope=1:1..3:3 children=1\n    └── MetadataRecord scope=2:1..2:8 name="x" value=scalar(text("a b")) children=0\n'
+    'Document scope=1:1..3:3 anchor=null attributes={} children=0\n└── Metadata scope=1:1..3:3 name=scalar(text("a b")) title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0\n'
 );
 if (JSON.stringify(parseMetadataDump(capturedMetadata)) !== JSON.stringify(metadataDumpCanary)) {
-    throw new Error("obsidian parity: nested metadata parser rejected a scoped record");
+    throw new Error("obsidian parity: metadata parser rejected direct fields");
 }
 
 const registeredEntries = [...policy.baselineGaps, ...(policy.expectedDivergences ?? [])];

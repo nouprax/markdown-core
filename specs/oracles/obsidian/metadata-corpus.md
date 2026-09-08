@@ -2,7 +2,7 @@
 
 These inputs are within Markdown Core's fixed-field metadata grammar and the
 pinned YAML Document/CST oracle's valid intersection. They compare decoded
-values, exact numeric spellings, record order and literal prose. They do not
+values, exact numeric spellings, named field assignment and literal prose. They do not
 claim complete Obsidian, Pandoc or YAML compatibility. Recovery, ignored input,
 allocation failures and binding coordinates are tested by product fixtures.
 
@@ -48,11 +48,13 @@ keywords: []
 .
 ````````````````````````````````
 
-## JSON root mapping
+## Quoted field names
 
 ```````````````````````````````` example
 ---
-{"name":"value","state":true,"time":3}
+"name": value
+"state": true
+"time": 3
 ---
 After
 .

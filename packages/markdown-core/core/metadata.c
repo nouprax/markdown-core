@@ -6,35 +6,22 @@
 #include <string.h>
 #include <limits.h>
 
-/* Properties is an ordered, recovering source decoder. A root member owns its
- * indented continuation; a flow member owns its balanced value. Unsupported
+/* Properties is an ordered, recovering source decoder. A field owns its
+ * indented continuation and bracketed value. Unsupported
  * members are skipped without changing the envelope or interpreting their
  * interiors. No source range is retried. Public allocations belong to the
  * completed document value. */
-typedef struct {
-    size_t start, end;
-} source_span;
-typedef struct {
-    size_t start;
-} source_line;
-/* Syntax contexts differ only where the documented JSON spelling requires
- * quoted keys, JSON scalars/escapes and strict array separators. Lists are
- * flat: their items call the scalar decoder directly, without recursion. */
-typedef enum { PROPERTY_SYNTAX, LIST_SYNTAX, JSON_SYNTAX } value_syntax;
+/* Plain scalars in bracketed arrays stop at array separators; field-line
+ * scalars keep that punctuation as text. Quoted strings share one decoder. */
+typedef enum { PROPERTY_SCALAR, ARRAY_SCALAR } scalar_context;
 typedef struct {
     markdown_core_parser *parser;
     const unsigned char *source;
-    source_line *lines;
-    size_t line_count, line_capacity;
     markdown_core_metadata *metadata;
-    size_t capacity;
-    unsigned int fields;
-    source_span *flows;
-    size_t flow_count, flow_capacity;
 } properties;
 typedef struct {
     properties *owner;
-    size_t pos, end, last;
+    size_t pos, end;
 } decoder;
 
 static bool space(unsigned char c) { return c == ' ' || c == '\t'; }
@@ -113,40 +100,17 @@ void markdown_core_metadata_free(markdown_core_mem *mem, markdown_core_metadata 
     if (!metadata) {
         return;
     }
-    for (size_t i = 0; i < metadata->count; i++) {
-        markdown_core_metadata_record *record = &metadata->content[i];
-        mem->free((void *)record->name.data);
-        free_value(mem, &record->value);
-    }
-    mem->free(metadata->content);
+    free_value(mem, &metadata->name);
+    free_value(mem, &metadata->title);
+    free_value(mem, &metadata->subtitle);
+    free_value(mem, &metadata->time);
+    free_value(mem, &metadata->date);
+    free_value(mem, &metadata->authors);
+    free_value(mem, &metadata->keywords);
+    free_value(mem, &metadata->abstract);
+    free_value(mem, &metadata->state);
+    free_value(mem, &metadata->comment);
     mem->free(metadata);
-}
-static size_t line_index(properties *p, size_t offset) {
-    size_t lo = 0, hi = p->line_count;
-    while (lo + 1 < hi) {
-        size_t mid = lo + (hi - lo) / 2;
-        p->parser->metadata_line_lookup_work++;
-        if (p->lines[mid].start <= offset) {
-            lo = mid;
-        } else {
-            hi = mid;
-        }
-    }
-    return lo;
-}
-static markdown_core_position position(properties *p, size_t offset) {
-    size_t line = line_index(p, offset);
-    return (markdown_core_position){(int32_t)(line + 1), (int32_t)(offset - p->lines[line].start + 1)};
-}
-static markdown_core_scope extent(properties *p, size_t start, size_t end) {
-    return (markdown_core_scope){position(p, start), position(p, end > start ? end - 1 : start)};
-}
-static bool append(properties *p, markdown_core_metadata_record value) {
-    if (!grow(p, (void **)&p->metadata->content, &p->capacity, p->metadata->count + 1, sizeof(*p->metadata->content))) {
-        return false;
-    }
-    p->metadata->content[p->metadata->count++] = value;
-    return true;
 }
 static void skip(decoder *d) {
     const unsigned char *s = d->owner->source;
@@ -205,7 +169,7 @@ static bool hex4(decoder *d, uint32_t *scalar) {
     }
     return true;
 }
-static bool quoted(decoder *d, value_syntax syntax, markdown_core_string *value) {
+static bool quoted(decoder *d, markdown_core_string *value) {
     const unsigned char *s = d->owner->source;
     unsigned char quote = s[d->pos++];
     markdown_core_strbuf buf = MARKDOWN_CORE_BUF_INIT(d->owner->parser->mem);
@@ -253,7 +217,7 @@ static bool quoted(decoder *d, value_syntax syntax, markdown_core_string *value)
             } else {
                 valid = false;
             }
-        } else if (c < 0x20 && (syntax == JSON_SYNTAX || c != '\t')) {
+        } else if (c < 0x20 && c != '\t') {
             valid = false;
         } else {
             markdown_core_strbuf_putc(&buf, c);
@@ -264,9 +228,6 @@ static bool quoted(decoder *d, value_syntax syntax, markdown_core_string *value)
         d->owner->parser->oom = true;
     }
     markdown_core_strbuf_free(&buf);
-    if (valid) {
-        d->last = d->pos;
-    }
     return valid;
 }
 static bool plain(decoder *d, bool delimited, bool key, markdown_core_string *value) {
@@ -294,23 +255,45 @@ static bool plain(decoder *d, bool delimited, bool key, markdown_core_string *va
         }
     }
     *value = copy(d->owner, s + start, last - start);
-    d->last = last;
     return value->data != NULL;
 }
 static bool equals(markdown_core_string s, const char *text) {
     size_t n = strlen(text);
     return s.length == n && memcmp(s.data, text, n) == 0;
 }
-/* The fixed field set bounds both duplicate tracking and committed records. */
-static unsigned int field_id(markdown_core_string name) {
-    static const char *names[] = {"name",     "time",  "date",    "authors", "keywords",
-                                  "abstract", "state", "comment", "title",   "subtitle"};
-    for (size_t i = 0; i < sizeof(names) / sizeof(*names); i++) {
-        if (equals(name, names[i])) {
-            return 1u << i;
-        }
+/* Resolve the source name directly to its optional destination field. */
+static markdown_core_metadata_value *field_slot(markdown_core_metadata *metadata, markdown_core_string name) {
+    if (equals(name, "name")) {
+        return &metadata->name;
     }
-    return 0;
+    if (equals(name, "title")) {
+        return &metadata->title;
+    }
+    if (equals(name, "subtitle")) {
+        return &metadata->subtitle;
+    }
+    if (equals(name, "time")) {
+        return &metadata->time;
+    }
+    if (equals(name, "date")) {
+        return &metadata->date;
+    }
+    if (equals(name, "authors")) {
+        return &metadata->authors;
+    }
+    if (equals(name, "keywords")) {
+        return &metadata->keywords;
+    }
+    if (equals(name, "abstract")) {
+        return &metadata->abstract;
+    }
+    if (equals(name, "state")) {
+        return &metadata->state;
+    }
+    if (equals(name, "comment")) {
+        return &metadata->comment;
+    }
+    return NULL;
 }
 /* Only the two prose fields accept the literal | form. The first nonblank
  * line fixes its space indentation; inner indentation and blank lines are
@@ -323,7 +306,7 @@ static bool literal(decoder *d, size_t key_start, markdown_core_metadata_value *
         key_line--;
     }
     size_t key_indent = key_start - key_line;
-    d->last = ++d->pos;
+    d->pos++;
     if (d->pos < d->end && !space(s[d->pos]) && !newline(s[d->pos])) {
         return false;
     }
@@ -362,10 +345,6 @@ static bool literal(decoder *d, size_t key_start, markdown_core_metadata_value *
             markdown_core_strbuf_put(&text, s + d->pos + indent, (bufsize_t)(end - d->pos - indent));
             markdown_core_strbuf_putc(&text, '\n');
             clipped = (size_t)text.size;
-            d->last = end;
-            while (d->last > content && space(s[d->last - 1])) {
-                d->last--;
-            }
         }
         d->pos = next_line(s, end, d->end);
     }
@@ -379,7 +358,7 @@ static bool literal(decoder *d, size_t key_start, markdown_core_metadata_value *
     markdown_core_strbuf_free(&text);
     return valid;
 }
-static bool number(markdown_core_string s, value_syntax syntax) {
+static bool number(markdown_core_string s) {
     size_t i = 0;
     if (i < s.length && s.data[i] == '-') {
         i++;
@@ -399,9 +378,6 @@ static bool number(markdown_core_string s, value_syntax syntax) {
     }
     if (i < s.length && s.data[i] == '.') {
         i++;
-        if (syntax == JSON_SYNTAX && (i == s.length || s.data[i] < '0' || s.data[i] > '9')) {
-            return false;
-        }
         while (i < s.length && s.data[i] >= '0' && s.data[i] <= '9') {
             i++;
         }
@@ -421,11 +397,11 @@ static bool number(markdown_core_string s, value_syntax syntax) {
     }
     return i == s.length;
 }
-static bool scalar(decoder *d, value_syntax syntax, markdown_core_metadata_value *value) {
+static bool scalar(decoder *d, scalar_context syntax, markdown_core_metadata_value *value) {
     const unsigned char *s = d->owner->source;
     markdown_core_string text = {0};
-    bool quoted_style = d->pos < d->end && (s[d->pos] == '"' || (syntax != JSON_SYNTAX && s[d->pos] == '\''));
-    bool valid = quoted_style ? quoted(d, syntax, &text) : plain(d, syntax != PROPERTY_SYNTAX, false, &text);
+    bool quoted_style = d->pos < d->end && (s[d->pos] == '"' || s[d->pos] == '\'');
+    bool valid = quoted_style ? quoted(d, &text) : plain(d, syntax != PROPERTY_SCALAR, false, &text);
     if (!valid || (!quoted_style && !text.length) || !single_line(text)) {
         d->owner->parser->mem->free((void *)text.data);
         return false;
@@ -435,11 +411,8 @@ static bool scalar(decoder *d, value_syntax syntax, markdown_core_metadata_value
     result->kind = quoted_style                                    ? MARKDOWN_CORE_METADATA_TEXT
                    : equals(text, "null")                          ? MARKDOWN_CORE_METADATA_NULL
                    : equals(text, "true") || equals(text, "false") ? MARKDOWN_CORE_METADATA_BOOL
-                   : number(text, syntax)                          ? MARKDOWN_CORE_METADATA_NUMBER
+                   : number(text)                                  ? MARKDOWN_CORE_METADATA_NUMBER
                                                                    : MARKDOWN_CORE_METADATA_TEXT;
-    if (syntax == JSON_SYNTAX && !quoted_style && result->kind == MARKDOWN_CORE_METADATA_TEXT) {
-        valid = false;
-    }
     if (valid && (result->kind == MARKDOWN_CORE_METADATA_TEXT || result->kind == MARKDOWN_CORE_METADATA_NUMBER)) {
         result->value.string = text;
     } else {
@@ -450,7 +423,7 @@ static bool scalar(decoder *d, value_syntax syntax, markdown_core_metadata_value
     }
     return valid && !d->owner->parser->oom;
 }
-static bool list_item(decoder *d, value_syntax syntax, markdown_core_metadata_value *list, size_t *capacity) {
+static bool list_item(decoder *d, scalar_context syntax, markdown_core_metadata_value *list, size_t *capacity) {
     markdown_core_metadata_value value = {0};
     bool valid = scalar(d, syntax, &value);
     if (!valid || (value.as.scalar.kind != MARKDOWN_CORE_METADATA_NUMBER &&
@@ -469,20 +442,19 @@ static bool list_item(decoder *d, value_syntax syntax, markdown_core_metadata_va
         value.as.scalar.value.string};
     return true;
 }
-static bool sequence(decoder *d, value_syntax syntax, markdown_core_metadata_value *value) {
+static bool sequence(decoder *d, markdown_core_metadata_value *value) {
     const unsigned char *s = d->owner->source;
     value->kind = MARKDOWN_CORE_METADATA_LIST;
     size_t capacity = 0;
     if (s[d->pos] == '[') {
-        value_syntax item_syntax = syntax == JSON_SYNTAX ? JSON_SYNTAX : LIST_SYNTAX;
         d->pos++;
         skip(d);
         if (d->pos < d->end && s[d->pos] == ']') {
-            d->last = ++d->pos;
+            d->pos++;
             return true;
         }
         while (d->pos < d->end && !d->owner->parser->oom) {
-            if (!list_item(d, item_syntax, value, &capacity)) {
+            if (!list_item(d, ARRAY_SCALAR, value, &capacity)) {
                 return false;
             }
             skip(d);
@@ -490,7 +462,7 @@ static bool sequence(decoder *d, value_syntax syntax, markdown_core_metadata_val
                 return false;
             }
             if (s[d->pos] == ']') {
-                d->last = ++d->pos;
+                d->pos++;
                 return true;
             }
             if (s[d->pos++] != ',') {
@@ -498,10 +470,7 @@ static bool sequence(decoder *d, value_syntax syntax, markdown_core_metadata_val
             }
             skip(d);
             if (d->pos < d->end && s[d->pos] == ']') {
-                if (syntax == JSON_SYNTAX) {
-                    return false;
-                }
-                d->last = ++d->pos;
+                d->pos++;
                 return true;
             }
         }
@@ -536,7 +505,7 @@ static bool sequence(decoder *d, value_syntax syntax, markdown_core_metadata_val
             e = next_line(s, end, outer_end);
         }
         d->end = e;
-        bool valid = list_item(d, PROPERTY_SYNTAX, value, &capacity);
+        bool valid = list_item(d, PROPERTY_SCALAR, value, &capacity);
         skip(d);
         valid = valid && d->pos == d->end;
         d->end = outer_end;
@@ -548,126 +517,57 @@ static bool sequence(decoder *d, value_syntax syntax, markdown_core_metadata_val
     }
     return true;
 }
-static bool record(decoder *d, value_syntax syntax) {
+static bool field(decoder *d) {
     properties *p = d->owner;
     const unsigned char *s = p->source;
     size_t start = d->pos;
     p->parser->metadata_decoded_bytes += d->end - start;
-    markdown_core_metadata_record content = {0};
-    markdown_core_metadata_record *r = &content;
+    markdown_core_string name = {0};
+    markdown_core_metadata_value value = {0};
     bool quoted_key = d->pos < d->end && (s[d->pos] == '\'' || s[d->pos] == '"');
-    bool valid = d->pos == d->end || (syntax == JSON_SYNTAX && s[d->pos] != '"') ? false
-                 : quoted_key                                                    ? quoted(d, syntax, &r->name)
-                                                                                 : plain(d, false, true, &r->name);
-    valid = valid && r->name.length && single_line(r->name) && !memchr(s + start, '\n', d->pos - start) &&
+    bool valid = quoted_key ? quoted(d, &name) : plain(d, false, true, &name);
+    valid = valid && name.length && single_line(name) && !memchr(s + start, '\n', d->pos - start) &&
             !memchr(s + start, '\r', d->pos - start);
     while (d->pos < d->end && space(s[d->pos])) {
         d->pos++;
     }
-    unsigned int field = field_id(r->name);
-    if (!valid || !field || (p->fields & field) || d->pos == d->end || s[d->pos++] != ':') {
+    markdown_core_metadata_value *slot = field_slot(p->metadata, name);
+    if (!valid || !slot || slot->kind || d->pos == d->end || s[d->pos++] != ':') {
         goto failed;
     }
-    if (syntax == PROPERTY_SYNTAX && d->pos < d->end && !space(s[d->pos]) && !newline(s[d->pos])) {
+    if (d->pos < d->end && !space(s[d->pos]) && !newline(s[d->pos])) {
         goto failed;
     }
-    d->last = d->pos;
     size_t value_line_end = line_end(s, d->pos, d->end);
     skip(d);
-    if (d->pos == d->end && syntax == PROPERTY_SYNTAX) {
-        r->value.kind = MARKDOWN_CORE_METADATA_SCALAR;
-        r->value.as.scalar.kind = MARKDOWN_CORE_METADATA_NULL;
-    } else if (syntax == PROPERTY_SYNTAX && d->pos < value_line_end && s[d->pos] == '|' &&
-               (equals(r->name, "abstract") || equals(r->name, "comment"))) {
-        if (!literal(d, start, &r->value)) {
+    if (d->pos == d->end) {
+        value.kind = MARKDOWN_CORE_METADATA_SCALAR;
+        value.as.scalar.kind = MARKDOWN_CORE_METADATA_NULL;
+    } else if (d->pos < value_line_end && s[d->pos] == '|' && (equals(name, "abstract") || equals(name, "comment"))) {
+        if (!literal(d, start, &value)) {
             goto failed;
         }
-    } else if (d->pos < d->end && (s[d->pos] == '[' || (syntax == PROPERTY_SYNTAX && s[d->pos] == '-' &&
-                                                        d->pos + 1 < d->end && space(s[d->pos + 1])))) {
-        if (!sequence(d, syntax, &r->value)) {
+    } else if (d->pos < d->end &&
+               (s[d->pos] == '[' || (s[d->pos] == '-' && d->pos + 1 < d->end && space(s[d->pos + 1])))) {
+        if (!sequence(d, &value)) {
             goto failed;
         }
     } else {
-        if ((syntax == PROPERTY_SYNTAX && d->pos > value_line_end) || !scalar(d, syntax, &r->value)) {
+        if (d->pos > value_line_end || !scalar(d, PROPERTY_SCALAR, &value)) {
             goto failed;
         }
     }
-    r->scope = extent(p, start, d->last);
     skip(d);
     if (d->pos != d->end) {
         goto failed;
     }
-    if (!append(p, content)) {
-        goto failed;
-    }
-    p->fields |= field;
+    *slot = value;
+    p->parser->mem->free((void *)name.data);
     return true;
 failed:
-    p->parser->mem->free((void *)r->name.data);
-    free_value(p->parser->mem, &r->value);
+    p->parser->mem->free((void *)name.data);
+    free_value(p->parser->mem, &value);
     return false;
-}
-/* Locate a source member without interpreting it. Brackets and quoted strings
- * delimit flow members; indentation delimits block members. Recovery resumes
- * only at these boundaries, never at a colon found inside a failed value. */
-static size_t flow_boundary(const unsigned char *s, size_t start, size_t end) {
-    size_t depth = 0, p = start;
-    unsigned char quote = 0;
-    while (p < end) {
-        unsigned char c = s[p];
-        if (newline(c)) {
-            quote = 0;
-        }
-        if (quote) {
-            if (quote == '"' && c == '\\' && p + 1 < end) {
-                p++;
-            } else if (c == quote) {
-                if (quote == '\'' && p + 1 < end && s[p + 1] == '\'') {
-                    p++;
-                } else {
-                    quote = 0;
-                }
-            }
-        } else if ((c == '\'' || c == '"') &&
-                   (p == start || space(s[p - 1]) || newline(s[p - 1]) || strchr(":,[{?", s[p - 1]))) {
-            quote = c;
-        } else if (c == '#' && (p == start || space(s[p - 1]) || newline(s[p - 1]))) {
-            p = line_end(s, p, end);
-        } else if (c == '[' || c == '{') {
-            depth++;
-        } else if (c == ']' || c == '}') {
-            if (!depth) {
-                return p;
-            }
-            depth--;
-        } else if (c == ',' && !depth) {
-            return p;
-        }
-        if (p < end) {
-            p++;
-        }
-    }
-    return p;
-}
-static void json_mapping(properties *p, size_t start, size_t end) {
-    decoder d = {.owner = p, .pos = start + 1, .end = end};
-    skip(&d);
-    while (d.pos < end && p->source[d.pos] != '}' && !p->parser->oom) {
-        size_t item = d.pos;
-        size_t boundary = flow_boundary(p->source, item, end);
-        d.end = boundary;
-        if (printable(p, item, boundary)) {
-            record(&d, JSON_SYNTAX);
-        }
-        d.end = end;
-        d.pos = boundary;
-        if (d.pos < end && p->source[d.pos] == ',') {
-            d.pos++;
-        } else {
-            break;
-        }
-        skip(&d);
-    }
 }
 /* Return the byte after a directly authored block key's colon. The same
  * lexical rule identifies recovery boundaries. Flow punctuation is
@@ -724,7 +624,7 @@ static size_t block_boundary(const unsigned char *s, size_t start, size_t end, s
         if (!first && nonspace < e && nonspace - cursor <= indent) {
             bool list_line =
                 nonspace - cursor == indent && s[nonspace] == '-' && (nonspace + 1 == e || space(s[nonspace + 1]));
-            bool recovery_key = block_key_end(s, nonspace, e) || s[nonspace] == '{';
+            bool recovery_key = block_key_end(s, nonspace, e) != 0;
             size_t content = nonspace;
             while (content < e && space(s[content])) {
                 content++;
@@ -789,70 +689,6 @@ static size_t block_boundary(const unsigned char *s, size_t start, size_t end, s
     return cursor;
 }
 
-/* Match flow delimiters once for the payload. A root candidate consults this
- * index instead of searching the remaining source, so many unclosed roots
- * followed by recoverable records cannot cause repeated suffix scans. Entries
- * remain in opening-source order; stack indices survive vector growth. */
-static void index_flows(properties *p, size_t start, size_t end) {
-    const unsigned char *s = p->source;
-    size_t *stack = NULL, count = 0, capacity = 0;
-    unsigned char quote = 0;
-    for (size_t i = start; i < end && !p->parser->oom; i++) {
-        unsigned char c = s[i];
-        if (newline(c)) {
-            if (c == '\r' && i + 1 < end && s[i + 1] == '\n') {
-                i++;
-            }
-            quote = 0;
-            continue;
-        }
-        if (quote) {
-            if (quote == '"' && c == '\\' && i + 1 < end && !newline(s[i + 1])) {
-                i++;
-            } else if (c == quote) {
-                if (quote == '\'' && i + 1 < end && s[i + 1] == '\'') {
-                    i++;
-                } else {
-                    quote = 0;
-                }
-            }
-        } else if ((c == '\'' || c == '"') &&
-                   (i == start || space(s[i - 1]) || newline(s[i - 1]) || strchr(":,[{?", s[i - 1]))) {
-            quote = c;
-        } else if (c == '#' && (i == start || space(s[i - 1]) || newline(s[i - 1]))) {
-            i = line_end(s, i, end);
-            if (i < end) {
-                i = next_line(s, i, end) - 1;
-            }
-        } else if (c == '[' || c == '{') {
-            if (!grow(p, (void **)&p->flows, &p->flow_capacity, p->flow_count + 1, sizeof(*p->flows)) ||
-                !grow(p, (void **)&stack, &capacity, count + 1, sizeof(*stack))) {
-                break;
-            }
-            stack[count++] = p->flow_count;
-            p->flows[p->flow_count++] = (source_span){i, 0};
-        } else if ((c == ']' || c == '}') && count) {
-            source_span *open = &p->flows[stack[count - 1]];
-            if (s[open->start] == (c == ']' ? '[' : '{')) {
-                open->end = i + 1;
-                count--;
-            }
-        }
-    }
-    p->parser->mem->free(stack);
-}
-static size_t flow_end(properties *p, size_t start) {
-    size_t lo = 0, hi = p->flow_count;
-    while (lo < hi) {
-        size_t mid = lo + (hi - lo) / 2;
-        if (p->flows[mid].start < start) {
-            lo = mid + 1;
-        } else {
-            hi = mid;
-        }
-    }
-    return lo < p->flow_count && p->flows[lo].start == start ? p->flows[lo].end : 0;
-}
 static void payload(properties *p, size_t start, size_t end) {
     const unsigned char *s = p->source;
     size_t cursor = start;
@@ -871,21 +707,10 @@ static void payload(properties *p, size_t start, size_t end) {
             continue;
         }
         size_t indent = first - cursor;
-        if (s[first] == '{') {
-            size_t close = flow_end(p, first);
-            if (close) {
-                json_mapping(p, first, close);
-                cursor = close;
-            } else {
-                size_t boundary = block_boundary(s, cursor, end, indent);
-                cursor = boundary;
-            }
-            continue;
-        }
         size_t boundary = block_boundary(s, cursor, end, indent);
         decoder d = {.owner = p, .pos = first, .end = boundary};
         if (printable(p, first, boundary)) {
-            record(&d, PROPERTY_SYNTAX);
+            field(&d);
         }
         cursor = boundary;
     }
@@ -897,12 +722,14 @@ size_t markdown_core_metadata_parse(markdown_core_parser *parser, const unsigned
         return 0;
     }
     size_t start = next_line(source, opening, length), close = start;
+    size_t closing_line = 2;
     while (close < length) {
         size_t e = line_end(source, close, length);
         if (e == close + 3 && !memcmp(source + close, "---", 3)) {
             break;
         }
         close = next_line(source, e, length);
+        closing_line++;
     }
     if (close == length) {
         return 0;
@@ -914,29 +741,14 @@ size_t markdown_core_metadata_parse(markdown_core_parser *parser, const unsigned
         return 0;
     }
     size_t consumed = next_line(source, close + 3, length);
-    for (size_t i = 0; i < consumed && !parser->oom;) {
-        if (!grow(&p, (void **)&p.lines, &p.line_capacity, p.line_count + 1, sizeof(*p.lines))) {
-            break;
-        }
-        size_t e = line_end(source, i, consumed);
-        p.lines[p.line_count++] = (source_line){i};
-        i = next_line(source, e, consumed);
-    }
-    if (!parser->oom) {
-        p.metadata->scope = extent(&p, bom, close + 3);
-        index_flows(&p, start, close);
-        if (!parser->oom) {
-            payload(&p, start, close);
-        }
-    }
-    parser->mem->free(p.flows);
-    parser->mem->free(p.lines);
+    p.metadata->scope = (markdown_core_scope){{1, (int32_t)(bom + 1)}, {(int32_t)closing_line, 3}};
+    payload(&p, start, close);
     if (parser->oom) {
         markdown_core_metadata_free(parser->mem, p.metadata);
         return 0;
     }
     parser->root->as.document->metadata = p.metadata;
-    parser->line_number = (int)p.line_count;
+    parser->line_number = (int)closing_line;
     parser->last_line_length = 3;
     return consumed;
 }

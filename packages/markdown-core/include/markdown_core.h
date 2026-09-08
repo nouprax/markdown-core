@@ -92,10 +92,11 @@ typedef struct markdown_core_scope {
 } markdown_core_scope;
 
 /** Metadata is a scoped value, not Markup. It receives no visitor callbacks.
- * Records and list items retain source order; number strings retain their exact
- * spelling. Every returned handle and string borrows the document. */
+ * Ten optional fields hold values; list items retain order and numbers their exact
+ * spelling. Every returned handle and string borrows the document. Field
+ * accessors return NULL when absent; an explicit null is a present scalar. */
 typedef struct markdown_core_metadata markdown_core_metadata;
-typedef struct markdown_core_metadata_record markdown_core_metadata_record;
+typedef struct markdown_core_metadata_value markdown_core_metadata_value;
 typedef enum markdown_core_metadata_value_kind {
     MARKDOWN_CORE_METADATA_SCALAR = 1,
     MARKDOWN_CORE_METADATA_LIST = 2
@@ -124,18 +125,33 @@ typedef struct markdown_core_metadata_list_item {
 
 MARKDOWN_CORE_API const markdown_core_metadata *markdown_core_node_document_metadata(const markdown_core_node *node);
 MARKDOWN_CORE_API markdown_core_scope markdown_core_metadata_scope(const markdown_core_metadata *metadata);
-MARKDOWN_CORE_API size_t markdown_core_metadata_content_count(const markdown_core_metadata *metadata);
-MARKDOWN_CORE_API const markdown_core_metadata_record *
-markdown_core_metadata_content_at(const markdown_core_metadata *metadata, size_t index);
-MARKDOWN_CORE_API markdown_core_scope markdown_core_metadata_record_scope(const markdown_core_metadata_record *record);
-MARKDOWN_CORE_API markdown_core_string markdown_core_metadata_record_name(const markdown_core_metadata_record *record);
+MARKDOWN_CORE_API const markdown_core_metadata_value *
+markdown_core_metadata_name(const markdown_core_metadata *metadata);
+MARKDOWN_CORE_API const markdown_core_metadata_value *
+markdown_core_metadata_title(const markdown_core_metadata *metadata);
+MARKDOWN_CORE_API const markdown_core_metadata_value *
+markdown_core_metadata_subtitle(const markdown_core_metadata *metadata);
+MARKDOWN_CORE_API const markdown_core_metadata_value *
+markdown_core_metadata_time(const markdown_core_metadata *metadata);
+MARKDOWN_CORE_API const markdown_core_metadata_value *
+markdown_core_metadata_date(const markdown_core_metadata *metadata);
+MARKDOWN_CORE_API const markdown_core_metadata_value *
+markdown_core_metadata_authors(const markdown_core_metadata *metadata);
+MARKDOWN_CORE_API const markdown_core_metadata_value *
+markdown_core_metadata_keywords(const markdown_core_metadata *metadata);
+MARKDOWN_CORE_API const markdown_core_metadata_value *
+markdown_core_metadata_abstract(const markdown_core_metadata *metadata);
+MARKDOWN_CORE_API const markdown_core_metadata_value *
+markdown_core_metadata_state(const markdown_core_metadata *metadata);
+MARKDOWN_CORE_API const markdown_core_metadata_value *
+markdown_core_metadata_comment(const markdown_core_metadata *metadata);
 MARKDOWN_CORE_API markdown_core_metadata_value_kind
-markdown_core_metadata_record_kind(const markdown_core_metadata_record *record);
-MARKDOWN_CORE_API bool markdown_core_metadata_record_scalar(const markdown_core_metadata_record *record,
-                                                            markdown_core_metadata_scalar *value);
-MARKDOWN_CORE_API size_t markdown_core_metadata_record_item_count(const markdown_core_metadata_record *record);
-MARKDOWN_CORE_API bool markdown_core_metadata_record_item_at(const markdown_core_metadata_record *record, size_t index,
-                                                             markdown_core_metadata_list_item *value);
+markdown_core_metadata_value_get_kind(const markdown_core_metadata_value *value);
+MARKDOWN_CORE_API bool markdown_core_metadata_value_scalar(const markdown_core_metadata_value *value,
+                                                           markdown_core_metadata_scalar *scalar);
+MARKDOWN_CORE_API size_t markdown_core_metadata_value_item_count(const markdown_core_metadata_value *value);
+MARKDOWN_CORE_API bool markdown_core_metadata_value_item_at(const markdown_core_metadata_value *value, size_t index,
+                                                            markdown_core_metadata_list_item *item);
 
 typedef enum markdown_core_error_code {
     MARKDOWN_CORE_ERROR_NONE = 0,

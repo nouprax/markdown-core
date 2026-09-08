@@ -183,8 +183,8 @@ const modelProjections = [
         // extension kinds take a plain one. A reader that knew only the first
         // reported them as missing.
         declaration: (kind) => new RegExp(`^public (?:data )?class ${kind}\\b[^\\n]*\\(`, "m"),
-        field: /(?:public |override )?val ([A-Za-z]+)\s*:\s*([^\n]+?),?\s*$/gm,
-        optional: (m) => m[2].trim().endsWith("?")
+        field: /(?:public |override )?val `?([A-Za-z]+)`?\s*:\s*([^\n=]+?)(?:\s*=[^\n]*)?,?\s*$/gm,
+        optional: (m) => m[2].trim().replace(/,$/, "").endsWith("?")
     }),
     projection({
         label: "ES model",

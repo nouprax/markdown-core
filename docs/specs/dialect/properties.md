@@ -13,7 +13,7 @@ member by member is this repository's rule, not a claim about Pandoc behavior.
 
 ## Fields
 
-Only these exact, case-sensitive decoded names produce records:
+Only these exact, case-sensitive decoded names populate fields:
 
 | Name | Meaning |
 | --- | --- |
@@ -38,30 +38,37 @@ to these fields. `abstract` and `comment` additionally accept literal prose.
 Unknown names, unnamed text, `#` comments, `...`, invalid values, unsupported
 syntax, and later duplicate names are ignored. Only the first successfully
 decoded occurrence reserves a name; an invalid occurrence does not prevent a
-later valid one. At most ten records can be produced.
+later valid one. Each of the ten fields is assigned at most once.
 
 ## Model
 
 ```text
 Document(content: [Markup], metadata: Metadata?, footnotes: [Footnote])
-Metadata(content: [MetadataRecord], scope: Scope)
-MetadataRecord(name: String, value: MetadataValue, scope: Scope)
+Metadata(
+  name: MetadataValue?, title: MetadataValue?, subtitle: MetadataValue?,
+  time: MetadataValue?, date: MetadataValue?, authors: MetadataValue?,
+  keywords: MetadataValue?, abstract: MetadataValue?, state: MetadataValue?,
+  comment: MetadataValue?, scope: Scope
+)
 MetadataScalar   = null | bool(Bool) | number(String) | text(String)
 MetadataListItem = number(String) | text(String)
 MetadataValue    = scalar(MetadataScalar) | list([MetadataListItem])
 ```
 
-`Metadata.content` contains recognized records in source order. There is no
-comment/data wrapper, second records array, or public lookup map. The named
-`comment` field is an ordinary record. Neither metadata nor its records are
-Markup, have anchors/attributes, or receive visitor callbacks. Values remain
-atomic, including Markdown-looking text inside an abstract. Public value
-constructors remain ordinary owned-value constructors; the syntax producer
-owns field recognition.
+`Metadata` exposes these ten named optional values directly. It has no content
+collection, record wrapper, name lookup map, or retained source order. Missing
+fields are absent (`nil`/`null`); a successfully authored `null` is a present
+`scalar(null)`, and empty text and empty lists remain distinct values. The
+named `comment` field is ordinary data. Only the metadata envelope has a
+scope; individual values are located by their owner's scope.
 
-A missing or unclosed envelope gives `metadata == null`. A complete envelope
-with no recognized fields gives non-null metadata with empty content. Ignored
-text has no AST representation and never falls back into the Markdown body.
+Metadata is not Markup, has no anchors/attributes, and receives no visitor
+callbacks. Values remain atomic, including Markdown-looking text in an
+abstract. Public constructors create ordinary owned values; parsing owns
+field recognition. A missing or unclosed envelope gives `metadata == null`.
+A complete envelope with no valid fields gives present metadata with ten
+absent fields. Ignored source has no AST representation and never becomes
+part of the Markdown body.
 
 ```````````````````````````````` example
 ---
@@ -74,10 +81,7 @@ state: draft
 Body
 .
 Document scope=1:1..8:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..7:3 children=3
-│   ├── MetadataRecord scope=2:1..2:10 name="name" value=scalar(text("Note")) children=0
-│   ├── MetadataRecord scope=3:1..3:19 name="authors" value=list([text("Ada"),text("Lin")]) children=0
-│   └── MetadataRecord scope=6:1..6:12 name="state" value=scalar(text("draft")) children=0
+├── Metadata scope=1:1..7:3 name=scalar(text("Note")) title=null subtitle=null time=null date=null authors=list([text("Ada"),text("Lin")]) keywords=null abstract=null state=scalar(text("draft")) comment=null children=0
 └── Paragraph scope=8:1..8:4 anchor=null attributes={} children=1
     └── Text scope=8:1..8:4 anchor=null attributes={} literal="Body" children=0
 ````````````````````````````````
@@ -105,7 +109,7 @@ a Markdown fallback. The body is parsed once after the closing fence.
 body
 .
 Document scope=1:1..5:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..4:3 children=0
+├── Metadata scope=1:1..4:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
 └── Paragraph scope=5:1..5:4 anchor=null attributes={} children=1
     └── Text scope=5:1..5:4 anchor=null attributes={} literal="body" children=0
 ````````````````````````````````
@@ -130,7 +134,7 @@ recognition and uniqueness use decoded names without case conversion.
   between items do not split them. Empty lists are distinct from null.
 
 A single-quoted string escapes a quote by doubling it. Double-quoted strings
-use JSON escapes: `\"`, `\\`, `\/`, `\b`, `\f`, `\n`, `\r`, `\t`, and
+support these escapes: `\"`, `\\`, `\/`, `\b`, `\f`, `\n`, `\r`, `\t`, and
 `\uXXXX`; valid surrogate pairs decode to one Unicode scalar. Decoded CR/LF
 make a single-line field invalid. Other YAML escapes and multiline quoted or
 plain folding are unsupported. Plain text does not begin with reserved
@@ -138,12 +142,8 @@ indicators such as `&`, `*`, `!`, `|`, `>`, `[` or `{`; quoted occurrences are
 ordinary text. A separated `#` begins an ignored comment outside quotes or
 literal prose. A separated colon inside a plain value is unsupported.
 
-The JSON alternative is a root object with JSON double-quoted keys, scalar
-values and flat arrays. JSON number spelling requires a digit after a decimal
-point; JSON arrays do not accept trailing commas. Generic YAML flow-map forms
-and key-only pairs are unsupported. Recovery still operates member by member,
-so valid JSON members survive unsupported neighbors. Separator-only fragments
-are ignored under the same recovery rule.
+There is no JSON root-object form. Bracketed arrays are field values in the
+field-line grammar; they do not enable JSON documents or object-valued fields.
 
 Anchors, aliases, tags, merge/complex keys, nested lists/objects, and folded
 scalars are unsupported. There is no alias binding, expansion, rollback, or
@@ -183,10 +183,7 @@ state: ready
 Body
 .
 Document scope=1:1..11:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..10:3 children=3
-│   ├── MetadataRecord scope=2:1..5:19 name="abstract" value=scalar(text("First paragraph.\n\nSecond paragraph.\n")) children=0
-│   ├── MetadataRecord scope=6:1..8:19 name="comment" value=scalar(text("# literal text\nname: still prose\n")) children=0
-│   └── MetadataRecord scope=9:1..9:12 name="state" value=scalar(text("ready")) children=0
+├── Metadata scope=1:1..10:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=scalar(text("First paragraph.\n\nSecond paragraph.\n")) state=scalar(text("ready")) comment=scalar(text("# literal text\nname: still prose\n")) children=0
 └── Paragraph scope=11:1..11:4 anchor=null attributes={} children=1
     └── Text scope=11:1..11:4 anchor=null attributes={} literal="Body" children=0
 ````````````````````````````````
@@ -198,22 +195,22 @@ at the same or smaller indentation ends it. Quoted commas and balanced nested
 source stay with their owning bracketed member, even when its value is
 unsupported. An unfinished construct recovers at the next independent field
 boundary. Interior colons are never retried as a different field. Each valid
-member commits one record; each invalid member is skipped as a whole.
+member assigns its named field; each invalid member is skipped as a whole.
 
 `Metadata.scope` starts at the opening fence's first hyphen and ends at the
-closing fence's third hyphen. Each record starts at the first byte of its key,
-quotes included, and ends at its value's last non-whitespace source byte,
-excluding trailing comments and separators. An empty value ends at the colon;
-an empty literal ends at `|`. Literal text scopes include their owned body,
-with the last nonblank line providing the end. The body keeps its original
-source coordinates.
+closing fence's third hyphen. The body keeps its original source coordinates.
+No individual field scopes or source order are retained. The dump prints all
+ten fields in the model's fixed order, including absent fields as `null`.
 
-Record/list/string allocations belong to the document. C accessors borrow
+Field/list/string allocations belong to the document. C accessors borrow
 those values; Swift, Kotlin/JNI/Native and ES/Wasm copy them before releasing
-the native document or payload. Cleanup inspects only active value branches.
-Each member is decoded at most once. Delimiter indexing is linear; location
-and delimiter lookups use indexed source offsets. There is no recursive value
-expansion, per-member suffix retry, or input-cardinality decoding branch.
+the native document or payload. Cleanup reads only active value branches.
+Each source member is decoded at most once and assigned directly to its
+field; an already-present value also supplies the duplicate check. No record
+array, separate name-state table, bracket index or line-start index is built.
+The envelope scan counts lines as it locates the closing fence. Text is read
+directly, and array boundaries are scanned as part of their owning member.
+There is no recursive value expansion or per-member suffix retry.
 
 ## Verification
 
@@ -221,11 +218,11 @@ The pinned `yaml@2.9.0` Document/CST oracle compares only this grammar's valid
 intersection, including bare literal prose. It is test tooling, not a runtime
 dependency or authority for extra syntax. It must reject out-of-domain oracle
 inputs; direct core fixtures test that the product ignores those members and
-continues. Exact numeric source, record order and source ranges remain oracle
+continues. Exact numeric spelling and the envelope range remain oracle
 evidence. Pandoc Markdown parsing of string values is outside this AST model.
 
 Fixtures cover all ten names, quoted names, duplicates and retry after an
 invalid occurrence, empty metadata, ignored content, literal indentation and
-blank lines, supported scalar/list/JSON values, unsupported YAML forms, source
+blank lines, supported scalar/list values, unsupported YAML forms, source
 coordinates, body separation, long malformed input, flat list complexity,
 allocation failures, and owned values on every binding.

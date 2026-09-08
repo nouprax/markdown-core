@@ -93,7 +93,7 @@
             "markup.attributes.records",
             "document.metadata.present",
             "document.metadata.empty",
-            "metadata.content.populated",
+            "metadata.fields.populated",
             "metadata.scalar.null",
             "metadata.scalar.bool",
             "metadata.scalar.number",
@@ -496,7 +496,7 @@
                 "kinds": ["Document", "Paragraph", "Text"],
                 "states": [
                     "document.metadata.present",
-                    "metadata.content.populated",
+                    "metadata.fields.populated",
                     "metadata.scalar.null",
                     "metadata.scalar.bool",
                     "metadata.scalar.number",
@@ -525,7 +525,7 @@
                 "kinds": ["Document", "Paragraph", "Text"],
                 "states": [
                     "document.metadata.present",
-                    "metadata.content.populated",
+                    "metadata.fields.populated",
                     "metadata.scalar.number",
                     "metadata.scalar.text",
                     "metadata.list.populated"
@@ -539,7 +539,7 @@
             "expected": "properties-forms.ast",
             "coverage": {
                 "kinds": ["Document", "Paragraph", "Text"],
-                "states": ["document.metadata.present", "metadata.content.populated", "metadata.scalar.text"],
+                "states": ["document.metadata.present", "metadata.fields.populated", "metadata.scalar.text"],
                 "orders": []
             }
         },
@@ -549,7 +549,7 @@
             "expected": "properties-lists.ast",
             "coverage": {
                 "kinds": ["Document", "Paragraph", "Text"],
-                "states": ["document.metadata.present", "metadata.content.populated", "metadata.list.populated"],
+                "states": ["document.metadata.present", "metadata.fields.populated", "metadata.list.populated"],
                 "orders": []
             }
         }

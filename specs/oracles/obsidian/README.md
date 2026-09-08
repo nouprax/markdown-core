@@ -1,11 +1,12 @@
 # Obsidian parser oracles
 
 Metadata status (2026-09-08): the [Properties module](../../../docs/specs/dialect/properties.md)
-owns ten fixed fields, selected scalar/list/JSON forms, and bare literal `|`
+owns ten fixed fields, selected scalar/array/list forms, and bare literal `|`
 for `abstract` and `comment`. Unknown names and unsupported input are ignored.
-Metadata directly stores ordered scoped records. This is a user-defined format
-borrowing Obsidian/Pandoc notation, not full compatibility with either application
-or YAML. The pinned package remains comparison tooling for the valid intersection.
+Metadata directly stores ten optional named values and the envelope scope.
+This is a user-defined format borrowing Obsidian/Pandoc notation, not full
+compatibility with either application or YAML. The pinned package remains
+comparison tooling for the valid intersection.
 
 This oracle runs `@quartz-community/remark-obsidian@0.2.4` through the same
 unified/remark parser family already used by the repository. The package is
@@ -52,9 +53,10 @@ member grammar. Only a complete first envelope attaches, even when every member
 is ignored. The body is parsed after its closing fence; `...` does not close it.
 The oracle scanner recognizes that envelope and submits its payload to the
 pinned Document/CST parser. It checks only supported names and source forms:
-single-line direct scalars, flat text/number lists, JSON roots, and bare literal
+single-line direct scalars, flat text/number arrays and block lists, and bare literal
 prose on the two designated fields. Source checks exclude anchors, aliases,
-tags, nested values, general flow mappings, and folded/multiline scalars.
+tags, nested values, JSON root objects, general flow mappings, and
+folded/multiline scalars. There is no metadata bracket index.
 
 Oracle inputs outside that intersection fail the comparison precondition;
 product fixtures separately verify whole-member skipping and valid-neighbor
@@ -87,15 +89,15 @@ runs oracle canaries before comparison, parses the same corpus with both
 implementations, and compares a scope-free semantic tree. Scope correctness
 remains owned by product fixtures because the two parsers use different
 coordinate models. The Properties canaries additionally require every emitted
-record to retain ordered, in-envelope CST range evidence. The corpus covers
+metadata envelope to retain its complete range. The corpus covers
 all recognized names, exact large/decimal/exponent/negative-zero numeric text,
 quoted name decoding, single strings and both list spellings, literal prose,
 and empty metadata. Product fixtures own binding-coordinate scopes, ignored
-syntax, malformed recovery, bounded record state and allocation failures.
+syntax, malformed recovery, bounded field state and allocation failures.
 
 For successful Properties inputs, the normalized semantic root contains a
-`metadata` field: `null` means absent, while an array (including an empty
-array) contains ordered `{name, value}` records using the tagged scalar/list
-shape from `docs/specs/dialect/properties.md`. The gate reads the real Metadata
-field from canonical dumps and compares its ordered records directly. There
-are no retained-source cases to filter and no alias/tag expansion canaries.
+`metadata` object with the ten optional named fields. A null metadata object
+means no envelope; an object with ten null fields means an empty envelope.
+Tagged scalar/list values distinguish a present null scalar from a missing
+field. The gate reads the direct fields from canonical dumps and compares
+both projections in fixed model order. Source field order is not retained.

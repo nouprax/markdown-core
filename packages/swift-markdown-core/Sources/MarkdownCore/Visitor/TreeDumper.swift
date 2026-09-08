@@ -330,17 +330,23 @@ private struct DumpVisitor: MarkupVisitor {
 // Owned values have their own dump shape and do not participate in Markup visitation.
 extension DumpVisitor {
     fileprivate func dumpMetadata(_ value: Metadata) {
-        state.line("Metadata", scope: value.scope, fields: [], children: value.content.count)
-        state.nested(value.content.count) {
-            for record in value.content {
-                state.line(
-                    "MetadataRecord",
-                    scope: record.scope,
-                    fields: ["name=\(jsonString(record.name))", "value=\(metadataValue(record.value))"],
-                    children: 0
-                )
-            }
-        }
+        state.line(
+            "Metadata",
+            scope: value.scope,
+            fields: [
+                "name=\(value.name.map(metadataValue) ?? "null")",
+                "title=\(value.title.map(metadataValue) ?? "null")",
+                "subtitle=\(value.subtitle.map(metadataValue) ?? "null")",
+                "time=\(value.time.map(metadataValue) ?? "null")",
+                "date=\(value.date.map(metadataValue) ?? "null")",
+                "authors=\(value.authors.map(metadataValue) ?? "null")",
+                "keywords=\(value.keywords.map(metadataValue) ?? "null")",
+                "abstract=\(value.abstract.map(metadataValue) ?? "null")",
+                "state=\(value.state.map(metadataValue) ?? "null")",
+                "comment=\(value.comment.map(metadataValue) ?? "null")",
+            ],
+            children: 0
+        )
     }
 
     fileprivate func dumpFootnote(_ value: Footnote) {

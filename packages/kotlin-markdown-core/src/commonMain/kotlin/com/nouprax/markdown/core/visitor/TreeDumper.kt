@@ -111,17 +111,23 @@ private class DumpVisitor(
     }
 
     private fun metadata(value: Metadata) {
-        state.line("Metadata", value.scope, emptyList(), value.content.size)
-        state.nested(value.content.size) {
-            value.content.forEach { record ->
-                state.line(
-                    "MetadataRecord",
-                    record.scope,
-                    listOf("name=${jsonString(record.name)}", "value=${metadataValue(record.value)}"),
-                    0,
-                )
-            }
-        }
+        state.line(
+            "Metadata",
+            value.scope,
+            listOf(
+                "name=${value.name?.let(::metadataValue) ?: "null"}",
+                "title=${value.title?.let(::metadataValue) ?: "null"}",
+                "subtitle=${value.subtitle?.let(::metadataValue) ?: "null"}",
+                "time=${value.time?.let(::metadataValue) ?: "null"}",
+                "date=${value.date?.let(::metadataValue) ?: "null"}",
+                "authors=${value.authors?.let(::metadataValue) ?: "null"}",
+                "keywords=${value.keywords?.let(::metadataValue) ?: "null"}",
+                "abstract=${value.`abstract`?.let(::metadataValue) ?: "null"}",
+                "state=${value.state?.let(::metadataValue) ?: "null"}",
+                "comment=${value.comment?.let(::metadataValue) ?: "null"}",
+            ),
+            0,
+        )
     }
 
     private fun footnote(value: Footnote) {

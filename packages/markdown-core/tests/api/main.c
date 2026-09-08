@@ -2252,6 +2252,14 @@ static void table_source_map_growth(test_batch_runner *runner) {
     }
 }
 
+static size_t metadata_populated_count(const markdown_core_metadata *metadata) {
+    return (markdown_core_metadata_name(metadata) != NULL) + (markdown_core_metadata_title(metadata) != NULL) +
+           (markdown_core_metadata_subtitle(metadata) != NULL) + (markdown_core_metadata_time(metadata) != NULL) +
+           (markdown_core_metadata_date(metadata) != NULL) + (markdown_core_metadata_authors(metadata) != NULL) +
+           (markdown_core_metadata_keywords(metadata) != NULL) + (markdown_core_metadata_abstract(metadata) != NULL) +
+           (markdown_core_metadata_state(metadata) != NULL) + (markdown_core_metadata_comment(metadata) != NULL);
+}
+
 static void properties_values(test_batch_runner *runner) {
     const char *source = "---\n# ignored\nname: \"Note\"\nunknown: x\nnot YAML\n...\n"
                          "time: 9007199254740993\ndate: 2026-09-08\nauthors: [Ada, 2]\n"
@@ -2268,30 +2276,22 @@ static void properties_values(test_batch_runner *runner) {
     }
     const markdown_core_node *root = markdown_core_document_root(document);
     const markdown_core_metadata *metadata = markdown_core_node_document_metadata(root);
-    const char *names[] = {"name",     "time",  "date",    "authors", "keywords",
-                           "abstract", "state", "comment", "title",   "subtitle"};
-    INT_EQ(runner, markdown_core_metadata_content_count(metadata), 10, "only ten recognized unique fields remain");
-    for (size_t i = 0; i < 10; i++) {
-        markdown_core_string name = markdown_core_metadata_record_name(markdown_core_metadata_content_at(metadata, i));
-        OK(runner, name.length == strlen(names[i]) && !memcmp(name.data, names[i], name.length), "field order %zu", i);
-    }
+    INT_EQ(runner, metadata_populated_count(metadata), 10, "all ten named fields are present");
     markdown_core_metadata_scalar scalar;
-    const markdown_core_metadata_record *record = markdown_core_metadata_content_at(metadata, 1);
+    const markdown_core_metadata_value *record = markdown_core_metadata_time(metadata);
     OK(runner,
-       markdown_core_metadata_record_scalar(record, &scalar) && scalar.kind == MARKDOWN_CORE_METADATA_NUMBER &&
+       markdown_core_metadata_value_scalar(record, &scalar) && scalar.kind == MARKDOWN_CORE_METADATA_NUMBER &&
            scalar.value.string.length == 16 && !memcmp(scalar.value.string.data, "9007199254740993", 16),
        "exact numbers own their spelling without alias expansion");
-    record = markdown_core_metadata_content_at(metadata, 5);
+    record = markdown_core_metadata_abstract(metadata);
     OK(runner,
-       markdown_core_metadata_record_scalar(record, &scalar) && scalar.kind == MARKDOWN_CORE_METADATA_TEXT &&
+       markdown_core_metadata_value_scalar(record, &scalar) && scalar.kind == MARKDOWN_CORE_METADATA_TEXT &&
            scalar.value.string.length == 9 && !memcmp(scalar.value.string.data, "one\n\ntwo\n", 9),
        "literal prose keeps internal newlines and a clipped final newline");
-    INT_EQ(runner, markdown_core_metadata_record_scope(record).end.line, 14,
-           "literal scope ends on its last text line");
     INT_EQ(runner, markdown_core_metadata_scope(metadata).end.line, 20, "metadata ends at the closing fence");
     INT_EQ(runner, markdown_core_node_scope(markdown_core_node_get_first_child(root)).start.line, 21,
            "body stays outside metadata");
-    OK(runner, !markdown_core_metadata_content_at(metadata, 10), "metadata accessor checks bounds");
+    OK(runner, !markdown_core_metadata_name(NULL), "absent metadata has no field");
     markdown_core_document_free(document);
 }
 
@@ -2318,17 +2318,17 @@ static void properties_source_boundaries(test_batch_runner *runner) {
                 markdown_core_document *doc = markdown_core_document_parse(input.ptr, input.size, NULL);
                 const markdown_core_metadata *metadata =
                     markdown_core_node_document_metadata(markdown_core_document_root(doc));
-                INT_EQ(runner, markdown_core_metadata_content_count(metadata), 4,
+                INT_EQ(runner, metadata_populated_count(metadata), 4,
                        "comments never split a flat list or become records");
-                const markdown_core_metadata_record *record = markdown_core_metadata_content_at(metadata, 0);
-                INT_EQ(runner, markdown_core_metadata_record_item_count(record), 2,
+                const markdown_core_metadata_value *record = markdown_core_metadata_authors(metadata);
+                INT_EQ(runner, markdown_core_metadata_value_item_count(record), 2,
                        "both list entries survive every separation form");
-                record = markdown_core_metadata_content_at(metadata, 1);
+                record = markdown_core_metadata_abstract(metadata);
                 markdown_core_metadata_scalar scalar;
                 const char *expected = "# prose\n\n  name: inside\n";
                 OK(runner,
-                   markdown_core_metadata_record_scalar(record, &scalar) &&
-                       scalar.kind == MARKDOWN_CORE_METADATA_TEXT && scalar.value.string.length == strlen(expected) &&
+                   markdown_core_metadata_value_scalar(record, &scalar) && scalar.kind == MARKDOWN_CORE_METADATA_TEXT &&
+                       scalar.value.string.length == strlen(expected) &&
                        !memcmp(scalar.value.string.data, expected, strlen(expected)),
                    "literal indentation, hashes and line endings are text, not nested fields");
                 markdown_core_document_free(doc);
@@ -2350,36 +2350,46 @@ static void properties_source_boundaries(test_batch_runner *runner) {
         snprintf(source, sizeof(source), "---\n%s\nname: kept\n---\n", invalid[i]);
         markdown_core_document *doc = markdown_core_document_parse((const uint8_t *)source, strlen(source), NULL);
         const markdown_core_metadata *metadata = markdown_core_node_document_metadata(markdown_core_document_root(doc));
-        const markdown_core_metadata_record *record = markdown_core_metadata_content_at(metadata, 0);
+        const markdown_core_metadata_value *record = markdown_core_metadata_name(metadata);
         markdown_core_metadata_scalar value;
         OK(runner,
-           markdown_core_metadata_content_count(metadata) == 1 &&
-               markdown_core_metadata_record_scalar(record, &value) && value.kind == MARKDOWN_CORE_METADATA_TEXT &&
-               value.value.string.length == 4 && !memcmp(value.value.string.data, "kept", 4),
+           metadata_populated_count(metadata) == 1 && markdown_core_metadata_value_scalar(record, &value) &&
+               value.kind == MARKDOWN_CORE_METADATA_TEXT && value.value.string.length == 4 &&
+               !memcmp(value.value.string.data, "kept", 4),
            "unsupported member %zu is ignored without consuming the next valid field or reserving its name", i);
         markdown_core_document_free(doc);
     }
-    const char *json = "---\n{draft, title: Note, \"name\": \"\\uD83D\\uDE80\", \"authors\": [\"Ada\", 2],"
-                       "\"date\": 01, \"time\": 1., \"keywords\": [\"x\",], \"state\": false}\n---\n";
-    markdown_core_document *doc = markdown_core_document_parse((const uint8_t *)json, strlen(json), NULL);
+    const char *source =
+        "---\n{\"name\":\"ignored\"}\nname: \"\\uD83D\\uDE80\"\nauthors: [Ada, 2]\nstate: false\n---\n";
+    markdown_core_document *doc = markdown_core_document_parse((const uint8_t *)source, strlen(source), NULL);
     const markdown_core_metadata *metadata = markdown_core_node_document_metadata(markdown_core_document_root(doc));
-    INT_EQ(runner, markdown_core_metadata_content_count(metadata), 3,
-           "JSON members require JSON keys, numbers and array separators");
+    INT_EQ(runner, metadata_populated_count(metadata), 3, "only field lines produce metadata records");
     markdown_core_metadata_scalar value;
     OK(runner,
-       markdown_core_metadata_record_scalar(markdown_core_metadata_content_at(metadata, 0), &value) &&
+       markdown_core_metadata_value_scalar(markdown_core_metadata_name(metadata), &value) &&
            value.kind == MARKDOWN_CORE_METADATA_TEXT && value.value.string.length == 4 &&
            !memcmp(value.value.string.data, "\xf0\x9f\x9a\x80", 4),
-       "JSON surrogate pair decodes to a Unicode scalar");
+       "quoted Unicode surrogate pair decodes to a scalar");
     markdown_core_document_free(doc);
+    const char *ordered[] = {"---\nname: one\nstate: ready\n---\n", "---\nstate: ready\nname: one\n---\n"};
+    uint8_t *dumps[2] = {0};
+    size_t lengths[2] = {0};
+    for (size_t i = 0; i < 2; i++) {
+        doc = markdown_core_document_parse((const uint8_t *)ordered[i], strlen(ordered[i]), NULL);
+        OK(runner, markdown_core_document_dump(doc, &dumps[i], &lengths[i], NULL), "named fields dump");
+        markdown_core_document_free(doc);
+    }
+    OK(runner, dumps[0] && dumps[1] && lengths[0] == lengths[1] && !memcmp(dumps[0], dumps[1], lengths[0]),
+       "field order does not change metadata or its envelope scope");
+    markdown_core_dump_free(dumps[0]);
+    markdown_core_dump_free(dumps[1]);
 }
 
-static size_t properties_decoded_bytes, properties_line_lookup_work;
+static size_t properties_decoded_bytes;
 static markdown_core_node *observe_properties(const markdown_core_extension *extension, markdown_core_parser *parser,
                                               markdown_core_node *root) {
     (void)extension;
     properties_decoded_bytes = parser->metadata_decoded_bytes;
-    properties_line_lookup_work = parser->metadata_line_lookup_work;
     return root;
 }
 static void properties_member_work(test_batch_runner *runner) {
@@ -2405,11 +2415,8 @@ static void properties_member_work(test_batch_runner *runner) {
             OK(runner, properties_decoded_bytes <= (size_t)source.size, "disjoint members never retry a failed suffix");
             if (root) {
                 markdown_core_metadata *metadata = root->as.document->metadata;
-                const markdown_core_metadata_record *last =
-                    metadata && metadata->count ? &metadata->content[metadata->count - 1] : NULL;
-                OK(runner, last && last->name.length == 5 && !memcmp(last->name.data, "state", 5),
-                   "recovery reaches the final field");
-                OK(runner, metadata && metadata->count <= 10, "ignored members cannot grow committed record storage");
+                OK(runner, markdown_core_metadata_state(metadata) != NULL, "recovery reaches the final field");
+                OK(runner, metadata_populated_count(metadata) <= 10, "only named fields can be assigned");
                 markdown_core_node_free(root);
             }
             markdown_core_strbuf_free(&source);
@@ -2424,16 +2431,126 @@ static void properties_member_work(test_batch_runner *runner) {
         markdown_core_strbuf_puts(&source, "]\n---\n");
         markdown_core_node *root = parse_with_probes((const char *)source.ptr, source.size, extensions, 1);
         OK(runner, root != NULL, "long flat list parses");
-        OK(runner, properties_line_lookup_work <= 16, "flat list location queries do not scan every element prefix");
         if (root) {
             markdown_core_metadata *metadata = root->as.document->metadata;
-            const markdown_core_metadata_record *record = metadata && metadata->count == 1 ? metadata->content : NULL;
-            OK(runner,
-               record && record->value.kind == MARKDOWN_CORE_METADATA_LIST && record->value.as.list.count == count,
+            const markdown_core_metadata_value *record = markdown_core_metadata_authors(metadata);
+            OK(runner, record && record->kind == MARKDOWN_CORE_METADATA_LIST && record->as.list.count == count,
                "all items survive one general flat-list decoder");
             markdown_core_node_free(root);
         }
         markdown_core_strbuf_free(&source);
+    }
+}
+
+/* Track live bytes, not RSS or allocation timing. The header preserves C99
+ * fundamental alignment and lets realloc account for released capacity. */
+typedef union {
+    size_t size;
+    long double alignment;
+    void *pointer;
+} properties_allocation;
+static size_t properties_live_bytes, properties_peak_bytes;
+static void properties_account(size_t old_size, size_t new_size) {
+    properties_live_bytes = properties_live_bytes - old_size + new_size;
+    if (properties_live_bytes > properties_peak_bytes) {
+        properties_peak_bytes = properties_live_bytes;
+    }
+}
+static void *properties_calloc(size_t count, size_t size) {
+    if (count && size > (SIZE_MAX - sizeof(properties_allocation)) / count) {
+        return NULL;
+    }
+    size_t bytes = count * size;
+    properties_allocation *allocation = calloc(1, sizeof(*allocation) + bytes);
+    if (!allocation) {
+        return NULL;
+    }
+    allocation->size = bytes;
+    properties_account(0, bytes);
+    return allocation + 1;
+}
+static void properties_free(void *pointer) {
+    if (pointer) {
+        properties_allocation *allocation = (properties_allocation *)pointer - 1;
+        properties_account(allocation->size, 0);
+        free(allocation);
+    }
+}
+static void *properties_realloc(void *pointer, size_t size) {
+    if (!size) {
+        properties_free(pointer);
+        return NULL;
+    }
+    if (size > SIZE_MAX - sizeof(properties_allocation)) {
+        return NULL;
+    }
+    properties_allocation *allocation = pointer ? (properties_allocation *)pointer - 1 : NULL;
+    size_t old_size = allocation ? allocation->size : 0;
+    allocation = realloc(allocation, sizeof(*allocation) + size);
+    if (!allocation) {
+        return NULL;
+    }
+    allocation->size = size;
+    properties_account(old_size, size);
+    return allocation + 1;
+}
+static void properties_text_memory(test_batch_runner *runner) {
+    markdown_core_mem mem = {properties_calloc, properties_realloc, properties_free};
+    const char *prefixes[] = {"---\nname: x", "---\nname: \"x", "---\nabstract: |\n  ", "---\nauthors:\n- x"};
+    const char *suffixes[] = {"\n", "\"\n", "\n", "\n- second\n"};
+    for (size_t shape = 0; shape < sizeof(prefixes) / sizeof(*prefixes); shape++) {
+        for (size_t count = 65536; count <= 1048576; count *= 4) {
+            size_t baseline = 0;
+            const char *characters = "x{}[]";
+            for (size_t character = 0; characters[character]; character++) {
+                markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(markdown_core_get_default_mem_allocator());
+                markdown_core_strbuf_puts(&source, prefixes[shape]);
+                for (size_t i = 0; i < count; i++) {
+                    markdown_core_strbuf_putc(&source, characters[character]);
+                }
+                markdown_core_strbuf_puts(&source, suffixes[shape]);
+                markdown_core_strbuf_puts(&source, "state: ready\n---\n");
+                properties_live_bytes = properties_peak_bytes = 0;
+                markdown_core_node *root =
+                    markdown_core_parse_document_with_mem((const char *)source.ptr, source.size, &mem, NULL, NULL);
+                OK(runner, root != NULL, "long scalar shape %zu with %c parses", shape, characters[character]);
+                if (root) {
+                    markdown_core_metadata *metadata = root->as.document->metadata;
+                    OK(runner, metadata_populated_count(metadata) == 2, "text and following field survive");
+                    const markdown_core_metadata_value *record = shape == 2 ? markdown_core_metadata_abstract(metadata)
+                                                                 : shape == 3 ? markdown_core_metadata_authors(metadata)
+                                                                              : markdown_core_metadata_name(metadata);
+                    markdown_core_string text = {0};
+                    if (shape == 3) {
+                        markdown_core_metadata_list_item item;
+                        if (markdown_core_metadata_value_item_at(record, 0, &item)) {
+                            text = item.value;
+                        }
+                    } else {
+                        markdown_core_metadata_scalar scalar;
+                        if (markdown_core_metadata_value_scalar(record, &scalar) &&
+                            scalar.kind == MARKDOWN_CORE_METADATA_TEXT) {
+                            text = scalar.value.string;
+                        }
+                    }
+                    size_t offset = shape == 2 ? 0 : 1;
+                    bool intact = text.length == count + 1;
+                    for (size_t i = 0; intact && i < count; i++) {
+                        intact = text.data[offset + i] == characters[character];
+                    }
+                    OK(runner, intact, "brackets remain complete scalar text");
+                    markdown_core_node_free(root);
+                }
+                if (!character) {
+                    baseline = properties_peak_bytes;
+                }
+                OK(runner, properties_peak_bytes == baseline,
+                   "text brackets allocate no index storage: shape %zu, %zu bytes, %c peak %zu baseline %zu", shape,
+                   count, characters[character], properties_peak_bytes, baseline);
+                INT_EQ(runner, properties_live_bytes, 0, "all tracked parse allocations are released");
+                markdown_core_strbuf_free(&source);
+            }
+        }
     }
 }
 
@@ -2450,28 +2567,27 @@ static void universal_values(test_batch_runner *runner) {
     markdown_core_node *root = document->root;
     markdown_core_metadata *metadata = calloc(1, sizeof(*metadata));
     metadata->scope = (markdown_core_scope){{1, 1}, {1, 4}};
-    metadata->count = 6;
-    metadata->content = calloc(metadata->count, sizeof(*metadata->content));
     root->as.document->metadata = metadata;
-    for (size_t i = 0; i < metadata->count; i++) {
-        markdown_core_metadata_record *r = &metadata->content[i];
-        r->scope = metadata->scope;
-        r->name = owned_metadata_string("key");
-        /* Only initialize the active payload. Access and destruction must not
-         * depend on zeroed bytes in either union's inactive members. */
-        memset(&r->value.as, 0xa5, sizeof(r->value.as));
-        r->value.kind = i < 4 ? MARKDOWN_CORE_METADATA_SCALAR : MARKDOWN_CORE_METADATA_LIST;
+    markdown_core_metadata_value *values[] = {&metadata->name,  &metadata->time,    &metadata->date,
+                                              &metadata->title, &metadata->authors, &metadata->keywords};
+    for (size_t i = 0; i < 6; i++) {
+        markdown_core_metadata_value *value = values[i];
+        /* Only active union members are initialized. Access and cleanup must
+         * not read inactive storage, including absent field payloads. */
+        memset(&value->as, 0xa5, sizeof(value->as));
+        value->kind = i < 4 ? MARKDOWN_CORE_METADATA_SCALAR : MARKDOWN_CORE_METADATA_LIST;
         if (i < 4) {
-            r->value.as.scalar.kind = (markdown_core_metadata_scalar_kind)i;
+            value->as.scalar.kind = (markdown_core_metadata_scalar_kind)i;
         } else {
-            r->value.as.list.items = NULL;
-            r->value.as.list.count = 0;
+            value->as.list.items = NULL;
+            value->as.list.count = 0;
         }
     }
-    metadata->content[1].value.as.scalar.value.boolean = true;
-    metadata->content[2].value.as.scalar.value.string = owned_metadata_string("9007199254740993");
-    metadata->content[3].value.as.scalar.value.string = owned_metadata_string("中文\nquoted");
-    markdown_core_metadata_value *list = &metadata->content[5].value;
+    memset(&metadata->subtitle.as, 0xa5, sizeof(metadata->subtitle.as));
+    metadata->time.as.scalar.value.boolean = true;
+    metadata->date.as.scalar.value.string = owned_metadata_string("9007199254740993");
+    metadata->title.as.scalar.value.string = owned_metadata_string("中文\nquoted");
+    markdown_core_metadata_value *list = &metadata->keywords;
     list->as.list.count = 2;
     list->as.list.items = calloc(2, sizeof(*list->as.list.items));
     list->as.list.items[0] =
@@ -2479,14 +2595,14 @@ static void universal_values(test_batch_runner *runner) {
     list->as.list.items[1] =
         (markdown_core_metadata_list_item){MARKDOWN_CORE_METADATA_ITEM_TEXT, owned_metadata_string("")};
     OK(runner, markdown_core_node_document_metadata(root) == metadata, "document owns metadata");
-    INT_EQ(runner, markdown_core_metadata_content_count(metadata), 6, "all metadata records retained");
+    INT_EQ(runner, metadata_populated_count(metadata), 6, "all metadata records retained");
     for (size_t i = 0; i < 6; i++) {
-        const markdown_core_metadata_record *record = markdown_core_metadata_content_at(metadata, i);
+        const markdown_core_metadata_value *record = values[i];
         markdown_core_metadata_scalar scalar = {.kind = MARKDOWN_CORE_METADATA_BOOL, .value.boolean = false};
         markdown_core_metadata_list_item item = {.kind = MARKDOWN_CORE_METADATA_ITEM_TEXT, .value = {0}};
-        INT_EQ(runner, markdown_core_metadata_record_kind(record),
+        INT_EQ(runner, markdown_core_metadata_value_get_kind(record),
                i < 4 ? MARKDOWN_CORE_METADATA_SCALAR : MARKDOWN_CORE_METADATA_LIST, "metadata value tag retained");
-        INT_EQ(runner, markdown_core_metadata_record_scalar(record, &scalar), i < 4,
+        INT_EQ(runner, markdown_core_metadata_value_scalar(record, &scalar), i < 4,
                "scalar accessor checks value branch");
         if (i < 4) {
             INT_EQ(runner, scalar.kind, i, "scalar tag retained");
@@ -2498,16 +2614,16 @@ static void universal_values(test_batch_runner *runner) {
                    scalar.value.string.length == strlen(expected) &&
                        memcmp(scalar.value.string.data, expected, strlen(expected)) == 0,
                    "scalar string payload retained");
-                OK(runner, scalar.value.string.data == record->value.as.scalar.value.string.data,
+                OK(runner, scalar.value.string.data == record->as.scalar.value.string.data,
                    "scalar accessor borrows document string");
             }
         } else {
             OK(runner, scalar.kind == MARKDOWN_CORE_METADATA_BOOL && !scalar.value.boolean,
                "wrong scalar branch leaves output unchanged");
         }
-        INT_EQ(runner, markdown_core_metadata_record_item_count(record), i == 5 ? 2 : 0,
+        INT_EQ(runner, markdown_core_metadata_value_item_count(record), i == 5 ? 2 : 0,
                "only list branch exposes item count");
-        INT_EQ(runner, markdown_core_metadata_record_item_at(record, 0, &item), i == 5,
+        INT_EQ(runner, markdown_core_metadata_value_item_at(record, 0, &item), i == 5,
                "list accessor checks value branch");
         if (i == 5) {
             OK(runner,
@@ -2515,7 +2631,7 @@ static void universal_values(test_batch_runner *runner) {
                    memcmp(item.value.data, "1.25", 4) == 0,
                "list number payload retained");
             OK(runner, item.value.data == list->as.list.items[0].value.data, "list accessor borrows document string");
-            OK(runner, markdown_core_metadata_record_item_at(record, 1, &item), "second list item accessible");
+            OK(runner, markdown_core_metadata_value_item_at(record, 1, &item), "second list item accessible");
             OK(runner, item.kind == MARKDOWN_CORE_METADATA_ITEM_TEXT && item.value.length == 0,
                "empty text list item retained");
         } else {
@@ -2523,14 +2639,15 @@ static void universal_values(test_batch_runner *runner) {
                "absent list item leaves output unchanged");
         }
         markdown_core_metadata_list_item before = item;
-        OK(runner, !markdown_core_metadata_record_item_at(record, 2, &item), "metadata item bounds checked");
+        OK(runner, !markdown_core_metadata_value_item_at(record, 2, &item), "metadata item bounds checked");
         OK(runner,
            item.kind == before.kind && item.value.data == before.value.data && item.value.length == before.value.length,
            "out-of-bounds item leaves output unchanged");
-        OK(runner, !markdown_core_metadata_record_scalar(record, NULL), "null scalar output rejected");
-        OK(runner, !markdown_core_metadata_record_item_at(record, 0, NULL), "null list item output rejected");
+        OK(runner, !markdown_core_metadata_value_scalar(record, NULL), "null scalar output rejected");
+        OK(runner, !markdown_core_metadata_value_item_at(record, 0, NULL), "null list item output rejected");
     }
-    OK(runner, !markdown_core_metadata_content_at(metadata, 6), "metadata record bounds checked");
+    OK(runner, !markdown_core_metadata_subtitle(metadata), "absent field differs from explicit null");
+    OK(runner, markdown_core_metadata_name(metadata) != NULL, "explicit null field is present");
     markdown_core_node *image = root->first_child->first_child;
     image->as.link->width = (markdown_core_optional_i64){true, 640};
     image->as.link->height = (markdown_core_optional_i64){true, 480};
@@ -2542,9 +2659,9 @@ static void universal_values(test_batch_runner *runner) {
     uint8_t *dump = NULL;
     size_t length = 0;
     OK(runner, markdown_core_document_dump(document, &dump, &length, NULL), "metadata and dimensions dump");
-    OK(runner, strstr((const char *)dump, "value=scalar(number(\"9007199254740993\"))") != NULL,
+    OK(runner, strstr((const char *)dump, "date=scalar(number(\"9007199254740993\"))") != NULL,
        "decimal text never rounded");
-    OK(runner, strstr((const char *)dump, "value=list([])") != NULL, "empty list distinct from null");
+    OK(runner, strstr((const char *)dump, "authors=list([])") != NULL, "empty list distinct from null");
     OK(runner, strstr((const char *)dump, "width=640 height=480") != NULL, "typed dimensions dump");
     markdown_core_dump_free(dump);
     markdown_core_document_free(document); /* Sanitizers verify complete recursive ownership. */
@@ -3215,6 +3332,7 @@ int main(void) {
     properties_values(runner);
     properties_source_boundaries(runner);
     properties_member_work(runner);
+    properties_text_memory(runner);
     attribute_linear_work(runner);
     cross_link_linear_work(runner);
     inline_footnote_linear_work(runner);

@@ -5,7 +5,7 @@
     "dumpGrammar": "docs/specs/canonical-ast-dump.md",
     "walk": {
         "phases": ["entering", "exiting"],
-        "order": "Depth first. A node enters, then its owned Markup-valued fields are visited in canonical field order with arrays retaining stored order, then the node exits. Relations remain named fields; the walk does not project them into generic children. Citation, Footnote, and Specimen receive their own entering/exiting callbacks and traverse their owned Markup fields. Metadata and MetadataRecord are data values and emit no visitor callbacks. Document visits content, footnotes, specimens in that order."
+        "order": "Depth first. A node enters, then its owned Markup-valued fields are visited in canonical field order with arrays retaining stored order, then the node exits. Relations remain named fields; the walk does not project them into generic children. Citation, Footnote, and Specimen receive their own entering/exiting callbacks and traverse their owned Markup fields. Metadata is a data value and emits no visitor callbacks. Document visits content, footnotes, specimens in that order."
     },
     "enums": {
         "PlacementMode": ["embedded", "standalone"],
@@ -741,29 +741,57 @@
             "walk": false,
             "fields": [
                 {
-                    "name": "content",
-                    "type": "[MetadataRecord]",
-                    "optional": false
-                }
-            ],
-            "dump": "Metadata scope=L:C..L:C children=N; nested before Document.content, absent emits no line"
-        },
-        "MetadataRecord": {
-            "scoped": true,
-            "walk": false,
-            "fields": [
-                {
                     "name": "name",
-                    "type": "String",
-                    "optional": false
+                    "type": "MetadataValue",
+                    "optional": true
                 },
                 {
-                    "name": "value",
+                    "name": "title",
                     "type": "MetadataValue",
-                    "optional": false
+                    "optional": true
+                },
+                {
+                    "name": "subtitle",
+                    "type": "MetadataValue",
+                    "optional": true
+                },
+                {
+                    "name": "time",
+                    "type": "MetadataValue",
+                    "optional": true
+                },
+                {
+                    "name": "date",
+                    "type": "MetadataValue",
+                    "optional": true
+                },
+                {
+                    "name": "authors",
+                    "type": "MetadataValue",
+                    "optional": true
+                },
+                {
+                    "name": "keywords",
+                    "type": "MetadataValue",
+                    "optional": true
+                },
+                {
+                    "name": "abstract",
+                    "type": "MetadataValue",
+                    "optional": true
+                },
+                {
+                    "name": "state",
+                    "type": "MetadataValue",
+                    "optional": true
+                },
+                {
+                    "name": "comment",
+                    "type": "MetadataValue",
+                    "optional": true
                 }
             ],
-            "dump": "MetadataRecord scope=L:C..L:C name=\"...\" value=... children=0"
+            "dump": "Metadata scope=L:C..L:C name=... title=... subtitle=... time=... date=... authors=... keywords=... abstract=... state=... comment=... children=0; absent fields print null"
         },
         "MetadataValue": {
             "scoped": false,

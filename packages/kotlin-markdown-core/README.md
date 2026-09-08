@@ -31,11 +31,15 @@ ordered `classes` and ordered `records` (`name`, `value`), with duplicates
 preserved. Directives populate these fields through the shared Pandoc braced
 attribute grammar; an absent or empty container produces empty attributes.
 `Document.metadata` holds the first complete `---` envelope at the start of a
-document. Its ordered `content` contains `data(MetadataRecord)` and
-`comment(String)` cases: supported YAML properties become data, while comments,
-non-YAML text, `...`, and unsupported members retain their source. Valid
-properties before and after a failed member survive. Metadata stays outside
-Markup children and visitor callbacks. Numbers retain exact decimal strings.
+document. Metadata directly exposes ten optional fields:
+`name`, `title`, `subtitle`, `time`, `date`, `authors`, `keywords`, `abstract`,
+`state`, and `comment`. Unknown names, unnamed text, comments, invalid values,
+and later duplicates are ignored; valid neighboring fields survive. `authors`
+and `keywords` accept a single string, a bracketed array, or a block list.
+`abstract` and `comment` accept single-line text and indented multiline text
+with `: |`. Metadata stays outside Markup children and visitor callbacks.
+Numbers retain exact decimal strings. Missing fields are null; an authored null
+is a present scalar value. No field order or individual field scope is stored.
 `Image.width` and `Image.height` remain absent until O9.
 
 ## Parse Markdown

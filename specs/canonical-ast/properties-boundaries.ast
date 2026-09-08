@@ -1,11 +1,4 @@
-Document scope=1:1..22:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..21:3 children=7
-│   ├── MetadataRecord scope=2:1..2:8 name="name" value=scalar(text("x[")) children=0
-│   ├── MetadataRecord scope=5:1..8:15 name="abstract" value=scalar(text("keep { [ ' punctuation\n\nname: literal\n")) children=0
-│   ├── MetadataRecord scope=10:3..10:24 name="keywords" value=list([text("one"),number("2")]) children=0
-│   ├── MetadataRecord scope=11:3..11:11 name="time" value=scalar(number("3")) children=0
-│   ├── MetadataRecord scope=13:1..16:8 name="authors" value=list([text("text ["),text("second")]) children=0
-│   ├── MetadataRecord scope=17:1..19:5 name="comment" value=scalar(text("# prose\n---\n")) children=0
-│   └── MetadataRecord scope=20:1..20:12 name="state" value=scalar(text("ready")) children=0
-└── Paragraph scope=22:1..22:4 anchor=null attributes={} children=1
-    └── Text scope=22:1..22:4 anchor=null attributes={} literal="body" children=0
+Document scope=1:1..21:4 anchor=null attributes={} children=1
+├── Metadata scope=1:1..20:3 name=scalar(text("x[")) title=null subtitle=null time=scalar(number("3")) date=null authors=list([text("text ["),text("second")]) keywords=list([text("one"),number("2")]) abstract=scalar(text("keep { [ ' punctuation\n\nname: literal\n")) state=scalar(text("ready")) comment=scalar(text("# prose\n---\n")) children=0
+└── Paragraph scope=21:1..21:4 anchor=null attributes={} children=1
+    └── Text scope=21:1..21:4 anchor=null attributes={} literal="body" children=0

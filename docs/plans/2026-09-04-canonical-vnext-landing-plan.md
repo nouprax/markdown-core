@@ -258,7 +258,7 @@ value carries `scope` only.
 | `Footnote(id, content: [Markup], scope)`                                            | `M4`; document-owned, scoped and traversed, not `Markup`      |
 | `OrderedListVariant`, `OrderedListDelimiter`                                          | `M5`; values beyond the inherited forms first by `P9a`, `P9b` |
 | `TableColumn(alignment: TableAlignment, relative: Double?)`                         | `M6`; `relative` first produced by `P11c`                     |
-| `Metadata`, `MetadataRecord`, `MetadataValue`, `MetadataScalar`, `MetadataListItem` | `M7`; first produced by `O6`                                  |
+| `Metadata`, `MetadataValue`, `MetadataScalar`, `MetadataListItem` | `M7`; first produced by `O6`                                  |
 | `ReferenceForm`                                                                     | removed by `M2`                                               |
 | `DirectiveAttribute`                                                                | removed by `M7`                                               |
 
@@ -484,7 +484,7 @@ its behavior, with no separate publication step.
       projection audit, the fixture checker, and the dump grammar understand;
       add `Document.metadata: Metadata?` with the metadata value types; add
       `Image.width` and `Image.hten` as `null`. Add facade accessors for the
-      anchor, classes, records, metadata records, and dimensions, and carry the
+      anchor, classes, records, metadata fields, and dimensions, and carry the
       values through the JNI and Wasm transports. Implement the shared Pandoc
       3.11 braced-attribute scanner and normalization once in the C core (the
       last ID wins and an empty final `id=` clears it; `.class` and `class=`
@@ -821,64 +821,60 @@ its behavior, with no separate publication step.
   protect the general coordinate invariant.
 
 - [x] **O6 — Fixed metadata fields and literal prose.** The user-directed
-      contract of 2026-09-08 recognizes only `name`, `time`, `date`, `authors`,
-      `keywords`, `abstract`, `state`, `comment`, `title`, and `subtitle`.
-      Field names are exact and case-sensitive. Scalars, exact numeric text, flat lists, and JSON member
-      syntax use the [Properties module](../specs/dialect/properties.md).
-      `authors` and `keywords` accept single text, bracketed arrays and block lists.
-      `abstract: |` and `comment: |` additionally collect indented literal text,
-      retaining internal line breaks and blank lines with default clipping.
-      This borrows selected Obsidian/Pandoc notation, not full YAML semantics.
+      contract of 2026-09-08 recognizes exactly `name`, `title`, `subtitle`,
+      `time`, `date`, `authors`, `keywords`, `abstract`, `state`, and `comment`.
+      `Metadata` exposes these ten optional values directly, with only the
+      complete envelope's `scope`. Remove `Metadata.content`, the record
+      wrapper, retained field order, per-field scopes and all source indexes.
+      The [Properties module](../specs/dialect/properties.md) owns the grammar.
       Requires `O1`.
 
-      `Metadata.content` is now `[MetadataRecord]`. Ignore unnamed text,
-      unknown fields, YAML comments, `...`, unsupported/invalid values, and
-      later duplicates. The first successful occurrence reserves a name.
-      Remove the superseded comment/data wrapper on every surface; the named
-      `comment` field is ordinary data. A complete exact leading `---` envelope
-      always attaches metadata, including empty content. Only an absent or
-      unclosed envelope falls back to Markdown. Keep metadata/record/body
-      scopes and strict allocation failure behavior.
+      Keep scalar and flat-list value semantics, including exact numeric text.
+      `authors` and `keywords` accept single text, bracketed arrays and block
+      lists. `abstract` and `comment` accept single-line text and bare `: |`
+      indented prose, preserving internal blank lines with default clipping.
+      Missing fields differ from present null scalars, empty text and empty
+      lists. Ignore unnamed text, unknown fields, comments, `...`, invalid
+      values and later duplicates; the first successful occurrence wins.
+      Only an absent or unclosed envelope falls back to Markdown.
 
-      Use one bounded core producer. Remove anchors, alias expansion,
-      explicit tags, merge/complex keys, nested values, general flow mappings,
-      multiline folding, and their auxiliary state. Only bare literal `|`
-      on the two prose fields is added; no folding/chomping/indent flags or
-      runtime YAML dependency. The fixed field set bounds duplicate tracking
-      and committed records to ten. Failed members are skipped once at their
-      owning boundary, without retrying their interiors.
+      The parser assigns valid members directly to their named destination;
+      field presence supplies duplicate detection. Unsupported members are
+      skipped once at their owned boundary. No JSON root objects, full YAML
+      parser, anchors, aliases, tags, nested values, folding or literal modifiers
+      are supported. Arrays remain field values. C, Swift, Kotlin/JNI/Native
+      and ES/Wasm expose the same direct-field model and preserve ownership.
+      The dump prints all ten fields in fixed model order, with no nested
+      metadata records or visitor callbacks.
 
-      Acceptance for this replacement:
+      Acceptance:
 
-      - [x] Core implements the ten fields, bare literal prose, whole-member
-            skipping, first-successful uniqueness, exact numbers and body scopes.
-      - [x] C facade, Swift, Kotlin/JNI/Native, ES/Wasm, canonical model and dumps
-            all directly expose ordered records, with complete owned cleanup.
-      - [x] Semantic and shared fixtures cover ignored content, field whitelist,
-            literal indentation/blank lines/line endings, JSON restrictions,
-            list comment separation, malformed recovery, and duplicates.
-      - [x] Complexity and OOM gates prove bounded record state, disjoint member
-            decoding, flat list scaling, and whole-parse allocation failure.
-      - [x] The pinned YAML oracle is limited to the selected valid intersection.
-            Out-of-domain inputs are tested as ignored product input, never as
-            missing YAML features. Alias/tag/folding success canaries are removed.
-      - [x] Fresh core, sanitizer, binding, conformance, oracle and release gates
-            pass; prior validation does not establish this replacement's status.
+      - [x] Core recognizes ten fields, literal prose, first-successful
+            assignment, whole-member recovery and original body coordinates.
+      - [x] Every binding, public contract, dump and ABI snapshot exposes the
+            direct fields; superseded collection and record APIs are removed.
+      - [x] Fixtures cover missing/explicit-null/empty/list values, ignored
+            input, duplicate recovery, literal indentation and owned cleanup.
+      - [x] Complexity and OOM gates verify disjoint source decoding, flat-list
+            scaling and punctuation-independent text allocation.
+      - [x] The pinned YAML oracle compares only the selected valid grammar;
+            unsupported syntax is not a missing feature.
 
-  Status: implemented in PR #216 with the corrected fixed-field contract.
-  Alias expansion and rollback are removed; ignored comments cannot split
-  indentless lists; key-only flow pairs are ignored. All existing review threads
-  are resolved. The public metadata content wrapper is removed on every surface.
+  Status: direct-field replacement is implemented in PR #216. Both review
+  findings are addressed: metadata builds no source index, and the root/package
+  READMEs and changelog describe the direct-field model. Allocation tests from
+  64 KiB to 1 MiB verify identical peak live bytes for equal-length plain,
+  quoted, literal and list-item text with or without brackets. Fixtures verify
+  source-order independence, absent versus explicit-null values, ignored root
+  objects, and subsequent valid field lines.
 
   Fresh host validation (2026-09-08): C correctness 76/76 and conformance 2/2;
-  ASan, UBSan and TSan correctness 76/76 each; Swift tests/consumer and
-  conformance; Kotlin JVM, macOS Native and Android host tests/conformance;
-  ES Node/browser tests, packaging and conformance; `pnpm verify`; all four
-  oracle gates (metadata/Obsidian corpus: 32 inputs); 300 seeded fuzz inputs
-  each for CommonMark, GFM and remark; host release dry run, including packed
-  consumers and Maven publication validation. Canonical fixtures now have 18
-  cases. Position ledgers are unchanged: containment 26, places 0, inline 43,
-  reference order 0. Full Linux/macOS release aggregation remains in CI.
+  ASan, UBSan and TSan 76/76 each, including OOM sweeps; Swift tests, packed
+  consumer and conformance; Kotlin JVM, macOS Native and Android host tests
+  and conformance; ES Node/browser, packed consumer and conformance;
+  `pnpm verify`; metadata/Obsidian parity (32 inputs); host release dry run,
+  including ABI checks and Maven publication validation. Full Linux/macOS
+  release aggregation remains in CI.
 
 - [ ] **O7 — Block identifiers.** Attach `^block-id`
       during block finalization through one operation for paragraph suffixes,

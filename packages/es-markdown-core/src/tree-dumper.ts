@@ -221,17 +221,23 @@ class DumpState {
     }
 
     private metadata(value: Metadata): void {
-        this.valueLine("Metadata", value.scope, [], value.content.length);
-        this.nested(value.content.length, () => {
-            for (const record of value.content) {
-                this.valueLine(
-                    "MetadataRecord",
-                    record.scope,
-                    [`name=${jsonString(record.name)}`, `value=${metadataValue(record.value)}`],
-                    0
-                );
-            }
-        });
+        this.valueLine(
+            "Metadata",
+            value.scope,
+            [
+                `name=${value.name === null ? "null" : metadataValue(value.name)}`,
+                `title=${value.title === null ? "null" : metadataValue(value.title)}`,
+                `subtitle=${value.subtitle === null ? "null" : metadataValue(value.subtitle)}`,
+                `time=${value.time === null ? "null" : metadataValue(value.time)}`,
+                `date=${value.date === null ? "null" : metadataValue(value.date)}`,
+                `authors=${value.authors === null ? "null" : metadataValue(value.authors)}`,
+                `keywords=${value.keywords === null ? "null" : metadataValue(value.keywords)}`,
+                `abstract=${value.abstract === null ? "null" : metadataValue(value.abstract)}`,
+                `state=${value.state === null ? "null" : metadataValue(value.state)}`,
+                `comment=${value.comment === null ? "null" : metadataValue(value.comment)}`
+            ],
+            0
+        );
     }
 
     private footnote(value: Footnote): void {

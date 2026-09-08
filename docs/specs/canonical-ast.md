@@ -44,7 +44,7 @@ or semantics.
 - Adjacent `Text` nodes in one content array are merged into one node spanning
   from the first's start to the last's end, and a `Text` node is never empty.
 - Besides `Markup`, exactly the scoped values `Citation`, `Footnote`, `Specimen`,
-  `Metadata`, and `MetadataRecord` carry a `scope`, because they are written;
+  and `Metadata` carry a `scope`, because they are written;
   every other value is located by its owner's scope. Those values arrive with
   the landing items that add them.
 
@@ -140,10 +140,10 @@ records: [Record])` is never null. `Record(name: String, value: String)`
 retains every assignment occurrence; classes retain every word occurrence.
 The last identifier wins and an empty final `id=` clears the anchor.
 
-`Document.metadata: Metadata?`, its ordered scoped `MetadataRecord` values use the
+`Document.metadata: Metadata?` holds ten named optional values defined by the
 [Properties value model](dialect/properties.md#model). Metadata is never
-Markup and has no visitor callbacks. O6 first produces it; until then it is
-null. `Image.width` and `Image.height` are nullable positive integers whose
+Markup and has no visitor callbacks. O6 produces it from the leading envelope.
+It retains only the envelope scope; absent fields differ from explicit null values. `Image.width` and `Image.height` are nullable positive integers whose
 first syntax producer is O9.
 
 ### Destination
@@ -358,8 +358,8 @@ The scoped values `Citation`, `Footnote`, and `Specimen` receive value callbacks
 walk descends into their markup arrays in declared field order: a `Cite`
 visits each `Citation`, whose `prefix` precedes its `suffix`, and `Document`
 visits `content`, `footnotes`, then `specimens`, each definition descending into its
-`content`. Metadata and MetadataRecord carry scopes but no Markup edges, so
-they receive no visitor callbacks. Unscoped values are likewise not descended into.
+`content`. Metadata carries its envelope scope and ten fields but no Markup edges, so
+it receives no visitor callbacks. Unscoped values are likewise not descended into.
 
 The walking visitor is exhaustive under the same rule as `Visitor`: every
 node-kind callback is required and there is no default, optional handler,

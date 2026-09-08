@@ -1,5 +1,9 @@
 # Extension specification audit
 
+> Metadata update (2026-09-08): historical record/field-scope proposals below
+> are superseded by [the fixed-field metadata contract](../specs/dialect/properties.md).
+> Metadata has ten direct optional fields and only an envelope scope.
+
 > Specimen model update: historical example-list/ExampleReference proposals below
 > are superseded by [the specimen citation contract](../specs/dialect/specimens.md).
 > `ListItem.exampleLabel` and `OrderedListVariant.example` are retired.

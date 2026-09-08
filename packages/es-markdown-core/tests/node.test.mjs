@@ -848,6 +848,7 @@ test("ast: metadata preserves tags, decimal text, duplicate keys and owned lists
     const root = node(0, 1);
     put(root + 120, 1);
     const metadata = node(1, 0x103);
+    put(metadata + 4, 0x3f);
     put(metadata + 28, 6);
     for (let index = 0; index < 6; index++) {
         put(edges + index * 4, index + 2);
@@ -872,7 +873,14 @@ test("ast: metadata preserves tags, decimal text, duplicate keys and owned lists
     assert.throws(() => new NodeDecoder(bad).decodeDocument(), /metadata scalar/);
     bytes.fill(0);
     assert.deepEqual(
-        document.metadata.content.map((content) => content.value),
+        [
+            document.metadata.name,
+            document.metadata.title,
+            document.metadata.subtitle,
+            document.metadata.time,
+            document.metadata.date,
+            document.metadata.authors
+        ],
         [
             { kind: "scalar", value: { kind: "null" } },
             { kind: "scalar", value: { kind: "bool", value: true } },
@@ -888,11 +896,9 @@ test("ast: metadata preserves tags, decimal text, duplicate keys and owned lists
             }
         ]
     );
-    assert.deepEqual(
-        document.metadata.content.slice(0, 2).map((content) => content.name),
-        ["key", "key"]
-    );
-    assert.match(document.dump(), /value=scalar\(number\("9007199254740993"\)\)/);
+    assert.equal(document.metadata.comment, null);
+    assert.equal(document.metadata.keywords, null);
+    assert.match(document.dump(), /subtitle=scalar\(number\("9007199254740993"\)\)/);
     const visited = [];
     walk(
         document,
@@ -967,13 +973,12 @@ test("ast: Properties keep recognized fields and literal prose after native rele
     const bytes = nativeResult(source);
     const document = new NodeDecoder(bytes).decodeDocument();
     bytes.fill(0);
-    const content = document.metadata.content;
     assert.deepEqual(
-        content.map((record) => record.name),
-        ["name", "abstract", "comment"]
-    );
-    assert.deepEqual(
-        content.map((record) => record.value.value.value),
+        [
+            document.metadata.name.value.value,
+            document.metadata.abstract.value.value,
+            document.metadata.comment.value.value
+        ],
         ["9007199254740993", "first\n\nsecond\n", "# prose\n"]
     );
     assert.equal(document.content[0].scope.start.line, 15);
@@ -986,6 +991,8 @@ test("ast: Properties keep recognized fields and literal prose after native rele
         })
     );
     assert.deepEqual(events, ["document", "paragraph", "text"]);
-    assert.equal(Document.parse("---\nunknown: 1\nfree text\n---").metadata.content.length, 0);
+    const empty = Document.parse("---\nunknown: 1\nfree text\n---").metadata;
+    assert.ok(empty);
+    assert.ok(Object.entries(empty).every(([key, value]) => key === "scope" || value === null));
     assert.equal(Document.parse("---\nname: 1\n").metadata, null);
 });

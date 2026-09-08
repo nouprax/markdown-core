@@ -234,11 +234,11 @@ item, so that the grammar has one answer before the first of them arrives:
   `TableCaption` when non-null, then its existing row groups; `Definition` prints a `DefinitionTerm`
   group, then one `DefinitionBody` group per body.
 - Further value lines print as `Citation` and `Footnote` do:
-  `Metadata scope=... children=N` and
-  `MetadataRecord scope=... name="..." value=... children=0`.
+  `Metadata scope=... name=... title=... subtitle=... time=... date=...
+  authors=... keywords=... abstract=... state=... comment=... children=0`.
 - `children` keeps counting structural children: `head.count + content.count
   + foot.count` for `Table`, `definitions.count` for `DefinitionList`, the
-  number of bodies for `Definition`, and `content.count` for `Metadata`;
+  number of bodies for `Definition`, and zero for `Metadata`;
   nested caption, metadata, term, and row-group lines are never counted by
   their owner.
 - Every scalar and enum keeps the encodings above; nothing is omitted because
@@ -252,10 +252,12 @@ increase the document's `children` count. A specimen reference uses a `Cite`
 with a `Citation` whose referent prints `specimen(id="...")` and whose affix
 groups are empty. No resolved display number is printed.
 
-A present `Document.metadata` prints a `Metadata scope=L:C..L:C children=N`
-line before content, with N nested `MetadataRecord` lines. Each record prints
-`scope`, `name`, `value`, and `children=0`. Neither value has anchor or
-attributes. The value grammar is `scalar(null)`, `scalar(bool(true|false))`,
-`scalar(number("lexeme"))`, `scalar(text("..."))`, or
-`list([number("lexeme"),text("...")])`; lists may be empty. Null metadata
-emits no line, and no metadata contributes a document child or visitor event.
+A present `Document.metadata` prints one `Metadata` line before content. It
+prints `scope`, then the ten named fields in the order `name`, `title`,
+`subtitle`, `time`, `date`, `authors`, `keywords`, `abstract`, `state`, `comment`,
+then `children=0`. Missing fields print `null`. A present value prints
+`scalar(null)`, `scalar(bool(true|false))`, `scalar(number("lexeme"))`,
+`scalar(text("..."))`, or `list([number("lexeme"),text("...")])`; lists may
+be empty. There are no nested record lines, field scopes, anchors or attributes.
+Absent metadata emits no line and metadata contributes no document child or
+visitor event.

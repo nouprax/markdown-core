@@ -17,14 +17,13 @@ class ApiTest {
                 "comment: |\r\n  # prose\r\n---\r\nbody\r\n"
         val document = Document.parse(source)
         val metadata = assertNotNull(document.metadata)
-        assertEquals(listOf("name", "abstract", "comment"), metadata.content.map { it.name })
         assertEquals(
             listOf(
                 MetadataValue.Scalar(MetadataScalar.Number("9007199254740993")),
                 MetadataValue.Scalar(MetadataScalar.Text("first\n\nsecond\n")),
                 MetadataValue.Scalar(MetadataScalar.Text("# prose\n")),
             ),
-            metadata.content.map { it.value },
+            listOf(metadata.name, metadata.`abstract`, metadata.comment),
         )
         assertEquals(14, metadata.scope.end.line)
         assertEquals(
@@ -32,7 +31,8 @@ class ApiTest {
             document.content[0]
                 .scope.start.line,
         )
-        assertEquals(emptyList(), Document.parse("---\nunknown: 1\nfree text\n---").metadata?.content)
+        val empty = assertNotNull(Document.parse("---\nunknown: 1\nfree text\n---").metadata)
+        assertEquals(Metadata(scope = empty.scope), empty)
         assertEquals(null, Document.parse("---\nname: 1\n").metadata)
     }
 

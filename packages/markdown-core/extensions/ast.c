@@ -515,40 +515,56 @@ const markdown_core_metadata *markdown_core_node_document_metadata(const markdow
 markdown_core_scope markdown_core_metadata_scope(const markdown_core_metadata *metadata) {
     return metadata ? metadata->scope : (markdown_core_scope){0};
 }
-size_t markdown_core_metadata_content_count(const markdown_core_metadata *metadata) {
-    return metadata ? metadata->count : 0;
+const markdown_core_metadata_value *markdown_core_metadata_name(const markdown_core_metadata *metadata) {
+    return metadata && metadata->name.kind ? &metadata->name : NULL;
 }
-const markdown_core_metadata_record *markdown_core_metadata_content_at(const markdown_core_metadata *metadata,
-                                                                       size_t index) {
-    return metadata && index < metadata->count ? &metadata->content[index] : NULL;
+const markdown_core_metadata_value *markdown_core_metadata_title(const markdown_core_metadata *metadata) {
+    return metadata && metadata->title.kind ? &metadata->title : NULL;
 }
-markdown_core_scope markdown_core_metadata_record_scope(const markdown_core_metadata_record *record) {
-    return record ? record->scope : (markdown_core_scope){0};
+const markdown_core_metadata_value *markdown_core_metadata_subtitle(const markdown_core_metadata *metadata) {
+    return metadata && metadata->subtitle.kind ? &metadata->subtitle : NULL;
 }
-markdown_core_string markdown_core_metadata_record_name(const markdown_core_metadata_record *record) {
-    return record ? record->name : (markdown_core_string){0};
+const markdown_core_metadata_value *markdown_core_metadata_time(const markdown_core_metadata *metadata) {
+    return metadata && metadata->time.kind ? &metadata->time : NULL;
 }
-markdown_core_metadata_value_kind markdown_core_metadata_record_kind(const markdown_core_metadata_record *record) {
-    return record ? record->value.kind : 0;
+const markdown_core_metadata_value *markdown_core_metadata_date(const markdown_core_metadata *metadata) {
+    return metadata && metadata->date.kind ? &metadata->date : NULL;
 }
-bool markdown_core_metadata_record_scalar(const markdown_core_metadata_record *record,
-                                          markdown_core_metadata_scalar *value) {
-    if (!record || record->value.kind != MARKDOWN_CORE_METADATA_SCALAR || !value) {
+const markdown_core_metadata_value *markdown_core_metadata_authors(const markdown_core_metadata *metadata) {
+    return metadata && metadata->authors.kind ? &metadata->authors : NULL;
+}
+const markdown_core_metadata_value *markdown_core_metadata_keywords(const markdown_core_metadata *metadata) {
+    return metadata && metadata->keywords.kind ? &metadata->keywords : NULL;
+}
+const markdown_core_metadata_value *markdown_core_metadata_abstract(const markdown_core_metadata *metadata) {
+    return metadata && metadata->abstract.kind ? &metadata->abstract : NULL;
+}
+const markdown_core_metadata_value *markdown_core_metadata_state(const markdown_core_metadata *metadata) {
+    return metadata && metadata->state.kind ? &metadata->state : NULL;
+}
+const markdown_core_metadata_value *markdown_core_metadata_comment(const markdown_core_metadata *metadata) {
+    return metadata && metadata->comment.kind ? &metadata->comment : NULL;
+}
+markdown_core_metadata_value_kind markdown_core_metadata_value_get_kind(const markdown_core_metadata_value *value) {
+    return value ? value->kind : 0;
+}
+bool markdown_core_metadata_value_scalar(const markdown_core_metadata_value *value,
+                                         markdown_core_metadata_scalar *scalar) {
+    if (!value || value->kind != MARKDOWN_CORE_METADATA_SCALAR || !scalar) {
         return false;
     }
-    *value = record->value.as.scalar;
+    *scalar = value->as.scalar;
     return true;
 }
-size_t markdown_core_metadata_record_item_count(const markdown_core_metadata_record *record) {
-    return record && record->value.kind == MARKDOWN_CORE_METADATA_LIST ? record->value.as.list.count : 0;
+size_t markdown_core_metadata_value_item_count(const markdown_core_metadata_value *value) {
+    return value && value->kind == MARKDOWN_CORE_METADATA_LIST ? value->as.list.count : 0;
 }
-bool markdown_core_metadata_record_item_at(const markdown_core_metadata_record *record, size_t index,
-                                           markdown_core_metadata_list_item *value) {
-    if (!record || record->value.kind != MARKDOWN_CORE_METADATA_LIST || !value ||
-        index >= record->value.as.list.count) {
+bool markdown_core_metadata_value_item_at(const markdown_core_metadata_value *value, size_t index,
+                                          markdown_core_metadata_list_item *item) {
+    if (!value || value->kind != MARKDOWN_CORE_METADATA_LIST || !item || index >= value->as.list.count) {
         return false;
     }
-    *value = record->value.as.list.items[index];
+    *item = value->as.list.items[index];
     return true;
 }
 
@@ -1352,10 +1368,14 @@ static void dump_cite_nodes(dump_buffer *buffer, const markdown_core_node *node,
     }
 }
 
-static void dump_metadata_value(dump_buffer *buffer, const markdown_core_metadata_record *record) {
-    if (markdown_core_metadata_record_kind(record) == MARKDOWN_CORE_METADATA_SCALAR) {
+static void dump_metadata_value(dump_buffer *buffer, const markdown_core_metadata_value *record) {
+    if (!record) {
+        buffer_cstr(buffer, "null");
+        return;
+    }
+    if (markdown_core_metadata_value_get_kind(record) == MARKDOWN_CORE_METADATA_SCALAR) {
         markdown_core_metadata_scalar value;
-        if (!markdown_core_metadata_record_scalar(record, &value)) {
+        if (!markdown_core_metadata_value_scalar(record, &value)) {
             buffer->failed = true;
             return;
         }
@@ -1378,11 +1398,11 @@ static void dump_metadata_value(dump_buffer *buffer, const markdown_core_metadat
             return;
         }
         buffer_cstr(buffer, ")");
-    } else if (markdown_core_metadata_record_kind(record) == MARKDOWN_CORE_METADATA_LIST) {
+    } else if (markdown_core_metadata_value_get_kind(record) == MARKDOWN_CORE_METADATA_LIST) {
         buffer_cstr(buffer, "list([");
-        for (size_t i = 0; i < markdown_core_metadata_record_item_count(record); i++) {
+        for (size_t i = 0; i < markdown_core_metadata_value_item_count(record); i++) {
             markdown_core_metadata_list_item item;
-            if (!markdown_core_metadata_record_item_at(record, i, &item)) {
+            if (!markdown_core_metadata_value_item_at(record, i, &item)) {
                 buffer->failed = true;
                 return;
             }
@@ -1414,22 +1434,27 @@ static void dump_metadata(dump_buffer *buffer, const markdown_core_metadata *met
     dump_prefix(buffer, depth + 1);
     buffer_cstr(buffer, "Metadata scope=");
     buffer_scope(buffer, markdown_core_metadata_scope(metadata));
-    size_t count = markdown_core_metadata_content_count(metadata);
-    buffer_cstr(buffer, " children=");
-    buffer_i64(buffer, (int64_t)count);
-    buffer_cstr(buffer, "\n");
-    for (size_t i = 0; i < count; i++) {
-        const markdown_core_metadata_record *record = markdown_core_metadata_content_at(metadata, i);
-        buffer->more[depth + 1] = i + 1 < count;
-        dump_prefix(buffer, depth + 2);
-        buffer_cstr(buffer, "MetadataRecord scope=");
-        buffer_scope(buffer, markdown_core_metadata_record_scope(record));
-        buffer_cstr(buffer, " name=");
-        buffer_json_string(buffer, markdown_core_metadata_record_name(record));
-        buffer_cstr(buffer, " value=");
-        dump_metadata_value(buffer, record);
-        buffer_cstr(buffer, " children=0\n");
-    }
+    buffer_cstr(buffer, " name=");
+    dump_metadata_value(buffer, markdown_core_metadata_name(metadata));
+    buffer_cstr(buffer, " title=");
+    dump_metadata_value(buffer, markdown_core_metadata_title(metadata));
+    buffer_cstr(buffer, " subtitle=");
+    dump_metadata_value(buffer, markdown_core_metadata_subtitle(metadata));
+    buffer_cstr(buffer, " time=");
+    dump_metadata_value(buffer, markdown_core_metadata_time(metadata));
+    buffer_cstr(buffer, " date=");
+    dump_metadata_value(buffer, markdown_core_metadata_date(metadata));
+    buffer_cstr(buffer, " authors=");
+    dump_metadata_value(buffer, markdown_core_metadata_authors(metadata));
+    buffer_cstr(buffer, " keywords=");
+    dump_metadata_value(buffer, markdown_core_metadata_keywords(metadata));
+    buffer_cstr(buffer, " abstract=");
+    dump_metadata_value(buffer, markdown_core_metadata_abstract(metadata));
+    buffer_cstr(buffer, " state=");
+    dump_metadata_value(buffer, markdown_core_metadata_state(metadata));
+    buffer_cstr(buffer, " comment=");
+    dump_metadata_value(buffer, markdown_core_metadata_comment(metadata));
+    buffer_cstr(buffer, " children=0\n");
 }
 
 /* The document's footnotes are scoped values nested after its content (M4):

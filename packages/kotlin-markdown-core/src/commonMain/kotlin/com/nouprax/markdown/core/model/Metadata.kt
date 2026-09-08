@@ -1,16 +1,17 @@
 package com.nouprax.markdown.core
 
-/** Scoped Properties values; they are never Markup or visitor events. */
-public class Metadata(
-    content: kotlin.collections.List<MetadataRecord>,
-    public val scope: Scope,
-) {
-    public val content: kotlin.collections.List<MetadataRecord> = content.immutableMap { it }
-}
-
-public data class MetadataRecord(
-    public val name: String,
-    public val value: MetadataValue,
+/** Ten optional fields and their complete source envelope; never Markup. */
+public data class Metadata(
+    public val name: MetadataValue? = null,
+    public val title: MetadataValue? = null,
+    public val subtitle: MetadataValue? = null,
+    public val time: MetadataValue? = null,
+    public val date: MetadataValue? = null,
+    public val authors: MetadataValue? = null,
+    public val keywords: MetadataValue? = null,
+    public val `abstract`: MetadataValue? = null,
+    public val state: MetadataValue? = null,
+    public val comment: MetadataValue? = null,
     public val scope: Scope,
 )
 

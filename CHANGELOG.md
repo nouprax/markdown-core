@@ -6,12 +6,15 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
-- Land O6 Properties as document-owned ordered metadata content. Supported YAML
-  members become data records; comments, non-YAML text, `...`, duplicates, and
-  unsupported or over-budget members retain source in the comment value case.
-  Valid neighboring data survives. Replace `Metadata.records` with `content`
-  across C, Swift, Kotlin, and ES, preserve exact numbers and record scopes, and
-  keep metadata outside Markup children and visitors.
+- Land O6 as document-owned metadata with ten direct optional fields: `name`,
+  `title`, `subtitle`, `time`, `date`, `authors`, `keywords`, `abstract`, `state`,
+  and `comment`. Ignore unknown names, unnamed text, comments, invalid values
+  and later duplicates while preserving valid neighboring fields. Authors and
+  keywords accept single strings, bracketed arrays and block lists; abstract
+  and comment accept single-line text and `: |` literal prose. Preserve exact
+  numeric text and the complete envelope scope across C, Swift, Kotlin and ES.
+  Metadata stays outside Markup and visitors. Remove the metadata collection,
+  record wrappers, per-field scopes, JSON root parser and source indexes.
 
 - Recognize one authored Unicode scalar as a task marker on C, Swift, Kotlin,
   and ES, including `?`, `✓` and `🚀`. Consume the entire SP/TAB/VT/FF separator

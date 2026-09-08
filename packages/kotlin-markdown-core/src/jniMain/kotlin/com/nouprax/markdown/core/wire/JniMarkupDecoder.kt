@@ -441,43 +441,52 @@ private class JniTreeDecoder(
     private fun metadata(): Metadata? {
         if (!reader.boolean()) return null
         val scope = reader.scope()
-        val content =
-            immutableList(count("metadata content")) {
-                val recordScope = reader.scope()
-                val name = reader.requiredString()
-                val value =
-                    when (val branch = reader.byte().toInt()) {
-                        1 -> {
-                            MetadataValue.Scalar(
-                                when (val kind = reader.byte().toInt()) {
-                                    0 -> MetadataScalar.Null
-                                    1 -> MetadataScalar.Bool(reader.boolean())
-                                    2 -> MetadataScalar.Number(reader.requiredString())
-                                    3 -> MetadataScalar.Text(reader.requiredString())
-                                    else -> error("invalid native metadata scalar $kind")
-                                },
-                            )
-                        }
+        return Metadata(
+            name = metadataValue(),
+            title = metadataValue(),
+            subtitle = metadataValue(),
+            time = metadataValue(),
+            date = metadataValue(),
+            authors = metadataValue(),
+            keywords = metadataValue(),
+            `abstract` = metadataValue(),
+            state = metadataValue(),
+            comment = metadataValue(),
+            scope = scope,
+        )
+    }
 
-                        2 -> {
-                            MetadataValue.List(
-                                immutableList(count("metadata item")) {
-                                    when (val kind = reader.byte().toInt()) {
-                                        1 -> MetadataListItem.Number(reader.requiredString())
-                                        2 -> MetadataListItem.Text(reader.requiredString())
-                                        else -> error("invalid native metadata item $kind")
-                                    }
-                                },
-                            )
-                        }
-
-                        else -> {
-                            error("invalid native metadata value $branch")
-                        }
-                    }
-                MetadataRecord(name, value, recordScope)
+    private fun metadataValue(): MetadataValue? {
+        if (!reader.boolean()) return null
+        return when (val branch = reader.byte().toInt()) {
+            1 -> {
+                MetadataValue.Scalar(
+                    when (val kind = reader.byte().toInt()) {
+                        0 -> MetadataScalar.Null
+                        1 -> MetadataScalar.Bool(reader.boolean())
+                        2 -> MetadataScalar.Number(reader.requiredString())
+                        3 -> MetadataScalar.Text(reader.requiredString())
+                        else -> error("invalid native metadata scalar $kind")
+                    },
+                )
             }
-        return Metadata(content, scope)
+
+            2 -> {
+                MetadataValue.List(
+                    immutableList(count("metadata item")) {
+                        when (val kind = reader.byte().toInt()) {
+                            1 -> MetadataListItem.Number(reader.requiredString())
+                            2 -> MetadataListItem.Text(reader.requiredString())
+                            else -> error("invalid native metadata item $kind")
+                        }
+                    },
+                )
+            }
+
+            else -> {
+                error("invalid native metadata value $branch")
+            }
+        }
     }
 
     private fun dimension(): Int? =
