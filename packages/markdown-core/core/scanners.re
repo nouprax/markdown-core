@@ -119,17 +119,6 @@ bufsize_t _scan_html_tag(const unsigned char *p)
 */
 }
 
-// Try to (liberally) match an HTML tag after first <, returning num of chars matched.
-bufsize_t _scan_liberal_html_tag(const unsigned char *p)
-{
-  const unsigned char *marker = NULL;
-  const unsigned char *start = p;
-/*!re2c
-  [^\n\x00]+ [>] { return (bufsize_t)(p - start); }
-  * { return 0; }
-*/
-}
-
 bufsize_t _scan_html_comment(const unsigned char *p)
 {
   const unsigned char *marker = NULL;

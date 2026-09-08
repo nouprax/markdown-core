@@ -11,11 +11,6 @@
 
 int LLVMFuzzerInitialize(int *argc, char ***argv) { return 0; }
 
-static bool attach_core_extensions(markdown_core_parser *parser, void *context) {
-    (void)context;
-    return markdown_core_core_extensions_attach(parser) != 0;
-}
-
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     struct __attribute__((packed)) {
         uint8_t splitpoint;
@@ -50,11 +45,9 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
                 memcpy(markdown, markdown0, markdown_size);
             }
 
-            /* The one dialect: the engine configuration `markdown-core-extensions.h`
-             * states, and the fixed table's one attach order. */
+            /* The engine always attaches the complete dialect. */
             markdown_core_node *doc = markdown_core_parse_document_with_mem(
-                markdown, markdown_size, MARKDOWN_CORE_DIALECT_OPTIONS, markdown_core_get_default_mem_allocator(),
-                attach_core_extensions, NULL);
+                markdown, markdown_size, markdown_core_get_default_mem_allocator(), NULL, NULL);
             if (!doc) {
                 return 0;
             }

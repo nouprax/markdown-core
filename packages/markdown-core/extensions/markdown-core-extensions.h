@@ -57,19 +57,6 @@ typedef enum {
     MARKDOWN_CORE_FORMULA_MODE_STANDALONE
 } markdown_core_formula_mode;
 
-/** THE DIALECT'S ENGINE CONFIGURATION, and the only place it is written down.
- *
- * The parser has one language. Every extension in the attach table of
- * `core-extensions.c` is always attached and every bit of this option word is
- * always set; nothing selects a subset -- not the facade, not the installed
- * CLI, not a test -- so a feature is public from the commit that adds it here,
- * and every fixture, oracle gate, and audit judges the language that ships.
- *
- * Nothing here strips anything: an HTML comment is a `Comment` node, and a
- * consumer that does not want comments drops the nodes.
- */
-#define MARKDOWN_CORE_DIALECT_OPTIONS (MARKDOWN_CORE_OPT_FOOTNOTES)
-
 /** Attaches every extension of the dialect, in this library's one order.
  * Returns 1 when all of them attached and 0 when any did not; on failure the
  * parser keeps whatever attached before the failure and the caller is expected

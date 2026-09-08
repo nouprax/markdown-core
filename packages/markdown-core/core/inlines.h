@@ -15,8 +15,7 @@ markdown_core_chunk markdown_core_clean_url(markdown_core_mem *mem, markdown_cor
 markdown_core_optional_chunk markdown_core_clean_title(markdown_core_mem *mem, markdown_core_chunk *title, int *lost);
 
 MARKDOWN_CORE_EXPORT
-void markdown_core_parse_inlines(markdown_core_parser *parser, markdown_core_node *parent, markdown_core_map *refmap,
-                                 int options);
+void markdown_core_parse_inlines(markdown_core_parser *parser, markdown_core_node *parent, markdown_core_map *refmap);
 
 /* Reads ONE link reference definition off the front of `input`, registers its
  * label and the resource it states in `refmap`, and returns the number of

@@ -103,7 +103,8 @@ static const char OOM_EXTENSION_EDGE_CORPUS[] = ":inline[label]{.a class=\"\" .b
 static const char OOM_INLINE_FOOTNOTE_CORPUS[] =
     "^[a ^[b [^x]] www.example.com] :d[^[label]] ^[] ^[ \t ] ^[open\n\n"
     "[outer ^[[inner](u)]](v) ^[==mark== %%comment%%]\n\n"
-    "[^inline-1]: reserved\n[^inline-1-1]: suffix\n[^inline-1-2]: suffix\n[^x]: ^[nested [^x]]\n";
+    "[^inline-1]: reserved\n[^inline-1-1]: suffix\n[^inline-1-2]: suffix\n[^x]: ^[nested [^x]]\n\n"
+    "^[http://example.com] :d[^[www.example.com]] ^[outer :d[^[inner]]]\n";
 
 static const char OOM_MARK_CORPUS[] = "===a *b*=== ==c====d== ==[link](/u) <!--c-->==\n\n"
                                       "| ==h== |\n| --- |\n| ==x\\|y== |\n\ncall[^n]\n\n[^n]: ==note==\n";

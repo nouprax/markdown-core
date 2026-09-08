@@ -489,54 +489,12 @@ MARKDOWN_CORE_EXPORT int markdown_core_node_append_child(markdown_core_node *nod
  *  materialized because an allocation failed; the tree stays valid. */
 MARKDOWN_CORE_EXPORT int markdown_core_consolidate_text_nodes(markdown_core_node *root);
 
-/**
- * ## Parsing
- *
- * Simple interface:
- *
- *     markdown_core_node *document = markdown_core_parse_document("Hello *world*", 13,
- *                                                 MARKDOWN_CORE_OPT_DEFAULT);
- */
-
-/** Parse a CommonMark document in 'buffer' of length 'len'.
- * Returns a pointer to a tree of nodes.  The memory allocated for
- * the node tree should be released using 'markdown_core_node_free'
- * when it is no longer needed.
+/** Parse the complete Markdown Core dialect using the default allocator.
+ * Internal node access for engine tests; the installed API returns a document.
+ * The returned tree must be released with markdown_core_node_free.
  */
 MARKDOWN_CORE_EXPORT
-markdown_core_node *markdown_core_parse_document(const char *buffer, size_t len, int options);
-
-/**
- * ## Options
- */
-
-/** Default options.
- */
-#define MARKDOWN_CORE_OPT_DEFAULT 0
-
-/** Track multiline inline source positions while parsing. */
-#define MARKDOWN_CORE_OPT_SOURCEPOS (1 << 1)
-
-/**
- * ### Options affecting parsing
- */
-
-/** Legacy option (no effect).
- */
-#define MARKDOWN_CORE_OPT_NORMALIZE (1 << 8)
-
-/** Be liberal in interpreting inline HTML tags.
- */
-#define MARKDOWN_CORE_OPT_LIBERAL_HTML_TAG (1 << 12)
-
-/** Parse footnotes.
- */
-#define MARKDOWN_CORE_OPT_FOOTNOTES (1 << 13)
-
-/** Only parse strikethroughs if surrounded by exactly 2 tildes.
- * Gives some compatibility with redcarpet.
- */
-#define MARKDOWN_CORE_OPT_STRIKETHROUGH_DOUBLE_TILDE (1 << 14)
+markdown_core_node *markdown_core_parse_document(const char *buffer, size_t len);
 
 /**
  * ## Version information

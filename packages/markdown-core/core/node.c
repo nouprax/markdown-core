@@ -31,11 +31,6 @@ bool markdown_core_node_can_contain_type(markdown_core_node *node, markdown_core
         return (MARKDOWN_CORE_NODE_TYPE_BLOCK_P(child_type) && child_type != MARKDOWN_CORE_NODE_LIST_ITEM) ||
                MARKDOWN_CORE_NODE_TYPE_INLINE_P(child_type);
 
-    case MARKDOWN_CORE_NODE_CITE:
-        /* An inline body's sole owner until the document footnote operation
-         * transfers it to Document.footnotes at the end of the parse. */
-        return child_type == MARKDOWN_CORE_NODE_FOOTNOTE;
-
     case MARKDOWN_CORE_NODE_LIST:
         return child_type == MARKDOWN_CORE_NODE_LIST_ITEM;
 

@@ -194,7 +194,11 @@ extension are recognized at the same step:
 A URL or `www.` candidate extends to the first whitespace or `<`; then
 trailing `?`, `!`, `.`, `,`, `:`, `*`, `_`, `~`, `'`, `"`, a trailing
 entity-shaped `&...;`, and every `)` beyond the number of `(` inside the run
-are excluded from its end. Neither form is recognized inside an open bracket.
+are excluded from its end. Neither form is recognized inside an open link or image label. An inline
+footnote starts an independent inline body: both forms are recognized there,
+including at its first byte, and stop before the first unescaped `]` belonging
+to that body. Their bytes retain the ordinary bare-URL spelling, including
+backslashes before escaped punctuation.
 Every bare form produces `Link(dest=url(...), title=null)` with the link text
 as content; an email destination carries the inherited `mailto:` prefix and a
 `www.` destination the inherited `http://` prefix:

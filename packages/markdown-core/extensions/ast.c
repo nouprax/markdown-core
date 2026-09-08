@@ -60,13 +60,6 @@ static void set_error(markdown_core_error **error, const markdown_core_error *va
     *error = (markdown_core_error *)(uintptr_t)value;
 }
 
-static bool configure_facade_parse(markdown_core_parser *parser, void *context) {
-    (void)context;
-    /* The facade never says WHICH extensions: `core-extensions.c` owns the one
-     * list and the one order used by every product entry. */
-    return markdown_core_core_extensions_attach(parser);
-}
-
 /* THE ONE PARSE TRANSACTION. Every caller runs it over the whole dialect:
  * the public entry supplies the default allocator, and the allocation-failure
  * tests supply an injected one. Nothing else builds a parser, so there is
@@ -91,8 +84,7 @@ markdown_core_document *markdown_core_document_parse_with_mem(const uint8_t *sou
     }
     document->mem = mem;
 
-    document->root = markdown_core_parse_document_with_mem((const char *)source, length, MARKDOWN_CORE_DIALECT_OPTIONS,
-                                                           mem, configure_facade_parse, NULL);
+    document->root = markdown_core_parse_document_with_mem((const char *)source, length, mem, NULL, NULL);
     if (!document->root) {
         mem->free(document);
         set_error(error, &ERROR_PARSE_ALLOCATION);

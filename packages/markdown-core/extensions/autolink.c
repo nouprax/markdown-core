@@ -194,6 +194,24 @@ static void set_sourcepos_from_range(markdown_core_parser *parser, markdown_core
     }
 }
 
+/* URL and www candidates use the same extent rule. Bracket bodies supply
+ * their delimiter; escaped punctuation stays in the opaque token. Each byte
+ * is visited once, including tokens that end at a footnote's closing ]. */
+static size_t autolink_extent(markdown_core_inline_parser *parser, uint8_t *data, size_t size, size_t offset) {
+    unsigned char closer = markdown_core_inline_parser_closing_bracket(parser);
+    while (offset < size && !markdown_core_isspace(data[offset]) && data[offset] != '<') {
+        if (data[offset] == closer) {
+            break;
+        }
+        if (data[offset] == '\\' && offset + 1 < size && markdown_core_ispunct(data[offset + 1]) &&
+            data[offset + 1] != '<') {
+            offset++;
+        }
+        offset++;
+    }
+    return offset;
+}
+
 static markdown_core_node *www_match(markdown_core_parser *parser, markdown_core_node *parent,
                                      markdown_core_inline_parser *inline_parser) {
     markdown_core_chunk *chunk = markdown_core_inline_parser_get_chunk(inline_parser);
@@ -203,7 +221,8 @@ static markdown_core_node *www_match(markdown_core_parser *parser, markdown_core
 
     size_t link_end;
 
-    if (max_rewind > 0 && strchr("*_~(", data[-1]) == NULL && !markdown_core_isspace(data[-1])) {
+    if (max_rewind > (size_t)markdown_core_inline_parser_context_start(inline_parser) &&
+        strchr("*_~(", data[-1]) == NULL && !markdown_core_isspace(data[-1])) {
         return 0;
     }
 
@@ -217,9 +236,7 @@ static markdown_core_node *www_match(markdown_core_parser *parser, markdown_core
         return NULL;
     }
 
-    while (link_end < size && !markdown_core_isspace(data[link_end]) && data[link_end] != '<') {
-        link_end++;
-    }
+    link_end = autolink_extent(inline_parser, data, size, link_end);
 
     link_end = autolink_delim(data, link_end);
 
@@ -295,9 +312,7 @@ static markdown_core_node *url_match(markdown_core_parser *parser, markdown_core
     }
 
     link_end += domain_len;
-    while (link_end < size && !markdown_core_isspace(data[link_end]) && data[link_end] != '<') {
-        link_end++;
-    }
+    link_end = autolink_extent(inline_parser, data, size, link_end);
 
     link_end = autolink_delim(data, link_end);
 

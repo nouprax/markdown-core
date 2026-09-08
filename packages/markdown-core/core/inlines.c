@@ -103,7 +103,7 @@ static MARKDOWN_CORE_INLINE bool S_is_line_end_char(char c) { return (c == '\n' 
 static delimiter *S_insert_delimited_inline(subject *subj, delimiter *opener, delimiter *closer, bufsize_t use_delims,
                                             markdown_core_node_type kind);
 
-static int parse_inline(markdown_core_parser *parser, subject *subj, markdown_core_node *parent, int options);
+static int parse_inline(markdown_core_parser *parser, subject *subj, markdown_core_node *parent);
 
 static void subject_from_buf(markdown_core_parser *parser, markdown_core_mem *mem, int line_number, subject *e,
                              markdown_core_chunk *buffer, markdown_core_map *refmap);
@@ -477,7 +477,7 @@ static void S_normalize_code(markdown_core_strbuf *s) {
 
 // Parse backtick code section or raw backticks, return an inline.
 // Assumes that the subject has a backtick at the current position.
-static markdown_core_node *handle_backticks(subject *subj, int options) {
+static markdown_core_node *handle_backticks(subject *subj) {
     markdown_core_chunk openticks = take_while(subj, isbacktick);
     bufsize_t startpos = subj->pos;
     bufsize_t endpos = scan_to_closing_backticks(subj, openticks.len);
@@ -1150,7 +1150,7 @@ markdown_core_optional_chunk markdown_core_clean_title(markdown_core_mem *mem, m
 
 // Parse an autolink, an HTML comment, or an HTML tag.
 // Assumes the subject has a '<' character at the current position.
-static markdown_core_node *handle_pointy_brace(subject *subj, int options) {
+static markdown_core_node *handle_pointy_brace(subject *subj) {
     bufsize_t matchlen = 0;
     bool comment = false;
     markdown_core_chunk contents;
@@ -1252,16 +1252,6 @@ static markdown_core_node *handle_pointy_brace(subject *subj, int options) {
         subj->pos += matchlen;
         markdown_core_node *node = make_raw_html(subj, subj->pos - matchlen - 1, subj->pos - 1, contents);
         return node;
-    }
-
-    if (options & MARKDOWN_CORE_OPT_LIBERAL_HTML_TAG) {
-        matchlen = scan_liberal_html_tag(&subj->input, subj->pos);
-        if (matchlen > 0) {
-            contents = markdown_core_chunk_dup(&subj->input, subj->pos - 1, matchlen + 1);
-            subj->pos += matchlen;
-            markdown_core_node *node = make_raw_html(subj, subj->pos - matchlen - 1, subj->pos - 1, contents);
-            return node;
-        }
     }
 
     // if nothing matches, just return the opening <:
@@ -1454,13 +1444,9 @@ static markdown_core_node *close_inline_footnote(markdown_core_parser *parser, s
         append_child(footnote, child);
         child = next;
     }
-    /* Until finalization the occurrence owns its body as a structural child.
-     * Thus all ordinary tree phases see it and failure cleanup owns it once.
-     * The document operation assigns both ids and transfers this child to
-     * Document.footnotes; no temporary pointer survives in the public tree. */
-    append_child(cite, footnote);
     markdown_core_node_insert_before(opener->inl_text, cite);
-    if (!markdown_core_parser_register_footnote(parser, footnote)) {
+    if (!markdown_core_parser_register_footnote(parser, footnote, cite->as.cite->citations)) {
+        markdown_core_node_free(footnote);
         subj->oom = 1;
     }
     markdown_core_node_free(opener->inl_text);
@@ -1582,8 +1568,7 @@ static markdown_core_node *handle_close_bracket(markdown_core_parser *parser, su
 noMatch:
     // If we fall through to here, it means we didn't match a link.
     // What if we're a footnote link?
-    if (parser->options & MARKDOWN_CORE_OPT_FOOTNOTES && opener->inl_text->next &&
-        opener->inl_text->next->kind == MARKDOWN_CORE_NODE_TEXT) {
+    if (opener->inl_text->next && opener->inl_text->next->kind == MARKDOWN_CORE_NODE_TEXT) {
 
         markdown_core_chunk *literal = opener->inl_text->next->as.literal;
 
@@ -1819,7 +1804,10 @@ static bufsize_t subject_find_special_char(subject *subj) {
     bufsize_t n = subj->pos + 1;
 
     while (n < subj->input.len) {
-        if (subj->special_chars[subj->input.data[n]]) {
+        /* A caret starts syntax only as part of ^[. Every other caret
+         * belongs to the surrounding ordinary text span. */
+        if (subj->special_chars[subj->input.data[n]] &&
+            (subj->input.data[n] != '^' || (n + 1 < subj->input.len && subj->input.data[n + 1] == '['))) {
             return n;
         }
         n++;
@@ -1841,6 +1829,7 @@ static int is_core_special_character(unsigned char c) {
     case ']':
     case '<':
     case '!':
+    case '^':
         return 1;
     default:
         return 0;
@@ -1939,7 +1928,7 @@ static int bracket_takes_close_bracket(markdown_core_parser *parser, subject *su
 
 // Parse an inline, advancing subject, and add it as a child of parent.
 // Return 0 if no inline can be parsed, 1 otherwise.
-static int parse_inline(markdown_core_parser *parser, subject *subj, markdown_core_node *parent, int options) {
+static int parse_inline(markdown_core_parser *parser, subject *subj, markdown_core_node *parent) {
     markdown_core_node *new_inl = NULL;
     markdown_core_chunk contents;
     unsigned char c;
@@ -1965,7 +1954,7 @@ static int parse_inline(markdown_core_parser *parser, subject *subj, markdown_co
         new_inl = handle_newline(subj);
         break;
     case '`':
-        new_inl = handle_backticks(subj, options);
+        new_inl = handle_backticks(subj);
         break;
     case '\\':
         new_inl = try_extensions(parser, parent, c, subj);
@@ -1981,7 +1970,7 @@ static int parse_inline(markdown_core_parser *parser, subject *subj, markdown_co
         new_inl = handle_entity(subj);
         break;
     case '<':
-        new_inl = handle_pointy_brace(subj, options);
+        new_inl = handle_pointy_brace(subj);
         break;
     case '*':
     case '_':
@@ -1994,15 +1983,13 @@ static int parse_inline(markdown_core_parser *parser, subject *subj, markdown_co
         new_inl = handle_delim(subj, c);
         break;
     case '^':
-        advance(subj);
-        if (peek_char(subj) == '[') {
-            advance(subj);
-            new_inl = make_str(subj, subj->pos - 2, subj->pos - 1, markdown_core_chunk_literal("^["));
-            if (new_inl) {
-                push_bracket(subj, BRACKET_FOOTNOTE, new_inl);
-            }
-        } else {
-            new_inl = make_str(subj, subj->pos - 1, subj->pos - 1, markdown_core_chunk_literal("^"));
+        if (peek_char_n(subj, 1) != '[') {
+            goto text;
+        }
+        subj->pos += 2;
+        new_inl = make_str(subj, subj->pos - 2, subj->pos - 1, markdown_core_chunk_literal("^["));
+        if (new_inl) {
+            push_bracket(subj, BRACKET_FOOTNOTE, new_inl);
         }
         break;
     case '[':
@@ -2051,6 +2038,7 @@ static int parse_inline(markdown_core_parser *parser, subject *subj, markdown_co
             break;
         }
 
+    text:
         endpos = subject_find_special_char(subj);
         contents = markdown_core_chunk_dup(&subj->input, subj->pos, endpos - subj->pos);
         startpos = subj->pos;
@@ -2085,8 +2073,7 @@ append:
 }
 
 // Parse inlines from parent's string_content, adding as children of parent.
-void markdown_core_parse_inlines(markdown_core_parser *parser, markdown_core_node *parent, markdown_core_map *refmap,
-                                 int options) {
+void markdown_core_parse_inlines(markdown_core_parser *parser, markdown_core_node *parent, markdown_core_map *refmap) {
     subject subj;
     markdown_core_chunk content = {parent->content.ptr, parent->content.size, 0};
     /* EVERY content-bearing block has a map by the time its inlines are parsed.
@@ -2105,7 +2092,7 @@ void markdown_core_parse_inlines(markdown_core_parser *parser, markdown_core_nod
     subj.owner = parent;
     markdown_core_chunk_rtrim(&subj.input);
 
-    while (!is_eof(&subj) && parse_inline(parser, &subj, parent, options))
+    while (!is_eof(&subj) && parse_inline(parser, &subj, parent))
         ;
 
     process_emphasis(parser, &subj, 0);
@@ -2461,3 +2448,14 @@ bufsize_t markdown_core_delimiter_length(const delimiter *delim) { return delim-
 int markdown_core_delimiter_can_open(const delimiter *delim) { return delim->can_open; }
 
 int markdown_core_delimiter_can_close(const delimiter *delim) { return delim->can_close; }
+
+/* A bare token scanner must leave the active container's closer to the
+ * bracket algorithm. Unlike link/image labels, footnote bodies allow links. */
+unsigned char markdown_core_inline_parser_closing_bracket(markdown_core_inline_parser *parser) {
+    return parser->last_bracket ? ']' : 0;
+}
+
+int markdown_core_inline_parser_context_start(markdown_core_inline_parser *parser) {
+    bracket *opener = parser->last_bracket;
+    return opener && opener->kind == BRACKET_FOOTNOTE ? opener->position : 0;
+}

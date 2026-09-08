@@ -311,6 +311,11 @@ Document scope=1:1..1:8 anchor=null attributes={} children=1
         └── Text scope=1:6..1:6 anchor=null attributes={} literal="b" children=0
 ````````````````````````````````
 
+The body is an independent inline context, so bare URLs and `www.` links
+are recognized even at its first byte. Their scanner leaves the body's first
+unescaped `]` for the shared bracket procedure; `^[http://example.com]`
+therefore contains a link to `http://example.com` and ends at that bracket.
+
 The `]` that matches the opener closes the footnote without attempting any
 link, reference, span, cite, or attribute tail, so `^[a](b)` is a `Cite`
 followed by text `(b)`. At one `^`, the inline footnote wins over a `[^label]`

@@ -32,15 +32,19 @@ typedef struct {
     int source_step;
 } markdown_core_line_mark;
 
-/* The committed footnotes of one parse. Entries borrow nodes from their
- * structural owners until finalization transfers them to Document.footnotes.
- * Registration order is parse order, not source order. Failed candidates
- * never enter this collection; a failed parse discards the index without
- * reading its entries. */
+/* Parse-time edges used only to assign document-local ids. Every footnote
+ * is already owned by the document, either in its block tree or value field.
+ * The index is discarded before any mutating postprocessor runs. */
 typedef struct {
-    struct markdown_core_node **values;
+    struct markdown_core_node *footnote;
+    struct markdown_core_node *citation;
+} markdown_core_footnote_entry;
+
+typedef struct {
+    markdown_core_footnote_entry *values;
     size_t count;
     size_t capacity;
+    struct markdown_core_node *last_inline;
 } markdown_core_footnote_collection;
 
 struct markdown_core_parser {
@@ -83,7 +87,6 @@ struct markdown_core_parser {
      * normalized line currently being parsed. */
     markdown_core_strbuf line_scratch;
     /* Options set by the user, see the Options section in markdown_core.h */
-    int options;
     /* Sticky allocation-failure flag: once any parse structure is lost, the
      * one-shot transaction reports the whole parse as failed (NULL) instead of
      * returning a silently truncated document. */
@@ -92,6 +95,7 @@ struct markdown_core_parser {
     size_t cross_link_scan_work;
     size_t opaque_scan_work;
     size_t footnote_body_work;
+    size_t footnote_registration_work;
     /* Run bytes, opener comparisons, and child moves in the shared delimiter algorithm. */
     size_t delimiter_work;
     /* Opener checks of the `%%` comment scanner; and the lines the block-start
@@ -212,19 +216,20 @@ int markdown_core_parser_lookahead_next(markdown_core_block_lookahead *lookahead
                                         int *first_nonspace, int *indent, int *blank_lines);
 void markdown_core_parser_lookahead_end(markdown_core_block_lookahead *lookahead);
 
-/* Register once when footnote syntax commits, while the node has a tree
- * owner. Successful later phases may move this node but cannot retract the
- * footnote. Allocation failure marks the whole parse failed. */
-bool markdown_core_parser_register_footnote(markdown_core_parser *parser, struct markdown_core_node *footnote);
+/* Register committed syntax. A citation transfers its detached inline body
+ * into Document.footnotes; an authored definition remains in the block tree
+ * until inline parsing finishes. Allocation failure aborts the whole parse. */
+bool markdown_core_parser_register_footnote(markdown_core_parser *parser, struct markdown_core_node *footnote,
+                                            struct markdown_core_node *citation);
 
 /* The engine has one parse operation. `setup`, when present, configures the
- * fresh parser before any source is read; extension attachment belongs there.
+ * fresh parser after the complete dialect is attached, before any source is
+ * read. Tests may add instrumentation; no caller selects the language.
  * Returning false aborts the transaction. The
  * parser never escapes this call and is destroyed before it returns. */
 typedef bool (*markdown_core_parser_setup_func)(markdown_core_parser *parser, void *context);
-markdown_core_node *markdown_core_parse_document_with_mem(const char *source, size_t length, int options,
-                                                          markdown_core_mem *mem, markdown_core_parser_setup_func setup,
-                                                          void *context);
+markdown_core_node *markdown_core_parse_document_with_mem(const char *source, size_t length, markdown_core_mem *mem,
+                                                          markdown_core_parser_setup_func setup, void *context);
 
 #ifdef __cplusplus
 }

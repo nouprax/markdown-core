@@ -26,11 +26,9 @@
  *      answers the case where table DECLINES; only the order answers the case
  *      where its matcher succeeds.
  *
- * Tests are exempt from (1) on purpose. `extension_decline_yields_turn` in
- * `tests/api/main.c` attaches `table` and then `directive` by hand precisely so
- * that it keeps failing under any order. The strict OOM runner similarly
- * supplies its own setup callback. A test that could not build a parser the
- * product cannot build would be unable to gate the product's choice.
+ * Tests may attach synthetic fault-injection or observation probes. The
+ * engine still attaches the complete core table before any setup callback,
+ * so those probes never select a subset of the dialect.
  */
 
 import fs from "node:fs";
@@ -105,6 +103,35 @@ for (const stray of strays) {
         `${stray.file}: ${ATTACH} is called from \`${stray.function}\`. ` +
             "A second attach site is a second attach ORDER, which is D15."
     );
+}
+
+// The one transaction attaches the whole table; neither facade, tests, nor
+// fuzzers own a configurable engine entry. Old option words cannot return.
+const dialectAttachSites = [];
+function cSources(dir) {
+    return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+        const full = path.join(dir, entry.name);
+        return entry.isDirectory() ? cSources(full) : /\.(?:c|h|cpp)$/.test(entry.name) ? [full] : [];
+    });
+}
+for (const file of cSources(pkg)) {
+    const source = fs.readFileSync(file, "utf8");
+    if (/\bMARKDOWN_CORE_(?:OPT_\w+|DIALECT_OPTIONS)\b/.test(source)) {
+        failures.push(`${path.relative(pkg, file)} retains a parse option`);
+    }
+    if (!file.endsWith(".c")) continue;
+    for (const match of source.matchAll(/\bmarkdown_core_core_extensions_attach\s*\(/g)) {
+        const end = endOfArguments(source, source.indexOf("(", match.index));
+        if (end < 0 || /^\s*\{/.test(source.slice(end))) continue;
+        dialectAttachSites.push({ file: path.relative(pkg, file), function: enclosingFunction(source, match.index) });
+    }
+}
+if (
+    dialectAttachSites.length !== 1 ||
+    dialectAttachSites[0].file !== "core/blocks.c" ||
+    dialectAttachSites[0].function !== "markdown_core_parse_document_with_mem"
+) {
+    failures.push("the sole engine parse transaction must be the sole complete-dialect attachment site");
 }
 
 // (2) The shared inventory proves every descriptor has exactly one position.

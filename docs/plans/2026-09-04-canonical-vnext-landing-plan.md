@@ -329,6 +329,12 @@ its behavior, with no separate publication step.
       regenerated and reviewed; no surface and no test parses a part of the
       dialect; and the corpus and fuzz gates judge the language that ships.
       Requires `S0`, which states the switch-less dialect.
+  Completion audit (2026-09-08): removed the remaining internal option word,
+  constants, liberal-HTML branch and scanner, extension-subset test helpers,
+  and manually configured fuzz entries. The engine transaction always attaches
+  the complete dialect before optional test instrumentation. The attachment
+  audit rejects option constants and any second complete-dialect attach site.
+
 - [ ] **P0 — Pandoc evidence gate.** Add `oracle-pandoc` to
       `scripts/init-environment.sh`: `--install` fetches only the host archive
       named by `specs/oracles/pandoc/source.json` and verifies its SHA-256, and
@@ -733,19 +739,19 @@ its behavior, with no separate publication step.
       allocation failure, and adversarial `^`, `[`, and `]` runs. Requires `O1`.
   Implementation notes (2026-09-08): `^[` pushes an inline-footnote opener
   on the shared bracket stack; its matching close consumes no tail. The
-  inherited and inline forms use one citation constructor. An inline Cite
-  owns its pending Footnote body through consolidation and extension passes;
-  both forms register in one borrowed parser collection when their syntax
-  commits, including notes in deferred directive labels. Finalization visits
-  only the registered values, orders them by source start with eight stable
-  byte passes, reserves all authored ids, and assigns `inline-N` / `inline-N-K`
-  before transferring ownership. Failed candidates never register; all later
-  successful phases retain committed notes. No public field, kind, export, or
-  transport layout changes.
+  inherited and inline forms use one citation constructor. A successful inline
+  close places its Footnote directly in the document value field, and both
+  forms register in one parser collection. Finalization visits only those
+  values, orders source starts with eight stable byte passes, reserves all
+  authored ids, and assigns `inline-N` / `inline-N-K`. It completes document
+  ownership and discards the index before consolidation and mutable extension
+  passes. Those phases visit document footnotes through their live owner slots.
+  Failed candidates never register. No public field, kind, export, or transport
+  layout changes.
   Nonblank-body evidence visits disjoint consumed token ranges, and nested
   bodies are neither rescanned nor reparsed. Package coverage now includes all
   module examples plus malformed, nested, collision, semantic-cycle, opacity,
-  link-boundary, table-map, and detached-field cases (31 cases total). The
+  link-boundary, table-map, and detached-field cases (35 cases total). The
   new canonical case and Swift/Kotlin/ES tests verify direct inline bodies,
   source ordering, and finite value visitation. P6 owns superscript composition.
 
@@ -755,10 +761,13 @@ its behavior, with no separate publication step.
   all four oracle gates, and 400-input seed-1 fuzz runs for CommonMark, GFM,
   and remark pass. The bracket probes double from 128 to 8192 units; authored
   suffix-collision sets double to 4096. Postprocess probes verify the collection
-  is complete before finalization, retains structural owners, and allocates
-  nothing for failed candidates. Existing golden ASTs remain exact.
+  records only committed notes and is discarded before mutable callbacks; a
+  callback that deletes all footnotes verifies the lifetime boundary. Literal
+  caret spans from 1 KiB to 1 MiB allocate exactly as ordinary text spans. Bare
+  URL fixtures cover closing brackets, escapes, nested notes and label fields.
+  Existing golden ASTs remain exact.
   Position-place and external-position ledgers and the reference-resolution
-  ledger remain unchanged. The containment ledger adds two reviewed nested
+  ledger remain unchanged. The containment ledger adds three reviewed nested
   footnote overlaps: the values retain their original, enclosing source
   ranges after document ownership transfer. `pnpm verify` and the host release
   dry run pass; full cross-host release aggregation remains the required CI gate.
@@ -969,10 +978,9 @@ its behavior, with no separate publication step.
       rejection, `\ ` to a no-break space, empty bodies, `^[` and `~~`
       precedence. Add both kinds, fixtures, and
       canonical cases; remove the `superscript-and-subscript` and
-      `empty-superscript-and-subscript` gaps. Remove the legacy
-      double-tilde-only strikethrough mode with it: the CLI flag, the C option
-      bit, and the parser branch; and remove single-tilde strikethrough from
-      the strikethrough extension, registering the cmark-gfm delta, so a
+      `empty-superscript-and-subscript` gaps. X0 has removed the legacy
+      double-tilde-only switch; this item removes single-tilde strikethrough
+      from the extension, registering the cmark-gfm delta, so a
       single tilde is always a subscript delimiter. Two
       cross-item cases are owned by whichever item merges later: the `^[`
       precedence case with `O4`, and an identifier caret removed by
