@@ -4,7 +4,7 @@ Status: normative module of the [Markdown Core dialect](../dialect.md).
 Sources: cmark-gfm's task-list
 extension; Obsidian's custom task characters. Executable oracles: cmark-gfm
 for the inherited markers, `@quartz-community/remark-obsidian` for custom
-markers. Landing: the `marker` field landed with `M5`; custom markers land with `O5`. The
+markers. Landing: the `marker` field landed with `M5`; custom markers landed with `O5`. The
 [example format](../dialect.md#examples) is defined by the index.
 
 ## Model
@@ -153,6 +153,13 @@ Document scope=1:1..2:8 anchor=null attributes={} children=1
             └── Text scope=2:3..2:8 anchor=null attributes={} literal="[ab] b" children=0
 ````````````````````````````````
 
+The pinned Obsidian oracle scans decoded paragraph text with a one-code-unit
+regular expression. Its limits on supplementary scalars and `]`, broader
+whitespace alphabet, one-character separator removal, and recognition after
+escape decoding or on a later paragraph deliberately differ from this grammar.
+The exact witnesses and both semantic digests are registered in
+`specs/oracles/obsidian/deltas.json`; they are evidence, not product gaps.
+
 ## Fallback
 
 A malformed prefix is inline text of the item's first block.
@@ -162,7 +169,9 @@ the prefix is decided before inline parsing.
 ## Scopes
 
 `ListItem.scope` covers the prefix; the item's first block and its
-descendants begin after the separator.
+descendants begin after the separator. Source columns count UTF-8 bytes.
+For subsequent indentation and tab expansion, the marker counts as one
+virtual column regardless of its UTF-8 length or display width.
 
 ## Required conformance cases
 

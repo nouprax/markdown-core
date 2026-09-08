@@ -106,6 +106,11 @@ static const char OOM_INLINE_FOOTNOTE_CORPUS[] =
     "[^inline-1]: reserved\n[^inline-1-1]: suffix\n[^inline-1-2]: suffix\n[^x]: ^[nested [^x]]\n\n"
     "^[http://example.com] :d[^[www.example.com]] ^[outer :d[^[inner]]]\n";
 
+static const char OOM_TASK_CORPUS[] = "- [é] two\n- [✓] three\n- [🚀] four\n"
+                                      "> 1. [?] # heading\n>    - [-] nested\n"
+                                      "- [✓] \t\v\f\noutside\n"
+                                      "- [] empty\n- [é] multiple\n- [?]none\n";
+
 static const char OOM_MARK_CORPUS[] = "===a *b*=== ==c====d== ==[link](/u) <!--c-->==\n\n"
                                       "| ==h== |\n| --- |\n| ==x\\|y== |\n\ncall[^n]\n\n[^n]: ==note==\n";
 
@@ -143,6 +148,7 @@ typedef struct oom_case {
 } oom_case;
 
 static const oom_case OOM_CASES[] = {
+    {"task markers", OOM_TASK_CORPUS, sizeof(OOM_TASK_CORPUS) - 1},
     {"inline footnotes", OOM_INLINE_FOOTNOTE_CORPUS, sizeof(OOM_INLINE_FOOTNOTE_CORPUS) - 1},
     {"comments", OOM_COMMENT_CORPUS, sizeof(OOM_COMMENT_CORPUS) - 1},
     {"marks", OOM_MARK_CORPUS, sizeof(OOM_MARK_CORPUS) - 1},

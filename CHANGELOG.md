@@ -6,6 +6,12 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
+- Recognize one authored Unicode scalar as a task marker on C, Swift, Kotlin,
+  and ES, including `?`, `✓` and `🚀`. Consume the entire SP/TAB/VT/FF separator
+  run before deciding the first block, and inspect only an item's opening
+  prefix. Preserve the exact scalar in `ListItem.marker`; empty or multi-scalar
+  candidates and prefixes without a separator retain their literal fallback.
+
 - Recognize `^[inline note]` on C, Swift, Kotlin, and ES through the shared
   bracket algorithm. Store parsed inline bodies directly in document-owned
   Footnote values, merge both footnote forms by source position, and assign

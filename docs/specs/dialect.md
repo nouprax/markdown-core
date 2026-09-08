@@ -91,7 +91,7 @@ that makes the row `present`.
 | marks                               | [marks](dialect/marks.md)                                         | Obsidian                               | remark-obsidian                      | present                         |
 | `%%` comments                       | [comments](dialect/comments.md)                                   | Obsidian                               | remark-obsidian                      | present                         |
 | inline footnotes                    | [footnotes](dialect/footnotes.md)                                 | Obsidian, Pandoc                       | none; product fixtures               | present                   |
-| task markers                        | [task lists](dialect/task-lists.md)                               | Obsidian                               | remark-obsidian                      | missing, `O5`                   |
+| task markers                        | [task lists](dialect/task-lists.md)                               | Obsidian                               | remark-obsidian                      | present                         |
 | properties                          | [properties](dialect/properties.md)                               | Obsidian                               | `yaml`                               | missing, `O6`                   |
 | block identifiers                   | [block identifiers](dialect/block-identifiers.md)                 | Obsidian                               | none; product fixtures               | missing, `O7`                   |
 | callouts                            | [callouts](dialect/callouts.md)                                   | Obsidian                               | none; product fixtures               | partial, `O8`                   |
@@ -266,7 +266,7 @@ inherited process-emphasis algorithm.
 | 3    | formula block `$$` and `\\[` lines                                                             |
 | 4    | block comment `%%` line                                                                        |
 | 5    | block quote, becoming `Callout`, with metadata on its first line                               |
-| 6    | list markers, including fancy and example markers                                              |
+| 6    | list markers, including fancy and example markers, then an optional task prefix                |
 | 7    | container, nameless container, and leaf directive `:::name`, `::: {...}`, `::: word`, `::name` |
 | 8    | ATX heading, with its attribute container                                                      |
 | 9    | Setext heading                                                                                 |

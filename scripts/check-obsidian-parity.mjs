@@ -7,7 +7,7 @@
  * A separately pinned source-preserving YAML document parser supplies
  * executable evidence for Obsidian Properties after the exact profile envelope
  * has been recognized. The gate compares a scope-free semantic tree and keeps
- * every current product gap explicit and fail-closed.
+ * unfinished features and deliberate syntax differences explicit and fail-closed.
  */
 
 import { execFileSync } from "node:child_process";
@@ -718,26 +718,27 @@ if (JSON.stringify(parseMetadataDump(capturedMetadata)) !== JSON.stringify(metad
     throw new Error("obsidian parity: nested metadata parser rejected a scoped record");
 }
 
+const registeredEntries = [...policy.baselineGaps, ...(policy.expectedDivergences ?? [])];
 const invalidPolicy = [];
-const gapIds = new Set();
-const gapInputs = new Set();
-for (const gap of policy.baselineGaps) {
-    if (!gap.id || gapIds.has(gap.id)) invalidPolicy.push(`duplicate or empty gap id: ${String(gap.id)}`);
-    if (gapInputs.has(gap.input)) invalidPolicy.push(`duplicate gap input: ${JSON.stringify(gap.input)}`);
-    if (!/^[0-9a-f]{64}$/.test(gap.oracleDigest)) invalidPolicy.push(`invalid oracle digest: ${gap.id}`);
-    if (!/^[0-9a-f]{64}$/.test(gap.markdownCoreDigest)) {
-        invalidPolicy.push(`invalid markdown-core digest: ${gap.id}`);
+const entryIds = new Set();
+const entryInputs = new Set();
+for (const entry of registeredEntries) {
+    if (!entry.id || entryIds.has(entry.id)) invalidPolicy.push(`duplicate or empty entry id: ${String(entry.id)}`);
+    if (entryInputs.has(entry.input)) invalidPolicy.push(`duplicate entry input: ${JSON.stringify(entry.input)}`);
+    if (!/^[0-9a-f]{64}$/.test(entry.oracleDigest)) invalidPolicy.push(`invalid oracle digest: ${entry.id}`);
+    if (!/^[0-9a-f]{64}$/.test(entry.markdownCoreDigest)) {
+        invalidPolicy.push(`invalid markdown-core digest: ${entry.id}`);
     }
-    gapIds.add(gap.id);
-    gapInputs.add(gap.input);
+    entryIds.add(entry.id);
+    entryInputs.add(entry.input);
 }
 if (invalidPolicy.length) {
     process.stderr.write(`obsidian parity: invalid ${policyPath}\n  ${invalidPolicy.join("\n  ")}\n`);
     process.exit(1);
 }
 
-const gaps = new Map(policy.baselineGaps.map((entry) => [entry.input, entry]));
-const seenGaps = new Set();
+const entries = new Map(registeredEntries.map((entry) => [entry.input, entry]));
+const seenEntries = new Set();
 const failures = [];
 const unknownKinds = new Set();
 const cases = policy.corpus.flatMap((file) => readExamples(root, file));
@@ -766,19 +767,19 @@ for (const testCase of cases) {
         continue;
     }
     for (const kind of result.unknown) unknownKinds.add(kind);
-    const gap = gaps.get(testCase.input);
+    const entry = entries.get(testCase.input);
     if (result.oracle === result.ours) {
-        if (gap) failures.push({ ...testCase, settledGap: gap, ...result });
-    } else if (gap) {
+        if (entry) failures.push({ ...testCase, settledEntry: entry, ...result });
+    } else if (entry) {
         const oracleDigest = digest(result.oracle);
         const markdownCoreDigest = digest(result.ours);
         if (verbose) {
-            process.stdout.write(`  ${gap.id}: oracle=${oracleDigest} markdown-core=${markdownCoreDigest}\n`);
+            process.stdout.write(`  ${entry.id}: oracle=${oracleDigest} markdown-core=${markdownCoreDigest}\n`);
         }
-        if (gap.oracleDigest !== oracleDigest || gap.markdownCoreDigest !== markdownCoreDigest) {
-            failures.push({ ...testCase, changedGap: gap, oracleDigest, markdownCoreDigest, ...result });
+        if (entry.oracleDigest !== oracleDigest || entry.markdownCoreDigest !== markdownCoreDigest) {
+            failures.push({ ...testCase, changedEntry: entry, oracleDigest, markdownCoreDigest, ...result });
         } else {
-            seenGaps.add(testCase.input);
+            seenEntries.add(testCase.input);
         }
     } else {
         failures.push({ ...testCase, ...result });
@@ -786,8 +787,8 @@ for (const testCase of cases) {
 }
 
 const corpusInputs = new Set(cases.map((testCase) => testCase.input));
-for (const [input, gap] of gaps) {
-    if (!corpusInputs.has(input)) failures.push({ source: policyPath, input, unreachableGap: gap });
+for (const [input, entry] of entries) {
+    if (!corpusInputs.has(input)) failures.push({ source: policyPath, input, unreachableEntry: entry });
 }
 
 if (unknownKinds.size) {
@@ -799,7 +800,7 @@ if (unknownKinds.size) {
 
 process.stdout.write(
     `obsidian parity: ${String(cases.length)} inputs, ` +
-        `${String(seenGaps.size)}/${String(gaps.size)} registered gaps reproduced\n`
+        `${String(seenEntries.size)}/${String(entries.size)} registered entries reproduced\n`
 );
 process.stdout.write(`  oracle: ${policy.oracle.package}@${policy.oracle.version}\n`);
 process.stdout.write(
@@ -813,17 +814,17 @@ if (failures.length) {
         process.stderr.write(`\n  ${entry.source}\n  ${JSON.stringify(entry.input)}\n`);
         if (entry.failure) {
             process.stderr.write(`    harness error: ${entry.failure}\n`);
-        } else if (entry.settledGap) {
+        } else if (entry.settledEntry) {
             process.stderr.write(
-                `    registered gap ${entry.settledGap.id} now agrees; remove it from ${policyPath}\n`
+                `    registered entry ${entry.settledEntry.id} now agrees; remove it from ${policyPath}\n`
             );
-        } else if (entry.unreachableGap) {
+        } else if (entry.unreachableEntry) {
             process.stderr.write(
-                `    registered gap ${entry.unreachableGap.id} is no longer exercised; restore or retire it explicitly\n`
+                `    registered entry ${entry.unreachableEntry.id} is no longer exercised; restore or retire it explicitly\n`
             );
-        } else if (entry.changedGap) {
+        } else if (entry.changedEntry) {
             process.stderr.write(
-                `    registered gap ${entry.changedGap.id} changed shape\n` +
+                `    registered entry ${entry.changedEntry.id} changed shape\n` +
                     `    oracle digest: ${entry.oracleDigest}\n` +
                     `    markdown-core digest: ${entry.markdownCoreDigest}\n`
             );

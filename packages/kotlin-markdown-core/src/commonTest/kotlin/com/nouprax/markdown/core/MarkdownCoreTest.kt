@@ -10,6 +10,20 @@ import kotlin.test.assertTrue
 
 class ApiTest {
     @Test
+    fun taskMarkersPreserveScalarsAndDeriveCompletion() {
+        for (marker in listOf(" ", "x", "X", "?", "é", "✓", "🚀", "́", "]")) {
+            val item = assertIs<List>(Document.parse("- [$marker] body\n").content.single()).items.single()
+            assertEquals(marker, item.marker)
+            assertEquals(true, item.tasked)
+            assertEquals(marker != " ", item.completed)
+        }
+        val item = assertIs<List>(Document.parse("- [é] body\n").content.single()).items.single()
+        assertEquals(null, item.marker)
+        assertEquals(false, item.tasked)
+        assertEquals(false, item.completed)
+    }
+
+    @Test
     fun theDialectHasNoSwitches() {
         // One witness per feature that used to sit behind a `ParseOptions`
         // field, and one for the substitution smart punctuation used to make:

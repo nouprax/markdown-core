@@ -1868,8 +1868,89 @@ static void marker_test_free(void *pointer) {
 }
 static markdown_core_mem marker_test_mem = {calloc, realloc, marker_test_free};
 
+/* A byte offset and an indentation column are different coordinates. Splitting
+ * byte advances anywhere, including inside a scalar, must compose identically;
+ * a column advance can split a tab but must finish a whole scalar. */
+static void block_cursor_coordinates(test_batch_runner *runner) {
+    const char *markers[] = {"?", "é", "✓", "🚀", "́"};
+    for (size_t i = 0; i < sizeof(markers) / sizeof(markers[0]); i++) {
+        char input[32];
+        int length = snprintf(input, sizeof(input), "%s\t%s\t%sX", markers[i], markers[i], markers[i]);
+        int width = (int)strlen(markers[i]);
+        for (int split = 0; split <= length; split++) {
+            markdown_core_parser cursor = {0};
+            markdown_core_parser_advance_offset(&cursor, input, split, false);
+            markdown_core_parser_advance_offset(&cursor, input, length - split, false);
+            OK(runner, cursor.offset == length && cursor.column == 10 && !cursor.partially_consumed_tab,
+               "byte advances compose across scalar and tab boundaries (%s, %d)", markers[i], split);
+        }
+        markdown_core_parser cursor = {0};
+        markdown_core_parser_advance_offset(&cursor, input, 1, true);
+        OK(runner, cursor.offset == width && cursor.column == 1, "one column consumes one whole scalar");
+        markdown_core_parser_advance_offset(&cursor, input, 2, true);
+        OK(runner, cursor.offset == width && cursor.column == 3 && cursor.partially_consumed_tab,
+           "a tab after any scalar expands from its virtual column");
+        markdown_core_parser_advance_offset(&cursor, input, 7, true);
+        OK(runner, cursor.offset == length && cursor.column == 10 && !cursor.partially_consumed_tab,
+           "resuming a partial tab preserves later scalar and tab coordinates");
+    }
+}
+
+/* All block facts except the authored marker and byte coordinates must be
+ * invariant under replacing a single-scalar marker with another UTF-8 width.
+ * The generated trees have bounded depth and contain only lists and leaves. */
+static bool task_block_facts_equal(markdown_core_node *a, markdown_core_node *b) {
+    if (!a || !b) {
+        return a == b;
+    }
+    if (a->kind != b->kind) {
+        return false;
+    }
+    const char *a_literal = markdown_core_node_get_literal(a);
+    const char *b_literal = markdown_core_node_get_literal(b);
+    if ((a_literal == NULL) != (b_literal == NULL) || (a_literal && strcmp(a_literal, b_literal) != 0)) {
+        return false;
+    }
+    if (a->kind == MARKDOWN_CORE_NODE_LIST &&
+        (a->as.list->list_type != b->as.list->list_type || a->as.list->start != b->as.list->start ||
+         a->as.list->delimiter != b->as.list->delimiter || a->as.list->tight != b->as.list->tight)) {
+        return false;
+    }
+    return task_block_facts_equal(a->first_child, b->first_child) && task_block_facts_equal(a->next, b->next);
+}
+
+static void task_marker_tab_structure(test_batch_runner *runner) {
+    const char *markers[] = {"é", "✓", "🚀", "́"};
+    const char *separators[] = {" ", "\t", " \t", "\v", "\f", " \t\v\f"};
+    const char *padding[] = {" ", "\t", " \t", "\t ", " \t ", "\t\t"};
+    const char *lists[] = {"-", "1.", "1)"};
+    for (int indent = 0; indent < 4; indent++) {
+        for (size_t sep = 0; sep < sizeof(separators) / sizeof(separators[0]); sep++) {
+            for (size_t pad = 0; pad < sizeof(padding) / sizeof(padding[0]); pad++) {
+                for (size_t list = 0; list < sizeof(lists) / sizeof(lists[0]); list++) {
+                    char source[128];
+                    int length = snprintf(source, sizeof(source), "%*s- [?]%s%s%schild\n", indent, "", separators[sep],
+                                          lists[list], padding[pad]);
+                    markdown_core_node *baseline = markdown_core_parse_document(source, length);
+                    OK(runner, baseline != NULL, "ASCII task baseline parses");
+                    for (size_t m = 0; m < sizeof(markers) / sizeof(markers[0]); m++) {
+                        length = snprintf(source, sizeof(source), "%*s- [%s]%s%s%schild\n", indent, "", markers[m],
+                                          separators[sep], lists[list], padding[pad]);
+                        markdown_core_node *actual = markdown_core_parse_document(source, length);
+                        OK(runner, baseline && actual && task_block_facts_equal(baseline, actual),
+                           "task marker width cannot change block facts (indent=%d sep=%zu pad=%zu list=%zu marker=%s)",
+                           indent, sep, pad, list, markers[m]);
+                        markdown_core_node_free(actual);
+                    }
+                    markdown_core_node_free(baseline);
+                }
+            }
+        }
+    }
+}
+
 static void task_marker_ownership(test_batch_runner *runner) {
-    char source[] = "- [ ] open\n- [X] done\n- ordinary\n";
+    char source[] = "- [ ] open\n- [X] done\n- ordinary\n- [🚀] custom\n";
     markdown_core_document *document = markdown_core_document_parse((const uint8_t *)source, strlen(source), NULL);
     OK(runner, document != NULL, "task marker ownership document parses");
     if (!document) {
@@ -1889,15 +1970,9 @@ static void task_marker_ownership(test_batch_runner *runner) {
     OK(runner, !marker.has_value && marker.value.data == NULL && marker.value.length == 0,
        "ordinary item has an absent marker");
 
-    /* O5's grammar is separate; the storage and facade already preserve a
-     * complete UTF-8 scalar without interpreting it as a completion bit. */
-    char custom[] = "🚀";
-    OK(runner, markdown_core_chunk_set_cstr(markdown_core_node_mem(item), &item->as.list->task_marker.value, custom),
-       "owned marker accepts UTF-8 bytes");
-    memset(custom, '?', sizeof(custom) - 1);
-    markdown_core_node_list_item_marker(item, &marker);
+    markdown_core_node_list_item_marker(item->next->next->next, &marker);
     OK(runner, marker.has_value && marker.value.length == 4 && memcmp(marker.value.data, "🚀", 4) == 0,
-       "facade preserves the complete owned UTF-8 marker");
+       "parsed custom marker survives input reuse with its complete UTF-8 spelling");
     uint8_t *dump = NULL;
     size_t length = 0;
     OK(runner, markdown_core_document_dump(document, &dump, &length, NULL), "UTF-8 marker document dumps");
@@ -2989,6 +3064,8 @@ int main(void) {
     source_pos_inlines(runner);
     ref_source_pos(runner);
     link_resource_lifecycle(runner);
+    block_cursor_coordinates(runner);
+    task_marker_tab_structure(runner);
     task_marker_ownership(runner);
     specimen_values(runner);
     set_kind_keeps_extension_data_beside_the_arm(runner);

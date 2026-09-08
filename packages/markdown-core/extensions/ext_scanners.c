@@ -564,64 +564,6 @@ bufsize_t _scan_table_row_end(const unsigned char *p) {
   }
 }
 
-bufsize_t _scan_tasklist(const unsigned char *p) {
-  const unsigned char *marker = NULL;
-  const unsigned char *start = p;
-
-  {
-    unsigned char yych;
-    static const unsigned char yybm[256] = {
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 128, 0, 128, 128, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0,   0, 0,   128, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0,   0, 0,   0,   0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0,   0, 0,   0,   0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0,   0, 0,   0,   0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0,   0, 0,   0,   0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0,   0, 0,   0,   0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0,   0, 0,   0,   0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0,   0, 0,   0,   0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0,   0, 0,   0,   0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0,   0, 0,   0,   0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0,   0, 0,   0,   0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0,   0, 0,   0,   0, 0, 0};
-    yych = *p;
-    if (yych == '[')
-      goto yy49;
-    ++p;
-  yy48: { return 0; }
-  yy49:
-    yych = *(marker = ++p);
-    if (yych <= 'W') {
-      if (yych != ' ')
-        goto yy48;
-    } else {
-      if (yych <= 'X')
-        goto yy50;
-      if (yych != 'x')
-        goto yy48;
-    }
-  yy50:
-    yych = *++p;
-    if (yych == ']')
-      goto yy52;
-  yy51:
-    p = marker;
-    goto yy48;
-  yy52:
-    yych = *++p;
-    if (yybm[0 + yych] & 128)
-      goto yy53;
-    goto yy51;
-  yy53:
-    yych = *++p;
-    if (yybm[0 + yych] & 128)
-      goto yy53;
-    {
-      return (bufsize_t)(p - start);
-    }
-  }
-}
-
 bufsize_t _scan_formula_dollar_inline_open(const unsigned char *p) {
   const unsigned char *start = p;
 

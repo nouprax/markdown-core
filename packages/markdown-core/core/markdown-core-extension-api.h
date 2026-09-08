@@ -310,8 +310,9 @@ int markdown_core_parser_get_offset(markdown_core_parser *parser);
  * Return the offset in 'columns' in the line being processed.
  *
  * This value may differ from the value returned by
- * markdown_core_parser_get_offset() in that it accounts for tabs,
- * and as such should not be used as an index in the current line's
+ * markdown_core_parser_get_offset() in that each complete Unicode scalar
+ * counts as one column and tabs expand to the next multiple of four. This
+ * value should not be used as an index in the current line's
  * buffer.
  *
  * Example:

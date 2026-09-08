@@ -118,14 +118,6 @@
     "corpus": ["specs/oracles/obsidian/corpus.md", "specs/oracles/obsidian/metadata-corpus.md"],
     "baselineGaps": [
         {
-            "id": "custom-task-character",
-            "input": "- [?] custom state\n",
-            "oracleDigest": "e3e696d3ca75290972a4560ae370df8bb389c3b0256f3198cc8a39c9d29351da",
-            "markdownCoreDigest": "0ef32488e38064f3dbcc12165f67bc6d6fe64495a7477c34e3090c132f4f7523",
-            "requirement": "Recognize a non-space task character as complete and remove the marker from visible item content.",
-            "closedBy": "Phase 4 — task markers, media parameters, and tables"
-        },
-        {
             "id": "properties-scalars-and-body",
             "input": "---\ntitle: Galactic handbook\ndraft: false\nrating: 4.5\nempty:\n---\n# Body\n",
             "oracleDigest": "c44a4535d90ed71c8bd6122d83f9e337001c73be29f1483ab156892c62d033fd",
@@ -239,5 +231,63 @@
         "Block identifier attachment, inline-footnote recognition, the Cite/Citation/CitationReferent/Footnote consumer projection, or image-size semantics. The selected Markdown comparison does not implement them, so official-example product fixtures own them.",
         "YAML values outside the documented Obsidian domain, transactional invalid-candidate fallback and Markdown precedence, binding-specific range coordinates, allocation failure, or parser-wide resource limits. Product fixtures own these boundaries. The source-preserving Properties oracle does exercise exact envelope recognition, key shape and decoded-name uniqueness, source order, exact number spellings, aliases, and supported-value projection and rejection.",
         "Vault resolution, rendering, styling, editor completion, or transclusion. These are outside a parser-only AST."
+    ],
+    "expectedDivergences": [
+        {
+            "id": "task-prefix-supplementary-scalar",
+            "input": "- [🚀] supplementary scalar\n",
+            "oracleDigest": "b20cbe257d1304c554917d786226b020be35f6255058ac448da2718f10944664",
+            "markdownCoreDigest": "0cbbd1622f058bd594944d9fce72d1e2ea9693de619ed1de2a23aa7b4bfb8c7b",
+            "authority": "docs/specs/dialect/task-lists.md (O5)",
+            "requirement": "The marker is a Unicode scalar; the oracle matches one UTF-16 code unit without the Unicode regex flag."
+        },
+        {
+            "id": "task-prefix-closing-bracket",
+            "input": "- []] closing bracket\n",
+            "oracleDigest": "da5de062ad8feb691c81ad07ecb96e43864d7e96bfdec76a34ab4996c9bf67c9",
+            "markdownCoreDigest": "ff17222cf95cae17a86a25ac00baac2c5c3147ec5044ff20a5ffaa979cc94c38",
+            "authority": "docs/specs/dialect/task-lists.md (O5)",
+            "requirement": "The scalar may itself be a closing bracket; the oracle excludes it."
+        },
+        {
+            "id": "task-prefix-separator-alphabet",
+            "input": "- [?] nonstructural separator\n",
+            "oracleDigest": "b518b89f8066f1fde3768cd98e4840b1bc14f8bbe8f4be059df8621ab5d8d034",
+            "markdownCoreDigest": "5193bd733a4a86f7c3a42dc9e87887620ce7d43f4927d6c49a04a3f0a798a52d",
+            "authority": "docs/specs/dialect/task-lists.md (O5)",
+            "requirement": "Only SP, TAB, VT and FF separate a prefix; the oracle accepts Unicode whitespace including NBSP."
+        },
+        {
+            "id": "task-prefix-separator-run",
+            "input": "- [?] \t\u000b\f  body\n",
+            "oracleDigest": "3b4ab8a4d01adf4bef7901e95756cbcab6f84f0c6e8224527a3f2b37aad4d020",
+            "markdownCoreDigest": "3fd19bbbe29f15210415141397949e38d5c9b4890cd2787a8db428aef603335a",
+            "authority": "docs/specs/dialect/task-lists.md (O5)",
+            "requirement": "The entire structural separator run is removed; the oracle removes only one whitespace character."
+        },
+        {
+            "id": "task-prefix-before-first-block",
+            "input": "- [?] # heading\n",
+            "oracleDigest": "7de967776f7824a414bc783f9866f57b86cf6cd4229b3cfb8eb65d79b4121693",
+            "markdownCoreDigest": "64c18f8d0a695959e5a216ba576c367edc25c1dfb86b9c3366d3ff4a92d1057a",
+            "authority": "docs/specs/dialect/task-lists.md (O5)",
+            "requirement": "The prefix is removed before deciding the first block; the oracle removes it after forming a paragraph."
+        },
+        {
+            "id": "task-prefix-authored-scalar",
+            "input": "- [\\?] escaped candidate\n",
+            "oracleDigest": "d3bb70b4ee542f5dc673e7131c0378d681d1ca9693a06bb63e7f9ad7dce8e008",
+            "markdownCoreDigest": "2315f12b739b0755d3f6e326afb78f7b15264e0db113278889820e38d968b6cf",
+            "authority": "docs/specs/dialect/task-lists.md (O5)",
+            "requirement": "The authored candidate contains one scalar, before escape decoding; the oracle inspects already-decoded text."
+        },
+        {
+            "id": "task-prefix-opening-line",
+            "input": "-\n  [?] later first block\n",
+            "oracleDigest": "1f48d5b39f537c94c6a0a64d0b71f60b017ce507fe8be0ebed21ac9032d7b7ba",
+            "markdownCoreDigest": "4605c68588210fab359e6592103ea46381287805a5981534e24f2a8ce3edabb1",
+            "authority": "docs/specs/dialect/task-lists.md (O5)",
+            "requirement": "Only the opening line is inspected; the oracle inspects the first paragraph even when it begins later."
+        }
     ]
 }

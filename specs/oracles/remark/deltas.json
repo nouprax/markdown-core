@@ -453,6 +453,76 @@
             "authority": "Markdown Core dialect",
             "summary": "O1 recognizes the innermost complete double brackets as a CrossLink, including inside a directive label.",
             "why": "The cross-links module owns double bracket recognition; remark-directive owns only the directive envelope."
+        },
+        {
+            "id": "task-prefix-grammar-49",
+            "input": "- [?] a\n- [-] b\n- [✓] c\n",
+            "authority": "docs/specs/dialect/task-lists.md (O5); opacity follows formulas.md, cross-links.md and comments.md",
+            "summary": "One Unicode scalar and its full structural separator run are recognized once when an item opens, before its first block. Opaque bodies cannot supply a task prefix.",
+            "why": "remark-gfm only recognizes inherited ASCII task states after forming paragraph content; it has no custom markers, CrossLink or percent comments. The exact witnesses preserve every difference instead of changing the product grammar."
+        },
+        {
+            "id": "task-prefix-grammar-50",
+            "input": "- [é] two\n- [🚀] four\n- [́] combining scalar\n- [[] open bracket\n- []] close bracket\n- [\\] backslash\n- [\t] tab marker\n- [\u000b] vertical tab marker\n- [\f] form feed marker\n",
+            "authority": "docs/specs/dialect/task-lists.md (O5); opacity follows formulas.md, cross-links.md and comments.md",
+            "summary": "One Unicode scalar and its full structural separator run are recognized once when an item opens, before its first block. Opaque bodies cannot supply a task prefix.",
+            "why": "remark-gfm only recognizes inherited ASCII task states after forming paragraph content; it has no custom markers, CrossLink or percent comments. The exact witnesses preserve every difference instead of changing the product grammar."
+        },
+        {
+            "id": "task-prefix-grammar-51",
+            "input": "- [?] space\n- [✓]\ttab\n- [🚀]\u000bvertical\n- [-]\fform\n- [?] \t\u000b\f  mixed\n",
+            "authority": "docs/specs/dialect/task-lists.md (O5); opacity follows formulas.md, cross-links.md and comments.md",
+            "summary": "One Unicode scalar and its full structural separator run are recognized once when an item opens, before its first block. Opaque bodies cannot supply a task prefix.",
+            "why": "remark-gfm only recognizes inherited ASCII task states after forming paragraph content; it has no custom markers, CrossLink or percent comments. The exact witnesses preserve every difference instead of changing the product grammar."
+        },
+        {
+            "id": "task-prefix-grammar-52",
+            "input": "> 1. [🚀] outer\n>    - [?] middle\n>      2) [✓] inner\n>         continuation\n",
+            "authority": "docs/specs/dialect/task-lists.md (O5); opacity follows formulas.md, cross-links.md and comments.md",
+            "summary": "One Unicode scalar and its full structural separator run are recognized once when an item opens, before its first block. Opaque bodies cannot supply a task prefix.",
+            "why": "remark-gfm only recognizes inherited ASCII task states after forming paragraph content; it has no custom markers, CrossLink or percent comments. The exact witnesses preserve every difference instead of changing the product grammar."
+        },
+        {
+            "id": "task-prefix-grammar-53",
+            "input": "- [✓] [?] second prefix\n\n  [x] later paragraph\n- ordinary\n\n  [?] later paragraph\n-\n  [x] later first block\n",
+            "authority": "docs/specs/dialect/task-lists.md (O5); opacity follows formulas.md, cross-links.md and comments.md",
+            "summary": "One Unicode scalar and its full structural separator run are recognized once when an item opens, before its first block. Opaque bodies cannot supply a task prefix.",
+            "why": "remark-gfm only recognizes inherited ASCII task states after forming paragraph content; it has no custom markers, CrossLink or percent comments. The exact witnesses preserve every difference instead of changing the product grammar."
+        },
+        {
+            "id": "task-prefix-grammar-54",
+            "input": "- [?] # heading\n- [✓] > quote\n- [🚀] - [?] nested item\n- [-] ```text\n  code\n  ```\n- [?] $$\n  formula\n  $$\n- [✓] :::note\n  body\n  :::\n",
+            "authority": "docs/specs/dialect/task-lists.md (O5); opacity follows formulas.md, cross-links.md and comments.md",
+            "summary": "One Unicode scalar and its full structural separator run are recognized once when an item opens, before its first block. Opaque bodies cannot supply a task prefix.",
+            "why": "remark-gfm only recognizes inherited ASCII task states after forming paragraph content; it has no custom markers, CrossLink or percent comments. The exact witnesses preserve every difference instead of changing the product grammar."
+        },
+        {
+            "id": "task-prefix-grammar-55",
+            "input": "- [?] \t\u000b\f\noutside\n",
+            "authority": "docs/specs/dialect/task-lists.md (O5); opacity follows formulas.md, cross-links.md and comments.md",
+            "summary": "One Unicode scalar and its full structural separator run are recognized once when an item opens, before its first block. Opaque bodies cannot supply a task prefix.",
+            "why": "remark-gfm only recognizes inherited ASCII task states after forming paragraph content; it has no custom markers, CrossLink or percent comments. The exact witnesses preserve every difference instead of changing the product grammar."
+        },
+        {
+            "id": "task-prefix-grammar-56",
+            "input": "- `- [?] code`\n- $- [✓] formula$\n- <i title=\"- [🚀] html\">text</i>\n- [[- [?] link]]\n- %% - [✓] inline comment %%\n\n%%\n- [?] block comment\n%%\n\n```\n- [🚀] fenced\n```\n",
+            "authority": "docs/specs/dialect/task-lists.md (O5); opacity follows formulas.md, cross-links.md and comments.md",
+            "summary": "One Unicode scalar and its full structural separator run are recognized once when an item opens, before its first block. Opaque bodies cannot supply a task prefix.",
+            "why": "remark-gfm only recognizes inherited ASCII task states after forming paragraph content; it has no custom markers, CrossLink or percent comments. The exact witnesses preserve every difference instead of changing the product grammar."
+        },
+        {
+            "id": "task-prefix-line-ending-separator",
+            "input": "- [x]\n:n{class=\"a b c\u000bv\ff\" .a class=tail}a}*.foo.*\n:x{:_a}\n",
+            "authority": "docs/specs/dialect/task-lists.md (O5)",
+            "summary": "A line ending is not a task separator, even when the following line lazily continues the paragraph.",
+            "why": "The O5 deterministic fuzz run exposed remark recognizing [x] across a line ending. The product retains the marker literally and parses the following inline directives as usual."
+        },
+        {
+            "id": "task-prefix-unicode-tab-columns",
+            "input": "- [?] - \tchild\n- [é] - \tchild\n- [✓] - \tchild\n- [🚀] - \tchild\n",
+            "authority": "docs/specs/dialect/task-lists.md (O5)",
+            "summary": "All one-scalar task markers use one virtual indentation column before nested tab padding. Source scopes remain byte-based.",
+            "why": "remark-gfm has no custom task prefixes and treats these markers and following nested-list syntax as paragraph content."
         }
     ],
     "baselineBacklog": [],

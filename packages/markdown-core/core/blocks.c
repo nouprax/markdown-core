@@ -15,6 +15,7 @@
 #include "markdown_core_ctype.h"
 #include "extension.h"
 #include "../extensions/markdown-core-extensions.h"
+#include "../extensions/tasklist.h"
 #include "config.h"
 #include "parser.h"
 #include "markdown-core.h"
@@ -1331,9 +1332,8 @@ static void S_find_first_nonspace(markdown_core_parser *parser, markdown_core_ch
 
 // Advance parser->offset and parser->column.  parser->offset is the
 // byte position in input; parser->column is a virtual column number
-// that takes into account tabs. (Multibyte characters are not taken
-// into account, because the Markdown line prefixes we are interested in
-// analyzing are entirely ASCII.)  The count parameter indicates
+// that counts each Unicode scalar once and expands tabs to tab stops.
+// Source positions remain byte-based. The count parameter indicates
 // how far to advance the offset.  If columns is true, then count
 // indicates a number of columns; otherwise, a number of bytes.
 // If advancing a certain number of columns partially consumes
@@ -1342,7 +1342,7 @@ static void S_advance_offset(markdown_core_parser *parser, markdown_core_chunk *
     char c;
     int chars_to_tab;
     int chars_to_advance;
-    while (count > 0 && (c = peek_at(input, parser->offset))) {
+    while (count > 0 && parser->offset < input->len && (c = peek_at(input, parser->offset))) {
         if (c == '\t') {
             chars_to_tab = TAB_STOP - (parser->column % TAB_STOP);
             if (columns) {
@@ -1360,8 +1360,12 @@ static void S_advance_offset(markdown_core_parser *parser, markdown_core_chunk *
         } else {
             parser->partially_consumed_tab = false;
             parser->offset += 1;
-            parser->column += 1; // assume ascii; block starts are ascii
-            count -= 1;
+            /* Valid UTF-8 is a caller precondition. Complete a virtual column
+             * only at the scalar's end. Byte-counted advances may split a
+             * scalar; column-counted advances always consume it completely. */
+            bool scalar_end = parser->offset == input->len || (peek_at(input, parser->offset) & 0xC0) != 0x80;
+            parser->column += scalar_end;
+            count -= columns ? scalar_end : 1;
         }
     }
 }
@@ -2230,6 +2234,11 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
             }
             memcpy((*container)->as.list, data, sizeof(*data));
             parser->mem->free(data);
+            S_find_first_nonspace(parser, input);
+            markdown_core_parse_task_prefix(parser, *container, input->data, input->len);
+            if (parser->oom) {
+                return;
+            }
         } else if (indented && !maybe_lazy && !parser->blank) {
             S_advance_offset(parser, input, CODE_INDENT, true);
             *container = add_child(parser, *container, MARKDOWN_CORE_NODE_CODE_BLOCK, parser->offset + 1);

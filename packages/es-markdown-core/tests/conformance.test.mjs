@@ -153,3 +153,16 @@ function dumpKinds(dump) {
             .map((name) => (name.startsWith("HTML") ? `html${name.slice(4)}` : name[0].toLowerCase() + name.slice(1)))
     );
 }
+
+test("conformance: task markers preserve scalars and derive completion", () => {
+    for (const marker of [" ", "x", "X", "?", "é", "✓", "🚀", "́", "]"]) {
+        const item = Document.parse(`- [${marker}] body\n`).content[0].items[0];
+        assert.equal(item.marker, marker);
+        assert.equal(item.tasked, true);
+        assert.equal(item.completed, marker !== " ");
+    }
+    const item = Document.parse("- [é] body\n").content[0].items[0];
+    assert.equal(item.marker, null);
+    assert.equal(item.tasked, false);
+    assert.equal(item.completed, false);
+});
