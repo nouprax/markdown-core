@@ -129,9 +129,11 @@ typedef struct {
     struct markdown_core_node *suffix;
 } markdown_core_citation_item;
 
-/* A FOOTNOTE (M4): the id is the definition's label under the map's own
- * normalization, without the caret, the key every call's referent names; the
- * content is the node's children. */
+/* A FOOTNOTE: content is the node's children, block or inline. A definition
+ * has its normalized authored id. An inline body has no id until finalization
+ * and is owned by its Cite's child edge through all ordinary tree phases.
+ * The document operation assigns its id and transfers that same node to the
+ * document's value chain, removing the temporary child edge. */
 typedef struct {
     markdown_core_chunk id;
 } markdown_core_footnote_value;

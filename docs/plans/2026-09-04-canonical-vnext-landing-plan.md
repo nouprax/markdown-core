@@ -721,7 +721,7 @@ its behavior, with no separate publication step.
   shared canonical case gains only `Comment` lines every dumper already
   prints. Full cross-host aggregation remains the required CI check.
 
-- [ ] **O4 — Inline footnotes.** Recognize `^[content]` inside the shared bracket algorithm,
+- [x] **O4 — Inline footnotes.** Recognize `^[content]` inside the shared bracket algorithm,
       ahead of superscript, producing one one-item `Cite` with a `footnote`
       referent and one document-owned `Footnote` whose content is the parsed
       inline body stored directly, with no synthesized `Paragraph`; assign
@@ -731,6 +731,33 @@ its behavior, with no separate publication step.
       escaped brackets, empty and unclosed forms, unresolved calls, nested
       citations, semantic cycles, deterministic IDs and visitation order,
       allocation failure, and adversarial `^`, `[`, and `]` runs. Requires `O1`.
+  Implementation notes (2026-09-08): `^[` pushes an inline-footnote opener
+  on the shared bracket stack; its matching close consumes no tail. The
+  inherited and inline forms use one citation constructor. An inline Cite
+  owns its pending Footnote body through consolidation and extension passes;
+  the final document operation collects both forms, including directive label
+  fields, orders them by source start with eight stable byte passes, reserves
+  all authored ids, and assigns `inline-N` / `inline-N-K` before transferring
+  ownership. No public field, kind, export, or transport layout changes.
+  Nonblank-body evidence visits disjoint consumed token ranges, and nested
+  bodies are neither rescanned nor reparsed. Package coverage now includes all
+  module examples plus malformed, nested, collision, semantic-cycle, opacity,
+  link-boundary, table-map, and detached-field cases (31 cases total). The
+  new canonical case and Swift/Kotlin/ES tests verify direct inline bodies,
+  source ordering, and finite value visitation. P6 owns superscript composition.
+
+  Validation (2026-09-08): C correctness (74 tests), conformance (2 tests),
+  ASan, UBSan, TSan, strict OOM, Swift and its package consumer, Kotlin
+  JVM/Native/Android-host and conformance, ES Node/browser and conformance,
+  all four oracle gates, and 400-input seed-1 fuzz runs for CommonMark, GFM,
+  and remark pass. The bracket probes double from 128 to 8192 units; authored
+  suffix-collision sets double to 4096. Existing golden ASTs remain exact.
+  Position-place and external-position ledgers and the reference-resolution
+  ledger remain unchanged. The containment ledger adds two reviewed nested
+  footnote overlaps: the values retain their original, enclosing source
+  ranges after document ownership transfer. `pnpm verify` and the host release
+  dry run pass; full cross-host release aggregation remains the required CI gate.
+
 - [ ] **O5 — Task markers.** Generalize the task-list scanner's marker from
       `[ xX]` to exactly one Unicode scalar followed by a structural separator,
       decoding at most the candidate marker. Fixtures cover the module's marker table, ordered and nested lists,

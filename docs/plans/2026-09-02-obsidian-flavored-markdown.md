@@ -117,9 +117,9 @@ does not define Pandoc `@key` syntax; the citations module does.
 O1 introduces the cross-link descriptor and the shared wikilink/embed scanner.
 O2–O4 implement marks, comments, and inline footnotes through their respective
 semantic operations. Their source family does not define a runtime module or
-descriptor. The first bullet remains open until all four items land.
+descriptor. O4 completes the shared feature-boundary implementation bullet.
 
-- [ ] Implement cross links, comments, marks, and inline footnotes at their
+- [x] Implement cross links, comments, marks, and inline footnotes at their
       feature boundaries, reusing each feature's existing semantic model and
       operation. All scanners use the existing subject cursor,
       delimiter/bracket infrastructure, allocator, source map, and extension
@@ -136,14 +136,14 @@ descriptor. The first bullet remains open until all four items land.
       ownership by code, formulas, HTML comments/tokens, and cross links taking
       precedence. Paired inline HTML tags do not create a suppressing region.
       The `%%` opacity composition follows in O3.
-- [ ] The inline footnote scanner creates one one-item `Cite` containing a
+- [x] The inline footnote scanner creates one one-item `Cite` containing a
       `Citation` whose referent
       is `CitationReferent.footnote(id)` and whose prefix and suffix are empty,
       plus one document-owned `Footnote`; it stores the parsed inline body
       directly in `Footnote.content` with no synthesized `Paragraph` and obtains
       the ID from the same parser-owned footnote collection used by inherited
       referenced footnotes.
-- [ ] Resolve inherited `[^label]` calls through the same operation, so repeated
+- [x] Resolve inherited `[^label]` calls through the same operation, so repeated
       calls share one `Footnote` without body duplication. Merge referenced and
       inline values in source order and assign their deterministic document-local
       IDs once during document finalization.

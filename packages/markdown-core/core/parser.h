@@ -79,6 +79,7 @@ struct markdown_core_parser {
     /* Bytes inspected by the cross-link scanner, for deterministic complexity gates. */
     size_t cross_link_scan_work;
     size_t opaque_scan_work;
+    size_t footnote_body_work;
     /* Run bytes, opener comparisons, and child moves in the shared delimiter algorithm. */
     size_t delimiter_work;
     /* Opener checks of the `%%` comment scanner; and the lines the block-start

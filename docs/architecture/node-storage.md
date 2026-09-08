@@ -47,3 +47,22 @@ Tests protect the pointer-sized union, constructor allocation failures,
 transactional kind conversion, containment rejection in parser conversions,
 owned subtree release, and whole-parse OOM propagation. Platform builds verify
 native alignment, and sanitizer suites exercise the same ownership paths.
+
+Inline footnotes use the existing Footnote data record and one-item Cite.
+During parsing, the Cite owns its Footnote as a structural child; the
+Footnote owns the parsed inline body directly. Referenced definitions remain
+at their block positions through the same phases. This temporary ownership
+keeps consolidation, autolinking, extension-owned label traversal, and failure
+cleanup on the ordinary tree algorithms without a second body registry.
+
+Document finalization collects both forms from all owned trees before making
+any mutation. It orders the F values by source start with eight stable byte
+passes over their two 32-bit coordinates, bounding ordering work by O(F). It
+reserves all authored ids in the shared key index and assigns inline ids in
+that order. Collision probes across all inline ordinals consume disjoint authored
+id namespaces, so their total is bounded by F plus the authored-id count.
+Only after all allocations succeed does it transfer every Footnote into the
+document's one value chain. A returned Cite has no structural child and owns
+only Citation values naming ids; semantic cycles never become object cycles.
+The bracket scanner tracks the most recent non-SP/TAB byte over disjoint
+consumed token ranges, so rejecting empty bodies never rescans nested bodies.

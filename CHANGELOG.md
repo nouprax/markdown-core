@@ -6,6 +6,12 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
+- Recognize `^[inline note]` on C, Swift, Kotlin, and ES through the shared
+  bracket algorithm. Store parsed inline bodies directly in document-owned
+  Footnote values, merge both footnote forms by source position, and assign
+  deterministic `inline-N` ids after reserving every authored id. Nested
+  citations remain id edges, so traversal has no object cycles.
+
 - Recognize `%%...%%` comments as `Comment` on C, Swift, Kotlin, and ES, the
   kind an HTML comment already produces. Inline, the body ends at the first
   later `%%` and is opaque to every other construct; on fence lines of their

@@ -114,6 +114,8 @@
             "citation.referent.footnote",
             "citation.affix.empty",
             "document.specimens.empty",
+            "footnote.content.inline",
+            "footnote.content.block",
             "document.footnotes.empty",
             "document.footnotes.populated"
         ],
@@ -442,6 +444,22 @@
                 ],
                 "states": ["scope.positive", "children.empty", "children.populated"],
                 "orders": ["inline.source-order", "document.source-order"]
+            }
+        },
+        {
+            "name": "inline-footnotes",
+            "input": "inline-footnotes.md",
+            "expected": "inline-footnotes.ast",
+            "coverage": {
+                "kinds": ["Document", "Paragraph", "Cite", "Text", "Comment", "Directive", "DirectiveLabel"],
+                "states": [
+                    "footnote.content.inline",
+                    "footnote.content.block",
+                    "citation.referent.footnote",
+                    "citation.affix.empty",
+                    "document.footnotes.populated"
+                ],
+                "orders": ["document.content-before-footnotes"]
             }
         }
     ]

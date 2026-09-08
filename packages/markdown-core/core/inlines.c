@@ -26,11 +26,14 @@
 
 #define MAXBACKTICKS 80
 
+typedef enum { BRACKET_LINK, BRACKET_IMAGE, BRACKET_FOOTNOTE } bracket_kind;
+
 typedef struct bracket {
     struct bracket *previous;
     markdown_core_node *inl_text;
     bufsize_t position;
-    bool image;
+    bracket_kind kind;
+    bool outer_no_link_openers;
     bool active;
     bool bracket_after;
     bool in_bracket_image0;
@@ -66,6 +69,9 @@ typedef struct subject {
     int delim_openers[MARKDOWN_CORE_DELIM_RULE_COUNT];
     int delim_closers[MARKDOWN_CORE_DELIM_RULE_COUNT];
     bracket *last_bracket;
+    /* One past the last consumed byte other than SP/TAB. This lets every
+     * inline-note closer test its body's non-empty rule in constant time. */
+    bufsize_t nonblank_end;
     bufsize_t backticks[MAXBACKTICKS + 1];
     bool scanned_for_backticks;
     bool no_link_openers;
@@ -82,7 +88,7 @@ typedef struct subject {
 static const int8_t BASE_SPECIAL_CHARS[256] = {
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0,
     0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -312,6 +318,7 @@ static void subject_from_buf(markdown_core_parser *parser, markdown_core_mem *me
     memset(e->delim_openers, 0, sizeof(e->delim_openers));
     memset(e->delim_closers, 0, sizeof(e->delim_closers));
     e->last_bracket = NULL;
+    e->nonblank_end = 0;
     for (i = 0; i <= MAXBACKTICKS; i++) {
         e->backticks[i] = 0;
     }
@@ -686,7 +693,7 @@ static void push_delimiter(subject *subj, const markdown_core_extension *owner, 
     }
 }
 
-static void push_bracket(subject *subj, bool image, markdown_core_node *inl_text) {
+static void push_bracket(subject *subj, bracket_kind kind, markdown_core_node *inl_text) {
     bracket *b = (bracket *)subj->mem->calloc(1, sizeof(bracket));
     if (!b) {
         subj->oom = 1;
@@ -694,22 +701,25 @@ static void push_bracket(subject *subj, bool image, markdown_core_node *inl_text
     }
     if (subj->last_bracket != NULL) {
         subj->last_bracket->bracket_after = true;
-        b->in_bracket_image0 = subj->last_bracket->in_bracket_image0;
-        b->in_bracket_image1 = subj->last_bracket->in_bracket_image1;
+        if (kind != BRACKET_FOOTNOTE) {
+            b->in_bracket_image0 = subj->last_bracket->in_bracket_image0;
+            b->in_bracket_image1 = subj->last_bracket->in_bracket_image1;
+        }
     }
-    b->image = image;
+    b->kind = kind;
+    b->outer_no_link_openers = subj->no_link_openers;
     b->active = true;
     b->inl_text = inl_text;
     b->previous = subj->last_bracket;
     b->position = subj->pos;
     b->bracket_after = false;
-    if (image) {
+    if (kind == BRACKET_IMAGE) {
         b->in_bracket_image1 = true;
-    } else {
+    } else if (kind == BRACKET_LINK) {
         b->in_bracket_image0 = true;
     }
     subj->last_bracket = b;
-    if (!image) {
+    if (kind != BRACKET_IMAGE) {
         subj->no_link_openers = false;
     }
 }
@@ -1397,6 +1407,65 @@ static bool S_footnote_label_is_defined(markdown_core_parser *parser, subject *s
     return defined;
 }
 
+/* Both footnote forms construct the same citation edge. The caller supplies
+ * an authored normalized id, or leaves it absent until document finalization. */
+static markdown_core_node *make_footnote_cite(subject *subj, bracket *opener, bufsize_t after_close) {
+    markdown_core_node *cite = make_simple(subj->mem, MARKDOWN_CORE_NODE_CITE);
+    markdown_core_node *citation = cite ? make_simple(subj->mem, MARKDOWN_CORE_NODE_CITATION) : NULL;
+    if (!citation) {
+        if (cite) {
+            markdown_core_node_free(cite);
+        }
+        subj->oom = 1;
+        return NULL;
+    }
+    cite->as.cite->citations = citation;
+    citation->as.citation->referent = MARKDOWN_CORE_NODE_REFERENT_FOOTNOTE;
+    S_place_inline(subj, cite, opener->position - (opener->kind == BRACKET_FOOTNOTE ? 2 : 1), after_close - 1);
+    S_place_inline(subj, citation, opener->position, after_close - 2);
+    return cite;
+}
+
+static markdown_core_node *close_inline_footnote(markdown_core_parser *parser, subject *subj, bracket *opener) {
+    markdown_core_node *cite, *footnote, *child, *next;
+    /* The consumed body is inspected once by parse_inline, never once per
+     * ancestor. Invalid openers keep their already parsed content as text. */
+    if (subj->nonblank_end <= opener->position) {
+        subj->no_link_openers = opener->outer_no_link_openers;
+        pop_bracket(subj);
+        return make_str(subj, subj->pos - 1, subj->pos - 1, markdown_core_chunk_literal("]"));
+    }
+    cite = make_footnote_cite(subj, opener, subj->pos);
+    footnote = cite ? make_simple(subj->mem, MARKDOWN_CORE_NODE_FOOTNOTE) : NULL;
+    if (!footnote) {
+        if (cite) {
+            markdown_core_node_free(cite);
+        }
+        subj->oom = 1;
+        pop_bracket(subj);
+        return NULL;
+    }
+    S_place_inline(subj, footnote, opener->position - 2, subj->pos - 1);
+    process_emphasis(parser, subj, opener->position);
+    child = opener->inl_text->next;
+    while (child) {
+        next = child->next;
+        markdown_core_node_unlink(child);
+        append_child(footnote, child);
+        child = next;
+    }
+    /* Until finalization the occurrence owns its body as a structural child.
+     * Thus all ordinary tree phases see it and failure cleanup owns it once.
+     * The document operation assigns both ids and transfers this child to
+     * Document.footnotes; no temporary pointer survives in the public tree. */
+    append_child(cite, footnote);
+    markdown_core_node_insert_before(opener->inl_text, cite);
+    markdown_core_node_free(opener->inl_text);
+    subj->no_link_openers = opener->outer_no_link_openers;
+    pop_bracket(subj);
+    return NULL;
+}
+
 // Return a link, an image, or a literal close bracket.
 static markdown_core_node *handle_close_bracket(markdown_core_parser *parser, subject *subj) {
     bufsize_t initial_pos, after_link_text_pos;
@@ -1429,9 +1498,13 @@ static markdown_core_node *handle_close_bracket(markdown_core_parser *parser, su
         return make_str(subj, subj->pos - 1, subj->pos - 1, markdown_core_chunk_literal("]"));
     }
 
+    if (opener->kind == BRACKET_FOOTNOTE) {
+        return close_inline_footnote(parser, subj, opener);
+    }
+
     // If we got here, we matched a potential link/image text.
     // Now we check to see if it's a link/image.
-    is_image = opener->image;
+    is_image = opener->kind == BRACKET_IMAGE;
 
     if (!is_image && subj->no_link_openers) {
         // take delimiter off stack
@@ -1560,80 +1633,25 @@ noMatch:
             // Let's just rewind the subject's position:
             subj->pos = initial_pos;
 
-            /* A defined call lowers to a one-item `Cite` (M4): the cluster
-             * covers `[^label]`, its one `Citation` covers `^label`, the
-             * referent names the footnote by the normalized label without the
-             * caret, and both affixes are empty. */
-            markdown_core_node *fnref = make_simple(subj->mem, MARKDOWN_CORE_NODE_CITE);
-            markdown_core_node *citation = fnref ? make_simple(subj->mem, MARKDOWN_CORE_NODE_CITATION) : NULL;
-            if (!fnref || !citation) {
-                if (fnref) {
-                    markdown_core_node_free(fnref);
-                }
-                subj->oom = 1;
+            markdown_core_node *fnref = make_footnote_cite(subj, opener, initial_pos);
+            if (!fnref) {
                 pop_bracket(subj);
-                return make_str(subj, subj->pos - 1, subj->pos - 1, markdown_core_chunk_literal("]"));
+                return NULL;
             }
-
-            // the start and end of the footnote ref is the opening and closing brace
-            // i.e. the subject's current position, and the opener's start_column
-            int fnref_start_column = opener->inl_text->start_column;
-
-            // The label is a slice of the SOURCE, delimited by two buffer offsets
-            // this function already holds: `opener->position` is the byte after
-            // the '[', and `initial_pos` the byte after the ']'. One byte of
-            // that span is the caret.
-            //
-            // It used to be a slice of the FOLLOWING NODE's literal whose length
-            // came from column arithmetic, and the two coordinate spaces have
-            // nothing to do with each other. A label crossing a line ending came
-            // out empty and its bytes reached no node at all; an entity-spelled
-            // caret indexed past the end of an owned decode buffer and put the
-            // bytes it found there into the document; and the loop below then
-            // freed the very node the slice pointed into, leaving a label that
-            // `markdown_core_map_lookup` reads once per footnote reference.
-            // `subj->input` is the block's own content buffer, released only
-            // with the node, which is the lifetime every literal `make_str`
-            // hands out already relies on.
-            //
-            // The length cannot underflow: reaching here requires a decoded '^'
-            // and either a second decoded byte or a further node, and decoding
-            // never lengthens a span, so the span is at least two bytes wide.
-            assert(initial_pos - opener->position >= 2);
-            {
-                markdown_core_chunk label =
-                    markdown_core_chunk_dup(&subj->input, opener->position + 1, initial_pos - opener->position - 2);
-                int lost = 0;
-                /* The referent's id is the label under the map's own
-                 * normalization, without the caret: the key the winning
-                 * definition's `Footnote` carries. */
-                unsigned char *id = normalize_map_label(subj->mem, &label, &lost);
-                if (!id) {
-                    subj->oom = 1;
-                    markdown_core_node_free(citation);
-                    markdown_core_node_free(fnref);
-                    pop_bracket(subj);
-                    subj->pos = initial_pos;
-                    return make_str(subj, subj->pos - 1, subj->pos - 1, markdown_core_chunk_literal("]"));
-                }
-                citation->as.citation->referent = MARKDOWN_CORE_NODE_REFERENT_FOOTNOTE;
-                citation->as.citation->value.data = id;
-                citation->as.citation->value.len = (bufsize_t)strlen((const char *)id);
-                citation->as.citation->value.alloc = 1;
-                fnref->as.cite->citations = citation;
+            markdown_core_chunk label =
+                markdown_core_chunk_dup(&subj->input, opener->position + 1, initial_pos - opener->position - 2);
+            int lost = 0;
+            unsigned char *id = normalize_map_label(subj->mem, &label, &lost);
+            if (!id) {
+                subj->oom = 1;
+                markdown_core_node_free(fnref);
+                pop_bracket(subj);
+                return NULL;
             }
-
-            // The call runs from its own '[' to its ']', and the two need not be
-            // on the same line; both ends are projected from the offsets this
-            // function already holds.
-            S_place_inline(subj, fnref, opener->position - 1, initial_pos - 1);
-            fnref->start_line = opener->inl_text->start_line;
-            fnref->start_column = fnref_start_column;
-            /* The item covers `^label`: from the caret, one byte after the
-             * opener's bracket on the same line, to the byte before `]`. */
-            S_place_inline(subj, citation, opener->position, initial_pos - 2);
-            citation->start_line = fnref->start_line;
-            citation->start_column = fnref_start_column + 1;
+            markdown_core_chunk *value = &fnref->as.cite->citations->as.citation->value;
+            value->data = id;
+            value->len = (bufsize_t)strlen((const char *)id);
+            value->alloc = 1;
 
             // we then replace the opener with this new fnref node, the net effect
             // being replacing the opening '[' text node with a `^footnote-ref]` node.
@@ -1920,6 +1938,7 @@ static int parse_inline(markdown_core_parser *parser, subject *subj, markdown_co
     markdown_core_chunk contents;
     unsigned char c;
     bufsize_t startpos, endpos;
+    bufsize_t token_start = subj->pos;
     c = peek_char(subj);
     if (c == 0) {
         return 0;
@@ -1968,6 +1987,18 @@ static int parse_inline(markdown_core_parser *parser, subject *subj, markdown_co
          * and the text arm below owns them like any other byte. */
         new_inl = handle_delim(subj, c);
         break;
+    case '^':
+        advance(subj);
+        if (peek_char(subj) == '[') {
+            advance(subj);
+            new_inl = make_str(subj, subj->pos - 2, subj->pos - 1, markdown_core_chunk_literal("^["));
+            if (new_inl) {
+                push_bracket(subj, BRACKET_FOOTNOTE, new_inl);
+            }
+        } else {
+            new_inl = make_str(subj, subj->pos - 1, subj->pos - 1, markdown_core_chunk_literal("^"));
+        }
+        break;
     case '[':
         new_inl = try_extensions(parser, parent, c, subj);
         if (new_inl != NULL) {
@@ -1978,7 +2009,7 @@ static int parse_inline(markdown_core_parser *parser, subject *subj, markdown_co
          * `handle_close_bracket` re-claims it MARKER for the link it opens. */
         new_inl = make_str(subj, subj->pos - 1, subj->pos - 1, markdown_core_chunk_literal("["));
         if (new_inl) {
-            push_bracket(subj, false, new_inl);
+            push_bracket(subj, BRACKET_LINK, new_inl);
         }
         break;
     case ']':
@@ -2002,7 +2033,7 @@ static int parse_inline(markdown_core_parser *parser, subject *subj, markdown_co
             advance(subj);
             new_inl = make_str(subj, subj->pos - 2, subj->pos - 1, markdown_core_chunk_literal("!["));
             if (new_inl) {
-                push_bracket(subj, true, new_inl);
+                push_bracket(subj, BRACKET_IMAGE, new_inl);
             }
         } else {
             new_inl = make_str(subj, subj->pos - 1, subj->pos - 1, markdown_core_chunk_literal("!"));
@@ -2032,6 +2063,15 @@ static int parse_inline(markdown_core_parser *parser, subject *subj, markdown_co
          * is what L5 measures. */
     }
 append:
+    endpos = subj->pos;
+    while (endpos > token_start) {
+        unsigned char byte = subj->input.data[--endpos];
+        parser->footnote_body_work++;
+        if (byte != ' ' && byte != '\t') {
+            subj->nonblank_end = endpos + 1;
+            break;
+        }
+    }
     if (new_inl != NULL) {
         append_child(parent, new_inl);
     }

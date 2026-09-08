@@ -218,6 +218,49 @@ class BindingMappingTest {
     }
 
     @Test
+    fun inlineFootnotesKeepDirectContentSourceIdsAndFiniteVisitation() {
+        val document = Document.parse("^[^[x]]\n\n[^inline-1]: authored\n")
+        assertEquals(listOf("inline-1-1", "inline-2", "inline-1"), document.footnotes.map { it.id })
+        val outer = assertIs<Cite>(assertIs<Paragraph>(document.content.single()).content.single())
+        assertEquals("inline-1-1", assertIs<CitationReferent.Footnote>(outer.citations.single().referent).id)
+        val inner = assertIs<Cite>(document.footnotes[0].content.single())
+        assertEquals("inline-2", assertIs<CitationReferent.Footnote>(inner.citations.single().referent).id)
+        assertEquals("x", assertIs<Text>(document.footnotes[1].content.single()).literal)
+        assertIs<Paragraph>(document.footnotes[2].content.single())
+        val visitor = RecordingWalkingVisitor()
+        document.walk(visitor)
+        assertEquals(
+            listOf(
+                "entering:Document",
+                "entering:Paragraph",
+                "entering:Cite",
+                "entering:Citation",
+                "exiting:Citation",
+                "exiting:Cite",
+                "exiting:Paragraph",
+                "entering:Footnote",
+                "entering:Cite",
+                "entering:Citation",
+                "exiting:Citation",
+                "exiting:Cite",
+                "exiting:Footnote",
+                "entering:Footnote",
+                "entering:Text",
+                "exiting:Text",
+                "exiting:Footnote",
+                "entering:Footnote",
+                "entering:Paragraph",
+                "entering:Text",
+                "exiting:Text",
+                "exiting:Paragraph",
+                "exiting:Footnote",
+                "exiting:Document",
+            ),
+            visitor.events,
+        )
+    }
+
+    @Test
     fun citationsAreValuesAndTheDocumentOwnsItsFootnotes() {
         // M4: an inherited call is a one-item cite naming its footnote by id
         // with empty affixes; the footnote is a value the document owns, never

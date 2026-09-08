@@ -2344,7 +2344,7 @@ static void universal_values(test_batch_runner *runner) {
 /* Count visited source positions as well as verifying values. Repeated failed
  * candidates share one extent, so they cannot rescan each other's suffixes. */
 typedef struct {
-    size_t cross_link, opaque, delimiters, comment, lookahead;
+    size_t cross_link, opaque, delimiters, comment, lookahead, footnote_body;
 } inline_work;
 static markdown_core_node *record_inline_work(const markdown_core_extension *extension, markdown_core_parser *parser,
                                               markdown_core_node *root) {
@@ -2355,6 +2355,7 @@ static markdown_core_node *record_inline_work(const markdown_core_extension *ext
     work->delimiters = parser->delimiter_work;
     work->comment = parser->comment_scan_work;
     work->lookahead = parser->block_lookahead_work;
+    work->footnote_body = parser->footnote_body_work;
     root->user_data = NULL;
     return root;
 }
@@ -2406,6 +2407,75 @@ static void cross_link_linear_work(test_batch_runner *runner) {
             markdown_core_node_free(root);
             markdown_core_strbuf_free(&source);
         }
+    }
+}
+
+/* Nested bodies are never rescanned for emptiness and close in one bracket
+ * operation. The document order follows opening positions, not close order. */
+static void inline_footnote_linear_work(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    static const struct {
+        const char *left, *middle, *right;
+        int notes_per_unit;
+    } cases[] = {
+        {"^", "", "", 0},        {"[", "x", "]", 0},      {"^[", "x", "]", 1},  {"^[", "", "", 0},
+        {"]", "", "", 0},        {"^[ \t ] ", "", "", 0}, {"^[a] ", "", "", 1}, {"^[a [x](u) ", "z", " b]", 1},
+        {"^[a ", "^[]", "]", 1},
+    };
+    for (size_t c = 0; c < sizeof(cases) / sizeof(*cases); c++) {
+        for (size_t count = 128; count <= 8192; count *= 2) {
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+            for (size_t i = 0; i < count; i++) {
+                markdown_core_strbuf_puts(&source, cases[c].left);
+            }
+            markdown_core_strbuf_puts(&source, cases[c].middle);
+            for (size_t i = 0; i < count; i++) {
+                markdown_core_strbuf_puts(&source, cases[c].right);
+            }
+            inline_work work = {0};
+            markdown_core_node *root =
+                markdown_core_parse_document_with_mem((const char *)source.ptr, (size_t)source.size,
+                                                      MARKDOWN_CORE_OPT_FOOTNOTES, mem, measure_inline_work, &work);
+            OK(runner, root != NULL, "adversarial inline footnotes parse");
+            OK(runner, work.footnote_body <= (size_t)source.size,
+               "nonblank evidence inspects disjoint source ranges: case=%zu size=%d work=%zu", c, source.size,
+               work.footnote_body);
+            if (root) {
+                size_t actual = 0;
+                int previous_column = 0;
+                for (markdown_core_node *note = root->as.document->footnotes; note; note = note->next) {
+                    char expected[40];
+                    snprintf(expected, sizeof(expected), "inline-%zu", ++actual);
+                    STR_EQ(runner, (const char *)note->as.footnote->id.data, expected, "ids follow source order");
+                    OK(runner, note->start_column > previous_column && note->parent == NULL,
+                       "document owns each value once in increasing source order");
+                    previous_column = note->start_column;
+                }
+                INT_EQ(runner, actual, count * cases[c].notes_per_unit, "all and only completed notes are retained");
+                markdown_core_node_free(root);
+            }
+            markdown_core_strbuf_free(&source);
+        }
+    }
+    for (size_t count = 128; count <= 4096; count *= 2) {
+        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+        markdown_core_strbuf_puts(&source, "^[x]\n\n[^inline-1]: reserved\n");
+        for (size_t i = 1; i <= count; i++) {
+            char definition[64];
+            snprintf(definition, sizeof(definition), "[^inline-1-%zu]: reserved\n", i);
+            markdown_core_strbuf_puts(&source, definition);
+        }
+        markdown_core_node *root = markdown_core_parse_document_with_mem((const char *)source.ptr, (size_t)source.size,
+                                                                         MARKDOWN_CORE_OPT_FOOTNOTES, mem, NULL, NULL);
+        OK(runner, root != NULL, "long authored suffix sets parse");
+        if (root) {
+            char expected[40];
+            snprintf(expected, sizeof(expected), "inline-1-%zu", count + 1);
+            STR_EQ(runner, (const char *)root->as.document->footnotes->as.footnote->id.data, expected,
+                   "generated ids skip the complete authored suffix set");
+            markdown_core_node_free(root);
+        }
+        markdown_core_strbuf_free(&source);
     }
 }
 
@@ -2787,6 +2857,7 @@ int main(void) {
     universal_values(runner);
     attribute_linear_work(runner);
     cross_link_linear_work(runner);
+    inline_footnote_linear_work(runner);
     mark_linear_work(runner);
     comment_inline_linear_work(runner);
     comment_block_linear_work(runner);
