@@ -206,6 +206,11 @@
             "id": "text-directive",
             "input": "- [x]\n:n{class=\"a b c\u000bv\ff\" .a class=tail}a}*.foo.*\n:x{:_a}\n",
             "note": "O5 fuzz witness: the initial [x] has no structural separator, so both parsers keep it literally. The following text directives belong to the dialect and remain literal in cmark-gfm."
+        },
+        {
+            "id": "task-prefix-grammar",
+            "input": "- [?] - \tchild\n- [é] - \tchild\n- [✓] - \tchild\n- [🚀] - \tchild\n",
+            "note": "O5 review regression: each Unicode scalar occupies one virtual indentation column while node scopes retain UTF-8 byte columns. cmark-gfm keeps custom prefixes as text."
         }
     ],
     "notDeltas": [],

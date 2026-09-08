@@ -1,4 +1,4 @@
-Document scope=1:1..13:19 anchor=null attributes={} children=2
+Document scope=1:1..18:17 anchor=null attributes={} children=3
 ├── List scope=1:1..11:0 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=10
 │   ├── ListItem scope=1:1..1:16 anchor=null attributes={} marker=" " children=1
 │   │   └── Paragraph scope=1:7..1:16 anchor=null attributes={} children=1
@@ -30,12 +30,29 @@ Document scope=1:1..13:19 anchor=null attributes={} children=2
 │   └── ListItem scope=10:1..11:0 anchor=null attributes={} marker=null children=1
 │       └── Paragraph scope=10:3..10:24 anchor=null attributes={} children=1
 │           └── Text scope=10:3..10:24 anchor=null attributes={} literal="[] empty stays literal" children=0
-└── Callout scope=12:1..13:19 anchor=null attributes={} variant=null collapsed=null children=1
-    └── List scope=12:3..13:19 anchor=null attributes={} flavor=ordered start=1 variant=decimal delimiter=parenthesis(closed=false) tight=true children=1
-        └── ListItem scope=12:3..13:19 anchor=null attributes={} marker="🚀" children=2
-            ├── Paragraph scope=12:13..12:19 anchor=null attributes={} children=1
-            │   └── Text scope=12:13..12:19 anchor=null attributes={} literal="ordered" children=0
-            └── List scope=13:6..13:19 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
-                └── ListItem scope=13:6..13:19 anchor=null attributes={} marker="✓" children=1
-                    └── Paragraph scope=13:14..13:19 anchor=null attributes={} children=1
-                        └── Text scope=13:14..13:19 anchor=null attributes={} literal="nested" children=0
+├── Callout scope=12:1..13:19 anchor=null attributes={} variant=null collapsed=null children=1
+│   └── List scope=12:3..13:19 anchor=null attributes={} flavor=ordered start=1 variant=decimal delimiter=parenthesis(closed=false) tight=true children=1
+│       └── ListItem scope=12:3..13:19 anchor=null attributes={} marker="🚀" children=2
+│           ├── Paragraph scope=12:13..12:19 anchor=null attributes={} children=1
+│           │   └── Text scope=12:13..12:19 anchor=null attributes={} literal="ordered" children=0
+│           └── List scope=13:6..13:19 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+│               └── ListItem scope=13:6..13:19 anchor=null attributes={} marker="✓" children=1
+│                   └── Paragraph scope=13:14..13:19 anchor=null attributes={} children=1
+│                       └── Text scope=13:14..13:19 anchor=null attributes={} literal="nested" children=0
+└── List scope=15:1..18:17 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=4
+    ├── ListItem scope=15:1..15:14 anchor=null attributes={} marker="?" children=1
+    │   └── List scope=15:7..15:14 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+    │       └── ListItem scope=15:7..15:14 anchor=null attributes={} marker=null children=1
+    │           └── CodeBlock scope=15:10..15:14 anchor=null attributes={} info=null language=null literal="child\n" fenced=false closed=true children=0
+    ├── ListItem scope=16:1..16:15 anchor=null attributes={} marker="é" children=1
+    │   └── List scope=16:8..16:15 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+    │       └── ListItem scope=16:8..16:15 anchor=null attributes={} marker=null children=1
+    │           └── CodeBlock scope=16:11..16:15 anchor=null attributes={} info=null language=null literal="child\n" fenced=false closed=true children=0
+    ├── ListItem scope=17:1..17:16 anchor=null attributes={} marker="✓" children=1
+    │   └── List scope=17:9..17:16 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+    │       └── ListItem scope=17:9..17:16 anchor=null attributes={} marker=null children=1
+    │           └── CodeBlock scope=17:12..17:16 anchor=null attributes={} info=null language=null literal="child\n" fenced=false closed=true children=0
+    └── ListItem scope=18:1..18:17 anchor=null attributes={} marker="🚀" children=1
+        └── List scope=18:10..18:17 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+            └── ListItem scope=18:10..18:17 anchor=null attributes={} marker=null children=1
+                └── CodeBlock scope=18:13..18:17 anchor=null attributes={} info=null language=null literal="child\n" fenced=false closed=true children=0

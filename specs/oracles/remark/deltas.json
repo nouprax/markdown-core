@@ -516,6 +516,13 @@
             "authority": "docs/specs/dialect/task-lists.md (O5)",
             "summary": "A line ending is not a task separator, even when the following line lazily continues the paragraph.",
             "why": "The O5 deterministic fuzz run exposed remark recognizing [x] across a line ending. The product retains the marker literally and parses the following inline directives as usual."
+        },
+        {
+            "id": "task-prefix-unicode-tab-columns",
+            "input": "- [?] - \tchild\n- [é] - \tchild\n- [✓] - \tchild\n- [🚀] - \tchild\n",
+            "authority": "docs/specs/dialect/task-lists.md (O5)",
+            "summary": "All one-scalar task markers use one virtual indentation column before nested tab padding. Source scopes remain byte-based.",
+            "why": "remark-gfm has no custom task prefixes and treats these markers and following nested-list syntax as paragraph content."
         }
     ],
     "baselineBacklog": [],

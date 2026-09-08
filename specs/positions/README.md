@@ -12,6 +12,9 @@ Three gates that judge the engine's source positions, and one ledger each.
 
 A source position in this engine is a (line, column) pair counted in **bytes**
 from 1, and the canonical dump prints one closed interval of them per node.
+The block parser separately tracks virtual columns for indentation: each
+Unicode scalar counts once and a tab advances to the next multiple of four.
+Those virtual columns never become source positions.
 Before these gates, nothing in the repository checked that those numbers named
 anything:
 

@@ -789,7 +789,7 @@ its behavior, with no separate publication step.
   task extension descriptor, and duplicated item-continuation callback are
   removed; every item uses the inherited continuation rule. This also prevents
   a later paragraph from assigning or replacing an item's marker.
-  Eighteen package cases include every module example byte for byte,
+  Nineteen package cases include every module example byte for byte,
   one- through four-byte markers, combining scalars versus multi-scalar
   graphemes, punctuation, separators, malformed forms, ordered and nested
   containers, scopes, first-block decisions, and all already-landed opaque
@@ -810,6 +810,15 @@ its behavior, with no separate publication step.
   oracle parity, three 300-input deterministic differential fuzz runs (seed 1),
   `pnpm verify`, and the host release dry run pass. Full cross-host release
   aggregation remains the required CI gate.
+  Review follow-up: the shared block cursor counts each completed Unicode
+  scalar as one virtual indentation column while retaining byte offsets for
+  scopes. Its byte advances compose across scalar boundaries, its column
+  advances consume whole scalars, and tabs still expand or partially consume
+  to the next four-column stop. This removes the ASCII-only assumption that
+  made nested tab padding change a CodeBlock into a Paragraph for multibyte
+  task markers. The regression joins both package and canonical fixtures;
+  cursor partition tests and 1,728 marker-replacement/indentation combinations
+  protect the general coordinate invariant.
 
 - [ ] **O6 — Properties.** Recognize at most one exact `---`
       envelope at the beginning of the decoded document after an optional BOM,

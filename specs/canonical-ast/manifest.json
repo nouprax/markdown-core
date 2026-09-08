@@ -468,12 +468,13 @@
             "input": "task-markers.md",
             "expected": "task-markers.ast",
             "coverage": {
-                "kinds": ["Document", "Callout", "List", "ListItem", "Paragraph", "Text"],
+                "kinds": ["Document", "Callout", "List", "ListItem", "Paragraph", "Text", "CodeBlock"],
                 "states": [
                     "listItem.marker.null",
                     "listItem.marker.space",
                     "listItem.marker.value",
-                    "listItem.marker.custom"
+                    "listItem.marker.custom",
+                    "codeBlock.fenced.false"
                 ],
                 "orders": []
             }

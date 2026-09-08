@@ -169,7 +169,9 @@ the prefix is decided before inline parsing.
 ## Scopes
 
 `ListItem.scope` covers the prefix; the item's first block and its
-descendants begin after the separator.
+descendants begin after the separator. Source columns count UTF-8 bytes.
+For subsequent indentation and tab expansion, the marker counts as one
+virtual column regardless of its UTF-8 length or display width.
 
 ## Required conformance cases
 
