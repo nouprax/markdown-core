@@ -154,9 +154,21 @@ typedef struct oom_case {
     size_t length;
 } oom_case;
 
+static const char OOM_BLOCK_IDENTIFIER_CORPUS[] =
+    "text #paragraph#\n\n- [✓] item #item#\n- second\n  line #p#\n\n#list#\n\n"
+    "> - nested\n>\n> #nested#\n>\n> after\n\n#quote#\n\n"
+    "lead\n   #lead#\n| h |\n| - |\n| c |\n\n#table#\n\n#duplicate#\n\n"
+    "[a]: /a\n[b]: /b \"title\"\n| [a] |\n| - |\n\n[b]\n\n"
+    "[c]: /c\nlead [c] #lead-ref#\n| h |\n| - |\n\n"
+    "- blocked\n\n[gap]: /x\n\n#gap#\n\n[gap]\n\n"
+    "> - nested\n>\n> [gap]: /x\n>\n> #gap#\n>\n\n"
+    "- #empty#\n\n  [inside]: /x\n\n> next\n\n#next#\n\n"
+    "[^n]: text #note#\n\ntext \\#escape#\n\n$$x$$ #formula#\n\n> last\n\n#end#";
+
 static const oom_case OOM_CASES[] = {
     {"properties", OOM_PROPERTIES_CORPUS, sizeof(OOM_PROPERTIES_CORPUS) - 1},
     {"properties flow", OOM_PROPERTIES_ARRAY_CORPUS, sizeof(OOM_PROPERTIES_ARRAY_CORPUS) - 1},
+    {"block identifiers", OOM_BLOCK_IDENTIFIER_CORPUS, sizeof(OOM_BLOCK_IDENTIFIER_CORPUS) - 1},
     {"task markers", OOM_TASK_CORPUS, sizeof(OOM_TASK_CORPUS) - 1},
     {"inline footnotes", OOM_INLINE_FOOTNOTE_CORPUS, sizeof(OOM_INLINE_FOOTNOTE_CORPUS) - 1},
     {"comments", OOM_COMMENT_CORPUS, sizeof(OOM_COMMENT_CORPUS) - 1},

@@ -48,6 +48,18 @@ transactional kind conversion, containment rejection in parser conversions,
 owned subtree release, and whole-parse OOM propagation. Platform builds verify
 native alignment, and sanitizer suites exercise the same ownership paths.
 
+Link reference definitions are recognized during block parsing so paragraph
+content and Setext classification can use the remaining text. A finalized
+paragraph containing only definitions stays in its parent's child chain with
+the internal `REFERENCE_DEFINITION_ONLY` flag. Later block identifiers see
+that paragraph in source order and cannot attach across it. After all block
+syntax and anchor decisions finish, one iterative postorder pass discards
+these paragraphs and derives list layout from the cleaned semantic children,
+before inline parsing. The document owns them through their parents,
+including on parse failure. An intentionally empty anchored list-item
+paragraph is not a definition and survives this cleanup. No definition node
+reaches the public AST.
+
 Inline footnotes use the existing Footnote data record and one-item Cite.
 A successful close transfers the parsed inline body directly to
 Document.footnotes. A Cite never has a Footnote child: its Citation names the

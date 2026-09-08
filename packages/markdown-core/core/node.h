@@ -177,11 +177,15 @@ enum markdown_core_node__internal_flags {
     // than on the line before, and to know that a `-->` line really closed a
     // type-2 block rather than the input or a container running out.
     MARKDOWN_CORE_NODE__CLOSED_BY_END_CONDITION = (1 << 4),
+    // A finalized paragraph consumed entirely by reference definitions. It
+    // retains block adjacency until block parsing ends, then is discarded
+    // before list layout and inline parsing observe the semantic children.
+    MARKDOWN_CORE_NODE__REFERENCE_DEFINITION_ONLY = (1 << 5),
 
     // The first bit an extension may claim. Extension flags are compile-time
     // constants owned by the extension that uses them; there is no runtime
     // registration and no allocator to run out of bits.
-    MARKDOWN_CORE_NODE__EXTENSION_FIRST = (1 << 5),
+    MARKDOWN_CORE_NODE__EXTENSION_FIRST = (1 << 6),
 };
 
 typedef uint16_t markdown_core_node_internal_flags;

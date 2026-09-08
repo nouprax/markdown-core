@@ -1,0 +1,1258 @@
+# Block identifiers
+
+```````````````````````````````` example
+Some text #abc#
+
+Tabbed→#t1#
+.
+Document scope=1:1..3:11 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:15 anchor="abc" attributes={} children=1
+│   └── Text scope=1:1..1:9 anchor=null attributes={} literal="Some text" children=0
+└── Paragraph scope=3:1..3:11 anchor="t1" attributes={} children=1
+    └── Text scope=3:1..3:6 anchor=null attributes={} literal="Tabbed" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+text
+#abc#
+.
+Document scope=1:1..2:5 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..2:5 anchor="abc" attributes={} children=1
+    └── Text scope=1:1..1:4 anchor=null attributes={} literal="text" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+first
+second
+#id#
+.
+Document scope=1:1..3:4 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..3:4 anchor="id" attributes={} children=3
+    ├── Text scope=1:1..1:5 anchor=null attributes={} literal="first" children=0
+    ├── SoftBreak scope=1:6..1:6 anchor=null attributes={} children=0
+    └── Text scope=2:1..2:6 anchor=null attributes={} literal="second" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+- a
+- b
+
+#lst#
+
+next
+.
+Document scope=1:1..6:4 anchor=null attributes={} children=2
+├── List scope=1:1..4:5 anchor="lst" attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=2
+│   ├── ListItem scope=1:1..1:3 anchor=null attributes={} marker=null children=1
+│   │   └── Paragraph scope=1:3..1:3 anchor=null attributes={} children=1
+│   │       └── Text scope=1:3..1:3 anchor=null attributes={} literal="a" children=0
+│   └── ListItem scope=2:1..3:0 anchor=null attributes={} marker=null children=1
+│       └── Paragraph scope=2:3..2:3 anchor=null attributes={} children=1
+│           └── Text scope=2:3..2:3 anchor=null attributes={} literal="b" children=0
+└── Paragraph scope=6:1..6:4 anchor=null attributes={} children=1
+    └── Text scope=6:1..6:4 anchor=null attributes={} literal="next" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+> quote
+
+#q#
+
+| h |
+| - |
+| c |
+
+#tbl#
+.
+Document scope=1:1..9:5 anchor=null attributes={} children=2
+├── Callout scope=1:1..3:3 anchor="q" attributes={} variant=null collapsed=null children=1
+│   └── Paragraph scope=1:3..1:7 anchor=null attributes={} children=1
+│       └── Text scope=1:3..1:7 anchor=null attributes={} literal="quote" children=0
+└── Table scope=5:1..9:5 anchor="tbl" attributes={} columns=[none:null] children=2
+    ├── TableHead children=1
+    │   └── TableRow scope=5:1..5:5 anchor=null attributes={} children=1
+    │       └── TableCell scope=5:2..5:4 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │           └── Text scope=5:3..5:3 anchor=null attributes={} literal="h" children=0
+    ├── TableBody children=1
+    │   └── TableRow scope=7:1..7:5 anchor=null attributes={} children=1
+    │       └── TableCell scope=7:2..7:4 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │           └── Text scope=7:3..7:3 anchor=null attributes={} literal="c" children=0
+    └── TableFoot children=0
+````````````````````````````````
+
+```````````````````````````````` example
+#abc#
+
+#def#
+.
+Document scope=1:1..3:5 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:5 anchor=null attributes={} children=1
+│   └── Text scope=1:1..1:5 anchor=null attributes={} literal="#abc#" children=0
+└── Paragraph scope=3:1..3:5 anchor=null attributes={} children=1
+    └── Text scope=3:1..3:5 anchor=null attributes={} literal="#def#" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+- item #id#
+- second
+  more #p#
+.
+Document scope=1:1..3:10 anchor=null attributes={} children=1
+└── List scope=1:1..3:10 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=2
+    ├── ListItem scope=1:1..1:11 anchor="id" attributes={} marker=null children=1
+    │   └── Paragraph scope=1:3..1:11 anchor=null attributes={} children=1
+    │       └── Text scope=1:3..1:6 anchor=null attributes={} literal="item" children=0
+    └── ListItem scope=2:1..3:10 anchor=null attributes={} marker=null children=1
+        └── Paragraph scope=2:3..3:10 anchor="p" attributes={} children=3
+            ├── Text scope=2:3..2:8 anchor=null attributes={} literal="second" children=0
+            ├── SoftBreak scope=2:9..2:9 anchor=null attributes={} children=0
+            └── Text scope=3:3..3:6 anchor=null attributes={} literal="more" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+$$x$$ #formula#
+.
+Document scope=1:1..1:15 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:15 anchor="formula" attributes={} children=1
+    └── Formula scope=1:1..1:5 anchor=null attributes={} mode=standalone literal="x" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+text #a_b# text ## text#abc#
+
+text \#abc#
+
+text #abc# extra
+.
+Document scope=1:1..5:16 anchor=null attributes={} children=3
+├── Paragraph scope=1:1..1:28 anchor=null attributes={} children=1
+│   └── Text scope=1:1..1:28 anchor=null attributes={} literal="text #a_b# text ## text#abc#" children=0
+├── Paragraph scope=3:1..3:11 anchor=null attributes={} children=1
+│   └── Text scope=3:1..3:11 anchor=null attributes={} literal="text #abc#" children=0
+└── Paragraph scope=5:1..5:16 anchor=null attributes={} children=1
+    └── Text scope=5:1..5:16 anchor=null attributes={} literal="text #abc# extra" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+text #abc
+
+text #abc\#
+
+text ^abc
+.
+Document scope=1:1..5:9 anchor=null attributes={} children=3
+├── Paragraph scope=1:1..1:9 anchor=null attributes={} children=1
+│   └── Text scope=1:1..1:9 anchor=null attributes={} literal="text #abc" children=0
+├── Paragraph scope=3:1..3:11 anchor=null attributes={} children=1
+│   └── Text scope=3:1..3:11 anchor=null attributes={} literal="text #abc#" children=0
+└── Paragraph scope=5:1..5:9 anchor=null attributes={} children=1
+    └── Text scope=5:1..5:9 anchor=null attributes={} literal="text ^abc" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+text #a# #b#
+.
+Document scope=1:1..1:12 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:12 anchor="b" attributes={} children=1
+    └── Text scope=1:1..1:8 anchor=null attributes={} literal="text #a#" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+```
+x #id#
+```
+.
+Document scope=1:1..3:3 anchor=null attributes={} children=1
+└── CodeBlock scope=1:1..3:3 anchor=null attributes={} info=null language=null literal="x #id#\n" fenced=true closed=true children=0
+````````````````````````````````
+
+# Boundary cases
+
+## suffix-before-trailing-space
+
+```````````````````````````````` example
+  text #Ab-09# →
+.
+Document scope=1:1..1:16 anchor=null attributes={} children=1
+└── Paragraph scope=1:3..1:16 anchor="Ab-09" attributes={} children=1
+    └── Text scope=1:3..1:6 anchor=null attributes={} literal="text" children=0
+````````````````````````````````
+
+## own-line-indent
+
+```````````````````````````````` example
+text
+    #bad#
+
+text
+   #good#
+.
+Document scope=1:1..5:9 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..2:9 anchor=null attributes={} children=3
+│   ├── Text scope=1:1..1:4 anchor=null attributes={} literal="text" children=0
+│   ├── SoftBreak scope=1:5..1:5 anchor=null attributes={} children=0
+│   └── Text scope=2:5..2:9 anchor=null attributes={} literal="#bad#" children=0
+└── Paragraph scope=4:1..5:9 anchor="good" attributes={} children=1
+    └── Text scope=4:1..4:4 anchor=null attributes={} literal="text" children=0
+````````````````````````````````
+
+## own-line-tab
+
+```````````````````````````````` example
+text
+→#bad#
+.
+Document scope=1:1..2:6 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..2:6 anchor=null attributes={} children=3
+    ├── Text scope=1:1..1:4 anchor=null attributes={} literal="text" children=0
+    ├── SoftBreak scope=1:5..1:5 anchor=null attributes={} children=0
+    └── Text scope=2:2..2:6 anchor=null attributes={} literal="#bad#" children=0
+````````````````````````````````
+
+## continued-suffix-indent
+
+```````````````````````````````` example
+text
+    more #good#
+.
+Document scope=1:1..2:15 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..2:15 anchor="good" attributes={} children=3
+    ├── Text scope=1:1..1:4 anchor=null attributes={} literal="text" children=0
+    ├── SoftBreak scope=1:5..1:5 anchor=null attributes={} children=0
+    └── Text scope=2:5..2:8 anchor=null attributes={} literal="more" children=0
+````````````````````````````````
+
+## empty-item
+
+```````````````````````````````` example
+- #id#
+.
+Document scope=1:1..1:6 anchor=null attributes={} children=1
+└── List scope=1:1..1:6 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+    └── ListItem scope=1:1..1:6 anchor="id" attributes={} marker=null children=1
+        └── Paragraph scope=1:3..1:6 anchor=null attributes={} children=0
+````````````````````````````````
+
+## task-item
+
+```````````````````````````````` example
+- [✓] item #task#
+.
+Document scope=1:1..1:19 anchor=null attributes={} children=1
+└── List scope=1:1..1:19 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+    └── ListItem scope=1:1..1:19 anchor="task" attributes={} marker="✓" children=1
+        └── Paragraph scope=1:9..1:19 anchor=null attributes={} children=1
+            └── Text scope=1:9..1:12 anchor=null attributes={} literal="item" children=0
+````````````````````````````````
+
+## later-paragraph
+
+```````````````````````````````` example
+- first
+
+  second #p#
+.
+Document scope=1:1..3:12 anchor=null attributes={} children=1
+└── List scope=1:1..3:12 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=false children=1
+    └── ListItem scope=1:1..3:12 anchor=null attributes={} marker=null children=2
+        ├── Paragraph scope=1:3..1:7 anchor=null attributes={} children=1
+        │   └── Text scope=1:3..1:7 anchor=null attributes={} literal="first" children=0
+        └── Paragraph scope=3:3..3:12 anchor="p" attributes={} children=1
+            └── Text scope=3:3..3:8 anchor=null attributes={} literal="second" children=0
+````````````````````````````````
+
+## earlier-candidates
+
+```````````````````````````````` example
+text #a# #b#
+more #last#
+.
+Document scope=1:1..2:11 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..2:11 anchor="last" attributes={} children=3
+    ├── Text scope=1:1..1:12 anchor=null attributes={} literal="text #a# #b#" children=0
+    ├── SoftBreak scope=1:13..1:13 anchor=null attributes={} children=0
+    └── Text scope=2:1..2:4 anchor=null attributes={} literal="more" children=0
+````````````````````````````````
+
+## nested-outer
+
+```````````````````````````````` example
+- outer
+  - inner
+
+#outer#
+
+next
+.
+Document scope=1:1..6:4 anchor=null attributes={} children=2
+├── List scope=1:1..4:7 anchor="outer" attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+│   └── ListItem scope=1:1..3:0 anchor=null attributes={} marker=null children=2
+│       ├── Paragraph scope=1:3..1:7 anchor=null attributes={} children=1
+│       │   └── Text scope=1:3..1:7 anchor=null attributes={} literal="outer" children=0
+│       └── List scope=2:3..3:0 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+│           └── ListItem scope=2:3..3:0 anchor=null attributes={} marker=null children=1
+│               └── Paragraph scope=2:5..2:9 anchor=null attributes={} children=1
+│                   └── Text scope=2:5..2:9 anchor=null attributes={} literal="inner" children=0
+└── Paragraph scope=6:1..6:4 anchor=null attributes={} children=1
+    └── Text scope=6:1..6:4 anchor=null attributes={} literal="next" children=0
+````````````````````````````````
+
+## nested-inner
+
+```````````````````````````````` example
+- outer
+  - inner
+
+  #inner#
+
+  rest
+.
+Document scope=1:1..6:6 anchor=null attributes={} children=1
+└── List scope=1:1..6:6 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=false children=1
+    └── ListItem scope=1:1..6:6 anchor=null attributes={} marker=null children=3
+        ├── Paragraph scope=1:3..1:7 anchor=null attributes={} children=1
+        │   └── Text scope=1:3..1:7 anchor=null attributes={} literal="outer" children=0
+        ├── List scope=2:3..4:9 anchor="inner" attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+        │   └── ListItem scope=2:3..3:0 anchor=null attributes={} marker=null children=1
+        │       └── Paragraph scope=2:5..2:9 anchor=null attributes={} children=1
+        │           └── Text scope=2:5..2:9 anchor=null attributes={} literal="inner" children=0
+        └── Paragraph scope=6:3..6:6 anchor=null attributes={} children=1
+            └── Text scope=6:3..6:6 anchor=null attributes={} literal="rest" children=0
+````````````````````````````````
+
+## quoted-list
+
+```````````````````````````````` example
+> - item
+>
+> #list#
+>
+> rest
+.
+Document scope=1:1..5:6 anchor=null attributes={} children=1
+└── Callout scope=1:1..5:6 anchor=null attributes={} variant=null collapsed=null children=2
+    ├── List scope=1:3..3:8 anchor="list" attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+    │   └── ListItem scope=1:3..2:1 anchor=null attributes={} marker=null children=1
+    │       └── Paragraph scope=1:5..1:8 anchor=null attributes={} children=1
+    │           └── Text scope=1:5..1:8 anchor=null attributes={} literal="item" children=0
+    └── Paragraph scope=5:3..5:6 anchor=null attributes={} children=1
+        └── Text scope=5:3..5:6 anchor=null attributes={} literal="rest" children=0
+````````````````````````````````
+
+## quoted-boundary
+
+```````````````````````````````` example
+> - item
+>
+> #list#
+
+outside
+.
+Document scope=1:1..5:7 anchor=null attributes={} children=2
+├── Callout scope=1:1..3:8 anchor=null attributes={} variant=null collapsed=null children=2
+│   ├── List scope=1:3..2:1 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+│   │   └── ListItem scope=1:3..2:1 anchor=null attributes={} marker=null children=1
+│   │       └── Paragraph scope=1:5..1:8 anchor=null attributes={} children=1
+│   │           └── Text scope=1:5..1:8 anchor=null attributes={} literal="item" children=0
+│   └── Paragraph scope=3:3..3:8 anchor=null attributes={} children=1
+│       └── Text scope=3:3..3:8 anchor=null attributes={} literal="#list#" children=0
+└── Paragraph scope=5:1..5:7 anchor=null attributes={} children=1
+    └── Text scope=5:1..5:7 anchor=null attributes={} literal="outside" children=0
+````````````````````````````````
+
+## no-leading-blank
+
+```````````````````````````````` example
+> quote
+#id#
+.
+Document scope=1:1..2:4 anchor=null attributes={} children=1
+└── Callout scope=1:1..2:4 anchor=null attributes={} variant=null collapsed=null children=1
+    └── Paragraph scope=1:3..2:4 anchor="id" attributes={} children=1
+        └── Text scope=1:3..1:7 anchor=null attributes={} literal="quote" children=0
+````````````````````````````````
+
+## no-following-blank
+
+```````````````````````````````` example
+- item
+
+#id#
+next
+.
+Document scope=1:1..4:4 anchor=null attributes={} children=2
+├── List scope=1:1..2:0 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+│   └── ListItem scope=1:1..2:0 anchor=null attributes={} marker=null children=1
+│       └── Paragraph scope=1:3..1:6 anchor=null attributes={} children=1
+│           └── Text scope=1:3..1:6 anchor=null attributes={} literal="item" children=0
+└── Paragraph scope=3:1..4:4 anchor=null attributes={} children=3
+    ├── Text scope=3:1..3:4 anchor=null attributes={} literal="#id#" children=0
+    ├── SoftBreak scope=3:5..3:5 anchor=null attributes={} children=0
+    └── Text scope=4:1..4:4 anchor=null attributes={} literal="next" children=0
+````````````````````````````````
+
+## indented-follower
+
+```````````````````````````````` example
+- item
+
+    #code#
+.
+Document scope=1:1..3:10 anchor=null attributes={} children=1
+└── List scope=1:1..3:10 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=false children=1
+    └── ListItem scope=1:1..3:10 anchor=null attributes={} marker=null children=2
+        ├── Paragraph scope=1:3..1:6 anchor=null attributes={} children=1
+        │   └── Text scope=1:3..1:6 anchor=null attributes={} literal="item" children=0
+        └── Paragraph scope=3:5..3:10 anchor=null attributes={} children=1
+            └── Text scope=3:5..3:10 anchor=null attributes={} literal="#code#" children=0
+````````````````````````````````
+
+## duplicate-follower
+
+```````````````````````````````` example
+- item
+
+#one#
+
+#two#
+.
+Document scope=1:1..5:5 anchor=null attributes={} children=2
+├── List scope=1:1..3:5 anchor="one" attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+│   └── ListItem scope=1:1..2:0 anchor=null attributes={} marker=null children=1
+│       └── Paragraph scope=1:3..1:6 anchor=null attributes={} children=1
+│           └── Text scope=1:3..1:6 anchor=null attributes={} literal="item" children=0
+└── Paragraph scope=5:1..5:5 anchor=null attributes={} children=1
+    └── Text scope=5:1..5:5 anchor=null attributes={} literal="#two#" children=0
+````````````````````````````````
+
+## duplicate-values
+
+```````````````````````````````` example
+first #same#
+
+second #same#
+.
+Document scope=1:1..3:13 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:12 anchor="same" attributes={} children=1
+│   └── Text scope=1:1..1:5 anchor=null attributes={} literal="first" children=0
+└── Paragraph scope=3:1..3:13 anchor="same" attributes={} children=1
+    └── Text scope=3:1..3:6 anchor=null attributes={} literal="second" children=0
+````````````````````````````````
+
+## nested-blank-cache
+
+```````````````````````````````` example
+* foo
+  * bar
+
+  #nested#
+
+  baz
+.
+Document scope=1:1..6:5 anchor=null attributes={} children=1
+└── List scope=1:1..6:5 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=false children=1
+    └── ListItem scope=1:1..6:5 anchor=null attributes={} marker=null children=3
+        ├── Paragraph scope=1:3..1:5 anchor=null attributes={} children=1
+        │   └── Text scope=1:3..1:5 anchor=null attributes={} literal="foo" children=0
+        ├── List scope=2:3..4:10 anchor="nested" attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+        │   └── ListItem scope=2:3..3:0 anchor=null attributes={} marker=null children=1
+        │       └── Paragraph scope=2:5..2:7 anchor=null attributes={} children=1
+        │           └── Text scope=2:5..2:7 anchor=null attributes={} literal="bar" children=0
+        └── Paragraph scope=6:3..6:5 anchor=null attributes={} children=1
+            └── Text scope=6:3..6:5 anchor=null attributes={} literal="baz" children=0
+````````````````````````````````
+
+## invalid-character
+
+```````````````````````````````` example
+text #a_b#
+
+text #é#
+
+text #a.b#
+.
+Document scope=1:1..5:10 anchor=null attributes={} children=3
+├── Paragraph scope=1:1..1:10 anchor=null attributes={} children=1
+│   └── Text scope=1:1..1:10 anchor=null attributes={} literal="text #a_b#" children=0
+├── Paragraph scope=3:1..3:9 anchor=null attributes={} children=1
+│   └── Text scope=3:1..3:9 anchor=null attributes={} literal="text #é#" children=0
+└── Paragraph scope=5:1..5:10 anchor=null attributes={} children=1
+    └── Text scope=5:1..5:10 anchor=null attributes={} literal="text #a.b#" children=0
+````````````````````````````````
+
+## invalid-delimiters
+
+```````````````````````````````` example
+text ##
+
+text #a##b#
+
+text ##a##
+
+text abc#
+
+text #a b#
+.
+Document scope=1:1..9:10 anchor=null attributes={} children=5
+├── Paragraph scope=1:1..1:7 anchor=null attributes={} children=1
+│   └── Text scope=1:1..1:7 anchor=null attributes={} literal="text ##" children=0
+├── Paragraph scope=3:1..3:11 anchor=null attributes={} children=1
+│   └── Text scope=3:1..3:11 anchor=null attributes={} literal="text #a##b#" children=0
+├── Paragraph scope=5:1..5:10 anchor=null attributes={} children=1
+│   └── Text scope=5:1..5:10 anchor=null attributes={} literal="text ##a##" children=0
+├── Paragraph scope=7:1..7:9 anchor=null attributes={} children=1
+│   └── Text scope=7:1..7:9 anchor=null attributes={} literal="text abc#" children=0
+└── Paragraph scope=9:1..9:10 anchor=null attributes={} children=1
+    └── Text scope=9:1..9:10 anchor=null attributes={} literal="text #a b#" children=0
+````````````````````````````````
+
+## escaped-markers
+
+```````````````````````````````` example
+text \#id#
+
+text #id\#
+
+text \\#id#
+.
+Document scope=1:1..5:11 anchor=null attributes={} children=3
+├── Paragraph scope=1:1..1:10 anchor=null attributes={} children=1
+│   └── Text scope=1:1..1:10 anchor=null attributes={} literal="text #id#" children=0
+├── Paragraph scope=3:1..3:10 anchor=null attributes={} children=1
+│   └── Text scope=3:1..3:10 anchor=null attributes={} literal="text #id#" children=0
+└── Paragraph scope=5:1..5:11 anchor=null attributes={} children=1
+    └── Text scope=5:1..5:11 anchor=null attributes={} literal="text \\#id#" children=0
+````````````````````````````````
+
+## heading-boundaries
+
+```````````````````````````````` example
+# heading #id#
+
+# id #
+
+setext #id#
+---
+.
+Document scope=1:1..6:3 anchor=null attributes={} children=3
+├── Heading scope=1:1..1:14 anchor=null attributes={} level=1 children=1
+│   └── Text scope=1:3..1:14 anchor=null attributes={} literal="heading #id#" children=0
+├── Heading scope=3:1..3:6 anchor=null attributes={} level=1 children=1
+│   └── Text scope=3:3..3:4 anchor=null attributes={} literal="id" children=0
+└── Heading scope=5:1..6:3 anchor=null attributes={} level=2 children=1
+    └── Text scope=5:1..5:11 anchor=null attributes={} literal="setext #id#" children=0
+````````````````````````````````
+
+## opaque-blocks
+
+```````````````````````````````` example
+```
+x #id#
+```
+
+<div>
+x #id#
+
+%%
+x #id#
+%%
+.
+Document scope=1:1..10:2 anchor=null attributes={} children=3
+├── CodeBlock scope=1:1..3:3 anchor=null attributes={} info=null language=null literal="x #id#\n" fenced=true closed=true children=0
+├── HTMLBlock scope=5:1..6:6 anchor=null attributes={} literal="<div>\nx #id#\n" children=0
+└── Comment scope=8:1..10:2 anchor=null attributes={} literal="x #id#\n" children=0
+````````````````````````````````
+
+## inline-ownership
+
+```````````````````````````````` example
+`#code#` [[Note#^ref]] %%#comment#%% <i>#html#</i> #p#
+.
+Document scope=1:1..1:54 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:54 anchor="p" attributes={} children=9
+    ├── Code scope=1:1..1:8 anchor=null attributes={} literal="#code#" children=0
+    ├── Text scope=1:9..1:9 anchor=null attributes={} literal=" " children=0
+    ├── CrossLink scope=1:10..1:22 anchor=null attributes={} embedded=false dest=cross(path="Note",anchor="ref") label=null children=0
+    ├── Text scope=1:23..1:23 anchor=null attributes={} literal=" " children=0
+    ├── Comment scope=1:24..1:36 anchor=null attributes={} literal="#comment#" children=0
+    ├── Text scope=1:37..1:37 anchor=null attributes={} literal=" " children=0
+    ├── HTML scope=1:38..1:40 anchor=null attributes={} literal="<i>" children=0
+    ├── Text scope=1:41..1:46 anchor=null attributes={} literal="#html#" children=0
+    └── HTML scope=1:47..1:50 anchor=null attributes={} literal="</i>" children=0
+````````````````````````````````
+
+## lexical-final-line
+
+```````````````````````````````` example
+`open #code#
+
+<span title="open #html#
+
+%%open #comment#
+.
+Document scope=1:1..5:16 anchor=null attributes={} children=3
+├── Paragraph scope=1:1..1:12 anchor="code" attributes={} children=1
+│   └── Text scope=1:1..1:5 anchor=null attributes={} literal="`open" children=0
+├── Paragraph scope=3:1..3:24 anchor="html" attributes={} children=1
+│   └── Text scope=3:1..3:17 anchor=null attributes={} literal="<span title=\"open" children=0
+└── Paragraph scope=5:1..5:16 anchor="comment" attributes={} children=1
+    └── Text scope=5:1..5:6 anchor=null attributes={} literal="%%open" children=0
+````````````````````````````````
+
+## reference-definition
+
+```````````````````````````````` example
+[link]: /url
+text #p#
+
+[link]
+.
+Document scope=1:1..4:6 anchor=null attributes={} children=2
+├── Paragraph scope=2:1..2:8 anchor="p" attributes={} children=1
+│   └── Text scope=2:1..2:4 anchor=null attributes={} literal="text" children=0
+└── Paragraph scope=4:1..4:6 anchor=null attributes={} children=1
+    └── Link scope=4:1..4:6 anchor=null attributes={} dest=url("/url") title=null children=1
+        └── Text scope=4:2..4:5 anchor=null attributes={} literal="link" children=0
+````````````````````````````````
+
+## footnote-body
+
+```````````````````````````````` example
+[^n]: body #note#
+
+call[^n]
+.
+Document scope=1:1..3:8 anchor=null attributes={} children=1
+├── Paragraph scope=3:1..3:8 anchor=null attributes={} children=2
+│   ├── Text scope=3:1..3:4 anchor=null attributes={} literal="call" children=0
+│   └── Cite scope=3:5..3:8 anchor=null attributes={} children=1
+│       └── Citation scope=3:6..3:7 referent=footnote(id="n") children=0
+│           ├── CitationPrefix children=0
+│           └── CitationSuffix children=0
+└── Footnote scope=1:1..2:0 id="n" children=1
+    └── Paragraph scope=1:7..1:17 anchor="note" attributes={} children=1
+        └── Text scope=1:7..1:10 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## directive-parent
+
+```````````````````````````````` example
+:::box
+- item
+
+#list#
+
+:::
+.
+Document scope=1:1..6:3 anchor=null attributes={} children=1
+└── DirectiveBlock scope=1:1..6:3 anchor=null attributes={} name="box" children=1
+    └── List scope=2:1..4:6 anchor="list" attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+        └── ListItem scope=2:1..3:0 anchor=null attributes={} marker=null children=1
+            └── Paragraph scope=2:3..2:6 anchor=null attributes={} children=1
+                └── Text scope=2:3..2:6 anchor=null attributes={} literal="item" children=0
+````````````````````````````````
+
+## directive-close-boundary
+
+```````````````````````````````` example
+:::box
+- item
+
+#list#
+:::
+.
+Document scope=1:1..5:3 anchor=null attributes={} children=1
+└── DirectiveBlock scope=1:1..5:3 anchor=null attributes={} name="box" children=2
+    ├── List scope=2:1..3:0 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+    │   └── ListItem scope=2:1..3:0 anchor=null attributes={} marker=null children=1
+    │       └── Paragraph scope=2:3..2:6 anchor=null attributes={} children=1
+    │           └── Text scope=2:3..2:6 anchor=null attributes={} literal="item" children=0
+    └── Paragraph scope=4:1..4:6 anchor=null attributes={} children=1
+        └── Text scope=4:1..4:6 anchor=null attributes={} literal="#list#" children=0
+````````````````````````````````
+
+## table-lead
+
+```````````````````````````````` example
+text #lead# →
+| h |
+| - |
+| c |
+.
+Document scope=1:1..4:5 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:13 anchor="lead" attributes={} children=1
+│   └── Text scope=1:1..1:4 anchor=null attributes={} literal="text" children=0
+└── Table scope=2:1..4:5 anchor=null attributes={} columns=[none:null] children=2
+    ├── TableHead children=1
+    │   └── TableRow scope=2:1..2:5 anchor=null attributes={} children=1
+    │       └── TableCell scope=2:2..2:4 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │           └── Text scope=2:3..2:3 anchor=null attributes={} literal="h" children=0
+    ├── TableBody children=1
+    │   └── TableRow scope=4:1..4:5 anchor=null attributes={} children=1
+    │       └── TableCell scope=4:2..4:4 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │           └── Text scope=4:3..4:3 anchor=null attributes={} literal="c" children=0
+    └── TableFoot children=0
+````````````````````````````````
+
+## table-lead-own-line
+
+```````````````````````````````` example
+text
+   #lead#
+| h |
+| - |
+.
+Document scope=1:1..4:5 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..2:9 anchor="lead" attributes={} children=1
+│   └── Text scope=1:1..1:4 anchor=null attributes={} literal="text" children=0
+└── Table scope=3:1..4:5 anchor=null attributes={} columns=[none:null] children=1
+    ├── TableHead children=1
+    │   └── TableRow scope=3:1..3:5 anchor=null attributes={} children=1
+    │       └── TableCell scope=3:2..3:4 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │           └── Text scope=3:3..3:3 anchor=null attributes={} literal="h" children=0
+    ├── TableBody children=0
+    └── TableFoot children=0
+````````````````````````````````
+
+## table-lead-indented
+
+```````````````````````````````` example
+text
+    #bad#
+| h |
+| - |
+.
+Document scope=1:1..4:5 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..2:9 anchor=null attributes={} children=3
+│   ├── Text scope=1:1..1:4 anchor=null attributes={} literal="text" children=0
+│   ├── SoftBreak scope=1:5..1:5 anchor=null attributes={} children=0
+│   └── Text scope=2:5..2:9 anchor=null attributes={} literal="#bad#" children=0
+└── Table scope=3:1..4:5 anchor=null attributes={} columns=[none:null] children=1
+    ├── TableHead children=1
+    │   └── TableRow scope=3:1..3:5 anchor=null attributes={} children=1
+    │       └── TableCell scope=3:2..3:4 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │           └── Text scope=3:3..3:3 anchor=null attributes={} literal="h" children=0
+    ├── TableBody children=0
+    └── TableFoot children=0
+````````````````````````````````
+
+## table-lead-item
+
+```````````````````````````````` example
+- text #item#
+  | h |
+  | - |
+.
+Document scope=1:1..3:7 anchor=null attributes={} children=1
+└── List scope=1:1..3:7 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+    └── ListItem scope=1:1..3:7 anchor="item" attributes={} marker=null children=2
+        ├── Paragraph scope=1:3..1:13 anchor=null attributes={} children=1
+        │   └── Text scope=1:3..1:6 anchor=null attributes={} literal="text" children=0
+        └── Table scope=2:3..3:7 anchor=null attributes={} columns=[none:null] children=1
+            ├── TableHead children=1
+            │   └── TableRow scope=2:3..2:7 anchor=null attributes={} children=1
+            │       └── TableCell scope=2:4..2:6 anchor=null attributes={} rowspan=1 colspan=1 children=1
+            │           └── Text scope=2:5..2:5 anchor=null attributes={} literal="h" children=0
+            ├── TableBody children=0
+            └── TableFoot children=0
+````````````````````````````````
+
+## table-cell
+
+```````````````````````````````` example
+| #cell# |
+| - |
+| text #cell# |
+
+#table#
+.
+Document scope=1:1..5:7 anchor=null attributes={} children=1
+└── Table scope=1:1..5:7 anchor="table" attributes={} columns=[none:null] children=2
+    ├── TableHead children=1
+    │   └── TableRow scope=1:1..1:10 anchor=null attributes={} children=1
+    │       └── TableCell scope=1:2..1:9 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │           └── Text scope=1:3..1:8 anchor=null attributes={} literal="#cell#" children=0
+    ├── TableBody children=1
+    │   └── TableRow scope=3:1..3:15 anchor=null attributes={} children=1
+    │       └── TableCell scope=3:2..3:14 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │           └── Text scope=3:3..3:13 anchor=null attributes={} literal="text #cell#" children=0
+    └── TableFoot children=0
+````````````````````````````````
+
+## anchored-bracket-formula
+
+```````````````````````````````` example
+\\[x\\] #formula#
+.
+Document scope=1:1..1:17 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:17 anchor="formula" attributes={} children=1
+    └── Formula scope=1:1..1:7 anchor=null attributes={} mode=standalone literal="x" children=0
+````````````````````````````````
+
+## anchored-own-line-formula
+
+```````````````````````````````` example
+$$x$$
+#formula#
+.
+Document scope=1:1..2:9 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..2:9 anchor="formula" attributes={} children=1
+    └── Formula scope=1:1..1:5 anchor=null attributes={} mode=standalone literal="x" children=0
+````````````````````````````````
+
+## formula-item
+
+```````````````````````````````` example
+- $$x$$ #item#
+.
+Document scope=1:1..1:14 anchor=null attributes={} children=1
+└── List scope=1:1..1:14 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+    └── ListItem scope=1:1..1:14 anchor="item" attributes={} marker=null children=1
+        └── FormulaBlock scope=1:3..1:14 anchor=null attributes={} literal="x" children=0
+````````````````````````````````
+
+## opaque-formula
+
+```````````````````````````````` example
+$x #id#$
+
+$$
+x #id#
+$$
+
+#outer#
+.
+Document scope=1:1..7:7 anchor=null attributes={} children=3
+├── Paragraph scope=1:1..1:8 anchor=null attributes={} children=1
+│   └── Formula scope=1:1..1:8 anchor=null attributes={} mode=embedded literal="x #id#" children=0
+├── FormulaBlock scope=3:1..5:2 anchor=null attributes={} literal="x #id#" children=0
+└── Paragraph scope=7:1..7:7 anchor=null attributes={} children=1
+    └── Text scope=7:1..7:7 anchor=null attributes={} literal="#outer#" children=0
+````````````````````````````````
+
+## table-lead-reference-definition
+
+```````````````````````````````` example
+[link]: /url
+text [link] #lead# →
+| h |
+| - |
+.
+Document scope=1:1..4:5 anchor=null attributes={} children=2
+├── Paragraph scope=2:1..2:20 anchor="lead" attributes={} children=2
+│   ├── Text scope=2:1..2:5 anchor=null attributes={} literal="text " children=0
+│   └── Link scope=2:6..2:11 anchor=null attributes={} dest=url("/url") title=null children=1
+│       └── Text scope=2:7..2:10 anchor=null attributes={} literal="link" children=0
+└── Table scope=3:1..4:5 anchor=null attributes={} columns=[none:null] children=1
+    ├── TableHead children=1
+    │   └── TableRow scope=3:1..3:5 anchor=null attributes={} children=1
+    │       └── TableCell scope=3:2..3:4 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │           └── Text scope=3:3..3:3 anchor=null attributes={} literal="h" children=0
+    ├── TableBody children=0
+    └── TableFoot children=0
+````````````````````````````````
+
+## table-lead-reference-own-line
+
+```````````````````````````````` example
+[link]: /url
+text
+   #lead#
+| h |
+| - |
+
+[link]
+.
+Document scope=1:1..7:6 anchor=null attributes={} children=3
+├── Paragraph scope=2:1..3:9 anchor="lead" attributes={} children=1
+│   └── Text scope=2:1..2:4 anchor=null attributes={} literal="text" children=0
+├── Table scope=4:1..5:5 anchor=null attributes={} columns=[none:null] children=1
+│   ├── TableHead children=1
+│   │   └── TableRow scope=4:1..4:5 anchor=null attributes={} children=1
+│   │       └── TableCell scope=4:2..4:4 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │           └── Text scope=4:3..4:3 anchor=null attributes={} literal="h" children=0
+│   ├── TableBody children=0
+│   └── TableFoot children=0
+└── Paragraph scope=7:1..7:6 anchor=null attributes={} children=1
+    └── Link scope=7:1..7:6 anchor=null attributes={} dest=url("/url") title=null children=1
+        └── Text scope=7:2..7:5 anchor=null attributes={} literal="link" children=0
+````````````````````````````````
+
+## table-lead-reference-empty-anchor-fallback
+
+```````````````````````````````` example
+[link]: /url
+#lead#
+| h |
+| - |
+
+[link]
+.
+Document scope=1:1..6:6 anchor=null attributes={} children=3
+├── Paragraph scope=2:1..2:6 anchor=null attributes={} children=1
+│   └── Text scope=2:1..2:6 anchor=null attributes={} literal="#lead#" children=0
+├── Table scope=3:1..4:5 anchor=null attributes={} columns=[none:null] children=1
+│   ├── TableHead children=1
+│   │   └── TableRow scope=3:1..3:5 anchor=null attributes={} children=1
+│   │       └── TableCell scope=3:2..3:4 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │           └── Text scope=3:3..3:3 anchor=null attributes={} literal="h" children=0
+│   ├── TableBody children=0
+│   └── TableFoot children=0
+└── Paragraph scope=6:1..6:6 anchor=null attributes={} children=1
+    └── Link scope=6:1..6:6 anchor=null attributes={} dest=url("/url") title=null children=1
+        └── Text scope=6:2..6:5 anchor=null attributes={} literal="link" children=0
+````````````````````````````````
+
+## reference-gap-list
+
+```````````````````````````````` example
+- a
+
+[ref]: /x
+
+#list#
+
+[ref]
+.
+Document scope=1:1..7:5 anchor=null attributes={} children=3
+├── List scope=1:1..2:0 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+│   └── ListItem scope=1:1..2:0 anchor=null attributes={} marker=null children=1
+│       └── Paragraph scope=1:3..1:3 anchor=null attributes={} children=1
+│           └── Text scope=1:3..1:3 anchor=null attributes={} literal="a" children=0
+├── Paragraph scope=5:1..5:6 anchor=null attributes={} children=1
+│   └── Text scope=5:1..5:6 anchor=null attributes={} literal="#list#" children=0
+└── Paragraph scope=7:1..7:5 anchor=null attributes={} children=1
+    └── Link scope=7:1..7:5 anchor=null attributes={} dest=url("/x") title=null children=1
+        └── Text scope=7:2..7:4 anchor=null attributes={} literal="ref" children=0
+````````````````````````````````
+
+## reference-gap-callout
+
+```````````````````````````````` example
+> a
+
+[ref]: /x
+
+#quote#
+
+[ref]
+.
+Document scope=1:1..7:5 anchor=null attributes={} children=3
+├── Callout scope=1:1..1:3 anchor=null attributes={} variant=null collapsed=null children=1
+│   └── Paragraph scope=1:3..1:3 anchor=null attributes={} children=1
+│       └── Text scope=1:3..1:3 anchor=null attributes={} literal="a" children=0
+├── Paragraph scope=5:1..5:7 anchor=null attributes={} children=1
+│   └── Text scope=5:1..5:7 anchor=null attributes={} literal="#quote#" children=0
+└── Paragraph scope=7:1..7:5 anchor=null attributes={} children=1
+    └── Link scope=7:1..7:5 anchor=null attributes={} dest=url("/x") title=null children=1
+        └── Text scope=7:2..7:4 anchor=null attributes={} literal="ref" children=0
+````````````````````````````````
+
+## reference-gap-table
+
+```````````````````````````````` example
+| h |
+| - |
+
+[ref]: /x
+
+#table#
+
+[ref]
+.
+Document scope=1:1..8:5 anchor=null attributes={} children=3
+├── Table scope=1:1..2:5 anchor=null attributes={} columns=[none:null] children=1
+│   ├── TableHead children=1
+│   │   └── TableRow scope=1:1..1:5 anchor=null attributes={} children=1
+│   │       └── TableCell scope=1:2..1:4 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │           └── Text scope=1:3..1:3 anchor=null attributes={} literal="h" children=0
+│   ├── TableBody children=0
+│   └── TableFoot children=0
+├── Paragraph scope=6:1..6:7 anchor=null attributes={} children=1
+│   └── Text scope=6:1..6:7 anchor=null attributes={} literal="#table#" children=0
+└── Paragraph scope=8:1..8:5 anchor=null attributes={} children=1
+    └── Link scope=8:1..8:5 anchor=null attributes={} dest=url("/x") title=null children=1
+        └── Text scope=8:2..8:4 anchor=null attributes={} literal="ref" children=0
+````````````````````````````````
+
+## reference-gap-nested-list
+
+```````````````````````````````` example
+> - a
+>
+> [ref]: /x
+>
+> #list#
+>
+> [ref]
+.
+Document scope=1:1..7:7 anchor=null attributes={} children=1
+└── Callout scope=1:1..7:7 anchor=null attributes={} variant=null collapsed=null children=3
+    ├── List scope=1:3..2:1 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+    │   └── ListItem scope=1:3..2:1 anchor=null attributes={} marker=null children=1
+    │       └── Paragraph scope=1:5..1:5 anchor=null attributes={} children=1
+    │           └── Text scope=1:5..1:5 anchor=null attributes={} literal="a" children=0
+    ├── Paragraph scope=5:3..5:8 anchor=null attributes={} children=1
+    │   └── Text scope=5:3..5:8 anchor=null attributes={} literal="#list#" children=0
+    └── Paragraph scope=7:3..7:7 anchor=null attributes={} children=1
+        └── Link scope=7:3..7:7 anchor=null attributes={} dest=url("/x") title=null children=1
+            └── Text scope=7:4..7:6 anchor=null attributes={} literal="ref" children=0
+````````````````````````````````
+
+## reference-gap-nested-callout
+
+```````````````````````````````` example
+- > a
+
+  [ref]: /x
+
+  #quote#
+
+  [ref]
+.
+Document scope=1:1..7:7 anchor=null attributes={} children=1
+└── List scope=1:1..7:7 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=false children=1
+    └── ListItem scope=1:1..7:7 anchor=null attributes={} marker=null children=3
+        ├── Callout scope=1:3..1:5 anchor=null attributes={} variant=null collapsed=null children=1
+        │   └── Paragraph scope=1:5..1:5 anchor=null attributes={} children=1
+        │       └── Text scope=1:5..1:5 anchor=null attributes={} literal="a" children=0
+        ├── Paragraph scope=5:3..5:9 anchor=null attributes={} children=1
+        │   └── Text scope=5:3..5:9 anchor=null attributes={} literal="#quote#" children=0
+        └── Paragraph scope=7:3..7:7 anchor=null attributes={} children=1
+            └── Link scope=7:3..7:7 anchor=null attributes={} dest=url("/x") title=null children=1
+                └── Text scope=7:4..7:6 anchor=null attributes={} literal="ref" children=0
+````````````````````````````````
+
+## reference-gap-directive
+
+```````````````````````````````` example
+:::box
+| h |
+| - |
+
+[ref]: /x
+
+#table#
+
+[ref]
+:::
+.
+Document scope=1:1..10:3 anchor=null attributes={} children=1
+└── DirectiveBlock scope=1:1..10:3 anchor=null attributes={} name="box" children=3
+    ├── Table scope=2:1..3:5 anchor=null attributes={} columns=[none:null] children=1
+    │   ├── TableHead children=1
+    │   │   └── TableRow scope=2:1..2:5 anchor=null attributes={} children=1
+    │   │       └── TableCell scope=2:2..2:4 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │   │           └── Text scope=2:3..2:3 anchor=null attributes={} literal="h" children=0
+    │   ├── TableBody children=0
+    │   └── TableFoot children=0
+    ├── Paragraph scope=7:1..7:7 anchor=null attributes={} children=1
+    │   └── Text scope=7:1..7:7 anchor=null attributes={} literal="#table#" children=0
+    └── Paragraph scope=9:1..9:5 anchor=null attributes={} children=1
+        └── Link scope=9:1..9:5 anchor=null attributes={} dest=url("/x") title=null children=1
+            └── Text scope=9:2..9:4 anchor=null attributes={} literal="ref" children=0
+````````````````````````````````
+
+## reference-inside-list
+
+```````````````````````````````` example
+- a
+
+  [ref]: /x
+
+#list#
+
+[ref]
+.
+Document scope=1:1..7:5 anchor=null attributes={} children=2
+├── List scope=1:1..5:6 anchor="list" attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+│   └── ListItem scope=1:1..4:0 anchor=null attributes={} marker=null children=1
+│       └── Paragraph scope=1:3..1:3 anchor=null attributes={} children=1
+│           └── Text scope=1:3..1:3 anchor=null attributes={} literal="a" children=0
+└── Paragraph scope=7:1..7:5 anchor=null attributes={} children=1
+    └── Link scope=7:1..7:5 anchor=null attributes={} dest=url("/x") title=null children=1
+        └── Text scope=7:2..7:4 anchor=null attributes={} literal="ref" children=0
+````````````````````````````````
+
+## reference-inside-callout
+
+```````````````````````````````` example
+> a
+>
+> [ref]: /x
+
+#quote#
+
+[ref]
+.
+Document scope=1:1..7:5 anchor=null attributes={} children=2
+├── Callout scope=1:1..5:7 anchor="quote" attributes={} variant=null collapsed=null children=1
+│   └── Paragraph scope=1:3..1:3 anchor=null attributes={} children=1
+│       └── Text scope=1:3..1:3 anchor=null attributes={} literal="a" children=0
+└── Paragraph scope=7:1..7:5 anchor=null attributes={} children=1
+    └── Link scope=7:1..7:5 anchor=null attributes={} dest=url("/x") title=null children=1
+        └── Text scope=7:2..7:4 anchor=null attributes={} literal="ref" children=0
+````````````````````````````````
+
+## reference-before-new-owner
+
+```````````````````````````````` example
+- a
+
+[ref]: /x
+
+> b
+
+#quote#
+
+[ref]
+.
+Document scope=1:1..9:5 anchor=null attributes={} children=3
+├── List scope=1:1..2:0 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+│   └── ListItem scope=1:1..2:0 anchor=null attributes={} marker=null children=1
+│       └── Paragraph scope=1:3..1:3 anchor=null attributes={} children=1
+│           └── Text scope=1:3..1:3 anchor=null attributes={} literal="a" children=0
+├── Callout scope=5:1..7:7 anchor="quote" attributes={} variant=null collapsed=null children=1
+│   └── Paragraph scope=5:3..5:3 anchor=null attributes={} children=1
+│       └── Text scope=5:3..5:3 anchor=null attributes={} literal="b" children=0
+└── Paragraph scope=9:1..9:5 anchor=null attributes={} children=1
+    └── Link scope=9:1..9:5 anchor=null attributes={} dest=url("/x") title=null children=1
+        └── Text scope=9:2..9:4 anchor=null attributes={} literal="ref" children=0
+````````````````````````````````
+
+## reference-gap-eof
+
+```````````````````````````````` example
+- a
+
+[ref]: /x
+
+#list#
+.
+Document scope=1:1..5:6 anchor=null attributes={} children=2
+├── List scope=1:1..2:0 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+│   └── ListItem scope=1:1..2:0 anchor=null attributes={} marker=null children=1
+│       └── Paragraph scope=1:3..1:3 anchor=null attributes={} children=1
+│           └── Text scope=1:3..1:3 anchor=null attributes={} literal="a" children=0
+└── Paragraph scope=5:1..5:6 anchor=null attributes={} children=1
+    └── Text scope=5:1..5:6 anchor=null attributes={} literal="#list#" children=0
+````````````````````````````````
+
+## reference-definition-before-paragraph-anchor
+
+```````````````````````````````` example
+[ref]: /x
+#id#
+
+[ref]
+.
+Document scope=1:1..4:5 anchor=null attributes={} children=2
+├── Paragraph scope=2:1..2:4 anchor=null attributes={} children=1
+│   └── Text scope=2:1..2:4 anchor=null attributes={} literal="#id#" children=0
+└── Paragraph scope=4:1..4:5 anchor=null attributes={} children=1
+    └── Link scope=4:1..4:5 anchor=null attributes={} dest=url("/x") title=null children=1
+        └── Text scope=4:2..4:4 anchor=null attributes={} literal="ref" children=0
+````````````````````````````````
+
+## footnote-gap-list
+
+```````````````````````````````` example
+- a
+
+[^ref]: note
+
+#list#
+.
+Document scope=1:1..5:6 anchor=null attributes={} children=2
+├── List scope=1:1..2:0 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+│   └── ListItem scope=1:1..2:0 anchor=null attributes={} marker=null children=1
+│       └── Paragraph scope=1:3..1:3 anchor=null attributes={} children=1
+│           └── Text scope=1:3..1:3 anchor=null attributes={} literal="a" children=0
+├── Paragraph scope=5:1..5:6 anchor=null attributes={} children=1
+│   └── Text scope=5:1..5:6 anchor=null attributes={} literal="#list#" children=0
+└── Footnote scope=3:1..4:0 id="ref" children=1
+    └── Paragraph scope=3:9..3:12 anchor=null attributes={} children=1
+        └── Text scope=3:9..3:12 anchor=null attributes={} literal="note" children=0
+````````````````````````````````
+
+## reference-cleanup-before-list-layout
+
+```````````````````````````````` example
+- a
+
+  [r]: /x
+
+> b
+
+#q#
+.
+Document scope=1:1..7:3 anchor=null attributes={} children=2
+├── List scope=1:1..4:0 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+│   └── ListItem scope=1:1..4:0 anchor=null attributes={} marker=null children=1
+│       └── Paragraph scope=1:3..1:3 anchor=null attributes={} children=1
+│           └── Text scope=1:3..1:3 anchor=null attributes={} literal="a" children=0
+└── Callout scope=5:1..7:3 anchor="q" attributes={} variant=null collapsed=null children=1
+    └── Paragraph scope=5:3..5:3 anchor=null attributes={} children=1
+        └── Text scope=5:3..5:3 anchor=null attributes={} literal="b" children=0
+````````````````````````````````
+
+## reference-cleanup-before-nested-list-layout
+
+```````````````````````````````` example
+> - a
+>
+>   [r]: /x
+>
+> > b
+>
+> #q#
+.
+Document scope=1:1..7:5 anchor=null attributes={} children=1
+└── Callout scope=1:1..7:5 anchor=null attributes={} variant=null collapsed=null children=2
+    ├── List scope=1:3..4:1 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+    │   └── ListItem scope=1:3..4:1 anchor=null attributes={} marker=null children=1
+    │       └── Paragraph scope=1:5..1:5 anchor=null attributes={} children=1
+    │           └── Text scope=1:5..1:5 anchor=null attributes={} literal="a" children=0
+    └── Callout scope=5:3..7:5 anchor="q" attributes={} variant=null collapsed=null children=1
+        └── Paragraph scope=5:5..5:5 anchor=null attributes={} children=1
+            └── Text scope=5:5..5:5 anchor=null attributes={} literal="b" children=0
+````````````````````````````````
+
+## reference-cleanup-preserves-empty-anchored-paragraph
+
+```````````````````````````````` example
+- #item#
+
+  [r]: /x
+
+#list#
+
+[r]
+.
+Document scope=1:1..7:3 anchor=null attributes={} children=2
+├── List scope=1:1..5:6 anchor="list" attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+│   └── ListItem scope=1:1..4:0 anchor="item" attributes={} marker=null children=1
+│       └── Paragraph scope=1:3..1:8 anchor=null attributes={} children=0
+└── Paragraph scope=7:1..7:3 anchor=null attributes={} children=1
+    └── Link scope=7:1..7:3 anchor=null attributes={} dest=url("/x") title=null children=1
+        └── Text scope=7:2..7:2 anchor=null attributes={} literal="r" children=0
+````````````````````````````````
+
+## reference-cleanup-preserves-empty-list-item
+
+```````````````````````````````` example
+- [r]: /x
+- a
+
+[r]
+.
+Document scope=1:1..4:3 anchor=null attributes={} children=2
+├── List scope=1:1..3:0 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=2
+│   ├── ListItem scope=1:1..1:9 anchor=null attributes={} marker=null children=0
+│   └── ListItem scope=2:1..3:0 anchor=null attributes={} marker=null children=1
+│       └── Paragraph scope=2:3..2:3 anchor=null attributes={} children=1
+│           └── Text scope=2:3..2:3 anchor=null attributes={} literal="a" children=0
+└── Paragraph scope=4:1..4:3 anchor=null attributes={} children=1
+    └── Link scope=4:1..4:3 anchor=null attributes={} dest=url("/x") title=null children=1
+        └── Text scope=4:2..4:2 anchor=null attributes={} literal="r" children=0
+````````````````````````````````

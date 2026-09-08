@@ -743,7 +743,11 @@ static markdown_core_node *postprocess_node(const markdown_core_extension *exten
         return formula;
     }
 
-    if (node->kind == MARKDOWN_CORE_NODE_PARAGRAPH && node->first_child && node->first_child == node->last_child &&
+    /* Only an anonymous paragraph is a removable wrapper. A declared anchor
+     * or attributes belong to that paragraph, even when its only remaining
+     * content is a standalone formula. */
+    if (node->kind == MARKDOWN_CORE_NODE_PARAGRAPH && !node->attributes.anchor.len && !node->attributes.class_count &&
+        !node->attributes.record_count && node->first_child && node->first_child == node->last_child &&
         node->first_child->kind == MARKDOWN_CORE_NODE_FORMULA && is_standalone_formula_node(node->first_child)) {
         node_formula *formula = get_formula(node->first_child);
         if (formula) {

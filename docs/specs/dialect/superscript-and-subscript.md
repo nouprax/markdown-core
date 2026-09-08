@@ -173,10 +173,8 @@ Document scope=1:1..1:9 anchor=null attributes={} children=1
         └── Text scope=1:2..1:8 anchor=null attributes={} literal="[note]" children=0
 ````````````````````````````````
 
-A `^` removed by [block identifier](block-identifiers.md) attachment is never
-a delimiter, because that attachment is decided before inline parsing. A `^`
-or `~` owned by an autolink, code span, HTML token, comment, formula, or cross
-link is opaque.
+A `^` or `~` owned by an autolink, code span, HTML token, comment, formula,
+or cross link is opaque.
 
 ## Fallback
 
@@ -201,6 +199,6 @@ space.
 ## Required conformance cases
 
 Every example of this module is a package fixture. Tests also cover adjacent
-and intraword forms, Unicode whitespace and newlines inside candidates, a
-caret removed by a block identifier, code, comments, HTML, formulas,
-autolinks, and other inline nesting, exact scopes, allocation failure, and adversarial caret and tilde runs.
+and intraword forms, Unicode whitespace and newlines inside candidates, code,
+comments, HTML, formulas, autolinks, and other inline nesting, exact scopes,
+allocation failure, and adversarial caret and tilde runs.

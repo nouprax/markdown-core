@@ -120,7 +120,10 @@ Document scope=1:1..1:27 anchor=null attributes={} children=1
 The target is the block form when `#^` immediately follows the path and a
 non-empty `block-id` runs to the `|` or `]]`; then `anchor` is the identifier
 without `#^`. In every other position `^` is an ordinary heading byte, and a
-`^^` at the start of the target is part of the path:
+`^^` at the start of the target is part of the path. This reference spelling
+addresses the value declared by `#anchor-id#` in the
+[block identifiers](block-identifiers.md) module; declaration delimiters do
+not become part of the reference:
 
 ```````````````````````````````` example
 ![[Note#^block-id]] [[A#^id#x]] [[^^text]]

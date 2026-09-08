@@ -885,22 +885,25 @@ its behavior, with no separate publication step.
   with C correctness/conformance, all three sanitizer suites, shared conformance
   across Swift/Kotlin/ES, the metadata oracle, and `pnpm verify`.
 
-- [ ] **O7 — Block identifiers.** Attach `^block-id`
+- [x] **O7 — Block identifiers.** Attach `#anchor-id#`
       during block finalization through one operation for paragraph suffixes,
       structured-block follower lines with the required blank-line boundaries,
       and list-item suffixes, writing the identifier into the owner's inherited
-      `anchor` and removing it from visible content with no repair pass or
-      offset side table; a second candidate on one owner is ordinary content,
+      `anchor` without either `#` delimiter and removing the complete marker
+      from visible content with no repair pass or offset side table; a second
+      candidate on one owner is ordinary content,
       and the owner's scope still covers the identifier while child scopes end
       before it. Fixtures cover every placement, metadata-free callouts, nested
-      lists, invalid characters, missing separation, duplicates, end of
-      document, scopes, allocation failure, and long candidate sequences.
+      lists, invalid characters, missing separation, escaped or missing
+      delimiters, extra hash runs, the former caret spelling as ordinary
+      inline content, ATX heading boundaries, duplicates, end of document,
+      scopes, allocation failure, and long candidate sequences with linear
+      scanning work.
       Identifier-like bytes inside a crosslink source form belong to this item
       because it requires `O1`. These cross-item cases are owned by whichever
       item merges later: the cross-extension reservation case of the anchor
       contract with `P3`, an identifier attached to a metadata-bearing callout
-      with `O8`, an identifier caret removed before superscript parsing with
-      `P6`, and an identifier line after a table's caption attaching to the
+      with `O8`, and an identifier line after a table's caption attaching to the
       `Table`, once per table form, with `P11a`, `P11b`, `P11c`, and `P11d`.
       Requires `O1`.
 - [ ] **O8 — Callout metadata.** Evaluate `[!type]`, the
@@ -1071,11 +1074,9 @@ its behavior, with no separate publication step.
       `empty-superscript-and-subscript` gaps. X0 has removed the legacy
       double-tilde-only switch; this item removes single-tilde strikethrough
       from the extension, registering the cmark-gfm delta, so a
-      single tilde is always a subscript delimiter. Two
-      cross-item cases are owned by whichever item merges later: the `^[`
-      precedence case with `O4`, and an identifier caret removed by
-      block-identifier attachment before superscript parsing with `O7`. The
-      heading-text projection of `Superscript` and `Subscript` in generated
+      single tilde is always a subscript delimiter. The `^[` precedence case
+      with `O4` is owned by whichever item merges later. The heading-text
+      projection of `Superscript` and `Subscript` in generated
       anchors is a cross-item case owned by whichever of `P6` and `P3` merges
       later. Requires `P0`, `M7`.
 - [ ] **P7 — `citations`.** Recognize bare and braced keys, bracketed groups
@@ -1251,7 +1252,7 @@ Sizes are rough review-effort estimates, not schedules.
 | `O4`   | `O1`               | M    | `^[` before superscript (`P6`)                                                                                                                                                                          | Obsidian Phase 2 inline footnotes and resolution                                                                                 |
 | `O5`   | `O1`               | S    | —                                                                                                                                                                                                       | Obsidian Phase 4 task markers                                                                                                    |
 | `O6`   | `O1`               | XL   | —                                                                                                                                                                                                       | Obsidian Phase 3 Properties                                                                                                      |
-| `O7`   | `O1`               | M    | anchor reserved before synthesis (`P3`); identifier on a metadata-bearing callout (`O8`); identifier caret before superscript (`P6`); identifier after a table caption (`P11a`, `P11b`, `P11c`, `P11d`) | Obsidian Phase 3 block identifiers                                                                                               |
+| `O7`   | `O1`               | M    | anchor reserved before synthesis (`P3`); identifier on a metadata-bearing callout (`O8`); identifier after a table caption (`P11a`, `P11b`, `P11c`, `P11d`) | Obsidian Phase 3 block identifiers                                                                                               |
 | `O8`   | `O1`, `O2`         | M    | identifier on a metadata-bearing callout (`O7`); callout title that is one comment (`O3`)                                                                                                               | Obsidian Phase 3 callouts                                                                                                        |
 | `O9`   | `O1`               | M    | typed dimensions beside a dimension attribute record (`P2d`)                                                                                                                                            | Obsidian Phase 4 media parameters                                                                                                |
 | `O10`  | `O1`–`O9`          | M    | —                                                                                                                                                                                                       | Obsidian Phase 1 fixtures and oracle registration; Phase 2 caller audit; Phase 5; plan exit criterion                                          |
@@ -1263,7 +1264,7 @@ Sizes are rough review-effort estimates, not schedules.
 | `P3`   | `P2b`              | M    | anchor reserved before synthesis (`O7`, `P2a`, `P2c`, `P2d`, `P5`, `P8`); heading-text projection (`O1`, `O2`, `I1`, `P5`, `P6`, `P7`, `P9b`)                                                           | Pandoc Phase 2 heading registry                                                                                                  |
 | `P4`   | `P3`               | M    | attributes on an implicit heading reference (`P2d`); complete cite over a virtual heading reference (`P7`)                                                                                              | Pandoc Phase 3 document resolution                                                                                               |
 | `P5`   | `P0`, `M7`         | M    | link tail ahead of a span (`P2d`); anchor reserved before synthesis (`P3`); heading-text projection (`P3`); container after a complete wikilink (`O1`)                                                  | Pandoc Phase 3 spans                                                                                                             |
-| `P6`   | `P0`, `M7`         | S    | `^[` before superscript (`O4`); identifier caret before superscript (`O7`); heading-text projection (`P3`)                                                                                              | Pandoc Phase 3 superscript and subscript                                                                                         |
+| `P6`   | `P0`, `M7`         | S    | `^[` before superscript (`O4`); heading-text projection (`P3`)                                                                                              | Pandoc Phase 3 superscript and subscript                                                                                         |
 | `P7`   | `P5`, `P9b`        | L    | heading-text projection (`P3`); complete cite over a virtual heading reference (`P4`)                                                                                                                   | Pandoc Phase 3 citations and resolution                                                                                          |
 | `P8`   | `P0`, `M7`         | M    | definition body ends at a nameless-container close (`P10`); anchor reserved before synthesis (`P3`)                                                                                                                    | Pandoc Phase 4 fenced divs                                                                                                       |
 | `P9a`  | `P0`, `M7`         | M    | —                                                                                                                                                                                                       | Pandoc Phase 4 ordered markers                                                                                                   |
@@ -1298,8 +1299,8 @@ Sizes are rough review-effort estimates, not schedules.
 - The `Cross-item cases` column, together with the opacity rule, is the complete
   list of fixtures that wait for a second item neither of whose items requires
   the other: `Insert` composed with `CrossLink` and `Mark`; `^[` before
-  superscript; an identifier caret before superscript; an explicit anchor
-  reserved before synthesis, once per producer; the heading-text projection of
+  superscript; an explicit anchor reserved before synthesis, once per producer;
+  the heading-text projection of
   each inline kind a later item produces; a complete cite over a virtual heading
   reference; an identifier on a metadata-bearing callout; a callout title that
   is one comment; an identifier line after a table caption, once per table form;

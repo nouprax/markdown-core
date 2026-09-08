@@ -93,7 +93,7 @@ that makes the row `present`.
 | inline footnotes                    | [footnotes](dialect/footnotes.md)                                 | Obsidian, Pandoc                       | none; product fixtures               | present                   |
 | task markers                        | [task lists](dialect/task-lists.md)                               | Obsidian                               | remark-obsidian                      | present                         |
 | properties                          | [properties](dialect/properties.md)                               | Obsidian                               | `yaml`                               | present, `O6`                   |
-| block identifiers                   | [block identifiers](dialect/block-identifiers.md)                 | Obsidian                               | none; product fixtures               | missing, `O7`                   |
+| block identifiers                   | [block identifiers](dialect/block-identifiers.md)                 | Obsidian, adapted declaration syntax   | none; product fixtures               | present                         |
 | callouts                            | [callouts](dialect/callouts.md)                                   | Obsidian                               | none; product fixtures               | partial, `O8`                   |
 | image dimensions                    | [links and images](dialect/links-and-images.md)                   | Obsidian                               | none; product fixtures               | missing, `O9`                   |
 | inserted text                       | [inserted text](dialect/inserted-text.md)                         | `markdown-it-ins`                      | `markdown-it-ins`                    | missing, `I1`                   |
@@ -274,8 +274,8 @@ inherited process-emphasis algorithm.
 | 11   | thematic break                                                                                 |
 | 12   | footnote definition, reference definition                                                      |
 | 13   | definition list                                                                                |
-| 14   | block identifier line `^id`                                                                    |
-| 15   | paragraph, with the `^id` suffix at finalization                                               |
+| 14   | block identifier line `#anchor-id#`                                                           |
+| 15   | paragraph, with the `#anchor-id#` suffix at finalization                                      |
 
 A block start is tested at the first non-space byte of the line after the open
 containers' prefixes have been consumed. Steps 2 through 14 are tested in
