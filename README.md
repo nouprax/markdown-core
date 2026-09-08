@@ -45,6 +45,13 @@ CommonMark base; quotation marks, hyphens, and periods are stored as written.
 `TreeDumper` and `dump()` produce a canonical debug representation for logs,
 tests, and debugging; dump text is not a persistence or interchange format.
 
+Task prefixes accept exactly one authored Unicode scalar, such as `- [?]`,
+`- [✓]`, or `- [🚀]`, followed by a space, tab, vertical tab, or form feed.
+The item preserves that scalar in `marker`; completion is derived. Recognition
+is limited to the item's opening line and removes the prefix before deciding
+its first block. Empty or multi-scalar markers and a missing separator remain
+literal text.
+
 `==highlight==` produces `Mark` with parsed inline `content`, including nested
 emphasis, links, and other inline nodes. Matching consumes two equals signs
 at a time; unmatched signs remain text. Typed visitors and walking visitors

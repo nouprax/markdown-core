@@ -88,6 +88,12 @@
             "summary": "The canonical table stores head/content/foot groups and positive cell spans; pipe tables have one head row and unit spans.",
             "handling": "The oracle projection groups its first row as TableHead, its remaining rows as TableBody, and adds an empty TableFoot; cells gain rowspan=1 and colspan=1. Native table topology and spans are compared unchanged.",
             "evidence": "docs/specs/dialect/tables.md; canonical table fixtures and existing pipe-table oracle corpus."
+        },
+        {
+            "id": "task-prefix-grammar",
+            "kind": "deliberate-difference",
+            "summary": "The task prefix is exactly one Unicode scalar plus SP, TAB, VT or FF, consumed once when any inherited list item opens, before deciding its first block. cmark-gfm only recognizes ASCII task states, misses quoted containers and can recognize later paragraphs.",
+            "handling": "Exact module and historical fixture inputs pin custom markers, containers, opening-line ownership, block decisions and opaque bodies. No comparison erases task syntax."
         }
     ],
     "expectedDivergences": [
@@ -140,6 +146,66 @@
             "id": "text-directive",
             "input": "[foo:_x_@y.z](u) and [mailto:x@y.z](u)\n\nEmail me at:x@y.z or mailto:x@y.z, not word:name@nodot.\n",
             "note": "`word:name@nodot` has no address after its colon, so the dialect's text directive claims `:name`; cmark-gfm has no directives and keeps the text. The two links and the emphasis inside the link agree."
+        },
+        {
+            "id": "task-prefix-grammar",
+            "input": "- [x] foo\n  - [ ] bar\n  - [x] baz\n- [ ] bim\n\nShow a regular (non task) list to show that it has the same structure\n- [@] foo\n  - [@] bar\n  - [@] baz\n- [@] bim\n",
+            "note": "O5 task-lists.md: one authored scalar, the complete structural separator run, and opening-line-only recognition precede the first block. The opacity witness also retains formula, CrossLink and Comment bodies under their existing modules."
+        },
+        {
+            "id": "task-prefix-grammar",
+            "input": "- [x] foo\n    - [ ] bar\n    - [x] baz\n- [ ] bim\n\nShow a regular (non task) list to show that it has the same structure\n- [@] foo\n    - [@] bar\n    - [@] baz\n- [@] bim\n",
+            "note": "O5 task-lists.md: one authored scalar, the complete structural separator run, and opening-line-only recognition precede the first block. The opacity witness also retains formula, CrossLink and Comment bodies under their existing modules."
+        },
+        {
+            "id": "task-prefix-grammar",
+            "input": "> - [ ] a\n",
+            "note": "O5 task-lists.md: one authored scalar, the complete structural separator run, and opening-line-only recognition precede the first block. The opacity witness also retains formula, CrossLink and Comment bodies under their existing modules."
+        },
+        {
+            "id": "task-prefix-grammar",
+            "input": "- [?] a\n- [-] b\n- [✓] c\n",
+            "note": "O5 task-lists.md: one authored scalar, the complete structural separator run, and opening-line-only recognition precede the first block. The opacity witness also retains formula, CrossLink and Comment bodies under their existing modules."
+        },
+        {
+            "id": "task-prefix-grammar",
+            "input": "- [é] two\n- [🚀] four\n- [́] combining scalar\n- [[] open bracket\n- []] close bracket\n- [\\] backslash\n- [\t] tab marker\n- [\u000b] vertical tab marker\n- [\f] form feed marker\n",
+            "note": "O5 task-lists.md: one authored scalar, the complete structural separator run, and opening-line-only recognition precede the first block. The opacity witness also retains formula, CrossLink and Comment bodies under their existing modules."
+        },
+        {
+            "id": "task-prefix-grammar",
+            "input": "- [?] space\n- [✓]\ttab\n- [🚀]\u000bvertical\n- [-]\fform\n- [?] \t\u000b\f  mixed\n",
+            "note": "O5 task-lists.md: one authored scalar, the complete structural separator run, and opening-line-only recognition precede the first block. The opacity witness also retains formula, CrossLink and Comment bodies under their existing modules."
+        },
+        {
+            "id": "task-prefix-grammar",
+            "input": "> 1. [🚀] outer\n>    - [?] middle\n>      2) [✓] inner\n>         continuation\n",
+            "note": "O5 task-lists.md: one authored scalar, the complete structural separator run, and opening-line-only recognition precede the first block. The opacity witness also retains formula, CrossLink and Comment bodies under their existing modules."
+        },
+        {
+            "id": "task-prefix-grammar",
+            "input": "- [✓] [?] second prefix\n\n  [x] later paragraph\n- ordinary\n\n  [?] later paragraph\n-\n  [x] later first block\n",
+            "note": "O5 task-lists.md: one authored scalar, the complete structural separator run, and opening-line-only recognition precede the first block. The opacity witness also retains formula, CrossLink and Comment bodies under their existing modules."
+        },
+        {
+            "id": "task-prefix-grammar",
+            "input": "- [?] # heading\n- [✓] > quote\n- [🚀] - [?] nested item\n- [-] ```text\n  code\n  ```\n- [?] $$\n  formula\n  $$\n- [✓] :::note\n  body\n  :::\n",
+            "note": "O5 task-lists.md: one authored scalar, the complete structural separator run, and opening-line-only recognition precede the first block. The opacity witness also retains formula, CrossLink and Comment bodies under their existing modules."
+        },
+        {
+            "id": "task-prefix-grammar",
+            "input": "- [?] \t\u000b\f\noutside\n",
+            "note": "O5 task-lists.md: one authored scalar, the complete structural separator run, and opening-line-only recognition precede the first block. The opacity witness also retains formula, CrossLink and Comment bodies under their existing modules."
+        },
+        {
+            "id": "task-prefix-grammar",
+            "input": "- `- [?] code`\n- $- [✓] formula$\n- <i title=\"- [🚀] html\">text</i>\n- [[- [?] link]]\n- %% - [✓] inline comment %%\n\n%%\n- [?] block comment\n%%\n\n```\n- [🚀] fenced\n```\n",
+            "note": "O5 task-lists.md: one authored scalar, the complete structural separator run, and opening-line-only recognition precede the first block. The opacity witness also retains formula, CrossLink and Comment bodies under their existing modules."
+        },
+        {
+            "id": "text-directive",
+            "input": "- [x]\n:n{class=\"a b c\u000bv\ff\" .a class=tail}a}*.foo.*\n:x{:_a}\n",
+            "note": "O5 fuzz witness: the initial [x] has no structural separator, so both parsers keep it literally. The following text directives belong to the dialect and remain literal in cmark-gfm."
         }
     ],
     "notDeltas": [],

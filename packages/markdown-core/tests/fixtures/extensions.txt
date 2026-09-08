@@ -1200,6 +1200,9 @@ Document scope=1:1..2:9 anchor=null attributes={} children=1
             └── Text scope=2:7..2:9 anchor=null attributes={} literal="bar" children=0
 ````````````````````````````````
 
+O5 recognizes the historical `[@]` controls below as custom tasks.
+Both marker families retain the same nesting.
+
 Show that a task list and a regular list get processed the same in
 the way that sublists are created. If something works in a list
 item, then it should work the same way with a task.  The only
@@ -1237,19 +1240,19 @@ Document scope=1:1..10:9 anchor=null attributes={} children=3
 ├── Paragraph scope=6:1..6:69 anchor=null attributes={} children=1
 │   └── Text scope=6:1..6:69 anchor=null attributes={} literal="Show a regular (non task) list to show that it has the same structure" children=0
 └── List scope=7:1..10:9 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=2
-    ├── ListItem scope=7:1..9:11 anchor=null attributes={} marker=null children=2
-    │   ├── Paragraph scope=7:3..7:9 anchor=null attributes={} children=1
-    │   │   └── Text scope=7:3..7:9 anchor=null attributes={} literal="[@] foo" children=0
+    ├── ListItem scope=7:1..9:11 anchor=null attributes={} marker="@" children=2
+    │   ├── Paragraph scope=7:7..7:9 anchor=null attributes={} children=1
+    │   │   └── Text scope=7:7..7:9 anchor=null attributes={} literal="foo" children=0
     │   └── List scope=8:3..9:11 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=2
-    │       ├── ListItem scope=8:3..8:11 anchor=null attributes={} marker=null children=1
-    │       │   └── Paragraph scope=8:5..8:11 anchor=null attributes={} children=1
-    │       │       └── Text scope=8:5..8:11 anchor=null attributes={} literal="[@] bar" children=0
-    │       └── ListItem scope=9:3..9:11 anchor=null attributes={} marker=null children=1
-    │           └── Paragraph scope=9:5..9:11 anchor=null attributes={} children=1
-    │               └── Text scope=9:5..9:11 anchor=null attributes={} literal="[@] baz" children=0
-    └── ListItem scope=10:1..10:9 anchor=null attributes={} marker=null children=1
-        └── Paragraph scope=10:3..10:9 anchor=null attributes={} children=1
-            └── Text scope=10:3..10:9 anchor=null attributes={} literal="[@] bim" children=0
+    │       ├── ListItem scope=8:3..8:11 anchor=null attributes={} marker="@" children=1
+    │       │   └── Paragraph scope=8:9..8:11 anchor=null attributes={} children=1
+    │       │       └── Text scope=8:9..8:11 anchor=null attributes={} literal="bar" children=0
+    │       └── ListItem scope=9:3..9:11 anchor=null attributes={} marker="@" children=1
+    │           └── Paragraph scope=9:9..9:11 anchor=null attributes={} children=1
+    │               └── Text scope=9:9..9:11 anchor=null attributes={} literal="baz" children=0
+    └── ListItem scope=10:1..10:9 anchor=null attributes={} marker="@" children=1
+        └── Paragraph scope=10:7..10:9 anchor=null attributes={} children=1
+            └── Text scope=10:7..10:9 anchor=null attributes={} literal="bim" children=0
 ````````````````````````````````
 Use a larger indent -- a task list and a regular list should produce
 the same structure.
@@ -1284,19 +1287,19 @@ Document scope=1:1..10:9 anchor=null attributes={} children=3
 ├── Paragraph scope=6:1..6:69 anchor=null attributes={} children=1
 │   └── Text scope=6:1..6:69 anchor=null attributes={} literal="Show a regular (non task) list to show that it has the same structure" children=0
 └── List scope=7:1..10:9 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=2
-    ├── ListItem scope=7:1..9:13 anchor=null attributes={} marker=null children=2
-    │   ├── Paragraph scope=7:3..7:9 anchor=null attributes={} children=1
-    │   │   └── Text scope=7:3..7:9 anchor=null attributes={} literal="[@] foo" children=0
+    ├── ListItem scope=7:1..9:13 anchor=null attributes={} marker="@" children=2
+    │   ├── Paragraph scope=7:7..7:9 anchor=null attributes={} children=1
+    │   │   └── Text scope=7:7..7:9 anchor=null attributes={} literal="foo" children=0
     │   └── List scope=8:5..9:13 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=2
-    │       ├── ListItem scope=8:5..8:13 anchor=null attributes={} marker=null children=1
-    │       │   └── Paragraph scope=8:7..8:13 anchor=null attributes={} children=1
-    │       │       └── Text scope=8:7..8:13 anchor=null attributes={} literal="[@] bar" children=0
-    │       └── ListItem scope=9:5..9:13 anchor=null attributes={} marker=null children=1
-    │           └── Paragraph scope=9:7..9:13 anchor=null attributes={} children=1
-    │               └── Text scope=9:7..9:13 anchor=null attributes={} literal="[@] baz" children=0
-    └── ListItem scope=10:1..10:9 anchor=null attributes={} marker=null children=1
-        └── Paragraph scope=10:3..10:9 anchor=null attributes={} children=1
-            └── Text scope=10:3..10:9 anchor=null attributes={} literal="[@] bim" children=0
+    │       ├── ListItem scope=8:5..8:13 anchor=null attributes={} marker="@" children=1
+    │       │   └── Paragraph scope=8:11..8:13 anchor=null attributes={} children=1
+    │       │       └── Text scope=8:11..8:13 anchor=null attributes={} literal="bar" children=0
+    │       └── ListItem scope=9:5..9:13 anchor=null attributes={} marker="@" children=1
+    │           └── Paragraph scope=9:11..9:13 anchor=null attributes={} children=1
+    │               └── Text scope=9:11..9:13 anchor=null attributes={} literal="baz" children=0
+    └── ListItem scope=10:1..10:9 anchor=null attributes={} marker="@" children=1
+        └── Paragraph scope=10:7..10:9 anchor=null attributes={} children=1
+            └── Text scope=10:7..10:9 anchor=null attributes={} literal="bim" children=0
 ````````````````````````````````
 
 A task item's checked state is decided by the marker the scanner matched, not

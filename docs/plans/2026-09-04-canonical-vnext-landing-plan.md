@@ -772,13 +772,45 @@ its behavior, with no separate publication step.
   ranges after document ownership transfer. `pnpm verify` and the host release
   dry run pass; full cross-host release aggregation remains the required CI gate.
 
-- [ ] **O5 — Task markers.** Generalize the task-list scanner's marker from
+- [x] **O5 — Task markers.** Generalize the task-list scanner's marker from
       `[ xX]` to exactly one Unicode scalar followed by a structural separator,
       decoding at most the candidate marker. Fixtures cover the module's marker table, ordered and nested lists,
       tabs, vertical tabs, and form feeds as separators, a prefix at the end
       of its line as a non-task, empty and multi-scalar markers, missing
       separators, scopes, and long malformed bracket runs; remove the
       `custom-task-character` gap. Requires `O1`.
+
+  Implementation notes (2026-09-08): task recognition runs once immediately
+  after the inherited list algorithm creates an item, before choosing its
+  first block. The task module decodes one candidate scalar, checks the
+  closing bracket and required separator, owns the exact UTF-8 bytes, and
+  consumes the entire SP/TAB/VT/FF separator run. Failed candidates do not
+  search for a later closer or allocate marker storage. The old ASCII scanner,
+  task extension descriptor, and duplicated item-continuation callback are
+  removed; every item uses the inherited continuation rule. This also prevents
+  a later paragraph from assigning or replacing an item's marker.
+  Eighteen package cases include every module example byte for byte,
+  one- through four-byte markers, combining scalars versus multi-scalar
+  graphemes, punctuation, separators, malformed forms, ordered and nested
+  containers, scopes, first-block decisions, and all already-landed opaque
+  contexts. Only the two historical `[@]` goldens change, because those
+  controls now express custom task states. The `task-markers` canonical case
+  and Swift, Kotlin, and ES assertions verify real parses and derived
+  completion. C tests verify input-buffer independence, strict allocation
+  failure, and size-doubling malformed bracket and scalar runs with constant
+  output-node counts and exact literal fallback.
+  The Obsidian custom-task gap closes by agreement. Seven exact, digest-locked
+  entries retain its deliberate grammar differences; cmark-gfm and remark
+  register their ASCII-only and paragraph-first boundaries. A deterministic
+  fuzz witness also fixes the requirement that a line ending cannot be a task
+  separator before lazy paragraph content. Position and reference-resolution
+  ledgers remain unchanged.
+  C correctness/conformance, ASan, UBSan, TSan, Swift/macOS, Kotlin/JVM,
+  Kotlin/macOS arm64, Kotlin/Android host, ES Node/browser and conformance,
+  oracle parity, three 300-input deterministic differential fuzz runs (seed 1),
+  `pnpm verify`, and the host release dry run pass. Full cross-host release
+  aggregation remains the required CI gate.
+
 - [ ] **O6 — Properties.** Recognize at most one exact `---`
       envelope at the beginning of the decoded document after an optional BOM,
       scan it transactionally, decode the payload once as a YAML 1.2.2 document

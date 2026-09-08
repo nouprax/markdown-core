@@ -287,6 +287,7 @@ set(MARKDOWN_CORE_PATHOLOGICAL_CASES
     backticks
     unclosed_links_a
     unclosed_links_b
+    task_marker_runs
     unclosed_comment
     comment_percent_runs
     comment_unclosed_body
@@ -335,6 +336,8 @@ markdown_core_add_test(
     "${MARKDOWN_CORE_CANONICAL_AST_DIR}/inline-footnotes.md"
     --corpus
     "${MARKDOWN_CORE_CANONICAL_AST_DIR}/marks.md"
+    --corpus
+    "${MARKDOWN_CORE_CANONICAL_AST_DIR}/task-markers.md"
     --corpus
     "${MARKDOWN_CORE_CANONICAL_AST_DIR}/scopes.md"
     --corpus

@@ -1,20 +1,17 @@
 #ifndef TASKLIST_H
 #define TASKLIST_H
 
-#include "markdown-core-extensions.h"
+#include "markdown-core.h"
+#include "buffer.h"
 
-/* C LINKAGE, AND WINDOWS IS THE ONLY PLACE THIS SHOWS. The Itanium ABI does not
- * mangle a variable at global scope, so `MARKDOWN_CORE_EXTENSION_*` resolves on
- * Linux and macOS whether or not the declaration says `extern "C"`; MSVC mangles
- * every variable, and a C++ translation unit including this header without the
- * guard fails to link with LNK2019. */
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/** The one, immutable descriptor. `core-extensions.c`'s table is the only
- * place its position in the attach order is written down. */
-extern const markdown_core_extension MARKDOWN_CORE_EXTENSION_TASKLIST;
+/* Called once, immediately after the inherited list algorithm opens an item
+ * and finds its first non-space byte, before deciding its first block. */
+void markdown_core_parse_task_prefix(markdown_core_parser *parser, markdown_core_node *item, const unsigned char *input,
+                                     bufsize_t len);
 
 #ifdef __cplusplus
 }

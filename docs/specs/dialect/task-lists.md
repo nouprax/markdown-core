@@ -4,7 +4,7 @@ Status: normative module of the [Markdown Core dialect](../dialect.md).
 Sources: cmark-gfm's task-list
 extension; Obsidian's custom task characters. Executable oracles: cmark-gfm
 for the inherited markers, `@quartz-community/remark-obsidian` for custom
-markers. Landing: the `marker` field landed with `M5`; custom markers land with `O5`. The
+markers. Landing: the `marker` field landed with `M5`; custom markers landed with `O5`. The
 [example format](../dialect.md#examples) is defined by the index.
 
 ## Model
@@ -152,6 +152,13 @@ Document scope=1:1..2:8 anchor=null attributes={} children=1
         └── Paragraph scope=2:3..2:8 anchor=null attributes={} children=1
             └── Text scope=2:3..2:8 anchor=null attributes={} literal="[ab] b" children=0
 ````````````````````````````````
+
+The pinned Obsidian oracle scans decoded paragraph text with a one-code-unit
+regular expression. Its limits on supplementary scalars and `]`, broader
+whitespace alphabet, one-character separator removal, and recognition after
+escape decoding or on a later paragraph deliberately differ from this grammar.
+The exact witnesses and both semantic digests are registered in
+`specs/oracles/obsidian/deltas.json`; they are evidence, not product gaps.
 
 ## Fallback
 

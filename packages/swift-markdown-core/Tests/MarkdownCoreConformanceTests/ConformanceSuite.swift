@@ -63,6 +63,21 @@ private typealias Comment = Testing.Comment
         #expect(image.dest == .url("/image") && image.title == "title")
     }
 
+    @Test("task markers preserve scalars and derive completion")
+    func taskMarkers() throws {
+        for marker in [" ", "x", "X", "?", "é", "✓", "🚀", "́", "]"] {
+            let list = try #require(try Document.parse("- [\(marker)] body\n").content.first as? MarkdownCore.List)
+            let item = try #require(list.items.first)
+            #expect(item.marker == marker)
+            #expect(item.tasked)
+            #expect(item.completed == (marker != " "))
+        }
+        let list = try #require(try Document.parse("- [é] body\n").content.first as? MarkdownCore.List)
+        #expect(list.items.first?.marker == nil)
+        #expect(list.items.first?.tasked == false)
+        #expect(list.items.first?.completed == false)
+    }
+
     @Test("all manifest cases match the shared canonical AST spec")
     func sharedCanonicalAST() throws {
         let resource = try #require(

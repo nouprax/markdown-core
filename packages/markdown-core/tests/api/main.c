@@ -1869,7 +1869,7 @@ static void marker_test_free(void *pointer) {
 static markdown_core_mem marker_test_mem = {calloc, realloc, marker_test_free};
 
 static void task_marker_ownership(test_batch_runner *runner) {
-    char source[] = "- [ ] open\n- [X] done\n- ordinary\n";
+    char source[] = "- [ ] open\n- [X] done\n- ordinary\n- [🚀] custom\n";
     markdown_core_document *document = markdown_core_document_parse((const uint8_t *)source, strlen(source), NULL);
     OK(runner, document != NULL, "task marker ownership document parses");
     if (!document) {
@@ -1889,15 +1889,9 @@ static void task_marker_ownership(test_batch_runner *runner) {
     OK(runner, !marker.has_value && marker.value.data == NULL && marker.value.length == 0,
        "ordinary item has an absent marker");
 
-    /* O5's grammar is separate; the storage and facade already preserve a
-     * complete UTF-8 scalar without interpreting it as a completion bit. */
-    char custom[] = "🚀";
-    OK(runner, markdown_core_chunk_set_cstr(markdown_core_node_mem(item), &item->as.list->task_marker.value, custom),
-       "owned marker accepts UTF-8 bytes");
-    memset(custom, '?', sizeof(custom) - 1);
-    markdown_core_node_list_item_marker(item, &marker);
+    markdown_core_node_list_item_marker(item->next->next->next, &marker);
     OK(runner, marker.has_value && marker.value.length == 4 && memcmp(marker.value.data, "🚀", 4) == 0,
-       "facade preserves the complete owned UTF-8 marker");
+       "parsed custom marker survives input reuse with its complete UTF-8 spelling");
     uint8_t *dump = NULL;
     size_t length = 0;
     OK(runner, markdown_core_document_dump(document, &dump, &length, NULL), "UTF-8 marker document dumps");

@@ -204,8 +204,8 @@ descriptor. O4 completes the shared feature-boundary implementation bullet.
 
 ## Phase 4 — task markers, media parameters, and tables
 
-- [ ] Generalize the existing task-list scanner from `[ xX]` to one Unicode code
-      point. Store the marker, derive completion, and retain the existing rule that
+- [x] Generalize the existing task-list scanner from `[ xX]` to one Unicode
+      scalar. Store the marker, derive completion, and retain the existing rule that
       only the item prefix is inspected.
 - [ ] Parse external image `W`, `WxH`, `alt|W`, and `alt|WxH` suffixes,
       lowercase `x` with no surrounding spaces, in the shared image construction

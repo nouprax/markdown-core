@@ -414,3 +414,13 @@ The exact-input `task-prefix-before-block-content` remark delta records an
 empty task item's lack of a paragraph for lazy continuation, following the
 [task-list prefix rule](dialect/task-lists.md). The expanded M7 fuzz corpus
 exposed this pre-existing difference; task parsing is unchanged.
+
+O5's [task-prefix grammar](dialect/task-lists.md) preserves one authored
+Unicode scalar and consumes the whole SP/TAB/VT/FF separator run when an item
+opens, before deciding its first block. Line endings never serve as separators,
+even before lazy paragraph content. Custom markers, opening-line ownership,
+block decisions and opaque bodies have exact witnesses in the cmark-gfm and
+remark registries. The Obsidian registry locks both semantic digests for its
+UTF-16 marker limit, excluded `]`, whitespace handling, paragraph-first scan,
+escape decoding and later-line recognition; those are deliberate differences,
+while `custom-task-character` is closed by agreement.

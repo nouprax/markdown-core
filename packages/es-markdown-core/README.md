@@ -65,8 +65,14 @@ is stripped, and a consumer that does not want comments drops the nodes.
 recursively readonly TypeScript properties. The JavaScript objects are not
 runtime-frozen. The package exposes parsing and typed AST inspection, not
 rendering or AST mutation.
-Task items preserve their authored `marker`; `tasked` and `completed` are
-derived conveniences. Ordered lists expose their `variant` and `delimiter`.
+Ordered lists expose their `variant` and `delimiter`.
+
+Task prefixes accept exactly one authored Unicode scalar, such as `- [?]`,
+`- [✓]`, or `- [🚀]`, followed by a space, tab, vertical tab, or form feed.
+The item preserves that scalar in `marker`; completion is derived. Recognition
+is limited to the item's opening line and removes the prefix before deciding
+its first block. Empty or multi-scalar markers and a missing separator remain
+literal text.
 
 ## Traverse and Inspect
 

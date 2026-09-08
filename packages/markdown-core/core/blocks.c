@@ -15,6 +15,7 @@
 #include "markdown_core_ctype.h"
 #include "extension.h"
 #include "../extensions/markdown-core-extensions.h"
+#include "../extensions/tasklist.h"
 #include "config.h"
 #include "parser.h"
 #include "markdown-core.h"
@@ -2230,6 +2231,11 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
             }
             memcpy((*container)->as.list, data, sizeof(*data));
             parser->mem->free(data);
+            S_find_first_nonspace(parser, input);
+            markdown_core_parse_task_prefix(parser, *container, input->data, input->len);
+            if (parser->oom) {
+                return;
+            }
         } else if (indented && !maybe_lazy && !parser->blank) {
             S_advance_offset(parser, input, CODE_INDENT, true);
             *container = add_child(parser, *container, MARKDOWN_CORE_NODE_CODE_BLOCK, parser->offset + 1);

@@ -63,6 +63,7 @@
             "listItem.marker.null",
             "listItem.marker.space",
             "listItem.marker.value",
+            "listItem.marker.custom",
             "list.variant.decimal",
             "list.variant.null",
             "list.delimiter.period",
@@ -460,6 +461,21 @@
                     "document.footnotes.populated"
                 ],
                 "orders": ["document.content-before-footnotes"]
+            }
+        },
+        {
+            "name": "task-markers",
+            "input": "task-markers.md",
+            "expected": "task-markers.ast",
+            "coverage": {
+                "kinds": ["Document", "Callout", "List", "ListItem", "Paragraph", "Text"],
+                "states": [
+                    "listItem.marker.null",
+                    "listItem.marker.space",
+                    "listItem.marker.value",
+                    "listItem.marker.custom"
+                ],
+                "orders": []
             }
         }
     ]

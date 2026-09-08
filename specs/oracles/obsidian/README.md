@@ -67,10 +67,14 @@ values make the tentative Properties candidate fail. Only the exact outer
 
 The corpus contains inputs only. It deliberately has no Markdown Core expected
 AST blocks; product goldens belong to the C fixture and shared canonical AST
-corpus. `deltas.json` registers every current semantic gap and the parity gate
-requires each gap's two semantic-tree digests to continue reproducing. A new or
-changed divergence fails, and a gap that starts agreeing also fails until its
-registry entry is removed in the same implementation change.
+corpus. `deltas.json` separates unfinished features in `baselineGaps` from
+exact deliberate syntax differences in `expectedDivergences`. One comparison
+checks both registries: each input must remain in the corpus and both semantic
+digests must reproduce; agreement, changed digests, duplicate entries, or an
+unregistered difference fail. O5 retires `custom-task-character`; its seven
+remaining task witnesses record the oracle's UTF-16 marker matching, excluded
+closing bracket, whitespace handling, paragraph-first recognition, decoded
+escapes, and later-line recognition.
 
 Set up and run the gate offline after dependency installation:
 

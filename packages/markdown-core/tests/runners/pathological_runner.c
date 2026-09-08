@@ -1090,6 +1090,40 @@ static int case_formula_backslash_nested(pc_context *context) {
     return result;
 }
 
+/* A malformed task prefix may inspect only its candidate scalar, regardless
+ * of the bracket run or scalar run that follows. Size doubling checks exact
+ * fallback and a constant output-node count for both kinds of adversary. */
+static int case_task_marker_runs(pc_context *unused) {
+    const char *units[] = {"[", "]", "é", "✓", "🚀"};
+    for (size_t u = 0; u < sizeof(units) / sizeof(units[0]); u++) {
+        for (size_t count = 1024; count <= 131072; count *= 2) {
+            pc_context context = {0};
+            int result = pc_build(&context, "- [", units[u], count, "] body\n");
+            if (result == 0) {
+                result = pc_parse(&context);
+            }
+            if (result == 0) {
+                const markdown_core_node *list =
+                    markdown_core_node_get_first_child(markdown_core_document_root(context.document));
+                const markdown_core_node *item = markdown_core_node_get_first_child(list);
+                markdown_core_optional_string marker;
+                if (!markdown_core_node_list_item_marker(item, &marker) || marker.has_value ||
+                    pc_expect_count(&context, MARKDOWN_CORE_KIND_LIST_ITEM, 1, "ListItem") != 0 ||
+                    pc_expect_count(&context, MARKDOWN_CORE_KIND_TEXT, 1, "Text") != 0 ||
+                    pc_expect_text(&context, context.input + 2, context.input_length - 3) != 0) {
+                    result = -1;
+                }
+            }
+            markdown_core_document_free(context.document);
+            free(context.input);
+            if (result != 0) {
+                return result;
+            }
+        }
+    }
+    return 0;
+}
+
 /* Registry ------------------------------------------------------------------ */
 
 typedef struct pc_case_entry {
@@ -1098,6 +1132,7 @@ typedef struct pc_case_entry {
 } pc_case_entry;
 
 static const pc_case_entry PC_CASES[] = {
+    {"task_marker_runs", case_task_marker_runs},
     {"nested_strong_emph", case_nested_strong_emph},
     {"many_emph_closers", case_emph_closers},
     {"many_emph_openers", case_emph_openers},

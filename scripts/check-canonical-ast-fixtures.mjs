@@ -69,6 +69,12 @@ const INLINE_CONTENT = new Set([
     "Image"
 ]);
 
+function taskMarkers(tree) {
+    return [...tree.matchAll(/^.*ListItem scope=.* marker=("(?:[^"\\]|\\.)*") /gm)].map((match) =>
+        JSON.parse(match[1])
+    );
+}
+
 const stateValidators = {
     "crossLink.embedded.false": (tree) => /CrossLink scope=.* embedded=false /.test(tree),
     "crossLink.embedded.true": (tree) => /CrossLink scope=.* embedded=true /.test(tree),
@@ -89,7 +95,9 @@ const stateValidators = {
     "list.tight.true": (tree) => /^.*List scope=.* tight=true /m.test(tree),
     "listItem.marker.null": (tree) => /^.*ListItem scope=.* marker=null /m.test(tree),
     "listItem.marker.space": (tree) => /^.*ListItem scope=.* marker=" " /m.test(tree),
-    "listItem.marker.value": (tree) => /^.*ListItem scope=.* marker="[xX]" /m.test(tree),
+    "listItem.marker.value": (tree) => taskMarkers(tree).some((marker) => [...marker].length === 1 && marker !== " "),
+    "listItem.marker.custom": (tree) =>
+        taskMarkers(tree).some((marker) => [...marker].length === 1 && ![" ", "x", "X"].includes(marker)),
     "list.variant.decimal": (tree) => /^.*List scope=.* variant=decimal /m.test(tree),
     "list.variant.null": (tree) => /^.*List scope=.* variant=null /m.test(tree),
     "list.delimiter.period": (tree) => /^.*List scope=.* delimiter=period /m.test(tree),

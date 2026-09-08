@@ -46,3 +46,377 @@ Document scope=1:1..2:7 anchor=null attributes={} children=2
 └── Paragraph scope=2:1..2:7 anchor=null attributes={} children=1
     └── Text scope=2:1..2:7 anchor=null attributes={} literal="outside" children=0
 ````````````````````````````````
+
+```````````````````````````````` example
+1. [x] a
+   - [ ] b
+.
+Document scope=1:1..2:10 anchor=null attributes={} children=1
+└── List scope=1:1..2:10 anchor=null attributes={} flavor=ordered start=1 variant=decimal delimiter=period tight=true children=1
+    └── ListItem scope=1:1..2:10 anchor=null attributes={} marker="x" children=2
+        ├── Paragraph scope=1:8..1:8 anchor=null attributes={} children=1
+        │   └── Text scope=1:8..1:8 anchor=null attributes={} literal="a" children=0
+        └── List scope=2:4..2:10 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+            └── ListItem scope=2:4..2:10 anchor=null attributes={} marker=" " children=1
+                └── Paragraph scope=2:10..2:10 anchor=null attributes={} children=1
+                    └── Text scope=2:10..2:10 anchor=null attributes={} literal="b" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+- [x]	tab
+- [x]
+- [x]none
+.
+Document scope=1:1..3:9 anchor=null attributes={} children=1
+└── List scope=1:1..3:9 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=3
+    ├── ListItem scope=1:1..1:9 anchor=null attributes={} marker="x" children=1
+    │   └── Paragraph scope=1:7..1:9 anchor=null attributes={} children=1
+    │       └── Text scope=1:7..1:9 anchor=null attributes={} literal="tab" children=0
+    ├── ListItem scope=2:1..2:5 anchor=null attributes={} marker=null children=1
+    │   └── Paragraph scope=2:3..2:5 anchor=null attributes={} children=1
+    │       └── Text scope=2:3..2:5 anchor=null attributes={} literal="[x]" children=0
+    └── ListItem scope=3:1..3:9 anchor=null attributes={} marker=null children=1
+        └── Paragraph scope=3:3..3:9 anchor=null attributes={} children=1
+            └── Text scope=3:3..3:9 anchor=null attributes={} literal="[x]none" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+- a [x] b
+.
+Document scope=1:1..1:9 anchor=null attributes={} children=1
+└── List scope=1:1..1:9 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+    └── ListItem scope=1:1..1:9 anchor=null attributes={} marker=null children=1
+        └── Paragraph scope=1:3..1:9 anchor=null attributes={} children=1
+            └── Text scope=1:3..1:9 anchor=null attributes={} literal="a [x] b" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+> - [ ] a
+.
+Document scope=1:1..1:9 anchor=null attributes={} children=1
+└── Callout scope=1:1..1:9 anchor=null attributes={} variant=null collapsed=null children=1
+    └── List scope=1:3..1:9 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+        └── ListItem scope=1:3..1:9 anchor=null attributes={} marker=" " children=1
+            └── Paragraph scope=1:9..1:9 anchor=null attributes={} children=1
+                └── Text scope=1:9..1:9 anchor=null attributes={} literal="a" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+- [?] a
+- [-] b
+- [✓] c
+.
+Document scope=1:1..3:9 anchor=null attributes={} children=1
+└── List scope=1:1..3:9 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=3
+    ├── ListItem scope=1:1..1:7 anchor=null attributes={} marker="?" children=1
+    │   └── Paragraph scope=1:7..1:7 anchor=null attributes={} children=1
+    │       └── Text scope=1:7..1:7 anchor=null attributes={} literal="a" children=0
+    ├── ListItem scope=2:1..2:7 anchor=null attributes={} marker="-" children=1
+    │   └── Paragraph scope=2:7..2:7 anchor=null attributes={} children=1
+    │       └── Text scope=2:7..2:7 anchor=null attributes={} literal="b" children=0
+    └── ListItem scope=3:1..3:9 anchor=null attributes={} marker="✓" children=1
+        └── Paragraph scope=3:9..3:9 anchor=null attributes={} children=1
+            └── Text scope=3:9..3:9 anchor=null attributes={} literal="c" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+- [] a
+- [ab] b
+.
+Document scope=1:1..2:8 anchor=null attributes={} children=1
+└── List scope=1:1..2:8 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=2
+    ├── ListItem scope=1:1..1:6 anchor=null attributes={} marker=null children=1
+    │   └── Paragraph scope=1:3..1:6 anchor=null attributes={} children=1
+    │       └── Text scope=1:3..1:6 anchor=null attributes={} literal="[] a" children=0
+    └── ListItem scope=2:1..2:8 anchor=null attributes={} marker=null children=1
+        └── Paragraph scope=2:3..2:8 anchor=null attributes={} children=1
+            └── Text scope=2:3..2:8 anchor=null attributes={} literal="[ab] b" children=0
+````````````````````````````````
+
+## Every UTF-8 width and authored punctuation
+
+```````````````````````````````` example
+- [é] two
+- [🚀] four
+- [́] combining scalar
+- [[] open bracket
+- []] close bracket
+- [\] backslash
+- [→] tab marker
+- [] vertical tab marker
+- [] form feed marker
+.
+Document scope=1:1..9:22 anchor=null attributes={} children=1
+└── List scope=1:1..9:22 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=9
+    ├── ListItem scope=1:1..1:10 anchor=null attributes={} marker="é" children=1
+    │   └── Paragraph scope=1:8..1:10 anchor=null attributes={} children=1
+    │       └── Text scope=1:8..1:10 anchor=null attributes={} literal="two" children=0
+    ├── ListItem scope=2:1..2:13 anchor=null attributes={} marker="🚀" children=1
+    │   └── Paragraph scope=2:10..2:13 anchor=null attributes={} children=1
+    │       └── Text scope=2:10..2:13 anchor=null attributes={} literal="four" children=0
+    ├── ListItem scope=3:1..3:23 anchor=null attributes={} marker="́" children=1
+    │   └── Paragraph scope=3:8..3:23 anchor=null attributes={} children=1
+    │       └── Text scope=3:8..3:23 anchor=null attributes={} literal="combining scalar" children=0
+    ├── ListItem scope=4:1..4:18 anchor=null attributes={} marker="[" children=1
+    │   └── Paragraph scope=4:7..4:18 anchor=null attributes={} children=1
+    │       └── Text scope=4:7..4:18 anchor=null attributes={} literal="open bracket" children=0
+    ├── ListItem scope=5:1..5:19 anchor=null attributes={} marker="]" children=1
+    │   └── Paragraph scope=5:7..5:19 anchor=null attributes={} children=1
+    │       └── Text scope=5:7..5:19 anchor=null attributes={} literal="close bracket" children=0
+    ├── ListItem scope=6:1..6:15 anchor=null attributes={} marker="\\" children=1
+    │   └── Paragraph scope=6:7..6:15 anchor=null attributes={} children=1
+    │       └── Text scope=6:7..6:15 anchor=null attributes={} literal="backslash" children=0
+    ├── ListItem scope=7:1..7:16 anchor=null attributes={} marker="\t" children=1
+    │   └── Paragraph scope=7:7..7:16 anchor=null attributes={} children=1
+    │       └── Text scope=7:7..7:16 anchor=null attributes={} literal="tab marker" children=0
+    ├── ListItem scope=8:1..8:25 anchor=null attributes={} marker="\u000b" children=1
+    │   └── Paragraph scope=8:7..8:25 anchor=null attributes={} children=1
+    │       └── Text scope=8:7..8:25 anchor=null attributes={} literal="vertical tab marker" children=0
+    └── ListItem scope=9:1..9:22 anchor=null attributes={} marker="\f" children=1
+        └── Paragraph scope=9:7..9:22 anchor=null attributes={} children=1
+            └── Text scope=9:7..9:22 anchor=null attributes={} literal="form feed marker" children=0
+````````````````````````````````
+
+## Each structural separator, including mixed runs
+
+```````````````````````````````` example
+- [?] space
+- [✓]→tab
+- [🚀]vertical
+- [-]form
+- [?] →  mixed
+.
+Document scope=1:1..5:16 anchor=null attributes={} children=1
+└── List scope=1:1..5:16 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=5
+    ├── ListItem scope=1:1..1:11 anchor=null attributes={} marker="?" children=1
+    │   └── Paragraph scope=1:7..1:11 anchor=null attributes={} children=1
+    │       └── Text scope=1:7..1:11 anchor=null attributes={} literal="space" children=0
+    ├── ListItem scope=2:1..2:11 anchor=null attributes={} marker="✓" children=1
+    │   └── Paragraph scope=2:9..2:11 anchor=null attributes={} children=1
+    │       └── Text scope=2:9..2:11 anchor=null attributes={} literal="tab" children=0
+    ├── ListItem scope=3:1..3:17 anchor=null attributes={} marker="🚀" children=1
+    │   └── Paragraph scope=3:10..3:17 anchor=null attributes={} children=1
+    │       └── Text scope=3:10..3:17 anchor=null attributes={} literal="vertical" children=0
+    ├── ListItem scope=4:1..4:10 anchor=null attributes={} marker="-" children=1
+    │   └── Paragraph scope=4:7..4:10 anchor=null attributes={} children=1
+    │       └── Text scope=4:7..4:10 anchor=null attributes={} literal="form" children=0
+    └── ListItem scope=5:1..5:16 anchor=null attributes={} marker="?" children=1
+        └── Paragraph scope=5:12..5:16 anchor=null attributes={} children=1
+            └── Text scope=5:12..5:16 anchor=null attributes={} literal="mixed" children=0
+````````````````````````````````
+
+## Malformed prefixes preserve their text
+
+```````````````````````````````` example
+- [🚀]
+- [✓]none
+- [?] nbsp
+- [é] decomposed
+- [👩‍💻] joined
+- [éé] pair
+- [\?] escape
+- [&#x2713;] entity
+- [? no close
+- [?]again
+.
+Document scope=1:1..10:10 anchor=null attributes={} children=1
+└── List scope=1:1..10:10 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=10
+    ├── ListItem scope=1:1..1:8 anchor=null attributes={} marker=null children=1
+    │   └── Paragraph scope=1:3..1:8 anchor=null attributes={} children=1
+    │       └── Text scope=1:3..1:8 anchor=null attributes={} literal="[🚀]" children=0
+    ├── ListItem scope=2:1..2:11 anchor=null attributes={} marker=null children=1
+    │   └── Paragraph scope=2:3..2:11 anchor=null attributes={} children=1
+    │       └── Text scope=2:3..2:11 anchor=null attributes={} literal="[✓]none" children=0
+    ├── ListItem scope=3:1..3:11 anchor=null attributes={} marker=null children=1
+    │   └── Paragraph scope=3:3..3:11 anchor=null attributes={} children=1
+    │       └── Text scope=3:3..3:11 anchor=null attributes={} literal="[?] nbsp" children=0
+    ├── ListItem scope=4:1..4:18 anchor=null attributes={} marker=null children=1
+    │   └── Paragraph scope=4:3..4:18 anchor=null attributes={} children=1
+    │       └── Text scope=4:3..4:18 anchor=null attributes={} literal="[é] decomposed" children=0
+    ├── ListItem scope=5:1..5:22 anchor=null attributes={} marker=null children=1
+    │   └── Paragraph scope=5:3..5:22 anchor=null attributes={} children=1
+    │       └── Text scope=5:3..5:22 anchor=null attributes={} literal="[👩‍💻] joined" children=0
+    ├── ListItem scope=6:1..6:13 anchor=null attributes={} marker=null children=1
+    │   └── Paragraph scope=6:3..6:13 anchor=null attributes={} children=1
+    │       └── Text scope=6:3..6:13 anchor=null attributes={} literal="[éé] pair" children=0
+    ├── ListItem scope=7:1..7:13 anchor=null attributes={} marker=null children=1
+    │   └── Paragraph scope=7:3..7:13 anchor=null attributes={} children=1
+    │       └── Text scope=7:3..7:13 anchor=null attributes={} literal="[?] escape" children=0
+    ├── ListItem scope=8:1..8:19 anchor=null attributes={} marker=null children=1
+    │   └── Paragraph scope=8:3..8:19 anchor=null attributes={} children=1
+    │       └── Text scope=8:3..8:19 anchor=null attributes={} literal="[✓] entity" children=0
+    ├── ListItem scope=9:1..9:13 anchor=null attributes={} marker=null children=1
+    │   └── Paragraph scope=9:3..9:13 anchor=null attributes={} children=1
+    │       └── Text scope=9:3..9:13 anchor=null attributes={} literal="[? no close" children=0
+    └── ListItem scope=10:1..10:10 anchor=null attributes={} marker=null children=1
+        └── Paragraph scope=10:3..10:10 anchor=null attributes={} children=1
+            └── Text scope=10:3..10:10 anchor=null attributes={} literal="[?]again" children=0
+````````````````````````````````
+
+## Nested ordered and bullet items under a callout
+
+```````````````````````````````` example
+> 1. [🚀] outer
+>    - [?] middle
+>      2) [✓] inner
+>         continuation
+.
+Document scope=1:1..4:22 anchor=null attributes={} children=1
+└── Callout scope=1:1..4:22 anchor=null attributes={} variant=null collapsed=null children=1
+    └── List scope=1:3..4:22 anchor=null attributes={} flavor=ordered start=1 variant=decimal delimiter=period tight=true children=1
+        └── ListItem scope=1:3..4:22 anchor=null attributes={} marker="🚀" children=2
+            ├── Paragraph scope=1:13..1:17 anchor=null attributes={} children=1
+            │   └── Text scope=1:13..1:17 anchor=null attributes={} literal="outer" children=0
+            └── List scope=2:6..4:22 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+                └── ListItem scope=2:6..4:22 anchor=null attributes={} marker="?" children=1
+                    └── Paragraph scope=2:12..4:22 anchor=null attributes={} children=5
+                        ├── Text scope=2:12..2:17 anchor=null attributes={} literal="middle" children=0
+                        ├── SoftBreak scope=2:18..2:18 anchor=null attributes={} children=0
+                        ├── Text scope=3:8..3:21 anchor=null attributes={} literal="2) [✓] inner" children=0
+                        ├── SoftBreak scope=3:22..3:22 anchor=null attributes={} children=0
+                        └── Text scope=4:11..4:22 anchor=null attributes={} literal="continuation" children=0
+````````````````````````````````
+
+## Only the opening prefix is inspected
+
+```````````````````````````````` example
+- [✓] [?] second prefix
+
+  [x] later paragraph
+- ordinary
+
+  [?] later paragraph
+-
+  [x] later first block
+.
+Document scope=1:1..8:23 anchor=null attributes={} children=1
+└── List scope=1:1..8:23 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=false children=3
+    ├── ListItem scope=1:1..3:21 anchor=null attributes={} marker="✓" children=2
+    │   ├── Paragraph scope=1:9..1:25 anchor=null attributes={} children=1
+    │   │   └── Text scope=1:9..1:25 anchor=null attributes={} literal="[?] second prefix" children=0
+    │   └── Paragraph scope=3:3..3:21 anchor=null attributes={} children=1
+    │       └── Text scope=3:3..3:21 anchor=null attributes={} literal="[x] later paragraph" children=0
+    ├── ListItem scope=4:1..6:21 anchor=null attributes={} marker=null children=2
+    │   ├── Paragraph scope=4:3..4:10 anchor=null attributes={} children=1
+    │   │   └── Text scope=4:3..4:10 anchor=null attributes={} literal="ordinary" children=0
+    │   └── Paragraph scope=6:3..6:21 anchor=null attributes={} children=1
+    │       └── Text scope=6:3..6:21 anchor=null attributes={} literal="[?] later paragraph" children=0
+    └── ListItem scope=7:1..8:23 anchor=null attributes={} marker=null children=1
+        └── Paragraph scope=8:3..8:23 anchor=null attributes={} children=1
+            └── Text scope=8:3..8:23 anchor=null attributes={} literal="[x] later first block" children=0
+````````````````````````````````
+
+## The prefix precedes the first block decision
+
+```````````````````````````````` example
+- [?] # heading
+- [✓] > quote
+- [🚀] - [?] nested item
+- [-] ```text
+  code
+  ```
+- [?] $$
+  formula
+  $$
+- [✓] :::note
+  body
+  :::
+.
+Document scope=1:1..12:5 anchor=null attributes={} children=1
+└── List scope=1:1..12:5 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=6
+    ├── ListItem scope=1:1..1:15 anchor=null attributes={} marker="?" children=1
+    │   └── Heading scope=1:7..1:15 anchor=null attributes={} level=1 children=1
+    │       └── Text scope=1:9..1:15 anchor=null attributes={} literal="heading" children=0
+    ├── ListItem scope=2:1..2:15 anchor=null attributes={} marker="✓" children=1
+    │   └── Callout scope=2:9..2:15 anchor=null attributes={} variant=null collapsed=null children=1
+    │       └── Paragraph scope=2:11..2:15 anchor=null attributes={} children=1
+    │           └── Text scope=2:11..2:15 anchor=null attributes={} literal="quote" children=0
+    ├── ListItem scope=3:1..3:26 anchor=null attributes={} marker="🚀" children=1
+    │   └── List scope=3:10..3:26 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+    │       └── ListItem scope=3:10..3:26 anchor=null attributes={} marker="?" children=1
+    │           └── Paragraph scope=3:16..3:26 anchor=null attributes={} children=1
+    │               └── Text scope=3:16..3:26 anchor=null attributes={} literal="nested item" children=0
+    ├── ListItem scope=4:1..6:5 anchor=null attributes={} marker="-" children=1
+    │   └── CodeBlock scope=4:7..6:5 anchor=null attributes={} info="text" language="text" literal="code\n" fenced=true closed=true children=0
+    ├── ListItem scope=7:1..9:4 anchor=null attributes={} marker="?" children=1
+    │   └── FormulaBlock scope=7:7..9:4 anchor=null attributes={} literal="formula" children=0
+    └── ListItem scope=10:1..12:5 anchor=null attributes={} marker="✓" children=1
+        └── DirectiveBlock scope=10:9..12:5 anchor=null attributes={} name="note" children=1
+            └── Paragraph scope=11:3..11:6 anchor=null attributes={} children=1
+                └── Text scope=11:3..11:6 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Every separator-only opening leaves no paragraph for lazy continuation
+
+```````````````````````````````` example
+- [?] →
+outside
+.
+Document scope=1:1..2:7 anchor=null attributes={} children=2
+├── List scope=1:1..1:9 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+│   └── ListItem scope=1:1..1:9 anchor=null attributes={} marker="?" children=0
+└── Paragraph scope=2:1..2:7 anchor=null attributes={} children=1
+    └── Text scope=2:1..2:7 anchor=null attributes={} literal="outside" children=0
+````````````````````````````````
+
+## Opaque bodies cannot supply a task prefix
+
+```````````````````````````````` example
+- `- [?] code`
+- $- [✓] formula$
+- <i title="- [🚀] html">text</i>
+- [[- [?] link]]
+- %% - [✓] inline comment %%
+
+%%
+- [?] block comment
+%%
+
+```
+- [🚀] fenced
+```
+.
+Document scope=1:1..13:3 anchor=null attributes={} children=3
+├── List scope=1:1..6:0 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=5
+│   ├── ListItem scope=1:1..1:14 anchor=null attributes={} marker=null children=1
+│   │   └── Paragraph scope=1:3..1:14 anchor=null attributes={} children=1
+│   │       └── Code scope=1:3..1:14 anchor=null attributes={} literal="- [?] code" children=0
+│   ├── ListItem scope=2:1..2:19 anchor=null attributes={} marker=null children=1
+│   │   └── Paragraph scope=2:3..2:19 anchor=null attributes={} children=1
+│   │       └── Formula scope=2:3..2:19 anchor=null attributes={} mode=embedded literal="- [✓] formula" children=0
+│   ├── ListItem scope=3:1..3:35 anchor=null attributes={} marker=null children=1
+│   │   └── Paragraph scope=3:3..3:35 anchor=null attributes={} children=3
+│   │       ├── HTML scope=3:3..3:27 anchor=null attributes={} literal="<i title=\"- [🚀] html\">" children=0
+│   │       ├── Text scope=3:28..3:31 anchor=null attributes={} literal="text" children=0
+│   │       └── HTML scope=3:32..3:35 anchor=null attributes={} literal="</i>" children=0
+│   ├── ListItem scope=4:1..4:16 anchor=null attributes={} marker=null children=1
+│   │   └── Paragraph scope=4:3..4:16 anchor=null attributes={} children=1
+│   │       └── Text scope=4:3..4:16 anchor=null attributes={} literal="[[- [?] link]]" children=0
+│   └── ListItem scope=5:1..6:0 anchor=null attributes={} marker=null children=1
+│       └── Paragraph scope=5:3..5:30 anchor=null attributes={} children=1
+│           └── Comment scope=5:3..5:30 anchor=null attributes={} literal=" - [✓] inline comment " children=0
+├── Comment scope=7:1..9:2 anchor=null attributes={} literal="- [?] block comment\n" children=0
+└── CodeBlock scope=11:1..13:3 anchor=null attributes={} info=null language=null literal="- [🚀] fenced\n" fenced=true closed=true children=0
+````````````````````````````````
+
+## A line ending cannot separate the task marker from lazy content
+
+```````````````````````````````` example
+- [x]
+:n{class="a b cvf" .a class=tail}a}*.foo.*
+:x{:_a}
+.
+Document scope=1:1..3:7 anchor=null attributes={} children=1
+└── List scope=1:1..3:7 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+    └── ListItem scope=1:1..3:7 anchor=null attributes={} marker=null children=1
+        └── Paragraph scope=1:3..3:7 anchor=null attributes={} children=8
+            ├── Text scope=1:3..1:5 anchor=null attributes={} literal="[x]" children=0
+            ├── SoftBreak scope=1:6..1:6 anchor=null attributes={} children=0
+            ├── Directive scope=2:1..2:38 anchor=null attributes={.a .b .c .v .f .a .tail} name="n" children=0
+            ├── Text scope=2:39..2:40 anchor=null attributes={} literal="a}" children=0
+            ├── Emphasis scope=2:41..2:47 anchor=null attributes={} children=1
+            │   └── Text scope=2:42..2:46 anchor=null attributes={} literal=".foo." children=0
+            ├── SoftBreak scope=2:48..2:48 anchor=null attributes={} children=0
+            ├── Directive scope=3:1..3:2 anchor=null attributes={} name="x" children=0
+            └── Text scope=3:3..3:7 anchor=null attributes={} literal="{:_a}" children=0
+````````````````````````````````

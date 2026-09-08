@@ -52,8 +52,14 @@ strikethrough, autolinks, task lists, formulas, and directives, on the
 CommonMark base. Quotation marks, hyphens, and periods are stored as written.
 The result is an immutable value tree with source scopes. The package exposes
 parsing and typed AST inspection, not rendering or mutation.
-Task items preserve their authored `marker`; `tasked` and `completed` are
-derived conveniences. Ordered lists expose their `variant` and `delimiter`.
+Ordered lists expose their `variant` and `delimiter`.
+
+Task prefixes accept exactly one authored Unicode scalar, such as `- [?]`,
+`- [✓]`, or `- [🚀]`, followed by a space, tab, vertical tab, or form feed.
+The item preserves that scalar in `marker`; completion is derived. Recognition
+is limited to the item's opening line and removes the prefix before deciding
+its first block. Empty or multi-scalar markers and a missing separator remain
+literal text.
 
 `==highlight==` produces `Mark` with parsed inline `content`, including nested
 emphasis, links, and other inline nodes. Matching consumes two equals signs
