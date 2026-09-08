@@ -251,7 +251,8 @@ static void try_inserting_table_header_paragraph(markdown_core_parser *parser, m
                                                  unsigned char *parent_string, int paragraph_offset) {
     markdown_core_node *paragraph;
     bufsize_t first = 0;
-    bufsize_t last = paragraph_offset;
+    bufsize_t content_end = paragraph_offset;
+    bufsize_t scope_end = content_end;
     int line, column;
 
     // Four allocations, and every one of them used to be trusted. The first was
@@ -273,13 +274,16 @@ static void try_inserting_table_header_paragraph(markdown_core_parser *parser, m
      * lost one of its two backslashes here and the inline phase then read the
      * survivor as the escape, giving `pre | lead` where the author wrote an
      * escaped backslash followed by a pipe. */
-    while (first < last && markdown_core_isspace(parent_string[first])) {
+    while (first < content_end && markdown_core_isspace(parent_string[first])) {
         first++;
     }
-    while (last > first && (parent_string[last - 1] == '\n' || parent_string[last - 1] == '\r')) {
-        last--;
+    /* Paragraph finalization needs the complete terminated slice, including
+     * the last reference definition's newline. Only the authored scope omits
+     * line endings; inline parsing trims its own input after finalization. */
+    while (scope_end > first && (parent_string[scope_end - 1] == '\n' || parent_string[scope_end - 1] == '\r')) {
+        scope_end--;
     }
-    markdown_core_strbuf_put(&paragraph->content, parent_string + first, last - first);
+    markdown_core_strbuf_put(&paragraph->content, parent_string + first, content_end - first);
     if (paragraph->content.oom) {
         parser->oom = true;
         markdown_core_node_free(paragraph);
@@ -293,14 +297,15 @@ static void try_inserting_table_header_paragraph(markdown_core_parser *parser, m
         paragraph->start_line = line;
         paragraph->start_column = column;
     }
-    if (last > first && markdown_core_parser_content_place(parser, parent_container, last - 1, &line, &column)) {
+    if (scope_end > first &&
+        markdown_core_parser_content_place(parser, parent_container, scope_end - 1, &line, &column)) {
         paragraph->end_line = line;
         paragraph->end_column = column;
     }
     /* The lead's content is a SLICE of the paragraph's, and it can be several
      * lines long, so it takes the marks for those lines rather than one mark
      * for the first of them. */
-    markdown_core_parser_adopt_content_marks(parser, parent_container, paragraph, first, last - first);
+    markdown_core_parser_adopt_content_marks(parser, parent_container, paragraph, first, content_end - first);
 
     if (!markdown_core_node_insert_before(parent_container, paragraph)) {
         // markdown_core_node_free, not mem->free: the node owns a content

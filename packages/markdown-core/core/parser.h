@@ -36,8 +36,9 @@ typedef struct {
     int indent;
 } markdown_core_line_mark;
 
-/* Finalize the semantics of an already positioned, attached paragraph. False
- * means reference definitions consumed all content and the caller removes it. */
+/* Finalize the semantics of an already positioned, attached paragraph whose
+ * content retains its normalized line terminators. False means reference
+ * definitions consumed all content and the caller removes it. */
 bool markdown_core_parser_finalize_paragraph(struct markdown_core_parser *parser, struct markdown_core_node *node);
 
 /* Parse-time edges used only to assign document-local ids. Every footnote

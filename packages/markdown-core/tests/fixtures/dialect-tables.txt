@@ -409,3 +409,127 @@ Document scope=1:1..9:6 anchor=null attributes={} children=3
     │           └── Text scope=9:3..9:4 anchor=null attributes={} literal="|" children=0
     └── TableFoot children=0
 ````````````````````````````````
+
+## Reference-only table lead
+
+```````````````````````````````` example
+[link]: /url
+| h |
+| - |
+
+[link]
+.
+Document scope=1:1..5:6 anchor=null attributes={} children=2
+├── Table scope=2:1..3:5 anchor=null attributes={} columns=[none:null] children=1
+│   ├── TableHead children=1
+│   │   └── TableRow scope=2:1..2:5 anchor=null attributes={} children=1
+│   │       └── TableCell scope=2:2..2:4 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │           └── Text scope=2:3..2:3 anchor=null attributes={} literal="h" children=0
+│   ├── TableBody children=0
+│   └── TableFoot children=0
+└── Paragraph scope=5:1..5:6 anchor=null attributes={} children=1
+    └── Link scope=5:1..5:6 anchor=null attributes={} dest=url("/url") title=null children=1
+        └── Text scope=5:2..5:5 anchor=null attributes={} literal="link" children=0
+````````````````````````````````
+
+## Multiple definitions and a multiline title in the table lead
+
+```````````````````````````````` example
+[a]: /a
+[b]: /b
+  "title"
+| [a] |
+| - |
+
+[a] [b]
+.
+Document scope=1:1..7:7 anchor=null attributes={} children=2
+├── Table scope=4:1..5:5 anchor=null attributes={} columns=[none:null] children=1
+│   ├── TableHead children=1
+│   │   └── TableRow scope=4:1..4:7 anchor=null attributes={} children=1
+│   │       └── TableCell scope=4:2..4:6 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │           └── Link scope=4:3..4:5 anchor=null attributes={} dest=url("/a") title=null children=1
+│   │               └── Text scope=4:4..4:4 anchor=null attributes={} literal="a" children=0
+│   ├── TableBody children=0
+│   └── TableFoot children=0
+└── Paragraph scope=7:1..7:7 anchor=null attributes={} children=3
+    ├── Link scope=7:1..7:3 anchor=null attributes={} dest=url("/a") title=null children=1
+    │   └── Text scope=7:2..7:2 anchor=null attributes={} literal="a" children=0
+    ├── Text scope=7:4..7:4 anchor=null attributes={} literal=" " children=0
+    └── Link scope=7:5..7:7 anchor=null attributes={} dest=url("/b") title="title" children=1
+        └── Text scope=7:6..7:6 anchor=null attributes={} literal="b" children=0
+````````````````````````````````
+
+## Invalid reference definition remains visible above a table
+
+```````````````````````````````` example
+[link]: /url junk
+| h |
+| - |
+
+[link]
+.
+Document scope=1:1..5:6 anchor=null attributes={} children=3
+├── Paragraph scope=1:1..1:17 anchor=null attributes={} children=1
+│   └── Text scope=1:1..1:17 anchor=null attributes={} literal="[link]: /url junk" children=0
+├── Table scope=2:1..3:5 anchor=null attributes={} columns=[none:null] children=1
+│   ├── TableHead children=1
+│   │   └── TableRow scope=2:1..2:5 anchor=null attributes={} children=1
+│   │       └── TableCell scope=2:2..2:4 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │           └── Text scope=2:3..2:3 anchor=null attributes={} literal="h" children=0
+│   ├── TableBody children=0
+│   └── TableFoot children=0
+└── Paragraph scope=5:1..5:6 anchor=null attributes={} children=1
+    └── Text scope=5:1..5:6 anchor=null attributes={} literal="[link]" children=0
+````````````````````````````````
+
+## Reference-only table lead inside a quoted list item
+
+```````````````````````````````` example
+> - [link]: /url
+>   | h |
+>   | - |
+>
+>   [link]
+.
+Document scope=1:1..5:10 anchor=null attributes={} children=1
+└── Callout scope=1:1..5:10 anchor=null attributes={} variant=null collapsed=null children=1
+    └── List scope=1:3..5:10 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=false children=1
+        └── ListItem scope=1:3..5:10 anchor=null attributes={} marker=null children=2
+            ├── Table scope=2:5..3:9 anchor=null attributes={} columns=[none:null] children=1
+            │   ├── TableHead children=1
+            │   │   └── TableRow scope=2:5..2:9 anchor=null attributes={} children=1
+            │   │       └── TableCell scope=2:6..2:8 anchor=null attributes={} rowspan=1 colspan=1 children=1
+            │   │           └── Text scope=2:7..2:7 anchor=null attributes={} literal="h" children=0
+            │   ├── TableBody children=0
+            │   └── TableFoot children=0
+            └── Paragraph scope=5:5..5:10 anchor=null attributes={} children=1
+                └── Link scope=5:5..5:10 anchor=null attributes={} dest=url("/url") title=null children=1
+                    └── Text scope=5:6..5:9 anchor=null attributes={} literal="link" children=0
+````````````````````````````````
+
+## Consecutive reference definitions without titles above a table
+
+```````````````````````````````` example
+[a]: /a
+[b]: /b
+| h |
+| - |
+
+[a] [b]
+.
+Document scope=1:1..6:7 anchor=null attributes={} children=2
+├── Table scope=3:1..4:5 anchor=null attributes={} columns=[none:null] children=1
+│   ├── TableHead children=1
+│   │   └── TableRow scope=3:1..3:5 anchor=null attributes={} children=1
+│   │       └── TableCell scope=3:2..3:4 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │           └── Text scope=3:3..3:3 anchor=null attributes={} literal="h" children=0
+│   ├── TableBody children=0
+│   └── TableFoot children=0
+└── Paragraph scope=6:1..6:7 anchor=null attributes={} children=3
+    ├── Link scope=6:1..6:3 anchor=null attributes={} dest=url("/a") title=null children=1
+    │   └── Text scope=6:2..6:2 anchor=null attributes={} literal="a" children=0
+    ├── Text scope=6:4..6:4 anchor=null attributes={} literal=" " children=0
+    └── Link scope=6:5..6:7 anchor=null attributes={} dest=url("/b") title=null children=1
+        └── Text scope=6:6..6:6 anchor=null attributes={} literal="b" children=0
+````````````````````````````````
