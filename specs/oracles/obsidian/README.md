@@ -1,5 +1,12 @@
 # Obsidian parser oracles
 
+Properties status (2026-09-08): the user corrected O6 to follow the documented
+Obsidian Properties approach. The [landing plan](../../../docs/plans/2026-09-04-canonical-vnext-landing-plan.md)
+reopens implementation and oracle migration. The existing runner/corpus still
+exercise the superseded alias/tag projection; green checks and closed old gaps
+do not prove the revised target. YAML library acceptance is syntax evidence,
+not a product feature checklist.
+
 This oracle runs `@quartz-community/remark-obsidian@0.2.4` through the same
 unified/remark parser family already used by the repository. The package is
 exact-pinned in `package.json` and integrity-pinned in `pnpm-lock.yaml`.
@@ -41,37 +48,34 @@ under official-example product fixtures. Inherited HTML behavior remains owned
 by the cmark oracle; the dialect adds no Obsidian-specific HTML suppression.
 
 The Properties page is the source for beginning-of-file placement, the
-three-hyphen fence form, the supported consumer domain, and the absence of
-Markdown and nested Properties values; `docs/specs/dialect/properties.md`
+three-hyphen fence form, the supported consumer domain, and the Properties
+editor's limits on nested values and Markdown rendering; `docs/specs/dialect/properties.md`
 states the rule. The harness therefore owns one exact,
 line-oriented envelope scanner and passes only the bytes between a valid pair
 of fences to the YAML oracle. A package-specific frontmatter recognizer is
 neither an authority nor an intermediate normalization layer.
 
-`yaml` parses one document with JSON scalar resolution plus a plain-string
-fallback, duplicate checking disabled at composition time, and source tokens
-enabled. The Properties projection then walks the ordered mapping pairs,
-decodes each directly authored scalar key as text, checks uniqueness in that
-decoded string namespace, retains number payloads from scalar source, resolves
-aliases on the node graph, and accepts only the contract's scalar and
-text/number-list domain. It never calls `toJS()` or materializes a root
-JavaScript object. Empty, whitespace-only, and comment-only payloads all
-produce a document with no content node and therefore the same non-null empty
-metadata array on the oracle side. Product `Metadata.content` retains comments;
-the `metadata-comment-retention` projection removes comment cases only for data
-comparison. Direct canaries verify retained source and recovery of later data.
+For the corrected O6 target, `yaml` witnesses supported YAML/JSON syntax
+through ordered mapping pairs and CST tokens. The Properties projection keeps
+direct scalar names, exact numeric spellings, atomic scalar values, and flat
+text/number lists. It does not construct a generic YAML object graph or resolve
+aliases/tags. The runner's old alias and tagged-empty-null success canaries,
+corpus entries, and legacy delta need migration with the replacement producer.
 
-The YAML document oracle judges supported data. Syntax errors, unsupported tags
-or values, duplicate names, invalid aliases, and stream indicators place an
-input outside that intersection. O6 retains those source members as metadata
-comments and keeps valid neighboring records. Only the exact outer `---` line
-closes the envelope; an absent or incomplete envelope falls back to Markdown.
-Product fixtures own recovery and projection limits.
+The official help documents property types and source forms. Its nested-value
+UI limitation does not establish that Obsidian's underlying YAML parser rejects
+nested input, aliases, or tags. This repository excludes those constructs from
+its data projection and preserves their source according to the user's explicit
+retention rule. Obsidian's [public API](https://github.com/obsidianmd/obsidian-api/blob/master/obsidian.d.ts)
+declares `parseYaml`; this offline gate has no Obsidian runtime and makes no claim about which library the app uses.
 
-The module resolves explicitly tagged empty decoded scalars to null, including
-`!!null ""` and `!!null ''`. The pinned YAML parser reports a tag-resolution
-warning for quoted spellings. The `metadata-tagged-empty-null` projection has
-oracle and product canaries; product fixtures own those null values.
+Only the exact outer `---` line closes the envelope. Complete envelopes always
+produce metadata; unsupported or malformed members become `comment` values,
+while valid neighboring members remain data. The YAML data comparison removes
+those comment cases, including source-only payloads, only for semantic parity.
+Product fixtures must verify exact comment bytes, ordering, source-independent
+ownership, member recovery, scopes, resource bounds, and allocation failure.
+Whole-document YAML success/failure cannot substitute for those tests.
 
 The corpus contains inputs only. It deliberately has no Markdown Core expected
 AST blocks; product goldens belong to the C fixture and shared canonical AST
@@ -99,8 +103,8 @@ remains owned by product fixtures because the two parsers use different
 coordinate models. The Properties canaries additionally require every emitted
 record to retain ordered, in-envelope CST range evidence. Its corpus covers
 integer-looking keys in non-JavaScript order, exact large/decimal/exponent/
-negative-zero number spellings, quoted key decoding, aliases, and strict
-projection failures. Product fixtures remain the rule for canonical
+negative-zero number spellings, quoted key decoding, and projection failures.
+Legacy alias success coverage remains pending migration, as noted above. Product fixtures remain the rule for canonical
 binding-coordinate scopes, allocation failure, and parser-wide resource
 limits.
 
@@ -109,4 +113,5 @@ For successful Properties inputs, the normalized semantic root contains a
 array) contains ordered `{name, value}` records using the tagged scalar/list
 shape from `docs/specs/dialect/properties.md`. The gate reads the real Metadata
 field from canonical dumps, projects comment cases away, and compares its data
-records directly. All eight original Properties gaps close in O6.
+records directly. The eight original gap closures belong to the superseded
+implementation; the corrected O6 acceptance criteria require fresh evidence.

@@ -1,13 +1,46 @@
 # Properties
 
-Status: normative module of the [Markdown Core dialect](../dialect.md). It
-owns the document metadata model and the one source rule that populates it.
-Source: Obsidian's Properties and the
-YAML 1.2.2 specification it links. Executable oracle: `yaml` 2.9.0 through
-its Document/CST API, behind the Obsidian gate's exact envelope scanner, under
-`specs/oracles/obsidian/`. Landing: the value types with `M7`, recognition
-with `O6`. The [example format](../dialect.md#examples) is defined by the
-index.
+Status: normative target module of the [Markdown Core dialect](../dialect.md).
+O6 was reopened on 2026-09-08 to follow Obsidian's Properties scope. PR #216's
+current decoder, fixtures, and oracle still require migration; their passing
+results do not establish conformance to this corrected target.
+
+Source: [Obsidian Properties](https://help.obsidian.md/properties), including
+its property types, property format, and JSON properties sections (checked
+2026-09-08). YAML supplies the storage syntax. The pinned `yaml` 2.9.0
+Document/CST oracle supplies syntax evidence; it does not define the product's
+feature set or identify Obsidian's internal implementation. Landing is owned by
+[O6](../../plans/2026-09-04-canonical-vnext-landing-plan.md).
+The [example format](../dialect.md#examples) is defined by the index.
+
+## Purpose and implementation boundary
+
+Properties attach small, atomic values to a note. Obsidian documents Text,
+List, Number, Checkbox, Date, Date & time, and Tags property types; it also
+accepts JSON objects as their source spelling. The source-only AST below
+represents that domain without implementing vault settings or a Properties
+editor. Dates and date-times remain text, numbers keep exact spellings, and
+links remain quoted text. `aliases` is an ordinary property name, independent
+of YAML alias syntax. Nested property objects and Markdown inside values do
+not add AST structure.
+
+O6 does not implement general YAML object construction. Anchor declarations,
+alias references, explicit tags, merge keys, complex keys, and nested values
+are outside its supported source domain. Their owning source members remain
+`comment(String)` without interpretation or expansion. Quoted occurrences of
+those characters remain ordinary text. This boundary is this repository's
+Properties contract; the documentation's UI limitations do not prove that
+Obsidian's underlying YAML parser rejects the same input.
+
+YAML syntax decoding and Properties projection have separate responsibilities.
+Evaluate a maintained C-compatible vendored parser for quoting, escapes,
+indentation, scalar decoding, collections, and source positions. The core
+producer owns the exact envelope, ordered projection, duplicate handling,
+comment retention, and recovery of neighboring members. A library must fit
+those requirements, including allocator/OOM and all binding targets, before
+adoption; its accepted language must not automatically become data. The task
+does not require a handwritten YAML parser, an alias registry, an expansion
+budget, or a second fallback decoder. Parser choice remains an O6 deliverable.
 
 ## Model
 
@@ -83,11 +116,9 @@ Document scope=1:1..7:3 anchor=null attributes={} children=0
 
 Scalar values:
 
-- `null` is an empty scalar, a plain scalar that resolves to null, or a
-  scalar with the standard null tag. It differs from empty text and from an
-  empty list.
-- `bool` is an unquoted `true` or `false` or a scalar with the standard bool
-  tag.
+- `null` is an empty scalar or a plain `null`. It differs from empty text
+  and from an empty list.
+- `bool` is an unquoted `true` or `false`.
 - `number` holds the complete decoded ASCII spelling of the number, never a
   host integer or float; integers, decimals, and exponents keep their exact
   spelling on every surface.
@@ -251,31 +282,12 @@ Document scope=1:1..6:3 anchor=null attributes={} children=0
     └── MetadataRecord scope=5:1..5:4 name="~" value=scalar(text("d")) children=0
 ````````````````````````````````
 
-A tagged scalar is valid if and only if its content is exactly what the plain
-form of the branch requires: `!!null` empty or `null`; `!!bool` `true` or
-`false`; `!!int` `-?(0|[1-9][0-9]*)`; `!!float` the number grammar; `!!str`
-any single-line scalar, giving text even for `null`, `true`, or a numeric
-spelling. `!!map` and `!!seq` may state the required collection kind. Every
-other tag makes its owning member a comment. Support is decided on decoded values: a
-folded or escaped source form is valid when its decoded content contains no
-U+000A or U+000D, and U+0085, U+2028, and U+2029 are ordinary characters.
-
-An alias contributes the resolved value at its occurrence when its anchor was
-defined earlier in a successful data member, or earlier within the current
-member, and the value is supported. An anchor shadows an earlier name as soon
-as its value starts; referring to it before completion is a cycle and makes
-the member a comment. An unsuccessful member rolls back all its anchor
-bindings, including shadows, and never supplies an alias target. Thus aliases
-are resolved once to complete values; they create no public reference graph. The sum, over all committed alias
-occurrences, of the aliased node's source byte length (from its first tag or
-anchor prefix, or first value token, through its final value token) may not exceed
-the dialect's alias expansion budget of 1048576 bytes, and a payload holds at
-most 65536 data records. A member that would exceed either limit becomes a
-comment; earlier data survives, and a failed member consumes no alias budget.
-The limits bound data projection, never retention of source. Anchor names,
-quote style, and flow versus block style are presentation details of data.
-Comments are retained source, and exact numeric spelling is kept because
-converting it loses precision:
+A data value has no explicit tag, anchor, or alias. Such constructs do not
+participate in type inference and cannot introduce references between members.
+A payload holds at most 65536 data records; subsequent members remain comments.
+The record limit bounds projection, never retention of source. Numeric spelling
+remains exact because converting it can lose precision. Unsupported YAML
+constructs are retained in place:
 
 ```````````````````````````````` example
 ---
@@ -286,9 +298,9 @@ z: !!str 1
 .
 Document scope=1:1..5:3 anchor=null attributes={} children=0
 └── Metadata scope=1:1..5:3 children=3
-    ├── MetadataRecord scope=2:1..2:7 name="x" value=scalar(number("1")) children=0
-    ├── MetadataRecord scope=3:1..3:5 name="y" value=scalar(number("1")) children=0
-    └── MetadataRecord scope=4:1..4:10 name="z" value=scalar(text("1")) children=0
+    ├── MetadataContent value=comment("x: &a 1") children=0
+    ├── MetadataContent value=comment("y: *a") children=0
+    └── MetadataContent value=comment("z: !!str 1") children=0
 ````````````````````````````````
 
 ## Member ownership, recovery, and attachment
@@ -313,7 +325,7 @@ a JSON root object uses this same mapping operation.
 
 Each member either commits one data record and its authored YAML comments, or
 commits its original source as a comment. A scalar or sequence root, explicit
-null, malformed YAML, unsupported key, nested value, invalid tag or alias, and a
+null, malformed YAML, unsupported key, nested value, anchor, tag, alias, merge, and a
 duplicate decoded name all use the comment branch. Recovery does not split a
 valid record into partly interpreted values. Independently decoded members on
 either side remain data. A data record precedes comments inside or after its
@@ -357,42 +369,48 @@ closing fence is outside it, and the scope never covers the body. Each
 `MetadataRecord.scope` starts at the first byte of its key, quotes included,
 and ends at the last non-whitespace byte of the value's last owned line,
 excluding trailing comments, flow separators, and the line ending; an empty
-value without an authored tag or anchor ends at the colon. An alias-resolved value keeps the
-alias-owning record's range. `Document.scope` covers the complete source, and
+value ends at the colon. A key-only flow pair, when decoded as an empty
+value by the syntax parser, ends at its key's last byte. `Document.scope` covers the complete source, and
 each body block covers only its own occurrence.
 
 ## Oracle
 
-The gate applies the envelope grammar above exactly, then parses the payload
-with `yaml` 2.9.0 through its Document and node API with source tokens
-retained, JSON scalar resolution with a string fallback, and duplicate
-checking disabled, and projects the ordered mapping pairs directly without
-building a JavaScript object. It witnesses supported YAML data, key shape, source order, exact numeric
-lexemes, aliases, and values. The comparison projects away metadata comment
-cases because YAML presentation comments are not data records. Product canaries
-and fixtures own member recovery, retained source, duplicates, and budget
-boundaries; malformed payloads are not sent to the YAML oracle as documents. Scopes are compared by product fixtures only;
-the package's offsets are not binding coordinates. Syntax the package accepts
-beyond this module never enters the dialect.
+The gate must apply the envelope grammar above, then use pinned `yaml` 2.9.0
+Document/CST parsing to witness syntax only within the supported Properties
+domain. JSON scalar resolution with a string fallback and ordered mapping
+pairs preserve names and numeric spelling without building a JavaScript
+object. Library support for aliases, tags, merge keys, or nested values is not
+an additional conformance requirement. The previous alias-resolution and
+tagged-empty-null success canaries must be removed during O6 migration.
+
+The comparison projects away metadata comment cases. Product fixtures own raw
+source retention, duplicates, unsupported members, recovery after malformed
+members, allocation failure, resource bounds, and binding-coordinate scopes.
+The whole-document YAML oracle cannot establish member-level recovery of
+invalid payloads. That recovery and ordered retention are explicit user-directed
+repository behavior; they are not claimed as Obsidian runtime parity.
 
 ## Required conformance cases
 
-Every example of this module is a package fixture. Tests also cover a block
-after a BOM; LF, CR, and CRLF; closing at the end of the document;
-whitespace-only payloads; arbitrary Unicode and punctuation-bearing names;
-`1` with `"1"` as a duplicate; JSON roots; exact large integers, exponents,
-date-times, quoted escapes, folded single-line text, every allowed tag, and
-alias chains; body parsing immediately after the close; every record scope,
-`Metadata.scope`, and body scopes. Envelope-negative cases cover leading text lines,
-second blocks, directives and document indicators after a mapping, short,
-long, indented, trailed, and info-word fences, missing closers, malformed
-payloads, thematic-break and Setext interaction, and source-like bytes inside
-every container. Comment-retention cases cover empty or multiline names,
-sequence, mapping, alias, tagged and explicit keys, multiline text, boolean
-and null list items, nested values, unsupported tags, invalid explicitly tagged
-numbers, undefined, cyclic and over-budget aliases, and non-printable bytes.
-Mixed cases must prove that data survives before and after each failed member;
-comments, duplicate names, alias rollback, and allocation failure must be tested
-on every transport. Size-doubling probes cover malformed members, shared long
-prefixes, many comments, repeated aliases, and long single-line flow lists.
-Work counters bound disjoint member decoding and source-line lookup work.
+Every example of this module must become a package fixture as part of the O6
+rework. Official Properties examples cover text, quoted links, number,
+checkbox/empty, date/date-time, list, tags, ordinary `aliases`, and JSON roots.
+Tests also cover absent/empty/populated metadata; BOM and LF/CR/CRLF; closing at
+EOF; names, duplicate decoded names, exact numbers, quoting and escapes,
+single-line decoded text, block/flow lists, list comments at any permitted
+indentation, and metadata/record/body scopes.
+
+Mixed inputs must preserve each valid property on either side of malformed or
+unsupported source. Anchor declarations, aliases (including missing/cyclic
+spellings), explicit tags, merge keys, complex keys, nested objects/lists,
+multiline decoded text, and boolean/null list items remain comments. They must
+not trigger reference resolution, expansion, or additional public types.
+Quoting those spellings keeps them ordinary strings. Strict envelope-negative
+cases and container opacity keep their existing coverage.
+
+All transports must agree on ordered data/comments and source-independent
+ownership. Size-doubling probes must bound member scanning and source lookup,
+including long strings/lists and repeated unsupported syntax. Peak live-memory
+and allocation-failure checks must prove that temporary decoding state is
+released and no partial document is published. Parser integration must pass
+the repository's C, Swift, Kotlin/JNI/Native, and ES/Wasm validation gates.

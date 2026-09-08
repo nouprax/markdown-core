@@ -820,72 +820,80 @@ its behavior, with no separate publication step.
   cursor partition tests and 1,728 marker-replacement/indentation combinations
   protect the general coordinate invariant.
 
-- [x] **O6 — Properties.** Recognize at most one exact `---` envelope at the
-      beginning of the decoded document after an optional BOM. A complete
-      envelope always becomes `Document.metadata`, with ordered
-      `Metadata.content: [MetadataContent]` where
-      `MetadataContent = comment(String) | data(MetadataRecord)`. Decode each
-      source member once using the Properties module's YAML rules, retaining
-      textual names, exact number lexemes, supported lists, bounded acyclic
-      aliases, standard tags, and JSON root objects. Non-YAML text, `...`, YAML
-      comments, unsupported members, later duplicate names, and members that
-      exceed projection budgets become comment values in place. Valid members
-      before and after remain data. Comments are never `Comment` markup.
-      Only an absent or unclosed envelope returns bytes to inherited parsing;
-      allocation failure fails the parse. Record envelope and data scopes and
-      parse the body once after the closing fence. Update the C facade, all
-      bindings/transports, canonical contract and dump together; remove the
-      superseded records-only model. Fixtures own recovery, source retention,
-      rollback, scopes, resource limits, opacity, and allocation failure. Close
-      the eight `properties-*` gaps using real metadata data projection and
-      document the comment-retention projection. Requires `O1`.
+- [ ] **O6 — Obsidian-style Properties.** Deliver the documented Properties
+      value domain using YAML/JSON source syntax. The product is a sequence of
+      metadata name/value pairs: single-line text, exact numbers, booleans,
+      empty/null values, and flat text/number lists. Dates, date-times, URLs,
+      and quoted internal links remain atomic text in this parser-only AST;
+      vault-assigned property types and presentation belong to consumers.
+      `tags`, `aliases`, and `cssclasses` remain ordinary property names.
+      Requires `O1`.
 
-      Design correction (2026-09-08): user-directed member-level retention
-      replaces the previous whole-envelope rejection contract. No partial
-      decoder or records-only compatibility path is a completed O6.
+      Goal correction (2026-09-08, user-directed): follow
+      [Obsidian Properties](https://help.obsidian.md/properties), which defines
+      the property types, YAML storage, and JSON object spelling. Full YAML
+      conformance, alias expansion, anchor binding/shadowing, explicit tag
+      resolution, merge keys, and arbitrary nested objects are not O6 goals.
+      Their presence in a YAML library does not create a product requirement.
+      Source members using those unsupported constructs remain metadata
+      comments. This is the repository's bounded Properties contract, not a
+      claim that Obsidian's underlying YAML parser rejects those constructs.
+      The previous completed status and YAML-feature checklist are withdrawn.
 
-  Implementation (2026-09-08): the core decoder owns the envelope and emits
-  ordered data/comment values directly. Block and flow members share the value
-  decoder, name index, anchor transactions, and document-owned cleanup. One
-  delimiter index bounds recovery over unfinished roots, and one line index
-  supplies scopes and continuation indentation without rescanning long flow
-  prefixes. Work-count tests cover disjoint member decoding and single-line
-  lists through 65,536 elements; limit tests cover 65,537 source members and
-  the exact alias budget. Strict OOM probes exercise data, retained comments,
-  alias cloning, and rollback. C, Swift, Kotlin/JNI/Native, and ES/Wasm expose
-  the content enum without a records-only compatibility path or visitor kind.
-  The Properties module, canonical model/dump/coverage manifest, package and
-  canonical fixtures, public API snapshots, source lists, and release inputs
-  now describe the same operation. All eight Properties oracle gaps are
-  removed; comment projection and decoded tagged-empty null have explicit
-  model deltas and executable canaries.
+      Preserve the user-directed ordered model:
+      `Metadata.content: [MetadataContent]`, where
+      `MetadataContent = comment(String) | data(MetadataRecord)`. Recognize at
+      most one exact leading `---` envelope after an optional BOM. A complete
+      envelope always becomes `Document.metadata`; non-YAML text, `...`, YAML
+      comments, unsupported members, and later duplicate names retain their
+      source as comments. Keep each valid member before and after a failed
+      member as data. Only an absent or unclosed envelope returns bytes to
+      Markdown. Allocation failure fails the parse. Metadata comments never
+      become `Comment` markup. Retain source scopes and parse the body once.
 
-  Position evidence: the containment ledger remains at 26 rows. Claiming the
-  first envelope removes an inherited heading-overlap finding; the new
-  container-opacity fixture exposes one existing Callout/Setext containment
-  finding. An isolated build of the pre-O6 commit produces the identical dump
-  for that container source. This item records that inherited finding rather
-  than changing unrelated block finalization.
+      Separate YAML syntax decoding from the Properties projection. Evaluate
+      vendoring a maintained C-compatible YAML parser before replacing the
+      current handwritten decoder. Record version/license, source ranges and
+      raw retention, scalar decoding, malformed-member recovery, allocator/OOM
+      integration, and C/Swift/Kotlin/Wasm build costs. Parser reuse must not
+      force whole-envelope rejection or alias expansion. Use one syntax path
+      and one projection; do not keep the current decoder as a parallel
+      fallback or implement additional YAML machinery to satisfy an oracle.
+      No dependency choice or Obsidian internal library is assumed by this
+      goal correction; selection requires implementation evidence.
 
-  Validation (2026-09-08): all 47 Properties fixtures, C correctness (76 tests),
-  C conformance (2 tests), and the full correctness suite under ASan, UBSan,
-  and TSan pass. Swift macOS correctness, external consumer, and conformance;
-  Kotlin JVM, macOS arm64, and Android-host correctness/conformance; and ES
-  Node, browser, conformance, type/packaged-consumer checks pass. Public/API and
-  source-list audits, all four oracle gates, three 300-input deterministic
-  differential fuzz runs (seed 1), position ledgers, `pnpm verify`, and the
-  host release dry run pass. Full cross-host release aggregation remains the
-  required CI gate; Linux and device/simulator execution are not claimed by
-  these host results.
-  Review follow-up: one block-key scanner now recognizes plain punctuation
-  for both recovery and scalar headers. Member boundaries track the actual
-  value form, so brackets or quotes inside block plain scalars cannot create
-  flow or quote ownership. Comment ranges use the source-line index to retain
-  standalone indentation while inline comments still start at `#`. The shared
-  canonical boundary fixture exercises all transports; C tests cover every
-  flow punctuation character, LF/CR/CRLF, space/tab comment prefixes, source
-  retention, and disjoint decoding work. The pinned YAML oracle independently
-  witnesses valid plain-key/value/header punctuation.
+      Remaining work and acceptance:
+
+      - [ ] Select and document the syntax implementation against the above
+            boundaries; remove the superseded handwritten YAML mechanisms,
+            including alias cloning, binding transactions, and their expansion
+            budget. Any parser adaptation must have a source-ownership or
+            recovery requirement, not merely a convenient failing example.
+      - [ ] Preserve documented YAML properties and JSON roots, quoted names
+            and values, exact number spelling, supported block/flow lists,
+            comment indentation, uniqueness, metadata/body scopes, and the
+            first-successful-member rule through one shared producer.
+      - [ ] Reclassify anchor/alias/tag/merge/nested-value examples as retained
+            source. Retain adjacent valid data and never interpret a failed
+            member's interior as another property. Keep `aliases: [Name]` as
+            ordinary data. Test malformed and unsupported syntax separately.
+      - [ ] Synchronize the C facade, Swift, Kotlin/JNI/Native, ES/Wasm,
+            canonical fixtures, package fixtures, and Properties oracle with
+            the corrected contract. The pinned YAML package witnesses syntax
+            only within that domain. Retire alias-expansion and tagged-null
+            success canaries; a library's wider support is not a coverage gap.
+      - [ ] Re-run semantic, source-retention, complexity, OOM, binding,
+            conformance, oracle, and release gates on the replacement. Do not
+            mark O6 complete on the strength of the superseded implementation's
+            passing tests or closed oracle gaps.
+
+  Status: PR #216 is an implementation draft requiring this rework. The
+  envelope and ordered public value model remain useful work. The earlier
+  handwritten decoder and its tests demonstrate the superseded scope, not
+  completion of this goal. The four outstanding review findings must be
+  reassessed against the replacement; a goal edit does not resolve them.
+  Prior host validation and the 26-row containment ledger remain historical
+  evidence for that revision only; the replacement needs fresh evidence.
 
 - [ ] **O7 — Block identifiers.** Attach `^block-id`
       during block finalization through one operation for paragraph suffixes,

@@ -104,7 +104,9 @@ does not define Pandoc `@key` syntax; the citations module does.
       parse option, no preset, no CLI `--profile obsidian`, and no layer
       selection in the test tree. Keep the inherited grammar stable, but make the
       canonical `BlockQuote` to `Callout` rename universal. Add only the engine
-      bit each module needs; do not add a second parser.
+      bit each module needs; do not add a second Markdown parser. A vendored
+      YAML syntax dependency for Properties remains inside the one core
+      producer and is evaluated under O6.
 
 - [ ] **Exit criterion:** all public surfaces compile with exhaustive handling, the
       canonical schema audit proves kind/field parity, and fixtures can express every
@@ -162,16 +164,18 @@ descriptor. O4 completes the shared feature-boundary implementation bullet.
       the decoded document after an optional BOM. A complete envelope always
       attaches metadata; only a missing or malformed envelope leaves its bytes
       to inherited Markdown. Allocation failure remains terminal.
-- [x] Decode source members once into ordered `Metadata.content` cases:
-      `comment(String)` or `data(MetadataRecord)`. Retain supported YAML data
-      with exact numbers, decoded textual names, standard tags, JSON roots, and
-      bounded acyclic aliases. Preserve YAML comments, non-YAML fragments,
-      `...`, unsupported members, later duplicates, and over-budget members as
-      comment values. Keep good members before and after failures, and roll back
-      failed anchor bindings. Metadata comments are never Markup.
-- [x] Record source-faithful metadata and record scopes before parsing the
-      remaining body. Decoding and alias expansion must never extend a record
-      scope to another source occurrence or manufacture an expanded range.
+- [ ] Rework Properties under the user-corrected O6 goal: use YAML/JSON
+      syntax to populate the documented Obsidian property domain, with ordered
+      `comment(String)` and `data(MetadataRecord)` cases. Preserve exact
+      numbers, decoded names, atomic text and flat lists. Retain unsupported
+      source and valid neighboring members independently. Remove alias
+      expansion, anchor transactions, explicit tag resolution, and full YAML
+      compatibility from the task goals; `aliases` remains an ordinary key.
+      Evaluate a maintained vendored YAML syntax parser against source
+      retention, member recovery, allocator/OOM and all target builds.
+- [ ] Verify source-faithful metadata and record scopes with the replacement
+      syntax producer before parsing the remaining body. Decoded values keep
+      their authored ranges. Metadata comments are never Markup.
 
 - [ ] Add block identifiers during block finalization, when ownership is known.
       One attachment operation handles paragraph suffixes, structured-block
@@ -187,9 +191,9 @@ descriptor. O4 completes the shared feature-boundary implementation bullet.
 - [ ] Use the same container recursion for nested callouts. Unknown/custom types
       remain metadata-bearing callouts; alias-to-style mapping stays outside the
       parser.
-- [x] Cover absent/empty/populated Properties, arbitrary names, every value
-      branch, JSON roots, strict fences, member-level comment retention, and
-      Properties/body scope boundaries.
+- [ ] Revalidate absent/empty/populated Properties, documented property
+      types, arbitrary names, JSON roots, strict fences, unsupported-source
+      retention, and Properties/body scope boundaries against corrected O6.
 - [ ] Cover metadata-free, title-only, empty-body, formatted-title, nested,
       invalid-position, mixed-case, custom-type, and whole-structured-block
       identifier cases.
@@ -241,13 +245,12 @@ descriptor. O4 completes the shared feature-boundary implementation bullet.
       evidence for recognition, precedence, and fallback, which the dialect
       modules own, and their source-shaped definition/reference nodes do not
       override the consumer AST contract.
-- [x] Extend the Obsidian parity gate with the exact module-owned envelope
-      scanner and exact-pinned `yaml@2.9.0` Document/node parsing with CST source
-      tokens. Project mapping pairs without a JavaScript object intermediary so
-      empty/comment-only documents, key shape, decoded-name uniqueness, source
-      order, exact number spelling, aliases, and supported values are executable
-      evidence. Keep binding-coordinate scopes, allocation failure, and shared
-      resource limits under product fixtures.
+- [ ] Update the existing exact-envelope / `yaml@2.9.0` Document/CST
+      oracle to the corrected Properties domain. Compare ordered mapping
+      pairs, decoded names, exact numbers and supported values without a
+      JavaScript object intermediary. Remove alias/tag success requirements;
+      wider YAML acceptance does not extend the product. Product fixtures own
+      comment retention, member recovery, scopes, resource bounds and OOM.
 - [ ] Keep official-only requirements—callouts, block identifiers, inline
       footnote recognition, the
       `Cite`/`Citation`/`CitationReferent`/`Footnote` projection,
