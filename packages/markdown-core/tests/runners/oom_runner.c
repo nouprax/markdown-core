@@ -177,7 +177,11 @@ static const char OOM_CALLOUT_CORPUS[] =
     "> body #body#\n> > [!custom_1]+ %%hidden%%\n> > nested\n\n#callout#\n\n"
     "> [!note]\n\n> [!empty]+ \t\n\n> [!table] T\n> | --- |\n\n> [!plain] Title\nlazy\n\n[ref]: /u \"title\"\n";
 
+static const char OOM_INLINE_OWNERSHIP_CORPUS[] = "> [!tip]+ ==<i title=\"==hidden==\">title</i>==\n"
+                                                  "> - [✓] ==a %%==b%% c== ^[![[asset|100x145]]] #item#\n";
+
 static const oom_case OOM_CASES[] = {
+    {"inline ownership composition", OOM_INLINE_OWNERSHIP_CORPUS, sizeof(OOM_INLINE_OWNERSHIP_CORPUS) - 1},
     {"image dimensions", OOM_IMAGE_DIMENSIONS_CORPUS, sizeof(OOM_IMAGE_DIMENSIONS_CORPUS) - 1},
     {"callouts", OOM_CALLOUT_CORPUS, sizeof(OOM_CALLOUT_CORPUS) - 1},
     {"properties", OOM_PROPERTIES_CORPUS, sizeof(OOM_PROPERTIES_CORPUS) - 1},

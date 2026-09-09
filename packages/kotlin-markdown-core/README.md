@@ -82,6 +82,21 @@ is limited to the item's opening line and removes the prefix before deciding
 its first block. Empty or multi-scalar markers and a missing separator remain
 literal text.
 
+[Block identifiers](../../docs/specs/dialect/block-identifiers.md) use `text #id#` to populate
+`Paragraph.anchor`, or `- [✓] task #id#` to populate `ListItem.anchor`.
+A standalone identifier line can attach to an eligible preceding list,
+callout, or table under the module's boundary rules. The marker disappears
+from visible content, while scopes retain the authored source positions.
+Identifiers are declarations; target resolution belongs to consumers.
+
+Within a pipe-table cell, write a cross-link label separator as `\|`, as in
+`[[Note\|Label]]` or `![[asset\|100x145]]`. It remains inside that cell.
+Inline `$x$` and display `$$` forms use `Formula` and `FormulaBlock` under the
+[formula grammar](../../docs/specs/dialect/formulas.md). Ordinary fenced code remains `CodeBlock`
+with its info, language label, and literal body. Code, formula, comment, HTML
+token, and cross-reference payloads retain their ownership boundaries; text
+between paired inline HTML tags remains eligible for Markdown parsing.
+
 `==highlight==` produces `Mark` with parsed inline `content`, including nested
 emphasis, links, and other inline nodes. Matching consumes two equals signs
 at a time; unmatched signs remain text. Typed visitors and walking visitors

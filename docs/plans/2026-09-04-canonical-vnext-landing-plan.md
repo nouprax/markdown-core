@@ -1000,13 +1000,12 @@ its behavior, with no separate publication step.
   npm and Maven. Full cross-host release aggregation remains the required CI
   check. The dimension-attribute composition remains owned by later item `P2d`.
 
-- [ ] **O10 — Obsidian evidence closure.** Add the integration fixtures for
-      every pairwise opaque-context interaction, OFM and CommonMark constructs
-      between paired inline HTML tags, the five-step precedence order, task
+- [x] **O10 — Obsidian evidence closure.** Add the integration fixtures for
+      the shared opacity and overlapping-delimiter invariants, OFM and CommonMark
+      constructs between paired inline HTML tags, the dialect recognition order, task
       items carrying block identifiers, generic `CodeBlock` info/language
       preservation and literal-body opacity, and inline and display math; add
-      canonical cases until every OFM kind, state, and
-      order is covered; add deterministic fuzz seeds and pathological cases for
+      canonical cases until every OFM kind, state, and order is covered; add deterministic fuzz seeds and pathological cases for
       delimiter runs, nested callouts, inline-HTML boundaries, escaped table
       pipes, long paths and headings, and repeated identifiers with structural
       bounds; audit every inline extension caller and delete obsolete skip
@@ -1014,11 +1013,21 @@ its behavior, with no separate publication step.
       feature-table row `present`; document every Obsidian feature in the README
       and the binding READMEs. Requires `O1` through `O9`.
 
-  Code-block evidence follows the [base language contract](../specs/dialect/base.md#code)
-  for arbitrary language labels. Consumers interpret those labels; they do not
-  introduce AST kinds, language-specific parsing, or a per-language fixture
-  checklist. Existing generic `CodeBlock` fixtures discharge the corresponding
-  preservation and opacity requirements.
+  CodeBlock evidence follows the [base language contract](../specs/dialect/base.md#code)
+  for preserved info/language and opaque literal bodies. Consumers interpret
+  those fields; no CodeBlock subkinds or per-language fixture checklist is
+  introduced. Existing generic fixtures discharge these requirements.
+
+  Completed 2026-09-09 on the merged O9 baseline. The
+  [O10 evidence record](2026-09-09-obsidian-evidence-closure.md) maps each module
+  to its fixtures and records the inline caller audit, shared ownership
+  invariants, complexity/OOM coverage and validation. One new shared composition
+  case runs on all four surfaces and joins the fixed fuzz corpus; HTML/comment
+  boundary probes extend the existing delimiter test. C and all three
+  sanitizers pass 78/78, C conformance 2/2, all host binding suites, four oracle
+  gates, three 400-case fuzz seeds, static/position audits and the host release
+  dry run pass. The remaining supported hosts and release aggregation retain
+  their required PR CI gates. O10 adds no parser or public-model changes.
 
 - **Obsidian track exit criterion**, verified in the `O10` pull request: the
   plan exit criterion of the Obsidian implementation plan holds on every public

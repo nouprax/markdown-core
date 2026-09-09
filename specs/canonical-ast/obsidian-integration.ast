@@ -1,0 +1,64 @@
+Document scope=1:1..28:23 anchor=null attributes={} children=8
+├── Metadata scope=1:1..3:3 name=scalar(text("integration")) title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+├── Paragraph scope=4:1..4:84 anchor=null attributes={} children=9
+│   ├── HTML scope=4:1..4:44 anchor=null attributes={} literal="<i title=\"[[hidden]] ==hidden== %%hidden%%\">" children=0
+│   ├── CrossLink scope=4:45..4:52 anchor=null attributes={} dest=cross(path="Note",anchor=null) label=null children=0
+│   ├── Text scope=4:53..4:53 anchor=null attributes={} literal=" " children=0
+│   ├── Mark scope=4:54..4:63 anchor=null attributes={} children=1
+│   │   └── Emphasis scope=4:56..4:61 anchor=null attributes={} children=1
+│   │       └── Text scope=4:57..4:60 anchor=null attributes={} literal="mark" children=0
+│   ├── Text scope=4:64..4:64 anchor=null attributes={} literal=" " children=0
+│   ├── Comment scope=4:65..4:72 anchor=null attributes={} literal="body" children=0
+│   ├── Text scope=4:73..4:73 anchor=null attributes={} literal=" " children=0
+│   ├── Cite scope=4:74..4:80 anchor=null attributes={} children=1
+│   │   └── Citation scope=4:76..4:79 referent=footnote(id="inline-1") children=0
+│   │       ├── CitationPrefix children=0
+│   │       └── CitationSuffix children=0
+│   └── HTML scope=4:81..4:84 anchor=null attributes={} literal="</i>" children=0
+├── Paragraph scope=6:1..6:65 anchor=null attributes={} children=5
+│   ├── Comment scope=6:1..6:21 anchor=null attributes={} literal="[[Note]] ==mark==" children=0
+│   ├── Text scope=6:22..6:22 anchor=null attributes={} literal=" " children=0
+│   ├── CrossLink scope=6:23..6:38 anchor=null attributes={} dest=cross(path="Note",anchor=null) label="%%raw%%" children=0
+│   ├── Text scope=6:39..6:39 anchor=null attributes={} literal=" " children=0
+│   └── CrossEmbedded scope=6:40..6:65 anchor=null attributes={} dest=cross(path="asset",anchor=null) label="==raw==" dimensions=(width=100,height=145) children=0
+├── Paragraph scope=8:1..8:15 anchor=null attributes={} children=1
+│   └── Mark scope=8:1..8:15 anchor=null attributes={} children=3
+│       ├── Text scope=8:3..8:4 anchor=null attributes={} literal="a " children=0
+│       ├── Comment scope=8:5..8:11 anchor=null attributes={} literal="==b" children=0
+│       └── Text scope=8:12..8:13 anchor=null attributes={} literal=" c" children=0
+├── Paragraph scope=10:1..10:24 anchor=null attributes={} children=4
+│   ├── Text scope=10:1..10:9 anchor=null attributes={} literal="[[broken " children=0
+│   ├── Formula scope=10:10..10:15 anchor=null attributes={} mode=embedded literal="math" children=0
+│   ├── Text scope=10:16..10:16 anchor=null attributes={} literal=" " children=0
+│   └── Mark scope=10:17..10:24 anchor=null attributes={} children=1
+│       └── Text scope=10:19..10:22 anchor=null attributes={} literal="live" children=0
+├── Callout scope=12:1..14:29 anchor=null attributes={} variant="tip" collapsed=false children=1
+│   ├── Title children=1
+│   │   └── Mark scope=12:11..12:19 anchor=null attributes={} children=1
+│   │       └── Text scope=12:13..12:17 anchor=null attributes={} literal="Title" children=0
+│   └── List scope=13:3..14:29 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=2
+│       ├── ListItem scope=13:3..13:21 anchor="item" attributes={} marker="✓" children=1
+│       │   └── Paragraph scope=13:11..13:21 anchor=null attributes={} children=1
+│       │       └── Text scope=13:11..13:14 anchor=null attributes={} literal="task" children=0
+│       └── ListItem scope=14:3..14:29 anchor=null attributes={} marker=" " children=1
+│           └── Paragraph scope=14:9..14:29 anchor=null attributes={} children=1
+│               └── Media scope=14:9..14:29 anchor=null attributes={} dest=url("/asset") title="title" dimensions=(width=100,height=null) children=1
+│                   └── Text scope=14:11..14:17 anchor=null attributes={} literal="caption" children=0
+├── Table scope=16:1..18:43 anchor=null attributes={} columns=[none:null,none:null] children=2
+│   ├── TableHead children=1
+│   │   └── TableRow scope=16:1..16:15 anchor=null attributes={} children=2
+│   │       ├── TableCell scope=16:2..16:6 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │       │   └── Text scope=16:3..16:5 anchor=null attributes={} literal="Ref" children=0
+│   │       └── TableCell scope=16:8..16:14 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │           └── Text scope=16:9..16:13 anchor=null attributes={} literal="Embed" children=0
+│   ├── TableBody children=1
+│   │   └── TableRow scope=18:1..18:43 anchor=null attributes={} children=2
+│   │       ├── TableCell scope=18:2..18:20 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │       │   └── CrossLink scope=18:3..18:19 anchor=null attributes={} dest=cross(path="Note",anchor=null) label="==raw==" children=0
+│   │       └── TableCell scope=18:22..18:42 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │           └── CrossEmbedded scope=18:23..18:41 anchor=null attributes={} dest=cross(path="asset",anchor=null) label="" dimensions=(width=100,height=145) children=0
+│   └── TableFoot children=0
+├── CodeBlock scope=20:1..22:3 anchor=null attributes={} info="sample" language="sample" literal="[[Note]] ==mark== %%comment%% ^[note] $math$\n" fenced=true closed=true children=0
+├── FormulaBlock scope=24:1..26:2 anchor=null attributes={} literal="[[raw]] ==raw==" children=0
+└── Footnote scope=4:74..4:80 id="inline-1" children=1
+    └── Text scope=4:76..4:79 anchor=null attributes={} literal="note" children=0

@@ -6,6 +6,16 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
+- Close the Obsidian evidence track across C, Swift, Kotlin and ES with shared
+  composition fixtures, fixed fuzz inputs, HTML/comment boundary work probes
+  and a mixed-ownership allocation-failure sweep. The supported subset covers
+  cross links and embeds, marks, comments, inline/referenced footnotes, authored
+  task markers, fixed-field Properties, block identifiers, callouts and media
+  dimensions. Parsing and source ownership stay in the core; rendering, vault
+  resolution and execution stay with consumers. The source snapshot is
+  `obsidianmd/obsidian-help@d780d6b48a92ee6a150304b40ee888f322bf43bf`
+  (read 2026-09-03); the dialect modules own the documented adaptations.
+
 - Rename the canonical `Image` node to `Media` across C, Swift, Kotlin, ES,
   visitors and dumps. ES uses `kind: "media"`; C uses
   `MARKDOWN_CORE_KIND_MEDIA` and `markdown_core_node_dimensions`.

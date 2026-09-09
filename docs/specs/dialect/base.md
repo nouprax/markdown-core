@@ -110,10 +110,11 @@ inherited indentation removal and no other transformation. `fenced` is `true`
 for a fenced block and `false` for an indented one. `closed` is `true` if and
 only if a closing fence line was found; an indented block is always `closed`.
 
-Every fenced code block produces `CodeBlock`, regardless of its language label.
-The label is descriptive metadata for consumers; it does not select an AST
-kind or a parser for the body. The body remains opaque to Markdown recognition.
-Rendering and execution belong to consumers.
+The base grammar produces `CodeBlock` for fenced code and treats its language
+label as descriptive metadata for consumers. The body remains opaque to
+Markdown recognition. The explicitly specified `formula` fence belongs to the
+[formula module](formulas.md); ordinary language labels introduce no additional
+AST kinds or body parsers. Rendering and execution belong to consumers.
 
 `CodeBlock.info` is the fence's info string after CommonMark backslash-escape
 and character-reference processing and after stripping leading and trailing
