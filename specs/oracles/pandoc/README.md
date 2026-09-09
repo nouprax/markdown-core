@@ -43,7 +43,7 @@ host executable explicitly with `scripts/init-environment.sh --install oracle-pa
 runs CLI canaries, both parsers and the fail-closed digest registry. Normal
 builds and tests never install the executable or access the network.
 
-The active corpus has 36 cases: twelve agreements, seven documented dialect
+The active corpus has 37 cases: thirteen agreements, seven documented dialect
 differences, and seventeen missing-feature gaps assigned to later landing items.
 Every difference pins input/reader, oracle projection and product projection
 SHA-256 digests. New, changed, stale, duplicate and unknown entries fail.
@@ -53,7 +53,8 @@ exact deliberate difference, with an executable `combineAttr` canary.
 
 P3/P4 retire `gfm-auto-anchors` and `implicit-header-references`. Added agreements
 cover empty fallback, authored markup labels, forward and duplicate labels,
-explicit-definition priority, and occurrence attributes. Exact deliberate
+explicit-definition priority, occurrence attributes, and a heading reference
+inside declaration-shaped paragraph text (the reduced CI seed-1 witness). Exact deliberate
 differences retain global explicit-anchor reservation (including inline code),
 Unicode simple lowercase, `White_Space`, permitted scalars without emoji aliases,
 and CommonMark reference adjacency. CLI canaries independently pin these Pandoc

@@ -963,3 +963,30 @@ Document scope=1:1..10:8 anchor=null attributes={} children=4
         └── Link scope=8:7..8:14 anchor=null attributes={} dest=url("#target") title=null children=1
             └── Text scope=8:8..8:13 anchor=null attributes={} literal="Target" children=0
 ````````````````````````````````
+
+## Implicit reference in declaration-shaped paragraph text (CI seed 1)
+
+```````````````````````````````` example
+### foo
+three---        with two lines.
+[foo]: <>
+****
+    <a
+*foo _bar* baz_seven-------
+.
+Document scope=1:1..6:27 anchor=null attributes={} children=5
+├── Heading scope=1:1..1:7 anchor="foo" attributes={} level=3 children=1
+│   └── Text scope=1:5..1:7 anchor=null attributes={} literal="foo" children=0
+├── Paragraph scope=2:1..3:9 anchor=null attributes={} children=4
+│   ├── Text scope=2:1..2:31 anchor=null attributes={} literal="three---        with two lines." children=0
+│   ├── SoftBreak scope=2:32..2:32 anchor=null attributes={} children=0
+│   ├── Link scope=3:1..3:5 anchor=null attributes={} dest=url("#foo") title=null children=1
+│   │   └── Text scope=3:2..3:4 anchor=null attributes={} literal="foo" children=0
+│   └── Text scope=3:6..3:9 anchor=null attributes={} literal=": <>" children=0
+├── ThematicBreak scope=4:1..4:4 anchor=null attributes={} children=0
+├── CodeBlock scope=5:5..5:6 anchor=null attributes={} info=null language=null literal="<a\n" fenced=false closed=true children=0
+└── Paragraph scope=6:1..6:27 anchor=null attributes={} children=2
+    ├── Emphasis scope=6:1..6:10 anchor=null attributes={} children=1
+    │   └── Text scope=6:2..6:9 anchor=null attributes={} literal="foo _bar" children=0
+    └── Text scope=6:11..6:27 anchor=null attributes={} literal=" baz_seven-------" children=0
+````````````````````````````````

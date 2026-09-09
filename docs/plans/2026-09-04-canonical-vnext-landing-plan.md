@@ -1232,13 +1232,13 @@ its behavior, with no separate publication step.
     boundaries, opaque/attribute overlaps, pending delimiter ownership, detached
     resource lifetime, and references throughout directive/callout/footnote fields.
   - All nine anchors-module examples appear byte-for-byte in
-    `dialect-anchors.txt`, which contains 52 cases. A shared canonical case
+    `dialect-anchors.txt`, which contains 53 cases. A shared canonical case
     crosses every binding. Every byte changed in the ten pre-existing fixture
     files is confined to `Heading.anchor`; source scopes remain unchanged.
     Current cross-item cases with `O1`, `O2`, `O7`, `O9`, `I1`, `M7`, and
     `P2a`–`P2d` are covered. Future producers and citation conflicts remain owned
     by `P5`, `P6`, `P7`, `P8`, and `P9b` as listed above.
-  - The Pandoc corpus now has 36 cases: twelve agreements, seven exact dialect
+  - The Pandoc corpus now has 37 cases: thirteen agreements, seven exact dialect
     differences, and seventeen remaining feature gaps. Both P3/P4 gaps are
     retired. Added evidence pins global explicit reservation, Unicode simple
     lowercase/whitespace/filter behavior, and CommonMark reference adjacency;
@@ -1255,6 +1255,17 @@ its behavior, with no separate publication step.
     produce byte-identical ASTs on main `8d9177fa` and this implementation. The
     task-list module excludes LF from its separator alphabet. This is existing
     evidence outside P3/P4, not a new heading discrepancy or a widened policy.
+    CI seed 1 additionally exposed two P3/P4 harness omissions: heading-reference
+    compositions were compared against cmark, and Remark compared a heading
+    anchor fact its model cannot express. The independent CommonMark scope
+    classifier now reports those compositions separately from comparisons;
+    the shared Remark projection omits only `Heading.anchor`. Scope/projection
+    tests preserve comparison of explicit references, opaque brackets, heading
+    content/levels/attributes and other nodes' anchors. The full CommonMark
+    fuzz witness is a product fixture and its reduced reference interaction
+    agrees with Pandoc. CI seed 1 now passes: CommonMark compares 373/373 inputs
+    and reports 27 outside-scope compositions; GFM and Remark compare 400/400
+    each. Parser behavior is unchanged by this CI follow-up.
   - Local representative timing against main `8d9177fa` used three alternating
     runs, each with 15 measurements and three warmups. The median ratio across
     non-heading samples was 1.018 (range 0.965–1.041). Dense ATX/Setext samples

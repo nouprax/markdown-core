@@ -155,6 +155,14 @@ no source range. Writable authored heading labels also define ordinary
 reference targets, including forward references. These use `Destination.url`
 with the final `#anchor`, no title, and no inherited heading attributes; all
 occurrences share the existing reference resource. Explicit definitions win.
+Differential fuzzing against cmark, cmark-gfm and remark keeps this extension
+outside their shared-language domain; the independent scope classifier and
+separate comparison counts are documented in the
+[oracle policy](../../specs/oracles/README.md). The pinned Pandoc oracle checks
+the implicit-reference behavior itself.
+Remark's `heading-anchor-unavailable` comparison boundary omits only
+`Heading.anchor`: mdast has no corresponding identifier fact. Heading levels,
+content and attributes, and anchors on every other kind remain observable.
 
 `Document.metadata: Metadata?` holds ten named optional values defined by the
 [Properties value model](dialect/properties.md#model). Metadata is never

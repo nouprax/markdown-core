@@ -181,6 +181,11 @@
             "id": "implicit-reference-adjacency",
             "from": "markdown_strict+auto_identifiers+gfm_auto_identifiers+implicit_header_references",
             "input": "[Foo] [Foo][] [go][Foo]\n\n# Foo\n\n# Foo\n"
+        },
+        {
+            "id": "implicit-reference-in-paragraph-definition-text",
+            "from": "markdown_strict+auto_identifiers+gfm_auto_identifiers+implicit_header_references",
+            "input": "# foo\n\nparagraph\n[foo]: <>\n"
         }
     ]
 }
