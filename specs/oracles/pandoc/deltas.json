@@ -65,24 +65,6 @@
             "coreDigest": "31fa99134634c81b5b2d2bc30a7aad2a68d23aec1baac3112405096fa07f0e80"
         },
         {
-            "id": "gfm-auto-anchors",
-            "item": "P3",
-            "status": "gap",
-            "reason": "The P3 syntax has not landed; retain this exact semantic evidence until its implementing item.",
-            "inputDigest": "6b50237ae17d0a79c5a24c2516774f84f57dbfb2e3c7d74449c09c0d044db6c8",
-            "oracleDigest": "1c4e2e4a16b89ceccdb15c2cbdca90b916d6285303a26548b717085087a29f4f",
-            "coreDigest": "3aea8de4d73e559998f607c4b61e2bb696d360e0179e2edf7bc1afd78b206ea4"
-        },
-        {
-            "id": "implicit-header-references",
-            "item": "P4",
-            "status": "gap",
-            "reason": "The P4 syntax has not landed; retain this exact semantic evidence until its implementing item.",
-            "inputDigest": "9e20ec6d94f729dee73d85e1318bfc75cc8e58f3988ce8be73b9f2f68d5b6056",
-            "oracleDigest": "a54ddc4a71f00e857264edab863d17fc374d394ff25fb7231fb7ab0c43015723",
-            "coreDigest": "1d9b3da7e89e34c4b4ace5dead96912a8cee1c3f8d2ca42b5832eaa9fa56d2d5"
-        },
-        {
             "id": "pandoc-reference-attribute-merge",
             "item": "P2d",
             "status": "projection",
@@ -104,10 +86,10 @@
             "id": "multiline-table",
             "item": "P11c",
             "status": "gap",
-            "reason": "The P11c syntax has not landed; retain this exact semantic evidence until its implementing item.",
+            "reason": "The P11c syntax has not landed; retain this exact semantic evidence until its implementing item. P3 now populates the heading anchor produced by the existing fallback; P11c still owns multiline table recognition.",
             "inputDigest": "31017a429fd3f7d01127eed33c83565196bf0250ebf8abd659361caa8e193fee",
             "oracleDigest": "83fbd0b4f6ec4e77d059846aee8e69901c4ba6d8ef8e7eacc382cb8674779e08",
-            "coreDigest": "c757d04adf2176deb849acfa8a7a2b2f42a7a6acf08f5dfffc506f194897f1ca"
+            "coreDigest": "1ba6c3895e8191d1b7bc403da798a8c8457da55e8452ffe8b182d6b21d68c17a"
         },
         {
             "id": "grid-table-block-cells",
@@ -180,6 +162,60 @@
             "inputDigest": "ead7761f90c8140b7bf927889c8aaefeefa6eb8b861231ef7319f707c56bd467",
             "oracleDigest": "b04070c42872ef2b3c64f7174849e429fcdbb46e8d73eb9d0f617237e9d3c2ba",
             "coreDigest": "b2f78a5ebccb5087a5fd5e1fb58850db1a62e19d596c7f1d3506920d4bc36b3e"
+        },
+        {
+            "id": "anchor-global-reservation",
+            "item": "P3",
+            "status": "projection",
+            "reason": "Markdown Core reserves every explicit declaration across the whole document before generating anchors; Pandoc allocates this heading before it sees the later explicit heading identifier.",
+            "inputDigest": "2da3fd4396a89c8add8bcf1adf6f930e90a49a9bffa2a99a911e96182168b426",
+            "oracleDigest": "2975067296f172872012b12b75a8472d1355141fe423f0023a87049bc6cff62c",
+            "coreDigest": "fe8d148c82a145777cc00d3baab9ae80164c302ef5b624812065b37c17b6a892"
+        },
+        {
+            "id": "anchor-permitted-scalars",
+            "item": "P3",
+            "status": "projection",
+            "reason": "Markdown Core filters every scalar uniformly and has no emoji alias step; Pandoc converts the grinning-face scalar to its grinning alias during GFM anchor generation.",
+            "inputDigest": "2134c4215ad59c246f89001f2d8de2c732c4ee69342b06cfa0e8d29ade786234",
+            "oracleDigest": "a1510715fcb10bc291ec586becf6cafe96f3eb853a37ab0b616e24dd3723b4c4",
+            "coreDigest": "ab2dfa9ef4425de20c518c1ef557deb5053c3d28f7a9ff2b817b9a957d0f2f0d"
+        },
+        {
+            "id": "anchor-simple-lowercase",
+            "item": "P3",
+            "status": "projection",
+            "reason": "Markdown Core applies Unicode 17 simple lowercase (U+0130 becomes U+0069); Pandoc expands U+0130 to U+0069 U+0307 with full lowercase.",
+            "inputDigest": "2e3200795f0c1ae0be24d473bf94a5ce7082d54a88e1491313073090db22f8ed",
+            "oracleDigest": "262795d5e52194b65e2b85b06d9ee57166e146769daf1d9036a150bcad9a5277",
+            "coreDigest": "ab1d8853fb547ff9ff2f0b6ee170d9f16d79ce6e34a21cdb0987af9ff332df67"
+        },
+        {
+            "id": "anchor-whitespace-scalars",
+            "item": "P3",
+            "status": "projection",
+            "reason": "Markdown Core maps each Unicode White_Space scalar to a hyphen, including U+0085 and U+2028; Pandoc removes those two scalars from this heading anchor.",
+            "inputDigest": "aab3bc4adaf3fa86ffd463bd9910f215af5c067c12fa9c5b6acb23aa5f783e05",
+            "oracleDigest": "639a6c891b18300c68a3682d9997511ea66177475bbdd8cddbe4afd0ad49aac3",
+            "coreDigest": "c8f9d26a459d5b30ce348c0b60e1b486b9596cbcfb996db0f6980ef11241630f"
+        },
+        {
+            "id": "anchor-inline-code-reservation",
+            "item": "P3",
+            "status": "projection",
+            "reason": "Markdown Core reserves identifiers on every emitted kind before heading synthesis; Pandoc does not reserve the code identifier against its heading registry.",
+            "inputDigest": "1df9e387a45836a08ef35ca48c27f11d74ac842159362ab82a566da91827a82c",
+            "oracleDigest": "b7ae7d939d8ab22efec206f9de1497d85e206bbdd28e47cc762e5934541e12be",
+            "coreDigest": "eb4a3c9a5e8d28dca2b61451cb27191375a24c730f502ea35788d084718c6f0e"
+        },
+        {
+            "id": "implicit-reference-adjacency",
+            "item": "P4",
+            "status": "projection",
+            "reason": "Markdown Core keeps the inherited CommonMark reference-tail adjacency rule, so whitespace-separated occurrences resolve independently; Pandoc combines the first two bracket groups into one full reference.",
+            "inputDigest": "4388c8fe0daa8aede4797766f587f4fca2e4c978306832580d63ae0f73455b8a",
+            "oracleDigest": "27cc798a636a7fee233c81a4765cf7cf8e67271e37f76cf91a3bcc067d6ebacd",
+            "coreDigest": "7dc1e290c9f37264dfbc27a60ba93f4073763e94f3d4f71bbd2f89df44741d02"
         }
     ]
 }

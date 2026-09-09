@@ -1414,7 +1414,7 @@ static void source_pos(test_batch_runner *runner) {
     test_facade_dump(
         runner, markdown,
         "Document scope=1:1..10:20 anchor=null attributes={} children=3\n"
-        "├── Heading scope=1:1..1:13 anchor=null attributes={} level=1 children=3\n"
+        "├── Heading scope=1:1..1:13 anchor=\"hi-there\" attributes={} level=1 children=3\n"
         "│   ├── Text scope=1:3..1:5 anchor=null attributes={} literal=\"Hi \" children=0\n"
         "│   ├── Emphasis scope=1:6..1:12 anchor=null attributes={} children=1\n"
         "│   │   └── Text scope=1:7..1:11 anchor=null attributes={} literal=\"there\" children=0\n"
@@ -2785,8 +2785,8 @@ static void universal_values(test_batch_runner *runner) {
 typedef struct {
     size_t cross_link, opaque, delimiters, comment, lookahead, footnote_body, block_identifier, callout, dimensions;
     size_t registered_footnotes;
-    bool footnote_collection_allocated, footnotes_owned;
-    size_t attributes;
+    bool footnote_collection_allocated, footnotes_owned, heading_collection_disposed;
+    size_t attributes, anchors;
 } inline_work;
 static markdown_core_node *record_inline_work(const markdown_core_extension *extension, markdown_core_parser *parser,
                                               markdown_core_node *root) {
@@ -2804,6 +2804,8 @@ static markdown_core_node *record_inline_work(const markdown_core_extension *ext
     work->callout = parser->callout_scan_work;
     work->dimensions = parser->dimension_work;
     work->attributes = parser->attribute_work;
+    work->anchors = parser->anchor_work;
+    work->heading_collection_disposed = parser->headings.values == NULL && parser->headings.count == 0;
     work->footnote_body = parser->footnote_body_work;
     work->registered_footnotes = parser->footnote_registration_work;
     work->footnote_collection_allocated = parser->footnotes.values != NULL;
@@ -3630,6 +3632,161 @@ static void attribute_attachment_linear_work(test_batch_runner *runner) {
     }
 }
 
+static void heading_registry_invariants(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    for (size_t count = 128; count <= 8192; count *= 2) {
+        for (int reserve = 0; reserve < 2; reserve++) {
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+            for (size_t i = 0; i < count; i++) {
+                markdown_core_strbuf_puts(&source, "# Same\n\n");
+            }
+            if (reserve) {
+                markdown_core_strbuf_puts(&source, ":n{#same}\n\n");
+                for (size_t i = 1; i <= count; i++) {
+                    char declaration[80];
+                    snprintf(declaration, sizeof(declaration), ":n{#same-%zu}\n\n", i);
+                    markdown_core_strbuf_puts(&source, declaration);
+                }
+            }
+            markdown_core_strbuf_puts(&source, "[Same] [Same][] [go][Same]\n");
+            inline_work work = {0};
+            markdown_core_node *root =
+                markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
+            OK(runner, root != NULL, "heading registry handles dense future reservations");
+            if (root) {
+                markdown_core_node *node = root->first_child;
+                OK(runner, work.heading_collection_disposed, "postprocessors never observe live heading parse state");
+                for (size_t i = 0; i < count; i++, node = node->next) {
+                    char expected[80];
+                    size_t ordinal = reserve ? count + i + 1 : i;
+                    if (ordinal) {
+                        snprintf(expected, sizeof(expected), "same-%zu", ordinal);
+                    } else {
+                        strcpy(expected, "same");
+                    }
+                    STR_EQ(runner, (const char *)node->attributes.anchor.data, expected,
+                           "every generated suffix is the smallest available");
+                }
+                OK(runner, work.anchors > count && work.anchors < 25 * (size_t)source.size,
+                   "registry work is linear in input and generated spelling bytes: %zu/%d", work.anchors, source.size);
+                markdown_core_node *first = root->last_child->first_child;
+                OK(runner,
+                   first->as.link->resource == first->next->next->as.link->resource &&
+                       first->as.link->resource == first->next->next->next->next->as.link->resource,
+                   "all reference spellings share the first heading's resource");
+                markdown_core_node_free(root);
+            }
+            markdown_core_strbuf_free(&source);
+        }
+    }
+    /* The cursor may have live delimiters, backtick lookahead, and attribute
+     * recognition state at the declaration boundary. It resumes exactly once. */
+    for (size_t count = 128; count <= 4096; count *= 2) {
+        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+        for (size_t i = 0; i < count; i++) {
+            markdown_core_strbuf_puts(&source, "# *`prefix` [Later]* {#same}\n\n");
+        }
+        markdown_core_strbuf_puts(&source, "# Later\n");
+        inline_work work = {0};
+        markdown_core_node *root =
+            markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
+        OK(runner, root != NULL, "pending heading cursors retain their delimiter ownership");
+        if (root) {
+            INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_LINK), count, "every forward call resolves once");
+            INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_EMPHASIS), count,
+                   "every live delimiter pair resolves once");
+            OK(runner, work.anchors + work.attributes + work.footnote_body < 40 * (size_t)source.size,
+               "declaration parsing and finalization stay linear with pending cursors");
+            markdown_core_node_free(root);
+        }
+        markdown_core_strbuf_free(&source);
+    }
+}
+
+static void heading_reference_resource_lifetime(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+    const size_t count = 4096, length = 65536;
+    markdown_core_strbuf_puts(&source, "# Target {id=");
+    for (size_t i = 0; i < length; i++) {
+        markdown_core_strbuf_putc(&source, 'a');
+    }
+    markdown_core_strbuf_puts(&source, " .heading k=1}\n\n");
+    for (size_t i = 0; i < count; i++) {
+        markdown_core_strbuf_puts(&source, "[Target] ");
+    }
+    markdown_core_node *root = parse((char *)source.ptr);
+    OK(runner, root != NULL, "large virtual destination has no expansion cutoff");
+    if (root) {
+        markdown_core_resource *resource = NULL;
+        size_t references = 0;
+        for (markdown_core_node *node = root->last_child->first_child; node; node = node->next) {
+            if (node->kind != MARKDOWN_CORE_NODE_LINK) {
+                continue;
+            }
+            if (!resource) {
+                resource = node->as.link->resource;
+            }
+            OK(runner, resource == node->as.link->resource, "the virtual destination is materialized once");
+            references++;
+        }
+        INT_EQ(runner, references, count, "all forward/shortcut references survive parser destruction");
+        INT_EQ(runner, resource->url.len, length + 1, "virtual destination includes exactly one fragment marker");
+        INT_EQ(runner, resource->url.data[0], '#', "virtual destination is the URL branch");
+        OK(runner,
+           !resource->title.has_value && !resource->attributes.anchor.len && !resource->attributes.class_count &&
+               !resource->attributes.record_count,
+           "heading metadata never becomes inherited reference metadata");
+        markdown_core_node *occurrences = root->last_child;
+        markdown_core_node_unlink(occurrences);
+        markdown_core_node_free(root);
+        OK(runner, resource->url.data[length] == 'a', "shared targets outlive both parser and heading declaration");
+        markdown_core_node_free(occurrences);
+    }
+    markdown_core_strbuf_clear(&source);
+    markdown_core_strbuf_puts(&source, "# x\n\n[r]: /u {id=");
+    for (size_t i = 0; i < length; i++) {
+        markdown_core_strbuf_putc(&source, 'a');
+    }
+    markdown_core_strbuf_puts(&source, "}\n\n");
+    for (size_t i = 0; i < count; i++) {
+        markdown_core_strbuf_puts(&source, "[r] ");
+    }
+    inline_work work = {0};
+    root = markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
+    OK(runner, root != NULL, "inherited anchor reservation preserves the reference expansion bound");
+    OK(runner, work.anchors < 25 * (size_t)source.size,
+       "a shared inherited anchor is inspected once, not once per occurrence: %zu/%d", work.anchors, source.size);
+    markdown_core_node_free(root);
+    markdown_core_strbuf_free(&source);
+}
+
+static void heading_label_length_boundary(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    for (size_t length = MAX_LINK_LABEL_LENGTH; length <= MAX_LINK_LABEL_LENGTH + 1; length++) {
+        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+        markdown_core_strbuf_puts(&source, "# ");
+        for (size_t i = 0; i < length; i++) {
+            markdown_core_strbuf_putc(&source, 'a');
+        }
+        markdown_core_strbuf_puts(&source, "\n\n[");
+        for (size_t i = 0; i < length; i++) {
+            markdown_core_strbuf_putc(&source, 'a');
+        }
+        markdown_core_strbuf_puts(&source, "]\n");
+        markdown_core_node *root = parse((char *)source.ptr);
+        OK(runner, root != NULL, "heading labels respect the inherited raw-label length boundary");
+        if (root) {
+            INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_LINK), length == MAX_LINK_LABEL_LENGTH,
+                   "declaration and occurrence use the same raw-label limit");
+            INT_EQ(runner, root->first_child->attributes.anchor.len, length,
+                   "label eligibility never limits generated heading anchors");
+        }
+        markdown_core_node_free(root);
+        markdown_core_strbuf_free(&source);
+    }
+}
+
 static size_t count_anchors(markdown_core_node *root) {
     size_t count = 0;
     markdown_core_iter *iter = markdown_core_iter_new(root);
@@ -3916,6 +4073,9 @@ int main(void) {
     reference_definition_lifetime(runner);
     attribute_linear_work(runner);
     attribute_attachment_linear_work(runner);
+    heading_registry_invariants(runner);
+    heading_reference_resource_lifetime(runner);
+    heading_label_length_boundary(runner);
     cross_link_linear_work(runner);
     inline_footnote_linear_work(runner);
     footnote_registration(runner);

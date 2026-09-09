@@ -505,7 +505,7 @@ Document scope=1:1..11:18 anchor=null attributes={} children=4
 │   └── Paragraph scope=5:3..5:17 anchor=null attributes={} children=1
 │       └── Text scope=5:3..5:17 anchor=null attributes={} literal="[!note] literal" children=0
 ├── Callout scope=7:1..8:17 anchor=null attributes={} variant=null collapsed=null children=2
-│   ├── Heading scope=7:3..7:8 anchor=null attributes={} level=1 children=1
+│   ├── Heading scope=7:3..7:8 anchor="head" attributes={} level=1 children=1
 │   │   └── Text scope=7:5..7:8 anchor=null attributes={} literal="head" children=0
 │   └── Paragraph scope=8:3..8:17 anchor=null attributes={} children=1
 │       └── Text scope=8:3..8:17 anchor=null attributes={} literal="[!note] literal" children=0
@@ -599,7 +599,7 @@ Document scope=1:1..17:5 anchor=null attributes={} children=5
 └── Callout scope=15:1..17:5 anchor=null attributes={} variant="note" collapsed=null children=1
     ├── Title children=1
     │   └── Text scope=15:11..15:11 anchor=null attributes={} literal="T" children=0
-    └── Heading scope=16:3..17:5 anchor=null attributes={} level=1 children=1
+    └── Heading scope=16:3..17:5 anchor="head" attributes={} level=1 children=1
         └── Text scope=16:3..16:6 anchor=null attributes={} literal="head" children=0
 ````````````````````````````````
 
@@ -899,7 +899,7 @@ Document scope=1:1..10:5 anchor=null attributes={} children=1
 └── Callout scope=1:1..10:5 anchor=null attributes={} variant="note" collapsed=null children=4
     ├── Title children=1
     │   └── Text scope=1:11..1:11 anchor=null attributes={} literal="T" children=0
-    ├── Heading scope=2:3..2:11 anchor=null attributes={} level=1 children=1
+    ├── Heading scope=2:3..2:11 anchor="heading" attributes={} level=1 children=1
     │   └── Text scope=2:5..2:11 anchor=null attributes={} literal="heading" children=0
     ├── List scope=4:3..5:1 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
     │   └── ListItem scope=4:3..5:1 anchor=null attributes={} marker=null children=1

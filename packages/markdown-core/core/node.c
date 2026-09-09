@@ -1126,3 +1126,11 @@ int markdown_core_node_check(markdown_core_node *node, FILE *out) {
 
     return errors;
 }
+
+const markdown_core_chunk *markdown_core_node_anchor_chunk(const markdown_core_node *node) {
+    if (!node->attributes.anchor.len &&
+        (node->kind == MARKDOWN_CORE_NODE_LINK || node->kind == MARKDOWN_CORE_NODE_MEDIA) && node->as.link->resource) {
+        return &node->as.link->resource->attributes.anchor;
+    }
+    return &node->attributes.anchor;
+}

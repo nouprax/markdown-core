@@ -148,6 +148,14 @@ sites intentionally differ from Remark; exact inputs are registered in its
 oracle policy. Each binding keeps its native collection types and owns all
 returned values after the native document is released.
 
+Parsed headings always have a nonempty anchor: an explicit identifier wins,
+otherwise the [anchors module](dialect/anchors.md) derives one from parsed
+content after reserving every emitted explicit anchor. Generated anchors add
+no source range. Writable authored heading labels also define ordinary
+reference targets, including forward references. These use `Destination.url`
+with the final `#anchor`, no title, and no inherited heading attributes; all
+occurrences share the existing reference resource. Explicit definitions win.
+
 `Document.metadata: Metadata?` holds ten named optional values defined by the
 [Properties value model](dialect/properties.md#model). Metadata is never
 Markup and has no visitor callbacks. O6 produces it from the leading envelope.

@@ -16,6 +16,7 @@
 #include "extension.h"
 #include "../extensions/markdown-core-extensions.h"
 #include "../extensions/tasklist.h"
+#include "../extensions/directive.h"
 #include "config.h"
 #include "parser.h"
 #include "markdown-core.h"
@@ -43,6 +44,8 @@
 #endif
 
 #define peek_at(i, n) (i)->data[n]
+
+static void dispose_headings(markdown_core_parser *parser, markdown_core_heading_collection *headings);
 
 static bool S_last_line_blank(const markdown_core_node *node) {
     return (node->flags & MARKDOWN_CORE_NODE__LAST_LINE_BLANK) != 0;
@@ -136,6 +139,7 @@ int markdown_core_parser_attach_extension(markdown_core_parser *parser, const ma
 }
 
 static void S_parser_dispose(markdown_core_parser *parser) {
+    dispose_headings(parser, &parser->headings);
     /* This index never owns nodes and is never read during destruction. */
     parser->mem->free(parser->footnotes.values);
     if (parser->root) {
@@ -220,6 +224,28 @@ static void S_parser_free(markdown_core_parser *parser) {
     markdown_core_llist_free(parser->mem, parser->extensions);
     markdown_core_llist_free(parser->mem, parser->inline_extensions);
     mem->free(parser);
+}
+
+/* Registration is a block-construction fact, not a finished-tree search.
+ * No postprocessor observes this collection or changes its borrowed nodes. */
+static void register_heading(markdown_core_parser *parser, markdown_core_node *node) {
+    markdown_core_heading_collection *headings = &parser->headings;
+    if (headings->count == headings->capacity) {
+        size_t capacity = headings->capacity ? headings->capacity * 2 : 8;
+        if (capacity > SIZE_MAX / sizeof(*headings->values)) {
+            parser->oom = true;
+            return;
+        }
+        void *values = parser->mem->realloc(headings->values, capacity * sizeof(*headings->values));
+        if (!values) {
+            parser->oom = true;
+            return;
+        }
+        headings->values = values;
+        headings->capacity = capacity;
+    }
+    assert(!headings->count || headings->values[headings->count - 1].node->start_line < node->start_line);
+    headings->values[headings->count++] = (markdown_core_heading_parse){.node = node};
 }
 
 static markdown_core_node *finalize(markdown_core_parser *parser, markdown_core_node *b);
@@ -844,6 +870,10 @@ static markdown_core_node *finalize(markdown_core_parser *parser, markdown_core_
     markdown_core_strbuf *node_content = &b->content;
 
     switch (S_type(b)) {
+    case MARKDOWN_CORE_NODE_HEADING:
+        register_heading(parser, b);
+        break;
+
     case MARKDOWN_CORE_NODE_PARAGRAPH:
         markdown_core_parser_finalize_paragraph(parser, b);
         break;
@@ -1042,7 +1072,7 @@ static void process_inline_tree(markdown_core_parser *parser, markdown_core_node
     while ((ev_type = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
         cur = markdown_core_iter_get_node(iter);
         if (ev_type == MARKDOWN_CORE_EVENT_ENTER) {
-            if (contains_inlines(cur)) {
+            if (contains_inlines(cur) && cur->kind != MARKDOWN_CORE_NODE_HEADING) {
                 markdown_core_parse_inlines(parser, cur, refmap);
             }
         }
@@ -1113,8 +1143,6 @@ static int process_inline_fields(markdown_core_parser *parser, markdown_core_nod
 // Parse the structural document tree first, then every detached field tree.
 // All individual walks retain ordinary cmark child-only iterator semantics.
 static void process_inlines(markdown_core_parser *parser, markdown_core_map *refmap) {
-    markdown_core_manage_extensions_special_characters(parser, true);
-
     process_inline_tree(parser, parser->root, refmap);
     if (!parser->oom) {
         process_inline_fields(parser, parser->root, refmap);
@@ -1285,8 +1313,6 @@ static markdown_core_node *finalize_document(markdown_core_parser *parser) {
     finalize(parser, parser->root);
 
     S_complete_block_tree(parser->root);
-    process_inlines(parser, parser->refmap);
-
     return parser->root;
 }
 
@@ -2950,6 +2976,286 @@ done:
     memset(collection, 0, sizeof(*collection));
 }
 
+static void prepare_headings(markdown_core_parser *parser, markdown_core_heading_collection *headings) {
+    /* Explicit definitions already precede virtual records in the map's
+     * declaration order. Its first-definition rule handles both priorities. */
+    for (size_t i = 0; i < headings->count && !parser->oom; i++) {
+        markdown_core_prepare_heading(parser, &headings->values[i]);
+        if (parser->refmap->oom) {
+            parser->oom = true;
+        }
+    }
+    for (size_t i = 0; i < headings->count && !parser->oom; i++) {
+        markdown_core_finish_heading(parser, &headings->values[i]);
+    }
+}
+
+static void dispose_headings(markdown_core_parser *parser, markdown_core_heading_collection *headings) {
+    for (size_t i = 0; i < headings->count; i++) {
+        markdown_core_dispose_heading(&headings->values[i]);
+    }
+    parser->mem->free(headings->values);
+    *headings = (markdown_core_heading_collection){0};
+}
+
+/* Each registered spelling owns one monotone suffix cursor. A duplicate
+ * resumes at the first untried suffix rather than scanning 1..N again. Keys
+ * borrow final immutable anchors; entries remain stable across index growth. */
+typedef struct anchor_entry {
+    struct anchor_entry *next;
+    size_t suffix;
+} anchor_entry;
+
+typedef struct {
+    markdown_core_key_index index;
+    /* Inherited anchors share a resource. Its identity is reserved once,
+     * so repeated occurrences never rehash the definition's string. */
+    markdown_core_key_index resources;
+    anchor_entry *entries;
+} anchor_registry;
+
+static anchor_entry *find_anchor(markdown_core_parser *parser, anchor_registry *registry, markdown_core_chunk key) {
+    parser->anchor_work += (size_t)key.len + 1;
+    return markdown_core_key_index_lookup(&registry->index, key.data, key.len);
+}
+
+static void reserve_anchor(markdown_core_parser *parser, anchor_registry *registry, markdown_core_chunk key) {
+    if (!key.len || find_anchor(parser, registry, key)) {
+        return;
+    }
+    anchor_entry *entry = parser->mem->calloc(1, sizeof(*entry));
+    if (!entry) {
+        parser->oom = true;
+        return;
+    }
+    entry->suffix = 1;
+    entry->next = registry->entries;
+    registry->entries = entry;
+    parser->anchor_work += (size_t)key.len + 1;
+    if (!markdown_core_key_index_insert(&registry->index, key.data, key.len, entry, 0, NULL)) {
+        parser->oom = true;
+    }
+}
+
+static int reserve_tree_anchors(markdown_core_parser *parser, markdown_core_node **root, void *context) {
+    markdown_core_iter *iter = markdown_core_iter_new(*root);
+    if (!iter) {
+        parser->oom = true;
+        return 0;
+    }
+    markdown_core_event_type event;
+    while (!parser->oom && (event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+        if (event == MARKDOWN_CORE_EVENT_ENTER) {
+            markdown_core_node *node = markdown_core_iter_get_node(iter);
+            parser->anchor_work++;
+            anchor_registry *registry = context;
+            const markdown_core_chunk *anchor = markdown_core_node_anchor_chunk(node);
+            if (anchor->len && anchor != &node->attributes.anchor) {
+                const unsigned char *identity = (const unsigned char *)&node->as.link->resource;
+                void *existing = NULL;
+                if (!markdown_core_key_index_insert(&registry->resources, identity, sizeof(node->as.link->resource),
+                                                    node->as.link->resource, 0, &existing)) {
+                    parser->oom = true;
+                    break;
+                }
+                if (existing) {
+                    continue;
+                }
+            }
+            reserve_anchor(parser, registry, *anchor);
+        }
+    }
+    markdown_core_iter_free(iter);
+    return !parser->oom;
+}
+
+static void project_anchor_literal(markdown_core_parser *parser, markdown_core_strbuf *base, const unsigned char *text,
+                                   bufsize_t length) {
+    parser->anchor_work += (size_t)length;
+    for (bufsize_t at = 0; at < length;) {
+        int32_t scalar;
+        int width = markdown_core_utf8proc_iterate(text + at, length - at, &scalar);
+        assert(width > 0); /* Valid UTF-8 is the caller precondition. */
+        at += width;
+        scalar = markdown_core_utf8proc_anchor_scalar(scalar);
+        if (scalar) {
+            markdown_core_utf8proc_encode_char(scalar, base);
+        }
+    }
+}
+
+/* The stack holds return edges for field-owned labels. Ordinary child edges
+ * are followed directly, so formatting depth does not allocate or recurse. */
+static void heading_anchor_base(markdown_core_parser *parser, markdown_core_node *heading, markdown_core_strbuf *base) {
+    markdown_core_node *node = heading->first_child;
+    markdown_core_node **returns = NULL;
+    size_t count = 0, capacity = 0;
+    markdown_core_node *root = heading;
+    while (node && !parser->oom && !base->oom) {
+        markdown_core_node *children = NULL;
+        parser->anchor_work++;
+        switch (node->kind) {
+        case MARKDOWN_CORE_NODE_TEXT:
+        case MARKDOWN_CORE_NODE_CODE:
+            project_anchor_literal(parser, base, node->as.literal->data, node->as.literal->len);
+            break;
+        case MARKDOWN_CORE_NODE_FORMULA: {
+            const char *literal = markdown_core_extensions_get_formula_literal(node);
+            project_anchor_literal(parser, base, (const unsigned char *)literal, (bufsize_t)strlen(literal));
+            break;
+        }
+        case MARKDOWN_CORE_NODE_SOFT_BREAK:
+        case MARKDOWN_CORE_NODE_LINE_BREAK:
+            markdown_core_strbuf_putc(base, '-');
+            break;
+        case MARKDOWN_CORE_NODE_CROSS_LINK:
+        case MARKDOWN_CORE_NODE_CROSS_EMBEDDED: {
+            markdown_core_cross_reference *cross = markdown_core_node_cross_reference(node);
+            if (cross->label.has_value) {
+                project_anchor_literal(parser, base, cross->label.value.data, cross->label.value.len);
+            } else {
+                project_anchor_literal(parser, base, cross->path.data, cross->path.len);
+                if (cross->anchor.has_value) {
+                    project_anchor_literal(parser, base, cross->anchor.value.data, cross->anchor.value.len);
+                }
+            }
+            break;
+        }
+        case MARKDOWN_CORE_NODE_EMPHASIS:
+        case MARKDOWN_CORE_NODE_STRONG:
+        case MARKDOWN_CORE_NODE_STRIKETHROUGH:
+        case MARKDOWN_CORE_NODE_MARK:
+        case MARKDOWN_CORE_NODE_INSERTION:
+        case MARKDOWN_CORE_NODE_LINK:
+        case MARKDOWN_CORE_NODE_MEDIA:
+        case MARKDOWN_CORE_NODE_DIRECTIVE_LABEL:
+            children = node->first_child;
+            break;
+        case MARKDOWN_CORE_NODE_DIRECTIVE: {
+            markdown_core_node *label = markdown_core_directive_label(node);
+            if (label && label->first_child) {
+                if (count + 2 > capacity) {
+                    capacity = capacity ? capacity * 2 : 8;
+                    if (capacity > SIZE_MAX / sizeof(*returns)) {
+                        parser->oom = true;
+                        break;
+                    }
+                    void *values = parser->mem->realloc(returns, capacity * sizeof(*returns));
+                    if (!values) {
+                        parser->oom = true;
+                        break;
+                    }
+                    returns = values;
+                }
+                returns[count++] = root;
+                returns[count++] = node;
+                root = label;
+                node = label->first_child;
+                continue;
+            }
+            break;
+        }
+        default:
+            /* HTML, Comment, and the currently produced footnote Cite have
+             * no projected text. Their bodies/targets are never descended. */
+            break;
+        }
+        if (children) {
+            node = children;
+            continue;
+        }
+        while (node != root && !node->next) {
+            node = node->parent;
+        }
+        while (node == root && count) {
+            node = returns[--count];
+            root = returns[--count];
+            while (node != root && !node->next) {
+                node = node->parent;
+            }
+        }
+        node = node == root ? NULL : node->next;
+    }
+    parser->mem->free(returns);
+    if (!base->size) {
+        markdown_core_strbuf_puts(base, "section");
+    }
+    if (base->oom) {
+        parser->oom = true;
+    }
+}
+
+static void finalize_heading_anchors(markdown_core_parser *parser, markdown_core_heading_collection *headings) {
+    if (!headings->count) {
+        return;
+    }
+    anchor_registry registry = {0};
+    markdown_core_strbuf base = MARKDOWN_CORE_BUF_INIT(parser->mem);
+    if (!markdown_core_key_index_init(&registry.index, parser->mem, headings->count) ||
+        !markdown_core_key_index_init(&registry.resources, parser->mem, 0)) {
+        parser->oom = true;
+        goto done;
+    }
+    if (!S_apply_tree_phase(parser, &parser->root, reserve_tree_anchors, &registry)) {
+        goto done;
+    }
+    for (size_t i = 0; i < headings->count && !parser->oom; i++) {
+        markdown_core_heading_parse *heading = &headings->values[i];
+        markdown_core_chunk *anchor = &heading->node->attributes.anchor;
+        if (!anchor->len) {
+            markdown_core_strbuf_clear(&base);
+            heading_anchor_base(parser, heading->node, &base);
+            if (parser->oom) {
+                break;
+            }
+            bufsize_t base_length = base.size;
+            anchor_entry *entry = find_anchor(parser, &registry, (markdown_core_chunk){base.ptr, base.size, 0});
+            if (entry) {
+                do {
+                    char suffix[3 * sizeof(size_t) + 2];
+                    snprintf(suffix, sizeof(suffix), "-%zu", entry->suffix++);
+                    markdown_core_strbuf_truncate(&base, base_length);
+                    markdown_core_strbuf_puts(&base, suffix);
+                } while (!base.oom && find_anchor(parser, &registry, (markdown_core_chunk){base.ptr, base.size, 0}));
+            }
+            if (base.oom) {
+                parser->oom = true;
+                break;
+            }
+            markdown_core_chunk_free(parser->mem, anchor);
+            *anchor = markdown_core_chunk_buf_detach(&base);
+            if (!anchor->data) {
+                parser->oom = true;
+                break;
+            }
+            reserve_anchor(parser, &registry, *anchor);
+        }
+        if (heading->resource && !parser->oom) {
+            markdown_core_strbuf_clear(&base);
+            markdown_core_strbuf_putc(&base, '#');
+            markdown_core_strbuf_put(&base, anchor->data, anchor->len);
+            if (base.oom) {
+                parser->oom = true;
+                break;
+            }
+            markdown_core_chunk_free(parser->mem, &heading->resource->url);
+            heading->resource->url = markdown_core_chunk_buf_detach(&base);
+            if (!heading->resource->url.data) {
+                parser->oom = true;
+            }
+        }
+    }
+done:
+    markdown_core_strbuf_free(&base);
+    markdown_core_key_index_free(&registry.index);
+    markdown_core_key_index_free(&registry.resources);
+    while (registry.entries) {
+        anchor_entry *next = registry.entries->next;
+        parser->mem->free(registry.entries);
+        registry.entries = next;
+    }
+}
+
 static int S_consolidate_tree(markdown_core_parser *parser, markdown_core_node **root_slot, void *context) {
     (void)context;
     return markdown_core_consolidate_text_nodes_with_parser(parser, *root_slot);
@@ -2975,12 +3281,20 @@ static int S_postprocess_tree(markdown_core_parser *parser, markdown_core_node *
 static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
     markdown_core_node *res;
     markdown_core_llist *extensions;
+    markdown_core_heading_collection *headings = &parser->headings;
 
     if (parser->root == NULL || parser->oom) {
         return NULL;
     }
 
     finalize_document(parser);
+    if (!parser->oom) {
+        markdown_core_manage_extensions_special_characters(parser, true);
+        prepare_headings(parser, headings);
+    }
+    if (!parser->oom) {
+        process_inlines(parser, parser->refmap);
+    }
 
     /* Map failures are sticky on the maps because reference resolution owns
      * those allocations. Pull them into the transaction flag at every phase
@@ -2995,6 +3309,10 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
     /* Complete the document model and discard parse-time edges before any
      * tree transform. Postprocessors receive resolved ids and owned values. */
     finalize_footnotes(parser);
+    if (!parser->oom) {
+        finalize_heading_anchors(parser, headings);
+    }
+    dispose_headings(parser, headings);
     if (parser->oom) {
         goto failed;
     }
@@ -3029,6 +3347,7 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
     return res;
 
 failed:
+    dispose_headings(parser, headings);
     markdown_core_node_free(parser->root);
     parser->root = NULL;
     return NULL;

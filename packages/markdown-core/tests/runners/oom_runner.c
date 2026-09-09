@@ -44,6 +44,12 @@ static const char OOM_PROPERTIES_CORPUS[] =
 static const char OOM_PROPERTIES_ARRAY_CORPUS[] = "---\nname: x[\nauthors: [\"two\", 3]\nabstract: {nested: 1}\n"
                                                   "date: 4\ncomment: \"bad\\q\"\nkeywords: []\nstate: ready\n---\n";
 
+static const char OOM_HEADING_CORPUS[] = "[First] [First][] [go][First]{#own .c}\n\n"
+                                         "# *`prefix` [First]*\n\n# First\n\n# First\n\n# !!!\n\n"
+                                         "# First {#explicit}\n\n# T {id=}\n\n# :n[Label :n[`Code`]] $Formula$\n\n"
+                                         ":n{#first-1}\n\n[^f]: # First\n\n"
+                                         "# `x{#false k=`[First]}\n\n# \xe4\xb8\xad\xe6\x96\x87\n";
+
 static const char OOM_CORPUS[] = "`x`{#c .one .two k=1 k=2} <https://example.com>{.external}\n\n"
                                  "# Heading ## {#h .header}\n\nSetext {#s}\n===\n\n"
                                  "~~~Python {#f .numberLines startFrom=10}\nx\n~~~\n\n"
@@ -192,6 +198,7 @@ static const char OOM_INLINE_OWNERSHIP_CORPUS[] = "> [!tip]+ ==<i title=\"==hidd
                                                   "> - [✓] ==a %%==b%% c== ^[![[asset|100x145]]] #item#\n";
 
 static const oom_case OOM_CASES[] = {
+    {"heading declarations and anchors", OOM_HEADING_CORPUS, sizeof(OOM_HEADING_CORPUS) - 1},
     {"inline ownership composition", OOM_INLINE_OWNERSHIP_CORPUS, sizeof(OOM_INLINE_OWNERSHIP_CORPUS) - 1},
     {"image dimensions", OOM_IMAGE_DIMENSIONS_CORPUS, sizeof(OOM_IMAGE_DIMENSIONS_CORPUS) - 1},
     {"callouts", OOM_CALLOUT_CORPUS, sizeof(OOM_CALLOUT_CORPUS) - 1},

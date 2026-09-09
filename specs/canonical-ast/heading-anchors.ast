@@ -1,0 +1,46 @@
+Document scope=1:1..19:6 anchor=null attributes={} children=9
+├── Paragraph scope=1:1..1:46 anchor=null attributes={} children=5
+│   ├── Link scope=1:1..1:9 anchor=null attributes={} dest=url("#chapter") title=null children=1
+│   │   └── Text scope=1:2..1:8 anchor=null attributes={} literal="Chapter" children=0
+│   ├── Text scope=1:10..1:10 anchor=null attributes={} literal=" " children=0
+│   ├── Link scope=1:11..1:21 anchor=null attributes={} dest=url("#chapter") title=null children=1
+│   │   └── Text scope=1:12..1:18 anchor=null attributes={} literal="Chapter" children=0
+│   ├── Text scope=1:22..1:22 anchor=null attributes={} literal=" " children=0
+│   └── Link scope=1:23..1:46 anchor=null attributes={.jump k="1"} dest=url("#chapter") title=null children=1
+│       └── Text scope=1:24..1:25 anchor=null attributes={} literal="go" children=0
+├── Heading scope=3:1..3:9 anchor="chapter" attributes={} level=1 children=1
+│   └── Text scope=3:3..3:9 anchor=null attributes={} literal="Chapter" children=0
+├── Heading scope=5:1..5:9 anchor="chapter-2" attributes={} level=1 children=1
+│   └── Text scope=5:3..5:9 anchor=null attributes={} literal="Chapter" children=0
+├── Paragraph scope=7:1..7:14 anchor=null attributes={} children=1
+│   └── Directive scope=7:1..7:14 anchor="chapter-1" attributes={} name="n" children=0
+├── Heading scope=9:1..9:23 anchor="styled--code" attributes={} level=1 children=3
+│   ├── Emphasis scope=9:3..9:10 anchor=null attributes={} children=1
+│   │   └── Text scope=9:4..9:9 anchor=null attributes={} literal="Styled" children=0
+│   ├── Text scope=9:11..9:17 anchor=null attributes={} literal=" & " children=0
+│   └── Code scope=9:18..9:23 anchor=null attributes={} literal="Code" children=0
+├── Paragraph scope=11:1..11:23 anchor=null attributes={} children=1
+│   └── Link scope=11:1..11:23 anchor=null attributes={} dest=url("#styled--code") title=null children=3
+│       ├── Emphasis scope=11:2..11:9 anchor=null attributes={} children=1
+│       │   └── Text scope=11:3..11:8 anchor=null attributes={} literal="Styled" children=0
+│       ├── Text scope=11:10..11:16 anchor=null attributes={} literal=" & " children=0
+│       └── Code scope=11:17..11:22 anchor=null attributes={} literal="Code" children=0
+├── Heading scope=15:1..15:43 anchor="chapter-and-marked-inserted" attributes={} level=1 children=3
+│   ├── Link scope=15:3..15:11 anchor=null attributes={} dest=url("#chapter") title=null children=1
+│   │   └── Text scope=15:4..15:10 anchor=null attributes={} literal="Chapter" children=0
+│   ├── Text scope=15:12..15:16 anchor=null attributes={} literal=" and " children=0
+│   └── Directive scope=15:17..15:43 anchor=null attributes={} name="n" children=0
+│       └── DirectiveLabel scope=15:19..15:43 anchor=null attributes={} children=3
+│           ├── Mark scope=15:20..15:29 anchor=null attributes={} children=1
+│           │   └── Text scope=15:22..15:27 anchor=null attributes={} literal="Marked" children=0
+│           ├── Text scope=15:30..15:30 anchor=null attributes={} literal=" " children=0
+│           └── Insertion scope=15:31..15:42 anchor=null attributes={} children=1
+│               └── Text scope=15:33..15:40 anchor=null attributes={} literal="Inserted" children=0
+├── Heading scope=17:1..17:6 anchor="ab" attributes={} level=1 children=1
+│   └── Text scope=17:3..17:6 anchor=null attributes={} literal="A]B" children=0
+├── Paragraph scope=19:1..19:6 anchor=null attributes={} children=1
+│   └── Link scope=19:1..19:6 anchor=null attributes={} dest=url("#ab") title=null children=1
+│       └── Text scope=19:2..19:5 anchor=null attributes={} literal="A]B" children=0
+└── Footnote scope=13:1..14:0 id="note" children=1
+    └── Heading scope=13:10..13:18 anchor="chapter-3" attributes={} level=1 children=1
+        └── Text scope=13:12..13:18 anchor=null attributes={} literal="Chapter" children=0

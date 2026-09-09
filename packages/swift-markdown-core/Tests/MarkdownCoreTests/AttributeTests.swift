@@ -100,6 +100,34 @@ extension APISuite {
 }
 
 extension ErrorsSuite {
+    @Test("forward heading references share the final target after native release")
+    func sharedHeadingResource() throws {
+        let anchor = String(repeating: "a", count: 1024)
+        let count = 5_000
+        let document = try Document.parse(
+            String(repeating: "[Target]\n\n", count: count)
+                + "# Target {#\(anchor) .heading k=1}\n"
+        )
+        let links = try document.content.prefix(count).map {
+            try #require(($0 as? Paragraph)?.content.first as? Link)
+        }
+        #expect(document.content[count].anchor == anchor)
+        guard case .url(var first) = links[0].dest else {
+            Issue.record("a heading reference is the url branch")
+            return
+        }
+        #expect(first == "#" + anchor)
+        let storage = first.withUTF8 { UnsafeRawPointer($0.baseAddress!) }
+        for link in links {
+            #expect(link.anchor == nil && link.title == nil && link.attributes == .empty)
+            guard case .url(var url) = link.dest else {
+                Issue.record("a heading reference is the url branch")
+                continue
+            }
+            #expect(url.withUTF8 { UnsafeRawPointer($0.baseAddress!) } == storage)
+        }
+    }
+
     @Test("every occurrence of one reference definition materializes one resource")
     func sharedResource() throws {
         // M2: the C tree shares one resource across every occurrence of a

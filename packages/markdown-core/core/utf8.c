@@ -209,3 +209,20 @@ int markdown_core_utf8proc_is_punctuation(int32_t uc) {
 }
 
 #include "unicode_categories.inc"
+
+#include "anchor_scalars.inc"
+
+int32_t markdown_core_utf8proc_anchor_scalar(int32_t uc) {
+    size_t low = 0, high = sizeof(anchor_scalars) / sizeof(*anchor_scalars);
+    while (low < high) {
+        size_t mid = low + (high - low) / 2;
+        if (uc < anchor_scalars[mid][0]) {
+            high = mid;
+        } else if (uc > anchor_scalars[mid][1]) {
+            low = mid + 1;
+        } else {
+            return uc + anchor_scalars[mid][2];
+        }
+    }
+    return 0;
+}

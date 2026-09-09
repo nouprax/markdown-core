@@ -1,0 +1,965 @@
+# Heading anchors and implicit references
+
+```````````````````````````````` example
+# My Header
+
+A paragraph.
+.
+Document scope=1:1..3:12 anchor=null attributes={} children=2
+├── Heading scope=1:1..1:11 anchor="my-header" attributes={} level=1 children=1
+│   └── Text scope=1:3..1:11 anchor=null attributes={} literal="My Header" children=0
+└── Paragraph scope=3:1..3:12 anchor=null attributes={} children=1
+    └── Text scope=3:1..3:12 anchor=null attributes={} literal="A paragraph." children=0
+````````````````````````````````
+
+```````````````````````````````` example
+# My Header
+
+## My Header
+.
+Document scope=1:1..3:12 anchor=null attributes={} children=2
+├── Heading scope=1:1..1:11 anchor="my-header" attributes={} level=1 children=1
+│   └── Text scope=1:3..1:11 anchor=null attributes={} literal="My Header" children=0
+└── Heading scope=3:1..3:12 anchor="my-header-1" attributes={} level=2 children=1
+    └── Text scope=3:4..3:12 anchor=null attributes={} literal="My Header" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+# T {#x}
+
+# x
+.
+Document scope=1:1..3:3 anchor=null attributes={} children=2
+├── Heading scope=1:1..1:8 anchor="x" attributes={} level=1 children=1
+│   └── Text scope=1:3..1:3 anchor=null attributes={} literal="T" children=0
+└── Heading scope=3:1..3:3 anchor="x-1" attributes={} level=1 children=1
+    └── Text scope=3:3..3:3 anchor=null attributes={} literal="x" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+# Hello, World!
+
+# 1. Intro
+
+# A.B
+
+# :tada: Party
+
+# *Em* and `code`
+
+# !!!
+
+# Ünïcode Ĝ
+
+#   spaced   words
+.
+Document scope=1:1..15:18 anchor=null attributes={} children=8
+├── Heading scope=1:1..1:15 anchor="hello-world" attributes={} level=1 children=1
+│   └── Text scope=1:3..1:15 anchor=null attributes={} literal="Hello, World!" children=0
+├── Heading scope=3:1..3:10 anchor="1-intro" attributes={} level=1 children=1
+│   └── Text scope=3:3..3:10 anchor=null attributes={} literal="1. Intro" children=0
+├── Heading scope=5:1..5:5 anchor="ab" attributes={} level=1 children=1
+│   └── Text scope=5:3..5:5 anchor=null attributes={} literal="A.B" children=0
+├── Heading scope=7:1..7:14 anchor="tada-party" attributes={} level=1 children=1
+│   └── Text scope=7:3..7:14 anchor=null attributes={} literal=":tada: Party" children=0
+├── Heading scope=9:1..9:17 anchor="em-and-code" attributes={} level=1 children=3
+│   ├── Emphasis scope=9:3..9:6 anchor=null attributes={} children=1
+│   │   └── Text scope=9:4..9:5 anchor=null attributes={} literal="Em" children=0
+│   ├── Text scope=9:7..9:11 anchor=null attributes={} literal=" and " children=0
+│   └── Code scope=9:12..9:17 anchor=null attributes={} literal="code" children=0
+├── Heading scope=11:1..11:5 anchor="section" attributes={} level=1 children=1
+│   └── Text scope=11:3..11:5 anchor=null attributes={} literal="!!!" children=0
+├── Heading scope=13:1..13:14 anchor="ünïcode-ĝ" attributes={} level=1 children=1
+│   └── Text scope=13:3..13:14 anchor=null attributes={} literal="Ünïcode Ĝ" children=0
+└── Heading scope=15:1..15:18 anchor="spaced---words" attributes={} level=1 children=1
+    └── Text scope=15:5..15:18 anchor=null attributes={} literal="spaced   words" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+# First chapter
+
+[First chapter] [First chapter][] [go there][First chapter]
+.
+Document scope=1:1..3:59 anchor=null attributes={} children=2
+├── Heading scope=1:1..1:15 anchor="first-chapter" attributes={} level=1 children=1
+│   └── Text scope=1:3..1:15 anchor=null attributes={} literal="First chapter" children=0
+└── Paragraph scope=3:1..3:59 anchor=null attributes={} children=5
+    ├── Link scope=3:1..3:15 anchor=null attributes={} dest=url("#first-chapter") title=null children=1
+    │   └── Text scope=3:2..3:14 anchor=null attributes={} literal="First chapter" children=0
+    ├── Text scope=3:16..3:16 anchor=null attributes={} literal=" " children=0
+    ├── Link scope=3:17..3:33 anchor=null attributes={} dest=url("#first-chapter") title=null children=1
+    │   └── Text scope=3:18..3:30 anchor=null attributes={} literal="First chapter" children=0
+    ├── Text scope=3:34..3:34 anchor=null attributes={} literal=" " children=0
+    └── Link scope=3:35..3:59 anchor=null attributes={} dest=url("#first-chapter") title=null children=1
+        └── Text scope=3:36..3:43 anchor=null attributes={} literal="go there" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+# First chapter
+
+[First chapter]
+
+[First chapter]: /explicit
+.
+Document scope=1:1..5:26 anchor=null attributes={} children=2
+├── Heading scope=1:1..1:15 anchor="first-chapter" attributes={} level=1 children=1
+│   └── Text scope=1:3..1:15 anchor=null attributes={} literal="First chapter" children=0
+└── Paragraph scope=3:1..3:15 anchor=null attributes={} children=1
+    └── Link scope=3:1..3:15 anchor=null attributes={} dest=url("/explicit") title=null children=1
+        └── Text scope=3:2..3:14 anchor=null attributes={} literal="First chapter" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+# *Foo*
+
+[*Foo*] [Foo]
+.
+Document scope=1:1..3:13 anchor=null attributes={} children=2
+├── Heading scope=1:1..1:7 anchor="foo" attributes={} level=1 children=1
+│   └── Emphasis scope=1:3..1:7 anchor=null attributes={} children=1
+│       └── Text scope=1:4..1:6 anchor=null attributes={} literal="Foo" children=0
+└── Paragraph scope=3:1..3:13 anchor=null attributes={} children=2
+    ├── Link scope=3:1..3:7 anchor=null attributes={} dest=url("#foo") title=null children=1
+    │   └── Emphasis scope=3:2..3:6 anchor=null attributes={} children=1
+    │       └── Text scope=3:3..3:5 anchor=null attributes={} literal="Foo" children=0
+    └── Text scope=3:8..3:13 anchor=null attributes={} literal=" [Foo]" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+# Dup
+
+# Dup
+
+[Dup]
+.
+Document scope=1:1..5:5 anchor=null attributes={} children=3
+├── Heading scope=1:1..1:5 anchor="dup" attributes={} level=1 children=1
+│   └── Text scope=1:3..1:5 anchor=null attributes={} literal="Dup" children=0
+├── Heading scope=3:1..3:5 anchor="dup-1" attributes={} level=1 children=1
+│   └── Text scope=3:3..3:5 anchor=null attributes={} literal="Dup" children=0
+└── Paragraph scope=5:1..5:5 anchor=null attributes={} children=1
+    └── Link scope=5:1..5:5 anchor=null attributes={} dest=url("#dup") title=null children=1
+        └── Text scope=5:2..5:4 anchor=null attributes={} literal="Dup" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+# My Header
+
+[[#My Header]]
+.
+Document scope=1:1..3:14 anchor=null attributes={} children=2
+├── Heading scope=1:1..1:11 anchor="my-header" attributes={} level=1 children=1
+│   └── Text scope=1:3..1:11 anchor=null attributes={} literal="My Header" children=0
+└── Paragraph scope=3:1..3:14 anchor=null attributes={} children=1
+    └── CrossLink scope=3:1..3:14 anchor=null attributes={} dest=cross(path="",anchor="My Header") label=null children=0
+````````````````````````````````
+
+## formatting
+
+```````````````````````````````` example
+# **Strong** *Em* ~~Strike~~ ==Mark== ++Insert++
+.
+Document scope=1:1..1:48 anchor=null attributes={} children=1
+└── Heading scope=1:1..1:48 anchor="strong-em-strike-mark-insert" attributes={} level=1 children=9
+    ├── Strong scope=1:3..1:12 anchor=null attributes={} children=1
+    │   └── Text scope=1:5..1:10 anchor=null attributes={} literal="Strong" children=0
+    ├── Text scope=1:13..1:13 anchor=null attributes={} literal=" " children=0
+    ├── Emphasis scope=1:14..1:17 anchor=null attributes={} children=1
+    │   └── Text scope=1:15..1:16 anchor=null attributes={} literal="Em" children=0
+    ├── Text scope=1:18..1:18 anchor=null attributes={} literal=" " children=0
+    ├── Strikethrough scope=1:19..1:28 anchor=null attributes={} children=1
+    │   └── Text scope=1:21..1:26 anchor=null attributes={} literal="Strike" children=0
+    ├── Text scope=1:29..1:29 anchor=null attributes={} literal=" " children=0
+    ├── Mark scope=1:30..1:37 anchor=null attributes={} children=1
+    │   └── Text scope=1:32..1:35 anchor=null attributes={} literal="Mark" children=0
+    ├── Text scope=1:38..1:38 anchor=null attributes={} literal=" " children=0
+    └── Insertion scope=1:39..1:48 anchor=null attributes={} children=1
+        └── Text scope=1:41..1:46 anchor=null attributes={} literal="Insert" children=0
+````````````````````````````````
+
+## links and media
+
+```````````````````````````````` example
+# [Label](/url) ![Alt *Text*](/img) <https://Example.com/X>
+.
+Document scope=1:1..1:59 anchor=null attributes={} children=1
+└── Heading scope=1:1..1:59 anchor="label-alt-text-httpsexamplecomx" attributes={} level=1 children=5
+    ├── Link scope=1:3..1:15 anchor=null attributes={} dest=url("/url") title=null children=1
+    │   └── Text scope=1:4..1:8 anchor=null attributes={} literal="Label" children=0
+    ├── Text scope=1:16..1:16 anchor=null attributes={} literal=" " children=0
+    ├── Media scope=1:17..1:35 anchor=null attributes={} dest=url("/img") title=null dimensions=null children=2
+    │   ├── Text scope=1:19..1:22 anchor=null attributes={} literal="Alt " children=0
+    │   └── Emphasis scope=1:23..1:28 anchor=null attributes={} children=1
+    │       └── Text scope=1:24..1:27 anchor=null attributes={} literal="Text" children=0
+    ├── Text scope=1:36..1:36 anchor=null attributes={} literal=" " children=0
+    └── Link scope=1:37..1:59 anchor=null attributes={} dest=url("https://Example.com/X") title=null children=1
+        └── Text scope=1:38..1:58 anchor=null attributes={} literal="https://Example.com/X" children=0
+````````````````````````````````
+
+## formula and opaque omissions
+
+```````````````````````````````` example
+# $A+B$ <i>Visible</i> <!--hidden--> %%hide%% [^f]
+
+[^f]: omitted
+.
+Document scope=1:1..3:13 anchor=null attributes={} children=1
+├── Heading scope=1:1..1:50 anchor="ab-visible---" attributes={} level=1 children=11
+│   ├── Formula scope=1:3..1:7 anchor=null attributes={} mode=embedded literal="A+B" children=0
+│   ├── Text scope=1:8..1:8 anchor=null attributes={} literal=" " children=0
+│   ├── HTML scope=1:9..1:11 anchor=null attributes={} literal="<i>" children=0
+│   ├── Text scope=1:12..1:18 anchor=null attributes={} literal="Visible" children=0
+│   ├── HTML scope=1:19..1:22 anchor=null attributes={} literal="</i>" children=0
+│   ├── Text scope=1:23..1:23 anchor=null attributes={} literal=" " children=0
+│   ├── Comment scope=1:24..1:36 anchor=null attributes={} literal="hidden" children=0
+│   ├── Text scope=1:37..1:37 anchor=null attributes={} literal=" " children=0
+│   ├── Comment scope=1:38..1:45 anchor=null attributes={} literal="hide" children=0
+│   ├── Text scope=1:46..1:46 anchor=null attributes={} literal=" " children=0
+│   └── Cite scope=1:47..1:50 anchor=null attributes={} children=1
+│       └── Citation scope=1:48..1:49 referent=footnote(id="f") children=0
+│           ├── CitationPrefix children=0
+│           └── CitationSuffix children=0
+└── Footnote scope=3:1..3:13 id="f" children=1
+    └── Paragraph scope=3:7..3:13 anchor=null attributes={} children=1
+        └── Text scope=3:7..3:13 anchor=null attributes={} literal="omitted" children=0
+````````````````````````````````
+
+## soft and hard breaks
+
+```````````````````````````````` example
+One
+Two  
+Three\
+Four
+====
+.
+Document scope=1:1..5:4 anchor=null attributes={} children=1
+└── Heading scope=1:1..5:4 anchor="one-two-three-four" attributes={} level=1 children=7
+    ├── Text scope=1:1..1:3 anchor=null attributes={} literal="One" children=0
+    ├── SoftBreak scope=1:4..1:4 anchor=null attributes={} children=0
+    ├── Text scope=2:1..2:5 anchor=null attributes={} literal="Two" children=0
+    ├── LineBreak scope=2:6..2:6 anchor=null attributes={} children=0
+    ├── Text scope=3:1..3:5 anchor=null attributes={} literal="Three" children=0
+    ├── LineBreak scope=3:6..3:7 anchor=null attributes={} children=0
+    └── Text scope=4:1..4:4 anchor=null attributes={} literal="Four" children=0
+````````````````````````````````
+
+## cross links and embeds
+
+```````````````````````````````` example
+# [[Note Name#Heading!]] ![[Pic#Anchor|Label]] [[#Only]] [[N|]] ![[N#A]]
+.
+Document scope=1:1..1:72 anchor=null attributes={} children=1
+└── Heading scope=1:1..1:72 anchor="note-nameheading-label-only--na" attributes={} level=1 children=9
+    ├── CrossLink scope=1:3..1:24 anchor=null attributes={} dest=cross(path="Note Name",anchor="Heading!") label=null children=0
+    ├── Text scope=1:25..1:25 anchor=null attributes={} literal=" " children=0
+    ├── CrossEmbedded scope=1:26..1:46 anchor=null attributes={} dest=cross(path="Pic",anchor="Anchor") label="Label" dimensions=null children=0
+    ├── Text scope=1:47..1:47 anchor=null attributes={} literal=" " children=0
+    ├── CrossLink scope=1:48..1:56 anchor=null attributes={} dest=cross(path="",anchor="Only") label=null children=0
+    ├── Text scope=1:57..1:57 anchor=null attributes={} literal=" " children=0
+    ├── CrossLink scope=1:58..1:63 anchor=null attributes={} dest=cross(path="N",anchor=null) label="" children=0
+    ├── Text scope=1:64..1:64 anchor=null attributes={} literal=" " children=0
+    └── CrossEmbedded scope=1:65..1:72 anchor=null attributes={} dest=cross(path="N",anchor="A") label=null dimensions=null children=0
+````````````````````````````````
+
+## directive field nesting
+
+```````````````````````````````` example
+# :n[One :m[Two] Three] End
+.
+Document scope=1:1..1:27 anchor=null attributes={} children=1
+└── Heading scope=1:1..1:27 anchor="one-two-three-end" attributes={} level=1 children=2
+    ├── Directive scope=1:3..1:23 anchor=null attributes={} name="n" children=0
+    │   └── DirectiveLabel scope=1:5..1:23 anchor=null attributes={} children=3
+    │       ├── Text scope=1:6..1:9 anchor=null attributes={} literal="One " children=0
+    │       ├── Directive scope=1:10..1:16 anchor=null attributes={} name="m" children=0
+    │       │   └── DirectiveLabel scope=1:12..1:16 anchor=null attributes={} children=1
+    │       │       └── Text scope=1:13..1:15 anchor=null attributes={} literal="Two" children=0
+    │       └── Text scope=1:17..1:22 anchor=null attributes={} literal=" Three" children=0
+    └── Text scope=1:24..1:27 anchor=null attributes={} literal=" End" children=0
+````````````````````````````````
+
+## Unicode simple lowercase and categories
+
+```````````````````````````````` example
+# İ ſ ẞ Σ ς Ⅳ ² é a‿b a⁀b _ A—B 😀
+.
+Document scope=1:1..1:53 anchor=null attributes={} children=1
+└── Heading scope=1:1..1:53 anchor="i-ſ-ß-σ-ς-ⅳ-²-é-a‿b-a⁀b-_-ab-" attributes={} level=1 children=1
+    └── Text scope=1:3..1:53 anchor=null attributes={} literal="İ ſ ẞ Σ ς Ⅳ ² é a‿b a⁀b _ A—B 😀" children=0
+````````````````````````````````
+
+## Unicode whitespace
+
+```````````````````````````````` example
+# A        　B
+.
+Document scope=1:1..1:33 anchor=null attributes={} children=1
+└── Heading scope=1:1..1:33 anchor="a-----------b" attributes={} level=1 children=1
+    └── Text scope=1:3..1:33 anchor=null attributes={} literal="A\u000b        　B" children=0
+````````````````````````````````
+
+## empty and cleared identifiers
+
+```````````````````````````````` example
+#
+
+# !!!
+
+# X {#given id=}
+.
+Document scope=1:1..5:16 anchor=null attributes={} children=3
+├── Heading scope=1:1..1:1 anchor="section" attributes={} level=1 children=0
+├── Heading scope=3:1..3:5 anchor="section-1" attributes={} level=1 children=1
+│   └── Text scope=3:3..3:5 anchor=null attributes={} literal="!!!" children=0
+└── Heading scope=5:1..5:16 anchor="x" attributes={} level=1 children=1
+    └── Text scope=5:3..5:3 anchor=null attributes={} literal="X" children=0
+````````````````````````````````
+
+## smallest free suffix
+
+```````````````````````````````` example
+# x
+
+# x
+
+# x-1
+
+# x
+
+:n{#x-2}
+
+:n{#x-4}
+.
+Document scope=1:1..11:8 anchor=null attributes={} children=6
+├── Heading scope=1:1..1:3 anchor="x" attributes={} level=1 children=1
+│   └── Text scope=1:3..1:3 anchor=null attributes={} literal="x" children=0
+├── Heading scope=3:1..3:3 anchor="x-1" attributes={} level=1 children=1
+│   └── Text scope=3:3..3:3 anchor=null attributes={} literal="x" children=0
+├── Heading scope=5:1..5:5 anchor="x-1-1" attributes={} level=1 children=1
+│   └── Text scope=5:3..5:5 anchor=null attributes={} literal="x-1" children=0
+├── Heading scope=7:1..7:3 anchor="x-3" attributes={} level=1 children=1
+│   └── Text scope=7:3..7:3 anchor=null attributes={} literal="x" children=0
+├── Paragraph scope=9:1..9:8 anchor=null attributes={} children=1
+│   └── Directive scope=9:1..9:8 anchor="x-2" attributes={} name="n" children=0
+└── Paragraph scope=11:1..11:8 anchor=null attributes={} children=1
+    └── Directive scope=11:1..11:8 anchor="x-4" attributes={} name="n" children=0
+````````````````````````````````
+
+## explicit duplicates retained
+
+```````````````````````````````` example
+# A {#x}
+
+# B {#x}
+
+# x
+.
+Document scope=1:1..5:3 anchor=null attributes={} children=3
+├── Heading scope=1:1..1:8 anchor="x" attributes={} level=1 children=1
+│   └── Text scope=1:3..1:3 anchor=null attributes={} literal="A" children=0
+├── Heading scope=3:1..3:8 anchor="x" attributes={} level=1 children=1
+│   └── Text scope=3:3..3:3 anchor=null attributes={} literal="B" children=0
+└── Heading scope=5:1..5:3 anchor="x-1" attributes={} level=1 children=1
+    └── Text scope=5:3..5:3 anchor=null attributes={} literal="x" children=0
+````````````````````````````````
+
+## source order including footnotes
+
+```````````````````````````````` example
+[^f]: # Dup
+
+# Dup
+
+[Dup] [^f]
+.
+Document scope=1:1..5:10 anchor=null attributes={} children=2
+├── Heading scope=3:1..3:5 anchor="dup-1" attributes={} level=1 children=1
+│   └── Text scope=3:3..3:5 anchor=null attributes={} literal="Dup" children=0
+├── Paragraph scope=5:1..5:10 anchor=null attributes={} children=3
+│   ├── Link scope=5:1..5:5 anchor=null attributes={} dest=url("#dup") title=null children=1
+│   │   └── Text scope=5:2..5:4 anchor=null attributes={} literal="Dup" children=0
+│   ├── Text scope=5:6..5:6 anchor=null attributes={} literal=" " children=0
+│   └── Cite scope=5:7..5:10 anchor=null attributes={} children=1
+│       └── Citation scope=5:8..5:9 referent=footnote(id="f") children=0
+│           ├── CitationPrefix children=0
+│           └── CitationSuffix children=0
+└── Footnote scope=1:1..2:0 id="f" children=1
+    └── Heading scope=1:7..1:11 anchor="dup" attributes={} level=1 children=1
+        └── Text scope=1:9..1:11 anchor=null attributes={} literal="Dup" children=0
+````````````````````````````````
+
+## heading references inside a heading
+
+```````````````````````````````` example
+# [Next] and *more*
+
+# Next
+.
+Document scope=1:1..3:6 anchor=null attributes={} children=2
+├── Heading scope=1:1..1:19 anchor="next-and-more" attributes={} level=1 children=3
+│   ├── Link scope=1:3..1:8 anchor=null attributes={} dest=url("#next") title=null children=1
+│   │   └── Text scope=1:4..1:7 anchor=null attributes={} literal="Next" children=0
+│   ├── Text scope=1:9..1:13 anchor=null attributes={} literal=" and " children=0
+│   └── Emphasis scope=1:14..1:19 anchor=null attributes={} children=1
+│       └── Text scope=1:15..1:18 anchor=null attributes={} literal="more" children=0
+└── Heading scope=3:1..3:6 anchor="next" attributes={} level=1 children=1
+    └── Text scope=3:3..3:6 anchor=null attributes={} literal="Next" children=0
+````````````````````````````````
+
+## source label preserves markup and entities
+
+```````````````````````````````` example
+# *Straße*
+
+[*STRASSE*] [Straße]
+
+# A &amp; B
+
+[A &amp; B] [A & B]
+.
+Document scope=1:1..7:19 anchor=null attributes={} children=4
+├── Heading scope=1:1..1:11 anchor="straße" attributes={} level=1 children=1
+│   └── Emphasis scope=1:3..1:11 anchor=null attributes={} children=1
+│       └── Text scope=1:4..1:10 anchor=null attributes={} literal="Straße" children=0
+├── Paragraph scope=3:1..3:21 anchor=null attributes={} children=2
+│   ├── Link scope=3:1..3:11 anchor=null attributes={} dest=url("#straße") title=null children=1
+│   │   └── Emphasis scope=3:2..3:10 anchor=null attributes={} children=1
+│   │       └── Text scope=3:3..3:9 anchor=null attributes={} literal="STRASSE" children=0
+│   └── Text scope=3:12..3:21 anchor=null attributes={} literal=" [Straße]" children=0
+├── Heading scope=5:1..5:11 anchor="a--b" attributes={} level=1 children=1
+│   └── Text scope=5:3..5:11 anchor=null attributes={} literal="A & B" children=0
+└── Paragraph scope=7:1..7:19 anchor=null attributes={} children=2
+    ├── Link scope=7:1..7:11 anchor=null attributes={} dest=url("#a--b") title=null children=1
+    │   └── Text scope=7:2..7:10 anchor=null attributes={} literal="A & B" children=0
+    └── Text scope=7:12..7:19 anchor=null attributes={} literal=" [A & B]" children=0
+````````````````````````````````
+
+## escaped and forbidden brackets
+
+```````````````````````````````` example
+# A\]B
+
+[A\]B] [go][A\]B]
+
+# C]D
+
+[C\]D]
+.
+Document scope=1:1..7:6 anchor=null attributes={} children=4
+├── Heading scope=1:1..1:6 anchor="ab" attributes={} level=1 children=1
+│   └── Text scope=1:3..1:6 anchor=null attributes={} literal="A]B" children=0
+├── Paragraph scope=3:1..3:17 anchor=null attributes={} children=3
+│   ├── Link scope=3:1..3:6 anchor=null attributes={} dest=url("#ab") title=null children=1
+│   │   └── Text scope=3:2..3:5 anchor=null attributes={} literal="A]B" children=0
+│   ├── Text scope=3:7..3:7 anchor=null attributes={} literal=" " children=0
+│   └── Link scope=3:8..3:17 anchor=null attributes={} dest=url("#ab") title=null children=1
+│       └── Text scope=3:9..3:10 anchor=null attributes={} literal="go" children=0
+├── Heading scope=5:1..5:5 anchor="cd" attributes={} level=1 children=1
+│   └── Text scope=5:3..5:5 anchor=null attributes={} literal="C]D" children=0
+└── Paragraph scope=7:1..7:6 anchor=null attributes={} children=1
+    └── Text scope=7:1..7:6 anchor=null attributes={} literal="[C]D]" children=0
+````````````````````````````````
+
+## heading attribute source excludes records
+
+```````````````````````````````` example
+[Title] [go][Title]
+
+# Title ## {#dest .c k="[Other]"}
+
+# Other
+.
+Document scope=1:1..5:7 anchor=null attributes={} children=3
+├── Paragraph scope=1:1..1:19 anchor=null attributes={} children=3
+│   ├── Link scope=1:1..1:7 anchor=null attributes={} dest=url("#dest") title=null children=1
+│   │   └── Text scope=1:2..1:6 anchor=null attributes={} literal="Title" children=0
+│   ├── Text scope=1:8..1:8 anchor=null attributes={} literal=" " children=0
+│   └── Link scope=1:9..1:19 anchor=null attributes={} dest=url("#dest") title=null children=1
+│       └── Text scope=1:10..1:11 anchor=null attributes={} literal="go" children=0
+├── Heading scope=3:1..3:33 anchor="dest" attributes={.c k="[Other]"} level=1 children=1
+│   └── Text scope=3:3..3:7 anchor=null attributes={} literal="Title" children=0
+└── Heading scope=5:1..5:7 anchor="other" attributes={} level=1 children=1
+    └── Text scope=5:3..5:7 anchor=null attributes={} literal="Other" children=0
+````````````````````````````````
+
+## opaque body can cross a candidate attribute opener
+
+```````````````````````````````` example
+[`x{#false k=`}] [`x]
+
+# `x{#false k=`}
+.
+Document scope=1:1..3:16 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:21 anchor=null attributes={} children=2
+│   ├── Link scope=1:1..1:16 anchor=null attributes={} dest=url("#xfalse-k") title=null children=2
+│   │   ├── Code scope=1:2..1:14 anchor=null attributes={} literal="x{#false k=" children=0
+│   │   └── Text scope=1:15..1:15 anchor=null attributes={} literal="}" children=0
+│   └── Text scope=1:17..1:21 anchor=null attributes={} literal=" [`x]" children=0
+└── Heading scope=3:1..3:16 anchor="xfalse-k" attributes={} level=1 children=2
+    ├── Code scope=3:3..3:15 anchor=null attributes={} literal="x{#false k=" children=0
+    └── Text scope=3:16..3:16 anchor=null attributes={} literal="}" children=0
+````````````````````````````````
+
+## resume after opaque token before a reference
+
+```````````````````````````````` example
+# `x{#false k=`[Later]}
+
+# Later
+.
+Document scope=1:1..3:7 anchor=null attributes={} children=2
+├── Heading scope=1:1..1:23 anchor="xfalse-klater" attributes={} level=1 children=3
+│   ├── Code scope=1:3..1:15 anchor=null attributes={} literal="x{#false k=" children=0
+│   ├── Link scope=1:16..1:22 anchor=null attributes={} dest=url("#later") title=null children=1
+│   │   └── Text scope=1:17..1:21 anchor=null attributes={} literal="Later" children=0
+│   └── Text scope=1:23..1:23 anchor=null attributes={} literal="}" children=0
+└── Heading scope=3:1..3:7 anchor="later" attributes={} level=1 children=1
+    └── Text scope=3:3..3:7 anchor=null attributes={} literal="Later" children=0
+````````````````````````````````
+
+## declaration opacity in reference occurrences
+
+```````````````````````````````` example
+# Ref
+
+`[Ref]` <a title="[Ref]"> $[Ref]$ %%[Ref]%% [[Ref]] [Ref]
+.
+Document scope=1:1..3:57 anchor=null attributes={} children=2
+├── Heading scope=1:1..1:5 anchor="ref" attributes={} level=1 children=1
+│   └── Text scope=1:3..1:5 anchor=null attributes={} literal="Ref" children=0
+└── Paragraph scope=3:1..3:57 anchor=null attributes={} children=11
+    ├── Code scope=3:1..3:7 anchor=null attributes={} literal="[Ref]" children=0
+    ├── Text scope=3:8..3:8 anchor=null attributes={} literal=" " children=0
+    ├── HTML scope=3:9..3:25 anchor=null attributes={} literal="<a title=\"[Ref]\">" children=0
+    ├── Text scope=3:26..3:26 anchor=null attributes={} literal=" " children=0
+    ├── Formula scope=3:27..3:33 anchor=null attributes={} mode=embedded literal="[Ref]" children=0
+    ├── Text scope=3:34..3:34 anchor=null attributes={} literal=" " children=0
+    ├── Comment scope=3:35..3:43 anchor=null attributes={} literal="[Ref]" children=0
+    ├── Text scope=3:44..3:44 anchor=null attributes={} literal=" " children=0
+    ├── CrossLink scope=3:45..3:51 anchor=null attributes={} dest=cross(path="Ref",anchor=null) label=null children=0
+    ├── Text scope=3:52..3:52 anchor=null attributes={} literal=" " children=0
+    └── Link scope=3:53..3:57 anchor=null attributes={} dest=url("#ref") title=null children=1
+        └── Text scope=3:54..3:56 anchor=null attributes={} literal="Ref" children=0
+````````````````````````````````
+
+## occurrence metadata
+
+```````````````````````````````` example
+[Ref]{#own .c k=1} [Ref][] [go][Ref]
+
+# Ref {#target .heading k=2}
+.
+Document scope=1:1..3:28 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:36 anchor=null attributes={} children=5
+│   ├── Link scope=1:1..1:5 anchor=null attributes={} dest=url("#target") title=null children=1
+│   │   └── Text scope=1:2..1:4 anchor=null attributes={} literal="Ref" children=0
+│   ├── Text scope=1:6..1:19 anchor=null attributes={} literal="{#own .c k=1} " children=0
+│   ├── Link scope=1:20..1:26 anchor=null attributes={} dest=url("#target") title=null children=1
+│   │   └── Text scope=1:21..1:23 anchor=null attributes={} literal="Ref" children=0
+│   ├── Text scope=1:27..1:27 anchor=null attributes={} literal=" " children=0
+│   └── Link scope=1:28..1:36 anchor=null attributes={} dest=url("#target") title=null children=1
+│       └── Text scope=1:29..1:30 anchor=null attributes={} literal="go" children=0
+└── Heading scope=3:1..3:28 anchor="target" attributes={.heading k="2"} level=1 children=1
+    └── Text scope=3:3..3:5 anchor=null attributes={} literal="Ref" children=0
+````````````````````````````````
+
+## explicit definition takes precedence regardless of source order
+
+```````````````````````````````` example
+[Ref]
+
+# Ref
+
+[Ref]: /explicit "title" {#local .a}
+.
+Document scope=1:1..5:36 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:5 anchor=null attributes={} children=1
+│   └── Link scope=1:1..1:5 anchor="local" attributes={.a} dest=url("/explicit") title="title" children=1
+│       └── Text scope=1:2..1:4 anchor=null attributes={} literal="Ref" children=0
+└── Heading scope=3:1..3:5 anchor="ref" attributes={} level=1 children=1
+    └── Text scope=3:3..3:5 anchor=null attributes={} literal="Ref" children=0
+````````````````````````````````
+
+## normalized duplicate label targets first heading
+
+```````````````````````````````` example
+[A B]
+
+# A   B {#first}
+
+# a b {#second}
+.
+Document scope=1:1..5:15 anchor=null attributes={} children=3
+├── Paragraph scope=1:1..1:5 anchor=null attributes={} children=1
+│   └── Link scope=1:1..1:5 anchor=null attributes={} dest=url("#first") title=null children=1
+│       └── Text scope=1:2..1:4 anchor=null attributes={} literal="A B" children=0
+├── Heading scope=3:1..3:16 anchor="first" attributes={} level=1 children=1
+│   └── Text scope=3:3..3:7 anchor=null attributes={} literal="A   B" children=0
+└── Heading scope=5:1..5:15 anchor="second" attributes={} level=1 children=1
+    └── Text scope=5:3..5:5 anchor=null attributes={} literal="a b" children=0
+````````````````````````````````
+
+## self reference and invalid nested link fallback
+
+```````````````````````````````` example
+# Self
+
+[Self [Self]](/outer) [Self](missing [Self]) [missing][Self]
+.
+Document scope=1:1..3:60 anchor=null attributes={} children=2
+├── Heading scope=1:1..1:6 anchor="self" attributes={} level=1 children=1
+│   └── Text scope=1:3..1:6 anchor=null attributes={} literal="Self" children=0
+└── Paragraph scope=3:1..3:60 anchor=null attributes={} children=8
+    ├── Text scope=3:1..3:6 anchor=null attributes={} literal="[Self " children=0
+    ├── Link scope=3:7..3:12 anchor=null attributes={} dest=url("#self") title=null children=1
+    │   └── Text scope=3:8..3:11 anchor=null attributes={} literal="Self" children=0
+    ├── Text scope=3:13..3:22 anchor=null attributes={} literal="](/outer) " children=0
+    ├── Link scope=3:23..3:28 anchor=null attributes={} dest=url("#self") title=null children=1
+    │   └── Text scope=3:24..3:27 anchor=null attributes={} literal="Self" children=0
+    ├── Text scope=3:29..3:37 anchor=null attributes={} literal="(missing " children=0
+    ├── Link scope=3:38..3:43 anchor=null attributes={} dest=url("#self") title=null children=1
+    │   └── Text scope=3:39..3:42 anchor=null attributes={} literal="Self" children=0
+    ├── Text scope=3:44..3:45 anchor=null attributes={} literal=") " children=0
+    └── Link scope=3:46..3:60 anchor=null attributes={} dest=url("#self") title=null children=1
+        └── Text scope=3:47..3:53 anchor=null attributes={} literal="missing" children=0
+````````````````````````````````
+
+## reserve inline code before synthesis
+
+```````````````````````````````` example
+# x
+
+`code`{#x}
+.
+Document scope=1:1..3:10 anchor=null attributes={} children=2
+├── Heading scope=1:1..1:3 anchor="x-1" attributes={} level=1 children=1
+│   └── Text scope=1:3..1:3 anchor=null attributes={} literal="x" children=0
+└── Paragraph scope=3:1..3:10 anchor=null attributes={} children=1
+    └── Code scope=3:1..3:10 anchor="x" attributes={} literal="code" children=0
+````````````````````````````````
+
+## reserve heading before synthesis
+
+```````````````````````````````` example
+# x
+
+# Other {#x}
+.
+Document scope=1:1..3:12 anchor=null attributes={} children=2
+├── Heading scope=1:1..1:3 anchor="x-1" attributes={} level=1 children=1
+│   └── Text scope=1:3..1:3 anchor=null attributes={} literal="x" children=0
+└── Heading scope=3:1..3:12 anchor="x" attributes={} level=1 children=1
+    └── Text scope=3:3..3:7 anchor=null attributes={} literal="Other" children=0
+````````````````````````````````
+
+## reserve fenced code before synthesis
+
+```````````````````````````````` example
+# x
+
+~~~ lang {#x}
+body
+~~~
+.
+Document scope=1:1..5:3 anchor=null attributes={} children=2
+├── Heading scope=1:1..1:3 anchor="x-1" attributes={} level=1 children=1
+│   └── Text scope=1:3..1:3 anchor=null attributes={} literal="x" children=0
+└── CodeBlock scope=3:1..5:3 anchor="x" attributes={} info="lang" language="lang" literal="body\n" fenced=true closed=true children=0
+````````````````````````````````
+
+## reserve direct link before synthesis
+
+```````````````````````````````` example
+# x
+
+[link](/url){#x}
+.
+Document scope=1:1..3:16 anchor=null attributes={} children=2
+├── Heading scope=1:1..1:3 anchor="x-1" attributes={} level=1 children=1
+│   └── Text scope=1:3..1:3 anchor=null attributes={} literal="x" children=0
+└── Paragraph scope=3:1..3:16 anchor=null attributes={} children=1
+    └── Link scope=3:1..3:16 anchor="x" attributes={} dest=url("/url") title=null children=1
+        └── Text scope=3:2..3:5 anchor=null attributes={} literal="link" children=0
+````````````````````````````````
+
+## reserve image before synthesis
+
+```````````````````````````````` example
+# x
+
+![image](/url){#x}
+.
+Document scope=1:1..3:18 anchor=null attributes={} children=2
+├── Heading scope=1:1..1:3 anchor="x-1" attributes={} level=1 children=1
+│   └── Text scope=1:3..1:3 anchor=null attributes={} literal="x" children=0
+└── Paragraph scope=3:1..3:18 anchor=null attributes={} children=1
+    └── Media scope=3:1..3:18 anchor="x" attributes={} dest=url("/url") title=null dimensions=null children=1
+        └── Text scope=3:3..3:7 anchor=null attributes={} literal="image" children=0
+````````````````````````````````
+
+## reserve autolink before synthesis
+
+```````````````````````````````` example
+# x
+
+<https://example.com>{#x}
+.
+Document scope=1:1..3:25 anchor=null attributes={} children=2
+├── Heading scope=1:1..1:3 anchor="x-1" attributes={} level=1 children=1
+│   └── Text scope=1:3..1:3 anchor=null attributes={} literal="x" children=0
+└── Paragraph scope=3:1..3:25 anchor=null attributes={} children=1
+    └── Link scope=3:1..3:25 anchor="x" attributes={} dest=url("https://example.com") title=null children=1
+        └── Text scope=3:2..3:20 anchor=null attributes={} literal="https://example.com" children=0
+````````````````````````````````
+
+## reserve referenced definition before synthesis
+
+```````````````````````````````` example
+# x
+
+[ref]
+
+[ref]: /url {#x}
+.
+Document scope=1:1..5:16 anchor=null attributes={} children=2
+├── Heading scope=1:1..1:3 anchor="x-1" attributes={} level=1 children=1
+│   └── Text scope=1:3..1:3 anchor=null attributes={} literal="x" children=0
+└── Paragraph scope=3:1..3:5 anchor=null attributes={} children=1
+    └── Link scope=3:1..3:5 anchor="x" attributes={} dest=url("/url") title=null children=1
+        └── Text scope=3:2..3:4 anchor=null attributes={} literal="ref" children=0
+````````````````````````````````
+
+## reserve block identifier before synthesis
+
+```````````````````````````````` example
+# x
+
+Paragraph #x#
+.
+Document scope=1:1..3:13 anchor=null attributes={} children=2
+├── Heading scope=1:1..1:3 anchor="x-1" attributes={} level=1 children=1
+│   └── Text scope=1:3..1:3 anchor=null attributes={} literal="x" children=0
+└── Paragraph scope=3:1..3:13 anchor="x" attributes={} children=1
+    └── Text scope=3:1..3:9 anchor=null attributes={} literal="Paragraph" children=0
+````````````````````````````````
+
+## reserve inline directive before synthesis
+
+```````````````````````````````` example
+# x
+
+:n{#x}
+.
+Document scope=1:1..3:6 anchor=null attributes={} children=2
+├── Heading scope=1:1..1:3 anchor="x-1" attributes={} level=1 children=1
+│   └── Text scope=1:3..1:3 anchor=null attributes={} literal="x" children=0
+└── Paragraph scope=3:1..3:6 anchor=null attributes={} children=1
+    └── Directive scope=3:1..3:6 anchor="x" attributes={} name="n" children=0
+````````````````````````````````
+
+## reserve block directive before synthesis
+
+```````````````````````````````` example
+# x
+
+:::n{#x}
+body
+:::
+.
+Document scope=1:1..5:3 anchor=null attributes={} children=2
+├── Heading scope=1:1..1:3 anchor="x-1" attributes={} level=1 children=1
+│   └── Text scope=1:3..1:3 anchor=null attributes={} literal="x" children=0
+└── DirectiveBlock scope=3:1..5:3 anchor="x" attributes={} name="n" children=1
+    └── Paragraph scope=4:1..4:4 anchor=null attributes={} children=1
+        └── Text scope=4:1..4:4 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## reserve directive label before synthesis
+
+```````````````````````````````` example
+# x
+
+:n[`code`{#x} end]
+.
+Document scope=1:1..3:18 anchor=null attributes={} children=2
+├── Heading scope=1:1..1:3 anchor="x-1" attributes={} level=1 children=1
+│   └── Text scope=1:3..1:3 anchor=null attributes={} literal="x" children=0
+└── Paragraph scope=3:1..3:18 anchor=null attributes={} children=1
+    └── Directive scope=3:1..3:18 anchor=null attributes={} name="n" children=0
+        └── DirectiveLabel scope=3:3..3:18 anchor=null attributes={} children=2
+            ├── Code scope=3:4..3:13 anchor="x" attributes={} literal="code" children=0
+            └── Text scope=3:14..3:17 anchor=null attributes={} literal=" end" children=0
+````````````````````````````````
+
+## reserve footnote explicit anchor before synthesis
+
+```````````````````````````````` example
+# x
+
+[^f]: para #x#
+.
+Document scope=1:1..3:14 anchor=null attributes={} children=1
+├── Heading scope=1:1..1:3 anchor="x-1" attributes={} level=1 children=1
+│   └── Text scope=1:3..1:3 anchor=null attributes={} literal="x" children=0
+└── Footnote scope=3:1..3:14 id="f" children=1
+    └── Paragraph scope=3:7..3:14 anchor="x" attributes={} children=1
+        └── Text scope=3:7..3:10 anchor=null attributes={} literal="para" children=0
+````````````````````````````````
+
+## unreferenced definitions reserve nothing
+
+```````````````````````````````` example
+# x
+
+[unused]: /url {#x}
+.
+Document scope=1:1..3:19 anchor=null attributes={} children=1
+└── Heading scope=1:1..1:3 anchor="x" attributes={} level=1 children=1
+    └── Text scope=1:3..1:3 anchor=null attributes={} literal="x" children=0
+````````````````````````````````
+
+## inherited empty attributes on virtual definitions
+
+```````````````````````````````` example
+# Heading {#heading .a k=1}
+
+[Heading]
+.
+Document scope=1:1..3:9 anchor=null attributes={} children=2
+├── Heading scope=1:1..1:27 anchor="heading" attributes={.a k="1"} level=1 children=1
+│   └── Text scope=1:3..1:9 anchor=null attributes={} literal="Heading" children=0
+└── Paragraph scope=3:1..3:9 anchor=null attributes={} children=1
+    └── Link scope=3:1..3:9 anchor=null attributes={} dest=url("#heading") title=null children=1
+        └── Text scope=3:2..3:8 anchor=null attributes={} literal="Heading" children=0
+````````````````````````````````
+
+## line ending normalization and Setext labels
+
+```````````````````````````````` example
+[a b]
+
+A
+B {#id}
+====
+.
+Document scope=1:1..5:4 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:5 anchor=null attributes={} children=1
+│   └── Link scope=1:1..1:5 anchor=null attributes={} dest=url("#id") title=null children=1
+│       └── Text scope=1:2..1:4 anchor=null attributes={} literal="a b" children=0
+└── Heading scope=3:1..5:4 anchor="id" attributes={} level=1 children=3
+    ├── Text scope=3:1..3:1 anchor=null attributes={} literal="A" children=0
+    ├── SoftBreak scope=3:2..3:2 anchor=null attributes={} children=0
+    └── Text scope=4:1..4:1 anchor=null attributes={} literal="B" children=0
+````````````````````````````````
+
+## Leading and repeated interior whitespace
+
+```````````````````````````````` example
+# ` A `  `  B  `
+.
+Document scope=1:1..1:16 anchor=null attributes={} children=1
+└── Heading scope=1:1..1:16 anchor="a---b-" attributes={} level=1 children=3
+    ├── Code scope=1:3..1:7 anchor=null attributes={} literal="A" children=0
+    ├── Text scope=1:8..1:9 anchor=null attributes={} literal="  " children=0
+    └── Code scope=1:10..1:16 anchor=null attributes={} literal=" B " children=0
+````````````````````````````````
+
+## Only effective occurrence identifiers reserve names
+
+```````````````````````````````` example
+# x
+
+[ref][]{#own}
+
+[ref]: /url {#x}
+.
+Document scope=1:1..5:16 anchor=null attributes={} children=2
+├── Heading scope=1:1..1:3 anchor="x" attributes={} level=1 children=1
+│   └── Text scope=1:3..1:3 anchor=null attributes={} literal="x" children=0
+└── Paragraph scope=3:1..3:13 anchor=null attributes={} children=1
+    └── Link scope=3:1..3:13 anchor="own" attributes={} dest=url("/url") title=null children=1
+        └── Text scope=3:2..3:4 anchor=null attributes={} literal="ref" children=0
+````````````````````````````````
+
+## Attributes on collapsed implicit references
+
+```````````````````````````````` example
+[Ref][]{#own .c k=1} [Ref][] [go][Ref]
+
+# Ref {#target .heading k=2}
+.
+Document scope=1:1..3:28 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:38 anchor=null attributes={} children=5
+│   ├── Link scope=1:1..1:20 anchor="own" attributes={.c k="1"} dest=url("#target") title=null children=1
+│   │   └── Text scope=1:2..1:4 anchor=null attributes={} literal="Ref" children=0
+│   ├── Text scope=1:21..1:21 anchor=null attributes={} literal=" " children=0
+│   ├── Link scope=1:22..1:28 anchor=null attributes={} dest=url("#target") title=null children=1
+│   │   └── Text scope=1:23..1:25 anchor=null attributes={} literal="Ref" children=0
+│   ├── Text scope=1:29..1:29 anchor=null attributes={} literal=" " children=0
+│   └── Link scope=1:30..1:38 anchor=null attributes={} dest=url("#target") title=null children=1
+│       └── Text scope=1:31..1:32 anchor=null attributes={} literal="go" children=0
+└── Heading scope=3:1..3:28 anchor="target" attributes={.heading k="2"} level=1 children=1
+    └── Text scope=3:3..3:5 anchor=null attributes={} literal="Ref" children=0
+````````````````````````````````
+
+## Reserve anchors in callout title fields
+
+```````````````````````````````` example
+# x
+
+> [!note] `code`{#x}
+> body
+.
+Document scope=1:1..4:6 anchor=null attributes={} children=2
+├── Heading scope=1:1..1:3 anchor="x-1" attributes={} level=1 children=1
+│   └── Text scope=1:3..1:3 anchor=null attributes={} literal="x" children=0
+└── Callout scope=3:1..4:6 anchor=null attributes={} variant="note" collapsed=null children=1
+    ├── Title children=1
+    │   └── Code scope=3:11..3:20 anchor="x" attributes={} literal="code" children=0
+    └── Paragraph scope=4:3..4:6 anchor=null attributes={} children=1
+        └── Text scope=4:3..4:6 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Resolve virtual references throughout owned fields
+
+```````````````````````````````` example
+:n[[Target]]
+
+> [!note] [Target]
+> body
+
+^[inline [Target]]
+
+[^f]: [Target]
+
+# Target
+.
+Document scope=1:1..10:8 anchor=null attributes={} children=4
+├── Paragraph scope=1:1..1:12 anchor=null attributes={} children=1
+│   └── Directive scope=1:1..1:12 anchor=null attributes={} name="n" children=0
+│       └── DirectiveLabel scope=1:3..1:12 anchor=null attributes={} children=1
+│           └── Link scope=1:4..1:11 anchor=null attributes={} dest=url("#target") title=null children=1
+│               └── Text scope=1:5..1:10 anchor=null attributes={} literal="Target" children=0
+├── Callout scope=3:1..4:6 anchor=null attributes={} variant="note" collapsed=null children=1
+│   ├── Title children=1
+│   │   └── Link scope=3:11..3:18 anchor=null attributes={} dest=url("#target") title=null children=1
+│   │       └── Text scope=3:12..3:17 anchor=null attributes={} literal="Target" children=0
+│   └── Paragraph scope=4:3..4:6 anchor=null attributes={} children=1
+│       └── Text scope=4:3..4:6 anchor=null attributes={} literal="body" children=0
+├── Paragraph scope=6:1..6:18 anchor=null attributes={} children=1
+│   └── Cite scope=6:1..6:18 anchor=null attributes={} children=1
+│       └── Citation scope=6:3..6:17 referent=footnote(id="inline-1") children=0
+│           ├── CitationPrefix children=0
+│           └── CitationSuffix children=0
+├── Heading scope=10:1..10:8 anchor="target" attributes={} level=1 children=1
+│   └── Text scope=10:3..10:8 anchor=null attributes={} literal="Target" children=0
+├── Footnote scope=6:1..6:18 id="inline-1" children=2
+│   ├── Text scope=6:3..6:9 anchor=null attributes={} literal="inline " children=0
+│   └── Link scope=6:10..6:17 anchor=null attributes={} dest=url("#target") title=null children=1
+│       └── Text scope=6:11..6:16 anchor=null attributes={} literal="Target" children=0
+└── Footnote scope=8:1..9:0 id="f" children=1
+    └── Paragraph scope=8:7..8:14 anchor=null attributes={} children=1
+        └── Link scope=8:7..8:14 anchor=null attributes={} dest=url("#target") title=null children=1
+            └── Text scope=8:8..8:13 anchor=null attributes={} literal="Target" children=0
+````````````````````````````````

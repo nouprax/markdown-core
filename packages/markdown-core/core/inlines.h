@@ -7,6 +7,7 @@ extern "C" {
 
 #include "references.h"
 #include "attributes.h"
+#include "parser.h"
 
 /* Parse one raw label suffix atomically. Callers record its separator while
  * recognizing their own label grammar; no search or allocation occurs here. */
@@ -18,6 +19,10 @@ int markdown_core_inline_parser_attributes(markdown_core_inline_parser *parser, 
 
 markdown_core_chunk markdown_core_clean_url(markdown_core_mem *mem, markdown_core_chunk *url, int *lost);
 markdown_core_optional_chunk markdown_core_clean_title(markdown_core_mem *mem, markdown_core_chunk *title, int *lost);
+
+void markdown_core_prepare_heading(markdown_core_parser *parser, markdown_core_heading_parse *heading);
+void markdown_core_finish_heading(markdown_core_parser *parser, markdown_core_heading_parse *heading);
+void markdown_core_dispose_heading(markdown_core_heading_parse *heading);
 
 MARKDOWN_CORE_EXPORT
 void markdown_core_parse_inlines(markdown_core_parser *parser, markdown_core_node *parent, markdown_core_map *refmap);
