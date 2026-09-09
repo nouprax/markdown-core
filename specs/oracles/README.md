@@ -21,10 +21,31 @@ policy that defines each comparison:
 
 Each active gate's `deltas.json` records the oracle version, compared
 corpus, deliberate differences, and fail-closed exceptions. The Pandoc policy
-currently has an immutable `source.json` and input-only corpus; it explicitly
-does not claim parity until the planned gate and its initial delta registry
-land. A registered difference must reproduce; a new difference and a
+pins its immutable `source.json`, input-only corpus and exact projection digests.
+A registered difference must reproduce; a new difference and a
 registered difference that disappears both fail an active gate.
+
+Seeded differential fuzzing compares only the shared language of its selected
+oracle. Since P4, a document combining a heading with unresolved bracket text
+can activate implicit heading references, which cmark, cmark-gfm and remark do
+not implement. `scripts/lib/fuzz-scope.mjs` conservatively classifies that
+composition with an independent CommonMark parse. It neither consults product
+output nor implements heading-label matching. Explicitly resolved references,
+headings without unresolved brackets, references without headings, and brackets
+inside code/HTML remain eligible for comparison. The scope tests run before
+every `pnpm fuzz:parity` invocation.
+
+Out-of-scope and exact registered inputs are reported separately from actual
+comparisons; neither counts as an agreement, and zero comparisons fails the
+run. The ordinary parity gates keep their fail-closed comparison unchanged.
+The anchors fixtures retain the complete CI seed-1 witness, and the Pandoc
+corpus independently verifies its reduced heading-reference interaction.
+The `heading-anchor-unavailable` Remark boundary projects out only
+`Heading.anchor`, a fact mdast cannot express. Heading levels, content and
+attributes, and anchors on other kinds remain compared. This projection runs
+in the ordinary gate as well as fuzzing; its tests prove those remaining facts
+still detect differences. Heading-anchor values are checked by Pandoc and the
+product fixtures.
 
 Evidence is scoped, not voted: cmark-gfm cannot override current cmark on the
 base language, Pandoc cannot replace inherited CommonMark/GFM behavior with its

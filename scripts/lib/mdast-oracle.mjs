@@ -1,5 +1,11 @@
 import fs from "node:fs";
-import { tableGroups } from "./upstream-cmark.mjs";
+import {
+    tableGroups,
+    parseAttributesDump,
+    parseDestination,
+    renderDestination,
+    taskCompletion
+} from "./upstream-cmark.mjs";
 /**
  * mdast/remark normalization.
  *
@@ -300,4 +306,50 @@ export const MDAST_COMPARED = {
 };
 
 const contract = JSON.parse(fs.readFileSync(new URL("../../docs/specs/canonical-ast.json", import.meta.url), "utf8"));
-for (const { name } of contract.kinds) MDAST_COMPARED[name] = ["anchor", "attributes", ...(MDAST_COMPARED[name] ?? [])];
+// mdast headings have no anchor fact. P3's identifier is checked by the
+// Pandoc oracle and canonical fixtures; every other shared field remains
+// observable, including explicit directive anchors and heading attributes.
+for (const { name } of contract.kinds) {
+    MDAST_COMPARED[name] = [...(name === "Heading" ? [] : ["anchor"]), "attributes", ...(MDAST_COMPARED[name] ?? [])];
+}
+
+/** Project both normalized trees onto exactly the facts mdast can express. */
+export function projectMdastComparison(node) {
+    const children = [];
+    for (const child of node.children) {
+        // `:red[]` carries an empty label field in this repository's AST and
+        // no label content at all in mdast, which cannot express the difference
+        // between it and `:red`. Dropping the empty node compares what both
+        // models can state.
+        if (child.kind === "DirectiveLabel" && child.children.length === 0) continue;
+        const projected = projectMdastComparison(child);
+        const previous = children[children.length - 1];
+        if (previous && previous.kind === "Text" && projected.kind === "Text") {
+            previous.fields.literal += projected.fields.literal;
+        } else {
+            children.push(projected);
+        }
+    }
+    const fields = {};
+    for (const key of MDAST_COMPARED[node.kind] ?? []) {
+        let value = node.fields[key];
+        if (node.kind === "ListItem" && key === "completed") value = taskCompletion(node.fields);
+        // `dest` is a tagged value on both sides: the object the mdast mapping
+        // built, or the dump's `url("...")` text. One spelling is compared.
+        if (key === "dest") {
+            const destination = typeof value === "string" ? parseDestination(value) : value;
+            if (!destination) throw new Error(`invalid destination on ${node.kind}: ${String(value)}`);
+            fields.dest = renderDestination(destination);
+            continue;
+        }
+        if (key === "attributes") {
+            fields.attributes = JSON.stringify(
+                typeof value === "string" ? parseAttributesDump(value) : (value ?? { classes: [], records: [] })
+            );
+            continue;
+        }
+        if (value === undefined || value === "") value = key === "literal" ? "" : "null";
+        fields[key] = String(value);
+    }
+    return { kind: node.kind, fields, children };
+}

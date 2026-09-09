@@ -6,6 +6,13 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
+- Generate heading anchors with Unicode simple lowercase, global explicit-anchor
+  reservation and deterministic duplicate suffixes. Resolve full, collapsed and
+  shortcut references to authored heading labels, including forward references;
+  explicit reference definitions win. Share each final target through the
+  existing resource model in C, Swift, Kotlin and ES. Preserve source scopes,
+  cover allocation failure and linear work, and retire the P3/P4 Pandoc gaps.
+
 - Attach normalized attributes to inline code, ATX/Setext headings, fenced code,
   links and media. Reference occurrences inherit definition attributes while
   retaining local anchors, duplicate declarations, typed dimensions and exact

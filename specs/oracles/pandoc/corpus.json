@@ -126,6 +126,66 @@
             "id": "bibliography-citations",
             "from": "markdown_strict+citations",
             "input": "Blah [see @doe99, pp. 33-35 and *passim*; -@smith04, chap. 1]. @jones05 [p. 7] agrees.\n"
+        },
+        {
+            "id": "anchor-empty-fallback",
+            "from": "markdown_strict+auto_identifiers+gfm_auto_identifiers",
+            "input": "# !!!\n"
+        },
+        {
+            "id": "anchor-global-reservation",
+            "from": "markdown_strict+auto_identifiers+gfm_auto_identifiers+header_attributes",
+            "input": "# x\n\n# Name {#x}\n"
+        },
+        {
+            "id": "anchor-permitted-scalars",
+            "from": "markdown_strict+auto_identifiers+gfm_auto_identifiers",
+            "input": "# a‿b ∑ 😀\n"
+        },
+        {
+            "id": "anchor-simple-lowercase",
+            "from": "markdown_strict+auto_identifiers+gfm_auto_identifiers",
+            "input": "# İ ſ ẞ Σ ς\n"
+        },
+        {
+            "id": "anchor-whitespace-scalars",
+            "from": "markdown_strict+auto_identifiers+gfm_auto_identifiers",
+            "input": "# AB C\n"
+        },
+        {
+            "id": "implicit-authored-label",
+            "from": "markdown_strict+auto_identifiers+gfm_auto_identifiers+implicit_header_references",
+            "input": "# *Foo*\n\n[*Foo*], [Foo]\n"
+        },
+        {
+            "id": "implicit-forward-and-duplicates",
+            "from": "markdown_strict+auto_identifiers+gfm_auto_identifiers+implicit_header_references",
+            "input": "[Foo], [Foo][], [go][Foo]\n\n# Foo\n\n# Foo\n"
+        },
+        {
+            "id": "implicit-explicit-priority",
+            "from": "markdown_strict+auto_identifiers+gfm_auto_identifiers+implicit_header_references",
+            "input": "[Foo]\n\n# Foo\n\n[Foo]: /explicit\n"
+        },
+        {
+            "id": "implicit-occurrence-attributes",
+            "from": "markdown_strict+auto_identifiers+gfm_auto_identifiers+implicit_header_references+header_attributes+link_attributes",
+            "input": "[Foo][]{#own .jump}\n\n# Foo {#target .header}\n"
+        },
+        {
+            "id": "anchor-inline-code-reservation",
+            "from": "markdown_strict+auto_identifiers+gfm_auto_identifiers+inline_code_attributes",
+            "input": "# x\n\n`code`{#x}\n"
+        },
+        {
+            "id": "implicit-reference-adjacency",
+            "from": "markdown_strict+auto_identifiers+gfm_auto_identifiers+implicit_header_references",
+            "input": "[Foo] [Foo][] [go][Foo]\n\n# Foo\n\n# Foo\n"
+        },
+        {
+            "id": "implicit-reference-in-paragraph-definition-text",
+            "from": "markdown_strict+auto_identifiers+gfm_auto_identifiers+implicit_header_references",
+            "input": "# foo\n\nparagraph\n[foo]: <>\n"
         }
     ]
 }

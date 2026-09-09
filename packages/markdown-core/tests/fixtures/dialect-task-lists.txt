@@ -325,7 +325,7 @@ Document scope=1:1..8:23 anchor=null attributes={} children=1
 Document scope=1:1..12:5 anchor=null attributes={} children=1
 └── List scope=1:1..12:5 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=6
     ├── ListItem scope=1:1..1:15 anchor=null attributes={} marker="?" children=1
-    │   └── Heading scope=1:7..1:15 anchor=null attributes={} level=1 children=1
+    │   └── Heading scope=1:7..1:15 anchor="heading" attributes={} level=1 children=1
     │       └── Text scope=1:9..1:15 anchor=null attributes={} literal="heading" children=0
     ├── ListItem scope=2:1..2:15 anchor=null attributes={} marker="✓" children=1
     │   └── Callout scope=2:9..2:15 anchor=null attributes={} variant=null collapsed=null children=1

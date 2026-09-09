@@ -748,6 +748,33 @@
                 ],
                 "orders": ["document.source-order", "inline.source-order"]
             }
+        },
+        {
+            "name": "heading-anchors",
+            "input": "heading-anchors.md",
+            "expected": "heading-anchors.ast",
+            "coverage": {
+                "kinds": [
+                    "Document",
+                    "Heading",
+                    "Text",
+                    "Paragraph",
+                    "Link",
+                    "Directive",
+                    "DirectiveLabel",
+                    "Emphasis",
+                    "Code",
+                    "Mark",
+                    "Insertion"
+                ],
+                "states": [
+                    "markup.anchor.value",
+                    "markup.attributes.classes",
+                    "markup.attributes.records",
+                    "scope.positive"
+                ],
+                "orders": ["document.source-order", "inline.source-order"]
+            }
         }
     ]
 }

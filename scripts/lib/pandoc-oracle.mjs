@@ -344,6 +344,17 @@ export function assertCanaries(run) {
         },
         "Pandoc combineAttr behavior changed"
     );
+    const anchors = "markdown_strict+auto_identifiers+gfm_auto_identifiers";
+    const headingAnchors = (input, from = anchors) =>
+        fromPandoc(run(input, from)).children.map((value) => value.anchor);
+    assert.deepEqual(headingAnchors("# !!!\n"), ["section"]);
+    assert.deepEqual(headingAnchors("# x\n\n# Name {#x}\n", anchors + "+header_attributes"), ["x", "x"]);
+    assert.deepEqual(headingAnchors("# a‿b ∑ 😀\n"), ["a‿b--grinning"]);
+    assert.deepEqual(headingAnchors("# İ ſ ẞ Σ ς\n"), ["i̇-ſ-ß-σ-ς"]);
+    assert.deepEqual(headingAnchors("# A\u0085B\u2028C\n"), ["abc"]);
+    const adjacent = fromPandoc(run("# H\n\n[H] [H]\n", anchors + "+implicit_header_references"));
+    assert.equal(adjacent.children[1].children.length, 1, "Pandoc permits whitespace before a full reference tail");
+    assert.equal(adjacent.children[1].children[0].dest.value, "#h");
 }
 
 export function validatePolicy(policy, cases) {

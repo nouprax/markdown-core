@@ -56,6 +56,21 @@ typedef struct {
     struct markdown_core_node *last_inline;
 } markdown_core_footnote_collection;
 
+/* A heading is registered once when its block closes. Headings are leaves
+ * in block grammar, so closure order is source order, including in footnotes.
+ * Pending holds the ordinary inline cursor at its declaration dependency;
+ * nodes and resources remain owned by the tree and reference map. */
+typedef struct {
+    markdown_core_node *node;
+    markdown_core_inline_parser *pending;
+    markdown_core_resource *resource;
+} markdown_core_heading_parse;
+
+typedef struct {
+    markdown_core_heading_parse *values;
+    size_t count, capacity;
+} markdown_core_heading_collection;
+
 struct markdown_core_parser {
     struct markdown_core_mem *mem;
     /* A hashtable of urls in the current document for cross-references */
@@ -65,6 +80,7 @@ struct markdown_core_parser {
      * to decide whether a `[^label]` is a call at all. */
     struct markdown_core_map *footnote_defs;
     markdown_core_footnote_collection footnotes;
+    markdown_core_heading_collection headings;
     /* The root node of the parser, always a MARKDOWN_CORE_NODE_DOCUMENT */
     struct markdown_core_node *root;
     /* The last open block after a line is fully processed */
@@ -117,8 +133,11 @@ struct markdown_core_parser {
     /* Bytes examined by the shared block-identifier suffix scanner. */
     size_t block_identifier_work;
     size_t callout_scan_work;
-    /* Ordinary image-label bytes and bounded dimension work for Media and embeds. */
+    /* Shared attribute grammar and attachment work. */
     size_t attribute_work;
+    /* Projection bytes and registry spelling work, including collision probes. */
+    size_t anchor_work;
+    /* Ordinary image-label bytes and bounded dimension work for Media and embeds. */
     size_t dimension_work;
     /* THE SOURCE AFTER THE LINE BEING PROCESSED. `S_parse_source` sets the
      * cursor to the first byte of the next raw line before it hands each line

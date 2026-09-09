@@ -98,6 +98,12 @@
             "summary": "The canonical table stores head/content/foot groups and positive cell spans; pipe tables have one head row and unit spans.",
             "handling": "The oracle projection groups its first row as TableHead, its remaining rows as TableBody, and adds an empty TableFoot; cells gain rowspan=1 and colspan=1. Native table topology and spans are compared unchanged.",
             "evidence": "docs/specs/dialect/tables.md; canonical table fixtures and existing pipe-table oracle corpus."
+        },
+        {
+            "id": "heading-anchor-unavailable",
+            "kind": "comparison-boundary",
+            "summary": "mdast headings carry no anchor fact. P3 produces heading identifiers under the Pandoc-owned anchors module.",
+            "handling": "The shared comparison field map omits only Heading.anchor on both sides. Heading level, content and attributes, and anchors on all other Markup kinds remain compared; the Pandoc oracle and canonical fixtures verify generated and explicit heading anchors."
         }
     ],
     "notDeltas": [

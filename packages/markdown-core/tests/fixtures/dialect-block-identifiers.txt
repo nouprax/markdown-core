@@ -535,11 +535,11 @@ setext #id#
 ---
 .
 Document scope=1:1..6:3 anchor=null attributes={} children=3
-├── Heading scope=1:1..1:14 anchor=null attributes={} level=1 children=1
+├── Heading scope=1:1..1:14 anchor="heading-id" attributes={} level=1 children=1
 │   └── Text scope=1:3..1:14 anchor=null attributes={} literal="heading #id#" children=0
-├── Heading scope=3:1..3:6 anchor=null attributes={} level=1 children=1
+├── Heading scope=3:1..3:6 anchor="id" attributes={} level=1 children=1
 │   └── Text scope=3:3..3:4 anchor=null attributes={} literal="id" children=0
-└── Heading scope=5:1..6:3 anchor=null attributes={} level=2 children=1
+└── Heading scope=5:1..6:3 anchor="setext-id" attributes={} level=2 children=1
     └── Text scope=5:1..5:11 anchor=null attributes={} literal="setext #id#" children=0
 ````````````````````````````````
 

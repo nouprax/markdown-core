@@ -283,6 +283,10 @@ struct markdown_core_node {
     markdown_core_node_data as;
 };
 
+/* The effective declaration is occurrence-local, then inherited from its
+ * shared definition. All consumers, including synthesis reservation, use it. */
+const markdown_core_chunk *markdown_core_node_anchor_chunk(const markdown_core_node *node);
+
 /* Both cross kinds own the same raw reference fields in one payload allocation.
  * Only CrossEmbedded allocates the dimension value beside those fields. */
 static inline markdown_core_cross_reference *markdown_core_node_cross_reference(const markdown_core_node *node) {

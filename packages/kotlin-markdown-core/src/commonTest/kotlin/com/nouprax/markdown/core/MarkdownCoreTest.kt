@@ -607,6 +607,24 @@ class RobustnessTest {
     }
 
     @Test
+    fun forwardHeadingReferencesShareFinalTargetAfterNativeRelease() {
+        val anchor = "a".repeat(1024)
+        val count = 5_000
+        val document = Document.parse("[Target]\n\n".repeat(count) + "# Target {#$anchor .heading k=1}\n")
+        val links = document.content.take(count).map { assertIs<Link>(assertIs<Paragraph>(it).content.single()) }
+        assertEquals(anchor, document.content[count].anchor)
+        val destination = links.first().dest
+        assertEquals("#$anchor", assertIs<Destination.Url>(destination).value)
+        for (link in links) {
+            assertSame(destination, link.dest)
+            assertEquals(null, link.anchor)
+            assertEquals(null, link.title)
+            assertTrue(link.attributes.classes.isEmpty())
+            assertTrue(link.attributes.records.isEmpty())
+        }
+    }
+
+    @Test
     fun everyOccurrenceOfOneDefinitionMaterializesOneResource() {
         // M2: the C tree shares one resource across every occurrence of a
         // definition, the JNI payload sends it once, and both decoders reuse
