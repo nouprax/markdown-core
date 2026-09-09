@@ -37,7 +37,11 @@ for oracle_file in \
     specs/oracles/obsidian/corpus.md \
     specs/oracles/obsidian/metadata-corpus.md \
     specs/oracles/pandoc/source.json \
-    specs/oracles/pandoc/corpus.json; do
+    specs/oracles/pandoc/corpus.json \
+    specs/oracles/pandoc/deltas.json \
+    scripts/check-pandoc-parity.mjs \
+    scripts/lib/pandoc-oracle.mjs \
+    scripts/tests/pandoc-oracle.test.mjs; do
     if [ ! -f "$oracle_file" ]; then
         fail "external oracle file is missing: $oracle_file"
     fi
@@ -248,6 +252,10 @@ fi
 
 if ! grep -q 'pnpm check:ins-parity' .github/workflows/ci.yml || ! grep -q 'pnpm run check:ins-parity' package.json; then
     fail "the insertion oracle gate is not wired into CI and aggregate parity"
+fi
+
+if ! grep -q 'pnpm check:pandoc-parity' .github/workflows/ci.yml || ! grep -q 'pnpm run check:pandoc-parity' package.json; then
+    fail "Pandoc oracle is not wired into CI and aggregate parity"
 fi
 
 if [ "$failures" -gt 0 ]; then

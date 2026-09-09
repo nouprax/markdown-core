@@ -434,7 +434,12 @@ partial value, and releases its source under the owning construct's fallback;
 the failed `{` is text. Recognition indexes every suffix once, so overlapping malformed or unclosed
 candidates cannot repeatedly scan the same source. Normalization runs forward
 only over committed containers; recognition, normalization, and merging are
-linear in source bytes plus output. There is one attribute
+linear in source bytes plus output. Physical representation is private to each
+binding: public collections retain their language's native conventions and
+value or immutability guarantees. Definition values need not be decoded again
+for each occurrence; materializing a native merged sequence costs its output
+length. C and wire payloads retain one definition value and occurrence-local
+declarations without expanding inherited sequences. There is one attribute
 scanner in the C core, shared by every site; no site keeps a private tokenizer
 or storage shape.
 

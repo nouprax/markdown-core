@@ -33,6 +33,13 @@ MARKDOWN_CORE_1.0 {
     markdown_core_metadata_value_item_count;
     markdown_core_metadata_value_scalar;
     markdown_core_node_anchor;
+    markdown_core_node_primary_attributes;
+    markdown_core_node_inherited_attributes;
+    markdown_core_attribute_value_anchor;
+    markdown_core_attribute_value_class_count;
+    markdown_core_attribute_value_class_at;
+    markdown_core_attribute_value_record_count;
+    markdown_core_attribute_value_record_at;
     markdown_core_node_attribute_class_at;
     markdown_core_node_attribute_class_count;
     markdown_core_node_attribute_record_at;

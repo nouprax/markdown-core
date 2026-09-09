@@ -5,7 +5,7 @@
 > `ListItem.exampleLabel` and `OrderedListVariant.example` are retired.
 
 
-Status: proposed. This plan implements the Pandoc-derived modules of the
+Status: in progress. This plan implements the Pandoc-derived modules of the
 [Markdown Core dialect](../specs/dialect.md) on the canonical parser and all
 public bindings. It does not add a monolithic Pandoc dialect and does not retain
 compatibility aliases for any public model that this work replaces.
@@ -16,7 +16,7 @@ mergeable pull requests is
 
 ## Outcome
 
-Add the selected Pandoc syntax as opt-in rules inside the existing block and
+Add the selected Pandoc syntax as always-on rules inside the existing block and
 inline engines. All source forms project to one consumer-oriented canonical
 AST: every Markup value has the universal anchor and attributes fields, all
 table syntaxes produce one Table model, all ordered-list syntaxes produce one
@@ -65,32 +65,32 @@ selected Pandoc extension participates.
 
 ## Phase 0 — bootstrap the pinned oracle
 
-- [ ] Add `oracle-pandoc` to `scripts/init-environment.sh`. `--install` downloads
+- [x] Add `oracle-pandoc` to `scripts/init-environment.sh`. `--install` downloads
       only the host archive declared in `source.json`, verifies its SHA-256, and
       installs it below the repository-managed tools directory. `--check` accepts
       only the exact 3.11 runner. Normal build and test commands perform no
       network access.
-- [ ] Implement one oracle adapter that reads
+- [x] Implement one oracle adapter that reads
       [`corpus.json`](../../specs/oracles/pandoc/corpus.json), passes each case's
       explicit `from` string to the official CLI, and requests JSON. Before
       accepting an observation it must run canaries for the exact version, native
       JSON API envelope, extension enable/disable behavior, expected top-level
       construct, UTF-8 input, and isolation from user data.
-- [ ] Define one semantic projection per target concept, not per example. It may
+- [x] Define one semantic projection per target concept, not per example. It may
       discard source locations that Pandoc JSON does not expose and may translate
       representation-only constructors such as `Plain`; it may not erase
       recognition, content, order, anchors, attributes, list
       variant/start/delimiter, citation mode/affixes, heading anchors, table groups,
       column alignment/width, or cell spans.
-- [ ] Keep the corpus input-only. Product expected AST belongs in the C fixtures
+- [x] Keep the corpus input-only. Product expected AST belongs in the C fixtures
       and `specs/canonical-ast/`; raw Pandoc JSON and projected Markdown Core
       output are generated during comparison and never committed as product
       goldens.
 
-- [ ] **Exit criterion:** a clean checkout can explicitly install or check the pinned
+- [x] **Exit criterion:** a clean checkout can explicitly install or check the pinned
       runner, and the oracle-side canaries reject the wrong binary, API version,
-      reader bundle, user-data environment, or extension behavior. This phase makes
-      no product-parity claim because the target AST does not yet exist.
+      reader bundle, user-data environment, or extension behavior. Product comparison is active for the current AST; missing syntax is
+      recorded as exact gaps owned by later landing items.
 
 ## Phase 1 — freeze the public consumer model
 
@@ -131,9 +131,9 @@ selected Pandoc extension participates.
       extension receives an option. Automatic anchors compose the two pinned
       Pandoc extension rules internally, compact definition syntax is part of
       definition lists, and start numbers are always honored.
-- [ ] Activate product comparison once the target values can be
+- [x] Activate product comparison once the target values can be
       represented. Register every initial gap in a fail-closed `deltas.json` with
-      both semantic digests and the phase that closes it; add the offline gate to
+      both semantic digests and the landing item that closes it; add the offline gate to
       `check:oracle-parity`. A new gap, changed gap, or registered gap that
       disappears without removal fails the gate.
 
@@ -156,19 +156,20 @@ selected Pandoc extension participates.
       add every resulting Remark-oracle grammar difference to its fail-closed
       registry in that same commit; do not retain Remark shorthand, bare-name,
       empty-assignment, or entity behavior as a hidden mode.
-- [ ] Attach inline code, heading, fenced-code, link/image, bracketed-Span, and
-      fenced-Div attributes during construction of their owning node. Reference
+- [x] Attach inline code, heading, fenced-code, and link/image attributes during
+      construction of their owning node (`P2a`–`P2d`). Reference
       definitions retain attributes only in the existing parser-owned resolution
       table. An occurrence-local suffix belongs to that occurrence's
       source-faithful scope; definition inheritance transfers semantic values
       only and never expands, unions, or substitutes the occurrence scope.
       Failed suffixes release source transactionally.
+- [ ] Attach bracketed-Span and fenced-Div attributes with `P5` and `P8`.
 - [ ] Finalize explicit and generated heading anchors in one document registry.
       Use the specified GFM algorithm, reserve every explicit anchor from every
       rule before synthesis, generate headings in source order,
       resolve generated collisions deterministically, and build virtual
       implicit-reference entries from the same final values.
-- [ ] Audit every existing Link/Media, Heading, Code/CodeBlock, directive, and
+- [x] Audit every existing Link/Media, Heading, Code/CodeBlock, directive, and
       reference-definition caller. Remove repair passes or duplicated fields made
       obsolete by the shared operation.
 

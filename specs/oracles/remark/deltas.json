@@ -523,6 +523,150 @@
             "authority": "docs/specs/dialect/task-lists.md (O5)",
             "summary": "All one-scalar task markers use one virtual indentation column before nested tab padding. Source scopes remain byte-based.",
             "why": "remark-gfm has no custom task prefixes and treats these markers and following nested-list syntax as paragraph content."
+        },
+        {
+            "id": "p2-attribute-sites-58",
+            "input": "`x`{#a#b}\n\n`x`{-k=v}\n\n`x`{.one.two #1}\n\n`x`{k=\"a\\\"b&amp;c\" m=a&amp;b n= id=}\n\n`x`{class=\"a b\" .a k=1 k=2}\n",
+            "authority": "docs/specs/dialect/attributes.md; P2a–P2d",
+            "note": "packages/markdown-core/tests/fixtures/dialect-attributes.txt:232: the dialect attaches normalized attributes at code, heading and link sites and inherits reference-definition values; remark has no such attachment sites. Fenced-code info remains the authored text outside the container. Its competing base/extension parse is preserved as exact evidence."
+        },
+        {
+            "id": "p2-attribute-sites-59",
+            "input": "`printf()`{.c} `<$>`{#operator .haskell role=\"function\"}\n",
+            "authority": "docs/specs/dialect/attributes.md; P2a–P2d",
+            "note": "packages/markdown-core/tests/fixtures/dialect-attributes.txt:269: the dialect attaches normalized attributes at code, heading and link sites and inherits reference-definition values; remark has no such attachment sites. Fenced-code info remains the authored text outside the container. Its competing base/extension parse is preserved as exact evidence."
+        },
+        {
+            "id": "p2-attribute-sites-60",
+            "input": "# Title {#custom-id .c}\n\n# {#x}\n\n## Chapter ## {#other}\n\nSetext {#s}\n===========\n",
+            "authority": "docs/specs/dialect/attributes.md; P2a–P2d",
+            "note": "packages/markdown-core/tests/fixtures/dialect-attributes.txt:290: the dialect attaches normalized attributes at code, heading and link sites and inherits reference-definition values; remark has no such attachment sites. Fenced-code info remains the authored text outside the container. Its competing base/extension parse is preserved as exact evidence."
+        },
+        {
+            "id": "p2-attribute-sites-61",
+            "input": "```python {.numberLines startFrom=\"10\"}\nprint(\"hello\")\n```\n",
+            "authority": "docs/specs/dialect/attributes.md; P2a–P2d",
+            "note": "packages/markdown-core/tests/fixtures/dialect-attributes.txt:310: the dialect attaches normalized attributes at code, heading and link sites and inherits reference-definition values; remark has no such attachment sites. Fenced-code info remains the authored text outside the container. Its competing base/extension parse is preserved as exact evidence."
+        },
+        {
+            "id": "p2-attribute-sites-62",
+            "input": "``` python {.x} y\nz\n```\n",
+            "authority": "docs/specs/dialect/attributes.md; P2a–P2d",
+            "note": "packages/markdown-core/tests/fixtures/dialect-attributes.txt:319: the dialect attaches normalized attributes at code, heading and link sites and inherits reference-definition values; remark has no such attachment sites. Fenced-code info remains the authored text outside the container. Its competing base/extension parse is preserved as exact evidence."
+        },
+        {
+            "id": "p2-attribute-sites-63",
+            "input": "[text](https://example.com){target=\"_blank\"}\n\n![image](foo.jpg){#hero .wide width=50%}\n\n<https://example.com>{.external}\n",
+            "authority": "docs/specs/dialect/attributes.md; P2a–P2d",
+            "note": "packages/markdown-core/tests/fixtures/dialect-attributes.txt:328: the dialect attaches normalized attributes at code, heading and link sites and inherits reference-definition values; remark has no such attachment sites. Fenced-code info remains the authored text outside the container. Its competing base/extension parse is preserved as exact evidence."
+        },
+        {
+            "id": "p2-attribute-sites-64",
+            "input": "[x][r] [x][r]{#bar}\n\n[r]: /target {#foo}\n",
+            "authority": "docs/specs/dialect/attributes.md; P2a–P2d",
+            "note": "packages/markdown-core/tests/fixtures/dialect-attributes.txt:357: the dialect attaches normalized attributes at code, heading and link sites and inherits reference-definition values; remark has no such attachment sites. Fenced-code info remains the authored text outside the container. Its competing base/extension parse is preserved as exact evidence."
+        },
+        {
+            "id": "p2-attribute-sites-65",
+            "input": "[x][r]{.b .c k=3}\n\n[r]: /t {#d .a .b k=1 m=2}\n",
+            "authority": "docs/specs/dialect/attributes.md; P2a–P2d",
+            "note": "packages/markdown-core/tests/fixtures/dialect-attributes.txt:371: the dialect attaches normalized attributes at code, heading and link sites and inherits reference-definition values; remark has no such attachment sites. Fenced-code info remains the authored text outside the container. Its competing base/extension parse is preserved as exact evidence."
+        },
+        {
+            "id": "p2-attribute-sites-66",
+            "input": "`x`{} `a`{#first id= .one class=\"two two\" k=1 k=2}\n",
+            "authority": "docs/specs/dialect/attributes.md; P2a–P2d",
+            "note": "packages/markdown-core/tests/fixtures/dialect-attributes.txt:382: the dialect attaches normalized attributes at code, heading and link sites and inherits reference-definition values; remark has no such attachment sites. Fenced-code info remains the authored text outside the container. Its competing base/extension parse is preserved as exact evidence."
+        },
+        {
+            "id": "p2-attribute-sites-67",
+            "input": "> `中`{.类 k=\"a\nb\"} tail\n",
+            "authority": "docs/specs/dialect/attributes.md; P2a–P2d",
+            "note": "packages/markdown-core/tests/fixtures/dialect-attributes.txt:407: the dialect attaches normalized attributes at code, heading and link sites and inherits reference-definition values; remark has no such attachment sites. Fenced-code info remains the authored text outside the container. Its competing base/extension parse is preserved as exact evidence."
+        },
+        {
+            "id": "p2-attribute-sites-68",
+            "input": "# Title{#compact}\n\n# ### {#empty}\n\n## Before ## {#after}\n\n## Text {.a} ###\n\n# :n{#heading}\n\n# `code`{#heading}\n",
+            "authority": "docs/specs/dialect/attributes.md; P2a–P2d",
+            "note": "packages/markdown-core/tests/fixtures/dialect-attributes.txt:418: the dialect attaches normalized attributes at code, heading and link sites and inherits reference-definition values; remark has no such attachment sites. Fenced-code info remains the authored text outside the container. Its competing base/extension parse is preserved as exact evidence."
+        },
+        {
+            "id": "p2-attribute-sites-69",
+            "input": "# T {.1}\n\n# T {#unclosed\n\n# T \\{.escaped}\n\nFirst\nLast {#setext .c}\n---\n\n",
+            "authority": "docs/specs/dialect/attributes.md; P2a–P2d",
+            "note": "packages/markdown-core/tests/fixtures/dialect-attributes.txt:445: the dialect attaches normalized attributes at code, heading and link sites and inherits reference-definition values; remark has no such attachment sites. Fenced-code info remains the authored text outside the container. Its competing base/extension parse is preserved as exact evidence."
+        },
+        {
+            "id": "p2-attribute-sites-70",
+            "input": "~~~ {.c #code}\nx\n~~~\n\n``` C++ {.numberLines startFrom=10}\nx\n```\n\n~~~ Python {.1}\ny\n~~~\n\n~~~ lang {#unclosed\ny\n~~~\n",
+            "authority": "docs/specs/dialect/attributes.md; P2a–P2d",
+            "note": "packages/markdown-core/tests/fixtures/dialect-attributes.txt:470: the dialect attaches normalized attributes at code, heading and link sites and inherits reference-definition values; remark has no such attachment sites. Fenced-code info remains the authored text outside the container. Its competing base/extension parse is preserved as exact evidence."
+        },
+        {
+            "id": "p2-attribute-sites-71",
+            "input": "[x](/url){.own} ![image](/img){.wide width=50% height=2in}\n\n<mailto:a@b.com>{.email} <https://example.com>{.external}\n\n[x](/url){broken} ![image](/img){#unclosed\n",
+            "authority": "docs/specs/dialect/attributes.md; P2a–P2d",
+            "note": "packages/markdown-core/tests/fixtures/dialect-attributes.txt:494: the dialect attaches normalized attributes at code, heading and link sites and inherits reference-definition values; remark has no such attachment sites. Fenced-code info remains the authored text outside the container. Its competing base/extension parse is preserved as exact evidence."
+        },
+        {
+            "id": "p2-attribute-sites-72",
+            "input": "[x][r]{#own .same .own k=2} [r][]{id= .same} [r] ![img|20x30][r]{width=50% height=2in}\n\n[r]: /url \"title\" {#def .same .def k=1 k=1}\n",
+            "authority": "docs/specs/dialect/attributes.md; P2a–P2d",
+            "note": "packages/markdown-core/tests/fixtures/dialect-attributes.txt:523: the dialect attaches normalized attributes at code, heading and link sites and inherits reference-definition values; remark has no such attachment sites. Fenced-code info remains the authored text outside the container. Its competing base/extension parse is preserved as exact evidence."
+        },
+        {
+            "id": "p2-attribute-sites-73",
+            "input": "[r][] [x][r] ![r][]\n\n[r]: /url\n  {#next .c}\n\n[r]: /ignored {#loser}\n",
+            "authority": "docs/specs/dialect/attributes.md; P2a–P2d",
+            "note": "packages/markdown-core/tests/fixtures/dialect-attributes.txt:543: the dialect attaches normalized attributes at code, heading and link sites and inherits reference-definition values; remark has no such attachment sites. Fenced-code info remains the authored text outside the container. Its competing base/extension parse is preserved as exact evidence."
+        },
+        {
+            "id": "p2-attribute-sites-74",
+            "input": "[r][]\n\n[r]: /url \"title\"\n  {.next k=\"x\ny\"}\n",
+            "authority": "docs/specs/dialect/attributes.md; P2a–P2d",
+            "note": "packages/markdown-core/tests/fixtures/dialect-attributes.txt:583: the dialect attaches normalized attributes at code, heading and link sites and inherits reference-definition values; remark has no such attachment sites. Fenced-code info remains the authored text outside the container. Its competing base/extension parse is preserved as exact evidence."
+        },
+        {
+            "id": "p2-attribute-sites-75",
+            "input": "`[x](/u){.a}` <i data-x=\"{.a}\"> $[x](/u){.a}$ %% [x](/u){.a} %% [[Note|{.a}]]\n",
+            "authority": "docs/specs/dialect/attributes.md; P2a–P2d",
+            "note": "packages/markdown-core/tests/fixtures/dialect-attributes.txt:596: the dialect attaches normalized attributes at code, heading and link sites and inherits reference-definition values; remark has no such attachment sites. Fenced-code info remains the authored text outside the container. Its competing base/extension parse is preserved as exact evidence."
+        },
+        {
+            "id": "p2-attribute-sites-76",
+            "input": "# `x{.a}`\n\n# <i data-x=\"{.a}\">\n\n# $x{.a}$\n\n# %% x {.a} %%\n\n# [[Note|{.a}]]\n",
+            "authority": "docs/specs/dialect/attributes.md; P2a–P2d",
+            "note": "packages/markdown-core/tests/fixtures/dialect-attributes.txt:612: the dialect attaches normalized attributes at code, heading and link sites and inherits reference-definition values; remark has no such attachment sites. Fenced-code info remains the authored text outside the container. Its competing base/extension parse is preserved as exact evidence."
+        },
+        {
+            "id": "p2-attribute-sites-77",
+            "input": "[[Note]]{.literal} ![[Note|20x30]]{width=50%}\n",
+            "authority": "docs/specs/dialect/attributes.md; P2a–P2d",
+            "note": "packages/markdown-core/tests/fixtures/dialect-attributes.txt:636: the dialect attaches normalized attributes at code, heading and link sites and inherits reference-definition values; remark has no such attachment sites. Fenced-code info remains the authored text outside the container. Its competing base/extension parse is preserved as exact evidence."
+        },
+        {
+            "id": "p2-attribute-sites-78",
+            "input": "| Code | Link |\n| - | - |\n| `x`{#c .cell} | [x](/u){.link} |\n",
+            "authority": "docs/specs/dialect/attributes.md; P2a–P2d",
+            "note": "packages/markdown-core/tests/fixtures/dialect-attributes.txt:647: the dialect attaches normalized attributes at code, heading and link sites and inherits reference-definition values; remark has no such attachment sites. Fenced-code info remains the authored text outside the container. Its competing base/extension parse is preserved as exact evidence."
+        },
+        {
+            "id": "p2-attribute-sites-79",
+            "input": "[x](/u){.a}{.b} `x`{.a}{.b}\n",
+            "authority": "docs/specs/dialect/attributes.md; P2a–P2d",
+            "note": "packages/markdown-core/tests/fixtures/dialect-attributes.txt:670: the dialect attaches normalized attributes at code, heading and link sites and inherits reference-definition values; remark has no such attachment sites. Fenced-code info remains the authored text outside the container. Its competing base/extension parse is preserved as exact evidence."
+        },
+        {
+            "id": "p2-attribute-sites-80",
+            "input": "[x][r]{.local} [x][r][]{.other}\n\n[r]: /u {#a .base}\n",
+            "authority": "docs/specs/dialect/attributes.md; P2a–P2d",
+            "note": "packages/markdown-core/tests/fixtures/dialect-attributes.txt:682: the dialect attaches normalized attributes at code, heading and link sites and inherits reference-definition values; remark has no such attachment sites. Fenced-code info remains the authored text outside the container. Its competing base/extension parse is preserved as exact evidence."
+        },
+        {
+            "id": "p2-attribute-sites-81",
+            "input": "`x`{k=\"a\" m=\"> &amp;\" q=\\}b} :n{.directive}\n",
+            "authority": "docs/specs/dialect/attributes.md; P2a–P2d",
+            "note": "packages/markdown-core/tests/fixtures/dialect-attributes.txt:697: the dialect attaches normalized attributes at code, heading and link sites and inherits reference-definition values; remark has no such attachment sites. Fenced-code info remains the authored text outside the container. Its competing base/extension parse is preserved as exact evidence."
         }
     ],
     "baselineBacklog": [],

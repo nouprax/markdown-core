@@ -481,32 +481,68 @@ bool markdown_core_node_directive_properties(const markdown_core_node *node, mar
 static markdown_core_string chunk_string(markdown_core_chunk value) {
     return (markdown_core_string){value.data, (size_t)value.len};
 }
-markdown_core_optional_string markdown_core_node_anchor(const markdown_core_node *node) {
-    return node
-               ? (markdown_core_optional_string){node->attributes.anchor.len > 0, chunk_string(node->attributes.anchor)}
-               : (markdown_core_optional_string){0};
+const markdown_core_attribute_value *markdown_core_node_primary_attributes(const markdown_core_node *node) {
+    return node ? &node->attributes : NULL;
 }
-size_t markdown_core_node_attribute_class_count(const markdown_core_node *node) {
-    return node ? node->attributes.class_count : 0;
+const markdown_core_attribute_value *markdown_core_node_inherited_attributes(const markdown_core_node *node) {
+    const markdown_core_resource *resource = markdown_core_node_resource(node);
+    return resource ? &resource->attributes : NULL;
 }
-bool markdown_core_node_attribute_class_at(const markdown_core_node *node, size_t index, markdown_core_string *value) {
-    if (!node || !value || index >= node->attributes.class_count) {
+markdown_core_optional_string markdown_core_attribute_value_anchor(const markdown_core_attribute_value *attributes) {
+    return attributes ? (markdown_core_optional_string){attributes->anchor.len > 0, chunk_string(attributes->anchor)}
+                      : (markdown_core_optional_string){0};
+}
+size_t markdown_core_attribute_value_class_count(const markdown_core_attribute_value *attributes) {
+    return attributes ? attributes->class_count : 0;
+}
+bool markdown_core_attribute_value_class_at(const markdown_core_attribute_value *attributes, size_t index,
+                                            markdown_core_string *value) {
+    if (!attributes || !value || index >= attributes->class_count) {
         return false;
     }
-    *value = chunk_string(node->attributes.classes[index]);
+    *value = chunk_string(attributes->classes[index]);
     return true;
 }
+size_t markdown_core_attribute_value_record_count(const markdown_core_attribute_value *attributes) {
+    return attributes ? attributes->record_count : 0;
+}
+bool markdown_core_attribute_value_record_at(const markdown_core_attribute_value *attributes, size_t index,
+                                             markdown_core_string *name, markdown_core_string *value) {
+    if (!attributes || !name || !value || index >= attributes->record_count) {
+        return false;
+    }
+    *name = chunk_string(attributes->records[index].name);
+    *value = chunk_string(attributes->records[index].value);
+    return true;
+}
+markdown_core_optional_string markdown_core_node_anchor(const markdown_core_node *node) {
+    markdown_core_optional_string primary =
+        markdown_core_attribute_value_anchor(markdown_core_node_primary_attributes(node));
+    return primary.has_value ? primary
+                             : markdown_core_attribute_value_anchor(markdown_core_node_inherited_attributes(node));
+}
+size_t markdown_core_node_attribute_class_count(const markdown_core_node *node) {
+    return markdown_core_attribute_value_class_count(markdown_core_node_inherited_attributes(node)) +
+           markdown_core_attribute_value_class_count(markdown_core_node_primary_attributes(node));
+}
+bool markdown_core_node_attribute_class_at(const markdown_core_node *node, size_t index, markdown_core_string *value) {
+    const markdown_core_attribute_value *inherited = markdown_core_node_inherited_attributes(node);
+    size_t count = markdown_core_attribute_value_class_count(inherited);
+    return index < count ? markdown_core_attribute_value_class_at(inherited, index, value)
+                         : markdown_core_attribute_value_class_at(markdown_core_node_primary_attributes(node),
+                                                                  index - count, value);
+}
 size_t markdown_core_node_attribute_record_count(const markdown_core_node *node) {
-    return node ? node->attributes.record_count : 0;
+    return markdown_core_attribute_value_record_count(markdown_core_node_inherited_attributes(node)) +
+           markdown_core_attribute_value_record_count(markdown_core_node_primary_attributes(node));
 }
 bool markdown_core_node_attribute_record_at(const markdown_core_node *node, size_t index, markdown_core_string *name,
                                             markdown_core_string *value) {
-    if (!node || !name || !value || index >= node->attributes.record_count) {
-        return false;
-    }
-    *name = chunk_string(node->attributes.records[index].name);
-    *value = chunk_string(node->attributes.records[index].value);
-    return true;
+    const markdown_core_attribute_value *inherited = markdown_core_node_inherited_attributes(node);
+    size_t count = markdown_core_attribute_value_record_count(inherited);
+    return index < count ? markdown_core_attribute_value_record_at(inherited, index, name, value)
+                         : markdown_core_attribute_value_record_at(markdown_core_node_primary_attributes(node),
+                                                                   index - count, name, value);
 }
 const markdown_core_dimensions *markdown_core_node_dimensions(const markdown_core_node *node) {
     if (!node) {

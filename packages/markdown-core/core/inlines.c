@@ -60,6 +60,7 @@ typedef struct subject {
     markdown_core_mem *mem;
     markdown_core_chunk input;
     markdown_core_attribute_parser attributes;
+    bufsize_t heading_attributes_start, heading_content_end;
     unsigned flags;
     bufsize_t opaque_end;
     /* One plus the start of a suffix proven to contain no closer of a rule. */
@@ -178,6 +179,9 @@ void markdown_core_inline_parser_place(markdown_core_inline_parser *parser, mark
 
 int markdown_core_inline_parser_attributes(markdown_core_inline_parser *parser, bufsize_t start,
                                            markdown_core_attributes *value, bufsize_t *end) {
+    if (start == parser->heading_attributes_start) {
+        return 0;
+    }
     if (!parser->attributes.mem) {
         parser->attributes.mem = parser->mem;
         parser->attributes.data = parser->input.data;
@@ -188,6 +192,17 @@ int markdown_core_inline_parser_attributes(markdown_core_inline_parser *parser, 
         parser->oom = 1;
     }
     return matched;
+}
+
+/* Inline owners consume one immediate suffix. A heading's trailing container
+ * belongs to its block envelope, and is reserved until the inline cursor
+ * proves it is outside an opaque body. */
+static void attach_inline_attributes(subject *subj, markdown_core_node *node, bufsize_t from) {
+    bufsize_t end;
+    if (markdown_core_inline_parser_attributes(subj, subj->pos, &node->attributes, &end)) {
+        subj->pos = end;
+        S_place_inline(subj, node, from, end - 1);
+    }
 }
 
 // Create an inline with a literal string value.
@@ -307,6 +322,7 @@ static MARKDOWN_CORE_INLINE markdown_core_node *make_autolink(subject *subj, int
     if (text) {
         append_child(link, text);
     }
+    attach_inline_attributes(subj, link, start_column);
     /* The pointy braces are the syntax; what they enclose is the text. */
     return link;
 }
@@ -318,6 +334,8 @@ static void subject_from_buf(markdown_core_parser *parser, markdown_core_mem *me
     e->skip_chars = parser ? parser->skip_chars : BASE_SKIP_CHARS;
     e->mem = mem;
     e->input = *chunk;
+    memset(&e->attributes, 0, sizeof(e->attributes));
+    e->heading_attributes_start = e->heading_content_end = -1;
     e->flags = 0;
     e->opaque_end = 0;
     memset(e->opaque_failed_from, 0, sizeof(e->opaque_failed_from));
@@ -529,6 +547,7 @@ static markdown_core_node *handle_backticks(subject *subj) {
         if (!node) {
             return NULL;
         }
+        attach_inline_attributes(subj, node, startpos - openticks.len);
         /* The ticks reach no literal and the bytes between them do. */
         return node;
     }
@@ -1587,6 +1606,7 @@ static markdown_core_node *handle_close_bracket(markdown_core_parser *parser, su
     int found_label;
     markdown_core_node *tmp, *tmpnext;
     bool is_image;
+    bool explicit_tail = false;
 
     advance(subj); // advance past ]
     initial_pos = subj->pos;
@@ -1628,6 +1648,7 @@ static markdown_core_node *handle_close_bracket(markdown_core_parser *parser, su
         endall = endtitle + scan_spacechars(&subj->input, endtitle);
 
         if (peek_at(subj, endall) == ')') {
+            explicit_tail = true;
             subj->pos = endall + 1;
 
             title_chunk = markdown_core_chunk_dup(&subj->input, starttitle, endtitle - starttitle);
@@ -1653,6 +1674,7 @@ static markdown_core_node *handle_close_bracket(markdown_core_parser *parser, su
     // skip spaces
     raw_label = markdown_core_chunk_literal("");
     found_label = link_label(subj, &raw_label);
+    explicit_tail = found_label;
     if (!found_label) {
         // If we have a shortcut reference link, back up
         // to before the spacse we skipped.
@@ -1833,6 +1855,10 @@ match:
     // Text at 1:2 -- a node that begins after its own first child.
     inl->start_line = opener->inl_text->start_line;
     inl->start_column = opener->inl_text->start_column;
+    if (explicit_tail) {
+        attach_inline_attributes(subj, inl, opener->position - 1);
+        inl->start_column = opener->inl_text->start_column;
+    }
     S_place_inline(subj, inl, opener->position - 1, subj->pos - 1);
     inl->start_line = opener->inl_text->start_line;
     inl->start_column = opener->inl_text->start_column;
@@ -2070,6 +2096,17 @@ static int parse_inline(markdown_core_parser *parser, subject *subj, markdown_co
                            markdown_core_chunk_dup(&subj->input, startpos, subj->pos - startpos));
         goto append;
     }
+    if (subj->pos == subj->heading_content_end) {
+        bufsize_t end;
+        if (markdown_core_attributes_parse(&subj->attributes, subj->heading_attributes_start, &parent->attributes,
+                                           &end)) {
+            subj->pos = subj->input.len;
+        }
+        if (subj->attributes.oom) {
+            subj->oom = 1;
+        }
+        return 0;
+    }
     switch (c) {
     case '\r':
     case '\n':
@@ -2171,6 +2208,9 @@ static int parse_inline(markdown_core_parser *parser, subject *subj, markdown_co
 
     text:
         endpos = subject_find_special_char(subj);
+        if (subj->pos < subj->heading_content_end && endpos > subj->heading_content_end) {
+            endpos = subj->heading_content_end;
+        }
         /* Text runs are disjoint, so recording separators costs at most one
          * extra visit per byte, regardless of bracket nesting or digit-run
          * length. No image closer scans its label again. */
@@ -2230,9 +2270,51 @@ void markdown_core_parse_inlines(markdown_core_parser *parser, markdown_core_nod
                                           parent->start_column + parent->internal_offset);
     }
     subject_from_buf(parser, parser->mem, parent->start_line, &subj, &content, refmap);
-    memset(&subj.attributes, 0, sizeof(subj.attributes));
     subj.owner = parent;
     markdown_core_chunk_rtrim(&subj.input);
+
+    if (parent->kind == MARKDOWN_CORE_NODE_HEADING) {
+        bufsize_t line = subj.input.len;
+        while (line > 0 && !S_is_line_end_char(subj.input.data[line - 1])) {
+            line--;
+        }
+        subj.attributes =
+            (markdown_core_attribute_parser){.mem = parser->mem, .data = subj.input.data, .length = subj.input.len};
+        subj.heading_attributes_start = markdown_core_attributes_tail(&subj.attributes, line, subj.input.len);
+        if (subj.heading_attributes_start >= 0) {
+            bufsize_t end = subj.heading_attributes_start;
+            while (end > line && (subj.input.data[end - 1] == ' ' || subj.input.data[end - 1] == '\t')) {
+                end--;
+            }
+            if (!parent->as.heading->setext) {
+                bufsize_t hashes = end;
+                while (hashes > line && subj.input.data[hashes - 1] == '#') {
+                    hashes--;
+                }
+                if (hashes < end &&
+                    (hashes == line || (subj.input.data[hashes - 1] == ' ' || subj.input.data[hashes - 1] == '\t'))) {
+                    end = hashes;
+                    while (end > line && (subj.input.data[end - 1] == ' ' || subj.input.data[end - 1] == '\t')) {
+                        end--;
+                    }
+                }
+            }
+            subj.heading_content_end = end;
+        } else if (!parent->as.heading->setext) {
+            bufsize_t hashes = subj.input.len;
+            while (hashes > 0 && subj.input.data[hashes - 1] == '#') {
+                hashes--;
+            }
+            if (hashes < subj.input.len &&
+                (hashes == 0 || (subj.input.data[hashes - 1] == ' ' || subj.input.data[hashes - 1] == '\t'))) {
+                subj.input.len = hashes;
+                markdown_core_chunk_rtrim(&subj.input);
+            }
+        }
+        if (subj.attributes.oom) {
+            subj.oom = 1;
+        }
+    }
 
     while (!is_eof(&subj) && parse_inline(parser, &subj, parent))
         ;
@@ -2247,6 +2329,7 @@ void markdown_core_parse_inlines(markdown_core_parser *parser, markdown_core_nod
     }
 
     if (subj.attributes.mem) {
+        parser->attribute_work += subj.attributes.work;
         markdown_core_attribute_parser_free(&subj.attributes);
     }
     if (subj.oom) {
@@ -2266,11 +2349,30 @@ static void spnl(subject *subj) {
 // Modify refmap if a reference is encountered.
 // Return 0 if no reference found, otherwise position of subject
 // after reference is parsed.
+static bool reference_tail(subject *subj, markdown_core_attribute_parser *attributes, markdown_core_attributes *value) {
+    bufsize_t before = subj->pos;
+    spnl(subj);
+    bufsize_t base = (bufsize_t)(subj->input.data - attributes->data);
+    bufsize_t start = base + subj->pos;
+    bufsize_t end = markdown_core_attributes_end(attributes, start);
+    if (end) {
+        subj->pos = end - base;
+        skip_spaces(subj);
+        if (skip_line_end(subj)) {
+            return markdown_core_attributes_parse(attributes, start, value, &end) != 0;
+        }
+    }
+    subj->pos = before;
+    skip_spaces(subj);
+    return skip_line_end(subj);
+}
+
 bufsize_t markdown_core_parse_reference_inline(markdown_core_mem *mem, markdown_core_chunk *input,
-                                               markdown_core_map *refmap) {
+                                               markdown_core_map *refmap, markdown_core_attribute_parser *attributes) {
     subject subj;
     markdown_core_resource *resource;
     int lost = 0;
+    markdown_core_attributes value = {0};
 
     markdown_core_chunk lab;
     markdown_core_chunk url;
@@ -2315,12 +2417,10 @@ bufsize_t markdown_core_parse_reference_inline(markdown_core_mem *mem, markdown_
     }
 
     // parse final spaces and newline:
-    skip_spaces(&subj);
-    if (!skip_line_end(&subj)) {
+    if (!reference_tail(&subj, attributes, &value)) {
         if (matchlen) { // try rewinding before title
             subj.pos = beforetitle;
-            skip_spaces(&subj);
-            if (!skip_line_end(&subj)) {
+            if (!reference_tail(&subj, attributes, &value)) {
                 return 0;
             }
             // The title candidate is un-read here: its bytes stay paragraph
@@ -2349,7 +2449,10 @@ bufsize_t markdown_core_parse_reference_inline(markdown_core_mem *mem, markdown_
         }
     }
     if (resource) {
+        resource->attributes = value;
         markdown_core_reference_create(mem, refmap, &lab, resource);
+    } else {
+        markdown_core_attributes_free(mem, &value);
     }
     if ((subj.oom || lost) && refmap) {
         refmap->oom = 1;

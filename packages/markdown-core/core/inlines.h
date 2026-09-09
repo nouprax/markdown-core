@@ -28,7 +28,7 @@ void markdown_core_parse_inlines(markdown_core_parser *parser, markdown_core_nod
  * definition produces no node (M2): it is consumed, and every reference that
  * resolves to it is the `Link` or `Media` it names. */
 bufsize_t markdown_core_parse_reference_inline(markdown_core_mem *mem, markdown_core_chunk *input,
-                                               markdown_core_map *refmap);
+                                               markdown_core_map *refmap, markdown_core_attribute_parser *attributes);
 
 /* The special-character tables live in the parser (parser-local, never
  * process-global); reset installs the core defaults. */

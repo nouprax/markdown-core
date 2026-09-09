@@ -168,7 +168,7 @@ export function tableGroups(rows, fired) {
  * value as one non-whitespace token truncates structured values and makes an
  * oracle compare printer spacing instead of semantics.
  */
-export function parseCanonicalFields(body) {
+function parseCanonicalFieldTokens(body) {
     const fields = {};
     let cursor = body.indexOf(" ");
     if (cursor < 0) return fields;
@@ -213,9 +213,20 @@ export function parseCanonicalFields(body) {
         }
 
         const value = body.slice(valueStart, cursor);
-        fields[name] = value.startsWith('"') ? JSON.parse(value) : value;
+        fields[name] = value;
     }
     return fields;
+}
+
+// Lexical tokens retain distinctions the legacy text projections cannot
+// represent, notably the absent marker null versus the authored string "null".
+function decodeCanonicalFields(tokens) {
+    return Object.fromEntries(
+        Object.entries(tokens).map(([name, value]) => [name, value.startsWith('"') ? JSON.parse(value) : value])
+    );
+}
+export function parseCanonicalFields(body) {
+    return decodeCanonicalFields(parseCanonicalFieldTokens(body));
 }
 
 /** The `url` branch of a `Destination`: the target as one decoded string. */
@@ -319,14 +330,15 @@ export function renderDestination(destination) {
 /** Parses this repository's canonical AST dump. */
 export function parseCanonicalDump(dump) {
     const lines = dump.split("\n").filter((line) => line.trim().length);
-    const root = { kind: "Document", fields: parseCanonicalFields(lines[0] ?? "Document"), children: [] };
+    const tokens = parseCanonicalFieldTokens(lines[0] ?? "Document");
+    const root = { kind: "Document", fields: decodeCanonicalFields(tokens), tokens, children: [] };
     const byDepth = [root];
     for (const line of lines.slice(1)) {
         const marker = line.search(/[├└]/);
         const depth = marker < 0 ? 1 : marker / 4 + 1;
         const body = marker < 0 ? line.trim() : line.slice(marker + 4).trim();
-        const fields = parseCanonicalFields(body);
-        const node = { kind: body.split(" ")[0], fields, children: [] };
+        const tokens = parseCanonicalFieldTokens(body);
+        const node = { kind: body.split(" ")[0], fields: decodeCanonicalFields(tokens), tokens, children: [] };
         byDepth[depth - 1].children.push(node);
         byDepth[depth] = node;
     }

@@ -140,6 +140,14 @@ records: [Record])` is never null. `Record(name: String, value: String)`
 retains every assignment occurrence; classes retain every word occurrence.
 The last identifier wins and an empty final `id=` clears the anchor.
 
+Inline code, ATX/Setext headings, fenced code, and completed link/image
+occurrences attach the same normalized attribute grammar. Reference definitions
+supply inherited attributes; local anchors take precedence and local classes and
+records follow inherited declarations without deduplication. These attachment
+sites intentionally differ from Remark; exact inputs are registered in its
+oracle policy. Each binding keeps its native collection types and owns all
+returned values after the native document is released.
+
 `Document.metadata: Metadata?` holds ten named optional values defined by the
 [Properties value model](dialect/properties.md#model). Metadata is never
 Markup and has no visitor callbacks. O6 produces it from the leading envelope.

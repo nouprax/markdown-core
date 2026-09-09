@@ -2,6 +2,7 @@
 
 package com.nouprax.markdown.core
 
+import cnames.structs.markdown_core_attribute_value
 import cnames.structs.markdown_core_citation
 import cnames.structs.markdown_core_error
 import cnames.structs.markdown_core_footnote
@@ -75,6 +76,11 @@ import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_TABLE_ALIGNMENT_CEN
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_TABLE_ALIGNMENT_LEFT
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_TABLE_ALIGNMENT_NONE
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_TABLE_ALIGNMENT_RIGHT
+import com.nouprax.markdown.core.internal.capi.markdown_core_attribute_value_anchor
+import com.nouprax.markdown.core.internal.capi.markdown_core_attribute_value_class_at
+import com.nouprax.markdown.core.internal.capi.markdown_core_attribute_value_class_count
+import com.nouprax.markdown.core.internal.capi.markdown_core_attribute_value_record_at
+import com.nouprax.markdown.core.internal.capi.markdown_core_attribute_value_record_count
 import com.nouprax.markdown.core.internal.capi.markdown_core_citation_next
 import com.nouprax.markdown.core.internal.capi.markdown_core_citation_prefix
 import com.nouprax.markdown.core.internal.capi.markdown_core_citation_referent
@@ -109,11 +115,6 @@ import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_value_get_
 import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_value_item_at
 import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_value_item_count
 import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_value_scalar
-import com.nouprax.markdown.core.internal.capi.markdown_core_node_anchor
-import com.nouprax.markdown.core.internal.capi.markdown_core_node_attribute_class_at
-import com.nouprax.markdown.core.internal.capi.markdown_core_node_attribute_class_count
-import com.nouprax.markdown.core.internal.capi.markdown_core_node_attribute_record_at
-import com.nouprax.markdown.core.internal.capi.markdown_core_node_attribute_record_count
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_callout_properties
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_callout_title
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_child_count
@@ -132,9 +133,11 @@ import com.nouprax.markdown.core.internal.capi.markdown_core_node_get_first_chil
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_get_kind
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_get_next_sibling
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_heading_level
+import com.nouprax.markdown.core.internal.capi.markdown_core_node_inherited_attributes
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_list_item_marker
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_list_properties
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_literal
+import com.nouprax.markdown.core.internal.capi.markdown_core_node_primary_attributes
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_resource
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_scope
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_table_cell_spans
@@ -268,11 +271,19 @@ private class NativeTreeBuilder(
      * C tree, and its identity keys one materialization here, so a long
      * destination referenced many times is copied out of C once.
      */
-    private val resources = HashMap<CPointer<markdown_core_resource>, Pair<Destination, String?>>()
+    private val resources = HashMap<CPointer<markdown_core_resource>, DefinitionResource>()
 
-    private fun resource(node: CPointer<markdown_core_node>): Pair<Destination, String?> {
+    private fun resource(node: CPointer<markdown_core_node>): DefinitionResource {
         val identity = requireNotNull(markdown_core_node_resource(node)) { "invalid link or image node" }
-        return resources.getOrPut(identity) { scratch.destination(node) to scratch.title(node) }
+        return resources.getOrPut(identity) {
+            val inherited = markdown_core_node_inherited_attributes(node)
+            DefinitionResource(
+                scratch.destination(node),
+                scratch.title(node),
+                markdown_core_attribute_value_anchor(inherited).useContents { copyOptionalString() },
+                scratch.attributes(inherited),
+            )
+        }
     }
 
     fun build(): Markup {
@@ -377,8 +388,18 @@ private class NativeTreeBuilder(
         val node = record.pointer
         val kind = markdown_core_node_get_kind(node)
         val scope = nativeScope(node)
-        val anchor = markdown_core_node_anchor(node).useContents { copyOptionalString() }
-        val attributes = scratch.attributes(node)
+        val inherited =
+            if (kind == MARKDOWN_CORE_KIND_LINK ||
+                kind == MARKDOWN_CORE_KIND_MEDIA
+            ) {
+                resource(node)
+            } else {
+                null
+            }
+        val primary = markdown_core_node_primary_attributes(node)
+        val anchor =
+            markdown_core_attribute_value_anchor(primary).useContents { copyOptionalString() } ?: inherited?.anchor
+        val attributes = scratch.attributes(primary).inheriting(inherited?.attributes ?: Attributes.empty)
         val children = children(record)
         return when (kind) {
             MARKDOWN_CORE_KIND_DOCUMENT -> {
@@ -507,12 +528,12 @@ private class NativeTreeBuilder(
 
             MARKDOWN_CORE_KIND_LINK -> {
                 val resource = resource(node)
-                Link(resource.first, resource.second, children, scope, anchor, attributes)
+                Link(resource.dest, resource.title, children, scope, anchor, attributes)
             }
 
             MARKDOWN_CORE_KIND_MEDIA -> {
                 val resource = resource(node)
-                Media(resource.first, resource.second, scratch.dimensions(node), children, scope, anchor, attributes)
+                Media(resource.dest, resource.title, scratch.dimensions(node), children, scope, anchor, attributes)
             }
 
             MARKDOWN_CORE_KIND_DIRECTIVE -> {
@@ -851,18 +872,18 @@ private class NativeScratch(
         return firstString.copyString()
     }
 
-    fun attributes(node: CPointer<markdown_core_node>): Attributes {
+    fun attributes(value: CPointer<markdown_core_attribute_value>?): Attributes {
         val classes =
-            immutableList(markdown_core_node_attribute_class_count(node).checkedSize("class count")) { index ->
+            immutableList(markdown_core_attribute_value_class_count(value).checkedSize("class count")) { index ->
                 require(
-                    markdown_core_node_attribute_class_at(node, index.toULong(), firstString.ptr),
+                    markdown_core_attribute_value_class_at(value, index.toULong(), firstString.ptr),
                 ) { "invalid class" }
                 firstString.copyString()
             }
         val records =
-            immutableList(markdown_core_node_attribute_record_count(node).checkedSize("record count")) { index ->
+            immutableList(markdown_core_attribute_value_record_count(value).checkedSize("record count")) { index ->
                 require(
-                    markdown_core_node_attribute_record_at(node, index.toULong(), firstString.ptr, secondString.ptr),
+                    markdown_core_attribute_value_record_at(value, index.toULong(), firstString.ptr, secondString.ptr),
                 ) {
                     "invalid record"
                 }

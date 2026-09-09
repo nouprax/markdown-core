@@ -1630,6 +1630,36 @@ static void link_resource_lifecycle(test_batch_runner *runner) {
     markdown_core_node_free(doc);
 }
 
+static void reference_attribute_lifecycle(test_batch_runner *runner) {
+    const char source[] = "[r][] [r][]{#own .same k=2}\n\n[r]: /u {#definition .same k=1 k=1}\n";
+    markdown_core_node *root = markdown_core_parse_document(source, sizeof(source) - 1);
+    markdown_core_node *first = root->first_child->first_child;
+    markdown_core_node *second = first->next->next;
+    const markdown_core_attribute_value *inherited = markdown_core_node_inherited_attributes(first);
+    OK(runner, inherited == markdown_core_node_inherited_attributes(second), "definition owns one normalized value");
+    INT_EQ(runner, markdown_core_attribute_value_class_count(markdown_core_node_primary_attributes(first)), 0,
+           "inherited declarations are not copied into occurrence values");
+    INT_EQ(runner, markdown_core_attribute_value_class_count(markdown_core_node_primary_attributes(second)), 1,
+           "occurrence retains only its local sequence");
+    INT_EQ(runner, markdown_core_node_attribute_class_count(second), 2, "merged classes retain duplicates");
+    attribute_eq(runner, second, 0, "k", "1", "first inherited declaration");
+    attribute_eq(runner, second, 1, "k", "1", "duplicate inherited declaration");
+    attribute_eq(runner, second, 2, "k", "2", "local declaration is last");
+    markdown_core_node_unlink(second);
+    markdown_core_node_free(root);
+    attribute_eq(runner, second, 0, "k", "1", "retained occurrence keeps its definition alive");
+    markdown_core_string value = {0};
+    OK(runner, markdown_core_attribute_value_class_at(inherited, 0, &value),
+       "borrowed definition survives sibling removal");
+    OK(runner, !markdown_core_attribute_value_class_at(inherited, 1, &value), "class range is checked");
+    OK(runner, !markdown_core_attribute_value_record_at(inherited, 2, NULL, NULL), "record range is checked");
+    OK(runner,
+       !markdown_core_attribute_value_anchor(NULL).has_value && markdown_core_attribute_value_class_count(NULL) == 0 &&
+           markdown_core_attribute_value_record_count(NULL) == 0,
+       "absent normalized values are empty");
+    markdown_core_node_free(second);
+}
+
 static size_t payload_allocations, payload_fail_at, payload_live;
 static void *payload_test_calloc(size_t count, size_t size) {
     if (++payload_allocations == payload_fail_at) {
@@ -2756,6 +2786,7 @@ typedef struct {
     size_t cross_link, opaque, delimiters, comment, lookahead, footnote_body, block_identifier, callout, dimensions;
     size_t registered_footnotes;
     bool footnote_collection_allocated, footnotes_owned;
+    size_t attributes;
 } inline_work;
 static markdown_core_node *record_inline_work(const markdown_core_extension *extension, markdown_core_parser *parser,
                                               markdown_core_node *root) {
@@ -2772,6 +2803,7 @@ static markdown_core_node *record_inline_work(const markdown_core_extension *ext
     work->block_identifier = parser->block_identifier_work;
     work->callout = parser->callout_scan_work;
     work->dimensions = parser->dimension_work;
+    work->attributes = parser->attribute_work;
     work->footnote_body = parser->footnote_body_work;
     work->registered_footnotes = parser->footnote_registration_work;
     work->footnote_collection_allocated = parser->footnotes.values != NULL;
@@ -3564,6 +3596,40 @@ static void attribute_linear_work(test_batch_runner *runner) {
     }
 }
 
+static void attribute_attachment_linear_work(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    static const struct {
+        const char *prefix, *unit, *suffix;
+    } cases[] = {
+        {"", "`x`{k=' ", "?}"},
+        {"", "[x](/u){k=' ", "?}"},
+        {"# ", "{#a ", "?}"},
+        {"~~~lang ", "{#a ", "?}\nbody\n~~~"},
+        {"", "[r]: /u {.c k=1}\n", "\n[r][]"},
+        {"", "[r]: /u {k=' ", "?}\n"},
+        {"", "`x`{.a .a k=1 k=2} ", ""},
+        {"", "[r][]{.a k=2} ", "\n\n[r]: /u {#a .b k=1}\n"},
+    };
+    for (size_t c = 0; c < sizeof(cases) / sizeof(*cases); c++) {
+        for (size_t count = 128; count <= 4096; count *= 2) {
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+            markdown_core_strbuf_puts(&source, cases[c].prefix);
+            for (size_t i = 0; i < count; i++) {
+                markdown_core_strbuf_puts(&source, cases[c].unit);
+            }
+            markdown_core_strbuf_puts(&source, cases[c].suffix);
+            inline_work work = {0};
+            markdown_core_node *root = markdown_core_parse_document_with_mem((const char *)source.ptr, source.size, mem,
+                                                                             measure_inline_work, &work);
+            OK(runner, root != NULL, "every attribute site parses adversarial inputs");
+            OK(runner, work.attributes > 0 && work.attributes <= 20 * (size_t)source.size,
+               "attribute attachment is linear: case=%zu bytes=%d work=%zu", c, source.size, work.attributes);
+            markdown_core_node_free(root);
+            markdown_core_strbuf_free(&source);
+        }
+    }
+}
+
 static size_t count_anchors(markdown_core_node *root) {
     size_t count = 0;
     markdown_core_iter *iter = markdown_core_iter_new(root);
@@ -3849,6 +3915,7 @@ int main(void) {
     block_identifier_ownership(runner);
     reference_definition_lifetime(runner);
     attribute_linear_work(runner);
+    attribute_attachment_linear_work(runner);
     cross_link_linear_work(runner);
     inline_footnote_linear_work(runner);
     footnote_registration(runner);
@@ -3887,6 +3954,7 @@ int main(void) {
     source_pos_inlines(runner);
     ref_source_pos(runner);
     link_resource_lifecycle(runner);
+    reference_attribute_lifecycle(runner);
     block_cursor_coordinates(runner);
     task_marker_tab_structure(runner);
     task_marker_ownership(runner);

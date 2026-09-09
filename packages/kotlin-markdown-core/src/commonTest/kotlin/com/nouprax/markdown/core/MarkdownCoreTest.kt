@@ -613,11 +613,45 @@ class RobustnessTest {
         // the one value they built for it.
         val destination = "/" + "u".repeat(1024)
         val count = 5_000
-        val document = Document.parse("[a]: $destination\n\n" + "[a]\n\n".repeat(count))
+        val anchor = "a".repeat(1024)
+        val classes = " .c".repeat(1024)
+        val document =
+            Document.parse("[a]: $destination {#$anchor$classes k=$destination}\n\n" + "[a]\n\n".repeat(count))
         val links = document.content.map { assertIs<Link>(assertIs<Paragraph>(it).content.single()) }
         assertEquals(count, links.size)
+        assertEquals(anchor, links[0].anchor)
+        assertEquals(1024, links[0].attributes.classes.size)
+        assertTrue(links.all { it.attributes === links[0].attributes })
         val first = links.first().dest
         assertEquals(destination, assertIs<Destination.Url>(first).value)
         assertTrue(links.all { it.dest === first }, "every occurrence materializes the one resource")
+    }
+
+    @Test
+    fun attributeSitesKeepNativeValuesAndOccurrenceScopes() {
+        val document =
+            Document.parse(
+                "# T ## {#heading}\n\n`x`{.code} [x][r]{#own .same k=2} ![alt|20x30][r]{width=50% height=2in}\n\n[r]: /u {#definition .same k=1 k=1}\n",
+            )
+        assertEquals("heading", document.content[0].anchor)
+        val paragraph = assertIs<Paragraph>(document.content[1])
+        val code = assertIs<Code>(paragraph.content[0])
+        val link = assertIs<Link>(paragraph.content[2])
+        val image = assertIs<Media>(paragraph.content[4])
+        assertEquals(listOf("code"), code.attributes.classes)
+        assertEquals(10, code.scope.end.column)
+        assertEquals("own", link.anchor)
+        assertEquals(listOf("same", "same"), link.attributes.classes)
+        assertEquals(listOf("1", "1", "2"), link.attributes.records.map { it.value })
+        assertEquals("definition", image.anchor)
+        assertEquals(Dimensions(20, 30), image.dimensions)
+        assertEquals(
+            listOf("50%", "2in"),
+            image.attributes.records
+                .takeLast(2)
+                .map { it.value },
+        )
+        assertEquals(3, link.scope.end.line)
+        assertEquals(3, image.scope.end.line)
     }
 }

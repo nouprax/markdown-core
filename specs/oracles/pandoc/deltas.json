@@ -1,0 +1,185 @@
+{
+    "schemaVersion": 1,
+    "entries": [
+        {
+            "id": "bracketed-spans",
+            "item": "P5",
+            "status": "gap",
+            "reason": "The P5 syntax has not landed; retain this exact semantic evidence until its implementing item.",
+            "inputDigest": "ed41d35e400bafbd1ac81634fe994cd95950e08018ec4fd51a923b70ff483890",
+            "oracleDigest": "16f726cc0d2dbb94d366b613c35b4944cb1cecc4b4a4815b9fc7e9697e917bf8",
+            "coreDigest": "0beb7834cc7ff8e719df16238d569163276bb2bc7bb92344d74c838e35d8f31c"
+        },
+        {
+            "id": "pandoc-shorthand-boundaries",
+            "item": "P5",
+            "status": "gap",
+            "reason": "The P5 syntax has not landed; retain this exact semantic evidence until its implementing item.",
+            "inputDigest": "1420ac406594236f3e2b229171d37f3605f43782d31657d67a268f4202421372",
+            "oracleDigest": "b129f4da266fdd75ffce672f4d66522f3794f62880c7d266ccf954f77165e48e",
+            "coreDigest": "abcc4776ee3d453b7f380b4fe863bd299a8b46086dafb440fcd53486dbdc4315"
+        },
+        {
+            "id": "pandoc-attribute-components-and-duplicates",
+            "item": "P5",
+            "status": "gap",
+            "reason": "The P5 syntax has not landed; retain this exact semantic evidence until its implementing item.",
+            "inputDigest": "ed0079236655fb5520d642ef551edb31eaa17274b2c8294f0ffc89131711de0b",
+            "oracleDigest": "062bab5b93e68e8f735bfc3c0d746b1fdf7793ab659405eea06b261dad18b3f5",
+            "coreDigest": "17f4907c813a895e89494c2bfcec73b0617c264810f5e9aa5b0afbe4dc20772b"
+        },
+        {
+            "id": "pandoc-attribute-value-decoding",
+            "item": "P5",
+            "status": "gap",
+            "reason": "The P5 syntax has not landed; retain this exact semantic evidence until its implementing item.",
+            "inputDigest": "ee6f05549f46b724e274d0d6e2631d22d12b8684933c8d7637d12178d6e78c4b",
+            "oracleDigest": "a555aaa92bb78bbcb26a513bd4026dbc752ddea61994502151f6a938b16eead1",
+            "coreDigest": "eb38a8c53e51c638427f79d643344f4348beeec875cb4282dba268309850c67f"
+        },
+        {
+            "id": "pandoc-special-unnumbered",
+            "item": "P5",
+            "status": "gap",
+            "reason": "The P5 syntax has not landed; retain this exact semantic evidence until its implementing item.",
+            "inputDigest": "bc6f5bcc0f136d4527e8b1ddc020f3c774dbad666e7c12c308f15241aa4b4f43",
+            "oracleDigest": "c30a9d1ba09db4f01e5d49d394882f926eaf51335130893675ac7ec701899bca",
+            "coreDigest": "a76e995aaaf8db7b4eedf1d6adb555095407a1aec22069956c1c1adfa39d4a3b"
+        },
+        {
+            "id": "superscript-and-subscript",
+            "item": "P6",
+            "status": "gap",
+            "reason": "The P6 syntax has not landed; retain this exact semantic evidence until its implementing item.",
+            "inputDigest": "726ea288e2fcb22f2b366a37af55cfd4524722a781f2a37431145991466a06c3",
+            "oracleDigest": "9a07c916f35fffe800e97f2d8967e1dabc3d69a6f4a50a1bf04151eb8cfaf3c2",
+            "coreDigest": "1c143618993aaf0d16516ee8a9289859e34f54a8d53bfcd9c94c2e79386573d1"
+        },
+        {
+            "id": "empty-superscript-and-subscript",
+            "item": "P6",
+            "status": "gap",
+            "reason": "The P6 syntax has not landed; retain this exact semantic evidence until its implementing item.",
+            "inputDigest": "1015835f9eced9f8a7222f9d0a6af3eba44c3e747aa6ae2075e8084bc8350ee0",
+            "oracleDigest": "7c4d76e54d6fe6d271470482d636a7ccfcc5751e361a1c02b1132d4e2e440c8a",
+            "coreDigest": "31fa99134634c81b5b2d2bc30a7aad2a68d23aec1baac3112405096fa07f0e80"
+        },
+        {
+            "id": "gfm-auto-anchors",
+            "item": "P3",
+            "status": "gap",
+            "reason": "The P3 syntax has not landed; retain this exact semantic evidence until its implementing item.",
+            "inputDigest": "6b50237ae17d0a79c5a24c2516774f84f57dbfb2e3c7d74449c09c0d044db6c8",
+            "oracleDigest": "1c4e2e4a16b89ceccdb15c2cbdca90b916d6285303a26548b717085087a29f4f",
+            "coreDigest": "3aea8de4d73e559998f607c4b61e2bb696d360e0179e2edf7bc1afd78b206ea4"
+        },
+        {
+            "id": "implicit-header-references",
+            "item": "P4",
+            "status": "gap",
+            "reason": "The P4 syntax has not landed; retain this exact semantic evidence until its implementing item.",
+            "inputDigest": "9e20ec6d94f729dee73d85e1318bfc75cc8e58f3988ce8be73b9f2f68d5b6056",
+            "oracleDigest": "a54ddc4a71f00e857264edab863d17fc374d394ff25fb7231fb7ab0c43015723",
+            "coreDigest": "1d9b3da7e89e34c4b4ace5dead96912a8cee1c3f8d2ca42b5832eaa9fa56d2d5"
+        },
+        {
+            "id": "pandoc-reference-attribute-merge",
+            "item": "P2d",
+            "status": "projection",
+            "reason": "Markdown Core retains inherited declarations before occurrence declarations, preserving every duplicate; Pandoc combineAttr instead deduplicates and reprioritizes declarations.",
+            "inputDigest": "4c646445f9704876bc85d5aa9e49fe1d64984221edbb22fac15ed28ce87d1cbb",
+            "oracleDigest": "d075c6eb719b2b8937797a7889047e44294626c8683797ad8057ab6766ad910a",
+            "coreDigest": "0d530b264cf27c1cbc4d09d4abeb2614ba9545bab3c116f3aea717ce93a0dc96"
+        },
+        {
+            "id": "simple-table-with-caption",
+            "item": "P11b",
+            "status": "gap",
+            "reason": "The P11b syntax has not landed; retain this exact semantic evidence until its implementing item.",
+            "inputDigest": "5d3027efa389a2f92fea421d86e3a4d2ba2388a0d07466482c18dd5684a8b1a9",
+            "oracleDigest": "fcf4038b9221f924ff15df830f9552823b05b25dbd886375421bf3948d29bca4",
+            "coreDigest": "fe5fb580d12c57ac0802b45e0304bb6226fa14df9dd133e70f6fb1c2c9fb4185"
+        },
+        {
+            "id": "multiline-table",
+            "item": "P11c",
+            "status": "gap",
+            "reason": "The P11c syntax has not landed; retain this exact semantic evidence until its implementing item.",
+            "inputDigest": "31017a429fd3f7d01127eed33c83565196bf0250ebf8abd659361caa8e193fee",
+            "oracleDigest": "83fbd0b4f6ec4e77d059846aee8e69901c4ba6d8ef8e7eacc382cb8674779e08",
+            "coreDigest": "c757d04adf2176deb849acfa8a7a2b2f42a7a6acf08f5dfffc506f194897f1ca"
+        },
+        {
+            "id": "grid-table-block-cells",
+            "item": "P11d",
+            "status": "gap",
+            "reason": "The P11d syntax has not landed; retain this exact semantic evidence until its implementing item.",
+            "inputDigest": "e3f2adfd6c2b97d1fce4b953d128724261d28dec1a7c1103f26235a255b9476f",
+            "oracleDigest": "0b6a570617098026ffd82af7cdff89981263cf2cd34822e3cf83af8eede01025",
+            "coreDigest": "583fbaa73479480928f806454f86bc6036053dd4b74cf09f80022e349957598d"
+        },
+        {
+            "id": "grid-table-row-and-column-spans",
+            "item": "P11d",
+            "status": "gap",
+            "reason": "The P11d syntax has not landed; retain this exact semantic evidence until its implementing item.",
+            "inputDigest": "206bef115bc4526effee567d071147b6786467c2ad1a80e052325d5794497eea",
+            "oracleDigest": "ba4f169109672fa6a5cb01ce4c0067b655afb4f94c5fb61556396a720c3c23ed",
+            "coreDigest": "dc5a425f0f3584571d3d101f6fd5032f62c9cd4042c3d66c7dd65248f3367d86"
+        },
+        {
+            "id": "fancy-list-and-startnum",
+            "item": "P9a",
+            "status": "gap",
+            "reason": "The P9a syntax has not landed; retain this exact semantic evidence until its implementing item.",
+            "inputDigest": "97f2084101a800e56105304c8413653c745a0aa95a9620a10553ab0c91eae9ec",
+            "oracleDigest": "6802901f0a8d34093e9d978ce237e5ccad5995fde1038face9afda8aba5c31f4",
+            "coreDigest": "e9f4659aa4a25fd2d77a55bb0de738713a4bf74bca035f287f8b842d2e1617cc"
+        },
+        {
+            "id": "definition-list-loose-and-multiple-bodies",
+            "item": "P10",
+            "status": "gap",
+            "reason": "The P10 syntax has not landed; retain this exact semantic evidence until its implementing item.",
+            "inputDigest": "7b3cf40a43e662f0d764558d4cf5cb3349770ee21ec99170b4587381c5a34b6c",
+            "oracleDigest": "bd304b79425434773287012392466a0e697900ac637c01a8e2d9d671abcbca07",
+            "coreDigest": "d42fad78bee1aa8703bc31ed2f88b0114e5767bec1631550db6fbe9d5bc115bb"
+        },
+        {
+            "id": "definition-list-compact",
+            "item": "P10",
+            "status": "gap",
+            "reason": "The P10 syntax has not landed; retain this exact semantic evidence until its implementing item.",
+            "inputDigest": "00484e1a513cf498e03b1c4a017aac21bc862b89e0854351f2298a5983531241",
+            "oracleDigest": "a40f82d626c56da2be4b2ceaaeec6542a2e5e41c202a5cc938e342d4dee454ad",
+            "coreDigest": "d28c10c13fc2eb2412a91173d2f8b3da2933b080ebbca154e5b5d1d1bee302db"
+        },
+        {
+            "id": "example-lists-and-reference",
+            "item": "P9b",
+            "status": "gap",
+            "reason": "The P9b syntax has not landed; retain this exact semantic evidence until its implementing item.",
+            "inputDigest": "c362a23129b82d354226ddb641bd135c9e77c2f1a291f16bb4942c95e5ed37cf",
+            "oracleDigest": "6cf71986484b5ea0b161dc2abfab3ed04f36d97c8971feabae12901c885d3de6",
+            "coreDigest": "f8e6f6fea7c9fa895887f46a632de34662f745b63d497abf8cb0c0de7327ae70"
+        },
+        {
+            "id": "fenced-divs-nested",
+            "item": "P8",
+            "status": "gap",
+            "reason": "The P8 syntax has not landed; retain this exact semantic evidence until its implementing item.",
+            "inputDigest": "3346c57ddcbae338cf3576adeffd93510099e974422a5b7e974848597d68c877",
+            "oracleDigest": "0f9013d8f989567e6ed9fc667b52b619b66c2951912dbf2f5dd8703b08370824",
+            "coreDigest": "7431fef9e20692ea936368ae5b965c6c02f69d0fc0e785c96dd457f25b0c68c5"
+        },
+        {
+            "id": "bibliography-citations",
+            "item": "P7",
+            "status": "gap",
+            "reason": "The P7 syntax has not landed; retain this exact semantic evidence until its implementing item.",
+            "inputDigest": "ead7761f90c8140b7bf927889c8aaefeefa6eb8b861231ef7319f707c56bd467",
+            "oracleDigest": "b04070c42872ef2b3c64f7174849e429fcdbb46e8d73eb9d0f617237e9d3c2ba",
+            "coreDigest": "b2f78a5ebccb5087a5fd5e1fb58850db1a62e19d596c7f1d3506920d4bc36b3e"
+        }
+    ]
+}

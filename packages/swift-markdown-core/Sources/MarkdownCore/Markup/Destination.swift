@@ -24,6 +24,8 @@ public enum Destination: Sendable, Hashable {
 struct SharedResource {
     let dest: Destination
     let title: String?
+    let anchor: String?
+    let attributes: Attributes
 
     static func shared(
         by node: OpaquePointer,
@@ -36,7 +38,13 @@ struct SharedResource {
         if let known = resources[key] { return known }
         var title = markdown_core_optional_string()
         markdown_core_node_title(node, &title)
-        let resource = SharedResource(dest: Destination(from: node), title: title.string)
+        let inherited = markdown_core_node_inherited_attributes(node)
+        let resource = SharedResource(
+            dest: Destination(from: node),
+            title: title.string,
+            anchor: markdown_core_attribute_value_anchor(inherited).string,
+            attributes: Attributes(from: inherited)
+        )
         resources[key] = resource
         return resource
     }

@@ -74,3 +74,70 @@ extension APISuite {
         #expect(!visitor.events.contains { $0.contains("Metadata") })
     }
 }
+
+extension APISuite {
+    @Test("P2 inheritance retains native values and occurrence scopes")
+    func attributeSites() throws {
+        let document = try Document.parse(
+            "# T ## {#heading}\n\n`x`{.code} [x][r]{#own .same k=2} "
+                + "![alt|20x30][r]{width=50% height=2in}\n\n[r]: /u {#definition .same k=1 k=1}\n"
+        )
+        #expect(document.content[0].anchor == "heading")
+        let paragraph = try #require(document.content[1] as? Paragraph)
+        let code = try #require(paragraph.content[0] as? Code)
+        let link = try #require(paragraph.content[2] as? Link)
+        let image = try #require(paragraph.content[4] as? Media)
+        #expect(code.literal == "x" && code.attributes.classes == ["code"])
+        #expect(code.scope.end.column == 10)
+        #expect(link.anchor == "own")
+        #expect(link.attributes.classes == ["same", "same"])
+        #expect(link.attributes.records.map(\.value) == ["1", "1", "2"])
+        #expect(image.anchor == "definition")
+        #expect(image.dimensions == Dimensions(width: 20, height: 30))
+        #expect(image.attributes.records.suffix(2).map(\.value) == ["50%", "2in"])
+        #expect(link.scope.end.line == 3 && image.scope.end.line == 3)
+    }
+}
+
+extension ErrorsSuite {
+    @Test("every occurrence of one reference definition materializes one resource")
+    func sharedResource() throws {
+        // M2: the C tree shares one resource across every occurrence of a
+        // definition, and the Swift tree decodes it once. The destination is
+        // long enough to live in heap storage, so two Strings that share it
+        // report one buffer and two independent decodes would report two.
+        let destination = "/" + String(repeating: "u", count: 1024)
+        let count = 5_000
+        let anchor = String(repeating: "a", count: 1024)
+        let classes = String(repeating: " .c", count: 1024)
+        let document = try Document.parse(
+            "[a]: \(destination) {#\(anchor)\(classes) k=\(destination)}\n\n"
+                + String(repeating: "[a]\n\n", count: count)
+        )
+        let links = try document.content.map { try #require(($0 as? Paragraph)?.content.first as? Link) }
+        #expect(links.count == count)
+        #expect(links[0].anchor == anchor)
+        #expect(links[0].attributes.classes.count == 1024)
+        let classStorage = links[0].attributes.classes.withUnsafeBufferPointer { $0.baseAddress }
+        for link in links {
+            #expect(link.attributes.classes.withUnsafeBufferPointer { $0.baseAddress } == classStorage)
+        }
+        var editable = links[0].attributes.classes
+        editable[0] = "edited"
+        #expect(links[1].attributes.classes[0] == "c")
+        guard case .url(var first) = links[0].dest else {
+            Issue.record("a resolved reference is the url branch")
+            return
+        }
+        #expect(first == destination)
+        let storage = first.withUTF8 { UnsafeRawPointer($0.baseAddress!) }
+        for link in links.dropFirst() {
+            guard case .url(var url) = link.dest else {
+                Issue.record("a resolved reference is the url branch")
+                return
+            }
+            #expect(url.withUTF8 { UnsafeRawPointer($0.baseAddress!) } == storage)
+        }
+    }
+
+}

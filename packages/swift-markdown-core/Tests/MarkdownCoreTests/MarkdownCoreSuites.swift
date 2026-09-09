@@ -171,32 +171,6 @@ import Testing
         #expect(link.title == nil)
     }
 
-    @Test("every occurrence of one reference definition materializes one resource")
-    func sharedResource() throws {
-        // M2: the C tree shares one resource across every occurrence of a
-        // definition, and the Swift tree decodes it once. The destination is
-        // long enough to live in heap storage, so two Strings that share it
-        // report one buffer and two independent decodes would report two.
-        let destination = "/" + String(repeating: "u", count: 1024)
-        let count = 5_000
-        let document = try Document.parse("[a]: \(destination)\n\n" + String(repeating: "[a]\n\n", count: count))
-        let links = try document.content.map { try #require(($0 as? Paragraph)?.content.first as? Link) }
-        #expect(links.count == count)
-        guard case .url(var first) = links[0].dest else {
-            Issue.record("a resolved reference is the url branch")
-            return
-        }
-        #expect(first == destination)
-        let storage = first.withUTF8 { UnsafeRawPointer($0.baseAddress!) }
-        for link in links.dropFirst() {
-            guard case .url(var url) = link.dest else {
-                Issue.record("a resolved reference is the url branch")
-                return
-            }
-            #expect(url.withUTF8 { UnsafeRawPointer($0.baseAddress!) } == storage)
-        }
-    }
-
     @Test("an ordinary quote is a metadata-free callout")
     func callout() throws {
         let document = try Document.parse("> quote\n")

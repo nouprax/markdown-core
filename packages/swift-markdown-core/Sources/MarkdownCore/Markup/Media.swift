@@ -34,8 +34,9 @@ extension Media {
         let dimensions = markdown_core_node_dimensions(node).map { Dimensions($0.pointee) }
         self.init(
             scope: Self.scope(from: node),
-            anchor: markdown_core_node_anchor(node).string,
-            attributes: Attributes(from: node),
+            anchor: markdown_core_attribute_value_anchor(markdown_core_node_primary_attributes(node)).string
+                ?? resource.anchor,
+            attributes: Attributes(from: node).inheriting(resource.attributes),
             content: content,
             dest: resource.dest,
             title: resource.title,

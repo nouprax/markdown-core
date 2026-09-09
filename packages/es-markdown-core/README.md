@@ -133,3 +133,11 @@ Tables expose `columns`, `head`, `content`, and `foot`. Each `TableColumn` has
 `alignment` and nullable `relative`; each `TableCell` has `rowspan`, `colspan`,
 and direct inline or block `content`. Rows carry their cells and scope; group
 ownership belongs to the table. Pipe tables have unit spans and no authored widths.
+
+Attributes attach to inline code (``x`{.code}`), ATX and Setext headings,
+fenced code, direct links/media, resolved references and angle autolinks.
+Reference definitions can supply an anchor, classes and records. An occurrence's
+nonempty anchor wins; its classes and records follow inherited declarations,
+including duplicates. Image dimension suffixes and dimension attribute records
+remain independent. All returned values use the binding's native collections
+and remain usable after parsing finishes.

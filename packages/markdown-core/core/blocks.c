@@ -568,11 +568,17 @@ static bool resolve_reference_link_definitions(markdown_core_parser *parser, mar
     bufsize_t pos;
     markdown_core_strbuf *node_content = &b->content;
     markdown_core_chunk chunk = {node_content->ptr, node_content->size, 0};
+    markdown_core_attribute_parser attributes = {.mem = parser->mem, .data = chunk.data, .length = chunk.len};
     while (chunk.len && chunk.data[0] == '[' &&
-           (pos = markdown_core_parse_reference_inline(parser->mem, &chunk, parser->refmap))) {
+           (pos = markdown_core_parse_reference_inline(parser->mem, &chunk, parser->refmap, &attributes))) {
         chunk.data += pos;
         chunk.len -= pos;
     }
+    if (attributes.oom) {
+        parser->oom = true;
+    }
+    parser->attribute_work += attributes.work;
+    markdown_core_attribute_parser_free(&attributes);
     // The definitions are dropped off the FRONT of the block's content, so what
     // is left starts further down the source than the block was told it did.
     // Without this a paragraph whose leading definitions were consumed keeps the
@@ -805,7 +811,6 @@ static markdown_core_node *finalize(markdown_core_parser *parser, markdown_core_
         b->end_column = parser->last_line_length;
     } else if (S_type(b) == MARKDOWN_CORE_NODE_DOCUMENT ||
                (S_type(b) == MARKDOWN_CORE_NODE_CODE_BLOCK && b->as.code->fenced) ||
-               (S_type(b) == MARKDOWN_CORE_NODE_HEADING && b->as.heading->setext) ||
                /* D35: a block finalized on the line it OPENED did not end on
                 * the previous one. `line_number - 1` below assumes the block
                 * was closed by a later line, which is true of every block that
@@ -857,7 +862,22 @@ static markdown_core_node *finalize(markdown_core_parser *parser, markdown_core_
             assert(pos < node_content->size);
 
             markdown_core_strbuf tmp = MARKDOWN_CORE_BUF_INIT(parser->mem);
-            houdini_unescape_html_f(&tmp, node_content->ptr, pos);
+            bufsize_t info_end = pos, attribute_end;
+            while (info_end > 0 && S_is_space_or_tab(node_content->ptr[info_end - 1])) {
+                info_end--;
+            }
+            markdown_core_attribute_parser attributes = {.mem = parser->mem, .data = node_content->ptr, .length = pos};
+            bufsize_t attribute_start = markdown_core_attributes_tail(&attributes, 0, info_end);
+            if (attribute_start >= 0 &&
+                markdown_core_attributes_parse(&attributes, attribute_start, &b->attributes, &attribute_end)) {
+                info_end = attribute_start;
+            }
+            if (attributes.oom) {
+                parser->oom = true;
+            }
+            parser->attribute_work += attributes.work;
+            markdown_core_attribute_parser_free(&attributes);
+            houdini_unescape_html_f(&tmp, node_content->ptr, info_end);
             markdown_core_strbuf_trim(&tmp);
             markdown_core_strbuf_unescape(&tmp);
             /* WHETHER THE SOURCE WROTE AN INFO STRING IS DECIDED HERE, ONCE.
@@ -1390,24 +1410,6 @@ static void S_parse_source(markdown_core_parser *parser, const unsigned char *so
         parser->lookahead_end = end;
         S_process_line(parser, parser->line_scratch.ptr, parser->line_scratch.size);
         markdown_core_strbuf_clear(&parser->line_scratch);
-    }
-}
-
-static void chop_trailing_hashtags(markdown_core_chunk *ch) {
-    bufsize_t n, orig_n;
-
-    markdown_core_chunk_rtrim(ch);
-    orig_n = n = ch->len - 1;
-
-    // if string ends in space followed by #s, remove these:
-    while (n >= 0 && peek_at(ch, n) == '#') {
-        n--;
-    }
-
-    // Check for a space before the final #s:
-    if (n != orig_n && n >= 0 && S_is_space_or_tab(peek_at(ch, n))) {
-        ch->len = n;
-        markdown_core_chunk_rtrim(ch);
     }
 }
 
@@ -2648,9 +2650,6 @@ static void add_text_to_container(markdown_core_parser *parser, markdown_core_no
         } else if (parser->blank) {
             // ??? do nothing
         } else if (accepts_lines(container)) {
-            if (S_type(container) == MARKDOWN_CORE_NODE_HEADING && container->as.heading->setext == false) {
-                chop_trailing_hashtags(input);
-            }
             S_advance_offset(parser, input, parser->first_nonspace - parser->offset, false);
             add_line(container, input, parser);
         } else {
@@ -2736,15 +2735,9 @@ static void S_process_line(markdown_core_parser *parser, const unsigned char *bu
     add_text_to_container(parser, container, last_matched_container, &input);
 
 finished:
-    /* M0: measured from `curline`, not from `input`. The two share their
-     * bytes, but `chop_trailing_hashtags` shortens `input` to an ATX
-     * heading's content before the line is added, and a block that ends on
-     * this line -- the heading itself, when the next line closes it -- took
-     * that shortened length as its end: `# ATX #` ended at 1:5, the content,
-     * while `foo   ` as a paragraph ended at 1:6, its whole line. A heading's
-     * closing sequence is a delimiter, and delimiters belong to the node
-     * they delimit, so the heading now ends where every other block does:
-     * at its line's last byte before the line ending. */
+    /* Block scopes cover the complete physical line, including closing
+     * delimiters and attribute containers. Inline content trimming never
+     * changes this source boundary. */
     parser->last_line_length = parser->curline.size;
     if (parser->last_line_length && parser->curline.ptr[parser->last_line_length - 1] == '\n') {
         parser->last_line_length -= 1;

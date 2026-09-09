@@ -1078,7 +1078,7 @@ jobs:
             - name: Build this parser
               run: pnpm build:c
             - name: Build the pinned parser oracles
-              run: scripts/init-environment.sh --install oracle-cmark oracle-cmark-gfm
+              run: scripts/init-environment.sh --install oracle-cmark oracle-cmark-gfm oracle-pandoc
             - name: Compare CommonMark against current cmark
               run: pnpm check:commonmark-parity
             - name: Compare GFM extensions against cmark-gfm
@@ -1087,6 +1087,8 @@ jobs:
               run: pnpm check:mdast-parity
             - name: Run the supplementary Obsidian and Properties oracles
               run: pnpm check:obsidian-parity
+            - name: Pandoc oracle parity
+              run: pnpm check:pandoc-parity
             - name: Insertion oracle parity
               run: pnpm check:ins-parity
             # The position oracles. They live here because one of the three

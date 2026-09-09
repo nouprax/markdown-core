@@ -30,18 +30,33 @@ public struct Attributes: Sendable, Hashable {
 
 extension Attributes {
     init(from node: OpaquePointer) {
+        self.init(from: markdown_core_node_primary_attributes(node))
+    }
+
+    init(from value: OpaquePointer?) {
         self.init(
-            classes: (0..<markdown_core_node_attribute_class_count(node)).map { index in
-                var value = markdown_core_string()
-                precondition(markdown_core_node_attribute_class_at(node, index, &value))
-                return value.requiredString
+            classes: (0..<markdown_core_attribute_value_class_count(value)).map { index in
+                var string = markdown_core_string()
+                precondition(markdown_core_attribute_value_class_at(value, index, &string))
+                return string.requiredString
             },
-            records: (0..<markdown_core_node_attribute_record_count(node)).map { index in
+            records: (0..<markdown_core_attribute_value_record_count(value)).map { index in
                 var name = markdown_core_string()
-                var value = markdown_core_string()
-                precondition(markdown_core_node_attribute_record_at(node, index, &name, &value))
-                return Record(name: name.requiredString, value: value.requiredString)
+                var string = markdown_core_string()
+                precondition(markdown_core_attribute_value_record_at(value, index, &name, &string))
+                return Record(name: name.requiredString, value: string.requiredString)
             }
+        )
+    }
+}
+
+extension Attributes {
+    /// Native arrays keep Swift value semantics and copy-on-write storage. Only
+    /// a nonempty occurrence sequence needs a new array when it is appended.
+    func inheriting(_ inherited: Attributes) -> Attributes {
+        Attributes(
+            classes: classes.isEmpty ? inherited.classes : inherited.classes + classes,
+            records: records.isEmpty ? inherited.records : inherited.records + records
         )
     }
 }

@@ -337,7 +337,7 @@ its behavior, with no separate publication step.
   the complete dialect before optional test instrumentation. The attachment
   audit rejects option constants and any second complete-dialect attach site.
 
-- [ ] **P0 — Pandoc evidence gate.** Add `oracle-pandoc` to
+- [x] **P0 — Pandoc evidence gate.** Add `oracle-pandoc` to
       `scripts/init-environment.sh`: `--install` fetches only the host archive
       named by `specs/oracles/pandoc/source.json` and verifies its SHA-256, and
       `--check` accepts only the exact 3.11 runner. Add one adapter that passes
@@ -345,9 +345,9 @@ its behavior, with no separate publication step.
       data directory and requests JSON, with canaries for the version prefix,
       the `[1, 23, 1, 2]` API envelope, extension enable and disable behavior,
       UTF-8 input, and user-data isolation. Define one semantic projection per
-      target concept, register all 25 cases as not yet implemented in a
-      fail-closed `specs/oracles/pandoc/deltas.json` carrying both digests and
-      the implementing item, and wire `check:pandoc-parity` into
+      target concept, compare all 25 cases and register only actual missing
+      features in a fail-closed `specs/oracles/pandoc/deltas.json` carrying both
+      digests and the implementing item, and wire `check:pandoc-parity` into
       `check:oracle-parity`, the External parity CI job, and
       `scripts/audit-test-topology.sh`. Normal build and test commands still
       perform no network access. The adapter runs each case through the one
@@ -1096,19 +1096,19 @@ its behavior, with no separate publication step.
 
 ## Stage 4 — Pandoc track
 
-- [ ] **P2a — `inline_code_attributes`.** Attach a container that begins
+- [x] **P2a — `inline_code_attributes`.** Attach a container that begins
       immediately after a complete closing backtick run to the `Code` node,
       excluding it from `literal` and including it in scope; whitespace prevents
       attachment and a malformed suffix leaves the code span unchanged. Fixtures
       and a canonical case; remove the `inline-code-attributes` gap. An explicit
       ID from this syntax reserved before heading synthesis is a cross-item case
       owned by whichever of `P2a` and `P3` merges later. Requires `P0`, `M7`.
-- [ ] **P2b — `heading_attributes`.** Attach a trailing container on ATX and
+- [x] **P2b — `heading_attributes`.** Attach a trailing container on ATX and
       Setext headings, after optional closing hashes, removing it from content
       and including it in scope; an invalid suffix stays visible. Fixtures cover
       compact, spaced, Setext, and malformed forms; remove the
       `header-attributes` gap. Requires `P0`, `M7`.
-- [ ] **P2c — `fenced_code_attributes`.** Accept a braced list in the opening
+- [x] **P2c — `fenced_code_attributes`.** Accept a braced list in the opening
       info region of tilde and backtick fences and attach its classes and
       records as written; `info` and `language` keep the inherited contract over
       the bytes outside the list, nothing is lowercased, aliased, or derived
@@ -1118,20 +1118,19 @@ its behavior, with no separate publication step.
       `fenced-code-attributes` gap. An explicit ID from this syntax reserved
       before heading synthesis is a cross-item case owned by whichever of `P2c`
       and `P3` merges later. Requires `P0`, `M7`.
-- [ ] **P2d — `link_attributes`.** Attach an immediate container after a direct
+- [x] **P2d — `link_attributes`.** Attach an immediate container after a direct
       link, image, resolved reference occurrence, or autolink. Implement the
       attributes contract's `merge(primary, inherited)` operation here with
-      reference definitions as its first consumer: store a definition's
-      container in the parser reference map as part of the shared resource that
-      `M2` introduced, so an occurrence references the definition's attributes
-      and materializes only its occurrence-local merge delta rather than a copy,
-      and apply the merge on resolution without touching the occurrence scope,
+      reference definitions as its first consumer. The C parser stores a
+      definition's container in the reference resource introduced by `M2`; each
+      occurrence retains its local declarations and reads inherited values
+      through that resource. Apply the merge without changing occurrence scope,
       keeping inherited duplicates and registering Pandoc's `combineAttr`
       deduplication as an expected divergence of the Pandoc gate;
       extend `pathological_reference_expansion_bound` and its transport and
-      decoder counterparts so a long definition anchor, class list, or record
-      referenced many times is stored once on every surface; keep `width` and
-      `hten` unit strings as records. Audit every Link, Media, Heading, Code,
+      decoder counterparts. Within each binding, decode inherited values once per
+      definition using that language's native collection and ownership conventions;
+      keep `width` and `height` unit strings as records. Audit every Link, Media, Heading, Code,
       CodeBlock, directive, and reference-definition caller and delete repair
       passes made obsolete by the shared operation. Two cross-item cases are
       owned by whichever item merges later: a link tail claiming the container
@@ -1140,9 +1139,42 @@ its behavior, with no separate publication step.
       `link-and-image-attributes` and `pandoc-reference-attribute-merge` gaps.
       An explicit ID from this syntax reserved before heading synthesis is a
       cross-item case owned by whichever of `P2d` and `P3` merges later, and an
-      image carrying both a typed dimension suffix and a `width` or `hten`
+      image carrying both a typed dimension suffix and a `width` or `height`
       attribute record, each retained independently, is a cross-item case owned
       by whichever of `P2d` and `O9` merges later. Requires `P0`, `M7`.
+
+  P2 completion audit (2026-09-09):
+
+  - Binding representation is a language-specific design choice. Swift keeps
+    value types and copy-on-write Arrays; Kotlin keeps immutable List snapshots;
+    ES keeps ordinary readonly arrays. No binding retains a native handle after
+    parsing. Definition values are decoded once within each binding, and an
+    occurrence with local declarations constructs its merged native sequences.
+    C and transport storage are linear in authored input. Binding construction
+    is linear in input plus the native arrays explicitly materialized by local
+    merges; public collection types are not replaced to impose a uniform
+    physical-storage mechanism.
+  - The shared recognition index serves immediate suffixes, trailing block
+    containers and reference definitions. Heading envelopes reserve their own
+    trailing container before inline attachment; an opaque inline body can
+    consume source before that reservation commits. Scope comes from the
+    existing source map, and definition inheritance never supplies scope.
+  - P2b also fixes Setext finalization: the block ends on its underline, not
+    the following line. The reviewed updates change only heading endpoints in
+    13 existing fixture cases and remove ten containment/overlap ledger rows.
+  - P0 observes five agreements, one exact `combineAttr` divergence, and nineteen
+    gaps owned by later P items. The already-agreeing bare-name rejection case
+    is an agreement rather than a fictitious baseline gap. Pandoc code language
+    classes and final code newlines use documented representation projections.
+  - Validation passed on macOS arm64: `pnpm verify`, C correctness and conformance, strict OOM,
+    ASan/UBSan/TSan (79 correctness tests each); Swift and Kotlin JVM/Native
+    correctness and conformance; ES Node/browser and conformance; all oracle
+    gates; position and reference-order ledgers; 400 fixed-seed cases each for
+    CommonMark, GFM and Remark differential fuzzing; and the host release dry run.
+    The pinned Pandoc installer was exercised from a missing executable through
+    download, SHA-256 verification, installation and the offline version check.
+    Full Linux/macOS release aggregation remains in CI.
+
 - [ ] **P3 — `auto_anchors`.** Build one document anchor registry that reserves
       every explicit anchor from every enabled extension before synthesis, then
       generates GFM anchors in heading order from the per-kind text projection

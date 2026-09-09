@@ -221,8 +221,11 @@ test("ownership: every occurrence of one definition crosses the boundary once an
     // size where copying would multiply the destination by the occurrences.
     const destination = `/${"u".repeat(1024)}`;
     const count = 20_000;
-    const source = `[a]: ${destination}\n\n${"[a]\n\n".repeat(count)}`;
+    const anchor = "a".repeat(1024);
+    const classes = Array.from({ length: 1024 }, () => "c");
+    const source = `[a]: ${destination} {#${anchor} ${classes.map((value) => `.${value}`).join(" ")} k=${destination}}\n\n${"[a]\n\n".repeat(count)}`;
     let stringsLength = -1;
+    let attributeCount = -1;
     const measuringNative = {
         memory: native.memory,
         malloc: native.malloc,
@@ -230,6 +233,7 @@ test("ownership: every occurrence of one definition crosses the boundary once an
         es_parse: (...arguments_) => {
             const result = native.es_parse(...arguments_);
             stringsLength = new DataView(native.memory.buffer).getUint32(result + 60, true);
+            attributeCount = new DataView(native.memory.buffer).getUint32(result + 32, true);
             return result;
         },
         es_result_free: native.es_result_free
@@ -237,6 +241,22 @@ test("ownership: every occurrence of one definition crosses the boundary once an
     const document = parseDocumentWithNative(measuringNative, source);
     const links = document.content.map((paragraph) => paragraph.content[0]);
     assert.equal(links.length, count);
+    assert.equal(links[0].anchor, anchor);
+    assert.deepEqual(links[0].attributes.classes, classes);
+    assert.equal(attributeCount, classes.length + 1, "definition attributes cross Wasm once");
+    assert.throws(() => {
+        links[0].attributes.classes[0] = "edited";
+    }, TypeError);
+    assert.throws(() => {
+        links[0].attributes.records[0].value = "edited";
+    }, TypeError);
+    assert.throws(() => {
+        links[0].attributes.records = [];
+    }, TypeError);
+    assert.equal(links[1].attributes.classes[0], "c");
+    assert.equal(links[1].attributes.records[0].value, destination);
+    assert.ok(links.every((link) => link.attributes.classes === links[0].attributes.classes));
+    assert.ok(links.every((link) => link.attributes.records === links[0].attributes.records));
     assert.deepEqual(links[0].dest, { kind: "url", value: destination });
     assert.ok(
         links.every((link) => link.kind === "link" && link.dest === links[0].dest),
@@ -303,7 +323,7 @@ test("ast: a title is decoded from the auxiliary range before the content and du
     // its auxiliary range. This transport fixture is built by hand:
     // a document holding one collapsed `note` callout whose
     // title is the text `T` and whose content is empty.
-    const nodeSize = 136;
+    const nodeSize = 160;
     const strings = Uint8Array.from("noteT", (character) => character.charCodeAt(0));
     const nodesOffset = 64;
     const edgesOffset = nodesOffset + 3 * nodeSize;
@@ -661,7 +681,7 @@ test("errors: malformed native values are rejected before they enter the AST", (
     const directiveOffset = findNode(malformedDirective, kinds.indexOf("directive"));
     const labelIndex = new DataView(malformedDirective.buffer).getUint32(directiveOffset + 32, true);
     const nodesOffset = new DataView(malformedDirective.buffer).getUint32(40, true);
-    new DataView(malformedDirective.buffer).setUint32(nodesOffset + labelIndex * 136, 3, true);
+    new DataView(malformedDirective.buffer).setUint32(nodesOffset + labelIndex * 160, 3, true);
     assert.throws(
         () => new NodeDecoder(malformedDirective).decodeDocument(),
         /directive label field contains a non-label node/u
@@ -763,7 +783,7 @@ function findNode(result, kind) {
     const count = view.getUint32(24, true);
     const nodesOffset = view.getUint32(40, true);
     for (let index = 0; index < count; index += 1) {
-        const offset = nodesOffset + index * 136;
+        const offset = nodesOffset + index * 160;
         if (view.getUint32(offset, true) === kind) return offset;
     }
     throw new Error(`result does not contain kind ${kind}`);
@@ -779,7 +799,7 @@ test("ast: specimen definitions and references retain ownership, nulls and reset
     let citations = 0;
     let firstSpecimen;
     for (let i = 0; i < view.getUint32(24, true); ++i) {
-        const at = nodes + i * 136;
+        const at = nodes + i * 160;
         const kind = view.getUint32(at, true);
         if (kind === 0x100 && ++citations === 2) view.setInt32(at + 44, 3, true);
         if (kind === 0x101 && ++definitions > 1) {
@@ -889,7 +909,7 @@ test("ast: metadata preserves tags, decimal text, duplicate keys and owned lists
     ];
     const encoded = strings.map((value) => new globalThis.TextEncoder().encode(value));
     const nodes = 64,
-        edges = nodes + 8 * 136,
+        edges = nodes + 8 * 160,
         attributes = edges + 6 * 4,
         blob = attributes + 2 * 16;
     const bytes = new Uint8Array(blob + encoded.reduce((n, value) => n + value.length, 0));
@@ -921,7 +941,7 @@ test("ast: metadata preserves tags, decimal text, duplicate keys and owned lists
         put(offset + 4, refs[index][1]);
     };
     const node = (index, kind) => {
-        const at = nodes + index * 136;
+        const at = nodes + index * 160;
         put(at, kind);
         for (const offset of [8, 12, 16, 20]) put(at + offset, 1);
         for (const offset of [32, 36, 64, 72, 80, 88, 96, 120]) put(at + offset, 0xffff_ffff);
@@ -951,7 +971,7 @@ test("ast: metadata preserves tags, decimal text, duplicate keys and owned lists
     string(attributes + 24, 10);
     const document = new NodeDecoder(bytes).decodeDocument();
     const bad = bytes.slice();
-    new DataView(bad.buffer).setUint32(nodes + 3 * 136 + 4, 9, true);
+    new DataView(bad.buffer).setUint32(nodes + 3 * 160 + 4, 9, true);
     assert.throws(() => new NodeDecoder(bad).decodeDocument(), /metadata scalar/);
     bytes.fill(0);
     assert.deepEqual(
@@ -1107,4 +1127,31 @@ test("ast: embedded dimensions survive the wire lifetime and require an embedded
     assert.equal(link.label, "raw *label*");
     assert.deepEqual(link.dimensions, { width: 2147483647, height: 2 });
     assert.deepEqual(link.dest, { kind: "cross", path: "", anchor: "id" });
+});
+
+test("ast: P2 attributes preserve native arrays, inheritance, dimensions and occurrence scopes", () => {
+    const document = Document.parse(
+        "# T ## {#heading}\n\n`x`{.code} [x][r]{#own .same k=2} ![alt|20x30][r]{width=50% height=2in}\n\n[r]: /u {#definition .same k=1 k=1}\n"
+    );
+    assert.equal(document.content[0].anchor, "heading");
+    const [code, link, image] = document.content[1].content.filter((value) => value.kind !== "text");
+    assert.deepEqual(code.attributes.classes, ["code"]);
+    assert.equal(code.literal, "x");
+    assert.equal(code.scope.end.column, 10);
+    assert.equal(link.anchor, "own");
+    assert.deepEqual(link.attributes.classes, ["same", "same"]);
+    assert.deepEqual(
+        link.attributes.records.map((value) => value.value),
+        ["1", "1", "2"]
+    );
+    assert.equal(image.anchor, "definition");
+    assert.deepEqual(image.dimensions, { width: 20, height: 30 });
+    assert.deepEqual(image.attributes.records.slice(-2), [
+        { name: "width", value: "50%" },
+        { name: "height", value: "2in" }
+    ]);
+    assert.equal(link.scope.end.line, 3);
+    assert.equal(image.scope.end.line, 3);
+    assert.ok(Array.isArray(link.attributes.classes));
+    assert.ok(document.dump().includes('anchor="definition"'));
 });
