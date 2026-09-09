@@ -24,3 +24,8 @@ fixture mirrors inside the oracle policy tree.
 `spec_runner --rewrite` is a maintenance command, not an acceptance mechanism.
 Every generated dump change must be reviewed together with the parser or AST
 contract change that caused it.
+
+The [O10 module manifest](../../../../docs/plans/2026-09-09-obsidian-evidence-closure.md#module-and-fixture-ownership)
+maps each OFM fixture file, and every example it owns, to its normative module.
+It also names the shared canonical cases and integration evidence; CTest and
+the canonical manifest remain the executable case registries.

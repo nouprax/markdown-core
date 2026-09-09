@@ -650,6 +650,56 @@
                 ],
                 "orders": []
             }
+        },
+        {
+            "name": "obsidian-integration",
+            "input": "obsidian-integration.md",
+            "expected": "obsidian-integration.ast",
+            "coverage": {
+                "kinds": [
+                    "Document",
+                    "Paragraph",
+                    "HTML",
+                    "CrossLink",
+                    "CrossEmbedded",
+                    "Mark",
+                    "Emphasis",
+                    "Comment",
+                    "Cite",
+                    "Text",
+                    "Formula",
+                    "FormulaBlock",
+                    "Callout",
+                    "List",
+                    "ListItem",
+                    "Media",
+                    "Table",
+                    "TableRow",
+                    "TableCell",
+                    "CodeBlock"
+                ],
+                "states": [
+                    "document.metadata.present",
+                    "document.footnotes.populated",
+                    "callout.variant.value",
+                    "callout.collapsed.false",
+                    "callout.title.populated",
+                    "listItem.marker.custom",
+                    "listItem.marker.space",
+                    "markup.anchor.value",
+                    "media.dimensions.width",
+                    "crossEmbedded.dimensions.width-height",
+                    "codeBlock.language.value",
+                    "codeBlock.fenced.true",
+                    "codeBlock.closed.true"
+                ],
+                "orders": [
+                    "document.content-before-footnotes",
+                    "callout.title-before-content",
+                    "inline.source-order",
+                    "table.head-content-foot"
+                ]
+            }
         }
     ]
 }

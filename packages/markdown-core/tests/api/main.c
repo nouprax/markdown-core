@@ -3050,16 +3050,19 @@ static void mark_linear_work(test_batch_runner *runner) {
         const char *left, *middle, *right;
         size_t marks_per_unit;
     } cases[] = {
-        {"=", "", "", 0},            // one maximal run: no empty mark
-        {"=", "x", "=", 0},          // pairwise nesting, checked separately
-        {"==a ", "", "", 0},         // unmatched openers
-        {" a==", "", "", 0},         // unmatched closers
-        {"==a* ", "", "", 0},        // failed searches across another rule
-        {"==a* ", "", " b==", 1},    // mixed nested runs
-        {"==a===b== ", "", "", 1},   // odd leftovers must never match
-        {"==*a*== ", "", "", 1},     // parsed child ownership
-        {"==a====b== ", "", "", 2},  // adjacent marks
-        {"[==a==](/u) ", "", "", 1}, // separate inline containers
+        {"=", "", "", 0},                                       // one maximal run: no empty mark
+        {"=", "x", "=", 0},                                     // pairwise nesting, checked separately
+        {"==a ", "", "", 0},                                    // unmatched openers
+        {" a==", "", "", 0},                                    // unmatched closers
+        {"==a* ", "", "", 0},                                   // failed searches across another rule
+        {"==a* ", "", " b==", 1},                               // mixed nested runs
+        {"==a===b== ", "", "", 1},                              // odd leftovers must never match
+        {"==*a*== ", "", "", 1},                                // parsed child ownership
+        {"==a====b== ", "", "", 2},                             // adjacent marks
+        {"[==a==](/u) ", "", "", 1},                            // separate inline containers
+        {"<i title=\"==hidden==\">==*body*==</i> ", "", "", 1}, // token opacity, live body
+        {"==<i title=\"==hidden==\">body</i>== ", "", "", 1},   // tag delimiters stay owned
+        {"==a %%==b%% c== ", "", "", 1},                        // comment cannot close the mark
     };
     for (size_t c = 0; c < sizeof(cases) / sizeof(*cases); c++) {
         for (size_t count = 128; count <= 8192; count *= 2) {

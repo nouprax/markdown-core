@@ -1,6 +1,7 @@
 # Obsidian Flavored Markdown implementation plan
 
-Status: proposed. This plan implements the Obsidian-derived modules of the
+Status: complete (O10, 2026-09-09). This plan implements the Obsidian-derived
+modules of the
 [Markdown Core dialect](../specs/dialect.md) as a new canonical AST baseline,
 without compatibility aliases for replaced kinds or fields.
 
@@ -15,7 +16,7 @@ always on, with no parse option. They reuse the current CommonMark/GFM block and
 algorithms, add the documented OFM syntax as always-on extensions, expose every
 new semantic fact through the immutable canonical AST, and keep vault resolution
 and rendering out of the parser. Every `>` container becomes `Callout`; a plain
-quoted block has `variant=null`, `title=null`, and `fold=none`, while `[!type]`
+quoted block has `variant=null`, `title=null`, and `collapsed=null`, while `[!type]`
 populates that same node model. Every successful reference link or image is
 resolved before the public AST is finalized and is indistinguishable from its
 direct counterpart; source definitions and reference forms remain
@@ -33,9 +34,9 @@ add no HTML element-region suppression. Block identifiers populate the same
 universal `Markup.anchor` string used by other extensions; they do not introduce
 a block-specific target type. Outgoing references use the shared tagged
 `Destination`: ordinary Markdown `Link` and `Media` values own
-`Destination.url`, while `CrossLink` values own the `Destination.cross(path,
-anchor)` branch. Heading and block source spellings populate the same optional
-anchor field and introduce no discriminator. No destination populates the
+`Destination.url`, while `CrossLink` and `CrossEmbedded` values own the
+`Destination.cross(path, anchor)` branch. Heading and block source spellings
+populate the same optional anchor field and introduce no discriminator. No destination populates the
 declaration-side anchor on its owning reference node.
 
 The normative work items are the dialect modules linked from the [dialect
@@ -47,19 +48,19 @@ shared [`Cite`, `Citation`, and `CitationReferent`
 model](../specs/dialect/footnotes.md) owns their reusable semantics; this plan
 does not define Pandoc `@key` syntax; the citations module does.
 
-- [ ] **Plan exit criterion:** the in-scope official extension examples, negative
+- [x] **Plan exit criterion:** the in-scope official extension examples, negative
       boundaries, cross-extension interactions, oracle comparison, allocation
       failures, adversarial complexity, and all four public surfaces pass together.
       A partial binding or a C-only hidden node is not a shippable intermediate
       state.
 
-## Phase 1 — freeze the public model
+## Phase 1 — establish the public model
 
 - [x] Replace `BlockQuote` with one `Callout` kind across the canonical schema and
       every public surface. Its optional `variant`, `title`, and `collapsed`
       distinguish metadata-free quoted blocks from `[!type]` callouts; do not
       retain a `BlockQuote` alias or parallel node.
-- [ ] Replace `FootnoteReference` and `FootnoteDefinition` with one inline
+- [x] Replace `FootnoteReference` and `FootnoteDefinition` with one inline
       `Cite(citations, scope)` kind owning scoped
       `Citation(referent, prefix, suffix, scope)` values,
       `CitationReferent = bib(key, mode) | footnote(id)`,
@@ -67,43 +68,44 @@ does not define Pandoc `@key` syntax; the citations module does.
       `Footnote(id, content, scope)` value, and `Document.footnotes`. Referenced and
       inline source forms must lower to the same one-item resolved consumer model;
       retain none of the source-shaped kinds as aliases.
-- [x] Add optional `Document.metadata` and the document-owned `Metadata`,
-      `MetadataValue`, `MetadataScalar`, and
-      `MetadataListItem` values (`M7`; Properties syntax remains O6).
-      Preserve exact record-name case and source order, distinguish absent from
-      explicitly empty metadata, retain number payloads as exact strings, and
-      add no known-name enum, vault type, resolved link, or Markup child.
-- [ ] Resolve direct, full, collapsed, shortcut, and autolinks to the same `Link`
+- [x] Add optional `Document.metadata` with ten direct optional fields and the
+      shared scalar/list value model. Under the corrected O6 contract, field
+      names use the fixed spelling, numbers retain exact text, and only the
+      envelope has a scope. Missing metadata, empty metadata, absent fields,
+      and authored null values remain distinct. Metadata is outside Markup and
+      visitor callbacks; source field order and per-field scopes are not stored.
+- [x] Resolve direct, full, collapsed, shortcut, and autolinks to the same `Link`
       shape with `dest=Destination.url(...)`, and direct/reference images to the
       same `Media(dest=Destination.url(...), ...)` shape. Remove
       `LinkReference`, `ImageReference`, `ReferenceDefinition`, and
       `ReferenceForm` from the public AST. Keep labels, form, definition storage,
       and normalization in the existing parser-owned lookup operation; add no
       `CitationReferent.link` branch or document link registry.
-- [ ] Add the remaining target value types and kinds to
+- [x] Add the remaining target value types and kinds to
       `docs/specs/canonical-ast.json`, `docs/specs/canonical-ast.md`, and
       `docs/specs/canonical-ast-dump.md`:
       the shared `Destination` enum and `Link.dest`/`Media.dest`; `CrossLink`,
-      `Mark`, and `Comment`; the `Destination.cross(path, anchor)` branch;
-      the callout-fold enum; and `marker` on `ListItem`. Only the
+      `CrossEmbedded`, `Mark`, and `Comment`; `Destination.cross(path, anchor)`;
+      nullable `Callout.collapsed`; `marker` on `ListItem`; and the independent
+      `Dimensions` value held only by Media and CrossEmbedded. Only the
       addressable kinds named by the block-identifier grammar receive a non-null
       anchor from that source rule.
 - [x] Add the universal nullable `anchor` field and optional image dimensions
       across the facade, models and transports (`M7`, grouped into the
       node-independent `Media.dimensions: Dimensions?` by `O9`, also held by
-      embedded `CrossEmbedded.dimensions`). O9 produces typed dimensions from
+      `CrossEmbedded.dimensions`). O9 produces typed dimensions from
       labels; directive IDs populate anchors independently.
 - [x] Replace stored `checked: Bool?` with the authored `marker: String?`.
       Keep source compatibility only through a derived language convenience
       property when that does not duplicate wire state. Treat the public shape
       change as a major-version change rather than preserving two authorities.
-- [ ] Add each C kind and field identifier with the item that first produces it,
+- [x] Add each C kind and field identifier with the item that first produces it,
       then update the native AST, C read-only facade, wire format,
       Swift/Kotlin/ES values, exhaustive visitors, walkers, dumpers, and AST
       projection audit atomically. While 3.0.0 is unreleased, identifiers, wire
       layouts, and manifest order may be renumbered by any later item; nothing
       is reserved in advance.
-- [ ] Land each module's scanner always on and register in `specs/oracles/`
+- [x] Land each module's scanner always on and register in `specs/oracles/`
       each place it deliberately leaves an oracle's language; there is no
       parse option, no preset, no CLI `--profile obsidian`, and no layer
       selection in the test tree. Keep the inherited grammar stable, but make the
@@ -112,9 +114,9 @@ does not define Pandoc `@key` syntax; the citations module does.
       has a bounded source grammar under O6; it does not add a general YAML
       parser or dependency.
 
-- [ ] **Exit criterion:** all public surfaces compile with exhaustive handling, the
-      canonical schema audit proves kind/field parity, and fixtures can express every
-      new fact before syntax recognition is enabled. Equivalent direct and reference
+- [x] **Exit criterion:** all public surfaces compile with exhaustive handling, the
+      canonical schema audit proves kind/field parity, and fixtures express every
+      new fact alongside its first syntax producer. Equivalent direct and reference
       links/images have identical semantic shapes, while only footnote citations
       retain a consumer-visible ID edge.
 
@@ -130,9 +132,10 @@ descriptor. O4 completes the shared feature-boundary implementation bullet.
       operation. All scanners use the existing subject cursor,
       delimiter/bracket infrastructure, allocator, source map, and extension
       attachment order. Do not introduce an OFM umbrella extension.
-- [x] Make `![[...]]` and `[[...]]` one scanner and one `CrossLink` payload. Split
-      path, optional anchor, and label value once while scanning, then construct
-      one complete `Destination.cross`. Heading and block punctuation must not
+- [x] Make `![[...]]` and `[[...]]` one scanner with shared reference fields.
+      Construct `CrossEmbedded` and `CrossLink`, respectively; only the former
+      also carries dimensions. Split path, optional anchor, and label once
+      while scanning, then construct one complete `Destination.cross`. Heading and block punctuation must not
       survive as a consumer discriminator. Do not rescan the completed literal
       in a binding or renderer.
 - [x] Make comments opaque during scanning and emit the same `Comment` node an
@@ -141,7 +144,7 @@ descriptor. O4 completes the shared feature-boundary implementation bullet.
 - [x] Parse highlight children through the normal inline engine, with source
       ownership by code, formulas, HTML comments/tokens, and cross links taking
       precedence. Paired inline HTML tags do not create a suppressing region.
-      The `%%` opacity composition follows in O3.
+      The `%%` opacity composition is covered by O3.
 - [x] The inline footnote scanner creates one one-item `Cite` containing a
       `Citation` whose referent
       is `CitationReferent.footnote(id)` and whose prefix and suffix are empty,
@@ -153,10 +156,10 @@ descriptor. O4 completes the shared feature-boundary implementation bullet.
       calls share one `Footnote` without body duplication. Merge referenced and
       inline values in source order and assign their deterministic document-local
       IDs once during document finalization.
-- [ ] Audit every inline extension caller and delete any product-specific
+- [x] Audit every inline extension caller and delete any product-specific
       delimiter skip table or repair path made obsolete by the shared model.
 
-- [ ] **Exit criterion:** official positive forms and unmatched/escaped/code/comment/
+- [x] **Exit criterion:** official positive forms and unmatched/escaped/code/comment/
       HTML-token negative forms have native golden AST tests; extension syntax between
       paired inline HTML tags remains enabled; referenced and inline footnotes produce
       the same one-item `Cite` edge to a `Footnote`; and size-doubling probes show
@@ -218,8 +221,8 @@ descriptor. O4 completes the shared feature-boundary implementation bullet.
 - [x] Parse external image `W`, `WxH`, `alt|W`, and `alt|WxH` suffixes,
       lowercase `x` with no surrounding spaces, in the shared image construction
       path. Consume valid embed dimension suffixes through the shared Dimensions parser;
-      keep the remaining label and ordinary wikilink labels raw until vault resolution
-      establishes the embedded file kind.
+      keep the remaining embed label and ordinary cross-link labels raw. The parser
+      does not resolve a vault target or infer its media type.
 - [x] Move wiki alias-pipe awareness into the shared table/inline boundary so
       `[[target\|label]]` and `![[image\|100]]` stay inside one cell. Do not add a
       table-only wikilink parser.
@@ -232,19 +235,21 @@ descriptor. O4 completes the shared feature-boundary implementation bullet.
 
 ## Phase 5 — product fixtures and external evidence
 
-- [ ] Add package-owned C fixtures with a manifest mapping every example back to
-      its normative OFM module. They own in-scope official extension examples,
+- [x] Add package-owned C fixtures with the
+      [O10 module manifest](2026-09-09-obsidian-evidence-closure.md#module-and-fixture-ownership)
+      mapping every example back to its normative OFM module. They own in-scope
+      official extension examples,
       strict fallbacks, cross-extension conflicts, scopes, and
       source-order behavior. Do not copy product goldens into `specs/oracles/`.
-- [ ] Extend `specs/canonical-ast/` with compact cross-binding cases covering every
+- [x] Extend `specs/canonical-ast/` with compact cross-binding cases covering every
       new kind, enum state, nullable field, ownership edge, escaping rule, and
       direct/reference link and image equivalence.
-- [ ] Move each resolved entry out of
+- [x] Move each resolved entry out of
       `specs/oracles/obsidian/deltas.json` in the implementation commit that makes
       it agree. If a deliberate AST-shape difference remains, register a general
       projection and prove that it fires; never replace a semantic difference with
       normalization.
-- [ ] Update the cmark/cmark-gfm and remark comparison projections for the
+- [x] Update the cmark/cmark-gfm and remark comparison projections for the
       universal reference-link/image normalization. Those oracles remain
       evidence for recognition, precedence, and fallback, which the dialect
       modules own, and their source-shaped definition/reference nodes do not
@@ -255,17 +260,17 @@ descriptor. O4 completes the shared feature-boundary implementation bullet.
       JavaScript object intermediary. Remove alias/tag success requirements;
       wider YAML acceptance does not extend the product. Product fixtures own
       ignored input, literal prose, member recovery, scopes, resource bounds and OOM.
-- [ ] Keep official-only requirements—callouts, block identifiers, inline
+- [x] Keep official-only requirements—callouts, block identifiers, inline
       footnote recognition, the
       `Cite`/`Citation`/`CitationReferent`/`Footnote` projection,
       and image dimensions—under product goldens, because the selected oracle does
       not parse them. Its silence is not agreement.
-- [ ] Add deterministic fuzz seeds and pathological cases for delimiter runs,
+- [x] Add deterministic fuzz seeds and pathological cases for delimiter runs,
       nested callouts, inline-HTML boundaries, escaped table pipes, long
       paths/headings, and repeated block identifiers. Assert semantic output and
       structural resource bounds, not wall-clock thresholds.
 
-- [ ] **Exit criterion:** C correctness/conformance, Swift macOS, Kotlin JVM, ES Node and
+- [x] **Exit criterion:** C correctness/conformance, Swift macOS, Kotlin JVM, ES Node and
       browser, all static audits, and every external parity gate pass. Required CI on
       the remaining supported hosts then supplies the platform release evidence.
 
@@ -277,9 +282,15 @@ fixtures green. No phase may publish a module's syntax until its AST exists on
 every platform and the module's target fixture is enabled; before that point the
 module's scanner remains internal test plumbing.
 
-- [ ] Publish release notes listing the documented OFM subset, parser-only
-      boundary, `Document.metadata` addition, reference-link/image normalization,
+- [x] Prepare the unreleased 3.0.0 release notes listing the documented OFM
+      subset, parser-only boundary, `Document.metadata` addition, reference-link/image normalization,
       the `BlockQuote` to `Callout`, source-shaped footnote to
       `Cite`/`Citation`/`CitationReferent`/`Footnote`, and `checked` to `marker`
       migrations, the unchanged inherited source grammar, and the exact
       official help snapshot used for conformance.
+
+The [O10 evidence record](2026-09-09-obsidian-evidence-closure.md) maps the
+completed model, module fixtures, ownership boundaries, caller audit,
+complexity/OOM probes and validation commands. Release publication remains a
+separate operation; subsequent Pandoc and inserted-text items do not hold this
+OFM subset open.
