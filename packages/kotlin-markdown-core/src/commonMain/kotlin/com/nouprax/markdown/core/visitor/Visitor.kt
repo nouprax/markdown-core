@@ -57,6 +57,8 @@ public interface Visitor<Result> {
 
     public fun visitMark(node: Mark): Result
 
+    public fun visitInsertion(node: Insertion): Result
+
     public fun visitLink(node: Link): Result
 
     public fun visitMedia(node: Media): Result

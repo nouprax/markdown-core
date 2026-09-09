@@ -27,6 +27,7 @@ export const kindVisitor = {
     visitStrong: (node) => node.kind,
     visitStrikethrough: (node) => node.kind,
     visitMark: (node) => node.kind,
+    visitInsertion: (node) => node.kind,
     visitLink: (node) => node.kind,
     visitMedia: (node) => node.kind,
     visitDirective: (node) => node.kind,

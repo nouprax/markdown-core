@@ -1,0 +1,272 @@
+[
+    {
+        "id": "upstream-01",
+        "source": "upstream",
+        "input": "++Insert++\n"
+    },
+    {
+        "id": "upstream-02",
+        "source": "upstream",
+        "input": "x ++++foo++ bar++\n"
+    },
+    {
+        "id": "upstream-03",
+        "source": "upstream",
+        "input": "x ++foo ++bar++++\n"
+    },
+    {
+        "id": "upstream-04",
+        "source": "upstream",
+        "input": "x ++++foo++++\n"
+    },
+    {
+        "id": "upstream-05",
+        "source": "upstream",
+        "input": "x +++foo+++\n"
+    },
+    {
+        "id": "upstream-06",
+        "source": "upstream",
+        "input": "**++test**++\n\n++**test++**\n"
+    },
+    {
+        "id": "upstream-07",
+        "source": "upstream",
+        "input": "[++link]()++\n++[link++]()\n"
+    },
+    {
+        "id": "upstream-08",
+        "source": "upstream",
+        "input": "++`code++`\n\n`++code`++\n"
+    },
+    {
+        "id": "upstream-09",
+        "source": "upstream",
+        "input": "++foo ++bar++ baz++\n"
+    },
+    {
+        "id": "upstream-10",
+        "source": "upstream",
+        "input": "++f **o ++o b++ a** r++\n"
+    },
+    {
+        "id": "upstream-11",
+        "source": "upstream",
+        "input": "foo ++ bar ++ baz\n"
+    },
+    {
+        "id": "upstream-12",
+        "source": "upstream",
+        "input": "++test\n++\n\n++\ntest++\n\n++\ntest\n++\n"
+    },
+    {
+        "id": "upstream-13",
+        "source": "upstream",
+        "input": "x ++a ++foo+++++++++++bar++ b++\n\nx ++a ++foo++++++++++++bar++ b++\n"
+    },
+    {
+        "id": "upstream-14",
+        "source": "upstream",
+        "input": "a++\"foo\"++\n"
+    },
+    {
+        "id": "upstream-15",
+        "source": "upstream",
+        "input": "[++foo++]()\n"
+    },
+    {
+        "id": "upstream-16",
+        "source": "upstream",
+        "input": "-++++;++++++\n"
+    },
+    {
+        "id": "module-01",
+        "source": "module",
+        "input": "This is ++inserted++ text.\n"
+    },
+    {
+        "id": "module-02",
+        "source": "module",
+        "input": "++**b**++ ++c *d*++\n"
+    },
+    {
+        "id": "module-03",
+        "source": "module",
+        "input": "a++b++c\n"
+    },
+    {
+        "id": "module-04",
+        "source": "module",
+        "input": "++++text++++\n"
+    },
+    {
+        "id": "module-05",
+        "source": "module",
+        "input": "+++text+++\n"
+    },
+    {
+        "id": "module-06",
+        "source": "module",
+        "input": "++++ a++++b + not ++\n"
+    },
+    {
+        "id": "module-07",
+        "source": "module",
+        "input": "**++text**++\n"
+    },
+    {
+        "id": "module-08",
+        "source": "module",
+        "input": "\\++a++ ++a\\++\n"
+    },
+    {
+        "id": "module-09",
+        "source": "module",
+        "input": "++a\nb++\n"
+    },
+    {
+        "id": "module-10",
+        "source": "module",
+        "input": "[++link++](/u)\n"
+    },
+    {
+        "id": "module-11",
+        "source": "module",
+        "input": "`++a++` <b>++c++</b>\n"
+    },
+    {
+        "id": "unicode-flanking",
+        "source": "composition",
+        "input": "中++文++字 ++é，🙂++ a++“b”++ ++中 ++ ++ x++\n"
+    },
+    {
+        "id": "punctuation",
+        "source": "composition",
+        "input": "(++x++) a++!++b ++!++ ++ x++ ++x ++\n"
+    },
+    {
+        "id": "odd-dual-run",
+        "source": "composition",
+        "input": "++a+++b++ ++a+++++b++ ++a+++++++b++\n"
+    },
+    {
+        "id": "escaped-runs",
+        "source": "composition",
+        "input": "\\+++a++ ++a\\+++ \\+\\+x++ ++a\\+b++\n"
+    },
+    {
+        "id": "entity-plus",
+        "source": "composition",
+        "input": "&#43;&#43;a++ ++a&#43;&#43; ++a &amp; b++\n"
+    },
+    {
+        "id": "nested-strike",
+        "source": "composition",
+        "input": "++~~a~~++ ~~++b++~~\n"
+    },
+    {
+        "id": "crossed-strike",
+        "source": "composition",
+        "input": "~~++a~~++ ++~~b++~~\n"
+    },
+    {
+        "id": "nested-mark",
+        "source": "composition",
+        "input": "++==a==++ ==++b++==\n"
+    },
+    {
+        "id": "crossed-mark",
+        "source": "composition",
+        "input": "==++a==++ ++==b++==\n"
+    },
+    {
+        "id": "cross-links",
+        "source": "composition",
+        "input": "++[[Note|display]] ![[Pic|20x30]]++ [[Note|++raw++]] ![[Pic|++raw++]]\n"
+    },
+    {
+        "id": "crossed-cross-link",
+        "source": "composition",
+        "input": "++[[Note|label++]] [[Note|++label]]++\n"
+    },
+    {
+        "id": "cites",
+        "source": "composition",
+        "input": "++a[^n] b^[++inline++]++\n\n[^n]: ++note++\n"
+    },
+    {
+        "id": "link-boundaries",
+        "source": "composition",
+        "input": "++[a](/u)++ [++b++](/u) ++[c++](/u) [++d](/u)++\n"
+    },
+    {
+        "id": "media-content",
+        "source": "composition",
+        "input": "![++alt++](/image.png) ++![alt](/image.png)++\n"
+    },
+    {
+        "id": "comments",
+        "source": "composition",
+        "input": "++a %%++raw++%% b <!--++raw++--> c++\n"
+    },
+    {
+        "id": "html-tokens",
+        "source": "composition",
+        "input": "++<i title=\"++raw++\">a</i>++ <b>++live++</b> <?pi ++raw++?>\n"
+    },
+    {
+        "id": "formulas",
+        "source": "composition",
+        "input": "++a $++raw++$ b \\\\(++raw++\\\\) c \\\\[++raw++\\\\]++\n"
+    },
+    {
+        "id": "autolinks",
+        "source": "composition",
+        "input": "<https://example.com/++raw++> ++<https://example.com>++ https://example.com/++raw++\n"
+    },
+    {
+        "id": "code-blocks",
+        "source": "composition",
+        "input": "``` ++info++\n++raw++\n```\n\n    ++raw++\n\n++live++\n"
+    },
+    {
+        "id": "html-block",
+        "source": "composition",
+        "input": "<div title=\"++raw++\">\n++raw++\n</div>\n\n++live++\n"
+    },
+    {
+        "id": "comment-block",
+        "source": "composition",
+        "input": "%%\n++raw++\n%%\n\n++live++\n"
+    },
+    {
+        "id": "formula-block",
+        "source": "composition",
+        "input": "$$\n++raw++\n$$\n\n++live++\n"
+    },
+    {
+        "id": "container-boundaries",
+        "source": "composition",
+        "input": "++first\n\nlast++\n\n> ++quote++\n\n- ++item++\n"
+    },
+    {
+        "id": "table-position",
+        "source": "composition",
+        "input": "| inserted |\n| --- |\n| +++中\\|文+++ |\n"
+    },
+    {
+        "id": "inline-fields",
+        "source": "composition",
+        "input": "> [!note] ++title++\n> ++body++\n\n:badge[++label++]\n\n^[++note++]\n"
+    },
+    {
+        "id": "failed-candidates",
+        "source": "composition",
+        "input": "++[[unfinished $x$ ==mark== ++end++\n\n++[unfinished ++end++\n"
+    },
+    {
+        "id": "nested-odd",
+        "source": "composition",
+        "input": "+++++a+++++ ++++++b++++++\n"
+    }
+]

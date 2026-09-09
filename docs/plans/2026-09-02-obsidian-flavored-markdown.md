@@ -292,5 +292,5 @@ module's scanner remains internal test plumbing.
 The [O10 evidence record](2026-09-09-obsidian-evidence-closure.md) maps the
 completed model, module fixtures, ownership boundaries, caller audit,
 complexity/OOM probes and validation commands. Release publication remains a
-separate operation; subsequent Pandoc and inserted-text items do not hold this
+separate operation; subsequent Pandoc and insertion items do not hold this
 OFM subset open.

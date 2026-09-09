@@ -445,6 +445,17 @@
             "invariants": "inline content"
         },
         {
+            "name": "Insertion",
+            "fields": [
+                {
+                    "name": "content",
+                    "type": "[Markup]",
+                    "optional": false
+                }
+            ],
+            "invariants": "inline content"
+        },
+        {
             "name": "Link",
             "fields": [
                 {

@@ -249,6 +249,15 @@ public final class com/nouprax/markdown/core/Heading : com/nouprax/markdown/core
 	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 }
 
+public final class com/nouprax/markdown/core/Insertion : com/nouprax/markdown/core/Markup {
+	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
+	public fun dump ()Ljava/lang/String;
+	public fun getAnchor ()Ljava/lang/String;
+	public fun getAttributes ()Lcom/nouprax/markdown/core/Attributes;
+	public final fun getContent ()Ljava/util/List;
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+}
+
 public final class com/nouprax/markdown/core/LineBreak : com/nouprax/markdown/core/Markup {
 	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
 	public fun dump ()Ljava/lang/String;
@@ -691,6 +700,7 @@ public abstract interface class com/nouprax/markdown/core/Visitor {
 	public abstract fun visitHTML (Lcom/nouprax/markdown/core/HTML;)Ljava/lang/Object;
 	public abstract fun visitHTMLBlock (Lcom/nouprax/markdown/core/HTMLBlock;)Ljava/lang/Object;
 	public abstract fun visitHeading (Lcom/nouprax/markdown/core/Heading;)Ljava/lang/Object;
+	public abstract fun visitInsertion (Lcom/nouprax/markdown/core/Insertion;)Ljava/lang/Object;
 	public abstract fun visitLineBreak (Lcom/nouprax/markdown/core/LineBreak;)Ljava/lang/Object;
 	public abstract fun visitLink (Lcom/nouprax/markdown/core/Link;)Ljava/lang/Object;
 	public abstract fun visitList (Lcom/nouprax/markdown/core/List;)Ljava/lang/Object;
@@ -736,6 +746,7 @@ public abstract interface class com/nouprax/markdown/core/WalkingVisitor {
 	public abstract fun visitHTML (Lcom/nouprax/markdown/core/HTML;Lcom/nouprax/markdown/core/WalkPhase;)V
 	public abstract fun visitHTMLBlock (Lcom/nouprax/markdown/core/HTMLBlock;Lcom/nouprax/markdown/core/WalkPhase;)V
 	public abstract fun visitHeading (Lcom/nouprax/markdown/core/Heading;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visitInsertion (Lcom/nouprax/markdown/core/Insertion;Lcom/nouprax/markdown/core/WalkPhase;)V
 	public abstract fun visitLineBreak (Lcom/nouprax/markdown/core/LineBreak;Lcom/nouprax/markdown/core/WalkPhase;)V
 	public abstract fun visitLink (Lcom/nouprax/markdown/core/Link;Lcom/nouprax/markdown/core/WalkPhase;)V
 	public abstract fun visitList (Lcom/nouprax/markdown/core/List;Lcom/nouprax/markdown/core/WalkPhase;)V

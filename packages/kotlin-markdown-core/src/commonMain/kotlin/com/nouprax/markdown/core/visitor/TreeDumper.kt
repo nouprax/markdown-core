@@ -321,6 +321,10 @@ private class DumpVisitor(
         state.container("Mark", node, children = node.content)
     }
 
+    override fun visitInsertion(node: Insertion) {
+        state.container("Insertion", node, children = node.content)
+    }
+
     override fun visitLink(node: Link) {
         state.container(
             "Link",

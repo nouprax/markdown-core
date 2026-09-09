@@ -505,5 +505,5 @@ names beginning with a digit, `-`, or `_`, nesting to depths 32 and 33,
 multi-line labels, every container success and failure, closer lines inside
 opaque blocks, closers longer than the opener, empty nameless content,
 missing closers at container end, nameless containers holding block content
-of every kind, exact scopes, nesting limits, allocation failure, and
+of every kind, exact scopes, label-nesting boundaries, allocation failure, and
 size-doubling colon runs, brackets, and braces.

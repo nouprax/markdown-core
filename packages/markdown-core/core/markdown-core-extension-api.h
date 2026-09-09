@@ -140,6 +140,7 @@ typedef enum {
     MARKDOWN_CORE_DELIM_RULE_EMPHASIS,   /* `*` */
     MARKDOWN_CORE_DELIM_RULE_UNDERSCORE, /* `_` */
     MARKDOWN_CORE_DELIM_RULE_MARK,       /* `==`, pairwise, no rule of three */
+    MARKDOWN_CORE_DELIM_RULE_INSERTION,  /* `++`, pairwise, no rule of three */
     /* Extensions. One entry per rule, not per extension and not per byte. */
     MARKDOWN_CORE_DELIM_RULE_STRIKETHROUGH,
     MARKDOWN_CORE_DELIM_RULE_FORMULA_DOLLAR_INLINE,

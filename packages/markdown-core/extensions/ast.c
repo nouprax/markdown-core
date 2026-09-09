@@ -182,6 +182,9 @@ markdown_core_node_kind markdown_core_node_get_kind(const markdown_core_node *no
     if (node->kind == MARKDOWN_CORE_NODE_MARK) {
         return MARKDOWN_CORE_KIND_MARK;
     }
+    if (node->kind == MARKDOWN_CORE_NODE_INSERTION) {
+        return MARKDOWN_CORE_KIND_INSERTION;
+    }
     if (node->kind == MARKDOWN_CORE_NODE_STRONG) {
         return MARKDOWN_CORE_KIND_STRONG;
     }
@@ -266,9 +269,10 @@ const char *markdown_core_node_kind_name(markdown_core_node_kind kind) {
         "Comment",
         "CrossLink",
         "Mark",
-        "CrossEmbedded"};
+        "CrossEmbedded",
+        "Insertion"};
     /* clang-format on */
-    if (kind < MARKDOWN_CORE_KIND_NONE || kind > MARKDOWN_CORE_KIND_CROSS_EMBEDDED) {
+    if (kind < MARKDOWN_CORE_KIND_NONE || kind > MARKDOWN_CORE_KIND_INSERTION) {
         return "None";
     }
     return names[kind];
@@ -1607,6 +1611,7 @@ static void dump_node(dump_buffer *buffer, const markdown_core_node *node, size_
     case MARKDOWN_CORE_KIND_EMPHASIS:
     case MARKDOWN_CORE_KIND_STRONG:
     case MARKDOWN_CORE_KIND_MARK:
+    case MARKDOWN_CORE_KIND_INSERTION:
     case MARKDOWN_CORE_KIND_STRIKETHROUGH:
     case MARKDOWN_CORE_KIND_LINK:
     case MARKDOWN_CORE_KIND_MEDIA:

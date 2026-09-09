@@ -1,0 +1,887 @@
+# Insertion
+
+Normative module examples, pinned upstream inputs, and ownership boundaries.
+
+```````````````````````````````` example
+This is ++inserted++ text.
+.
+Document scope=1:1..1:26 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:26 anchor=null attributes={} children=3
+    ├── Text scope=1:1..1:8 anchor=null attributes={} literal="This is " children=0
+    ├── Insertion scope=1:9..1:20 anchor=null attributes={} children=1
+    │   └── Text scope=1:11..1:18 anchor=null attributes={} literal="inserted" children=0
+    └── Text scope=1:21..1:26 anchor=null attributes={} literal=" text." children=0
+````````````````````````````````
+
+```````````````````````````````` example
+++**b**++ ++c *d*++
+.
+Document scope=1:1..1:19 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:19 anchor=null attributes={} children=3
+    ├── Insertion scope=1:1..1:9 anchor=null attributes={} children=1
+    │   └── Strong scope=1:3..1:7 anchor=null attributes={} children=1
+    │       └── Text scope=1:5..1:5 anchor=null attributes={} literal="b" children=0
+    ├── Text scope=1:10..1:10 anchor=null attributes={} literal=" " children=0
+    └── Insertion scope=1:11..1:19 anchor=null attributes={} children=2
+        ├── Text scope=1:13..1:14 anchor=null attributes={} literal="c " children=0
+        └── Emphasis scope=1:15..1:17 anchor=null attributes={} children=1
+            └── Text scope=1:16..1:16 anchor=null attributes={} literal="d" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+a++b++c
+.
+Document scope=1:1..1:7 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:7 anchor=null attributes={} children=3
+    ├── Text scope=1:1..1:1 anchor=null attributes={} literal="a" children=0
+    ├── Insertion scope=1:2..1:6 anchor=null attributes={} children=1
+    │   └── Text scope=1:4..1:4 anchor=null attributes={} literal="b" children=0
+    └── Text scope=1:7..1:7 anchor=null attributes={} literal="c" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+++++text++++
+.
+Document scope=1:1..1:12 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:12 anchor=null attributes={} children=1
+    └── Insertion scope=1:1..1:12 anchor=null attributes={} children=1
+        └── Insertion scope=1:3..1:10 anchor=null attributes={} children=1
+            └── Text scope=1:5..1:8 anchor=null attributes={} literal="text" children=0
+````````````````````````````````
+
+```````````````````````````````` example
++++text+++
+.
+Document scope=1:1..1:10 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:10 anchor=null attributes={} children=3
+    ├── Text scope=1:1..1:1 anchor=null attributes={} literal="+" children=0
+    ├── Insertion scope=1:2..1:9 anchor=null attributes={} children=1
+    │   └── Text scope=1:4..1:7 anchor=null attributes={} literal="text" children=0
+    └── Text scope=1:10..1:10 anchor=null attributes={} literal="+" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+++++ a++++b + not ++
+.
+Document scope=1:1..1:20 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:20 anchor=null attributes={} children=1
+    └── Text scope=1:1..1:20 anchor=null attributes={} literal="++++ a++++b + not ++" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+**++text**++
+.
+Document scope=1:1..1:12 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:12 anchor=null attributes={} children=2
+    ├── Strong scope=1:1..1:10 anchor=null attributes={} children=1
+    │   └── Text scope=1:3..1:8 anchor=null attributes={} literal="++text" children=0
+    └── Text scope=1:11..1:12 anchor=null attributes={} literal="++" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+\++a++ ++a\++
+.
+Document scope=1:1..1:13 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:13 anchor=null attributes={} children=1
+    └── Text scope=1:1..1:13 anchor=null attributes={} literal="++a++ ++a++" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+++a
+b++
+.
+Document scope=1:1..2:3 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..2:3 anchor=null attributes={} children=1
+    └── Insertion scope=1:1..2:3 anchor=null attributes={} children=3
+        ├── Text scope=1:3..1:3 anchor=null attributes={} literal="a" children=0
+        ├── SoftBreak scope=1:4..1:4 anchor=null attributes={} children=0
+        └── Text scope=2:1..2:1 anchor=null attributes={} literal="b" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+[++link++](/u)
+.
+Document scope=1:1..1:14 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:14 anchor=null attributes={} children=1
+    └── Link scope=1:1..1:14 anchor=null attributes={} dest=url("/u") title=null children=1
+        └── Insertion scope=1:2..1:9 anchor=null attributes={} children=1
+            └── Text scope=1:4..1:7 anchor=null attributes={} literal="link" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+`++a++` <b>++c++</b>
+.
+Document scope=1:1..1:20 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:20 anchor=null attributes={} children=5
+    ├── Code scope=1:1..1:7 anchor=null attributes={} literal="++a++" children=0
+    ├── Text scope=1:8..1:8 anchor=null attributes={} literal=" " children=0
+    ├── HTML scope=1:9..1:11 anchor=null attributes={} literal="<b>" children=0
+    ├── Insertion scope=1:12..1:16 anchor=null attributes={} children=1
+    │   └── Text scope=1:14..1:14 anchor=null attributes={} literal="c" children=0
+    └── HTML scope=1:17..1:20 anchor=null attributes={} literal="</b>" children=0
+````````````````````````````````
+
+upstream-01
+
+```````````````````````````````` example
+++Insert++
+.
+Document scope=1:1..1:10 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:10 anchor=null attributes={} children=1
+    └── Insertion scope=1:1..1:10 anchor=null attributes={} children=1
+        └── Text scope=1:3..1:8 anchor=null attributes={} literal="Insert" children=0
+````````````````````````````````
+
+upstream-02
+
+```````````````````````````````` example
+x ++++foo++ bar++
+.
+Document scope=1:1..1:17 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:17 anchor=null attributes={} children=2
+    ├── Text scope=1:1..1:2 anchor=null attributes={} literal="x " children=0
+    └── Insertion scope=1:3..1:17 anchor=null attributes={} children=2
+        ├── Insertion scope=1:5..1:11 anchor=null attributes={} children=1
+        │   └── Text scope=1:7..1:9 anchor=null attributes={} literal="foo" children=0
+        └── Text scope=1:12..1:15 anchor=null attributes={} literal=" bar" children=0
+````````````````````````````````
+
+upstream-03
+
+```````````````````````````````` example
+x ++foo ++bar++++
+.
+Document scope=1:1..1:17 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:17 anchor=null attributes={} children=2
+    ├── Text scope=1:1..1:2 anchor=null attributes={} literal="x " children=0
+    └── Insertion scope=1:3..1:17 anchor=null attributes={} children=2
+        ├── Text scope=1:5..1:8 anchor=null attributes={} literal="foo " children=0
+        └── Insertion scope=1:9..1:15 anchor=null attributes={} children=1
+            └── Text scope=1:11..1:13 anchor=null attributes={} literal="bar" children=0
+````````````````````````````````
+
+upstream-04
+
+```````````````````````````````` example
+x ++++foo++++
+.
+Document scope=1:1..1:13 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:13 anchor=null attributes={} children=2
+    ├── Text scope=1:1..1:2 anchor=null attributes={} literal="x " children=0
+    └── Insertion scope=1:3..1:13 anchor=null attributes={} children=1
+        └── Insertion scope=1:5..1:11 anchor=null attributes={} children=1
+            └── Text scope=1:7..1:9 anchor=null attributes={} literal="foo" children=0
+````````````````````````````````
+
+upstream-05
+
+```````````````````````````````` example
+x +++foo+++
+.
+Document scope=1:1..1:11 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:11 anchor=null attributes={} children=3
+    ├── Text scope=1:1..1:3 anchor=null attributes={} literal="x +" children=0
+    ├── Insertion scope=1:4..1:10 anchor=null attributes={} children=1
+    │   └── Text scope=1:6..1:8 anchor=null attributes={} literal="foo" children=0
+    └── Text scope=1:11..1:11 anchor=null attributes={} literal="+" children=0
+````````````````````````````````
+
+upstream-06
+
+```````````````````````````````` example
+**++test**++
+
+++**test++**
+.
+Document scope=1:1..3:12 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:12 anchor=null attributes={} children=2
+│   ├── Strong scope=1:1..1:10 anchor=null attributes={} children=1
+│   │   └── Text scope=1:3..1:8 anchor=null attributes={} literal="++test" children=0
+│   └── Text scope=1:11..1:12 anchor=null attributes={} literal="++" children=0
+└── Paragraph scope=3:1..3:12 anchor=null attributes={} children=2
+    ├── Insertion scope=3:1..3:10 anchor=null attributes={} children=1
+    │   └── Text scope=3:3..3:8 anchor=null attributes={} literal="**test" children=0
+    └── Text scope=3:11..3:12 anchor=null attributes={} literal="**" children=0
+````````````````````````````````
+
+upstream-07
+
+```````````````````````````````` example
+[++link]()++
+++[link++]()
+.
+Document scope=1:1..2:12 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..2:12 anchor=null attributes={} children=5
+    ├── Link scope=1:1..1:10 anchor=null attributes={} dest=url("") title=null children=1
+    │   └── Text scope=1:2..1:7 anchor=null attributes={} literal="++link" children=0
+    ├── Text scope=1:11..1:12 anchor=null attributes={} literal="++" children=0
+    ├── SoftBreak scope=1:13..1:13 anchor=null attributes={} children=0
+    ├── Text scope=2:1..2:2 anchor=null attributes={} literal="++" children=0
+    └── Link scope=2:3..2:12 anchor=null attributes={} dest=url("") title=null children=1
+        └── Text scope=2:4..2:9 anchor=null attributes={} literal="link++" children=0
+````````````````````````````````
+
+upstream-08
+
+```````````````````````````````` example
+++`code++`
+
+`++code`++
+.
+Document scope=1:1..3:10 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:10 anchor=null attributes={} children=2
+│   ├── Text scope=1:1..1:2 anchor=null attributes={} literal="++" children=0
+│   └── Code scope=1:3..1:10 anchor=null attributes={} literal="code++" children=0
+└── Paragraph scope=3:1..3:10 anchor=null attributes={} children=2
+    ├── Code scope=3:1..3:8 anchor=null attributes={} literal="++code" children=0
+    └── Text scope=3:9..3:10 anchor=null attributes={} literal="++" children=0
+````````````````````````````````
+
+upstream-09
+
+```````````````````````````````` example
+++foo ++bar++ baz++
+.
+Document scope=1:1..1:19 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:19 anchor=null attributes={} children=1
+    └── Insertion scope=1:1..1:19 anchor=null attributes={} children=3
+        ├── Text scope=1:3..1:6 anchor=null attributes={} literal="foo " children=0
+        ├── Insertion scope=1:7..1:13 anchor=null attributes={} children=1
+        │   └── Text scope=1:9..1:11 anchor=null attributes={} literal="bar" children=0
+        └── Text scope=1:14..1:17 anchor=null attributes={} literal=" baz" children=0
+````````````````````````````````
+
+upstream-10
+
+```````````````````````````````` example
+++f **o ++o b++ a** r++
+.
+Document scope=1:1..1:23 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:23 anchor=null attributes={} children=1
+    └── Insertion scope=1:1..1:23 anchor=null attributes={} children=3
+        ├── Text scope=1:3..1:4 anchor=null attributes={} literal="f " children=0
+        ├── Strong scope=1:5..1:19 anchor=null attributes={} children=3
+        │   ├── Text scope=1:7..1:8 anchor=null attributes={} literal="o " children=0
+        │   ├── Insertion scope=1:9..1:15 anchor=null attributes={} children=1
+        │   │   └── Text scope=1:11..1:13 anchor=null attributes={} literal="o b" children=0
+        │   └── Text scope=1:16..1:17 anchor=null attributes={} literal=" a" children=0
+        └── Text scope=1:20..1:21 anchor=null attributes={} literal=" r" children=0
+````````````````````````````````
+
+upstream-11
+
+```````````````````````````````` example
+foo ++ bar ++ baz
+.
+Document scope=1:1..1:17 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:17 anchor=null attributes={} children=1
+    └── Text scope=1:1..1:17 anchor=null attributes={} literal="foo ++ bar ++ baz" children=0
+````````````````````````````````
+
+upstream-12
+
+```````````````````````````````` example
+++test
+++
+
+++
+test++
+
+++
+test
+++
+.
+Document scope=1:1..9:2 anchor=null attributes={} children=3
+├── Paragraph scope=1:1..2:2 anchor=null attributes={} children=3
+│   ├── Text scope=1:1..1:6 anchor=null attributes={} literal="++test" children=0
+│   ├── SoftBreak scope=1:7..1:7 anchor=null attributes={} children=0
+│   └── Text scope=2:1..2:2 anchor=null attributes={} literal="++" children=0
+├── Paragraph scope=4:1..5:6 anchor=null attributes={} children=3
+│   ├── Text scope=4:1..4:2 anchor=null attributes={} literal="++" children=0
+│   ├── SoftBreak scope=4:3..4:3 anchor=null attributes={} children=0
+│   └── Text scope=5:1..5:6 anchor=null attributes={} literal="test++" children=0
+└── Paragraph scope=7:1..9:2 anchor=null attributes={} children=5
+    ├── Text scope=7:1..7:2 anchor=null attributes={} literal="++" children=0
+    ├── SoftBreak scope=7:3..7:3 anchor=null attributes={} children=0
+    ├── Text scope=8:1..8:4 anchor=null attributes={} literal="test" children=0
+    ├── SoftBreak scope=8:5..8:5 anchor=null attributes={} children=0
+    └── Text scope=9:1..9:2 anchor=null attributes={} literal="++" children=0
+````````````````````````````````
+
+upstream-13
+
+```````````````````````````````` example
+x ++a ++foo+++++++++++bar++ b++
+
+x ++a ++foo++++++++++++bar++ b++
+.
+Document scope=1:1..3:32 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:31 anchor=null attributes={} children=4
+│   ├── Text scope=1:1..1:2 anchor=null attributes={} literal="x " children=0
+│   ├── Insertion scope=1:3..1:15 anchor=null attributes={} children=2
+│   │   ├── Text scope=1:5..1:6 anchor=null attributes={} literal="a " children=0
+│   │   └── Insertion scope=1:7..1:13 anchor=null attributes={} children=1
+│   │       └── Text scope=1:9..1:11 anchor=null attributes={} literal="foo" children=0
+│   ├── Text scope=1:16..1:18 anchor=null attributes={} literal="+++" children=0
+│   └── Insertion scope=1:19..1:31 anchor=null attributes={} children=2
+│       ├── Insertion scope=1:21..1:27 anchor=null attributes={} children=1
+│       │   └── Text scope=1:23..1:25 anchor=null attributes={} literal="bar" children=0
+│       └── Text scope=1:28..1:29 anchor=null attributes={} literal=" b" children=0
+└── Paragraph scope=3:1..3:32 anchor=null attributes={} children=4
+    ├── Text scope=3:1..3:2 anchor=null attributes={} literal="x " children=0
+    ├── Insertion scope=3:3..3:15 anchor=null attributes={} children=2
+    │   ├── Text scope=3:5..3:6 anchor=null attributes={} literal="a " children=0
+    │   └── Insertion scope=3:7..3:13 anchor=null attributes={} children=1
+    │       └── Text scope=3:9..3:11 anchor=null attributes={} literal="foo" children=0
+    ├── Text scope=3:16..3:19 anchor=null attributes={} literal="++++" children=0
+    └── Insertion scope=3:20..3:32 anchor=null attributes={} children=2
+        ├── Insertion scope=3:22..3:28 anchor=null attributes={} children=1
+        │   └── Text scope=3:24..3:26 anchor=null attributes={} literal="bar" children=0
+        └── Text scope=3:29..3:30 anchor=null attributes={} literal=" b" children=0
+````````````````````````````````
+
+upstream-14
+
+```````````````````````````````` example
+a++"foo"++
+.
+Document scope=1:1..1:10 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:10 anchor=null attributes={} children=1
+    └── Text scope=1:1..1:10 anchor=null attributes={} literal="a++\"foo\"++" children=0
+````````````````````````````````
+
+upstream-15
+
+```````````````````````````````` example
+[++foo++]()
+.
+Document scope=1:1..1:11 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:11 anchor=null attributes={} children=1
+    └── Link scope=1:1..1:11 anchor=null attributes={} dest=url("") title=null children=1
+        └── Insertion scope=1:2..1:8 anchor=null attributes={} children=1
+            └── Text scope=1:4..1:6 anchor=null attributes={} literal="foo" children=0
+````````````````````````````````
+
+upstream-16
+
+```````````````````````````````` example
+-++++;++++++
+.
+Document scope=1:1..1:12 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:12 anchor=null attributes={} children=3
+    ├── Text scope=1:1..1:1 anchor=null attributes={} literal="-" children=0
+    ├── Insertion scope=1:2..1:10 anchor=null attributes={} children=1
+    │   └── Insertion scope=1:4..1:8 anchor=null attributes={} children=1
+    │       └── Text scope=1:6..1:6 anchor=null attributes={} literal=";" children=0
+    └── Text scope=1:11..1:12 anchor=null attributes={} literal="++" children=0
+````````````````````````````````
+
+unicode-flanking
+
+```````````````````````````````` example
+中++文++字 ++é，🙂++ a++“b”++ ++中 ++ ++ x++
+.
+Document scope=1:1..1:59 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:59 anchor=null attributes={} children=6
+    ├── Text scope=1:1..1:3 anchor=null attributes={} literal="中" children=0
+    ├── Insertion scope=1:4..1:10 anchor=null attributes={} children=1
+    │   └── Text scope=1:6..1:8 anchor=null attributes={} literal="文" children=0
+    ├── Text scope=1:11..1:14 anchor=null attributes={} literal="字 " children=0
+    ├── Insertion scope=1:15..1:27 anchor=null attributes={} children=1
+    │   └── Text scope=1:17..1:25 anchor=null attributes={} literal="é，🙂" children=0
+    ├── Text scope=1:28..1:41 anchor=null attributes={} literal=" a++“b”++ " children=0
+    └── Insertion scope=1:42..1:59 anchor=null attributes={} children=1
+        └── Text scope=1:44..1:57 anchor=null attributes={} literal="中 ++ ++ x" children=0
+````````````````````````````````
+
+punctuation
+
+```````````````````````````````` example
+(++x++) a++!++b ++!++ ++ x++ ++x ++
+.
+Document scope=1:1..1:35 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:35 anchor=null attributes={} children=5
+    ├── Text scope=1:1..1:1 anchor=null attributes={} literal="(" children=0
+    ├── Insertion scope=1:2..1:6 anchor=null attributes={} children=1
+    │   └── Text scope=1:4..1:4 anchor=null attributes={} literal="x" children=0
+    ├── Text scope=1:7..1:12 anchor=null attributes={} literal=") a++!" children=0
+    ├── Insertion scope=1:13..1:28 anchor=null attributes={} children=3
+    │   ├── Text scope=1:15..1:16 anchor=null attributes={} literal="b " children=0
+    │   ├── Insertion scope=1:17..1:21 anchor=null attributes={} children=1
+    │   │   └── Text scope=1:19..1:19 anchor=null attributes={} literal="!" children=0
+    │   └── Text scope=1:22..1:26 anchor=null attributes={} literal=" ++ x" children=0
+    └── Text scope=1:29..1:35 anchor=null attributes={} literal=" ++x ++" children=0
+````````````````````````````````
+
+odd-dual-run
+
+```````````````````````````````` example
+++a+++b++ ++a+++++b++ ++a+++++++b++
+.
+Document scope=1:1..1:35 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:35 anchor=null attributes={} children=9
+    ├── Insertion scope=1:1..1:5 anchor=null attributes={} children=1
+    │   └── Text scope=1:3..1:3 anchor=null attributes={} literal="a" children=0
+    ├── Text scope=1:6..1:10 anchor=null attributes={} literal="+b++ " children=0
+    ├── Insertion scope=1:11..1:15 anchor=null attributes={} children=1
+    │   └── Text scope=1:13..1:13 anchor=null attributes={} literal="a" children=0
+    ├── Text scope=1:16..1:16 anchor=null attributes={} literal="+" children=0
+    ├── Insertion scope=1:17..1:21 anchor=null attributes={} children=1
+    │   └── Text scope=1:19..1:19 anchor=null attributes={} literal="b" children=0
+    ├── Text scope=1:22..1:22 anchor=null attributes={} literal=" " children=0
+    ├── Insertion scope=1:23..1:27 anchor=null attributes={} children=1
+    │   └── Text scope=1:25..1:25 anchor=null attributes={} literal="a" children=0
+    ├── Text scope=1:28..1:30 anchor=null attributes={} literal="+++" children=0
+    └── Insertion scope=1:31..1:35 anchor=null attributes={} children=1
+        └── Text scope=1:33..1:33 anchor=null attributes={} literal="b" children=0
+````````````````````````````````
+
+escaped-runs
+
+```````````````````````````````` example
+\+++a++ ++a\+++ \+\+x++ ++a\+b++
+.
+Document scope=1:1..1:32 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:32 anchor=null attributes={} children=6
+    ├── Text scope=1:1..1:2 anchor=null attributes={} literal="+" children=0
+    ├── Insertion scope=1:3..1:7 anchor=null attributes={} children=1
+    │   └── Text scope=1:5..1:5 anchor=null attributes={} literal="a" children=0
+    ├── Text scope=1:8..1:8 anchor=null attributes={} literal=" " children=0
+    ├── Insertion scope=1:9..1:15 anchor=null attributes={} children=1
+    │   └── Text scope=1:11..1:13 anchor=null attributes={} literal="a+" children=0
+    ├── Text scope=1:16..1:24 anchor=null attributes={} literal=" ++x++ " children=0
+    └── Insertion scope=1:25..1:32 anchor=null attributes={} children=1
+        └── Text scope=1:27..1:30 anchor=null attributes={} literal="a+b" children=0
+````````````````````````````````
+
+entity-plus
+
+```````````````````````````````` example
+&#43;&#43;a++ ++a&#43;&#43; ++a &amp; b++
+.
+Document scope=1:1..1:41 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:41 anchor=null attributes={} children=2
+    ├── Text scope=1:1..1:28 anchor=null attributes={} literal="++a++ ++a++ " children=0
+    └── Insertion scope=1:29..1:41 anchor=null attributes={} children=1
+        └── Text scope=1:31..1:39 anchor=null attributes={} literal="a & b" children=0
+````````````````````````````````
+
+nested-strike
+
+```````````````````````````````` example
+++~~a~~++ ~~++b++~~
+.
+Document scope=1:1..1:19 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:19 anchor=null attributes={} children=3
+    ├── Insertion scope=1:1..1:9 anchor=null attributes={} children=1
+    │   └── Strikethrough scope=1:3..1:7 anchor=null attributes={} children=1
+    │       └── Text scope=1:5..1:5 anchor=null attributes={} literal="a" children=0
+    ├── Text scope=1:10..1:10 anchor=null attributes={} literal=" " children=0
+    └── Strikethrough scope=1:11..1:19 anchor=null attributes={} children=1
+        └── Insertion scope=1:13..1:17 anchor=null attributes={} children=1
+            └── Text scope=1:15..1:15 anchor=null attributes={} literal="b" children=0
+````````````````````````````````
+
+crossed-strike
+
+```````````````````````````````` example
+~~++a~~++ ++~~b++~~
+.
+Document scope=1:1..1:19 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:19 anchor=null attributes={} children=4
+    ├── Strikethrough scope=1:1..1:7 anchor=null attributes={} children=1
+    │   └── Text scope=1:3..1:5 anchor=null attributes={} literal="++a" children=0
+    ├── Text scope=1:8..1:10 anchor=null attributes={} literal="++ " children=0
+    ├── Insertion scope=1:11..1:17 anchor=null attributes={} children=1
+    │   └── Text scope=1:13..1:15 anchor=null attributes={} literal="~~b" children=0
+    └── Text scope=1:18..1:19 anchor=null attributes={} literal="~~" children=0
+````````````````````````````````
+
+nested-mark
+
+```````````````````````````````` example
+++==a==++ ==++b++==
+.
+Document scope=1:1..1:19 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:19 anchor=null attributes={} children=3
+    ├── Insertion scope=1:1..1:9 anchor=null attributes={} children=1
+    │   └── Mark scope=1:3..1:7 anchor=null attributes={} children=1
+    │       └── Text scope=1:5..1:5 anchor=null attributes={} literal="a" children=0
+    ├── Text scope=1:10..1:10 anchor=null attributes={} literal=" " children=0
+    └── Mark scope=1:11..1:19 anchor=null attributes={} children=1
+        └── Insertion scope=1:13..1:17 anchor=null attributes={} children=1
+            └── Text scope=1:15..1:15 anchor=null attributes={} literal="b" children=0
+````````````````````````````````
+
+crossed-mark
+
+```````````````````````````````` example
+==++a==++ ++==b++==
+.
+Document scope=1:1..1:19 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:19 anchor=null attributes={} children=4
+    ├── Mark scope=1:1..1:7 anchor=null attributes={} children=1
+    │   └── Text scope=1:3..1:5 anchor=null attributes={} literal="++a" children=0
+    ├── Text scope=1:8..1:10 anchor=null attributes={} literal="++ " children=0
+    ├── Insertion scope=1:11..1:17 anchor=null attributes={} children=1
+    │   └── Text scope=1:13..1:15 anchor=null attributes={} literal="==b" children=0
+    └── Text scope=1:18..1:19 anchor=null attributes={} literal="==" children=0
+````````````````````````````````
+
+cross-links
+
+```````````````````````````````` example
+++[[Note|display]] ![[Pic|20x30]]++ [[Note|++raw++]] ![[Pic|++raw++]]
+.
+Document scope=1:1..1:69 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:69 anchor=null attributes={} children=5
+    ├── Insertion scope=1:1..1:35 anchor=null attributes={} children=3
+    │   ├── CrossLink scope=1:3..1:18 anchor=null attributes={} dest=cross(path="Note",anchor=null) label="display" children=0
+    │   ├── Text scope=1:19..1:19 anchor=null attributes={} literal=" " children=0
+    │   └── CrossEmbedded scope=1:20..1:33 anchor=null attributes={} dest=cross(path="Pic",anchor=null) label="" dimensions=(width=20,height=30) children=0
+    ├── Text scope=1:36..1:36 anchor=null attributes={} literal=" " children=0
+    ├── CrossLink scope=1:37..1:52 anchor=null attributes={} dest=cross(path="Note",anchor=null) label="++raw++" children=0
+    ├── Text scope=1:53..1:53 anchor=null attributes={} literal=" " children=0
+    └── CrossEmbedded scope=1:54..1:69 anchor=null attributes={} dest=cross(path="Pic",anchor=null) label="++raw++" dimensions=null children=0
+````````````````````````````````
+
+crossed-cross-link
+
+```````````````````````````````` example
+++[[Note|label++]] [[Note|++label]]++
+.
+Document scope=1:1..1:37 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:37 anchor=null attributes={} children=1
+    └── Insertion scope=1:1..1:37 anchor=null attributes={} children=3
+        ├── CrossLink scope=1:3..1:18 anchor=null attributes={} dest=cross(path="Note",anchor=null) label="label++" children=0
+        ├── Text scope=1:19..1:19 anchor=null attributes={} literal=" " children=0
+        └── CrossLink scope=1:20..1:35 anchor=null attributes={} dest=cross(path="Note",anchor=null) label="++label" children=0
+````````````````````````````````
+
+cites
+
+```````````````````````````````` example
+++a[^n] b^[++inline++]++
+
+[^n]: ++note++
+.
+Document scope=1:1..3:14 anchor=null attributes={} children=1
+├── Paragraph scope=1:1..1:24 anchor=null attributes={} children=1
+│   └── Insertion scope=1:1..1:24 anchor=null attributes={} children=4
+│       ├── Text scope=1:3..1:3 anchor=null attributes={} literal="a" children=0
+│       ├── Cite scope=1:4..1:7 anchor=null attributes={} children=1
+│       │   └── Citation scope=1:5..1:6 referent=footnote(id="n") children=0
+│       │       ├── CitationPrefix children=0
+│       │       └── CitationSuffix children=0
+│       ├── Text scope=1:8..1:9 anchor=null attributes={} literal=" b" children=0
+│       └── Cite scope=1:10..1:22 anchor=null attributes={} children=1
+│           └── Citation scope=1:12..1:21 referent=footnote(id="inline-1") children=0
+│               ├── CitationPrefix children=0
+│               └── CitationSuffix children=0
+├── Footnote scope=1:10..1:22 id="inline-1" children=1
+│   └── Insertion scope=1:12..1:21 anchor=null attributes={} children=1
+│       └── Text scope=1:14..1:19 anchor=null attributes={} literal="inline" children=0
+└── Footnote scope=3:1..3:14 id="n" children=1
+    └── Paragraph scope=3:7..3:14 anchor=null attributes={} children=1
+        └── Insertion scope=3:7..3:14 anchor=null attributes={} children=1
+            └── Text scope=3:9..3:12 anchor=null attributes={} literal="note" children=0
+````````````````````````````````
+
+link-boundaries
+
+```````````````````````````````` example
+++[a](/u)++ [++b++](/u) ++[c++](/u) [++d](/u)++
+.
+Document scope=1:1..1:47 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:47 anchor=null attributes={} children=5
+    ├── Insertion scope=1:1..1:11 anchor=null attributes={} children=1
+    │   └── Link scope=1:3..1:9 anchor=null attributes={} dest=url("/u") title=null children=1
+    │       └── Text scope=1:4..1:4 anchor=null attributes={} literal="a" children=0
+    ├── Text scope=1:12..1:12 anchor=null attributes={} literal=" " children=0
+    ├── Link scope=1:13..1:23 anchor=null attributes={} dest=url("/u") title=null children=1
+    │   └── Insertion scope=1:14..1:18 anchor=null attributes={} children=1
+    │       └── Text scope=1:16..1:16 anchor=null attributes={} literal="b" children=0
+    ├── Text scope=1:24..1:24 anchor=null attributes={} literal=" " children=0
+    └── Insertion scope=1:25..1:47 anchor=null attributes={} children=3
+        ├── Link scope=1:27..1:35 anchor=null attributes={} dest=url("/u") title=null children=1
+        │   └── Text scope=1:28..1:30 anchor=null attributes={} literal="c++" children=0
+        ├── Text scope=1:36..1:36 anchor=null attributes={} literal=" " children=0
+        └── Link scope=1:37..1:45 anchor=null attributes={} dest=url("/u") title=null children=1
+            └── Text scope=1:38..1:40 anchor=null attributes={} literal="++d" children=0
+````````````````````````````````
+
+media-content
+
+```````````````````````````````` example
+![++alt++](/image.png) ++![alt](/image.png)++
+.
+Document scope=1:1..1:45 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:45 anchor=null attributes={} children=3
+    ├── Media scope=1:1..1:22 anchor=null attributes={} dest=url("/image.png") title=null dimensions=null children=1
+    │   └── Insertion scope=1:3..1:9 anchor=null attributes={} children=1
+    │       └── Text scope=1:5..1:7 anchor=null attributes={} literal="alt" children=0
+    ├── Text scope=1:23..1:23 anchor=null attributes={} literal=" " children=0
+    └── Insertion scope=1:24..1:45 anchor=null attributes={} children=1
+        └── Media scope=1:26..1:43 anchor=null attributes={} dest=url("/image.png") title=null dimensions=null children=1
+            └── Text scope=1:28..1:30 anchor=null attributes={} literal="alt" children=0
+````````````````````````````````
+
+comments
+
+```````````````````````````````` example
+++a %%++raw++%% b <!--++raw++--> c++
+.
+Document scope=1:1..1:36 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:36 anchor=null attributes={} children=1
+    └── Insertion scope=1:1..1:36 anchor=null attributes={} children=5
+        ├── Text scope=1:3..1:4 anchor=null attributes={} literal="a " children=0
+        ├── Comment scope=1:5..1:15 anchor=null attributes={} literal="++raw++" children=0
+        ├── Text scope=1:16..1:18 anchor=null attributes={} literal=" b " children=0
+        ├── Comment scope=1:19..1:32 anchor=null attributes={} literal="++raw++" children=0
+        └── Text scope=1:33..1:34 anchor=null attributes={} literal=" c" children=0
+````````````````````````````````
+
+html-tokens
+
+```````````````````````````````` example
+++<i title="++raw++">a</i>++ <b>++live++</b> <?pi ++raw++?>
+.
+Document scope=1:1..1:59 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:59 anchor=null attributes={} children=7
+    ├── Insertion scope=1:1..1:28 anchor=null attributes={} children=3
+    │   ├── HTML scope=1:3..1:21 anchor=null attributes={} literal="<i title=\"++raw++\">" children=0
+    │   ├── Text scope=1:22..1:22 anchor=null attributes={} literal="a" children=0
+    │   └── HTML scope=1:23..1:26 anchor=null attributes={} literal="</i>" children=0
+    ├── Text scope=1:29..1:29 anchor=null attributes={} literal=" " children=0
+    ├── HTML scope=1:30..1:32 anchor=null attributes={} literal="<b>" children=0
+    ├── Insertion scope=1:33..1:40 anchor=null attributes={} children=1
+    │   └── Text scope=1:35..1:38 anchor=null attributes={} literal="live" children=0
+    ├── HTML scope=1:41..1:44 anchor=null attributes={} literal="</b>" children=0
+    ├── Text scope=1:45..1:45 anchor=null attributes={} literal=" " children=0
+    └── HTML scope=1:46..1:59 anchor=null attributes={} literal="<?pi ++raw++?>" children=0
+````````````````````````````````
+
+formulas
+
+```````````````````````````````` example
+++a $++raw++$ b \\(++raw++\\) c \\[++raw++\\]++
+.
+Document scope=1:1..1:47 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:47 anchor=null attributes={} children=1
+    └── Insertion scope=1:1..1:47 anchor=null attributes={} children=6
+        ├── Text scope=1:3..1:4 anchor=null attributes={} literal="a " children=0
+        ├── Formula scope=1:5..1:13 anchor=null attributes={} mode=embedded literal="++raw++" children=0
+        ├── Text scope=1:14..1:16 anchor=null attributes={} literal=" b " children=0
+        ├── Formula scope=1:17..1:29 anchor=null attributes={} mode=embedded literal="++raw++" children=0
+        ├── Text scope=1:30..1:32 anchor=null attributes={} literal=" c " children=0
+        └── Formula scope=1:33..1:45 anchor=null attributes={} mode=standalone literal="++raw++" children=0
+````````````````````````````````
+
+autolinks
+
+```````````````````````````````` example
+<https://example.com/++raw++> ++<https://example.com>++ https://example.com/++raw++
+.
+Document scope=1:1..1:83 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:83 anchor=null attributes={} children=5
+    ├── Link scope=1:1..1:29 anchor=null attributes={} dest=url("https://example.com/++raw++") title=null children=1
+    │   └── Text scope=1:2..1:28 anchor=null attributes={} literal="https://example.com/++raw++" children=0
+    ├── Text scope=1:30..1:30 anchor=null attributes={} literal=" " children=0
+    ├── Insertion scope=1:31..1:55 anchor=null attributes={} children=1
+    │   └── Link scope=1:33..1:53 anchor=null attributes={} dest=url("https://example.com") title=null children=1
+    │       └── Text scope=1:34..1:52 anchor=null attributes={} literal="https://example.com" children=0
+    ├── Text scope=1:56..1:56 anchor=null attributes={} literal=" " children=0
+    └── Link scope=1:57..1:83 anchor=null attributes={} dest=url("https://example.com/++raw++") title=null children=1
+        └── Text scope=1:57..1:83 anchor=null attributes={} literal="https://example.com/++raw++" children=0
+````````````````````````````````
+
+code-blocks
+
+```````````````````````````````` example
+``` ++info++
+++raw++
+```
+
+    ++raw++
+
+++live++
+.
+Document scope=1:1..7:8 anchor=null attributes={} children=3
+├── CodeBlock scope=1:1..3:3 anchor=null attributes={} info="++info++" language="++info++" literal="++raw++\n" fenced=true closed=true children=0
+├── CodeBlock scope=5:5..6:0 anchor=null attributes={} info=null language=null literal="++raw++\n" fenced=false closed=true children=0
+└── Paragraph scope=7:1..7:8 anchor=null attributes={} children=1
+    └── Insertion scope=7:1..7:8 anchor=null attributes={} children=1
+        └── Text scope=7:3..7:6 anchor=null attributes={} literal="live" children=0
+````````````````````````````````
+
+html-block
+
+```````````````````````````````` example
+<div title="++raw++">
+++raw++
+</div>
+
+++live++
+.
+Document scope=1:1..5:8 anchor=null attributes={} children=2
+├── HTMLBlock scope=1:1..3:6 anchor=null attributes={} literal="<div title=\"++raw++\">\n++raw++\n</div>\n" children=0
+└── Paragraph scope=5:1..5:8 anchor=null attributes={} children=1
+    └── Insertion scope=5:1..5:8 anchor=null attributes={} children=1
+        └── Text scope=5:3..5:6 anchor=null attributes={} literal="live" children=0
+````````````````````````````````
+
+comment-block
+
+```````````````````````````````` example
+%%
+++raw++
+%%
+
+++live++
+.
+Document scope=1:1..5:8 anchor=null attributes={} children=2
+├── Comment scope=1:1..3:2 anchor=null attributes={} literal="++raw++\n" children=0
+└── Paragraph scope=5:1..5:8 anchor=null attributes={} children=1
+    └── Insertion scope=5:1..5:8 anchor=null attributes={} children=1
+        └── Text scope=5:3..5:6 anchor=null attributes={} literal="live" children=0
+````````````````````````````````
+
+formula-block
+
+```````````````````````````````` example
+$$
+++raw++
+$$
+
+++live++
+.
+Document scope=1:1..5:8 anchor=null attributes={} children=2
+├── FormulaBlock scope=1:1..3:2 anchor=null attributes={} literal="++raw++" children=0
+└── Paragraph scope=5:1..5:8 anchor=null attributes={} children=1
+    └── Insertion scope=5:1..5:8 anchor=null attributes={} children=1
+        └── Text scope=5:3..5:6 anchor=null attributes={} literal="live" children=0
+````````````````````````````````
+
+container-boundaries
+
+```````````````````````````````` example
+++first
+
+last++
+
+> ++quote++
+
+- ++item++
+.
+Document scope=1:1..7:10 anchor=null attributes={} children=4
+├── Paragraph scope=1:1..1:7 anchor=null attributes={} children=1
+│   └── Text scope=1:1..1:7 anchor=null attributes={} literal="++first" children=0
+├── Paragraph scope=3:1..3:6 anchor=null attributes={} children=1
+│   └── Text scope=3:1..3:6 anchor=null attributes={} literal="last++" children=0
+├── Callout scope=5:1..5:11 anchor=null attributes={} variant=null collapsed=null children=1
+│   └── Paragraph scope=5:3..5:11 anchor=null attributes={} children=1
+│       └── Insertion scope=5:3..5:11 anchor=null attributes={} children=1
+│           └── Text scope=5:5..5:9 anchor=null attributes={} literal="quote" children=0
+└── List scope=7:1..7:10 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+    └── ListItem scope=7:1..7:10 anchor=null attributes={} marker=null children=1
+        └── Paragraph scope=7:3..7:10 anchor=null attributes={} children=1
+            └── Insertion scope=7:3..7:10 anchor=null attributes={} children=1
+                └── Text scope=7:5..7:8 anchor=null attributes={} literal="item" children=0
+````````````````````````````````
+
+table-position
+
+```````````````````````````````` example
+| inserted |
+| --- |
+| +++中\|文+++ |
+.
+Document scope=1:1..3:18 anchor=null attributes={} children=1
+└── Table scope=1:1..3:18 anchor=null attributes={} columns=[none:null] children=2
+    ├── TableHead children=1
+    │   └── TableRow scope=1:1..1:12 anchor=null attributes={} children=1
+    │       └── TableCell scope=1:2..1:11 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │           └── Text scope=1:3..1:10 anchor=null attributes={} literal="inserted" children=0
+    ├── TableBody children=1
+    │   └── TableRow scope=3:1..3:18 anchor=null attributes={} children=1
+    │       └── TableCell scope=3:2..3:17 anchor=null attributes={} rowspan=1 colspan=1 children=3
+    │           ├── Text scope=3:3..3:3 anchor=null attributes={} literal="+" children=0
+    │           ├── Insertion scope=3:4..3:15 anchor=null attributes={} children=1
+    │           │   └── Text scope=3:6..3:13 anchor=null attributes={} literal="中|文" children=0
+    │           └── Text scope=3:16..3:16 anchor=null attributes={} literal="+" children=0
+    └── TableFoot children=0
+````````````````````````````````
+
+inline-fields
+
+```````````````````````````````` example
+> [!note] ++title++
+> ++body++
+
+:badge[++label++]
+
+^[++note++]
+.
+Document scope=1:1..6:11 anchor=null attributes={} children=3
+├── Callout scope=1:1..2:10 anchor=null attributes={} variant="note" collapsed=null children=1
+│   ├── Title children=1
+│   │   └── Insertion scope=1:11..1:19 anchor=null attributes={} children=1
+│   │       └── Text scope=1:13..1:17 anchor=null attributes={} literal="title" children=0
+│   └── Paragraph scope=2:3..2:10 anchor=null attributes={} children=1
+│       └── Insertion scope=2:3..2:10 anchor=null attributes={} children=1
+│           └── Text scope=2:5..2:8 anchor=null attributes={} literal="body" children=0
+├── Paragraph scope=4:1..4:17 anchor=null attributes={} children=1
+│   └── Directive scope=4:1..4:17 anchor=null attributes={} name="badge" children=0
+│       └── DirectiveLabel scope=4:7..4:17 anchor=null attributes={} children=1
+│           └── Insertion scope=4:8..4:16 anchor=null attributes={} children=1
+│               └── Text scope=4:10..4:14 anchor=null attributes={} literal="label" children=0
+├── Paragraph scope=6:1..6:11 anchor=null attributes={} children=1
+│   └── Cite scope=6:1..6:11 anchor=null attributes={} children=1
+│       └── Citation scope=6:3..6:10 referent=footnote(id="inline-1") children=0
+│           ├── CitationPrefix children=0
+│           └── CitationSuffix children=0
+└── Footnote scope=6:1..6:11 id="inline-1" children=1
+    └── Insertion scope=6:3..6:10 anchor=null attributes={} children=1
+        └── Text scope=6:5..6:8 anchor=null attributes={} literal="note" children=0
+````````````````````````````````
+
+failed-candidates
+
+```````````````````````````````` example
+++[[unfinished $x$ ==mark== ++end++
+
+++[unfinished ++end++
+.
+Document scope=1:1..3:21 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:35 anchor=null attributes={} children=6
+│   ├── Text scope=1:1..1:15 anchor=null attributes={} literal="++[[unfinished " children=0
+│   ├── Formula scope=1:16..1:18 anchor=null attributes={} mode=embedded literal="x" children=0
+│   ├── Text scope=1:19..1:19 anchor=null attributes={} literal=" " children=0
+│   ├── Mark scope=1:20..1:27 anchor=null attributes={} children=1
+│   │   └── Text scope=1:22..1:25 anchor=null attributes={} literal="mark" children=0
+│   ├── Text scope=1:28..1:28 anchor=null attributes={} literal=" " children=0
+│   └── Insertion scope=1:29..1:35 anchor=null attributes={} children=1
+│       └── Text scope=1:31..1:33 anchor=null attributes={} literal="end" children=0
+└── Paragraph scope=3:1..3:21 anchor=null attributes={} children=2
+    ├── Text scope=3:1..3:14 anchor=null attributes={} literal="++[unfinished " children=0
+    └── Insertion scope=3:15..3:21 anchor=null attributes={} children=1
+        └── Text scope=3:17..3:19 anchor=null attributes={} literal="end" children=0
+````````````````````````````````
+
+nested-odd
+
+```````````````````````````````` example
++++++a+++++ ++++++b++++++
+.
+Document scope=1:1..1:25 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:25 anchor=null attributes={} children=4
+    ├── Text scope=1:1..1:1 anchor=null attributes={} literal="+" children=0
+    ├── Insertion scope=1:2..1:10 anchor=null attributes={} children=1
+    │   └── Insertion scope=1:4..1:8 anchor=null attributes={} children=1
+    │       └── Text scope=1:6..1:6 anchor=null attributes={} literal="a" children=0
+    ├── Text scope=1:11..1:12 anchor=null attributes={} literal="+ " children=0
+    └── Insertion scope=1:13..1:25 anchor=null attributes={} children=1
+        └── Insertion scope=1:15..1:23 anchor=null attributes={} children=1
+            └── Insertion scope=1:17..1:21 anchor=null attributes={} children=1
+                └── Text scope=1:19..1:19 anchor=null attributes={} literal="b" children=0
+````````````````````````````````

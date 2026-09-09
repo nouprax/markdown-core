@@ -128,7 +128,7 @@ The base of a heading is derived from its parsed inline content:
 
 1. Project the content to plain text: `Text` and `Code` contribute `literal`;
    `Emphasis`, `Strong`, `Strikethrough`, `Span`, `Superscript`, `Subscript`,
-   `Mark`, `Insert`, `Link`, `Media`, and `DirectiveLabel` contribute their
+   `Mark`, `Insertion`, `Link`, `Media`, and `DirectiveLabel` contribute their
    concatenated child text; `Directive` contributes its label text; `SoftBreak`
    and `LineBreak` contribute one space; `Formula` contributes `literal`;
    `CrossLink` and `CrossEmbedded` contribute `label` when non-null and otherwise its authored

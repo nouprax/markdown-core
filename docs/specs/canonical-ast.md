@@ -274,6 +274,7 @@ and returns no document.
 | `Strong` | `content: [Markup]` | inline content |
 | `Strikethrough` | `content: [Markup]` | inline content |
 | `Mark` | `content: [Markup]` | inline content |
+| `Insertion` | `content: [Markup]` | inline content |
 | `Link` | `dest: Destination`, `title: String?`, `content: [Markup]` | `dest` is the tagged `Destination` value and is never absent: `[a]()` and `[a](<>)` wrote one and wrote nothing in it, so it is `url("")`; a reference occurrence answers the destination its definition stated, and an unresolved reference is the inherited literal text; every `Link` owns the `url` branch; absent and empty title remain distinct; inline content |
 | `Media` | `dest: Destination`, `title: String?`, `dimensions: Dimensions?`, `content: [Markup]` | `dest` is the tagged `Destination` value and is never absent, for the reason `Link.dest` is not; every `Media` owns the `url` branch; absent and empty title remain distinct; content is parsed alt-text inline content |
 | `Directive` | `name: String`, `label: DirectiveLabel?` | letter-first name; attributes use the inherited fields; label is a typed Markup field spanning its brackets, never content; absent and empty labels remain distinct; leaf |
