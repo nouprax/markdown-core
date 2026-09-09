@@ -282,6 +282,7 @@ set(MARKDOWN_CORE_PATHOLOGICAL_CASES
     pattern_image_link
     hard_link_emph
     nested_brackets
+    cross_reference_kinds
     nested_block_quotes
     deeply_nested_lists
     empty_lines_in_deeply_nested_lists

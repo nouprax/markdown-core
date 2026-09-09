@@ -260,13 +260,22 @@ let failed = false;
  * read three of those -- the three MODELS -- so a decoder that forgot a kind, a
  * dumper that could not name one, or a wire enum that was one short was
  * invisible here and visible only if some test happened to parse that kind. */
+const cKinds = namedKinds("packages/markdown-core/include/markdown_core.h", /MARKDOWN_CORE_KIND_([A-Z_]+)/g).filter(
+    (name) => name !== "NONE"
+);
+const counterBound = read("packages/markdown-core/tests/support/test_support.h").match(
+    /^#define TS_KIND_COUNT \(MARKDOWN_CORE_KIND_([A-Z_]+) \+ 1\)$/m
+);
+if (counterBound?.[1] !== cKinds.at(-1)) {
+    console.error("C test node-kind counter capacity does not match the last public node kind");
+    failed = true;
+}
+
 const kindSurfaces = [
     {
         label: "C header kind enum",
         expect: [...kinds.keys()].map(snake),
-        actual: namedKinds("packages/markdown-core/include/markdown_core.h", /MARKDOWN_CORE_KIND_([A-Z_]+)/g).filter(
-            (name) => name !== "NONE"
-        )
+        actual: cKinds
     },
     {
         label: "C dump kind names",

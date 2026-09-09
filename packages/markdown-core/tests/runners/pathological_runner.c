@@ -61,6 +61,10 @@ static int pc_parse(pc_context *context) {
 }
 
 static int pc_expect_count(const pc_context *context, markdown_core_node_kind kind, size_t expected, const char *what) {
+    if ((size_t)kind >= TS_KIND_COUNT) {
+        fprintf(stderr, "node kind %d exceeds the test counter capacity\n", (int)kind);
+        return -1;
+    }
     if (context->counts[kind] != expected) {
         fprintf(stderr, "expected %zu %s node(s), found %zu\n", expected, what, context->counts[kind]);
         return -1;
@@ -282,6 +286,21 @@ static int case_nested_brackets(pc_context *context) {
         return -1;
     }
     return pc_expect_count(context, MARKDOWN_CORE_KIND_CROSS_LINK, 1, "CrossLink");
+}
+
+/* Cross links and transclusions remain distinct leaves, including embeds
+ * with and without dimensions. Every occurrence must reach the counter. */
+static int case_cross_reference_kinds(pc_context *context) {
+    const size_t repetitions = 20000;
+    if (pc_build(context, NULL, "[[page]] ![[asset]] ![[asset|100x145]] ", repetitions, NULL) != 0 ||
+        pc_parse(context) != 0) {
+        return -1;
+    }
+    if (pc_expect_count(context, MARKDOWN_CORE_KIND_CROSS_LINK, repetitions, "CrossLink") != 0 ||
+        pc_expect_count(context, MARKDOWN_CORE_KIND_CROSS_EMBEDDED, 2 * repetitions, "CrossEmbedded") != 0) {
+        return -1;
+    }
+    return 0;
 }
 
 static int case_nested_block_quotes(pc_context *context) {
@@ -1145,6 +1164,7 @@ static const pc_case_entry PC_CASES[] = {
     {"pattern_image_link", case_pattern_image_link},
     {"hard_link_emph", case_hard_link_emph},
     {"nested_brackets", case_nested_brackets},
+    {"cross_reference_kinds", case_cross_reference_kinds},
     {"nested_block_quotes", case_nested_block_quotes},
     {"deeply_nested_lists", case_deeply_nested_lists},
     {"empty_lines_in_deeply_nested_lists", case_empty_lines_in_deeply_nested_lists},

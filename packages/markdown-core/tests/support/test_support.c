@@ -364,9 +364,11 @@ int ts_ast_walk(const markdown_core_node *root, ts_ast_visit_fn visit, void *con
 static int ts_count_visit(const markdown_core_node *node, void *context) {
     size_t *counts = (size_t *)context;
     markdown_core_node_kind kind = markdown_core_node_get_kind(node);
-    if ((size_t)kind < TS_KIND_COUNT) {
-        counts[kind]++;
+    if ((size_t)kind >= TS_KIND_COUNT) {
+        fprintf(stderr, "node kind %d exceeds the test counter capacity\n", (int)kind);
+        return -1;
     }
+    counts[kind]++;
     return 0;
 }
 
