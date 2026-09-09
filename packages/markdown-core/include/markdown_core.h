@@ -375,10 +375,13 @@ MARKDOWN_CORE_API bool markdown_core_node_attribute_class_at(const markdown_core
 MARKDOWN_CORE_API size_t markdown_core_node_attribute_record_count(const markdown_core_node *node);
 MARKDOWN_CORE_API bool markdown_core_node_attribute_record_at(const markdown_core_node *node, size_t index,
                                                               markdown_core_string *name, markdown_core_string *value);
-/** Immutable normalized values, borrowed for the document lifetime. The
- * primary value belongs to the occurrence; the inherited value belongs to its
- * definition (NULL otherwise). Their identities let a binding decode each
- * value once using its own native ownership and collection conventions.
+/** Immutable normalized merge inputs, borrowed for the document lifetime.
+ * The primary contribution comes from the occurrence, and the inherited
+ * contribution from its resource. A missing contribution may be NULL or an
+ * empty value; neither distinguishes direct syntax from a reference occurrence.
+ * Value accessors accept NULL as empty: no anchor, zero classes and records.
+ * Their identities let a binding decode each value once using its own native
+ * ownership and collection conventions.
  * Node accessors above read merge(primary, inherited): primary nonempty anchor
  * first; inherited classes/records followed by primary, retaining duplicates. */
 typedef struct markdown_core_attribute_value markdown_core_attribute_value;
