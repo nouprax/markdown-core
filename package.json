@@ -82,7 +82,7 @@
         "@eslint/js": "10.0.1",
         "@quartz-community/remark-obsidian": "0.2.4",
         "eslint": "10.0.1",
-        "markdown-it": "13.0.2",
+        "markdown-it": "14.2.0",
         "markdown-it-ins": "4.0.0",
         "prettier": "3.9.5",
         "remark-directive": "^4.0.0",
