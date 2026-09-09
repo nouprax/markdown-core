@@ -116,6 +116,12 @@ exponent, no exponent zero padding). Its rows always nest under three group line
 counts their rows, not the group lines. A row prints no scalar fields; each
 cell prints `rowspan` then `colspan`, followed by its unchanged content.
 
+A `Dimensions` value prints `(width=W,height=H)` with no internal spaces;
+`H` is `null` when only width was authored. `Media.dimensions` and `CrossEmbedded.dimensions` print `null`
+when absent, so `dimensions=null` and `dimensions=(width=100,height=null)`
+remain distinct. A present value always has positive width; height without
+width is invalid. The value introduces no node or child line.
+
 ## Field order by record kind
 
 Fields appear after `scope` and before `children` in exactly this order:
@@ -147,7 +153,8 @@ that the dump represents as nested descendants.
 | `LineBreak` | `anchor`, `attributes` |
 | `Code` | `anchor`, `attributes`, `literal` |
 | `HTML` | `anchor`, `attributes`, `literal` |
-| `CrossLink` | `anchor`, `attributes`, `embedded`, `dest`, `label` |
+| `CrossLink` | `anchor`, `attributes`, `dest`, `label` |
+| `CrossEmbedded` | `anchor`, `attributes`, `dest`, `label`, `dimensions` |
 | `Comment` | `anchor`, `attributes`, `literal` |
 | `Formula` | `anchor`, `attributes`, `mode`, `literal` |
 | `Emphasis` | `anchor`, `attributes` |
@@ -155,7 +162,7 @@ that the dump represents as nested descendants.
 | `Strikethrough` | `anchor`, `attributes` |
 | `Mark` | `anchor`, `attributes` |
 | `Link` | `anchor`, `attributes`, `dest`, `title` |
-| `Image` | `anchor`, `attributes`, `dest`, `title`, `width`, `height` |
+| `Media` | `anchor`, `attributes`, `dest`, `title`, `dimensions` |
 | `Directive` | `anchor`, `attributes`, `name` |
 | `Cite` | `anchor`, `attributes` |
 

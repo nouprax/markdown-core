@@ -32,7 +32,7 @@ one consumer fact:
 | block identifier `#foo#`                    | `anchor="foo"` |
 
 There is no heading, block, or fragment discriminator. The reference side of a
-link never populates its own `anchor`: `Link`, `CrossLink`, `Cite`, and a
+link never populates its own `anchor`: `Link`, `CrossLink`, `CrossEmbedded`, `Cite`, and a
 footnote call declare nothing by referring to something.
 `Destination.url("#foo")` and `Destination.cross(path="", anchor="foo")` are two
 reference spellings that a consumer may match against a node whose `anchor ==
@@ -128,10 +128,10 @@ The base of a heading is derived from its parsed inline content:
 
 1. Project the content to plain text: `Text` and `Code` contribute `literal`;
    `Emphasis`, `Strong`, `Strikethrough`, `Span`, `Superscript`, `Subscript`,
-   `Mark`, `Insert`, `Link`, `Image`, and `DirectiveLabel` contribute their
+   `Mark`, `Insert`, `Link`, `Media`, and `DirectiveLabel` contribute their
    concatenated child text; `Directive` contributes its label text; `SoftBreak`
    and `LineBreak` contribute one space; `Formula` contributes `literal`;
-   `CrossLink` contributes `label` when non-null and otherwise its authored
+   `CrossLink` and `CrossEmbedded` contribute `label` when non-null and otherwise its authored
    path and anchor text; a bibliography `Cite` contributes, per item, prefix
    text, `@` and the key, and suffix text in order; `Cite` with a `specimen` referent
    contributes `@` and its referent id; `HTML`, `Comment`, and a footnote `Cite`
@@ -297,7 +297,7 @@ Document scope=1:1..3:14 anchor=null attributes={} children=2
 ├── Heading scope=1:1..1:11 anchor="my-header" attributes={} level=1 children=1
 │   └── Text scope=1:3..1:11 anchor=null attributes={} literal="My Header" children=0
 └── Paragraph scope=3:1..3:14 anchor=null attributes={} children=1
-    └── CrossLink scope=3:1..3:14 anchor=null attributes={} embedded=false dest=cross(path="",anchor="My Header") label=null children=0
+    └── CrossLink scope=3:1..3:14 anchor=null attributes={} dest=cross(path="",anchor="My Header") label=null children=0
 ````````````````````````````````
 
 ## Scopes and lifecycle
@@ -316,7 +316,7 @@ Every example of this module is a package fixture. Tests also cover
 `anchor=null` on every kind; explicit identifiers at every attachment site;
 block identifiers; identical values from different rules; last-identifier,
 clearing, and occurrence-over-definition precedence; every kind of the
-projection table inside a heading, `Formula`, `HTML`, `Comment`, `Image`,
+projection table inside a heading, `Formula`, `HTML`, `Comment`, `Media`,
 line breaks, and directive labels included; combining marks and connectors;
 reservation of every explicit anchor from every rule before synthesis, including an anchor on an unreferenced definition reserving
 nothing; headings inside footnotes; explicit and generated duplicates;

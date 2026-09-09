@@ -54,8 +54,7 @@ enum es_node_offset {
     ES_NODE_RECORDS_START = 112,
     ES_NODE_RECORDS_COUNT = 116,
     ES_NODE_METADATA = 120,
-    ES_NODE_WIDTH = 124,
-    ES_NODE_HEIGHT = 128
+    ES_NODE_DIMENSIONS = 124
 };
 
 /* The wire kinds of the scoped values (M4), above the node-kind space
@@ -79,7 +78,9 @@ typedef struct es_source_node {
     const markdown_core_metadata_value *metadata_value;
     markdown_core_optional_string anchor;
     uint32_t class_start, class_count, record_start, record_count, metadata_index;
-    uint32_t width, height;
+    struct {
+        uint32_t width, height;
+    } dimensions;
     uint32_t wire_kind;
     uint32_t child_start;
     uint32_t child_count;
@@ -696,6 +697,16 @@ static void collect_node_fields(es_build *build, size_t node_index) {
         }
         append_attribute(build, name, value);
     }
+    const markdown_core_dimensions *dimensions = markdown_core_node_dimensions(node);
+    if (dimensions) {
+        if (dimensions->width < 1 ||
+            (dimensions->height.has_value && (dimensions->height.value < 1 || dimensions->height.value > INT32_MAX))) {
+            build->failure = ES_BUILD_INTERNAL;
+            return;
+        }
+        record->dimensions.width = (uint32_t)dimensions->width;
+        record->dimensions.height = dimensions->height.has_value ? (uint32_t)dimensions->height.value : 0;
+    }
     kind = markdown_core_node_get_kind(node);
     switch (kind) {
     case MARKDOWN_CORE_KIND_CALLOUT: {
@@ -832,34 +843,21 @@ static void collect_node_fields(es_build *build, size_t node_index) {
         record->strings[0] = required_string(first);
         break;
     }
-    case MARKDOWN_CORE_KIND_CROSS_LINK: {
+    case MARKDOWN_CORE_KIND_CROSS_LINK:
+    case MARKDOWN_CORE_KIND_CROSS_EMBEDDED: {
         markdown_core_destination destination;
-        bool embedded;
-        if (!markdown_core_node_destination(node, &destination) ||
-            !markdown_core_node_cross_link_properties(node, &embedded, &optional_first)) {
+        if (!markdown_core_node_destination(node, &destination)) {
             build->failure = ES_BUILD_INTERNAL;
             break;
         }
-        record->flags = embedded ? 1 : 0;
         record->scalar0 = (int32_t)destination.kind;
         record->strings[0] = required_string(destination.path);
         record->strings[1] = destination.anchor;
-        record->strings[2] = optional_first;
+        record->strings[2] = markdown_core_node_cross_label(node);
         break;
     }
     case MARKDOWN_CORE_KIND_LINK:
-    case MARKDOWN_CORE_KIND_IMAGE: {
-        if (kind == MARKDOWN_CORE_KIND_IMAGE) {
-            markdown_core_optional_i64 width, height;
-            if (!markdown_core_node_image_dimensions(node, &width, &height) ||
-                (width.has_value && (width.value < 1 || width.value > INT32_MAX)) ||
-                (height.has_value && (height.value < 1 || height.value > INT32_MAX))) {
-                build->failure = ES_BUILD_INTERNAL;
-                break;
-            }
-            record->width = width.has_value ? (uint32_t)width.value : 0;
-            record->height = height.has_value ? (uint32_t)height.value : 0;
-        }
+    case MARKDOWN_CORE_KIND_MEDIA: {
         /* The tagged `Destination`: the branch is the scalar, its strings are
          * the first slots -- the url, or the path and the optional anchor --
          * and the title is the third, so a slot never means two things. The
@@ -1051,8 +1049,8 @@ static uint8_t *success_result(const es_build *build, es_build_failure *failure)
         put_u32(output, node_offset + ES_NODE_RECORDS_START, source->record_start);
         put_u32(output, node_offset + ES_NODE_RECORDS_COUNT, source->record_count);
         put_u32(output, node_offset + ES_NODE_METADATA, source->metadata_index);
-        put_u32(output, node_offset + ES_NODE_WIDTH, source->width);
-        put_u32(output, node_offset + ES_NODE_HEIGHT, source->height);
+        put_u32(output, node_offset + ES_NODE_DIMENSIONS, source->dimensions.width);
+        put_u32(output, node_offset + ES_NODE_DIMENSIONS + 4, source->dimensions.height);
         if (source->resource_first != ES_NO_INDEX && source->resource_first != index) {
             /* A later occurrence of a resource: its destination and title
              * were written with the first occurrence, so the record points

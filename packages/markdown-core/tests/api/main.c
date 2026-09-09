@@ -53,11 +53,11 @@ static const markdown_core_node_type node_types[] = {
     MARKDOWN_CORE_NODE_THEMATIC_BREAK, MARKDOWN_CORE_NODE_TEXT,       MARKDOWN_CORE_NODE_SOFT_BREAK,
     MARKDOWN_CORE_NODE_LINE_BREAK,     MARKDOWN_CORE_NODE_CODE,       MARKDOWN_CORE_NODE_HTML,
     MARKDOWN_CORE_NODE_COMMENT,        MARKDOWN_CORE_NODE_EMPHASIS,   MARKDOWN_CORE_NODE_STRONG,
-    MARKDOWN_CORE_NODE_LINK,           MARKDOWN_CORE_NODE_IMAGE};
+    MARKDOWN_CORE_NODE_LINK,           MARKDOWN_CORE_NODE_MEDIA};
 static const char *const node_type_names[] = {
     "document",  "callout", "list",           "list_item", "code_block", "html_block", "comment_block",
     "paragraph", "heading", "thematic_break", "text",      "soft_break", "line_break", "code",
-    "html",      "comment", "emphasis",       "strong",    "link",       "image"};
+    "html",      "comment", "emphasis",       "strong",    "link",       "media"};
 static const int num_node_types = sizeof(node_types) / sizeof(*node_types);
 
 static void test_md_paragraph_text(test_batch_runner *runner, const char *markdown, const char *expected_text,
@@ -96,10 +96,12 @@ static void node_type_values(test_batch_runner *runner) {
         MARKDOWN_CORE_NODE_LINE_BREAK,    MARKDOWN_CORE_NODE_CODE,
         MARKDOWN_CORE_NODE_HTML,          MARKDOWN_CORE_NODE_EMPHASIS,
         MARKDOWN_CORE_NODE_STRONG,        MARKDOWN_CORE_NODE_LINK,
-        MARKDOWN_CORE_NODE_IMAGE,         MARKDOWN_CORE_NODE_CITE,
+        MARKDOWN_CORE_NODE_MEDIA,         MARKDOWN_CORE_NODE_CITE,
         MARKDOWN_CORE_NODE_STRIKETHROUGH, MARKDOWN_CORE_NODE_FORMULA,
         MARKDOWN_CORE_NODE_DIRECTIVE,     MARKDOWN_CORE_NODE_DIRECTIVE_LABEL,
-        MARKDOWN_CORE_NODE_COMMENT,       MARKDOWN_CORE_NODE_CITATION};
+        MARKDOWN_CORE_NODE_COMMENT,       MARKDOWN_CORE_NODE_CITATION,
+        MARKDOWN_CORE_NODE_CROSS_LINK,    MARKDOWN_CORE_NODE_MARK,
+        MARKDOWN_CORE_NODE_CROSS_EMBEDDED};
 
     for (size_t i = 0; i < sizeof(block_types) / sizeof(*block_types); ++i) {
         INT_EQ(runner, block_types[i] & MARKDOWN_CORE_NODE_TYPE_MASK, MARKDOWN_CORE_NODE_TYPE_BLOCK,
@@ -706,7 +708,7 @@ void hierarchy(test_batch_runner *runner) {
                                   MARKDOWN_CORE_NODE_EMPHASIS,
                                   MARKDOWN_CORE_NODE_STRONG,
                                   MARKDOWN_CORE_NODE_LINK,
-                                  MARKDOWN_CORE_NODE_IMAGE,
+                                  MARKDOWN_CORE_NODE_MEDIA,
                                   0};
 
     test_content(runner, MARKDOWN_CORE_NODE_DOCUMENT, top_level_blocks);
@@ -728,7 +730,7 @@ void hierarchy(test_batch_runner *runner) {
     test_content(runner, MARKDOWN_CORE_NODE_EMPHASIS, all_inlines);
     test_content(runner, MARKDOWN_CORE_NODE_STRONG, all_inlines);
     test_content(runner, MARKDOWN_CORE_NODE_LINK, all_inlines);
-    test_content(runner, MARKDOWN_CORE_NODE_IMAGE, all_inlines);
+    test_content(runner, MARKDOWN_CORE_NODE_MEDIA, all_inlines);
 }
 
 static void test_content(test_batch_runner *runner, markdown_core_node_type type, unsigned int *allowed_content) {
@@ -1443,8 +1445,8 @@ static void source_pos(test_batch_runner *runner) {
         "            └── Paragraph scope=9:6..10:20 anchor=null attributes={} children=3\n"
         "                ├── Text scope=9:6..9:15 anchor=null attributes={} literal=\"Yes, okay.\" children=0\n"
         "                ├── SoftBreak scope=9:16..9:16 anchor=null attributes={} children=0\n"
-        "                └── Image scope=10:6..10:20 anchor=null attributes={} dest=url(\"hi\") title=\"yes\" "
-        "width=null height=null "
+        "                └── Media scope=10:6..10:20 anchor=null attributes={} dest=url(\"hi\") title=\"yes\" "
+        "dimensions=null "
         "children=1\n"
         "                    └── Text scope=10:8..10:9 anchor=null attributes={} literal=\"ok\" children=0\n",
         "scopes are as expected");
@@ -1580,7 +1582,7 @@ static void link_resource_lifecycle(test_batch_runner *runner) {
      * reading another arm's bytes as a resource pointer. */
     markdown_core_node *paragraph = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
     markdown_core_node *link = markdown_core_node_new(MARKDOWN_CORE_NODE_LINK);
-    markdown_core_node *image = markdown_core_node_new(MARKDOWN_CORE_NODE_IMAGE);
+    markdown_core_node *image = markdown_core_node_new(MARKDOWN_CORE_NODE_MEDIA);
     markdown_core_node *converted = markdown_core_node_new(MARKDOWN_CORE_NODE_TEXT);
     markdown_core_destination destination;
     markdown_core_optional_string title;
@@ -1665,11 +1667,14 @@ static void node_payload_lifecycle(test_batch_runner *runner) {
     INT_EQ(runner, sizeof(markdown_core_node_data), sizeof(void *),
            "all payload arms share one pointer-sized node slot");
     static const markdown_core_node_type extra_types[] = {
-        MARKDOWN_CORE_NODE_MARK,          MARKDOWN_CORE_NODE_CROSS_LINK,      MARKDOWN_CORE_NODE_CITE,
-        MARKDOWN_CORE_NODE_CITATION,      MARKDOWN_CORE_NODE_FOOTNOTE,        MARKDOWN_CORE_NODE_SPECIMEN,
-        MARKDOWN_CORE_NODE_TABLE,         MARKDOWN_CORE_NODE_TABLE_ROW,       MARKDOWN_CORE_NODE_TABLE_CELL,
-        MARKDOWN_CORE_NODE_STRIKETHROUGH, MARKDOWN_CORE_NODE_FORMULA,         MARKDOWN_CORE_NODE_FORMULA_BLOCK,
-        MARKDOWN_CORE_NODE_DIRECTIVE,     MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK, MARKDOWN_CORE_NODE_DIRECTIVE_LABEL,
+        MARKDOWN_CORE_NODE_CROSS_EMBEDDED,  MARKDOWN_CORE_NODE_MARK,
+        MARKDOWN_CORE_NODE_CROSS_LINK,      MARKDOWN_CORE_NODE_CITE,
+        MARKDOWN_CORE_NODE_CITATION,        MARKDOWN_CORE_NODE_FOOTNOTE,
+        MARKDOWN_CORE_NODE_SPECIMEN,        MARKDOWN_CORE_NODE_TABLE,
+        MARKDOWN_CORE_NODE_TABLE_ROW,       MARKDOWN_CORE_NODE_TABLE_CELL,
+        MARKDOWN_CORE_NODE_STRIKETHROUGH,   MARKDOWN_CORE_NODE_FORMULA,
+        MARKDOWN_CORE_NODE_FORMULA_BLOCK,   MARKDOWN_CORE_NODE_DIRECTIVE,
+        MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK, MARKDOWN_CORE_NODE_DIRECTIVE_LABEL,
     };
     size_t extra_count = sizeof(extra_types) / sizeof(*extra_types);
     for (size_t i = 0; i < (size_t)num_node_types + extra_count; i++) {
@@ -1742,11 +1747,10 @@ static void node_payload_lifecycle(test_batch_runner *runner) {
            "a node constructed without fields acquires an owned replacement record");
     markdown_core_destination destination;
     markdown_core_optional_string label;
-    bool embedded;
+    label = markdown_core_node_cross_label(empty);
     OK(runner,
        markdown_core_node_destination(empty, &destination) && destination.path.length == 0 &&
-           !destination.anchor.has_value && markdown_core_node_cross_link_properties(empty, &embedded, &label) &&
-           !embedded && !label.has_value,
+           !destination.anchor.has_value && !label.has_value && markdown_core_node_dimensions(empty) == NULL,
        "converted cross link establishes ordinary empty and absent defaults");
 
     markdown_core_node *cite = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_CITE, &payload_test_mem);
@@ -2717,20 +2721,22 @@ static void universal_values(test_batch_runner *runner) {
     OK(runner, !markdown_core_metadata_subtitle(metadata), "absent field differs from explicit null");
     OK(runner, markdown_core_metadata_name(metadata) != NULL, "explicit null field is present");
     markdown_core_node *image = root->first_child->first_child;
-    image->as.link->width = (markdown_core_optional_i64){true, 640};
-    image->as.link->height = (markdown_core_optional_i64){true, 480};
-    markdown_core_optional_i64 width, height;
-    OK(runner, markdown_core_node_image_dimensions(image, &width, &height), "image dimensions accessible");
-    OK(runner, width.has_value && width.value == 640 && height.has_value && height.value == 480,
-       "dimensions preserve their owned values");
-    OK(runner, !markdown_core_node_image_dimensions(root, &width, &height), "non-image has no dimension operation");
+    OK(runner, markdown_core_node_dimensions(image) == NULL, "unsized image has no dimensions");
+    image->as.link->dimensions.has_value = true;
+    image->as.link->dimensions.value = (markdown_core_dimensions){640, {true, 480}};
+    const markdown_core_dimensions *dimensions = markdown_core_node_dimensions(image);
+    OK(runner,
+       dimensions && dimensions->width == 640 && dimensions->height.has_value && dimensions->height.value == 480,
+       "dimensions preserve their owned value");
+    OK(runner, markdown_core_node_dimensions(root) == NULL && markdown_core_node_dimensions(NULL) == NULL,
+       "only a sized image has dimensions");
     uint8_t *dump = NULL;
     size_t length = 0;
     OK(runner, markdown_core_document_dump(document, &dump, &length, NULL), "metadata and dimensions dump");
     OK(runner, strstr((const char *)dump, "date=scalar(number(\"9007199254740993\"))") != NULL,
        "decimal text never rounded");
     OK(runner, strstr((const char *)dump, "authors=list([])") != NULL, "empty list distinct from null");
-    OK(runner, strstr((const char *)dump, "width=640 height=480") != NULL, "typed dimensions dump");
+    OK(runner, strstr((const char *)dump, "dimensions=(width=640,height=480)") != NULL, "typed dimensions dump");
     markdown_core_dump_free(dump);
     markdown_core_document_free(document); /* Sanitizers verify complete recursive ownership. */
 }
@@ -2738,7 +2744,7 @@ static void universal_values(test_batch_runner *runner) {
 /* Count visited source positions as well as verifying values. Repeated failed
  * candidates share one extent, so they cannot rescan each other's suffixes. */
 typedef struct {
-    size_t cross_link, opaque, delimiters, comment, lookahead, footnote_body, block_identifier, callout;
+    size_t cross_link, opaque, delimiters, comment, lookahead, footnote_body, block_identifier, callout, dimensions;
     size_t registered_footnotes;
     bool footnote_collection_allocated, footnotes_owned;
 } inline_work;
@@ -2756,6 +2762,7 @@ static markdown_core_node *record_inline_work(const markdown_core_extension *ext
     work->lookahead = parser->block_lookahead_work;
     work->block_identifier = parser->block_identifier_work;
     work->callout = parser->callout_scan_work;
+    work->dimensions = parser->dimension_work;
     work->footnote_body = parser->footnote_body_work;
     work->registered_footnotes = parser->footnote_registration_work;
     work->footnote_collection_allocated = parser->footnotes.values != NULL;
@@ -2784,6 +2791,12 @@ static void cross_link_linear_work(test_batch_runner *runner) {
         {"[[a", "#h", "]]"},
         {"[[", "^", "]]"},
         {"[[a|", "|", "]]"},
+        {"![[a|", "9", "]]"},
+        {"![[a|1x", "9", "]]"},
+        {"![[a|", "|", "2147483647x1]]"},
+        {"![[a|", "\\|", "2147483647x1]]"},
+        {"", "![[a|caption|1x2]] ", ""},
+        {"", "![[a|caption|1x2[", "]]"},
         {"![[", "a", ""},
         {"![[", "a", "]"},
         {"", "![[a[", "]]"},
@@ -2811,6 +2824,8 @@ static void cross_link_linear_work(test_batch_runner *runner) {
                work.cross_link);
             OK(runner, work.opaque <= 4 * (size_t)source.size,
                "opaque delimiter searches are linear: case=%zu size=%d work=%zu", c, source.size, work.opaque);
+            OK(runner, work.dimensions <= 3 * (size_t)source.size,
+               "dimension recognition is bounded: case=%zu size=%d work=%zu", c, source.size, work.dimensions);
             markdown_core_node_free(root);
             markdown_core_strbuf_free(&source);
         }
@@ -3312,34 +3327,36 @@ static void cross_link_fields(test_batch_runner *runner) {
     node = markdown_core_node_get_first_child(node);
     markdown_core_destination dest;
     markdown_core_optional_string label;
-    bool embedded = true;
+    label = markdown_core_node_cross_label(node);
     OK(runner, markdown_core_node_destination(node, &dest) && dest.kind == MARKDOWN_CORE_DESTINATION_CROSS,
        "cross links produce the cross destination branch");
     OK(runner, dest.path.length == 6 && memcmp(dest.path.data, " Note ", 6) == 0 && !dest.anchor.has_value,
        "path bytes are preserved and anchor is absent");
-    OK(runner, markdown_core_node_cross_link_properties(node, &embedded, &label) && !embedded && !label.has_value,
+    OK(runner,
+       markdown_core_node_get_kind(node) == MARKDOWN_CORE_KIND_CROSS_LINK && !label.has_value &&
+           markdown_core_node_dimensions(node) == NULL,
        "no separator means absent label");
     OK(runner, markdown_core_node_resource(node) == NULL && markdown_core_node_get_first_child(node) == NULL,
        "a cross link is an occurrence-owned leaf");
     OK(runner, !markdown_core_node_title(node, &label), "cross links have labels, not link titles");
     node = markdown_core_node_get_next_sibling(markdown_core_node_get_next_sibling(node));
-    OK(runner,
-       markdown_core_node_cross_link_properties(node, &embedded, &label) && label.has_value && label.value.length == 0,
-       "an authored empty label remains present");
+    label = markdown_core_node_cross_label(node);
+    OK(runner, label.has_value && label.value.length == 0, "an authored empty label remains present");
     node = markdown_core_node_get_next_sibling(markdown_core_node_get_next_sibling(node));
-    OK(runner, markdown_core_node_cross_link_properties(node, &embedded, &label) && embedded,
-       "embed uses the same payload");
+    OK(runner, markdown_core_node_get_kind(node) == MARKDOWN_CORE_KIND_CROSS_EMBEDDED, "transclusion has its own kind");
+    OK(runner,
+       strcmp(markdown_core_node_kind_name(MARKDOWN_CORE_KIND_CROSS_EMBEDDED), "CrossEmbedded") == 0 &&
+           markdown_core_node_dimensions(node) == NULL,
+       "an unsized CrossEmbedded retains its kind");
     markdown_core_node_destination(node, &dest);
     OK(runner,
        dest.path.length == 0 && dest.anchor.has_value && dest.anchor.value.length == 5 &&
            memcmp(dest.anchor.value.data, "block", 5) == 0,
        "block punctuation is removed, current-document path is empty");
     OK(runner,
-       !markdown_core_node_cross_link_properties(NULL, &embedded, &label) &&
-           !markdown_core_node_cross_link_properties(node, NULL, &label) &&
-           !markdown_core_node_cross_link_properties(node, &embedded, NULL) &&
-           !markdown_core_node_cross_link_properties(markdown_core_document_root(doc), &embedded, &label),
-       "cross-link facade rejects wrong kinds and missing outputs");
+       !markdown_core_node_cross_label(NULL).has_value &&
+           !markdown_core_node_cross_label(markdown_core_document_root(doc)).has_value,
+       "cross label is absent for null and unrelated nodes");
     markdown_core_document_free(doc);
 }
 
@@ -3405,6 +3422,58 @@ static size_t count_anchors(markdown_core_node *root) {
     }
     markdown_core_iter_free(iter);
     return count;
+}
+
+/* Long digit/pipe runs and nested successful images exercise the same bound:
+ * no image closer rescans a nested label, including labels without pipes. */
+static void image_dimension_linear_work(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    for (size_t count = 128; count <= 8192; count *= 2) {
+        for (int shape = 0; shape < 5; shape++) {
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+            if (shape < 2) {
+                markdown_core_strbuf_puts(&source, "![alt|");
+                for (size_t i = 0; i < count; i++) {
+                    markdown_core_strbuf_putc(&source, shape == 0 ? '9' : '|');
+                }
+                markdown_core_strbuf_puts(&source, "10](/i)\n");
+            } else {
+                for (size_t i = 0; i < count; i++) {
+                    markdown_core_strbuf_puts(&source, shape == 4 ? "![" : "![a|");
+                }
+                markdown_core_strbuf_puts(&source, "1");
+                for (size_t i = 0; i < count; i++) {
+                    markdown_core_strbuf_puts(&source, shape == 3 ? "](/i)|2" : "](/i)");
+                }
+                markdown_core_strbuf_putc(&source, '\n');
+            }
+            inline_work work = {0};
+            markdown_core_node *root = markdown_core_parse_document_with_mem(
+                (const char *)source.ptr, (size_t)source.size, mem, measure_inline_work, &work);
+            OK(runner, root != NULL, "adversarial image labels parse");
+            OK(runner, work.dimensions > 0 && work.dimensions <= 3 * (size_t)source.size,
+               "image dimension work is linear: shape=%d bytes=%d work=%zu", shape, source.size, work.dimensions);
+            if (root) {
+                markdown_core_node *node = root->first_child->first_child;
+                size_t images = 0, sized = 0;
+                while (node) {
+                    if (node->kind == MARKDOWN_CORE_NODE_MEDIA) {
+                        images++;
+                        sized += node->as.link->dimensions.has_value;
+                    }
+                    node = node->first_child ? node->first_child : node->next;
+                }
+                INT_EQ(runner, images, shape < 2 ? 1 : count, "nested image depth is preserved");
+                INT_EQ(runner, sized,
+                       shape == 0   ? 0
+                       : shape == 3 ? count
+                                    : 1,
+                       "only each image's own complete suffix sets dimensions");
+            }
+            markdown_core_node_free(root);
+            markdown_core_strbuf_free(&source);
+        }
+    }
 }
 
 /* Each newly opened quote inspects one bounded prefix or its own type/title
@@ -3623,6 +3692,7 @@ int main(void) {
     properties_text_memory(runner);
     block_identifier_linear_work(runner);
     callout_linear_work(runner);
+    image_dimension_linear_work(runner);
     block_identifier_ownership(runner);
     reference_definition_lifetime(runner);
     attribute_linear_work(runner);

@@ -47,6 +47,12 @@
             "kind": "deliberate-difference",
             "summary": "O6 attaches a complete beginning-of-file --- envelope as Metadata. Unsupported payload members are ignored; CommonMark parses the fences and payload as body blocks.",
             "handling": "Keyed to both affected pinned CommonMark examples; member recovery, exact data, and body separation are checked by the Properties fixtures and YAML data oracle."
+        },
+        {
+            "id": "image-dimensions",
+            "kind": "deliberate-difference",
+            "summary": "O9 consumes complete positive 32-bit image-dimension suffixes into occurrence-owned width and height. CommonMark retains those bytes in alt content.",
+            "handling": "Exact inputs from the links-and-images module fixtures; formatted alt, reference forms, opaque tokens, cross links and tables retain the behavior of their owning modules. Product goldens and binding conformance assert typed dimensions, malformed fallback and exact scopes without normalizing either tree."
         }
     ],
     "expectedDivergences": [
@@ -109,6 +115,51 @@
             "id": "properties-envelope",
             "input": "---\n---\n",
             "note": "O6: complete first envelope owns its source; any unsupported payload is a metadata comment."
+        },
+        {
+            "id": "image-dimensions",
+            "input": "![100x145](a.png)\n\n![alt|100](a.png) ![alt|100x145](a.png) ![|200](a.png)\n",
+            "note": "O9: image suffix syntax and its composed inline contexts are owned by dialect/links-and-images.md and the package fixtures; cmark keeps the suffix in alt content."
+        },
+        {
+            "id": "image-dimensions",
+            "input": "![*a* `b|c`|300](a.png)\n",
+            "note": "O9: image suffix syntax and its composed inline contexts are owned by dialect/links-and-images.md and the package fixtures; cmark keeps the suffix in alt content."
+        },
+        {
+            "id": "image-dimensions",
+            "input": "![alt|100][r]\n\n[r]: /i.png\n",
+            "note": "O9: image suffix syntax and its composed inline contexts are owned by dialect/links-and-images.md and the package fixtures; cmark keeps the suffix in alt content."
+        },
+        {
+            "id": "image-dimensions",
+            "input": "![1](/i)\n\n![2147483647](/i)\n\n![1x2147483647](/i)\n\n![2147483647x1](/i)\n\n![2147483647x2147483647](/i)\n\n![alt|1](/i)\n\n![alt|1x2](/i)\n\n![|1](/i)\n\n![|1x2](/i)\n\n![a|b|20](/i)\n\n![a||20](/i)\n",
+            "note": "O9: image suffix syntax and its composed inline contexts are owned by dialect/links-and-images.md and the package fixtures; cmark keeps the suffix in alt content."
+        },
+        {
+            "id": "image-dimensions",
+            "input": "![alt\\|100](/i)\n\n![alt\\\\|100](/i)\n\n![alt&#124;100](/i)\n\n![alt|&#49;00](/i)\n\n![alt|100&#120;200](/i)\n\n![`100`](/i)\n\n![`a|100`](/i)\n\n![[a|100]](/i)\n\n![[a|100]|200](/i)\n\n![[a|100]300](/i)\n\n![[[a|100]]](/i)\n\n![[[a|100]]|200](/i)\n\n![`a|b`|300](/i)\n\n![`unclosed|300](/i)\n\n![\\[alt|100](/i)\n\n![&amp;|100](/i)\n\n![*a* **b** ==c== ~~d~~|300](/i)\n",
+            "note": "O9: image suffix syntax and its composed inline contexts are owned by dialect/links-and-images.md and the package fixtures; cmark keeps the suffix in alt content."
+        },
+        {
+            "id": "image-dimensions",
+            "input": "![alt|10][r] ![20x30][r] ![40][] ![50] ![alt|60][missing]\n\n[r]: /same \"title\"\n[40]: /same\n[50]: /same\n",
+            "note": "O9: image suffix syntax and its composed inline contexts are owned by dialect/links-and-images.md and the package fixtures; cmark keeps the suffix in alt content."
+        },
+        {
+            "id": "image-dimensions",
+            "input": "`![100](/i)` <i title=\"![100](/i)\"> $![100](/i)$ %%![100](/i)%% ![[image|100x200]]\n\n![<i title=\"a|100\">|200](/i) ![$a|100$|200](/i) ![%%a|100%%|200](/i)\n\n[alt|100](/i) <i>![100](/i)</i>\n",
+            "note": "O9: image suffix syntax and its composed inline contexts are owned by dialect/links-and-images.md and the package fixtures; cmark keeps the suffix in alt content."
+        },
+        {
+            "id": "image-dimensions",
+            "input": "> ![\u00e9\n> **\u5b57**|200x300](/i \"t\") after\n\n- ![\u00e9&amp;|100][r]\n\n| image | next |\n| -- | -- |\n| ![\u00e9\\|100](/i) | ![200x300][r] |\n| ![a\\\\|100](/i) | ![[image\\|100]] |\n\n[r]: /i\n",
+            "note": "O9: image suffix syntax and its composed inline contexts are owned by dialect/links-and-images.md and the package fixtures; cmark keeps the suffix in alt content."
+        },
+        {
+            "id": "image-dimensions",
+            "input": "![![inner|10](/inner)|20x30](/outer) ![a [b](/link)|40](/i)\n",
+            "note": "O9: image suffix syntax and its composed inline contexts are owned by dialect/links-and-images.md and the package fixtures; cmark keeps the suffix in alt content."
         }
     ],
     "notDeltas": [],
@@ -134,7 +185,7 @@
         {
             "file": "packages/markdown-core/tests/fixtures/dialect-links-and-images.txt",
             "selection": "commonmark-sections",
-            "note": "The links-and-images module's destination examples: cmark owns the link and image grammar, and its `Destination` is the `url` branch of the dialect's tagged value. The module's GFM autolink section is cmark-gfm's to judge."
+            "note": "The links-and-images module: cmark owns inherited link and image grammar; O9 dimension suffixes are registered exact-input differences. The GFM autolink section is judged by cmark-gfm."
         }
     ],
     "corpusNote": "cmark is the sole primary implementation oracle for CommonMark syntax and its own pinned 0.31.2 spec is compared in full. Both sides parse every input as their whole language: the dialect has no switches, so this gate judges what ships, and every place the dialect deliberately leaves CommonMark is registered above as a projection or keyed to its exact inputs. The product's extension fixtures are not in this corpus; their syntax is judged by cmark-gfm, remark, and the product fixtures themselves.",

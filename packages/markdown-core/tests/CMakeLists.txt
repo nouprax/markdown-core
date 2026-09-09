@@ -339,6 +339,8 @@ markdown_core_add_test(
     --corpus
     "${MARKDOWN_CORE_CANONICAL_AST_DIR}/inlines.md"
     --corpus
+    "${MARKDOWN_CORE_CANONICAL_AST_DIR}/media-dimensions.md"
+    --corpus
     "${MARKDOWN_CORE_CANONICAL_AST_DIR}/inline-footnotes.md"
     --corpus
     "${MARKDOWN_CORE_CANONICAL_AST_DIR}/marks.md"

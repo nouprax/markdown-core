@@ -288,7 +288,7 @@ const kindSurfaces = [
         expect: [...kinds.keys()].map(snake),
         actual: namedKinds(
             "packages/kotlin-markdown-core/src/jniMain/kotlin/com/nouprax/markdown/core/wire/JniMarkupDecoder.kt",
-            /JniNodeKind\.([A-Z_]+)\s*->/g
+            /JniNodeKind\.([A-Z_]+)(?=\s*(?:,|->))/g
         )
     },
     {

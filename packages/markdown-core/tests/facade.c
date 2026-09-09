@@ -101,14 +101,14 @@ static void check_null_and_empty(void) {
         {"[a](/u)\n", MARKDOWN_CORE_KIND_LINK, "/u", false, ""},
         {"[a](/u \"\")\n", MARKDOWN_CORE_KIND_LINK, "/u", true, ""},
         {"[a](/u \"t\")\n", MARKDOWN_CORE_KIND_LINK, "/u", true, "t"},
-        {"![a]()\n", MARKDOWN_CORE_KIND_IMAGE, "", false, ""},
-        {"![a](/s \"\")\n", MARKDOWN_CORE_KIND_IMAGE, "/s", true, ""},
+        {"![a]()\n", MARKDOWN_CORE_KIND_MEDIA, "", false, ""},
+        {"![a](/s \"\")\n", MARKDOWN_CORE_KIND_MEDIA, "/s", true, ""},
         /* M2: a resolved reference answers what its definition stated,
          * through the same accessors, and the definition is not a node. */
         {"[a]: <>\n\n[a]\n", MARKDOWN_CORE_KIND_LINK, "", false, ""},
         {"[a]: <> \"\"\n\n[a][]\n", MARKDOWN_CORE_KIND_LINK, "", true, ""},
         {"[a]: /u \"t\"\n\n[x][a]\n", MARKDOWN_CORE_KIND_LINK, "/u", true, "t"},
-        {"![a][r]\n\n[r]: /s \"\"\n", MARKDOWN_CORE_KIND_IMAGE, "/s", true, ""},
+        {"![a][r]\n\n[r]: /s \"\"\n", MARKDOWN_CORE_KIND_MEDIA, "/s", true, ""},
     };
     static const struct {
         const char *source;
@@ -190,6 +190,41 @@ static void check_null_and_empty(void) {
     }
 }
 
+static void check_image_dimensions(void) {
+    const char *source = "![*alt*|2147483647x2][r] ![3][r] ![bad|01][r]\n\n[r]: /shared\n";
+    markdown_core_document *document = markdown_core_document_parse((const uint8_t *)source, strlen(source), NULL);
+    check(document != NULL, "dimensioned image references parse");
+    if (!document) {
+        return;
+    }
+    const markdown_core_node *paragraph = markdown_core_node_get_first_child(markdown_core_document_root(document));
+    const markdown_core_resource *shared = NULL;
+    int index = 0;
+    for (const markdown_core_node *node = markdown_core_node_get_first_child(paragraph); node;
+         node = markdown_core_node_get_next_sibling(node)) {
+        if (markdown_core_node_get_kind(node) != MARKDOWN_CORE_KIND_MEDIA) {
+            continue;
+        }
+        const markdown_core_dimensions *dimensions = markdown_core_node_dimensions(node);
+        check((dimensions != NULL) == (index < 2), "dimension presence is per image");
+        if (dimensions) {
+            check(dimensions->width == (index == 0 ? INT32_MAX : 3), "parsed width is exact");
+            check(dimensions->height.has_value == (index == 0), "height is optional inside dimensions");
+        }
+        if (index == 0) {
+            check(dimensions && dimensions->height.value == 2, "parsed height is exact");
+            shared = markdown_core_node_resource(node);
+        }
+        check(shared == markdown_core_node_resource(node), "dimensions never split a shared destination");
+        if (index == 1) {
+            check(markdown_core_node_get_first_child(node) == NULL, "numeric-only alt has no children");
+        }
+        index++;
+    }
+    check(index == 3, "all dimensioned and malformed occurrences remain images");
+    markdown_core_document_free(document);
+}
+
 /* M2: every occurrence that resolved through one definition shares one
  * resource, and the identity says so; a direct link, a direct image and an
  * autolink each own one, and every other kind has none. */
@@ -215,7 +250,7 @@ static void check_resource_identity(void) {
          child = markdown_core_node_get_next_sibling(child)) {
         const markdown_core_resource *resource = markdown_core_node_resource(child);
         markdown_core_node_kind kind = markdown_core_node_get_kind(child);
-        if (kind != MARKDOWN_CORE_KIND_LINK && kind != MARKDOWN_CORE_KIND_IMAGE) {
+        if (kind != MARKDOWN_CORE_KIND_LINK && kind != MARKDOWN_CORE_KIND_MEDIA) {
             check(resource == NULL, "a text node has no resource");
             others++;
             continue;
@@ -556,6 +591,7 @@ int main(int argc, char **argv) {
     check_dialect_is_whole();
     check_null_and_empty();
     check_resource_identity();
+    check_image_dimensions();
     check_callout_fields();
     check_callout_source_boundaries();
     check_callout_inherited_setext_scope();

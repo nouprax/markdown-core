@@ -1,9 +1,9 @@
 import type { MarkupBase } from "./base.js";
 import type { Destination } from "../values.js";
 
-/** An authored workspace reference. The label is absent only when no separator was written. */
+/** A workspace link. The label is absent only when no separator was written. */
 export interface CrossLink extends MarkupBase<"crossLink"> {
-    readonly embedded: boolean;
     readonly dest: Destination;
+    /** The complete raw authored label; null only when no separator was authored. */
     readonly label: string | null;
 }

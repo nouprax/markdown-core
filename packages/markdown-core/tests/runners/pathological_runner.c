@@ -200,7 +200,7 @@ static int case_pattern_image_link(pc_context *context) {
         return -1;
     }
     if (pc_expect_count(context, MARKDOWN_CORE_KIND_LINK, 160000, "Link") != 0 ||
-        pc_expect_count(context, MARKDOWN_CORE_KIND_IMAGE, 0, "Image") != 0) {
+        pc_expect_count(context, MARKDOWN_CORE_KIND_MEDIA, 0, "Media") != 0) {
         return -1;
     }
     expected = ts_repeat("![", 160000, &expected_length);

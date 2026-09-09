@@ -373,13 +373,14 @@ private struct KindVisitor: MarkupVisitor {
     mutating func visit(_ node: HTML) -> String { kindName(node) }
     mutating func visit(_ node: MarkdownCore.Comment) -> String { kindName(node) }
     mutating func visit(_ node: MarkdownCore.CrossLink) -> String { kindName(node) }
+    mutating func visit(_ node: MarkdownCore.CrossEmbedded) -> String { kindName(node) }
     mutating func visit(_ node: Formula) -> String { kindName(node) }
     mutating func visit(_ node: Emphasis) -> String { kindName(node) }
     mutating func visit(_ node: Strong) -> String { kindName(node) }
     mutating func visit(_ node: Strikethrough) -> String { kindName(node) }
     mutating func visit(_ node: Mark) -> String { kindName(node) }
     mutating func visit(_ node: Link) -> String { kindName(node) }
-    mutating func visit(_ node: Image) -> String { kindName(node) }
+    mutating func visit(_ node: Media) -> String { kindName(node) }
     mutating func visit(_ node: Directive) -> String { kindName(node) }
     mutating func visit(_ node: Cite) -> String { kindName(node) }
     mutating func visit(_ node: TableRow) -> String { "row" }
@@ -435,13 +436,14 @@ struct RecordingWalkingVisitor: MarkupWalkingVisitor {
     mutating func visit(_ node: HTML, phase: WalkPhase) { record(node, phase) }
     mutating func visit(_ node: MarkdownCore.Comment, phase: WalkPhase) { record(node, phase) }
     mutating func visit(_ node: MarkdownCore.CrossLink, phase: WalkPhase) { record(node, phase) }
+    mutating func visit(_ node: MarkdownCore.CrossEmbedded, phase: WalkPhase) { record(node, phase) }
     mutating func visit(_ node: Formula, phase: WalkPhase) { record(node, phase) }
     mutating func visit(_ node: Emphasis, phase: WalkPhase) { record(node, phase) }
     mutating func visit(_ node: Strong, phase: WalkPhase) { record(node, phase) }
     mutating func visit(_ node: Strikethrough, phase: WalkPhase) { record(node, phase) }
     mutating func visit(_ node: Mark, phase: WalkPhase) { record(node, phase) }
     mutating func visit(_ node: Link, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: Image, phase: WalkPhase) { record(node, phase) }
+    mutating func visit(_ node: Media, phase: WalkPhase) { record(node, phase) }
     mutating func visit(_ node: Directive, phase: WalkPhase) { record(node, phase) }
     mutating func visit(_ node: Cite, phase: WalkPhase) { record(node, phase) }
     mutating func visit(_ node: TableRow, phase: WalkPhase) {

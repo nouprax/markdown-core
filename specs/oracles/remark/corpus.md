@@ -170,7 +170,7 @@ An image reference resolves to an image.
 .
 Document scope=1:1..3:13 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..1:11 anchor=null attributes={} children=1
-    └── Image scope=1:1..1:11 anchor=null attributes={} dest=url("/p") title="P" width=null height=null children=1
+    └── Media scope=1:1..1:11 anchor=null attributes={} dest=url("/p") title="P" dimensions=null children=1
         └── Text scope=1:3..1:5 anchor=null attributes={} literal="alt" children=0
 ````````````````````````````````
 

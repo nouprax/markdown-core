@@ -21,13 +21,14 @@ export const kindVisitor = {
     visitHTML: (node) => node.kind,
     visitComment: (node) => node.kind,
     visitCrossLink: (node) => node.kind,
+    visitCrossEmbedded: (node) => node.kind,
     visitFormula: (node) => node.kind,
     visitEmphasis: (node) => node.kind,
     visitStrong: (node) => node.kind,
     visitStrikethrough: (node) => node.kind,
     visitMark: (node) => node.kind,
     visitLink: (node) => node.kind,
-    visitImage: (node) => node.kind,
+    visitMedia: (node) => node.kind,
     visitDirective: (node) => node.kind,
     visitCite: (node) => node.kind
 };

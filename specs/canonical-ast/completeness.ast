@@ -16,7 +16,7 @@ Document scope=1:1..18:8 anchor=null attributes={} children=6
 │   ├── Link scope=9:16..9:29 anchor=null attributes={} dest=url("/b") title="" children=1
 │   │   └── Text scope=9:17..9:21 anchor=null attributes={} literal="empty" children=0
 │   ├── Text scope=9:30..9:30 anchor=null attributes={} literal=" " children=0
-│   └── Image scope=9:31..9:40 anchor=null attributes={} dest=url("/i") title=null width=null height=null children=1
+│   └── Media scope=9:31..9:40 anchor=null attributes={} dest=url("/i") title=null dimensions=null children=1
 │       └── Text scope=9:33..9:35 anchor=null attributes={} literal="alt" children=0
 ├── Paragraph scope=11:1..11:54 anchor=null attributes={} children=5
 │   ├── Directive scope=11:1..11:6 anchor=null attributes={} name="plain" children=0

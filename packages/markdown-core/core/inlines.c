@@ -32,6 +32,9 @@ typedef struct bracket {
     struct bracket *previous;
     markdown_core_node *inl_text;
     bufsize_t position;
+    /* Last pipe read as ordinary text at this bracket's depth. Opaque tokens,
+     * escapes and nested brackets never update the enclosing image. */
+    bufsize_t image_pipe;
     bracket_kind kind;
     bool outer_no_link_openers;
     bool active;
@@ -712,6 +715,7 @@ static void push_bracket(subject *subj, bracket_kind kind, markdown_core_node *i
     b->inl_text = inl_text;
     b->previous = subj->last_bracket;
     b->position = subj->pos;
+    b->image_pipe = -1;
     b->bracket_after = false;
     if (kind == BRACKET_IMAGE) {
         b->in_bracket_image1 = true;
@@ -1455,6 +1459,79 @@ static markdown_core_node *close_inline_footnote(markdown_core_parser *parser, s
     return NULL;
 }
 
+/* Positive 32-bit components bound inspection even for arbitrarily long digit
+ * runs. No decoded character or partially valid suffix becomes a dimension. */
+static bool dimension_component(const unsigned char *s, bufsize_t *pos, bufsize_t end, int32_t *value, size_t *work) {
+    if (*pos == end || s[*pos] < '1' || s[*pos] > '9') {
+        return false;
+    }
+    int32_t number = 0;
+    while (*pos < end && s[*pos] >= '0' && s[*pos] <= '9') {
+        (*work)++;
+        int digit = s[(*pos)++] - '0';
+        if (number > (INT32_MAX - digit) / 10) {
+            return false;
+        }
+        number = number * 10 + digit;
+    }
+    *value = number;
+    return true;
+}
+
+bool markdown_core_parse_dimensions(markdown_core_chunk label, bufsize_t suffix, bufsize_t separator_length,
+                                    markdown_core_dimensions *value, size_t *work) {
+    bufsize_t pos = suffix + separator_length;
+    markdown_core_dimensions parsed = {0};
+    (*work)++;
+    if ((suffix > 0 && markdown_core_isspace(label.data[suffix - 1])) ||
+        !dimension_component(label.data, &pos, label.len, &parsed.width, work)) {
+        return false;
+    }
+    if (pos < label.len && label.data[pos] == 'x') {
+        int32_t height;
+        pos++;
+        if (!dimension_component(label.data, &pos, label.len, &height, work)) {
+            return false;
+        }
+        parsed.height = (markdown_core_optional_i64){true, height};
+    }
+    if (pos != label.len) {
+        return false;
+    }
+    *value = parsed;
+    return true;
+}
+
+static void apply_image_dimensions(subject *subj, const bracket *opener, markdown_core_node *image, bufsize_t end) {
+    /* Earlier inline allocation failure may have omitted the final text run.
+     * The transaction is already failed; do not consume its incomplete tree. */
+    if (subj->oom || subj->owner_parser->oom) {
+        return;
+    }
+    bufsize_t suffix = opener->image_pipe >= 0 ? opener->image_pipe : opener->position;
+    markdown_core_dimensions dimensions;
+    markdown_core_chunk label = markdown_core_chunk_dup(&subj->input, opener->position, end - opener->position);
+    if (!markdown_core_parse_dimensions(label, suffix - opener->position, opener->image_pipe >= 0 ? 1 : 0, &dimensions,
+                                        &subj->owner_parser->dimension_work)) {
+        return;
+    }
+
+    /* A successful suffix contains only ordinary ASCII text and belongs to
+     * the final text run at this bracket depth. Remove it before delimiter
+     * reduction; the prefix keeps its nodes and its original source map. */
+    markdown_core_node *tail = image->last_child;
+    assert(tail && tail->kind == MARKDOWN_CORE_NODE_TEXT && tail->as.literal->len >= end - suffix);
+    bufsize_t start = end - tail->as.literal->len;
+    tail->as.literal->len -= end - suffix;
+    if (tail->as.literal->len == 0) {
+        markdown_core_node_free(tail);
+    } else {
+        S_place_inline(subj, tail, start, suffix - 1);
+    }
+    image->as.link->dimensions.value = dimensions;
+    image->as.link->dimensions.has_value = true;
+}
+
 // Return a link, an image, or a literal close bracket.
 static markdown_core_node *handle_close_bracket(markdown_core_parser *parser, subject *subj) {
     bufsize_t initial_pos, after_link_text_pos;
@@ -1555,7 +1632,7 @@ static markdown_core_node *handle_close_bracket(markdown_core_parser *parser, su
     }
 
     /* `[t][l]`, `[l][]` and `[l]` resolve identically and to the same node: the
-     * `Link` or `Image` the definition names (M2). Nothing records which of the
+     * `Link` or `Media` the definition names (M2). Nothing records which of the
      * three spellings the author wrote, and nothing downstream can recover it
      * -- the module states one node for every successful form. */
     if (found_label && (record = markdown_core_map_lookup(subj->refmap, &raw_label)) != NULL) {
@@ -1682,9 +1759,9 @@ noMatch:
     return make_str(subj, subj->pos - 1, subj->pos - 1, markdown_core_chunk_literal("]"));
 
 match:
-    inl = make_simple(subj->mem, is_image ? MARKDOWN_CORE_NODE_IMAGE : MARKDOWN_CORE_NODE_LINK);
+    inl = make_simple(subj->mem, is_image ? MARKDOWN_CORE_NODE_MEDIA : MARKDOWN_CORE_NODE_LINK);
     if (inl && record) {
-        /* A RESOLVED REFERENCE IS THE LINK OR IMAGE IT NAMES (M2), and it reads
+        /* A RESOLVED REFERENCE IS THE LINK OR MEDIA IT NAMES (M2), and it reads
          * its destination and title through the definition's resource, which
          * the map owns once and every occurrence shares. Nothing is copied, so
          * there is nothing to charge and no budget can make whether a reference
@@ -1743,6 +1820,10 @@ match:
         markdown_core_node_unlink(tmp);
         append_child(inl, tmp);
         tmp = tmpnext;
+    }
+
+    if (is_image) {
+        apply_image_dimensions(subj, opener, inl, initial_pos - 1);
     }
 
     // Free the bracket [:
@@ -2040,6 +2121,17 @@ static int parse_inline(markdown_core_parser *parser, subject *subj, markdown_co
 
     text:
         endpos = subject_find_special_char(subj);
+        /* Text runs are disjoint, so recording separators costs at most one
+         * extra visit per byte, regardless of bracket nesting or digit-run
+         * length. No image closer scans its label again. */
+        if (subj->last_bracket && subj->last_bracket->kind == BRACKET_IMAGE) {
+            for (bufsize_t i = subj->pos; i < endpos; i++) {
+                parser->dimension_work++;
+                if (subj->input.data[i] == '|') {
+                    subj->last_bracket->image_pipe = i;
+                }
+            }
+        }
         contents = markdown_core_chunk_dup(&subj->input, subj->pos, endpos - subj->pos);
         startpos = subj->pos;
         subj->pos = endpos;

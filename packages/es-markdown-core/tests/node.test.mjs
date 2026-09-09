@@ -9,6 +9,36 @@ import { kinds } from "../dist/wire/kinds.js";
 import { NodeDecoder } from "../dist/wire/node-decoder.js";
 import { kindVisitor } from "./visitor.mjs";
 
+test("ast: dimensions belong to each image occurrence while its destination stays shared", () => {
+    const document = Document.parse('![*alt*|2147483647x2][r] ![3][r] ![bad|01][r]\n\n[r]: /shared "title"\n');
+    const images = document.content[0].content.filter((node) => node.kind === "media");
+    assert.deepEqual(
+        images.map((node) => node.dimensions),
+        [{ width: 2147483647, height: 2 }, { width: 3, height: null }, null]
+    );
+    assert.equal(images[0].dest, images[1].dest);
+    assert.equal(images[1].dest, images[2].dest);
+    assert.equal(images[0].title, "title");
+    assert.equal(images[0].content[0].kind, "emphasis");
+    assert.equal(images[0].content[0].content[0].literal, "alt");
+    assert.equal(images[0].content[0].scope.end.column, 7);
+    assert.deepEqual(images[1].content, []);
+    assert.equal(images[2].content[0].literal, "bad|01");
+    const events = [];
+    walk(
+        images[0],
+        walkingVisitor((node, phase) => events.push(`${phase}:${nodeKindName(node)}`))
+    );
+    assert.deepEqual(events, [
+        "entering:Media",
+        "entering:Emphasis",
+        "entering:Text",
+        "exiting:Text",
+        "exiting:Emphasis",
+        "exiting:Media"
+    ]);
+});
+
 test("api: synchronous parse and typed visitor dispatch", () => {
     const document = Document.parse("# Heading\n\nBody\n");
     assert.equal(
@@ -942,21 +972,23 @@ test("ast: metadata preserves tags, decimal text, duplicate keys and owned lists
 test("ast: dimensions belong to occurrences and universal attributes survive release", () => {
     const bytes = nativeResult("![a][r] ![b][r]\n\n[r]: /u\n");
     const view = new DataView(bytes.buffer);
-    const image = findNode(bytes, kinds.indexOf("image"));
+    const image = findNode(bytes, kinds.indexOf("media"));
     view.setUint32(image + 124, 640, true);
     view.setUint32(image + 128, 480, true);
     const document = new NodeDecoder(bytes).decodeDocument();
-    const images = document.content[0].content.filter((value) => value.kind === "image");
+    const images = document.content[0].content.filter((value) => value.kind === "media");
     assert.equal(images[0].dest, images[1].dest);
     assert.deepEqual(
-        images.map((value) => [value.width, value.height]),
-        [
-            [640, 480],
-            [null, null]
-        ]
+        images.map((value) => value.dimensions),
+        [{ width: 640, height: 480 }, null]
     );
+    view.setUint32(image + 124, 0, true);
+    assert.throws(() => new NodeDecoder(bytes).decodeDocument(), /invalid dimensions/);
     view.setUint32(image + 124, 0xffff_ffff, true);
-    assert.throws(() => new NodeDecoder(bytes).decodeDocument(), /image dimension/);
+    assert.throws(() => new NodeDecoder(bytes).decodeDocument(), /invalid dimensions/);
+    view.setUint32(image + 124, 640, true);
+    view.setUint32(image + 128, 0xffff_ffff, true);
+    assert.throws(() => new NodeDecoder(bytes).decodeDocument(), /invalid dimensions/);
     bytes.fill(0);
     const directive = Document.parse(':n{#id .a class="a b}c" k=1 k=2}').content[0].content[0];
     assert.equal(directive.anchor, "id");
@@ -973,24 +1005,29 @@ test("ast: dimensions belong to occurrences and universal attributes survive rel
 test("ast: cross links retain raw values after native release and reject wrong wire branches", () => {
     const bytes = nativeResult("[[Note]] [[Note|]] ![[#^id|raw *label*]]\n");
     const document = new NodeDecoder(bytes).decodeDocument();
-    const links = document.content[0].content.filter((node) => node.kind === "crossLink");
+    const links = document.content[0].content.filter(
+        (node) => node.kind === "crossLink" || node.kind === "crossEmbedded"
+    );
     assert.deepEqual(
-        links.map((node) => [node.embedded, node.dest, node.label]),
+        links.map((node) => [node.kind, node.dest, node.label]),
         [
-            [false, { kind: "cross", path: "Note", anchor: null }, null],
-            [false, { kind: "cross", path: "Note", anchor: null }, ""],
-            [true, { kind: "cross", path: "", anchor: "id" }, "raw *label*"]
+            ["crossLink", { kind: "cross", path: "Note", anchor: null }, null],
+            ["crossLink", { kind: "cross", path: "Note", anchor: null }, ""],
+            ["crossEmbedded", { kind: "cross", path: "", anchor: "id" }, "raw *label*"]
         ]
     );
+    assert.ok(links.every((node) => !("embedded" in node)));
+    assert.ok(!("dimensions" in links[0]));
+    assert.equal(links[2].dimensions, null);
     const events = [];
     walk(
         links[2],
         walkingVisitor((node, phase) => events.push(`${phase}:${node.kind}`))
     );
-    assert.deepEqual(events, ["entering:crossLink", "exiting:crossLink"]);
+    assert.deepEqual(events, ["entering:crossEmbedded", "exiting:crossEmbedded"]);
     const malformed = bytes.slice();
     new DataView(malformed.buffer).setInt32(findNode(malformed, kinds.indexOf("crossLink")) + 44, 1, true);
-    assert.throws(() => new NodeDecoder(malformed).decodeDocument(), /cross link requires a cross destination/u);
+    assert.throws(() => new NodeDecoder(malformed).decodeDocument(), /cross reference requires a cross destination/u);
     bytes.fill(0);
     assert.equal(links[2].label, "raw *label*");
 });
@@ -1025,4 +1062,27 @@ test("ast: Properties keep recognized fields and literal prose after native rele
     assert.ok(empty);
     assert.ok(Object.entries(empty).every(([key, value]) => key === "scope" || value === null));
     assert.equal(Document.parse("---\nname: 1\n").metadata, null);
+});
+
+test("ast: embedded dimensions survive the wire lifetime and require an embedded label", () => {
+    const bytes = nativeResult("![[#^id|raw *label*|2147483647x2]]\n");
+    const record = findNode(bytes, kinds.indexOf("crossEmbedded"));
+    const document = new NodeDecoder(bytes).decodeDocument();
+    const link = document.content[0].content[0];
+    assert.equal(link.label, "raw *label*");
+    assert.deepEqual(link.dimensions, { width: 2147483647, height: 2 });
+    const view = new DataView(bytes.buffer);
+    view.setUint32(record, kinds.indexOf("crossLink"), true);
+    assert.throws(() => new NodeDecoder(bytes).decodeDocument(), /dimensions require/u);
+    view.setUint32(record, kinds.indexOf("crossEmbedded"), true);
+    view.setUint32(record + 124, 0, true);
+    assert.throws(() => new NodeDecoder(bytes).decodeDocument(), /invalid dimensions/u);
+    view.setUint32(record + 124, 100, true);
+    view.setUint32(record + 80, 0xffff_ffff, true);
+    view.setUint32(record + 84, 0, true);
+    assert.throws(() => new NodeDecoder(bytes).decodeDocument(), /dimensions require/u);
+    bytes.fill(0);
+    assert.equal(link.label, "raw *label*");
+    assert.deepEqual(link.dimensions, { width: 2147483647, height: 2 });
+    assert.deepEqual(link.dest, { kind: "cross", path: "", anchor: "id" });
 });

@@ -31,6 +31,7 @@
             "Code",
             "HTML",
             "CrossLink",
+            "CrossEmbedded",
             "Comment",
             "Formula",
             "Emphasis",
@@ -38,16 +39,20 @@
             "Strikethrough",
             "Mark",
             "Link",
-            "Image",
+            "Media",
             "Directive",
             "Cite"
         ],
         "states": [
-            "crossLink.embedded.false",
-            "crossLink.embedded.true",
+            "crossEmbedded.dimensions.width",
+            "crossEmbedded.dimensions.width-height",
+            "crossEmbedded.dimensions.null",
             "crossLink.label.null",
             "crossLink.label.empty",
             "crossLink.label.value",
+            "crossEmbedded.label.null",
+            "crossEmbedded.label.empty",
+            "crossEmbedded.label.value",
             "destination.cross.path",
             "destination.cross.current-document",
             "destination.cross.anchor.null",
@@ -105,7 +110,9 @@
             "metadata.list.empty",
             "metadata.list.populated",
             "document.metadata.null",
-            "image.dimensions.null",
+            "media.dimensions.width",
+            "media.dimensions.width-height",
+            "media.dimensions.null",
             "directive.label.null",
             "directive.label.empty",
             "directive.label.populated",
@@ -113,8 +120,8 @@
             "link.title.null",
             "link.title.empty",
             "link.title.value",
-            "image.title.null",
-            "image.title.value",
+            "media.title.null",
+            "media.title.value",
             "scope.positive",
             "children.empty",
             "children.populated",
@@ -191,7 +198,7 @@
                     "CodeBlock",
                     "HTMLBlock",
                     "Link",
-                    "Image"
+                    "Media"
                 ],
                 "states": [
                     "callout.variant.null",
@@ -235,7 +242,7 @@
                     "Paragraph",
                     "Text",
                     "Link",
-                    "Image",
+                    "Media",
                     "Directive",
                     "DirectiveLabel",
                     "Table",
@@ -266,7 +273,7 @@
                     "directive.label.empty",
                     "link.title.null",
                     "link.title.empty",
-                    "image.title.null",
+                    "media.title.null",
                     "scope.positive",
                     "children.empty",
                     "children.populated",
@@ -275,7 +282,7 @@
                     "markup.anchor.value",
                     "markup.attributes.classes",
                     "document.metadata.null",
-                    "image.dimensions.null"
+                    "media.dimensions.null"
                 ],
                 "orders": ["document.source-order", "table.head-content-foot", "inline.source-order"]
             }
@@ -310,7 +317,7 @@
                     "Strikethrough",
                     "Code",
                     "Link",
-                    "Image",
+                    "Media",
                     "Directive",
                     "DirectiveLabel",
                     "Formula",
@@ -323,7 +330,7 @@
                     "markup.attributes.records",
                     "directive.label.populated",
                     "link.title.value",
-                    "image.title.value",
+                    "media.title.value",
                     "scope.positive",
                     "children.empty",
                     "children.populated",
@@ -414,14 +421,14 @@
             "input": "destinations.md",
             "expected": "destinations.ast",
             "coverage": {
-                "kinds": ["Document", "Paragraph", "Link", "Image", "Text"],
+                "kinds": ["Document", "Paragraph", "Link", "Media", "Text"],
                 "states": [
                     "destination.url.empty",
                     "destination.url.value",
                     "link.title.null",
                     "link.title.value",
-                    "image.title.null",
-                    "image.title.value",
+                    "media.title.null",
+                    "media.title.value",
                     "scope.positive",
                     "children.empty",
                     "children.populated"
@@ -434,12 +441,12 @@
             "input": "references.md",
             "expected": "references.ast",
             "coverage": {
-                "kinds": ["Document", "Paragraph", "Link", "Image", "Text"],
+                "kinds": ["Document", "Paragraph", "Link", "Media", "Text"],
                 "states": [
                     "reference.resolution.identical",
                     "destination.url.value",
                     "link.title.value",
-                    "image.title.value",
+                    "media.title.value",
                     "scope.positive",
                     "children.empty",
                     "children.populated"
@@ -452,10 +459,8 @@
             "input": "cross-links.md",
             "expected": "cross-links.ast",
             "coverage": {
-                "kinds": ["Document", "Paragraph", "CrossLink", "Text"],
+                "kinds": ["Document", "Paragraph", "CrossLink", "Text", "CrossEmbedded"],
                 "states": [
-                    "crossLink.embedded.false",
-                    "crossLink.embedded.true",
                     "crossLink.label.null",
                     "crossLink.label.empty",
                     "crossLink.label.value",
@@ -612,6 +617,38 @@
                     "callout.title.populated"
                 ],
                 "orders": ["callout.title-before-content"]
+            }
+        },
+        {
+            "name": "media-dimensions",
+            "input": "media-dimensions.md",
+            "expected": "media-dimensions.ast",
+            "coverage": {
+                "kinds": [
+                    "Document",
+                    "Paragraph",
+                    "Media",
+                    "Text",
+                    "Emphasis",
+                    "Code",
+                    "CrossLink",
+                    "Table",
+                    "TableRow",
+                    "TableCell",
+                    "CrossEmbedded"
+                ],
+                "states": [
+                    "media.dimensions.width",
+                    "media.dimensions.width-height",
+                    "media.dimensions.null",
+                    "crossEmbedded.dimensions.width",
+                    "crossEmbedded.dimensions.width-height",
+                    "crossEmbedded.dimensions.null",
+                    "crossEmbedded.label.null",
+                    "crossEmbedded.label.empty",
+                    "crossEmbedded.label.value"
+                ],
+                "orders": []
             }
         }
     ]

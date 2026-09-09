@@ -125,3 +125,8 @@ func attributeClass(_ value: String) -> String {
         }
     return plain ? value : jsonString(value)
 }
+
+func dimensionsString(_ value: Dimensions?) -> String {
+    guard let value else { return "null" }
+    return "(width=\(value.width),height=\(value.height.map(String.init) ?? "null"))"
+}

@@ -27,8 +27,8 @@ private typealias Comment = Testing.Comment
             "ListItem", "CodeBlock", "HTMLBlock", "FormulaBlock", "Table",
             "DirectiveBlock", "DirectiveLabel", "Text", "SoftBreak",
             "LineBreak",
-            "Code", "HTML", "Comment", "CrossLink", "Formula", "Emphasis", "Strong",
-            "Strikethrough", "Mark", "Link", "Image", "Directive", "Cite",
+            "Code", "HTML", "Comment", "CrossLink", "CrossEmbedded", "Formula", "Emphasis", "Strong",
+            "Strikethrough", "Mark", "Link", "Media", "Directive", "Cite",
             "TableRow", "TableCell",
         ]
         #expect(kinds == expected)
@@ -58,7 +58,7 @@ private typealias Comment = Testing.Comment
         #expect(table.head[0].cells.count == 1)
         let paragraph = try #require(document.content[3] as? Paragraph)
         let link = try #require(paragraph.content[0] as? Link)
-        let image = try #require(paragraph.content[2] as? Image)
+        let image = try #require(paragraph.content[2] as? Media)
         #expect(link.dest == .url("/go") && link.title == nil)
         #expect(image.dest == .url("/image") && image.title == "title")
     }

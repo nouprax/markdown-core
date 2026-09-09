@@ -50,7 +50,7 @@ test("conformance: public node schema is reachable", () => {
             "strikethrough",
             "mark",
             "link",
-            "image",
+            "media",
             "directive",
             "cite"
         ])

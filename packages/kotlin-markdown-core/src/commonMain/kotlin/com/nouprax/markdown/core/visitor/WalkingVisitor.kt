@@ -128,6 +128,11 @@ public interface WalkingVisitor {
         phase: WalkPhase,
     )
 
+    public fun visitCrossEmbedded(
+        node: CrossEmbedded,
+        phase: WalkPhase,
+    )
+
     public fun visitComment(
         node: Comment,
         phase: WalkPhase,
@@ -163,8 +168,8 @@ public interface WalkingVisitor {
         phase: WalkPhase,
     )
 
-    public fun visitImage(
-        node: Image,
+    public fun visitMedia(
+        node: Media,
         phase: WalkPhase,
     )
 
@@ -435,6 +440,11 @@ private class WalkingDriver(
         scheduleExit(node)
     }
 
+    override fun visitCrossEmbedded(node: CrossEmbedded) {
+        visitor.visitCrossEmbedded(node, phase)
+        scheduleExit(node)
+    }
+
     override fun visitComment(node: Comment) {
         visitor.visitComment(node, phase)
         scheduleExit(node)
@@ -475,8 +485,8 @@ private class WalkingDriver(
         if (phase == WalkPhase.ENTERING) schedule(node.content)
     }
 
-    override fun visitImage(node: Image) {
-        visitor.visitImage(node, phase)
+    override fun visitMedia(node: Media) {
+        visitor.visitMedia(node, phase)
         scheduleExit(node)
         if (phase == WalkPhase.ENTERING) schedule(node.content)
     }

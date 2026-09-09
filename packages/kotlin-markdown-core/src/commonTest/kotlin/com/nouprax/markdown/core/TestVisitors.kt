@@ -45,6 +45,8 @@ internal class KindVisitor : Visitor<String> {
 
     override fun visitCrossLink(node: CrossLink): String = name(node)
 
+    override fun visitCrossEmbedded(node: CrossEmbedded): String = name(node)
+
     override fun visitFormula(node: Formula): String = name(node)
 
     override fun visitEmphasis(node: Emphasis): String = name(node)
@@ -57,7 +59,7 @@ internal class KindVisitor : Visitor<String> {
 
     override fun visitLink(node: Link): String = name(node)
 
-    override fun visitImage(node: Image): String = name(node)
+    override fun visitMedia(node: Media): String = name(node)
 
     override fun visitDirective(node: Directive): String = name(node)
 
@@ -111,6 +113,8 @@ internal class RecordingVisitor : Visitor<Unit> {
 
     override fun visitCrossLink(node: CrossLink): Unit = record(node)
 
+    override fun visitCrossEmbedded(node: CrossEmbedded): Unit = record(node)
+
     override fun visitFormula(node: Formula): Unit = record(node)
 
     override fun visitEmphasis(node: Emphasis): Unit = record(node)
@@ -123,7 +127,7 @@ internal class RecordingVisitor : Visitor<Unit> {
 
     override fun visitLink(node: Link): Unit = record(node)
 
-    override fun visitImage(node: Image): Unit = record(node)
+    override fun visitMedia(node: Media): Unit = record(node)
 
     override fun visitDirective(node: Directive): Unit = record(node)
 
@@ -277,6 +281,11 @@ internal class RecordingWalkingVisitor(
         phase: WalkPhase,
     ): Unit = record(node, phase)
 
+    override fun visitCrossEmbedded(
+        node: CrossEmbedded,
+        phase: WalkPhase,
+    ): Unit = record(node, phase)
+
     override fun visitFormula(
         node: Formula,
         phase: WalkPhase,
@@ -307,8 +316,8 @@ internal class RecordingWalkingVisitor(
         phase: WalkPhase,
     ): Unit = record(node, phase)
 
-    override fun visitImage(
-        node: Image,
+    override fun visitMedia(
+        node: Media,
         phase: WalkPhase,
     ): Unit = record(node, phase)
 

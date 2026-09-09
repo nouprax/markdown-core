@@ -165,12 +165,20 @@ static const char OOM_BLOCK_IDENTIFIER_CORPUS[] =
     "- #empty#\n\n  [inside]: /x\n\n> next\n\n#next#\n\n"
     "[^n]: text #note#\n\ntext \\#escape#\n\n$$x$$ #formula#\n\n> last\n\n#end#";
 
+static const char OOM_IMAGE_DIMENSIONS_CORPUS[] =
+    "![[movie.mp4|raw *caption*|100x200]] ![[Note|3]] ![[Note|]] ![[Note]] ![[Note|bad|01]]\n"
+    "![[#^id|a\\|2147483647x1]] [[Note|100]] ![[unfinished|10x20]\n"
+    "![100](/i) ![|200x300](/i) ![*alt* `a|b`|2147483647x1][r] ![bad|01][r]\n"
+    "![![nested|2](/i)|3x4](/i) ![&amp;|10][r]\n\n"
+    "| image | next |\n| -- | -- |\n| ![alt\\|10x20][r] | ![20](/i) |\n\n[r]: /shared \"title\"\n";
+
 static const char OOM_CALLOUT_CORPUS[] =
     "> [!MiXeD]- **bold** ==mark== :tag[==label==] [ref] ^[note]\n"
     "> body #body#\n> > [!custom_1]+ %%hidden%%\n> > nested\n\n#callout#\n\n"
     "> [!note]\n\n> [!empty]+ \t\n\n> [!table] T\n> | --- |\n\n> [!plain] Title\nlazy\n\n[ref]: /u \"title\"\n";
 
 static const oom_case OOM_CASES[] = {
+    {"image dimensions", OOM_IMAGE_DIMENSIONS_CORPUS, sizeof(OOM_IMAGE_DIMENSIONS_CORPUS) - 1},
     {"callouts", OOM_CALLOUT_CORPUS, sizeof(OOM_CALLOUT_CORPUS) - 1},
     {"properties", OOM_PROPERTIES_CORPUS, sizeof(OOM_PROPERTIES_CORPUS) - 1},
     {"properties flow", OOM_PROPERTIES_ARRAY_CORPUS, sizeof(OOM_PROPERTIES_ARRAY_CORPUS) - 1},

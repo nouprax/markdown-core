@@ -677,14 +677,14 @@ Document scope=1:1..5:16 anchor=null attributes={} children=1
 │   │   ├── Text scope=1:53..1:53 anchor=null attributes={} literal=" " children=0
 │   │   ├── Formula scope=1:54..1:56 anchor=null attributes={} mode=embedded literal="x" children=0
 │   │   ├── Text scope=1:57..1:57 anchor=null attributes={} literal=" " children=0
-│   │   ├── CrossLink scope=1:58..1:71 anchor=null attributes={} embedded=false dest=cross(path="Note",anchor=null) label="label" children=0
+│   │   ├── CrossLink scope=1:58..1:71 anchor=null attributes={} dest=cross(path="Note",anchor=null) label="label" children=0
 │   │   ├── Text scope=1:72..1:72 anchor=null attributes={} literal=" " children=0
-│   │   ├── CrossLink scope=1:73..1:80 anchor=null attributes={} embedded=true dest=cross(path="Pic",anchor=null) label=null children=0
+│   │   ├── CrossEmbedded scope=1:73..1:80 anchor=null attributes={} dest=cross(path="Pic",anchor=null) label=null dimensions=null children=0
 │   │   ├── Text scope=1:81..1:81 anchor=null attributes={} literal=" " children=0
 │   │   ├── Link scope=1:82..1:86 anchor=null attributes={} dest=url("/u") title="title" children=1
 │   │   │   └── Text scope=1:83..1:85 anchor=null attributes={} literal="ref" children=0
 │   │   ├── Text scope=1:87..1:87 anchor=null attributes={} literal=" " children=0
-│   │   ├── Image scope=1:88..1:99 anchor=null attributes={} dest=url("/img") title=null width=null height=null children=1
+│   │   ├── Media scope=1:88..1:99 anchor=null attributes={} dest=url("/img") title=null dimensions=null children=1
 │   │   │   └── Text scope=1:90..1:92 anchor=null attributes={} literal="alt" children=0
 │   │   ├── Text scope=1:100..1:100 anchor=null attributes={} literal=" " children=0
 │   │   ├── Directive scope=1:101..1:116 anchor=null attributes={} name="tag" children=0

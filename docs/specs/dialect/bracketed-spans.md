@@ -119,7 +119,7 @@ Document scope=1:1..1:22 anchor=null attributes={} children=1
 .
 Document scope=1:1..1:12 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..1:12 anchor=null attributes={} children=2
-    ├── CrossLink scope=1:1..1:8 anchor=null attributes={} embedded=false dest=cross(path="wiki",anchor=null) label=null children=0
+    ├── CrossLink scope=1:1..1:8 anchor=null attributes={} dest=cross(path="wiki",anchor=null) label=null children=0
     └── Text scope=1:9..1:12 anchor=null attributes={} literal="{.x}" children=0
 ````````````````````````````````
 

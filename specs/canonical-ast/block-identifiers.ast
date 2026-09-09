@@ -26,9 +26,9 @@ Document scope=1:1..24:16 anchor=null attributes={} children=8
 │   │           └── Text scope=16:3..16:3 anchor=null attributes={} literal="c" children=0
 │   └── TableFoot children=0
 ├── Paragraph scope=20:1..20:26 anchor=null attributes={} children=3
-│   ├── CrossLink scope=20:1..20:15 anchor=null attributes={} embedded=false dest=cross(path="",anchor="paragraph") label=null children=0
+│   ├── CrossLink scope=20:1..20:15 anchor=null attributes={} dest=cross(path="",anchor="paragraph") label=null children=0
 │   ├── Text scope=20:16..20:16 anchor=null attributes={} literal=" " children=0
-│   └── CrossLink scope=20:17..20:26 anchor=null attributes={} embedded=false dest=cross(path="",anchor="list") label=null children=0
+│   └── CrossLink scope=20:17..20:26 anchor=null attributes={} dest=cross(path="",anchor="list") label=null children=0
 ├── Paragraph scope=22:1..22:15 anchor=null attributes={} children=1
 │   └── Text scope=22:1..22:15 anchor=null attributes={} literal="text #escaped#" children=0
 └── Paragraph scope=24:1..24:16 anchor="equation" attributes={} children=1

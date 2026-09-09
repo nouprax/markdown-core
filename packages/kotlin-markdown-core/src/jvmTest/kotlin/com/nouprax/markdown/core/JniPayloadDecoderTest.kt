@@ -23,7 +23,13 @@ private fun jniPayload(vararg parts: Any): ByteArray {
 class JniPayloadDecoderTest {
     @Test
     fun crossLinksKeepOwnedValuesAndRejectWrongDestinationBranches() {
-        fun payload(branch: Int = 2): ByteArray =
+        fun payload(
+            branch: Int = 2,
+            kind: Int = 32,
+            withDimensions: Boolean = true,
+            width: Int = 640,
+            height: Int = 480,
+        ): ByteArray =
             jniPayload(
                 "MKJ1",
                 0.toByte(),
@@ -46,7 +52,7 @@ class JniPayloadDecoderTest {
                 0,
                 0,
                 1,
-                30.toByte(),
+                kind.toByte(),
                 1,
                 1,
                 1,
@@ -54,23 +60,28 @@ class JniPayloadDecoderTest {
                 -1,
                 0,
                 0,
-                1.toByte(),
                 branch,
                 0,
                 2,
                 "id",
                 0,
+                *(if (withDimensions) arrayOf<Any>(1.toByte(), width, 1.toByte(), height) else emptyArray()),
                 0,
                 0,
             )
+        val ordinary = JniPayloadDecoder.decodeDocument(payload(kind = 30, withDimensions = false))
+        assertEquals("", assertIs<CrossLink>(assertIs<Paragraph>(ordinary.content.single()).content.single()).label)
         val bytes = payload()
         val document = JniPayloadDecoder.decodeDocument(bytes)
-        val link = assertIs<CrossLink>(assertIs<Paragraph>(document.content.single()).content.single())
-        assertTrue(link.embedded)
+        val link = assertIs<CrossEmbedded>(assertIs<Paragraph>(document.content.single()).content.single())
         assertEquals("", link.label)
         assertEquals("", assertIs<Destination.Cross>(link.dest).path)
         bytes.fill(0)
         assertEquals("id", assertIs<Destination.Cross>(link.dest).anchor)
+        assertEquals(Dimensions(640, 480), link.dimensions)
+        assertFailsWith<IllegalArgumentException> { JniPayloadDecoder.decodeDocument(payload(kind = 30)) }
+        assertFailsWith<IllegalArgumentException> { JniPayloadDecoder.decodeDocument(payload(width = 0)) }
+        assertFailsWith<IllegalArgumentException> { JniPayloadDecoder.decodeDocument(payload(height = 0)) }
         assertFailsWith<IllegalArgumentException> { JniPayloadDecoder.decodeDocument(payload(1)) }
     }
 
@@ -82,7 +93,8 @@ class JniPayloadDecoderTest {
 
         fun payload(
             scalarKind: Byte = 1,
-            width: Long = 640,
+            width: Int = 640,
+            height: Int = 480,
         ): ByteArray =
             jniPayload(
                 "MKJ1",
@@ -142,7 +154,7 @@ class JniPayloadDecoderTest {
                 1.toByte(),
                 width,
                 1.toByte(),
-                480L,
+                height,
                 0,
                 23.toByte(),
                 *scope(),
@@ -150,7 +162,6 @@ class JniPayloadDecoderTest {
                 0,
                 0,
                 0,
-                0.toByte(),
                 0.toByte(),
                 0,
                 0,
@@ -171,11 +182,11 @@ class JniPayloadDecoderTest {
         )
         assertEquals(null, metadata.keywords)
         assertEquals(null, metadata.comment)
-        val first = document.content[0] as Image
-        val second = document.content[1] as Image
+        val first = document.content[0] as Media
+        val second = document.content[1] as Media
         assertTrue(first.dest === second.dest)
-        assertEquals(640, first.width)
-        assertEquals(null, second.width)
+        assertEquals(Dimensions(640, 480), first.dimensions)
+        assertEquals(null, second.dimensions)
         assertEquals("first", first.anchor)
         assertEquals(listOf("a", "a"), first.attributes.classes)
         assertEquals(listOf(Record("k", "1"), Record("k", "2")), first.attributes.records)
@@ -185,6 +196,7 @@ class JniPayloadDecoderTest {
         assertTrue(visitor.events.none { it.contains("Metadata") })
         assertFailsWith<IllegalStateException> { JniPayloadDecoder.decodeDocument(payload(scalarKind = 9)) }
         assertFailsWith<IllegalArgumentException> { JniPayloadDecoder.decodeDocument(payload(width = 0)) }
+        assertFailsWith<IllegalArgumentException> { JniPayloadDecoder.decodeDocument(payload(height = 0)) }
     }
 
     @Test
@@ -707,6 +719,7 @@ class JniPayloadDecoderTest {
         assertFailsWith<IllegalStateException> { JniNodeKind.from(JniNodeKind.entries.maxOf { it.rawValue } + 1) }
         assertEquals(JniNodeKind.COMMENT, JniNodeKind.from(29))
         assertEquals(JniNodeKind.CROSS_LINK, JniNodeKind.from(30))
+        assertEquals(JniNodeKind.CROSS_EMBEDDED, JniNodeKind.from(32))
         assertEquals(JniNodeKind.CITE, JniNodeKind.from(25))
         assertFailsWith<IllegalArgumentException> {
             JniPayloadDecoder.decodeDocument("MKJ1".encodeToByteArray())

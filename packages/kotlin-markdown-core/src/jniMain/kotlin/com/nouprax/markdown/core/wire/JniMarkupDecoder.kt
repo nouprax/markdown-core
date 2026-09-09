@@ -108,11 +108,15 @@ private class JniTreeDecoder(
                 consume(HTML(reader.requiredString(), scope, anchor, attributes))
             }
 
-            JniNodeKind.CROSS_LINK -> {
-                val embedded = reader.boolean()
+            JniNodeKind.CROSS_LINK, JniNodeKind.CROSS_EMBEDDED -> {
                 val dest = destination()
-                require(dest is Destination.Cross) { "cross link requires a cross destination" }
-                consume(CrossLink(embedded, dest, reader.string(), scope, anchor, attributes))
+                require(dest is Destination.Cross) { "cross reference requires a cross destination" }
+                val label = reader.string()
+                if (kind == JniNodeKind.CROSS_EMBEDDED) {
+                    consume(CrossEmbedded(dest, label, dimensions(), scope, anchor, attributes))
+                } else {
+                    consume(CrossLink(dest, label, scope, anchor, attributes))
+                }
             }
 
             JniNodeKind.COMMENT -> {
@@ -144,13 +148,12 @@ private class JniTreeDecoder(
                 readChildren { consume(Link(resource.first, resource.second, it, scope, anchor, attributes)) }
             }
 
-            JniNodeKind.IMAGE -> {
+            JniNodeKind.MEDIA -> {
                 val resource = resource()
-                val width = dimension()
-                val height = dimension()
+                val dimensions = dimensions()
                 readChildren {
                     consume(
-                        Image(resource.first, resource.second, width, height, it, scope, anchor, attributes),
+                        Media(resource.first, resource.second, dimensions, it, scope, anchor, attributes),
                     )
                 }
             }
@@ -489,13 +492,9 @@ private class JniTreeDecoder(
         }
     }
 
-    private fun dimension(): Int? =
+    private fun dimensions(): Dimensions? =
         if (reader.boolean()) {
-            reader
-                .long()
-                .also {
-                    require(it in 1..Int.MAX_VALUE.toLong()) { "invalid image dimension" }
-                }.toInt()
+            Dimensions(reader.int(), if (reader.boolean()) reader.int() else null)
         } else {
             null
         }

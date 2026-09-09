@@ -25,7 +25,7 @@ internal enum class JniNodeKind(
     STRONG(20),
     STRIKETHROUGH(21),
     LINK(22),
-    IMAGE(23),
+    MEDIA(23),
     DIRECTIVE(24),
     CITE(25),
     TABLE_ROW(26),
@@ -34,6 +34,7 @@ internal enum class JniNodeKind(
     COMMENT(29),
     CROSS_LINK(30),
     MARK(31),
+    CROSS_EMBEDDED(32),
     ;
 
     companion object {
