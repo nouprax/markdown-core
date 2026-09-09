@@ -3020,36 +3020,64 @@ static void *count_text_realloc(void *pointer, size_t size) {
     return realloc(pointer, size);
 }
 
-/* A literal caret is ordinary text. Allocation work must equal an ordinary
- * text span of the same length, even when every byte is a caret. */
-static void literal_caret_allocations(test_batch_runner *runner) {
+/* Known-literal runs occupy the same text slice as surrounding prose.
+ * Their allocation count equals ordinary text at the same byte length;
+ * scanning each run once also bounds work independently of node allocation. */
+static void literal_text_allocations(test_batch_runner *runner) {
+    static const char *const units[] = {
+        "^", "a^", "a+", "+a", "a=b", " + ", " ++ ", " === ", " _ ", "a_b", " * ", "a+b=c_d", "α_β",
+    };
     markdown_core_mem mem = {count_text_calloc, count_text_realloc, free};
-    for (size_t count = 1024; count <= 1048576; count *= 2) {
-        char *source = malloc(count);
-        size_t ordinary_allocations = 0;
-        for (size_t shape = 0; shape < 3; shape++) {
-            for (size_t i = 0; i < count; i++) {
-                source[i] = shape == 0 || (shape == 2 && i % 2) ? 'a' : '^';
+    for (size_t size = 1024; size <= 1048576; size *= 2) {
+        for (size_t shape = 0; shape < sizeof(units) / sizeof(*units); shape++) {
+            size_t width = strlen(units[shape]);
+            size_t repeats = size / width;
+            size_t length = repeats * width + 2;
+            char *source = malloc(length);
+            size_t ordinary_allocations = 0;
+            for (size_t pass = 0; pass < 2; pass++) {
+                memset(source, 'a', length);
+                if (pass) {
+                    for (size_t i = 0; i < repeats; i++) {
+                        memcpy(source + 1 + i * width, units[shape], width);
+                    }
+                    source[length - 1] = 'z';
+                }
+                text_allocation_calls = 0;
+                inline_work work = {0};
+                markdown_core_node *root =
+                    markdown_core_parse_document_with_mem(source, length, &mem, measure_inline_work, &work);
+                OK(runner, root != NULL, "literal text parses: shape=%zu size=%zu", shape, length);
+                if (!pass) {
+                    ordinary_allocations = text_allocation_calls;
+                } else {
+                    INT_EQ(runner, text_allocation_calls, ordinary_allocations,
+                           "known-literal runs allocate only for their surrounding text slice");
+                }
+                size_t delimiter_bytes = 0;
+                for (size_t i = 0; i < length; i++) {
+                    if (strchr("*_+=", source[i])) {
+                        delimiter_bytes++;
+                    }
+                }
+                INT_EQ(runner, work.delimiters, delimiter_bytes,
+                       "known-literal delimiter runs are scanned once without matching work");
+                if (root) {
+                    markdown_core_node *text = root->first_child->first_child;
+                    OK(runner,
+                       text->kind == MARKDOWN_CORE_NODE_TEXT && !text->next &&
+                           text->as.literal->len == (bufsize_t)length &&
+                           memcmp(text->as.literal->data, source, length) == 0,
+                       "one Text retains every literal byte");
+                    OK(runner,
+                       text->start_line == 1 && text->start_column == 1 && text->end_line == 1 &&
+                           text->end_column == (int)length,
+                       "one Text retains the complete source scope");
+                    markdown_core_node_free(root);
+                }
             }
-            text_allocation_calls = 0;
-            markdown_core_node *root = markdown_core_parse_document_with_mem(source, count, &mem, NULL, NULL);
-            OK(runner, root != NULL, "ordinary text and caret spans parse at %zu bytes", count);
-            if (shape == 0) {
-                ordinary_allocations = text_allocation_calls;
-            } else {
-                INT_EQ(runner, text_allocation_calls, ordinary_allocations,
-                       "literal carets allocate only for their text span");
-            }
-            if (root) {
-                markdown_core_node *text = root->first_child->first_child;
-                OK(runner,
-                   !text->next && text->as.literal->len == (bufsize_t)count &&
-                       memcmp(text->as.literal->data, source, count) == 0,
-                   "one Text retains every literal byte");
-                markdown_core_node_free(root);
-            }
+            free(source);
         }
-        free(source);
     }
 }
 
@@ -3737,7 +3765,7 @@ int main(void) {
     inline_footnote_linear_work(runner);
     footnote_registration(runner);
     footnote_postprocessing(runner);
-    literal_caret_allocations(runner);
+    literal_text_allocations(runner);
     mark_linear_work(runner);
     insertion_linear_work(runner);
     comment_inline_linear_work(runner);

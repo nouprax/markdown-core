@@ -48,6 +48,14 @@ typedef struct bracket {
 #define FLAG_SKIP_HTML_PI (1u << 2)
 #define FLAG_SKIP_HTML_COMMENT (1u << 3)
 
+/* One maximal core run, classified from immutable source bytes. The text
+ * scanner may retain one lookahead run for delimiter dispatch to consume. */
+typedef struct {
+    bufsize_t start, end;
+    markdown_core_delimiter_rule rule;
+    bool can_open, can_close;
+} core_delimiter_run;
+
 typedef struct subject {
     markdown_core_mem *mem;
     markdown_core_chunk input;
@@ -66,6 +74,7 @@ typedef struct subject {
     markdown_core_node *owner;
     markdown_core_map *refmap;
     delimiter *last_delim;
+    core_delimiter_run core_run;
     /* How many delimiters of each rule on the stack can open, and how many
      * can close, kept at every push and removal so a scanner can ask whether
      * a closer will pair without walking the stack. */
@@ -318,6 +327,7 @@ static void subject_from_buf(markdown_core_parser *parser, markdown_core_mem *me
     e->owner = NULL;
     e->refmap = refmap;
     e->last_delim = NULL;
+    e->core_run = (core_delimiter_run){0};
     memset(e->delim_openers, 0, sizeof(e->delim_openers));
     memset(e->delim_closers, 0, sizeof(e->delim_closers));
     e->last_bracket = NULL;
@@ -524,46 +534,84 @@ static markdown_core_node *handle_backticks(subject *subj) {
     }
 }
 
-// Scan one maximal delimiter run and return its length.
-// Advances position.
-static int scan_delims(subject *subj, unsigned char c, bool *can_open, bool *can_close) {
-    int numdelims = 0;
-    bufsize_t before_char_pos, after_char_pos;
-    int32_t after_char = 0;
-    int32_t before_char = 0;
-    int len;
-    bool left_flanking, right_flanking;
+/** Core delimiter rules, keyed by the byte that spells each of them. */
+static markdown_core_delimiter_rule core_delimiter_rule(unsigned char c) {
+    switch (c) {
+    case '*':
+        return MARKDOWN_CORE_DELIM_RULE_EMPHASIS;
+    case '_':
+        return MARKDOWN_CORE_DELIM_RULE_UNDERSCORE;
+    case '=':
+        return MARKDOWN_CORE_DELIM_RULE_MARK;
+    case '+':
+        return MARKDOWN_CORE_DELIM_RULE_INSERTION;
+    default:
+        return MARKDOWN_CORE_DELIM_RULE_NONE;
+    }
+}
 
-    if (subj->pos == 0) {
+/* A core run is a compact sequence of identical delimiter units. The
+ * minimum width also decides whether a remainder can still participate.
+ * Single/double emphasis and fixed two-byte units share construction and
+ * source ownership; a fixed-width rule never uses the rule of three. */
+typedef struct {
+    bufsize_t minimum_width;
+    markdown_core_node_type single_kind;
+    markdown_core_node_type double_kind;
+} core_delimiter_spec;
+
+static const core_delimiter_spec CORE_DELIMITERS[MARKDOWN_CORE_DELIM_RULE_COUNT] = {
+    [MARKDOWN_CORE_DELIM_RULE_EMPHASIS] = {1, MARKDOWN_CORE_NODE_EMPHASIS, MARKDOWN_CORE_NODE_STRONG},
+    [MARKDOWN_CORE_DELIM_RULE_UNDERSCORE] = {1, MARKDOWN_CORE_NODE_EMPHASIS, MARKDOWN_CORE_NODE_STRONG},
+    [MARKDOWN_CORE_DELIM_RULE_MARK] = {2, MARKDOWN_CORE_NODE_NONE, MARKDOWN_CORE_NODE_MARK},
+    [MARKDOWN_CORE_DELIM_RULE_INSERTION] = {2, MARKDOWN_CORE_NODE_NONE, MARKDOWN_CORE_NODE_INSERTION},
+};
+
+/* Classify without moving the parser cursor or allocating an AST node.
+ * A cached lookahead is keyed by its source offset, so text scanning and
+ * delimiter dispatch consume the same classification even after a rewind. */
+static const core_delimiter_run *scan_core_delimiter(subject *subj, bufsize_t start) {
+    if (subj->core_run.rule != MARKDOWN_CORE_DELIM_RULE_NONE && subj->core_run.start == start) {
+        return &subj->core_run;
+    }
+    unsigned char c = peek_at(subj, start);
+    core_delimiter_run run = {.start = start, .end = start, .rule = core_delimiter_rule(c)};
+    assert(run.rule != MARKDOWN_CORE_DELIM_RULE_NONE);
+    while (run.end < subj->input.len && peek_at(subj, run.end) == c) {
+        run.end++;
+        if (subj->owner_parser) {
+            subj->owner_parser->delimiter_work++;
+        }
+    }
+    if (run.end - run.start < CORE_DELIMITERS[run.rule].minimum_width) {
+        subj->core_run = run;
+        return &subj->core_run;
+    }
+
+    bufsize_t before_char_pos, after_char_pos;
+    int32_t after_char = 0, before_char = 0;
+    int len;
+    if (run.start == 0) {
         before_char = 10;
     } else {
-        before_char_pos = subj->pos - 1;
-        // walk back to the beginning of the UTF_8 sequence:
+        before_char_pos = run.start - 1;
+        // Walk back to the beginning of the UTF-8 sequence.
         while ((peek_at(subj, before_char_pos) >> 6 == 2 || subj->skip_chars[peek_at(subj, before_char_pos)]) &&
                before_char_pos > 0) {
-            before_char_pos -= 1;
+            before_char_pos--;
         }
-        len = markdown_core_utf8proc_iterate(subj->input.data + before_char_pos, subj->pos - before_char_pos,
+        len = markdown_core_utf8proc_iterate(subj->input.data + before_char_pos, run.start - before_char_pos,
                                              &before_char);
         if (len == -1 || (before_char < 256 && subj->skip_chars[(unsigned char)before_char])) {
             before_char = 10;
         }
     }
-
-    while (peek_char(subj) == c) {
-        numdelims++;
-        if (subj->owner_parser) {
-            subj->owner_parser->delimiter_work++;
-        }
-        advance(subj);
-    }
-
-    if (subj->pos == subj->input.len) {
+    if (run.end == subj->input.len) {
         after_char = 10;
     } else {
-        after_char_pos = subj->pos;
+        after_char_pos = run.end;
         while (after_char_pos < subj->input.len && flanking_skip_at(subj, after_char_pos)) {
-            after_char_pos += 1;
+            after_char_pos++;
         }
         len = markdown_core_utf8proc_iterate(subj->input.data + after_char_pos, subj->input.len - after_char_pos,
                                              &after_char);
@@ -571,23 +619,25 @@ static int scan_delims(subject *subj, unsigned char c, bool *can_open, bool *can
             after_char = 10;
         }
     }
-
-    left_flanking =
-        numdelims > 0 && !markdown_core_utf8proc_is_space(after_char) &&
+    bool left_flanking =
+        !markdown_core_utf8proc_is_space(after_char) &&
         (!markdown_core_utf8proc_is_punctuation_or_symbol(after_char) || markdown_core_utf8proc_is_space(before_char) ||
          markdown_core_utf8proc_is_punctuation_or_symbol(before_char));
-    right_flanking =
-        numdelims > 0 && !markdown_core_utf8proc_is_space(before_char) &&
+    bool right_flanking =
+        !markdown_core_utf8proc_is_space(before_char) &&
         (!markdown_core_utf8proc_is_punctuation_or_symbol(before_char) || markdown_core_utf8proc_is_space(after_char) ||
          markdown_core_utf8proc_is_punctuation_or_symbol(after_char));
     if (c == '_') {
-        *can_open = left_flanking && (!right_flanking || markdown_core_utf8proc_is_punctuation_or_symbol(before_char));
-        *can_close = right_flanking && (!left_flanking || markdown_core_utf8proc_is_punctuation_or_symbol(after_char));
+        run.can_open =
+            left_flanking && (!right_flanking || markdown_core_utf8proc_is_punctuation_or_symbol(before_char));
+        run.can_close =
+            right_flanking && (!left_flanking || markdown_core_utf8proc_is_punctuation_or_symbol(after_char));
     } else {
-        *can_open = left_flanking;
-        *can_close = right_flanking;
+        run.can_open = left_flanking;
+        run.can_close = right_flanking;
     }
-    return numdelims;
+    subj->core_run = run;
+    return &subj->core_run;
 }
 
 /*
@@ -637,39 +687,6 @@ static void pop_bracket(subject *subj) {
     subj->last_bracket = subj->last_bracket->previous;
     subj->mem->free(b);
 }
-
-/** Core delimiter rules, keyed by the byte that spells each of them. */
-static markdown_core_delimiter_rule core_delimiter_rule(unsigned char c) {
-    switch (c) {
-    case '*':
-        return MARKDOWN_CORE_DELIM_RULE_EMPHASIS;
-    case '_':
-        return MARKDOWN_CORE_DELIM_RULE_UNDERSCORE;
-    case '=':
-        return MARKDOWN_CORE_DELIM_RULE_MARK;
-    case '+':
-        return MARKDOWN_CORE_DELIM_RULE_INSERTION;
-    default:
-        return MARKDOWN_CORE_DELIM_RULE_NONE;
-    }
-}
-
-/* A core run is a compact sequence of identical delimiter units. The
- * minimum width also decides whether a remainder can still participate.
- * Single/double emphasis and fixed two-byte units share construction and
- * source ownership; a fixed-width rule never uses the rule of three. */
-typedef struct {
-    bufsize_t minimum_width;
-    markdown_core_node_type single_kind;
-    markdown_core_node_type double_kind;
-} core_delimiter_spec;
-
-static const core_delimiter_spec CORE_DELIMITERS[MARKDOWN_CORE_DELIM_RULE_COUNT] = {
-    [MARKDOWN_CORE_DELIM_RULE_EMPHASIS] = {1, MARKDOWN_CORE_NODE_EMPHASIS, MARKDOWN_CORE_NODE_STRONG},
-    [MARKDOWN_CORE_DELIM_RULE_UNDERSCORE] = {1, MARKDOWN_CORE_NODE_EMPHASIS, MARKDOWN_CORE_NODE_STRONG},
-    [MARKDOWN_CORE_DELIM_RULE_MARK] = {2, MARKDOWN_CORE_NODE_NONE, MARKDOWN_CORE_NODE_MARK},
-    [MARKDOWN_CORE_DELIM_RULE_INSERTION] = {2, MARKDOWN_CORE_NODE_NONE, MARKDOWN_CORE_NODE_INSERTION},
-};
 
 static void push_delimiter(subject *subj, const markdown_core_extension *owner, markdown_core_delimiter_rule rule,
                            bool can_open, bool can_close, markdown_core_node *inl_text) {
@@ -747,24 +764,15 @@ static void push_bracket(subject *subj, bracket_kind kind, markdown_core_node *i
     }
 }
 
-// Assumes the subject has a c at the current position.
-static markdown_core_node *handle_delim(subject *subj, unsigned char c) {
-    bufsize_t numdelims;
-    markdown_core_node *inl_text;
-    bool can_open, can_close;
-    markdown_core_chunk contents;
-
-    markdown_core_delimiter_rule rule = core_delimiter_rule(c);
-    numdelims = scan_delims(subj, c, &can_open, &can_close);
-    contents = markdown_core_chunk_dup(&subj->input, subj->pos - numdelims, numdelims);
-    inl_text = make_str(subj, subj->pos - numdelims, subj->pos - 1, contents);
-
-    // A maximal run is one stack entry: it cannot match itself. Distinct
-    // runs have non-empty source between them, regardless of the final children.
-    if (inl_text && (can_open || can_close) && numdelims >= CORE_DELIMITERS[rule].minimum_width) {
-        push_delimiter(subj, NULL, rule, can_open, can_close, inl_text);
+static markdown_core_node *handle_delim(subject *subj, const core_delimiter_run *run) {
+    assert(run->can_open || run->can_close);
+    subj->pos = run->end;
+    markdown_core_node *inl_text = make_str(subj, run->start, run->end - 1,
+                                            markdown_core_chunk_dup(&subj->input, run->start, run->end - run->start));
+    // One eligible maximal run owns one stack entry and cannot match itself.
+    if (inl_text) {
+        push_delimiter(subj, NULL, run->rule, run->can_open, run->can_close, inl_text);
     }
-
     return inl_text;
 }
 
@@ -1899,18 +1907,26 @@ static markdown_core_node *handle_newline(subject *subj) {
 }
 
 static bufsize_t subject_find_special_char(subject *subj) {
-    bufsize_t n = subj->pos + 1;
-
+    // The caller has already established that the first byte is literal.
+    bufsize_t n = subj->pos;
     while (n < subj->input.len) {
-        /* A caret starts syntax only as part of ^[. Every other caret
-         * belongs to the surrounding ordinary text span. */
-        if (subj->special_chars[subj->input.data[n]] &&
-            (subj->input.data[n] != '^' || (n + 1 < subj->input.len && subj->input.data[n + 1] == '['))) {
+        unsigned char c = subj->input.data[n];
+        if (!subj->special_chars[c]) {
+            n++;
+        } else if (core_delimiter_rule(c) != MARKDOWN_CORE_DELIM_RULE_NONE) {
+            const core_delimiter_run *run = scan_core_delimiter(subj, n);
+            if (run->can_open || run->can_close) {
+                assert(n > subj->pos);
+                return n;
+            }
+            // A run that cannot delimit belongs to the current text slice.
+            n = run->end;
+        } else if (n > subj->pos && (c != '^' || (n + 1 < subj->input.len && subj->input.data[n + 1] == '['))) {
             return n;
+        } else {
+            n++;
         }
-        n++;
     }
-
     return subj->input.len;
 }
 
@@ -2075,14 +2091,19 @@ static int parse_inline(markdown_core_parser *parser, subject *subj, markdown_co
     case '*':
     case '_':
     case '=':
-    case '+':
+    case '+': {
+        const core_delimiter_run *run = scan_core_delimiter(subj, subj->pos);
+        if (!run->can_open && !run->can_close) {
+            goto text;
+        }
         /* A `*`, `_`, `=`, or `+` run is CONTENT until it matches -- an unmatched one IS
          * its own literal -- and `S_insert_delimited_inline` re-claims the bytes it uses.
          * Quotation marks, hyphens, and periods are not here: the dialect has
          * no smart punctuation, so they are ordinary text stored as written,
          * and the text arm below owns them like any other byte. */
-        new_inl = handle_delim(subj, c);
+        new_inl = handle_delim(subj, run);
         break;
+    }
     case '^':
         if (peek_char_n(subj, 1) != '[') {
             goto text;

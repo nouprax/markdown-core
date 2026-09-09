@@ -1065,6 +1065,15 @@ its behavior, with no separate publication step.
   middle position without a repair pass. Every public model, transport, dumper
   and visitor includes Insertion, with a shared canonical composition case.
 
+  Core delimiter runs are classified before node allocation. Runs shorter than
+  their rule's minimum width, or with neither flanking role, remain in the
+  surrounding borrowed text slice. One source-offset-keyed lookahead carries
+  the classification from text scanning to delimiter dispatch. Size-doubling
+  allocation tests cover all four core delimiter characters, literal carets,
+  and Unicode intraword underscores: known-literal spans allocate exactly as
+  ordinary text of the same byte length, scan each delimiter byte once, and
+  retain the exact literal and scope.
+
   Validation (2026-09-09, macOS arm64): `pnpm verify`, all external parity
   gates, source-position/reference ledgers and the JVM surface audit pass.
   C passes 79 correctness and 2 conformance tests; ASan, UBSan and TSan each
