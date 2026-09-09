@@ -65,3 +65,13 @@ relevant specifications or architecture documentation instead of this file.
 - Never work around sandbox boundaries implicitly. Use the platform's explicit
   approval or connector path, keep the requested authority scoped to the task,
   and distinguish an approval denial from a real host-side failure.
+
+## Git metadata and final verification
+
+- Commit scripts that have a shebang with executable mode `100755`. After
+  staging, verify the mode recorded by `git ls-files --stage`; invoking a script
+  through its interpreter does not verify its executable permission.
+- Re-run repository audits after newly created files enter the Git index.
+  Checks that enumerate tracked files cannot validate untracked additions, so a
+  passing audit before staging is not final verification. Run checks that
+  require a clean checkout after committing and before pushing.
