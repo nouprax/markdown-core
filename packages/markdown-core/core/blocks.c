@@ -3158,6 +3158,19 @@ static void heading_anchor_base(markdown_core_parser *parser, markdown_core_node
     }
 }
 
+/* A size_t needs at most 3 * sizeof(size_t) decimal digits. Suffix spelling
+ * is always ASCII and has no locale or format-string interpretation. */
+static void append_anchor_suffix(markdown_core_strbuf *base, size_t ordinal) {
+    char suffix[3 * sizeof(size_t) + 1];
+    char *end = suffix + sizeof(suffix), *start = end;
+    do {
+        *--start = (char)('0' + ordinal % 10);
+        ordinal /= 10;
+    } while (ordinal);
+    *--start = '-';
+    markdown_core_strbuf_put(base, (const unsigned char *)start, (bufsize_t)(end - start));
+}
+
 static void finalize_heading_anchors(markdown_core_parser *parser, markdown_core_heading_collection *headings,
                                      anchor_registry *registry) {
     markdown_core_strbuf base = MARKDOWN_CORE_BUF_INIT(parser->mem);
@@ -3176,10 +3189,8 @@ static void finalize_heading_anchors(markdown_core_parser *parser, markdown_core
             markdown_core_key_index_slot *candidate = entry;
             if (entry && entry->key) {
                 do {
-                    char suffix[3 * sizeof(size_t) + 2];
-                    snprintf(suffix, sizeof(suffix), "-%zu", entry->value.counter++);
                     markdown_core_strbuf_truncate(&base, base_length);
-                    markdown_core_strbuf_puts(&base, suffix);
+                    append_anchor_suffix(&base, entry->value.counter++);
                     if (base.oom) {
                         parser->oom = true;
                         break;

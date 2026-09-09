@@ -98,7 +98,8 @@ rehashing without allocating a stable object per anchor. Once `base-N` is known
 to be occupied, later duplicates of that base never retry it. A spelling of the
 form `base-N` has one such base, so occupied candidate work is amortized over
 reserved spellings. There is no cardinality-dependent algorithm or restart at
-suffix 1 for each heading.
+suffix 1 for each heading. Decimal suffixes are appended directly with bounded
+stack storage and no general format-string processing.
 
 Projection and target construction reuse a single scratch buffer; final
 node/resource strings receive exact-size owned copies. Scratch capacity is
