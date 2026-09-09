@@ -1220,13 +1220,16 @@ its behavior, with no separate publication step.
     [Heading resolution](../architecture/heading-resolution.md) records the
     dependency argument, lifecycle, and complexity bounds.
   - One document registry reserves effective explicit anchors from every
-    currently emitted producer and owned field. Per-base suffix cursors never
+    currently emitted producer and owned field during the existing inline
+    completion walk, without another whole-tree traversal. Per-base suffix
+    cursors live in the index slots and never
     restart; inherited definition anchors are hashed once per resource, not per
     occurrence. One generated Unicode 17.0.0 range table performs lowercase,
     whitespace replacement and filtering in one scalar lookup. The table
     regenerates byte-for-byte from pinned UnicodeData and the pinned runtime.
-  - Virtual heading definitions use the existing M2 resource and first-definition
-    rule. A final target is filled once before any postprocessor; bindings keep
+  - Each writable heading creates an ordinary reference definition with the
+    existing M2 resource, including duplicate labels. Ordinary reference lookup
+    applies the existing first-definition rule; heading parsing does not deduplicate. A final target is filled once before any postprocessor; bindings keep
     their native resource sharing without new transport fields. Tests cover
     forward references, explicit priority, duplicate labels, raw-label length
     boundaries, opaque/attribute overlaps, pending delimiter ownership, detached

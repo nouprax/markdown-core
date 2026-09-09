@@ -12,8 +12,18 @@ footnote definitions. A heading is a leaf block, so closure order is source
 order. The parser keeps borrowed node pointers in that order; no final tree
 search or sorting is needed. Explicit reference definitions are already in the
 ordinary reference map before heading declarations are added. The map's
-existing first-definition rule therefore gives explicit definitions priority
-and selects the first duplicate heading.
+first-definition rule therefore gives explicit definitions priority and selects
+the first duplicate heading. Both authored and heading definitions use the
+same declaration function and create an ordinary shared resource there;
+reference parsing needs no heading-specific case.
+
+Each writable heading creates its own implicit reference definition, including
+duplicate labels. Ordinary reference lookup selects the first definition using
+the existing map; heading parsing does not deduplicate declarations or create
+a separate resolution path. Normalization uses map-owned scratch, while every
+declaration owns its label in the same allocation as its record. This changes
+storage only: duplicate records and resources remain distinct, and the map's
+existing first-definition selection runs when references are resolved.
 
 A heading label uses authored source, not projected display text. Its endpoint
 depends on whether the normal inline cursor actually claims trailing heading
@@ -54,10 +64,15 @@ to the resource once; bindings encode and decode that resource once, just as
 they do for an explicit reference definition. The heading's attributes do not
 become inherited reference attributes.
 
-After inline parsing and footnote finalization, the existing owned-tree phase
-walk reserves effective explicit anchors from content, footnotes, and owned
-label/title fields. The registry and C facade use one effective-anchor accessor
-for local-over-inherited precedence. A reference resource's inherited anchor
+The existing inline-completion walk reserves effective explicit anchors while
+it discovers owned label/title fields. It visits only completed child trees,
+after bracket reductions and occurrence attributes have settled; a temporary
+inline later discarded by a footnote call cannot reserve an anchor. Field
+parsing may append inline footnotes, which the same completion loop then
+visits. Block footnotes are still attached to the content tree during this
+walk. No additional anchor-specific whole-tree traversal is needed. The
+registry and C facade use one effective-anchor accessor for local-over-inherited
+precedence. A reference resource's inherited anchor
 is hashed only on its first emitted inheriting occurrence. This identity index
 is necessary to avoid repeatedly hashing a long definition anchor for every
 short reference; unreferenced or fully overridden definitions reserve nothing.
@@ -73,11 +88,21 @@ case conversion and whitespace replacement. Its generator verifies both the
 pinned UnicodeData SHA-256 and Node Unicode version. Builds need no download.
 
 The exact-string anchor index reserves both explicit and synthesized spellings.
-Each occupied base has one increasing suffix cursor. Once `base-N` is known to
-be occupied, later duplicates of that base never retry it. A spelling of the
+Each occupied base has one increasing suffix cursor stored directly in its
+index slot. An entry lookup returns either an occupied or a vacant slot; the
+latter is committed using the final node-owned spelling without hashing it
+again. Only a new key can grow the index. Synthesis advances the base cursor
+before querying its next candidate and never reads that borrowed slot again
+after a vacant candidate returns. This keeps slot lifetimes valid through
+rehashing without allocating a stable object per anchor. Once `base-N` is known
+to be occupied, later duplicates of that base never retry it. A spelling of the
 form `base-N` has one such base, so occupied candidate work is amortized over
 reserved spellings. There is no cardinality-dependent algorithm or restart at
 suffix 1 for each heading.
+
+Projection and target construction reuse a single scratch buffer; final
+node/resource strings receive exact-size owned copies. Scratch capacity is
+retained across headings rather than discarded when a value is attached.
 
 ## Lifetime and bounds
 

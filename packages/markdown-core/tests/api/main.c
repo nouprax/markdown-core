@@ -2786,7 +2786,7 @@ typedef struct {
     size_t cross_link, opaque, delimiters, comment, lookahead, footnote_body, block_identifier, callout, dimensions;
     size_t registered_footnotes;
     bool footnote_collection_allocated, footnotes_owned, heading_collection_disposed;
-    size_t attributes, anchors;
+    size_t attributes, anchors, definitions, definition_resources;
 } inline_work;
 static markdown_core_node *record_inline_work(const markdown_core_extension *extension, markdown_core_parser *parser,
                                               markdown_core_node *root) {
@@ -2805,6 +2805,11 @@ static markdown_core_node *record_inline_work(const markdown_core_extension *ext
     work->dimensions = parser->dimension_work;
     work->attributes = parser->attribute_work;
     work->anchors = parser->anchor_work;
+    work->definitions = 0;
+    for (markdown_core_map_record *record = parser->refmap->records; record; record = record->next) {
+        work->definitions++;
+        work->definition_resources += record->resource != NULL;
+    }
     work->heading_collection_disposed = parser->headings.values == NULL && parser->headings.count == 0;
     work->footnote_body = parser->footnote_body_work;
     work->registered_footnotes = parser->footnote_registration_work;
@@ -3632,6 +3637,67 @@ static void attribute_attachment_linear_work(test_batch_runner *runner) {
     }
 }
 
+static void heading_completion_invariants(test_batch_runner *runner) {
+    static const struct {
+        const char *source, *anchor;
+    } cases[] = {
+        {"# x\n\n# T {#x}\n", "x-1"},
+        {"# x\n\n[r]: /u {#x}\n", "x"},
+        {"# x\n\n[r][]{#y}\n\n[r]: /u {#x}\n", "x"},
+        {"# x\n\n[^`a`{#x}]\n\n[^`a`{#x}]: note\n", "x"},
+        {"# x\n\n:d[`a`{#x}]\n", "x-1"},
+        {"# x\n\n:d[^[`a`{#x}]]\n", "x-1"},
+        {"# x\n\n> [!note] `a`{#x}\n", "x-1"},
+        {"# x\n\n[^n]: `a`{#x}\n", "x-1"},
+    };
+    for (size_t i = 0; i < sizeof(cases) / sizeof(*cases); i++) {
+        markdown_core_node *root = parse(cases[i].source);
+        OK(runner, root != NULL, "completed inline ownership preserves anchor reservations");
+        if (root) {
+            STR_EQ(runner, (char *)root->first_child->attributes.anchor.data, cases[i].anchor,
+                   "only final effective anchors on emitted nodes reserve names");
+        }
+        markdown_core_node_free(root);
+    }
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    size_t anchor_work = 0;
+    for (size_t count = 128; count <= 4096; count *= 2) {
+        for (int referenced = 0; referenced < 2; referenced++) {
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+            for (size_t i = 0; i < count; i++) {
+                markdown_core_strbuf_puts(&source, "# Same\n\n");
+            }
+            if (referenced) {
+                markdown_core_strbuf_puts(&source, "[Same] ![Same] [Same][]\n");
+            }
+            inline_work work = {0};
+            markdown_core_node *root =
+                markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
+            OK(runner, root != NULL, "repeated heading declarations parse");
+            INT_EQ(runner, work.definitions, count, "each heading creates its own implicit reference definition");
+            INT_EQ(runner, work.definition_resources, count,
+                   "duplicate heading definitions retain their ordinary resources");
+            markdown_core_node_free(root);
+            markdown_core_strbuf_free(&source);
+        }
+        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+        markdown_core_strbuf_puts(&source, "# Only\n\n");
+        for (size_t i = 0; i < count; i++) {
+            markdown_core_strbuf_puts(&source, "Plain **paragraph**.\n\n");
+        }
+        inline_work work = {0};
+        markdown_core_node *root =
+            markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
+        OK(runner, root != NULL, "unrelated content does not add anchor work");
+        if (!anchor_work) {
+            anchor_work = work.anchors;
+        }
+        INT_EQ(runner, work.anchors, anchor_work, "anchor work is independent of unrelated AST size");
+        markdown_core_node_free(root);
+        markdown_core_strbuf_free(&source);
+    }
+}
+
 static void heading_registry_invariants(test_batch_runner *runner) {
     markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
     for (size_t count = 128; count <= 8192; count *= 2) {
@@ -4073,6 +4139,7 @@ int main(void) {
     reference_definition_lifetime(runner);
     attribute_linear_work(runner);
     attribute_attachment_linear_work(runner);
+    heading_completion_invariants(runner);
     heading_registry_invariants(runner);
     heading_reference_resource_lifetime(runner);
     heading_label_length_boundary(runner);

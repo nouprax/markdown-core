@@ -9,36 +9,33 @@
 static markdown_core_map_record *definition_create(markdown_core_mem *mem, markdown_core_map *map,
                                                    markdown_core_chunk *label, markdown_core_resource *resource) {
     markdown_core_map_record *record;
-    unsigned char *reflabel;
-    int lost = 0;
+    markdown_core_strbuf *reflabel;
 
     /* A missing map means parser construction has already poisoned the parse;
      * keep cleanup paths null-safe while the transaction unwinds. */
-    if (map == NULL) {
+    if (map == NULL || map->oom) {
         markdown_core_resource_release(mem, resource);
         return NULL;
     }
     /* All declarations precede lookup, including virtual heading records. */
     assert(!map->prepared);
 
-    reflabel = normalize_map_label(map->mem, label, &lost);
-    /* An empty label, or one that is all whitespace, defines nothing. */
-    if (reflabel == NULL) {
-        if (lost) {
-            map->oom = 1;
-        }
+    reflabel = &map->label_buffer;
+    /* Every declaration keeps its own normalized label, including duplicates.
+     * Scratch is reused; the final spelling is owned with the record. */
+    if (!normalize_map_label_into(reflabel, label)) {
+        map->oom = reflabel->oom;
         markdown_core_resource_release(mem, resource);
         return NULL;
     }
 
-    record = (markdown_core_map_record *)map->mem->calloc(1, sizeof(*record));
+    record = map->mem->calloc(1, sizeof(*record) + (size_t)reflabel->size + 1);
     if (!record) {
         map->oom = 1;
-        map->mem->free(reflabel);
         markdown_core_resource_release(mem, resource);
         return NULL;
     }
-    record->label = reflabel;
+    memcpy(record->label, reflabel->ptr, (size_t)reflabel->size + 1);
     record->resource = resource;
     record->next = map->records;
 

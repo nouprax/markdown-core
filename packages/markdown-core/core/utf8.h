@@ -29,8 +29,8 @@ int markdown_core_utf8proc_is_punctuation_or_symbol(int32_t uc);
 int markdown_core_utf8proc_is_letter(int32_t uc);
 int markdown_core_utf8proc_is_number(int32_t uc);
 int markdown_core_utf8proc_is_mark(int32_t uc);
-/* The anchors module's complete scalar transform; zero means omitted. */
-int32_t markdown_core_utf8proc_anchor_scalar(int32_t uc);
+/* Append the anchors module's Unicode projection of a valid UTF-8 literal. */
+void markdown_core_utf8proc_anchor(markdown_core_strbuf *dest, const uint8_t *str, bufsize_t len);
 
 #ifdef __cplusplus
 }

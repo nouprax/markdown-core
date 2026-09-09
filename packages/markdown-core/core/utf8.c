@@ -212,7 +212,7 @@ int markdown_core_utf8proc_is_punctuation(int32_t uc) {
 
 #include "anchor_scalars.inc"
 
-int32_t markdown_core_utf8proc_anchor_scalar(int32_t uc) {
+static int32_t anchor_scalar(int32_t uc) {
     size_t low = 0, high = sizeof(anchor_scalars) / sizeof(*anchor_scalars);
     while (low < high) {
         size_t mid = low + (high - low) / 2;
@@ -225,4 +225,19 @@ int32_t markdown_core_utf8proc_anchor_scalar(int32_t uc) {
         }
     }
     return 0;
+}
+
+/* Consume a complete literal here so UTF-8 decoding, scalar projection and
+ * encoding share one loop and can be inlined within the Unicode module. */
+void markdown_core_utf8proc_anchor(markdown_core_strbuf *dest, const uint8_t *str, bufsize_t len) {
+    for (bufsize_t at = 0; at < len;) {
+        int32_t scalar;
+        int width = markdown_core_utf8proc_iterate(str + at, len - at, &scalar);
+        assert(width > 0); /* Valid UTF-8 is the parser's input contract. */
+        at += width;
+        scalar = anchor_scalar(scalar);
+        if (scalar) {
+            markdown_core_utf8proc_encode_char(scalar, dest);
+        }
+    }
 }

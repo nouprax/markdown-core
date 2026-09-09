@@ -48,6 +48,7 @@ static const char OOM_HEADING_CORPUS[] = "[First] [First][] [go][First]{#own .c}
                                          "# *`prefix` [First]*\n\n# First\n\n# First\n\n# !!!\n\n"
                                          "# First {#explicit}\n\n# T {id=}\n\n# :n[Label :n[`Code`]] $Formula$\n\n"
                                          ":n{#first-1}\n\n[^f]: # First\n\n"
+                                         ":n[^[`a`{#first-2}]]\n\n[^`a`{#discarded}]\n\n[^`a`{#discarded}]: note\n\n"
                                          "# `x{#false k=`[First]}\n\n# \xe4\xb8\xad\xe6\x96\x87\n";
 
 static const char OOM_CORPUS[] = "`x`{#c .one .two k=1 k=2} <https://example.com>{.external}\n\n"
