@@ -636,15 +636,16 @@ its behavior, with no separate publication step.
   C, Swift, npm, Maven, and Android AAR artifacts. Full cross-host aggregation
   remains the required CI check.
 
-  Shared requirement discrepancy found during O2: the dialect index specifies
-  `MARKDOWN_CORE_MAX_INLINE_DEPTH = 256`, but `blocks.c` only declares that
-  unused macro; the shared delimiter algorithm does not enforce it. The
-  pre-existing `pathological_nested_strong_emph` test requires tens of thousands
-  of nested emphasis/strong nodes. O2 preserves that shared behavior, and its
-  size-doubling probes measure work on both flat and deep input. A follow-up
-  must reconcile the global limit and inherited tests for every delimiter kind
-  through the shared algorithm; a Mark-only limit would create divergent
-  semantics. The normative limit is not changed or claimed as implemented here.
+  O2 recorded an unused `MARKDOWN_CORE_MAX_INLINE_DEPTH = 256` macro and a
+  conflicting limit in the dialect index. The I0/I1 provenance audit resolved
+  this on 2026-09-09: commit `53b9a2aa` introduced the constant as the capacity
+  of a temporary traversal worklist for source-ownership checks, without
+  changing the parsed tree. Commit `e4107e5e` removed that traversal but left
+  the macro. The ME-9 specification audit in `2d9dc333` then promoted it into
+  a delimiter syntax limit without a parser implementation. The unused macro
+  and mistaken normative limit are removed. Delimiter nesting retains its
+  existing uncapped semantics, protected by the nested emphasis/strong stress
+  tests and the shared delimiter size-doubling probes.
 
 - [x] **O3 — Comments.** Scan `%%...%%` from the shared cursor
       with a linear closer search, classify block placement when both delimiters
@@ -1044,7 +1045,7 @@ its behavior, with no separate publication step.
       code, formula, comment, and HTML-token bytes are opaque and paired tags
       create no region. Add the `Insertion(content)` kind, fixtures replaying the
       pinned upstream cases plus the contract's crossed-delimiter, `CrossLink`,
-      `Mark`, `Cite`, nesting-limit, allocation-failure, and size-doubling
+      `Mark`, `Cite`, deep-nesting, allocation-failure, and size-doubling
       cases, and a canonical case; remove every `I0` gap. The `CrossLink` and
       `Mark` composition cases are cross-item cases owned by whichever of `I1`
       and `O1` or `O2` merges later, the `Cite` composition case belongs to `I1`
@@ -1072,11 +1073,10 @@ its behavior, with no separate publication step.
   release dry run with packaged consumers. Other release hosts remain covered
   by the Release dry run workflow.
 
-  The global 256-depth discrepancy recorded under O2 still applies. This item
-  does not claim to enforce that unused limit or introduce an Insertion-only cap;
-  its deep size-doubling probes preserve the existing shared behavior. The
-  follow-up must reconcile the limit for every delimiter kind and the inherited
-  deep-nesting tests together. P3 still owns generated heading-anchor projection.
+  The O2 depth discrepancy is resolved by tracing and removing the mistaken
+  specification limit, as recorded under O2. Deep size-doubling probes preserve
+  the shared parser's uncapped nesting behavior. P3 still owns generated
+  heading-anchor projection.
 
 ## Stage 4 — Pandoc track
 

@@ -205,8 +205,8 @@ Document scope=1:1..1:20 anchor=null attributes={} children=1
 An unmatched or ineligible unit is text, and failed
 recognition consumes no escape, bracket, or plus sign a later construct
 needs. Each run is scanned once, parsing stays linear for long runs and many
-unmatched candidates, the inline nesting limit applies, and allocation
-failure follows the shared rule.
+unmatched candidates, and allocation failure follows the shared rule. Delimiter
+nesting has no fixed syntax limit.
 
 ## Oracle
 
@@ -239,4 +239,4 @@ Every example of this module is a package fixture, and the pinned upstream
 cases are replayed. Tests also cover Unicode and punctuation flanking; nested
 and crossed strikethrough, cross links, marks, cites, and inserted spans; every
 opaque context; exact content order and scopes; allocation failure; the
-nesting limit; long unmatched sequences; and size-doubling plus runs.
+deep nesting; long unmatched sequences; and size-doubling plus runs.

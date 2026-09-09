@@ -286,8 +286,6 @@ static MARKDOWN_CORE_INLINE bool contains_inlines(markdown_core_node *node) {
     return (node->kind == MARKDOWN_CORE_NODE_PARAGRAPH || node->kind == MARKDOWN_CORE_NODE_HEADING);
 }
 
-#define MARKDOWN_CORE_MAX_INLINE_DEPTH 256
-
 /* Record where the bytes about to be appended to `node`'s content came from.
  *
  * `column` is a BYTE column counted from 1, which is what every position in

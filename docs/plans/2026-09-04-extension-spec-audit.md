@@ -4,6 +4,11 @@ Historical naming note: this audit predates the I0/I1 naming correction.
 Its `Insert` and `inserted-text.md` references describe the former proposal;
 the current product contract is [`Insertion`](../specs/dialect/insertion.md).
 
+The inline depth limit proposed in ME-9 is also superseded. The I0/I1 provenance
+audit traced 256 to a removed source-ownership traversal's worklist capacity;
+it never limited delimiter parsing. See the O2 resolution in the
+[landing plan](2026-09-04-canonical-vnext-landing-plan.md).
+
 > Metadata update (2026-09-08): historical record/field-scope proposals below
 > are superseded by [the fixed-field metadata contract](../specs/dialect/properties.md).
 > Metadata has ten direct optional fields and only an envelope scope.

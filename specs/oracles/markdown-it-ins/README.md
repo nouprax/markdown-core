@@ -58,10 +58,9 @@ fields, which the pinned oracle does not implement. Each exception names its
 input, reason and both semantic digests. An unregistered difference, changed
 side, unreachable exception or new agreement fails the gate.
 
-The global inline-depth discrepancy recorded by O2 remains a separate shared
-parser issue: the declared 256 limit is not enforced by the inherited delimiter
-stack. Insertion uses that same stack; size-doubling deep-run tests exercise its
-actual behavior. This oracle does not certify that unimplemented limit.
+The product has no fixed delimiter nesting limit. Its shared size-doubling
+deep-run tests and nested emphasis/strong stress cases verify this behavior
+independently of the pinned oracle's own nesting guard.
 
 ## Upstream license
 

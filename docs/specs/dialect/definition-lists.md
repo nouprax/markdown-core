@@ -318,5 +318,5 @@ through three columns of marker indentation; one through four padding
 columns, tabs, and excess padding that becomes indented code; code,
 callouts, lists, and tables in bodies; the caption exclusion; same-depth
 list, fence, and div boundaries; missing term or body fallback; exact
-scopes; allocation failure; nesting limits; and size-doubling term and body
+scopes; allocation failure; deep nesting; and size-doubling term and body
 inputs.

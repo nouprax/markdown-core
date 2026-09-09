@@ -164,5 +164,5 @@ every `[`.
 
 Every example of this module is a package fixture. Tests also cover every
 shared attribute form, citation and link attribute precedence, escaped
-brackets, code, comments, HTML, and formulas, exact scopes, nesting limits,
+brackets, code, comments, HTML, and formulas, exact scopes, deep nesting,
 allocation failure, and size-doubling bracket and brace runs.

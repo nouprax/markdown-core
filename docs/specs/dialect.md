@@ -330,7 +330,6 @@ dialect. Changing one is a behavior change.
 
 | Limit                                                             | Value         | Effect when exceeded                                                                   |
 | ----------------------------------------------------------------- | ------------- | -------------------------------------------------------------------------------------- |
-| inline delimiter nesting depth (`MARKDOWN_CORE_MAX_INLINE_DEPTH`) | 256           | further delimiter units at that depth are literal text                                 |
 | footnote container depth (`MAX_FOOTNOTE_DEPTH`)                   | 100           | a definition at that depth or greater is not a definition; its line is ordinary content |
 | link and footnote label length (`MAX_LINK_LABEL_LENGTH`)          | 1000 bytes    | a longer label is not a label; the brackets are ordinary bracket text                  |
 | code span backtick string length (`MAXBACKTICKS`)                 | 80            | a longer backtick string is never a code span delimiter and is text; cmark shares the ceiling, so the cmark gate sees no divergence |
@@ -342,9 +341,11 @@ dialect. Changing one is a behavior change.
 | autocompleted pipe-table cells per table (`MAX_AUTOCOMPLETED_CELLS`) | 524288     | once the synthesized empty cells exceed it, the next line is not a row and ends the table |
 | pipe-table cells per row                                          | 65535         | a header or delimiter row with more cells is not a table; a body row with more cells ends the table before it |
 
-Block container depth is not limited: the parser, every transport, and every
-binding are stack-safe at any depth, and the conformance suites prove it with
-a ten-thousand-level nested list.
+Inline delimiter nesting and block container depth have no fixed syntax limit.
+Deep nesting follows the shared parsing and allocation-failure rules. The
+parser, transports, and bindings use stack-safe traversal; deep delimiter
+size-doubling cases, nested emphasis/strong stress cases, and ten-thousand-level
+nested-list conformance cases protect this behavior.
 
 ## Unicode and text
 
