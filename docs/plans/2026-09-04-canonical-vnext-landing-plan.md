@@ -1003,8 +1003,9 @@ its behavior, with no separate publication step.
 - [ ] **O10 — Obsidian evidence closure.** Add the integration fixtures for
       every pairwise opaque-context interaction, OFM and CommonMark constructs
       between paired inline HTML tags, the five-step precedence order, task
-      items carrying block identifiers, `mermaid` and `query` blocks, and inline
-      and display math; add canonical cases until every OFM kind, state, and
+      items carrying block identifiers, generic `CodeBlock` info/language
+      preservation and literal-body opacity, and inline and display math; add
+      canonical cases until every OFM kind, state, and
       order is covered; add deterministic fuzz seeds and pathological cases for
       delimiter runs, nested callouts, inline-HTML boundaries, escaped table
       pipes, long paths and headings, and repeated identifiers with structural
@@ -1012,6 +1013,13 @@ its behavior, with no separate publication step.
       tables and repair paths; empty `baselineGaps`; mark every Obsidian
       feature-table row `present`; document every Obsidian feature in the README
       and the binding READMEs. Requires `O1` through `O9`.
+
+  Code-block evidence follows the [base language contract](../specs/dialect/base.md#code)
+  for arbitrary language labels. Consumers interpret those labels; they do not
+  introduce AST kinds, language-specific parsing, or a per-language fixture
+  checklist. Existing generic `CodeBlock` fixtures discharge the corresponding
+  preservation and opacity requirements.
+
 - **Obsidian track exit criterion**, verified in the `O10` pull request: the
   plan exit criterion of the Obsidian implementation plan holds on every public
   surface, with every Obsidian module always on in the switch-less dialect and
