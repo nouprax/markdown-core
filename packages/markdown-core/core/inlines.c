@@ -640,6 +640,15 @@ static const core_delimiter_run *scan_core_delimiter(subject *subj, bufsize_t st
     return &subj->core_run;
 }
 
+/* Source classification is immutable, but eligibility depends on the live
+ * stack. A close-only run cannot match a future opener. Keep it as text when
+ * no earlier opener of its rule survives; runs that can open must remain
+ * eligible even without an earlier opener. Counts are conservative because
+ * pair reduction is deferred and one run can supply several delimiter units. */
+static bool core_delimiter_needs_stack(const subject *subj, const core_delimiter_run *run) {
+    return run->can_open || (run->can_close && subj->delim_openers[run->rule] > 0);
+}
+
 /*
 static void print_delimiters(subject *subj)
 {
@@ -765,7 +774,7 @@ static void push_bracket(subject *subj, bracket_kind kind, markdown_core_node *i
 }
 
 static markdown_core_node *handle_delim(subject *subj, const core_delimiter_run *run) {
-    assert(run->can_open || run->can_close);
+    assert(core_delimiter_needs_stack(subj, run));
     subj->pos = run->end;
     markdown_core_node *inl_text = make_str(subj, run->start, run->end - 1,
                                             markdown_core_chunk_dup(&subj->input, run->start, run->end - run->start));
@@ -1915,7 +1924,7 @@ static bufsize_t subject_find_special_char(subject *subj) {
             n++;
         } else if (core_delimiter_rule(c) != MARKDOWN_CORE_DELIM_RULE_NONE) {
             const core_delimiter_run *run = scan_core_delimiter(subj, n);
-            if (run->can_open || run->can_close) {
+            if (core_delimiter_needs_stack(subj, run)) {
                 assert(n > subj->pos);
                 return n;
             }
@@ -2093,7 +2102,7 @@ static int parse_inline(markdown_core_parser *parser, subject *subj, markdown_co
     case '=':
     case '+': {
         const core_delimiter_run *run = scan_core_delimiter(subj, subj->pos);
-        if (!run->can_open && !run->can_close) {
+        if (!core_delimiter_needs_stack(subj, run)) {
             goto text;
         }
         /* A `*`, `_`, `=`, or `+` run is CONTENT until it matches -- an unmatched one IS

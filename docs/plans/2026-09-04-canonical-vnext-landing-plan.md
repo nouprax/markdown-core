@@ -1074,6 +1074,13 @@ its behavior, with no separate publication step.
   ordinary text of the same byte length, scan each delimiter byte once, and
   retain the exact literal and scope.
 
+  Stack eligibility also keeps close-only runs literal when no earlier opener
+  of the same rule survives. This decision reads the live opener counts rather
+  than caching mutable state with source classification. Allocation/work tests
+  cover close-only prose such as `C++ `, unrelated openers, and bracket cleanup
+  for all four core rules. Matching tests preserve dual-role openers, multiple
+  units in one opener run, and openers outside a completed bracket.
+
   Validation (2026-09-09, macOS arm64): `pnpm verify`, all external parity
   gates, source-position/reference ledgers and the JVM surface audit pass.
   C passes 79 correctness and 2 conformance tests; ASan, UBSan and TSan each

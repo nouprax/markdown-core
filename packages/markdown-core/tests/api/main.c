@@ -3024,24 +3024,69 @@ static void *count_text_realloc(void *pointer, size_t size) {
  * Their allocation count equals ordinary text at the same byte length;
  * scanning each run once also bounds work independently of node allocation. */
 static void literal_text_allocations(test_batch_runner *runner) {
-    static const char *const units[] = {
-        "^", "a^", "a+", "+a", "a=b", " + ", " ++ ", " === ", " _ ", "a_b", " * ", "a+b=c_d", "α_β",
+    static const struct {
+        const char *prefix, *unit;
+    } cases[] = {
+        {"a", "^"},
+        {"a", "a^"},
+        {"a", "a+"},
+        {"a", "+a"},
+        {"a", "a=b"},
+        {"a", " + "},
+        {"a", " ++ "},
+        {"a", " === "},
+        {"a", " _ "},
+        {"a", "a_b"},
+        {"a", " * "},
+        {"a", "a+b=c_d"},
+        {"a", "α_β"},
+        // Close-only runs without an earlier opener, including odd/long runs.
+        {"a", "C++ "},
+        {"a", "x+++ "},
+        {"a", "x++++ "},
+        {"a", "x== "},
+        {"a", "x=== "},
+        {"a", "x* "},
+        {"a", "x** "},
+        {"a", "x*** "},
+        {"a", "x_ "},
+        {"a", "x__ "},
+        {"a", "x___ "},
+        {"a", "x* x_ x== C++ "},
+        // An opener of another rule cannot make these closers eligible.
+        {"*other ", "C++ "},
+        {"++other ", "x== "},
+        {"==other ", "x_ "},
+        {"_other ", "x* "},
+        // Bracket completion removes both unmatched and consumed openers.
+        {"[++open](/u) a", "C++ "},
+        {"[++x++](/u) a", "C++ "},
+        {"[==open](/u) a", "x== "},
+        {"[==x==](/u) a", "x== "},
+        {"[*open](/u) a", "x* "},
+        {"[*x*](/u) a", "x* "},
+        {"[_open](/u) a", "x_ "},
+        {"[_x_](/u) a", "x_ "},
     };
     markdown_core_mem mem = {count_text_calloc, count_text_realloc, free};
     for (size_t size = 1024; size <= 1048576; size *= 2) {
-        for (size_t shape = 0; shape < sizeof(units) / sizeof(*units); shape++) {
-            size_t width = strlen(units[shape]);
+        for (size_t shape = 0; shape < sizeof(cases) / sizeof(*cases); shape++) {
+            size_t prefix_length = strlen(cases[shape].prefix);
+            size_t width = strlen(cases[shape].unit);
             size_t repeats = size / width;
-            size_t length = repeats * width + 2;
+            size_t length = prefix_length + repeats * width + 1;
             char *source = malloc(length);
             size_t ordinary_allocations = 0;
+            size_t ordinary_work = 0;
+            int ordinary_text_start = 0;
             for (size_t pass = 0; pass < 2; pass++) {
                 memset(source, 'a', length);
+                memcpy(source, cases[shape].prefix, prefix_length);
+                source[length - 1] = 'z';
                 if (pass) {
                     for (size_t i = 0; i < repeats; i++) {
-                        memcpy(source + 1 + i * width, units[shape], width);
+                        memcpy(source + prefix_length + i * width, cases[shape].unit, width);
                     }
-                    source[length - 1] = 'z';
                 }
                 text_allocation_calls = 0;
                 inline_work work = {0};
@@ -3050,27 +3095,32 @@ static void literal_text_allocations(test_batch_runner *runner) {
                 OK(runner, root != NULL, "literal text parses: shape=%zu size=%zu", shape, length);
                 if (!pass) {
                     ordinary_allocations = text_allocation_calls;
+                    ordinary_work = work.delimiters;
                 } else {
                     INT_EQ(runner, text_allocation_calls, ordinary_allocations,
                            "known-literal runs allocate only for their surrounding text slice");
                 }
                 size_t delimiter_bytes = 0;
-                for (size_t i = 0; i < length; i++) {
+                for (size_t i = prefix_length; i < length; i++) {
                     if (strchr("*_+=", source[i])) {
                         delimiter_bytes++;
                     }
                 }
-                INT_EQ(runner, work.delimiters, delimiter_bytes,
+                INT_EQ(runner, work.delimiters, ordinary_work + delimiter_bytes,
                        "known-literal delimiter runs are scanned once without matching work");
                 if (root) {
-                    markdown_core_node *text = root->first_child->first_child;
+                    markdown_core_node *text = root->first_child->last_child;
+                    if (!pass) {
+                        ordinary_text_start = text->start_column;
+                    }
+                    size_t text_offset = (size_t)ordinary_text_start - 1;
                     OK(runner,
                        text->kind == MARKDOWN_CORE_NODE_TEXT && !text->next &&
-                           text->as.literal->len == (bufsize_t)length &&
-                           memcmp(text->as.literal->data, source, length) == 0,
+                           text->as.literal->len == (bufsize_t)(length - text_offset) &&
+                           memcmp(text->as.literal->data, source + text_offset, length - text_offset) == 0,
                        "one Text retains every literal byte");
                     OK(runner,
-                       text->start_line == 1 && text->start_column == 1 && text->end_line == 1 &&
+                       text->start_line == 1 && text->start_column == ordinary_text_start && text->end_line == 1 &&
                            text->end_column == (int)length,
                        "one Text retains the complete source scope");
                     markdown_core_node_free(root);
@@ -3171,6 +3221,44 @@ static size_t count_kind(markdown_core_node *root, markdown_core_node_type kind)
     }
     markdown_core_iter_free(iter);
     return found;
+}
+
+/* Eligibility must preserve future openers, opener units and bracket scope.
+ * In particular, an opener count is not a count of available delimiter units. */
+static void core_delimiter_stack_eligibility(test_batch_runner *runner) {
+    static const struct {
+        const char *marker;
+        markdown_core_node_type kind;
+    } rules[] = {
+        {"*", MARKDOWN_CORE_NODE_EMPHASIS},
+        {"_", MARKDOWN_CORE_NODE_EMPHASIS},
+        {"==", MARKDOWN_CORE_NODE_MARK},
+        {"++", MARKDOWN_CORE_NODE_INSERTION},
+    };
+    static const struct {
+        const char *format;
+        size_t nodes;
+    } cases[] = {
+        {"x%s %sy%s", 1},           // Literal closer before a later valid opener.
+        {"%s%sa%s b%s", 2},         // One opener run supplies two separate closers.
+        {"%s[x](/u)%s", 1},         // An outer opener survives bracket completion.
+        {"[%sx](/u) y%s %sz%s", 1}, // An inner opener is discarded at the bracket.
+        {"(%s!x%s)", 1},            // A run with both roles can open an empty stack.
+    };
+    for (size_t rule = 0; rule < sizeof(rules) / sizeof(*rules); rule++) {
+        for (size_t c = 0; c < sizeof(cases) / sizeof(*cases); c++) {
+            const char *marker = rules[rule].marker;
+            char source[128];
+            snprintf(source, sizeof(source), cases[c].format, marker, marker, marker, marker);
+            markdown_core_node *root = markdown_core_parse_document(source, strlen(source));
+            OK(runner, root != NULL, "core delimiter eligibility parses: %s", source);
+            if (root) {
+                INT_EQ(runner, count_kind(root, rules[rule].kind), cases[c].nodes,
+                       "core delimiter eligibility preserves matching: %s", source);
+                markdown_core_node_free(root);
+            }
+        }
+    }
 }
 
 /* O3: the inline `%%` scanner. Every failed closer search is cached under the
@@ -3766,6 +3854,7 @@ int main(void) {
     footnote_registration(runner);
     footnote_postprocessing(runner);
     literal_text_allocations(runner);
+    core_delimiter_stack_eligibility(runner);
     mark_linear_work(runner);
     insertion_linear_work(runner);
     comment_inline_linear_work(runner);
