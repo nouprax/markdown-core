@@ -763,7 +763,7 @@ Foo
 bar
 .
 Document scope=1:1..3:3 anchor=null attributes={} children=2
-├── Heading scope=1:1..3:3 anchor=null attributes={} level=2 children=1
+├── Heading scope=1:1..2:3 anchor=null attributes={} level=2 children=1
 │   └── Text scope=1:1..1:3 anchor=null attributes={} literal="Foo" children=0
 └── Paragraph scope=3:1..3:3 anchor=null attributes={} children=1
     └── Text scope=3:1..3:3 anchor=null attributes={} literal="bar" children=0
@@ -1117,7 +1117,7 @@ Foo *bar*
 ---------
 .
 Document scope=1:1..5:9 anchor=null attributes={} children=2
-├── Heading scope=1:1..3:0 anchor=null attributes={} level=1 children=2
+├── Heading scope=1:1..2:9 anchor=null attributes={} level=1 children=2
 │   ├── Text scope=1:1..1:4 anchor=null attributes={} literal="Foo " children=0
 │   └── Emphasis scope=1:5..1:9 anchor=null attributes={} children=1
 │       └── Text scope=1:6..1:8 anchor=null attributes={} literal="bar" children=0
@@ -1174,7 +1174,7 @@ Foo
 =
 .
 Document scope=1:1..5:1 anchor=null attributes={} children=2
-├── Heading scope=1:1..3:0 anchor=null attributes={} level=2 children=1
+├── Heading scope=1:1..2:25 anchor=null attributes={} level=2 children=1
 │   └── Text scope=1:1..1:3 anchor=null attributes={} literal="Foo" children=0
 └── Heading scope=4:1..5:1 anchor=null attributes={} level=1 children=1
     └── Text scope=4:1..4:3 anchor=null attributes={} literal="Foo" children=0
@@ -1195,9 +1195,9 @@ not line up with the underlining:
   ===
 .
 Document scope=1:1..8:5 anchor=null attributes={} children=3
-├── Heading scope=1:4..3:0 anchor=null attributes={} level=2 children=1
+├── Heading scope=1:4..2:3 anchor=null attributes={} level=2 children=1
 │   └── Text scope=1:4..1:6 anchor=null attributes={} literal="Foo" children=0
-├── Heading scope=4:3..6:0 anchor=null attributes={} level=2 children=1
+├── Heading scope=4:3..5:5 anchor=null attributes={} level=2 children=1
 │   └── Text scope=4:3..4:5 anchor=null attributes={} literal="Foo" children=0
 └── Heading scope=7:3..8:5 anchor=null attributes={} level=1 children=1
     └── Text scope=7:3..7:5 anchor=null attributes={} literal="Foo" children=0
@@ -1303,11 +1303,11 @@ indicators of inline structure, the following are setext headings:
 of dashes"/>
 .
 Document scope=1:1..7:12 anchor=null attributes={} children=4
-├── Heading scope=1:1..3:1 anchor=null attributes={} level=2 children=1
+├── Heading scope=1:1..2:4 anchor=null attributes={} level=2 children=1
 │   └── Text scope=1:1..1:4 anchor=null attributes={} literal="`Foo" children=0
 ├── Paragraph scope=3:1..3:1 anchor=null attributes={} children=1
 │   └── Text scope=3:1..3:1 anchor=null attributes={} literal="`" children=0
-├── Heading scope=5:1..7:12 anchor=null attributes={} level=2 children=1
+├── Heading scope=5:1..6:3 anchor=null attributes={} level=2 children=1
 │   └── Text scope=5:1..5:15 anchor=null attributes={} literal="<a title=\"a lot" children=0
 └── Paragraph scope=7:1..7:12 anchor=null attributes={} children=1
     └── Text scope=7:1..7:12 anchor=null attributes={} literal="of dashes\"/>" children=0
@@ -1388,7 +1388,7 @@ Baz
 .
 Document scope=1:1..6:3 anchor=null attributes={} children=2
 ├── Metadata scope=1:1..3:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
-├── Heading scope=4:1..6:3 anchor=null attributes={} level=2 children=1
+├── Heading scope=4:1..5:3 anchor=null attributes={} level=2 children=1
 │   └── Text scope=4:1..4:3 anchor=null attributes={} literal="Bar" children=0
 └── Paragraph scope=6:1..6:3 anchor=null attributes={} children=1
     └── Text scope=6:1..6:3 anchor=null attributes={} literal="Baz" children=0
@@ -1501,7 +1501,7 @@ baz
 Document scope=1:1..5:3 anchor=null attributes={} children=3
 ├── Paragraph scope=1:1..1:3 anchor=null attributes={} children=1
 │   └── Text scope=1:1..1:3 anchor=null attributes={} literal="Foo" children=0
-├── Heading scope=3:1..5:3 anchor=null attributes={} level=2 children=1
+├── Heading scope=3:1..4:3 anchor=null attributes={} level=2 children=1
 │   └── Text scope=3:1..3:3 anchor=null attributes={} literal="bar" children=0
 └── Paragraph scope=5:1..5:3 anchor=null attributes={} children=1
     └── Text scope=5:1..5:3 anchor=null attributes={} literal="baz" children=0
@@ -1720,7 +1720,7 @@ Document scope=1:1..6:4 anchor=null attributes={} children=5
 ├── Heading scope=1:1..1:9 anchor=null attributes={} level=1 children=1
 │   └── Text scope=1:3..1:9 anchor=null attributes={} literal="Heading" children=0
 ├── CodeBlock scope=2:5..2:7 anchor=null attributes={} info=null language=null literal="foo\n" fenced=false closed=true children=0
-├── Heading scope=3:1..5:7 anchor=null attributes={} level=2 children=1
+├── Heading scope=3:1..4:6 anchor=null attributes={} level=2 children=1
 │   └── Text scope=3:1..3:7 anchor=null attributes={} literal="Heading" children=0
 ├── CodeBlock scope=5:5..5:7 anchor=null attributes={} info=null language=null literal="foo\n" fenced=false closed=true children=0
 └── ThematicBreak scope=6:1..6:4 anchor=null attributes={} children=0
@@ -2096,7 +2096,7 @@ bar
 # baz
 .
 Document scope=1:1..6:5 anchor=null attributes={} children=3
-├── Heading scope=1:1..3:3 anchor=null attributes={} level=2 children=1
+├── Heading scope=1:1..2:3 anchor=null attributes={} level=2 children=1
 │   └── Text scope=1:1..1:3 anchor=null attributes={} literal="foo" children=0
 ├── CodeBlock scope=3:1..5:3 anchor=null attributes={} info=null language=null literal="bar\n" fenced=true closed=true children=0
 └── Heading scope=6:1..6:5 anchor=null attributes={} level=1 children=1
@@ -3314,7 +3314,7 @@ bar
 [foo]
 .
 Document scope=1:1..4:5 anchor=null attributes={} children=2
-├── Heading scope=2:1..4:5 anchor=null attributes={} level=1 children=1
+├── Heading scope=2:1..3:3 anchor=null attributes={} level=1 children=1
 │   └── Text scope=2:1..2:3 anchor=null attributes={} literal="bar" children=0
 └── Paragraph scope=4:1..4:5 anchor=null attributes={} children=1
     └── Link scope=4:1..4:5 anchor=null attributes={} dest=url("/url") title=null children=1
@@ -5234,7 +5234,7 @@ Document scope=1:1..4:5 anchor=null attributes={} children=1
     │   └── Heading scope=1:3..1:7 anchor=null attributes={} level=1 children=1
     │       └── Text scope=1:5..1:7 anchor=null attributes={} literal="Foo" children=0
     └── ListItem scope=2:1..4:5 anchor=null attributes={} marker=null children=2
-        ├── Heading scope=2:3..4:5 anchor=null attributes={} level=2 children=1
+        ├── Heading scope=2:3..3:5 anchor=null attributes={} level=2 children=1
         │   └── Text scope=2:3..2:5 anchor=null attributes={} literal="Bar" children=0
         └── Paragraph scope=4:3..4:5 anchor=null attributes={} children=1
             └── Text scope=4:3..4:5 anchor=null attributes={} literal="baz" children=0

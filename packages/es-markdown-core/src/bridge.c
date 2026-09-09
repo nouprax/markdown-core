@@ -14,7 +14,7 @@
  * another Wasm call, a native object handle, or recursion in the decoder.
  */
 
-enum { ES_HEADER_SIZE = 64, ES_NODE_SIZE = 136, ES_ATTRIBUTE_SIZE = 16, ES_COLUMN_SIZE = 16 };
+enum { ES_HEADER_SIZE = 64, ES_NODE_SIZE = 160, ES_ATTRIBUTE_SIZE = 16, ES_COLUMN_SIZE = 16 };
 static const uint32_t ES_NO_INDEX = UINT32_MAX;
 
 enum es_header_offset {
@@ -54,7 +54,8 @@ enum es_node_offset {
     ES_NODE_RECORDS_START = 112,
     ES_NODE_RECORDS_COUNT = 116,
     ES_NODE_METADATA = 120,
-    ES_NODE_DIMENSIONS = 124
+    ES_NODE_DIMENSIONS = 124,
+    ES_NODE_INHERITED_ATTRIBUTES = 132
 };
 
 /* The wire kinds of the scoped values (M4), above the node-kind space
@@ -67,6 +68,11 @@ enum {
     ES_KIND_METADATA_VALUE = 0x104
 };
 
+typedef struct es_source_attributes {
+    markdown_core_optional_string anchor;
+    uint32_t class_start, class_count, record_start, record_count;
+} es_source_attributes;
+
 typedef struct es_source_node {
     /* A node record names its node; a value record names its handle instead
      * and leaves `node` NULL (M4). */
@@ -76,8 +82,8 @@ typedef struct es_source_node {
     const markdown_core_specimen *specimen;
     const markdown_core_metadata *metadata;
     const markdown_core_metadata_value *metadata_value;
-    markdown_core_optional_string anchor;
-    uint32_t class_start, class_count, record_start, record_count, metadata_index;
+    es_source_attributes attributes, inherited_attributes;
+    uint32_t metadata_index;
     struct {
         uint32_t width, height;
     } dimensions;
@@ -655,6 +661,38 @@ static void collect_value_fields(es_build *build, es_source_node *record) {
     count_string(build, record->strings[0]);
 }
 
+static void collect_attributes(es_build *build, es_source_attributes *record,
+                               const markdown_core_attribute_value *attributes) {
+    record->anchor = markdown_core_attribute_value_anchor(attributes);
+    count_string(build, record->anchor);
+    size_t classes = markdown_core_attribute_value_class_count(attributes),
+           records = markdown_core_attribute_value_record_count(attributes);
+    if (classes > UINT32_MAX || records > UINT32_MAX) {
+        build->failure = ES_BUILD_ALLOCATION;
+        return;
+    }
+    record->class_start = (uint32_t)build->attribute_count;
+    record->class_count = (uint32_t)classes;
+    for (size_t i = 0; i < classes; i++) {
+        markdown_core_string value;
+        if (!markdown_core_attribute_value_class_at(attributes, i, &value)) {
+            build->failure = ES_BUILD_INTERNAL;
+            return;
+        }
+        append_attribute(build, (markdown_core_string){NULL, 0}, value);
+    }
+    record->record_start = (uint32_t)build->attribute_count;
+    record->record_count = (uint32_t)records;
+    for (size_t i = 0; i < records; i++) {
+        markdown_core_string name, value;
+        if (!markdown_core_attribute_value_record_at(attributes, i, &name, &value)) {
+            build->failure = ES_BUILD_INTERNAL;
+            return;
+        }
+        append_attribute(build, name, value);
+    }
+}
+
 static void collect_node_fields(es_build *build, size_t node_index) {
     es_source_node *record = &build->nodes[node_index];
     const markdown_core_node *node = record->node;
@@ -669,34 +707,7 @@ static void collect_node_fields(es_build *build, size_t node_index) {
         collect_value_fields(build, record);
         return;
     }
-    record->anchor = markdown_core_node_anchor(node);
-    count_string(build, record->anchor);
-    size_t classes = markdown_core_node_attribute_class_count(node),
-           records = markdown_core_node_attribute_record_count(node);
-    if (classes > UINT32_MAX || records > UINT32_MAX) {
-        build->failure = ES_BUILD_ALLOCATION;
-        return;
-    }
-    record->class_start = (uint32_t)build->attribute_count;
-    record->class_count = (uint32_t)classes;
-    for (size_t i = 0; i < classes; i++) {
-        markdown_core_string value;
-        if (!markdown_core_node_attribute_class_at(node, i, &value)) {
-            build->failure = ES_BUILD_INTERNAL;
-            return;
-        }
-        append_attribute(build, (markdown_core_string){NULL, 0}, value);
-    }
-    record->record_start = (uint32_t)build->attribute_count;
-    record->record_count = (uint32_t)records;
-    for (size_t i = 0; i < records; i++) {
-        markdown_core_string name, value;
-        if (!markdown_core_node_attribute_record_at(node, i, &name, &value)) {
-            build->failure = ES_BUILD_INTERNAL;
-            return;
-        }
-        append_attribute(build, name, value);
-    }
+    collect_attributes(build, &record->attributes, markdown_core_node_primary_attributes(node));
     const markdown_core_dimensions *dimensions = markdown_core_node_dimensions(node);
     if (dimensions) {
         if (dimensions->width < 1 ||
@@ -883,6 +894,7 @@ static void collect_node_fields(es_build *build, size_t node_index) {
             record->scalar0 = build->nodes[first].scalar0;
             break;
         }
+        collect_attributes(build, &record->inherited_attributes, markdown_core_node_inherited_attributes(node));
         if (!markdown_core_node_destination(node, &destination) || !markdown_core_node_title(node, &optional_first)) {
             build->failure = ES_BUILD_INTERNAL;
             break;
@@ -1044,14 +1056,23 @@ static uint8_t *success_result(const es_build *build, es_build_failure *failure)
         put_i32(output, node_offset + ES_NODE_SCALAR0, source->scalar0);
         put_i64(output, node_offset + ES_NODE_INTEGER2, source->integer2);
         put_i64(output, node_offset + ES_NODE_I64, source->integer);
-        write_string_reference(output, node_offset + ES_NODE_ANCHOR, source->anchor, &string_cursor);
-        put_u32(output, node_offset + ES_NODE_CLASSES_START, source->class_start);
-        put_u32(output, node_offset + ES_NODE_CLASSES_COUNT, source->class_count);
-        put_u32(output, node_offset + ES_NODE_RECORDS_START, source->record_start);
-        put_u32(output, node_offset + ES_NODE_RECORDS_COUNT, source->record_count);
+        write_string_reference(output, node_offset + ES_NODE_ANCHOR, source->attributes.anchor, &string_cursor);
+        put_u32(output, node_offset + ES_NODE_CLASSES_START, source->attributes.class_start);
+        put_u32(output, node_offset + ES_NODE_CLASSES_COUNT, source->attributes.class_count);
+        put_u32(output, node_offset + ES_NODE_RECORDS_START, source->attributes.record_start);
+        put_u32(output, node_offset + ES_NODE_RECORDS_COUNT, source->attributes.record_count);
         put_u32(output, node_offset + ES_NODE_METADATA, source->metadata_index);
         put_u32(output, node_offset + ES_NODE_DIMENSIONS, source->dimensions.width);
         put_u32(output, node_offset + ES_NODE_DIMENSIONS + 4, source->dimensions.height);
+        if (source->resource_first == index) {
+            size_t at = node_offset + ES_NODE_INHERITED_ATTRIBUTES;
+            const es_source_attributes *attributes = &source->inherited_attributes;
+            write_string_reference(output, at, attributes->anchor, &string_cursor);
+            put_u32(output, at + 8, attributes->class_start);
+            put_u32(output, at + 12, attributes->class_count);
+            put_u32(output, at + 16, attributes->record_start);
+            put_u32(output, at + 20, attributes->record_count);
+        }
         if (source->resource_first != ES_NO_INDEX && source->resource_first != index) {
             /* A later occurrence of a resource: its destination and title
              * were written with the first occurrence, so the record points

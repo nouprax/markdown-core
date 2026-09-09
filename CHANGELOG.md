@@ -6,6 +6,14 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
+- Attach normalized attributes to inline code, ATX/Setext headings, fenced code,
+  links and media. Reference occurrences inherit definition attributes while
+  retaining local anchors, duplicate declarations, typed dimensions and exact
+  source scopes. Keep each binding's native collection and ownership model;
+  encode and decode inherited definition values once. Fix Setext heading ends
+  to stop at the underline. Add the pinned Pandoc 3.11 oracle gate and exact
+  evidence for the dialect's deliberate attribute-merge difference.
+
 - Add always-on `++inserted text++` as `Insertion(content)` across C, Swift, Kotlin,
   and ES, including typed visitors, JNI/Wasm transports and canonical dumps.
   Pin the insertion oracle and replay upstream, composition, source-scope,

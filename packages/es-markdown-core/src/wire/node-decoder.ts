@@ -31,7 +31,7 @@ import { kinds, type NativeKind } from "./kinds.js";
 
 const magic = [0x4d, 0x43, 0x42, 0x31] as const;
 export const transferHeaderSize = 64;
-const nodeSize = 136;
+const nodeSize = 160;
 const attributeSize = 16;
 const columnSize = 16;
 const noIndex = 0xffff_ffff;
@@ -90,7 +90,8 @@ const nodeField = {
     recordsStart: 112,
     recordsCount: 116,
     metadata: 120,
-    dimensions: 124
+    dimensions: 124,
+    inheritedAttributes: 132
 } as const;
 
 type MarkupValue = Markup extends infer Node ? (Node extends Markup ? Omit<Node, "dump"> : never) : never;
@@ -110,10 +111,12 @@ interface ResultLayout {
     readonly stringsLength: number;
 }
 
-/** A destination and title materialized once and shared by every occurrence. */
+/** Definition values decoded once into ordinary immutable JavaScript values. */
 interface Resource {
     readonly dest: Destination;
     readonly title: string | null;
+    readonly anchor: string | null;
+    readonly attributes: Attributes;
 }
 
 interface NodeRecord {
@@ -743,7 +746,18 @@ export class NodeDecoder {
         }
         let resource = this.resources.get(first);
         if (resource === undefined) {
-            resource = { dest: this.destination(record), title: this.string(record, 2) };
+            const definition = this.readRecord(first);
+            if ((definition.kind !== "link" && definition.kind !== "media") || definition.integer !== BigInt(first))
+                throw new Error("invalid definition resource");
+            const offset = definition.offset + nodeField.inheritedAttributes;
+            const anchor = this.stringAt(offset);
+            if (anchor === "") throw new Error("empty normalized anchor");
+            resource = {
+                dest: this.destination(definition),
+                title: this.string(definition, 2),
+                anchor,
+                attributes: this.attributes(offset)
+            };
             this.resources.set(first, resource);
         }
         return resource;
@@ -805,34 +819,41 @@ export class NodeDecoder {
         record: NodeRecord,
         kind: Kind = record.kind as Kind
     ): Omit<MarkupBase<Kind>, "dump"> {
-        return {
-            kind,
-            scope: record.scope,
-            anchor: this.stringAt(record.offset + nodeField.anchor),
-            attributes: this.attributes(record)
-        };
+        const primaryAnchor = this.stringAt(record.offset + nodeField.anchor);
+        const primary = this.attributes(record.offset + nodeField.anchor);
+        if (kind !== "link" && kind !== "media")
+            return { kind, scope: record.scope, anchor: primaryAnchor, attributes: primary };
+        const inherited = this.resource(record);
+        // Keep ordinary JS arrays. Definition-only occurrences reuse the native
+        // immutable values; a local sequence creates its own merged array.
+        const attributes = Object.freeze({
+            classes: primary.classes.length
+                ? Object.freeze([...inherited.attributes.classes, ...primary.classes])
+                : inherited.attributes.classes,
+            records: primary.records.length
+                ? Object.freeze([...inherited.attributes.records, ...primary.records])
+                : inherited.attributes.records
+        });
+        return { kind, scope: record.scope, anchor: primaryAnchor ?? inherited.anchor, attributes };
     }
 
-    private attributes(record: NodeRecord): Attributes {
-        const classes = this.attributeRange(
-            this.uint(record.offset + nodeField.classesStart),
-            this.uint(record.offset + nodeField.classesCount)
-        );
+    private attributes(offset: number): Attributes {
+        const classes = this.attributeRange(this.uint(offset + 8), this.uint(offset + 12));
         if (classes.some((value) => value.name !== "" || value.value.length === 0))
             throw new Error("class has a record name");
-        const records = this.attributeRange(
-            this.uint(record.offset + nodeField.recordsStart),
-            this.uint(record.offset + nodeField.recordsCount)
-        );
+        const records = this.attributeRange(this.uint(offset + 16), this.uint(offset + 20));
         if (records.some((value) => value.name === "id" || value.name === "class" || value.name.length === 0))
             throw new Error("invalid normalized attribute record");
-        return { classes: classes.map((value) => value.value), records };
+        return Object.freeze({
+            classes: Object.freeze(classes.map((value) => value.value)),
+            records: Object.freeze(records)
+        });
     }
     private attributeRange(start: number, count: number): readonly { readonly name: string; readonly value: string }[] {
         this.range(start, count, this.layout.attributeCount, "attribute range");
         return Array.from({ length: count }, (_, index) => {
             const offset = this.layout.attributesOffset + (start + index) * attributeSize;
-            return { name: this.requiredStringAt(offset), value: this.requiredStringAt(offset + 8) };
+            return Object.freeze({ name: this.requiredStringAt(offset), value: this.requiredStringAt(offset + 8) });
         });
     }
     private dimensions(record: NodeRecord): Dimensions | null {

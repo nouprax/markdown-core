@@ -433,10 +433,10 @@ static void write_citation(jni_payload_buffer *buffer, jni_payload_stack *stack,
     schedule_chain(buffer, stack, markdown_core_citation_prefix(action.citation));
 }
 
-static void write_attributes(jni_payload_buffer *buffer, const markdown_core_node *node) {
-    put_optional_string(buffer, markdown_core_node_anchor(node));
-    size_t classes = markdown_core_node_attribute_class_count(node),
-           records = markdown_core_node_attribute_record_count(node);
+static void write_attributes(jni_payload_buffer *buffer, const markdown_core_attribute_value *attributes) {
+    put_optional_string(buffer, markdown_core_attribute_value_anchor(attributes));
+    size_t classes = markdown_core_attribute_value_class_count(attributes),
+           records = markdown_core_attribute_value_record_count(attributes);
     if (classes > INT32_MAX || records > INT32_MAX) {
         buffer->failure = JNI_PAYLOAD_ALLOCATION;
         return;
@@ -444,7 +444,7 @@ static void write_attributes(jni_payload_buffer *buffer, const markdown_core_nod
     put_i32(buffer, (int32_t)classes);
     for (size_t i = 0; i < classes; i++) {
         markdown_core_string value;
-        if (!markdown_core_node_attribute_class_at(node, i, &value)) {
+        if (!markdown_core_attribute_value_class_at(attributes, i, &value)) {
             buffer->failure = JNI_PAYLOAD_INTERNAL;
             return;
         }
@@ -453,7 +453,7 @@ static void write_attributes(jni_payload_buffer *buffer, const markdown_core_nod
     put_i32(buffer, (int32_t)records);
     for (size_t i = 0; i < records; i++) {
         markdown_core_string name, value;
-        if (!markdown_core_node_attribute_record_at(node, i, &name, &value)) {
+        if (!markdown_core_attribute_value_record_at(attributes, i, &name, &value)) {
             buffer->failure = JNI_PAYLOAD_INTERNAL;
             return;
         }
@@ -557,7 +557,7 @@ static void write_node(jni_payload_buffer *buffer, jni_payload_stack *stack, jni
 
     put_u8(buffer, (uint8_t)kind);
     put_scope(buffer, markdown_core_node_scope(node));
-    write_attributes(buffer, node);
+    write_attributes(buffer, markdown_core_node_primary_attributes(node));
     if (buffer->failure != JNI_PAYLOAD_OK) {
         return;
     }
@@ -815,6 +815,7 @@ static void write_node(jni_payload_buffer *buffer, jni_payload_stack *stack, jni
                 return;
             }
             put_optional_string(buffer, optional_first);
+            write_attributes(buffer, markdown_core_node_inherited_attributes(node));
         }
         if (kind == MARKDOWN_CORE_KIND_MEDIA) {
             put_dimensions(buffer, markdown_core_node_dimensions(node));

@@ -118,6 +118,7 @@ struct markdown_core_parser {
     size_t block_identifier_work;
     size_t callout_scan_work;
     /* Ordinary image-label bytes and bounded dimension work for Media and embeds. */
+    size_t attribute_work;
     size_t dimension_work;
     /* THE SOURCE AFTER THE LINE BEING PROCESSED. `S_parse_source` sets the
      * cursor to the first byte of the next raw line before it hands each line

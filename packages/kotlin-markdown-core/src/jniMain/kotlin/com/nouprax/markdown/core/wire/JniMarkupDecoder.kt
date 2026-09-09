@@ -149,7 +149,18 @@ private class JniTreeDecoder(
 
             JniNodeKind.LINK -> {
                 val resource = resource()
-                readChildren { consume(Link(resource.first, resource.second, it, scope, anchor, attributes)) }
+                readChildren {
+                    consume(
+                        Link(
+                            resource.dest,
+                            resource.title,
+                            it,
+                            scope,
+                            anchor ?: resource.anchor,
+                            attributes.inheriting(resource.attributes),
+                        ),
+                    )
+                }
             }
 
             JniNodeKind.MEDIA -> {
@@ -157,7 +168,15 @@ private class JniTreeDecoder(
                 val dimensions = dimensions()
                 readChildren {
                     consume(
-                        Media(resource.first, resource.second, dimensions, it, scope, anchor, attributes),
+                        Media(
+                            resource.dest,
+                            resource.title,
+                            dimensions,
+                            it,
+                            scope,
+                            anchor ?: resource.anchor,
+                            attributes.inheriting(resource.attributes),
+                        ),
                     )
                 }
             }
@@ -563,13 +582,13 @@ private class JniTreeDecoder(
      * destination referenced many times crosses the boundary once and is
      * materialized once.
      */
-    private val resources = ArrayList<Pair<Destination, String?>>()
+    private val resources = ArrayList<DefinitionResource>()
 
-    private fun resource(): Pair<Destination, String?> {
+    private fun resource(): DefinitionResource {
         val ordinal = reader.int()
         if (ordinal in resources.indices) return resources[ordinal]
         require(ordinal == resources.size) { "JNI payload names an unknown resource $ordinal" }
-        val resource = destination() to reader.string()
+        val resource = DefinitionResource(destination(), reader.string(), reader.string(), attributes())
         resources += resource
         return resource
     }

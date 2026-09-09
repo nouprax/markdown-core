@@ -351,8 +351,8 @@ static void check_callout_inherited_setext_scope(void) {
     const markdown_core_node *heading = markdown_core_node_get_first_child(callout);
     markdown_core_scope scope = markdown_core_node_scope(heading);
     check(markdown_core_node_get_kind(heading) == MARKDOWN_CORE_KIND_HEADING && scope.start.line == 2 &&
-              scope.start.column == 3 && scope.end.line == 4 && scope.end.column == 0,
-          "metadata preserves the inherited Setext end boundary before a following blank line");
+              scope.start.column == 3 && scope.end.line == 3 && scope.end.column == 5,
+          "callout Setext scope ends on the underline before a following blank line");
     markdown_core_document_free(document);
 }
 

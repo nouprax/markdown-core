@@ -720,7 +720,7 @@ Document scope=1:1..3:4 anchor=null attributes={} children=2
 Document scope=1:1..7:5 anchor=null attributes={} children=3
 ├── Callout scope=1:1..3:5 anchor=null attributes={} variant=null collapsed=null children=2
 │   ├── ThematicBreak scope=1:3..1:5 anchor=null attributes={} children=0
-│   └── Heading scope=2:3..4:0 anchor=null attributes={} level=2 children=1
+│   └── Heading scope=2:3..3:5 anchor=null attributes={} level=2 children=1
 │       └── Text scope=2:3..2:6 anchor=null attributes={} literal="a: 1" children=0
 ├── ThematicBreak scope=5:1..5:5 anchor=null attributes={} children=0
 └── Heading scope=6:3..7:5 anchor=null attributes={} level=2 children=1

@@ -80,6 +80,9 @@ struct markdown_core_resource {
     /* OPTIONAL (requirement 14): `[a](/u)` wrote no title and `[a](/u "")`
      * wrote an empty one. */
     markdown_core_optional_chunk title;
+    /* Definition metadata is immutable and owned by the same resource. Each
+     * occurrence holds only its own normalized attributes on the node. */
+    markdown_core_attributes attributes;
     size_t holders;
 };
 #ifndef MARKDOWN_CORE_RESOURCE_TYPEDEF

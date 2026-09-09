@@ -10,7 +10,7 @@ typedef struct {
 
 /* One normalized value. Empty anchor bytes mean no anchor. The vectors retain
  * every occurrence; capacity is private construction state, never semantics. */
-typedef struct {
+typedef struct markdown_core_attribute_value {
     markdown_core_chunk anchor;
     markdown_core_chunk *classes;
     size_t class_count, class_capacity;
@@ -35,6 +35,12 @@ typedef struct {
 
 void markdown_core_attributes_free(markdown_core_mem *mem, markdown_core_attributes *value);
 void markdown_core_attribute_parser_free(markdown_core_attribute_parser *parser);
+/* Recognition only: no values are decoded until the owner commits. Zero
+ * denotes a malformed candidate. The index is shared for the whole extent. */
+bufsize_t markdown_core_attributes_end(markdown_core_attribute_parser *parser, bufsize_t start);
+/* First complete container ending at `end`, outside escaped punctuation.
+ * The caller selects the permitted line/extent. Returns -1 on failure. */
+bufsize_t markdown_core_attributes_tail(markdown_core_attribute_parser *parser, bufsize_t start, bufsize_t end);
 /* The caller supplies an empty result. Success transfers its allocations and
  * advances end; failure leaves both outputs untouched. Allocation failure is
  * sticky in parser->oom and never becomes a grammar fallback. */

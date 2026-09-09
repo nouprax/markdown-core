@@ -37,13 +37,29 @@ fragment-only target such as `#section` remains a URL-branch reference to the
 declaration-side `Markup.anchor`; the projection does not copy that value into
 the reference node's own anchor field.
 
-The corpus contains inputs and runner options only. It contains no Markdown
-Core expected AST and no stored Pandoc output. The planned parity gate will run
-both parsers, project their semantic trees, and register every current product
-gap fail-closed as described by the
-[implementation plan](../../../docs/plans/2026-09-03-pandoc-markdown-extensions.md).
-Until that gate lands, this directory freezes the oracle source and initial
-corpus but does not claim executable product parity.
+The corpus contains inputs and exact reader strings only. Install its pinned
+host executable explicitly with `scripts/init-environment.sh --install oracle-pandoc`;
+`--check oracle-pandoc` verifies it without downloads. `pnpm check:pandoc-parity`
+runs CLI canaries, both parsers and the fail-closed digest registry. Normal
+builds and tests never install the executable or access the network.
+
+The active corpus has five agreements, one documented attribute-merge
+divergence and nineteen missing-feature gaps assigned to later landing items.
+Every difference pins input/reader, oracle projection and product projection
+SHA-256 digests. New, changed, stale, duplicate and unknown entries fail.
+`inline-code-attributes`, `header-attributes`, `fenced-code-attributes` and
+`link-and-image-attributes` agree; `pandoc-reference-attribute-merge` remains an
+exact deliberate difference, with an executable `combineAttr` canary.
+
+Representation projections are shared by concept, not selected by case:
+`Plain` uses paragraph content, Pandoc spaces join adjacent Text values, empty
+link titles project to absent, and CodeBlock compares Pandoc's language/class
+sequence to the authored language followed by Markdown Core classes. Pandoc
+cannot distinguish a language token from an attribute class or preserve a
+complete info string, so product fixtures separately verify that distinction.
+Pandoc omits one terminal code-block newline; the comparison removes that same
+newline from the product. Neither projection changes attributes on other kinds.
+Product source ranges remain owned by the canonical and package fixtures.
 
 The comparison must use `--to=json` without citeproc, filters, defaults files,
 templates, metadata files, bibliography lookup, or network access. A semantic
@@ -53,3 +69,7 @@ attribute, citation, list, heading, or table difference. Product scopes remain
 owned by Markdown Core fixtures because Pandoc JSON does not expose compatible
 source ranges. Attribute cases compare all three projected components and
 their order; the records sequence may not collapse into a unique-key map.
+
+Table comparison retains column alignment and width, row groups, cell spans and
+cell content. Pandoc-only cell alignment is outside the canonical intersection.
+Ordered-list variants and delimiters map to the canonical value spelling.

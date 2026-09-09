@@ -732,6 +732,22 @@
                 "states": ["scope.positive", "children.empty", "children.populated"],
                 "orders": ["inline.source-order", "document.source-order"]
             }
+        },
+        {
+            "name": "attribute-sites",
+            "input": "attribute-sites.md",
+            "expected": "attribute-sites.ast",
+            "coverage": {
+                "kinds": ["Document", "Heading", "CodeBlock", "Paragraph", "Code", "Link", "Media", "Text"],
+                "states": [
+                    "markup.anchor.value",
+                    "markup.attributes.classes",
+                    "markup.attributes.records",
+                    "scope.positive",
+                    "media.dimensions.width-height"
+                ],
+                "orders": ["document.source-order", "inline.source-order"]
+            }
         }
     ]
 }

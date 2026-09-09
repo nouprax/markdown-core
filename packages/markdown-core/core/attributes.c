@@ -227,21 +227,40 @@ static bufsize_t scan_name(markdown_core_attribute_parser *p, bufsize_t n, bufsi
     return at;
 }
 
-int markdown_core_attributes_parse(markdown_core_attribute_parser *p, bufsize_t start, markdown_core_attributes *result,
-                                   bufsize_t *end) {
-    const unsigned char *s = p->data;
+bufsize_t markdown_core_attributes_end(markdown_core_attribute_parser *p, bufsize_t start) {
     p->work++;
     if (p->oom) {
         return 0;
     }
-    if (start < 0 || start >= p->length || s[start] != '{') {
+    if (start < 0 || start >= p->length || p->data[start] != '{') {
         return 0;
     }
     if (!p->ends && !index_input(p)) {
         p->oom = 1;
         return 0;
     }
-    bufsize_t finish = suffix(p, start + 1);
+    return suffix(p, start + 1);
+}
+
+bufsize_t markdown_core_attributes_tail(markdown_core_attribute_parser *p, bufsize_t start, bufsize_t end) {
+    if (end <= start || p->data[end - 1] != '}') {
+        return -1;
+    }
+    for (bufsize_t at = start; at < end; at++) {
+        p->work++;
+        if (escaped(p->data, end, at)) {
+            at++;
+        } else if (p->data[at] == '{' && markdown_core_attributes_end(p, at) == end) {
+            return at;
+        }
+    }
+    return -1;
+}
+
+int markdown_core_attributes_parse(markdown_core_attribute_parser *p, bufsize_t start, markdown_core_attributes *result,
+                                   bufsize_t *end) {
+    const unsigned char *s = p->data;
+    bufsize_t finish = markdown_core_attributes_end(p, start);
     if (!finish) {
         return 0;
     }

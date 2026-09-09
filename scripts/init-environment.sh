@@ -40,7 +40,7 @@ Usage: scripts/init-environment.sh --check [component ...]
        scripts/init-environment.sh --install [component ...]
 
 Components: core node java wrappers android android-emulator swift emscripten
-            oracle-cmark oracle-cmark-gfm dependencies tools
+            oracle-cmark oracle-cmark-gfm oracle-pandoc dependencies tools
 
 With no components, the command checks or installs the complete environment
 supported by the current host. --check never installs or downloads anything.
@@ -72,7 +72,7 @@ fi
 
 for component do
     case "$component" in
-        core | node | java | wrappers | android | android-emulator | swift | emscripten | oracle-cmark | oracle-cmark-gfm | dependencies | tools) ;;
+        core | node | java | wrappers | android | android-emulator | swift | emscripten | oracle-cmark | oracle-cmark-gfm | oracle-pandoc | dependencies | tools) ;;
         *)
             echo "Unknown environment component: $component" >&2
             usage >&2
@@ -585,6 +585,7 @@ if [ "$mode" = --install ]; then
     has_component android-emulator "$@" && install_android_emulator
     has_component swift "$@" && check_swift
     has_component emscripten "$@" && install_emscripten
+    has_component oracle-pandoc "$@" && node scripts/install-pandoc-oracle.mjs --install
     has_component oracle-cmark "$@" && install_oracle_cmark
     has_component oracle-cmark-gfm "$@" && install_oracle_cmark_gfm
     has_component dependencies "$@" \
@@ -602,6 +603,7 @@ has_component android "$@" && check_android
 has_component android-emulator "$@" && check_android_emulator
 has_component swift "$@" && check_swift
 has_component emscripten "$@" && check_emscripten
+has_component oracle-pandoc "$@" && { node scripts/install-pandoc-oracle.mjs --check || fail "Pandoc oracle check failed"; }
 has_component oracle-cmark "$@" && check_oracle_cmark
 has_component oracle-cmark-gfm "$@" && check_oracle_cmark_gfm
 has_component dependencies "$@" && check_dependencies

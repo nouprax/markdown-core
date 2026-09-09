@@ -846,6 +846,7 @@ void markdown_core_resource_release(markdown_core_mem *mem, markdown_core_resour
     }
     markdown_core_chunk_free(mem, &resource->url);
     markdown_core_optional_chunk_free(mem, &resource->title);
+    markdown_core_attributes_free(mem, &resource->attributes);
     mem->free(resource);
 }
 

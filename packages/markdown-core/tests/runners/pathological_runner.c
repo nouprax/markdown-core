@@ -761,6 +761,21 @@ static int pc_payload_seen(pc_reference_payload *total, const void *identity) {
     }
 }
 
+static size_t pc_attribute_bytes(const markdown_core_attribute_value *attributes) {
+    size_t bytes = markdown_core_attribute_value_anchor(attributes).value.length;
+    for (size_t i = 0; i < markdown_core_attribute_value_class_count(attributes); i++) {
+        markdown_core_string value;
+        markdown_core_attribute_value_class_at(attributes, i, &value);
+        bytes += value.length;
+    }
+    for (size_t i = 0; i < markdown_core_attribute_value_record_count(attributes); i++) {
+        markdown_core_string name, value;
+        markdown_core_attribute_value_record_at(attributes, i, &name, &value);
+        bytes += name.length + value.length;
+    }
+    return bytes;
+}
+
 static int pc_reference_payload_visit(const markdown_core_node *node, void *context) {
     pc_reference_payload *total = (pc_reference_payload *)context;
     markdown_core_optional_string title;
@@ -768,6 +783,7 @@ static int pc_reference_payload_visit(const markdown_core_node *node, void *cont
     const markdown_core_resource *identity = markdown_core_node_resource(node);
     if (identity) {
         total->occurrences++;
+        total->bytes += pc_attribute_bytes(markdown_core_node_primary_attributes(node));
         if (total->distinct * 2 >= total->capacity) {
             fprintf(stderr, "more distinct resources than the case can record\n");
             return -1;
@@ -775,6 +791,7 @@ static int pc_reference_payload_visit(const markdown_core_node *node, void *cont
         if (pc_payload_seen(total, identity)) {
             return 0;
         }
+        total->bytes += pc_attribute_bytes(markdown_core_node_inherited_attributes(node));
         if (!markdown_core_node_destination(node, &dest) || !markdown_core_node_title(node, &title)) {
             return -1;
         }
@@ -800,7 +817,7 @@ static int case_reference_expansion_bound(pc_context *context) {
      * stored once however often it is named, so the payload never exceeds
      * the source. */
     static const double MAX_PAYLOAD_RATIO = 1.0;
-    size_t capacity = DESTINATION_LENGTH + 32 + REFERENCE_COUNT * 8;
+    size_t capacity = DESTINATION_LENGTH * 8 + 128 + REFERENCE_COUNT * 24;
     size_t written = 0;
     size_t index;
     pc_reference_payload total = {0};
@@ -814,9 +831,19 @@ static int case_reference_expansion_bound(pc_context *context) {
     written += (size_t)snprintf(context->input + written, capacity - written, "[a]: /");
     memset(context->input + written, 'u', DESTINATION_LENGTH);
     written += DESTINATION_LENGTH;
-    written += (size_t)snprintf(context->input + written, capacity - written, "\n\n");
+    written += (size_t)snprintf(context->input + written, capacity - written, " {#");
+    memset(context->input + written, 'a', DESTINATION_LENGTH);
+    written += DESTINATION_LENGTH;
+    for (index = 0; index < DESTINATION_LENGTH; index++) {
+        written += (size_t)snprintf(context->input + written, capacity - written, " .c");
+    }
+    written += (size_t)snprintf(context->input + written, capacity - written, " k=");
+    memset(context->input + written, 'v', DESTINATION_LENGTH);
+    written += DESTINATION_LENGTH;
+    written += (size_t)snprintf(context->input + written, capacity - written, "}\n\n");
     for (index = 0; index < REFERENCE_COUNT; index++) {
-        written += (size_t)snprintf(context->input + written, capacity - written, "[a]\n\n");
+        written += (size_t)snprintf(context->input + written, capacity - written,
+                                    index % 2 ? "[a][]{.local k=2}\n\n" : "[a]\n\n");
     }
     context->input_length = written;
 

@@ -367,3 +367,11 @@ attestation, and post-publication verification. Release notes start from
 
 Markdown Core preserves all applicable upstream copyright and license notices.
 See [LICENSE](LICENSE), [COPYING](COPYING), and [UPSTREAM.md](UPSTREAM.md).
+
+Attributes attach to inline code (``x`{.code}`), ATX and Setext headings,
+fenced code, direct links/media, resolved references and angle autolinks.
+Reference definitions can supply an anchor, classes and records. An occurrence's
+nonempty anchor wins; its classes and records follow inherited declarations,
+including duplicates. Image dimension suffixes and dimension attribute records
+remain independent. All returned values use the binding's native collections
+and remain usable after parsing finishes.

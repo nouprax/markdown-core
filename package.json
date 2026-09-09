@@ -35,7 +35,7 @@
         "check:kotlin-consumers": "scripts/check-kotlin-consumers.sh",
         "check:mdast-parity": "node scripts/check-mdast-parity.mjs",
         "check:obsidian-parity": "node scripts/check-obsidian-parity.mjs",
-        "check:oracle-parity": "pnpm run check:commonmark-parity && pnpm run check:gfm-parity && pnpm run check:mdast-parity && pnpm run check:obsidian-parity && pnpm run check:ins-parity",
+        "check:oracle-parity": "pnpm run check:commonmark-parity && pnpm run check:gfm-parity && pnpm run check:mdast-parity && pnpm run check:obsidian-parity && pnpm run check:ins-parity && pnpm run check:pandoc-parity",
         "clean:kotlin-android-emulator": "scripts/gradle.sh :packages:kotlin-markdown-core:cleanManagedDevices",
         "conformance:c-host": "cmake --preset default && cmake --build --preset default --parallel && ctest --preset conformance",
         "conformance:es-node": "pnpm --dir packages/es-markdown-core run conformance",
@@ -76,7 +76,8 @@
         "test:kotlin-macos-arm64": "scripts/gradle.sh :packages:kotlin-markdown-core:macosArm64Test",
         "test:swift-ios-simulator": "scripts/run-swift-ios-tests.sh MarkdownCoreTests",
         "test:swift-macos": "CLANG_MODULE_CACHE_PATH=build/swift-module-cache swift test --disable-sandbox --filter '^MarkdownCoreTests\\.' && CLANG_MODULE_CACHE_PATH=build/swift-module-cache swift test --disable-sandbox --package-path packages/swift-markdown-core/Tests/Consumer",
-        "verify": "pnpm run format:check && pnpm run lint && pnpm run check:contracts && pnpm run check:gradle-model && pnpm run release:check-version && pnpm run audit:repository && pnpm run audit:ci && pnpm run audit:tests && pnpm run audit:surface && pnpm run check:extension-inventory && pnpm run audit:extension-special-chars && pnpm run audit:extension-attach-order && pnpm run audit:source-lists && pnpm run audit:ast-projections && pnpm run audit:packages"
+        "verify": "pnpm run format:check && pnpm run lint && pnpm run check:contracts && pnpm run check:gradle-model && pnpm run release:check-version && pnpm run audit:repository && pnpm run audit:ci && pnpm run audit:tests && pnpm run audit:surface && pnpm run check:extension-inventory && pnpm run audit:extension-special-chars && pnpm run audit:extension-attach-order && pnpm run audit:source-lists && pnpm run audit:ast-projections && pnpm run audit:packages",
+        "check:pandoc-parity": "node --test scripts/tests/pandoc-oracle.test.mjs && node scripts/check-pandoc-parity.mjs"
     },
     "devDependencies": {
         "@eslint/js": "10.0.1",
