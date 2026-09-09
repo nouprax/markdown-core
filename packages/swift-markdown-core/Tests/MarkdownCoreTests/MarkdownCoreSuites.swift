@@ -197,11 +197,8 @@ import Testing
         }
     }
 
-    @Test("every `>` container is a metadata-free callout")
+    @Test("an ordinary quote is a metadata-free callout")
     func callout() throws {
-        // M3: the kind is `Callout`; the metadata rule that fills variant,
-        // collapsed, and title in lands with O8, so every callout reads as
-        // metadata-free and dumps its fields as such.
         let document = try Document.parse("> quote\n")
         let callout = try #require(document.content.first as? Callout)
         #expect(callout.variant == nil)

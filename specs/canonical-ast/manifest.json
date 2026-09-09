@@ -84,6 +84,10 @@
             "table.alignment.center",
             "table.alignment.right",
             "callout.variant.null",
+            "callout.variant.value",
+            "callout.collapsed.false",
+            "callout.collapsed.true",
+            "callout.title.populated",
             "callout.collapsed.null",
             "callout.title.null",
             "markup.anchor.null",
@@ -130,6 +134,7 @@
             "document.footnotes.populated"
         ],
         "orders": [
+            "callout.title-before-content",
             "document.source-order",
             "table.head-content-foot",
             "directive.label-before-content",
@@ -580,6 +585,33 @@
                 "kinds": ["Document", "Paragraph", "Text"],
                 "states": ["document.metadata.present", "metadata.fields.populated", "metadata.list.populated"],
                 "orders": []
+            }
+        },
+        {
+            "name": "callouts",
+            "input": "callouts.md",
+            "expected": "callouts.ast",
+            "coverage": {
+                "kinds": [
+                    "Document",
+                    "Callout",
+                    "Paragraph",
+                    "Text",
+                    "Strong",
+                    "Mark",
+                    "Directive",
+                    "DirectiveLabel",
+                    "Link",
+                    "Comment",
+                    "Cite"
+                ],
+                "states": [
+                    "callout.variant.value",
+                    "callout.collapsed.false",
+                    "callout.collapsed.true",
+                    "callout.title.populated"
+                ],
+                "orders": ["callout.title-before-content"]
             }
         }
     ]

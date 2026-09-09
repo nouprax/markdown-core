@@ -6,6 +6,12 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
+- Recognize opening callout metadata on C, Swift, Kotlin and ES. Preserve the
+  authored type in `variant`, map `+`/`-` to `collapsed`, and parse the optional
+  inline title before body content. Keep inherited nesting and lazy continuation;
+  metadata never becomes a body heading, table header or block identifier.
+  Titles participate in reference resolution, owned-field traversal and cleanup.
+
 - Land O6 as document-owned metadata with ten direct optional fields: `name`,
   `title`, `subtitle`, `time`, `date`, `authors`, `keywords`, `abstract`, `state`,
   and `comment`. Ignore unknown names, unnamed text, comments, invalid values

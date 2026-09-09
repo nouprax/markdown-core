@@ -906,7 +906,7 @@ its behavior, with no separate publication step.
       with `O8`, and an identifier line after a table's caption attaching to the
       `Table`, once per table form, with `P11a`, `P11b`, `P11c`, and `P11d`.
       Requires `O1`.
-- [ ] **O8 — Callout metadata.** Evaluate `[!type]`, the
+- [x] **O8 — Callout metadata.** Evaluate `[!type]`, the
       optional `+` or `-` fold marker, and the inline title on the first content
       line of every `>` container inside the existing block algorithm, store the
       type as written in `variant` with matching left to consumers, remove the
@@ -923,6 +923,27 @@ its behavior, with no separate publication step.
       whichever of `O8` and `O7` merges later, and a title that is one `%%`
       comment, non-null and holding one `Comment`, is a cross-item case owned by
       whichever of `O8` and `O3` merges later. Requires `O1`, `O2`.
+
+  O8 implementation and host validation (2026-09-08): the existing quote-open
+  path recognizes the first metadata line once. A callout owns its authored
+  variant and optional collapsed state; its title uses the shared inline and
+  owned-field phases. Body paragraphs are created when body text arrives,
+  including immediate lazy continuation. The public accessor, transport,
+  visitor, and dump forms are unchanged. All 15 module examples are copied
+  byte for byte into 32 callout fixtures, with the four existing examples
+  unchanged; the canonical case covers all four populated states and title
+  visitation before content. A facade assertion preserves the native Setext
+  end boundary before a following blank line. Existing scope ledgers and
+  unrelated fixtures are unchanged.
+
+  C correctness 77/77 and conformance 2/2 pass, as do ASan, UBSan and TSan
+  correctness 77/77 each, including strict allocation-failure sweeps and
+  adversarial quote-depth work bounds. Swift macOS, Kotlin JVM/macOS Native/
+  Android host, and ES Node/browser tests and conformance pass, together with
+  oracle parity, scope/place audits, `pnpm verify`, and the host release dry
+  run for C, Swift, npm and Maven. Full cross-host release aggregation remains
+  the required CI check.
+
 - [ ] **O9 — Image dimensions.** Parse the complete
       `W`, `WxH`, `alt|W`, and `alt|WxH` alt-label suffixes in the shared image
       construction path into `width` and `hten`, keep the whole label as alt

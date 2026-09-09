@@ -1,27 +1,14 @@
 ---
 title: Callouts module examples
 author: Dongyu Zhao
-version: 0.1
-date: '2026-09-07'
+version: 0.2
+date: '2026-09-08'
 license: '[CC-BY-SA 4.0](http://creativecommons.org/licenses/by-sa/4.0/)'
 ...
 
-## Every `>` container is a `Callout`
+## Inherited containers
 
-The examples of the [base module](../../../../docs/specs/dialect/base.md)
-and the [callouts module](../../../../docs/specs/dialect/callouts.md) whose
-behavior `M3` landed: every source container introduced by `>` is a `Callout`
-with `variant=null`, `collapsed=null`, and no title, and the inherited prefix,
-laziness, continuation, blank-line, and nesting rules are unchanged. The
-metadata rule that gives a callout its `variant`, `collapsed`, and title arrives
-with `O8`, so only the module's metadata-free examples are here; they are in
-the module's order. The expected dumps are the modules' expected dumps in the
-dump grammar of today, which does not yet print the universal `anchor` and
-`attributes` fields that `M7` lands, so every line differs from the module's
-by exactly ` anchor=null attributes={}` and by nothing else.
-
-The base module's example: a plain quoted block, a lazy continuation, and a
-nested container:
+The base module's quote, lazy continuation and nesting example:
 
 ```````````````````````````````` example
 > quoted
@@ -44,8 +31,7 @@ Document scope=1:1..5:10 anchor=null attributes={} children=2
             └── Text scope=5:5..5:10 anchor=null attributes={} literal="nested" children=0
 ````````````````````````````````
 
-The callouts module's examples. A plain quoted block is a callout without
-metadata:
+## Callouts module examples
 
 ```````````````````````````````` example
 > quote
@@ -56,9 +42,41 @@ Document scope=1:1..1:7 anchor=null attributes={} children=1
         └── Text scope=1:3..1:7 anchor=null attributes={} literal="quote" children=0
 ````````````````````````````````
 
-A `]`, or a fold marker, that is not followed by a space, a tab, or the end
-of the line is not a metadata line, and neither is a marker that is not at the
-first position, so the callout is metadata-free and the bytes are content:
+```````````````````````````````` example
+> [!info]
+
+> [!TIP] Title
+.
+Document scope=1:1..3:14 anchor=null attributes={} children=2
+├── Callout scope=1:1..1:9 anchor=null attributes={} variant="info" collapsed=null children=0
+└── Callout scope=3:1..3:14 anchor=null attributes={} variant="TIP" collapsed=null children=0
+    └── Title children=1
+        └── Text scope=3:10..3:14 anchor=null attributes={} literal="Title" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+> [!custom-type]
+
+> [!Note]
+.
+Document scope=1:1..3:9 anchor=null attributes={} children=2
+├── Callout scope=1:1..1:16 anchor=null attributes={} variant="custom-type" collapsed=null children=0
+└── Callout scope=3:1..3:9 anchor=null attributes={} variant="Note" collapsed=null children=0
+````````````````````````````````
+
+```````````````````````````````` example
+> [!faq]+ Are callouts foldable?
+
+> [!faq]- Are callouts foldable?
+.
+Document scope=1:1..3:32 anchor=null attributes={} children=2
+├── Callout scope=1:1..1:32 anchor=null attributes={} variant="faq" collapsed=false children=0
+│   └── Title children=1
+│       └── Text scope=1:11..1:32 anchor=null attributes={} literal="Are callouts foldable?" children=0
+└── Callout scope=3:1..3:32 anchor=null attributes={} variant="faq" collapsed=true children=0
+    └── Title children=1
+        └── Text scope=3:11..3:32 anchor=null attributes={} literal="Are callouts foldable?" children=0
+````````````````````````````````
 
 ```````````````````````````````` example
 > [!note]Title
@@ -79,7 +97,18 @@ Document scope=1:1..5:11 anchor=null attributes={} children=3
         └── Text scope=5:3..5:11 anchor=null attributes={} literal="x [!note]" children=0
 ````````````````````````````````
 
-A blank first line means no metadata:
+```````````````````````````````` example
+>    [!note] x
+
+>     [!note]
+.
+Document scope=1:1..3:13 anchor=null attributes={} children=2
+├── Callout scope=1:1..1:14 anchor=null attributes={} variant="note" collapsed=null children=0
+│   └── Title children=1
+│       └── Text scope=1:14..1:14 anchor=null attributes={} literal="x" children=0
+└── Callout scope=3:1..3:13 anchor=null attributes={} variant=null collapsed=null children=1
+    └── CodeBlock scope=3:7..3:13 anchor=null attributes={} info=null language=null literal="[!note]\n" fenced=false closed=true children=0
+````````````````````````````````
 
 ```````````````````````````````` example
 >
@@ -89,4 +118,826 @@ Document scope=1:1..2:11 anchor=null attributes={} children=1
 └── Callout scope=1:1..2:11 anchor=null attributes={} variant=null collapsed=null children=1
     └── Paragraph scope=2:3..2:11 anchor=null attributes={} children=1
         └── Text scope=2:3..2:11 anchor=null attributes={} literal="[!note] x" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+> [!note] **bold** title
+.
+Document scope=1:1..1:24 anchor=null attributes={} children=1
+└── Callout scope=1:1..1:24 anchor=null attributes={} variant="note" collapsed=null children=0
+    └── Title children=2
+        ├── Strong scope=1:11..1:18 anchor=null attributes={} children=1
+        │   └── Text scope=1:13..1:16 anchor=null attributes={} literal="bold" children=0
+        └── Text scope=1:19..1:24 anchor=null attributes={} literal=" title" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+> [!note] Title
+> body
+> more
+.
+Document scope=1:1..3:6 anchor=null attributes={} children=1
+└── Callout scope=1:1..3:6 anchor=null attributes={} variant="note" collapsed=null children=1
+    ├── Title children=1
+    │   └── Text scope=1:11..1:15 anchor=null attributes={} literal="Title" children=0
+    └── Paragraph scope=2:3..3:6 anchor=null attributes={} children=3
+        ├── Text scope=2:3..2:6 anchor=null attributes={} literal="body" children=0
+        ├── SoftBreak scope=2:7..2:7 anchor=null attributes={} children=0
+        └── Text scope=3:3..3:6 anchor=null attributes={} literal="more" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+> [!note] T
+> body
+lazy
+.
+Document scope=1:1..3:4 anchor=null attributes={} children=1
+└── Callout scope=1:1..3:4 anchor=null attributes={} variant="note" collapsed=null children=1
+    ├── Title children=1
+    │   └── Text scope=1:11..1:11 anchor=null attributes={} literal="T" children=0
+    └── Paragraph scope=2:3..3:4 anchor=null attributes={} children=3
+        ├── Text scope=2:3..2:6 anchor=null attributes={} literal="body" children=0
+        ├── SoftBreak scope=2:7..2:7 anchor=null attributes={} children=0
+        └── Text scope=3:1..3:4 anchor=null attributes={} literal="lazy" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+> [!note] T
+> ===
+.
+Document scope=1:1..2:5 anchor=null attributes={} children=1
+└── Callout scope=1:1..2:5 anchor=null attributes={} variant="note" collapsed=null children=1
+    ├── Title children=1
+    │   └── Text scope=1:11..1:11 anchor=null attributes={} literal="T" children=0
+    └── Paragraph scope=2:3..2:5 anchor=null attributes={} children=1
+        └── Text scope=2:3..2:5 anchor=null attributes={} literal="===" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+> [!outer]
+> > [!inner] x
+.
+Document scope=1:1..2:14 anchor=null attributes={} children=1
+└── Callout scope=1:1..2:14 anchor=null attributes={} variant="outer" collapsed=null children=1
+    └── Callout scope=2:3..2:14 anchor=null attributes={} variant="inner" collapsed=null children=0
+        └── Title children=1
+            └── Text scope=2:14..2:14 anchor=null attributes={} literal="x" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+> [!note] %%t%%
+.
+Document scope=1:1..1:15 anchor=null attributes={} children=1
+└── Callout scope=1:1..1:15 anchor=null attributes={} variant="note" collapsed=null children=0
+    └── Title children=1
+        └── Comment scope=1:11..1:15 anchor=null attributes={} literal="t" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+> [!note] Title #t#
+> body #p#
+.
+Document scope=1:1..2:10 anchor=null attributes={} children=1
+└── Callout scope=1:1..2:10 anchor=null attributes={} variant="note" collapsed=null children=1
+    ├── Title children=1
+    │   └── Text scope=1:11..1:19 anchor=null attributes={} literal="Title #t#" children=0
+    └── Paragraph scope=2:3..2:10 anchor="p" attributes={} children=1
+        └── Text scope=2:3..2:6 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+> [!NOTE]
+> text
+.
+Document scope=1:1..2:6 anchor=null attributes={} children=1
+└── Callout scope=1:1..2:6 anchor=null attributes={} variant="NOTE" collapsed=null children=1
+    └── Paragraph scope=2:3..2:6 anchor=null attributes={} children=1
+        └── Text scope=2:3..2:6 anchor=null attributes={} literal="text" children=0
+````````````````````````````````
+
+## Title-only and empty-body fold states
+
+```````````````````````````````` example
+> [!note]
+
+> [!note] Title
+
+> [!note] → →
+
+> [!note]+
+
+> [!note]+ Title
+
+> [!note]+ → →
+
+> [!note]-
+
+> [!note]- Title
+
+> [!note]- → →
+.
+Document scope=1:1..17:14 anchor=null attributes={} children=9
+├── Callout scope=1:1..1:9 anchor=null attributes={} variant="note" collapsed=null children=0
+├── Callout scope=3:1..3:15 anchor=null attributes={} variant="note" collapsed=null children=0
+│   └── Title children=1
+│       └── Text scope=3:11..3:15 anchor=null attributes={} literal="Title" children=0
+├── Callout scope=5:1..5:13 anchor=null attributes={} variant="note" collapsed=null children=0
+├── Callout scope=7:1..7:10 anchor=null attributes={} variant="note" collapsed=false children=0
+├── Callout scope=9:1..9:16 anchor=null attributes={} variant="note" collapsed=false children=0
+│   └── Title children=1
+│       └── Text scope=9:12..9:16 anchor=null attributes={} literal="Title" children=0
+├── Callout scope=11:1..11:14 anchor=null attributes={} variant="note" collapsed=false children=0
+├── Callout scope=13:1..13:10 anchor=null attributes={} variant="note" collapsed=true children=0
+├── Callout scope=15:1..15:16 anchor=null attributes={} variant="note" collapsed=true children=0
+│   └── Title children=1
+│       └── Text scope=15:12..15:16 anchor=null attributes={} literal="Title" children=0
+└── Callout scope=17:1..17:14 anchor=null attributes={} variant="note" collapsed=true children=0
+````````````````````````````````
+
+## Built-in types and aliases preserve spelling
+
+The [official supported types](https://obsidian.md/help/callouts) and aliases
+are stored as written; the trailing mixed-case, custom and minimal types use
+the same grammar.
+
+```````````````````````````````` example
+> [!note]
+
+> [!abstract]
+
+> [!summary]
+
+> [!tldr]
+
+> [!info]
+
+> [!todo]
+
+> [!tip]
+
+> [!hint]
+
+> [!important]
+
+> [!success]
+
+> [!check]
+
+> [!done]
+
+> [!question]
+
+> [!help]
+
+> [!faq]
+
+> [!warning]
+
+> [!caution]
+
+> [!attention]
+
+> [!failure]
+
+> [!fail]
+
+> [!missing]
+
+> [!danger]
+
+> [!error]
+
+> [!bug]
+
+> [!example]
+
+> [!quote]
+
+> [!cite]
+
+> [!NoTe]
+
+> [!TIP]
+
+> [!My_custom-9]
+
+> [!9]
+
+> [!_]
+
+> [!-]
+.
+Document scope=1:1..65:6 anchor=null attributes={} children=33
+├── Callout scope=1:1..1:9 anchor=null attributes={} variant="note" collapsed=null children=0
+├── Callout scope=3:1..3:13 anchor=null attributes={} variant="abstract" collapsed=null children=0
+├── Callout scope=5:1..5:12 anchor=null attributes={} variant="summary" collapsed=null children=0
+├── Callout scope=7:1..7:9 anchor=null attributes={} variant="tldr" collapsed=null children=0
+├── Callout scope=9:1..9:9 anchor=null attributes={} variant="info" collapsed=null children=0
+├── Callout scope=11:1..11:9 anchor=null attributes={} variant="todo" collapsed=null children=0
+├── Callout scope=13:1..13:8 anchor=null attributes={} variant="tip" collapsed=null children=0
+├── Callout scope=15:1..15:9 anchor=null attributes={} variant="hint" collapsed=null children=0
+├── Callout scope=17:1..17:14 anchor=null attributes={} variant="important" collapsed=null children=0
+├── Callout scope=19:1..19:12 anchor=null attributes={} variant="success" collapsed=null children=0
+├── Callout scope=21:1..21:10 anchor=null attributes={} variant="check" collapsed=null children=0
+├── Callout scope=23:1..23:9 anchor=null attributes={} variant="done" collapsed=null children=0
+├── Callout scope=25:1..25:13 anchor=null attributes={} variant="question" collapsed=null children=0
+├── Callout scope=27:1..27:9 anchor=null attributes={} variant="help" collapsed=null children=0
+├── Callout scope=29:1..29:8 anchor=null attributes={} variant="faq" collapsed=null children=0
+├── Callout scope=31:1..31:12 anchor=null attributes={} variant="warning" collapsed=null children=0
+├── Callout scope=33:1..33:12 anchor=null attributes={} variant="caution" collapsed=null children=0
+├── Callout scope=35:1..35:14 anchor=null attributes={} variant="attention" collapsed=null children=0
+├── Callout scope=37:1..37:12 anchor=null attributes={} variant="failure" collapsed=null children=0
+├── Callout scope=39:1..39:9 anchor=null attributes={} variant="fail" collapsed=null children=0
+├── Callout scope=41:1..41:12 anchor=null attributes={} variant="missing" collapsed=null children=0
+├── Callout scope=43:1..43:11 anchor=null attributes={} variant="danger" collapsed=null children=0
+├── Callout scope=45:1..45:10 anchor=null attributes={} variant="error" collapsed=null children=0
+├── Callout scope=47:1..47:8 anchor=null attributes={} variant="bug" collapsed=null children=0
+├── Callout scope=49:1..49:12 anchor=null attributes={} variant="example" collapsed=null children=0
+├── Callout scope=51:1..51:10 anchor=null attributes={} variant="quote" collapsed=null children=0
+├── Callout scope=53:1..53:9 anchor=null attributes={} variant="cite" collapsed=null children=0
+├── Callout scope=55:1..55:9 anchor=null attributes={} variant="NoTe" collapsed=null children=0
+├── Callout scope=57:1..57:8 anchor=null attributes={} variant="TIP" collapsed=null children=0
+├── Callout scope=59:1..59:16 anchor=null attributes={} variant="My_custom-9" collapsed=null children=0
+├── Callout scope=61:1..61:6 anchor=null attributes={} variant="9" collapsed=null children=0
+├── Callout scope=63:1..63:6 anchor=null attributes={} variant="_" collapsed=null children=0
+└── Callout scope=65:1..65:6 anchor=null attributes={} variant="-" collapsed=null children=0
+````````````````````````````````
+
+## Invalid types and fold boundaries
+
+```````````````````````````````` example
+> [!]
+
+> [!a b]
+
+> [!é]
+
+> [!a.b]
+
+> [!a/b]
+
+> [!a\-b]
+
+> [!note
+
+> [!note]++ T
+
+> [!note]-- T
+
+> [!note]+x
+
+> [!note]x
+
+> [!note]! T
+
+> \[!note]
+
+> [!note] + title
+
+> [!note] - title
+.
+Document scope=1:1..29:17 anchor=null attributes={} children=15
+├── Callout scope=1:1..1:5 anchor=null attributes={} variant=null collapsed=null children=1
+│   └── Paragraph scope=1:3..1:5 anchor=null attributes={} children=1
+│       └── Text scope=1:3..1:5 anchor=null attributes={} literal="[!]" children=0
+├── Callout scope=3:1..3:8 anchor=null attributes={} variant=null collapsed=null children=1
+│   └── Paragraph scope=3:3..3:8 anchor=null attributes={} children=1
+│       └── Text scope=3:3..3:8 anchor=null attributes={} literal="[!a b]" children=0
+├── Callout scope=5:1..5:7 anchor=null attributes={} variant=null collapsed=null children=1
+│   └── Paragraph scope=5:3..5:7 anchor=null attributes={} children=1
+│       └── Text scope=5:3..5:7 anchor=null attributes={} literal="[!é]" children=0
+├── Callout scope=7:1..7:8 anchor=null attributes={} variant=null collapsed=null children=1
+│   └── Paragraph scope=7:3..7:8 anchor=null attributes={} children=1
+│       └── Text scope=7:3..7:8 anchor=null attributes={} literal="[!a.b]" children=0
+├── Callout scope=9:1..9:8 anchor=null attributes={} variant=null collapsed=null children=1
+│   └── Paragraph scope=9:3..9:8 anchor=null attributes={} children=1
+│       └── Text scope=9:3..9:8 anchor=null attributes={} literal="[!a/b]" children=0
+├── Callout scope=11:1..11:9 anchor=null attributes={} variant=null collapsed=null children=1
+│   └── Paragraph scope=11:3..11:9 anchor=null attributes={} children=1
+│       └── Text scope=11:3..11:9 anchor=null attributes={} literal="[!a-b]" children=0
+├── Callout scope=13:1..13:8 anchor=null attributes={} variant=null collapsed=null children=1
+│   └── Paragraph scope=13:3..13:8 anchor=null attributes={} children=1
+│       └── Text scope=13:3..13:8 anchor=null attributes={} literal="[!note" children=0
+├── Callout scope=15:1..15:13 anchor=null attributes={} variant=null collapsed=null children=1
+│   └── Paragraph scope=15:3..15:13 anchor=null attributes={} children=1
+│       └── Text scope=15:3..15:13 anchor=null attributes={} literal="[!note]++ T" children=0
+├── Callout scope=17:1..17:13 anchor=null attributes={} variant=null collapsed=null children=1
+│   └── Paragraph scope=17:3..17:13 anchor=null attributes={} children=1
+│       └── Text scope=17:3..17:13 anchor=null attributes={} literal="[!note]-- T" children=0
+├── Callout scope=19:1..19:11 anchor=null attributes={} variant=null collapsed=null children=1
+│   └── Paragraph scope=19:3..19:11 anchor=null attributes={} children=1
+│       └── Text scope=19:3..19:11 anchor=null attributes={} literal="[!note]+x" children=0
+├── Callout scope=21:1..21:10 anchor=null attributes={} variant=null collapsed=null children=1
+│   └── Paragraph scope=21:3..21:10 anchor=null attributes={} children=1
+│       └── Text scope=21:3..21:10 anchor=null attributes={} literal="[!note]x" children=0
+├── Callout scope=23:1..23:12 anchor=null attributes={} variant=null collapsed=null children=1
+│   └── Paragraph scope=23:3..23:12 anchor=null attributes={} children=1
+│       └── Text scope=23:3..23:12 anchor=null attributes={} literal="[!note]! T" children=0
+├── Callout scope=25:1..25:10 anchor=null attributes={} variant=null collapsed=null children=1
+│   └── Paragraph scope=25:3..25:10 anchor=null attributes={} children=1
+│       └── Text scope=25:3..25:10 anchor=null attributes={} literal="[!note]" children=0
+├── Callout scope=27:1..27:17 anchor=null attributes={} variant="note" collapsed=null children=0
+│   └── Title children=1
+│       └── Text scope=27:11..27:17 anchor=null attributes={} literal="+ title" children=0
+└── Callout scope=29:1..29:17 anchor=null attributes={} variant="note" collapsed=null children=0
+    └── Title children=1
+        └── Text scope=29:11..29:17 anchor=null attributes={} literal="- title" children=0
+````````````````````````````````
+
+## Extra indentation and title separators
+
+```````````````````````````````` example
+>  [!one] x
+
+>   [!two] x
+
+>    [!three]→x→→
+
+>     [!code] x
+
+> →[!tab] x
+
+> [!note]→ **中😀** →
+.
+Document scope=1:1..11:24 anchor=null attributes={} children=6
+├── Callout scope=1:1..1:11 anchor=null attributes={} variant="one" collapsed=null children=0
+│   └── Title children=1
+│       └── Text scope=1:11..1:11 anchor=null attributes={} literal="x" children=0
+├── Callout scope=3:1..3:12 anchor=null attributes={} variant="two" collapsed=null children=0
+│   └── Title children=1
+│       └── Text scope=3:12..3:12 anchor=null attributes={} literal="x" children=0
+├── Callout scope=5:1..5:17 anchor=null attributes={} variant="three" collapsed=null children=0
+│   └── Title children=1
+│       └── Text scope=5:15..5:15 anchor=null attributes={} literal="x" children=0
+├── Callout scope=7:1..7:15 anchor=null attributes={} variant=null collapsed=null children=1
+│   └── CodeBlock scope=7:7..7:15 anchor=null attributes={} info=null language=null literal="[!code] x\n" fenced=false closed=true children=0
+├── Callout scope=9:1..9:11 anchor=null attributes={} variant=null collapsed=null children=1
+│   └── Paragraph scope=9:4..9:11 anchor=null attributes={} children=1
+│       └── Text scope=9:4..9:11 anchor=null attributes={} literal="[!tab] x" children=0
+└── Callout scope=11:1..11:24 anchor=null attributes={} variant="note" collapsed=null children=0
+    └── Title children=1
+        └── Strong scope=11:12..11:22 anchor=null attributes={} children=1
+            └── Text scope=11:14..11:20 anchor=null attributes={} literal="中😀" children=0
+````````````````````````````````
+
+## Only the opening line is metadata
+
+```````````````````````````````` example
+> first
+> [!note] literal
+
+>
+> [!note] literal
+
+> # head
+> [!note] literal
+
+> > [!inner] inner
+> [!outer] literal
+.
+Document scope=1:1..11:18 anchor=null attributes={} children=4
+├── Callout scope=1:1..2:17 anchor=null attributes={} variant=null collapsed=null children=1
+│   └── Paragraph scope=1:3..2:17 anchor=null attributes={} children=3
+│       ├── Text scope=1:3..1:7 anchor=null attributes={} literal="first" children=0
+│       ├── SoftBreak scope=1:8..1:8 anchor=null attributes={} children=0
+│       └── Text scope=2:3..2:17 anchor=null attributes={} literal="[!note] literal" children=0
+├── Callout scope=4:1..5:17 anchor=null attributes={} variant=null collapsed=null children=1
+│   └── Paragraph scope=5:3..5:17 anchor=null attributes={} children=1
+│       └── Text scope=5:3..5:17 anchor=null attributes={} literal="[!note] literal" children=0
+├── Callout scope=7:1..8:17 anchor=null attributes={} variant=null collapsed=null children=2
+│   ├── Heading scope=7:3..7:8 anchor=null attributes={} level=1 children=1
+│   │   └── Text scope=7:5..7:8 anchor=null attributes={} literal="head" children=0
+│   └── Paragraph scope=8:3..8:17 anchor=null attributes={} children=1
+│       └── Text scope=8:3..8:17 anchor=null attributes={} literal="[!note] literal" children=0
+└── Callout scope=10:1..11:18 anchor=null attributes={} variant=null collapsed=null children=1
+    └── Callout scope=10:3..11:18 anchor=null attributes={} variant="inner" collapsed=null children=1
+        ├── Title children=1
+        │   └── Text scope=10:14..10:18 anchor=null attributes={} literal="inner" children=0
+        └── Paragraph scope=11:3..11:18 anchor=null attributes={} children=1
+            └── Text scope=11:3..11:18 anchor=null attributes={} literal="[!outer] literal" children=0
+````````````````````````````````
+
+## Lazy body starts on the second line
+
+```````````````````````````````` example
+> [!note] Title
+lazy
+continued
+
+> [!note]
+>    indented body
+> more
+.
+Document scope=1:1..7:6 anchor=null attributes={} children=2
+├── Callout scope=1:1..3:9 anchor=null attributes={} variant="note" collapsed=null children=1
+│   ├── Title children=1
+│   │   └── Text scope=1:11..1:15 anchor=null attributes={} literal="Title" children=0
+│   └── Paragraph scope=2:1..3:9 anchor=null attributes={} children=3
+│       ├── Text scope=2:1..2:4 anchor=null attributes={} literal="lazy" children=0
+│       ├── SoftBreak scope=2:5..2:5 anchor=null attributes={} children=0
+│       └── Text scope=3:1..3:9 anchor=null attributes={} literal="continued" children=0
+└── Callout scope=5:1..7:6 anchor=null attributes={} variant="note" collapsed=null children=1
+    └── Paragraph scope=6:6..7:6 anchor=null attributes={} children=3
+        ├── Text scope=6:6..6:18 anchor=null attributes={} literal="indented body" children=0
+        ├── SoftBreak scope=6:19..6:19 anchor=null attributes={} children=0
+        └── Text scope=7:3..7:6 anchor=null attributes={} literal="more" children=0
+````````````````````````````````
+
+## Metadata never becomes a Setext heading or table header
+
+```````````````````````````````` example
+> [!note] T
+> ===
+
+> [!note] T
+> ---
+
+> [!note] T
+> | --- |
+
+> [!note] T
+> | a | b |
+> | - | - |
+> | c | d |
+
+> [!note] T
+> head
+> ===
+.
+Document scope=1:1..17:5 anchor=null attributes={} children=5
+├── Callout scope=1:1..2:5 anchor=null attributes={} variant="note" collapsed=null children=1
+│   ├── Title children=1
+│   │   └── Text scope=1:11..1:11 anchor=null attributes={} literal="T" children=0
+│   └── Paragraph scope=2:3..2:5 anchor=null attributes={} children=1
+│       └── Text scope=2:3..2:5 anchor=null attributes={} literal="===" children=0
+├── Callout scope=4:1..5:5 anchor=null attributes={} variant="note" collapsed=null children=1
+│   ├── Title children=1
+│   │   └── Text scope=4:11..4:11 anchor=null attributes={} literal="T" children=0
+│   └── ThematicBreak scope=5:3..5:5 anchor=null attributes={} children=0
+├── Callout scope=7:1..8:9 anchor=null attributes={} variant="note" collapsed=null children=1
+│   ├── Title children=1
+│   │   └── Text scope=7:11..7:11 anchor=null attributes={} literal="T" children=0
+│   └── Paragraph scope=8:3..8:9 anchor=null attributes={} children=1
+│       └── Text scope=8:3..8:9 anchor=null attributes={} literal="| --- |" children=0
+├── Callout scope=10:1..13:11 anchor=null attributes={} variant="note" collapsed=null children=1
+│   ├── Title children=1
+│   │   └── Text scope=10:11..10:11 anchor=null attributes={} literal="T" children=0
+│   └── Table scope=11:3..13:11 anchor=null attributes={} columns=[none:null,none:null] children=2
+│       ├── TableHead children=1
+│       │   └── TableRow scope=11:3..11:11 anchor=null attributes={} children=2
+│       │       ├── TableCell scope=11:4..11:6 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│       │       │   └── Text scope=11:5..11:5 anchor=null attributes={} literal="a" children=0
+│       │       └── TableCell scope=11:8..11:10 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│       │           └── Text scope=11:9..11:9 anchor=null attributes={} literal="b" children=0
+│       ├── TableBody children=1
+│       │   └── TableRow scope=13:3..13:11 anchor=null attributes={} children=2
+│       │       ├── TableCell scope=13:4..13:6 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│       │       │   └── Text scope=13:5..13:5 anchor=null attributes={} literal="c" children=0
+│       │       └── TableCell scope=13:8..13:10 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│       │           └── Text scope=13:9..13:9 anchor=null attributes={} literal="d" children=0
+│       └── TableFoot children=0
+└── Callout scope=15:1..17:5 anchor=null attributes={} variant="note" collapsed=null children=1
+    ├── Title children=1
+    │   └── Text scope=15:11..15:11 anchor=null attributes={} literal="T" children=0
+    └── Heading scope=16:3..17:5 anchor=null attributes={} level=1 children=1
+        └── Text scope=16:3..16:6 anchor=null attributes={} literal="head" children=0
+````````````````````````````````
+
+## Nested metadata, ordinary quotes, lists and blocks
+
+```````````````````````````````` example
+> [!outer]- **outer**
+> > ordinary
+> >
+> > > [!inner]+ ==inner==
+> > > - item
+> > >
+> > >     code
+>
+> - [✓] task
+>   > [!custom_1] nested
+>
+> ```md
+> [!literal]
+> ```
+.
+Document scope=1:1..14:5 anchor=null attributes={} children=1
+└── Callout scope=1:1..14:5 anchor=null attributes={} variant="outer" collapsed=true children=3
+    ├── Title children=1
+    │   └── Strong scope=1:13..1:21 anchor=null attributes={} children=1
+    │       └── Text scope=1:15..1:19 anchor=null attributes={} literal="outer" children=0
+    ├── Callout scope=2:3..7:14 anchor=null attributes={} variant=null collapsed=null children=2
+    │   ├── Paragraph scope=2:5..2:12 anchor=null attributes={} children=1
+    │   │   └── Text scope=2:5..2:12 anchor=null attributes={} literal="ordinary" children=0
+    │   └── Callout scope=4:5..7:14 anchor=null attributes={} variant="inner" collapsed=false children=1
+    │       ├── Title children=1
+    │       │   └── Mark scope=4:17..4:25 anchor=null attributes={} children=1
+    │       │       └── Text scope=4:19..4:23 anchor=null attributes={} literal="inner" children=0
+    │       └── List scope=5:7..7:14 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=false children=1
+    │           └── ListItem scope=5:7..7:14 anchor=null attributes={} marker=null children=2
+    │               ├── Paragraph scope=5:9..5:12 anchor=null attributes={} children=1
+    │               │   └── Text scope=5:9..5:12 anchor=null attributes={} literal="item" children=0
+    │               └── Paragraph scope=7:11..7:14 anchor=null attributes={} children=1
+    │                   └── Text scope=7:11..7:14 anchor=null attributes={} literal="code" children=0
+    ├── List scope=9:3..11:1 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+    │   └── ListItem scope=9:3..11:1 anchor=null attributes={} marker="✓" children=2
+    │       ├── Paragraph scope=9:11..9:14 anchor=null attributes={} children=1
+    │       │   └── Text scope=9:11..9:14 anchor=null attributes={} literal="task" children=0
+    │       └── Callout scope=10:5..10:24 anchor=null attributes={} variant="custom_1" collapsed=null children=0
+    │           └── Title children=1
+    │               └── Text scope=10:19..10:24 anchor=null attributes={} literal="nested" children=0
+    └── CodeBlock scope=12:3..14:5 anchor=null attributes={} info="md" language="md" literal="[!literal]\n" fenced=true closed=true children=0
+````````````````````````````````
+
+## Inline title grammar and deferred owned fields
+
+```````````````````````````````` example
+> [!Mixed]- **bold** *em* ~~strike~~ ==mark== `code` $x$ [[Note|label]] ![[Pic]] [ref] ![alt](/img) :tag[==marked==] ^[inline] [^n]
+> body [ref]
+
+[ref]: /u "title"
+[^n]: definition
+.
+Document scope=1:1..5:16 anchor=null attributes={} children=1
+├── Callout scope=1:1..2:12 anchor=null attributes={} variant="Mixed" collapsed=true children=1
+│   ├── Title children=25
+│   │   ├── Strong scope=1:13..1:20 anchor=null attributes={} children=1
+│   │   │   └── Text scope=1:15..1:18 anchor=null attributes={} literal="bold" children=0
+│   │   ├── Text scope=1:21..1:21 anchor=null attributes={} literal=" " children=0
+│   │   ├── Emphasis scope=1:22..1:25 anchor=null attributes={} children=1
+│   │   │   └── Text scope=1:23..1:24 anchor=null attributes={} literal="em" children=0
+│   │   ├── Text scope=1:26..1:26 anchor=null attributes={} literal=" " children=0
+│   │   ├── Strikethrough scope=1:27..1:36 anchor=null attributes={} children=1
+│   │   │   └── Text scope=1:29..1:34 anchor=null attributes={} literal="strike" children=0
+│   │   ├── Text scope=1:37..1:37 anchor=null attributes={} literal=" " children=0
+│   │   ├── Mark scope=1:38..1:45 anchor=null attributes={} children=1
+│   │   │   └── Text scope=1:40..1:43 anchor=null attributes={} literal="mark" children=0
+│   │   ├── Text scope=1:46..1:46 anchor=null attributes={} literal=" " children=0
+│   │   ├── Code scope=1:47..1:52 anchor=null attributes={} literal="code" children=0
+│   │   ├── Text scope=1:53..1:53 anchor=null attributes={} literal=" " children=0
+│   │   ├── Formula scope=1:54..1:56 anchor=null attributes={} mode=embedded literal="x" children=0
+│   │   ├── Text scope=1:57..1:57 anchor=null attributes={} literal=" " children=0
+│   │   ├── CrossLink scope=1:58..1:71 anchor=null attributes={} embedded=false dest=cross(path="Note",anchor=null) label="label" children=0
+│   │   ├── Text scope=1:72..1:72 anchor=null attributes={} literal=" " children=0
+│   │   ├── CrossLink scope=1:73..1:80 anchor=null attributes={} embedded=true dest=cross(path="Pic",anchor=null) label=null children=0
+│   │   ├── Text scope=1:81..1:81 anchor=null attributes={} literal=" " children=0
+│   │   ├── Link scope=1:82..1:86 anchor=null attributes={} dest=url("/u") title="title" children=1
+│   │   │   └── Text scope=1:83..1:85 anchor=null attributes={} literal="ref" children=0
+│   │   ├── Text scope=1:87..1:87 anchor=null attributes={} literal=" " children=0
+│   │   ├── Image scope=1:88..1:99 anchor=null attributes={} dest=url("/img") title=null width=null height=null children=1
+│   │   │   └── Text scope=1:90..1:92 anchor=null attributes={} literal="alt" children=0
+│   │   ├── Text scope=1:100..1:100 anchor=null attributes={} literal=" " children=0
+│   │   ├── Directive scope=1:101..1:116 anchor=null attributes={} name="tag" children=0
+│   │   │   └── DirectiveLabel scope=1:105..1:116 anchor=null attributes={} children=1
+│   │   │       └── Mark scope=1:106..1:115 anchor=null attributes={} children=1
+│   │   │           └── Text scope=1:108..1:113 anchor=null attributes={} literal="marked" children=0
+│   │   ├── Text scope=1:117..1:117 anchor=null attributes={} literal=" " children=0
+│   │   ├── Cite scope=1:118..1:126 anchor=null attributes={} children=1
+│   │   │   └── Citation scope=1:120..1:125 referent=footnote(id="inline-1") children=0
+│   │   │       ├── CitationPrefix children=0
+│   │   │       └── CitationSuffix children=0
+│   │   ├── Text scope=1:127..1:127 anchor=null attributes={} literal=" " children=0
+│   │   └── Cite scope=1:128..1:131 anchor=null attributes={} children=1
+│   │       └── Citation scope=1:129..1:130 referent=footnote(id="n") children=0
+│   │           ├── CitationPrefix children=0
+│   │           └── CitationSuffix children=0
+│   └── Paragraph scope=2:3..2:12 anchor=null attributes={} children=2
+│       ├── Text scope=2:3..2:7 anchor=null attributes={} literal="body " children=0
+│       └── Link scope=2:8..2:12 anchor=null attributes={} dest=url("/u") title="title" children=1
+│           └── Text scope=2:9..2:11 anchor=null attributes={} literal="ref" children=0
+├── Footnote scope=1:118..1:126 id="inline-1" children=1
+│   └── Text scope=1:120..1:125 anchor=null attributes={} literal="inline" children=0
+└── Footnote scope=5:1..5:16 id="n" children=1
+    └── Paragraph scope=5:7..5:16 anchor=null attributes={} children=1
+        └── Text scope=5:7..5:16 anchor=null attributes={} literal="definition" children=0
+````````````````````````````````
+
+## Comments are nonempty title nodes
+
+```````````````````````````````` example
+> [!note] %%t%%
+
+> [!note]+ <!--t-->
+
+> [!note]- %%%%
+
+> [!note] %%**hidden** [[raw]]%%
+.
+Document scope=1:1..7:32 anchor=null attributes={} children=4
+├── Callout scope=1:1..1:15 anchor=null attributes={} variant="note" collapsed=null children=0
+│   └── Title children=1
+│       └── Comment scope=1:11..1:15 anchor=null attributes={} literal="t" children=0
+├── Callout scope=3:1..3:19 anchor=null attributes={} variant="note" collapsed=false children=0
+│   └── Title children=1
+│       └── Comment scope=3:12..3:19 anchor=null attributes={} literal="t" children=0
+├── Callout scope=5:1..5:15 anchor=null attributes={} variant="note" collapsed=true children=0
+│   └── Title children=1
+│       └── Comment scope=5:12..5:15 anchor=null attributes={} literal="" children=0
+└── Callout scope=7:1..7:32 anchor=null attributes={} variant="note" collapsed=null children=0
+    └── Title children=1
+        └── Comment scope=7:11..7:32 anchor=null attributes={} literal="**hidden** [[raw]]" children=0
+````````````````````````````````
+
+## Title whitespace and linebreak candidates
+
+```````````````````````````````` example
+> [!note] T →
+> body
+
+> [!note] T\
+> body
+
+> [!note] \ →
+.
+Document scope=1:1..7:13 anchor=null attributes={} children=3
+├── Callout scope=1:1..2:6 anchor=null attributes={} variant="note" collapsed=null children=1
+│   ├── Title children=1
+│   │   └── Text scope=1:11..1:11 anchor=null attributes={} literal="T" children=0
+│   └── Paragraph scope=2:3..2:6 anchor=null attributes={} children=1
+│       └── Text scope=2:3..2:6 anchor=null attributes={} literal="body" children=0
+├── Callout scope=4:1..5:6 anchor=null attributes={} variant="note" collapsed=null children=1
+│   ├── Title children=1
+│   │   └── Text scope=4:11..4:12 anchor=null attributes={} literal="T\\" children=0
+│   └── Paragraph scope=5:3..5:6 anchor=null attributes={} children=1
+│       └── Text scope=5:3..5:6 anchor=null attributes={} literal="body" children=0
+└── Callout scope=7:1..7:13 anchor=null attributes={} variant="note" collapsed=null children=0
+    └── Title children=1
+        └── Text scope=7:11..7:11 anchor=null attributes={} literal="\\" children=0
+````````````````````````````````
+
+## Identifiers attach to body and whole callout
+
+```````````````````````````````` example
+> [!note] Title #t#
+> body #p#
+
+#callout#
+
+> [!note]-
+
+#empty#
+
+> [!outer]
+> > [!inner] T
+>
+> #inner#
+>
+> body
+
+#outer#
+.
+Document scope=1:1..17:7 anchor=null attributes={} children=3
+├── Callout scope=1:1..4:9 anchor="callout" attributes={} variant="note" collapsed=null children=1
+│   ├── Title children=1
+│   │   └── Text scope=1:11..1:19 anchor=null attributes={} literal="Title #t#" children=0
+│   └── Paragraph scope=2:3..2:10 anchor="p" attributes={} children=1
+│       └── Text scope=2:3..2:6 anchor=null attributes={} literal="body" children=0
+├── Callout scope=6:1..8:7 anchor="empty" attributes={} variant="note" collapsed=true children=0
+└── Callout scope=10:1..17:7 anchor="outer" attributes={} variant="outer" collapsed=null children=2
+    ├── Callout scope=11:3..13:9 anchor="inner" attributes={} variant="inner" collapsed=null children=0
+    │   └── Title children=1
+    │       └── Text scope=11:14..11:14 anchor=null attributes={} literal="T" children=0
+    └── Paragraph scope=15:3..15:6 anchor=null attributes={} children=1
+        └── Text scope=15:3..15:6 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Title-looking definitions stay inline
+
+```````````````````````````````` example
+> [!note] [x]: /title
+> [x]
+
+[x]
+
+> [!note] [y]
+> [y]: /body
+
+[y]
+.
+Document scope=1:1..9:3 anchor=null attributes={} children=4
+├── Callout scope=1:1..2:5 anchor=null attributes={} variant="note" collapsed=null children=1
+│   ├── Title children=1
+│   │   └── Text scope=1:11..1:21 anchor=null attributes={} literal="[x]: /title" children=0
+│   └── Paragraph scope=2:3..2:5 anchor=null attributes={} children=1
+│       └── Text scope=2:3..2:5 anchor=null attributes={} literal="[x]" children=0
+├── Paragraph scope=4:1..4:3 anchor=null attributes={} children=1
+│   └── Text scope=4:1..4:3 anchor=null attributes={} literal="[x]" children=0
+├── Callout scope=6:1..7:12 anchor=null attributes={} variant="note" collapsed=null children=0
+│   └── Title children=1
+│       └── Link scope=6:11..6:13 anchor=null attributes={} dest=url("/body") title=null children=1
+│           └── Text scope=6:12..6:12 anchor=null attributes={} literal="y" children=0
+└── Paragraph scope=9:1..9:3 anchor=null attributes={} children=1
+    └── Link scope=9:1..9:3 anchor=null attributes={} dest=url("/body") title=null children=1
+        └── Text scope=9:2..9:2 anchor=null attributes={} literal="y" children=0
+````````````````````````````````
+
+## Metadata syntax stays opaque in inline and block regions
+
+```````````````````````````````` example
+> `[!note]`
+
+> <a title="[!note]">
+
+> $[!note]$
+
+> %%[!note]%%
+
+> [[Note|[!note] ]]
+
+```md
+> [!note]
+```
+
+<!--
+> [!note]
+-->
+
+$$
+> [!note]
+$$
+
+%%
+> [!note]
+%%
+.
+Document scope=1:1..25:2 anchor=null attributes={} children=9
+├── Callout scope=1:1..1:11 anchor=null attributes={} variant=null collapsed=null children=1
+│   └── Paragraph scope=1:3..1:11 anchor=null attributes={} children=1
+│       └── Code scope=1:3..1:11 anchor=null attributes={} literal="[!note]" children=0
+├── Callout scope=3:1..3:21 anchor=null attributes={} variant=null collapsed=null children=1
+│   └── HTMLBlock scope=3:3..3:21 anchor=null attributes={} literal="<a title=\"[!note]\">\n" children=0
+├── Callout scope=5:1..5:11 anchor=null attributes={} variant=null collapsed=null children=1
+│   └── Paragraph scope=5:3..5:11 anchor=null attributes={} children=1
+│       └── Formula scope=5:3..5:11 anchor=null attributes={} mode=embedded literal="[!note]" children=0
+├── Callout scope=7:1..7:13 anchor=null attributes={} variant=null collapsed=null children=1
+│   └── Paragraph scope=7:3..7:13 anchor=null attributes={} children=1
+│       └── Comment scope=7:3..7:13 anchor=null attributes={} literal="[!note]" children=0
+├── Callout scope=9:1..9:19 anchor=null attributes={} variant=null collapsed=null children=1
+│   └── Paragraph scope=9:3..9:19 anchor=null attributes={} children=1
+│       └── Text scope=9:3..9:19 anchor=null attributes={} literal="[[Note|[!note] ]]" children=0
+├── CodeBlock scope=11:1..13:3 anchor=null attributes={} info="md" language="md" literal="> [!note]\n" fenced=true closed=true children=0
+├── Comment scope=15:1..17:3 anchor=null attributes={} literal="\n> [!note]\n" children=0
+├── FormulaBlock scope=19:1..21:2 anchor=null attributes={} literal="> [!note]" children=0
+└── Comment scope=23:1..25:2 anchor=null attributes={} literal="> [!note]\n" children=0
+````````````````````````````````
+
+## Block starts after metadata
+
+```````````````````````````````` example
+> [!note] T
+> # heading
+>
+> - item
+>
+> <!--body-->
+>
+> :::box
+> body
+> :::
+.
+Document scope=1:1..10:5 anchor=null attributes={} children=1
+└── Callout scope=1:1..10:5 anchor=null attributes={} variant="note" collapsed=null children=4
+    ├── Title children=1
+    │   └── Text scope=1:11..1:11 anchor=null attributes={} literal="T" children=0
+    ├── Heading scope=2:3..2:11 anchor=null attributes={} level=1 children=1
+    │   └── Text scope=2:5..2:11 anchor=null attributes={} literal="heading" children=0
+    ├── List scope=4:3..5:1 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+    │   └── ListItem scope=4:3..5:1 anchor=null attributes={} marker=null children=1
+    │       └── Paragraph scope=4:5..4:8 anchor=null attributes={} children=1
+    │           └── Text scope=4:5..4:8 anchor=null attributes={} literal="item" children=0
+    ├── Comment scope=6:3..6:13 anchor=null attributes={} literal="body" children=0
+    └── DirectiveBlock scope=8:3..10:5 anchor=null attributes={} name="box" children=1
+        └── Paragraph scope=9:3..9:6 anchor=null attributes={} children=1
+            └── Text scope=9:3..9:6 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## Body blocks have no metadata paragraph to interrupt
+
+```````````````````````````````` example
+> [!note] T
+> 2. numbered
+
+> [!note] T
+>     indented code
+
+> [!note] T
+> <span>
+> body
+.
+Document scope=1:1..9:6 anchor=null attributes={} children=3
+├── Callout scope=1:1..2:13 anchor=null attributes={} variant="note" collapsed=null children=1
+│   ├── Title children=1
+│   │   └── Text scope=1:11..1:11 anchor=null attributes={} literal="T" children=0
+│   └── List scope=2:3..2:13 anchor=null attributes={} flavor=ordered start=2 variant=decimal delimiter=period tight=true children=1
+│       └── ListItem scope=2:3..2:13 anchor=null attributes={} marker=null children=1
+│           └── Paragraph scope=2:6..2:13 anchor=null attributes={} children=1
+│               └── Text scope=2:6..2:13 anchor=null attributes={} literal="numbered" children=0
+├── Callout scope=4:1..5:19 anchor=null attributes={} variant="note" collapsed=null children=1
+│   ├── Title children=1
+│   │   └── Text scope=4:11..4:11 anchor=null attributes={} literal="T" children=0
+│   └── CodeBlock scope=5:7..5:19 anchor=null attributes={} info=null language=null literal="indented code\n" fenced=false closed=true children=0
+└── Callout scope=7:1..9:6 anchor=null attributes={} variant="note" collapsed=null children=1
+    ├── Title children=1
+    │   └── Text scope=7:11..7:11 anchor=null attributes={} literal="T" children=0
+    └── HTMLBlock scope=8:3..9:6 anchor=null attributes={} literal="<span>\nbody\n" children=0
 ````````````````````````````````

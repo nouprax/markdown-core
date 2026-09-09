@@ -382,7 +382,7 @@ private class JniTreeDecoder(
      * A callout's metadata leads, then its title -- a node-valued list that the
      * payload sends before the content, as the walk visits it, and whose count
      * is its presence because a present title holds at least one node -- and
-     * then the content. Every callout is metadata-free until O8.
+     * then the content. An absent title has a zero count.
      */
     private fun readCallout(
         scope: Scope,

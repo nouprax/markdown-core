@@ -116,6 +116,7 @@ struct markdown_core_parser {
     size_t metadata_decoded_bytes;
     /* Bytes examined by the shared block-identifier suffix scanner. */
     size_t block_identifier_work;
+    size_t callout_scan_work;
     /* THE SOURCE AFTER THE LINE BEING PROCESSED. `S_parse_source` sets the
      * cursor to the first byte of the next raw line before it hands each line
      * to `S_process_line`, so a block start whose grammar needs a later line --

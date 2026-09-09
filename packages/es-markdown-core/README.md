@@ -19,6 +19,12 @@ The package is ESM-only and supports Node.js 20 or later and browsers that can
 load its WebAssembly asset. Importing the module completes WebAssembly
 initialization, so `Document.parse` is synchronous.
 
+Every `>` container is a `Callout`. An opening `[!type]` line stores the type
+as written in `variant`; optional `+` and `-` set `collapsed` to false and true.
+The parsed inline `title` is visited before `content` and is never a content
+child. A plain quote has null metadata, and a missing title stays null. Custom
+types are preserved; default titles, aliases and styling belong to consumers.
+
 Every Markup value also exposes `anchor` and `attributes`. Attributes contain
 ordered `classes` and ordered `records` (`name`, `value`), with duplicates
 preserved. Directives populate these fields through the shared Pandoc braced

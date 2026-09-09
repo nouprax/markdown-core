@@ -196,10 +196,7 @@ test("ownership: every occurrence of one definition crosses the boundary once an
     );
 });
 
-test("ast: every `>` container is a metadata-free callout", () => {
-    // M3: the kind is `callout`; the metadata rule that fills variant,
-    // collapsed, and title in lands with O8, so every callout reads as
-    // metadata-free and dumps its fields as such.
+test("ast: an ordinary quote is a metadata-free callout", () => {
     const document = Document.parse("> quote\n");
     const [callout] = document.content;
     assert.equal(callout.kind, "callout");
@@ -216,10 +213,43 @@ test("ast: every `>` container is a metadata-free callout", () => {
     );
 });
 
+test("ast: authored callout title walks before body after native release", () => {
+    const callout = Document.parse("> [!CuStOm]- **T**\n> body\n").content[0];
+    assert.equal(callout.variant, "CuStOm");
+    assert.equal(callout.collapsed, true);
+    assert.deepEqual(callout.title.map(nodeKindName), ["Strong"]);
+    assert.deepEqual(callout.content.map(nodeKindName), ["Paragraph"]);
+    assert.equal(callout.title[0].content[0].literal, "T");
+    const events = [];
+    walk(
+        callout,
+        walkingVisitor((node, phase) => events.push(`${phase}:${nodeKindName(node)}`))
+    );
+    assert.deepEqual(events, [
+        "entering:Callout",
+        "entering:Strong",
+        "entering:Text",
+        "exiting:Text",
+        "exiting:Strong",
+        "entering:Paragraph",
+        "entering:Text",
+        "exiting:Text",
+        "exiting:Paragraph",
+        "exiting:Callout"
+    ]);
+    const [comment, empty] = Document.parse("> [!note]+ %%t%%\n\n> [!note]\n").content;
+    assert.equal(comment.collapsed, false);
+    assert.equal(comment.title[0].kind, "comment");
+    assert.equal(comment.title[0].literal, "t");
+    assert.deepEqual(comment.content, []);
+    assert.equal(empty.title, null);
+    assert.equal(empty.collapsed, null);
+});
+
 test("ast: a title is decoded from the auxiliary range before the content and dumped as a group", () => {
     // The title path of the wire: a node-valued list the record owns through
-    // its auxiliary range. No parse produces one until O8, so the result is
-    // built by hand: a document holding one collapsed `note` callout whose
+    // its auxiliary range. This transport fixture is built by hand:
+    // a document holding one collapsed `note` callout whose
     // title is the text `T` and whose content is empty.
     const nodeSize = 136;
     const strings = Uint8Array.from("noteT", (character) => character.charCodeAt(0));

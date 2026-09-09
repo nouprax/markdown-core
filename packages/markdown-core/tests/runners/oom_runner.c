@@ -165,7 +165,13 @@ static const char OOM_BLOCK_IDENTIFIER_CORPUS[] =
     "- #empty#\n\n  [inside]: /x\n\n> next\n\n#next#\n\n"
     "[^n]: text #note#\n\ntext \\#escape#\n\n$$x$$ #formula#\n\n> last\n\n#end#";
 
+static const char OOM_CALLOUT_CORPUS[] =
+    "> [!MiXeD]- **bold** ==mark== :tag[==label==] [ref] ^[note]\n"
+    "> body #body#\n> > [!custom_1]+ %%hidden%%\n> > nested\n\n#callout#\n\n"
+    "> [!note]\n\n> [!empty]+ \t\n\n> [!table] T\n> | --- |\n\n> [!plain] Title\nlazy\n\n[ref]: /u \"title\"\n";
+
 static const oom_case OOM_CASES[] = {
+    {"callouts", OOM_CALLOUT_CORPUS, sizeof(OOM_CALLOUT_CORPUS) - 1},
     {"properties", OOM_PROPERTIES_CORPUS, sizeof(OOM_PROPERTIES_CORPUS) - 1},
     {"properties flow", OOM_PROPERTIES_ARRAY_CORPUS, sizeof(OOM_PROPERTIES_ARRAY_CORPUS) - 1},
     {"block identifiers", OOM_BLOCK_IDENTIFIER_CORPUS, sizeof(OOM_BLOCK_IDENTIFIER_CORPUS) - 1},

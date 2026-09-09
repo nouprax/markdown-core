@@ -1,0 +1,31 @@
+Document scope=1:1..10:26 anchor=null attributes={} children=2
+├── Callout scope=1:1..6:9 anchor="callout" attributes={} variant="MiXeD" collapsed=true children=2
+│   ├── Title children=9
+│   │   ├── Strong scope=1:13..1:20 anchor=null attributes={} children=1
+│   │   │   └── Text scope=1:15..1:18 anchor=null attributes={} literal="bold" children=0
+│   │   ├── Text scope=1:21..1:21 anchor=null attributes={} literal=" " children=0
+│   │   ├── Mark scope=1:22..1:29 anchor=null attributes={} children=1
+│   │   │   └── Text scope=1:24..1:27 anchor=null attributes={} literal="mark" children=0
+│   │   ├── Text scope=1:30..1:30 anchor=null attributes={} literal=" " children=0
+│   │   ├── Directive scope=1:31..1:45 anchor=null attributes={} name="tag" children=0
+│   │   │   └── DirectiveLabel scope=1:35..1:45 anchor=null attributes={} children=1
+│   │   │       └── Mark scope=1:36..1:44 anchor=null attributes={} children=1
+│   │   │           └── Text scope=1:38..1:42 anchor=null attributes={} literal="label" children=0
+│   │   ├── Text scope=1:46..1:46 anchor=null attributes={} literal=" " children=0
+│   │   ├── Link scope=1:47..1:51 anchor=null attributes={} dest=url("/target") title="reference" children=1
+│   │   │   └── Text scope=1:48..1:50 anchor=null attributes={} literal="ref" children=0
+│   │   ├── Text scope=1:52..1:52 anchor=null attributes={} literal=" " children=0
+│   │   └── Cite scope=1:53..1:65 anchor=null attributes={} children=1
+│   │       └── Citation scope=1:55..1:64 referent=footnote(id="inline-1") children=0
+│   │           ├── CitationPrefix children=0
+│   │           └── CitationSuffix children=0
+│   ├── Paragraph scope=2:3..2:13 anchor="body" attributes={} children=1
+│   │   └── Text scope=2:3..2:6 anchor=null attributes={} literal="body" children=0
+│   └── Callout scope=3:3..4:10 anchor=null attributes={} variant="custom_1" collapsed=false children=1
+│       ├── Title children=1
+│       │   └── Comment scope=3:18..3:27 anchor=null attributes={} literal="hidden" children=0
+│       └── Paragraph scope=4:5..4:10 anchor=null attributes={} children=1
+│           └── Text scope=4:5..4:10 anchor=null attributes={} literal="nested" children=0
+├── Callout scope=8:1..8:9 anchor=null attributes={} variant="note" collapsed=null children=0
+└── Footnote scope=1:53..1:65 id="inline-1" children=1
+    └── Text scope=1:55..1:64 anchor=null attributes={} literal="title note" children=0
