@@ -30,9 +30,8 @@ modules state the ruled behavior and the ruling is final.
   of the document, closed by `---`, flat scalars and text or number lists,
   atomic text values; `...` invalidates the candidate and a later `---` pair
   is inherited Markdown. Product ruling that the provisional rule is final.
-- **C-3 Cross links.** Not a collision. `CrossLink` with
-  `Destination.cross` is the unified model of Obsidian's internal links and
-  embeds. Pandoc's `wikilinks_title_after_pipe` writes the same order, target
+- **C-3 Cross links.** Not a collision. `CrossLink` and `CrossEmbedded` share
+  `Destination.cross` for Obsidian's internal links and transclusions. Pandoc's `wikilinks_title_after_pipe` writes the same order, target
   before the pipe and label after it, so it is a special case of the model.
   Pandoc's `wikilinks_title_before_pipe` reads the identical bytes with the
   two roles swapped; nothing is wrong with that convention, but one input has

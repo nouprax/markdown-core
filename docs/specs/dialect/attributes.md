@@ -212,7 +212,7 @@ table, row, cell, or caption receives attributes or an anchor; a
 | inline code                                    | `Code`                         | immediately after the complete closing backtick run                   |
 | ATX and Setext heading                         | `Heading`                      | the last non-whitespace bytes of the heading's content line           |
 | fenced code                                    | `CodeBlock`                    | the last non-whitespace content of the opening fence line             |
-| direct, reference, and autolink link and image | `Link`, `Image`                | immediately after the occurrence, or inherited from its definition    |
+| direct, reference, and autolink link and image | `Link`, `Media`                | immediately after the occurrence, or inherited from its definition    |
 | bracketed span                                 | `Span`                         | immediately after the balanced closing `]`                            |
 | nameless container directive                   | `DirectiveBlock`               | on the opening colon fence, as a container or one class word          |
 
@@ -333,7 +333,7 @@ Document scope=1:1..3:3 anchor=null attributes={} children=1
 
 A container beginning at the byte after a complete direct link or image
 tail, a full or collapsed reference tail that resolves, or an angle-bracket
-autolink attaches to the resulting `Link` or `Image`; a shortcut reference
+autolink attaches to the resulting `Link` or `Media`; a shortcut reference
 followed by a container is a bracketed span, which the bracket procedure
 tests first:
 
@@ -349,7 +349,7 @@ Document scope=1:1..5:32 anchor=null attributes={} children=3
 │   └── Link scope=1:1..1:44 anchor=null attributes={target="_blank"} dest=url("https://example.com") title=null children=1
 │       └── Text scope=1:2..1:5 anchor=null attributes={} literal="text" children=0
 ├── Paragraph scope=3:1..3:40 anchor=null attributes={} children=1
-│   └── Image scope=3:1..3:40 anchor="hero" attributes={.wide width="50%"} dest=url("foo.jpg") title=null width=null height=null children=1
+│   └── Media scope=3:1..3:40 anchor="hero" attributes={.wide width="50%"} dest=url("foo.jpg") title=null dimensions=null children=1
 │       └── Text scope=3:3..3:7 anchor=null attributes={} literal="image" children=0
 └── Paragraph scope=5:1..5:32 anchor=null attributes={} children=1
     └── Link scope=5:1..5:32 anchor=null attributes={.external} dest=url("https://example.com") title=null children=1
@@ -410,9 +410,9 @@ Document scope=1:1..3:26 anchor=null attributes={} children=1
         └── Text scope=1:2..1:2 anchor=null attributes={} literal="x" children=0
 ````````````````````````````````
 
-Image `width` and `height` assignments are records stored verbatim,
+Media `width` and `height` assignments are records stored verbatim,
 `width=50%` and `height=2in` alike; the parser validates no unit. The typed
-`Image.width` and `Image.height` fields are populated only by the
+`Media.dimensions: Dimensions?` value is populated only by the
 [image dimensions](links-and-images.md) rule, never by a record, and vice
 versa.
 

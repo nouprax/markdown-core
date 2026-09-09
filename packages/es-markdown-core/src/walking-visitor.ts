@@ -4,6 +4,7 @@ import type { CodeBlock } from "./model/code-block.js";
 import type { Code } from "./model/code.js";
 import type { Comment } from "./model/comment.js";
 import type { CrossLink } from "./model/cross-link.js";
+import type { CrossEmbedded } from "./model/cross-embedded.js";
 import type { DirectiveBlock } from "./model/directive-block.js";
 import type { DirectiveLabel } from "./model/directive-label.js";
 import type { Directive } from "./model/directive.js";
@@ -16,7 +17,7 @@ import type { Formula } from "./model/formula.js";
 import type { Heading } from "./model/heading.js";
 import type { HTMLBlock } from "./model/html-block.js";
 import type { HTML } from "./model/html.js";
-import type { Image } from "./model/image.js";
+import type { Media } from "./model/media.js";
 import type { LineBreak } from "./model/line-break.js";
 import type { Link } from "./model/link.js";
 import type { List, ListItem } from "./model/list.js";
@@ -64,13 +65,14 @@ export interface WalkingVisitor {
     visitHTML(this: void, node: HTML, phase: WalkPhase): void;
     visitComment(this: void, node: Comment, phase: WalkPhase): void;
     visitCrossLink(this: void, node: CrossLink, phase: WalkPhase): void;
+    visitCrossEmbedded(this: void, node: CrossEmbedded, phase: WalkPhase): void;
     visitFormula(this: void, node: Formula, phase: WalkPhase): void;
     visitEmphasis(this: void, node: Emphasis, phase: WalkPhase): void;
     visitStrong(this: void, node: Strong, phase: WalkPhase): void;
     visitStrikethrough(this: void, node: Strikethrough, phase: WalkPhase): void;
     visitMark(this: void, node: Mark, phase: WalkPhase): void;
     visitLink(this: void, node: Link, phase: WalkPhase): void;
-    visitImage(this: void, node: Image, phase: WalkPhase): void;
+    visitMedia(this: void, node: Media, phase: WalkPhase): void;
     visitDirective(this: void, node: Directive, phase: WalkPhase): void;
     visitCite(this: void, node: Cite, phase: WalkPhase): void;
     /** A value callback: a `Citation` is a scoped value, not a `Markup` kind. */
@@ -259,6 +261,10 @@ export function walk(root: Markup, walkingVisitor: WalkingVisitor): void {
             walkingVisitor.visitCrossLink(node, phase);
             scheduleExit(node);
         },
+        visitCrossEmbedded: (node) => {
+            walkingVisitor.visitCrossEmbedded(node, phase);
+            scheduleExit(node);
+        },
         visitComment: (node) => {
             walkingVisitor.visitComment(node, phase);
             scheduleExit(node);
@@ -292,8 +298,8 @@ export function walk(root: Markup, walkingVisitor: WalkingVisitor): void {
             scheduleExit(node);
             if (phase === "entering") schedule(node.content);
         },
-        visitImage: (node) => {
-            walkingVisitor.visitImage(node, phase);
+        visitMedia: (node) => {
+            walkingVisitor.visitMedia(node, phase);
             scheduleExit(node);
             if (phase === "entering") schedule(node.content);
         },

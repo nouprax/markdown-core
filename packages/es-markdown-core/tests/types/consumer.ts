@@ -6,7 +6,10 @@ import {
     type MetadataValue,
     type MetadataScalar,
     type MetadataListItem,
-    type Image,
+    type Media,
+    type CrossLink,
+    type CrossEmbedded,
+    type Dimensions,
     TreeDumper,
     visit,
     walk,
@@ -56,13 +59,14 @@ const visitor: Visitor<string> = {
     visitHTML: (node) => node.kind,
     visitComment: (node) => node.kind,
     visitCrossLink: (node) => node.kind,
+    visitCrossEmbedded: (node) => node.kind,
     visitFormula: (node) => node.kind,
     visitEmphasis: (node) => node.kind,
     visitStrong: (node) => node.kind,
     visitStrikethrough: (node) => node.kind,
     visitMark: (node) => node.kind,
     visitLink: (node) => node.kind,
-    visitImage: (node) => node.kind,
+    visitMedia: (node) => node.kind,
     visitDirective: (node) => node.kind,
     visitCite: (node) => node.kind
 };
@@ -143,9 +147,17 @@ const metadata: Metadata = {
 };
 const parsedMetadata: Metadata | null = document.metadata;
 void [anchor, attributes, empty, record, listItem, metadata, parsedMetadata];
-declare const image: Image;
-const dimensions: readonly (number | null)[] = [image.width, image.height];
-void dimensions;
+declare const image: Media;
+const dimensions: Dimensions | null = image.dimensions;
+const standaloneSize: Dimensions = { width: 640, height: null };
+void [dimensions, standaloneSize];
+// @ts-expect-error dimensions require width
+const heightOnly: Dimensions = { height: 480 };
+// @ts-expect-error dimensions are values, not Markup
+const sizeNode: Markup = standaloneSize;
+void [heightOnly, sizeNode];
+// @ts-expect-error dimensions are immutable
+standaloneSize.width = 800;
 // @ts-expect-error inherited attributes are recursively readonly
 attributes.classes[0] = "replacement";
 // @ts-expect-error metadata fields are readonly
@@ -153,3 +165,14 @@ metadata.name = metadataValue;
 // @ts-expect-error an attribute record is a value, not Markup
 const recordMarkup: Markup = record;
 void recordMarkup;
+
+declare const crossLink: CrossLink;
+declare const crossEmbedded: CrossEmbedded;
+const embeddedSize: Dimensions | null = crossEmbedded.dimensions;
+void embeddedSize;
+// @ts-expect-error ordinary cross links have no dimensions
+void crossLink.dimensions;
+// @ts-expect-error the node kind replaces the old embedded flag
+void crossLink.embedded;
+// @ts-expect-error CrossEmbedded also has no redundant embedded flag
+void crossEmbedded.embedded;

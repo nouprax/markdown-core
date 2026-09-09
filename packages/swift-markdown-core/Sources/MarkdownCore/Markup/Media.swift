@@ -1,37 +1,37 @@
 import MarkdownCoreC
 
-/// An inline image — `![alt](source)`.
+/// Inline media — `![alt](source)` or a resolved reference.
+/// The target type is not inferred.
 ///
 /// Its content is PARSED alt text: `![a *b*](s)` has an ``Emphasis`` in it, and
 /// flattening it to a string is the consumer's decision, not the parser's.
-public struct Image: Markup {
+/// Complete `W`, `WxH`, `alt|W` and `alt|WxH` labels supply positive 32-bit
+/// dimensions without leading zeros, on both direct and resolved images.
+public struct Media: Markup {
     /// Where it is, `![` through the closing parenthesis. See ``Scope``.
     public let scope: Scope
     /// The explicit anchor, absent when none was attached.
     public let anchor: String?
     /// Ordered classes and records, including duplicates.
     public let attributes: Attributes
-    /// The alt text, as parsed inline content.
+    /// Parsed alt content excluding a valid dimension suffix; empty for a numeric-only label.
+    /// A malformed suffix remains part of the alt content.
     public let content: [any Markup]
     /// Required, for the reason ``Link/dest`` is.
     public let dest: Destination
     /// Optional.
     public let title: String?
-    /// Authored dimensions, absent until O9.
-    public let width: Int?
-    /// Authored height, absent until O9.
-    public let height: Int?
+    /// Authored size from a complete label suffix, or nil. Independent of attribute records.
+    public let dimensions: Dimensions?
 
-    /// Dispatches to the visitor's `Image` case.
+    /// Dispatches to the visitor's `Media` case.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 }
 
-extension Image {
+extension Media {
     init(from node: OpaquePointer, content: [any Markup], resources: inout [UnsafeRawPointer: SharedResource]) {
         let resource = SharedResource.shared(by: node, in: &resources)
-        var width = markdown_core_optional_i64()
-        var height = markdown_core_optional_i64()
-        markdown_core_node_image_dimensions(node, &width, &height)
+        let dimensions = markdown_core_node_dimensions(node).map { Dimensions($0.pointee) }
         self.init(
             scope: Self.scope(from: node),
             anchor: markdown_core_node_anchor(node).string,
@@ -39,8 +39,7 @@ extension Image {
             content: content,
             dest: resource.dest,
             title: resource.title,
-            width: width.has_value ? Int(width.value) : nil,
-            height: height.has_value ? Int(height.value) : nil
+            dimensions: dimensions
         )
     }
 }

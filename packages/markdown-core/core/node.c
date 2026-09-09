@@ -40,7 +40,7 @@ bool markdown_core_node_can_contain_type(markdown_core_node *node, markdown_core
     case MARKDOWN_CORE_NODE_STRONG:
     case MARKDOWN_CORE_NODE_MARK:
     case MARKDOWN_CORE_NODE_LINK:
-    case MARKDOWN_CORE_NODE_IMAGE:
+    case MARKDOWN_CORE_NODE_MEDIA:
         return MARKDOWN_CORE_NODE_TYPE_INLINE_P(child_type);
 
     default:
@@ -128,11 +128,14 @@ static size_t S_node_payload_size(markdown_core_node_type type) {
         size = sizeof(markdown_core_chunk);
         break;
     case MARKDOWN_CORE_NODE_LINK:
-    case MARKDOWN_CORE_NODE_IMAGE:
+    case MARKDOWN_CORE_NODE_MEDIA:
         size = sizeof(markdown_core_link);
         break;
     case MARKDOWN_CORE_NODE_CROSS_LINK:
-        size = sizeof(markdown_core_cross_link);
+        size = sizeof(markdown_core_cross_reference);
+        break;
+    case MARKDOWN_CORE_NODE_CROSS_EMBEDDED:
+        size = sizeof(markdown_core_cross_embedded);
         break;
     case MARKDOWN_CORE_NODE_CITE:
         size = sizeof(markdown_core_cite);
@@ -232,10 +235,13 @@ static void free_node_as(markdown_core_node *node) {
         markdown_core_chunk_free(NODE_MEM(node), &node->as.html_block->literal);
         break;
     case MARKDOWN_CORE_NODE_CROSS_LINK:
-        markdown_core_chunk_free(NODE_MEM(node), &node->as.cross_link->path);
-        markdown_core_optional_chunk_free(NODE_MEM(node), &node->as.cross_link->anchor);
-        markdown_core_optional_chunk_free(NODE_MEM(node), &node->as.cross_link->label);
+    case MARKDOWN_CORE_NODE_CROSS_EMBEDDED: {
+        markdown_core_cross_reference *cross = markdown_core_node_cross_reference(node);
+        markdown_core_chunk_free(NODE_MEM(node), &cross->path);
+        markdown_core_optional_chunk_free(NODE_MEM(node), &cross->anchor);
+        markdown_core_optional_chunk_free(NODE_MEM(node), &cross->label);
         break;
+    }
     case MARKDOWN_CORE_NODE_CITATION:
         /* The affix chains are freed by the walk in `S_free_nodes`, spliced
          * in beside the children; only the referent's bytes are the arm's. */
@@ -248,7 +254,7 @@ static void free_node_as(markdown_core_node *node) {
         markdown_core_chunk_free(NODE_MEM(node), &node->as.footnote->id);
         break;
     case MARKDOWN_CORE_NODE_LINK:
-    case MARKDOWN_CORE_NODE_IMAGE:
+    case MARKDOWN_CORE_NODE_MEDIA:
         /* One holder fewer; a resource shared with other occurrences, or
          * still held by the reference map, stays. */
         markdown_core_resource_release(NODE_MEM(node), node->as.link->resource);
@@ -432,8 +438,8 @@ const char *markdown_core_node_get_type_string(markdown_core_node *node) {
         return "mark";
     case MARKDOWN_CORE_NODE_LINK:
         return "link";
-    case MARKDOWN_CORE_NODE_IMAGE:
-        return "image";
+    case MARKDOWN_CORE_NODE_MEDIA:
+        return "media";
     case MARKDOWN_CORE_NODE_CITE:
         return "cite";
     case MARKDOWN_CORE_NODE_CITATION:

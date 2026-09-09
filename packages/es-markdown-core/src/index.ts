@@ -5,6 +5,7 @@ export type { Citation, Cite } from "./model/cite.js";
 export type { Code } from "./model/code.js";
 export type { Comment } from "./model/comment.js";
 export type { CrossLink } from "./model/cross-link.js";
+export type { CrossEmbedded } from "./model/cross-embedded.js";
 export type { DirectiveBlock } from "./model/directive-block.js";
 export type { DirectiveLabel } from "./model/directive-label.js";
 export type { Directive } from "./model/directive.js";
@@ -16,7 +17,7 @@ export type { Formula } from "./model/formula.js";
 export type { Heading } from "./model/heading.js";
 export type { HTMLBlock } from "./model/html-block.js";
 export type { HTML } from "./model/html.js";
-export type { Image } from "./model/image.js";
+export type { Media } from "./model/media.js";
 export type { LineBreak } from "./model/line-break.js";
 export type { Link } from "./model/link.js";
 export type { List, ListItem } from "./model/list.js";
@@ -37,6 +38,7 @@ export type {
     BibMode,
     CitationReferent,
     Destination,
+    Dimensions,
     ListFlavor,
     OrderedListDelimiter,
     OrderedListVariant,

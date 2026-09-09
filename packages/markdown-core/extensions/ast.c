@@ -188,11 +188,14 @@ markdown_core_node_kind markdown_core_node_get_kind(const markdown_core_node *no
     if (node->kind == MARKDOWN_CORE_NODE_LINK) {
         return MARKDOWN_CORE_KIND_LINK;
     }
-    if (node->kind == MARKDOWN_CORE_NODE_IMAGE) {
-        return MARKDOWN_CORE_KIND_IMAGE;
+    if (node->kind == MARKDOWN_CORE_NODE_MEDIA) {
+        return MARKDOWN_CORE_KIND_MEDIA;
     }
     if (node->kind == MARKDOWN_CORE_NODE_CROSS_LINK) {
         return MARKDOWN_CORE_KIND_CROSS_LINK;
+    }
+    if (node->kind == MARKDOWN_CORE_NODE_CROSS_EMBEDDED) {
+        return MARKDOWN_CORE_KIND_CROSS_EMBEDDED;
     }
     if (node->kind == MARKDOWN_CORE_NODE_CITE) {
         return MARKDOWN_CORE_KIND_CITE;
@@ -254,7 +257,7 @@ const char *markdown_core_node_kind_name(markdown_core_node_kind kind) {
         "Strong",
         "Strikethrough",
         "Link",
-        "Image",
+        "Media",
         "Directive",
         "Cite",
         "TableRow",
@@ -262,9 +265,10 @@ const char *markdown_core_node_kind_name(markdown_core_node_kind kind) {
         "DirectiveLabel",
         "Comment",
         "CrossLink",
-        "Mark"};
+        "Mark",
+        "CrossEmbedded"};
     /* clang-format on */
-    if (kind < MARKDOWN_CORE_KIND_NONE || kind > MARKDOWN_CORE_KIND_MARK) {
+    if (kind < MARKDOWN_CORE_KIND_NONE || kind > MARKDOWN_CORE_KIND_CROSS_EMBEDDED) {
         return "None";
     }
     return names[kind];
@@ -500,14 +504,19 @@ bool markdown_core_node_attribute_record_at(const markdown_core_node *node, size
     *value = chunk_string(node->attributes.records[index].value);
     return true;
 }
-bool markdown_core_node_image_dimensions(const markdown_core_node *node, markdown_core_optional_i64 *width,
-                                         markdown_core_optional_i64 *height) {
-    if (!node || node->kind != MARKDOWN_CORE_NODE_IMAGE || !width || !height) {
-        return false;
+const markdown_core_dimensions *markdown_core_node_dimensions(const markdown_core_node *node) {
+    if (!node) {
+        return NULL;
     }
-    *width = node->as.link->width;
-    *height = node->as.link->height;
-    return true;
+    const markdown_core_optional_dimensions *dimensions;
+    if (node->kind == MARKDOWN_CORE_NODE_MEDIA) {
+        dimensions = &node->as.link->dimensions;
+    } else if (node->kind == MARKDOWN_CORE_NODE_CROSS_EMBEDDED) {
+        dimensions = &node->as.cross_embedded->dimensions;
+    } else {
+        return NULL;
+    }
+    return dimensions->has_value ? &dimensions->value : NULL;
 }
 const markdown_core_metadata *markdown_core_node_document_metadata(const markdown_core_node *node) {
     return node && node->kind == MARKDOWN_CORE_NODE_DOCUMENT ? node->as.document->metadata : NULL;
@@ -591,7 +600,7 @@ const markdown_core_node *markdown_core_node_callout_title(const markdown_core_n
 }
 
 static bool is_link(const markdown_core_node *node) {
-    return node && (node->kind == MARKDOWN_CORE_NODE_LINK || node->kind == MARKDOWN_CORE_NODE_IMAGE);
+    return node && (node->kind == MARKDOWN_CORE_NODE_LINK || node->kind == MARKDOWN_CORE_NODE_MEDIA);
 }
 
 /* Every link and image the parser produces reads through a resource, and
@@ -601,14 +610,15 @@ static const markdown_core_chunk empty_url = {(unsigned char *)"", 0, 0};
 static const markdown_core_optional_chunk absent_title = {{NULL, 0, 0}, false};
 
 bool markdown_core_node_destination(const markdown_core_node *node, markdown_core_destination *destination) {
-    if (!node || !destination || (!is_link(node) && node->kind != MARKDOWN_CORE_NODE_CROSS_LINK)) {
+    if (!node || !destination || (!is_link(node) && !markdown_core_node_cross_reference(node))) {
         return false;
     }
     memset(destination, 0, sizeof(*destination));
-    if (node->kind == MARKDOWN_CORE_NODE_CROSS_LINK) {
+    const markdown_core_cross_reference *cross = markdown_core_node_cross_reference(node);
+    if (cross) {
         destination->kind = MARKDOWN_CORE_DESTINATION_CROSS;
-        string_from_chunk(&destination->path, &node->as.cross_link->path);
-        optional_string_from_chunk(&destination->anchor, &node->as.cross_link->anchor);
+        string_from_chunk(&destination->path, &cross->path);
+        optional_string_from_chunk(&destination->anchor, &cross->anchor);
         return true;
     }
     destination->kind = MARKDOWN_CORE_DESTINATION_URL;
@@ -616,14 +626,13 @@ bool markdown_core_node_destination(const markdown_core_node *node, markdown_cor
     return true;
 }
 
-bool markdown_core_node_cross_link_properties(const markdown_core_node *node, bool *embedded,
-                                              markdown_core_optional_string *label) {
-    if (!node || node->kind != MARKDOWN_CORE_NODE_CROSS_LINK || !embedded || !label) {
-        return false;
+markdown_core_optional_string markdown_core_node_cross_label(const markdown_core_node *node) {
+    markdown_core_optional_string label = {0};
+    const markdown_core_cross_reference *cross = markdown_core_node_cross_reference(node);
+    if (cross) {
+        optional_string_from_chunk(&label, &cross->label);
     }
-    *embedded = node->as.cross_link->embedded;
-    optional_string_from_chunk(label, &node->as.cross_link->label);
-    return true;
+    return label;
 }
 
 bool markdown_core_node_title(const markdown_core_node *node, markdown_core_optional_string *title) {
@@ -909,6 +918,22 @@ static const char *mode_name(markdown_core_placement_mode mode) {
  * Kept OUTSIDE `dump_fields`, whose body the projection audit reads for the
  * `name=` literals a kind prints: the branch fields are the value's, not the
  * node's. */
+static void buffer_dimensions(dump_buffer *buffer, const markdown_core_dimensions *value) {
+    if (!value) {
+        buffer_cstr(buffer, "null");
+        return;
+    }
+    buffer_cstr(buffer, "(width=");
+    buffer_i64(buffer, value->width);
+    buffer_cstr(buffer, ",height=");
+    if (value->height.has_value) {
+        buffer_i64(buffer, value->height.value);
+    } else {
+        buffer_cstr(buffer, "null");
+    }
+    buffer_cstr(buffer, ")");
+}
+
 static void buffer_destination(dump_buffer *buffer, markdown_core_destination destination) {
     if (destination.kind == MARKDOWN_CORE_DESTINATION_CROSS) {
         buffer_cstr(buffer, "cross(path=");
@@ -1141,37 +1166,31 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
         buffer_cstr(buffer, " title=");
         buffer_optional_string(buffer, oa);
         break;
-    case MARKDOWN_CORE_KIND_CROSS_LINK: {
-        bool embedded;
-        markdown_core_node_cross_link_properties(node, &embedded, &oa);
+    case MARKDOWN_CORE_KIND_CROSS_LINK:
         markdown_core_node_destination(node, &destination);
-        buffer_cstr(buffer, embedded ? " embedded=true dest=" : " embedded=false dest=");
+        buffer_cstr(buffer, " dest=");
         buffer_destination(buffer, destination);
         buffer_cstr(buffer, " label=");
-        buffer_optional_string(buffer, oa);
+        buffer_optional_string(buffer, markdown_core_node_cross_label(node));
         break;
-    }
-    case MARKDOWN_CORE_KIND_IMAGE: {
+    case MARKDOWN_CORE_KIND_CROSS_EMBEDDED:
+        markdown_core_node_destination(node, &destination);
+        buffer_cstr(buffer, " dest=");
+        buffer_destination(buffer, destination);
+        buffer_cstr(buffer, " label=");
+        buffer_optional_string(buffer, markdown_core_node_cross_label(node));
+        buffer_cstr(buffer, " dimensions=");
+        buffer_dimensions(buffer, markdown_core_node_dimensions(node));
+        break;
+    case MARKDOWN_CORE_KIND_MEDIA: {
         markdown_core_node_destination(node, &destination);
         markdown_core_node_title(node, &oa);
         buffer_cstr(buffer, " dest=");
         buffer_destination(buffer, destination);
         buffer_cstr(buffer, " title=");
         buffer_optional_string(buffer, oa);
-        markdown_core_optional_i64 width, height;
-        markdown_core_node_image_dimensions(node, &width, &height);
-        buffer_cstr(buffer, " width=");
-        if (width.has_value) {
-            buffer_i64(buffer, width.value);
-        } else {
-            buffer_cstr(buffer, "null");
-        }
-        buffer_cstr(buffer, " height=");
-        if (height.has_value) {
-            buffer_i64(buffer, height.value);
-        } else {
-            buffer_cstr(buffer, "null");
-        }
+        buffer_cstr(buffer, " dimensions=");
+        buffer_dimensions(buffer, markdown_core_node_dimensions(node));
         break;
     }
     default:
@@ -1590,7 +1609,7 @@ static void dump_node(dump_buffer *buffer, const markdown_core_node *node, size_
     case MARKDOWN_CORE_KIND_MARK:
     case MARKDOWN_CORE_KIND_STRIKETHROUGH:
     case MARKDOWN_CORE_KIND_LINK:
-    case MARKDOWN_CORE_KIND_IMAGE:
+    case MARKDOWN_CORE_KIND_MEDIA:
         dump_children(buffer, node, depth, child_count);
         break;
     case MARKDOWN_CORE_KIND_THEMATIC_BREAK:
@@ -1605,6 +1624,7 @@ static void dump_node(dump_buffer *buffer, const markdown_core_node *node, size_
     case MARKDOWN_CORE_KIND_COMMENT:
     case MARKDOWN_CORE_KIND_FORMULA:
     case MARKDOWN_CORE_KIND_CROSS_LINK:
+    case MARKDOWN_CORE_KIND_CROSS_EMBEDDED:
     case MARKDOWN_CORE_KIND_NONE:
         break;
     }

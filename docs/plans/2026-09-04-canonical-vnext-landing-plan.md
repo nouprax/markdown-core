@@ -32,7 +32,7 @@ parallel and every merge leaves `main` releasable.
 | #190 release dry-run readiness                | landed | Every pull request must pass the credential-free `Release Dry Run - Ready` check, so an intermediate state that cannot build every artifact cannot merge.                                                       |
 | #191 UTF-8 repair removal and table positions | landed | Valid UTF-8 is a caller precondition, so new scanners add no validation or repair path. The position ledgers are fail-closed ratchets that every parser change keeps exact.                                    |
 | #192 extension module contracts               | specs  | The Obsidian module set, the Pandoc module set, the shared attributes, citation, and inserted-text contracts, Remark directive attachment, the Pandoc and Obsidian oracle pins, and the two implementation plans. |
-| #193 anchors and destinations                 | specs  | The universal `Markup.anchor` field, the tagged `Destination` value on `Link`, `Image`, and `CrossLink`, and the simplified `Attributes` shape.                                                                 |
+| #193 anchors and destinations                 | specs  | The universal `Markup.anchor` field, the tagged `Destination` value on `Link`, `Media`, and `CrossLink`, and the simplified `Attributes` shape.                                                                 |
 | #194 Obsidian Properties                      | specs  | `Document.metadata`, the shared metadata value model, the Properties envelope, and the `yaml@2.9.0` oracle.                                                                                                     |
 | #196 Properties corrections                   | specs  | Textual mapping keys and tightened oracle canaries; the original null-root rejection is superseded by O6 member skipping.                                                                                                       |
 
@@ -230,9 +230,10 @@ and the manifest order.
 | `Definition`                                                                                       | `term: [Markup]`, `content: [[Markup]]`, `compact: Bool`                                                          | new                                              | `P10`        |
 | `Text`, `SoftBreak`, `LineBreak`, `Code`, `HTML`, `Formula`, `Emphasis`, `Strong`, `Strikethrough` | as today                                                                                                          | unchanged                                        | —            |
 | `Link`                                                                                             | `dest: Destination`, `title`, `content`                                                                           | changed                                          | `M1`         |
-| `Image`                                                                                            | `dest: Destination`, `title`, `width: Int?`, `hten: Int?`, `content`                                            | changed                                          | `M1`, `M7`   |
+| `Media`                                                                                            | `dest: Destination`, `title`, `dimensions: Dimensions?`, `content`                                            | changed                                          | `M1`, `M7`, `O9`   |
 | `Directive`                                                                                        | `name`, `label`                                                                                                   | changed; attributes move to the inherited field  | `M7`         |
-| `CrossLink`                                                                                        | `embedded: Bool`, `dest: Destination`, `label: String?`                                                           | new                                              | `O1`         |
+| `CrossLink` | `dest: Destination`, `label: String?` | new | `O1` |
+| `CrossEmbedded` | `dest: Destination`, `label: String?`, `dimensions: Dimensions?` | new; transclusion separated from CrossLink | `O9` |
 | `Mark`                                                                                             | `content`                                                                                                         | new                                              | `O2`         |
 | `Comment`                                                                                          | `literal`                                                                                                         | new; block or inline by its parent edge          | `M0`         |
 | `Cite`                                                                                             | `citations: [Citation]`                                                                                           | new                                              | `M4`         |
@@ -252,6 +253,7 @@ value carries `scope` only.
 | Value                                                                               | Item and first producer                                       |
 | ----------------------------------------------------------------------------------- | ------------------------------------------------------------- |
 | `Destination = url(String) \| cross(path: String, anchor: String?)`                 | `M1`; `cross` first produced by `O1`                          |
+| `Dimensions(width: Int, height: Int?)` | `O9`; node-independent, first held by `Media.dimensions` |
 | `Attributes(classes: [String], records: [Record])`, `Record(name, value)`           | `M7`; populated from directive syntax in `M7`                 |
 | `CitationReferent = bib(key, mode: BibMode) \| footnote(id)`, `BibMode`             | `M4`; `bib` first produced by `P7`                            |
 | `Citation(referent, prefix: [Markup], suffix: [Markup], scope)`                     | `M4`; scoped and traversed, not `Markup`                      |
@@ -388,7 +390,7 @@ its behavior, with no separate publication step.
       closing sequence included, as the base module's example shows; the
       current parser ends it at the content. Manifest states: `comment.placement.block`,
       `comment.placement.inline`. Requires `S0`.
-- [x] **M1 — `Destination` on `Link` and `Image`.** Add the tagged `Destination`
+- [x] **M1 — `Destination` on `Link` and `Media`.** Add the tagged `Destination`
       value with both branches and replace `Link.destination` and `Image.source`
       with `dest`; only `url` is produced until `O1`. New facade accessors
       reporting the branch and its strings replace
@@ -399,7 +401,7 @@ its behavior, with no separate publication step.
       `destination.url.empty`, `destination.url.value`. Requires `S0`.
 - [x] **M2 — Resolved reference links and images.** Resolve every successful
       full, collapsed, shortcut, and autolink form to `Link(dest=url(...))` and
-      every reference image to `Image` inside the existing parser-owned lookup,
+      every reference image to `Media` inside the existing parser-owned lookup,
       and remove `LinkReference`, `ImageReference`, `ReferenceDefinition`, and
       `ReferenceForm` from every surface with their facade accessors;
       `markdown_core_node_association` narrows to the footnote kinds until `M4`.
@@ -483,7 +485,7 @@ its behavior, with no separate publication step.
       turning the contract's single inherited field into an ordered set that the
       projection audit, the fixture checker, and the dump grammar understand;
       add `Document.metadata: Metadata?` with the metadata value types; add
-      `Image.width` and `Image.hten` as `null`. Add facade accessors for the
+      optional image dimensions as `null` (regrouped as `Media.dimensions` in O9). Add facade accessors for the
       anchor, classes, records, metadata fields, and dimensions, and carry the
       values through the JNI and Wasm transports. Implement the shared Pandoc
       3.11 braced-attribute scanner and normalization once in the C core (the
@@ -508,7 +510,7 @@ its behavior, with no separate publication step.
       dialect's attributes module, and regenerate every golden once. The
       Obsidian gate reads `metadata` from the dump's nested `Metadata` lines.
       Manifest states: `markup.anchor.null`, `markup.attributes.empty`,
-      `document.metadata.null`, `image.dimensions.null`. Exit: the attributes
+      `document.metadata.null`, `media.dimensions.null`. Exit: the attributes
       and Remark attribute conformance cases pass, no second attribute tokenizer
       remains, and size-doubling valid, duplicate, malformed, and unclosed
       containers are linear. Requires `M0` through `M6`.
@@ -546,7 +548,9 @@ its behavior, with no separate publication step.
       handling), always on, and public from this item. One
       scanner recognizes `[[...]]` and `![[...]]`, splits path, optional anchor,
       and label while scanning, removes the `#` and `#^` punctuation, and builds
-      one `CrossLink(embedded, dest=cross(path, anchor), label)` whose `label`
+      `CrossLink(dest=cross(path, anchor), label)` or, for `![[...]]`,
+      `CrossEmbedded(dest=cross(path, anchor), label, dimensions)` (separated
+      into its own kind in O9), whose `label`
       is null only when no `|` was authored. Add the `CrossLink` kind on every
       surface as the first producer of `Destination.cross`, fixtures for the
       module's seven table rows, every malformed boundary, opaque contexts,
@@ -560,9 +564,9 @@ its behavior, with no separate publication step.
       is unchanged. Fixtures also cover escaped pipes in aligned and pipe-optional
       tables. An escaped wikilink pipe inside a simple, multiline, or grid table
       cell is a cross-item case owned by whichever of `O1` and `P11b`, `P11c`,
-      or `P11d` merges later. The heading-text projection of `CrossLink` in
+      or `P11d` merges later. The heading-text projection of `CrossLink` and `CrossEmbedded` in
       generated anchors is a cross-item case owned by whichever of `O1` and `P3`
-      merges later. An attribute container following a complete `CrossLink`
+      merges later. An attribute container following a complete `CrossLink` or `CrossEmbedded`
       staying text beside bracketed spans is a cross-item case owned by
       whichever of `O1` and `P5` merges later. Requires `X0`, `M7`.
 
@@ -944,19 +948,64 @@ its behavior, with no separate publication step.
   run for C, Swift, npm and Maven. Full cross-host release aggregation remains
   the required CI check.
 
-- [ ] **O9 — Image dimensions.** Parse the complete
+- [x] **O9 — Media dimensions.** Parse the complete
       `W`, `WxH`, `alt|W`, and `alt|WxH` alt-label suffixes in the shared image
-      construction path into `width` and `hten`, keep the whole label as alt
-      content on any malformed suffix, and leave `CrossLink.label` raw.
+      construction path into `dimensions: Dimensions?`, keep the whole label as alt
+      content on any malformed suffix. Apply the shared size grammar to embedded
+      `CrossEmbedded.label`, retaining its raw prefix and exposing `dimensions`;
+      ordinary cross-link labels remain raw.
       Fixtures cover every valid and invalid dimension form and formatted alt
       content. An image carrying both a typed dimension suffix and a `width` or
-      `hten` attribute record, each retained independently, is a cross-item
+      `height` attribute record, each retained independently, is a cross-item
       case owned by whichever of `O9` and `P2d` merges later. Requires `O1`.
+
+  O9 renames the canonical `Image` node to `Media` across the C kinds and
+  accessor, Swift/Kotlin/ES models, visitors, decoders, dumps and public API
+  inventories. The inherited `![...](...)` syntax does not infer the target
+  media type; `CrossEmbedded` remains a workspace transclusion.
+
+  O9 also groups the previously independent width/height fields into the
+  node-independent `Dimensions(width: Int, height: Int?)` value, held by
+  `Media.dimensions: Dimensions?`. Its C facade, binding models, transports,
+  dump grammar, fixtures and API inventories change together; there is no
+  legacy pair of image fields or Dimensions visitor callback. Embedded cross
+  references are now `CrossEmbedded`, sharing the same dimension parser and value,
+  with the generic C accessor
+  `markdown_core_node_dimensions`; a size-only embed label stays present as
+  an empty string. `CrossLink` has only `dest` and `label`; no node carries
+  an `embedded` flag. Raw cross-link scanners and Media inline brackets each
+  supply their own separator boundaries without reparsing or rescanning labels.
+
+  Implementation notes (2026-09-09): the shared successful-image branch
+  consumes dimensions after direct/reference resolution and before delimiter
+  reduction. Each image bracket records its last ordinary-text pipe; escaped and
+  opaque tokens and nested brackets keep their own boundaries. Bounded integer
+  parsing checks complete raw suffixes, and retained alt nodes use the existing
+  content-to-source map, including contracted table pipes. Dimensions belong to
+  the occurrence while referenced destinations keep their shared identity.
+
+  Package fixtures include every module example, numeric limits and malformed
+  forms, all reference forms, formatted alt, opacity, nested images, table
+  escapes and exact scopes. The shared `media-dimensions` case covers both
+  produced dimension states on every binding. Size-doubling digit/pipe runs
+  and nested image labels assert a linear work bound; strict OOM sweeps cover
+  truncation and empty alt. Nine exact CommonMark inputs register the authored
+  suffix difference; the exact Obsidian embed input registers label consumption
+  as `embedded-dimensions`. Position and reference ledgers gain no exceptions.
+  Validation: C correctness 77/77 and conformance 2/2; ASan, UBSan and TSan
+  correctness 77/77 each, including strict OOM sweeps. Swift macOS, Kotlin
+  JVM/macOS Native/Android host, and ES Node/browser tests and conformance pass,
+  as do all four oracle gates, the three 400-case CI fuzz seeds, position and
+  reference audits, `pnpm verify`, and the host release dry run for C, Swift,
+  npm and Maven. Full cross-host release aggregation remains the required CI
+  check. The dimension-attribute composition remains owned by later item `P2d`.
+
 - [ ] **O10 — Obsidian evidence closure.** Add the integration fixtures for
       every pairwise opaque-context interaction, OFM and CommonMark constructs
       between paired inline HTML tags, the five-step precedence order, task
-      items carrying block identifiers, `mermaid` and `query` blocks, and inline
-      and display math; add canonical cases until every OFM kind, state, and
+      items carrying block identifiers, generic `CodeBlock` info/language
+      preservation and literal-body opacity, and inline and display math; add
+      canonical cases until every OFM kind, state, and
       order is covered; add deterministic fuzz seeds and pathological cases for
       delimiter runs, nested callouts, inline-HTML boundaries, escaped table
       pipes, long paths and headings, and repeated identifiers with structural
@@ -964,6 +1013,13 @@ its behavior, with no separate publication step.
       tables and repair paths; empty `baselineGaps`; mark every Obsidian
       feature-table row `present`; document every Obsidian feature in the README
       and the binding READMEs. Requires `O1` through `O9`.
+
+  Code-block evidence follows the [base language contract](../specs/dialect/base.md#code)
+  for arbitrary language labels. Consumers interpret those labels; they do not
+  introduce AST kinds, language-specific parsing, or a per-language fixture
+  checklist. Existing generic `CodeBlock` fixtures discharge the corresponding
+  preservation and opacity requirements.
+
 - **Obsidian track exit criterion**, verified in the `O10` pull request: the
   plan exit criterion of the Obsidian implementation plan holds on every public
   surface, with every Obsidian module always on in the switch-less dialect and
@@ -1025,7 +1081,7 @@ its behavior, with no separate publication step.
       extend `pathological_reference_expansion_bound` and its transport and
       decoder counterparts so a long definition anchor, class list, or record
       referenced many times is stored once on every surface; keep `width` and
-      `hten` unit strings as records. Audit every Link, Image, Heading, Code,
+      `hten` unit strings as records. Audit every Link, Media, Heading, Code,
       CodeBlock, directive, and reference-definition caller and delete repair
       passes made obsolete by the shared operation. Two cross-item cases are
       owned by whichever item merges later: a link tail claiming the container
@@ -1041,13 +1097,13 @@ its behavior, with no separate publication step.
       every explicit anchor from every enabled extension before synthesis, then
       generates GFM anchors in heading order from the per-kind text projection
       of the anchors module (`Text` and `Code` literals; the concatenated child
-      text of formatting, `Link`, `Image`, and directive labels; one space per
+      text of formatting, `Link`, `Media`, and directive labels; one space per
       soft or hard line break; nothing for `HTML`, `Comment`, and a footnote
       `Cite`; `Formula.literal`), Unicode lowercasing, whitespace to `-` without
       collapsing, and the permitted-scalar filter, falling back to `section` and
       uniquifying with the smallest free `-N`. A generated anchor has no scope.
       Fixtures cover the module's cases, a projection case for every kind that
-      exists when this item lands, `Formula`, `HTML`, `Comment`, `Image`, line
+      exists when this item lands, `Formula`, `HTML`, `Comment`, `Media`, line
       breaks, and directive labels included, and large duplicate sets; remove
       the `gfm-auto-anchors` gap. Reserving an explicit anchor before synthesis
       is a cross-item case with every explicit-anchor producer that neither
@@ -1055,7 +1111,7 @@ its behavior, with no separate publication step.
       and `P8`, each owned by whichever merges later; the `P2b` heading and `M7`
       directive cases belong to this item. The heading-text projection of each
       kind a later item produces is a cross-item case owned by whichever of `P3`
-      and that item merges later: `CrossLink` with `O1`, `Mark` with `O2`,
+      and that item merges later: `CrossLink` with `O1`, `CrossEmbedded` with `O9`, `Mark` with `O2`,
       `Insert` with `I1`, `Span` with `P5`, `Superscript` and `Subscript` with
       `P6`, a bibliography `Cite` with `P7`, and `Cite` with a `specimen` referent with `P9b`.
       Requires `P2b`.
@@ -1084,7 +1140,7 @@ its behavior, with no separate publication step.
       cross-item case owned by whichever of `P5` and `P3` merges later. The
       heading-text projection of `Span` in generated anchors is a cross-item
       case owned by whichever of `P5` and `P3` merges later. An attribute
-      container following a complete `CrossLink` staying text is a cross-item
+      container following a complete `CrossLink` or `CrossEmbedded` staying text is a cross-item
       case owned by whichever of `P5` and `O1` merges later. Requires `P0`,
       `M7`.
 - [ ] **P6 — `superscript` and `subscript`.** Add the single `^` and `~`
@@ -1267,7 +1323,7 @@ Sizes are rough review-effort estimates, not schedules.
 | `M5`   | `S0`               | M    | —                                                                                                                                                                                                       | Obsidian Phase 1 `marker`; Pandoc Phase 1 list values                                                                            |
 | `M6`   | `S0`               | L    | —                                                                                                                                                                                                       | Pandoc Phase 1 table values                                                                                                      |
 | `M7`   | `M0`–`M6`          | XL   | —                                                                                                                                                                                                       | Obsidian Phase 1 metadata, anchor, dimensions; Pandoc Phase 1 fields; Pandoc Phase 2 attribute operation and directive migration |
-| `O1`   | `X0`, `M7`         | M    | `Insert` containing `CrossLink` (`I1`); heading-text projection (`P3`); container after a complete wikilink (`P5`); escaped wikilink pipe in a simple, multiline, or grid cell (`P11b`, `P11c`, `P11d`) | Obsidian Phase 2 wikilinks; Phase 4 escaped table pipes                                                                          |
+| `O1`   | `X0`, `M7`         | M    | `Insert` containing `CrossLink` and `CrossEmbedded` (`I1`); heading-text projection (`P3`); container after a complete wikilink (`P5`); escaped wikilink pipe in a simple, multiline, or grid cell (`P11b`, `P11c`, `P11d`) | Obsidian Phase 2 wikilinks; Phase 4 escaped table pipes                                                                          |
 | `O2`   | `O1`               | S    | `Insert` containing `Mark` (`I1`); heading-text projection (`P3`)                                                                                                                                       | Obsidian Phase 2 highlights                                                                                                      |
 | `O3`   | `O1`               | M    | callout title that is one comment (`O8`)                                                                                                                                                                | Obsidian Phase 2 comments                                                                                                        |
 | `O4`   | `O1`               | M    | `^[` before superscript (`P6`)                                                                                                                                                                          | Obsidian Phase 2 inline footnotes and resolution                                                                                 |
@@ -1277,7 +1333,7 @@ Sizes are rough review-effort estimates, not schedules.
 | `O8`   | `O1`, `O2`         | M    | identifier on a metadata-bearing callout (`O7`); callout title that is one comment (`O3`)                                                                                                               | Obsidian Phase 3 callouts                                                                                                        |
 | `O9`   | `O1`               | M    | typed dimensions beside a dimension attribute record (`P2d`)                                                                                                                                            | Obsidian Phase 4 media parameters                                                                                                |
 | `O10`  | `O1`–`O9`          | M    | —                                                                                                                                                                                                       | Obsidian Phase 1 fixtures and oracle registration; Phase 2 caller audit; Phase 5; plan exit criterion                                          |
-| `I1`   | `X0`, `I0`, `M7`   | S    | `Insert` containing `CrossLink`, `Mark` (`O1`, `O2`); heading-text projection (`P3`)                                                                                                                    | inserted-text contract                                                                                                           |
+| `I1`   | `X0`, `I0`, `M7`   | S    | `Insert` containing `CrossLink` and `CrossEmbedded`, `Mark` (`O1`, `O2`); heading-text projection (`P3`)                                                                                                                    | inserted-text contract                                                                                                           |
 | `P2a`  | `P0`, `M7`         | S    | anchor reserved before synthesis (`P3`)                                                                                                                                                                 | Pandoc Phase 2 attachment sites                                                                                                  |
 | `P2b`  | `P0`, `M7`         | S    | —                                                                                                                                                                                                       | Pandoc Phase 2 attachment sites                                                                                                  |
 | `P2c`  | `P0`, `M7`         | M    | anchor reserved before synthesis (`P3`)                                                                                                                                                                 | Pandoc Phase 2 attachment sites                                                                                                  |
@@ -1319,7 +1375,7 @@ Sizes are rough review-effort estimates, not schedules.
   starts.
 - The `Cross-item cases` column, together with the opacity rule, is the complete
   list of fixtures that wait for a second item neither of whose items requires
-  the other: `Insert` composed with `CrossLink` and `Mark`; `^[` before
+  the other: `Insert` composed with `CrossLink`, `CrossEmbedded`, and `Mark`; `^[` before
   superscript; an explicit anchor reserved before synthesis, once per producer;
   the heading-text projection of
   each inline kind a later item produces; a complete cite over a virtual heading

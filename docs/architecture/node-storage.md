@@ -12,9 +12,22 @@ allocation-header padding is included in measured memory costs.
 All block, inline, and manual construction uses the same node constructor.
 It makes one allocation for the node and its kind's record, establishes
 defaults, and only then exposes the node. Failure releases all acquired storage.
-Node data and its strings use the node's allocator. CrossLink keeps its explicit
-path, optional anchor, optional label, and embedded flag, with ordinary owned
-chunks; optional presence remains independent of string length.
+Node data and its strings use the node's allocator.
+
+`CrossLink` stores a `markdown_core_cross_reference` record containing its raw
+path, optional anchor, and optional label. `CrossEmbedded` stores a
+`markdown_core_cross_embedded` record containing the same reference fields and
+optional dimensions. The two kinds share the reference layout, while each
+occurrence owns its string chunks; optional presence remains independent of
+string length. The node kind identifies a link or transclusion, with no
+embedded flag in either record.
+
+Only `Media` and `CrossEmbedded` expose `Dimensions(width, height?)`. The
+optional value is stored inline in the occurrence's typed record, without a
+separate allocation, and its lifetime ends with that record. A `Media` node
+retains its own dimensions even when its destination and title come from a
+resource shared with other resolved references. Cross references own their raw
+destination fields directly and do not share a resource with a definition.
 
 Kind conversion preserves node identity and tree links. After containment
 validation, it allocates a replacement record before releasing the old fields.

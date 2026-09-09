@@ -4,6 +4,7 @@ import type { CodeBlock } from "./model/code-block.js";
 import type { Code } from "./model/code.js";
 import type { Comment } from "./model/comment.js";
 import type { CrossLink } from "./model/cross-link.js";
+import type { CrossEmbedded } from "./model/cross-embedded.js";
 import type { DirectiveBlock } from "./model/directive-block.js";
 import type { DirectiveLabel } from "./model/directive-label.js";
 import type { Directive } from "./model/directive.js";
@@ -14,7 +15,7 @@ import type { Formula } from "./model/formula.js";
 import type { Heading } from "./model/heading.js";
 import type { HTMLBlock } from "./model/html-block.js";
 import type { HTML } from "./model/html.js";
-import type { Image } from "./model/image.js";
+import type { Media } from "./model/media.js";
 import type { LineBreak } from "./model/line-break.js";
 import type { Link } from "./model/link.js";
 import type { List, ListItem } from "./model/list.js";
@@ -51,13 +52,14 @@ export interface Visitor<Result> {
     visitHTML(this: void, node: HTML): Result;
     visitComment(this: void, node: Comment): Result;
     visitCrossLink(this: void, node: CrossLink): Result;
+    visitCrossEmbedded(this: void, node: CrossEmbedded): Result;
     visitFormula(this: void, node: Formula): Result;
     visitEmphasis(this: void, node: Emphasis): Result;
     visitStrong(this: void, node: Strong): Result;
     visitStrikethrough(this: void, node: Strikethrough): Result;
     visitMark(this: void, node: Mark): Result;
     visitLink(this: void, node: Link): Result;
-    visitImage(this: void, node: Image): Result;
+    visitMedia(this: void, node: Media): Result;
     visitDirective(this: void, node: Directive): Result;
     visitCite(this: void, node: Cite): Result;
 }
@@ -106,6 +108,8 @@ export function visit<Result>(node: Markup, visitor: Visitor<Result>): Result {
             return visitor.visitHTML(node);
         case "crossLink":
             return visitor.visitCrossLink(node);
+        case "crossEmbedded":
+            return visitor.visitCrossEmbedded(node);
         case "comment":
             return visitor.visitComment(node);
         case "formula":
@@ -120,8 +124,8 @@ export function visit<Result>(node: Markup, visitor: Visitor<Result>): Result {
             return visitor.visitMark(node);
         case "link":
             return visitor.visitLink(node);
-        case "image":
-            return visitor.visitImage(node);
+        case "media":
+            return visitor.visitMedia(node);
         case "directive":
             return visitor.visitDirective(node);
         case "cite":

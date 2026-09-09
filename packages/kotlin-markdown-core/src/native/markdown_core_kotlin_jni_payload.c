@@ -529,6 +529,23 @@ static void write_metadata(jni_payload_buffer *buffer, const markdown_core_metad
     write_metadata_value(buffer, markdown_core_metadata_comment(metadata));
 }
 
+static void put_dimensions(jni_payload_buffer *buffer, const markdown_core_dimensions *dimensions) {
+    if (dimensions &&
+        (dimensions->width < 1 ||
+         (dimensions->height.has_value && (dimensions->height.value < 1 || dimensions->height.value > INT32_MAX)))) {
+        buffer->failure = JNI_PAYLOAD_INTERNAL;
+        return;
+    }
+    put_u8(buffer, dimensions ? 1 : 0);
+    if (dimensions) {
+        put_i32(buffer, dimensions->width);
+        put_u8(buffer, dimensions->height.has_value ? 1 : 0);
+        if (dimensions->height.has_value) {
+            put_i32(buffer, (int32_t)dimensions->height.value);
+        }
+    }
+}
+
 static void write_node(jni_payload_buffer *buffer, jni_payload_stack *stack, jni_payload_resources *resources,
                        const markdown_core_node *node) {
     markdown_core_node_kind kind = markdown_core_node_get_kind(node);
@@ -742,23 +759,24 @@ static void write_node(jni_payload_buffer *buffer, jni_payload_stack *stack, jni
         /* The items are values the cite owns, not children. */
         write_citations(buffer, stack, node);
         break;
-    case MARKDOWN_CORE_KIND_CROSS_LINK: {
+    case MARKDOWN_CORE_KIND_CROSS_LINK:
+    case MARKDOWN_CORE_KIND_CROSS_EMBEDDED: {
         markdown_core_destination destination;
-        bool embedded;
-        if (!markdown_core_node_destination(node, &destination) ||
-            !markdown_core_node_cross_link_properties(node, &embedded, &optional_first)) {
+        if (!markdown_core_node_destination(node, &destination)) {
             buffer->failure = JNI_PAYLOAD_INTERNAL;
             return;
         }
-        put_u8(buffer, embedded ? 1 : 0);
         put_i32(buffer, (int32_t)destination.kind);
         put_string(buffer, destination.path, true);
         put_optional_string(buffer, destination.anchor);
-        put_optional_string(buffer, optional_first);
+        put_optional_string(buffer, markdown_core_node_cross_label(node));
+        if (kind == MARKDOWN_CORE_KIND_CROSS_EMBEDDED) {
+            put_dimensions(buffer, markdown_core_node_dimensions(node));
+        }
         break;
     }
     case MARKDOWN_CORE_KIND_LINK:
-    case MARKDOWN_CORE_KIND_IMAGE: {
+    case MARKDOWN_CORE_KIND_MEDIA: {
         /* The resource's ordinal leads. Only its first sight carries the
          * destination and title; a later occurrence names the ordinal and
          * nothing else, so the decoder materializes each resource once. */
@@ -797,20 +815,8 @@ static void write_node(jni_payload_buffer *buffer, jni_payload_stack *stack, jni
             }
             put_optional_string(buffer, optional_first);
         }
-        if (kind == MARKDOWN_CORE_KIND_IMAGE) {
-            markdown_core_optional_i64 width, height;
-            if (!markdown_core_node_image_dimensions(node, &width, &height)) {
-                buffer->failure = JNI_PAYLOAD_INTERNAL;
-                return;
-            }
-            put_u8(buffer, width.has_value ? 1 : 0);
-            if (width.has_value) {
-                put_i64(buffer, width.value);
-            }
-            put_u8(buffer, height.has_value ? 1 : 0);
-            if (height.has_value) {
-                put_i64(buffer, height.value);
-            }
+        if (kind == MARKDOWN_CORE_KIND_MEDIA) {
+            put_dimensions(buffer, markdown_core_node_dimensions(node));
         }
         schedule_children(buffer, stack, node);
         break;

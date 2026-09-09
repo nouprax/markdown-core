@@ -282,6 +282,7 @@ set(MARKDOWN_CORE_PATHOLOGICAL_CASES
     pattern_image_link
     hard_link_emph
     nested_brackets
+    cross_reference_kinds
     nested_block_quotes
     deeply_nested_lists
     empty_lines_in_deeply_nested_lists
@@ -338,6 +339,8 @@ markdown_core_add_test(
     "${MARKDOWN_CORE_CANONICAL_AST_DIR}/formulas.md"
     --corpus
     "${MARKDOWN_CORE_CANONICAL_AST_DIR}/inlines.md"
+    --corpus
+    "${MARKDOWN_CORE_CANONICAL_AST_DIR}/media-dimensions.md"
     --corpus
     "${MARKDOWN_CORE_CANONICAL_AST_DIR}/inline-footnotes.md"
     --corpus

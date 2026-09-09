@@ -42,13 +42,14 @@ public protocol MarkupWalkingVisitor {
     mutating func visit(_ node: HTML, phase: WalkPhase)
     mutating func visit(_ node: Comment, phase: WalkPhase)
     mutating func visit(_ node: CrossLink, phase: WalkPhase)
+    mutating func visit(_ node: CrossEmbedded, phase: WalkPhase)
     mutating func visit(_ node: Formula, phase: WalkPhase)
     mutating func visit(_ node: Emphasis, phase: WalkPhase)
     mutating func visit(_ node: Strong, phase: WalkPhase)
     mutating func visit(_ node: Strikethrough, phase: WalkPhase)
     mutating func visit(_ node: Mark, phase: WalkPhase)
     mutating func visit(_ node: Link, phase: WalkPhase)
-    mutating func visit(_ node: Image, phase: WalkPhase)
+    mutating func visit(_ node: Media, phase: WalkPhase)
     mutating func visit(_ node: Directive, phase: WalkPhase)
     mutating func visit(_ node: Cite, phase: WalkPhase)
     mutating func visit(_ node: TableRow, phase: WalkPhase)
@@ -87,9 +88,7 @@ private enum WalkAction {
 
 /// Node-kind callbacks own the relation schedule. The action stack is only a
 /// traversal mechanism; it is not a public iterator or child projection.
-private struct WalkingDriver<WalkingVisitor: MarkupWalkingVisitor>: MarkupVisitor {
-    typealias Result = Void
-
+private struct WalkingDriver<WalkingVisitor: MarkupWalkingVisitor> {
     var visitor: WalkingVisitor
     private var actions: [WalkAction] = []
     private var phase = WalkPhase.entering
@@ -159,6 +158,12 @@ private struct WalkingDriver<WalkingVisitor: MarkupWalkingVisitor>: MarkupVisito
             for child in value.content.reversed() { actions.append(.enter(child)) }
         }
     }
+
+}
+
+// Each node callback schedules its own owned relations through the shared driver.
+extension WalkingDriver: MarkupVisitor {
+    typealias Result = Void
 
     mutating func visit(_ node: Document) {
         visitor.visit(node, phase: phase)
@@ -291,6 +296,10 @@ private struct WalkingDriver<WalkingVisitor: MarkupWalkingVisitor>: MarkupVisito
         visitor.visit(node, phase: phase)
         scheduleExit(node)
     }
+    mutating func visit(_ node: CrossEmbedded) {
+        visitor.visit(node, phase: phase)
+        scheduleExit(node)
+    }
 
     mutating func visit(_ node: Comment) {
         visitor.visit(node, phase: phase)
@@ -341,7 +350,7 @@ private struct WalkingDriver<WalkingVisitor: MarkupWalkingVisitor>: MarkupVisito
         }
     }
 
-    mutating func visit(_ node: Image) {
+    mutating func visit(_ node: Media) {
         visitor.visit(node, phase: phase)
         scheduleExit(node)
         if phase == .entering {

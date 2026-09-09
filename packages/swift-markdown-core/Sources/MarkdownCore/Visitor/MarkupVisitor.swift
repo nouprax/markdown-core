@@ -26,13 +26,14 @@ public protocol MarkupVisitor {
     mutating func visit(_ node: HTML) -> Result
     mutating func visit(_ node: Comment) -> Result
     mutating func visit(_ node: CrossLink) -> Result
+    mutating func visit(_ node: CrossEmbedded) -> Result
     mutating func visit(_ node: Formula) -> Result
     mutating func visit(_ node: Emphasis) -> Result
     mutating func visit(_ node: Strong) -> Result
     mutating func visit(_ node: Strikethrough) -> Result
     mutating func visit(_ node: Mark) -> Result
     mutating func visit(_ node: Link) -> Result
-    mutating func visit(_ node: Image) -> Result
+    mutating func visit(_ node: Media) -> Result
     mutating func visit(_ node: Directive) -> Result
     mutating func visit(_ node: Cite) -> Result
     mutating func visit(_ node: TableRow) -> Result

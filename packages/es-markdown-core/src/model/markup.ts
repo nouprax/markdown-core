@@ -4,6 +4,7 @@ import type { CodeBlock } from "./code-block.js";
 import type { Code } from "./code.js";
 import type { Comment } from "./comment.js";
 import type { CrossLink } from "./cross-link.js";
+import type { CrossEmbedded } from "./cross-embedded.js";
 import type { DirectiveBlock } from "./directive-block.js";
 import type { DirectiveLabel } from "./directive-label.js";
 import type { Directive } from "./directive.js";
@@ -14,7 +15,7 @@ import type { Formula } from "./formula.js";
 import type { Heading } from "./heading.js";
 import type { HTMLBlock } from "./html-block.js";
 import type { HTML } from "./html.js";
-import type { Image } from "./image.js";
+import type { Media } from "./media.js";
 import type { LineBreak } from "./line-break.js";
 import type { Link } from "./link.js";
 import type { List, ListItem } from "./list.js";
@@ -50,12 +51,13 @@ export type Markup =
     | HTML
     | Comment
     | CrossLink
+    | CrossEmbedded
     | Formula
     | Emphasis
     | Strong
     | Strikethrough
     | Mark
     | Link
-    | Image
+    | Media
     | Directive
     | Cite;

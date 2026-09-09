@@ -1,7 +1,7 @@
 package com.nouprax.markdown.core
 
 /**
- * The target of a [Link], [Image], or [CrossLink]: a tagged value, not a node, so it has no
+ * The target of a [Link], [Media], [CrossLink], or [CrossEmbedded]: a tagged value, not a node, so it has no
  * scope and no children, and a branch's fields exist only in that branch.
  */
 public sealed interface Destination {

@@ -55,7 +55,7 @@ typedef struct {
     struct markdown_core_node *title;
 } markdown_core_callout;
 
-/* THE RESOURCE a Link or Image reads its destination and title from (M2).
+/* THE RESOURCE a Link or Media reads its destination and title from (M2).
  *
  * It is COUNTED and SHARED. A link reference definition's resource is built
  * once, when the block phase reads the definition into the parser's map, and
@@ -88,12 +88,16 @@ typedef struct markdown_core_resource markdown_core_resource;
 #endif
 
 typedef struct {
+    bool has_value;
+    markdown_core_dimensions value;
+} markdown_core_optional_dimensions;
+
+typedef struct {
     /* NEVER NULL on a node the parser finished: the resource is attached in
      * the same step that makes the node a link, and an allocation that could
      * not attach one frees the node. */
     markdown_core_resource *resource;
-    markdown_core_optional_i64 width;
-    markdown_core_optional_i64 height;
+    markdown_core_optional_dimensions dimensions;
 } markdown_core_link;
 
 /* One authored workspace reference. Each occurrence owns its raw strings;
@@ -102,8 +106,12 @@ typedef struct {
     markdown_core_chunk path;
     markdown_core_optional_chunk anchor;
     markdown_core_optional_chunk label;
-    bool embedded;
-} markdown_core_cross_link;
+} markdown_core_cross_reference;
+
+typedef struct {
+    markdown_core_cross_reference reference;
+    markdown_core_optional_dimensions dimensions;
+} markdown_core_cross_embedded;
 
 /* THE CITE (M4): a `Cite` owns its items as a chain of CITATION nodes beside
  * its children, which it never has. The chain is a node-valued field, not
@@ -169,7 +177,7 @@ typedef struct {
 /* A link reference definition is not a node (M2). The block phase reads it off
  * the front of the paragraph that held it into the parser's map, which owns
  * its resource once, and every reference that resolves to it is the `Link` or
- * `Image` it names, sharing that resource. This is the inherited grammar's
+ * `Media` it names, sharing that resource. This is the inherited grammar's
  * model: a definition exists to be referred to, an unreferenced one produces
  * nothing, and the first definition of a label in source order wins. A footnote
  * definition stays a node while it is parsed, because its body is flow
@@ -222,7 +230,8 @@ typedef union {
     markdown_core_heading *heading;
     markdown_core_callout *callout;
     markdown_core_link *link;
-    markdown_core_cross_link *cross_link;
+    markdown_core_cross_reference *cross_link;
+    markdown_core_cross_embedded *cross_embedded;
     markdown_core_cite *cite;
     markdown_core_citation_item *citation;
     markdown_core_footnote_value *footnote;
@@ -270,6 +279,21 @@ struct markdown_core_node {
     void *node_data_allocation;
     markdown_core_node_data as;
 };
+
+/* Both cross kinds own the same raw reference fields in one payload allocation.
+ * Only CrossEmbedded allocates the dimension value beside those fields. */
+static inline markdown_core_cross_reference *markdown_core_node_cross_reference(const markdown_core_node *node) {
+    if (!node) {
+        return NULL;
+    }
+    if (node->kind == MARKDOWN_CORE_NODE_CROSS_LINK) {
+        return node->as.cross_link;
+    }
+    if (node->kind == MARKDOWN_CORE_NODE_CROSS_EMBEDDED) {
+        return &node->as.cross_embedded->reference;
+    }
+    return NULL;
+}
 
 static MARKDOWN_CORE_INLINE markdown_core_mem *markdown_core_node_mem(markdown_core_node *node) {
     return node->content.mem;

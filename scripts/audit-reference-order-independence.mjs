@@ -30,7 +30,7 @@
  *
  * A reference that SHARES its definition's resource buys both, and that is
  * M2's model: the parser's map owns each winning destination and title once,
- * every occurrence that resolves to the label is the `Link` or `Image` it
+ * every occurrence that resolves to the label is the `Link` or `Media` it
  * names and reads through that one resource, so nothing is copied, there is
  * nothing to charge and no budget. `reference_expansion_bound` counts the
  * payload once per distinct resource identity and holds it within the source

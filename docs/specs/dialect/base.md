@@ -43,7 +43,7 @@ The base language produces these kinds of
 [`canonical-ast.md`](../canonical-ast.md) without any dialect extension:
 `Document`, `Paragraph`, `Heading`, `ThematicBreak`, `List` and `ListItem`,
 `CodeBlock`, `HTMLBlock`, `Comment`, `Text`, `SoftBreak`, `LineBreak`,
-`Code`, `HTML`, `Emphasis`, `Strong`, `Link`, `Image`, and `Callout`. The
+`Code`, `HTML`, `Emphasis`, `Strong`, `Link`, `Media`, and `Callout`. The
 rules below fix what the CommonMark specification leaves to the
 implementation.
 
@@ -109,6 +109,11 @@ Document scope=1:1..6:3 anchor=null attributes={} children=1
 inherited indentation removal and no other transformation. `fenced` is `true`
 for a fenced block and `false` for an indented one. `closed` is `true` if and
 only if a closing fence line was found; an indented block is always `closed`.
+
+Every fenced code block produces `CodeBlock`, regardless of its language label.
+The label is descriptive metadata for consumers; it does not select an AST
+kind or a parser for the body. The body remains opaque to Markdown recognition.
+Rendering and execution belong to consumers.
 
 `CodeBlock.info` is the fence's info string after CommonMark backslash-escape
 and character-reference processing and after stripping leading and trailing
@@ -290,7 +295,7 @@ Document scope=1:1..1:55 anchor=null attributes={} children=1
     ├── Link scope=1:19..1:28 anchor=null attributes={} dest=url("") title="" children=1
     │   └── Text scope=1:20..1:20 anchor=null attributes={} literal="c" children=0
     ├── Text scope=1:29..1:29 anchor=null attributes={} literal=" " children=0
-    ├── Image scope=1:30..1:41 anchor=null attributes={} dest=url("/i.png") title=null width=null height=null children=1
+    ├── Media scope=1:30..1:41 anchor=null attributes={} dest=url("/i.png") title=null dimensions=null children=1
     │   └── Text scope=1:32..1:32 anchor=null attributes={} literal="d" children=0
     ├── Text scope=1:42..1:42 anchor=null attributes={} literal=" " children=0
     └── Link scope=1:43..1:55 anchor=null attributes={} dest=url("https://x.y") title=null children=1

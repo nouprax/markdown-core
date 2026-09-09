@@ -560,7 +560,7 @@ static bool S_ends_with_blank_line(markdown_core_node *node) {
 /* A definition has no semantic node (M2). A link reference definition read off the
  * front of `b`'s content goes into the parser's map, which owns the resource it
  * states once, and every reference that resolves to it is the `Link` or
- * `Image` it names, sharing that resource. This is the inherited grammar's
+ * `Media` it names, sharing that resource. This is the inherited grammar's
  * model: the bytes are consumed and remaining content is rebased onto where
  * it was written. An invalid definition stays paragraph text. A paragraph
  * consumed entirely by definitions retains its position in the block tree

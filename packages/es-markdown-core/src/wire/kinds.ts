@@ -21,7 +21,7 @@ export type NativeKind =
     | "strong"
     | "strikethrough"
     | "link"
-    | "image"
+    | "media"
     | "directive"
     | "cite"
     | "tableRow"
@@ -29,7 +29,8 @@ export type NativeKind =
     | "directiveLabel"
     | "comment"
     | "crossLink"
-    | "mark";
+    | "mark"
+    | "crossEmbedded";
 
 export const kinds: readonly (NativeKind | "none")[] = Object.freeze([
     "none",
@@ -55,7 +56,7 @@ export const kinds: readonly (NativeKind | "none")[] = Object.freeze([
     "strong",
     "strikethrough",
     "link",
-    "image",
+    "media",
     "directive",
     "cite",
     "tableRow",
@@ -63,5 +64,6 @@ export const kinds: readonly (NativeKind | "none")[] = Object.freeze([
     "directiveLabel",
     "comment",
     "crossLink",
-    "mark"
+    "mark",
+    "crossEmbedded"
 ]);

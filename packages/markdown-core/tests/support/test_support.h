@@ -71,9 +71,10 @@ typedef int (*ts_ast_visit_fn)(const markdown_core_node *node, void *context);
 int ts_ast_walk(const markdown_core_node *root, ts_ast_visit_fn visit, void *context);
 
 /* Counts every node kind in the subtree.  `counts` must hold
- * TS_KIND_COUNT entries.  Returns 0 on success. */
+ * TS_KIND_COUNT entries. Returns 0 on success, -1 if traversal fails or a
+ * node kind exceeds the counter capacity. */
 int ts_ast_count_kinds(const markdown_core_node *root, size_t *counts);
-#define TS_KIND_COUNT (MARKDOWN_CORE_KIND_MARK + 1)
+#define TS_KIND_COUNT (MARKDOWN_CORE_KIND_CROSS_EMBEDDED + 1)
 
 /* Concatenates the literals of every Text node in pre-order into a malloc'd
  * NUL-terminated buffer (embedded NULs impossible: parser replaces them). */

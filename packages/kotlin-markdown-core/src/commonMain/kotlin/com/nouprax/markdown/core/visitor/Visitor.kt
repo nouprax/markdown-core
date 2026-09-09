@@ -45,6 +45,8 @@ public interface Visitor<Result> {
 
     public fun visitCrossLink(node: CrossLink): Result
 
+    public fun visitCrossEmbedded(node: CrossEmbedded): Result
+
     public fun visitFormula(node: Formula): Result
 
     public fun visitEmphasis(node: Emphasis): Result
@@ -57,7 +59,7 @@ public interface Visitor<Result> {
 
     public fun visitLink(node: Link): Result
 
-    public fun visitImage(node: Image): Result
+    public fun visitMedia(node: Media): Result
 
     public fun visitDirective(node: Directive): Result
 

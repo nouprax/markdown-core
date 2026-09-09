@@ -143,8 +143,17 @@ The last identifier wins and an empty final `id=` clears the anchor.
 `Document.metadata: Metadata?` holds ten named optional values defined by the
 [Properties value model](dialect/properties.md#model). Metadata is never
 Markup and has no visitor callbacks. O6 produces it from the leading envelope.
-It retains only the envelope scope; absent fields differ from explicit null values. `Image.width` and `Image.height` are nullable positive integers whose
-first syntax producer is O9.
+It retains only the envelope scope; absent fields differ from explicit null values.
+
+### Dimensions
+
+`Dimensions(width: Int, height: Int?)` is a node-independent value. Width is
+required and height is optional; every present component is in 1..2147483647.
+It has no kind, scope, anchor, attributes, children or visitor callbacks.
+`Media.dimensions` and `CrossEmbedded.dimensions` have type `Dimensions?`, absent when no complete valid suffix was
+recognized, including malformed labels. O9 produces this value from image
+labels and embedded cross-link labels. `CrossLink` has no dimensions field.
+The value is independent of a destination's shared identity and attribute records.
 
 ### Destination
 
@@ -154,13 +163,13 @@ Destination = url(String) | cross(path: String, anchor: String?)
 
 `Destination` is a tagged value, not a node: it has no scope, children,
 anchor, or attributes, and a branch's fields exist only in that branch. It is
-the `dest` of every `Link` and `Image`, which own the `url` branch: the
+the `dest` of every `Link` and `Media`, which own the `url` branch: the
 complete semantic destination the inherited grammar produced, the bytes
 between angle brackets or the bare destination with backslash escapes and
 character references decoded and no percent-encoding, normalization, or
 resolution, and possibly empty. The `cross` branch is the workspace address of
 the [cross links](dialect/cross-links.md) module and is first produced by
-`CrossLink` (`O1`). The parser fetches no URL, opens no file, tests no
+`CrossLink` and `CrossEmbedded` (`O1`, `O9`). The parser fetches no URL, opens no file, tests no
 existence, and infers no media type; no such result is a field or a branch.
 The C facade answers it through `markdown_core_node_destination`, whose
 `kind` names the branch and whose other branch's fields are zeroed; Swift
@@ -257,7 +266,8 @@ and returns no document.
 | `LineBreak` | none | leaf |
 | `Code` | `literal: String` | mode is `embedded`; leaf |
 | `HTML` | `literal: String` | raw HTML is preserved; an HTML comment token is a `Comment`; leaf |
-| `CrossLink` | `embedded: Bool`, `dest: Destination`, `label: String?` | inline leaf; cross destination and raw authored label; no separator means null |
+| `CrossLink` | `dest: Destination`, `label: String?` | inline leaf; cross destination; complete raw label; no separator means null |
+| `CrossEmbedded` | `dest: Destination`, `label: String?`, `dimensions: Dimensions?` | inline leaf; workspace transclusion; cross destination; label is the raw prefix after a valid size suffix; no separator means null |
 | `Comment` | `literal: String` | an HTML comment or a `%%` comment, the one kind valid in both block and inline content, which the parent edge records; `literal` excludes the delimiters and keeps every byte between them; leaf |
 | `Formula` | `mode: PlacementMode`, `literal: String` | either mode; leaf |
 | `Emphasis` | `content: [Markup]` | inline content |
@@ -265,16 +275,16 @@ and returns no document.
 | `Strikethrough` | `content: [Markup]` | inline content |
 | `Mark` | `content: [Markup]` | inline content |
 | `Link` | `dest: Destination`, `title: String?`, `content: [Markup]` | `dest` is the tagged `Destination` value and is never absent: `[a]()` and `[a](<>)` wrote one and wrote nothing in it, so it is `url("")`; a reference occurrence answers the destination its definition stated, and an unresolved reference is the inherited literal text; every `Link` owns the `url` branch; absent and empty title remain distinct; inline content |
-| `Image` | `dest: Destination`, `title: String?`, `width: Int?`, `height: Int?`, `content: [Markup]` | `dest` is the tagged `Destination` value and is never absent, for the reason `Link.dest` is not; every `Image` owns the `url` branch; absent and empty title remain distinct; content is parsed alt-text inline content |
+| `Media` | `dest: Destination`, `title: String?`, `dimensions: Dimensions?`, `content: [Markup]` | `dest` is the tagged `Destination` value and is never absent, for the reason `Link.dest` is not; every `Media` owns the `url` branch; absent and empty title remain distinct; content is parsed alt-text inline content |
 | `Directive` | `name: String`, `label: DirectiveLabel?` | letter-first name; attributes use the inherited fields; label is a typed Markup field spanning its brackets, never content; absent and empty labels remain distinct; leaf |
 | `Cite` | `citations: [Citation]` | one or more items in source order; every item has exactly one referent and one cite never mixes referent families; an inherited `[^label]` call is one item with a `footnote` referent whose id is the normalized label without the caret and with empty affixes; its items are scoped values, never children, so it is a leaf |
 
 Every row also has the ordered inherited fields `scope: Scope`,
-`anchor: String?`, and `attributes: Attributes`; they are not repeated in the table. The `url` of a `Link` or `Image` destination, and
+`anchor: String?`, and `attributes: Attributes`; they are not repeated in the table. The `url` of a `Link` or `Media` destination, and
 every `title`, are the CommonMark-unescaped values with angle-bracket
 wrappers removed and no percent-encoding or normalization. A link reference
 definition produces no node: the parser consumes it, and every successful
-full, collapsed, shortcut, or autolink form is the `Link` or `Image` it names,
+full, collapsed, shortcut, or autolink form is the `Link` or `Media` it names,
 with the definition's destination and title and its own occurrence scope. An
 unresolved reference is the inherited literal text with its brackets.
 
@@ -430,3 +440,10 @@ envelope becomes metadata even when its payload is not YAML. The pinned
 CommonMark examples `---\n---\n` and `---\nFoo\n---\nBar\n---\nBaz\n`
 therefore produce metadata in place of the initial body blocks. Unsupported
 members are ignored and never enter Markup.
+
+O9 adds the exact-input `image-dimensions` CommonMark delta. Complete positive
+32-bit `W`, `WxH`, `alt|W` and `alt|WxH` suffixes populate each Media's `dimensions`
+value and leave only the parsed prefix as alt content. CommonMark retains the
+suffix as alt text. The [links and images module](dialect/links-and-images.md),
+package fixtures, and shared canonical `media-dimensions` case own this syntax,
+its malformed fallbacks, source scopes and cross-context compositions.

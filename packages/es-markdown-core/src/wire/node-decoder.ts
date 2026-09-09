@@ -1,4 +1,4 @@
-import type { Attributes, Metadata, MetadataValue } from "../values.js";
+import type { Attributes, Dimensions, Metadata, MetadataValue } from "../values.js";
 import type { MarkupBase } from "../model/base.js";
 import type { DirectiveLabel } from "../model/directive-label.js";
 import type { Citation } from "../model/cite.js";
@@ -90,8 +90,7 @@ const nodeField = {
     recordsStart: 112,
     recordsCount: 116,
     metadata: 120,
-    width: 124,
-    height: 128
+    dimensions: 124
 } as const;
 
 type MarkupValue = Markup extends infer Node ? (Node extends Markup ? Omit<Node, "dump"> : never) : never;
@@ -289,10 +288,12 @@ export class NodeDecoder {
                 this.recordRelation(record, metadata, incoming, "metadata");
             }
             if (
-                record.kind !== "image" &&
-                (this.uint(record.offset + nodeField.width) !== 0 || this.uint(record.offset + nodeField.height) !== 0)
+                record.kind !== "media" &&
+                record.kind !== "crossEmbedded" &&
+                (this.uint(record.offset + nodeField.dimensions) !== 0 ||
+                    this.uint(record.offset + nodeField.dimensions + 4) !== 0)
             )
-                throw new Error("non-image carries dimensions");
+                throw new Error("dimensions require Media or CrossEmbedded");
             if (record.labelIndex !== noIndex) {
                 if (record.kind !== "directive" && record.kind !== "directiveBlock") {
                     throw new Error("only a directive may own a label relation");
@@ -452,27 +453,30 @@ export class NodeDecoder {
                 } as MarkupValue;
             }
             case "crossLink":
-                this.flags(record, 1);
+            case "crossEmbedded": {
+                this.flags(record, 0);
                 this.leaf(record);
-                if (record.scalar0 !== 2) throw new Error("cross link requires a cross destination");
-                return {
-                    ...base,
-                    embedded: (record.flags & 1) !== 0,
-                    dest: this.destination(record),
-                    label: this.string(record, 2)
-                } as MarkupValue;
+                if (record.scalar0 !== 2) throw new Error("cross reference requires a cross destination");
+                const label = this.string(record, 2);
+                const fields = { ...base, dest: this.destination(record), label };
+                if (kind === "crossEmbedded") {
+                    const dimensions = this.dimensions(record);
+                    if (dimensions !== null && label === null) throw new Error("dimensions require an authored label");
+                    return { ...fields, dimensions } as MarkupValue;
+                }
+                return fields as MarkupValue;
+            }
             case "link":
-            case "image": {
+            case "media": {
                 this.flags(record, 0);
                 const resource = this.resource(record);
                 return {
                     ...base,
                     dest: resource.dest,
                     title: resource.title,
-                    ...(kind === "image"
+                    ...(kind === "media"
                         ? {
-                              width: this.dimension(record, nodeField.width),
-                              height: this.dimension(record, nodeField.height)
+                              dimensions: this.dimensions(record)
                           }
                         : {}),
                     content: this.content(record)
@@ -830,10 +834,14 @@ export class NodeDecoder {
             return { name: this.requiredStringAt(offset), value: this.requiredStringAt(offset + 8) };
         });
     }
-    private dimension(record: NodeRecord, field: number): number | null {
-        const value = this.uint(record.offset + field);
-        if (value > 0x7fffffff) throw new Error("invalid image dimension");
-        return value === 0 ? null : value;
+    private dimensions(record: NodeRecord): Dimensions | null {
+        // The value occupies two u32s. Zero width encodes absence and requires
+        // zero height; otherwise width is required and zero height is optional.
+        const width = this.uint(record.offset + nodeField.dimensions);
+        const height = this.uint(record.offset + nodeField.dimensions + 4);
+        if (width > 0x7fffffff || height > 0x7fffffff || (width === 0 && height !== 0))
+            throw new Error("invalid dimensions");
+        return width === 0 ? null : { width, height: height === 0 ? null : height };
     }
     private documentMetadata(record: NodeRecord): Metadata | null {
         const index = this.uint(record.offset + nodeField.metadata);

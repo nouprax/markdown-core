@@ -1,10 +1,11 @@
-import type { Attributes, Metadata, MetadataValue } from "./values.js";
+import type { Attributes, Dimensions, Metadata, MetadataValue } from "./values.js";
 import type { Callout } from "./model/callout.js";
 import type { Citation, Cite } from "./model/cite.js";
 import type { CodeBlock } from "./model/code-block.js";
 import type { Code } from "./model/code.js";
 import type { Comment } from "./model/comment.js";
 import type { CrossLink } from "./model/cross-link.js";
+import type { CrossEmbedded } from "./model/cross-embedded.js";
 import type { DirectiveBlock } from "./model/directive-block.js";
 import type { DirectiveLabel } from "./model/directive-label.js";
 import type { Directive } from "./model/directive.js";
@@ -17,7 +18,7 @@ import type { Formula } from "./model/formula.js";
 import type { Heading } from "./model/heading.js";
 import type { HTMLBlock } from "./model/html-block.js";
 import type { HTML } from "./model/html.js";
-import type { Image } from "./model/image.js";
+import type { Media } from "./model/media.js";
 import type { LineBreak } from "./model/line-break.js";
 import type { Link } from "./model/link.js";
 import type { List, ListItem } from "./model/list.js";
@@ -151,10 +152,12 @@ class DumpState {
         visitCode: (node: Code) => this.line("Code", node, [`literal=${jsonString(node.literal)}`]),
         visitHTML: (node: HTML) => this.line("HTML", node, [`literal=${jsonString(node.literal)}`]),
         visitCrossLink: (node: CrossLink) =>
-            this.line("CrossLink", node, [
-                `embedded=${String(node.embedded)}`,
+            this.line("CrossLink", node, [`dest=${destination(node.dest)}`, `label=${optionalString(node.label)}`]),
+        visitCrossEmbedded: (node: CrossEmbedded) =>
+            this.line("CrossEmbedded", node, [
                 `dest=${destination(node.dest)}`,
-                `label=${optionalString(node.label)}`
+                `label=${optionalString(node.label)}`,
+                `dimensions=${dimensionsString(node.dimensions)}`
             ]),
         visitComment: (node: Comment) => this.line("Comment", node, [`literal=${jsonString(node.literal)}`]),
         visitFormula: (node: Formula) =>
@@ -170,15 +173,14 @@ class DumpState {
                 [`dest=${destination(node.dest)}`, `title=${optionalString(node.title)}`],
                 node.content
             ),
-        visitImage: (node: Image) =>
+        visitMedia: (node: Media) =>
             this.container(
-                "Image",
+                "Media",
                 node,
                 [
                     `dest=${destination(node.dest)}`,
                     `title=${optionalString(node.title)}`,
-                    `width=${node.width ?? "null"}`,
-                    `height=${node.height ?? "null"}`
+                    `dimensions=${dimensionsString(node.dimensions)}`
                 ],
                 node.content
             ),
@@ -366,4 +368,8 @@ function metadataValue(value: MetadataValue): string {
     const scalar = value.value;
     if (scalar.kind === "null") return "scalar(null)";
     return `scalar(${scalar.kind}(${scalar.kind === "bool" ? String(scalar.value) : jsonString(scalar.value)}))`;
+}
+
+function dimensionsString(value: Dimensions | null): string {
+    return value === null ? "null" : `(width=${value.width},height=${value.height ?? "null"})`;
 }

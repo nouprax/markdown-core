@@ -66,7 +66,7 @@ const INLINE_CONTENT = new Set([
     "Strong",
     "Strikethrough",
     "Link",
-    "Image"
+    "Media"
 ]);
 
 function taskMarkers(tree) {
@@ -76,11 +76,17 @@ function taskMarkers(tree) {
 }
 
 const stateValidators = {
-    "crossLink.embedded.false": (tree) => /CrossLink scope=.* embedded=false /.test(tree),
-    "crossLink.embedded.true": (tree) => /CrossLink scope=.* embedded=true /.test(tree),
+    "crossEmbedded.dimensions.width": (tree) =>
+        /CrossEmbedded scope=.* dimensions=\(width=[1-9][0-9]*,height=null\) /.test(tree),
+    "crossEmbedded.dimensions.width-height": (tree) =>
+        /CrossEmbedded scope=.* dimensions=\(width=[1-9][0-9]*,height=[1-9][0-9]*\) /.test(tree),
+    "crossEmbedded.dimensions.null": (tree) => /CrossEmbedded scope=.* dimensions=null /.test(tree),
     "crossLink.label.null": (tree) => /CrossLink scope=.* label=null /.test(tree),
     "crossLink.label.empty": (tree) => /CrossLink scope=.* label="" /.test(tree),
     "crossLink.label.value": (tree) => /CrossLink scope=.* label="[^"\n]+" /.test(tree),
+    "crossEmbedded.label.null": (tree) => /CrossEmbedded scope=.* label=null /.test(tree),
+    "crossEmbedded.label.empty": (tree) => /CrossEmbedded scope=.* label="" /.test(tree),
+    "crossEmbedded.label.value": (tree) => /CrossEmbedded scope=.* label="[^"\n]+" /.test(tree),
     "destination.cross.path": (tree) => / dest=cross\(path="[^"\n]+",anchor=/.test(tree),
     "destination.cross.current-document": (tree) => / dest=cross\(path="",anchor="/.test(tree),
     "destination.cross.anchor.null": (tree) => / dest=cross\(path="[^"\n]*",anchor=null\)/.test(tree),
@@ -141,7 +147,10 @@ const stateValidators = {
     "metadata.list.empty": (tree) => /Metadata scope=.*[a-z]=list\(\[\]\)/.test(tree),
     "metadata.list.populated": (tree) => /Metadata scope=.*[a-z]=list\(\[(?:text|number)\(/.test(tree),
     "document.metadata.null": (tree) => !/Metadata scope=/.test(tree),
-    "image.dimensions.null": (tree) => /Image scope=.* width=null height=null /.test(tree),
+    "media.dimensions.width": (tree) => /Media scope=.* dimensions=\(width=[1-9][0-9]*,height=null\) /.test(tree),
+    "media.dimensions.width-height": (tree) =>
+        /Media scope=.* dimensions=\(width=[1-9][0-9]*,height=[1-9][0-9]*\) /.test(tree),
+    "media.dimensions.null": (tree) => /Media scope=.* dimensions=null /.test(tree),
     // The dump visualizes the DirectiveLabel field as a nested Markup node:
     // absent emits no label node, empty has `children=0`, and populated owns
     // inline descendants.
@@ -152,12 +161,12 @@ const stateValidators = {
     "directive.label.empty": (tree) => /DirectiveLabel scope=\S+ anchor=null attributes=\{\} children=0$/m.test(tree),
     "directive.label.populated": (tree) =>
         /DirectiveLabel scope=\S+ anchor=null attributes=\{\} children=[1-9]\d*$/m.test(tree),
-    // M2: a reference occurrence is the `Link` or `Image` it names, and dumps
+    // M2: a reference occurrence is the `Link` or `Media` it names, and dumps
     // identically to a direct one apart from scope. The case holds one direct
     // and several reference occurrences of each kind, so every `Link` line and
-    // every `Image` line, scope removed, must be one line.
+    // every `Media` line, scope removed, must be one line.
     "reference.resolution.identical": (tree) =>
-        ["Link", "Image"].every((kind) => {
+        ["Link", "Media"].every((kind) => {
             const lines = tree
                 .split("\n")
                 .filter((line) => new RegExp(`(?:^|\u2500 )${kind} scope=`).test(line))
@@ -167,8 +176,8 @@ const stateValidators = {
     "link.title.null": (tree) => /^.*Link scope=.* title=null /m.test(tree),
     "link.title.empty": (tree) => /^.*Link scope=.* title="" /m.test(tree),
     "link.title.value": (tree) => /^.*Link scope=.* title=".+" /m.test(tree),
-    "image.title.null": (tree) => /^.*Image scope=.* title=null /m.test(tree),
-    "image.title.value": (tree) => /^.*Image scope=.* title=".+" /m.test(tree),
+    "media.title.null": (tree) => /^.*Media scope=.* title=null /m.test(tree),
+    "media.title.value": (tree) => /^.*Media scope=.* title=".+" /m.test(tree),
     "scope.positive": (tree) => / scope=[1-9]\d*:[1-9]\d*\.\./.test(tree),
     /* `scope.zero` was here, and it required the canonical corpus to demonstrate
        a node with NO position -- 0:0..0:0. Its only two witnesses in that corpus

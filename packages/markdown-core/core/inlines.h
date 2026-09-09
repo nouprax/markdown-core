@@ -8,6 +8,11 @@ extern "C" {
 #include "references.h"
 #include "attributes.h"
 
+/* Parse one raw label suffix atomically. Callers record its separator while
+ * recognizing their own label grammar; no search or allocation occurs here. */
+bool markdown_core_parse_dimensions(markdown_core_chunk label, bufsize_t suffix, bufsize_t separator_length,
+                                    markdown_core_dimensions *value, size_t *work);
+
 int markdown_core_inline_parser_attributes(markdown_core_inline_parser *parser, bufsize_t start,
                                            markdown_core_attributes *value, bufsize_t *end);
 
@@ -21,7 +26,7 @@ void markdown_core_parse_inlines(markdown_core_parser *parser, markdown_core_nod
  * label and the resource it states in `refmap`, and returns the number of
  * bytes it consumed -- 0 if the front of `input` is not a definition. The
  * definition produces no node (M2): it is consumed, and every reference that
- * resolves to it is the `Link` or `Image` it names. */
+ * resolves to it is the `Link` or `Media` it names. */
 bufsize_t markdown_core_parse_reference_inline(markdown_core_mem *mem, markdown_core_chunk *input,
                                                markdown_core_map *refmap);
 

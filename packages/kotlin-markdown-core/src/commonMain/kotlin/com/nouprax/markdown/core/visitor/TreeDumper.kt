@@ -282,13 +282,17 @@ private class DumpVisitor(
     }
 
     override fun visitCrossLink(node: CrossLink) {
+        state.line("CrossLink", node, listOf("dest=${destination(node.dest)}", "label=${optionalString(node.label)}"))
+    }
+
+    override fun visitCrossEmbedded(node: CrossEmbedded) {
         state.line(
-            "CrossLink",
+            "CrossEmbedded",
             node,
             listOf(
-                "embedded=${node.embedded}",
                 "dest=${destination(node.dest)}",
                 "label=${optionalString(node.label)}",
+                "dimensions=${dimensionsString(node.dimensions)}",
             ),
         )
     }
@@ -329,15 +333,14 @@ private class DumpVisitor(
         )
     }
 
-    override fun visitImage(node: Image) {
+    override fun visitMedia(node: Media) {
         state.container(
-            "Image",
+            "Media",
             node,
             listOf(
                 "dest=${destination(node.dest)}",
                 "title=${optionalString(node.title)}",
-                "width=${node.width ?: "null"}",
-                "height=${node.height ?: "null"}",
+                "dimensions=${dimensionsString(node.dimensions)}",
             ),
             node.content,
         )
@@ -528,3 +531,6 @@ private fun attributeClass(value: String): String {
             value.all { it.code in 33..126 && it.code !in listOf(34, 92, 123, 125, 91, 93, 40, 41, 61) }
     return if (plain) value else jsonString(value)
 }
+
+private fun dimensionsString(value: Dimensions?): String =
+    value?.let { "(width=${it.width},height=${it.height ?: "null"})" } ?: "null"

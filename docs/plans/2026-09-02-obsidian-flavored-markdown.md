@@ -32,7 +32,7 @@ behavior, including Markdown recognition between paired inline HTML tags, and
 add no HTML element-region suppression. Block identifiers populate the same
 universal `Markup.anchor` string used by other extensions; they do not introduce
 a block-specific target type. Outgoing references use the shared tagged
-`Destination`: ordinary Markdown `Link` and `Image` values own
+`Destination`: ordinary Markdown `Link` and `Media` values own
 `Destination.url`, while `CrossLink` values own the `Destination.cross(path,
 anchor)` branch. Heading and block source spellings populate the same optional
 anchor field and introduce no discriminator. No destination populates the
@@ -75,7 +75,7 @@ does not define Pandoc `@key` syntax; the citations module does.
       add no known-name enum, vault type, resolved link, or Markup child.
 - [ ] Resolve direct, full, collapsed, shortcut, and autolinks to the same `Link`
       shape with `dest=Destination.url(...)`, and direct/reference images to the
-      same `Image(dest=Destination.url(...), ...)` shape. Remove
+      same `Media(dest=Destination.url(...), ...)` shape. Remove
       `LinkReference`, `ImageReference`, `ReferenceDefinition`, and
       `ReferenceForm` from the public AST. Keep labels, form, definition storage,
       and normalization in the existing parser-owned lookup operation; add no
@@ -83,14 +83,16 @@ does not define Pandoc `@key` syntax; the citations module does.
 - [ ] Add the remaining target value types and kinds to
       `docs/specs/canonical-ast.json`, `docs/specs/canonical-ast.md`, and
       `docs/specs/canonical-ast-dump.md`:
-      the shared `Destination` enum and `Link.dest`/`Image.dest`; `CrossLink`,
+      the shared `Destination` enum and `Link.dest`/`Media.dest`; `CrossLink`,
       `Mark`, and `Comment`; the `Destination.cross(path, anchor)` branch;
       the callout-fold enum; and `marker` on `ListItem`. Only the
       addressable kinds named by the block-identifier grammar receive a non-null
       anchor from that source rule.
-- [x] Add the universal nullable `anchor` field and optional `Image.width` and
-      `Image.height` across the facade, models and transports (`M7`). Typed
-      dimensions remain absent until O9; directive IDs populate anchors now.
+- [x] Add the universal nullable `anchor` field and optional image dimensions
+      across the facade, models and transports (`M7`, grouped into the
+      node-independent `Media.dimensions: Dimensions?` by `O9`, also held by
+      embedded `CrossEmbedded.dimensions`). O9 produces typed dimensions from
+      labels; directive IDs populate anchors independently.
 - [x] Replace stored `checked: Bool?` with the authored `marker: String?`.
       Keep source compatibility only through a derived language convenience
       property when that does not duplicate wire state. Treat the public shape
@@ -213,17 +215,18 @@ descriptor. O4 completes the shared feature-boundary implementation bullet.
 - [x] Generalize the existing task-list scanner from `[ xX]` to one Unicode
       scalar. Store the marker, derive completion, and retain the existing rule that
       only the item prefix is inspected.
-- [ ] Parse external image `W`, `WxH`, `alt|W`, and `alt|WxH` suffixes,
+- [x] Parse external image `W`, `WxH`, `alt|W`, and `alt|WxH` suffixes,
       lowercase `x` with no surrounding spaces, in the shared image construction
-      path. Keep wikilink label parameters raw until vault resolution
+      path. Consume valid embed dimension suffixes through the shared Dimensions parser;
+      keep the remaining label and ordinary wikilink labels raw until vault resolution
       establishes the embedded file kind.
 - [x] Move wiki alias-pipe awareness into the shared table/inline boundary so
       `[[target\|label]]` and `![[image\|100]]` stay inside one cell. Do not add a
       table-only wikilink parser.
-- [ ] Preserve current GFM semantics for ordinary tables and task items that use
+- [x] Preserve current GFM semantics for ordinary tables and task items that use
       no Obsidian syntax.
 
-- [ ] **Exit criterion:** task markers round-trip through every public AST, two-hyphen
+- [x] **Exit criterion:** task markers round-trip through every public AST, two-hyphen
       tables retain current behavior, escaped wiki pipes never create extra cells,
       and image dimensions are absent rather than guessed on malformed suffixes.
 

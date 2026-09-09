@@ -229,9 +229,17 @@ private struct DumpVisitor: MarkupVisitor {
         state.line(
             "CrossLink",
             node,
+            fields: ["dest=\(destinationString(node.dest))", "label=\(optionalString(node.label))"]
+        )
+    }
+
+    mutating func visit(_ node: CrossEmbedded) {
+        state.line(
+            "CrossEmbedded",
+            node,
             fields: [
-                "embedded=\(node.embedded)", "dest=\(destinationString(node.dest))",
-                "label=\(optionalString(node.label))",
+                "dest=\(destinationString(node.dest))", "label=\(optionalString(node.label))",
+                "dimensions=\(dimensionsString(node.dimensions))",
             ]
         )
     }
@@ -277,13 +285,13 @@ private struct DumpVisitor: MarkupVisitor {
         state.nested(node.content.count) { node.content.forEach(state.dump) }
     }
 
-    mutating func visit(_ node: Image) {
+    mutating func visit(_ node: Media) {
         state.line(
-            "Image",
+            "Media",
             node,
             fields: [
                 "dest=\(destinationString(node.dest))", "title=\(optionalString(node.title))",
-                "width=\(node.width.map(String.init) ?? "null")", "height=\(node.height.map(String.init) ?? "null")",
+                "dimensions=\(dimensionsString(node.dimensions))",
             ],
             children: node.content.count
         )

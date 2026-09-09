@@ -6,7 +6,7 @@ Reference resolution is order-independent and output-bounded.
 
 The parser's reference map owns each winning definition's resource -- its
 destination and title -- once, and every occurrence that resolves to the label
-is the `Link` or `Image` it names, reading through that one resource; the
+is the `Link` or `Media` it names, reading through that one resource; the
 identity is what `markdown_core_node_resource` answers with, and each binding
 materializes a distinct resource once. The model therefore needs neither a
 resolution budget that changes semantics nor output growth proportional to

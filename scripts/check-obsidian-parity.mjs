@@ -78,7 +78,7 @@ const mdastKinds = {
     inlineCode: "Code",
     code: "CodeBlock",
     link: "Link",
-    image: "Image",
+    image: "Media",
     break: "LineBreak",
     thematicBreak: "ThematicBreak",
     wikilink: "CrossLink",
@@ -93,8 +93,9 @@ const comparedFields = {
     Code: ["literal"],
     CodeBlock: ["literal", "info"],
     Link: ["dest", "title"],
-    Image: ["dest", "title"],
-    CrossLink: ["embedded", "dest", "label"]
+    Media: ["dest", "title"],
+    CrossLink: ["dest", "label"],
+    CrossEmbedded: ["dest", "label"]
 };
 
 const yamlStringFallback = {
@@ -283,7 +284,7 @@ function normalizeChildren(children) {
 }
 
 function fromMdast(node, unknown, source) {
-    const kind = mdastKinds[node.type];
+    const kind = node.type === "wikilink" && node.embedded ? "CrossEmbedded" : mdastKinds[node.type];
     if (!kind) {
         unknown.add(node.type);
         return { kind: `?${node.type}`, fields: {}, children: [] };
@@ -317,7 +318,6 @@ function fromMdast(node, unknown, source) {
         const spelling = source.slice(node.position?.start.offset ?? 0, node.position?.end.offset ?? 0);
         const bodyStart = spelling.startsWith("![[") ? 3 : 2;
         const hasLabelDelimiter = spelling.slice(bodyStart, -2).includes("|");
-        fields.embedded = String(node.embedded);
         fields.dest = crossDestination(node.path, node.heading ? node.heading.replace(/^\^/, "") : null);
         fields.label = node.alias === "" && !hasLabelDelimiter ? "null" : node.alias;
     }
@@ -609,16 +609,16 @@ for (const payload of [
     if (JSON.stringify(product) !== JSON.stringify(oracle)) throw new Error("literal prose oracle mismatch");
 }
 
-for (const [input, label, dest, embedded] of [
-    ["[[Note]]\n", "null", crossDestination("Note", null), "false"],
-    ["[[Note|]]\n", "", crossDestination("Note", null), "false"],
+for (const [input, label, dest, kind] of [
+    ["[[Note]]\n", "null", crossDestination("Note", null), "CrossLink"],
+    ["[[Note|]]\n", "", crossDestination("Note", null), "CrossLink"],
     [
         "[[Folder/Note#Heading#Child|Display text]]\n",
         "Display text",
         crossDestination("Folder/Note", "Heading#Child"),
-        "false"
+        "CrossLink"
     ],
-    ["![[Note#^block-id]]\n", "null", crossDestination("Note", "block-id"), "true"]
+    ["![[Note#^block-id]]\n", "null", crossDestination("Note", "block-id"), "CrossEmbedded"]
 ]) {
     const parsed = processor.runSync(processor.parse(input), input);
     const oracle = fromMdast(parsed, new Set(), input).children[0]?.children[0];
@@ -626,9 +626,8 @@ for (const [input, label, dest, embedded] of [
     const actual = oursTree.children[0]?.children[0];
     for (const value of [oracle, actual]) {
         if (
-            value?.kind !== "CrossLink" ||
+            value?.kind !== kind ||
             value.fields.label !== label ||
-            value.fields.embedded !== embedded ||
             JSON.stringify(value.fields.dest) !== JSON.stringify(dest) ||
             value.children.length !== 0
         ) {

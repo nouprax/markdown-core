@@ -147,11 +147,11 @@
         {
             "id": "destination-value-model",
             "summary": "mdast stores ordinary link/image URLs and wikilink path/heading components as flat fields. The target model stores one tagged Destination value.",
-            "handling": "The semantic projection wraps ordinary link/image URLs in Destination.url and wikilinks in Destination.cross; both heading and block spellings populate the same optional anchor after source punctuation is removed."
+            "handling": "The semantic projection wraps ordinary link/image URLs in Destination.url and wikilinks in Destination.cross; both heading and block spellings populate the same optional anchor after source punctuation is removed. The oracle wikilink embedded flag selects CrossEmbedded or CrossLink in the projection; a canary checks both node kinds and their label/destination values."
         },
         {
             "id": "image-alt-content-model",
-            "summary": "mdast stores an image's alt text as one string, while the target Image owns parsed inline content.",
+            "summary": "mdast stores an image's alt text as one string, while the target Media owns parsed inline content.",
             "handling": "The semantic projection maps a non-empty mdast alt string to one Text child. The corpus exercises the plain-text intersection; product fixtures own nested inline image-alt structure."
         },
         {
@@ -231,6 +231,14 @@
             "markdownCoreDigest": "4605c68588210fab359e6592103ea46381287805a5981534e24f2a8ce3edabb1",
             "authority": "docs/specs/dialect/task-lists.md (O5)",
             "requirement": "Only the opening line is inspected; the oracle inspects the first paragraph even when it begins later."
+        },
+        {
+            "id": "embedded-dimensions",
+            "input": "![[Image.png|100x145]]\n",
+            "oracleDigest": "927980018c1de98ef8b8936d0476cf3a26d60058206836a3b5ff24545885f124",
+            "markdownCoreDigest": "dd70a255d26439c2f4564ca4e7e127ec1ae6a7a1a94458dabd6f32cec7795282",
+            "authority": "docs/specs/dialect/cross-links.md#dimensions (O9)",
+            "requirement": "CrossEmbedded consumes a complete dimension suffix into Dimensions and removes it from the raw label. The oracle retains the suffix in the alias; product fixtures assert the value, malformed fallback, raw prefixes and scopes."
         }
     ]
 }

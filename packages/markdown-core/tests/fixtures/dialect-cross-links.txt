@@ -6,7 +6,7 @@ See [[Note]] for details.
 Document scope=1:1..1:25 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..1:25 anchor=null attributes={} children=3
     ├── Text scope=1:1..1:4 anchor=null attributes={} literal="See " children=0
-    ├── CrossLink scope=1:5..1:12 anchor=null attributes={} embedded=false dest=cross(path="Note",anchor=null) label=null children=0
+    ├── CrossLink scope=1:5..1:12 anchor=null attributes={} dest=cross(path="Note",anchor=null) label=null children=0
     └── Text scope=1:13..1:25 anchor=null attributes={} literal=" for details." children=0
 ````````````````````````````````
 
@@ -15,7 +15,7 @@ Document scope=1:1..1:25 anchor=null attributes={} children=1
 .
 Document scope=1:1..1:9 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..1:9 anchor=null attributes={} children=1
-    └── CrossLink scope=1:1..1:9 anchor=null attributes={} embedded=true dest=cross(path="Note",anchor=null) label=null children=0
+    └── CrossEmbedded scope=1:1..1:9 anchor=null attributes={} dest=cross(path="Note",anchor=null) label=null dimensions=null children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
@@ -23,7 +23,7 @@ Document scope=1:1..1:9 anchor=null attributes={} children=1
 .
 Document scope=1:1..1:21 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..1:21 anchor=null attributes={} children=1
-    └── CrossLink scope=1:1..1:21 anchor=null attributes={} embedded=false dest=cross(path="Folder/Note",anchor=null) label="Label" children=0
+    └── CrossLink scope=1:1..1:21 anchor=null attributes={} dest=cross(path="Folder/Note",anchor=null) label="Label" children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
@@ -31,9 +31,9 @@ Document scope=1:1..1:21 anchor=null attributes={} children=1
 .
 Document scope=1:1..1:33 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..1:33 anchor=null attributes={} children=3
-    ├── CrossLink scope=1:1..1:16 anchor=null attributes={} embedded=false dest=cross(path="Note",anchor="Heading") label=null children=0
+    ├── CrossLink scope=1:1..1:16 anchor=null attributes={} dest=cross(path="Note",anchor="Heading") label=null children=0
     ├── Text scope=1:17..1:21 anchor=null attributes={} literal=" and " children=0
-    └── CrossLink scope=1:22..1:33 anchor=null attributes={} embedded=false dest=cross(path="",anchor="Heading") label=null children=0
+    └── CrossLink scope=1:22..1:33 anchor=null attributes={} dest=cross(path="",anchor="Heading") label=null children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
@@ -41,7 +41,7 @@ Document scope=1:1..1:33 anchor=null attributes={} children=1
 .
 Document scope=1:1..1:27 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..1:27 anchor=null attributes={} children=1
-    └── CrossLink scope=1:1..1:27 anchor=null attributes={} embedded=false dest=cross(path="Note",anchor="Parent#Child") label="Label" children=0
+    └── CrossLink scope=1:1..1:27 anchor=null attributes={} dest=cross(path="Note",anchor="Parent#Child") label="Label" children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
@@ -49,11 +49,11 @@ Document scope=1:1..1:27 anchor=null attributes={} children=1
 .
 Document scope=1:1..1:42 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..1:42 anchor=null attributes={} children=5
-    ├── CrossLink scope=1:1..1:19 anchor=null attributes={} embedded=true dest=cross(path="Note",anchor="block-id") label=null children=0
+    ├── CrossEmbedded scope=1:1..1:19 anchor=null attributes={} dest=cross(path="Note",anchor="block-id") label=null dimensions=null children=0
     ├── Text scope=1:20..1:20 anchor=null attributes={} literal=" " children=0
-    ├── CrossLink scope=1:21..1:31 anchor=null attributes={} embedded=false dest=cross(path="A",anchor="^id#x") label=null children=0
+    ├── CrossLink scope=1:21..1:31 anchor=null attributes={} dest=cross(path="A",anchor="^id#x") label=null children=0
     ├── Text scope=1:32..1:32 anchor=null attributes={} literal=" " children=0
-    └── CrossLink scope=1:33..1:42 anchor=null attributes={} embedded=false dest=cross(path="^^text",anchor=null) label=null children=0
+    └── CrossLink scope=1:33..1:42 anchor=null attributes={} dest=cross(path="^^text",anchor=null) label=null children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
@@ -61,11 +61,11 @@ Document scope=1:1..1:42 anchor=null attributes={} children=1
 .
 Document scope=1:1..1:58 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..1:58 anchor=null attributes={} children=5
-    ├── CrossLink scope=1:1..1:22 anchor=null attributes={} embedded=true dest=cross(path="Image.png",anchor=null) label="100x145" children=0
+    ├── CrossEmbedded scope=1:1..1:22 anchor=null attributes={} dest=cross(path="Image.png",anchor=null) label="" dimensions=(width=100,height=145) children=0
     ├── Text scope=1:23..1:23 anchor=null attributes={} literal=" " children=0
-    ├── CrossLink scope=1:24..1:47 anchor=null attributes={} embedded=true dest=cross(path="Document.pdf",anchor="page=3") label=null children=0
+    ├── CrossEmbedded scope=1:24..1:47 anchor=null attributes={} dest=cross(path="Document.pdf",anchor="page=3") label=null dimensions=null children=0
     ├── Text scope=1:48..1:48 anchor=null attributes={} literal=" " children=0
-    └── CrossLink scope=1:49..1:58 anchor=null attributes={} embedded=false dest=cross(path=" Note ",anchor=null) label=null children=0
+    └── CrossLink scope=1:49..1:58 anchor=null attributes={} dest=cross(path=" Note ",anchor=null) label=null children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
@@ -73,9 +73,9 @@ Document scope=1:1..1:58 anchor=null attributes={} children=1
 .
 Document scope=1:1..1:22 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..1:22 anchor=null attributes={} children=3
-    ├── CrossLink scope=1:1..1:9 anchor=null attributes={} embedded=false dest=cross(path="Note",anchor=null) label="" children=0
+    ├── CrossLink scope=1:1..1:9 anchor=null attributes={} dest=cross(path="Note",anchor=null) label="" children=0
     ├── Text scope=1:10..1:10 anchor=null attributes={} literal=" " children=0
-    └── CrossLink scope=1:11..1:22 anchor=null attributes={} embedded=false dest=cross(path="Note",anchor=null) label="a|b" children=0
+    └── CrossLink scope=1:11..1:22 anchor=null attributes={} dest=cross(path="Note",anchor=null) label="a|b" children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
@@ -83,7 +83,7 @@ Document scope=1:1..1:22 anchor=null attributes={} children=1
 .
 Document scope=1:1..1:15 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..1:15 anchor=null attributes={} children=1
-    └── CrossLink scope=1:1..1:15 anchor=null attributes={} embedded=false dest=cross(path="Note",anchor=null) label="Label" children=0
+    └── CrossLink scope=1:1..1:15 anchor=null attributes={} dest=cross(path="Note",anchor=null) label="Label" children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
@@ -104,7 +104,7 @@ Document scope=1:1..3:27 anchor=null attributes={} children=2
 Document scope=1:1..1:10 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..1:10 anchor=null attributes={} children=3
     ├── Text scope=1:1..1:1 anchor=null attributes={} literal="[" children=0
-    ├── CrossLink scope=1:2..1:9 anchor=null attributes={} embedded=false dest=cross(path="Note",anchor=null) label=null children=0
+    ├── CrossLink scope=1:2..1:9 anchor=null attributes={} dest=cross(path="Note",anchor=null) label=null children=0
     └── Text scope=1:10..1:10 anchor=null attributes={} literal="]" children=0
 ````````````````````````````````
 
@@ -118,7 +118,7 @@ Document scope=1:1..3:10 anchor=null attributes={} children=2
 │   └── Text scope=1:1..1:9 anchor=null attributes={} literal="[[Note]]" children=0
 └── Paragraph scope=3:1..3:10 anchor=null attributes={} children=2
     ├── Text scope=3:1..3:2 anchor=null attributes={} literal="!" children=0
-    └── CrossLink scope=3:3..3:10 anchor=null attributes={} embedded=false dest=cross(path="Note",anchor=null) label=null children=0
+    └── CrossLink scope=3:3..3:10 anchor=null attributes={} dest=cross(path="Note",anchor=null) label=null children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
@@ -126,9 +126,9 @@ Document scope=1:1..3:10 anchor=null attributes={} children=2
 .
 Document scope=1:1..1:26 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..1:26 anchor=null attributes={} children=4
-    ├── CrossLink scope=1:1..1:8 anchor=null attributes={} embedded=false dest=cross(path="Note",anchor=null) label=null children=0
+    ├── CrossLink scope=1:1..1:8 anchor=null attributes={} dest=cross(path="Note",anchor=null) label=null children=0
     ├── Text scope=1:9..1:14 anchor=null attributes={} literal="(url) " children=0
-    ├── CrossLink scope=1:15..1:22 anchor=null attributes={} embedded=false dest=cross(path="Note",anchor=null) label=null children=0
+    ├── CrossLink scope=1:15..1:22 anchor=null attributes={} dest=cross(path="Note",anchor=null) label=null children=0
     └── Text scope=1:23..1:26 anchor=null attributes={} literal="{.c}" children=0
 ````````````````````````````````
 
@@ -139,7 +139,7 @@ Document scope=1:1..1:18 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..1:18 anchor=null attributes={} children=1
     └── Link scope=1:1..1:18 anchor=null attributes={} dest=url("/u") title=null children=3
         ├── Text scope=1:2..1:3 anchor=null attributes={} literal="a " children=0
-        ├── CrossLink scope=1:4..1:11 anchor=null attributes={} embedded=false dest=cross(path="Note",anchor=null) label=null children=0
+        ├── CrossLink scope=1:4..1:11 anchor=null attributes={} dest=cross(path="Note",anchor=null) label=null children=0
         └── Text scope=1:12..1:13 anchor=null attributes={} literal=" b" children=0
 ````````````````````````````````
 
@@ -183,7 +183,7 @@ Document scope=1:1..4:13 anchor=null attributes={} children=1
     ├── TableBody children=2
     │   ├── TableRow scope=3:1..3:16 anchor=null attributes={} children=2
     │   │   ├── TableCell scope=3:2..3:11 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │   │   │   └── CrossLink scope=3:3..3:10 anchor=null attributes={} embedded=false dest=cross(path="a",anchor=null) label="b" children=0
+    │   │   │   └── CrossLink scope=3:3..3:10 anchor=null attributes={} dest=cross(path="a",anchor=null) label="b" children=0
     │   │   └── TableCell scope=3:13..3:15 anchor=null attributes={} rowspan=1 colspan=1 children=1
     │   │       └── Text scope=3:14..3:14 anchor=null attributes={} literal="c" children=0
     │   └── TableRow scope=4:1..4:13 anchor=null attributes={} children=2
@@ -209,15 +209,15 @@ Document scope=1:1..1:17 anchor=null attributes={} children=1
 .
 Document scope=1:1..1:48 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..1:48 anchor=null attributes={} children=9
-    ├── CrossLink scope=1:1..1:7 anchor=null attributes={} embedded=false dest=cross(path="a",anchor=null) label="" children=0
+    ├── CrossLink scope=1:1..1:7 anchor=null attributes={} dest=cross(path="a",anchor=null) label="" children=0
     ├── Text scope=1:8..1:8 anchor=null attributes={} literal=" " children=0
-    ├── CrossLink scope=1:9..1:16 anchor=null attributes={} embedded=false dest=cross(path="a",anchor=null) label="b" children=0
+    ├── CrossLink scope=1:9..1:16 anchor=null attributes={} dest=cross(path="a",anchor=null) label="b" children=0
     ├── Text scope=1:17..1:17 anchor=null attributes={} literal=" " children=0
-    ├── CrossLink scope=1:18..1:27 anchor=null attributes={} embedded=false dest=cross(path="a",anchor="b") label="c" children=0
+    ├── CrossLink scope=1:18..1:27 anchor=null attributes={} dest=cross(path="a",anchor="b") label="c" children=0
     ├── Text scope=1:28..1:28 anchor=null attributes={} literal=" " children=0
-    ├── CrossLink scope=1:29..1:38 anchor=null attributes={} embedded=false dest=cross(path="a",anchor=null) label="b\\|c" children=0
+    ├── CrossLink scope=1:29..1:38 anchor=null attributes={} dest=cross(path="a",anchor=null) label="b\\|c" children=0
     ├── Text scope=1:39..1:39 anchor=null attributes={} literal=" " children=0
-    └── CrossLink scope=1:40..1:48 anchor=null attributes={} embedded=false dest=cross(path="a\\",anchor=null) label="b" children=0
+    └── CrossLink scope=1:40..1:48 anchor=null attributes={} dest=cross(path="a\\",anchor=null) label="b" children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
@@ -225,19 +225,19 @@ Document scope=1:1..1:48 anchor=null attributes={} children=1
 .
 Document scope=1:1..1:63 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..1:63 anchor=null attributes={} children=13
-    ├── CrossLink scope=1:1..1:7 anchor=null attributes={} embedded=false dest=cross(path="a",anchor="^") label=null children=0
+    ├── CrossLink scope=1:1..1:7 anchor=null attributes={} dest=cross(path="a",anchor="^") label=null children=0
     ├── Text scope=1:8..1:8 anchor=null attributes={} literal=" " children=0
-    ├── CrossLink scope=1:9..1:19 anchor=null attributes={} embedded=false dest=cross(path="a",anchor="^id#x") label=null children=0
+    ├── CrossLink scope=1:9..1:19 anchor=null attributes={} dest=cross(path="a",anchor="^id#x") label=null children=0
     ├── Text scope=1:20..1:20 anchor=null attributes={} literal=" " children=0
-    ├── CrossLink scope=1:21..1:31 anchor=null attributes={} embedded=false dest=cross(path="a",anchor="^id_x") label=null children=0
+    ├── CrossLink scope=1:21..1:31 anchor=null attributes={} dest=cross(path="a",anchor="^id_x") label=null children=0
     ├── Text scope=1:32..1:32 anchor=null attributes={} literal=" " children=0
-    ├── CrossLink scope=1:33..1:40 anchor=null attributes={} embedded=false dest=cross(path="",anchor="id") label=null children=0
+    ├── CrossLink scope=1:33..1:40 anchor=null attributes={} dest=cross(path="",anchor="id") label=null children=0
     ├── Text scope=1:41..1:41 anchor=null attributes={} literal=" " children=0
-    ├── CrossLink scope=1:42..1:50 anchor=null attributes={} embedded=false dest=cross(path="a",anchor="^é") label=null children=0
+    ├── CrossLink scope=1:42..1:50 anchor=null attributes={} dest=cross(path="a",anchor="^é") label=null children=0
     ├── Text scope=1:51..1:51 anchor=null attributes={} literal=" " children=0
-    ├── CrossLink scope=1:52..1:57 anchor=null attributes={} embedded=false dest=cross(path="",anchor=" ") label=null children=0
+    ├── CrossLink scope=1:52..1:57 anchor=null attributes={} dest=cross(path="",anchor=" ") label=null children=0
     ├── Text scope=1:58..1:58 anchor=null attributes={} literal=" " children=0
-    └── CrossLink scope=1:59..1:63 anchor=null attributes={} embedded=false dest=cross(path=" ",anchor=null) label=null children=0
+    └── CrossLink scope=1:59..1:63 anchor=null attributes={} dest=cross(path=" ",anchor=null) label=null children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
@@ -262,13 +262,13 @@ Document scope=1:1..1:61 anchor=null attributes={} children=1
 Document scope=1:1..1:39 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..1:39 anchor=null attributes={} children=9
     ├── Text scope=1:1..1:9 anchor=null attributes={} literal="[[a]] !" children=0
-    ├── CrossLink scope=1:10..1:14 anchor=null attributes={} embedded=false dest=cross(path="a",anchor=null) label=null children=0
+    ├── CrossLink scope=1:10..1:14 anchor=null attributes={} dest=cross(path="a",anchor=null) label=null children=0
     ├── Text scope=1:15..1:17 anchor=null attributes={} literal=" ![" children=0
-    ├── CrossLink scope=1:18..1:22 anchor=null attributes={} embedded=false dest=cross(path="a",anchor=null) label=null children=0
+    ├── CrossLink scope=1:18..1:22 anchor=null attributes={} dest=cross(path="a",anchor=null) label=null children=0
     ├── Text scope=1:23..1:25 anchor=null attributes={} literal="] !" children=0
-    ├── CrossLink scope=1:26..1:31 anchor=null attributes={} embedded=true dest=cross(path="a",anchor=null) label=null children=0
+    ├── CrossEmbedded scope=1:26..1:31 anchor=null attributes={} dest=cross(path="a",anchor=null) label=null dimensions=null children=0
     ├── Text scope=1:32..1:33 anchor=null attributes={} literal=" [" children=0
-    ├── CrossLink scope=1:34..1:38 anchor=null attributes={} embedded=false dest=cross(path="a",anchor=null) label=null children=0
+    ├── CrossLink scope=1:34..1:38 anchor=null attributes={} dest=cross(path="a",anchor=null) label=null children=0
     └── Text scope=1:39..1:39 anchor=null attributes={} literal="]" children=0
 ````````````````````````````````
 
@@ -291,19 +291,19 @@ Document scope=1:1..3:4 anchor=null attributes={} children=1
 .
 Document scope=1:1..1:73 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..1:73 anchor=null attributes={} children=7
-    ├── Image scope=1:1..1:35 anchor=null attributes={} dest=url("/image") title=null width=null height=null children=3
+    ├── Media scope=1:1..1:35 anchor=null attributes={} dest=url("/image") title=null dimensions=null children=3
     │   ├── Text scope=1:3..1:4 anchor=null attributes={} literal="a " children=0
-    │   ├── CrossLink scope=1:5..1:24 anchor=null attributes={} embedded=false dest=cross(path="note",anchor=null) label="raw *label*" children=0
+    │   ├── CrossLink scope=1:5..1:24 anchor=null attributes={} dest=cross(path="note",anchor=null) label="raw *label*" children=0
     │   └── Text scope=1:25..1:26 anchor=null attributes={} literal=" b" children=0
     ├── Text scope=1:36..1:36 anchor=null attributes={} literal=" " children=0
     ├── Emphasis scope=1:37..1:46 anchor=null attributes={} children=1
-    │   └── CrossLink scope=1:38..1:45 anchor=null attributes={} embedded=false dest=cross(path="Note",anchor=null) label=null children=0
+    │   └── CrossLink scope=1:38..1:45 anchor=null attributes={} dest=cross(path="Note",anchor=null) label=null children=0
     ├── Text scope=1:47..1:47 anchor=null attributes={} literal=" " children=0
     ├── Strong scope=1:48..1:60 anchor=null attributes={} children=1
-    │   └── CrossLink scope=1:50..1:58 anchor=null attributes={} embedded=true dest=cross(path="Note",anchor=null) label=null children=0
+    │   └── CrossEmbedded scope=1:50..1:58 anchor=null attributes={} dest=cross(path="Note",anchor=null) label=null dimensions=null children=0
     ├── Text scope=1:61..1:61 anchor=null attributes={} literal=" " children=0
     └── Strikethrough scope=1:62..1:73 anchor=null attributes={} children=1
-        └── CrossLink scope=1:64..1:71 anchor=null attributes={} embedded=false dest=cross(path="Note",anchor=null) label=null children=0
+        └── CrossLink scope=1:64..1:71 anchor=null attributes={} dest=cross(path="Note",anchor=null) label=null children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
@@ -313,9 +313,9 @@ Document scope=1:1..1:52 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..1:52 anchor=null attributes={} children=3
     ├── Directive scope=1:1..1:12 anchor=null attributes={} name="d" children=0
     │   └── DirectiveLabel scope=1:3..1:12 anchor=null attributes={} children=1
-    │       └── CrossLink scope=1:4..1:11 anchor=null attributes={} embedded=false dest=cross(path="note",anchor=null) label=null children=0
+    │       └── CrossLink scope=1:4..1:11 anchor=null attributes={} dest=cross(path="note",anchor=null) label=null children=0
     ├── Text scope=1:13..1:13 anchor=null attributes={} literal=" " children=0
-    └── CrossLink scope=1:14..1:52 anchor=null attributes={} embedded=false dest=cross(path="a",anchor=null) label=":d{.a} &amp; <i> `code` $x$ ~~s~~" children=0
+    └── CrossLink scope=1:14..1:52 anchor=null attributes={} dest=cross(path="a",anchor=null) label=":d{.a} &amp; <i> `code` $x$ ~~s~~" children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
@@ -352,13 +352,13 @@ Document scope=1:1..1:32 anchor=null attributes={} children=1
 .
 Document scope=1:1..1:50 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..1:50 anchor=null attributes={} children=7
-    ├── CrossLink scope=1:1..1:9 anchor=null attributes={} embedded=false dest=cross(path="a",anchor=null) label="$x$" children=0
+    ├── CrossLink scope=1:1..1:9 anchor=null attributes={} dest=cross(path="a",anchor=null) label="$x$" children=0
     ├── Text scope=1:10..1:10 anchor=null attributes={} literal=" " children=0
-    ├── CrossLink scope=1:11..1:21 anchor=null attributes={} embedded=false dest=cross(path="a",anchor=null) label="$$x$$" children=0
+    ├── CrossLink scope=1:11..1:21 anchor=null attributes={} dest=cross(path="a",anchor=null) label="$$x$$" children=0
     ├── Text scope=1:22..1:22 anchor=null attributes={} literal=" " children=0
-    ├── CrossLink scope=1:23..1:35 anchor=null attributes={} embedded=false dest=cross(path="a",anchor=null) label="\\\\(x\\\\)" children=0
+    ├── CrossLink scope=1:23..1:35 anchor=null attributes={} dest=cross(path="a",anchor=null) label="\\\\(x\\\\)" children=0
     ├── Text scope=1:36..1:36 anchor=null attributes={} literal=" " children=0
-    └── CrossLink scope=1:37..1:50 anchor=null attributes={} embedded=false dest=cross(path="a",anchor=null) label="<!--x-->" children=0
+    └── CrossLink scope=1:37..1:50 anchor=null attributes={} dest=cross(path="a",anchor=null) label="<!--x-->" children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
@@ -399,9 +399,9 @@ Document scope=1:1..3:37 anchor=null attributes={} children=1
     ├── TableBody children=1
     │   └── TableRow scope=3:1..3:37 anchor=null attributes={} children=2
     │       ├── TableCell scope=3:1..3:16 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │       │   └── CrossLink scope=3:1..3:15 anchor=null attributes={} embedded=false dest=cross(path="note",anchor=null) label="label" children=0
+    │       │   └── CrossLink scope=3:1..3:15 anchor=null attributes={} dest=cross(path="note",anchor=null) label="label" children=0
     │       └── TableCell scope=3:18..3:37 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │           └── CrossLink scope=3:19..3:37 anchor=null attributes={} embedded=true dest=cross(path="image",anchor=null) label="100x145" children=0
+    │           └── CrossEmbedded scope=3:19..3:37 anchor=null attributes={} dest=cross(path="image",anchor=null) label="" dimensions=(width=100,height=145) children=0
     └── TableFoot children=0
 ````````````````````````````````
 
@@ -415,15 +415,15 @@ Document scope=1:1..3:32 anchor=null attributes={} children=1
     ├── TableHead children=1
     │   └── TableRow scope=1:1..1:22 anchor=null attributes={} children=2
     │       ├── TableCell scope=1:2..1:17 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │       │   └── CrossLink scope=1:3..1:16 anchor=null attributes={} embedded=false dest=cross(path="note",anchor=null) label="head" children=0
+    │       │   └── CrossLink scope=1:3..1:16 anchor=null attributes={} dest=cross(path="note",anchor=null) label="head" children=0
     │       └── TableCell scope=1:19..1:21 anchor=null attributes={} rowspan=1 colspan=1 children=1
     │           └── Text scope=1:20..1:20 anchor=null attributes={} literal="B" children=0
     ├── TableBody children=1
     │   └── TableRow scope=3:1..3:32 anchor=null attributes={} children=2
     │       ├── TableCell scope=3:2..3:17 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │       │   └── CrossLink scope=3:3..3:16 anchor=null attributes={} embedded=false dest=cross(path="note",anchor="id") label="" children=0
+    │       │   └── CrossLink scope=3:3..3:16 anchor=null attributes={} dest=cross(path="note",anchor="id") label="" children=0
     │       └── TableCell scope=3:19..3:31 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │           └── CrossLink scope=3:20..3:30 anchor=null attributes={} embedded=false dest=cross(path="a",anchor=null) label="b|c" children=0
+    │           └── CrossLink scope=3:20..3:30 anchor=null attributes={} dest=cross(path="a",anchor=null) label="b|c" children=0
     └── TableFoot children=0
 ````````````````````````````````
 
@@ -440,9 +440,9 @@ Document scope=1:1..6:8 anchor=null attributes={} children=2
 │   └── List scope=1:3..2:21 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
 │       └── ListItem scope=1:3..2:21 anchor=null attributes={} marker=null children=1
 │           └── Paragraph scope=1:5..2:21 anchor=null attributes={} children=3
-│               ├── CrossLink scope=1:5..1:29 anchor=null attributes={} embedded=false dest=cross(path="中文",anchor="标题") label="别名" children=0
+│               ├── CrossLink scope=1:5..1:29 anchor=null attributes={} dest=cross(path="中文",anchor="标题") label="别名" children=0
 │               ├── SoftBreak scope=1:30..1:30 anchor=null attributes={} children=0
-│               └── CrossLink scope=2:5..2:21 anchor=null attributes={} embedded=true dest=cross(path="image.png",anchor=null) label="32" children=0
+│               └── CrossEmbedded scope=2:5..2:21 anchor=null attributes={} dest=cross(path="image.png",anchor=null) label="" dimensions=(width=32,height=null) children=0
 ├── Paragraph scope=6:1..6:8 anchor=null attributes={} children=2
 │   ├── Text scope=6:1..6:4 anchor=null attributes={} literal="call" children=0
 │   └── Cite scope=6:5..6:8 anchor=null attributes={} children=1
@@ -451,7 +451,7 @@ Document scope=1:1..6:8 anchor=null attributes={} children=2
 │           └── CitationSuffix children=0
 └── Footnote scope=4:1..5:0 id="n" children=1
     └── Paragraph scope=4:7..4:14 anchor=null attributes={} children=1
-        └── CrossLink scope=4:7..4:14 anchor=null attributes={} embedded=false dest=cross(path="Note",anchor=null) label=null children=0
+        └── CrossLink scope=4:7..4:14 anchor=null attributes={} dest=cross(path="Note",anchor=null) label=null children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
@@ -462,15 +462,15 @@ Document scope=1:1..6:8 anchor=null attributes={} children=2
 .
 Document scope=1:1..4:0 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..1:52 anchor=null attributes={} children=9
-    ├── CrossLink scope=1:1..1:8 anchor=null attributes={} embedded=false dest=cross(path="Note",anchor=null) label=null children=0
+    ├── CrossLink scope=1:1..1:8 anchor=null attributes={} dest=cross(path="Note",anchor=null) label=null children=0
     ├── Text scope=1:9..1:14 anchor=null attributes={} literal="(url) " children=0
-    ├── CrossLink scope=1:15..1:22 anchor=null attributes={} embedded=false dest=cross(path="Note",anchor=null) label=null children=0
+    ├── CrossLink scope=1:15..1:22 anchor=null attributes={} dest=cross(path="Note",anchor=null) label=null children=0
     ├── Link scope=1:23..1:27 anchor=null attributes={} dest=url("/u") title=null children=1
     │   └── Text scope=1:24..1:26 anchor=null attributes={} literal="ref" children=0
     ├── Text scope=1:28..1:28 anchor=null attributes={} literal=" " children=0
-    ├── CrossLink scope=1:29..1:36 anchor=null attributes={} embedded=false dest=cross(path="Note",anchor=null) label=null children=0
+    ├── CrossLink scope=1:29..1:36 anchor=null attributes={} dest=cross(path="Note",anchor=null) label=null children=0
     ├── Text scope=1:37..1:42 anchor=null attributes={} literal="{#id} " children=0
-    ├── CrossLink scope=1:43..1:50 anchor=null attributes={} embedded=false dest=cross(path="Note",anchor=null) label=null children=0
+    ├── CrossLink scope=1:43..1:50 anchor=null attributes={} dest=cross(path="Note",anchor=null) label=null children=0
     └── Text scope=1:51..1:52 anchor=null attributes={} literal="[]" children=0
 ````````````````````````````````
 
@@ -479,11 +479,11 @@ Document scope=1:1..4:0 anchor=null attributes={} children=1
 .
 Document scope=1:1..1:46 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..1:46 anchor=null attributes={} children=5
-    ├── CrossLink scope=1:1..1:22 anchor=null attributes={} embedded=false dest=cross(path="&amp;",anchor="A%20B") label="&quot;" children=0
+    ├── CrossLink scope=1:1..1:22 anchor=null attributes={} dest=cross(path="&amp;",anchor="A%20B") label="&quot;" children=0
     ├── Text scope=1:23..1:23 anchor=null attributes={} literal=" " children=0
-    ├── CrossLink scope=1:24..1:34 anchor=null attributes={} embedded=false dest=cross(path="a\\b",anchor=null) label="\\*c" children=0
+    ├── CrossLink scope=1:24..1:34 anchor=null attributes={} dest=cross(path="a\\b",anchor=null) label="\\*c" children=0
     ├── Text scope=1:35..1:35 anchor=null attributes={} literal=" " children=0
-    └── CrossLink scope=1:36..1:46 anchor=null attributes={} embedded=false dest=cross(path="a\tb",anchor=null) label="c\td" children=0
+    └── CrossLink scope=1:36..1:46 anchor=null attributes={} dest=cross(path="a\tb",anchor=null) label="c\td" children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
@@ -507,7 +507,7 @@ Document scope=1:1..1:14 anchor=null attributes={} children=1
     ├── Emphasis scope=1:5..1:7 anchor=null attributes={} children=1
     │   └── Text scope=1:6..1:6 anchor=null attributes={} literal="b" children=0
     ├── Text scope=1:8..1:9 anchor=null attributes={} literal="$ " children=0
-    └── CrossLink scope=1:10..1:14 anchor=null attributes={} embedded=false dest=cross(path="c",anchor=null) label=null children=0
+    └── CrossLink scope=1:10..1:14 anchor=null attributes={} dest=cross(path="c",anchor=null) label=null children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
@@ -517,5 +517,196 @@ Document scope=1:1..1:17 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..1:17 anchor=null attributes={} children=3
     ├── Formula scope=1:1..1:11 anchor=null attributes={} mode=embedded literal="[[a|\\$b]]" children=0
     ├── Text scope=1:12..1:12 anchor=null attributes={} literal=" " children=0
-    └── CrossLink scope=1:13..1:17 anchor=null attributes={} embedded=false dest=cross(path="d",anchor=null) label=null children=0
+    └── CrossLink scope=1:13..1:17 anchor=null attributes={} dest=cross(path="d",anchor=null) label=null children=0
+````````````````````````````````
+
+## Embedded dimensions
+
+```````````````````````````````` example
+![[movie.mp4|raw *caption*|100x200]] ![[audio|300]] [[Note|100x200]]
+.
+Document scope=1:1..1:68 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:68 anchor=null attributes={} children=5
+    ├── CrossEmbedded scope=1:1..1:36 anchor=null attributes={} dest=cross(path="movie.mp4",anchor=null) label="raw *caption*" dimensions=(width=100,height=200) children=0
+    ├── Text scope=1:37..1:37 anchor=null attributes={} literal=" " children=0
+    ├── CrossEmbedded scope=1:38..1:51 anchor=null attributes={} dest=cross(path="audio",anchor=null) label="" dimensions=(width=300,height=null) children=0
+    ├── Text scope=1:52..1:52 anchor=null attributes={} literal=" " children=0
+    └── CrossLink scope=1:53..1:68 anchor=null attributes={} dest=cross(path="Note",anchor=null) label="100x200" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+![[Note]] ![[Note|]] ![[Note|bad|01]] ![[Note|bad |10]]
+.
+Document scope=1:1..1:55 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:55 anchor=null attributes={} children=7
+    ├── CrossEmbedded scope=1:1..1:9 anchor=null attributes={} dest=cross(path="Note",anchor=null) label=null dimensions=null children=0
+    ├── Text scope=1:10..1:10 anchor=null attributes={} literal=" " children=0
+    ├── CrossEmbedded scope=1:11..1:20 anchor=null attributes={} dest=cross(path="Note",anchor=null) label="" dimensions=null children=0
+    ├── Text scope=1:21..1:21 anchor=null attributes={} literal=" " children=0
+    ├── CrossEmbedded scope=1:22..1:37 anchor=null attributes={} dest=cross(path="Note",anchor=null) label="bad|01" dimensions=null children=0
+    ├── Text scope=1:38..1:38 anchor=null attributes={} literal=" " children=0
+    └── CrossEmbedded scope=1:39..1:55 anchor=null attributes={} dest=cross(path="Note",anchor=null) label="bad |10" dimensions=null children=0
+````````````````````````````````
+
+```````````````````````````````` example
+| embed | ordinary |
+| -- | -- |
+| ![[Note\|é\|10x20]] | [[Note\|100]] |
+.
+Document scope=1:1..3:40 anchor=null attributes={} children=1
+└── Table scope=1:1..3:40 anchor=null attributes={} columns=[none:null,none:null] children=2
+    ├── TableHead children=1
+    │   └── TableRow scope=1:1..1:20 anchor=null attributes={} children=2
+    │       ├── TableCell scope=1:2..1:8 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       │   └── Text scope=1:3..1:7 anchor=null attributes={} literal="embed" children=0
+    │       └── TableCell scope=1:10..1:19 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │           └── Text scope=1:11..1:18 anchor=null attributes={} literal="ordinary" children=0
+    ├── TableBody children=1
+    │   └── TableRow scope=3:1..3:40 anchor=null attributes={} children=2
+    │       ├── TableCell scope=3:2..3:23 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       │   └── CrossEmbedded scope=3:3..3:22 anchor=null attributes={} dest=cross(path="Note",anchor=null) label="é" dimensions=(width=10,height=20) children=0
+    │       └── TableCell scope=3:25..3:39 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │           └── CrossLink scope=3:26..3:38 anchor=null attributes={} dest=cross(path="Note",anchor=null) label="100" children=0
+    └── TableFoot children=0
+````````````````````````````````
+
+```````````````````````````````` example
+![[a|1]] ![[a|2147483647x2147483647]] ![[a|caption|2]] ![[a||3x4]] ![[100]]
+.
+Document scope=1:1..1:75 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:75 anchor=null attributes={} children=9
+    ├── CrossEmbedded scope=1:1..1:8 anchor=null attributes={} dest=cross(path="a",anchor=null) label="" dimensions=(width=1,height=null) children=0
+    ├── Text scope=1:9..1:9 anchor=null attributes={} literal=" " children=0
+    ├── CrossEmbedded scope=1:10..1:37 anchor=null attributes={} dest=cross(path="a",anchor=null) label="" dimensions=(width=2147483647,height=2147483647) children=0
+    ├── Text scope=1:38..1:38 anchor=null attributes={} literal=" " children=0
+    ├── CrossEmbedded scope=1:39..1:54 anchor=null attributes={} dest=cross(path="a",anchor=null) label="caption" dimensions=(width=2,height=null) children=0
+    ├── Text scope=1:55..1:55 anchor=null attributes={} literal=" " children=0
+    ├── CrossEmbedded scope=1:56..1:66 anchor=null attributes={} dest=cross(path="a",anchor=null) label="" dimensions=(width=3,height=4) children=0
+    ├── Text scope=1:67..1:67 anchor=null attributes={} literal=" " children=0
+    └── CrossEmbedded scope=1:68..1:75 anchor=null attributes={} dest=cross(path="100",anchor=null) label=null dimensions=null children=0
+````````````````````````````````
+
+```````````````````````````````` example
+![[a|0]] ![[a|01]] ![[a|+1]] ![[a|-1]] ![[a|2147483648]] ![[a|1x2147483648]]
+.
+Document scope=1:1..1:76 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:76 anchor=null attributes={} children=11
+    ├── CrossEmbedded scope=1:1..1:8 anchor=null attributes={} dest=cross(path="a",anchor=null) label="0" dimensions=null children=0
+    ├── Text scope=1:9..1:9 anchor=null attributes={} literal=" " children=0
+    ├── CrossEmbedded scope=1:10..1:18 anchor=null attributes={} dest=cross(path="a",anchor=null) label="01" dimensions=null children=0
+    ├── Text scope=1:19..1:19 anchor=null attributes={} literal=" " children=0
+    ├── CrossEmbedded scope=1:20..1:28 anchor=null attributes={} dest=cross(path="a",anchor=null) label="+1" dimensions=null children=0
+    ├── Text scope=1:29..1:29 anchor=null attributes={} literal=" " children=0
+    ├── CrossEmbedded scope=1:30..1:38 anchor=null attributes={} dest=cross(path="a",anchor=null) label="-1" dimensions=null children=0
+    ├── Text scope=1:39..1:39 anchor=null attributes={} literal=" " children=0
+    ├── CrossEmbedded scope=1:40..1:56 anchor=null attributes={} dest=cross(path="a",anchor=null) label="2147483648" dimensions=null children=0
+    ├── Text scope=1:57..1:57 anchor=null attributes={} literal=" " children=0
+    └── CrossEmbedded scope=1:58..1:76 anchor=null attributes={} dest=cross(path="a",anchor=null) label="1x2147483648" dimensions=null children=0
+````````````````````````````````
+
+```````````````````````````````` example
+![[a|1x]] ![[a|x1]] ![[a|1X2]] ![[a|1x0]] ![[a|1x01]] ![[a|1x2x3]]
+.
+Document scope=1:1..1:66 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:66 anchor=null attributes={} children=11
+    ├── CrossEmbedded scope=1:1..1:9 anchor=null attributes={} dest=cross(path="a",anchor=null) label="1x" dimensions=null children=0
+    ├── Text scope=1:10..1:10 anchor=null attributes={} literal=" " children=0
+    ├── CrossEmbedded scope=1:11..1:19 anchor=null attributes={} dest=cross(path="a",anchor=null) label="x1" dimensions=null children=0
+    ├── Text scope=1:20..1:20 anchor=null attributes={} literal=" " children=0
+    ├── CrossEmbedded scope=1:21..1:30 anchor=null attributes={} dest=cross(path="a",anchor=null) label="1X2" dimensions=null children=0
+    ├── Text scope=1:31..1:31 anchor=null attributes={} literal=" " children=0
+    ├── CrossEmbedded scope=1:32..1:41 anchor=null attributes={} dest=cross(path="a",anchor=null) label="1x0" dimensions=null children=0
+    ├── Text scope=1:42..1:42 anchor=null attributes={} literal=" " children=0
+    ├── CrossEmbedded scope=1:43..1:53 anchor=null attributes={} dest=cross(path="a",anchor=null) label="1x01" dimensions=null children=0
+    ├── Text scope=1:54..1:54 anchor=null attributes={} literal=" " children=0
+    └── CrossEmbedded scope=1:55..1:66 anchor=null attributes={} dest=cross(path="a",anchor=null) label="1x2x3" dimensions=null children=0
+````````````````````````````````
+
+```````````````````````````````` example
+![[a| 10]] ![[a|10 ]] ![[a|a |10]] ![[a|a	|10]] ![[a|a|10|bad]] ![[a|١٠]]
+.
+Document scope=1:1..1:75 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:75 anchor=null attributes={} children=11
+    ├── CrossEmbedded scope=1:1..1:10 anchor=null attributes={} dest=cross(path="a",anchor=null) label=" 10" dimensions=null children=0
+    ├── Text scope=1:11..1:11 anchor=null attributes={} literal=" " children=0
+    ├── CrossEmbedded scope=1:12..1:21 anchor=null attributes={} dest=cross(path="a",anchor=null) label="10 " dimensions=null children=0
+    ├── Text scope=1:22..1:22 anchor=null attributes={} literal=" " children=0
+    ├── CrossEmbedded scope=1:23..1:34 anchor=null attributes={} dest=cross(path="a",anchor=null) label="a |10" dimensions=null children=0
+    ├── Text scope=1:35..1:35 anchor=null attributes={} literal=" " children=0
+    ├── CrossEmbedded scope=1:36..1:47 anchor=null attributes={} dest=cross(path="a",anchor=null) label="a\t|10" dimensions=null children=0
+    ├── Text scope=1:48..1:48 anchor=null attributes={} literal=" " children=0
+    ├── CrossEmbedded scope=1:49..1:63 anchor=null attributes={} dest=cross(path="a",anchor=null) label="a|10|bad" dimensions=null children=0
+    ├── Text scope=1:64..1:64 anchor=null attributes={} literal=" " children=0
+    └── CrossEmbedded scope=1:65..1:75 anchor=null attributes={} dest=cross(path="a",anchor=null) label="١٠" dimensions=null children=0
+````````````````````````````````
+
+```````````````````````````````` example
+![[a|`raw`|10]] ![[a|*raw*|20]] ![[a|`raw|10`]] ![[a|&#49;]] ![[a|100&#120;200]]
+.
+Document scope=1:1..1:80 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:80 anchor=null attributes={} children=9
+    ├── CrossEmbedded scope=1:1..1:15 anchor=null attributes={} dest=cross(path="a",anchor=null) label="`raw`" dimensions=(width=10,height=null) children=0
+    ├── Text scope=1:16..1:16 anchor=null attributes={} literal=" " children=0
+    ├── CrossEmbedded scope=1:17..1:31 anchor=null attributes={} dest=cross(path="a",anchor=null) label="*raw*" dimensions=(width=20,height=null) children=0
+    ├── Text scope=1:32..1:32 anchor=null attributes={} literal=" " children=0
+    ├── CrossEmbedded scope=1:33..1:47 anchor=null attributes={} dest=cross(path="a",anchor=null) label="`raw|10`" dimensions=null children=0
+    ├── Text scope=1:48..1:48 anchor=null attributes={} literal=" " children=0
+    ├── CrossEmbedded scope=1:49..1:60 anchor=null attributes={} dest=cross(path="a",anchor=null) label="&#49;" dimensions=null children=0
+    ├── Text scope=1:61..1:61 anchor=null attributes={} literal=" " children=0
+    └── CrossEmbedded scope=1:62..1:80 anchor=null attributes={} dest=cross(path="a",anchor=null) label="100&#120;200" dimensions=null children=0
+````````````````````````````````
+
+```````````````````````````````` example
+![[n\|raw\|100x200]] ![[n|raw|100x200]] ![[n|a\\|100]] ![[n|a |100]]
+.
+Document scope=1:1..1:69 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:69 anchor=null attributes={} children=7
+    ├── CrossEmbedded scope=1:1..1:20 anchor=null attributes={} dest=cross(path="n",anchor=null) label="raw" dimensions=(width=100,height=200) children=0
+    ├── Text scope=1:21..1:21 anchor=null attributes={} literal=" " children=0
+    ├── CrossEmbedded scope=1:22..1:39 anchor=null attributes={} dest=cross(path="n",anchor=null) label="raw" dimensions=(width=100,height=200) children=0
+    ├── Text scope=1:40..1:40 anchor=null attributes={} literal=" " children=0
+    ├── CrossEmbedded scope=1:41..1:54 anchor=null attributes={} dest=cross(path="n",anchor=null) label="a\\" dimensions=(width=100,height=null) children=0
+    ├── Text scope=1:55..1:55 anchor=null attributes={} literal=" " children=0
+    └── CrossEmbedded scope=1:56..1:69 anchor=null attributes={} dest=cross(path="n",anchor=null) label="a " dimensions=(width=100,height=null) children=0
+````````````````````````````````
+
+```````````````````````````````` example
+`![[n|100]]` $![[n|100]]$ %%![[n|100]]%% <i title="![[n|100]]">
+.
+Document scope=1:1..1:63 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:63 anchor=null attributes={} children=7
+    ├── Code scope=1:1..1:12 anchor=null attributes={} literal="![[n|100]]" children=0
+    ├── Text scope=1:13..1:13 anchor=null attributes={} literal=" " children=0
+    ├── Formula scope=1:14..1:25 anchor=null attributes={} mode=embedded literal="![[n|100]]" children=0
+    ├── Text scope=1:26..1:26 anchor=null attributes={} literal=" " children=0
+    ├── Comment scope=1:27..1:40 anchor=null attributes={} literal="![[n|100]]" children=0
+    ├── Text scope=1:41..1:41 anchor=null attributes={} literal=" " children=0
+    └── HTML scope=1:42..1:63 anchor=null attributes={} literal="<i title=\"![[n|100]]\">" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+> ![[#^id|字|10x20]] ![[file.pdf#page=3|100x200]]
+
+- ![[a|10]]
+
+![[bad|100]
+![[bad|10
+]]
+.
+Document scope=1:1..7:2 anchor=null attributes={} children=3
+├── Callout scope=1:1..1:50 anchor=null attributes={} variant=null collapsed=null children=1
+│   └── Paragraph scope=1:3..1:50 anchor=null attributes={} children=3
+│       ├── CrossEmbedded scope=1:3..1:21 anchor=null attributes={} dest=cross(path="",anchor="id") label="字" dimensions=(width=10,height=20) children=0
+│       ├── Text scope=1:22..1:22 anchor=null attributes={} literal=" " children=0
+│       └── CrossEmbedded scope=1:23..1:50 anchor=null attributes={} dest=cross(path="file.pdf",anchor="page=3") label="" dimensions=(width=100,height=200) children=0
+├── List scope=3:1..4:0 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+│   └── ListItem scope=3:1..4:0 anchor=null attributes={} marker=null children=1
+│       └── Paragraph scope=3:3..3:11 anchor=null attributes={} children=1
+│           └── CrossEmbedded scope=3:3..3:11 anchor=null attributes={} dest=cross(path="a",anchor=null) label="" dimensions=(width=10,height=null) children=0
+└── Paragraph scope=5:1..7:2 anchor=null attributes={} children=5
+    ├── Text scope=5:1..5:11 anchor=null attributes={} literal="![[bad|100]" children=0
+    ├── SoftBreak scope=5:12..5:12 anchor=null attributes={} children=0
+    ├── Text scope=6:1..6:9 anchor=null attributes={} literal="![[bad|10" children=0
+    ├── SoftBreak scope=6:10..6:10 anchor=null attributes={} children=0
+    └── Text scope=7:1..7:2 anchor=null attributes={} literal="]]" children=0
 ````````````````````````````````

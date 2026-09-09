@@ -6,6 +6,23 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
+- Rename the canonical `Image` node to `Media` across C, Swift, Kotlin, ES,
+  visitors and dumps. ES uses `kind: "media"`; C uses
+  `MARKDOWN_CORE_KIND_MEDIA` and `markdown_core_node_dimensions`.
+  The parser preserves the authored target without inferring its media type.
+
+- Parse external image dimensions from complete `W`, `WxH`, `alt|W` and
+  `alt|WxH` labels on C, Swift, Kotlin and ES. Direct and resolved images use
+  the same rule; dimensions belong to each occurrence, preserve parsed alt
+  content and scopes, and accept positive 32-bit values without leading zeros.
+  Split workspace transclusions into `CrossEmbedded(dest, label, dimensions)`
+  and ordinary cross links into `CrossLink(dest, label)`, removing the embedded
+  flag. CrossEmbedded labels use the same size grammar,
+  retaining only the raw label prefix. Ordinary cross-link labels and malformed
+  suffixes remain unchanged. C exposes the shared `markdown_core_node_dimensions`.
+  Replace separate image width/height fields with `Media.dimensions`, an optional
+  node-independent `Dimensions(width, height?)` value across every public surface.
+
 - Recognize opening callout metadata on C, Swift, Kotlin and ES. Preserve the
   authored type in `variant`, map `+`/`-` to `collapsed`, and parse the optional
   inline title before body content. Keep inherited nesting and lazy continuation;

@@ -340,11 +340,6 @@
             "name": "CrossLink",
             "fields": [
                 {
-                    "name": "embedded",
-                    "type": "Bool",
-                    "optional": false
-                },
-                {
                     "name": "dest",
                     "type": "Destination",
                     "optional": false
@@ -355,7 +350,28 @@
                     "optional": true
                 }
             ],
-            "invariants": "inline leaf; dest is cross(path, anchor); raw label is null only when no separator was authored"
+            "invariants": "inline leaf; dest is cross(path, anchor); the complete raw label is null only when no separator was authored"
+        },
+        {
+            "name": "CrossEmbedded",
+            "fields": [
+                {
+                    "name": "dest",
+                    "type": "Destination",
+                    "optional": false
+                },
+                {
+                    "name": "label",
+                    "type": "String",
+                    "optional": true
+                },
+                {
+                    "name": "dimensions",
+                    "type": "Dimensions",
+                    "optional": true
+                }
+            ],
+            "invariants": "inline leaf; workspace transclusion; dest is cross(path, anchor); label is the raw prefix after a valid dimension suffix and is null only when no separator was authored"
         },
         {
             "name": "Comment",
@@ -450,7 +466,7 @@
             "invariants": "`dest` is the tagged `Destination` value and is never absent: `[a]()` and `[a](<>)` wrote one and wrote nothing in it, so it is `url(\"\")`; a reference occurrence answers the destination its definition stated, and an unresolved reference is the inherited literal text; every `Link` owns the `url` branch; absent and empty title remain distinct; inline content"
         },
         {
-            "name": "Image",
+            "name": "Media",
             "fields": [
                 {
                     "name": "dest",
@@ -463,13 +479,8 @@
                     "optional": true
                 },
                 {
-                    "name": "width",
-                    "type": "Int",
-                    "optional": true
-                },
-                {
-                    "name": "height",
-                    "type": "Int",
+                    "name": "dimensions",
+                    "type": "Dimensions",
                     "optional": true
                 },
                 {
@@ -478,7 +489,7 @@
                     "optional": false
                 }
             ],
-            "invariants": "`dest` is the tagged `Destination` value and is never absent, for the reason `Link.dest` is not; every `Image` owns the `url` branch; absent and empty title remain distinct; content is parsed alt-text inline content"
+            "invariants": "`dest` is the tagged `Destination` value and is never absent, for the reason `Link.dest` is not; every `Media` owns the `url` branch; absent and empty title remain distinct; content is parsed alt-text inline content"
         },
         {
             "name": "Directive",
@@ -510,7 +521,7 @@
     ],
     "values": {
         "Destination": {
-            "purpose": "A tagged value, not a node: it has no scope, children, anchor, or attributes, and a branch's fields exist only in that branch. Every Link and Image owns the url branch; the cross branch is the workspace address a CrossLink produces.",
+            "purpose": "A tagged value, not a node: it has no scope, children, anchor, or attributes, and a branch's fields exist only in that branch. Every Link and Media owns the url branch; the cross branch is the workspace address CrossLink and CrossEmbedded produce.",
             "branches": {
                 "url": [
                     {
@@ -884,6 +895,22 @@
                 }
             ],
             "dump": "number(\"lexeme\") or text(\"...\")"
+        },
+        "Dimensions": {
+            "purpose": "A node-independent size value with required width and optional height. Every present component is an integer in 1..2147483647. It has no scope, children, attributes, anchor, identity, or visitor callbacks.",
+            "fields": [
+                {
+                    "name": "width",
+                    "type": "Int",
+                    "optional": false
+                },
+                {
+                    "name": "height",
+                    "type": "Int",
+                    "optional": true
+                }
+            ],
+            "dump": "(width=100,height=null) or (width=100,height=145); an optional absent value prints null"
         }
     },
     "inheritedFields": [

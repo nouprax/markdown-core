@@ -22,6 +22,7 @@ import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_CITE
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_CODE
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_CODE_BLOCK
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_COMMENT
+import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_CROSS_EMBEDDED
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_CROSS_LINK
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_DIRECTIVE
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK
@@ -33,12 +34,12 @@ import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_FORMULA_BLOCK
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_HEADING
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_HTML
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_HTML_BLOCK
-import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_IMAGE
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_LINE_BREAK
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_LINK
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_LIST
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_LIST_ITEM
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_MARK
+import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_MEDIA
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_PARAGRAPH
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_SOFT_BREAK
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_STRIKETHROUGH
@@ -117,8 +118,9 @@ import com.nouprax.markdown.core.internal.capi.markdown_core_node_callout_title
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_child_count
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_cite_citations
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_code_block_properties
-import com.nouprax.markdown.core.internal.capi.markdown_core_node_cross_link_properties
+import com.nouprax.markdown.core.internal.capi.markdown_core_node_cross_label
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_destination
+import com.nouprax.markdown.core.internal.capi.markdown_core_node_dimensions
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_directive_label
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_directive_properties
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_document_footnotes
@@ -129,7 +131,6 @@ import com.nouprax.markdown.core.internal.capi.markdown_core_node_get_first_chil
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_get_kind
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_get_next_sibling
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_heading_level
-import com.nouprax.markdown.core.internal.capi.markdown_core_node_image_dimensions
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_list_item_marker
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_list_properties
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_literal
@@ -162,6 +163,7 @@ import kotlinx.cinterop.MemScope
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.alloc
 import kotlinx.cinterop.memScoped
+import kotlinx.cinterop.pointed
 import kotlinx.cinterop.ptr
 import kotlinx.cinterop.readBytes
 import kotlinx.cinterop.reinterpret
@@ -458,9 +460,19 @@ private class NativeTreeBuilder(
             }
 
             MARKDOWN_CORE_KIND_CROSS_LINK -> {
-                val fields = scratch.crossLink(node)
-                CrossLink(fields.first, scratch.destination(node), fields.second, scope, anchor, attributes)
+                CrossLink(scratch.destination(node), scratch.crossLabel(node), scope, anchor, attributes)
                     .also { requireLeaf(children, kind) }
+            }
+
+            MARKDOWN_CORE_KIND_CROSS_EMBEDDED -> {
+                CrossEmbedded(
+                    scratch.destination(node),
+                    scratch.crossLabel(node),
+                    scratch.dimensions(node),
+                    scope,
+                    anchor,
+                    attributes,
+                ).also { requireLeaf(children, kind) }
             }
 
             MARKDOWN_CORE_KIND_COMMENT -> {
@@ -493,11 +505,9 @@ private class NativeTreeBuilder(
                 Link(resource.first, resource.second, children, scope, anchor, attributes)
             }
 
-            MARKDOWN_CORE_KIND_IMAGE -> {
+            MARKDOWN_CORE_KIND_MEDIA -> {
                 val resource = resource(node)
-                scratch.dimensions(node).let { (width, height) ->
-                    Image(resource.first, resource.second, width, height, children, scope, anchor, attributes)
-                }
+                Media(resource.first, resource.second, scratch.dimensions(node), children, scope, anchor, attributes)
             }
 
             MARKDOWN_CORE_KIND_DIRECTIVE -> {
@@ -604,8 +614,6 @@ private class NativeScratch(
     scope: MemScope,
 ) {
     private val firstString = scope.alloc<markdown_core_string>()
-    private val imageWidth = scope.alloc<markdown_core_optional_i64>()
-    private val imageHeight = scope.alloc<markdown_core_optional_i64>()
     private val metadataScalar = scope.alloc<markdown_core_metadata_scalar>()
     private val metadataItem = scope.alloc<markdown_core_metadata_list_item>()
     private val secondString = scope.alloc<markdown_core_string>()
@@ -858,17 +866,11 @@ private class NativeScratch(
         return Attributes(classes, records)
     }
 
-    fun dimensions(node: CPointer<markdown_core_node>): Pair<Int?, Int?> {
-        require(
-            markdown_core_node_image_dimensions(node, imageWidth.ptr, imageHeight.ptr),
-        ) { "invalid image dimensions" }
-
-        fun dimension(value: markdown_core_optional_i64): Int? {
-            if (!value.has_value) return null
-            require(value.value in 1..Int.MAX_VALUE.toLong()) { "invalid image dimension" }
-            return value.value.toInt()
-        }
-        return dimension(imageWidth) to dimension(imageHeight)
+    fun dimensions(node: CPointer<markdown_core_node>): Dimensions? {
+        val value = markdown_core_node_dimensions(node)?.pointed ?: return null
+        val height = value.height
+        require(!height.has_value || height.value in 1..Int.MAX_VALUE.toLong()) { "invalid dimension height" }
+        return Dimensions(value.width, if (height.has_value) height.value.toInt() else null)
     }
 
     fun metadata(node: CPointer<markdown_core_node>): Metadata? {
@@ -982,12 +984,8 @@ private class NativeScratch(
         }
     }
 
-    fun crossLink(node: CPointer<markdown_core_node>): Pair<Boolean, String?> {
-        require(markdown_core_node_cross_link_properties(node, firstBoolean.ptr, firstOptionalString.ptr)) {
-            "invalid cross link"
-        }
-        return firstBoolean.value to firstOptionalString.copyOptionalString()
-    }
+    fun crossLabel(node: CPointer<markdown_core_node>): String? =
+        markdown_core_node_cross_label(node).useContents { copyOptionalString() }
 
     fun title(node: CPointer<markdown_core_node>): String? {
         require(markdown_core_node_title(node, firstOptionalString.ptr)) { "invalid link or image node" }
