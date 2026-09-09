@@ -46,6 +46,15 @@ typedef struct {
     bool setext;
 } markdown_core_heading;
 
+/* The title has one private inline parsing root throughout its lifetime.
+ * It uses paragraph storage but never enters block content or finalization;
+ * the facade exposes only its inline children as Callout.title. */
+typedef struct {
+    markdown_core_optional_chunk variant;
+    markdown_core_optional_bool collapsed;
+    struct markdown_core_node *title;
+} markdown_core_callout;
+
 /* THE RESOURCE a Link or Image reads its destination and title from (M2).
  *
  * It is COUNTED and SHARED. A link reference definition's resource is built
@@ -211,6 +220,7 @@ typedef union {
     markdown_core_list *list;
     markdown_core_code *code;
     markdown_core_heading *heading;
+    markdown_core_callout *callout;
     markdown_core_link *link;
     markdown_core_cross_link *cross_link;
     markdown_core_cite *cite;

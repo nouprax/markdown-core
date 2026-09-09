@@ -3,7 +3,7 @@ package com.nouprax.markdown.core
 /**
  * A callout: every `>` container. A plain quoted block is a callout without
  * metadata, with a null [variant], a null [collapsed], and a null [title];
- * the callouts module's metadata rule, which fills them in, lands with `O8`.
+ * a valid opening `[!type]` line populates metadata with the type as written.
  */
 public class Callout internal constructor(
     /** The authored type as written, or null when the container has no metadata line. */

@@ -55,8 +55,8 @@ does not define Pandoc `@key` syntax; the citations module does.
 
 ## Phase 1 — freeze the public model
 
-- [ ] Replace `BlockQuote` with one `Callout` kind across the canonical schema and
-      every public surface. Its optional `variant` and `title` plus `fold`
+- [x] Replace `BlockQuote` with one `Callout` kind across the canonical schema and
+      every public surface. Its optional `variant`, `title`, and `collapsed`
       distinguish metadata-free quoted blocks from `[!type]` callouts; do not
       retain a `BlockQuote` alias or parallel node.
 - [ ] Replace `FootnoteReference` and `FootnoteDefinition` with one inline
@@ -184,23 +184,23 @@ descriptor. O4 completes the shared feature-boundary implementation bullet.
       identifier without either `#` delimiter into the owned block's universal
       anchor and removes the complete marker from visible content; it does not
       record an Obsidian or block discriminator.
-- [ ] Construct `Callout` for every `>` container through the existing block
-      algorithm. Default `variant` and `title` to null and `fold` to `none`.
-- [ ] When the first content line has a valid marker, store its source type
-      identifier as written in `variant`, populate fold state and title before
+- [x] Construct `Callout` for every `>` container through the existing block
+      algorithm. Default `variant`, `title`, and `collapsed` to null.
+- [x] When the first content line has a valid marker, store its source type
+      identifier as written in `variant`, populate `collapsed` and title before
       ordinary body blocks are finalized, and remove the marker line from
       content. Do not mutate/repair a finished tree in a post-pass.
-- [ ] Use the same container recursion for nested callouts. Unknown/custom types
+- [x] Use the same container recursion for nested callouts. Unknown/custom types
       remain metadata-bearing callouts; alias-to-style mapping stays outside the
       parser.
 - [x] Revalidate absent/empty/populated Properties, documented property
       values, the ten field names, arrays and block lists, strict fences, ignored unsupported
       input, literal prose, and Properties/body scope boundaries against corrected O6.
-- [ ] Cover metadata-free, title-only, empty-body, formatted-title, nested,
+- [x] Cover metadata-free, title-only, empty-body, formatted-title, nested,
       invalid-position, mixed-case, custom-type, and whole-structured-block
       identifier cases.
 
-- [ ] **Exit criterion:** one complete Properties envelope yields metadata and no body
+- [x] **Exit criterion:** one complete Properties envelope yields metadata and no body
       node, unsupported members are ignored while valid neighbors remain records, incomplete envelopes remain Markdown, and every
       block identifier has exactly one owner, no valid marker survives as
       visible text, every `>` container is a `Callout`, and plain and

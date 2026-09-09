@@ -579,22 +579,15 @@ bool markdown_core_node_callout_properties(const markdown_core_node *node, markd
     if (!is_callout(node) || !variant || !collapsed) {
         return false;
     }
-    /* Every `>` container is metadata-free until the callouts module's
-     * metadata rule lands with O8: no variant, no fold marker, no title. */
-    variant->has_value = false;
-    variant->value.data = NULL;
-    variant->value.length = 0;
-    collapsed->has_value = false;
-    collapsed->value = false;
+    variant->has_value = node->as.callout->variant.has_value;
+    variant->value.data = node->as.callout->variant.value.data;
+    variant->value.length = (size_t)node->as.callout->variant.value.len;
+    *collapsed = node->as.callout->collapsed;
     return true;
 }
 
 const markdown_core_node *markdown_core_node_callout_title(const markdown_core_node *node) {
-    /* No callout carries a title until O8, and a non-callout never does; a
-     * present title holds at least one node, so its first node is its
-     * presence. */
-    (void)node;
-    return NULL;
+    return is_callout(node) && node->as.callout->title ? node->as.callout->title->first_child : NULL;
 }
 
 static bool is_link(const markdown_core_node *node) {

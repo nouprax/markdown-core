@@ -282,6 +282,45 @@ static size_t count_occurrences(const char *text, const char *needle) {
     return count;
 }
 
+static void check_callout_source_boundaries(void) {
+    static const char source[] = "\xEF\xBB\xBF> [!note]- T  \r\n> body";
+    markdown_core_document *document = markdown_core_document_parse((const uint8_t *)source, sizeof(source) - 1, NULL);
+    check(document != NULL, "callout parses BOM, CRLF, trailing spaces and EOF without newline");
+    if (!document) {
+        return;
+    }
+    const markdown_core_node *callout = markdown_core_node_get_first_child(markdown_core_document_root(document));
+    const markdown_core_node *title = markdown_core_node_callout_title(callout);
+    markdown_core_string literal;
+    check(title && markdown_core_node_literal(title, &literal) && literal.length == 1 && literal.data[0] == 'T',
+          "trailing title spaces never create a break or title text");
+    check(title && !markdown_core_node_get_next_sibling(title), "title contains exactly one node");
+    markdown_core_scope title_scope = markdown_core_node_scope(title);
+    check(title_scope.start.line == 1 && title_scope.start.column == 15 && title_scope.end.column == 15,
+          "title scope uses original byte columns after BOM and metadata");
+    const markdown_core_node *body = markdown_core_node_get_first_child(callout);
+    markdown_core_scope body_scope = markdown_core_node_scope(body);
+    check(body && body_scope.start.line == 2 && body_scope.start.column == 3 && body_scope.end.column == 6,
+          "body scope starts after its quote prefix and reaches EOF");
+    markdown_core_document_free(document);
+}
+
+static void check_callout_inherited_setext_scope(void) {
+    static const char source[] = "> [!note] T\n> head\n> ===\n\nnext\n";
+    markdown_core_document *document = markdown_core_document_parse((const uint8_t *)source, sizeof(source) - 1, NULL);
+    check(document != NULL, "callout body Setext heading parses");
+    if (!document) {
+        return;
+    }
+    const markdown_core_node *callout = markdown_core_node_get_first_child(markdown_core_document_root(document));
+    const markdown_core_node *heading = markdown_core_node_get_first_child(callout);
+    markdown_core_scope scope = markdown_core_node_scope(heading);
+    check(markdown_core_node_get_kind(heading) == MARKDOWN_CORE_KIND_HEADING && scope.start.line == 2 &&
+              scope.start.column == 3 && scope.end.line == 4 && scope.end.column == 0,
+          "metadata preserves the inherited Setext end boundary before a following blank line");
+    markdown_core_document_free(document);
+}
+
 static void check_citation_model(void) {
     /* M4: repeated calls share one footnote, a later definition of the same
      * id is a footnote after the winner, and the dump nests each value under
@@ -518,6 +557,8 @@ int main(int argc, char **argv) {
     check_null_and_empty();
     check_resource_identity();
     check_callout_fields();
+    check_callout_source_boundaries();
+    check_callout_inherited_setext_scope();
     check_citation_model();
     check_directive_label_projection();
     for (i = 3; i < argc; i++) {

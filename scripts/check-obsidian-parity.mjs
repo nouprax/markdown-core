@@ -497,6 +497,23 @@ if (
 ) {
     throw new Error("obsidian parity: comment-removal canary failed");
 }
+// The direct oracle has no callout transform. Recognition is asserted here
+// separately from the scope-free metadata-free quote projection.
+const calloutInput = "> [!NOTE]- title\n> body\n";
+const calloutOracle = processor.runSync(processor.parse(calloutInput), calloutInput);
+const calloutProduct = execFileSync(ours, [], { input: calloutInput, encoding: "utf8" });
+if (
+    calloutOracle.children[0]?.type !== "blockquote" ||
+    calloutOracle.children[0].children[0]?.children[0]?.value !== "[!NOTE]- title\nbody" ||
+    !/Callout scope=1:1\.\.2:6 anchor=null attributes=\{\} variant="NOTE" collapsed=true children=1/.test(
+        calloutProduct
+    ) ||
+    !/Title children=1\n.*Text scope=1:12\.\.1:16 .*literal="title"/.test(calloutProduct) ||
+    !/Paragraph scope=2:3\.\.2:6/.test(calloutProduct)
+) {
+    throw new Error("obsidian parity: universal-callout-container canary failed");
+}
+
 const taskCanary = processor.runSync(processor.parse("- [?] task\n"), "- [?] task\n");
 if (taskCanary.children[0]?.children?.[0]?.data?.taskChar !== "?") {
     process.stderr.write("obsidian parity: oracle canary did not preserve a custom task character\n");

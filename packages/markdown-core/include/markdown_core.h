@@ -378,8 +378,7 @@ MARKDOWN_CORE_API const markdown_core_node *markdown_core_node_directive_label(c
  * is the authored type as written, absent when the container has no metadata
  * line, and `collapsed` is its fold marker, absent when no `+` or `-` was
  * authored, false for `+` (the callout opens expanded) and true for `-`.
- * Until the callouts module's metadata rule lands with `O8`, every callout
- * answers an absent variant and an absent marker. */
+ */
 MARKDOWN_CORE_API bool markdown_core_node_callout_properties(const markdown_core_node *node,
                                                              markdown_core_optional_string *variant,
                                                              markdown_core_optional_bool *collapsed);

@@ -1038,6 +1038,19 @@ typedef struct {
     markdown_core_map *refmap;
 } inline_field_context;
 
+/* Core and extension fields participate in the same parser phases. The
+ * private title root stays owned here from source capture through cleanup. */
+static int S_visit_inline_subtrees(markdown_core_node *node, markdown_core_owned_subtree_visitor visitor,
+                                   void *context) {
+    if (S_type(node) == MARKDOWN_CORE_NODE_CALLOUT && node->as.callout->title &&
+        !visitor(&node->as.callout->title, context)) {
+        return 0;
+    }
+    const markdown_core_extension *extension = node->extension;
+    return !extension || !extension->visit_owned_subtrees_func ||
+           extension->visit_owned_subtrees_func(extension, node, visitor, context);
+}
+
 static int process_inline_fields(markdown_core_parser *parser, markdown_core_node *root, markdown_core_map *refmap);
 
 static int process_inline_field(markdown_core_node **root_slot, void *context) {
@@ -1053,8 +1066,8 @@ static int process_inline_field(markdown_core_node **root_slot, void *context) {
     return process_inline_fields(fields->parser, root, fields->refmap);
 }
 
-/* Find node-valued fields from the completed child tree. The owning extension
- * decides which slots exist; each field is parsed as an independent child
+/* Find node-valued fields from the completed child tree. Each core kind or
+ * owning extension decides which slots exist; each field is parsed as an independent child
  * tree, then scanned for nested fields of its own. */
 static int process_inline_fields(markdown_core_parser *parser, markdown_core_node *root, markdown_core_map *refmap) {
     markdown_core_iter *iter = markdown_core_iter_new(root);
@@ -1067,14 +1080,11 @@ static int process_inline_fields(markdown_core_parser *parser, markdown_core_nod
     }
     while (!parser->oom && (event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
         markdown_core_node *node;
-        const markdown_core_extension *extension;
         if (event != MARKDOWN_CORE_EVENT_ENTER) {
             continue;
         }
         node = markdown_core_iter_get_node(iter);
-        extension = node->extension;
-        if (extension && extension->visit_owned_subtrees_func &&
-            !extension->visit_owned_subtrees_func(extension, node, process_inline_field, &context)) {
+        if (!S_visit_inline_subtrees(node, process_inline_field, &context)) {
             parser->oom = true;
         }
     }
@@ -2130,6 +2140,77 @@ void markdown_core_parser_lookahead_end(markdown_core_block_lookahead *lookahead
     lookahead->parser = NULL;
 }
 
+/* Called exactly once, when the quote prefix opens its container. Recognition
+ * scans only this line and commits before any body block can claim its bytes.
+ * No body paragraph exists until a later line actually supplies body text. */
+static bool S_parse_callout_metadata(markdown_core_parser *parser, markdown_core_node *node,
+                                     markdown_core_chunk *input) {
+    bufsize_t pos = parser->offset;
+    bufsize_t begin = pos;
+    while (pos < input->len && input->data[pos] == ' ' && pos - begin < 3) {
+        pos++;
+        parser->callout_scan_work++;
+    }
+    parser->callout_scan_work++;
+    if (parser->partially_consumed_tab || pos + 2 >= input->len || input->data[pos] != '[' ||
+        input->data[pos + 1] != '!') {
+        return false;
+    }
+    pos += 2;
+    begin = pos;
+    while (pos < input->len) {
+        unsigned char c = input->data[pos];
+        parser->callout_scan_work++;
+        if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-')) {
+            break;
+        }
+        pos++;
+    }
+    if (pos == begin || pos >= input->len || input->data[pos] != ']') {
+        return false;
+    }
+    markdown_core_chunk variant = {input->data + begin, pos - begin, 0};
+    pos++;
+    bool has_fold = pos < input->len && (input->data[pos] == '+' || input->data[pos] == '-');
+    bool collapsed = has_fold && input->data[pos] == '-';
+    pos += has_fold;
+    if (pos < input->len && !S_is_space_or_tab(input->data[pos]) && !S_is_line_end_char(input->data[pos])) {
+        return false;
+    }
+    while (pos < input->len && S_is_space_or_tab(input->data[pos])) {
+        pos++;
+        parser->callout_scan_work++;
+    }
+    bufsize_t end = input->len;
+    while (end > pos && (S_is_space_or_tab(input->data[end - 1]) || S_is_line_end_char(input->data[end - 1]))) {
+        end--;
+        parser->callout_scan_work++;
+    }
+    if (!markdown_core_chunk_to_cstr(parser->mem, &variant)) {
+        parser->oom = true;
+        return true;
+    }
+    node->as.callout->variant = markdown_core_optional_chunk_present(variant);
+    node->as.callout->collapsed = (markdown_core_optional_bool){has_fold, collapsed};
+    if (end > pos) {
+        markdown_core_node *title = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_PARAGRAPH, parser->mem);
+        if (!title) {
+            parser->oom = true;
+            return true;
+        }
+        node->as.callout->title = title;
+        title->start_line = title->end_line = parser->line_number;
+        title->start_column = pos + 1;
+        title->end_column = end;
+        markdown_core_strbuf_put(&title->content, input->data + pos, end - pos);
+        if (title->content.oom || !markdown_core_parser_mark_content(parser, title, parser->line_number, pos + 1)) {
+            parser->oom = true;
+        }
+    }
+    S_advance_offset(parser, input, input->len - 1 - parser->offset, false);
+    return true;
+}
+
 static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **container, markdown_core_chunk *input,
                             bool all_matched) {
     bool indented;
@@ -2166,6 +2247,10 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
             }
             *container = add_child(parser, *container, MARKDOWN_CORE_NODE_CALLOUT, blockquote_startpos + 1);
             if (!*container) {
+                return;
+            }
+
+            if (S_parse_callout_metadata(parser, *container, input)) {
                 return;
             }
 
@@ -2501,7 +2586,20 @@ static void add_text_to_container(markdown_core_parser *parser, markdown_core_no
     // then treat this as a "lazy continuation line" and add it to
     // the open paragraph.
     if (parser->current != last_matched_container && container == last_matched_container && !parser->blank &&
-        S_type(parser->current) == MARKDOWN_CORE_NODE_PARAGRAPH) {
+        (S_type(parser->current) == MARKDOWN_CORE_NODE_PARAGRAPH ||
+         (S_type(parser->current) == MARKDOWN_CORE_NODE_CALLOUT && parser->current->as.callout->variant.has_value &&
+          parser->current->start_line == parser->line_number - 1 && !parser->current->first_child))) {
+        /* Metadata is not body text. A lazy line immediately after it opens
+         * the body paragraph here, at its own source position; later lazy
+         * lines continue that paragraph through the same add_line operation. */
+        if (S_type(parser->current) == MARKDOWN_CORE_NODE_CALLOUT) {
+            markdown_core_node *paragraph =
+                add_child(parser, parser->current, MARKDOWN_CORE_NODE_PARAGRAPH, parser->offset + 1);
+            if (!paragraph) {
+                return;
+            }
+            parser->current = paragraph;
+        }
         add_line(parser->current, input, parser);
     } else { // not a lazy continuation
         // Finalize any blocks that were not matched and set cur to container:
@@ -2704,14 +2802,11 @@ static int S_apply_tree_phase(markdown_core_parser *parser, markdown_core_node *
     }
     while (!parser->oom && (event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
         markdown_core_node *node;
-        const markdown_core_extension *extension;
         if (event != MARKDOWN_CORE_EVENT_ENTER) {
             continue;
         }
         node = markdown_core_iter_get_node(iter);
-        extension = node->extension;
-        if (extension && extension->visit_owned_subtrees_func &&
-            !extension->visit_owned_subtrees_func(extension, node, S_apply_field_phase, &fields)) {
+        if (!S_visit_inline_subtrees(node, S_apply_field_phase, &fields)) {
             parser->oom = true;
         }
     }

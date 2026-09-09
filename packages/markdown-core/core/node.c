@@ -117,6 +117,9 @@ static size_t S_node_payload_size(markdown_core_node_type type) {
     case MARKDOWN_CORE_NODE_HEADING:
         size = sizeof(markdown_core_heading);
         break;
+    case MARKDOWN_CORE_NODE_CALLOUT:
+        size = sizeof(markdown_core_callout);
+        break;
     case MARKDOWN_CORE_NODE_TEXT:
     case MARKDOWN_CORE_NODE_HTML:
     case MARKDOWN_CORE_NODE_CODE:
@@ -203,6 +206,9 @@ markdown_core_node *markdown_core_node_new(markdown_core_node_type type) {
 
 static void free_node_as(markdown_core_node *node) {
     switch (node->kind) {
+    case MARKDOWN_CORE_NODE_CALLOUT:
+        markdown_core_optional_chunk_free(NODE_MEM(node), &node->as.callout->variant);
+        break;
     case MARKDOWN_CORE_NODE_DOCUMENT: {
         markdown_core_metadata_free(NODE_MEM(node), node->as.document->metadata);
         node->as.document->metadata = NULL;
@@ -279,6 +285,9 @@ static void S_splice_after(markdown_core_node *e, markdown_core_node *first) {
  * Kind conversion uses a separate walk so its siblings remain untouched. */
 static void S_splice_owned_fields(markdown_core_node *owner, markdown_core_node *after) {
     switch (owner->kind) {
+    case MARKDOWN_CORE_NODE_CALLOUT:
+        S_splice_after(after, owner->as.callout->title);
+        break;
     case MARKDOWN_CORE_NODE_CITE:
         S_splice_after(after, owner->as.cite->citations);
         break;

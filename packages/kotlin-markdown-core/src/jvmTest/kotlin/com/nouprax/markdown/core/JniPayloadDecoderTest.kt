@@ -500,8 +500,8 @@ class JniPayloadDecoderTest {
     @Test
     fun aTitleIsDecodedBeforeTheContentAndDumpedAsAGroup() {
         // The title path of the wire: a node-valued list the payload sends
-        // between the callout's metadata and its content. No parse produces
-        // one until O8, so the payload is built by hand: a document holding
+        // between the callout's metadata and its content. This payload is
+        // built by hand to isolate the transport: a document holding
         // one collapsed `note` callout whose title is the text `T` and whose
         // content is empty.
         val payload =

@@ -157,7 +157,7 @@
         {
             "id": "universal-callout-container",
             "summary": "mdast names every inherited > container blockquote, while the canonical AST uses Callout for both metadata-free and metadata-bearing quoted containers (M3).",
-            "handling": "The semantic projection maps mdast blockquote to Callout. The inherited source grammar remains owned by CommonMark; official product fixtures own optional Obsidian metadata."
+            "handling": "The semantic projection maps mdast blockquote to metadata-free Callout. An executable canary proves that the direct oracle leaves [!NOTE]- as paragraph text while Markdown Core fills variant, collapsed and title (O8); dialect-callouts.txt owns metadata grammar, types, scopes and nesting."
         },
         {
             "id": "metadata-fixed-fields-and-recovery",

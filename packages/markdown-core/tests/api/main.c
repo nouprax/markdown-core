@@ -2738,7 +2738,7 @@ static void universal_values(test_batch_runner *runner) {
 /* Count visited source positions as well as verifying values. Repeated failed
  * candidates share one extent, so they cannot rescan each other's suffixes. */
 typedef struct {
-    size_t cross_link, opaque, delimiters, comment, lookahead, footnote_body, block_identifier;
+    size_t cross_link, opaque, delimiters, comment, lookahead, footnote_body, block_identifier, callout;
     size_t registered_footnotes;
     bool footnote_collection_allocated, footnotes_owned;
 } inline_work;
@@ -2755,6 +2755,7 @@ static markdown_core_node *record_inline_work(const markdown_core_extension *ext
     work->comment = parser->comment_scan_work;
     work->lookahead = parser->block_lookahead_work;
     work->block_identifier = parser->block_identifier_work;
+    work->callout = parser->callout_scan_work;
     work->footnote_body = parser->footnote_body_work;
     work->registered_footnotes = parser->footnote_registration_work;
     work->footnote_collection_allocated = parser->footnotes.values != NULL;
@@ -3406,6 +3407,61 @@ static size_t count_anchors(markdown_core_node *root) {
     return count;
 }
 
+/* Each newly opened quote inspects one bounded prefix or its own type/title
+ * separators. Deep quote chains and long failed type candidates must never
+ * rescan the remainder of the document. */
+static void callout_linear_work(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    for (size_t count = 128; count <= 8192; count *= 2) {
+        for (int shape = 0; shape < 4; shape++) {
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+            if (shape == 0) {
+                for (size_t i = 0; i < count; i++) {
+                    markdown_core_strbuf_putc(&source, '>');
+                }
+                markdown_core_strbuf_puts(&source, " [!deep]- ==title==\n");
+            } else if (shape == 1) {
+                markdown_core_strbuf_puts(&source, "> [!");
+                for (size_t i = 0; i < count; i++) {
+                    markdown_core_strbuf_putc(&source, 'a');
+                }
+                markdown_core_strbuf_puts(&source, ".] invalid\n");
+            } else if (shape == 2) {
+                for (size_t i = 0; i < count; i++) {
+                    markdown_core_strbuf_puts(&source, "> [!note]+ T\n\n");
+                }
+            } else {
+                markdown_core_strbuf_puts(&source, "> [!note]-");
+                for (size_t i = 0; i < count; i++) {
+                    markdown_core_strbuf_putc(&source, ' ');
+                }
+                markdown_core_strbuf_puts(&source, "\n");
+            }
+            inline_work work = {0};
+            markdown_core_node *root = markdown_core_parse_document_with_mem(
+                (const char *)source.ptr, (size_t)source.size, mem, measure_inline_work, &work);
+            OK(runner, root != NULL, "adversarial callouts parse");
+            OK(runner, work.callout > 0 && work.callout <= 2 * (size_t)source.size,
+               "callout recognition is linear: shape=%d bytes=%d work=%zu", shape, source.size, work.callout);
+            if (root && shape == 0) {
+                markdown_core_node *node = root->first_child;
+                size_t depth = 1;
+                while (node->first_child) {
+                    node = node->first_child;
+                    depth++;
+                }
+                INT_EQ(runner, depth, count, "no quote depth truncation");
+                STR_EQ(runner, (const char *)node->as.callout->variant.value.data, "deep", "deepest metadata retained");
+                OK(runner,
+                   node->as.callout->title && node->as.callout->title->first_child->kind == MARKDOWN_CORE_NODE_MARK,
+                   "deep title parsed through shared inlines");
+            }
+            markdown_core_node_free(root);
+            markdown_core_strbuf_free(&source);
+        }
+    }
+}
+
 static void block_identifier_linear_work(test_batch_runner *runner) {
     markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
     static const struct {
@@ -3566,6 +3622,7 @@ int main(void) {
     properties_member_work(runner);
     properties_text_memory(runner);
     block_identifier_linear_work(runner);
+    callout_linear_work(runner);
     block_identifier_ownership(runner);
     reference_definition_lifetime(runner);
     attribute_linear_work(runner);

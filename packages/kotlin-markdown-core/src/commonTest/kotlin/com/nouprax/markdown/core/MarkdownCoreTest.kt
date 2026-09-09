@@ -162,10 +162,7 @@ class ErrorsTest {
 
 class BindingMappingTest {
     @Test
-    fun everyQuoteContainerIsAMetadataFreeCallout() {
-        // M3: the kind is `Callout`; the metadata rule that fills variant,
-        // collapsed, and title in lands with O8, so every callout reads as
-        // metadata-free and dumps its fields as such.
+    fun ordinaryQuoteIsAMetadataFreeCallout() {
         val document = Document.parse("> quote\n")
         val callout = assertIs<Callout>(document.content.single())
         assertEquals(null, callout.variant)
@@ -179,6 +176,41 @@ class BindingMappingTest {
                 "        └── Text scope=1:3..1:7 anchor=null attributes={} literal=\"quote\" children=0\n",
             document.dump(),
         )
+    }
+
+    @Test
+    fun authoredCalloutTitleWalksBeforeBodyAfterNativeRelease() {
+        val callout = assertIs<Callout>(Document.parse("> [!CuStOm]- **T**\n> body\n").content.single())
+        assertEquals("CuStOm", callout.variant)
+        assertEquals(true, callout.collapsed)
+        val title = assertIs<Strong>(callout.title!!.single())
+        assertEquals("T", assertIs<Text>(title.content.single()).literal)
+        assertIs<Paragraph>(callout.content.single())
+        val visitor = RecordingWalkingVisitor()
+        callout.walk(visitor)
+        assertEquals(
+            listOf(
+                "entering:Callout",
+                "entering:Strong",
+                "entering:Text",
+                "exiting:Text",
+                "exiting:Strong",
+                "entering:Paragraph",
+                "entering:Text",
+                "exiting:Text",
+                "exiting:Paragraph",
+                "exiting:Callout",
+            ),
+            visitor.events,
+        )
+        val values = Document.parse("> [!note]+ %%t%%\n\n> [!note]\n").content
+        val comment = assertIs<Callout>(values[0])
+        assertEquals(false, comment.collapsed)
+        assertEquals("t", assertIs<Comment>(comment.title!!.single()).literal)
+        assertTrue(comment.content.isEmpty())
+        val empty = assertIs<Callout>(values[1])
+        assertEquals(null, empty.title)
+        assertEquals(null, empty.collapsed)
     }
 
     @Test

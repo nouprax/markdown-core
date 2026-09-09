@@ -26,6 +26,12 @@ JVM-only Gradle and Maven consumers can use
 `com.nouprax:kotlin-markdown-core-jvm:3.0.0`. Published targets are Android API
 21 or later, JVM 17, macOS arm64, and Linux x64.
 
+Every `>` container is a `Callout`. An opening `[!type]` line stores the type
+as written in `variant`; optional `+` and `-` set `collapsed` to false and true.
+The parsed inline `title` is visited before `content` and is never a content
+child. A plain quote has null metadata, and a missing title stays null. Custom
+types are preserved; default titles, aliases and styling belong to consumers.
+
 Every Markup value also exposes `anchor` and `attributes`. Attributes contain
 ordered `classes` and ordered `records` (`name`, `value`), with duplicates
 preserved. Directives populate these fields through the shared Pandoc braced

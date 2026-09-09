@@ -5,8 +5,8 @@ owns the `Callout` kind, which every `>` container produces, and the
 `[!type]` metadata rule. Source: Obsidian's callouts. Executable oracle:
 none; the Obsidian package does not parse callouts, so product fixtures are
 the oracle of record. Landing: the kind landed with `M3`, and the metadata
-rule lands with `O8`; until then every callout is metadata-free. The
-[example format](../dialect.md#examples) is defined by the index.
+rule landed with `O8`. The [example format](../dialect.md#examples) is defined
+by the index.
 
 ## Model
 
@@ -164,8 +164,9 @@ Document scope=1:1..1:24 anchor=null attributes={} children=1
 ````````````````````````````````
 
 The paragraph that began on the metadata line is split: its remaining lines,
-lazy lines included, form a `Paragraph` whose scope starts at the first byte
-of the second line, and with no remaining lines the body is empty:
+lazy lines included (even immediately after the metadata line), form a
+`Paragraph` whose scope starts at the first byte of the second line, and with
+no remaining lines the body is empty:
 
 ```````````````````````````````` example
 > [!note] Title
@@ -198,7 +199,10 @@ Document scope=1:1..3:4 anchor=null attributes={} children=1
 ````````````````````````````````
 
 Metadata is decided when the first line is consumed, before Setext
-resolution, so a following underline belongs to the body:
+resolution, so a following underline belongs to the body. Body block starts
+have no title paragraph to interrupt: a numbered list may start above one,
+indented code may start immediately, and HTML blocks use their ordinary
+block-start rules:
 
 ```````````````````````````````` example
 > [!note] T
@@ -242,14 +246,14 @@ A block identifier candidate on a metadata line is title text; the
 extracted, so a candidate in the body attaches to the body paragraph:
 
 ```````````````````````````````` example
-> [!note] Title ^t
-> body ^p
+> [!note] Title #t#
+> body #p#
 .
-Document scope=1:1..2:9 anchor=null attributes={} children=1
-└── Callout scope=1:1..2:9 anchor=null attributes={} variant="note" collapsed=null children=1
+Document scope=1:1..2:10 anchor=null attributes={} children=1
+└── Callout scope=1:1..2:10 anchor=null attributes={} variant="note" collapsed=null children=1
     ├── Title children=1
-    │   └── Text scope=1:11..1:18 anchor=null attributes={} literal="Title ^t" children=0
-    └── Paragraph scope=2:3..2:9 anchor="p" attributes={} children=1
+    │   └── Text scope=1:11..1:19 anchor=null attributes={} literal="Title #t#" children=0
+    └── Paragraph scope=2:3..2:10 anchor="p" attributes={} children=1
         └── Text scope=2:3..2:6 anchor=null attributes={} literal="body" children=0
 ````````````````````````````````
 

@@ -3,8 +3,8 @@ import MarkdownCoreC
 /// A callout — every `>` container.
 ///
 /// A plain quoted block is a callout without metadata: `variant`, `collapsed`
-/// and `title` are `nil`. The callouts module's metadata rule, which fills
-/// them in, lands with `O8`.
+/// and `title` are `nil`. A valid opening `[!type]` line
+/// populates metadata; the type is stored as written.
 public struct Callout: Markup {
     /// Where it is. See ``Scope`` — boundaries, not a byte range.
     public let scope: Scope

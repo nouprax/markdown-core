@@ -119,11 +119,11 @@ const stateValidators = {
     "table.alignment.left": (tree) => /^.*Table scope=.*columns=\[[^\]]*left[^\]]*\]/m.test(tree),
     "table.alignment.center": (tree) => /^.*Table scope=.*columns=\[[^\]]*center[^\]]*\]/m.test(tree),
     "table.alignment.right": (tree) => /^.*Table scope=.*columns=\[[^\]]*right[^\]]*\]/m.test(tree),
-    // Every `>` container is a `Callout` (M3). Its metadata line arrives with
-    // O8; until then every callout is metadata-free, which these three states
-    // pin: no variant, no fold marker, and no `Title` group, which is
-    // the only way a title prints.
     "callout.variant.null": (tree) => /^.*Callout scope=\S+ anchor=null attributes=\{\} variant=null /m.test(tree),
+    "callout.variant.value": (tree) => /^.*Callout scope=.* variant="[^"]+" /m.test(tree),
+    "callout.collapsed.false": (tree) => /^.*Callout scope=.* collapsed=false /m.test(tree),
+    "callout.collapsed.true": (tree) => /^.*Callout scope=.* collapsed=true /m.test(tree),
+    "callout.title.populated": (tree) => /Title children=[1-9]\d*/.test(tree),
     "callout.collapsed.null": (tree) => /^.*Callout scope=.* collapsed=null /m.test(tree),
     "callout.title.null": (tree) => /^.*Callout scope=/m.test(tree) && !/Title children=/.test(tree),
     "markup.anchor.null": (tree) => / anchor=null /.test(tree),
@@ -217,6 +217,8 @@ const stateValidators = {
     "document.footnotes.populated": (tree) => /^(?:├──|└──) Footnote scope=\S+ id="[^"]*" children=\d+$/m.test(tree)
 };
 const orderValidators = {
+    "callout.title-before-content": (tree) =>
+        /Callout scope=.* children=[1-9]\d*\n[^\n]*Title children=[1-9]\d*[\s\S]*Paragraph scope=/.test(tree),
     "document.source-order": (tree) => tree.startsWith("Document scope="),
     "table.head-content-foot": (tree) =>
         /TableHead children=\d+[\s\S]*TableBody children=\d+[\s\S]*TableFoot children=\d+/.test(tree),
