@@ -157,6 +157,30 @@ class ApiTest {
     }
 
     @Test
+    fun insertionsRetainTypedContentAndWalkBothPhasesAfterNativeRelease() {
+        val paragraph = Document.parse("++a *b*++").content.first() as Paragraph
+        val insertion = paragraph.content.first() as Insertion
+        val visitor = RecordingWalkingVisitor()
+        insertion.walk(visitor)
+        assertEquals(
+            listOf(
+                "entering:Insertion",
+                "entering:Text",
+                "exiting:Text",
+                "entering:Emphasis",
+                "entering:Text",
+                "exiting:Text",
+                "exiting:Emphasis",
+                "exiting:Insertion",
+            ),
+            visitor.events,
+        )
+        assertEquals(2, insertion.content.size)
+        assertEquals("b", ((insertion.content[1] as Emphasis).content.first() as Text).literal)
+        assertEquals(Scope(Position(1, 1), Position(1, 9)), insertion.scope)
+    }
+
+    @Test
     fun walkingVisitorIsTypedAndPreservesOwnedFieldSemantics() {
         val block = assertIs<DirectiveBlock>(Document.parse(":::note[Title]\nBody\n:::\n").content.single())
         val visitor = RecordingWalkingVisitor()

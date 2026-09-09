@@ -379,6 +379,7 @@ private struct KindVisitor: MarkupVisitor {
     mutating func visit(_ node: Strong) -> String { kindName(node) }
     mutating func visit(_ node: Strikethrough) -> String { kindName(node) }
     mutating func visit(_ node: Mark) -> String { kindName(node) }
+    mutating func visit(_ node: Insertion) -> String { kindName(node) }
     mutating func visit(_ node: Link) -> String { kindName(node) }
     mutating func visit(_ node: Media) -> String { kindName(node) }
     mutating func visit(_ node: Directive) -> String { kindName(node) }
@@ -442,6 +443,7 @@ struct RecordingWalkingVisitor: MarkupWalkingVisitor {
     mutating func visit(_ node: Strong, phase: WalkPhase) { record(node, phase) }
     mutating func visit(_ node: Strikethrough, phase: WalkPhase) { record(node, phase) }
     mutating func visit(_ node: Mark, phase: WalkPhase) { record(node, phase) }
+    mutating func visit(_ node: Insertion, phase: WalkPhase) { record(node, phase) }
     mutating func visit(_ node: Link, phase: WalkPhase) { record(node, phase) }
     mutating func visit(_ node: Media, phase: WalkPhase) { record(node, phase) }
     mutating func visit(_ node: Directive, phase: WalkPhase) { record(node, phase) }

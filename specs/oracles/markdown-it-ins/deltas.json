@@ -1,0 +1,103 @@
+{
+    "schemaVersion": 1,
+    "oracle": [
+        {
+            "package": "markdown-it",
+            "version": "13.0.2",
+            "integrity": "sha512-FtwnEuuK+2yVU7goGn/MJ0WBZMM9ZPgU9spqlFs7/A/pDIUNSOQZhUgOqYCficIuR2QaFnrt8LHqBWsbTAoI5w=="
+        },
+        {
+            "package": "markdown-it-ins",
+            "version": "4.0.0",
+            "integrity": "sha512-sWbjK2DprrkINE4oYDhHdCijGT+MIDhEupjSHLXe5UXeVr5qmVxs/nTUVtgi0Oh/qtF+QKV0tNWDhQBEPxiMew=="
+        }
+    ],
+    "baselineGaps": [],
+    "expectedDivergences": [
+        {
+            "id": "nested-mark",
+            "input": "++==a==++ ==++b++==\n",
+            "reason": "The product recognizes Mark and preserves its parsed inline content; markdown-it-ins has no highlight rule.",
+            "oracleDigest": "d54da487719330fc3a86faa23af30e57d26a6cdeba3917f113a2fbe3b30b0e9b",
+            "markdownCoreDigest": "5464f372851ad8df017928ac5269ba190d865da33ae4a8c61c7e7855a165e6a9"
+        },
+        {
+            "id": "crossed-mark",
+            "input": "==++a==++ ++==b++==\n",
+            "reason": "Mark and Insertion share the product delimiter stack, so a completed Mark prevents a crossed Insertion; the oracle treats equals signs as text.",
+            "oracleDigest": "3c53869062d94d7e6626a0ba9cc2d2dc480d7f444a1b0a64129575d0b1e75a34",
+            "markdownCoreDigest": "ca3515a8d9130e47a3ff08d05eda0043dfad110807dec541bd67ba4f0c4c9d53"
+        },
+        {
+            "id": "cross-links",
+            "input": "++[[Note|display]] ![[Pic|20x30]]++ [[Note|++raw++]] ![[Pic|++raw++]]\n",
+            "reason": "CrossLink and CrossEmbedded are opaque product nodes, including raw labels and dimensions; the oracle treats their spelling as inline text.",
+            "oracleDigest": "9d3aae69c6337cdae53a6ceb599b11dc6b1fefe5cd18da4eec77db348276f492",
+            "markdownCoreDigest": "9b05e5a46317954a44b0ff1bcd80bf70144424d0dfebff3ef1c4f5fbd991563d"
+        },
+        {
+            "id": "crossed-cross-link",
+            "input": "++[[Note|label++]] [[Note|++label]]++\n",
+            "reason": "Cross-link scanners own their labels before plus reduction. Plus runs inside those labels cannot close an outer Insertion.",
+            "oracleDigest": "f932bbc57a29f036db7dbfe7c8268dcf434b6b7451e0f94cb790456827dce86d",
+            "markdownCoreDigest": "304ac5273a39b3f5d6565ae4a407189df83475461697f672ad6ecd1cc19ec0a0"
+        },
+        {
+            "id": "cites",
+            "input": "++a[^n] b^[++inline++]++\n\n[^n]: ++note++\n",
+            "reason": "The product owns Cite occurrences and document Footnotes, with inline footnotes parsed in separate containers; the oracle has neither footnote form.",
+            "oracleDigest": "73fa70d609d441545872d0887ff8db0e2666f3cea8400156fd60ce5f0e48a766",
+            "markdownCoreDigest": "3b0b7b1cc97a8ec5549b60b9a7547d757a1ec453b481945e2fefd9fd357cc0cb"
+        },
+        {
+            "id": "comments",
+            "input": "++a %%++raw++%% b <!--++raw++--> c++\n",
+            "reason": "Percent comments are opaque in the product, and both comment syntaxes map to Comment. The oracle has only opaque HTML comment tokens.",
+            "oracleDigest": "351c010494cd33e4d894653a547987f7bb2d86e223129ac6530703af6c41f3c9",
+            "markdownCoreDigest": "a8f703ac35d180141e6a1e5ddf00eaaabd2ca4e1c022238631d010a0a8771925"
+        },
+        {
+            "id": "formulas",
+            "input": "++a $++raw++$ b \\\\(++raw++\\\\) c \\\\[++raw++\\\\]++\n",
+            "reason": "Dollar and double-backslash formulas own their literal bodies before delimiter reduction. The oracle has no formula parser.",
+            "oracleDigest": "6aab417164c75a70d8c2b3ba7fefcbdd3b3a2f06091ea98054ecd48d5a6a0842",
+            "markdownCoreDigest": "db776c8b23bacf4d52563891f16e8e40930977060bc7bc6f9e9807f4385f83c4"
+        },
+        {
+            "id": "autolinks",
+            "input": "<https://example.com/++raw++> ++<https://example.com>++ https://example.com/++raw++\n",
+            "reason": "The product recognizes GFM bare autolinks as opaque URLs; the pinned oracle has linkify disabled and sees their plus runs as inline text.",
+            "oracleDigest": "ebb2acfb281cd158b59dfc4a29b08bcd2d24fda5d87add8f6f333354e0573b85",
+            "markdownCoreDigest": "7427554595fee118e9b5c5642b9eb7e95f70cef69b822055da37a8f1747a00d7"
+        },
+        {
+            "id": "comment-block",
+            "input": "%%\n++raw++\n%%\n\n++live++\n",
+            "reason": "A product percent-comment block owns its literal body; the oracle reads an ordinary paragraph.",
+            "oracleDigest": "386c2627b6f0176535e3fdbb50588c927705ef12aad8e24c28eefcaa61d74e09",
+            "markdownCoreDigest": "ff6bcc2ab2345ac570a8c38af584a5b97d27c49e3d70116c49017ef7f03834ff"
+        },
+        {
+            "id": "formula-block",
+            "input": "$$\n++raw++\n$$\n\n++live++\n",
+            "reason": "A product formula block owns its literal body; the oracle reads an ordinary paragraph.",
+            "oracleDigest": "6778d3bd4ff6a7df1d4152e7abbc42bfbf8418e1a049c39ed61bb281641eb264",
+            "markdownCoreDigest": "721f9789210fc3548d6cc6014cfbe7f9fe8a20e1d33e3e5a7545cafcaa4c7ebf"
+        },
+        {
+            "id": "inline-fields",
+            "input": "> [!note] ++title++\n> ++body++\n\n:badge[++label++]\n\n^[++note++]\n",
+            "reason": "Callout titles, directive labels and inline footnotes have named, separately parsed ownership fields in the product; the oracle has none of these constructs.",
+            "oracleDigest": "60d20ae1e97ebda7ffbb119aae388a4906a408fa2a0db30ca0de27cee26a6a47",
+            "markdownCoreDigest": "d398fed79a6f481472d7cf79c5e027b67876398de2aad8e8293634260a717103"
+        },
+        {
+            "id": "failed-candidates",
+            "input": "++[[unfinished $x$ ==mark== ++end++\n\n++[unfinished ++end++\n",
+            "reason": "Failed cross-link recognition consumes nothing, allowing the product formula and mark scanners to retain their constructs. The oracle has neither feature.",
+            "oracleDigest": "5888c9e99186d97233534ab0a3fc74fef8f4e80b134f724e5282d444c58cdeb7",
+            "markdownCoreDigest": "08bf407fbe1733efd2f1d0535609621dd5d2df557af94bb76b646204147bd0f3"
+        }
+    ],
+    "corpusDigest": "184f34791a91b1625e23a0f40d056fa00e39cd74c0b389e1d0aeb5b5db69f131"
+}

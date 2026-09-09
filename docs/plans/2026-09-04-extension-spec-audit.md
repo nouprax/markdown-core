@@ -1,5 +1,9 @@
 # Extension specification audit
 
+Historical naming note: this audit predates the I0/I1 naming correction.
+Its `Insert` and `inserted-text.md` references describe the former proposal;
+the current product contract is [`Insertion`](../specs/dialect/insertion.md).
+
 > Metadata update (2026-09-08): historical record/field-scope proposals below
 > are superseded by [the fixed-field metadata contract](../specs/dialect/properties.md).
 > Metadata has ten direct optional fields and only an envelope scope.

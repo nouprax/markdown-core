@@ -161,6 +161,7 @@ that the dump represents as nested descendants.
 | `Strong` | `anchor`, `attributes` |
 | `Strikethrough` | `anchor`, `attributes` |
 | `Mark` | `anchor`, `attributes` |
+| `Insertion` | `anchor`, `attributes` |
 | `Link` | `anchor`, `attributes`, `dest`, `title` |
 | `Media` | `anchor`, `attributes`, `dest`, `title`, `dimensions` |
 | `Directive` | `anchor`, `attributes`, `name` |

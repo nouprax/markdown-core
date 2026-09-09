@@ -203,7 +203,8 @@ typedef enum markdown_core_node_kind {
     MARKDOWN_CORE_KIND_COMMENT,
     MARKDOWN_CORE_KIND_CROSS_LINK,
     MARKDOWN_CORE_KIND_MARK,
-    MARKDOWN_CORE_KIND_CROSS_EMBEDDED
+    MARKDOWN_CORE_KIND_CROSS_EMBEDDED,
+    MARKDOWN_CORE_KIND_INSERTION
 } markdown_core_node_kind;
 
 typedef enum markdown_core_list_flavor {

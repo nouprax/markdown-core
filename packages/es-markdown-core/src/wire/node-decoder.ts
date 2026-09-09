@@ -374,6 +374,7 @@ export class NodeDecoder {
             case "strong":
             case "strikethrough":
             case "mark":
+            case "insertion":
             case "directiveLabel":
                 this.flags(record, 0);
                 return { ...base, content: this.content(record) } as MarkupValue;

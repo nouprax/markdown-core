@@ -31,12 +31,12 @@ parallel and every merge leaves `main` releasable.
 | #187 node-kind walking visitors               | landed | Every new kind adds entering and exiting callbacks to the Swift, Kotlin, and ES walkers; the public-surface audit derives the required count from `canonical-ast.json`.                                       |
 | #190 release dry-run readiness                | landed | Every pull request must pass the credential-free `Release Dry Run - Ready` check, so an intermediate state that cannot build every artifact cannot merge.                                                       |
 | #191 UTF-8 repair removal and table positions | landed | Valid UTF-8 is a caller precondition, so new scanners add no validation or repair path. The position ledgers are fail-closed ratchets that every parser change keeps exact.                                    |
-| #192 extension module contracts               | specs  | The Obsidian module set, the Pandoc module set, the shared attributes, citation, and inserted-text contracts, Remark directive attachment, the Pandoc and Obsidian oracle pins, and the two implementation plans. |
+| #192 extension module contracts               | specs  | The Obsidian module set, the Pandoc module set, the shared attributes, citation, and insertion contracts, Remark directive attachment, the Pandoc and Obsidian oracle pins, and the two implementation plans. |
 | #193 anchors and destinations                 | specs  | The universal `Markup.anchor` field, the tagged `Destination` value on `Link`, `Media`, and `CrossLink`, and the simplified `Attributes` shape.                                                                 |
 | #194 Obsidian Properties                      | specs  | `Document.metadata`, the shared metadata value model, the Properties envelope, and the `yaml@2.9.0` oracle.                                                                                                     |
 | #196 Properties corrections                   | specs  | Textual mapping keys and tightened oracle canaries; the original null-root rejection is superseded by O6 member skipping.                                                                                                       |
 
-The inserted-text contract is the one specification that no existing plan
+The insertion contract is the one specification that no existing plan
 sequences; it is landed here as its own track. The dialect rewrite of `S0`
 replaced the specification files those commits added with
 `docs/specs/dialect.md` and its modules; item identifiers, oracle gap names, and
@@ -81,7 +81,7 @@ the two implementation plans are unchanged.
   serialized because each regenerates shared goldens; the three feature tracks
   are independent of one another after `M7`.
 - Item identifiers are stable. A registered oracle gap names the item that
-  closes it: Pandoc and inserted-text gaps use these identifiers from the start,
+  closes it: Pandoc and insertion gaps use these identifiers from the start,
   and the existing Obsidian entries, which name plan phases, are retargeted to
   identifiers by the item that closes them.
 - Each item states its scope, its proof, and its `Requires`. The module
@@ -237,7 +237,7 @@ and the manifest order.
 | `Mark`                                                                                             | `content`                                                                                                         | new                                              | `O2`         |
 | `Comment`                                                                                          | `literal`                                                                                                         | new; block or inline by its parent edge          | `M0`         |
 | `Cite`                                                                                             | `citations: [Citation]`                                                                                           | new                                              | `M4`         |
-| `Insert`                                                                                           | `content`                                                                                                         | new                                              | `I1`         |
+| `Insertion`                                                                                           | `content`                                                                                                         | new                                              | `I1`         |
 | `Span`                                                                                             | `content`                                                                                                         | new                                              | `P5`         |
 | `Superscript`, `Subscript`                                                                         | `content`                                                                                                         | new                                              | `P6`         |
 | `BlockQuote`                                                                                       | —                                                                                                                 | removed                                          | `M3`         |
@@ -357,13 +357,13 @@ its behavior, with no separate publication step.
       case where the specification chooses differently becomes a documented
       projection with a canary when its item lands, and no item changes a rule
       to match Pandoc. Requires `X0`, `S0`.
-- [ ] **I0 — Inserted-text oracle gate.** Pin `markdown-it@13.0.2` and
+- [x] **I0 — Insertion oracle gate.** Pin `markdown-it@13.0.2` and
       `markdown-it-ins@4.0.0` as exact development dependencies with the
-      integrity values recorded in `docs/specs/dialect/inserted-text.md`; add
+      integrity values recorded in `docs/specs/dialect/insertion.md`; add
       `specs/oracles/markdown-it-ins/` with a README, an input-only corpus
       replaying the pinned upstream cases plus the contract's composition cases,
       and a fail-closed `deltas.json`; add `check:ins-parity`, which compares
-      `ins_open` and `ins_close` placement and nesting to `Insert` after a
+      `ins_open` and `ins_close` placement and nesting to `Insertion` after a
       canary requiring exactly one pair for `++inserted++`, to
       `check:oracle-parity`, CI, and the topology audit. Every case is a
       registered gap until `I1`. Requires `S0`, which creates the module that
@@ -622,7 +622,7 @@ its behavior, with no separate publication step.
   document-owned footnote content. The existing package and canonical goldens
   remain byte-identical. The `highlight` gap is retired and the formatted-body
   content-model difference has an executable canary. `%%` opacity, callout
-  titles, generated heading anchors, and inserted-text composition remain with
+  titles, generated heading anchors, and insertion composition remain with
   O3, O8, P3, and I1 respectively.
 
   Validation (2026-09-07): C correctness (70 tests) and conformance (2 tests),
@@ -1034,15 +1034,15 @@ its behavior, with no separate publication step.
   surface, with every Obsidian module always on in the switch-less dialect and
   no option, preset, or composed switch on any surface.
 
-## Stage 3 — inserted-text track
+## Stage 3 — insertion track
 
-- [ ] **I1 — Inserted text.** Implement inserted text: tokenize each plus run
+- [x] **I1 — Insertion.** Implement inserted text: tokenize each plus run
       once into two-character units with the odd-run literal rule, apply the
       flanking rules without the rule of three, push eligible units onto the
       shared delimiter stack, nest rather than merge repeated units, and
       normalize an odd closer's spare `+` after its closing units; escapes,
       code, formula, comment, and HTML-token bytes are opaque and paired tags
-      create no region. Add the `Insert(content)` kind, fixtures replaying the
+      create no region. Add the `Insertion(content)` kind, fixtures replaying the
       pinned upstream cases plus the contract's crossed-delimiter, `CrossLink`,
       `Mark`, `Cite`, nesting-limit, allocation-failure, and size-doubling
       cases, and a canonical case; remove every `I0` gap. The `CrossLink` and
@@ -1050,8 +1050,33 @@ its behavior, with no separate publication step.
       and `O1` or `O2` merges later, the `Cite` composition case belongs to `I1`
       because it reaches the citation model through `M7`, and `Comment` opacity
       follows the opacity rule with `O3`. The heading-text projection of
-      `Insert` in generated anchors is a cross-item case owned by whichever of
+      `Insertion` in generated anchors is a cross-item case owned by whichever of
       `I1` and `P3` merges later. Requires `X0`, `I0`, `M7`.
+
+  I0/I1 implemented together on the O10 baseline. The oracle replays all 16
+  pinned upstream groups, all 11 normative examples and 27 composition inputs;
+  all upstream/module inputs agree and 12 exact existing-dialect differences
+  carry both digests. `baselineGaps` is empty. The shared core delimiter rule
+  descriptor supplies minimum unit width and emitted kinds; plus runs use the
+  same stack, reduction, OOM transaction and source extents as emphasis/marks.
+  One run compactly represents its identical units: consuming its trailing
+  opening pairs and leading closing pairs leaves an odd literal in the required
+  middle position without a repair pass. Every public model, transport, dumper
+  and visitor includes Insertion, with a shared canonical composition case.
+
+  Validation (2026-09-09, macOS arm64): `pnpm verify`, all external parity
+  gates, source-position/reference ledgers and the JVM surface audit pass.
+  C passes 79 correctness and 2 conformance tests; ASan, UBSan and TSan each
+  pass the 79 correctness tests. Swift, Kotlin JVM/Native/Android-host and ES
+  Node/browser correctness and conformance checks pass, as does the host
+  release dry run with packaged consumers. Other release hosts remain covered
+  by the Release dry run workflow.
+
+  The global 256-depth discrepancy recorded under O2 still applies. This item
+  does not claim to enforce that unused limit or introduce an Insertion-only cap;
+  its deep size-doubling probes preserve the existing shared behavior. The
+  follow-up must reconcile the limit for every delimiter kind and the inherited
+  deep-nesting tests together. P3 still owns generated heading-anchor projection.
 
 ## Stage 4 — Pandoc track
 
@@ -1121,7 +1146,7 @@ its behavior, with no separate publication step.
       directive cases belong to this item. The heading-text projection of each
       kind a later item produces is a cross-item case owned by whichever of `P3`
       and that item merges later: `CrossLink` with `O1`, `CrossEmbedded` with `O9`, `Mark` with `O2`,
-      `Insert` with `I1`, `Span` with `P5`, `Superscript` and `Subscript` with
+      `Insertion` with `I1`, `Span` with `P5`, `Superscript` and `Subscript` with
       `P6`, a bibliography `Cite` with `P7`, and `Cite` with a `specimen` referent with `P9b`.
       Requires `P2b`.
 - [ ] **P4 — `implicit_heading_references`.** Register a virtual reference
@@ -1323,7 +1348,7 @@ Sizes are rough review-effort estimates, not schedules.
 | `S0`   | —                  | L    | —                                                                                                                                                                                                       | the dialect modules; audit A1 through C6                                                                                         |
 | `X0`   | `S0`               | M    | —                                                                                                                                                                                                       | option registry serving both plans' option bullets                                                                               |
 | `P0`   | `X0`, `S0`         | M    | —                                                                                                                                                                                                       | Pandoc Phase 0; Pandoc Phase 1 gate activation                                                                                   |
-| `I0`   | `S0`               | S    | —                                                                                                                                                                                                       | inserted-text oracle setup                                                                                                       |
+| `I0`   | `S0`               | S    | —                                                                                                                                                                                                       | insertion oracle setup                                                                                                       |
 | `M0`   | `S0`               | S    | —                                                                                                                                                                                                       | Obsidian Phase 2 comments; removes `stripHTMLComments`                                                                           |
 | `M1`   | `S0`               | M    | —                                                                                                                                                                                                       | Obsidian and Pandoc Phase 1 `Destination`                                                                                        |
 | `M2`   | `M1`               | L    | —                                                                                                                                                                                                       | Obsidian Phase 1 reference normalization; Phase 5 projections                                                                    |
@@ -1332,8 +1357,8 @@ Sizes are rough review-effort estimates, not schedules.
 | `M5`   | `S0`               | M    | —                                                                                                                                                                                                       | Obsidian Phase 1 `marker`; Pandoc Phase 1 list values                                                                            |
 | `M6`   | `S0`               | L    | —                                                                                                                                                                                                       | Pandoc Phase 1 table values                                                                                                      |
 | `M7`   | `M0`–`M6`          | XL   | —                                                                                                                                                                                                       | Obsidian Phase 1 metadata, anchor, dimensions; Pandoc Phase 1 fields; Pandoc Phase 2 attribute operation and directive migration |
-| `O1`   | `X0`, `M7`         | M    | `Insert` containing `CrossLink` and `CrossEmbedded` (`I1`); heading-text projection (`P3`); container after a complete wikilink (`P5`); escaped wikilink pipe in a simple, multiline, or grid cell (`P11b`, `P11c`, `P11d`) | Obsidian Phase 2 wikilinks; Phase 4 escaped table pipes                                                                          |
-| `O2`   | `O1`               | S    | `Insert` containing `Mark` (`I1`); heading-text projection (`P3`)                                                                                                                                       | Obsidian Phase 2 highlights                                                                                                      |
+| `O1`   | `X0`, `M7`         | M    | `Insertion` containing `CrossLink` and `CrossEmbedded` (`I1`); heading-text projection (`P3`); container after a complete wikilink (`P5`); escaped wikilink pipe in a simple, multiline, or grid cell (`P11b`, `P11c`, `P11d`) | Obsidian Phase 2 wikilinks; Phase 4 escaped table pipes                                                                          |
+| `O2`   | `O1`               | S    | `Insertion` containing `Mark` (`I1`); heading-text projection (`P3`)                                                                                                                                       | Obsidian Phase 2 highlights                                                                                                      |
 | `O3`   | `O1`               | M    | callout title that is one comment (`O8`)                                                                                                                                                                | Obsidian Phase 2 comments                                                                                                        |
 | `O4`   | `O1`               | M    | `^[` before superscript (`P6`)                                                                                                                                                                          | Obsidian Phase 2 inline footnotes and resolution                                                                                 |
 | `O5`   | `O1`               | S    | —                                                                                                                                                                                                       | Obsidian Phase 4 task markers                                                                                                    |
@@ -1342,7 +1367,7 @@ Sizes are rough review-effort estimates, not schedules.
 | `O8`   | `O1`, `O2`         | M    | identifier on a metadata-bearing callout (`O7`); callout title that is one comment (`O3`)                                                                                                               | Obsidian Phase 3 callouts                                                                                                        |
 | `O9`   | `O1`               | M    | typed dimensions beside a dimension attribute record (`P2d`)                                                                                                                                            | Obsidian Phase 4 media parameters                                                                                                |
 | `O10`  | `O1`–`O9`          | M    | —                                                                                                                                                                                                       | Obsidian Phase 1 fixtures and oracle registration; Phase 2 caller audit; Phase 5; plan exit criterion                                          |
-| `I1`   | `X0`, `I0`, `M7`   | S    | `Insert` containing `CrossLink` and `CrossEmbedded`, `Mark` (`O1`, `O2`); heading-text projection (`P3`)                                                                                                                    | inserted-text contract                                                                                                           |
+| `I1`   | `X0`, `I0`, `M7`   | S    | `Insertion` containing `CrossLink` and `CrossEmbedded`, `Mark` (`O1`, `O2`); heading-text projection (`P3`)                                                                                                                    | insertion contract                                                                                                           |
 | `P2a`  | `P0`, `M7`         | S    | anchor reserved before synthesis (`P3`)                                                                                                                                                                 | Pandoc Phase 2 attachment sites                                                                                                  |
 | `P2b`  | `P0`, `M7`         | S    | —                                                                                                                                                                                                       | Pandoc Phase 2 attachment sites                                                                                                  |
 | `P2c`  | `P0`, `M7`         | M    | anchor reserved before synthesis (`P3`)                                                                                                                                                                 | Pandoc Phase 2 attachment sites                                                                                                  |
@@ -1374,7 +1399,7 @@ Sizes are rough review-effort estimates, not schedules.
 - `P0` and `I0` touch only scripts and oracle policy and may land at any point
   before the first Pandoc feature item and before `I1`; their registered digests
   are re-registered by whichever model item changes them.
-- After `M7`, the Obsidian, inserted-text, and Pandoc tracks are independent.
+- After `M7`, the Obsidian, insertion, and Pandoc tracks are independent.
   Inside a track, items that edit the same engine file are serialized or rebased
   in order: `O2` through `O5` share inline integration points while retaining
   their own semantic operations; `O6`, `O7`, and
@@ -1384,7 +1409,7 @@ Sizes are rough review-effort estimates, not schedules.
   starts.
 - The `Cross-item cases` column, together with the opacity rule, is the complete
   list of fixtures that wait for a second item neither of whose items requires
-  the other: `Insert` composed with `CrossLink`, `CrossEmbedded`, and `Mark`; `^[` before
+  the other: `Insertion` composed with `CrossLink`, `CrossEmbedded`, and `Mark`; `^[` before
   superscript; an explicit anchor reserved before synthesis, once per producer;
   the heading-text projection of
   each inline kind a later item produces; a complete cite over a virtual heading

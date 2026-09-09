@@ -86,6 +86,11 @@ emphasis, links, and other inline nodes. Matching consumes two equals signs
 at a time; unmatched signs remain text. Typed visitors and walking visitors
 include the `Mark` case, and its scope covers both delimiters and the body.
 
+`++inserted++` produces `Insertion` with parsed inline `content`. Repeated pairs
+nest (`++++text++++`), and an odd leftover plus stays outside the matching
+pairs (`+++text+++`). Insertion participates in exhaustive and walking visitors;
+its scope includes the delimiters. Escapes and opaque bodies retain literal plus signs.
+
 `^[inline note]` produces a one-item `Cite` and a document-owned `Footnote`
 whose content holds the parsed inline body directly. Referenced definitions and
 inline notes share `Document.footnotes` in source order. Generated `inline-N`

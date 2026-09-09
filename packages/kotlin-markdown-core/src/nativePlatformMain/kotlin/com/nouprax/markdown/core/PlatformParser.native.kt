@@ -34,6 +34,7 @@ import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_FORMULA_BLOCK
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_HEADING
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_HTML
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_HTML_BLOCK
+import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_INSERTION
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_LINE_BREAK
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_LINK
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_LIST
@@ -498,6 +499,10 @@ private class NativeTreeBuilder(
 
             MARKDOWN_CORE_KIND_MARK -> {
                 Mark(children, scope, anchor, attributes)
+            }
+
+            MARKDOWN_CORE_KIND_INSERTION -> {
+                Insertion(children, scope, anchor, attributes)
             }
 
             MARKDOWN_CORE_KIND_LINK -> {

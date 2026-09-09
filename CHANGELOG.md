@@ -6,6 +6,11 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
+- Add always-on `++inserted text++` as `Insertion(content)` across C, Swift, Kotlin,
+  and ES, including typed visitors, JNI/Wasm transports and canonical dumps.
+  Pin the insertion oracle and replay upstream, composition, source-scope,
+  strict OOM and linear-work cases.
+
 - Close the Obsidian evidence track across C, Swift, Kotlin and ES with shared
   composition fixtures, fixed fuzz inputs, HTML/comment boundary work probes
   and a mixed-ownership allocation-failure sweep. The supported subset covers

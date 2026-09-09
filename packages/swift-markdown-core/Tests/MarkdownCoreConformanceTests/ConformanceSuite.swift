@@ -12,7 +12,7 @@ private typealias Comment = Testing.Comment
             "# Heading\n\n> Quote\n\n---\n\n3. ordered\n\n- [x] task\n\n"
                 + "``` swift\ncode\n```\n\n<section>raw</section>\n\n[^n]: note\n\n[ref]: /r \"t\"\n"
                 + "\n[a][ref] ![b][ref]\n",
-            "Text *em* **strong** ~~strike~~ ==mark== `code` [link](/go \"title\") ![alt](/image.png) "
+            "Text *em* **strong** ~~strike~~ ==mark== ++inserted++ `code` [link](/go \"title\") ![alt](/image.png) "
                 + ":badge[label]{kind=demo} $x$ [^n]  \nnext <i>raw</i>\nsoft\n\n[^n]: definition\n",
             "| left | center |\n| :--- | :----: |\n| a | b |\n\n::leaf[Label]{id=value}\n\n"
                 + ":::container[Title]{kind=demo}\nBody\n:::\n",
@@ -28,7 +28,7 @@ private typealias Comment = Testing.Comment
             "DirectiveBlock", "DirectiveLabel", "Text", "SoftBreak",
             "LineBreak",
             "Code", "HTML", "Comment", "CrossLink", "CrossEmbedded", "Formula", "Emphasis", "Strong",
-            "Strikethrough", "Mark", "Link", "Media", "Directive", "Cite",
+            "Strikethrough", "Mark", "Insertion", "Link", "Media", "Directive", "Cite",
             "TableRow", "TableCell",
         ]
         #expect(kinds == expected)

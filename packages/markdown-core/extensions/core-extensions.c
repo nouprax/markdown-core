@@ -28,8 +28,8 @@
 //
 // The cross-link scanner recognizes complete [[ and ![[ before inherited bracket
 // handling. It follows autolinks and formulas, and precedes directives and the
-// final table. Marks are core delimiter rule C5 alongside emphasis: an earlier
-// scanner owns its whole span before the cursor can reach an equals run.
+// final table. Marks and insertions are core delimiter rules C5/C6 alongside emphasis: an earlier
+// scanner owns its whole span before the cursor can reach an equals or plus run.
 // They need no descriptor and do not change this extension attach order.
 //
 // `comment` sits between `formula` and `cross_link`, and the one position

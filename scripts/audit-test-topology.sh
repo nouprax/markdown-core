@@ -28,6 +28,12 @@ for oracle_file in \
     specs/oracles/remark/deltas.json \
     specs/oracles/remark/corpus.md \
     specs/oracles/obsidian/deltas.json \
+    specs/oracles/markdown-it-ins/README.md \
+    scripts/check-ins-parity.mjs \
+    scripts/lib/ins-oracle.mjs \
+    scripts/tests/ins-oracle.test.mjs \
+    specs/oracles/markdown-it-ins/corpus.json \
+    specs/oracles/markdown-it-ins/deltas.json \
     specs/oracles/obsidian/corpus.md \
     specs/oracles/obsidian/metadata-corpus.md \
     specs/oracles/pandoc/source.json \
@@ -59,7 +65,7 @@ for target_spec in \
     docs/specs/dialect/directives.md \
     docs/specs/dialect/footnotes.md \
     docs/specs/dialect/formulas.md \
-    docs/specs/dialect/inserted-text.md \
+    docs/specs/dialect/insertion.md \
     docs/specs/dialect/links-and-images.md \
     docs/specs/dialect/lists.md \
     docs/specs/dialect/specimens.md \
@@ -238,6 +244,10 @@ if grep -R -q '@Test' packages/swift-markdown-core/Tests/MarkdownCoreTests \
     note "Swift correctness and conformance targets declare Swift Testing tests"
 else
     fail "Swift correctness or conformance target declares no Swift Testing tests"
+fi
+
+if ! grep -q 'pnpm check:ins-parity' .github/workflows/ci.yml || ! grep -q 'pnpm run check:ins-parity' package.json; then
+    fail "the insertion oracle gate is not wired into CI and aggregate parity"
 fi
 
 if [ "$failures" -gt 0 ]; then

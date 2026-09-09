@@ -1087,6 +1087,8 @@ jobs:
               run: pnpm check:mdast-parity
             - name: Run the supplementary Obsidian and Properties oracles
               run: pnpm check:obsidian-parity
+            - name: Insertion oracle parity
+              run: pnpm check:ins-parity
             # The position oracles. They live here because one of the three
             # needs the pinned upstream parser this job already builds, and
             # because all three are ratchets over registered rows: they fail on

@@ -56,7 +56,7 @@ provisional until it is settled.
 | remark/micromark extensions                         | `micromark-extension-directive` 4.0.0, `micromark-extension-math` 3.1.0, `remark-gfm` 4 through the lockfile | unified/remark, `specs/oracles/remark/`                              | `pnpm check:mdast-parity`    |
 | Obsidian Flavored Markdown                          | `obsidianmd/obsidian-help` at `d780d6b48a92ee6a150304b40ee888f322bf43bf`      | `@quartz-community/remark-obsidian` 0.2.4 and `yaml` 2.9.0, `specs/oracles/obsidian/` | `pnpm check:obsidian-parity` |
 | Pandoc's Markdown                                   | Pandoc 3.11 at `b913622e1ff87c69ab8b1a606577122e220925cd`, `specs/oracles/pandoc/source.json` | the official Pandoc 3.11 CLI with `--to=json`, `specs/oracles/pandoc/` | `pnpm check:pandoc-parity` (lands with plan item `P0`) |
-| `markdown-it-ins`                                   | 4.0.0 with `markdown-it` 13.0.2, `docs/specs/dialect/inserted-text.md`         | `markdown-it` with the plugin, `specs/oracles/markdown-it-ins/`      | `pnpm check:ins-parity` (lands with plan item `I0`) |
+| `markdown-it-ins`                                   | 4.0.0 with `markdown-it` 13.0.2, `docs/specs/dialect/insertion.md`         | `markdown-it` with the plugin, `specs/oracles/markdown-it-ins/`      | `pnpm check:ins-parity` |
 
 Each oracle is locked to the features whose rows below name it. An oracle has
 no opinion outside those features: cmark-gfm does not judge CommonMark, Pandoc
@@ -96,7 +96,7 @@ that makes the row `present`.
 | block identifiers                   | [block identifiers](dialect/block-identifiers.md)                 | Obsidian, adapted declaration syntax   | none; product fixtures               | present                         |
 | callouts                            | [callouts](dialect/callouts.md)                                   | Obsidian                               | none; product fixtures               | present, `O8`                   |
 | image dimensions                    | [links and images](dialect/links-and-images.md)                   | Obsidian                               | none; product fixtures               | present                         |
-| inserted text                       | [inserted text](dialect/inserted-text.md)                         | `markdown-it-ins`                      | `markdown-it-ins`                    | missing, `I1`                   |
+| insertion                           | [insertion](dialect/insertion.md)                         | `markdown-it-ins`                      | `markdown-it-ins`                    | present                         |
 | inline code attributes              | [attributes](dialect/attributes.md)                               | Pandoc                                 | Pandoc                               | missing, `P2a`                  |
 | heading attributes                  | [attributes](dialect/attributes.md)                               | Pandoc                                 | Pandoc                               | missing, `P2b`                  |
 | fenced code attributes              | [attributes](dialect/attributes.md)                               | Pandoc                                 | Pandoc                               | missing, `P2c`                  |
@@ -245,7 +245,7 @@ the next alternative runs from there.
 | C3   | `~` subscript                                                                                   | delimiter stack                                                       |
 | C4   | `^` superscript                                                                                 | delimiter stack                                                       |
 | C5   | `==` mark                                                                                       | delimiter stack                                                       |
-| C6   | `++` insert                                                                                     | delimiter stack                                                       |
+| C6   | `++` insertion                                                                                  | delimiter stack                                                       |
 | D    | attribute suffix at every attachment site                                                       | immediately after its owner                                           |
 | E    | GFM email autolink                                                                              | post-pass over `Text` only                                            |
 Classes B and C are the inherited bracket and delimiter algorithms of

@@ -38,6 +38,7 @@
             "Strong",
             "Strikethrough",
             "Mark",
+            "Insertion",
             "Link",
             "Media",
             "Directive",
@@ -699,6 +700,37 @@
                     "inline.source-order",
                     "table.head-content-foot"
                 ]
+            }
+        },
+        {
+            "name": "insertion",
+            "input": "insertion.md",
+            "expected": "insertion.ast",
+            "coverage": {
+                "kinds": [
+                    "Callout",
+                    "Cite",
+                    "Code",
+                    "Comment",
+                    "CrossEmbedded",
+                    "CrossLink",
+                    "Directive",
+                    "DirectiveLabel",
+                    "Document",
+                    "Emphasis",
+                    "Formula",
+                    "HTML",
+                    "Insertion",
+                    "Link",
+                    "Mark",
+                    "Paragraph",
+                    "Table",
+                    "TableCell",
+                    "TableRow",
+                    "Text"
+                ],
+                "states": ["scope.positive", "children.empty", "children.populated"],
+                "orders": ["inline.source-order", "document.source-order"]
             }
         }
     ]

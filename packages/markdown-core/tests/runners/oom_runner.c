@@ -121,6 +121,12 @@ static const char OOM_TASK_CORPUS[] = "- [é] two\n- [✓] three\n- [🚀] four\
 static const char OOM_MARK_CORPUS[] = "===a *b*=== ==c====d== ==[link](/u) <!--c-->==\n\n"
                                       "| ==h== |\n| --- |\n| ==x\\|y== |\n\ncall[^n]\n\n[^n]: ==note==\n";
 
+static const char OOM_INSERTION_CORPUS[] =
+    "+++a *b*+++ ++++nested++++ ++c++++d++ ++==mark== [[Note]] ![[Pic]] [^n]++\n\n"
+    "++a %%++raw++%% <b>++live++</b> $++raw++$ `++raw++`++\n\n"
+    "| ++h++ |\n| --- |\n| +++x\\|y+++ |\n\n"
+    "> [!note] ++title++\n> ++body++\n\n:tag[++label++] ^[++inline++]\n\n[^n]: ++note++\n";
+
 /* O3: both `%%` forms, the lookahead's chain and cache in nested containers, a
  * candidate that fails at its container's end, the last line without a line
  * ending, and comments beside every earlier opaque construct. */
@@ -191,6 +197,7 @@ static const oom_case OOM_CASES[] = {
     {"inline footnotes", OOM_INLINE_FOOTNOTE_CORPUS, sizeof(OOM_INLINE_FOOTNOTE_CORPUS) - 1},
     {"comments", OOM_COMMENT_CORPUS, sizeof(OOM_COMMENT_CORPUS) - 1},
     {"marks", OOM_MARK_CORPUS, sizeof(OOM_MARK_CORPUS) - 1},
+    {"inserted text", OOM_INSERTION_CORPUS, sizeof(OOM_INSERTION_CORPUS) - 1},
     {"full-feature", OOM_CORPUS, sizeof(OOM_CORPUS) - 1},
     {"line-and-core", OOM_LINE_AND_CORE_CORPUS, sizeof(OOM_LINE_AND_CORE_CORPUS) - 1},
     {"extension-edges", OOM_EXTENSION_EDGE_CORPUS, sizeof(OOM_EXTENSION_EDGE_CORPUS) - 1},

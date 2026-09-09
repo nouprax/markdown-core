@@ -114,6 +114,9 @@ fi
 
 # These are API identifier checks, not prose checks.
 retired_surface_terms='render|feed|stream|edit|session|snapshot|delta|diagnostic|concrete|Concrete|CST|ConcreteSyntax|Token|Trivia|Recovery|Walker|WalkEvent'
+# Mutation verbs end at an identifier or camel/snake-case word boundary;
+# a noun sharing a lowercase prefix does not name a mutation operation.
+mutation_surface_terms='set[A-Z]|(insert|append|prepend|replace|unlink)([A-Z_]|\b)'
 
 CLANG_MODULE_CACHE_PATH="$temp_dir/swift-module-cache" \
     swift package --disable-sandbox dump-package >"$temp_dir/swift-package.json"
@@ -128,7 +131,7 @@ if (products.join("\n") !== "MarkdownCore:MarkdownCore") {
 NODE
 
 if grep -R -n -E \
-    "public (class|struct|enum|protocol|typealias|func|var|let|static func).*\\b(${retired_surface_terms}|set[A-Z]|insert|append|prepend|replace|unlink|nativeHandle|pointer|memory|wasm)" \
+    "public (class|struct|enum|protocol|typealias|func|var|let|static func).*\\b(${retired_surface_terms}|${mutation_surface_terms}|nativeHandle|pointer|memory|wasm)" \
     packages/swift-markdown-core/Sources/MarkdownCore; then
     fail "Swift exports a retired API, mutation, or native implementation detail"
 fi
@@ -173,7 +176,7 @@ done
 grep -q 'explicitApi()' packages/kotlin-markdown-core/build.gradle.kts \
     || fail "Kotlin explicit API mode is disabled"
 if grep -R -n -E \
-    "public (class|data class|sealed class|enum class|object|interface|typealias|fun|val|var).*\\b(${retired_surface_terms}|set[A-Z]|insert|append|prepend|replace|unlink|nativeHandle|pointer|memory|wasm)" \
+    "public (class|data class|sealed class|enum class|object|interface|typealias|fun|val|var).*\\b(${retired_surface_terms}|${mutation_surface_terms}|nativeHandle|pointer|memory|wasm)" \
     packages/kotlin-markdown-core/src/commonMain; then
     fail "Kotlin exports a retired API, mutation, or native implementation detail"
 fi
@@ -242,7 +245,7 @@ if grep -R -E -n 'readonly children' packages/es-markdown-core/src/model; then
     fail "ES exposes generic children"
 fi
 if grep -R -n -E \
-    "^export (declare )?(class|interface|type|enum|function|const).*\\b(${retired_surface_terms}|set[A-Z]|insert|append|prepend|replace|unlink|nativeHandle|pointer|memory|wasm)" \
+    "^export (declare )?(class|interface|type|enum|function|const).*\\b(${retired_surface_terms}|${mutation_surface_terms}|nativeHandle|pointer|memory|wasm)" \
     packages/es-markdown-core/src; then
     fail "ES exports a retired API, mutation, or native implementation detail"
 fi
