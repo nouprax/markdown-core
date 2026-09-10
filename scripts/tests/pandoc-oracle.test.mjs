@@ -111,3 +111,52 @@ test("list variants and table columns compare as values rather than wire spellin
         { alignment: "right", relative: 0.25 }
     ]);
 });
+
+test("citation projection compares keys, modes and ordered affixes without fallback rendering", () => {
+    const make = (key = "key", mode = "SuppressAuthor", prefix = "pre", suffix = "tail") => ({
+        blocks: [
+            {
+                t: "Para",
+                c: [
+                    {
+                        t: "Cite",
+                        c: [
+                            [
+                                {
+                                    citationId: key,
+                                    citationMode: { t: mode },
+                                    citationPrefix: [{ t: "Str", c: prefix }],
+                                    citationSuffix: [{ t: "Emph", c: [{ t: "Str", c: suffix }] }]
+                                }
+                            ],
+                            [{ t: "Str", c: "[pre -@key tail]" }]
+                        ]
+                    }
+                ]
+            }
+        ]
+    });
+    const actual = fromCanonical(
+        parseCanonicalDump(
+            "Document scope=1:1..1:16 anchor=null attributes={} children=1\n" +
+                "└── Paragraph scope=1:1..1:16 anchor=null attributes={} children=1\n" +
+                "    └── Cite scope=1:1..1:16 anchor=null attributes={} children=1\n" +
+                '        └── Citation scope=1:2..1:15 referent=bib(key="key",mode=suppressAuthor) children=0\n' +
+                "            ├── CitationPrefix children=1\n" +
+                '            │   └── Text scope=1:2..1:4 anchor=null attributes={} literal="pre" children=0\n' +
+                "            └── CitationSuffix children=1\n" +
+                "                └── Emphasis scope=1:12..1:15 anchor=null attributes={} children=1\n" +
+                '                    └── Text scope=1:12..1:15 anchor=null attributes={} literal="tail" children=0\n'
+        )
+    );
+    assert.deepEqual(actual, fromPandoc(make()));
+    for (const args of [
+        ["other"],
+        ["key", "NormalCitation"],
+        ["key", "AuthorInText"],
+        ["key", "SuppressAuthor", "different"],
+        ["key", "SuppressAuthor", "pre", "different"]
+    ]) {
+        assert.notDeepEqual(actual, fromPandoc(make(...args)));
+    }
+});

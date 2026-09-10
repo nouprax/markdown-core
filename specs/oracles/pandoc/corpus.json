@@ -276,6 +276,101 @@
             "id": "p6-isolated-entity-space-superscript",
             "from": "markdown_strict+superscript+subscript",
             "input": "^a&#32;b^\n"
+        },
+        {
+            "id": "p7-key-spellings",
+            "from": "markdown_strict+citations",
+            "input": "@Foo_bar.baz. @Foo_bar,baz @{https://example.com/x}. -@key\n"
+        },
+        {
+            "id": "p7-affix-modes",
+            "from": "markdown_strict+citations",
+            "input": "[pre *em* @a, *suffix*; -@b; cf. @c]\n"
+        },
+        {
+            "id": "p7-tail-and-nesting",
+            "from": "markdown_strict+citations",
+            "input": "@a [p. 7; cf. @b] [@a [@b]] [@a [x]]\n"
+        },
+        {
+            "id": "p7-tail-later-author",
+            "from": "markdown_strict+citations",
+            "input": "@a [@b [p. 7]]\n"
+        },
+        {
+            "id": "p7-bracket-precedence",
+            "from": "markdown_strict+citations+bracketed_spans",
+            "input": "[@a](u) [@a][r] [@a]{.c}\n\n[r]: /r\n"
+        },
+        {
+            "id": "p7-malformed-group",
+            "from": "markdown_strict+citations",
+            "input": "[@a; no key] [no key; @a] [@a;] [;@a]\n"
+        },
+        {
+            "id": "p7-heading-projection",
+            "from": "markdown_strict+citations+auto_identifiers+gfm_auto_identifiers",
+            "input": "## [pre @a suffix; @b]\n"
+        },
+        {
+            "id": "p7-heading-shortcut",
+            "from": "markdown_strict+citations+auto_identifiers+gfm_auto_identifiers+implicit_header_references",
+            "input": "## @a\n\n[@a]\n"
+        },
+        {
+            "id": "p7-unicode-boundary",
+            "from": "markdown_strict+citations",
+            "input": "_@a\n"
+        },
+        {
+            "id": "p9a-variants",
+            "from": "markdown_strict+fancy_lists+startnum",
+            "input": "a) alpha\nb) next\n\n(A) upper\n(B) next\n\niv. roman\nv. next\n\nIV) upper roman\nV) next\n"
+        },
+        {
+            "id": "p9a-default-and-disambiguation",
+            "from": "markdown_strict+fancy_lists+startnum",
+            "input": "h. h\ni. i\nj. j\n\nseparator\n\n#. default\n#. next\n\nseparator\n\n(#) enclosed\n(#) next\n"
+        },
+        {
+            "id": "p9a-nested-start",
+            "from": "markdown_strict+fancy_lists+startnum",
+            "input": "- parent\n  2. ordinary\n  1. nested\n"
+        },
+        {
+            "id": "p9a-capital-period",
+            "from": "markdown_strict+fancy_lists",
+            "input": "A. one space\n\nA.  two spaces\n\nI.  roman\n"
+        },
+        {
+            "id": "p9b-resolution",
+            "from": "markdown_strict+example_lists+fancy_lists+citations",
+            "input": "@label (@label) [@label] @label [p. 3]\n\n(7@label) First.\n(@label) Duplicate.\n(@) Anonymous.\n"
+        },
+        {
+            "id": "p9b-heading",
+            "from": "markdown_strict+example_lists+fancy_lists+citations+auto_identifiers+gfm_auto_identifiers",
+            "input": "## @label\n\n(@label) Body.\n"
+        },
+        {
+            "id": "p7-unresolved-reference-tail",
+            "from": "markdown_strict+citations",
+            "input": "[@a][missing]\n"
+        },
+        {
+            "id": "p7-explicit-citation-shortcut",
+            "from": "markdown_strict+citations",
+            "input": "[@a]\n\n[@a]: /u\n"
+        },
+        {
+            "id": "p7-author-tail",
+            "from": "markdown_strict+citations",
+            "input": "@a [p. 7; cf. @b]\n"
+        },
+        {
+            "id": "p9a-start-always-authored",
+            "from": "markdown_strict+fancy_lists",
+            "input": "h. eight\ni. nine\n"
         }
     ]
 }

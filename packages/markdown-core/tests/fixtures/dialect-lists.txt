@@ -59,3 +59,354 @@ Document scope=1:1..3:15 anchor=null attributes={} children=2
 └── Paragraph scope=3:1..3:15 anchor=null attributes={} children=1
     └── Text scope=3:1..3:15 anchor=null attributes={} literal="1234567890. ten" children=0
 ````````````````````````````````
+
+```````````````````````````````` example
+- a
++ b
+* c
+.
+Document scope=1:1..3:3 anchor=null attributes={} children=3
+├── List scope=1:1..1:3 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+│   └── ListItem scope=1:1..1:3 anchor=null attributes={} marker=null children=1
+│       └── Paragraph scope=1:3..1:3 anchor=null attributes={} children=1
+│           └── Text scope=1:3..1:3 anchor=null attributes={} literal="a" children=0
+├── List scope=2:1..2:3 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+│   └── ListItem scope=2:1..2:3 anchor=null attributes={} marker=null children=1
+│       └── Paragraph scope=2:3..2:3 anchor=null attributes={} children=1
+│           └── Text scope=2:3..2:3 anchor=null attributes={} literal="b" children=0
+└── List scope=3:1..3:3 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+    └── ListItem scope=3:1..3:3 anchor=null attributes={} marker=null children=1
+        └── Paragraph scope=3:3..3:3 anchor=null attributes={} children=1
+            └── Text scope=3:3..3:3 anchor=null attributes={} literal="c" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+3. a
+4. b
+
+1) c
+
+0. z
+.
+Document scope=1:1..6:4 anchor=null attributes={} children=3
+├── List scope=1:1..3:0 anchor=null attributes={} flavor=ordered start=3 variant=decimal delimiter=period tight=true children=2
+│   ├── ListItem scope=1:1..1:4 anchor=null attributes={} marker=null children=1
+│   │   └── Paragraph scope=1:4..1:4 anchor=null attributes={} children=1
+│   │       └── Text scope=1:4..1:4 anchor=null attributes={} literal="a" children=0
+│   └── ListItem scope=2:1..3:0 anchor=null attributes={} marker=null children=1
+│       └── Paragraph scope=2:4..2:4 anchor=null attributes={} children=1
+│           └── Text scope=2:4..2:4 anchor=null attributes={} literal="b" children=0
+├── List scope=4:1..5:0 anchor=null attributes={} flavor=ordered start=1 variant=decimal delimiter=parenthesis(closed=false) tight=true children=1
+│   └── ListItem scope=4:1..5:0 anchor=null attributes={} marker=null children=1
+│       └── Paragraph scope=4:4..4:4 anchor=null attributes={} children=1
+│           └── Text scope=4:4..4:4 anchor=null attributes={} literal="c" children=0
+└── List scope=6:1..6:4 anchor=null attributes={} flavor=ordered start=0 variant=decimal delimiter=period tight=true children=1
+    └── ListItem scope=6:1..6:4 anchor=null attributes={} marker=null children=1
+        └── Paragraph scope=6:4..6:4 anchor=null attributes={} children=1
+            └── Text scope=6:4..6:4 anchor=null attributes={} literal="z" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+a. x
+b. y
+
+A) x
+
+(i) x
+(ii) y
+
+IV. x
+.
+Document scope=1:1..9:5 anchor=null attributes={} children=4
+├── List scope=1:1..3:0 anchor=null attributes={} flavor=ordered start=1 variant=alpha(lowercased=true) delimiter=period tight=true children=2
+│   ├── ListItem scope=1:1..1:4 anchor=null attributes={} marker=null children=1
+│   │   └── Paragraph scope=1:4..1:4 anchor=null attributes={} children=1
+│   │       └── Text scope=1:4..1:4 anchor=null attributes={} literal="x" children=0
+│   └── ListItem scope=2:1..3:0 anchor=null attributes={} marker=null children=1
+│       └── Paragraph scope=2:4..2:4 anchor=null attributes={} children=1
+│           └── Text scope=2:4..2:4 anchor=null attributes={} literal="y" children=0
+├── List scope=4:1..5:0 anchor=null attributes={} flavor=ordered start=1 variant=alpha(lowercased=false) delimiter=parenthesis(closed=false) tight=true children=1
+│   └── ListItem scope=4:1..5:0 anchor=null attributes={} marker=null children=1
+│       └── Paragraph scope=4:4..4:4 anchor=null attributes={} children=1
+│           └── Text scope=4:4..4:4 anchor=null attributes={} literal="x" children=0
+├── List scope=6:1..8:0 anchor=null attributes={} flavor=ordered start=1 variant=roman(lowercased=true) delimiter=parenthesis(closed=true) tight=true children=2
+│   ├── ListItem scope=6:1..6:5 anchor=null attributes={} marker=null children=1
+│   │   └── Paragraph scope=6:5..6:5 anchor=null attributes={} children=1
+│   │       └── Text scope=6:5..6:5 anchor=null attributes={} literal="x" children=0
+│   └── ListItem scope=7:1..8:0 anchor=null attributes={} marker=null children=1
+│       └── Paragraph scope=7:6..7:6 anchor=null attributes={} children=1
+│           └── Text scope=7:6..7:6 anchor=null attributes={} literal="y" children=0
+└── List scope=9:1..9:5 anchor=null attributes={} flavor=ordered start=4 variant=roman(lowercased=false) delimiter=period tight=true children=1
+    └── ListItem scope=9:1..9:5 anchor=null attributes={} marker=null children=1
+        └── Paragraph scope=9:5..9:5 anchor=null attributes={} children=1
+            └── Text scope=9:5..9:5 anchor=null attributes={} literal="x" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+#. x
+#. y
+
+#) z
+.
+Document scope=1:1..4:4 anchor=null attributes={} children=2
+├── List scope=1:1..3:0 anchor=null attributes={} flavor=ordered start=1 variant=default delimiter=default tight=true children=2
+│   ├── ListItem scope=1:1..1:4 anchor=null attributes={} marker=null children=1
+│   │   └── Paragraph scope=1:4..1:4 anchor=null attributes={} children=1
+│   │       └── Text scope=1:4..1:4 anchor=null attributes={} literal="x" children=0
+│   └── ListItem scope=2:1..3:0 anchor=null attributes={} marker=null children=1
+│       └── Paragraph scope=2:4..2:4 anchor=null attributes={} children=1
+│           └── Text scope=2:4..2:4 anchor=null attributes={} literal="y" children=0
+└── List scope=4:1..4:4 anchor=null attributes={} flavor=ordered start=1 variant=default delimiter=parenthesis(closed=false) tight=true children=1
+    └── ListItem scope=4:1..4:4 anchor=null attributes={} marker=null children=1
+        └── Paragraph scope=4:4..4:4 anchor=null attributes={} children=1
+            └── Text scope=4:4..4:4 anchor=null attributes={} literal="z" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+B. Russell
+
+B.  Russell
+.
+Document scope=1:1..3:11 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:10 anchor=null attributes={} children=1
+│   └── Text scope=1:1..1:10 anchor=null attributes={} literal="B. Russell" children=0
+└── List scope=3:1..3:11 anchor=null attributes={} flavor=ordered start=2 variant=alpha(lowercased=false) delimiter=period tight=true children=1
+    └── ListItem scope=3:1..3:11 anchor=null attributes={} marker=null children=1
+        └── Paragraph scope=3:5..3:11 anchor=null attributes={} children=1
+            └── Text scope=3:5..3:11 anchor=null attributes={} literal="Russell" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+a. x
+1. y
+
+i. x
+j. y
+.
+Document scope=1:1..5:4 anchor=null attributes={} children=4
+├── List scope=1:1..1:4 anchor=null attributes={} flavor=ordered start=1 variant=alpha(lowercased=true) delimiter=period tight=true children=1
+│   └── ListItem scope=1:1..1:4 anchor=null attributes={} marker=null children=1
+│       └── Paragraph scope=1:4..1:4 anchor=null attributes={} children=1
+│           └── Text scope=1:4..1:4 anchor=null attributes={} literal="x" children=0
+├── List scope=2:1..3:0 anchor=null attributes={} flavor=ordered start=1 variant=decimal delimiter=period tight=true children=1
+│   └── ListItem scope=2:1..3:0 anchor=null attributes={} marker=null children=1
+│       └── Paragraph scope=2:4..2:4 anchor=null attributes={} children=1
+│           └── Text scope=2:4..2:4 anchor=null attributes={} literal="y" children=0
+├── List scope=4:1..4:4 anchor=null attributes={} flavor=ordered start=1 variant=roman(lowercased=true) delimiter=period tight=true children=1
+│   └── ListItem scope=4:1..4:4 anchor=null attributes={} marker=null children=1
+│       └── Paragraph scope=4:4..4:4 anchor=null attributes={} children=1
+│           └── Text scope=4:4..4:4 anchor=null attributes={} literal="x" children=0
+└── List scope=5:1..5:4 anchor=null attributes={} flavor=ordered start=10 variant=alpha(lowercased=true) delimiter=period tight=true children=1
+    └── ListItem scope=5:1..5:4 anchor=null attributes={} marker=null children=1
+        └── Paragraph scope=5:4..5:4 anchor=null attributes={} children=1
+            └── Text scope=5:4..5:4 anchor=null attributes={} literal="y" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+- x
+  b. y
+
+- x
+  a. y
+.
+Document scope=1:1..5:6 anchor=null attributes={} children=1
+└── List scope=1:1..5:6 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=false children=2
+    ├── ListItem scope=1:1..3:0 anchor=null attributes={} marker=null children=1
+    │   └── Paragraph scope=1:3..2:6 anchor=null attributes={} children=3
+    │       ├── Text scope=1:3..1:3 anchor=null attributes={} literal="x" children=0
+    │       ├── SoftBreak scope=1:4..1:4 anchor=null attributes={} children=0
+    │       └── Text scope=2:3..2:6 anchor=null attributes={} literal="b. y" children=0
+    └── ListItem scope=4:1..5:6 anchor=null attributes={} marker=null children=2
+        ├── Paragraph scope=4:3..4:3 anchor=null attributes={} children=1
+        │   └── Text scope=4:3..4:3 anchor=null attributes={} literal="x" children=0
+        └── List scope=5:3..5:6 anchor=null attributes={} flavor=ordered start=1 variant=alpha(lowercased=true) delimiter=period tight=true children=1
+            └── ListItem scope=5:3..5:6 anchor=null attributes={} marker=null children=1
+                └── Paragraph scope=5:6..5:6 anchor=null attributes={} children=1
+                    └── Text scope=5:6..5:6 anchor=null attributes={} literal="y" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+para
+2. x
+
+para
+b. x
+
+para
+1. x
+.
+Document scope=1:1..8:4 anchor=null attributes={} children=4
+├── Paragraph scope=1:1..2:4 anchor=null attributes={} children=3
+│   ├── Text scope=1:1..1:4 anchor=null attributes={} literal="para" children=0
+│   ├── SoftBreak scope=1:5..1:5 anchor=null attributes={} children=0
+│   └── Text scope=2:1..2:4 anchor=null attributes={} literal="2. x" children=0
+├── Paragraph scope=4:1..5:4 anchor=null attributes={} children=3
+│   ├── Text scope=4:1..4:4 anchor=null attributes={} literal="para" children=0
+│   ├── SoftBreak scope=4:5..4:5 anchor=null attributes={} children=0
+│   └── Text scope=5:1..5:4 anchor=null attributes={} literal="b. x" children=0
+├── Paragraph scope=7:1..7:4 anchor=null attributes={} children=1
+│   └── Text scope=7:1..7:4 anchor=null attributes={} literal="para" children=0
+└── List scope=8:1..8:4 anchor=null attributes={} flavor=ordered start=1 variant=decimal delimiter=period tight=true children=1
+    └── ListItem scope=8:1..8:4 anchor=null attributes={} marker=null children=1
+        └── Paragraph scope=8:4..8:4 anchor=null attributes={} children=1
+            └── Text scope=8:4..8:4 anchor=null attributes={} literal="x" children=0
+````````````````````````````````
+
+## Ownership and boundary regressions
+
+```````````````````````````````` example
+h. eight
+i. nine
+j. ten
+
+i. one
+ii. two
+.
+Document scope=1:1..6:7 anchor=null attributes={} children=2
+├── List scope=1:1..5:6 anchor=null attributes={} flavor=ordered start=8 variant=alpha(lowercased=true) delimiter=period tight=false children=4
+│   ├── ListItem scope=1:1..1:8 anchor=null attributes={} marker=null children=1
+│   │   └── Paragraph scope=1:4..1:8 anchor=null attributes={} children=1
+│   │       └── Text scope=1:4..1:8 anchor=null attributes={} literal="eight" children=0
+│   ├── ListItem scope=2:1..2:7 anchor=null attributes={} marker=null children=1
+│   │   └── Paragraph scope=2:4..2:7 anchor=null attributes={} children=1
+│   │       └── Text scope=2:4..2:7 anchor=null attributes={} literal="nine" children=0
+│   ├── ListItem scope=3:1..4:0 anchor=null attributes={} marker=null children=1
+│   │   └── Paragraph scope=3:4..3:6 anchor=null attributes={} children=1
+│   │       └── Text scope=3:4..3:6 anchor=null attributes={} literal="ten" children=0
+│   └── ListItem scope=5:1..5:6 anchor=null attributes={} marker=null children=1
+│       └── Paragraph scope=5:4..5:6 anchor=null attributes={} children=1
+│           └── Text scope=5:4..5:6 anchor=null attributes={} literal="one" children=0
+└── List scope=6:1..6:7 anchor=null attributes={} flavor=ordered start=2 variant=roman(lowercased=true) delimiter=period tight=true children=1
+    └── ListItem scope=6:1..6:7 anchor=null attributes={} marker=null children=1
+        └── Paragraph scope=6:5..6:7 anchor=null attributes={} children=1
+            └── Text scope=6:5..6:7 anchor=null attributes={} literal="two" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+A. one space
+
+A.  two spaces
+
+A.	body
+.
+Document scope=1:1..5:7 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:12 anchor=null attributes={} children=1
+│   └── Text scope=1:1..1:12 anchor=null attributes={} literal="A. one space" children=0
+└── List scope=3:1..5:7 anchor=null attributes={} flavor=ordered start=1 variant=alpha(lowercased=false) delimiter=period tight=false children=2
+    ├── ListItem scope=3:1..4:0 anchor=null attributes={} marker=null children=1
+    │   └── Paragraph scope=3:5..3:14 anchor=null attributes={} children=1
+    │       └── Text scope=3:5..3:14 anchor=null attributes={} literal="two spaces" children=0
+    └── ListItem scope=5:1..5:7 anchor=null attributes={} marker=null children=1
+        └── Paragraph scope=5:4..5:7 anchor=null attributes={} children=1
+            └── Text scope=5:4..5:7 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+1. a
+#. b
+2. c
+
+(A) a
+(#) b
+(B) c
+.
+Document scope=1:1..7:5 anchor=null attributes={} children=2
+├── List scope=1:1..4:0 anchor=null attributes={} flavor=ordered start=1 variant=decimal delimiter=period tight=true children=3
+│   ├── ListItem scope=1:1..1:4 anchor=null attributes={} marker=null children=1
+│   │   └── Paragraph scope=1:4..1:4 anchor=null attributes={} children=1
+│   │       └── Text scope=1:4..1:4 anchor=null attributes={} literal="a" children=0
+│   ├── ListItem scope=2:1..2:4 anchor=null attributes={} marker=null children=1
+│   │   └── Paragraph scope=2:4..2:4 anchor=null attributes={} children=1
+│   │       └── Text scope=2:4..2:4 anchor=null attributes={} literal="b" children=0
+│   └── ListItem scope=3:1..4:0 anchor=null attributes={} marker=null children=1
+│       └── Paragraph scope=3:4..3:4 anchor=null attributes={} children=1
+│           └── Text scope=3:4..3:4 anchor=null attributes={} literal="c" children=0
+└── List scope=5:1..7:5 anchor=null attributes={} flavor=ordered start=1 variant=alpha(lowercased=false) delimiter=parenthesis(closed=true) tight=true children=3
+    ├── ListItem scope=5:1..5:5 anchor=null attributes={} marker=null children=1
+    │   └── Paragraph scope=5:5..5:5 anchor=null attributes={} children=1
+    │       └── Text scope=5:5..5:5 anchor=null attributes={} literal="a" children=0
+    ├── ListItem scope=6:1..6:5 anchor=null attributes={} marker=null children=1
+    │   └── Paragraph scope=6:5..6:5 anchor=null attributes={} children=1
+    │       └── Text scope=6:5..6:5 anchor=null attributes={} literal="b" children=0
+    └── ListItem scope=7:1..7:5 anchor=null attributes={} marker=null children=1
+        └── Paragraph scope=7:5..7:5 anchor=null attributes={} children=1
+            └── Text scope=7:5..7:5 anchor=null attributes={} literal="c" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+IIII. repeated
+
+CMCD. composed
+
+Ii. mixed
+
+MMMM. large
+.
+Document scope=1:1..7:11 anchor=null attributes={} children=3
+├── List scope=1:1..4:0 anchor=null attributes={} flavor=ordered start=4 variant=roman(lowercased=false) delimiter=period tight=false children=2
+│   ├── ListItem scope=1:1..2:0 anchor=null attributes={} marker=null children=1
+│   │   └── Paragraph scope=1:7..1:14 anchor=null attributes={} children=1
+│   │       └── Text scope=1:7..1:14 anchor=null attributes={} literal="repeated" children=0
+│   └── ListItem scope=3:1..4:0 anchor=null attributes={} marker=null children=1
+│       └── Paragraph scope=3:7..3:14 anchor=null attributes={} children=1
+│           └── Text scope=3:7..3:14 anchor=null attributes={} literal="composed" children=0
+├── Paragraph scope=5:1..5:9 anchor=null attributes={} children=1
+│   └── Text scope=5:1..5:9 anchor=null attributes={} literal="Ii. mixed" children=0
+└── List scope=7:1..7:11 anchor=null attributes={} flavor=ordered start=4000 variant=roman(lowercased=false) delimiter=period tight=true children=1
+    └── ListItem scope=7:1..7:11 anchor=null attributes={} marker=null children=1
+        └── Paragraph scope=7:7..7:11 anchor=null attributes={} children=1
+            └── Text scope=7:7..7:11 anchor=null attributes={} literal="large" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+(0) zero
+
+(999999999) ceiling
+
+(1000000000) overflow
+.
+Document scope=1:1..5:21 anchor=null attributes={} children=2
+├── List scope=1:1..4:0 anchor=null attributes={} flavor=ordered start=0 variant=decimal delimiter=parenthesis(closed=true) tight=false children=2
+│   ├── ListItem scope=1:1..2:0 anchor=null attributes={} marker=null children=1
+│   │   └── Paragraph scope=1:5..1:8 anchor=null attributes={} children=1
+│   │       └── Text scope=1:5..1:8 anchor=null attributes={} literal="zero" children=0
+│   └── ListItem scope=3:1..4:0 anchor=null attributes={} marker=null children=1
+│       └── Paragraph scope=3:13..3:19 anchor=null attributes={} children=1
+│           └── Text scope=3:13..3:19 anchor=null attributes={} literal="ceiling" children=0
+└── Paragraph scope=5:1..5:21 anchor=null attributes={} children=1
+    └── Text scope=5:1..5:21 anchor=null attributes={} literal="(1000000000) overflow" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+paragraph
+b. ordinary
+
+paragraph
+a. interrupt
+
+- parent
+  b. ordinary
+  a. nested
+.
+Document scope=1:1..9:11 anchor=null attributes={} children=4
+├── Paragraph scope=1:1..2:11 anchor=null attributes={} children=3
+│   ├── Text scope=1:1..1:9 anchor=null attributes={} literal="paragraph" children=0
+│   ├── SoftBreak scope=1:10..1:10 anchor=null attributes={} children=0
+│   └── Text scope=2:1..2:11 anchor=null attributes={} literal="b. ordinary" children=0
+├── Paragraph scope=4:1..4:9 anchor=null attributes={} children=1
+│   └── Text scope=4:1..4:9 anchor=null attributes={} literal="paragraph" children=0
+├── List scope=5:1..6:0 anchor=null attributes={} flavor=ordered start=1 variant=alpha(lowercased=true) delimiter=period tight=true children=1
+│   └── ListItem scope=5:1..6:0 anchor=null attributes={} marker=null children=1
+│       └── Paragraph scope=5:4..5:12 anchor=null attributes={} children=1
+│           └── Text scope=5:4..5:12 anchor=null attributes={} literal="interrupt" children=0
+└── List scope=7:1..9:11 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+    └── ListItem scope=7:1..9:11 anchor=null attributes={} marker=null children=2
+        ├── Paragraph scope=7:3..8:13 anchor=null attributes={} children=3
+        │   ├── Text scope=7:3..7:8 anchor=null attributes={} literal="parent" children=0
+        │   ├── SoftBreak scope=7:9..7:9 anchor=null attributes={} children=0
+        │   └── Text scope=8:3..8:13 anchor=null attributes={} literal="b. ordinary" children=0
+        └── List scope=9:3..9:11 anchor=null attributes={} flavor=ordered start=1 variant=alpha(lowercased=true) delimiter=period tight=true children=1
+            └── ListItem scope=9:3..9:11 anchor=null attributes={} marker=null children=1
+                └── Paragraph scope=9:6..9:11 anchor=null attributes={} children=1
+                    └── Text scope=9:6..9:11 anchor=null attributes={} literal="nested" children=0
+````````````````````````````````

@@ -5213,10 +5213,8 @@ Document scope=1:1..1:11 anchor=null attributes={} children=1
     └── ListItem scope=1:1..1:11 anchor=null attributes={} marker=null children=1
         └── List scope=1:4..1:11 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
             └── ListItem scope=1:4..1:11 anchor=null attributes={} marker=null children=1
-                └── List scope=1:6..1:11 anchor=null attributes={} flavor=ordered start=2 variant=decimal delimiter=period tight=true children=1
-                    └── ListItem scope=1:6..1:11 anchor=null attributes={} marker=null children=1
-                        └── Paragraph scope=1:9..1:11 anchor=null attributes={} children=1
-                            └── Text scope=1:9..1:11 anchor=null attributes={} literal="foo" children=0
+                └── Paragraph scope=1:6..1:11 anchor=null attributes={} children=1
+                    └── Text scope=1:6..1:11 anchor=null attributes={} literal="2. foo" children=0
 ````````````````````````````````
 
 
@@ -10646,9 +10644,11 @@ Backslash-escapes do not work inside email autolinks:
 .
 Document scope=1:1..1:23 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..1:23 anchor=null attributes={} children=3
-    ├── Text scope=1:1..1:1 anchor=null attributes={} literal="<" children=0
-    ├── Link scope=1:2..1:22 anchor=null attributes={} dest=url("mailto:foo+@bar.example.com") title=null children=1
-    │   └── Text scope=1:2..1:22 anchor=null attributes={} literal="foo+@bar.example.com" children=0
+    ├── Text scope=1:1..1:6 anchor=null attributes={} literal="<foo+" children=0
+    ├── Cite scope=1:7..1:22 anchor=null attributes={} children=1
+    │   └── Citation scope=1:7..1:22 referent=bib(key="bar.example.com",mode=authorInText) children=0
+    │       ├── CitationPrefix children=0
+    │       └── CitationSuffix children=0
     └── Text scope=1:23..1:23 anchor=null attributes={} literal=">" children=0
 ````````````````````````````````
 

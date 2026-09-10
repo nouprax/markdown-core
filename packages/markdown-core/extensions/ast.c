@@ -341,12 +341,8 @@ bool markdown_core_node_list_properties(const markdown_core_node *node, markdown
                                                                      : MARKDOWN_CORE_LIST_FLAVOR_BULLET;
     start->has_value = *flavor == MARKDOWN_CORE_LIST_FLAVOR_ORDERED;
     start->value = node->as.list->start;
-    variant->kind = MARKDOWN_CORE_ORDERED_LIST_VARIANT_DECIMAL;
-    variant->lowercased = false;
-    delimiter->kind = node->as.list->delimiter == MARKDOWN_CORE_PAREN_DELIM
-                          ? MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PARENTHESIS
-                          : MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PERIOD;
-    delimiter->closed = false;
+    *variant = node->as.list->variant;
+    *delimiter = node->as.list->delimiter;
     *tight = node->as.list->tight;
     return true;
 }
@@ -752,12 +748,12 @@ bool markdown_core_citation_referent(const markdown_core_citation *citation, mar
 
 const markdown_core_node *markdown_core_citation_prefix(const markdown_core_citation *citation) {
     const markdown_core_node *node = citation_node(citation);
-    return node ? node->as.citation->prefix : NULL;
+    return node && node->as.citation->prefix ? node->as.citation->prefix->first_child : NULL;
 }
 
 const markdown_core_node *markdown_core_citation_suffix(const markdown_core_citation *citation) {
     const markdown_core_node *node = citation_node(citation);
-    return node ? node->as.citation->suffix : NULL;
+    return node && node->as.citation->suffix ? node->as.citation->suffix->first_child : NULL;
 }
 
 const markdown_core_footnote *markdown_core_node_document_footnotes(const markdown_core_node *node) {
@@ -1428,8 +1424,10 @@ static void dump_cite_nodes(dump_buffer *buffer, const markdown_core_node *node,
         buffer_cstr(buffer, " referent=");
         buffer_referent(buffer, referent);
         buffer_cstr(buffer, " children=0\n");
-        dump_affix_group(buffer, "CitationPrefix", item->as.citation->prefix, depth + 1, true);
-        dump_affix_group(buffer, "CitationSuffix", item->as.citation->suffix, depth + 1, false);
+        dump_affix_group(buffer, "CitationPrefix", markdown_core_citation_prefix((const markdown_core_citation *)item),
+                         depth + 1, true);
+        dump_affix_group(buffer, "CitationSuffix", markdown_core_citation_suffix((const markdown_core_citation *)item),
+                         depth + 1, false);
     }
 }
 

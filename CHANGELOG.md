@@ -6,6 +6,15 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
+- Parse bibliography keys, citation groups and author tails into typed Cite
+  values with ordered affixes, modes and scopes across C, Swift, Kotlin and ES.
+  Resolve bare specimen labels document-wide while preserving every definition,
+  duplicate, anonymous body and effective reset. Generalize ordered lists to
+  alphabetic, Roman and default markers with all three delimiter spellings,
+  bounded numeral accumulation and the nested-start rule. Share bracket,
+  delimiter, definition ownership and iterative field completion operations;
+  cover allocation failures, adversarial nesting and Pandoc agreements.
+
 - Add always-on bracketed spans (`[text]{.class}`), superscript (`^text^`)
   and subscript (`~text~`) across C, Swift, Kotlin and ES, with typed models,
   exhaustive/walking visitors, transports, attributes and source scopes.

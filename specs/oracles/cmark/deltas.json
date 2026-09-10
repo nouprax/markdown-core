@@ -53,6 +53,18 @@
             "kind": "deliberate-difference",
             "summary": "O9 consumes complete positive 32-bit image-dimension suffixes into occurrence-owned width and height. CommonMark retains those bytes in alt content.",
             "handling": "Exact inputs from the links-and-images module fixtures; formatted alt, reference forms, opaque tokens, cross links and tables retain the behavior of their owning modules. Product goldens and binding conformance assert typed dimensions, malformed fallback and exact scopes without normalizing either tree."
+        },
+        {
+            "id": "bibliography-citations",
+            "kind": "deliberate-difference",
+            "summary": "The citations module recognizes @key at a valid Unicode word boundary and stores a typed bibliography Cite. The inherited base/GFM grammar has no bibliography citations.",
+            "handling": "Retain exact changed inputs; citation keys, modes, affixes and scopes are covered by the Pandoc oracle and canonical conformance fixtures."
+        },
+        {
+            "id": "nested-ordered-start",
+            "kind": "deliberate-difference",
+            "summary": "A newly opened ordered list inside a list item or specimen body must start at one under the lists module. CommonMark permits a nested list to start at two.",
+            "handling": "The inherited same-line nested-marker witness remains exact; rejected markers stay ordinary paragraph content."
         }
     ],
     "expectedDivergences": [
@@ -62,9 +74,9 @@
             "note": ".tools/cmark/0.31.2/test/spec.txt:8845: cmark keeps the text; the dialect links the URL or address inside it, as cmark-gfm does."
         },
         {
-            "id": "gfm-autolink-literal",
+            "id": "bibliography-citations",
             "input": "<foo\\+@bar.example.com>\n",
-            "note": ".tools/cmark/0.31.2/test/spec.txt:8892: cmark keeps the text; the dialect links the URL or address inside it, as cmark-gfm does."
+            "note": "P7: escaped plus prevents the angle email token, then @bar.example.com is a bibliography key after punctuation."
         },
         {
             "id": "gfm-autolink-literal",
@@ -153,13 +165,18 @@
         },
         {
             "id": "image-dimensions",
-            "input": "> ![\u00e9\n> **\u5b57**|200x300](/i \"t\") after\n\n- ![\u00e9&amp;|100][r]\n\n| image | next |\n| -- | -- |\n| ![\u00e9\\|100](/i) | ![200x300][r] |\n| ![a\\\\|100](/i) | ![[image\\|100]] |\n\n[r]: /i\n",
+            "input": "> ![é\n> **字**|200x300](/i \"t\") after\n\n- ![é&amp;|100][r]\n\n| image | next |\n| -- | -- |\n| ![é\\|100](/i) | ![200x300][r] |\n| ![a\\\\|100](/i) | ![[image\\|100]] |\n\n[r]: /i\n",
             "note": "O9: image suffix syntax and its composed inline contexts are owned by dialect/links-and-images.md and the package fixtures; cmark keeps the suffix in alt content."
         },
         {
             "id": "image-dimensions",
             "input": "![![inner|10](/inner)|20x30](/outer) ![a [b](/link)|40](/i)\n",
             "note": "O9: image suffix syntax and its composed inline contexts are owned by dialect/links-and-images.md and the package fixtures; cmark keeps the suffix in alt content."
+        },
+        {
+            "id": "nested-ordered-start",
+            "input": "1. - 2. foo\n",
+            "note": "P9a, docs/specs/dialect/lists.md: new nested ordered lists start at one."
         }
     ],
     "notDeltas": [],

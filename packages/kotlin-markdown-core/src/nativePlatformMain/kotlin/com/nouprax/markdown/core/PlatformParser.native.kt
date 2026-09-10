@@ -68,6 +68,7 @@ import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_ORDERED_LIST_DELIMI
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PARENTHESIS
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PERIOD
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_ORDERED_LIST_VARIANT_ALPHA
+import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_ORDERED_LIST_VARIANT_DECIMAL
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_ORDERED_LIST_VARIANT_DEFAULT
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_ORDERED_LIST_VARIANT_ROMAN
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_PLACEMENT_EMBEDDED
@@ -712,13 +713,18 @@ private class NativeScratch(
             }
         val items = children.immutableMap { requireNotNull(it as? ListItem) { "list contains a non-item node" } }
         val variant =
-            when (listVariant.kind) {
-                MARKDOWN_CORE_ORDERED_LIST_VARIANT_ALPHA -> OrderedListVariant.Alpha(listVariant.lowercased)
-                MARKDOWN_CORE_ORDERED_LIST_VARIANT_ROMAN -> OrderedListVariant.Roman(listVariant.lowercased)
-                MARKDOWN_CORE_ORDERED_LIST_VARIANT_DEFAULT -> OrderedListVariant.Default
-                else -> OrderedListVariant.Decimal
-            }.takeIf { optionalLong.has_value }
-        val delimiter = decodeNativeListDelimiter(listDelimiter).takeIf { optionalLong.has_value }
+            if (optionalLong.has_value) {
+                when (listVariant.kind) {
+                    MARKDOWN_CORE_ORDERED_LIST_VARIANT_ALPHA -> OrderedListVariant.Alpha(listVariant.lowercased)
+                    MARKDOWN_CORE_ORDERED_LIST_VARIANT_ROMAN -> OrderedListVariant.Roman(listVariant.lowercased)
+                    MARKDOWN_CORE_ORDERED_LIST_VARIANT_DEFAULT -> OrderedListVariant.Default
+                    MARKDOWN_CORE_ORDERED_LIST_VARIANT_DECIMAL -> OrderedListVariant.Decimal
+                    else -> error("unsupported native list variant ${listVariant.kind}")
+                }
+            } else {
+                null
+            }
+        val delimiter = if (optionalLong.has_value) decodeNativeListDelimiter(listDelimiter) else null
         return List(
             flavor,
             optionalLong.value.takeIf { optionalLong.has_value },

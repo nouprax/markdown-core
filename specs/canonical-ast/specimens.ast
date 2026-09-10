@@ -1,0 +1,80 @@
+Document scope=1:1..19:25 anchor=null attributes={} children=5
+├── Heading scope=1:1..1:9 anchor="sample" attributes={} level=1 children=1
+│   └── Cite scope=1:3..1:9 anchor=null attributes={} children=1
+│       └── Citation scope=1:3..1:9 referent=specimen(id="sample") children=0
+│           ├── CitationPrefix children=0
+│           └── CitationSuffix children=0
+├── Paragraph scope=3:1..3:61 anchor=null attributes={} children=11
+│   ├── Cite scope=3:1..3:7 anchor=null attributes={} children=1
+│   │   └── Citation scope=3:1..3:7 referent=specimen(id="sample") children=0
+│   │       ├── CitationPrefix children=0
+│   │       └── CitationSuffix children=0
+│   ├── Text scope=3:8..3:8 anchor=null attributes={} literal=" " children=0
+│   ├── Cite scope=3:9..3:17 anchor=null attributes={} children=1
+│   │   └── Citation scope=3:10..3:16 referent=specimen(id="sample") children=0
+│   │       ├── CitationPrefix children=0
+│   │       └── CitationSuffix children=0
+│   ├── Text scope=3:18..3:18 anchor=null attributes={} literal=" " children=0
+│   ├── Cite scope=3:19..3:27 anchor=null attributes={} children=1
+│   │   └── Citation scope=3:20..3:26 referent=bib(key="sample",mode=normal) children=0
+│   │       ├── CitationPrefix children=0
+│   │       └── CitationSuffix children=0
+│   ├── Text scope=3:28..3:28 anchor=null attributes={} literal=" " children=0
+│   ├── Cite scope=3:29..3:42 anchor=null attributes={} children=1
+│   │   └── Citation scope=3:29..3:41 referent=bib(key="sample",mode=authorInText) children=0
+│   │       ├── CitationPrefix children=0
+│   │       └── CitationSuffix children=1
+│   │           └── Text scope=3:38..3:41 anchor=null attributes={} literal="p. 3" children=0
+│   ├── Text scope=3:43..3:43 anchor=null attributes={} literal=" " children=0
+│   ├── Cite scope=3:44..3:51 anchor=null attributes={} children=1
+│   │   └── Citation scope=3:44..3:51 referent=bib(key="sample",mode=suppressAuthor) children=0
+│   │       ├── CitationPrefix children=0
+│   │       └── CitationSuffix children=0
+│   ├── Text scope=3:52..3:52 anchor=null attributes={} literal=" " children=0
+│   └── Cite scope=3:53..3:61 anchor=null attributes={} children=1
+│       └── Citation scope=3:53..3:61 referent=bib(key="sample",mode=authorInText) children=0
+│           ├── CitationPrefix children=0
+│           └── CitationSuffix children=0
+├── Paragraph scope=11:1..11:9 anchor=null attributes={} children=1
+│   └── Text scope=11:1..11:9 anchor=null attributes={} literal="separator" children=0
+├── Callout scope=15:1..15:30 anchor=null attributes={} variant=null collapsed=null children=0
+├── Paragraph scope=19:1..19:25 anchor=null attributes={} children=6
+│   ├── Text scope=19:1..19:4 anchor=null attributes={} literal="note" children=0
+│   ├── Cite scope=19:5..19:8 anchor=null attributes={} children=1
+│   │   └── Citation scope=19:6..19:7 referent=footnote(id="n") children=0
+│   │       ├── CitationPrefix children=0
+│   │       └── CitationSuffix children=0
+│   ├── Text scope=19:9..19:9 anchor=null attributes={} literal=" " children=0
+│   ├── Cite scope=19:10..19:16 anchor=null attributes={} children=1
+│   │   └── Citation scope=19:10..19:16 referent=specimen(id="quoted") children=0
+│   │       ├── CitationPrefix children=0
+│   │       └── CitationSuffix children=0
+│   ├── Text scope=19:17..19:17 anchor=null attributes={} literal=" " children=0
+│   └── Cite scope=19:18..19:25 anchor=null attributes={} children=1
+│       └── Citation scope=19:18..19:25 referent=specimen(id="in-note") children=0
+│           ├── CitationPrefix children=0
+│           └── CitationSuffix children=0
+├── Footnote scope=17:1..18:0 id="n" children=0
+├── Specimen scope=5:1..7:29 id="sample" start=7 children=2
+│   ├── Paragraph scope=5:12..5:24 anchor=null attributes={} children=3
+│   │   ├── Text scope=5:12..5:17 anchor=null attributes={} literal="First " children=0
+│   │   ├── Emphasis scope=5:18..5:23 anchor=null attributes={} children=1
+│   │   │   └── Text scope=5:19..5:22 anchor=null attributes={} literal="body" children=0
+│   │   └── Text scope=5:24..5:24 anchor=null attributes={} literal="." children=0
+│   └── Paragraph scope=7:5..7:29 anchor=null attributes={} children=1
+│       └── Text scope=7:5..7:29 anchor=null attributes={} literal="Four-column continuation." children=0
+├── Specimen scope=8:1..8:25 id="sample" start=null children=1
+│   └── Paragraph scope=8:11..8:25 anchor=null attributes={} children=1
+│       └── Text scope=8:11..8:25 anchor=null attributes={} literal="Duplicate kept." children=0
+├── Specimen scope=9:1..10:0 id=null start=null children=1
+│   └── Paragraph scope=9:5..9:14 anchor=null attributes={} children=1
+│       └── Text scope=9:5..9:14 anchor=null attributes={} literal="Anonymous." children=0
+├── Specimen scope=13:1..14:0 id="later" start=12 children=1
+│   └── Paragraph scope=13:12..13:19 anchor=null attributes={} children=1
+│       └── Text scope=13:12..13:19 anchor=null attributes={} literal="A reset." children=0
+├── Specimen scope=15:3..15:30 id="quoted" start=null children=1
+│   └── Paragraph scope=15:13..15:30 anchor=null attributes={} children=1
+│       └── Text scope=15:13..15:30 anchor=null attributes={} literal="Quoted definition." children=0
+└── Specimen scope=17:7..18:0 id="in-note" start=null children=1
+    └── Paragraph scope=17:18..17:35 anchor=null attributes={} children=1
+        └── Text scope=17:18..17:35 anchor=null attributes={} literal="Nested definition." children=0

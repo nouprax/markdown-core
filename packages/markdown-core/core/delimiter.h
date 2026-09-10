@@ -9,7 +9,13 @@
 /* Stack events share source order and lifetime. Only MARKER entries take
  * part in pairing; boundaries constrain content and fields suspend token
  * completion until their independently owned inline trees have been parsed. */
-typedef enum { DELIMITER_MARKER, DELIMITER_BOUNDARY, DELIMITER_FIELD } delimiter_kind;
+typedef enum {
+    DELIMITER_MARKER,
+    DELIMITER_BOUNDARY,
+    DELIMITER_FIELD,
+    DELIMITER_CITATION_TOKEN,
+    DELIMITER_AFFIX_BOUNDARY
+} delimiter_kind;
 
 struct delimiter {
     struct delimiter *previous;

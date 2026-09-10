@@ -27,6 +27,26 @@
 
 #define MAXBACKTICKS 80
 
+/* Citation candidates borrow token nodes until the enclosing bracket chooses
+ * their owner. They retain source coordinates, never a second inline tree. */
+typedef struct citation_token {
+    struct citation_token *next;
+    markdown_core_node *node;
+    delimiter *boundary;
+    struct bracket *tail;
+    bufsize_t start, key_start, key_end, end, tail_start;
+    bool key, suppress;
+} citation_token;
+
+typedef struct {
+    citation_token *first, *last;
+} citation_tokens;
+
+typedef struct {
+    bufsize_t end, previous;
+    bool valid, content;
+} citation_brace;
+
 typedef enum { BRACKET_LINK, BRACKET_IMAGE, BRACKET_FOOTNOTE } bracket_kind;
 
 typedef struct bracket {
@@ -42,6 +62,16 @@ typedef struct bracket {
     bool bracket_after;
     bool in_bracket_image0;
     bool in_bracket_image1;
+    citation_tokens citations;
+    citation_token *author;
+    /* A tail waits for its key's enclosing owner. All token nodes stay in the
+     * AST; this parser-owned continuation borrows the exact bounded range. */
+    markdown_core_node *close_text;
+    delimiter *delim_end;
+    bufsize_t close_position;
+    bool pending_no_link_openers;
+    markdown_core_map_record *pending_reference;
+    struct bracket *pending_previous, *pending_next;
 } bracket;
 
 #define FLAG_SKIP_HTML_CDATA (1u << 0)
@@ -83,6 +113,9 @@ typedef struct subject {
     int delim_openers[MARKDOWN_CORE_DELIM_RULE_COUNT];
     int delim_closers[MARKDOWN_CORE_DELIM_RULE_COUNT];
     bracket *last_bracket;
+    citation_tokens citations;
+    citation_brace *citation_braces;
+    bracket *pending_brackets;
     /* One past the last consumed byte other than SP/TAB. This lets every
      * inline-note closer test its body's non-empty rule in constant time. */
     bufsize_t nonblank_end;
@@ -101,13 +134,9 @@ typedef struct subject {
 
 // "\r\n\\`&_*+=[]<!"
 static const int8_t BASE_SPECIAL_CHARS[256] = {
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0,
-    0, 1, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    ['\n'] = 1, ['\r'] = 1, ['\\'] = 1, ['`'] = 1, ['&'] = 1, ['_'] = 1, ['*'] = 1, ['='] = 1, ['+'] = 1,
+    ['['] = 1,  [']'] = 1,  ['<'] = 1,  ['!'] = 1, ['^'] = 1, ['~'] = 1, ['@'] = 1, ['-'] = 1, [';'] = 1,
+};
 
 // No emphasis-boundary skip characters by default; attached inline extensions
 // add theirs to the parser-local copy.
@@ -119,6 +148,8 @@ static delimiter *S_insert_delimited_inline(subject *subj, delimiter *opener, de
                                             markdown_core_node_type kind);
 
 static int parse_inline(markdown_core_parser *parser, subject *subj, markdown_core_node *parent);
+static markdown_core_node *handle_close_bracket(markdown_core_parser *parser, subject *subj);
+static void resolve_citation_tail(subject *subj, citation_token *token, bool ordinary);
 
 static void subject_from_buf(markdown_core_parser *parser, markdown_core_mem *mem, int line_number, subject *e,
                              markdown_core_chunk *buffer, markdown_core_map *refmap);
@@ -350,6 +381,9 @@ static void subject_from_buf(markdown_core_parser *parser, markdown_core_mem *me
     memset(e->delim_openers, 0, sizeof(e->delim_openers));
     memset(e->delim_closers, 0, sizeof(e->delim_closers));
     e->last_bracket = NULL;
+    e->citations = (citation_tokens){0};
+    e->citation_braces = NULL;
+    e->pending_brackets = NULL;
     e->nonblank_end = 0;
     e->backticks = NULL;
     e->backtick_capacity = 0;
@@ -735,6 +769,15 @@ static void remove_delimiter(subject *subj, delimiter *delim) {
     subj->mem->free(delim);
 }
 
+static void free_citation_tokens(subject *subj, citation_tokens *tokens) {
+    while (tokens->first) {
+        citation_token *next = tokens->first->next;
+        subj->mem->free(tokens->first);
+        tokens->first = next;
+    }
+    tokens->last = NULL;
+}
+
 static void pop_bracket(subject *subj) {
     bracket *b;
     if (subj->last_bracket == NULL) {
@@ -742,6 +785,18 @@ static void pop_bracket(subject *subj) {
     }
     b = subj->last_bracket;
     subj->last_bracket = subj->last_bracket->previous;
+    if (b->close_text) {
+        if (b->pending_previous) {
+            b->pending_previous->pending_next = b->pending_next;
+        } else {
+            subj->pending_brackets = b->pending_next;
+        }
+        if (b->pending_next) {
+            b->pending_next->pending_previous = b->pending_previous;
+        }
+        remove_delimiter(subj, b->delim_end);
+    }
+    free_citation_tokens(subj, &b->citations);
     subj->mem->free(b);
 }
 
@@ -845,6 +900,231 @@ static void push_delimiter(subject *subj, const markdown_core_extension *owner, 
     }
 }
 
+static bufsize_t scan_inline_html(subject *subj, bufsize_t pos, unsigned *flags, bool *is_comment);
+
+static bool citation_key_char(int32_t scalar) {
+    return scalar == '_' || markdown_core_utf8proc_is_letter(scalar) || markdown_core_utf8proc_is_number(scalar);
+}
+
+static bool citation_opener(subject *subj, bufsize_t pos) {
+    if (!pos) {
+        return true;
+    }
+    bufsize_t before = pos - 1;
+    while (before && (subj->input.data[before] & 0xc0) == 0x80) {
+        before--;
+    }
+    int32_t scalar;
+    markdown_core_utf8proc_iterate(subj->input.data + before, pos - before, &scalar);
+    return !citation_key_char(scalar);
+}
+
+/* The text lexer only needs the key's first scalar to reject a literal @.
+ * Full keys, including balanced braces, are consumed by scan_citation_key. */
+static bool citation_key_follows(subject *subj, bufsize_t at) {
+    if (at >= subj->input.len) {
+        return false;
+    }
+    if (subj->input.data[at] == '{') {
+        return true;
+    }
+    int32_t scalar;
+    markdown_core_utf8proc_iterate(subj->input.data + at, subj->input.len - at, &scalar);
+    return citation_key_char(scalar);
+}
+
+static bool source_escaped(subject *subj, bufsize_t at, bufsize_t begin) {
+    bufsize_t escape = at;
+    while (escape > begin && subj->input.data[escape - 1] == '\\') {
+        escape--;
+        subj->owner_parser->citation_work++;
+    }
+    return (at - escape) % 2 != 0;
+}
+
+/* Balanced braced keys share one lexical index per input extent. A failed
+ * outer candidate leaves every inner key available without rescanning its
+ * suffix. Opaque code/tag tokens contribute bytes but no brace events. */
+static void prepare_citation_braces(subject *subj) {
+    subj->citation_braces = subj->mem->calloc((size_t)subj->input.len, sizeof(*subj->citation_braces));
+    if (!subj->citation_braces) {
+        subj->oom = 1;
+        return;
+    }
+    bufsize_t top = -1;
+    unsigned html_flags = 0;
+    for (bufsize_t at = 0; at < subj->input.len;) {
+        bufsize_t opaque_end = at;
+        unsigned char c = subj->input.data[at];
+        bool escaped = (c == '`' || c == '<') && source_escaped(subj, at, 0);
+        if (c == '`' && !escaped) {
+            bufsize_t run = at;
+            while (run < subj->input.len && subj->input.data[run] == '`') {
+                run++;
+            }
+            bufsize_t saved = subj->pos;
+            subj->pos = run;
+            opaque_end = scan_to_closing_backticks(subj, run - at);
+            subj->pos = saved;
+            if (!opaque_end) {
+                opaque_end = run;
+            }
+        } else if (c == '<' && !escaped) {
+            bufsize_t width = scan_inline_html(subj, at + 1, &html_flags, NULL);
+            if (!width) {
+                width = scan_autolink_uri(&subj->input, at + 1);
+            }
+            if (!width) {
+                width = scan_autolink_email(&subj->input, at + 1);
+            }
+            if (width) {
+                opaque_end = at + 1 + width;
+            }
+        }
+        if (opaque_end > at) {
+            while (at < opaque_end) {
+                int32_t scalar;
+                int width = markdown_core_utf8proc_iterate(subj->input.data + at, opaque_end - at, &scalar);
+                subj->owner_parser->citation_work++;
+                if (top >= 0) {
+                    subj->citation_braces[top].content = true;
+                    if (markdown_core_utf8proc_is_space(scalar)) {
+                        subj->citation_braces[top].valid = false;
+                    }
+                }
+                at += width > 0 ? width : 1;
+            }
+            continue;
+        }
+        subj->owner_parser->citation_work++;
+        if (c == '{') {
+            subj->citation_braces[at] = (citation_brace){.previous = top, .valid = true};
+            top = at++;
+        } else if (c == '}' && top >= 0) {
+            citation_brace *brace = &subj->citation_braces[top];
+            bool valid = brace->valid && brace->content;
+            brace->end = valid ? at + 1 : 0;
+            top = brace->previous;
+            if (top >= 0) {
+                subj->citation_braces[top].valid &= valid;
+                subj->citation_braces[top].content = true;
+            }
+            at++;
+        } else {
+            int32_t scalar;
+            int width = markdown_core_utf8proc_iterate(subj->input.data + at, subj->input.len - at, &scalar);
+            if (top >= 0) {
+                subj->citation_braces[top].content = true;
+                if (markdown_core_utf8proc_is_space(scalar)) {
+                    subj->citation_braces[top].valid = false;
+                }
+            }
+            at += width > 0 ? width : 1;
+        }
+    }
+}
+
+static bool scan_citation_key(subject *subj, bufsize_t start, citation_token *token) {
+    bufsize_t pos = start;
+    *token = (citation_token){.start = start, .key = true};
+    if (!citation_opener(subj, start)) {
+        return false;
+    }
+    if (peek_at(subj, pos) == '-') {
+        token->suppress = true;
+        pos++;
+    }
+    if (peek_at(subj, pos) != '@') {
+        return false;
+    }
+    pos++;
+    if (peek_at(subj, pos) == '{') {
+        if (!subj->citation_braces) {
+            prepare_citation_braces(subj);
+        }
+        if (!subj->citation_braces || !subj->citation_braces[pos].end) {
+            return false;
+        }
+        token->key_start = pos + 1;
+        token->end = subj->citation_braces[pos].end;
+        token->key_end = token->end - 1;
+        return true;
+    }
+    token->key_start = pos;
+    while (pos < subj->input.len) {
+        int32_t scalar;
+        int width = markdown_core_utf8proc_iterate(subj->input.data + pos, subj->input.len - pos, &scalar);
+        subj->owner_parser->citation_work++;
+        if (citation_key_char(scalar)) {
+            pos += width;
+        } else if (pos > token->key_start && scalar < 128 && strchr(":.#$%&-+?<>~/", scalar) &&
+                   pos + width < subj->input.len) {
+            int32_t next;
+            markdown_core_utf8proc_iterate(subj->input.data + pos + width, subj->input.len - pos - width, &next);
+            if (!citation_key_char(next)) {
+                break;
+            }
+            pos += width;
+        } else {
+            break;
+        }
+    }
+    token->key_end = token->end = pos;
+    return pos > token->key_start;
+}
+
+static citation_tokens *current_citation_tokens(subject *subj) {
+    return subj->last_bracket ? &subj->last_bracket->citations : &subj->citations;
+}
+
+static markdown_core_node *read_citation_token(subject *subj, bool key) {
+    citation_token value = {.start = subj->pos, .end = subj->pos + 1};
+    if (key && !scan_citation_key(subj, subj->pos, &value)) {
+        return NULL;
+    }
+    markdown_core_node *text = make_str(subj, value.start, value.end - 1,
+                                        markdown_core_chunk_dup(&subj->input, value.start, value.end - value.start));
+    if (!text) {
+        return NULL;
+    }
+    citation_token *token = subj->mem->calloc(1, sizeof(*token));
+    delimiter *boundary = token ? push_delimiter_entry(subj, DELIMITER_CITATION_TOKEN, value.end) : NULL;
+    if (!boundary) {
+        subj->mem->free(token);
+        markdown_core_node_free(text);
+        subj->oom = 1;
+        return NULL;
+    }
+    *token = value;
+    token->tail_start = -1;
+    if (key) {
+        bufsize_t at = value.end;
+        unsigned lines = 0;
+        while (at < subj->input.len && (peek_at(subj, at) == ' ' || peek_at(subj, at) == '\t' ||
+                                        peek_at(subj, at) == '\n' || peek_at(subj, at) == '\r')) {
+            subj->owner_parser->citation_work++;
+            if (peek_at(subj, at) == '\n') {
+                lines++;
+            }
+            at++;
+        }
+        if (lines <= 1 && peek_at(subj, at) == '[' && peek_at(subj, at + 1) != '^') {
+            token->tail_start = at;
+        }
+    }
+    token->node = text;
+    token->boundary = boundary;
+    citation_tokens *tokens = current_citation_tokens(subj);
+    if (tokens->last) {
+        tokens->last->next = token;
+    } else {
+        tokens->first = token;
+    }
+    tokens->last = token;
+    subj->pos = value.end;
+    return text;
+}
+
 static void push_bracket(subject *subj, bracket_kind kind, markdown_core_node *inl_text) {
     bracket *b = (bracket *)subj->mem->calloc(1, sizeof(bracket));
     if (!b) {
@@ -857,6 +1137,10 @@ static void push_bracket(subject *subj, bracket_kind kind, markdown_core_node *i
             b->in_bracket_image0 = subj->last_bracket->in_bracket_image0;
             b->in_bracket_image1 = subj->last_bracket->in_bracket_image1;
         }
+    }
+    citation_token *author = current_citation_tokens(subj)->last;
+    if (kind == BRACKET_LINK && author && author->key && author->tail_start == subj->pos - 1) {
+        b->author = author;
     }
     b->kind = kind;
     b->outer_no_link_openers = subj->no_link_openers;
@@ -926,9 +1210,9 @@ static int any_extension_dispatches(markdown_core_parser *parser, unsigned char 
     return 0;
 }
 
-static void process_delimiters(markdown_core_parser *parser, subject *subj, bufsize_t stack_bottom) {
+static void process_delimiters(markdown_core_parser *parser, subject *subj, bufsize_t stack_bottom, delimiter *after) {
     delimiter *candidate;
-    delimiter *closer = NULL;
+    delimiter *closer = after;
     delimiter *opener;
     delimiter *old_closer;
     bool opener_found;
@@ -945,7 +1229,7 @@ static void process_delimiters(markdown_core_parser *parser, subject *subj, bufs
     }
 
     // move back to first relevant delim.
-    candidate = subj->last_delim;
+    candidate = after ? after->previous : subj->last_delim;
     while (candidate != NULL && candidate->position >= stack_bottom) {
         closer = candidate;
         candidate = candidate->previous;
@@ -961,11 +1245,11 @@ static void process_delimiters(markdown_core_parser *parser, subject *subj, bufs
     // turn. With `can_open` set, nothing freed it and the loop never ended.
     // The quote arm is gone with smart punctuation: a quotation mark is
     // ordinary text and pushes no delimiter.
-    while (closer != NULL) {
+    while (closer != after) {
         const markdown_core_extension *extension = closer->owner;
-        if (closer->kind == DELIMITER_BOUNDARY) {
+        if (closer->kind == DELIMITER_BOUNDARY || closer->kind == DELIMITER_AFFIX_BOUNDARY) {
             for (int rule = 0; rule < MARKDOWN_CORE_DELIM_RULE_COUNT; rule++) {
-                if (DELIMITER_RULES[rule].body == DELIMITER_WORD_BODY) {
+                if (closer->kind == DELIMITER_AFFIX_BOUNDARY || DELIMITER_RULES[rule].body == DELIMITER_WORD_BODY) {
                     for (i = 0; i < 3; i++) {
                         openers_bottom[i][rule] = closer->position;
                     }
@@ -1041,7 +1325,7 @@ static void process_delimiters(markdown_core_parser *parser, subject *subj, bufs
             closer = closer->next;
         }
     }
-    reduce_delimiter_range(subj, candidate, NULL);
+    reduce_delimiter_range(subj, candidate, after);
 }
 
 static delimiter *S_insert_delimited_inline(subject *subj, delimiter *opener, delimiter *closer, bufsize_t use_delims,
@@ -1327,6 +1611,73 @@ markdown_core_optional_chunk markdown_core_clean_title(markdown_core_mem *mem, m
 
 // Parse an autolink, an HTML comment, or an HTML tag.
 // Assumes the subject has a '<' character at the current position.
+static bufsize_t scan_inline_html(subject *subj, bufsize_t pos, unsigned *flags, bool *is_comment) {
+    bufsize_t matchlen = 0;
+    bool comment = false;
+    // finally, try to match an html tag
+    if (pos + 2 <= subj->input.len) {
+        int c = subj->input.data[pos];
+        if (c == '!' && (*flags & FLAG_SKIP_HTML_COMMENT) == 0) {
+            c = subj->input.data[pos + 1];
+            if (c == '-' && subj->input.data[pos + 2] == '-') {
+                if (subj->input.data[pos + 3] == '>') {
+                    matchlen = 4;
+                } else if (subj->input.data[pos + 3] == '-' && subj->input.data[pos + 4] == '>') {
+                    matchlen = 5;
+                } else {
+                    matchlen = scan_html_comment(&subj->input, pos + 1);
+                    if (matchlen > 0) {
+                        matchlen += 1; // prefix "<"
+                    } else {           // no match through end of input: set a flag so
+                                       // we don't reparse looking for -->:
+                        *flags |= FLAG_SKIP_HTML_COMMENT;
+                    }
+                }
+                comment = matchlen > 0;
+            } else if (c == '[') {
+                if ((*flags & FLAG_SKIP_HTML_CDATA) == 0) {
+                    matchlen = scan_html_cdata(&subj->input, pos + 2);
+                    if (matchlen > 0) {
+                        // The regex doesn't require the final "]]>". But if we're not at
+                        // the end of input, it must come after the match. Otherwise,
+                        // disable subsequent scans to avoid quadratic behavior.
+                        matchlen += 5; // prefix "![", suffix "]]>"
+                        if (pos + matchlen > subj->input.len) {
+                            *flags |= FLAG_SKIP_HTML_CDATA;
+                            matchlen = 0;
+                        }
+                    }
+                }
+            } else if ((*flags & FLAG_SKIP_HTML_DECLARATION) == 0) {
+                matchlen = scan_html_declaration(&subj->input, pos + 1);
+                if (matchlen > 0) {
+                    matchlen += 2; // prefix "!", suffix ">"
+                    if (pos + matchlen > subj->input.len) {
+                        *flags |= FLAG_SKIP_HTML_DECLARATION;
+                        matchlen = 0;
+                    }
+                }
+            }
+        } else if (c == '?') {
+            if ((*flags & FLAG_SKIP_HTML_PI) == 0) {
+                // Note that we allow an empty match.
+                matchlen = scan_html_pi(&subj->input, pos + 1);
+                matchlen += 3; // prefix "?", suffix "?>"
+                if (pos + matchlen > subj->input.len) {
+                    *flags |= FLAG_SKIP_HTML_PI;
+                    matchlen = 0;
+                }
+            }
+        } else {
+            matchlen = scan_html_tag(&subj->input, pos);
+        }
+    }
+    if (is_comment) {
+        *is_comment = comment;
+    }
+    return matchlen;
+}
+
 static markdown_core_node *handle_pointy_brace(subject *subj) {
     bufsize_t matchlen = 0;
     bool comment = false;
@@ -1352,64 +1703,7 @@ static markdown_core_node *handle_pointy_brace(subject *subj) {
         return make_autolink(subj, subj->pos - 1 - matchlen, subj->pos - 1, contents, 1);
     }
 
-    // finally, try to match an html tag
-    if (subj->pos + 2 <= subj->input.len) {
-        int c = subj->input.data[subj->pos];
-        if (c == '!' && (subj->flags & FLAG_SKIP_HTML_COMMENT) == 0) {
-            c = subj->input.data[subj->pos + 1];
-            if (c == '-' && subj->input.data[subj->pos + 2] == '-') {
-                if (subj->input.data[subj->pos + 3] == '>') {
-                    matchlen = 4;
-                } else if (subj->input.data[subj->pos + 3] == '-' && subj->input.data[subj->pos + 4] == '>') {
-                    matchlen = 5;
-                } else {
-                    matchlen = scan_html_comment(&subj->input, subj->pos + 1);
-                    if (matchlen > 0) {
-                        matchlen += 1; // prefix "<"
-                    } else {           // no match through end of input: set a flag so
-                                       // we don't reparse looking for -->:
-                        subj->flags |= FLAG_SKIP_HTML_COMMENT;
-                    }
-                }
-                comment = matchlen > 0;
-            } else if (c == '[') {
-                if ((subj->flags & FLAG_SKIP_HTML_CDATA) == 0) {
-                    matchlen = scan_html_cdata(&subj->input, subj->pos + 2);
-                    if (matchlen > 0) {
-                        // The regex doesn't require the final "]]>". But if we're not at
-                        // the end of input, it must come after the match. Otherwise,
-                        // disable subsequent scans to avoid quadratic behavior.
-                        matchlen += 5; // prefix "![", suffix "]]>"
-                        if (subj->pos + matchlen > subj->input.len) {
-                            subj->flags |= FLAG_SKIP_HTML_CDATA;
-                            matchlen = 0;
-                        }
-                    }
-                }
-            } else if ((subj->flags & FLAG_SKIP_HTML_DECLARATION) == 0) {
-                matchlen = scan_html_declaration(&subj->input, subj->pos + 1);
-                if (matchlen > 0) {
-                    matchlen += 2; // prefix "!", suffix ">"
-                    if (subj->pos + matchlen > subj->input.len) {
-                        subj->flags |= FLAG_SKIP_HTML_DECLARATION;
-                        matchlen = 0;
-                    }
-                }
-            }
-        } else if (c == '?') {
-            if ((subj->flags & FLAG_SKIP_HTML_PI) == 0) {
-                // Note that we allow an empty match.
-                matchlen = scan_html_pi(&subj->input, subj->pos + 1);
-                matchlen += 3; // prefix "?", suffix "?>"
-                if (subj->pos + matchlen > subj->input.len) {
-                    subj->flags |= FLAG_SKIP_HTML_PI;
-                    matchlen = 0;
-                }
-            }
-        } else {
-            matchlen = scan_html_tag(&subj->input, subj->pos);
-        }
-    }
+    matchlen = scan_inline_html(subj, subj->pos, &subj->flags, &comment);
     if (matchlen > 0) {
         if (comment) {
             /* M0: the token is a `Comment` whose literal is the bytes between
@@ -1578,9 +1872,239 @@ static bool S_footnote_label_is_defined(markdown_core_parser *parser, subject *s
 
 /* Both footnote forms construct the same citation edge. The caller supplies
  * an authored normalized id, or leaves it absent until document finalization. */
+/* Cite allocation and item ownership are shared by every referent family. */
+static markdown_core_node *new_cite(subject *subj) { return make_simple_subj(subj, MARKDOWN_CORE_NODE_CITE); }
+
+static markdown_core_node *new_citation(subject *subj, markdown_core_node *cite, markdown_core_node *last) {
+    markdown_core_node *item = make_simple_subj(subj, MARKDOWN_CORE_NODE_CITATION);
+    if (item) {
+        item->prev = last;
+        if (last) {
+            last->next = item;
+        } else {
+            cite->as.cite->citations = item;
+        }
+    }
+    return item;
+}
+
+static markdown_core_node *new_bib_item(subject *subj, markdown_core_node *cite, markdown_core_node *last,
+                                        const citation_token *key, bool normal) {
+    markdown_core_node *item = new_citation(subj, cite, last);
+    if (!item) {
+        return NULL;
+    }
+    item->as.citation->referent = MARKDOWN_CORE_NODE_REFERENT_BIB;
+    item->as.citation->mode = key->suppress ? MARKDOWN_CORE_BIB_MODE_SUPPRESS_AUTHOR
+                              : normal      ? MARKDOWN_CORE_BIB_MODE_NORMAL
+                                            : MARKDOWN_CORE_BIB_MODE_AUTHOR_IN_TEXT;
+    item->as.citation->value = markdown_core_chunk_dup(&subj->input, key->key_start, key->key_end - key->key_start);
+    if (!markdown_core_chunk_to_cstr(subj->mem, &item->as.citation->value)) {
+        subj->oom = 1;
+        return NULL;
+    }
+    S_place_inline(subj, item, key->start, key->end - 1);
+    return item;
+}
+
+static void citation_boundary(subject *subj, citation_token *token, bool field) {
+    if (token->boundary) {
+        if (field) {
+            token->boundary->kind = DELIMITER_AFFIX_BOUNDARY;
+        } else {
+            remove_delimiter(subj, token->boundary);
+        }
+        token->boundary = NULL;
+    }
+}
+
+static void trim_citation_source(subject *subj, bufsize_t *start, bufsize_t *end) {
+    while (*start < *end) {
+        int32_t scalar;
+        int width = markdown_core_utf8proc_iterate(subj->input.data + *start, *end - *start, &scalar);
+        subj->owner_parser->citation_work++;
+        if (!markdown_core_utf8proc_is_space(scalar)) {
+            break;
+        }
+        *start += width;
+    }
+    while (*end > *start) {
+        bufsize_t at = *end - 1;
+        while (at > *start && (subj->input.data[at] & 0xc0) == 0x80) {
+            at--;
+        }
+        int32_t scalar;
+        markdown_core_utf8proc_iterate(subj->input.data + at, *end - at, &scalar);
+        subj->owner_parser->citation_work++;
+        if (!markdown_core_utf8proc_is_space(scalar)) {
+            break;
+        }
+        /* An escaped ASCII space or line ending is an owned inline token,
+         * not raw edge whitespace. Preserve its complete source extent. */
+        if ((scalar == ' ' || scalar == '\n') && source_escaped(subj, at, *start)) {
+            break;
+        }
+        *end = at;
+    }
+}
+
+static int source_compare(int line, int column, int other_line, int other_column) {
+    if (line != other_line) {
+        return line < other_line ? -1 : 1;
+    }
+    return (column > other_column) - (column < other_column);
+}
+
+/* Only raw whitespace can cross an affix boundary. Such a partial Text has
+ * the original input's source-map view; decoded/opaque tokens remain whole. */
+static bool trim_affix_node(subject *subj, markdown_core_node *node, bufsize_t start, bufsize_t end) {
+    int start_line, start_column, end_line, end_column;
+    if (start == end) {
+        return false;
+    }
+    markdown_core_parser_content_place(subj->owner_parser, subj->owner, start, &start_line, &start_column);
+    markdown_core_parser_content_end_place(subj->owner_parser, subj->owner, end - 1, &end_line, &end_column);
+    if (source_compare(node->end_line, node->end_column, start_line, start_column) < 0 ||
+        source_compare(node->start_line, node->start_column, end_line, end_column) > 0) {
+        return false;
+    }
+    bool trim_start = source_compare(node->start_line, node->start_column, start_line, start_column) < 0;
+    bool trim_end = source_compare(node->end_line, node->end_column, end_line, end_column) > 0;
+    if ((trim_start || trim_end) && node->kind == MARKDOWN_CORE_NODE_TEXT) {
+        markdown_core_chunk *text = node->as.literal;
+        bufsize_t from = node->content_mark_offset - subj->owner->content_mark_offset;
+        bufsize_t first = trim_start ? start - from : 0;
+        bufsize_t length = trim_end && end - from < text->len ? end - from : text->len;
+        if (length <= first) {
+            return false;
+        }
+        length -= first;
+        if (text->alloc) {
+            memmove(text->data, text->data + first, (size_t)length);
+        } else {
+            text->data += first;
+        }
+        text->len = length;
+        S_place_inline(subj, node, from + first, from + first + length - 1);
+    }
+    return true;
+}
+
+static void take_citation_affix(subject *subj, markdown_core_node **slot, markdown_core_node *first,
+                                markdown_core_node *after, bufsize_t start, bufsize_t end) {
+    trim_citation_source(subj, &start, &end);
+    while (first != after && !subj->oom) {
+        markdown_core_node *next = first->next;
+        subj->owner_parser->citation_work++;
+        if (trim_affix_node(subj, first, start, end)) {
+            if (!*slot) {
+                *slot = make_simple_subj(subj, MARKDOWN_CORE_NODE_PARAGRAPH);
+                if (!*slot) {
+                    return;
+                }
+                S_place_inline(subj, *slot, start, end - 1);
+            }
+            markdown_core_node_unlink(first);
+            append_child(*slot, first);
+        } else {
+            markdown_core_node_free(first);
+        }
+        first = next;
+    }
+}
+
+/* Remove a source delimiter adjacent to an accepted specimen reference.
+ * The surviving Text keeps its original map; only its changed edge moves. */
+static void remove_specimen_parenthesis(subject *subj, markdown_core_node *text, bool first) {
+    assert(text && text->kind == MARKDOWN_CORE_NODE_TEXT && text->as.literal->len);
+    markdown_core_chunk *literal = text->as.literal;
+    if (literal->len == 1) {
+        markdown_core_node_free(text);
+        return;
+    }
+    if (first) {
+        markdown_core_parser_content_place(subj->owner_parser, text, 1, &text->start_line, &text->start_column);
+        markdown_core_parser_adopt_content_marks(subj->owner_parser, text, text, 1, literal->len - 1);
+        if (literal->alloc) {
+            memmove(literal->data, literal->data + 1, (size_t)literal->len - 1);
+        } else {
+            literal->data++;
+        }
+    } else {
+        markdown_core_parser_content_end_place(subj->owner_parser, text, literal->len - 2, &text->end_line,
+                                               &text->end_column);
+    }
+    literal->len--;
+}
+
+static void materialize_citation_key(subject *subj, citation_token *token) {
+    if (!token->key || token->node->kind == MARKDOWN_CORE_NODE_CITE || subj->oom) {
+        return;
+    }
+    if (!markdown_core_node_can_contain_type(token->node->parent, MARKDOWN_CORE_NODE_CITE)) {
+        return;
+    }
+    markdown_core_node *cite = new_cite(subj);
+    markdown_core_node *item = cite ? new_bib_item(subj, cite, NULL, token, false) : NULL;
+    if (!item) {
+        if (cite) {
+            markdown_core_node_free(cite);
+        }
+        return;
+    }
+    bool specimen = !token->suppress && token->key_start == token->start + 1 &&
+                    markdown_core_key_index_lookup(&subj->owner_parser->specimen_ids, item->as.citation->value.data,
+                                                   item->as.citation->value.len);
+    if (specimen) {
+        item->as.citation->referent = MARKDOWN_CORE_NODE_REFERENT_SPECIMEN;
+        item->as.citation->mode = 0;
+    }
+    bufsize_t start = token->start, end = token->end;
+    if (specimen && start && peek_at(subj, start - 1) == '(' && peek_at(subj, end) == ')') {
+        if (!source_escaped(subj, start - 1, 0) && token->node->prev && token->node->next &&
+            token->node->prev->kind == MARKDOWN_CORE_NODE_TEXT && token->node->next->kind == MARKDOWN_CORE_NODE_TEXT) {
+            remove_specimen_parenthesis(subj, token->node->prev, false);
+            remove_specimen_parenthesis(subj, token->node->next, true);
+            start--;
+            end++;
+        }
+    }
+    S_place_inline(subj, cite, start, end - 1);
+    markdown_core_node_insert_before(token->node, cite);
+    markdown_core_node_free(token->node);
+    token->node = cite;
+}
+
+/* Complete bare keys when another bracket owner wins. Failed groups preserve
+ * their unclaimed source tokens; nested committed constructs keep their tree. */
+static void finish_citation_tokens(subject *subj, citation_tokens *tokens, bool ordinary) {
+    for (citation_token *token = tokens->first; token && !subj->oom; token = token->next) {
+        resolve_citation_tail(subj, token, ordinary);
+        citation_boundary(subj, token, false);
+        if (ordinary) {
+            materialize_citation_key(subj, token);
+        }
+    }
+}
+
+static bool citation_group_valid(const citation_tokens *tokens, bool tail) {
+    bool key = tail;
+    for (citation_token *token = tokens->first; token; token = token->next) {
+        if (token->key) {
+            key = true;
+        } else {
+            if (!key) {
+                return false;
+            }
+            key = false;
+        }
+    }
+    return key;
+}
+
 static markdown_core_node *make_footnote_cite(subject *subj, bracket *opener, bufsize_t after_close) {
-    markdown_core_node *cite = make_simple(subj->mem, MARKDOWN_CORE_NODE_CITE);
-    markdown_core_node *citation = cite ? make_simple(subj->mem, MARKDOWN_CORE_NODE_CITATION) : NULL;
+    markdown_core_node *cite = new_cite(subj);
+    markdown_core_node *citation = cite ? new_citation(subj, cite, NULL) : NULL;
     if (!citation) {
         if (cite) {
             markdown_core_node_free(cite);
@@ -1600,7 +2124,7 @@ static markdown_core_node *make_footnote_cite(subject *subj, bracket *opener, bu
  * where the resulting owner lives and when its delimiter boundary closes. */
 static void take_bracket_content(markdown_core_parser *parser, bracket *opener, markdown_core_node *owner) {
     markdown_core_node *child = opener->inl_text->next;
-    while (child) {
+    while (child != opener->close_text) {
         markdown_core_node *next = child->next;
         markdown_core_node_unlink(child);
         append_child(owner, child);
@@ -1643,10 +2167,11 @@ static markdown_core_node *close_inline_footnote(markdown_core_parser *parser, s
         return NULL;
     }
     S_place_inline(subj, footnote, opener->position - 2, subj->pos - 1);
-    process_delimiters(parser, subj, opener->position);
+    finish_citation_tokens(subj, &opener->citations, true);
+    process_delimiters(parser, subj, opener->position, opener->delim_end);
     take_bracket_content(parser, opener, footnote);
     markdown_core_node_insert_before(opener->inl_text, cite);
-    if (!markdown_core_parser_register_footnote(parser, footnote, cite->as.cite->citations)) {
+    if (!markdown_core_parser_register_definition(parser, footnote, cite->as.cite->citations)) {
         markdown_core_node_free(footnote);
         subj->oom = 1;
     }
@@ -1727,6 +2252,95 @@ static void apply_image_dimensions(subject *subj, const bracket *opener, markdow
     }
     image->as.link->dimensions.value = dimensions;
     image->as.link->dimensions.has_value = true;
+}
+
+static bool close_bibliography(markdown_core_parser *parser, subject *subj, bracket *opener) {
+    bool tail = opener->author && peek_char(subj) != '(' && peek_char(subj) != '[';
+    if (peek_at(subj, opener->position) == '^' || !citation_group_valid(&opener->citations, tail) ||
+        !markdown_core_node_can_contain_type(opener->inl_text->parent, MARKDOWN_CORE_NODE_CITE)) {
+        return false;
+    }
+    bool first = !tail;
+    for (citation_token *token = opener->citations.first; token && !subj->oom; token = token->next) {
+        if (!token->key) {
+            citation_boundary(subj, token, true);
+            first = true;
+        } else if (first) {
+            resolve_citation_tail(subj, token, false);
+            citation_boundary(subj, token, true);
+            first = false;
+        } else {
+            resolve_citation_tail(subj, token, true);
+            citation_boundary(subj, token, false);
+            materialize_citation_key(subj, token);
+        }
+    }
+    if (subj->oom) {
+        pop_bracket(subj);
+        return true;
+    }
+    process_delimiters(parser, subj, opener->position, opener->delim_end);
+    markdown_core_node *cite = new_cite(subj);
+    if (!cite) {
+        pop_bracket(subj);
+        return true;
+    }
+    S_place_inline(subj, cite, tail ? opener->author->start : opener->position - 1, subj->pos - 1);
+    markdown_core_node *content = opener->inl_text->next;
+    if (tail) {
+        markdown_core_node *old = opener->author->node;
+        markdown_core_node_insert_before(old, cite);
+        while (old != content) {
+            markdown_core_node *next = old->next;
+            markdown_core_node_free(old);
+            old = next;
+        }
+        opener->author->node = cite;
+    } else {
+        replace_bracket_opener(subj, opener, cite);
+    }
+    bufsize_t item_start = opener->position;
+    citation_token *token = opener->citations.first;
+    markdown_core_node *last = NULL;
+    bool author_item = tail;
+    while ((author_item || token) && !subj->oom) {
+        citation_token *key = author_item ? opener->author : token;
+        assert(key->key);
+        citation_token *separator = author_item ? token : key->next;
+        while (separator && separator->key) {
+            separator = separator->next;
+        }
+        bufsize_t item_end = separator ? separator->start : subj->pos - 1;
+        bufsize_t scope_start = author_item ? key->start : item_start, scope_end = item_end;
+        trim_citation_source(subj, &scope_start, &scope_end);
+        markdown_core_node *item = new_bib_item(subj, cite, last, key, !author_item);
+        if (!item) {
+            break;
+        }
+        last = item;
+        S_place_inline(subj, item, scope_start, scope_end - 1);
+        if (!author_item) {
+            take_citation_affix(subj, &item->as.citation->prefix, content, key->node, item_start, key->start);
+            content = key->node->next;
+            markdown_core_node_free(key->node);
+        }
+        take_citation_affix(subj, &item->as.citation->suffix, content, separator ? separator->node : opener->close_text,
+                            author_item ? item_start : key->end, item_end);
+        author_item = false;
+        if (separator) {
+            content = separator->node->next;
+            markdown_core_node_free(separator->node);
+            item_start = separator->end;
+            token = separator->next;
+        } else {
+            token = NULL;
+        }
+    }
+    if (tail) {
+        opener->author->end = subj->pos;
+    }
+    pop_bracket(subj);
+    return true;
 }
 
 // Return a link, an image, or a literal close bracket.
@@ -1861,12 +2475,41 @@ static markdown_core_node *handle_close_bracket(markdown_core_parser *parser, su
             inl->attributes = attributes;
             subj->pos = end;
             S_place_inline(subj, inl, opener->position - 1, end - 1);
-            process_delimiters(parser, subj, opener->position);
+            finish_citation_tokens(subj, &opener->citations, true);
+            process_delimiters(parser, subj, opener->position, opener->delim_end);
             take_bracket_content(parser, opener, inl);
             replace_bracket_opener(subj, opener, inl);
             pop_bracket(subj);
             return NULL;
         }
+    }
+    if (opener->author && !opener->close_text && peek_char(subj) != '(' && peek_char(subj) != '[' &&
+        citation_group_valid(&opener->citations, true)) {
+        markdown_core_node *close = make_str(subj, initial_pos - 1, initial_pos - 1, markdown_core_chunk_literal("]"));
+        delimiter *end = close ? push_delimiter_entry(subj, DELIMITER_CITATION_TOKEN, initial_pos) : NULL;
+        if (!end) {
+            if (close) {
+                markdown_core_node_free(close);
+            }
+            subj->oom = 1;
+            return NULL;
+        }
+        opener->close_text = close;
+        opener->close_position = initial_pos - 1;
+        opener->delim_end = end;
+        opener->pending_no_link_openers = subj->no_link_openers;
+        opener->pending_reference = record;
+        opener->author->tail = opener;
+        opener->pending_next = subj->pending_brackets;
+        if (subj->pending_brackets) {
+            subj->pending_brackets->pending_previous = opener;
+        }
+        subj->pending_brackets = opener;
+        subj->last_bracket = opener->previous;
+        return close;
+    }
+    if (close_bibliography(parser, subj, opener)) {
+        return NULL;
     }
     if (record) {
         goto match;
@@ -1950,7 +2593,7 @@ static markdown_core_node *handle_close_bracket(markdown_core_parser *parser, su
             value->len = (bufsize_t)strlen((const char *)id);
             value->alloc = 1;
 
-            process_delimiters(parser, subj, opener->position);
+            process_delimiters(parser, subj, opener->position, opener->delim_end);
             // sometimes, the footnote reference text gets parsed into multiple nodes
             // i.e. '[^example]' parsed into '[', '^exam', 'ple]'.
             // this happens for ex with the autolink extension. when the autolinker
@@ -1982,11 +2625,13 @@ static markdown_core_node *handle_close_bracket(markdown_core_parser *parser, su
     }
 
 no_match:
+    finish_citation_tokens(subj, &opener->citations, false);
     pop_bracket(subj); // remove this opener from delimiter list
     subj->pos = initial_pos;
     return make_str(subj, subj->pos - 1, subj->pos - 1, markdown_core_chunk_literal("]"));
 
 match:
+    finish_citation_tokens(subj, &opener->citations, true);
     if (!markdown_core_node_can_contain_type(opener->inl_text->parent,
                                              is_image ? MARKDOWN_CORE_NODE_MEDIA : MARKDOWN_CORE_NODE_LINK)) {
         markdown_core_chunk_free(subj->mem, &url);
@@ -2060,7 +2705,7 @@ match:
     // Free the bracket [:
     markdown_core_node_free(opener->inl_text);
 
-    process_delimiters(parser, subj, opener->position);
+    process_delimiters(parser, subj, opener->position, opener->delim_end);
     pop_bracket(subj);
 
     // Now, if we have a link, we also want to deactivate links until
@@ -2071,6 +2716,100 @@ match:
     }
 
     return NULL;
+}
+
+static void resume_citation_tail(subject *subj, citation_token *token, bool ordinary) {
+    bracket *pending = token->tail;
+    if (!pending || subj->oom || subj->owner_parser->oom) {
+        return;
+    }
+    token->tail = NULL;
+    bracket *saved_bracket = subj->last_bracket;
+    bufsize_t saved_pos = subj->pos;
+    bool saved_no_links = subj->no_link_openers;
+    markdown_core_node *close = pending->close_text;
+    pending->previous = saved_bracket;
+    pending->author = ordinary ? token : NULL;
+    subj->last_bracket = pending;
+    subj->pos = pending->close_position;
+    subj->no_link_openers = pending->pending_no_link_openers;
+    markdown_core_node *literal = handle_close_bracket(subj->owner_parser, subj);
+    if (literal) {
+        markdown_core_node_free(literal);
+    } else if (!subj->oom && !subj->owner_parser->oom) {
+        markdown_core_node_free(close);
+    }
+    subj->pos = saved_pos;
+    subj->last_bracket = saved_bracket;
+    subj->no_link_openers |= saved_no_links;
+}
+
+typedef struct {
+    citation_token *key, *next;
+    bool ordinary, partitioned, first;
+} citation_resolution;
+
+static citation_resolution citation_resolution_for(citation_token *key, bool ordinary) {
+    bracket *pending = key->tail;
+    bool group = !ordinary && citation_group_valid(&pending->citations, false);
+    return (citation_resolution){key, pending->citations.first, ordinary, ordinary || group, !ordinary};
+}
+
+/* Resolve bracket dependencies in postorder without using the C call stack.
+ * Every token list and suspended range is consumed once, including adversarial
+ * chains of author keys whose possible tails contain more author keys. */
+static void resolve_citation_tail(subject *subj, citation_token *token, bool ordinary) {
+    if (!token->tail || subj->oom || subj->owner_parser->oom) {
+        return;
+    }
+    citation_resolution *stack = NULL;
+    size_t count = 0, capacity = 0;
+    citation_resolution next = citation_resolution_for(token, ordinary);
+    for (;;) {
+        if (count == capacity) {
+            size_t grown = capacity ? capacity * 2 : 8;
+            if (grown > SIZE_MAX / sizeof(*stack)) {
+                subj->oom = 1;
+                break;
+            }
+            void *values = subj->mem->realloc(stack, grown * sizeof(*stack));
+            if (!values) {
+                subj->oom = 1;
+                break;
+            }
+            stack = values;
+            capacity = grown;
+        }
+        stack[count++] = next;
+        bool descend = false;
+        while (count && !subj->oom && !subj->owner_parser->oom) {
+            citation_resolution *frame = &stack[count - 1];
+            citation_token *child = frame->next;
+            if (!child) {
+                resume_citation_tail(subj, frame->key, frame->ordinary);
+                count--;
+                continue;
+            }
+            frame->next = child->next;
+            subj->owner_parser->citation_work++;
+            bool child_ordinary;
+            if (frame->partitioned) {
+                child_ordinary = !frame->first;
+                frame->first = !child->key;
+            } else {
+                child_ordinary = frame->key->tail->pending_reference != NULL;
+            }
+            if (child->tail) {
+                next = citation_resolution_for(child, child_ordinary);
+                descend = true;
+                break;
+            }
+        }
+        if (!descend || subj->oom || subj->owner_parser->oom) {
+            break;
+        }
+    }
+    subj->mem->free(stack);
 }
 
 // Parse a hard or soft linebreak, returning an inline.
@@ -2120,6 +2859,10 @@ static bufsize_t subject_find_special_char(subject *subj) {
         unsigned char c = subj->input.data[n];
         if (!subj->special_chars[c]) {
             n++;
+        } else if ((c == '-' && peek_at(subj, n + 1) != '@') || (c == ';' && !subj->last_bracket) ||
+                   (c == '@' && (!citation_opener(subj, n) || !citation_key_follows(subj, n + 1)))) {
+            /* These bytes have no citation-token role in this context. */
+            n++;
         } else if (core_delimiter_rule(c) != MARKDOWN_CORE_DELIM_RULE_NONE) {
             const core_delimiter_run *run = scan_core_delimiter(subj, n);
             if (core_delimiter_needs_stack(subj, run)) {
@@ -2153,6 +2896,9 @@ static int is_core_special_character(unsigned char c) {
     case '<':
     case '!':
     case '^':
+    case '@':
+    case '-':
+    case ';':
         return 1;
     default:
         return 0;
@@ -2268,6 +3014,19 @@ static int parse_inline(markdown_core_parser *parser, subject *subj, markdown_co
         if (new_inl == NULL && !parser->oom && !subj->oom) {
             new_inl = handle_backslash(parser, subj);
         }
+        break;
+    case '@':
+    case '-':
+        new_inl = read_citation_token(subj, true);
+        if (!new_inl && !subj->oom) {
+            goto text;
+        }
+        break;
+    case ';':
+        if (!subj->last_bracket) {
+            goto text;
+        }
+        new_inl = read_citation_token(subj, false);
         break;
     case '&':
         /* `&amp;` reaches the literal as `&`, and that `&` is not the `&` the
@@ -2497,6 +3256,9 @@ static void start_inlines(markdown_core_parser *parser, markdown_core_node *pare
 
 static void clear_inlines(subject *subj) {
     markdown_core_parser *parser = subj->owner_parser;
+    free_citation_tokens(subj, &subj->citations);
+    subj->mem->free(subj->citation_braces);
+    subj->citation_braces = NULL;
     subj->mem->free(subj->backticks);
     subj->backticks = NULL;
     // free bracket and delim stack
@@ -2505,6 +3267,12 @@ static void clear_inlines(subject *subj) {
     }
     while (subj->last_bracket) {
         pop_bracket(subj);
+    }
+    while (subj->pending_brackets) {
+        bracket *next = subj->pending_brackets->pending_next;
+        free_citation_tokens(subj, &subj->pending_brackets->citations);
+        subj->mem->free(subj->pending_brackets);
+        subj->pending_brackets = next;
     }
 
     if (subj->attributes.mem) {
@@ -2524,7 +3292,11 @@ static bool finish_inlines(markdown_core_parser *parser, subject *subj) {
         }
     }
     if (!parser->oom && !subj->oom) {
-        process_delimiters(parser, subj, 0);
+        for (bracket *open = subj->last_bracket; open; open = open->previous) {
+            finish_citation_tokens(subj, &open->citations, true);
+        }
+        finish_citation_tokens(subj, &subj->citations, true);
+        process_delimiters(parser, subj, 0, NULL);
     }
     bool whitespace = subj->last_delim && subj->last_delim->kind == DELIMITER_BOUNDARY;
     clear_inlines(subj);
@@ -2562,7 +3334,8 @@ void markdown_core_prepare_heading(markdown_core_parser *parser, markdown_core_h
         }
     }
     if (!parser->oom && !subj.oom) {
-        process_delimiters(parser, &subj, 0);
+        finish_citation_tokens(&subj, &subj.citations, true);
+        process_delimiters(parser, &subj, 0, NULL);
         markdown_core_chunk label = {subj.input.data, subj.heading_label_end, 0};
         if (label.len > 0 && label.len <= MAX_LINK_LABEL_LENGTH &&
             reference_label_length(label.data, label.len) == label.len) {

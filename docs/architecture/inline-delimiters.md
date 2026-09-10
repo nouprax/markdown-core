@@ -8,19 +8,20 @@ parsed children. The hook cannot traverse or mutate the delimiter stack.
 
 ## Stack entries and lifetime
 
-The private stack contains three source-ordered entry kinds:
+The private stack contains five source-ordered entry kinds:
 
 | Entry | Meaning | Completion |
 | --- | --- | --- |
 | Marker | Borrowed Text, rule, width, opening/closing eligibility, extension owner | Paired by the shared matcher or left as authored text |
 | Boundary | Ordinary raw whitespace has occurred at this source position | Advances the standard opener-search floor for word bodies |
+| Citation token | A raw key or semicolon awaiting its bracket owner, or a suspended range endpoint | Becomes an affix boundary or is removed when ownership is decided |
+| Affix boundary | A committed item splits prefix, key and suffix inline fields | Advances every rule's opener-search floor |
 | Field | A consumed token owns inline fields that must finish before the next token | Parses those fields once, then becomes a boundary or is removed |
 
 Every entry uses the same allocation, linking and removal operations. Fields
 borrow their token owner; the AST owns the field trees. A field event is always
 the last entry when token scanning pauses. Completing it cannot change the
-parent stack because each field has its own inline subject. No pending-token
-pointer, script cursor boundary or per-marker boundary snapshot is retained.
+parent stack because each field has its own inline subject. No script cursor boundary or per-marker boundary snapshot is retained.
 
 A heading can suspend with a field event on its ordinary stack. Its label
 contains live brackets, so it cannot declare an implicit reference; its
@@ -54,7 +55,7 @@ its source is not rescanned by the enclosing parser.
 Pairing a parsed container and closing a bracket scope both reduce a stack
 range through one operation: remove its unresolved markers and retain only its
 last boundary. The AST's bracket grammar still determines Link, Media, Span and
-inline-footnote ownership, including tail precedence and attribute attachment.
+inline-footnote and bibliography ownership, including tail precedence and attribute attachment.
 Those constructs are bracket scopes, not interchangeable emphasis markers.
 
 Retaining the boundary is necessary for inputs such as `^a[**b c**]{}z^`:
@@ -87,3 +88,39 @@ node. That existing walk decodes flagged escapes, traverses owned fields with
 inherited script context, and reserves final anchors. Document-owned footnotes
 start an independent context. This is content completion, not delimiter
 recognition or reparsing Text values for syntax.
+
+## Citation ranges and affixes
+
+A key and a semicolon are raw source tokens until the enclosing bracket chooses
+its owner. Direct links, resolving reference tails and attribute-bearing Spans
+complete those keys as ordinary inlines. A complete citation group instead
+marks its first key and separators as affix boundaries, then runs the same
+bounded delimiter reduction. Failed groups preserve unclaimed tokens as Text.
+No citation item is constructed by reparsing a Text node or a copied body.
+
+An author key's following bracket can depend on an outer bracket's decision:
+`[@a [x]]` gives a normal item whose suffix contains `[x]`, whereas
+`[@a [x]](u)` gives a Link containing an author item with suffix `x`.
+The inner bracket suspends as a parser-owned continuation with source position,
+raw closing Text and a delimiter endpoint. Its already parsed nodes remain
+owned by the live AST. Once the outer owner is known, an explicit postorder
+stack resumes that same bracket procedure over its bounded range. Each
+continuation resolves once; sibling and nested keys share this operation.
+Allocation failure frees continuations independently of the AST they borrow.
+
+Each populated affix owns a private inline root, exposed through the public
+Citation's prefix/suffix collections. Source trimming only changes raw edge
+whitespace; nested markup keeps its authored scope. Completion, consolidation,
+validation and extension postprocessing traverse all owned inline roots using
+one explicit stack. Field order and inherited script depth are retained, and a
+phase may replace its root only after its nested fields finish. Definition
+families start independent contexts. Disposal splices the same owned roots into
+the existing iterative node release path.
+
+Bare keys and balanced braced keys use a single lexical operation. Braced
+candidates share a lazy source index with the ordinary code and HTML token
+scanners, so malformed nested candidates cannot repeatedly scan suffixes.
+Token scans, range reductions and continuation resolution are linear in source
+bytes plus emitted nodes. Doubling tests include successful and failed nested
+keys, long braced keys, semicolon groups and author-tail chains through 8192
+levels; allocation sweeps include pending and finalized affix owners.

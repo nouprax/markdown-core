@@ -20,7 +20,8 @@ typedef struct {
     int marker_offset;
     int padding;
     int start;
-    markdown_core_delim_type delimiter;
+    markdown_core_ordered_list_variant variant;
+    markdown_core_ordered_list_delimiter delimiter;
     unsigned char bullet_char;
     bool tight;
     /* The authored UTF-8 task marker, owned by the item; absent on ordinary
@@ -133,7 +134,9 @@ typedef enum {
 } markdown_core_node_referent_kind;
 
 /* ONE ITEM of a cite (M4): the referent, and two affix chains the item owns
- * beside its children, which it never has. `value` is the referent's key or
+ * beside its children, which it never has. Each populated affix uses the same
+ * private inline root as other owned fields; the facade exposes its children.
+ * `value` is the referent's key or
  * id: for a footnote referent it is the label under the map's own
  * normalization WITHOUT the caret, which is the `Footnote.id` it names,
  * computed once per occurrence. NORMATIVE: an id is compared with memcmp over

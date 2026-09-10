@@ -1797,13 +1797,14 @@ static void node_payload_lifecycle(test_batch_runner *runner) {
     markdown_core_node *prefix = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_TEXT, &payload_test_mem);
     OK(runner, markdown_core_node_append_child(parent, cite), "cite joins its parent");
     cite->as.cite->citations = item;
-    item->as.citation->prefix = prefix;
+    item->as.citation->prefix = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_PARAGRAPH, &payload_test_mem);
+    markdown_core_node_append_child(item->as.citation->prefix, prefix);
     OK(runner, markdown_core_node_set_literal(prefix, "prefix"), "citation owns an affix subtree");
     payload_fail_at = payload_allocations + 1;
     before = payload_live;
     OK(runner,
        markdown_core_node_set_kind(cite, MARKDOWN_CORE_NODE_TEXT) == MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED &&
-           cite->as.cite->citations == item && item->as.citation->prefix == prefix,
+           cite->as.cite->citations == item && item->as.citation->prefix->first_child == prefix,
        "failed retyping preserves node-valued fields");
     INT_EQ(runner, payload_live, before, "failed retyping leaves the owned subtree alive");
     payload_fail_at = 0;
@@ -1971,7 +1972,10 @@ static bool task_block_facts_equal(markdown_core_node *a, markdown_core_node *b)
     }
     if (a->kind == MARKDOWN_CORE_NODE_LIST &&
         (a->as.list->list_type != b->as.list->list_type || a->as.list->start != b->as.list->start ||
-         a->as.list->delimiter != b->as.list->delimiter || a->as.list->tight != b->as.list->tight)) {
+         a->as.list->delimiter.kind != b->as.list->delimiter.kind ||
+         a->as.list->delimiter.closed != b->as.list->delimiter.closed ||
+         a->as.list->variant.kind != b->as.list->variant.kind ||
+         a->as.list->variant.lowercased != b->as.list->variant.lowercased || a->as.list->tight != b->as.list->tight)) {
         return false;
     }
     return task_block_facts_equal(a->first_child, b->first_child) && task_block_facts_equal(a->next, b->next);
@@ -2799,9 +2803,10 @@ static void universal_values(test_batch_runner *runner) {
  * candidates share one extent, so they cannot rescan each other's suffixes. */
 typedef struct {
     size_t cross_link, opaque, delimiters, comment, lookahead, footnote_body, block_identifier, callout, dimensions;
-    size_t registered_footnotes;
+    size_t registered_definitions;
     bool footnote_collection_allocated, footnotes_owned, heading_collection_disposed;
-    size_t attributes, anchors, definitions, definition_resources, whitespace, brackets;
+    size_t attributes, anchors, definitions, definition_resources, whitespace, brackets, citations, list_markers,
+        specimens;
 } inline_work;
 static markdown_core_node *record_inline_work(const markdown_core_extension *extension, markdown_core_parser *parser,
                                               markdown_core_node *root) {
@@ -2815,6 +2820,9 @@ static markdown_core_node *record_inline_work(const markdown_core_extension *ext
     work->delimiters = parser->delimiter_work;
     work->whitespace = parser->whitespace_work;
     work->brackets = parser->bracket_work;
+    work->citations = parser->citation_work;
+    work->specimens = parser->specimen_work;
+    work->list_markers = parser->list_marker_work;
     work->comment = parser->comment_scan_work;
     work->lookahead = parser->block_lookahead_work;
     work->block_identifier = parser->block_identifier_work;
@@ -2829,7 +2837,7 @@ static markdown_core_node *record_inline_work(const markdown_core_extension *ext
     }
     work->heading_collection_disposed = parser->headings.values == NULL && parser->headings.count == 0;
     work->footnote_body = parser->footnote_body_work;
-    work->registered_footnotes = parser->footnote_registration_work;
+    work->registered_definitions = parser->definition_registration_work;
     work->footnote_collection_allocated = parser->footnotes.values != NULL;
     work->footnotes_owned = true;
     for (markdown_core_node *note = root->as.document->footnotes; note; note = note->next) {
@@ -2843,6 +2851,76 @@ static const markdown_core_extension WORK_RECORDER = {.name = "work-recorder", .
 static bool measure_inline_work(markdown_core_parser *parser, void *context) {
     parser->root->user_data = context;
     return markdown_core_parser_attach_extension(parser, &WORK_RECORDER);
+}
+
+static void ordered_numeral_ceiling(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+    for (size_t i = 0; i < 999999; i++) {
+        markdown_core_strbuf_putc(&source, 'M');
+    }
+    markdown_core_strbuf_puts(&source, "CMXCIX.  boundary\n");
+    inline_work work = {0};
+    markdown_core_node *root =
+        markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
+    OK(runner,
+       root && root->first_child->kind == MARKDOWN_CORE_NODE_LIST && root->first_child->as.list->start == 999999999,
+       "Roman numeral accepts the exact nine-digit ceiling");
+    OK(runner, work.list_markers <= 4 * (size_t)source.size, "ceiling accumulation inspects bounded source");
+    if (root) {
+        markdown_core_node_free(root);
+    }
+    static const char *const overflow[] = {"M", "CCCCCCCCCC", "CCCCCCCCCXXXXXXXXXX", "CCCCCCCCCXXXXXXXXXIIIIIIIIII"};
+    for (size_t i = 0; i < sizeof(overflow) / sizeof(*overflow); i++) {
+        markdown_core_strbuf_truncate(&source, 999999);
+        markdown_core_strbuf_puts(&source, overflow[i]);
+        markdown_core_strbuf_puts(&source, ".  overflow\n");
+        root = markdown_core_parse_document((char *)source.ptr, source.size);
+        OK(runner, root && root->first_child->kind == MARKDOWN_CORE_NODE_PARAGRAPH,
+           "Roman M/C/X/I accumulation rejects overflow without wrapping: case=%zu", i);
+        if (root) {
+            markdown_core_node_free(root);
+        }
+    }
+    markdown_core_strbuf_free(&source);
+}
+
+static void citation_linear_work(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    static const struct {
+        const char *prefix, *unit, *close, *suffix;
+    } cases[] = {
+        {"", "@a [", "]", ""},    {"# [", "@a [", "]", "]\n"},
+        {"", "[@a ", "]", ""},    {"[", "*pre* @a [@b [x]]; ", "", "@z]"},
+        {"", "@{", "", " key}"},  {"", "@{a", "}", ""},
+        {"", "@a [x] ", "", ""},  {"", "(@label) body\n\n", "", "@label"},
+        {"", "M", "", ".  body"},
+    };
+    for (size_t c = 0; c < sizeof(cases) / sizeof(*cases); c++) {
+        for (size_t count = 128; count <= 8192; count *= 2) {
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+            markdown_core_strbuf_puts(&source, cases[c].prefix);
+            for (size_t i = 0; i < count; i++) {
+                markdown_core_strbuf_puts(&source, cases[c].unit);
+            }
+            for (size_t i = 0; i < count; i++) {
+                markdown_core_strbuf_puts(&source, cases[c].close);
+            }
+            markdown_core_strbuf_puts(&source, cases[c].suffix);
+            inline_work work = {0};
+            markdown_core_node *root =
+                markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
+            OK(runner, root != NULL, "citation dependency chains parse: case=%zu count=%zu", c, count);
+            OK(runner, work.citations <= 20 * (size_t)source.size,
+               "citation scans and resolutions are linear: case=%zu size=%d work=%zu", c, source.size, work.citations);
+            OK(runner, work.brackets <= 4 * (size_t)source.size && work.delimiters <= 20 * (size_t)source.size,
+               "citation ranges share bounded delimiter reduction: case=%zu count=%zu", c, count);
+            OK(runner, work.list_markers <= 20 * (size_t)source.size && work.specimens <= 20 * (size_t)source.size,
+               "list marker scans are bounded: case=%zu count=%zu", c, count);
+            markdown_core_node_free(root);
+            markdown_core_strbuf_free(&source);
+        }
+    }
 }
 
 static void cross_link_linear_work(test_batch_runner *runner) {
@@ -2926,7 +3004,7 @@ static void inline_footnote_linear_work(test_batch_runner *runner) {
             OK(runner, work.footnote_body <= (size_t)source.size,
                "nonblank evidence inspects disjoint source ranges: case=%zu size=%d work=%zu", c, source.size,
                work.footnote_body);
-            INT_EQ(runner, work.registered_footnotes, count * cases[c].notes_per_unit,
+            INT_EQ(runner, work.registered_definitions, count * cases[c].notes_per_unit,
                    "all committed notes are registered before finalization");
             OK(runner, work.footnotes_owned, "postprocessors receive resolved document-owned footnotes");
             OK(runner, !work.footnote_collection_allocated,
@@ -2996,7 +3074,7 @@ static void footnote_registration(test_batch_runner *runner) {
         markdown_core_node *root = markdown_core_parse_document_with_mem(cases[c].source, strlen(cases[c].source), mem,
                                                                          measure_inline_work, &work);
         OK(runner, root != NULL, "footnote registration boundaries parse: case=%zu", c);
-        INT_EQ(runner, work.registered_footnotes, cases[c].count, "only committed notes enter the parser collection");
+        INT_EQ(runner, work.registered_definitions, cases[c].count, "only committed notes enter the parser collection");
         OK(runner, work.footnotes_owned, "postprocessors receive resolved document-owned footnotes");
         if (root) {
             size_t actual = 0;
@@ -3083,6 +3161,8 @@ static void literal_text_allocations(test_batch_runner *runner) {
     static const struct {
         const char *prefix, *unit;
     } cases[] = {
+        {"a", "@@@ "},
+        {"a", "-; "},
         {"a", "a+"},
         {"a", "+a"},
         {"a", "a=b"},
@@ -4251,6 +4331,8 @@ int main(void) {
     heading_registry_invariants(runner);
     heading_reference_resource_lifetime(runner);
     heading_label_length_boundary(runner);
+    ordered_numeral_ceiling(runner);
+    citation_linear_work(runner);
     cross_link_linear_work(runner);
     inline_footnote_linear_work(runner);
     footnote_registration(runner);

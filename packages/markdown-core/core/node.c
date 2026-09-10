@@ -170,6 +170,7 @@ static void S_init_node_as(markdown_core_node_type type, markdown_core_node_data
         break;
     case MARKDOWN_CORE_NODE_LIST:
         as->list->list_type = MARKDOWN_CORE_BULLET_LIST;
+        as->list->variant.kind = MARKDOWN_CORE_ORDERED_LIST_VARIANT_DECIMAL;
         break;
     default:
         break;
@@ -650,7 +651,14 @@ markdown_core_delim_type markdown_core_node_get_list_delim(markdown_core_node *n
     }
 
     if (node->kind == MARKDOWN_CORE_NODE_LIST) {
-        return node->as.list->delimiter;
+        const markdown_core_ordered_list_delimiter value = node->as.list->delimiter;
+        if (value.kind == MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PERIOD) {
+            return MARKDOWN_CORE_PERIOD_DELIM;
+        }
+        if (value.kind == MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PARENTHESIS && !value.closed) {
+            return MARKDOWN_CORE_PAREN_DELIM;
+        }
+        return MARKDOWN_CORE_NO_DELIM;
     } else {
         return MARKDOWN_CORE_NO_DELIM;
     }
@@ -666,7 +674,10 @@ int markdown_core_node_set_list_delim(markdown_core_node *node, markdown_core_de
     }
 
     if (node->kind == MARKDOWN_CORE_NODE_LIST) {
-        node->as.list->delimiter = delim;
+        node->as.list->delimiter = (markdown_core_ordered_list_delimiter){
+            delim == MARKDOWN_CORE_PERIOD_DELIM ? MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PERIOD
+                                                : MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PARENTHESIS,
+            false};
         return 1;
     } else {
         return 0;

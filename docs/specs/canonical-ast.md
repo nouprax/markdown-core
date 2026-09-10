@@ -489,3 +489,23 @@ retain every node's authored scope and the exact decoded content.
 The directive-envelope fallback witness in `specs/oracles/remark/deltas.json`
 records a balanced label becoming a Span when its enclosing directive fails;
 remark leaves that pair literal because it has no bracketed-span rule.
+
+### Bibliography citations, specimens and ordered markers
+
+The [citations](dialect/citations.md), [specimens](dialect/specimens.md) and
+[lists](dialect/lists.md) modules produce the existing typed citation,
+definition and ordered-list values on every binding. A complete bibliography
+group beats a shortcut, including a virtual heading reference; direct links,
+resolving reference tails and Spans have their specified earlier precedence.
+Bare keys resolve to document-wide specimen labels only when the occurrence
+has no bibliography tail. Generated anchors project the stored affixes and
+keys in source order.
+
+The exact `bibliography-citations` CommonMark/GFM differences retain inputs
+whose @key now becomes a Cite. The `nested-ordered-start` CommonMark difference
+requires a new nested ordered list to start at one. Pandoc agreements cover
+keys, modes, ordinary tails, link/Span precedence, heading shortcuts and list
+variants. Its retained affix whitespace, malformed-group fallback, underscore
+boundary, unresolved reference tails, conditional startnum behavior and example
+number rendering remain exact differences in the Pandoc registry. No projection
+turns specimen IDs into numbers or discards duplicate definitions.

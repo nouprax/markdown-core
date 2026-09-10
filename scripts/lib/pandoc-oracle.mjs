@@ -193,12 +193,16 @@ function pandocNode({ t, c }) {
                 {
                     citations: c[0].map((value) => ({
                         key: value.citationId,
-                        mode: value.citationMode.t,
+                        mode: {
+                            NormalCitation: "normal",
+                            AuthorInText: "authorInText",
+                            SuppressAuthor: "suppressAuthor"
+                        }[value.citationMode.t],
                         prefix: sequence(value.citationPrefix),
                         suffix: sequence(value.citationSuffix)
                     }))
                 },
-                sequence(c[1])
+                []
             );
         case "Note":
             return node("Footnote", {}, sequence(c));
@@ -237,6 +241,27 @@ export function fromPandoc(value) {
 export function fromCanonical(value) {
     const f = value.fields;
     const optional = (name) => (value.tokens[name] === undefined ? null : JSON.parse(value.tokens[name]));
+    if (value.kind === "Cite") {
+        const cite = node("Cite", {
+            citations: value.children.map((item) => {
+                const referent = item.fields.referent;
+                const bib = /^bib\(key=("(?:\\.|[^"\\])*"),mode=(normal|authorInText|suppressAuthor)\)$/.exec(referent);
+                const other = /^(footnote|specimen)\(id=("(?:\\.|[^"\\])*")\)$/.exec(referent);
+                assert.ok(bib || other, `unknown citation referent: ${referent}`);
+                const fields = bib
+                    ? { key: JSON.parse(bib[1]), mode: bib[2] }
+                    : { referent: other[1], id: JSON.parse(other[2]) };
+                for (const [index, name] of ["prefix", "suffix"].entries()) {
+                    fields[name] = [];
+                    for (const child of item.children[index].children) append(fields[name], fromCanonical(child));
+                }
+                return fields;
+            })
+        });
+        cite.anchor = optional("anchor");
+        cite.attributes = parseAttributesDump(f.attributes);
+        return cite;
+    }
     const children = [];
     for (const child of value.children) append(children, fromCanonical(child));
     const attrs = parseAttributesDump(f.attributes);
@@ -246,6 +271,10 @@ export function fromCanonical(value) {
     if (value.kind === "CodeBlock") {
         result.literal = f.literal.replace(/\n$/, "");
         if (optional("language") !== null) attrs.classes = [optional("language"), ...attrs.classes];
+    }
+    if (value.kind === "Specimen") {
+        result.id = optional("id");
+        result.start = optional("start");
     }
     if (value.kind === "Heading") result.level = Number(f.level);
     if (["Link", "Media", "CrossLink", "CrossEmbedded"].includes(value.kind)) {

@@ -332,6 +332,8 @@ MARKDOWN_CORE_API const markdown_core_node *markdown_core_node_get_next_sibling(
 MARKDOWN_CORE_API size_t markdown_core_node_child_count(const markdown_core_node *node);
 
 MARKDOWN_CORE_API bool markdown_core_node_heading_level(const markdown_core_node *node, int32_t *level);
+/** `variant` and `delimiter` have meaning only for an ordered list, when
+ * `start.has_value` is true. Bullet lists have no ordered-marker properties. */
 MARKDOWN_CORE_API bool markdown_core_node_list_properties(const markdown_core_node *node,
                                                           markdown_core_list_flavor *flavor,
                                                           markdown_core_optional_i64 *start,

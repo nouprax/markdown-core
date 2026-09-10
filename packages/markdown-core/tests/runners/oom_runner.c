@@ -210,7 +210,17 @@ static const char OOM_CALLOUT_CORPUS[] =
 static const char OOM_INLINE_OWNERSHIP_CORPUS[] = "> [!tip]+ ==<i title=\"==hidden==\">title</i>==\n"
                                                   "> - [✓] ==a %%==b%% c== ^[![[asset|100x145]]] #item#\n";
 
+static const char OOM_CITATION_CORPUS[] = "@a [@b [@c [@d [@e [@f [@g [@h [@i [@j [tail]]]]]]]]]]\n\n"
+                                          "# [pre *em* @a [@b [tail]]; -@{x{y}} {p. 3}]\n\n"
+                                          "@a [@b [x]] [@a [x]] [@a [@b]] [@a[x]; no key]\n"
+                                          "[@a[x]](u) [@a[x]]{.c} [@a [x]][r] @a[x] @spec (@spec) [@spec]\n\n"
+                                          "[r]: /u\n[x]: /x\n\n"
+                                          "(3@spec) body [pre @b *suffix*]\n\n    continuation ^[note]\n"
+                                          "(@spec) duplicate\n\n(@) anonymous\n\n"
+                                          "iv. first\nv. next\n\n(A) upper\n(B) next\n\n";
+
 static const oom_case OOM_CASES[] = {
+    {"citation ownership and specimen definitions", OOM_CITATION_CORPUS, sizeof(OOM_CITATION_CORPUS) - 1},
     {"heading declarations and anchors", OOM_HEADING_CORPUS, sizeof(OOM_HEADING_CORPUS) - 1},
     {"inline ownership composition", OOM_INLINE_OWNERSHIP_CORPUS, sizeof(OOM_INLINE_OWNERSHIP_CORPUS) - 1},
     {"image dimensions", OOM_IMAGE_DIMENSIONS_CORPUS, sizeof(OOM_IMAGE_DIMENSIONS_CORPUS) - 1},

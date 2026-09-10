@@ -142,6 +142,8 @@ static void S_parser_dispose(markdown_core_parser *parser) {
     dispose_headings(parser, &parser->headings);
     /* This index never owns nodes and is never read during destruction. */
     parser->mem->free(parser->footnotes.values);
+    parser->mem->free(parser->specimens.values);
+    markdown_core_key_index_free(&parser->specimen_ids);
     if (parser->root) {
         markdown_core_node_free(parser->root);
     }
@@ -1131,12 +1133,6 @@ static bool process_inline_tree(markdown_core_parser *parser, markdown_core_node
     return whitespace;
 }
 
-typedef struct {
-    markdown_core_parser *parser;
-    anchor_registry *anchors;
-    int script_depth;
-} inline_field_context;
-
 /* Core and extension fields participate in the same parser phases. The
  * private title root stays owned here from source capture through cleanup. */
 int markdown_core_visit_inline_subtrees(markdown_core_node *node, markdown_core_owned_subtree_visitor visitor,
@@ -1144,6 +1140,14 @@ int markdown_core_visit_inline_subtrees(markdown_core_node *node, markdown_core_
     if (S_type(node) == MARKDOWN_CORE_NODE_CALLOUT && node->as.callout->title &&
         !visitor(&node->as.callout->title, context)) {
         return 0;
+    }
+    if (node->kind == MARKDOWN_CORE_NODE_CITE) {
+        for (markdown_core_node *item = node->as.cite->citations; item; item = item->next) {
+            if ((item->as.citation->prefix && !visitor(&item->as.citation->prefix, context)) ||
+                (item->as.citation->suffix && !visitor(&item->as.citation->suffix, context))) {
+                return 0;
+            }
+        }
     }
     const markdown_core_extension *extension = node->extension;
     return !extension || !extension->visit_owned_subtrees_func ||
@@ -1173,62 +1177,120 @@ bool markdown_core_parse_inline_subtrees(markdown_core_parser *parser, markdown_
     return context.whitespace;
 }
 
-static int process_inline_fields(markdown_core_parser *parser, markdown_core_node *root, anchor_registry *anchors,
-                                 int script_depth);
+typedef int (*tree_phase_func)(markdown_core_parser *parser, markdown_core_node **root_slot, void *context);
+typedef void (*tree_node_func)(markdown_core_parser *parser, markdown_core_node *node, int script_depth, void *context);
 
-static int process_inline_field(markdown_core_node **root_slot, void *context) {
-    inline_field_context *fields = (inline_field_context *)context;
-    markdown_core_node *root = root_slot ? *root_slot : NULL;
-    if (!root || fields->parser->oom) {
-        return !fields->parser->oom;
+typedef struct {
+    markdown_core_node **slot;
+    markdown_core_iter *iter;
+    int script_depth;
+} owned_tree_frame;
+
+typedef struct {
+    markdown_core_parser *parser;
+    owned_tree_frame *frames;
+    size_t count, capacity;
+    int script_depth;
+} owned_tree_walk;
+
+static int push_owned_tree(markdown_core_node **slot, void *context) {
+    owned_tree_walk *walk = context;
+    if (!slot || !*slot || walk->parser->oom) {
+        return !walk->parser->oom;
     }
-    return process_inline_fields(fields->parser, root, fields->anchors, fields->script_depth);
+    if (walk->count == walk->capacity) {
+        size_t capacity = walk->capacity ? 2 * walk->capacity : 8;
+        if (capacity > SIZE_MAX / sizeof(*walk->frames)) {
+            walk->parser->oom = true;
+            return 0;
+        }
+        void *frames = walk->parser->mem->realloc(walk->frames, capacity * sizeof(*walk->frames));
+        if (!frames) {
+            walk->parser->oom = true;
+            return 0;
+        }
+        walk->frames = frames;
+        walk->capacity = capacity;
+    }
+    walk->frames[walk->count++] = (owned_tree_frame){slot, NULL, walk->script_depth};
+    return 1;
 }
 
-/* Complete already parsed child and field trees in their final ownership
- * context. A field keeps its own delimiter stack, but inherits script depth. */
-static int process_inline_fields(markdown_core_parser *parser, markdown_core_node *root, anchor_registry *anchors,
-                                 int script_depth) {
-    markdown_core_iter *iter = markdown_core_iter_new(root);
-    markdown_core_event_type event;
-    inline_field_context context = {parser, anchors, script_depth};
-
-    if (!iter) {
-        parser->oom = true;
-        return 0;
-    }
-    while (!parser->oom && (event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
-        markdown_core_node *node = markdown_core_iter_get_node(iter);
+/* Every independent inline tree uses the same explicit continuation stack.
+ * Field roots remain owned by their live slots until their children finish;
+ * a completion phase may then replace that root. Depth never uses C frames. */
+static int walk_owned_trees(markdown_core_parser *parser, markdown_core_node **slot, tree_node_func enter,
+                            tree_phase_func finish, void *context, int script_depth) {
+    owned_tree_walk walk = {.parser = parser, .script_depth = script_depth};
+    push_owned_tree(slot, &walk);
+    while (walk.count && !parser->oom) {
+        owned_tree_frame *frame = &walk.frames[walk.count - 1];
+        if (!frame->iter) {
+            frame->iter = markdown_core_iter_new(*frame->slot);
+            if (!frame->iter) {
+                parser->oom = true;
+                break;
+            }
+        }
+        markdown_core_event_type event = markdown_core_iter_next(frame->iter);
+        if (event == MARKDOWN_CORE_EVENT_DONE) {
+            markdown_core_node **completed = frame->slot;
+            markdown_core_iter_free(frame->iter);
+            walk.count--;
+            if (finish && !finish(parser, completed, context)) {
+                parser->oom = true;
+            }
+            continue;
+        }
+        markdown_core_node *node = markdown_core_iter_get_node(frame->iter);
         if (node->kind == MARKDOWN_CORE_NODE_SUPERSCRIPT || node->kind == MARKDOWN_CORE_NODE_SUBSCRIPT) {
-            script_depth += event == MARKDOWN_CORE_EVENT_ENTER ? 1 : -1;
+            frame->script_depth += event == MARKDOWN_CORE_EVENT_ENTER ? 1 : -1;
         }
         if (event != MARKDOWN_CORE_EVENT_ENTER) {
             continue;
         }
-        /* Bracket and delimiter ownership is final. Resolve the contextual
-         * escape token in this existing completion walk, before heading text
-         * projection or any other consumer reads the literal. Both spellings
-         * are two bytes, so the authored source map stays unchanged. */
-        if (node->flags & MARKDOWN_CORE_NODE__ESCAPED_SPACE) {
-            if (script_depth > 0) {
-                markdown_core_chunk_free(parser->mem, node->as.literal);
-                *node->as.literal = markdown_core_chunk_literal("\xC2\xA0");
-            }
-            node->flags &= ~MARKDOWN_CORE_NODE__ESCAPED_SPACE;
+        walk.script_depth = frame->script_depth;
+        if (enter) {
+            enter(parser, node, frame->script_depth, context);
         }
-        /* The child tree is complete: no later bracket reduction can discard
-         * this node or override its effective anchor. Reuse the field walk
-         * instead of searching the entire owned tree again for reservations. */
-        if (anchors) {
-            reserve_node_anchor(parser, anchors, node);
-        }
-        context.script_depth = script_depth;
-        if (!markdown_core_visit_inline_subtrees(node, process_inline_field, &context)) {
+        size_t first = walk.count;
+        if (!markdown_core_visit_inline_subtrees(node, push_owned_tree, &walk)) {
             parser->oom = true;
         }
+        /* The visitor reports fields in source order; a stack consumes their
+         * reversed registration order. No field is visited or scanned twice. */
+        for (size_t left = first, right = walk.count; left < right && left < --right; left++) {
+            owned_tree_frame swap = walk.frames[left];
+            walk.frames[left] = walk.frames[right];
+            walk.frames[right] = swap;
+        }
     }
-    markdown_core_iter_free(iter);
+    for (size_t i = 0; i < walk.count; i++) {
+        if (walk.frames[i].iter) {
+            markdown_core_iter_free(walk.frames[i].iter);
+        }
+    }
+    parser->mem->free(walk.frames);
     return !parser->oom;
+}
+
+static void complete_inline_node(markdown_core_parser *parser, markdown_core_node *node, int script_depth,
+                                 void *context) {
+    if (node->flags & MARKDOWN_CORE_NODE__ESCAPED_SPACE) {
+        if (script_depth > 0) {
+            markdown_core_chunk_free(parser->mem, node->as.literal);
+            *node->as.literal = markdown_core_chunk_literal("\xC2\xA0");
+        }
+        node->flags &= ~MARKDOWN_CORE_NODE__ESCAPED_SPACE;
+    }
+    if (context) {
+        reserve_node_anchor(parser, context, node);
+    }
+}
+
+static int process_inline_fields(markdown_core_parser *parser, markdown_core_node *root, anchor_registry *anchors,
+                                 int script_depth) {
+    return walk_owned_trees(parser, &root, complete_inline_node, NULL, anchors, script_depth);
 }
 
 // Parse each source buffer with its owned fields, then complete final owners.
@@ -1245,109 +1307,218 @@ static void process_inlines(markdown_core_parser *parser, markdown_core_map *ref
     markdown_core_manage_extensions_special_characters(parser, false);
 }
 
-// Attempts to parse a list item marker (bullet or enumerated).
-// On success, returns length of the marker, and populates
-// data with the details.  On failure, returns 0.
+/* A specimen marker owns only this line. Labels use exact Unicode letters
+ * and numbers, with a single '_' or '-' between non-empty alphanumeric runs. */
+static bufsize_t parse_specimen_marker(markdown_core_parser *parser, markdown_core_chunk *input, bufsize_t pos,
+                                       markdown_core_specimen_value *value) {
+    bufsize_t begin = pos;
+    *value = (markdown_core_specimen_value){0};
+    parser->specimen_work++;
+    if (peek_at(input, pos++) != '(') {
+        return 0;
+    }
+    int digits = 0;
+    while (digits < 9 && markdown_core_isdigit(peek_at(input, pos))) {
+        parser->specimen_work++;
+        value->start = value->start * 10 + input->data[pos++] - '0';
+        digits++;
+    }
+    value->has_start = digits > 0;
+    if ((digits && !value->start) || peek_at(input, pos++) != '@') {
+        return 0;
+    }
+    bufsize_t label = pos;
+    bool alnum = false;
+    while (pos < input->len) {
+        int32_t scalar;
+        int width = markdown_core_utf8proc_iterate(input->data + pos, input->len - pos, &scalar);
+        parser->specimen_work++;
+        if (markdown_core_utf8proc_is_letter(scalar) || markdown_core_utf8proc_is_number(scalar)) {
+            alnum = true;
+        } else if ((scalar == '_' || scalar == '-') && alnum) {
+            alnum = false;
+        } else {
+            break;
+        }
+        pos += width;
+    }
+    if ((pos != label && !alnum) || peek_at(input, pos) != ')' || !markdown_core_isspace(peek_at(input, pos + 1))) {
+        return 0;
+    }
+    if (pos > label) {
+        value->id = markdown_core_optional_chunk_present(markdown_core_chunk_dup(input, label, pos - label));
+    }
+    return pos + 1 - begin;
+}
+
+/* Read a numeral in its committed variant. The same bounded accumulation is
+ * used for every Roman component; no input cardinality selects another path. */
+static bool ordered_numeral(markdown_core_parser *parser, markdown_core_chunk *input, bufsize_t begin, bufsize_t end,
+                            markdown_core_ordered_list_variant variant, int *value) {
+    int number = 0;
+    if (variant.kind == MARKDOWN_CORE_ORDERED_LIST_VARIANT_DEFAULT) {
+        *value = 1;
+        return end == begin + 1 && input->data[begin] == '#';
+    }
+    if (variant.kind == MARKDOWN_CORE_ORDERED_LIST_VARIANT_ALPHA) {
+        unsigned char first = variant.lowercased ? 'a' : 'A';
+        if (end != begin + 1 || input->data[begin] < first || input->data[begin] > first + 25) {
+            return false;
+        }
+        *value = input->data[begin] - first + 1;
+        return true;
+    }
+    if (variant.kind == MARKDOWN_CORE_ORDERED_LIST_VARIANT_DECIMAL) {
+        if (end - begin > 9) {
+            return false;
+        }
+        for (bufsize_t at = begin; at < end; at++) {
+            parser->list_marker_work++;
+            if (!markdown_core_isdigit(input->data[at])) {
+                return false;
+            }
+            number = number * 10 + input->data[at] - '0';
+        }
+    } else {
+        static const struct {
+            const char *text;
+            int value;
+            bool repeat;
+        } terms[] = {{"M", 1000, true}, {"CM", 900, false}, {"D", 500, false}, {"CD", 400, false}, {"C", 100, true},
+                     {"XC", 90, false}, {"L", 50, false},   {"XL", 40, false}, {"X", 10, true},    {"IX", 9, false},
+                     {"V", 5, false},   {"IV", 4, false},   {"I", 1, true}};
+        bufsize_t at = begin;
+        for (size_t term = 0; term < sizeof(terms) / sizeof(terms[0]); term++) {
+            bufsize_t width = terms[term].text[1] ? 2 : 1;
+            unsigned char offset = variant.lowercased ? 'a' - 'A' : 0;
+            while (at + width <= end) {
+                parser->list_marker_work++;
+                if (input->data[at] != terms[term].text[0] + offset ||
+                    (width == 2 && input->data[at + 1] != terms[term].text[1] + offset)) {
+                    break;
+                }
+                if (number > 999999999 - terms[term].value) {
+                    return false;
+                }
+                number += terms[term].value;
+                at += width;
+                if (!terms[term].repeat) {
+                    break;
+                }
+            }
+        }
+        if (at != end) {
+            return false;
+        }
+    }
+    *value = number;
+    return end > begin;
+}
+
+static bool list_facts_match(const markdown_core_list *list, const markdown_core_list *item) {
+    return list->list_type == item->list_type && list->bullet_char == item->bullet_char &&
+           list->variant.kind == item->variant.kind && list->variant.lowercased == item->variant.lowercased &&
+           list->delimiter.kind == item->delimiter.kind && list->delimiter.closed == item->delimiter.closed;
+}
+
+/* Recognition is non-consuming and allocation-free. Only a complete marker
+ * returns authored facts to the ordinary block ownership/padding operation. */
 static bufsize_t parse_list_marker(markdown_core_parser *parser, markdown_core_chunk *input, bufsize_t pos,
-                                   bool interrupts_paragraph, markdown_core_list **dataptr) {
-    markdown_core_mem *mem = parser->mem;
-    unsigned char c;
-    bufsize_t startpos;
-    markdown_core_list *data;
-    bufsize_t i;
-
-    startpos = pos;
-    c = peek_at(input, pos);
-
+                                   markdown_core_node *container, markdown_core_list *data) {
+    bufsize_t startpos = pos;
+    unsigned char c = peek_at(input, pos);
+    bool interrupts_paragraph = container->kind == MARKDOWN_CORE_NODE_PARAGRAPH;
+    const markdown_core_list *committed = container->kind == MARKDOWN_CORE_NODE_LIST ? container->as.list : NULL;
+    *data = (markdown_core_list){0};
+    parser->list_marker_work++;
     if (c == '*' || c == '-' || c == '+') {
-        pos++;
-        if (!markdown_core_isspace(peek_at(input, pos))) {
-            return 0;
-        }
-
-        if (interrupts_paragraph) {
-            i = pos;
-            // require non-blank content after list marker:
-            while (S_is_space_or_tab(peek_at(input, i))) {
-                i++;
-            }
-            if (peek_at(input, i) == '\n') {
-                return 0;
-            }
-        }
-
-        data = (markdown_core_list *)mem->calloc(1, sizeof(*data));
-        if (!data) {
-            /* Allocation loss, not an invalid marker. */
-            parser->oom = true;
-            return 0;
-        }
-        data->marker_offset = 0; // will be adjusted later
         data->list_type = MARKDOWN_CORE_BULLET_LIST;
         data->bullet_char = c;
-        data->start = 0;
-        data->delimiter = MARKDOWN_CORE_NO_DELIM;
-        data->tight = false;
-    } else if (markdown_core_isdigit(c)) {
-        int start = 0;
-        int digits = 0;
-
-        do {
-            start = (10 * start) + (peek_at(input, pos) - '0');
+        pos++;
+    } else {
+        bool closed = c == '(';
+        pos += closed;
+        bufsize_t begin = pos;
+        c = peek_at(input, pos);
+        if (c == '#') {
             pos++;
-            digits++;
-            // We limit to 9 digits to avoid overflow,
-            // assuming max int is 2^31 - 1
-            // This also seems to be the limit for 'start' in some browsers.
-        } while (digits < 9 && markdown_core_isdigit(peek_at(input, pos)));
-
-        if (interrupts_paragraph && start != 1) {
+        } else {
+            while (markdown_core_isalnum(peek_at(input, pos))) {
+                parser->list_marker_work++;
+                pos++;
+            }
+        }
+        if (pos == begin) {
             return 0;
         }
-        c = peek_at(input, pos);
-        if (c == '.' || c == ')') {
-            pos++;
-            if (!markdown_core_isspace(peek_at(input, pos))) {
-                return 0;
-            }
-            if (interrupts_paragraph) {
-                // require non-blank content after list marker:
-                i = pos;
-                while (S_is_space_or_tab(peek_at(input, i))) {
-                    i++;
-                }
-                if (S_is_line_end_char(peek_at(input, i))) {
+        bufsize_t end = pos;
+        unsigned char delim = peek_at(input, pos++);
+        if (delim != ')' && (closed || delim != '.')) {
+            return 0;
+        }
+        data->list_type = MARKDOWN_CORE_ORDERED_LIST;
+        data->delimiter =
+            (markdown_core_ordered_list_delimiter){delim == '.' ? MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PERIOD
+                                                                : MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PARENTHESIS,
+                                                   closed};
+        data->variant.lowercased = c >= 'a' && c <= 'z';
+        data->variant.kind = c == '#'                                   ? MARKDOWN_CORE_ORDERED_LIST_VARIANT_DEFAULT
+                             : markdown_core_isdigit(c)                 ? MARKDOWN_CORE_ORDERED_LIST_VARIANT_DECIMAL
+                             : end == begin + 1 && c != 'i' && c != 'I' ? MARKDOWN_CORE_ORDERED_LIST_VARIANT_ALPHA
+                                                                        : MARKDOWN_CORE_ORDERED_LIST_VARIANT_ROMAN;
+        int start;
+        if (committed && committed->list_type == MARKDOWN_CORE_ORDERED_LIST &&
+            (c == '#' || ordered_numeral(parser, input, begin, end, committed->variant, &start))) {
+            data->variant = committed->variant;
+            data->start = c == '#' ? 1 : start;
+        } else if (!ordered_numeral(parser, input, begin, end, data->variant, &data->start)) {
+            return 0;
+        }
+        if (c == '#' && delim == '.' &&
+            (!committed || committed->delimiter.kind == MARKDOWN_CORE_ORDERED_LIST_DELIMITER_DEFAULT)) {
+            data->delimiter.kind = MARKDOWN_CORE_ORDERED_LIST_DELIMITER_DEFAULT;
+        }
+        if (interrupts_paragraph && data->start != 1) {
+            return 0;
+        }
+        if (!committed || !list_facts_match(committed, data)) {
+            for (markdown_core_node *ancestor = container; ancestor; ancestor = ancestor->parent) {
+                if ((ancestor->kind == MARKDOWN_CORE_NODE_LIST_ITEM || ancestor->kind == MARKDOWN_CORE_NODE_SPECIMEN) &&
+                    data->start != 1) {
                     return 0;
                 }
             }
-
-            data = (markdown_core_list *)mem->calloc(1, sizeof(*data));
-            if (!data) {
-                parser->oom = true;
+        }
+        if (end == begin + 1 && c >= 'A' && c <= 'Z' && delim == '.') {
+            int column = parser->first_nonspace_column + (pos - startpos);
+            int initial_column = column;
+            bufsize_t at = pos;
+            while (S_is_space_or_tab(peek_at(input, at))) {
+                parser->list_marker_work++;
+                column += input->data[at++] == '\t' ? 4 - column % 4 : 1;
+                if (column - initial_column >= 2) {
+                    break;
+                }
+            }
+            if (column - initial_column < 2 && !S_is_line_end_char(peek_at(input, at))) {
                 return 0;
             }
-            data->marker_offset = 0; // will be adjusted later
-            data->list_type = MARKDOWN_CORE_ORDERED_LIST;
-            data->bullet_char = 0;
-            data->start = start;
-            data->delimiter = (c == '.' ? MARKDOWN_CORE_PERIOD_DELIM : MARKDOWN_CORE_PAREN_DELIM);
-            data->tight = false;
-        } else {
-            return 0;
         }
-    } else {
+    }
+    if (!markdown_core_isspace(peek_at(input, pos))) {
         return 0;
     }
-
-    *dataptr = data;
-    return (pos - startpos);
-}
-
-// Return 1 if list item belongs in list, else 0.
-static int lists_match(markdown_core_list *list_data, markdown_core_list *item_data) {
-    return (list_data->list_type == item_data->list_type && list_data->delimiter == item_data->delimiter &&
-            // list_data->marker_offset == item_data.marker_offset &&
-            list_data->bullet_char == item_data->bullet_char);
+    if (interrupts_paragraph) {
+        bufsize_t at = pos;
+        while (S_is_space_or_tab(peek_at(input, at))) {
+            parser->list_marker_work++;
+            at++;
+        }
+        if (S_is_line_end_char(peek_at(input, at))) {
+            return 0;
+        }
+    }
+    return pos - startpos;
 }
 
 /* List layout depends on semantic children, after definitions are removed.
@@ -1786,6 +1957,7 @@ static bool S_container_prefix_matches(markdown_core_parser *parser, markdown_co
     case MARKDOWN_CORE_NODE_LIST_ITEM:
         return parse_node_item_prefix(parser, input, container, joining == container);
     case MARKDOWN_CORE_NODE_FOOTNOTE:
+    case MARKDOWN_CORE_NODE_SPECIMEN:
         return parse_footnote_definition_block_prefix(parser, input, container);
     default:
         return true;
@@ -2330,7 +2502,9 @@ static bool S_parse_callout_metadata(markdown_core_parser *parser, markdown_core
 static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **container, markdown_core_chunk *input,
                             bool all_matched) {
     bool indented;
-    markdown_core_list *data = NULL;
+    markdown_core_specimen_value specimen;
+    markdown_core_list marker;
+    markdown_core_list *data = &marker;
     bool maybe_lazy = S_type(parser->current) == MARKDOWN_CORE_NODE_PARAGRAPH;
     markdown_core_node_type cont_type = S_type(*container);
     bufsize_t matched = 0;
@@ -2491,7 +2665,7 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
             (*container)->as.footnote->id.data = id;
             (*container)->as.footnote->id.len = (bufsize_t)strlen((const char *)id);
             (*container)->as.footnote->id.alloc = 1;
-            if (!markdown_core_parser_register_footnote(parser, *container, NULL)) {
+            if (!markdown_core_parser_register_definition(parser, *container, NULL)) {
                 markdown_core_chunk_free(parser->mem, &c);
                 return;
             }
@@ -2513,9 +2687,32 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
             markdown_core_chunk_free(parser->mem, &c);
 
             (*container)->internal_offset = matched;
+        } else if (!indented && (*container)->kind != MARKDOWN_CORE_NODE_PARAGRAPH &&
+                   (matched = parse_specimen_marker(parser, input, parser->first_nonspace, &specimen))) {
+            if (specimen.id.has_value && !markdown_core_chunk_to_cstr(parser->mem, &specimen.id.value)) {
+                parser->oom = true;
+                return;
+            }
+            *container = add_child(parser, *container, MARKDOWN_CORE_NODE_SPECIMEN, parser->first_nonspace + 1);
+            if (!*container) {
+                markdown_core_optional_chunk_free(parser->mem, &specimen.id);
+                return;
+            }
+            if ((*container)->prev && (*container)->prev->kind == MARKDOWN_CORE_NODE_SPECIMEN) {
+                specimen.has_start = false;
+                specimen.start = 0;
+            }
+            *(*container)->as.specimen = specimen;
+            if (!markdown_core_parser_register_definition(parser, *container, NULL)) {
+                return;
+            }
+            S_advance_offset(parser, input, parser->first_nonspace + matched - parser->offset, false);
+            while (S_is_space_or_tab(peek_at(input, parser->offset))) {
+                S_advance_offset(parser, input, 1, true);
+                parser->specimen_work++;
+            }
         } else if ((!indented || cont_type == MARKDOWN_CORE_NODE_LIST) && parser->indent < 4 &&
-                   (matched = parse_list_marker(parser, input, parser->first_nonspace,
-                                                (*container)->kind == MARKDOWN_CORE_NODE_PARAGRAPH, &data))) {
+                   (matched = parse_list_marker(parser, input, parser->first_nonspace, *container, data))) {
 
             // Note that we can have new list items starting with >= 4
             // spaces indent, as long as the list container is still open.
@@ -2552,10 +2749,9 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
 
             data->marker_offset = parser->indent;
 
-            if (cont_type != MARKDOWN_CORE_NODE_LIST || !lists_match((*container)->as.list, data)) {
+            if (cont_type != MARKDOWN_CORE_NODE_LIST || !list_facts_match((*container)->as.list, data)) {
                 *container = add_child(parser, *container, MARKDOWN_CORE_NODE_LIST, parser->first_nonspace + 1);
                 if (!*container) {
-                    parser->mem->free(data);
                     return;
                 }
 
@@ -2565,11 +2761,9 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
             // add the list item
             *container = add_child(parser, *container, MARKDOWN_CORE_NODE_LIST_ITEM, parser->first_nonspace + 1);
             if (!*container) {
-                parser->mem->free(data);
                 return;
             }
             memcpy((*container)->as.list, data, sizeof(*data));
-            parser->mem->free(data);
             S_find_first_nonspace(parser, input);
             markdown_core_parse_task_prefix(parser, *container, input->data, input->len);
             if (parser->oom) {
@@ -2865,76 +3059,41 @@ finished:
     markdown_core_strbuf_clear(&parser->curline);
 }
 
-typedef int (*tree_phase_func)(markdown_core_parser *parser, markdown_core_node **root_slot, void *context);
-
-typedef struct {
-    markdown_core_parser *parser;
-    tree_phase_func phase;
-    void *phase_context;
-} tree_phase_context;
-
-static int S_apply_tree_phase(markdown_core_parser *parser, markdown_core_node **root_slot, tree_phase_func phase,
-                              void *context);
-
-static int S_apply_field_phase(markdown_core_node **root_slot, void *context) {
-    tree_phase_context *phase = (tree_phase_context *)context;
-    return S_apply_tree_phase(phase->parser, root_slot, phase->phase, phase->phase_context);
-}
-
-/* Apply one parser phase to every independent child tree, deepest fields
- * first. Field slots are requested from their live owner and consumed
- * immediately, so temporary inline nodes can never leave dangling registry
- * entries and a phase may replace a field root safely. */
+/* Document definitions are independent roots, followed by the content tree.
+ * Each family advances through the live slot after a phase replaces its root. */
 static int S_apply_tree_phase(markdown_core_parser *parser, markdown_core_node **root_slot, tree_phase_func phase,
                               void *context) {
     markdown_core_node *root = root_slot ? *root_slot : NULL;
-    markdown_core_iter *iter;
-    markdown_core_event_type event;
-    tree_phase_context fields = {parser, phase, context};
-
     if (!root || parser->oom) {
         return !parser->oom;
     }
     if (root->kind == MARKDOWN_CORE_NODE_DOCUMENT) {
-        for (markdown_core_node **slot = &root->as.document->footnotes; *slot; slot = &(*slot)->next) {
-            if (!S_apply_tree_phase(parser, slot, phase, context)) {
-                return 0;
+        markdown_core_node **families[] = {&root->as.document->footnotes, &root->as.document->specimens};
+        for (size_t family = 0; family < sizeof(families) / sizeof(families[0]); family++) {
+            for (markdown_core_node **slot = families[family]; *slot; slot = &(*slot)->next) {
+                if (!walk_owned_trees(parser, slot, NULL, phase, context, 0)) {
+                    return 0;
+                }
             }
         }
     }
-    iter = markdown_core_iter_new(root);
-    if (!iter) {
-        parser->oom = true;
-        return 0;
-    }
-    while (!parser->oom && (event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
-        markdown_core_node *node;
-        if (event != MARKDOWN_CORE_EVENT_ENTER) {
-            continue;
-        }
-        node = markdown_core_iter_get_node(iter);
-        if (!markdown_core_visit_inline_subtrees(node, S_apply_field_phase, &fields)) {
-            parser->oom = true;
-        }
-    }
-    markdown_core_iter_free(iter);
-    if (parser->oom) {
-        return 0;
-    }
-    return phase(parser, root_slot, context);
+    return walk_owned_trees(parser, root_slot, NULL, phase, context, 0);
 }
 
 /* Register at syntax commitment; no completed-tree discovery pass is needed.
  * Inline bodies enter the document's value chain immediately, and the index
  * borrows only until finalization, before consolidation or postprocessing. */
-bool markdown_core_parser_register_footnote(markdown_core_parser *parser, markdown_core_node *footnote,
-                                            markdown_core_node *citation) {
-    markdown_core_footnote_collection *collection = &parser->footnotes;
-    assert(footnote && footnote->kind == MARKDOWN_CORE_NODE_FOOTNOTE);
-    assert(citation ? !footnote->parent : footnote->parent != NULL);
+bool markdown_core_parser_register_definition(markdown_core_parser *parser, markdown_core_node *definition,
+                                              markdown_core_node *citation) {
+    assert(definition &&
+           (definition->kind == MARKDOWN_CORE_NODE_FOOTNOTE || definition->kind == MARKDOWN_CORE_NODE_SPECIMEN));
+    markdown_core_definition_collection *collection =
+        definition->kind == MARKDOWN_CORE_NODE_FOOTNOTE ? &parser->footnotes : &parser->specimens;
+    assert(!citation || definition->kind == MARKDOWN_CORE_NODE_FOOTNOTE);
+    assert(citation ? !definition->parent : definition->parent != NULL);
     if (collection->count == collection->capacity) {
         size_t capacity = collection->capacity ? collection->capacity * 2 : 8;
-        markdown_core_footnote_entry *values;
+        markdown_core_definition_entry *values;
         if (capacity > SIZE_MAX / sizeof(*values)) {
             parser->oom = true;
             return false;
@@ -2947,31 +3106,31 @@ bool markdown_core_parser_register_footnote(markdown_core_parser *parser, markdo
         collection->values = values;
         collection->capacity = capacity;
     }
-    collection->values[collection->count++] = (markdown_core_footnote_entry){footnote, citation};
-    parser->footnote_registration_work++;
+    collection->values[collection->count++] = (markdown_core_definition_entry){definition, citation};
+    parser->definition_registration_work++;
     if (citation) {
-        footnote->prev = collection->last_inline;
+        definition->prev = collection->last_inline;
         if (collection->last_inline) {
-            collection->last_inline->next = footnote;
+            collection->last_inline->next = definition;
         } else {
-            parser->root->as.document->footnotes = footnote;
+            parser->root->as.document->footnotes = definition;
         }
-        collection->last_inline = footnote;
+        collection->last_inline = definition;
     }
     return true;
 }
 
-static uint64_t footnote_source_key(const markdown_core_node *node) {
+static uint64_t definition_source_key(const markdown_core_node *node) {
     return ((uint64_t)(uint32_t)node->start_line << 32) | (uint32_t)node->start_column;
 }
 
 /* Eight stable byte passes order the two nonnegative 32-bit coordinates.
  * This bound holds for every source shape on every libc; there is no
  * comparison-sort worst case or input-size-dependent alternate path. */
-static int order_footnotes(markdown_core_mem *mem, markdown_core_footnote_collection *collection) {
-    markdown_core_footnote_entry *scratch = mem->calloc(collection->count, sizeof(*scratch));
-    markdown_core_footnote_entry *source = collection->values;
-    markdown_core_footnote_entry *target = scratch;
+static int order_definitions(markdown_core_mem *mem, markdown_core_definition_collection *collection) {
+    markdown_core_definition_entry *scratch = mem->calloc(collection->count, sizeof(*scratch));
+    markdown_core_definition_entry *source = collection->values;
+    markdown_core_definition_entry *target = scratch;
     if (!scratch) {
         return 0;
     }
@@ -2979,7 +3138,7 @@ static int order_footnotes(markdown_core_mem *mem, markdown_core_footnote_collec
         size_t offsets[256] = {0};
         size_t offset = 0;
         for (size_t i = 0; i < collection->count; i++) {
-            offsets[(footnote_source_key(source[i].footnote) >> shift) & 255]++;
+            offsets[(definition_source_key(source[i].definition) >> shift) & 255]++;
         }
         for (size_t byte = 0; byte < 256; byte++) {
             size_t count = offsets[byte];
@@ -2987,9 +3146,9 @@ static int order_footnotes(markdown_core_mem *mem, markdown_core_footnote_collec
             offset += count;
         }
         for (size_t i = 0; i < collection->count; i++) {
-            target[offsets[(footnote_source_key(source[i].footnote) >> shift) & 255]++] = source[i];
+            target[offsets[(definition_source_key(source[i].definition) >> shift) & 255]++] = source[i];
         }
-        markdown_core_footnote_entry *swap = source;
+        markdown_core_definition_entry *swap = source;
         source = target;
         target = swap;
     }
@@ -2999,31 +3158,66 @@ static int order_footnotes(markdown_core_mem *mem, markdown_core_footnote_collec
     return 1;
 }
 
+static void own_definitions(markdown_core_definition_collection *collection, markdown_core_node **slot) {
+    markdown_core_node *last = NULL;
+    *slot = NULL;
+    for (size_t i = 0; i < collection->count; i++) {
+        markdown_core_node *definition = collection->values[i].definition;
+        markdown_core_node_unlink(definition);
+        definition->prev = last;
+        if (last) {
+            last->next = definition;
+        } else {
+            *slot = definition;
+        }
+        last = definition;
+    }
+}
+
+/* The complete block definition set is known before any heading or inline is
+ * parsed. Its exact-byte index borrows authored ids and keeps the first node. */
+static void prepare_specimens(markdown_core_parser *parser) {
+    markdown_core_definition_collection *collection = &parser->specimens;
+    if (!markdown_core_key_index_init(&parser->specimen_ids, parser->mem, collection->count) ||
+        (collection->count && !order_definitions(parser->mem, collection))) {
+        parser->oom = true;
+        return;
+    }
+    for (size_t i = 0; i < collection->count; i++) {
+        markdown_core_node *definition = collection->values[i].definition;
+        markdown_core_optional_chunk *id = &definition->as.specimen->id;
+        if (id->has_value && !markdown_core_key_index_insert(&parser->specimen_ids, id->value.data, id->value.len,
+                                                             definition, 0, NULL)) {
+            parser->oom = true;
+            return;
+        }
+    }
+}
+
 /* Every authored id is reserved before generating any inline id. A collision
  * probe consumes an authored id from this candidate's namespace: inline-N and
  * inline-M never share suffix candidates when N != M. Thus total probes are
  * bounded by F plus the authored-id count, including adversarial suffix runs. */
 static void finalize_footnotes(markdown_core_parser *parser) {
-    markdown_core_footnote_collection *collection = &parser->footnotes;
+    markdown_core_definition_collection *collection = &parser->footnotes;
     markdown_core_key_index ids = {0};
     size_t index, ordinal = 0;
-    markdown_core_node *last = NULL;
     if (!collection->count) {
         goto done;
     }
-    if (!order_footnotes(parser->mem, collection) ||
+    if (!order_definitions(parser->mem, collection) ||
         !markdown_core_key_index_init(&ids, parser->mem, collection->count)) {
         goto failed;
     }
     for (index = 0; index < collection->count; index++) {
-        markdown_core_node *footnote = collection->values[index].footnote;
+        markdown_core_node *footnote = collection->values[index].definition;
         markdown_core_chunk *id = &footnote->as.footnote->id;
         if (id->data && !markdown_core_key_index_insert(&ids, id->data, id->len, footnote, 0, NULL)) {
             goto failed;
         }
     }
     for (index = 0; index < collection->count; index++) {
-        markdown_core_node *footnote = collection->values[index].footnote;
+        markdown_core_node *footnote = collection->values[index].definition;
         markdown_core_chunk *id = &footnote->as.footnote->id;
         if (!id->data) {
             /* Each decimal size_t takes at most 3 * sizeof(size_t) bytes. */
@@ -3045,18 +3239,7 @@ static void finalize_footnotes(markdown_core_parser *parser) {
         }
     }
     /* No allocation or fallible work remains once ownership starts moving. */
-    parser->root->as.document->footnotes = NULL;
-    for (index = 0; index < collection->count; index++) {
-        markdown_core_node *footnote = collection->values[index].footnote;
-        markdown_core_node_unlink(footnote);
-        footnote->prev = last;
-        if (last) {
-            last->next = footnote;
-        } else {
-            parser->root->as.document->footnotes = footnote;
-        }
-        last = footnote;
-    }
+    own_definitions(collection, &parser->root->as.document->footnotes);
     goto done;
 failed:
     parser->oom = true;
@@ -3094,16 +3277,67 @@ static void project_anchor_literal(markdown_core_parser *parser, markdown_core_s
     markdown_core_utf8proc_anchor(base, text, length);
 }
 
-/* The stack holds return edges for field-owned labels. Ordinary child edges
- * are followed directly, so formatting depth does not allocate or recurse. */
+typedef enum { ANCHOR_CONTENT, ANCHOR_CITATIONS, ANCHOR_KEY } anchor_projection_kind;
+typedef struct {
+    markdown_core_node *node;
+    anchor_projection_kind kind;
+} anchor_projection;
+
+typedef struct {
+    anchor_projection *values;
+    size_t count, capacity;
+} anchor_projection_stack;
+
+static bool push_anchor_projection(markdown_core_parser *parser, anchor_projection_stack *stack,
+                                   markdown_core_node *node, anchor_projection_kind kind) {
+    if (!node) {
+        return true;
+    }
+    if (stack->count == stack->capacity) {
+        size_t capacity = stack->capacity ? stack->capacity * 2 : 8;
+        if (capacity > SIZE_MAX / sizeof(*stack->values)) {
+            parser->oom = true;
+            return false;
+        }
+        void *values = parser->mem->realloc(stack->values, capacity * sizeof(*stack->values));
+        if (!values) {
+            parser->oom = true;
+            return false;
+        }
+        stack->values = values;
+        stack->capacity = capacity;
+    }
+    stack->values[stack->count++] = (anchor_projection){node, kind};
+    return true;
+}
+
+/* Source-order projection visits content and value-owned fields through one
+ * explicit continuation stack. A bibliography item contributes prefix/key/
+ * suffix; a definition body is never a reference's projected text. */
 static void heading_anchor_base(markdown_core_parser *parser, markdown_core_node *heading, markdown_core_strbuf *base) {
-    markdown_core_node *node = heading->first_child;
-    markdown_core_node **returns = NULL;
-    size_t count = 0, capacity = 0;
-    markdown_core_node *root = heading;
-    while (node && !parser->oom && !base->oom) {
-        markdown_core_node *children = NULL;
+    anchor_projection_stack stack = {0};
+    push_anchor_projection(parser, &stack, heading->first_child, ANCHOR_CONTENT);
+    while (stack.count && !parser->oom && !base->oom) {
+        anchor_projection projection = stack.values[--stack.count];
+        markdown_core_node *node = projection.node;
         parser->anchor_work++;
+        if (projection.kind == ANCHOR_KEY) {
+            project_anchor_literal(parser, base, (const unsigned char *)"@", 1);
+            project_anchor_literal(parser, base, node->as.citation->value.data, node->as.citation->value.len);
+            continue;
+        }
+        push_anchor_projection(parser, &stack, node->next, projection.kind);
+        if (projection.kind == ANCHOR_CITATIONS) {
+            markdown_core_citation_item *item = node->as.citation;
+            if (item->referent == MARKDOWN_CORE_NODE_REFERENT_BIB) {
+                push_anchor_projection(parser, &stack, item->suffix ? item->suffix->first_child : NULL, ANCHOR_CONTENT);
+                push_anchor_projection(parser, &stack, node, ANCHOR_KEY);
+                push_anchor_projection(parser, &stack, item->prefix ? item->prefix->first_child : NULL, ANCHOR_CONTENT);
+            } else if (item->referent == MARKDOWN_CORE_NODE_REFERENT_SPECIMEN) {
+                push_anchor_projection(parser, &stack, node, ANCHOR_KEY);
+            }
+            continue;
+        }
         switch (node->kind) {
         case MARKDOWN_CORE_NODE_TEXT:
         case MARKDOWN_CORE_NODE_CODE:
@@ -3131,6 +3365,9 @@ static void heading_anchor_base(markdown_core_parser *parser, markdown_core_node
             }
             break;
         }
+        case MARKDOWN_CORE_NODE_CITE:
+            push_anchor_projection(parser, &stack, node->as.cite->citations, ANCHOR_CITATIONS);
+            break;
         case MARKDOWN_CORE_NODE_EMPHASIS:
         case MARKDOWN_CORE_NODE_STRONG:
         case MARKDOWN_CORE_NODE_STRIKETHROUGH:
@@ -3142,54 +3379,19 @@ static void heading_anchor_base(markdown_core_parser *parser, markdown_core_node
         case MARKDOWN_CORE_NODE_LINK:
         case MARKDOWN_CORE_NODE_MEDIA:
         case MARKDOWN_CORE_NODE_DIRECTIVE_LABEL:
-            children = node->first_child;
+            push_anchor_projection(parser, &stack, node->first_child, ANCHOR_CONTENT);
             break;
         case MARKDOWN_CORE_NODE_DIRECTIVE: {
             markdown_core_node *label = markdown_core_directive_label(node);
-            if (label && label->first_child) {
-                if (count + 2 > capacity) {
-                    capacity = capacity ? capacity * 2 : 8;
-                    if (capacity > SIZE_MAX / sizeof(*returns)) {
-                        parser->oom = true;
-                        break;
-                    }
-                    void *values = parser->mem->realloc(returns, capacity * sizeof(*returns));
-                    if (!values) {
-                        parser->oom = true;
-                        break;
-                    }
-                    returns = values;
-                }
-                returns[count++] = root;
-                returns[count++] = node;
-                root = label;
-                node = label->first_child;
-                continue;
-            }
+            push_anchor_projection(parser, &stack, label ? label->first_child : NULL, ANCHOR_CONTENT);
             break;
         }
         default:
-            /* HTML, Comment, and the currently produced footnote Cite have
-             * no projected text. Their bodies/targets are never descended. */
+            /* HTML, comments and other opaque values contribute no text. */
             break;
         }
-        if (children) {
-            node = children;
-            continue;
-        }
-        while (node != root && !node->next) {
-            node = node->parent;
-        }
-        while (node == root && count) {
-            node = returns[--count];
-            root = returns[--count];
-            while (node != root && !node->next) {
-                node = node->parent;
-            }
-        }
-        node = node == root ? NULL : node->next;
     }
-    parser->mem->free(returns);
+    parser->mem->free(stack.values);
     if (!base->size) {
         markdown_core_strbuf_puts(base, "section");
     }
@@ -3306,6 +3508,9 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
 
     finalize_document(parser);
     if (!parser->oom) {
+        prepare_specimens(parser);
+    }
+    if (!parser->oom) {
         markdown_core_manage_extensions_special_characters(parser, true);
         prepare_headings(parser, headings);
     }
@@ -3331,6 +3536,12 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
     /* Complete the document model and discard parse-time edges before any
      * tree transform. Postprocessors receive resolved ids and owned values. */
     finalize_footnotes(parser);
+    if (!parser->oom) {
+        own_definitions(&parser->specimens, &parser->root->as.document->specimens);
+        parser->mem->free(parser->specimens.values);
+        parser->specimens = (markdown_core_definition_collection){0};
+        markdown_core_key_index_free(&parser->specimen_ids);
+    }
     if (!parser->oom) {
         finalize_heading_anchors(parser, headings, &anchors);
     }

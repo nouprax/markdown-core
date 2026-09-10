@@ -1388,7 +1388,7 @@ its behavior, with no separate publication step.
   The [delimiter architecture](../architecture/inline-delimiters.md) states the
   source-order, scope-reduction, lifecycle and complexity invariants.
 
-- [ ] **P7 — `citations`.** Recognize bare and braced keys, bracketed groups
+- [x] **P7 — `citations`.** Recognize bare and braced keys, bracketed groups
       with semicolon items and prefix, mode marker, key, and suffix scopes,
       author-in-text keys with an optional bracketed tail, `-@` for
       `suppressAuthor`, and locator braces retained as suffix text. A bracketed
@@ -1420,7 +1420,7 @@ its behavior, with no separate publication step.
       by whichever of `P8` and `P10` merges later. An explicit ID from this
       syntax reserved before heading synthesis is a cross-item case owned by
       whichever of `P8` and `P3` merges later. Requires `P0`, `M7`.
-- [ ] **P9a — `fancy_lists`.** Generalize the ordered-marker operation for
+- [x] **P9a — `fancy_lists`.** Generalize the ordered-marker operation for
       decimal, alphabetic, Roman, and `#` markers with period, one-paren, and
       two-paren delimiters, the capital-period two-space rule, `i` and `I`
       disambiguation, same-variant continuation, a new list on a variant or
@@ -1430,7 +1430,7 @@ its behavior, with no separate publication step.
       is ordinary text, the accumulation stopping at the ceiling so no run of
       any component can overflow the `int` that holds `List.start`.
       Remove the `fancy-list-and-startnum` gap. Requires `P0`, `M7`.
-- [ ] **P9b — specimen definitions and references (`example_lists`).**
+- [x] **P9b — specimen definitions and references (`example_lists`).**
       Implement [specimens](../specs/dialect/specimens.md) through the citation
       model: document-owned `Specimen(id?, start?, content, scope)` definitions
       and `Cite` items with `CitationReferent.specimen(id)`. The public model,
@@ -1443,6 +1443,39 @@ its behavior, with no separate publication step.
       coverage; retire the upstream `example-lists-and-reference` gap. The
       heading projection uses the existing citation projection with the id as
       its key spelling; test it with `P3`. Requires `M4`, `M5`, `P9a`.
+  P9a/P9b/P7 implementation (2026-09-11): these items land together so the
+  specimen definition registry exists before bibliography recognition. Ordered
+  markers use one allocation-free classifier with committed-variant reading and
+  bounded accumulation. Footnotes and specimens share definition registration,
+  source ordering and ownership transfer. Citation keys, groups and author tails
+  use the existing bracket procedure and delimiter matcher; deferred tails keep
+  their parsed nodes in the AST and resume bounded ranges once their owner is
+  known. Affixes use owned inline roots and all completion phases use an explicit
+  stack. Heading projection and virtual-heading shortcut precedence are covered.
+
+  All 30 normative examples are retained verbatim in the module fixtures, which
+  now contain 36 citation, 14 specimen and 16 list cases. Three shared canonical
+  cases cover populated referent families, modes, affixes, resets and list enum
+  branches. The manifest now has 31 cases. Complexity tests exercise 8192-level
+  citation dependency chains and numeral accumulation through the nine-digit
+  ceiling, including overflow in M/C/X/I runs. Strict allocation-failure sweeps
+  cover pending bracket ranges, affix roots and definition ownership. Kotlin/Native
+  now checks field presence before decoding ordered-list values on bullet lists.
+
+  The bibliography and fancy-list Pandoc gaps close by agreement. The example
+  gap becomes an exact model difference: the product retains IDs and definitions,
+  while Pandoc emits derived numbers and example List items. Nineteen new oracle
+  cases preserve agreements and isolated dialect differences; the Pandoc corpus
+  has 74 cases and seven unrelated gaps remain. Three historical golden changes
+  follow citation recognition and the nested-start rule; their original inputs
+  and exact oracle witnesses remain. Position and reference ledgers are unchanged.
+
+  Validation passes C correctness/conformance, ASan/UBSan/TSan and strict OOM;
+  Swift, Kotlin JVM/Android host/macOS Native and ES host tests and conformance;
+  all six oracle gates; 400-input seed-1 CommonMark/GFM/remark fuzz runs;
+  `pnpm verify`; and the host release dry run. The latter stages and verifies
+  local packages only; release publication remains gated by R1.
+
 - [ ] **P10 — `definition_lists`.** Recognize a one-line term, an optional
       single blank line, and a first marker line by bounded non-consuming
       lookahead before paragraph fallback; feed each body's lines to the

@@ -184,22 +184,22 @@ selected Pandoc extension participates.
 - [x] Add bracketed spans to the existing bracket stack so complete attribute
       suffixes, links/images, citations, implicit references, and literal fallback
       are decided by one ownership algorithm. P5 lands the current bracket
-      alternatives and P4 implicit-heading-reference composition; bibliography
-      composition remains assigned to P7.
+      alternatives and P4 implicit-heading-reference composition; P7 completes
+      bibliography and specimen precedence on that same bracket procedure.
 - [x] Add superscript and subscript through the delimiter engine with their exact
       escape/whitespace boundaries. Do not rescan Text nodes after inline parsing.
-- [ ] Add Pandoc bibliography syntax to the shared citation builder. Preserve
+- [x] Add Pandoc bibliography syntax to the shared citation builder. Preserve
       item order, `BibMode`, prefixes, and complete suffixes; bibliography and CSL
       processing remain consumer responsibilities.
 - [x] Collect virtual heading definitions while parsing (`P4`) and resolve them
       through the ordinary shared reference map. Explicit definitions win;
       source order selects duplicate heading labels. Final anchors fill the
       shared target once before any postprocessing or binding conversion.
-- [ ] Extend document resolution to example labels and citation conflicts
+- [x] Extend document resolution to example labels and citation conflicts
       (`P9b`, `P7`). Resolution order may not depend on whether the declaration
       precedes the call.
 
-- [ ] **Exit criterion:** all inline precedence and malformed boundaries pass,
+- [x] **Exit criterion:** all inline precedence and malformed boundaries pass,
       citations project to the shared model, and
       size-doubling runs of brackets, attributes, `@`, braces, carets, and tildes
       show linear work.
@@ -211,12 +211,12 @@ selected Pandoc extension participates.
       required on the opener, closing fences have no separate semantic node,
       nesting is unbounded and stack-safe as the dialect index requires, and
       contained blocks are parsed in place.
-- [ ] Generalize the ordered-list marker operation for Pandoc variant, delimiter,
+- [x] Generalize the ordered-list marker operation for Pandoc variant, delimiter,
       and starting-number facts. Preserve one List model and the ordinary list
       continuation algorithm; do not add a Pandoc-only list tree.
-- [ ] Add example-list numbering and label registration as document parser state.
-      Store authored labels and list starts, not a second derived ordinal on each
-      item.
+- [x] Register specimen labels document-wide and preserve document-owned
+      definitions, authored labels and effective first-in-group resets.
+      References store IDs; numbering remains derived by consumers.
 - [ ] Add definition lists before paragraph fallback using bounded lookahead for a
       complete term/first-marker prefix. Feed each definition body directly to the
       shared block parser and preserve multiple bodies without an intermediate
