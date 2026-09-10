@@ -41,6 +41,9 @@ for oracle_file in \
     specs/oracles/pandoc/deltas.json \
     scripts/check-pandoc-parity.mjs \
     scripts/lib/pandoc-oracle.mjs \
+    scripts/lib/fuzz-scope.mjs \
+    scripts/tests/fuzz-scope.test.mjs \
+    scripts/tests/mdast-oracle.test.mjs \
     scripts/tests/pandoc-oracle.test.mjs; do
     if [ ! -f "$oracle_file" ]; then
         fail "external oracle file is missing: $oracle_file"

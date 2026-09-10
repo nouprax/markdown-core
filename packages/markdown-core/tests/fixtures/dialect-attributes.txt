@@ -434,7 +434,7 @@ Document scope=1:1..11:18 anchor=null attributes={} children=6
 ├── Heading scope=3:1..3:14 anchor="empty" attributes={} level=1 children=0
 ├── Heading scope=5:1..5:21 anchor="after" attributes={} level=2 children=1
 │   └── Text scope=5:4..5:9 anchor=null attributes={} literal="Before" children=0
-├── Heading scope=7:1..7:16 anchor=null attributes={} level=2 children=1
+├── Heading scope=7:1..7:16 anchor="text-a" attributes={} level=2 children=1
 │   └── Text scope=7:4..7:12 anchor=null attributes={} literal="Text {.a}" children=0
 ├── Heading scope=9:1..9:14 anchor="heading" attributes={} level=1 children=1
 │   └── Directive scope=9:3..9:4 anchor=null attributes={} name="n" children=0
@@ -455,11 +455,11 @@ Last {#setext .c}
 
 .
 Document scope=1:1..10:0 anchor=null attributes={} children=4
-├── Heading scope=1:1..1:8 anchor=null attributes={} level=1 children=1
+├── Heading scope=1:1..1:8 anchor="t-1" attributes={} level=1 children=1
 │   └── Text scope=1:3..1:8 anchor=null attributes={} literal="T {.1}" children=0
-├── Heading scope=3:1..3:14 anchor=null attributes={} level=1 children=1
+├── Heading scope=3:1..3:14 anchor="t-unclosed" attributes={} level=1 children=1
 │   └── Text scope=3:3..3:14 anchor=null attributes={} literal="T {#unclosed" children=0
-├── Heading scope=5:1..5:15 anchor=null attributes={} level=1 children=1
+├── Heading scope=5:1..5:15 anchor="t-escaped" attributes={} level=1 children=1
 │   └── Text scope=5:3..5:15 anchor=null attributes={} literal="T {.escaped}" children=0
 └── Heading scope=7:1..9:3 anchor="setext" attributes={.c} level=2 children=3
     ├── Text scope=7:1..7:5 anchor=null attributes={} literal="First" children=0
@@ -621,15 +621,15 @@ Document scope=1:1..1:77 anchor=null attributes={} children=1
 # [[Note|{.a}]]
 .
 Document scope=1:1..9:15 anchor=null attributes={} children=5
-├── Heading scope=1:1..1:9 anchor=null attributes={} level=1 children=1
+├── Heading scope=1:1..1:9 anchor="xa" attributes={} level=1 children=1
 │   └── Code scope=1:3..1:9 anchor=null attributes={} literal="x{.a}" children=0
-├── Heading scope=3:1..3:19 anchor=null attributes={} level=1 children=1
+├── Heading scope=3:1..3:19 anchor="section" attributes={} level=1 children=1
 │   └── HTML scope=3:3..3:19 anchor=null attributes={} literal="<i data-x=\"{.a}\">" children=0
-├── Heading scope=5:1..5:9 anchor=null attributes={} level=1 children=1
+├── Heading scope=5:1..5:9 anchor="xa-1" attributes={} level=1 children=1
 │   └── Formula scope=5:3..5:9 anchor=null attributes={} mode=embedded literal="x{.a}" children=0
-├── Heading scope=7:1..7:14 anchor=null attributes={} level=1 children=1
+├── Heading scope=7:1..7:14 anchor="section-1" attributes={} level=1 children=1
 │   └── Comment scope=7:3..7:14 anchor=null attributes={} literal=" x {.a} " children=0
-└── Heading scope=9:1..9:15 anchor=null attributes={} level=1 children=1
+└── Heading scope=9:1..9:15 anchor="a" attributes={} level=1 children=1
     └── CrossLink scope=9:3..9:15 anchor=null attributes={} dest=cross(path="Note",anchor=null) label="{.a}" children=0
 ````````````````````````````````
 

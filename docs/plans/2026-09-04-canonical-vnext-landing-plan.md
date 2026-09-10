@@ -1175,7 +1175,7 @@ its behavior, with no separate publication step.
     download, SHA-256 verification, installation and the offline version check.
     Full Linux/macOS release aggregation remains in CI.
 
-- [ ] **P3 — `auto_anchors`.** Build one document anchor registry that reserves
+- [x] **P3 — `auto_anchors`.** Build one document anchor registry that reserves
       every explicit anchor from every enabled extension before synthesis, then
       generates GFM anchors in heading order from the per-kind text projection
       of the anchors module (`Text` and `Code` literals; the concatenated child
@@ -1197,7 +1197,7 @@ its behavior, with no separate publication step.
       `Insertion` with `I1`, `Span` with `P5`, `Superscript` and `Subscript` with
       `P6`, a bibliography `Cite` with `P7`, and `Cite` with a `specimen` referent with `P9b`.
       Requires `P2b`.
-- [ ] **P4 — `implicit_heading_references`.** Register a virtual reference
+- [x] **P4 — `implicit_heading_references`.** Register a virtual reference
       definition for every heading with a final anchor, keyed by the authored
       label source after removing heading syntax, closing hashes, and trailing
       attributes and applying inherited label normalization, targeting `#` plus
@@ -1210,6 +1210,72 @@ its behavior, with no separate publication step.
       heading such as `# @foo` is a cross-item case owned by whichever of `P4`
       and `P7` merges later. Remove the `implicit-header-references` gap.
       Requires `P3`.
+
+  P3/P4 implementation audit (2026-09-09):
+  - Headings register as their blocks close, already in source order, including
+    inside footnotes. There is no final collection walk or heading sort. The
+    ordinary inline cursor establishes actual heading-attribute ownership and
+    writable raw labels before reference lookup; only a live bracket suspends
+    that same cursor until declarations are complete. No prefix is reparsed.
+    [Heading resolution](../architecture/heading-resolution.md) records the
+    dependency argument, lifecycle, and complexity bounds.
+  - One document registry reserves effective explicit anchors from every
+    currently emitted producer and owned field during the existing inline
+    completion walk, without another whole-tree traversal. Per-base suffix
+    cursors live in the index slots and never
+    restart; inherited definition anchors are hashed once per resource, not per
+    occurrence. One generated Unicode 17.0.0 range table performs lowercase,
+    whitespace replacement and filtering in one scalar lookup. The table
+    regenerates byte-for-byte from pinned UnicodeData and the pinned runtime.
+  - Each writable heading creates an ordinary reference definition with the
+    existing M2 resource, including duplicate labels. Ordinary reference lookup
+    applies the existing first-definition rule; heading parsing does not deduplicate. A final target is filled once before any postprocessor; bindings keep
+    their native resource sharing without new transport fields. Tests cover
+    forward references, explicit priority, duplicate labels, raw-label length
+    boundaries, opaque/attribute overlaps, pending delimiter ownership, detached
+    resource lifetime, and references throughout directive/callout/footnote fields.
+  - All nine anchors-module examples appear byte-for-byte in
+    `dialect-anchors.txt`, which contains 53 cases. A shared canonical case
+    crosses every binding. Every byte changed in the ten pre-existing fixture
+    files is confined to `Heading.anchor`; source scopes remain unchanged.
+    Current cross-item cases with `O1`, `O2`, `O7`, `O9`, `I1`, `M7`, and
+    `P2a`–`P2d` are covered. Future producers and citation conflicts remain owned
+    by `P5`, `P6`, `P7`, `P8`, and `P9b` as listed above.
+  - The Pandoc corpus now has 37 cases: thirteen agreements, seven exact dialect
+    differences, and seventeen remaining feature gaps. Both P3/P4 gaps are
+    retired. Added evidence pins global explicit reservation, Unicode simple
+    lowercase/whitespace/filter behavior, and CommonMark reference adjacency;
+    the multiline-table gap only updates its existing fallback heading anchor.
+  - Host validation: C correctness 80/80 and conformance 2/2; ASan, UBSan and
+    TSan correctness 80/80 each; Swift correctness, external consumer and
+    conformance; ES Node, browser, packed consumers and conformance; Kotlin JVM
+    and macOS arm64 correctness/conformance; `pnpm verify`; all six oracle gates;
+    unchanged scope-containment, position-place and reference-order ledgers;
+    and the credential-free host release dry run. Full Linux/macOS release
+    aggregation remains in CI.
+  - Seed 903 differential fuzzing agrees on CommonMark 400/400 and GFM 400/400.
+    Remark agrees on 397/400; three occurrences of one task-prefix/LF difference
+    produce byte-identical ASTs on main `8d9177fa` and this implementation. The
+    task-list module excludes LF from its separator alphabet. This is existing
+    evidence outside P3/P4, not a new heading discrepancy or a widened policy.
+    CI seed 1 additionally exposed two P3/P4 harness omissions: heading-reference
+    compositions were compared against cmark, and Remark compared a heading
+    anchor fact its model cannot express. The independent CommonMark scope
+    classifier now reports those compositions separately from comparisons;
+    the shared Remark projection omits only `Heading.anchor`. Scope/projection
+    tests preserve comparison of explicit references, opaque brackets, heading
+    content/levels/attributes and other nodes' anchors. The full CommonMark
+    fuzz witness is a product fixture and its reduced reference interaction
+    agrees with Pandoc. CI seed 1 now passes: CommonMark compares 373/373 inputs
+    and reports 27 outside-scope compositions; GFM and Remark compare 400/400
+    each. Parser behavior is unchanged by this CI follow-up.
+  - Local representative timing against main `8d9177fa` used three alternating
+    runs, each with 15 measurements and three warmups. The median ratio across
+    non-heading samples was 1.018 (range 0.965–1.041). Dense ATX/Setext samples
+    changed from 0.330/0.176 ms to 0.768/0.496 ms, including new anchor and
+    reference-declaration work. These are host measurements, not timing gates;
+    doubling tests enforce the general work bounds independently.
+
 - [x] **P5 — `bracketed_spans`.** Decide `[text]{...}` in the shared bracket
       stack: a valid link tail wins, a complete attribute container after the
       first balanced `]` produces `Span`, `{}` produces an empty-attribute
@@ -1241,24 +1307,24 @@ its behavior, with no separate publication step.
       later. Requires `P0`, `M7`.
 
   P5/P6 validation (2026-09-10): all 36 kinds and 67 fields agree across
-  the 13 projection surfaces; 26 canonical cases include populated and empty
+  the 13 projection surfaces; 28 canonical cases include populated and empty
   Span content, nested scripts and contextual no-break spaces. The package
   fixtures include every example of the bracketed-span, script and
   strikethrough modules, shared attribute forms, link/reference precedence,
   opaque tokens, escaped brackets, Unicode whitespace, line endings and exact
-  scopes. Cross-item cases with P2d, O1 and O4 pass. M4's explicit bracket
+  scopes. Cross-item cases with P2d, O1, O4, P3 and P4 pass. M4's explicit bracket
   order (direct/reference tails, Span, cite, shortcut, footnote) is retained;
   stale local module text is synchronized with the owning table. The existing
   footnote/attribute input stays byte-identical and now demonstrates its P5
-  Span, while plain footnote calls keep their inherited behavior. Heading synthesis and
-  bibliography composition remain assigned to the later P3 and P7 items.
+  Span, while plain footnote calls keep their inherited behavior. Bibliography
+  composition remains assigned to P7.
 
   The bracket stack claims Span bodies through the same content transfer as
   links, images and inline footnotes. The shared delimiter engine matches
   scripts; it records raw-whitespace boundaries while scanning disjoint source
-  slices. Text finalization decodes tagged space-escape tokens after ownership
-  is known, without scanning Text values for syntax. Size-doubling tests from
-  128 through 8192 units bound bracket, attribute and delimiter work for deep
+  slices. The existing inline-completion walk decodes tagged space-escape tokens
+  after ownership is known and before heading projection, without scanning Text
+  values for syntax. Size-doubling tests from 128 through 8192 units bound bracket, attribute and delimiter work for deep
   nesting, malformed suffixes, empty pairs, whitespace and mixed inline owners.
   Mixed bracket/script runs expose the obsolete per-`]` delimiter-stack scan:
   19 counter gates fail with that scan and pass after removing it. Opaque
@@ -1270,13 +1336,13 @@ its behavior, with no separate publication step.
   gaps are removed, while bare-name rejection was already an agreement. P6's
   ordinary case agrees. Empty bodies, escaped spaces, Unicode whitespace,
   decoded TABs, maximal tilde runs and code opacity retain exact, explained
-  differences under the normative module. The Pandoc corpus has 35 cases,
-  16 agreements, 7 deliberate differences and 12 gaps for later items. The
+  differences under the normative module. The Pandoc corpus has 51 cases,
+  27 agreements, 14 deliberate differences and 10 gaps for later items. The
   cmark-gfm ledger preserves all four historical single-tilde inputs. A
   minimized remark fuzz witness pins a Span exposed by a failed directive;
   remark fuzz excludes fragments containing this foreign Span syntax.
 
-  C correctness (82 tests), conformance (2 tests), ASan, UBSan, TSan, Swift
+  C correctness (83 tests), conformance (2 tests), ASan, UBSan, TSan, Swift
   and its external consumer, Kotlin JVM/Native/Android-host with ABI checks,
   ES Node/browser and binding conformance pass. All six oracle gates and
   400-input seed-1 CommonMark/GFM/remark fuzz runs pass. Position, containment
@@ -1285,6 +1351,16 @@ its behavior, with no separate publication step.
   requirement. The Kotlin JVM surface ledger also records two pre-existing
   P2 internal helpers, `AttributesKt` and `DefinitionResource`; this change
   does not add them to the implementation or the public Kotlin ABI.
+
+  Integration with P3/P4 (#225): Span, Superscript and Subscript participate
+  in the heading text projection. A shared canonical case covers later explicit
+  Span ID reservation, formatted heading text, decoded script spaces and forward
+  references. Package cases also cover detached footnote/directive fields and
+  Span precedence over an implicit shortcut. Deep nested Span/script headings
+  retain linear bracket, delimiter and anchor work through 8192 levels. Three
+  new Pandoc compositions agree; the fourth pins global reservation of a later
+  Span ID. The original P4 occurrence-attribute input is retained and its new
+  P5 Span output is recorded.
 
 - [ ] **P7 — `citations`.** Recognize bare and braced keys, bracketed groups
       with semicolon items and prefix, mode marker, key, and suffix scopes,

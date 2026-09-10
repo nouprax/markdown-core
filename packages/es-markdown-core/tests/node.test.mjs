@@ -334,6 +334,29 @@ test("ownership: every occurrence of one definition crosses the boundary once an
     );
 });
 
+test("ownership: forward heading references share their finalized target without inheriting heading attributes", () => {
+    const anchor = "a".repeat(1024);
+    const count = 5_000;
+    const source = `${"[Target]\n\n".repeat(count)}# Target {#${anchor} .heading k=1}\n`;
+    let stringsLength = -1;
+    const measuringNative = {
+        ...native,
+        es_parse: (...arguments_) => {
+            const result = native.es_parse(...arguments_);
+            stringsLength = new DataView(native.memory.buffer).getUint32(result + 60, true);
+            return result;
+        }
+    };
+    const document = parseDocumentWithNative(measuringNative, source);
+    const links = document.content.slice(0, count).map((paragraph) => paragraph.content[0]);
+    assert.equal(document.content[count].anchor, anchor);
+    assert.deepEqual(links[0].dest, { kind: "url", value: `#${anchor}` });
+    assert.ok(links.every((link) => link.dest === links[0].dest));
+    assert.ok(links.every((link) => link.anchor === null && link.title === null));
+    assert.deepEqual(links[0].attributes, { classes: [], records: [] });
+    assert.ok(stringsLength >= 0 && stringsLength < 2 * source.length);
+});
+
 test("ast: an ordinary quote is a metadata-free callout", () => {
     const document = Document.parse("> quote\n");
     const [callout] = document.content;

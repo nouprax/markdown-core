@@ -22,6 +22,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { readExamples, selectExamples } from "./lib/fixture-corpus.mjs";
+import { outsideSharedFuzzScope } from "./lib/fuzz-scope.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 
@@ -251,10 +252,22 @@ function diverges(input) {
 }
 
 const failures = [];
+let compared = 0;
+let registeredInputs = 0;
+const outsideScope = new Map();
 try {
     for (let iteration = 0; iteration < iterations; iteration++) {
         const input = generate();
-        if (registered.has(input)) continue;
+        if (registered.has(input)) {
+            registeredInputs++;
+            continue;
+        }
+        const boundary = outsideSharedFuzzScope(input);
+        if (boundary) {
+            outsideScope.set(boundary, (outsideScope.get(boundary) ?? 0) + 1);
+            continue;
+        }
+        compared++;
         const report = diverges(input);
         if (report) failures.push({ iteration, input, report });
         if (verbose && iteration % 50 === 0) {
@@ -266,9 +279,17 @@ try {
 }
 
 process.stdout.write(
-    `fuzz-parity [${oracleName}]: ${String(iterations - failures.length)}/${String(iterations)} generated inputs agree ` +
-        `(seed ${String(seed)}, ${String(pool.length)} fragments)\n`
+    `fuzz-parity [${oracleName}]: ${String(compared - failures.length)}/${String(compared)} compared inputs agree ` +
+        `(seed ${String(seed)}, ${String(pool.length)} fragments, ${String(iterations)} generated)\n`
 );
+for (const [boundary, count] of outsideScope) {
+    process.stdout.write(`  outside shared oracle scope: ${boundary} (${String(count)} inputs)\n`);
+}
+if (registeredInputs) process.stdout.write(`  exact registered inputs: ${String(registeredInputs)}\n`);
+if (!compared) {
+    process.stderr.write("fuzz-parity: no input reached differential comparison.\n");
+    process.exit(1);
+}
 
 if (failures.length) {
     process.stderr.write(`\nfuzz-parity [${oracleName}] FAILED: ${String(failures.length)} input(s) diverge\n`);

@@ -176,6 +176,86 @@
             "id": "p6-opaque-tokens",
             "from": "markdown_strict+superscript+subscript",
             "input": "`^x^ ~y~` ^a`x y`b^\n"
+        },
+        {
+            "id": "anchor-empty-fallback",
+            "from": "markdown_strict+auto_identifiers+gfm_auto_identifiers",
+            "input": "# !!!\n"
+        },
+        {
+            "id": "anchor-global-reservation",
+            "from": "markdown_strict+auto_identifiers+gfm_auto_identifiers+header_attributes",
+            "input": "# x\n\n# Name {#x}\n"
+        },
+        {
+            "id": "anchor-permitted-scalars",
+            "from": "markdown_strict+auto_identifiers+gfm_auto_identifiers",
+            "input": "# a‿b ∑ 😀\n"
+        },
+        {
+            "id": "anchor-simple-lowercase",
+            "from": "markdown_strict+auto_identifiers+gfm_auto_identifiers",
+            "input": "# İ ſ ẞ Σ ς\n"
+        },
+        {
+            "id": "anchor-whitespace-scalars",
+            "from": "markdown_strict+auto_identifiers+gfm_auto_identifiers",
+            "input": "# AB C\n"
+        },
+        {
+            "id": "implicit-authored-label",
+            "from": "markdown_strict+auto_identifiers+gfm_auto_identifiers+implicit_header_references",
+            "input": "# *Foo*\n\n[*Foo*], [Foo]\n"
+        },
+        {
+            "id": "implicit-forward-and-duplicates",
+            "from": "markdown_strict+auto_identifiers+gfm_auto_identifiers+implicit_header_references",
+            "input": "[Foo], [Foo][], [go][Foo]\n\n# Foo\n\n# Foo\n"
+        },
+        {
+            "id": "implicit-explicit-priority",
+            "from": "markdown_strict+auto_identifiers+gfm_auto_identifiers+implicit_header_references",
+            "input": "[Foo]\n\n# Foo\n\n[Foo]: /explicit\n"
+        },
+        {
+            "id": "implicit-occurrence-attributes",
+            "from": "markdown_strict+auto_identifiers+gfm_auto_identifiers+implicit_header_references+header_attributes+link_attributes",
+            "input": "[Foo][]{#own .jump}\n\n# Foo {#target .header}\n"
+        },
+        {
+            "id": "anchor-inline-code-reservation",
+            "from": "markdown_strict+auto_identifiers+gfm_auto_identifiers+inline_code_attributes",
+            "input": "# x\n\n`code`{#x}\n"
+        },
+        {
+            "id": "implicit-reference-adjacency",
+            "from": "markdown_strict+auto_identifiers+gfm_auto_identifiers+implicit_header_references",
+            "input": "[Foo] [Foo][] [go][Foo]\n\n# Foo\n\n# Foo\n"
+        },
+        {
+            "id": "implicit-reference-in-paragraph-definition-text",
+            "from": "markdown_strict+auto_identifiers+gfm_auto_identifiers+implicit_header_references",
+            "input": "# foo\n\nparagraph\n[foo]: <>\n"
+        },
+        {
+            "id": "p5-p6-heading-content",
+            "from": "markdown_strict+auto_identifiers+gfm_auto_identifiers+bracketed_spans+superscript+subscript",
+            "input": "# [Rich *Title*]{.c} H~2~O 2^10^\n"
+        },
+        {
+            "id": "p5-heading-span-reservation",
+            "from": "markdown_strict+auto_identifiers+gfm_auto_identifiers+bracketed_spans",
+            "input": "# Taken\n\n[owner]{#taken}\n"
+        },
+        {
+            "id": "p5-implicit-heading-shortcut",
+            "from": "markdown_strict+auto_identifiers+gfm_auto_identifiers+implicit_header_references+bracketed_spans+link_attributes",
+            "input": "# Ref\n\n[Ref]{.span} [Ref][]{.link} [go][Ref]{.link}\n"
+        },
+        {
+            "id": "p6-heading-reference",
+            "from": "markdown_strict+auto_identifiers+gfm_auto_identifiers+implicit_header_references+superscript+subscript",
+            "input": "[2^10^]\n\n# 2^10^\n"
         }
     ]
 }

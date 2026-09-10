@@ -382,3 +382,11 @@ nonempty anchor wins; its classes and records follow inherited declarations,
 including duplicates. Image dimension suffixes and dimension attribute records
 remain independent. All returned values use the binding's native collections
 and remain usable after parsing finishes.
+
+Parsed headings receive automatic anchors: `# Hello World` declares
+`hello-world`, with `-1`, `-2`, and later suffixes for collisions. Explicit
+anchors anywhere in the document are reserved first. `[Hello World]`,
+`[Hello World][]`, and `[go][Hello World]` resolve to `#hello-world`, including
+before the heading; an explicit reference definition takes priority. Labels
+use authored heading text, so `# *Title*` is referenced by `[*Title*]`.
+Heading attributes stay on the heading, and generated targets add no scope.

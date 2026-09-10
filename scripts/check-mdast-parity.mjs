@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { parseAttributesDump } from "./lib/upstream-cmark.mjs";
 /**
  * mdast-parity gate.
  *
@@ -27,15 +26,8 @@ import remarkDirective from "remark-directive";
 import remarkMath from "remark-math";
 
 import { readExamples } from "./lib/fixture-corpus.mjs";
-import { dropEmptyText, fromMdast, MDAST_COMPARED } from "./lib/mdast-oracle.mjs";
-import {
-    liftFootnotes,
-    parseCanonicalDump,
-    parseDestination,
-    render,
-    renderDestination,
-    taskCompletion
-} from "./lib/upstream-cmark.mjs";
+import { dropEmptyText, fromMdast, projectMdastComparison } from "./lib/mdast-oracle.mjs";
+import { liftFootnotes, parseCanonicalDump, render } from "./lib/upstream-cmark.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const policyPath = "specs/oracles/remark/deltas.json";
@@ -52,51 +44,6 @@ if (!fs.existsSync(ours)) {
 
 const processor = unified().use(remarkParse).use(remarkGfm).use(remarkDirective).use(remarkMath);
 
-/**
- * Projects a normalized tree down to the fields this oracle compares. Both
- * sides go through the same function, so neither can be compared on a field
- * the other never carries.
- */
-function project(node) {
-    const children = [];
-    for (const child of node.children) {
-        // `:red[]` carries an empty label field in this repository's AST and
-        // no label content at all in mdast, which cannot express the difference
-        // between it and `:red`. Dropping the empty node compares what both
-        // models can state.
-        if (child.kind === "DirectiveLabel" && child.children.length === 0) continue;
-        const projected = project(child);
-        const previous = children[children.length - 1];
-        if (previous && previous.kind === "Text" && projected.kind === "Text") {
-            previous.fields.literal += projected.fields.literal;
-        } else {
-            children.push(projected);
-        }
-    }
-    const fields = {};
-    for (const key of MDAST_COMPARED[node.kind] ?? []) {
-        let value = node.fields[key];
-        if (node.kind === "ListItem" && key === "completed") value = taskCompletion(node.fields);
-        // `dest` is a tagged value on both sides: the object the mdast mapping
-        // built, or the dump's `url("...")` text. One spelling is compared.
-        if (key === "dest") {
-            const destination = typeof value === "string" ? parseDestination(value) : value;
-            if (!destination) throw new Error(`invalid destination on ${node.kind}: ${String(value)}`);
-            fields.dest = renderDestination(destination);
-            continue;
-        }
-        if (key === "attributes") {
-            fields.attributes = JSON.stringify(
-                typeof value === "string" ? parseAttributesDump(value) : (value ?? { classes: [], records: [] })
-            );
-            continue;
-        }
-        if (value === undefined || value === "") value = key === "literal" ? "" : "null";
-        fields[key] = String(value);
-    }
-    return { kind: node.kind, fields, children };
-}
-
 function unknownKinds(node, found = new Set()) {
     if (node.kind.startsWith("?")) found.add(node.kind.slice(1));
     for (const child of node.children) unknownKinds(child, found);
@@ -104,8 +51,8 @@ function unknownKinds(node, found = new Set()) {
 }
 
 function compare(input) {
-    const theirs = project(dropEmptyText(liftFootnotes(fromMdast(processor.parse(input)))));
-    const mine = project(
+    const theirs = projectMdastComparison(dropEmptyText(liftFootnotes(fromMdast(processor.parse(input)))));
+    const mine = projectMdastComparison(
         dropEmptyText(liftFootnotes(parseCanonicalDump(execFileSync(ours, [], { input, encoding: "utf8" }))))
     );
     return {

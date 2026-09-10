@@ -43,8 +43,8 @@ host executable explicitly with `scripts/init-environment.sh --install oracle-pa
 runs CLI canaries, both parsers and the fail-closed digest registry. Normal
 builds and tests never install the executable or access the network.
 
-The active corpus has 16 agreements, 7 documented divergences
-and 12 missing-feature gaps assigned to later landing items. Every difference
+The active corpus has 51 cases: 27 agreements, 14 documented divergences
+and 10 missing-feature gaps assigned to later landing items. Every difference
 pins input/reader, oracle projection and product projection SHA-256 digests.
 New, changed, stale, duplicate and unknown entries fail. P5's span and shared
 attribute grammar cases now agree, including empty containers, nesting,
@@ -53,11 +53,24 @@ superscript/subscript case agrees. Empty bodies, contextual escaped spaces,
 Unicode whitespace, decoded TAB preservation, maximal tilde runs and code-token
 opacity retain exact deliberate-difference witnesses. Inline-footnote composition
 is tested in the product fixtures, where the document-owned footnote model and
-source scopes are observable.
+source scopes are observable. P3/P4 compositions agree for heading text,
+script-bearing heading references and Span precedence over implicit shortcuts;
+the later Span ID reservation retains its exact global-reservation difference.
 
 `inline-code-attributes`, `header-attributes`, `fenced-code-attributes` and
 `link-and-image-attributes` agree; `pandoc-reference-attribute-merge` remains an
 exact deliberate difference, with an executable `combineAttr` canary.
+
+P3/P4 retire `gfm-auto-anchors` and `implicit-header-references`. Added agreements
+cover empty fallback, authored markup labels, forward and duplicate labels,
+explicit-definition priority, occurrence attributes, and a heading reference
+inside declaration-shaped paragraph text (the reduced CI seed-1 witness). Exact deliberate
+differences retain global explicit-anchor reservation (including inline code),
+Unicode simple lowercase, `White_Space`, permitted scalars without emoji aliases,
+and CommonMark reference adjacency. CLI canaries independently pin these Pandoc
+behaviors; the projections preserve both sides rather than erase differences.
+The `multiline-table` gap retains its missing recognition and now records the
+generated anchor on the product's existing heading fallback; `P11c` owns it.
 
 Representation projections are shared by concept, not selected by case:
 `Plain` uses paragraph content, Pandoc spaces join adjacent Text values, empty

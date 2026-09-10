@@ -528,10 +528,11 @@ bool markdown_core_attribute_value_record_at(const markdown_core_attribute_value
     return true;
 }
 markdown_core_optional_string markdown_core_node_anchor(const markdown_core_node *node) {
-    markdown_core_optional_string primary =
-        markdown_core_attribute_value_anchor(markdown_core_node_primary_attributes(node));
-    return primary.has_value ? primary
-                             : markdown_core_attribute_value_anchor(markdown_core_node_inherited_attributes(node));
+    if (!node) {
+        return (markdown_core_optional_string){0};
+    }
+    const markdown_core_chunk *anchor = markdown_core_node_anchor_chunk(node);
+    return (markdown_core_optional_string){anchor->len > 0, chunk_string(*anchor)};
 }
 size_t markdown_core_node_attribute_class_count(const markdown_core_node *node) {
     return markdown_core_attribute_value_class_count(markdown_core_node_inherited_attributes(node)) +

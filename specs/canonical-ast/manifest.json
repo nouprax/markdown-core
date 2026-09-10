@@ -773,6 +773,53 @@
                 "states": ["scope.positive", "children.populated"],
                 "orders": ["inline.source-order"]
             }
+        },
+        {
+            "name": "heading-anchors",
+            "input": "heading-anchors.md",
+            "expected": "heading-anchors.ast",
+            "coverage": {
+                "kinds": [
+                    "Document",
+                    "Heading",
+                    "Text",
+                    "Paragraph",
+                    "Link",
+                    "Directive",
+                    "DirectiveLabel",
+                    "Emphasis",
+                    "Code",
+                    "Mark",
+                    "Insertion"
+                ],
+                "states": [
+                    "markup.anchor.value",
+                    "markup.attributes.classes",
+                    "markup.attributes.records",
+                    "scope.positive"
+                ],
+                "orders": ["document.source-order", "inline.source-order"]
+            }
+        },
+        {
+            "name": "span-script-headings",
+            "input": "span-script-headings.md",
+            "expected": "span-script-headings.ast",
+            "coverage": {
+                "kinds": [
+                    "Document",
+                    "Heading",
+                    "Span",
+                    "Text",
+                    "Emphasis",
+                    "Superscript",
+                    "Subscript",
+                    "Paragraph",
+                    "Link"
+                ],
+                "states": ["markup.anchor.value", "scope.positive", "children.populated"],
+                "orders": ["document.source-order"]
+            }
         }
     ]
 }

@@ -6,7 +6,7 @@ automatic heading anchors, and implicit heading references. Sources: Pandoc's
 attribute identifiers, `auto_identifiers` with `gfm_auto_identifiers`, and
 `implicit_header_references`; Obsidian-derived block identifiers populate the
 same field under the [block identifiers](block-identifiers.md) module. Executable
-oracle: the Pandoc 3.11 CLI under `specs/oracles/pandoc/`. Landing: the field
+oracle: the Pandoc 3.11 CLI under `specs/oracles/pandoc/`. Implemented: the field
 with `M7`, automatic anchors with `P3`, implicit heading references with `P4`.
 The [example format](../dialect.md#examples) is defined by the index.
 
@@ -136,10 +136,11 @@ The base of a heading is derived from its parsed inline content:
    text, `@` and the key, and suffix text in order; `Cite` with a `specimen` referent
    contributes `@` and its referent id; `HTML`, `Comment`, and a footnote `Cite`
    contribute nothing.
-2. Apply the simple lowercase mapping.
-3. Replace each Unicode whitespace scalar with one `-`, without collapsing
+2. Apply the Unicode 17.0.0 simple lowercase mapping (one scalar to one scalar,
+   without case folding, full lowercase expansion, or normalization).
+3. Replace each Unicode 17.0.0 `White_Space` scalar with one `-`, without collapsing
    adjacent replacements.
-4. Remove every scalar that is not a letter, a number, a combining mark,
+4. Remove every scalar that is not a Unicode 17.0.0 letter, a number, a combining mark,
    connector punctuation, `-`, or `_`.
 5. If the result is empty, use `section`.
 
@@ -191,7 +192,7 @@ Document scope=1:1..15:18 anchor=null attributes={} children=8
 Every heading with a non-null final anchor contributes a virtual reference
 definition. Its label source is the
 authored heading text after removing the ATX or Setext heading syntax, the
-optional ATX closing sequence, and a trailing attribute container, normalized
+optional ATX closing sequence, and an actually attached trailing attribute container, normalized
 by the inherited reference-label normalization. The virtual definition
 targets `#` followed by the final anchor and has `title=null`, `anchor=null`,
 and `Attributes.empty` for `merge`. The full, collapsed, and shortcut forms
@@ -309,6 +310,10 @@ changes only the resolved occurrence's field; the occurrence keeps its own
 range. `anchor` is an owned immutable string and has no scope or attributes
 of its own. Recognizing an anchor never opens a link, resolves a document,
 creates an HTML `id`, or changes rendering.
+
+The [heading-resolution architecture](../../architecture/heading-resolution.md)
+describes declaration ordering, inline ownership, resource finalization, and
+complexity bounds. Pending parse state is never exposed to a consumer.
 
 ## Required conformance cases
 

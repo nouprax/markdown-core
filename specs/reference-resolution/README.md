@@ -32,3 +32,11 @@ once per parse into their own language-native values. An occurrence without
 local declarations reuses its immutable or copy-on-write collections; local
 merges allocate native collections proportional to the exposed result. This is
 an output-cost boundary, not a requirement for cross-language shared storage.
+
+P4 uses the same resource for implicit heading references. Heading labels are
+declared before reference lookup, with explicit definitions taking priority;
+the final `#anchor` target is filled once after P3 reserves explicit anchors
+and synthesizes heading anchors. Forward references, references inside headings,
+and references in owned fields all use this map. Heading attributes and source
+ranges are never inherited by a virtual reference. See the
+[lifecycle and complexity argument](../../docs/architecture/heading-resolution.md).

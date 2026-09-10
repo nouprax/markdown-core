@@ -60,7 +60,7 @@ typedef struct subject {
     markdown_core_mem *mem;
     markdown_core_chunk input;
     markdown_core_attribute_parser attributes;
-    bufsize_t heading_attributes_start, heading_content_end;
+    bufsize_t heading_attributes_start, heading_content_end, heading_label_end;
     unsigned flags;
     bufsize_t opaque_end;
     /* One plus the start of a suffix proven to contain no closer of a rule. */
@@ -88,7 +88,8 @@ typedef struct subject {
     /* One past the last consumed byte other than SP/TAB. This lets every
      * inline-note closer test its body's non-empty rule in constant time. */
     bufsize_t nonblank_end;
-    bufsize_t backticks[MAXBACKTICKS + 1];
+    bufsize_t *backticks;
+    bufsize_t backtick_capacity;
     bool scanned_for_backticks;
     bool no_link_openers;
     /* Borrowed from the owning parser (or the immutable core defaults when
@@ -332,7 +333,6 @@ static MARKDOWN_CORE_INLINE markdown_core_node *make_autolink(subject *subj, int
 
 static void subject_from_buf(markdown_core_parser *parser, markdown_core_mem *mem, int line_number, subject *e,
                              markdown_core_chunk *chunk, markdown_core_map *refmap) {
-    int i;
     e->special_chars = parser ? parser->special_chars : BASE_SPECIAL_CHARS;
     e->skip_chars = parser ? parser->skip_chars : BASE_SKIP_CHARS;
     e->mem = mem;
@@ -354,9 +354,8 @@ static void subject_from_buf(markdown_core_parser *parser, markdown_core_mem *me
     memset(e->delim_closers, 0, sizeof(e->delim_closers));
     e->last_bracket = NULL;
     e->nonblank_end = 0;
-    for (i = 0; i <= MAXBACKTICKS; i++) {
-        e->backticks[i] = 0;
-    }
+    e->backticks = NULL;
+    e->backtick_capacity = 0;
     e->scanned_for_backticks = false;
     e->no_link_openers = true;
     e->oom = 0;
@@ -445,6 +444,14 @@ static bufsize_t scan_to_closing_backticks(subject *subj, bufsize_t opentickleng
         // we limit backtick string length because of the array subj->backticks:
         return 0;
     }
+    if (!subj->backticks) {
+        subj->backtick_capacity = subj->input.len < MAXBACKTICKS ? subj->input.len : MAXBACKTICKS;
+        subj->backticks = subj->mem->calloc((size_t)subj->backtick_capacity + 1, sizeof(*subj->backticks));
+        if (!subj->backticks) {
+            subj->oom = 1;
+            return 0;
+        }
+    }
     if (subj->scanned_for_backticks && subj->backticks[openticklength] <= subj->pos) {
         // return if we already know there's no closer
         return 0;
@@ -464,7 +471,7 @@ static bufsize_t scan_to_closing_backticks(subject *subj, bufsize_t opentickleng
             numticks++;
         }
         // store position of ender
-        if (numticks <= MAXBACKTICKS) {
+        if (numticks <= subj->backtick_capacity) {
             subj->backticks[numticks] = subj->pos - numticks;
         }
         if (numticks == openticklength) {
@@ -1120,7 +1127,7 @@ static markdown_core_node *handle_backslash(markdown_core_parser *parser, subjec
         advance(subj);
         markdown_core_node *escaped = make_str(subj, start, subj->pos - 1, markdown_core_chunk_literal("\\ "));
         if (escaped) {
-            /* Contextual escape token: text finalization decodes it once the
+            /* Contextual escape token: inline completion decodes it once the
              * delimiter/bracket engine has established its semantic owner. */
             escaped->flags |= MARKDOWN_CORE_NODE__ESCAPED_SPACE;
         }
@@ -1373,6 +1380,18 @@ static markdown_core_node *handle_pointy_brace(subject *subj) {
     return make_str(subj, subj->pos - 1, subj->pos - 1, markdown_core_chunk_literal("<"));
 }
 
+/* Raw labels have one lexical grammar on declarations and occurrences. */
+static bufsize_t reference_label_length(const unsigned char *data, bufsize_t length) {
+    bufsize_t at = 0;
+    while (at < length && at <= MAX_LINK_LABEL_LENGTH && data[at] != '[' && data[at] != ']') {
+        if (data[at] == '\\' && at + 1 < length && markdown_core_ispunct(data[at + 1])) {
+            at++;
+        }
+        at++;
+    }
+    return at;
+}
+
 // Parse a link label.  Returns 1 if successful.
 // Note:  unescaped brackets are not allowed in labels.
 // The label begins with `[` and ends with the first `]` character
@@ -1389,22 +1408,12 @@ static int link_label(subject *subj, markdown_core_chunk *raw_label) {
         return 0;
     }
 
-    while ((c = peek_char(subj)) && c != '[' && c != ']') {
-        if (c == '\\') {
-            advance(subj);
-            length++;
-            if (markdown_core_ispunct(peek_char(subj))) {
-                advance(subj);
-                length++;
-            }
-        } else {
-            advance(subj);
-            length++;
-        }
-        if (length > MAX_LINK_LABEL_LENGTH) {
-            goto noMatch;
-        }
+    length = reference_label_length(subj->input.data + subj->pos, subj->input.len - subj->pos);
+    subj->pos += length;
+    if (length > MAX_LINK_LABEL_LENGTH) {
+        goto noMatch;
     }
+    c = peek_char(subj);
 
     if (c == ']') { // match found
         *raw_label = markdown_core_chunk_dup(&subj->input, startpos + 1, subj->pos - (startpos + 1));
@@ -2158,6 +2167,7 @@ static int parse_inline(markdown_core_parser *parser, subject *subj, markdown_co
         bufsize_t end;
         if (markdown_core_attributes_parse(&subj->attributes, subj->heading_attributes_start, &parent->attributes,
                                            &end)) {
+            subj->heading_label_end = subj->heading_content_end;
             subj->pos = subj->input.len;
         }
         if (subj->attributes.oom) {
@@ -2331,9 +2341,8 @@ append:
     return 1;
 }
 
-// Parse inlines from parent's string_content, adding as children of parent.
-void markdown_core_parse_inlines(markdown_core_parser *parser, markdown_core_node *parent, markdown_core_map *refmap) {
-    subject subj;
+static void start_inlines(markdown_core_parser *parser, markdown_core_node *parent, markdown_core_map *refmap,
+                          subject *subj) {
     markdown_core_chunk content = {parent->content.ptr, parent->content.size, 0};
     /* EVERY content-bearing block has a map by the time its inlines are parsed.
      * One the parser fed line by line already does; one whose content was SET
@@ -2346,71 +2355,148 @@ void markdown_core_parse_inlines(markdown_core_parser *parser, markdown_core_nod
         markdown_core_parser_mark_content(parser, parent, parent->start_line,
                                           parent->start_column + parent->internal_offset);
     }
-    subject_from_buf(parser, parser->mem, parent->start_line, &subj, &content, refmap);
-    subj.owner = parent;
-    markdown_core_chunk_rtrim(&subj.input);
+    subject_from_buf(parser, parser->mem, parent->start_line, subj, &content, refmap);
+    subj->owner = parent;
+    markdown_core_chunk_rtrim(&subj->input);
 
     if (parent->kind == MARKDOWN_CORE_NODE_HEADING) {
-        bufsize_t line = subj.input.len;
-        while (line > 0 && !S_is_line_end_char(subj.input.data[line - 1])) {
+        bufsize_t line = subj->input.len;
+        while (line > 0 && !S_is_line_end_char(subj->input.data[line - 1])) {
             line--;
         }
-        subj.attributes =
-            (markdown_core_attribute_parser){.mem = parser->mem, .data = subj.input.data, .length = subj.input.len};
-        subj.heading_attributes_start = markdown_core_attributes_tail(&subj.attributes, line, subj.input.len);
-        if (subj.heading_attributes_start >= 0) {
-            bufsize_t end = subj.heading_attributes_start;
-            while (end > line && (subj.input.data[end - 1] == ' ' || subj.input.data[end - 1] == '\t')) {
+        subj->attributes =
+            (markdown_core_attribute_parser){.mem = parser->mem, .data = subj->input.data, .length = subj->input.len};
+        subj->heading_attributes_start = markdown_core_attributes_tail(&subj->attributes, line, subj->input.len);
+        if (subj->heading_attributes_start >= 0) {
+            bufsize_t end = subj->heading_attributes_start;
+            while (end > line && (subj->input.data[end - 1] == ' ' || subj->input.data[end - 1] == '\t')) {
                 end--;
             }
             if (!parent->as.heading->setext) {
                 bufsize_t hashes = end;
-                while (hashes > line && subj.input.data[hashes - 1] == '#') {
+                while (hashes > line && subj->input.data[hashes - 1] == '#') {
                     hashes--;
                 }
                 if (hashes < end &&
-                    (hashes == line || (subj.input.data[hashes - 1] == ' ' || subj.input.data[hashes - 1] == '\t'))) {
+                    (hashes == line || (subj->input.data[hashes - 1] == ' ' || subj->input.data[hashes - 1] == '\t'))) {
                     end = hashes;
-                    while (end > line && (subj.input.data[end - 1] == ' ' || subj.input.data[end - 1] == '\t')) {
+                    while (end > line && (subj->input.data[end - 1] == ' ' || subj->input.data[end - 1] == '\t')) {
                         end--;
                     }
                 }
             }
-            subj.heading_content_end = end;
+            subj->heading_content_end = end;
         } else if (!parent->as.heading->setext) {
-            bufsize_t hashes = subj.input.len;
-            while (hashes > 0 && subj.input.data[hashes - 1] == '#') {
+            bufsize_t hashes = subj->input.len;
+            while (hashes > 0 && subj->input.data[hashes - 1] == '#') {
                 hashes--;
             }
-            if (hashes < subj.input.len &&
-                (hashes == 0 || (subj.input.data[hashes - 1] == ' ' || subj.input.data[hashes - 1] == '\t'))) {
-                subj.input.len = hashes;
-                markdown_core_chunk_rtrim(&subj.input);
+            if (hashes < subj->input.len &&
+                (hashes == 0 || (subj->input.data[hashes - 1] == ' ' || subj->input.data[hashes - 1] == '\t'))) {
+                subj->input.len = hashes;
+                markdown_core_chunk_rtrim(&subj->input);
             }
         }
-        if (subj.attributes.oom) {
-            subj.oom = 1;
+        if (subj->attributes.oom) {
+            subj->oom = 1;
         }
     }
 
-    while (!is_eof(&subj) && parse_inline(parser, &subj, parent))
-        ;
+    subj->heading_label_end = subj->input.len;
+}
 
-    process_emphasis(parser, &subj, 0);
+static void clear_inlines(subject *subj) {
+    markdown_core_parser *parser = subj->owner_parser;
+    subj->mem->free(subj->backticks);
+    subj->backticks = NULL;
     // free bracket and delim stack
-    while (subj.last_delim) {
-        remove_delimiter(&subj, subj.last_delim);
+    while (subj->last_delim) {
+        remove_delimiter(subj, subj->last_delim);
     }
-    while (subj.last_bracket) {
-        pop_bracket(&subj);
+    while (subj->last_bracket) {
+        pop_bracket(subj);
     }
 
-    if (subj.attributes.mem) {
-        parser->attribute_work += subj.attributes.work;
-        markdown_core_attribute_parser_free(&subj.attributes);
+    if (subj->attributes.mem) {
+        parser->attribute_work += subj->attributes.work;
+        markdown_core_attribute_parser_free(&subj->attributes);
     }
-    if (subj.oom) {
+    if (subj->oom) {
         parser->oom = true;
+    }
+}
+
+static void finish_inlines(markdown_core_parser *parser, subject *subj) {
+    while (!parser->oom && !subj->oom && !is_eof(subj) && parse_inline(parser, subj, subj->owner))
+        ;
+    if (!parser->oom && !subj->oom) {
+        process_emphasis(parser, subj, 0);
+    }
+    clear_inlines(subj);
+}
+
+void markdown_core_parse_inlines(markdown_core_parser *parser, markdown_core_node *parent, markdown_core_map *refmap) {
+    subject subj;
+    start_inlines(parser, parent, refmap, &subj);
+    finish_inlines(parser, &subj);
+}
+
+void markdown_core_prepare_heading(markdown_core_parser *parser, markdown_core_heading_parse *heading) {
+    subject subj;
+    start_inlines(parser, heading->node, parser->refmap, &subj);
+    while (!parser->oom && !subj.oom && !is_eof(&subj)) {
+        unsigned char c = peek_char(&subj);
+        /* Attribute ownership and opaque tokens are decided by the same
+         * cursor as every inline. A live bracket makes this declaration
+         * unwritable as a reference label; only its remaining inlines depend
+         * on the document's completed symbol table. */
+        if (subj.pos != subj.heading_content_end && subj.pos >= subj.opaque_end &&
+            (c == '[' || c == ']' || ((c == '!' || c == '^') && peek_char_n(&subj, 1) == '['))) {
+            heading->pending = parser->mem->calloc(1, sizeof(subj));
+            if (heading->pending) {
+                *heading->pending = subj;
+                return;
+            }
+            subj.oom = 1;
+            break;
+        }
+        if (!parse_inline(parser, &subj, heading->node)) {
+            break;
+        }
+    }
+    if (!parser->oom && !subj.oom) {
+        process_emphasis(parser, &subj, 0);
+        markdown_core_chunk label = {subj.input.data, subj.heading_label_end, 0};
+        if (label.len > 0 && label.len <= MAX_LINK_LABEL_LENGTH &&
+            reference_label_length(label.data, label.len) == label.len) {
+            markdown_core_resource *resource = markdown_core_resource_new(parser->mem, markdown_core_chunk_literal(""),
+                                                                          markdown_core_optional_chunk_absent());
+            if (!resource) {
+                subj.oom = 1;
+            } else {
+                markdown_core_map_record *record =
+                    markdown_core_reference_create(parser->mem, parser->refmap, &label, resource);
+                heading->resource = record ? record->resource : NULL;
+            }
+        }
+    }
+    clear_inlines(&subj);
+}
+
+void markdown_core_finish_heading(markdown_core_parser *parser, markdown_core_heading_parse *heading) {
+    if (heading->pending) {
+        finish_inlines(parser, heading->pending);
+        parser->mem->free(heading->pending);
+        heading->pending = NULL;
+    }
+}
+
+void markdown_core_dispose_heading(markdown_core_heading_parse *heading) {
+    if (heading->pending) {
+        markdown_core_mem *mem = heading->pending->mem;
+        clear_inlines(heading->pending);
+        mem->free(heading->pending);
+        heading->pending = NULL;
     }
 }
 

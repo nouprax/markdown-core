@@ -164,7 +164,7 @@ selected Pandoc extension participates.
       only and never expands, unions, or substitutes the occurrence scope.
       Failed suffixes release source transactionally.
 - [ ] Attach bracketed-Span and fenced-Div attributes with `P5` and `P8`.
-- [ ] Finalize explicit and generated heading anchors in one document registry.
+- [x] Finalize explicit and generated heading anchors in one document registry.
       Use the specified GFM algorithm, reserve every explicit anchor from every
       rule before synthesis, generate headings in source order,
       resolve generated collisions deterministically, and build virtual
@@ -191,10 +191,13 @@ selected Pandoc extension participates.
 - [ ] Add Pandoc bibliography syntax to the shared citation builder. Preserve
       item order, `BibMode`, prefixes, and complete suffixes; bibliography and CSL
       processing remain consumer responsibilities.
-- [ ] Collect example labels and virtual heading definitions while parsing the
-      document, then resolve their conflicts with citations and ordinary
-      references through one deterministic finalization operation. Resolution
-      order may not depend on whether the declaration precedes the call.
+- [x] Collect virtual heading definitions while parsing (`P4`) and resolve them
+      through the ordinary shared reference map. Explicit definitions win;
+      source order selects duplicate heading labels. Final anchors fill the
+      shared target once before any postprocessing or binding conversion.
+- [ ] Extend document resolution to example labels and citation conflicts
+      (`P9b`, `P7`). Resolution order may not depend on whether the declaration
+      precedes the call.
 
 - [ ] **Exit criterion:** all inline precedence and malformed boundaries pass,
       citations project to the shared model, and

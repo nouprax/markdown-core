@@ -33,8 +33,9 @@ markdown_core_map *markdown_core_reference_map_new(markdown_core_mem *mem);
  * for `label`, or releases it when the label defines nothing or the record
  * could not be made. `mem` frees it on those paths, since `map` may be NULL
  * once parser construction has poisoned the parse. */
-void markdown_core_reference_create(markdown_core_mem *mem, markdown_core_map *map, markdown_core_chunk *label,
-                                    struct markdown_core_resource *resource);
+markdown_core_map_record *markdown_core_reference_create(markdown_core_mem *mem, markdown_core_map *map,
+                                                         markdown_core_chunk *label,
+                                                         struct markdown_core_resource *resource);
 markdown_core_map *markdown_core_footnote_definition_map_new(markdown_core_mem *mem);
 void markdown_core_footnote_definition_create(markdown_core_map *map, markdown_core_chunk *label);
 
