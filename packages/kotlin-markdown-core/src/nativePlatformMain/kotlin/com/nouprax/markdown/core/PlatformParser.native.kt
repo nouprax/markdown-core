@@ -44,8 +44,11 @@ import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_MARK
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_MEDIA
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_PARAGRAPH
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_SOFT_BREAK
+import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_SPAN
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_STRIKETHROUGH
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_STRONG
+import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_SUBSCRIPT
+import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_SUPERSCRIPT
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_TABLE
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_TABLE_CELL
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_TABLE_ROW
@@ -524,6 +527,18 @@ private class NativeTreeBuilder(
 
             MARKDOWN_CORE_KIND_INSERTION -> {
                 Insertion(children, scope, anchor, attributes)
+            }
+
+            MARKDOWN_CORE_KIND_SPAN -> {
+                Span(children, scope, anchor, attributes)
+            }
+
+            MARKDOWN_CORE_KIND_SUPERSCRIPT -> {
+                Superscript(children, scope, anchor, attributes)
+            }
+
+            MARKDOWN_CORE_KIND_SUBSCRIPT -> {
+                Subscript(children, scope, anchor, attributes)
             }
 
             MARKDOWN_CORE_KIND_LINK -> {

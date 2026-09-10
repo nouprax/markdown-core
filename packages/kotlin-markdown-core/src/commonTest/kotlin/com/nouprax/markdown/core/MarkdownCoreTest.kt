@@ -181,6 +181,78 @@ class ApiTest {
     }
 
     @Test
+    fun spansRetainTypedContentAndWalkBothPhasesAfterNativeRelease() {
+        val paragraph = Document.parse("[a *b*]{}").content.first() as Paragraph
+        val span = paragraph.content.first() as Span
+        val visitor = RecordingWalkingVisitor()
+        span.walk(visitor)
+        assertEquals(
+            listOf(
+                "entering:Span",
+                "entering:Text",
+                "exiting:Text",
+                "entering:Emphasis",
+                "entering:Text",
+                "exiting:Text",
+                "exiting:Emphasis",
+                "exiting:Span",
+            ),
+            visitor.events,
+        )
+        assertEquals(2, span.content.size)
+        assertEquals("b", ((span.content[1] as Emphasis).content.first() as Text).literal)
+        assertEquals(Scope(Position(1, 1), Position(1, 9)), span.scope)
+    }
+
+    @Test
+    fun superscriptsRetainTypedContentAndWalkBothPhasesAfterNativeRelease() {
+        val paragraph = Document.parse("^a*b*^").content.first() as Paragraph
+        val superscript = paragraph.content.first() as Superscript
+        val visitor = RecordingWalkingVisitor()
+        superscript.walk(visitor)
+        assertEquals(
+            listOf(
+                "entering:Superscript",
+                "entering:Text",
+                "exiting:Text",
+                "entering:Emphasis",
+                "entering:Text",
+                "exiting:Text",
+                "exiting:Emphasis",
+                "exiting:Superscript",
+            ),
+            visitor.events,
+        )
+        assertEquals(2, superscript.content.size)
+        assertEquals("b", ((superscript.content[1] as Emphasis).content.first() as Text).literal)
+        assertEquals(Scope(Position(1, 1), Position(1, 6)), superscript.scope)
+    }
+
+    @Test
+    fun subscriptsRetainTypedContentAndWalkBothPhasesAfterNativeRelease() {
+        val paragraph = Document.parse("~a*b*~").content.first() as Paragraph
+        val subscript = paragraph.content.first() as Subscript
+        val visitor = RecordingWalkingVisitor()
+        subscript.walk(visitor)
+        assertEquals(
+            listOf(
+                "entering:Subscript",
+                "entering:Text",
+                "exiting:Text",
+                "entering:Emphasis",
+                "entering:Text",
+                "exiting:Text",
+                "exiting:Emphasis",
+                "exiting:Subscript",
+            ),
+            visitor.events,
+        )
+        assertEquals(2, subscript.content.size)
+        assertEquals("b", ((subscript.content[1] as Emphasis).content.first() as Text).literal)
+        assertEquals(Scope(Position(1, 1), Position(1, 6)), subscript.scope)
+    }
+
+    @Test
     fun walkingVisitorIsTypedAndPreservesOwnedFieldSemantics() {
         val block = assertIs<DirectiveBlock>(Document.parse(":::note[Title]\nBody\n:::\n").content.single())
         val visitor = RecordingWalkingVisitor()

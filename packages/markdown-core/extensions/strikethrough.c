@@ -1,24 +1,22 @@
 #include "strikethrough.h"
 #include "extension.h"
 #include <parser.h>
+#include <limits.h>
 
 static markdown_core_node *match(const markdown_core_extension *self, markdown_core_parser *parser,
                                  markdown_core_node *parent, unsigned char character,
                                  markdown_core_inline_parser *inline_parser) {
     markdown_core_node *res = NULL;
     int left_flanking, right_flanking, punct_before, punct_after, delims;
-    /* The longest run this matcher will consider. It used to be `sizeof` a
-     * 101-byte stack buffer the run was then written into, character by
-     * character, only to be copied back out as the node's literal -- the
-     * literal is a slice of the block's own content and needs no copy at all. */
-    enum { MAX_DELIMITERS = 100 };
+    /* One maximal run is a token. Only width two has delimiter semantics;
+     * a long literal run must never be split into a trailing valid pair. */
 
     if (character != '~') {
         return NULL;
     }
 
-    delims = markdown_core_inline_parser_scan_delimiters(inline_parser, MAX_DELIMITERS, '~', &left_flanking,
-                                                         &right_flanking, &punct_before, &punct_after);
+    delims = markdown_core_inline_parser_scan_delimiters(inline_parser, INT_MAX, '~', &left_flanking, &right_flanking,
+                                                         &punct_before, &punct_after);
 
     // The cursor is one past the run here, so the run is the `delims` bytes
     // behind it. The shared constructor owns the extent: left to this file it
@@ -34,7 +32,7 @@ static markdown_core_node *match(const markdown_core_extension *self, markdown_c
         return NULL;
     }
 
-    if ((left_flanking || right_flanking) && (delims == 1 || delims == 2)) {
+    if ((left_flanking || right_flanking) && delims == 2) {
         markdown_core_inline_parser_push_delimiter(inline_parser, self, MARKDOWN_CORE_DELIM_RULE_STRIKETHROUGH,
                                                    left_flanking, right_flanking, res);
     }

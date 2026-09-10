@@ -91,8 +91,9 @@ A definition is recognized only when the label is at most 1000 bytes and
 only at footnote container depth below 100. Its
 key is the label under the inherited reference-label normalization; the
 stored `Footnote.id` is that key and never contains the caret. A footnote call
-is the second alternative of the bracket procedure, tested after a direct
-tail: an unescaped `[^label]` whose label is defined produces a one-item
+is the sixth alternative of the shared bracket procedure, after direct and
+reference links, spans, and cite groups: an unescaped `[^label]` whose label
+is defined produces a one-item
 `Cite` whose `Citation` has referent `footnote(id)` and empty affixes.
 Repeated calls share one `Footnote`; the body is never duplicated:
 
@@ -223,9 +224,9 @@ Document scope=1:1..3:10 anchor=null attributes={} children=1
         └── Text scope=3:10..3:10 anchor=null attributes={} literal="x" children=0
 ````````````````````````````````
 
-A valid direct tail `(...)` is tested before the call, so `[^a](u)` is an
-inherited link whose text is `^a`; every other tail and every container after
-a defined call is text, because the call is complete at its `]`:
+The shared bracket procedure tests direct and resolving reference tails,
+then spans, before the call. Thus `[^a](u)` is a link whose text is `^a`,
+and `[^a]{.x}` is a `Span` containing that same text:
 
 ```````````````````````````````` example
 [^a](u) [^a]{.x}
@@ -233,15 +234,12 @@ a defined call is text, because the call is complete at its `]`:
 [^a]: note
 .
 Document scope=1:1..3:10 anchor=null attributes={} children=1
-├── Paragraph scope=1:1..1:16 anchor=null attributes={} children=4
+├── Paragraph scope=1:1..1:16 anchor=null attributes={} children=3
 │   ├── Link scope=1:1..1:7 anchor=null attributes={} dest=url("u") title=null children=1
 │   │   └── Text scope=1:2..1:3 anchor=null attributes={} literal="^a" children=0
 │   ├── Text scope=1:8..1:8 anchor=null attributes={} literal=" " children=0
-│   ├── Cite scope=1:9..1:12 anchor=null attributes={} children=1
-│   │   └── Citation scope=1:10..1:11 referent=footnote(id="a") children=0
-│   │       ├── CitationPrefix children=0
-│   │       └── CitationSuffix children=0
-│   └── Text scope=1:13..1:16 anchor=null attributes={} literal="{.x}" children=0
+│   └── Span scope=1:9..1:16 anchor=null attributes={.x} children=1
+│       └── Text scope=1:10..1:11 anchor=null attributes={} literal="^a" children=0
 └── Footnote scope=3:1..3:10 id="a" children=1
     └── Paragraph scope=3:7..3:10 anchor=null attributes={} children=1
         └── Text scope=3:7..3:10 anchor=null attributes={} literal="note" children=0

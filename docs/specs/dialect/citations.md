@@ -100,9 +100,9 @@ Document scope=1:1..1:19 anchor=null attributes={} children=1
 
 ## Bracketed groups
 
-Recognition of a group is alternative 5 of the bracket procedure of the
+Recognition of a group is alternative 4 of the bracket procedure of the
 [links and images](links-and-images.md) module: it is tested after a direct
-tail, a footnote call, a resolving reference tail, and an enabled valid span
+tail, a resolving reference tail, and a valid span
 container have failed, and before the shortcut-reference alternative.
 
 ```text

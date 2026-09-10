@@ -46,3 +46,9 @@ WalkAction$Node
 WalkAction$CitationValue
 WalkAction$FootnoteValue
 WalkAction$SpecimenValue
+
+# P2's reference-definition resource and shared attribute merge operations are
+# consumed by both JNI and Native materializers. Their internal Kotlin model
+# was already present before P5/P6; this audit records its JVM lowering.
+AttributesKt
+DefinitionResource

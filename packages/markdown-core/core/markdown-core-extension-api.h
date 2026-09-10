@@ -137,10 +137,12 @@ typedef struct subject markdown_core_inline_parser;
 typedef enum {
     MARKDOWN_CORE_DELIM_RULE_NONE = 0,
     /* Core. */
-    MARKDOWN_CORE_DELIM_RULE_EMPHASIS,   /* `*` */
-    MARKDOWN_CORE_DELIM_RULE_UNDERSCORE, /* `_` */
-    MARKDOWN_CORE_DELIM_RULE_MARK,       /* `==`, pairwise, no rule of three */
-    MARKDOWN_CORE_DELIM_RULE_INSERTION,  /* `++`, pairwise, no rule of three */
+    MARKDOWN_CORE_DELIM_RULE_EMPHASIS,    /* `*` */
+    MARKDOWN_CORE_DELIM_RULE_UNDERSCORE,  /* `_` */
+    MARKDOWN_CORE_DELIM_RULE_MARK,        /* `==`, pairwise, no rule of three */
+    MARKDOWN_CORE_DELIM_RULE_INSERTION,   /* `++`, pairwise, no rule of three */
+    MARKDOWN_CORE_DELIM_RULE_SUPERSCRIPT, /* `^`, non-empty, no raw whitespace */
+    MARKDOWN_CORE_DELIM_RULE_SUBSCRIPT,   /* `~`, non-empty, no raw whitespace */
     /* Extensions. One entry per rule, not per extension and not per byte. */
     MARKDOWN_CORE_DELIM_RULE_STRIKETHROUGH,
     MARKDOWN_CORE_DELIM_RULE_FORMULA_DOLLAR_INLINE,

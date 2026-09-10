@@ -118,6 +118,13 @@ inline or as a block when both `%%` fences stand on lines of their own under
 the same container prefixes. The body is opaque and stored as written, nothing
 is stripped, and a consumer that does not want comments drops the nodes.
 
+Bracketed spans (`[text]{.class}`) produce `Span(content)` with the shared
+anchor and attributes. Superscript (`^text^`) and subscript (`~text~`) retain
+parsed inline content; their bodies must be non-empty and contain no raw
+whitespace. An escaped ASCII space within a completed body becomes NBSP.
+Strikethrough uses `~~text~~`. All three kinds support typed visitors and
+walking visitors, and their scopes include their authored delimiters.
+
 ## Traverse and Inspect
 
 `Markup.accept(visitor)` dispatches exactly one node to an exhaustive typed

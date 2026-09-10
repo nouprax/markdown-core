@@ -299,6 +299,9 @@ and returns no document.
 | `Strikethrough` | `content: [Markup]` | inline content |
 | `Mark` | `content: [Markup]` | inline content |
 | `Insertion` | `content: [Markup]` | inline content |
+| `Span` | `content: [Markup]` | inline content; may be empty |
+| `Superscript` | `content: [Markup]` | inline content; non-empty body |
+| `Subscript` | `content: [Markup]` | inline content; non-empty body |
 | `Link` | `dest: Destination`, `title: String?`, `content: [Markup]` | `dest` is the tagged `Destination` value and is never absent: `[a]()` and `[a](<>)` wrote one and wrote nothing in it, so it is `url("")`; a reference occurrence answers the destination its definition stated, and an unresolved reference is the inherited literal text; every `Link` owns the `url` branch; absent and empty title remain distinct; inline content |
 | `Media` | `dest: Destination`, `title: String?`, `dimensions: Dimensions?`, `content: [Markup]` | `dest` is the tagged `Destination` value and is never absent, for the reason `Link.dest` is not; every `Media` owns the `url` branch; absent and empty title remain distinct; content is parsed alt-text inline content |
 | `Directive` | `name: String`, `label: DirectiveLabel?` | letter-first name; attributes use the inherited fields; label is a typed Markup field spanning its brackets, never content; absent and empty labels remain distinct; leaf |
@@ -472,3 +475,17 @@ value and leave only the parsed prefix as alt content. CommonMark retains the
 suffix as alt text. The [links and images module](dialect/links-and-images.md),
 package fixtures, and shared canonical `media-dimensions` case own this syntax,
 its malformed fallbacks, source scopes and cross-context compositions.
+
+### Bracketed spans and script delimiters
+
+The [bracketed-span module](dialect/bracketed-spans.md) defines `Span` and its
+attribute suffix. The [script module](dialect/superscript-and-subscript.md)
+defines `Superscript` and `Subscript`: single tildes always belong to Subscript,
+which deliberately differs from cmark-gfm's single-tilde strikethrough.
+The exact historical inputs remain in `specs/oracles/cmark-gfm/deltas.json`.
+Pandoc differences in empty bodies, escaped spaces, Unicode whitespace and
+opaque tokens are pinned in `specs/oracles/pandoc/deltas.json`; product fixtures
+retain every node's authored scope and the exact decoded content.
+The directive-envelope fallback witness in `specs/oracles/remark/deltas.json`
+records a balanced label becoming a Span when its enclosing directive fails;
+remark leaves that pair literal because it has no bracketed-span rule.

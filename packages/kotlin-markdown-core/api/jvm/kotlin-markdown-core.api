@@ -588,6 +588,15 @@ public final class com/nouprax/markdown/core/SoftBreak : com/nouprax/markdown/co
 	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 }
 
+public final class com/nouprax/markdown/core/Span : com/nouprax/markdown/core/Markup {
+	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
+	public fun dump ()Ljava/lang/String;
+	public fun getAnchor ()Ljava/lang/String;
+	public fun getAttributes ()Lcom/nouprax/markdown/core/Attributes;
+	public final fun getContent ()Ljava/util/List;
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+}
+
 public final class com/nouprax/markdown/core/Specimen {
 	public final fun getContent ()Ljava/util/List;
 	public final fun getId ()Ljava/lang/String;
@@ -605,6 +614,24 @@ public final class com/nouprax/markdown/core/Strikethrough : com/nouprax/markdow
 }
 
 public final class com/nouprax/markdown/core/Strong : com/nouprax/markdown/core/Markup {
+	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
+	public fun dump ()Ljava/lang/String;
+	public fun getAnchor ()Ljava/lang/String;
+	public fun getAttributes ()Lcom/nouprax/markdown/core/Attributes;
+	public final fun getContent ()Ljava/util/List;
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+}
+
+public final class com/nouprax/markdown/core/Subscript : com/nouprax/markdown/core/Markup {
+	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
+	public fun dump ()Ljava/lang/String;
+	public fun getAnchor ()Ljava/lang/String;
+	public fun getAttributes ()Lcom/nouprax/markdown/core/Attributes;
+	public final fun getContent ()Ljava/util/List;
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+}
+
+public final class com/nouprax/markdown/core/Superscript : com/nouprax/markdown/core/Markup {
 	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
 	public fun dump ()Ljava/lang/String;
 	public fun getAnchor ()Ljava/lang/String;
@@ -709,8 +736,11 @@ public abstract interface class com/nouprax/markdown/core/Visitor {
 	public abstract fun visitMedia (Lcom/nouprax/markdown/core/Media;)Ljava/lang/Object;
 	public abstract fun visitParagraph (Lcom/nouprax/markdown/core/Paragraph;)Ljava/lang/Object;
 	public abstract fun visitSoftBreak (Lcom/nouprax/markdown/core/SoftBreak;)Ljava/lang/Object;
+	public abstract fun visitSpan (Lcom/nouprax/markdown/core/Span;)Ljava/lang/Object;
 	public abstract fun visitStrikethrough (Lcom/nouprax/markdown/core/Strikethrough;)Ljava/lang/Object;
 	public abstract fun visitStrong (Lcom/nouprax/markdown/core/Strong;)Ljava/lang/Object;
+	public abstract fun visitSubscript (Lcom/nouprax/markdown/core/Subscript;)Ljava/lang/Object;
+	public abstract fun visitSuperscript (Lcom/nouprax/markdown/core/Superscript;)Ljava/lang/Object;
 	public abstract fun visitTable (Lcom/nouprax/markdown/core/Table;)Ljava/lang/Object;
 	public abstract fun visitTableCell (Lcom/nouprax/markdown/core/TableCell;)Ljava/lang/Object;
 	public abstract fun visitTableRow (Lcom/nouprax/markdown/core/TableRow;)Ljava/lang/Object;
@@ -755,9 +785,12 @@ public abstract interface class com/nouprax/markdown/core/WalkingVisitor {
 	public abstract fun visitMedia (Lcom/nouprax/markdown/core/Media;Lcom/nouprax/markdown/core/WalkPhase;)V
 	public abstract fun visitParagraph (Lcom/nouprax/markdown/core/Paragraph;Lcom/nouprax/markdown/core/WalkPhase;)V
 	public abstract fun visitSoftBreak (Lcom/nouprax/markdown/core/SoftBreak;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visitSpan (Lcom/nouprax/markdown/core/Span;Lcom/nouprax/markdown/core/WalkPhase;)V
 	public abstract fun visitSpecimen (Lcom/nouprax/markdown/core/Specimen;Lcom/nouprax/markdown/core/WalkPhase;)V
 	public abstract fun visitStrikethrough (Lcom/nouprax/markdown/core/Strikethrough;Lcom/nouprax/markdown/core/WalkPhase;)V
 	public abstract fun visitStrong (Lcom/nouprax/markdown/core/Strong;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visitSubscript (Lcom/nouprax/markdown/core/Subscript;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visitSuperscript (Lcom/nouprax/markdown/core/Superscript;Lcom/nouprax/markdown/core/WalkPhase;)V
 	public abstract fun visitTable (Lcom/nouprax/markdown/core/Table;Lcom/nouprax/markdown/core/WalkPhase;)V
 	public abstract fun visitTableCell (Lcom/nouprax/markdown/core/TableCell;Lcom/nouprax/markdown/core/WalkPhase;)V
 	public abstract fun visitTableRow (Lcom/nouprax/markdown/core/TableRow;Lcom/nouprax/markdown/core/WalkPhase;)V

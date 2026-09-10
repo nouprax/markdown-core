@@ -1276,11 +1276,11 @@ its behavior, with no separate publication step.
     reference-declaration work. These are host measurements, not timing gates;
     doubling tests enforce the general work bounds independently.
 
-- [ ] **P5 — `bracketed_spans`.** Decide `[text]{...}` in the shared bracket
+- [x] **P5 — `bracketed_spans`.** Decide `[text]{...}` in the shared bracket
       stack: a valid link tail wins, a complete attribute container after the
       first balanced `]` produces `Span`, `{}` produces an empty-attribute
       `Span`, and an invalid container falls back without consuming the `{`. Add
-      the kind, fixtures, and a canonical case; remove the six bracketed-span
+      the kind, fixtures, and a canonical case; remove the bracketed-span
       and attribute-grammar gaps. The `Span` containing a `Cite` case belongs to
       `P7`, and a link tail claiming the container ahead of a span is a
       cross-item case owned by whichever of `P5` and `P2d` merges later. An
@@ -1291,12 +1291,13 @@ its behavior, with no separate publication step.
       container following a complete `CrossLink` or `CrossEmbedded` staying text is a cross-item
       case owned by whichever of `P5` and `O1` merges later. Requires `P0`,
       `M7`.
-- [ ] **P6 — `superscript` and `subscript`.** Add the single `^` and `~`
+- [x] **P6 — `superscript` and `subscript`.** Add the single `^` and `~`
       delimiters through the delimiter engine with unescaped-whitespace
-      rejection, `\ ` to a no-break space, empty bodies, `^[` and `~~`
+      rejection, `\ ` to a no-break space, literal empty-body fallback, `^[` and `~~`
       precedence. Add both kinds, fixtures, and
-      canonical cases; remove the `superscript-and-subscript` and
-      `empty-superscript-and-subscript` gaps. X0 has removed the legacy
+      canonical cases; remove the `superscript-and-subscript` gap and
+      register the normative empty-body fallback as an exact deliberate
+      difference in `empty-superscript-and-subscript`. X0 has removed the legacy
       double-tilde-only switch; this item removes single-tilde strikethrough
       from the extension, registering the cmark-gfm delta, so a
       single tilde is always a subscript delimiter. The `^[` precedence case
@@ -1304,6 +1305,82 @@ its behavior, with no separate publication step.
       projection of `Superscript` and `Subscript` in generated
       anchors is a cross-item case owned by whichever of `P6` and `P3` merges
       later. Requires `P0`, `M7`.
+
+  P5/P6 validation (2026-09-10): all 36 kinds and 67 fields agree across
+  the 13 projection surfaces; 28 canonical cases include populated and empty
+  Span content, nested scripts and contextual no-break spaces. The package
+  fixtures include every example of the bracketed-span, script and
+  strikethrough modules, shared attribute forms, link/reference precedence,
+  opaque tokens, escaped brackets, Unicode whitespace, line endings and exact
+  scopes. Cross-item cases with P2d, O1, O4, P3 and P4 pass. M4's explicit bracket
+  order (direct/reference tails, Span, cite, shortcut, footnote) is retained;
+  stale local module text is synchronized with the owning table. The existing
+  footnote/attribute input stays byte-identical and now demonstrates its P5
+  Span, while plain footnote calls keep their inherited behavior. Bibliography
+  composition remains assigned to P7.
+
+  The bracket stack claims Span bodies through the same content transfer as
+  links, images and inline footnotes. The shared delimiter engine matches
+  scripts; it records raw-whitespace boundaries while scanning disjoint source
+  slices. The existing inline-completion walk decodes tagged space-escape tokens
+  after ownership is known and before heading projection, without scanning Text
+  values for syntax. Size-doubling tests from 128 through 8192 units bound bracket, attribute and delimiter work for deep
+  nesting, malformed suffixes, empty pairs, whitespace and mixed inline owners.
+  Mixed bracket/script runs expose the obsolete per-`]` delimiter-stack scan:
+  19 counter gates fail with that scan and pass after removing it. Opaque
+  scanners claim whole tokens at their openers; the extension audit now pins
+  the remaining `]` to the bracket procedure. Strict OOM tests sweep the new
+  ownership and failure paths, including the literal image bang before a Span.
+
+  All six historical P5 grammar inputs now agree with Pandoc; five registered
+  gaps are removed, while bare-name rejection was already an agreement. P6's
+  ordinary case agrees. Empty bodies, escaped spaces, Unicode whitespace,
+  decoded TABs, maximal tilde runs and code opacity retain exact, explained
+  differences under the normative module. The Pandoc corpus has 51 cases,
+  27 agreements, 14 deliberate differences and 10 gaps for later items. The
+  cmark-gfm ledger preserves all four historical single-tilde inputs. A
+  minimized remark fuzz witness pins a Span exposed by a failed directive;
+  remark fuzz excludes fragments containing this foreign Span syntax.
+
+  C correctness (83 tests), conformance (2 tests), ASan, UBSan, TSan, Swift
+  and its external consumer, Kotlin JVM/Native/Android-host with ABI checks,
+  ES Node/browser and binding conformance pass. All six oracle gates and
+  400-input seed-1 CommonMark/GFM/remark fuzz runs pass. Position, containment
+  and reference-order ledgers remain unchanged. `pnpm verify` and the host
+  release dry run pass; full Linux/macOS release aggregation remains a CI
+  requirement. The Kotlin JVM surface ledger also records two pre-existing
+  P2 internal helpers, `AttributesKt` and `DefinitionResource`; this change
+  does not add them to the implementation or the public Kotlin ABI.
+
+  Integration with P3/P4 (#225): Span, Superscript and Subscript participate
+  in the heading text projection. A shared canonical case covers later explicit
+  Span ID reservation, formatted heading text, decoded script spaces and forward
+  references. Package cases also cover detached footnote/directive fields and
+  Span precedence over an implicit shortcut. Deep nested Span/script headings
+  retain linear bracket, delimiter and anchor work through 8192 levels. Three
+  new Pandoc compositions agree; the fourth pins global reservation of a later
+  Span ID. The original P4 occurrence-attribute input is retained and its new
+  P5 Span output is recorded.
+
+  PR #226 review follow-up (2026-09-11): owned directive labels now report
+  ordinary raw whitespace to the enclosing script boundary through the shared
+  inline parser. Each source buffer parses once; a heading suspends at a token
+  with an owned label until forward references are available. The completion
+  walk inherits script depth through owned fields while document-owned footnotes
+  keep an independent context. Inline-field trailing spaces remain body content.
+  Ten new package cases cover nested labels, raw and escaped whitespace, opaque
+  content, local delimiters and failed outer candidates; eight fail before the
+  fix. Two existing canonical cases gain these compositions and heading cases.
+  Size-doubling counters and strict allocation-failure sweeps cover the new
+  paths. Label source maps now reuse the enclosing source view, including line
+  breaks and escaped table pipes; one existing table golden's Text endpoint is
+  corrected from column 22 to 23 with its input unchanged. Allocation failure
+  after extension consumption stops before any ordinary-text fallback.
+  Validation passes for C correctness/conformance, ASan/UBSan/TSan, all host
+  bindings and canonical cases, the six oracle gates, 400-input seed-1 fuzz
+  runs, unchanged position/reference ledgers, `pnpm verify` and the host
+  release dry run.
+
 - [ ] **P7 — `citations`.** Recognize bare and braced keys, bracketed groups
       with semicolon items and prefix, mode marker, key, and suffix scopes,
       author-in-text keys with an optional bracketed tail, `-@` for

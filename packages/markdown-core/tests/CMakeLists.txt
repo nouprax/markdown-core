@@ -246,6 +246,12 @@ markdown_core_add_test(spec_dialect_marks spec 120 spec_runner --spec
                        "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/dialect-marks.txt")
 markdown_core_add_test(spec_dialect_insertion spec 120 spec_runner --spec
                        "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/dialect-insertion.txt")
+markdown_core_add_test(spec_dialect_bracketed_spans spec 120 spec_runner --spec
+                       "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/dialect-bracketed-spans.txt")
+markdown_core_add_test(spec_dialect_superscript_and_subscript spec 120 spec_runner --spec
+                       "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/dialect-superscript-and-subscript.txt")
+markdown_core_add_test(spec_dialect_strikethrough spec 120 spec_runner --spec
+                       "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/dialect-strikethrough.txt")
 markdown_core_add_test(spec_dialect_cross_links spec 120 spec_runner --spec
                        "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/dialect-cross-links.txt")
 markdown_core_add_test(spec_dialect_comments spec 120 spec_runner --spec

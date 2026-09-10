@@ -325,6 +325,18 @@ private class DumpVisitor(
         state.container("Insertion", node, children = node.content)
     }
 
+    override fun visitSpan(node: Span) {
+        state.container("Span", node, children = node.content)
+    }
+
+    override fun visitSuperscript(node: Superscript) {
+        state.container("Superscript", node, children = node.content)
+    }
+
+    override fun visitSubscript(node: Subscript) {
+        state.container("Subscript", node, children = node.content)
+    }
+
     override fun visitLink(node: Link) {
         state.container(
             "Link",

@@ -128,6 +128,56 @@
             "input": "Blah [see @doe99, pp. 33-35 and *passim*; -@smith04, chap. 1]. @jones05 [p. 7] agrees.\n"
         },
         {
+            "id": "p5-empty-and-nesting",
+            "from": "markdown_strict+bracketed_spans",
+            "input": "[]{} [a [b]{} c]{.c}\n"
+        },
+        {
+            "id": "p5-shortcut-precedence",
+            "from": "markdown_strict+bracketed_spans",
+            "input": "[text]{.key}\n\n[text]: /u\n"
+        },
+        {
+            "id": "p5-link-tail-precedence",
+            "from": "markdown_strict+bracketed_spans+link_attributes",
+            "input": "[x](u){.c} [x][r]{.c} [r][]{.c}\n\n[r]: /u\n"
+        },
+        {
+            "id": "p5-malformed-fallback",
+            "from": "markdown_strict+bracketed_spans",
+            "input": "[x]{.1} [x] {.c} [x]{.c [y]{.d}\n"
+        },
+        {
+            "id": "p5-escaped-and-opaque-brackets",
+            "from": "markdown_strict+bracketed_spans",
+            "input": "[a\\]b]{.c} [`]`]{.c} [see [x](u)]{.c}\n"
+        },
+        {
+            "id": "p6-escaped-space",
+            "from": "markdown_strict+superscript+subscript",
+            "input": "^a\\ b^ ~*c\\ d*~ a\\ b ^a\\ b c^\n"
+        },
+        {
+            "id": "p6-whitespace-recovery",
+            "from": "markdown_strict+superscript+subscript",
+            "input": "^a b^c^ ~a b~c~ ^a b^\n"
+        },
+        {
+            "id": "p6-entity-space",
+            "from": "markdown_strict+superscript+subscript",
+            "input": "^a&#32;b^ ~a&Tab;b~\n"
+        },
+        {
+            "id": "p6-pairing-and-tilde-runs",
+            "from": "markdown_strict+superscript+subscript+strikeout",
+            "input": "^a^b^c^ ^^ ^^^^ ~~a~~ ~b~ ~~~c~~~ ~~x~\n"
+        },
+        {
+            "id": "p6-opaque-tokens",
+            "from": "markdown_strict+superscript+subscript",
+            "input": "`^x^ ~y~` ^a`x y`b^\n"
+        },
+        {
             "id": "anchor-empty-fallback",
             "from": "markdown_strict+auto_identifiers+gfm_auto_identifiers",
             "input": "# !!!\n"
@@ -186,6 +236,26 @@
             "id": "implicit-reference-in-paragraph-definition-text",
             "from": "markdown_strict+auto_identifiers+gfm_auto_identifiers+implicit_header_references",
             "input": "# foo\n\nparagraph\n[foo]: <>\n"
+        },
+        {
+            "id": "p5-p6-heading-content",
+            "from": "markdown_strict+auto_identifiers+gfm_auto_identifiers+bracketed_spans+superscript+subscript",
+            "input": "# [Rich *Title*]{.c} H~2~O 2^10^\n"
+        },
+        {
+            "id": "p5-heading-span-reservation",
+            "from": "markdown_strict+auto_identifiers+gfm_auto_identifiers+bracketed_spans",
+            "input": "# Taken\n\n[owner]{#taken}\n"
+        },
+        {
+            "id": "p5-implicit-heading-shortcut",
+            "from": "markdown_strict+auto_identifiers+gfm_auto_identifiers+implicit_header_references+bracketed_spans+link_attributes",
+            "input": "# Ref\n\n[Ref]{.span} [Ref][]{.link} [go][Ref]{.link}\n"
+        },
+        {
+            "id": "p6-heading-reference",
+            "from": "markdown_strict+auto_identifiers+gfm_auto_identifiers+implicit_header_references+superscript+subscript",
+            "input": "[2^10^]\n\n# 2^10^\n"
         }
     ]
 }

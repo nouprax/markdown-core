@@ -22,6 +22,7 @@ struct delimiter {
     /** The extension that pushed it, or NULL for a core rule. One load. */
     const markdown_core_extension *owner;
     bufsize_t position;
+    bufsize_t lower_bound;
     bufsize_t length;
     markdown_core_delimiter_rule rule;
     int can_open;

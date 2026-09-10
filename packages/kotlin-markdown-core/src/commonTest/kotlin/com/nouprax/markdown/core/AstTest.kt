@@ -87,7 +87,7 @@ class AstTest {
         val sources =
             listOf(
                 "# Heading\n\n> Quote\n\n---\n\n3. ordered\n\n- [x] task\n\n``` swift\ncode\n```\n\n<section>raw</section>\n\n[^n]: note\n\n[ref]: /r \"t\"\n\n[a][ref] ![b][ref]\n",
-                "Text *em* **strong** ~~strike~~ ==mark== ++inserted++ `code` [link](/go \"title\") ![alt](/image.png) :badge[label]{kind=demo} \$x\$ [^n]  \nnext <i>raw</i>\nsoft\n\n[^n]: definition\n",
+                "Text *em* **strong** ~~strike~~ ==mark== ++inserted++ [span]{} ^up^ ~down~ `code` [link](/go \"title\") ![alt](/image.png) :badge[label]{kind=demo} \$x\$ [^n]  \nnext <i>raw</i>\nsoft\n\n[^n]: definition\n",
                 "| left | center |\n| :--- | :----: |\n| a | b |\n\n::leaf[Label]{id=value}\n\n:::container[Title]{kind=demo}\nBody\n:::\n",
                 "\$\$\ny\n\$\$\n",
                 "a <!-- b --> c\n\n<!-- block -->\n",
@@ -124,6 +124,9 @@ class AstTest {
                 "Strikethrough",
                 "Mark",
                 "Insertion",
+                "Span",
+                "Superscript",
+                "Subscript",
                 "Link",
                 "Media",
                 "Directive",

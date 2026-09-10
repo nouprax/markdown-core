@@ -116,6 +116,12 @@ for (const { file: entry, source, body: descriptor } of descriptors) {
     const dispatch = setOf("dispatch");
     const transparent = setOf("flanking_transparent");
 
+    // Opaque scanners claim whole tokens at their openers. Every remaining
+    // ']' is owned by the shared bracket procedure, with no extension branch.
+    if (dispatch.includes("]".charCodeAt(0))) {
+        failures.push(`${entry}: ']' belongs to the shared bracket procedure, not extension dispatch.`);
+    }
+
     const body = matchBody(source, descriptor, entry);
     if (body === null) {
         if (dispatch.length > 0) {

@@ -2786,7 +2786,7 @@ typedef struct {
     size_t cross_link, opaque, delimiters, comment, lookahead, footnote_body, block_identifier, callout, dimensions;
     size_t registered_footnotes;
     bool footnote_collection_allocated, footnotes_owned, heading_collection_disposed;
-    size_t attributes, anchors, definitions, definition_resources;
+    size_t attributes, anchors, definitions, definition_resources, scripts, brackets;
 } inline_work;
 static markdown_core_node *record_inline_work(const markdown_core_extension *extension, markdown_core_parser *parser,
                                               markdown_core_node *root) {
@@ -2798,6 +2798,8 @@ static markdown_core_node *record_inline_work(const markdown_core_extension *ext
     work->cross_link = parser->cross_link_scan_work;
     work->opaque = parser->opaque_scan_work;
     work->delimiters = parser->delimiter_work;
+    work->scripts = parser->script_work;
+    work->brackets = parser->bracket_work;
     work->comment = parser->comment_scan_work;
     work->lookahead = parser->block_lookahead_work;
     work->block_identifier = parser->block_identifier_work;
@@ -3066,8 +3068,6 @@ static void literal_text_allocations(test_batch_runner *runner) {
     static const struct {
         const char *prefix, *unit;
     } cases[] = {
-        {"a", "^"},
-        {"a", "a^"},
         {"a", "a+"},
         {"a", "+a"},
         {"a", "a=b"},
@@ -3192,8 +3192,11 @@ static void paired_delimiter_linear_work(test_batch_runner *runner, markdown_cor
             markdown_core_node *root =
                 markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
             OK(runner, root != NULL, "adversarial paired-delimiter runs parse successfully");
-            OK(runner, work.delimiters > 0 && work.delimiters <= 8 * (size_t)source.size,
-               "shared delimiter work is linear: case=%zu size=%d work=%zu", c, source.size, work.delimiters);
+            OK(runner,
+               work.delimiters <= 8 * (size_t)source.size && work.attributes <= 16 * (size_t)source.size &&
+                   work.scripts <= 2 * (size_t)source.size && work.brackets <= 8 * (size_t)source.size,
+               "shared inline work is linear: case=%zu size=%d delimiters=%zu attributes=%zu scripts=%zu brackets=%zu",
+               c, source.size, work.delimiters, work.attributes, work.scripts, work.brackets);
             size_t nodes = 0;
             markdown_core_iter *iter = markdown_core_iter_new(root);
             markdown_core_event_type event;
@@ -3247,6 +3250,80 @@ static void insertion_linear_work(test_batch_runner *runner) {
         {"++a %%++b%% c++ ", "", "", 1},                        // comment cannot close the insertion
     };
     paired_delimiter_linear_work(runner, MARKDOWN_CORE_NODE_INSERTION, cases, sizeof(cases) / sizeof(*cases));
+}
+
+/* P5/P6: nesting, unmatched candidates, empty pairs and raw whitespace
+ * all use the same bracket/delimiter operations. Bounds count work, not time. */
+static void span_and_script_linear_work(test_batch_runner *runner) {
+    static const paired_delimiter_case spans[] = {
+        {"[a ", "x", "]{.c}", 1}, {"[", "x", "]{}", 1}, {"[a]{} ", "", "", 1},     {"[a]{k=\"", "", "", 0},
+        {"[a]{.c ", "", "", 0},   {"[", "", "", 0},     {"[a^b", "x", "]{.c}", 1}, {"[a~b", "x", "]{.c}", 1},
+    };
+    static const paired_delimiter_case superscripts[] = {
+        {"^", "", "", 0},
+        {"^a^ ", "", "", 1},
+        {"^a^b^c^ ", "", "", 2},
+        {"^a ", "", "", 0},
+        {"^a\t", "", "", 0},
+        {"^a\xe2\x80\x83", "", "", 0},
+        {"^*a\\ b*^ ", "", "", 1},
+        {"[^a^]{} ", "", "", 1},
+        {"^[^a^] ", "", "", 0}, /* detached notes are visited by the value walker */
+        {"^a ", "", "]", 0},    /* unmatched brackets cannot rescan the delimiter stack */
+        {"^a`x y`b^ ", "", "", 1},
+        {"^a%%x y%%b^ ", "", "", 1},
+        {"^a&#32;b^ ", "", "", 1},
+        {"^:d[:n[a b]]^ ", "", "", 0},
+        {"^:d[:n[a\\ b]]^ ", "", "", 1},
+        {"^:d[`a b`]^ ", "", "", 1},
+        {"^:d[a&#32;b]^ ", "", "", 1},
+    };
+    static const paired_delimiter_case subscripts[] = {
+        {"~", "", "", 0},
+        {"~~~", "", "", 0},
+        {"~a~ ", "", "", 1},
+        {"~a~~b~ ", "", "", 1},
+        {"~a ", "", "", 0},
+        {"~^a^~ ", "", "", 1},
+        {"~*a\\ b*~ ", "", "", 1},
+        {"~:d[:n[a b]]~ ", "", "", 0},
+        {"~:d[:n[a\\ b]]~ ", "", "", 1},
+    };
+    paired_delimiter_linear_work(runner, MARKDOWN_CORE_NODE_SPAN, spans, sizeof(spans) / sizeof(*spans));
+    paired_delimiter_linear_work(runner, MARKDOWN_CORE_NODE_SUPERSCRIPT, superscripts,
+                                 sizeof(superscripts) / sizeof(*superscripts));
+    paired_delimiter_linear_work(runner, MARKDOWN_CORE_NODE_SUBSCRIPT, subscripts,
+                                 sizeof(subscripts) / sizeof(*subscripts));
+
+    /* A suspended heading resumes with the same bracket/delimiter state.
+     * Projection visits nested formatting once and reserves a later Span id. */
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    for (size_t count = 128; count <= 8192; count *= 2) {
+        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+        markdown_core_strbuf_puts(&source, "# ");
+        for (size_t i = 0; i < count; i++) {
+            markdown_core_strbuf_putc(&source, '[');
+        }
+        markdown_core_strbuf_puts(&source, "^a\\ b^ ~x~");
+        for (size_t i = 0; i < count; i++) {
+            markdown_core_strbuf_puts(&source, "]{}");
+        }
+        markdown_core_strbuf_puts(&source, "\n\n[owner]{#a-b-x}\n");
+        inline_work work = {0};
+        markdown_core_node *root =
+            markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
+        OK(runner, root != NULL, "deep Span/script headings parse successfully");
+        if (root) {
+            STR_EQ(runner, (const char *)root->first_child->attributes.anchor.data, "a-b-x-1",
+                   "heading projection includes script bodies and reserves the later Span anchor");
+            OK(runner,
+               work.anchors < 25 * (size_t)source.size && work.brackets <= 8 * (size_t)source.size &&
+                   work.delimiters <= 8 * (size_t)source.size,
+               "heading projection and mixed bracket/delimiter ownership stay linear");
+            markdown_core_node_free(root);
+        }
+        markdown_core_strbuf_free(&source);
+    }
 }
 
 static size_t count_kind(markdown_core_node *root, markdown_core_node_type kind) {
@@ -4151,6 +4228,7 @@ int main(void) {
     core_delimiter_stack_eligibility(runner);
     mark_linear_work(runner);
     insertion_linear_work(runner);
+    span_and_script_linear_work(runner);
     comment_inline_linear_work(runner);
     comment_block_linear_work(runner);
     percent_comment_nodes(runner);

@@ -123,6 +123,8 @@ struct markdown_core_parser {
     size_t footnote_registration_work;
     /* Run bytes, opener comparisons, and child moves in the shared delimiter algorithm. */
     size_t delimiter_work;
+    size_t script_work;
+    size_t bracket_work;
     /* Opener checks of the `%%` comment scanner; and the lines the block-start
      * lookahead visited plus the prefix bytes each visit matched itself, for
      * the linearity gates of both. */

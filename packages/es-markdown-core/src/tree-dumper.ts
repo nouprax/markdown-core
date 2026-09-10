@@ -28,6 +28,9 @@ import type { SoftBreak } from "./model/soft-break.js";
 import type { Strikethrough } from "./model/strikethrough.js";
 import type { Mark } from "./model/mark.js";
 import type { Insertion } from "./model/insertion.js";
+import type { Span } from "./model/span.js";
+import type { Superscript } from "./model/superscript.js";
+import type { Subscript } from "./model/subscript.js";
 import type { Strong } from "./model/strong.js";
 import type { Table, TableCell, TableRow } from "./model/table.js";
 import type { Text } from "./model/text.js";
@@ -168,6 +171,9 @@ class DumpState {
         visitStrikethrough: (node: Strikethrough) => this.container("Strikethrough", node, [], node.content),
         visitMark: (node: Mark) => this.container("Mark", node, [], node.content),
         visitInsertion: (node: Insertion) => this.container("Insertion", node, [], node.content),
+        visitSpan: (node: Span) => this.container("Span", node, [], node.content),
+        visitSuperscript: (node: Superscript) => this.container("Superscript", node, [], node.content),
+        visitSubscript: (node: Subscript) => this.container("Subscript", node, [], node.content),
         visitLink: (node: Link) =>
             this.container(
                 "Link",

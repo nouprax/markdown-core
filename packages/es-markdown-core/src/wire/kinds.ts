@@ -31,7 +31,10 @@ export type NativeKind =
     | "crossLink"
     | "mark"
     | "crossEmbedded"
-    | "insertion";
+    | "insertion"
+    | "span"
+    | "superscript"
+    | "subscript";
 
 export const kinds: readonly (NativeKind | "none")[] = Object.freeze([
     "none",
@@ -67,5 +70,8 @@ export const kinds: readonly (NativeKind | "none")[] = Object.freeze([
     "crossLink",
     "mark",
     "crossEmbedded",
-    "insertion"
+    "insertion",
+    "span",
+    "superscript",
+    "subscript"
 ]);
