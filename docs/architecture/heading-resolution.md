@@ -41,7 +41,8 @@ placeholder AST, or later replacement of literal Text with Links.
 
 A consumed directive with an owned label is also a suspension boundary: that
 label has live brackets and may contain references of its own. The subject
-retains the token awaiting field parsing, including when it ends the heading.
+retains a field-completion event on its delimiter stack, including when the
+token ends the heading.
 A directive without a label does not suspend declaration.
 
 Opaque tokens and attached attribute containers are consumed by their existing
@@ -55,10 +56,11 @@ continuation pass, without a fixed-point resolver or general task scheduler.
 
 Ordinary blocks and owned inline fields then parse against the completed map.
 Each inline token's fields finish before the enclosing cursor advances. Fields
-use the same parser and report ordinary raw whitespace to the enclosing script
-delimiter boundary, excluding entities and opaque tokens. The structural walk
+use the same parser and report ordinary raw whitespace as a boundary entry
+on the enclosing delimiter stack, excluding entities and opaque tokens. The structural walk
 skips emitted inline trees, so every source buffer is parsed once. Field-local
 delimiters remain independent of those in the enclosing content.
+The [delimiter model](inline-delimiters.md) owns pairing and scope reduction.
 The heading's ordinary inline subject is the sole owner of its temporary
 caches and delimiter/bracket stacks. Backtick caches allocate lazily, bounded
 by the input length and the inherited backtick limit; a pending heading does

@@ -43,13 +43,16 @@ host executable explicitly with `scripts/init-environment.sh --install oracle-pa
 runs CLI canaries, both parsers and the fail-closed digest registry. Normal
 builds and tests never install the executable or access the network.
 
-The active corpus has 51 cases: 27 agreements, 14 documented divergences
+The active corpus has 55 cases: 31 agreements, 14 documented divergences
 and 10 missing-feature gaps assigned to later landing items. Every difference
 pins input/reader, oracle projection and product projection SHA-256 digests.
 New, changed, stale, duplicate and unknown entries fail. P5's span and shared
 attribute grammar cases now agree, including empty containers, nesting,
 shortcut precedence, complete link tails and malformed fallback. P6's ordinary
-superscript/subscript case agrees. Empty bodies, contextual escaped spaces,
+superscript/subscript case agrees. Four isolated agreement cases separately pin
+`^a b^` and `~a b~` as text, `^ab^` as Superscript, and `^a&#32;b^`
+as Superscript containing a decoded space; no difference waiver applies to
+these assertions. Empty bodies, contextual escaped spaces,
 Unicode whitespace, decoded TAB preservation, maximal tilde runs and code-token
 opacity retain exact deliberate-difference witnesses. Inline-footnote composition
 is tested in the product fixtures, where the document-owned footnote model and

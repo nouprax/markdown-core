@@ -457,18 +457,6 @@ static int is_backslash_delim(markdown_core_delimiter_rule delim_char) {
     return delim_char == FORMULA_DELIM_LATEX_BACKSLASH_INLINE || delim_char == FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY;
 }
 
-static void remove_delimiters(markdown_core_inline_parser *inline_parser, delimiter *opener, delimiter *closer) {
-    delimiter *delim = closer;
-
-    while (delim != NULL && delim != opener) {
-        delimiter *previous = markdown_core_delimiter_previous(delim);
-        markdown_core_inline_parser_remove_delimiter(inline_parser, delim);
-        delim = previous;
-    }
-
-    markdown_core_inline_parser_remove_delimiter(inline_parser, opener);
-}
-
 static void free_nodes_through(markdown_core_node *first, markdown_core_node *last) {
     markdown_core_node *node = first;
 
@@ -562,12 +550,11 @@ static markdown_core_node *make_formula_node(const markdown_core_extension *exte
  * backticks it matched, and every form applies the padding rule. Each body is
  * read once, because `match` lets one formula of a form open at a time and
  * so no pair ever spans another of its form. */
-static delimiter *insert_formula(const markdown_core_extension *extension, markdown_core_parser *parser,
-                                 markdown_core_inline_parser *inline_parser, delimiter *opener, delimiter *closer) {
+static void insert_formula(const markdown_core_extension *extension, markdown_core_parser *parser,
+                           markdown_core_inline_parser *inline_parser, delimiter *opener, delimiter *closer) {
     markdown_core_chunk *chunk = markdown_core_inline_parser_get_chunk(inline_parser);
     markdown_core_node *opener_node = markdown_core_delimiter_node(opener);
     markdown_core_node *closer_node = markdown_core_delimiter_node(closer);
-    delimiter *res = markdown_core_delimiter_next(closer);
     markdown_core_node *formula;
     markdown_core_delimiter_rule rule = markdown_core_delimiter_rule_of(opener);
     markdown_core_formula_mode mode = mode_for_delim(rule);
@@ -638,8 +625,7 @@ static delimiter *insert_formula(const markdown_core_extension *extension, markd
     }
 
 done:
-    remove_delimiters(inline_parser, opener, closer);
-    return res;
+    return;
 }
 
 static const char *get_type_string(const markdown_core_extension *extension, markdown_core_node *node) {

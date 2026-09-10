@@ -1381,6 +1381,13 @@ its behavior, with no separate publication step.
   runs, unchanged position/reference ledgers, `pnpm verify` and the host
   release dry run.
 
+  Post-merge audit (2026-09-11): [all 100 PR #226 files were audited](2026-09-11-p5-p6-delimiter-audit.md).
+  The follow-up replaces script boundary snapshots and the pending-field pointer
+  with events on the shared delimiter stack, unifies parsed-container construction
+  including Strikethrough, and adds isolated Pandoc whitespace agreements.
+  The [delimiter architecture](../architecture/inline-delimiters.md) states the
+  source-order, scope-reduction, lifecycle and complexity invariants.
+
 - [ ] **P7 — `citations`.** Recognize bare and braced keys, bracketed groups
       with semicolon items and prefix, mode marker, key, and suffix scopes,
       author-in-text keys with an optional bracketed tail, `-@` for

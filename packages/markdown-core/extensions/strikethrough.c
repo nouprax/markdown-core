@@ -40,63 +40,6 @@ static markdown_core_node *match(const markdown_core_extension *self, markdown_c
     return res;
 }
 
-static delimiter *insert(const markdown_core_extension *self, markdown_core_parser *parser,
-                         markdown_core_inline_parser *inline_parser, delimiter *opener, delimiter *closer) {
-    markdown_core_node *strikethrough;
-    markdown_core_node *tmp, *next;
-    delimiter *delim, *tmp_delim;
-    delimiter *res = markdown_core_delimiter_next(closer);
-
-    strikethrough = markdown_core_delimiter_node(opener);
-
-    if (markdown_core_delimiter_node(opener)->as.literal->len !=
-        markdown_core_delimiter_node(closer)->as.literal->len) {
-        goto done;
-    }
-
-    markdown_core_node_set_kind_result result =
-        markdown_core_node_set_kind(strikethrough, MARKDOWN_CORE_NODE_STRIKETHROUGH);
-    if (result != MARKDOWN_CORE_NODE_SET_KIND_OK) {
-        if (result == MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED) {
-            parser->oom = true;
-        }
-        goto done;
-    }
-
-    markdown_core_node_set_extension(strikethrough, self);
-
-    tmp = markdown_core_node_next(markdown_core_delimiter_node(opener));
-
-    while (tmp) {
-        if (tmp == markdown_core_delimiter_node(closer)) {
-            break;
-        }
-        next = markdown_core_node_next(tmp);
-        markdown_core_node_append_child(strikethrough, tmp);
-        tmp = next;
-    }
-
-    strikethrough->end_column =
-        markdown_core_delimiter_node(closer)->start_column + markdown_core_delimiter_node(closer)->as.literal->len - 1;
-    /* REQUIREMENT 11b: both tilde runs are the strikethrough's markers. The
-     * opener's node IS the strikethrough -- it was retyped in place -- so its
-     * own claim would otherwise read CONTENT, and the closer's node is freed on
-     * the next line, so its claim would name nothing. */
-    markdown_core_node_free(markdown_core_delimiter_node(closer));
-
-done:
-    delim = closer;
-    while (delim != NULL && delim != opener) {
-        tmp_delim = markdown_core_delimiter_previous(delim);
-        markdown_core_inline_parser_remove_delimiter(inline_parser, delim);
-        delim = tmp_delim;
-    }
-
-    markdown_core_inline_parser_remove_delimiter(inline_parser, opener);
-
-    return res;
-}
-
 static const char *get_type_string(const markdown_core_extension *extension, markdown_core_node *node) {
     return node->kind == MARKDOWN_CORE_NODE_STRIKETHROUGH ? "strikethrough" : "<unknown>";
 }
@@ -118,7 +61,6 @@ const markdown_core_extension MARKDOWN_CORE_EXTENSION_STRIKETHROUGH = {
     .get_type_string_func = get_type_string,
     .can_contain_func = can_contain,
     .match_inline = match,
-    .insert_inline_from_delim = insert,
     .terminates_text = "~",
     .dispatch = "~",
     .flanking_transparent = "~",

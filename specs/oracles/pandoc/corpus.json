@@ -256,6 +256,26 @@
             "id": "p6-heading-reference",
             "from": "markdown_strict+auto_identifiers+gfm_auto_identifiers+implicit_header_references+superscript+subscript",
             "input": "[2^10^]\n\n# 2^10^\n"
+        },
+        {
+            "id": "p6-isolated-raw-space-superscript",
+            "from": "markdown_strict+superscript+subscript",
+            "input": "^a b^\n"
+        },
+        {
+            "id": "p6-isolated-raw-space-subscript",
+            "from": "markdown_strict+superscript+subscript",
+            "input": "~a b~\n"
+        },
+        {
+            "id": "p6-isolated-nonempty-superscript",
+            "from": "markdown_strict+superscript+subscript",
+            "input": "^ab^\n"
+        },
+        {
+            "id": "p6-isolated-entity-space-superscript",
+            "from": "markdown_strict+superscript+subscript",
+            "input": "^a&#32;b^\n"
         }
     ]
 }

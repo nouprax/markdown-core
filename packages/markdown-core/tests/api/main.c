@@ -1866,9 +1866,23 @@ static void kind_conversion_containment(test_batch_runner *runner) {
         {MARKDOWN_CORE_NODE_HEADING, MARKDOWN_CORE_NODE_PARAGRAPH, "heading\n===\n", "heading\n==="},
         {MARKDOWN_CORE_NODE_COMMENT_BLOCK, MARKDOWN_CORE_NODE_HTML_BLOCK, "<!-- body -->\n", "<!-- body -->\n"},
         {MARKDOWN_CORE_NODE_STRIKETHROUGH, MARKDOWN_CORE_NODE_PARAGRAPH, "!~~text~~\n", "!~~text~~"},
+        {MARKDOWN_CORE_NODE_SPAN, MARKDOWN_CORE_NODE_PARAGRAPH, "![text]{}\n", "![text]{}"},
+        {MARKDOWN_CORE_NODE_LINK, MARKDOWN_CORE_NODE_PARAGRAPH, "! [text](u)\n", "! [text](u)"},
+        {MARKDOWN_CORE_NODE_MEDIA, MARKDOWN_CORE_NODE_PARAGRAPH, "![text](u)\n", "![text](u)"},
+        {MARKDOWN_CORE_NODE_CITE, MARKDOWN_CORE_NODE_PARAGRAPH, "!^[text]\n", "!^[text]"},
+        {MARKDOWN_CORE_NODE_CITE, MARKDOWN_CORE_NODE_PARAGRAPH, "![^n]\n\n[^n]: text\n", "![^n]"},
+        {MARKDOWN_CORE_NODE_EMPHASIS, MARKDOWN_CORE_NODE_PARAGRAPH, "!*text*\n", "!*text*"},
+        {MARKDOWN_CORE_NODE_STRONG, MARKDOWN_CORE_NODE_PARAGRAPH, "!**text**\n", "!**text**"},
+        {MARKDOWN_CORE_NODE_MARK, MARKDOWN_CORE_NODE_PARAGRAPH, "!==text==\n", "!==text=="},
+        {MARKDOWN_CORE_NODE_INSERTION, MARKDOWN_CORE_NODE_PARAGRAPH, "!++text++\n", "!++text++"},
+        {MARKDOWN_CORE_NODE_SUPERSCRIPT, MARKDOWN_CORE_NODE_PARAGRAPH, "!^text^\n", "!^text^"},
+        {MARKDOWN_CORE_NODE_SUBSCRIPT, MARKDOWN_CORE_NODE_PARAGRAPH, "!~text~\n", "!~text~"},
+
     };
-    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    markdown_core_mem *mem = &payload_test_mem;
+    payload_fail_at = 0;
     for (size_t i = 0; i < sizeof(cases) / sizeof(*cases); i++) {
+        size_t live_before = payload_live;
         conversion_policy policy = {cases[i].rejected_kind, 0};
         markdown_core_node *root = markdown_core_parse_document_with_mem(cases[i].source, strlen(cases[i].source), mem,
                                                                          configure_conversion_policy, &policy);
@@ -1897,6 +1911,7 @@ static void kind_conversion_containment(test_batch_runner *runner) {
         STR_EQ(runner, (char *)literal.ptr, cases[i].retained_literal, "case %zu preserves authored content", i);
         markdown_core_strbuf_free(&literal);
         markdown_core_node_free(root);
+        INT_EQ(runner, payload_live, live_before, "rejected containers release every allocation");
     }
 }
 
@@ -2786,7 +2801,7 @@ typedef struct {
     size_t cross_link, opaque, delimiters, comment, lookahead, footnote_body, block_identifier, callout, dimensions;
     size_t registered_footnotes;
     bool footnote_collection_allocated, footnotes_owned, heading_collection_disposed;
-    size_t attributes, anchors, definitions, definition_resources, scripts, brackets;
+    size_t attributes, anchors, definitions, definition_resources, whitespace, brackets;
 } inline_work;
 static markdown_core_node *record_inline_work(const markdown_core_extension *extension, markdown_core_parser *parser,
                                               markdown_core_node *root) {
@@ -2798,7 +2813,7 @@ static markdown_core_node *record_inline_work(const markdown_core_extension *ext
     work->cross_link = parser->cross_link_scan_work;
     work->opaque = parser->opaque_scan_work;
     work->delimiters = parser->delimiter_work;
-    work->scripts = parser->script_work;
+    work->whitespace = parser->whitespace_work;
     work->brackets = parser->bracket_work;
     work->comment = parser->comment_scan_work;
     work->lookahead = parser->block_lookahead_work;
@@ -3062,7 +3077,7 @@ static void *count_text_realloc(void *pointer, size_t size) {
 }
 
 /* Known-literal runs occupy the same text slice as surrounding prose.
- * Their allocation count equals ordinary text at the same byte length;
+ * Their allocation count equals ordinary text with the same whitespace and byte length;
  * scanning each run once also bounds work independently of node allocation. */
 static void literal_text_allocations(test_batch_runner *runner) {
     static const struct {
@@ -3122,10 +3137,16 @@ static void literal_text_allocations(test_batch_runner *runner) {
                 memset(source, 'a', length);
                 memcpy(source, cases[shape].prefix, prefix_length);
                 source[length - 1] = 'z';
-                if (pass) {
-                    for (size_t i = 0; i < repeats; i++) {
-                        memcpy(source + prefix_length + i * width, cases[shape].unit, width);
+                for (size_t i = 0; i < repeats; i++) {
+                    memcpy(source + prefix_length + i * width, cases[shape].unit, width);
+                }
+                if (!pass) {
+                    for (size_t i = prefix_length; i < length; i++) {
+                        if (source[i] != ' ') {
+                            source[i] = 'a';
+                        }
                     }
+                    source[length - 1] = 'z';
                 }
                 text_allocation_calls = 0;
                 inline_work work = {0};
@@ -3194,9 +3215,10 @@ static void paired_delimiter_linear_work(test_batch_runner *runner, markdown_cor
             OK(runner, root != NULL, "adversarial paired-delimiter runs parse successfully");
             OK(runner,
                work.delimiters <= 8 * (size_t)source.size && work.attributes <= 16 * (size_t)source.size &&
-                   work.scripts <= 2 * (size_t)source.size && work.brackets <= 8 * (size_t)source.size,
-               "shared inline work is linear: case=%zu size=%d delimiters=%zu attributes=%zu scripts=%zu brackets=%zu",
-               c, source.size, work.delimiters, work.attributes, work.scripts, work.brackets);
+                   work.whitespace <= 2 * (size_t)source.size && work.brackets <= 8 * (size_t)source.size,
+               "shared inline work is linear: case=%zu size=%d delimiters=%zu attributes=%zu whitespace=%zu "
+               "brackets=%zu",
+               c, source.size, work.delimiters, work.attributes, work.whitespace, work.brackets);
             size_t nodes = 0;
             markdown_core_iter *iter = markdown_core_iter_new(root);
             markdown_core_event_type event;
@@ -3277,6 +3299,12 @@ static void span_and_script_linear_work(test_batch_runner *runner) {
         {"^:d[:n[a\\ b]]^ ", "", "", 1},
         {"^:d[`a b`]^ ", "", "", 1},
         {"^:d[a&#32;b]^ ", "", "", 1},
+        {"^a[ ", "x", "]{}^ ", 0}, /* each closed scope retains one boundary */
+        {"^a* ", "x", " b*^ ", 0},
+        {"^a*^b^ ", "x", " c*^ ", 1},
+        {"^a~~b c~~^ ", "", "", 0},
+        {"^a[==b c==]{}^ ", "", "", 0},
+        {"^a[**b&#32;c**]{}^ ", "", "", 1},
     };
     static const paired_delimiter_case subscripts[] = {
         {"~", "", "", 0},
@@ -3288,6 +3316,9 @@ static void span_and_script_linear_work(test_batch_runner *runner) {
         {"~*a\\ b*~ ", "", "", 1},
         {"~:d[:n[a b]]~ ", "", "", 0},
         {"~:d[:n[a\\ b]]~ ", "", "", 1},
+        {"~a[ ", "x", "]{}~ ", 0},
+        {"~a~~b c~~z~ ", "", "", 0},
+        {"~a[**b&#32;c**]{}~ ", "", "", 1},
     };
     paired_delimiter_linear_work(runner, MARKDOWN_CORE_NODE_SPAN, spans, sizeof(spans) / sizeof(*spans));
     paired_delimiter_linear_work(runner, MARKDOWN_CORE_NODE_SUPERSCRIPT, superscripts,

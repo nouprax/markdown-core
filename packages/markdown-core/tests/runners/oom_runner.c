@@ -55,7 +55,9 @@ static const char OOM_HEADING_CORPUS[] = "# [Rich *Title*]{.c} ^a\\ b^ ~x~\n\n[o
                                          ":n[^[`a`{#first-2}]]\n\n[^`a`{#discarded}]\n\n[^`a`{#discarded}]: note\n\n"
                                          "# `x{#false k=`[First]}\n\n# \xe4\xb8\xad\xe6\x96\x87\n";
 
-static const char OOM_CORPUS[] = "[a *b*]{#id .a k=1 k=2} []{} [outer [inner](u)]{.x} ![x]{.c} ![^1]\n"
+static const char OOM_CORPUS[] = "^a[**b c**]{}z^ ~a[**b&#32;c**]{}z~ ^a~~b c~~z^\n"
+                                 "^a[[b c]{}]{}z^ ~:d[:n[a\\ b]]~ ~~a\nb~~\n"
+                                 "[a *b*]{#id .a k=1 k=2} []{} [outer [inner](u)]{.x} ![x]{.c} ![^1]\n"
                                  "^a\\ b^ ~*c\\ d*~ ^^ ^a b^ ~x~ ~~y~~\n"
                                  "^:d[:n[a b]]^ ~:d[:n[a\\ b]]~ ^:d[`a b`]^ ~:d[a&#32;b]~\n"
                                  "^:d[a\\ ]^ ^:d[a ]^ :d[a\\ b] ^:d[^[a\\ b]]^\n"

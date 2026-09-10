@@ -162,7 +162,8 @@ Document scope=1:1..1:11 anchor=null attributes={} children=1
     └── Text scope=1:7..1:10 anchor=null attributes={} literal="note" children=0
 ````````````````````````````````
 
-A bracket enters a superscript body only through the escape mechanism:
+To begin a superscript body with `[` rather than open an inline footnote,
+escape that leading bracket:
 
 ```````````````````````````````` example
 ^\[note]^
