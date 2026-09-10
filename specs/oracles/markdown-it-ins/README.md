@@ -3,7 +3,7 @@
 The [insertion module](../../../docs/specs/dialect/insertion.md) owns the
 language. This oracle supplies independent executable evidence for I0/I1.
 
-`markdown-it@13.0.2` and `markdown-it-ins@4.0.0` are exact development dependencies.
+`markdown-it@14.2.0` and `markdown-it-ins@4.0.0` are exact development dependencies.
 Their SHA-512 package integrity values are checked against both the lockfile
 and the normative module. The plugin is registered with `use`; HTML token
 recognition is enabled so token opacity is exercised. Other markdown-it defaults
@@ -22,22 +22,33 @@ duplicate/stale exceptions, changed digests, and exceptions that now agree.
 
 ## Corpus provenance
 
-`corpus.json` contains inputs only. Its 54 cases consist of:
+`corpus.json` contains inputs only. Its 57 cases consist of:
 
 - All 16 input groups from the [upstream fixture file](https://github.com/markdown-it/markdown-it-ins/blob/d1a13b290c944e8f212d3a6bd2de2f70b751c924/test/fixtures/ins.txt),
   at the module's pinned commit, preserving each group's line breaks and order.
   The upstream MIT license is retained below. Rendered HTML expectations are
   not copied or used as product goldens.
 - All 11 normative module examples, byte for byte.
-- 27 composition and failure-boundary inputs: Unicode and punctuation,
+- 30 composition and failure-boundary inputs: Unicode and punctuation,
   odd runs with both roles, escapes/entities, crossed and nested delimiters,
   CrossLink/CrossEmbedded, Cite, links/media, every opaque context, separate
   inline containers, table unescaping, named inline fields and failed scanners.
+  The Unicode cases include astral symbols, astral punctuation and non-ASCII
+  whitespace retained at paragraph/heading boundaries.
 
 The complete input list has a reviewed SHA-256 digest in `deltas.json`.
 Product AST expectations live separately in
 `packages/markdown-core/tests/fixtures/dialect-insertion.txt`; shared binding
 expectations live in `specs/canonical-ast/insertion.ast`.
+
+## Upgrade evidence
+
+The 13.0.2 → 14.2.0 upgrade preserves all 54 original projected oracle trees
+and all twelve registered divergence digests. Three additional composition
+cases exercise the [14.2.0 Unicode fixes](https://github.com/markdown-it/markdown-it/blob/829797aa00353ce0b62ddeb9b4583b837b1ffd9b/CHANGELOG.md):
+astral symbol and punctuation flanking, plus paragraph/heading whitespace
+preservation. Each changes the old oracle result and agrees with the existing
+product under 14.2.0. The upgrade requires no product rule or projection change.
 
 ## Comparison and policy
 

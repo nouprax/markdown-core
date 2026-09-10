@@ -357,7 +357,7 @@ its behavior, with no separate publication step.
       case where the specification chooses differently becomes a documented
       projection with a canary when its item lands, and no item changes a rule
       to match Pandoc. Requires `X0`, `S0`.
-- [x] **I0 — Insertion oracle gate.** Pin `markdown-it@13.0.2` and
+- [x] **I0 — Insertion oracle gate.** Pin `markdown-it@14.2.0` and
       `markdown-it-ins@4.0.0` as exact development dependencies with the
       integrity values recorded in `docs/specs/dialect/insertion.md`; add
       `specs/oracles/markdown-it-ins/` with a README, an input-only corpus

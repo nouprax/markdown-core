@@ -3,8 +3,8 @@
     "oracle": [
         {
             "package": "markdown-it",
-            "version": "13.0.2",
-            "integrity": "sha512-FtwnEuuK+2yVU7goGn/MJ0WBZMM9ZPgU9spqlFs7/A/pDIUNSOQZhUgOqYCficIuR2QaFnrt8LHqBWsbTAoI5w=="
+            "version": "14.2.0",
+            "integrity": "sha512-1TGiQiJVRQ3NPmZH6sx5Cfnmg6GQm9jvC1ch4TK511NjSJvjzKLzn5pPfZRNZkRPZP0HqCioSndqH8v2nRaWVQ=="
         },
         {
             "package": "markdown-it-ins",
@@ -99,5 +99,5 @@
             "markdownCoreDigest": "08bf407fbe1733efd2f1d0535609621dd5d2df557af94bb76b646204147bd0f3"
         }
     ],
-    "corpusDigest": "184f34791a91b1625e23a0f40d056fa00e39cd74c0b389e1d0aeb5b5db69f131"
+    "corpusDigest": "e8fc809d8c0d386cccc61c5bb62dfb546c7c148a0c525f5462f15a3066244fc3"
 }

@@ -268,5 +268,20 @@
         "id": "nested-odd",
         "source": "composition",
         "input": "+++++a+++++ ++++++b++++++\n"
+    },
+    {
+        "id": "astral-symbol-flanking",
+        "source": "composition",
+        "input": "a++🙂++b\n\n🙂++x++🙂\n"
+    },
+    {
+        "id": "astral-punctuation-flanking",
+        "source": "composition",
+        "input": "a++𐄀++b\n\n𐄀++x++𐄀\n"
+    },
+    {
+        "id": "unicode-block-trimming",
+        "source": "composition",
+        "input": "++x++ \n\n# ++x++ \n"
     }
 ]

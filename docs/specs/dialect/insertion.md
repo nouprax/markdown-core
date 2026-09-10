@@ -5,7 +5,7 @@ Source: `markdown-it-ins` 4.0.0 at
 commit `d1a13b290c944e8f212d3a6bd2de2f70b751c924`, whose README is the pinned
 source for the valid source form and the oracle's `<ins>` output; this module
 states the rule, and the plugin is evidence whose differences become registered deltas.
-Executable oracle: `markdown-it` 13.0.2 with the plugin registered, under
+Executable oracle: `markdown-it` 14.2.0 with the plugin registered, under
 `specs/oracles/markdown-it-ins/`, landed with `I0` and `I1`. The
 [example format](../dialect.md#examples) is defined by the index.
 
@@ -210,13 +210,13 @@ nesting has no fixed syntax limit.
 
 ## Oracle
 
-The deterministic syntax oracle is `markdown-it@13.0.2` with
+The deterministic syntax oracle is `markdown-it@14.2.0` with
 `markdown-it-ins@4.0.0` registered through `use`:
 
 ```text
-markdown-it@13.0.2
-  gitHead: e476f78bc3ea3576beb61bdc94322d0a6b2d85cc
-  integrity: sha512-FtwnEuuK+2yVU7goGn/MJ0WBZMM9ZPgU9spqlFs7/A/pDIUNSOQZhUgOqYCficIuR2QaFnrt8LHqBWsbTAoI5w==
+markdown-it@14.2.0
+  sourceCommit (14.2.0 tag): 829797aa00353ce0b62ddeb9b4583b837b1ffd9b
+  integrity: sha512-1TGiQiJVRQ3NPmZH6sx5Cfnmg6GQm9jvC1ch4TK511NjSJvjzKLzn5pPfZRNZkRPZP0HqCioSndqH8v2nRaWVQ==
 
 markdown-it-ins@4.0.0
   gitHead: d1a13b290c944e8f212d3a6bd2de2f70b751c924
