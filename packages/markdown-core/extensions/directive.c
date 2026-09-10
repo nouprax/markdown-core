@@ -421,7 +421,6 @@ static markdown_core_node *match_colon_directive(const markdown_core_extension *
     int start_line = markdown_core_inline_parser_get_line(inline_parser);
     int start_column = markdown_core_inline_parser_get_column(inline_parser);
 
-    (void)parent;
     memset(&attributes, 0, sizeof(attributes));
 
     /* A TEXT DIRECTIVE'S COLON MAY NOT SIT NEXT TO ANOTHER COLON, on either
@@ -493,22 +492,15 @@ static markdown_core_node *match_colon_directive(const markdown_core_extension *
             return NULL;
         }
         directive->label = label_node;
+        /* The field is a view of these source bytes, including line breaks
+         * and stripped block prefixes. Do not rebuild its map from one column. */
+        markdown_core_parser_adopt_content_marks(parser, parent, label_node, label_start, label_len);
     }
 
     markdown_core_inline_parser_set_offset(inline_parser, (int)pos);
     node->end_line = markdown_core_inline_parser_get_line(inline_parser);
     node->end_column = markdown_core_inline_parser_get_column(inline_parser) - 1;
 
-    /* The label brackets belong to the enclosing paragraph's claim run, not
-     * to the detached label content buffer. Parser phases discover the field
-     * from its live owner after this paragraph finishes. */
-    if (label_node) {
-        /* The label's scope spans its brackets, so the brackets are the
-         * label's markers (requirement 11b). They are claimed from HERE, in
-         * the enclosing paragraph's claim run, because they are not part of
-         * the label's own content buffer -- the label was made from what is
-         * between them. */
-    }
     return node;
 }
 
@@ -718,9 +710,8 @@ static int visit_owned_subtrees(const markdown_core_extension *extension, markdo
     return visitor(&directive->label, context);
 }
 
-/* `:` opens a directive. `]` is in the dispatch set for the `]` arbitration
- * `bracket_takes_close_bracket` performs, not because it terminates a text run --
- * `is_core_special_character` refuses it there. */
+/* The opener consumes the complete token; the shared inline parser parses its
+ * owned label before continuing beyond it. No close-bracket dispatch exists. */
 const markdown_core_extension MARKDOWN_CORE_EXTENSION_DIRECTIVE = {
     .name = "directive",
     .match_inline = match,

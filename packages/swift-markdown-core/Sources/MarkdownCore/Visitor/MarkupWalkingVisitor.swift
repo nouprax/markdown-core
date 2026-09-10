@@ -49,6 +49,9 @@ public protocol MarkupWalkingVisitor {
     mutating func visit(_ node: Strikethrough, phase: WalkPhase)
     mutating func visit(_ node: Mark, phase: WalkPhase)
     mutating func visit(_ node: Insertion, phase: WalkPhase)
+    mutating func visit(_ node: Span, phase: WalkPhase)
+    mutating func visit(_ node: Superscript, phase: WalkPhase)
+    mutating func visit(_ node: Subscript, phase: WalkPhase)
     mutating func visit(_ node: Link, phase: WalkPhase)
     mutating func visit(_ node: Media, phase: WalkPhase)
     mutating func visit(_ node: Directive, phase: WalkPhase)
@@ -343,6 +346,27 @@ extension WalkingDriver: MarkupVisitor {
         }
     }
     mutating func visit(_ node: Insertion) {
+        visitor.visit(node, phase: phase)
+        scheduleExit(node)
+        if phase == .entering {
+            for child in node.content.reversed() { actions.append(.enter(child)) }
+        }
+    }
+    mutating func visit(_ node: Span) {
+        visitor.visit(node, phase: phase)
+        scheduleExit(node)
+        if phase == .entering {
+            for child in node.content.reversed() { actions.append(.enter(child)) }
+        }
+    }
+    mutating func visit(_ node: Superscript) {
+        visitor.visit(node, phase: phase)
+        scheduleExit(node)
+        if phase == .entering {
+            for child in node.content.reversed() { actions.append(.enter(child)) }
+        }
+    }
+    mutating func visit(_ node: Subscript) {
         visitor.visit(node, phase: phase)
         scheduleExit(node)
         if phase == .entering {

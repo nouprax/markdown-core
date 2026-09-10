@@ -168,6 +168,21 @@ public interface WalkingVisitor {
         phase: WalkPhase,
     )
 
+    public fun visitSpan(
+        node: Span,
+        phase: WalkPhase,
+    )
+
+    public fun visitSuperscript(
+        node: Superscript,
+        phase: WalkPhase,
+    )
+
+    public fun visitSubscript(
+        node: Subscript,
+        phase: WalkPhase,
+    )
+
     public fun visitLink(
         node: Link,
         phase: WalkPhase,
@@ -486,6 +501,24 @@ private class WalkingDriver(
 
     override fun visitInsertion(node: Insertion) {
         visitor.visitInsertion(node, phase)
+        scheduleExit(node)
+        if (phase == WalkPhase.ENTERING) schedule(node.content)
+    }
+
+    override fun visitSpan(node: Span) {
+        visitor.visitSpan(node, phase)
+        scheduleExit(node)
+        if (phase == WalkPhase.ENTERING) schedule(node.content)
+    }
+
+    override fun visitSuperscript(node: Superscript) {
+        visitor.visitSuperscript(node, phase)
+        scheduleExit(node)
+        if (phase == WalkPhase.ENTERING) schedule(node.content)
+    }
+
+    override fun visitSubscript(node: Subscript) {
+        visitor.visitSubscript(node, phase)
         scheduleExit(node)
         if (phase == WalkPhase.ENTERING) schedule(node.content)
     }

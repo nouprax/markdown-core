@@ -103,8 +103,11 @@ abstract interface <#A: kotlin/Any?> com.nouprax.markdown.core/Visitor { // com.
     abstract fun visitMedia(com.nouprax.markdown.core/Media): #A // com.nouprax.markdown.core/Visitor.visitMedia|visitMedia(com.nouprax.markdown.core.Media){}[0]
     abstract fun visitParagraph(com.nouprax.markdown.core/Paragraph): #A // com.nouprax.markdown.core/Visitor.visitParagraph|visitParagraph(com.nouprax.markdown.core.Paragraph){}[0]
     abstract fun visitSoftBreak(com.nouprax.markdown.core/SoftBreak): #A // com.nouprax.markdown.core/Visitor.visitSoftBreak|visitSoftBreak(com.nouprax.markdown.core.SoftBreak){}[0]
+    abstract fun visitSpan(com.nouprax.markdown.core/Span): #A // com.nouprax.markdown.core/Visitor.visitSpan|visitSpan(com.nouprax.markdown.core.Span){}[0]
     abstract fun visitStrikethrough(com.nouprax.markdown.core/Strikethrough): #A // com.nouprax.markdown.core/Visitor.visitStrikethrough|visitStrikethrough(com.nouprax.markdown.core.Strikethrough){}[0]
     abstract fun visitStrong(com.nouprax.markdown.core/Strong): #A // com.nouprax.markdown.core/Visitor.visitStrong|visitStrong(com.nouprax.markdown.core.Strong){}[0]
+    abstract fun visitSubscript(com.nouprax.markdown.core/Subscript): #A // com.nouprax.markdown.core/Visitor.visitSubscript|visitSubscript(com.nouprax.markdown.core.Subscript){}[0]
+    abstract fun visitSuperscript(com.nouprax.markdown.core/Superscript): #A // com.nouprax.markdown.core/Visitor.visitSuperscript|visitSuperscript(com.nouprax.markdown.core.Superscript){}[0]
     abstract fun visitTable(com.nouprax.markdown.core/Table): #A // com.nouprax.markdown.core/Visitor.visitTable|visitTable(com.nouprax.markdown.core.Table){}[0]
     abstract fun visitTableCell(com.nouprax.markdown.core/TableCell): #A // com.nouprax.markdown.core/Visitor.visitTableCell|visitTableCell(com.nouprax.markdown.core.TableCell){}[0]
     abstract fun visitTableRow(com.nouprax.markdown.core/TableRow): #A // com.nouprax.markdown.core/Visitor.visitTableRow|visitTableRow(com.nouprax.markdown.core.TableRow){}[0]
@@ -141,9 +144,12 @@ abstract interface com.nouprax.markdown.core/WalkingVisitor { // com.nouprax.mar
     abstract fun visitMedia(com.nouprax.markdown.core/Media, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitMedia|visitMedia(com.nouprax.markdown.core.Media;com.nouprax.markdown.core.WalkPhase){}[0]
     abstract fun visitParagraph(com.nouprax.markdown.core/Paragraph, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitParagraph|visitParagraph(com.nouprax.markdown.core.Paragraph;com.nouprax.markdown.core.WalkPhase){}[0]
     abstract fun visitSoftBreak(com.nouprax.markdown.core/SoftBreak, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitSoftBreak|visitSoftBreak(com.nouprax.markdown.core.SoftBreak;com.nouprax.markdown.core.WalkPhase){}[0]
+    abstract fun visitSpan(com.nouprax.markdown.core/Span, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitSpan|visitSpan(com.nouprax.markdown.core.Span;com.nouprax.markdown.core.WalkPhase){}[0]
     abstract fun visitSpecimen(com.nouprax.markdown.core/Specimen, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitSpecimen|visitSpecimen(com.nouprax.markdown.core.Specimen;com.nouprax.markdown.core.WalkPhase){}[0]
     abstract fun visitStrikethrough(com.nouprax.markdown.core/Strikethrough, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitStrikethrough|visitStrikethrough(com.nouprax.markdown.core.Strikethrough;com.nouprax.markdown.core.WalkPhase){}[0]
     abstract fun visitStrong(com.nouprax.markdown.core/Strong, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitStrong|visitStrong(com.nouprax.markdown.core.Strong;com.nouprax.markdown.core.WalkPhase){}[0]
+    abstract fun visitSubscript(com.nouprax.markdown.core/Subscript, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitSubscript|visitSubscript(com.nouprax.markdown.core.Subscript;com.nouprax.markdown.core.WalkPhase){}[0]
+    abstract fun visitSuperscript(com.nouprax.markdown.core/Superscript, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitSuperscript|visitSuperscript(com.nouprax.markdown.core.Superscript;com.nouprax.markdown.core.WalkPhase){}[0]
     abstract fun visitTable(com.nouprax.markdown.core/Table, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitTable|visitTable(com.nouprax.markdown.core.Table;com.nouprax.markdown.core.WalkPhase){}[0]
     abstract fun visitTableCell(com.nouprax.markdown.core/TableCell, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitTableCell|visitTableCell(com.nouprax.markdown.core.TableCell;com.nouprax.markdown.core.WalkPhase){}[0]
     abstract fun visitTableRow(com.nouprax.markdown.core/TableRow, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitTableRow|visitTableRow(com.nouprax.markdown.core.TableRow;com.nouprax.markdown.core.WalkPhase){}[0]
@@ -886,6 +892,19 @@ final class com.nouprax.markdown.core/SoftBreak : com.nouprax.markdown.core/Mark
     final fun <#A1: kotlin/Any?> accept(com.nouprax.markdown.core/Visitor<#A1>): #A1 // com.nouprax.markdown.core/SoftBreak.accept|accept(com.nouprax.markdown.core.Visitor<0:0>){0§<kotlin.Any?>}[0]
 }
 
+final class com.nouprax.markdown.core/Span : com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core/Span|null[0]
+    final val anchor // com.nouprax.markdown.core/Span.anchor|{}anchor[0]
+        final fun <get-anchor>(): kotlin/String? // com.nouprax.markdown.core/Span.anchor.<get-anchor>|<get-anchor>(){}[0]
+    final val attributes // com.nouprax.markdown.core/Span.attributes|{}attributes[0]
+        final fun <get-attributes>(): com.nouprax.markdown.core/Attributes // com.nouprax.markdown.core/Span.attributes.<get-attributes>|<get-attributes>(){}[0]
+    final val content // com.nouprax.markdown.core/Span.content|{}content[0]
+        final fun <get-content>(): kotlin.collections/List<com.nouprax.markdown.core/Markup> // com.nouprax.markdown.core/Span.content.<get-content>|<get-content>(){}[0]
+    final val scope // com.nouprax.markdown.core/Span.scope|{}scope[0]
+        final fun <get-scope>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/Span.scope.<get-scope>|<get-scope>(){}[0]
+
+    final fun <#A1: kotlin/Any?> accept(com.nouprax.markdown.core/Visitor<#A1>): #A1 // com.nouprax.markdown.core/Span.accept|accept(com.nouprax.markdown.core.Visitor<0:0>){0§<kotlin.Any?>}[0]
+}
+
 final class com.nouprax.markdown.core/Specimen { // com.nouprax.markdown.core/Specimen|null[0]
     final val content // com.nouprax.markdown.core/Specimen.content|{}content[0]
         final fun <get-content>(): kotlin.collections/List<com.nouprax.markdown.core/Markup> // com.nouprax.markdown.core/Specimen.content.<get-content>|<get-content>(){}[0]
@@ -921,6 +940,32 @@ final class com.nouprax.markdown.core/Strong : com.nouprax.markdown.core/Markup 
         final fun <get-scope>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/Strong.scope.<get-scope>|<get-scope>(){}[0]
 
     final fun <#A1: kotlin/Any?> accept(com.nouprax.markdown.core/Visitor<#A1>): #A1 // com.nouprax.markdown.core/Strong.accept|accept(com.nouprax.markdown.core.Visitor<0:0>){0§<kotlin.Any?>}[0]
+}
+
+final class com.nouprax.markdown.core/Subscript : com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core/Subscript|null[0]
+    final val anchor // com.nouprax.markdown.core/Subscript.anchor|{}anchor[0]
+        final fun <get-anchor>(): kotlin/String? // com.nouprax.markdown.core/Subscript.anchor.<get-anchor>|<get-anchor>(){}[0]
+    final val attributes // com.nouprax.markdown.core/Subscript.attributes|{}attributes[0]
+        final fun <get-attributes>(): com.nouprax.markdown.core/Attributes // com.nouprax.markdown.core/Subscript.attributes.<get-attributes>|<get-attributes>(){}[0]
+    final val content // com.nouprax.markdown.core/Subscript.content|{}content[0]
+        final fun <get-content>(): kotlin.collections/List<com.nouprax.markdown.core/Markup> // com.nouprax.markdown.core/Subscript.content.<get-content>|<get-content>(){}[0]
+    final val scope // com.nouprax.markdown.core/Subscript.scope|{}scope[0]
+        final fun <get-scope>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/Subscript.scope.<get-scope>|<get-scope>(){}[0]
+
+    final fun <#A1: kotlin/Any?> accept(com.nouprax.markdown.core/Visitor<#A1>): #A1 // com.nouprax.markdown.core/Subscript.accept|accept(com.nouprax.markdown.core.Visitor<0:0>){0§<kotlin.Any?>}[0]
+}
+
+final class com.nouprax.markdown.core/Superscript : com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core/Superscript|null[0]
+    final val anchor // com.nouprax.markdown.core/Superscript.anchor|{}anchor[0]
+        final fun <get-anchor>(): kotlin/String? // com.nouprax.markdown.core/Superscript.anchor.<get-anchor>|<get-anchor>(){}[0]
+    final val attributes // com.nouprax.markdown.core/Superscript.attributes|{}attributes[0]
+        final fun <get-attributes>(): com.nouprax.markdown.core/Attributes // com.nouprax.markdown.core/Superscript.attributes.<get-attributes>|<get-attributes>(){}[0]
+    final val content // com.nouprax.markdown.core/Superscript.content|{}content[0]
+        final fun <get-content>(): kotlin.collections/List<com.nouprax.markdown.core/Markup> // com.nouprax.markdown.core/Superscript.content.<get-content>|<get-content>(){}[0]
+    final val scope // com.nouprax.markdown.core/Superscript.scope|{}scope[0]
+        final fun <get-scope>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/Superscript.scope.<get-scope>|<get-scope>(){}[0]
+
+    final fun <#A1: kotlin/Any?> accept(com.nouprax.markdown.core/Visitor<#A1>): #A1 // com.nouprax.markdown.core/Superscript.accept|accept(com.nouprax.markdown.core.Visitor<0:0>){0§<kotlin.Any?>}[0]
 }
 
 final class com.nouprax.markdown.core/Table : com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core/Table|null[0]

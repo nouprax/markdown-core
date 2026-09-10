@@ -27,6 +27,9 @@ import type { SoftBreak } from "./model/soft-break.js";
 import type { Strikethrough } from "./model/strikethrough.js";
 import type { Mark } from "./model/mark.js";
 import type { Insertion } from "./model/insertion.js";
+import type { Span } from "./model/span.js";
+import type { Superscript } from "./model/superscript.js";
+import type { Subscript } from "./model/subscript.js";
 import type { Strong } from "./model/strong.js";
 import type { Table, TableCell, TableRow } from "./model/table.js";
 import type { Text } from "./model/text.js";
@@ -73,6 +76,9 @@ export interface WalkingVisitor {
     visitStrikethrough(this: void, node: Strikethrough, phase: WalkPhase): void;
     visitMark(this: void, node: Mark, phase: WalkPhase): void;
     visitInsertion(this: void, node: Insertion, phase: WalkPhase): void;
+    visitSpan(this: void, node: Span, phase: WalkPhase): void;
+    visitSuperscript(this: void, node: Superscript, phase: WalkPhase): void;
+    visitSubscript(this: void, node: Subscript, phase: WalkPhase): void;
     visitLink(this: void, node: Link, phase: WalkPhase): void;
     visitMedia(this: void, node: Media, phase: WalkPhase): void;
     visitDirective(this: void, node: Directive, phase: WalkPhase): void;
@@ -297,6 +303,21 @@ export function walk(root: Markup, walkingVisitor: WalkingVisitor): void {
         },
         visitInsertion: (node) => {
             walkingVisitor.visitInsertion(node, phase);
+            scheduleExit(node);
+            if (phase === "entering") schedule(node.content);
+        },
+        visitSpan: (node) => {
+            walkingVisitor.visitSpan(node, phase);
+            scheduleExit(node);
+            if (phase === "entering") schedule(node.content);
+        },
+        visitSuperscript: (node) => {
+            walkingVisitor.visitSuperscript(node, phase);
+            scheduleExit(node);
+            if (phase === "entering") schedule(node.content);
+        },
+        visitSubscript: (node) => {
+            walkingVisitor.visitSubscript(node, phase);
             scheduleExit(node);
             if (phase === "entering") schedule(node.content);
         },

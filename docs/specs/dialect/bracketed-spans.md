@@ -40,10 +40,10 @@ Document scope=1:1..1:4 anchor=null attributes={} children=1
     └── Span scope=1:1..1:4 anchor=null attributes={} children=0
 ````````````````````````````````
 
-Recognition is alternative 4 of the bracket procedure of the
+Recognition is alternative 3 of the bracket procedure of the
 [links and images](links-and-images.md) module: at the `]` that balances the
-opener, after a valid direct tail, a footnote call, and a resolving reference
-tail have been excluded, a valid attribute container beginning at the byte
+opener, after a valid direct tail and a resolving reference tail have been
+excluded, a valid attribute container beginning at the byte
 after `]` produces the span. The brackets use the inherited balanced-bracket
 scanner: escaped brackets and brackets owned by code or by a completed inline
 construct do not close the span, and the body follows the shared inline
@@ -135,6 +135,22 @@ Document scope=1:1..1:11 anchor=null attributes={} children=1
         └── DirectiveLabel scope=1:3..1:11 anchor=null attributes={} children=1
             └── Span scope=1:4..1:10 anchor=null attributes={.c} children=1
                 └── Text scope=1:5..1:5 anchor=null attributes={} literal="x" children=0
+````````````````````````````````
+
+The attribute alternative also applies to an image opener that has no valid
+media tail: the `!` remains a separate Text sibling and the `Span.scope`
+begins at `[`, as the shared bracket procedure requires:
+
+```````````````````````````````` example
+![x]{.c} ![]{}
+.
+Document scope=1:1..1:14 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:14 anchor=null attributes={} children=4
+    ├── Text scope=1:1..1:1 anchor=null attributes={} literal="!" children=0
+    ├── Span scope=1:2..1:8 anchor=null attributes={.c} children=1
+    │   └── Text scope=1:3..1:3 anchor=null attributes={} literal="x" children=0
+    ├── Text scope=1:9..1:10 anchor=null attributes={} literal=" !" children=0
+    └── Span scope=1:11..1:14 anchor=null attributes={} children=0
 ````````````````````````````````
 
 ## Fallback

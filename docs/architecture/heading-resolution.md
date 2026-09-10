@@ -39,6 +39,12 @@ cursor and delimiter state, and resumes it after all writable heading labels
 have been declared. There is no second inline recognizer, reparsed prefix,
 placeholder AST, or later replacement of literal Text with Links.
 
+A consumed directive with an owned label is also a suspension boundary: that
+label has live brackets and may contain references of its own. The subject
+retains a field-completion event on its delimiter stack, including when the
+token ends the heading.
+A directive without a label does not suspend declaration.
+
 Opaque tokens and attached attribute containers are consumed by their existing
 owners before this boundary is tested. On completion the same raw-label
 validator used by explicit references rejects brackets even when they occurred
@@ -49,6 +55,12 @@ lookup. This is the invariant that permits one declaration pass and one
 continuation pass, without a fixed-point resolver or general task scheduler.
 
 Ordinary blocks and owned inline fields then parse against the completed map.
+Each inline token's fields finish before the enclosing cursor advances. Fields
+use the same parser and report ordinary raw whitespace as a boundary entry
+on the enclosing delimiter stack, excluding entities and opaque tokens. The structural walk
+skips emitted inline trees, so every source buffer is parsed once. Field-local
+delimiters remain independent of those in the enclosing content.
+The [delimiter model](inline-delimiters.md) owns pairing and scope reduction.
 The heading's ordinary inline subject is the sole owner of its temporary
 caches and delimiter/bracket stacks. Backtick caches allocate lazily, bounded
 by the input length and the inherited backtick limit; a pending heading does
@@ -68,7 +80,7 @@ The existing inline-completion walk reserves effective explicit anchors while
 it discovers owned label/title fields. It visits only completed child trees,
 after bracket reductions and occurrence attributes have settled; a temporary
 inline later discarded by a footnote call cannot reserve an anchor. Field
-parsing may append inline footnotes, which the same completion loop then
+parsing has already appended inline footnotes, which the completion loop also
 visits. Block footnotes are still attached to the content tree during this
 walk. No additional anchor-specific whole-tree traversal is needed. The
 registry and C facade use one effective-anchor accessor for local-over-inherited
@@ -76,6 +88,14 @@ precedence. A reference resource's inherited anchor
 is hashed only on its first emitted inheriting occurrence. This identity index
 is necessary to avoid repeatedly hashing a long definition anchor for every
 short reference; unreferenced or fully overridden definitions reserve nothing.
+
+The same completion walk resolves contextual script-space escape tokens after
+bracket/delimiter ownership is final. Heading projection and all later consumers
+therefore read decoded literals; it never reinterprets authored escape spellings.
+Script depth follows child and owned-field edges; document-owned footnotes
+begin their own context. Failed enclosing candidates therefore leave field
+escapes literal, while a completed script also decodes escapes in nested labels.
+Span, Superscript and Subscript contribute their ordinary child content.
 
 Heading synthesis follows the registered source order. The projection streams
 parsed text through Unicode simple lowercase, whitespace replacement, and the

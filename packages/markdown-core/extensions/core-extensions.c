@@ -30,7 +30,10 @@
 // handling. It follows autolinks and formulas, and precedes directives and the
 // final table. Marks and insertions are core delimiter rules C5/C6 alongside emphasis: an earlier
 // scanner owns its whole span before the cursor can reach an equals or plus run.
-// They need no descriptor and do not change this extension attach order.
+// Span is bracket alternative B3. Superscript and single-tilde Subscript
+// are core delimiter rules C4/C3; a two-tilde run still dispatches to the
+// strikethrough descriptor. They need no additional descriptor and do not
+// change this extension attach order.
 //
 // `comment` sits between `formula` and `cross_link`, and the one position
 // answers both of its forms: inline it is step A5, after the formula scanner

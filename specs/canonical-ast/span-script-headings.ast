@@ -1,0 +1,55 @@
+Document scope=1:1..17:6 anchor=null attributes={} children=9
+├── Heading scope=1:1..1:37 anchor="rich-title-a-b-h2o-1" attributes={} level=1 children=6
+│   ├── Span scope=1:3..1:24 anchor=null attributes={.label} children=2
+│   │   ├── Text scope=1:4..1:8 anchor=null attributes={} literal="Rich " children=0
+│   │   └── Emphasis scope=1:9..1:15 anchor=null attributes={} children=1
+│   │       └── Text scope=1:10..1:14 anchor=null attributes={} literal="Title" children=0
+│   ├── Text scope=1:25..1:25 anchor=null attributes={} literal=" " children=0
+│   ├── Superscript scope=1:26..1:31 anchor=null attributes={} children=1
+│   │   └── Text scope=1:27..1:30 anchor=null attributes={} literal="a b" children=0
+│   ├── Text scope=1:32..1:33 anchor=null attributes={} literal=" H" children=0
+│   ├── Subscript scope=1:34..1:36 anchor=null attributes={} children=1
+│   │   └── Text scope=1:35..1:35 anchor=null attributes={} literal="2" children=0
+│   └── Text scope=1:37..1:37 anchor=null attributes={} literal="O" children=0
+├── Paragraph scope=3:1..3:28 anchor=null attributes={} children=1
+│   └── Span scope=3:1..3:28 anchor="rich-title-a-b-h2o" attributes={} children=1
+│       └── Text scope=3:2..3:6 anchor=null attributes={} literal="owner" children=0
+├── Paragraph scope=5:1..5:7 anchor=null attributes={} children=1
+│   └── Link scope=5:1..5:7 anchor=null attributes={} dest=url("#210") title=null children=2
+│       ├── Text scope=5:2..5:2 anchor=null attributes={} literal="2" children=0
+│       └── Superscript scope=5:3..5:6 anchor=null attributes={} children=1
+│           └── Text scope=5:4..5:5 anchor=null attributes={} literal="10" children=0
+├── Heading scope=7:1..7:7 anchor="210" attributes={} level=1 children=2
+│   ├── Text scope=7:3..7:3 anchor=null attributes={} literal="2" children=0
+│   └── Superscript scope=7:4..7:7 anchor=null attributes={} children=1
+│       └── Text scope=7:5..7:6 anchor=null attributes={} literal="10" children=0
+├── Heading scope=9:1..9:26 anchor="a-b-h2o" attributes={} level=1 children=4
+│   ├── Superscript scope=9:3..9:16 anchor=null attributes={} children=1
+│   │   └── Directive scope=9:4..9:15 anchor=null attributes={} name="d" children=0
+│   │       └── DirectiveLabel scope=9:6..9:15 anchor=null attributes={} children=1
+│   │           └── Directive scope=9:7..9:14 anchor=null attributes={} name="n" children=0
+│   │               └── DirectiveLabel scope=9:9..9:14 anchor=null attributes={} children=1
+│   │                   └── Text scope=9:10..9:13 anchor=null attributes={} literal="a b" children=0
+│   ├── Text scope=9:17..9:18 anchor=null attributes={} literal=" H" children=0
+│   ├── Subscript scope=9:19..9:25 anchor=null attributes={} children=1
+│   │   └── Directive scope=9:20..9:24 anchor=null attributes={} name="d" children=0
+│   │       └── DirectiveLabel scope=9:22..9:24 anchor=null attributes={} children=1
+│   │           └── Text scope=9:23..9:23 anchor=null attributes={} literal="2" children=0
+│   └── Text scope=9:26..9:26 anchor=null attributes={} literal="O" children=0
+├── Heading scope=11:1..11:15 anchor="later" attributes={} level=1 children=1
+│   └── Superscript scope=11:3..11:15 anchor=null attributes={} children=1
+│       └── Directive scope=11:4..11:14 anchor=null attributes={} name="d" children=0
+│           └── DirectiveLabel scope=11:6..11:14 anchor=null attributes={} children=1
+│               └── Link scope=11:7..11:13 anchor=null attributes={} dest=url("#later-1") title=null children=1
+│                   └── Text scope=11:8..11:12 anchor=null attributes={} literal="Later" children=0
+├── Heading scope=13:1..13:7 anchor="later-1" attributes={} level=1 children=1
+│   └── Text scope=13:3..13:7 anchor=null attributes={} literal="Later" children=0
+├── Heading scope=15:1..15:11 anchor="a-b" attributes={} level=1 children=3
+│   ├── Text scope=15:3..15:3 anchor=null attributes={} literal="~" children=0
+│   ├── Directive scope=15:4..15:10 anchor=null attributes={} name="d" children=0
+│   │   └── DirectiveLabel scope=15:6..15:10 anchor=null attributes={} children=1
+│   │       └── Text scope=15:7..15:9 anchor=null attributes={} literal="a b" children=0
+│   └── Text scope=15:11..15:11 anchor=null attributes={} literal="~" children=0
+└── Heading scope=17:1..17:6 anchor="section" attributes={} level=1 children=1
+    └── Directive scope=17:3..17:6 anchor=null attributes={} name="d" children=0
+        └── DirectiveLabel scope=17:5..17:6 anchor=null attributes={} children=0

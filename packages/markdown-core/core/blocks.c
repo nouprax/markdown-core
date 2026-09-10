@@ -1101,40 +1101,46 @@ static void reserve_node_anchor(markdown_core_parser *parser, anchor_registry *r
     }
 }
 
-// Parse inline content in one child tree. Node-valued fields are separate
-// roots and are handed to this function independently by process_inlines.
-static void process_inline_tree(markdown_core_parser *parser, markdown_core_node *root, markdown_core_map *refmap) {
+/* Parse each source buffer once. Inline parsing completes fields at their
+ * owning token; the structural walk therefore skips the emitted inline tree. */
+static bool process_inline_tree(markdown_core_parser *parser, markdown_core_node *root, markdown_core_map *refmap) {
     markdown_core_iter *iter = markdown_core_iter_new(root);
     markdown_core_node *cur;
     markdown_core_event_type ev_type;
+    bool whitespace = false;
 
     if (!iter) {
         parser->oom = true;
-        return;
+        return false;
     }
 
-    while ((ev_type = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+    while (!parser->oom && (ev_type = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
         cur = markdown_core_iter_get_node(iter);
         if (ev_type == MARKDOWN_CORE_EVENT_ENTER) {
-            if (contains_inlines(cur) && cur->kind != MARKDOWN_CORE_NODE_HEADING) {
-                markdown_core_parse_inlines(parser, cur, refmap);
+            if (contains_inlines(cur)) {
+                if (cur->kind != MARKDOWN_CORE_NODE_HEADING) {
+                    whitespace |= markdown_core_parse_inlines(parser, cur, refmap);
+                }
+                markdown_core_iter_reset(iter, cur, MARKDOWN_CORE_EVENT_EXIT);
             }
+            whitespace |= markdown_core_parse_inline_subtrees(parser, cur, refmap);
         }
     }
 
     markdown_core_iter_free(iter);
+    return whitespace;
 }
 
 typedef struct {
     markdown_core_parser *parser;
-    markdown_core_map *refmap;
     anchor_registry *anchors;
+    int script_depth;
 } inline_field_context;
 
 /* Core and extension fields participate in the same parser phases. The
  * private title root stays owned here from source capture through cleanup. */
-static int S_visit_inline_subtrees(markdown_core_node *node, markdown_core_owned_subtree_visitor visitor,
-                                   void *context) {
+int markdown_core_visit_inline_subtrees(markdown_core_node *node, markdown_core_owned_subtree_visitor visitor,
+                                        void *context) {
     if (S_type(node) == MARKDOWN_CORE_NODE_CALLOUT && node->as.callout->title &&
         !visitor(&node->as.callout->title, context)) {
         return 0;
@@ -1144,8 +1150,31 @@ static int S_visit_inline_subtrees(markdown_core_node *node, markdown_core_owned
            extension->visit_owned_subtrees_func(extension, node, visitor, context);
 }
 
-static int process_inline_fields(markdown_core_parser *parser, markdown_core_node *root, markdown_core_map *refmap,
-                                 anchor_registry *anchors);
+typedef struct {
+    markdown_core_parser *parser;
+    markdown_core_map *refmap;
+    bool whitespace;
+} inline_parse_context;
+
+static int parse_inline_field(markdown_core_node **root_slot, void *context) {
+    inline_parse_context *fields = context;
+    if (root_slot && *root_slot && !fields->parser->oom) {
+        fields->whitespace |= process_inline_tree(fields->parser, *root_slot, fields->refmap);
+    }
+    return !fields->parser->oom;
+}
+
+bool markdown_core_parse_inline_subtrees(markdown_core_parser *parser, markdown_core_node *node,
+                                         markdown_core_map *refmap) {
+    inline_parse_context context = {parser, refmap, false};
+    if (!markdown_core_visit_inline_subtrees(node, parse_inline_field, &context)) {
+        parser->oom = true;
+    }
+    return context.whitespace;
+}
+
+static int process_inline_fields(markdown_core_parser *parser, markdown_core_node *root, anchor_registry *anchors,
+                                 int script_depth);
 
 static int process_inline_field(markdown_core_node **root_slot, void *context) {
     inline_field_context *fields = (inline_field_context *)context;
@@ -1153,39 +1182,48 @@ static int process_inline_field(markdown_core_node **root_slot, void *context) {
     if (!root || fields->parser->oom) {
         return !fields->parser->oom;
     }
-    process_inline_tree(fields->parser, root, fields->refmap);
-    if (fields->parser->oom) {
-        return 0;
-    }
-    return process_inline_fields(fields->parser, root, fields->refmap, fields->anchors);
+    return process_inline_fields(fields->parser, root, fields->anchors, fields->script_depth);
 }
 
-/* Find node-valued fields from the completed child tree. Each core kind or
- * owning extension decides which slots exist; each field is parsed as an independent child
- * tree, then scanned for nested fields of its own. */
-static int process_inline_fields(markdown_core_parser *parser, markdown_core_node *root, markdown_core_map *refmap,
-                                 anchor_registry *anchors) {
+/* Complete already parsed child and field trees in their final ownership
+ * context. A field keeps its own delimiter stack, but inherits script depth. */
+static int process_inline_fields(markdown_core_parser *parser, markdown_core_node *root, anchor_registry *anchors,
+                                 int script_depth) {
     markdown_core_iter *iter = markdown_core_iter_new(root);
     markdown_core_event_type event;
-    inline_field_context context = {parser, refmap, anchors};
+    inline_field_context context = {parser, anchors, script_depth};
 
     if (!iter) {
         parser->oom = true;
         return 0;
     }
     while (!parser->oom && (event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
-        markdown_core_node *node;
+        markdown_core_node *node = markdown_core_iter_get_node(iter);
+        if (node->kind == MARKDOWN_CORE_NODE_SUPERSCRIPT || node->kind == MARKDOWN_CORE_NODE_SUBSCRIPT) {
+            script_depth += event == MARKDOWN_CORE_EVENT_ENTER ? 1 : -1;
+        }
         if (event != MARKDOWN_CORE_EVENT_ENTER) {
             continue;
         }
-        node = markdown_core_iter_get_node(iter);
+        /* Bracket and delimiter ownership is final. Resolve the contextual
+         * escape token in this existing completion walk, before heading text
+         * projection or any other consumer reads the literal. Both spellings
+         * are two bytes, so the authored source map stays unchanged. */
+        if (node->flags & MARKDOWN_CORE_NODE__ESCAPED_SPACE) {
+            if (script_depth > 0) {
+                markdown_core_chunk_free(parser->mem, node->as.literal);
+                *node->as.literal = markdown_core_chunk_literal("\xC2\xA0");
+            }
+            node->flags &= ~MARKDOWN_CORE_NODE__ESCAPED_SPACE;
+        }
         /* The child tree is complete: no later bracket reduction can discard
          * this node or override its effective anchor. Reuse the field walk
          * instead of searching the entire owned tree again for reservations. */
         if (anchors) {
             reserve_node_anchor(parser, anchors, node);
         }
-        if (!S_visit_inline_subtrees(node, process_inline_field, &context)) {
+        context.script_depth = script_depth;
+        if (!markdown_core_visit_inline_subtrees(node, process_inline_field, &context)) {
             parser->oom = true;
         }
     }
@@ -1193,16 +1231,15 @@ static int process_inline_fields(markdown_core_parser *parser, markdown_core_nod
     return !parser->oom;
 }
 
-// Parse the structural document tree first, then every detached field tree.
-// All individual walks retain ordinary cmark child-only iterator semantics.
+// Parse each source buffer with its owned fields, then complete final owners.
 static void process_inlines(markdown_core_parser *parser, markdown_core_map *refmap, anchor_registry *anchors) {
     process_inline_tree(parser, parser->root, refmap);
     if (!parser->oom) {
-        process_inline_fields(parser, parser->root, refmap, anchors);
+        process_inline_fields(parser, parser->root, anchors, 0);
     }
 
     for (markdown_core_node *note = parser->root->as.document->footnotes; note && !parser->oom; note = note->next) {
-        process_inline_fields(parser, note, refmap, anchors);
+        process_inline_fields(parser, note, anchors, 0);
     }
 
     markdown_core_manage_extensions_special_characters(parser, false);
@@ -2876,7 +2913,7 @@ static int S_apply_tree_phase(markdown_core_parser *parser, markdown_core_node *
             continue;
         }
         node = markdown_core_iter_get_node(iter);
-        if (!S_visit_inline_subtrees(node, S_apply_field_phase, &fields)) {
+        if (!markdown_core_visit_inline_subtrees(node, S_apply_field_phase, &fields)) {
             parser->oom = true;
         }
     }
@@ -3099,6 +3136,9 @@ static void heading_anchor_base(markdown_core_parser *parser, markdown_core_node
         case MARKDOWN_CORE_NODE_STRIKETHROUGH:
         case MARKDOWN_CORE_NODE_MARK:
         case MARKDOWN_CORE_NODE_INSERTION:
+        case MARKDOWN_CORE_NODE_SPAN:
+        case MARKDOWN_CORE_NODE_SUPERSCRIPT:
+        case MARKDOWN_CORE_NODE_SUBSCRIPT:
         case MARKDOWN_CORE_NODE_LINK:
         case MARKDOWN_CORE_NODE_MEDIA:
         case MARKDOWN_CORE_NODE_DIRECTIVE_LABEL:

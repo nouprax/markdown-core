@@ -278,6 +278,18 @@ private struct DumpVisitor: MarkupVisitor {
         state.line("Insertion", node, children: node.content.count)
         state.nested(node.content.count) { node.content.forEach(state.dump) }
     }
+    mutating func visit(_ node: Span) {
+        state.line("Span", node, children: node.content.count)
+        state.nested(node.content.count) { node.content.forEach(state.dump) }
+    }
+    mutating func visit(_ node: Superscript) {
+        state.line("Superscript", node, children: node.content.count)
+        state.nested(node.content.count) { node.content.forEach(state.dump) }
+    }
+    mutating func visit(_ node: Subscript) {
+        state.line("Subscript", node, children: node.content.count)
+        state.nested(node.content.count) { node.content.forEach(state.dump) }
+    }
 
     mutating func visit(_ node: Link) {
         state.line(

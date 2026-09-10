@@ -128,6 +128,72 @@ test("ast: insertions retain typed content and walk both phases after native rel
     assert.deepEqual(insertion.scope, { start: { line: 1, column: 1 }, end: { line: 1, column: 9 } });
 });
 
+test("ast: spans retain typed content and walk both phases after native release", () => {
+    const span = Document.parse("[a *b*]{}").content[0].content[0];
+    assert.equal(visit(span, { ...kindVisitor, visitSpan: (node) => node.content.length }), 2);
+    const events = [];
+    walk(
+        span,
+        walkingVisitor((node, phase) => events.push(`${phase}:${node.kind}`))
+    );
+    assert.deepEqual(events, [
+        "entering:span",
+        "entering:text",
+        "exiting:text",
+        "entering:emphasis",
+        "entering:text",
+        "exiting:text",
+        "exiting:emphasis",
+        "exiting:span"
+    ]);
+    assert.equal(span.content[1].content[0].literal, "b");
+    assert.deepEqual(span.scope, { start: { line: 1, column: 1 }, end: { line: 1, column: 9 } });
+});
+
+test("ast: superscripts retain typed content and walk both phases after native release", () => {
+    const superscript = Document.parse("^a*b*^").content[0].content[0];
+    assert.equal(visit(superscript, { ...kindVisitor, visitSuperscript: (node) => node.content.length }), 2);
+    const events = [];
+    walk(
+        superscript,
+        walkingVisitor((node, phase) => events.push(`${phase}:${node.kind}`))
+    );
+    assert.deepEqual(events, [
+        "entering:superscript",
+        "entering:text",
+        "exiting:text",
+        "entering:emphasis",
+        "entering:text",
+        "exiting:text",
+        "exiting:emphasis",
+        "exiting:superscript"
+    ]);
+    assert.equal(superscript.content[1].content[0].literal, "b");
+    assert.deepEqual(superscript.scope, { start: { line: 1, column: 1 }, end: { line: 1, column: 6 } });
+});
+
+test("ast: subscripts retain typed content and walk both phases after native release", () => {
+    const subscript = Document.parse("~a*b*~").content[0].content[0];
+    assert.equal(visit(subscript, { ...kindVisitor, visitSubscript: (node) => node.content.length }), 2);
+    const events = [];
+    walk(
+        subscript,
+        walkingVisitor((node, phase) => events.push(`${phase}:${node.kind}`))
+    );
+    assert.deepEqual(events, [
+        "entering:subscript",
+        "entering:text",
+        "exiting:text",
+        "entering:emphasis",
+        "entering:text",
+        "exiting:text",
+        "exiting:emphasis",
+        "exiting:subscript"
+    ]);
+    assert.equal(subscript.content[1].content[0].literal, "b");
+    assert.deepEqual(subscript.scope, { start: { line: 1, column: 1 }, end: { line: 1, column: 6 } });
+});
+
 test("api: the dialect has no switches, so a plain parse recognizes every feature", () => {
     // One witness per feature that used to sit behind a `ParseOptions`
     // field, and one for the substitution smart punctuation used to make.

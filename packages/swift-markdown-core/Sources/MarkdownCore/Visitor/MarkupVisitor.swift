@@ -33,6 +33,9 @@ public protocol MarkupVisitor {
     mutating func visit(_ node: Strikethrough) -> Result
     mutating func visit(_ node: Mark) -> Result
     mutating func visit(_ node: Insertion) -> Result
+    mutating func visit(_ node: Span) -> Result
+    mutating func visit(_ node: Superscript) -> Result
+    mutating func visit(_ node: Subscript) -> Result
     mutating func visit(_ node: Link) -> Result
     mutating func visit(_ node: Media) -> Result
     mutating func visit(_ node: Directive) -> Result

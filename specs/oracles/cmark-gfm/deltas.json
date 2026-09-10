@@ -7,7 +7,7 @@
         "released": "2023-07-21",
         "note": "The newest published cmark-gfm release. It is pinned only as the implementation oracle for the GFM extension layer; current CommonMark semantics come from the separately pinned cmark release."
     },
-    "claim": "With Markdown Core's product extensions disabled, GFM extension constructs match cmark-gfm 0.29.0.gfm.13 except for the reviewed deltas below. cmark-gfm has no authority over the underlying CommonMark layer.",
+    "claim": "The one Markdown Core dialect matches the pinned cmark-gfm GFM extension semantics except for the reviewed projections and exact divergences below. cmark-gfm has no authority over the CommonMark base or the additional dialect modules.",
     "deltas": [
         {
             "id": "html-comment-node",
@@ -94,6 +94,12 @@
             "kind": "deliberate-difference",
             "summary": "The task prefix is exactly one Unicode scalar plus SP, TAB, VT or FF, consumed once when any inherited list item opens, before deciding its first block. cmark-gfm only recognizes ASCII task states, misses quoted containers and can recognize later paragraphs.",
             "handling": "Exact module and historical fixture inputs pin custom markers, containers, opening-line ownership, block decisions and opaque bodies. No comparison erases task syntax."
+        },
+        {
+            "id": "single-tilde-subscript",
+            "kind": "deliberate-difference",
+            "summary": "A single tilde is a subscript delimiter with non-empty, raw-whitespace-free content. Only a two-tilde run can be strikethrough; longer runs stay literal.",
+            "handling": "The four historical single-tilde inputs remain in the corpus and are registered exactly. Product fixtures cover the complete P6 tilde and whitespace rules."
         }
     ],
     "expectedDivergences": [
@@ -211,6 +217,26 @@
             "id": "task-prefix-grammar",
             "input": "- [?] - \tchild\n- [é] - \tchild\n- [✓] - \tchild\n- [🚀] - \tchild\n",
             "note": "O5 review regression: each Unicode scalar occupies one virtual indentation column while node scopes retain UTF-8 byte columns. cmark-gfm keeps custom prefixes as text."
+        },
+        {
+            "id": "single-tilde-subscript",
+            "input": "~Hi~ Hello, world!\n",
+            "note": "P6 gives single tildes to Subscript and rejects raw whitespace inside a candidate; double tildes remain Strikethrough."
+        },
+        {
+            "id": "single-tilde-subscript",
+            "input": "This ~text~ ~~is~~ ~~~curious~~~.\n",
+            "note": "P6 gives single tildes to Subscript and rejects raw whitespace inside a candidate; double tildes remain Strikethrough."
+        },
+        {
+            "id": "single-tilde-subscript",
+            "input": "A proper ~strikethrough~.\n",
+            "note": "P6 gives single tildes to Subscript and rejects raw whitespace inside a candidate; double tildes remain Strikethrough."
+        },
+        {
+            "id": "single-tilde-subscript",
+            "input": "These are ~not strikethroughs.\n\nNo, they are not~\n\nThis ~is ~ legit~ isn't ~ legit.\n\nThis is not ~~~~~one~~~~~ huge strikethrough.\n\n~one~ ~~two~~ ~~~three~~~\n\nNo ~mismatch~~\n",
+            "note": "P6 gives single tildes to Subscript and rejects raw whitespace inside a candidate; double tildes remain Strikethrough."
         }
     ],
     "notDeltas": [],

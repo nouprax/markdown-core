@@ -223,7 +223,9 @@ const stateValidators = {
         parentEdges(tree).some((edge) => edge.parent === "Footnote" && edge.kind === "Paragraph"),
     "document.footnotes.empty": (tree) =>
         tree.startsWith("Document scope=") && !/^(?:├──|└──) Footnote scope=/m.test(tree),
-    "document.footnotes.populated": (tree) => /^(?:├──|└──) Footnote scope=\S+ id="[^"]*" children=\d+$/m.test(tree)
+    "document.footnotes.populated": (tree) => /^(?:├──|└──) Footnote scope=\S+ id="[^"]*" children=\d+$/m.test(tree),
+    "span.content.empty": (tree) => /Span scope=.* children=0(?:\n|$)/.test(tree),
+    "span.content.populated": (tree) => /Span scope=.* children=[1-9]\d*(?:\n|$)/.test(tree)
 };
 const orderValidators = {
     "callout.title-before-content": (tree) =>

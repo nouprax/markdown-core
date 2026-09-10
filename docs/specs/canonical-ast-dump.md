@@ -162,6 +162,9 @@ that the dump represents as nested descendants.
 | `Strikethrough` | `anchor`, `attributes` |
 | `Mark` | `anchor`, `attributes` |
 | `Insertion` | `anchor`, `attributes` |
+| `Span` | `anchor`, `attributes` |
+| `Superscript` | `anchor`, `attributes` |
+| `Subscript` | `anchor`, `attributes` |
 | `Link` | `anchor`, `attributes`, `dest`, `title` |
 | `Media` | `anchor`, `attributes`, `dest`, `title`, `dimensions` |
 | `Directive` | `anchor`, `attributes`, `name` |

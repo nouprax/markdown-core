@@ -222,6 +222,13 @@ for size-only labels). Ordinary cross-link labels and invalid suffixes stay raw.
 `Dimensions` is a node-independent value with required `width` and optional
 `height`; it has no scope or visitor callbacks.
 
+Bracketed spans (`[text]{.class}`) produce `Span(content)` with the shared
+anchor and attributes. Superscript (`^text^`) and subscript (`~text~`) retain
+parsed inline content; their bodies must be non-empty and contain no raw
+whitespace. An escaped ASCII space within a completed body becomes NBSP.
+Strikethrough uses `~~text~~`. All three kinds support typed visitors and
+walking visitors, and their scopes include their authored delimiters.
+
 ## Repository layout
 
 - `packages/markdown-core`: C parser, public facade, CLI, extensions, and C tests.

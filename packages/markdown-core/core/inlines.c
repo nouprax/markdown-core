@@ -15,6 +15,7 @@
 #include "delimiter.h"
 #include "inlines.h"
 #include "extension.h"
+#include "../extensions/markdown-core-extensions.h"
 
 // Macros for creating various kinds of simple.
 #define make_str(subj, sc, ec, s) make_literal(subj, MARKDOWN_CORE_NODE_TEXT, sc, ec, s)
@@ -571,26 +572,40 @@ static markdown_core_delimiter_rule core_delimiter_rule(unsigned char c) {
         return MARKDOWN_CORE_DELIM_RULE_MARK;
     case '+':
         return MARKDOWN_CORE_DELIM_RULE_INSERTION;
+    case '^':
+        return MARKDOWN_CORE_DELIM_RULE_SUPERSCRIPT;
     default:
         return MARKDOWN_CORE_DELIM_RULE_NONE;
     }
 }
 
-/* A core run is a compact sequence of identical delimiter units. The
- * minimum width also decides whether a remainder can still participate.
- * Single/double emphasis and fixed two-byte units share construction and
- * source ownership; a fixed-width rule never uses the rule of three. */
+/* Run spelling, pair ambiguity and body grammar are independent rule
+ * properties. Every parsed body uses the same matcher and constructor;
+ * opaque bodies retain their extension's literal decoder. */
+typedef enum { DELIMITER_INLINE_BODY, DELIMITER_WORD_BODY } delimiter_body;
 typedef struct {
-    bufsize_t minimum_width;
-    markdown_core_node_type single_kind;
-    markdown_core_node_type double_kind;
-} core_delimiter_spec;
+    bufsize_t minimum_width, maximum_width;
+    bufsize_t run_limit; /* zero means a maximal run */
+    bool rule_of_three;
+    delimiter_body body;
+    markdown_core_node_type single_kind, double_kind;
+} delimiter_rule_spec;
 
-static const core_delimiter_spec CORE_DELIMITERS[MARKDOWN_CORE_DELIM_RULE_COUNT] = {
-    [MARKDOWN_CORE_DELIM_RULE_EMPHASIS] = {1, MARKDOWN_CORE_NODE_EMPHASIS, MARKDOWN_CORE_NODE_STRONG},
-    [MARKDOWN_CORE_DELIM_RULE_UNDERSCORE] = {1, MARKDOWN_CORE_NODE_EMPHASIS, MARKDOWN_CORE_NODE_STRONG},
-    [MARKDOWN_CORE_DELIM_RULE_MARK] = {2, MARKDOWN_CORE_NODE_NONE, MARKDOWN_CORE_NODE_MARK},
-    [MARKDOWN_CORE_DELIM_RULE_INSERTION] = {2, MARKDOWN_CORE_NODE_NONE, MARKDOWN_CORE_NODE_INSERTION},
+static const delimiter_rule_spec DELIMITER_RULES[MARKDOWN_CORE_DELIM_RULE_COUNT] = {
+    [MARKDOWN_CORE_DELIM_RULE_EMPHASIS] = {1, 2, 0, true, DELIMITER_INLINE_BODY, MARKDOWN_CORE_NODE_EMPHASIS,
+                                           MARKDOWN_CORE_NODE_STRONG},
+    [MARKDOWN_CORE_DELIM_RULE_UNDERSCORE] = {1, 2, 0, true, DELIMITER_INLINE_BODY, MARKDOWN_CORE_NODE_EMPHASIS,
+                                             MARKDOWN_CORE_NODE_STRONG},
+    [MARKDOWN_CORE_DELIM_RULE_MARK] = {2, 2, 0, false, DELIMITER_INLINE_BODY, MARKDOWN_CORE_NODE_NONE,
+                                       MARKDOWN_CORE_NODE_MARK},
+    [MARKDOWN_CORE_DELIM_RULE_INSERTION] = {2, 2, 0, false, DELIMITER_INLINE_BODY, MARKDOWN_CORE_NODE_NONE,
+                                            MARKDOWN_CORE_NODE_INSERTION},
+    [MARKDOWN_CORE_DELIM_RULE_SUPERSCRIPT] = {1, 1, 1, false, DELIMITER_WORD_BODY, MARKDOWN_CORE_NODE_SUPERSCRIPT,
+                                              MARKDOWN_CORE_NODE_NONE},
+    [MARKDOWN_CORE_DELIM_RULE_SUBSCRIPT] = {1, 1, 1, false, DELIMITER_WORD_BODY, MARKDOWN_CORE_NODE_SUBSCRIPT,
+                                            MARKDOWN_CORE_NODE_NONE},
+    [MARKDOWN_CORE_DELIM_RULE_STRIKETHROUGH] = {2, 2, 0, false, DELIMITER_INLINE_BODY, MARKDOWN_CORE_NODE_NONE,
+                                                MARKDOWN_CORE_NODE_STRIKETHROUGH},
 };
 
 /* Classify without moving the parser cursor or allocating an AST node.
@@ -603,13 +618,20 @@ static const core_delimiter_run *scan_core_delimiter(subject *subj, bufsize_t st
     unsigned char c = peek_at(subj, start);
     core_delimiter_run run = {.start = start, .end = start, .rule = core_delimiter_rule(c)};
     assert(run.rule != MARKDOWN_CORE_DELIM_RULE_NONE);
-    while (run.end < subj->input.len && peek_at(subj, run.end) == c) {
+    const delimiter_rule_spec *spec = &DELIMITER_RULES[run.rule];
+    while (run.end < subj->input.len && peek_at(subj, run.end) == c &&
+           (!spec->run_limit || run.end - run.start < spec->run_limit)) {
         run.end++;
         if (subj->owner_parser) {
             subj->owner_parser->delimiter_work++;
         }
     }
-    if (run.end - run.start < CORE_DELIMITERS[run.rule].minimum_width) {
+    if (spec->body == DELIMITER_WORD_BODY) {
+        run.can_open = run.can_close = true;
+        subj->core_run = run;
+        return &subj->core_run;
+    }
+    if (run.end - run.start < DELIMITER_RULES[run.rule].minimum_width) {
         subj->core_run = run;
         return &subj->core_run;
     }
@@ -723,6 +745,72 @@ static void pop_bracket(subject *subj) {
     subj->mem->free(b);
 }
 
+static delimiter *push_delimiter_entry(subject *subj, delimiter_kind kind, bufsize_t position) {
+    delimiter *entry = (delimiter *)subj->mem->calloc(1, sizeof(delimiter));
+    if (!entry) {
+        subj->oom = 1;
+        return NULL;
+    }
+    entry->kind = kind;
+    entry->position = position;
+    entry->previous = subj->last_delim;
+    if (entry->previous) {
+        entry->previous->next = entry;
+    }
+    subj->last_delim = entry;
+    return entry;
+}
+
+static void push_delimiter_boundary(subject *subj, bufsize_t position) {
+    if (subj->last_delim && subj->last_delim->kind == DELIMITER_BOUNDARY) {
+        subj->last_delim->position = position;
+    } else {
+        push_delimiter_entry(subj, DELIMITER_BOUNDARY, position);
+    }
+}
+
+/* Reduce a completed range to its last content boundary. Markers cannot
+ * escape a completed container, but its whitespace still constrains an
+ * enclosing word body. Keeping one summary also bounds repeated work across
+ * nested bracket scopes: each removed entry is visited only once. */
+static void reduce_delimiter_range(subject *subj, delimiter *before, delimiter *after) {
+    delimiter *entry = after ? after->previous : subj->last_delim;
+    bool boundary = false;
+    while (entry != before) {
+        delimiter *previous = entry->previous;
+        assert(entry->kind != DELIMITER_FIELD);
+        if (subj->owner_parser) {
+            subj->owner_parser->delimiter_work++;
+        }
+        if (entry->kind == DELIMITER_BOUNDARY && !boundary) {
+            boundary = true;
+        } else {
+            remove_delimiter(subj, entry);
+        }
+        entry = previous;
+    }
+}
+
+/* A token's owned fields finish before scanning its successor, preserving
+ * reference occurrence order. Heading declaration can suspend with this
+ * event on the same stack and resume after its symbol table is complete. */
+static void complete_inline_token(markdown_core_parser *parser, subject *subj) {
+    delimiter *entry = subj->last_delim;
+    if (!entry || entry->kind != DELIMITER_FIELD) {
+        return;
+    }
+    bool whitespace = markdown_core_parse_inline_subtrees(parser, entry->node, subj->refmap);
+    if (whitespace) {
+        entry->kind = DELIMITER_BOUNDARY;
+        entry->node = NULL;
+        if (entry->previous && entry->previous->kind == DELIMITER_BOUNDARY) {
+            remove_delimiter(subj, entry->previous);
+        }
+    } else {
+        remove_delimiter(subj, entry);
+    }
+}
+
 static void push_delimiter(subject *subj, const markdown_core_extension *owner, markdown_core_delimiter_rule rule,
                            bool can_open, bool can_close, markdown_core_node *inl_text) {
     delimiter *delim;
@@ -739,26 +827,16 @@ static void push_delimiter(subject *subj, const markdown_core_extension *owner, 
     if (rule <= MARKDOWN_CORE_DELIM_RULE_NONE || rule >= MARKDOWN_CORE_DELIM_RULE_COUNT) {
         return;
     }
-    delim = (delimiter *)subj->mem->calloc(1, sizeof(delimiter));
+    delim = push_delimiter_entry(subj, DELIMITER_MARKER, subj->pos);
     if (!delim) {
-        /* The literal text node stays in the tree; only its emphasis
-         * potential is lost, which the sticky flag reports. */
-        subj->oom = 1;
         return;
     }
     delim->owner = owner;
     delim->rule = rule;
     delim->can_open = can_open;
     delim->can_close = can_close;
-    delim->inl_text = inl_text;
-    delim->position = subj->pos;
+    delim->node = inl_text;
     delim->length = inl_text->as.literal->len;
-    delim->previous = subj->last_delim;
-    delim->next = NULL;
-    if (delim->previous != NULL) {
-        delim->previous->next = delim;
-    }
-    subj->last_delim = delim;
     if (can_open) {
         subj->delim_openers[rule]++;
     }
@@ -848,7 +926,7 @@ static int any_extension_dispatches(markdown_core_parser *parser, unsigned char 
     return 0;
 }
 
-static void process_emphasis(markdown_core_parser *parser, subject *subj, bufsize_t stack_bottom) {
+static void process_delimiters(markdown_core_parser *parser, subject *subj, bufsize_t stack_bottom) {
     delimiter *candidate;
     delimiter *closer = NULL;
     delimiter *opener;
@@ -885,7 +963,16 @@ static void process_emphasis(markdown_core_parser *parser, subject *subj, bufsiz
     // ordinary text and pushes no delimiter.
     while (closer != NULL) {
         const markdown_core_extension *extension = closer->owner;
-        (void)parser;
+        if (closer->kind == DELIMITER_BOUNDARY) {
+            for (int rule = 0; rule < MARKDOWN_CORE_DELIM_RULE_COUNT; rule++) {
+                if (DELIMITER_RULES[rule].body == DELIMITER_WORD_BODY) {
+                    for (i = 0; i < 3; i++) {
+                        openers_bottom[i][rule] = closer->position;
+                    }
+                }
+            }
+        }
+        assert(closer->kind != DELIMITER_FIELD);
         if (closer->can_close) {
             // Now look backwards for first matching opener:
             opener = closer->previous;
@@ -898,7 +985,7 @@ static void process_emphasis(markdown_core_parser *parser, subject *subj, bufsiz
                 if (opener->can_open && opener->rule == closer->rule) {
                     // interior closer of size 2 can't match opener of size 1
                     // or of size 1 can't match 2
-                    if (CORE_DELIMITERS[closer->rule].minimum_width == 2 || !(closer->can_open || opener->can_close) ||
+                    if (!DELIMITER_RULES[closer->rule].rule_of_three || !(closer->can_open || opener->can_close) ||
                         closer->length % 3 == 0 || (opener->length + closer->length) % 3 != 0) {
                         opener_found = true;
                         break;
@@ -908,34 +995,36 @@ static void process_emphasis(markdown_core_parser *parser, subject *subj, bufsiz
             }
             old_closer = closer;
 
-            if (extension != NULL) {
-                if (opener_found) {
-                    /* An extension that matches a delimiter pair BUILDS ITS OWN
-                     * NODE and frees the two `Text` nodes the runs were, so the
-                     * claims those made would name freed memory. Re-claiming
-                     * the runs for the BLOCK first is the floor: the bytes are
-                     * syntax either way, the owner is a node that cannot go
-                     * away, and an extension that wants the finer attribution
-                     * claims them for its own node -- a later claim, which
-                     * wins. */
-                }
-                closer = opener_found ? extension->insert_inline_from_delim(extension, parser, subj, opener, closer)
-                                      : closer->next;
-            } else if (CORE_DELIMITERS[closer->rule].minimum_width != 0) {
-                if (opener_found) {
-                    bufsize_t used =
-                        (opener->inl_text->as.literal->len >= 2 && closer->inl_text->as.literal->len >= 2) ? 2 : 1;
-                    const core_delimiter_spec *spec = &CORE_DELIMITERS[closer->rule];
+            /* Empty script pairs consume both units as text. Neither unit is
+             * available to turn a later byte into a different pairing. */
+            if (opener_found && DELIMITER_RULES[closer->rule].body == DELIMITER_WORD_BODY &&
+                opener->position == closer->position - closer->length) {
+                closer = closer->next;
+                remove_delimiter(subj, opener);
+                remove_delimiter(subj, old_closer);
+                continue;
+            }
+
+            if (opener_found) {
+                reduce_delimiter_range(subj, opener, closer);
+                const delimiter_rule_spec *spec = &DELIMITER_RULES[closer->rule];
+                if (spec->minimum_width) {
+                    bufsize_t used = spec->maximum_width;
+                    if (opener->node->as.literal->len < used || closer->node->as.literal->len < used) {
+                        used = spec->minimum_width;
+                    }
                     markdown_core_node_type kind = used == 2 ? spec->double_kind : spec->single_kind;
                     closer = S_insert_delimited_inline(subj, opener, closer, used, kind);
+                } else if (extension && extension->insert_inline_from_delim) {
+                    delimiter *next = closer->next;
+                    extension->insert_inline_from_delim(extension, parser, subj, opener, closer);
+                    remove_delimiter(subj, opener);
+                    remove_delimiter(subj, closer);
+                    closer = next;
                 } else {
                     closer = closer->next;
                 }
             } else {
-                /* No rule owns it. Unreachable while every push names a rule,
-                 * and it advances anyway: this is the arm whose absence was
-                 * D33, and a rule added without a handler must not resurrect
-                 * it. */
                 closer = closer->next;
             }
             if (!opener_found) {
@@ -952,21 +1041,26 @@ static void process_emphasis(markdown_core_parser *parser, subject *subj, bufsiz
             closer = closer->next;
         }
     }
-    // free all delimiters in list until stack_bottom:
-    while (subj->last_delim != NULL && subj->last_delim->position >= stack_bottom) {
-        remove_delimiter(subj, subj->last_delim);
-    }
+    reduce_delimiter_range(subj, candidate, NULL);
 }
 
 static delimiter *S_insert_delimited_inline(subject *subj, delimiter *opener, delimiter *closer, bufsize_t use_delims,
                                             markdown_core_node_type kind) {
-    delimiter *delim, *tmp_delim;
-    markdown_core_node *opener_inl = opener->inl_text;
-    markdown_core_node *closer_inl = closer->inl_text;
+    delimiter *tmp_delim;
+    markdown_core_node *opener_inl = opener->node;
+    markdown_core_node *closer_inl = closer->node;
     bufsize_t opener_num_chars = opener_inl->as.literal->len;
     bufsize_t closer_num_chars = closer_inl->as.literal->len;
     markdown_core_node *tmp, *tmpnext, *inline_node;
-    const bufsize_t minimum_width = CORE_DELIMITERS[closer->rule].minimum_width;
+    const bufsize_t minimum_width = DELIMITER_RULES[closer->rule].minimum_width;
+
+    /* A rejected container leaves its authored text intact for every rule. */
+    if (!markdown_core_node_can_contain_type(opener_inl->parent, kind)) {
+        delimiter *next = closer->next;
+        remove_delimiter(subj, opener);
+        remove_delimiter(subj, closer);
+        return next;
+    }
 
     // Allocate before mutating either run. OOM leaves the source intact and
     // aborts the shared parse transaction.
@@ -976,19 +1070,13 @@ static delimiter *S_insert_delimited_inline(subject *subj, delimiter *opener, de
         return closer->next;
     }
 
+    inline_node->extension = closer->owner;
+
     // remove used characters from associated inlines.
     opener_num_chars -= use_delims;
     closer_num_chars -= use_delims;
     opener_inl->as.literal->len = opener_num_chars;
     closer_inl->as.literal->len = closer_num_chars;
-
-    // free delimiters between opener and closer
-    delim = closer->previous;
-    while (delim != NULL && delim != opener) {
-        tmp_delim = delim->previous;
-        remove_delimiter(subj, delim);
-        delim = tmp_delim;
-    }
 
     tmp = opener_inl->next;
     if (tmp && tmp != closer_inl) {
@@ -1076,6 +1164,30 @@ static markdown_core_node *handle_backslash(markdown_core_parser *parser, subjec
      * reason, and the two arms must not merely look symmetric. */
     advance(subj);
     unsigned char nextchar = peek_char(subj);
+    if (nextchar == ' ') {
+        /* A trailing whitespace run cannot belong to a completed script.
+         * Leave it to the inherited text/line-ending scanner, including its
+         * trimming and hard-break rules. These lookaheads are disjoint: each
+         * begins after its own backslash and ends before the next token. */
+        bufsize_t end = subj->pos;
+        while (end < subj->input.len && !S_is_line_end_char(peek_at(subj, end)) &&
+               markdown_core_isspace(peek_at(subj, end))) {
+            end++;
+            parser->whitespace_work++;
+        }
+        if ((end == subj->input.len && !MARKDOWN_CORE_NODE_TYPE_INLINE_P(subj->owner->kind)) ||
+            (end < subj->input.len && S_is_line_end_char(peek_at(subj, end)))) {
+            return make_str(subj, start, start, markdown_core_chunk_literal("\\"));
+        }
+        advance(subj);
+        markdown_core_node *escaped = make_str(subj, start, subj->pos - 1, markdown_core_chunk_literal("\\ "));
+        if (escaped) {
+            /* Contextual escape token: inline completion decodes it once the
+             * delimiter/bracket engine has established its semantic owner. */
+            escaped->flags |= MARKDOWN_CORE_NODE__ESCAPED_SPACE;
+        }
+        return escaped;
+    }
     if ((parser->backslash_ispunct ? parser->backslash_ispunct : markdown_core_ispunct)(nextchar)) {
         if (nextchar == '\\' && !any_extension_dispatches(parser, '\\')) {
             bufsize_t end = start;
@@ -1108,6 +1220,7 @@ static markdown_core_node *handle_backslash(markdown_core_parser *parser, subjec
             return escaped;
         }
     } else if (!is_eof(subj) && skip_line_end(subj)) {
+        push_delimiter_boundary(subj, subj->pos);
         // A backslash hard break CONSUMES a line ending, so the subject has to
         // be told, exactly as handle_newline tells it. It was not, so every node
         // after such a break kept the break's own line and a column measured
@@ -1482,11 +1595,39 @@ static markdown_core_node *make_footnote_cite(subject *subj, bracket *opener, bu
     return cite;
 }
 
+/* Claim the parsed body of one balanced bracket pair. Span, links/images,
+ * and document-owned inline notes share this transfer; their callers decide
+ * where the resulting owner lives and when its delimiter boundary closes. */
+static void take_bracket_content(markdown_core_parser *parser, bracket *opener, markdown_core_node *owner) {
+    markdown_core_node *child = opener->inl_text->next;
+    while (child) {
+        markdown_core_node *next = child->next;
+        markdown_core_node_unlink(child);
+        append_child(owner, child);
+        parser->bracket_work++;
+        child = next;
+    }
+}
+
+/* Non-media bracket alternatives own '[' through the suffix. An authored
+ * image bang remains an ordinary Text sibling under bracket rules B3-B6. */
+static void replace_bracket_opener(subject *subj, bracket *opener, markdown_core_node *replacement) {
+    if (opener->kind == BRACKET_IMAGE) {
+        opener->inl_text->as.literal->len = 1;
+        S_place_inline(subj, opener->inl_text, opener->position - 2, opener->position - 2);
+        markdown_core_node_insert_after(opener->inl_text, replacement);
+    } else {
+        markdown_core_node_insert_before(opener->inl_text, replacement);
+        markdown_core_node_free(opener->inl_text);
+    }
+}
+
 static markdown_core_node *close_inline_footnote(markdown_core_parser *parser, subject *subj, bracket *opener) {
-    markdown_core_node *cite, *footnote, *child, *next;
+    markdown_core_node *cite, *footnote;
     /* The consumed body is inspected once by parse_inline, never once per
      * ancestor. Invalid openers keep their already parsed content as text. */
-    if (subj->nonblank_end <= opener->position) {
+    if (subj->nonblank_end <= opener->position ||
+        !markdown_core_node_can_contain_type(opener->inl_text->parent, MARKDOWN_CORE_NODE_CITE)) {
         subj->no_link_openers = opener->outer_no_link_openers;
         pop_bracket(subj);
         return make_str(subj, subj->pos - 1, subj->pos - 1, markdown_core_chunk_literal("]"));
@@ -1502,14 +1643,8 @@ static markdown_core_node *close_inline_footnote(markdown_core_parser *parser, s
         return NULL;
     }
     S_place_inline(subj, footnote, opener->position - 2, subj->pos - 1);
-    process_emphasis(parser, subj, opener->position);
-    child = opener->inl_text->next;
-    while (child) {
-        next = child->next;
-        markdown_core_node_unlink(child);
-        append_child(footnote, child);
-        child = next;
-    }
+    process_delimiters(parser, subj, opener->position);
+    take_bracket_content(parser, opener, footnote);
     markdown_core_node_insert_before(opener->inl_text, cite);
     if (!markdown_core_parser_register_footnote(parser, footnote, cite->as.cite->citations)) {
         markdown_core_node_free(footnote);
@@ -1613,10 +1748,11 @@ static markdown_core_node *handle_close_bracket(markdown_core_parser *parser, su
     markdown_core_node *inl;
     markdown_core_chunk raw_label;
     int found_label;
-    markdown_core_node *tmp, *tmpnext;
     bool is_image;
+    bool link_allowed;
     bool explicit_tail = false;
 
+    parser->bracket_work++;
     advance(subj); // advance past ]
     initial_pos = subj->pos;
 
@@ -1635,16 +1771,12 @@ static markdown_core_node *handle_close_bracket(markdown_core_parser *parser, su
     // Now we check to see if it's a link/image.
     is_image = opener->kind == BRACKET_IMAGE;
 
-    if (!is_image && subj->no_link_openers) {
-        // take delimiter off stack
-        pop_bracket(subj);
-        return make_str(subj, subj->pos - 1, subj->pos - 1, markdown_core_chunk_literal("]"));
-    }
+    link_allowed = is_image || !subj->no_link_openers;
 
     after_link_text_pos = subj->pos;
 
     // First, look for an inline link.
-    if (peek_char(subj) == '(' && ((sps = scan_spacechars(&subj->input, subj->pos + 1)) > -1) &&
+    if (link_allowed && peek_char(subj) == '(' && ((sps = scan_spacechars(&subj->input, subj->pos + 1)) > -1) &&
         ((n = manual_scan_link_url(&subj->input, subj->pos + 1 + sps, &url_chunk)) > -1)) {
 
         // try to parse an explicit link:
@@ -1700,14 +1832,46 @@ static markdown_core_node *handle_close_bracket(markdown_core_parser *parser, su
      * `Link` or `Media` the definition names (M2). Nothing records which of the
      * three spellings the author wrote, and nothing downstream can recover it
      * -- the module states one node for every successful form. */
-    if (found_label && (record = markdown_core_map_lookup(subj->refmap, &raw_label)) != NULL) {
-        markdown_core_chunk_free(subj->mem, &raw_label);
-        goto match;
+    if (link_allowed && found_label) {
+        record = markdown_core_map_lookup(subj->refmap, &raw_label);
     }
     markdown_core_chunk_free(subj->mem, &raw_label);
-    goto noMatch;
+    if (record && explicit_tail) {
+        goto match;
+    }
 
-noMatch:
+    /* A Span is independent of link eligibility: a complete link may be
+     * inside it. Only direct/full/collapsed link tails claim these bytes
+     * first; a shortcut is considered after the attribute alternative. */
+    subj->pos = initial_pos;
+    {
+        markdown_core_attributes attributes = {0};
+        bufsize_t end;
+        if (markdown_core_inline_parser_attributes(subj, initial_pos, &attributes, &end)) {
+            if (!markdown_core_node_can_contain_type(opener->inl_text->parent, MARKDOWN_CORE_NODE_SPAN)) {
+                markdown_core_attributes_free(subj->mem, &attributes);
+                goto no_match;
+            }
+            inl = make_simple_subj(subj, MARKDOWN_CORE_NODE_SPAN);
+            if (!inl) {
+                markdown_core_attributes_free(subj->mem, &attributes);
+                pop_bracket(subj);
+                return NULL;
+            }
+            inl->attributes = attributes;
+            subj->pos = end;
+            S_place_inline(subj, inl, opener->position - 1, end - 1);
+            process_delimiters(parser, subj, opener->position);
+            take_bracket_content(parser, opener, inl);
+            replace_bracket_opener(subj, opener, inl);
+            pop_bracket(subj);
+            return NULL;
+        }
+    }
+    if (record) {
+        goto match;
+    }
+
     // If we fall through to here, it means we didn't match a link.
     // What if we're a footnote link?
     if (opener->inl_text->next && opener->inl_text->next->kind == MARKDOWN_CORE_NODE_TEXT) {
@@ -1756,6 +1920,9 @@ noMatch:
         bool caret_written = opener->position < subj->input.len && subj->input.data[opener->position] == '^' &&
                              (literal->len > 1 || opener->inl_text->next->next);
         if (caret_written && S_footnote_label_is_defined(parser, subj, opener->position, initial_pos)) {
+            if (!markdown_core_node_can_contain_type(opener->inl_text->parent, MARKDOWN_CORE_NODE_CITE)) {
+                goto no_match;
+            }
 
             // Before we got this far, the `handle_close_bracket` function may have
             // advanced the current state beyond our footnote's actual closing
@@ -1783,11 +1950,7 @@ noMatch:
             value->len = (bufsize_t)strlen((const char *)id);
             value->alloc = 1;
 
-            // we then replace the opener with this new fnref node, the net effect
-            // being replacing the opening '[' text node with a `^footnote-ref]` node.
-            markdown_core_node_insert_before(opener->inl_text, fnref);
-
-            process_emphasis(parser, subj, opener->position);
+            process_delimiters(parser, subj, opener->position);
             // sometimes, the footnote reference text gets parsed into multiple nodes
             // i.e. '[^example]' parsed into '[', '^exam', 'ple]'.
             // this happens for ex with the autolink extension. when the autolinker
@@ -1812,18 +1975,24 @@ noMatch:
                 current_node = next_node;
             }
 
-            markdown_core_node_free(opener->inl_text);
-
+            replace_bracket_opener(subj, opener, fnref);
             pop_bracket(subj);
             return NULL;
         }
     }
 
+no_match:
     pop_bracket(subj); // remove this opener from delimiter list
     subj->pos = initial_pos;
     return make_str(subj, subj->pos - 1, subj->pos - 1, markdown_core_chunk_literal("]"));
 
 match:
+    if (!markdown_core_node_can_contain_type(opener->inl_text->parent,
+                                             is_image ? MARKDOWN_CORE_NODE_MEDIA : MARKDOWN_CORE_NODE_LINK)) {
+        markdown_core_chunk_free(subj->mem, &url);
+        markdown_core_optional_chunk_free(subj->mem, &title);
+        goto no_match;
+    }
     inl = make_simple(subj->mem, is_image ? MARKDOWN_CORE_NODE_MEDIA : MARKDOWN_CORE_NODE_LINK);
     if (inl && record) {
         /* A RESOLVED REFERENCE IS THE LINK OR MEDIA IT NAMES (M2), and it reads
@@ -1882,14 +2051,7 @@ match:
     // would count the label's own newlines a second time -- measured,
     // `[a\nb](/u) tail` then reports line 3 of a two-line document.
     markdown_core_node_insert_before(opener->inl_text, inl);
-    // Add link text:
-    tmp = opener->inl_text->next;
-    while (tmp) {
-        tmpnext = tmp->next;
-        markdown_core_node_unlink(tmp);
-        append_child(inl, tmp);
-        tmp = tmpnext;
-    }
+    take_bracket_content(parser, opener, inl);
 
     if (is_image) {
         apply_image_dimensions(subj, opener, inl, initial_pos - 1);
@@ -1898,7 +2060,7 @@ match:
     // Free the bracket [:
     markdown_core_node_free(opener->inl_text);
 
-    process_emphasis(parser, subj, opener->position);
+    process_delimiters(parser, subj, opener->position);
     pop_bracket(subj);
 
     // Now, if we have a link, we also want to deactivate links until
@@ -1922,6 +2084,7 @@ match:
 // rows across seven files said `0:0..0:0` -- a coordinate that is not a place
 // either, and one that carries no line at all.
 static markdown_core_node *handle_newline(subject *subj) {
+    push_delimiter_boundary(subj, subj->pos + 1);
     bufsize_t nlpos = subj->pos;
     markdown_core_node *brk;
     // skip over cr, crlf, or lf:
@@ -2051,39 +2214,11 @@ static markdown_core_node *try_extensions(markdown_core_parser *parser, markdown
     return res;
 }
 
-/* The innermost unmatched opener belonging to an extension that also claims
- * byte `c`. The owner comes off the delimiter now, so this no longer answers
- * "the first attached extension that happens to claim the delimiter's byte". */
-static delimiter *find_extension_opener_for_special_char(markdown_core_parser *parser, subject *subj, unsigned char c) {
-    delimiter *delim = subj->last_delim;
-    int closer_count[MARKDOWN_CORE_DELIM_RULE_COUNT];
-
-    (void)parser;
-    memset(closer_count, 0, sizeof(closer_count));
-
-    while (delim) {
-        if (delim->owner != NULL && extension_dispatches(delim->owner, c)) {
-            if (delim->can_close) {
-                closer_count[delim->rule]++;
-            } else if (delim->can_open) {
-                if (closer_count[delim->rule] > 0) {
-                    closer_count[delim->rule]--;
-                } else {
-                    return delim;
-                }
-            }
-        }
-
-        delim = delim->previous;
+static int has_inline_field(markdown_core_node **root_slot, void *context) {
+    if (root_slot && *root_slot) {
+        *(bool *)context = true;
     }
-
-    return NULL;
-}
-
-static int bracket_takes_close_bracket(markdown_core_parser *parser, subject *subj) {
-    delimiter *extension_opener = find_extension_opener_for_special_char(parser, subj, ']');
-
-    return subj->last_bracket && (!extension_opener || subj->last_bracket->position > extension_opener->position);
+    return 1;
 }
 
 // Parse an inline, advancing subject, and add it as a child of parent.
@@ -2130,7 +2265,7 @@ static int parse_inline(markdown_core_parser *parser, subject *subj, markdown_co
         break;
     case '\\':
         new_inl = try_extensions(parser, parent, c, subj);
-        if (new_inl == NULL) {
+        if (new_inl == NULL && !parser->oom && !subj->oom) {
             new_inl = handle_backslash(parser, subj);
         }
         break;
@@ -2162,7 +2297,8 @@ static int parse_inline(markdown_core_parser *parser, subject *subj, markdown_co
     }
     case '^':
         if (peek_char_n(subj, 1) != '[') {
-            goto text;
+            new_inl = handle_delim(subj, scan_core_delimiter(subj, subj->pos));
+            break;
         }
         subj->pos += 2;
         new_inl = make_str(subj, subj->pos - 2, subj->pos - 1, markdown_core_chunk_literal("^["));
@@ -2170,9 +2306,21 @@ static int parse_inline(markdown_core_parser *parser, subject *subj, markdown_co
             push_bracket(subj, BRACKET_FOOTNOTE, new_inl);
         }
         break;
+    case '~':
+        if (peek_char_n(subj, 1) == '~') {
+            new_inl = try_extensions(parser, parent, c, subj);
+        } else {
+            core_delimiter_run run = {.start = subj->pos,
+                                      .end = subj->pos + 1,
+                                      .rule = MARKDOWN_CORE_DELIM_RULE_SUBSCRIPT,
+                                      .can_open = true,
+                                      .can_close = true};
+            new_inl = handle_delim(subj, &run);
+        }
+        break;
     case '[':
         new_inl = try_extensions(parser, parent, c, subj);
-        if (new_inl != NULL) {
+        if (new_inl != NULL || parser->oom || subj->oom) {
             break;
         }
         advance(subj);
@@ -2184,18 +2332,14 @@ static int parse_inline(markdown_core_parser *parser, subject *subj, markdown_co
         }
         break;
     case ']':
-        if (bracket_takes_close_bracket(parser, subj)) {
-            new_inl = handle_close_bracket(parser, subj);
-            break;
-        }
-        new_inl = try_extensions(parser, parent, c, subj);
-        if (new_inl == NULL) {
-            new_inl = handle_close_bracket(parser, subj);
-        }
+        /* Opaque tokens consume their brackets before this dispatch. Every
+         * remaining close bracket belongs to the shared bracket procedure;
+         * no extension dispatches on ']'. Never rescan the delimiter stack. */
+        new_inl = handle_close_bracket(parser, subj);
         break;
     case '!':
         new_inl = try_extensions(parser, parent, c, subj);
-        if (new_inl != NULL) {
+        if (new_inl != NULL || parser->oom || subj->oom) {
             break;
         }
 
@@ -2212,7 +2356,7 @@ static int parse_inline(markdown_core_parser *parser, subject *subj, markdown_co
         break;
     default:
         new_inl = try_extensions(parser, parent, c, subj);
-        if (new_inl != NULL) {
+        if (new_inl != NULL || parser->oom || subj->oom) {
             break;
         }
 
@@ -2220,6 +2364,17 @@ static int parse_inline(markdown_core_parser *parser, subject *subj, markdown_co
         endpos = subject_find_special_char(subj);
         if (subj->pos < subj->heading_content_end && endpos > subj->heading_content_end) {
             endpos = subj->heading_content_end;
+        }
+        /* Disjoint ordinary text slices alone contribute whitespace barriers.
+         * Escapes, entities, and opaque tokens have their own token owners. */
+        for (bufsize_t at = subj->pos; at < endpos;) {
+            int32_t scalar = 0;
+            int width = markdown_core_utf8proc_iterate(subj->input.data + at, endpos - at, &scalar);
+            parser->whitespace_work++;
+            if (markdown_core_utf8proc_is_space(scalar)) {
+                push_delimiter_boundary(subj, at + width);
+            }
+            at += width > 0 ? width : 1;
         }
         /* Text runs are disjoint, so recording separators costs at most one
          * extra visit per byte, regardless of bracket nesting or digit-run
@@ -2260,6 +2415,14 @@ append:
     }
     if (new_inl != NULL) {
         append_child(parent, new_inl);
+        bool has_fields = false;
+        markdown_core_visit_inline_subtrees(new_inl, has_inline_field, &has_fields);
+        if (has_fields) {
+            delimiter *entry = push_delimiter_entry(subj, DELIMITER_FIELD, subj->pos);
+            if (entry) {
+                entry->node = new_inl;
+            }
+        }
     }
     return 1;
 }
@@ -2280,7 +2443,11 @@ static void start_inlines(markdown_core_parser *parser, markdown_core_node *pare
     }
     subject_from_buf(parser, parser->mem, parent->start_line, subj, &content, refmap);
     subj->owner = parent;
-    markdown_core_chunk_rtrim(&subj->input);
+    /* Block buffers include their terminating line ending. An inline field
+     * ends at its owner's delimiter: its trailing spaces are body content. */
+    if (!MARKDOWN_CORE_NODE_TYPE_INLINE_P(parent->kind)) {
+        markdown_core_chunk_rtrim(&subj->input);
+    }
 
     if (parent->kind == MARKDOWN_CORE_NODE_HEADING) {
         bufsize_t line = subj->input.len;
@@ -2349,32 +2516,39 @@ static void clear_inlines(subject *subj) {
     }
 }
 
-static void finish_inlines(markdown_core_parser *parser, subject *subj) {
-    while (!parser->oom && !subj->oom && !is_eof(subj) && parse_inline(parser, subj, subj->owner))
-        ;
-    if (!parser->oom && !subj->oom) {
-        process_emphasis(parser, subj, 0);
+static bool finish_inlines(markdown_core_parser *parser, subject *subj) {
+    while (!parser->oom && !subj->oom) {
+        complete_inline_token(parser, subj);
+        if (parser->oom || subj->oom || is_eof(subj) || !parse_inline(parser, subj, subj->owner)) {
+            break;
+        }
     }
+    if (!parser->oom && !subj->oom) {
+        process_delimiters(parser, subj, 0);
+    }
+    bool whitespace = subj->last_delim && subj->last_delim->kind == DELIMITER_BOUNDARY;
     clear_inlines(subj);
+    return whitespace;
 }
 
-void markdown_core_parse_inlines(markdown_core_parser *parser, markdown_core_node *parent, markdown_core_map *refmap) {
+bool markdown_core_parse_inlines(markdown_core_parser *parser, markdown_core_node *parent, markdown_core_map *refmap) {
     subject subj;
     start_inlines(parser, parent, refmap, &subj);
-    finish_inlines(parser, &subj);
+    return finish_inlines(parser, &subj);
 }
 
 void markdown_core_prepare_heading(markdown_core_parser *parser, markdown_core_heading_parse *heading) {
     subject subj;
     start_inlines(parser, heading->node, parser->refmap, &subj);
-    while (!parser->oom && !subj.oom && !is_eof(&subj)) {
+    while (!parser->oom && !subj.oom) {
         unsigned char c = peek_char(&subj);
         /* Attribute ownership and opaque tokens are decided by the same
          * cursor as every inline. A live bracket makes this declaration
          * unwritable as a reference label; only its remaining inlines depend
          * on the document's completed symbol table. */
-        if (subj.pos != subj.heading_content_end && subj.pos >= subj.opaque_end &&
-            (c == '[' || c == ']' || ((c == '!' || c == '^') && peek_char_n(&subj, 1) == '['))) {
+        if ((subj.last_delim && subj.last_delim->kind == DELIMITER_FIELD) ||
+            (subj.pos != subj.heading_content_end && subj.pos >= subj.opaque_end &&
+             (c == '[' || c == ']' || ((c == '!' || c == '^') && peek_char_n(&subj, 1) == '[')))) {
             heading->pending = parser->mem->calloc(1, sizeof(subj));
             if (heading->pending) {
                 *heading->pending = subj;
@@ -2383,12 +2557,12 @@ void markdown_core_prepare_heading(markdown_core_parser *parser, markdown_core_h
             subj.oom = 1;
             break;
         }
-        if (!parse_inline(parser, &subj, heading->node)) {
+        if (is_eof(&subj) || !parse_inline(parser, &subj, heading->node)) {
             break;
         }
     }
     if (!parser->oom && !subj.oom) {
-        process_emphasis(parser, &subj, 0);
+        process_delimiters(parser, &subj, 0);
         markdown_core_chunk label = {subj.input.data, subj.heading_label_end, 0};
         if (label.len > 0 && label.len <= MAX_LINK_LABEL_LENGTH &&
             reference_label_length(label.data, label.len) == label.len) {
@@ -2613,10 +2787,6 @@ void markdown_core_inline_parser_push_delimiter(markdown_core_inline_parser *par
     push_delimiter(parser, owner, rule, can_open != 0, can_close != 0, inl_text);
 }
 
-void markdown_core_inline_parser_remove_delimiter(markdown_core_inline_parser *parser, delimiter *delim) {
-    remove_delimiter(parser, delim);
-}
-
 int markdown_core_inline_parser_scan_delimiters(markdown_core_inline_parser *parser, int max_delims, unsigned char c,
                                                 int *left_flanking, int *right_flanking, int *punct_before,
                                                 int *punct_after) {
@@ -2752,10 +2922,6 @@ int markdown_core_inline_parser_has_unmatched_opener(markdown_core_inline_parser
     return parser->delim_openers[rule] > parser->delim_closers[rule];
 }
 
-delimiter *markdown_core_inline_parser_get_last_delimiter(markdown_core_inline_parser *parser) {
-    return parser->last_delim;
-}
-
 int markdown_core_inline_parser_get_line(markdown_core_inline_parser *parser) {
     int line, column;
     if (markdown_core_parser_content_place(parser->owner_parser, parser->owner, parser->pos, &line, &column)) {
@@ -2764,11 +2930,7 @@ int markdown_core_inline_parser_get_line(markdown_core_inline_parser *parser) {
     return parser->line;
 }
 
-delimiter *markdown_core_delimiter_previous(const delimiter *delim) { return delim->previous; }
-
-delimiter *markdown_core_delimiter_next(const delimiter *delim) { return delim->next; }
-
-markdown_core_node *markdown_core_delimiter_node(const delimiter *delim) { return delim->inl_text; }
+markdown_core_node *markdown_core_delimiter_node(const delimiter *delim) { return delim->node; }
 
 markdown_core_delimiter_rule markdown_core_delimiter_rule_of(const delimiter *delim) { return delim->rule; }
 

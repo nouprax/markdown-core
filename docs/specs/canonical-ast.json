@@ -456,6 +456,39 @@
             "invariants": "inline content"
         },
         {
+            "name": "Span",
+            "fields": [
+                {
+                    "name": "content",
+                    "type": "[Markup]",
+                    "optional": false
+                }
+            ],
+            "invariants": "inline content; may be empty"
+        },
+        {
+            "name": "Superscript",
+            "fields": [
+                {
+                    "name": "content",
+                    "type": "[Markup]",
+                    "optional": false
+                }
+            ],
+            "invariants": "inline content; non-empty body"
+        },
+        {
+            "name": "Subscript",
+            "fields": [
+                {
+                    "name": "content",
+                    "type": "[Markup]",
+                    "optional": false
+                }
+            ],
+            "invariants": "inline content; non-empty body"
+        },
+        {
             "name": "Link",
             "fields": [
                 {

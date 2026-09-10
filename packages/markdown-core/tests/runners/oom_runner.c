@@ -44,14 +44,26 @@ static const char OOM_PROPERTIES_CORPUS[] =
 static const char OOM_PROPERTIES_ARRAY_CORPUS[] = "---\nname: x[\nauthors: [\"two\", 3]\nabstract: {nested: 1}\n"
                                                   "date: 4\ncomment: \"bad\\q\"\nkeywords: []\nstate: ready\n---\n";
 
-static const char OOM_HEADING_CORPUS[] = "[First] [First][] [go][First]{#own .c}\n\n"
+static const char OOM_HEADING_CORPUS[] = "# [Rich *Title*]{.c} ^a\\ b^ ~x~\n\n[owner]{#rich-title-a-b-x}\n\n"
+                                         "# ^:d[:n[a\\ b [Later]]]^\n\n# Later\n\n"
+                                         "# ~:d[a b]~\n\n# :d[]\n\n"
+                                         "[2^10^]\n\n# 2^10^\n\n"
+                                         "[First] [First][] [go][First]{#own .c}\n\n"
                                          "# *`prefix` [First]*\n\n# First\n\n# First\n\n# !!!\n\n"
                                          "# First {#explicit}\n\n# T {id=}\n\n# :n[Label :n[`Code`]] $Formula$\n\n"
                                          ":n{#first-1}\n\n[^f]: # First\n\n"
                                          ":n[^[`a`{#first-2}]]\n\n[^`a`{#discarded}]\n\n[^`a`{#discarded}]: note\n\n"
                                          "# `x{#false k=`[First]}\n\n# \xe4\xb8\xad\xe6\x96\x87\n";
 
-static const char OOM_CORPUS[] = "`x`{#c .one .two k=1 k=2} <https://example.com>{.external}\n\n"
+static const char OOM_CORPUS[] = "^a[**b c**]{}z^ ~a[**b&#32;c**]{}z~ ^a~~b c~~z^\n"
+                                 "^a[[b c]{}]{}z^ ~:d[:n[a\\ b]]~ ~~a\nb~~\n"
+                                 "[a *b*]{#id .a k=1 k=2} []{} [outer [inner](u)]{.x} ![x]{.c} ![^1]\n"
+                                 "^a\\ b^ ~*c\\ d*~ ^^ ^a b^ ~x~ ~~y~~\n"
+                                 "^:d[:n[a b]]^ ~:d[:n[a\\ b]]~ ^:d[`a b`]^ ~:d[a&#32;b]~\n"
+                                 "^:d[a\\ ]^ ^:d[a ]^ :d[a\\ b] ^:d[^[a\\ b]]^\n"
+                                 "[x]{.a [y]{.b} ^[[^1]] [r]{.span}\n\n"
+                                 "[r]: /u\n\n"
+                                 "`x`{#c .one .two k=1 k=2} <https://example.com>{.external}\n\n"
                                  "# Heading ## {#h .header}\n\nSetext {#s}\n===\n\n"
                                  "~~~Python {#f .numberLines startFrom=10}\nx\n~~~\n\n"
                                  "[x][attrs]{#own .a k=2} ![x|20x30][attrs]{width=50%}\n\n"
