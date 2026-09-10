@@ -8,6 +8,7 @@ extern "C" {
 #include "references.h"
 #include "attributes.h"
 #include "parser.h"
+#include "extension.h"
 
 /* Parse one raw label suffix atomically. Callers record its separator while
  * recognizing their own label grammar; no search or allocation occurs here. */
@@ -25,7 +26,14 @@ void markdown_core_finish_heading(markdown_core_parser *parser, markdown_core_he
 void markdown_core_dispose_heading(markdown_core_heading_parse *heading);
 
 MARKDOWN_CORE_EXPORT
-void markdown_core_parse_inlines(markdown_core_parser *parser, markdown_core_node *parent, markdown_core_map *refmap);
+bool markdown_core_parse_inlines(markdown_core_parser *parser, markdown_core_node *parent, markdown_core_map *refmap);
+
+/* Shared field ownership and inline parsing. Parsing returns whether ordinary
+ * raw whitespace occurred, including in nested fields; OOM stays on parser. */
+int markdown_core_visit_inline_subtrees(markdown_core_node *node, markdown_core_owned_subtree_visitor visitor,
+                                        void *context);
+bool markdown_core_parse_inline_subtrees(markdown_core_parser *parser, markdown_core_node *node,
+                                         markdown_core_map *refmap);
 
 /* Reads ONE link reference definition off the front of `input`, registers its
  * label and the resource it states in `refmap`, and returns the number of

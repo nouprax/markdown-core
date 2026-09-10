@@ -3260,15 +3260,34 @@ static void span_and_script_linear_work(test_batch_runner *runner) {
         {"[a]{.c ", "", "", 0},   {"[", "", "", 0},     {"[a^b", "x", "]{.c}", 1}, {"[a~b", "x", "]{.c}", 1},
     };
     static const paired_delimiter_case superscripts[] = {
-        {"^", "", "", 0},          {"^a^ ", "", "", 1},           {"^a^b^c^ ", "", "", 2},   {"^a ", "", "", 0},
-        {"^a\t", "", "", 0},       {"^a\xe2\x80\x83", "", "", 0}, {"^*a\\ b*^ ", "", "", 1}, {"[^a^]{} ", "", "", 1},
+        {"^", "", "", 0},
+        {"^a^ ", "", "", 1},
+        {"^a^b^c^ ", "", "", 2},
+        {"^a ", "", "", 0},
+        {"^a\t", "", "", 0},
+        {"^a\xe2\x80\x83", "", "", 0},
+        {"^*a\\ b*^ ", "", "", 1},
+        {"[^a^]{} ", "", "", 1},
         {"^[^a^] ", "", "", 0}, /* detached notes are visited by the value walker */
         {"^a ", "", "]", 0},    /* unmatched brackets cannot rescan the delimiter stack */
-        {"^a`x y`b^ ", "", "", 1}, {"^a%%x y%%b^ ", "", "", 1},   {"^a&#32;b^ ", "", "", 1},
+        {"^a`x y`b^ ", "", "", 1},
+        {"^a%%x y%%b^ ", "", "", 1},
+        {"^a&#32;b^ ", "", "", 1},
+        {"^:d[:n[a b]]^ ", "", "", 0},
+        {"^:d[:n[a\\ b]]^ ", "", "", 1},
+        {"^:d[`a b`]^ ", "", "", 1},
+        {"^:d[a&#32;b]^ ", "", "", 1},
     };
     static const paired_delimiter_case subscripts[] = {
-        {"~", "", "", 0},   {"~~~", "", "", 0},    {"~a~ ", "", "", 1},       {"~a~~b~ ", "", "", 1},
-        {"~a ", "", "", 0}, {"~^a^~ ", "", "", 1}, {"~*a\\ b*~ ", "", "", 1},
+        {"~", "", "", 0},
+        {"~~~", "", "", 0},
+        {"~a~ ", "", "", 1},
+        {"~a~~b~ ", "", "", 1},
+        {"~a ", "", "", 0},
+        {"~^a^~ ", "", "", 1},
+        {"~*a\\ b*~ ", "", "", 1},
+        {"~:d[:n[a b]]~ ", "", "", 0},
+        {"~:d[:n[a\\ b]]~ ", "", "", 1},
     };
     paired_delimiter_linear_work(runner, MARKDOWN_CORE_NODE_SPAN, spans, sizeof(spans) / sizeof(*spans));
     paired_delimiter_linear_work(runner, MARKDOWN_CORE_NODE_SUPERSCRIPT, superscripts,

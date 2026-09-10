@@ -78,6 +78,9 @@ typedef struct subject {
     /* Source boundary for whitespace-sensitive delimiters. Opaque tokens and
      * decoded entities never advance it; ordinary whitespace does. */
     bufsize_t script_boundary;
+    /* A consumed inline token whose owned fields must finish before the next
+     * token. Heading declaration may suspend here until references exist. */
+    markdown_core_node *pending_fields;
     core_delimiter_run core_run;
     /* How many delimiters of each rule on the stack can open, and how many
      * can close, kept at every push and removal so a scanner can ask whether
@@ -349,6 +352,7 @@ static void subject_from_buf(markdown_core_parser *parser, markdown_core_mem *me
     e->refmap = refmap;
     e->last_delim = NULL;
     e->script_boundary = 0;
+    e->pending_fields = NULL;
     e->core_run = (core_delimiter_run){0};
     memset(e->delim_openers, 0, sizeof(e->delim_openers));
     memset(e->delim_closers, 0, sizeof(e->delim_closers));
@@ -1121,7 +1125,8 @@ static markdown_core_node *handle_backslash(markdown_core_parser *parser, subjec
             end++;
             parser->script_work++;
         }
-        if (end == subj->input.len || S_is_line_end_char(peek_at(subj, end))) {
+        if ((end == subj->input.len && !MARKDOWN_CORE_NODE_TYPE_INLINE_P(subj->owner->kind)) ||
+            (end < subj->input.len && S_is_line_end_char(peek_at(subj, end)))) {
             return make_str(subj, start, start, markdown_core_chunk_literal("\\"));
         }
         advance(subj);
@@ -2144,6 +2149,13 @@ static markdown_core_node *try_extensions(markdown_core_parser *parser, markdown
     return res;
 }
 
+static int has_inline_field(markdown_core_node **root_slot, void *context) {
+    if (root_slot && *root_slot) {
+        *(bool *)context = true;
+    }
+    return 1;
+}
+
 // Parse an inline, advancing subject, and add it as a child of parent.
 // Return 0 if no inline can be parsed, 1 otherwise.
 static int parse_inline(markdown_core_parser *parser, subject *subj, markdown_core_node *parent) {
@@ -2188,7 +2200,7 @@ static int parse_inline(markdown_core_parser *parser, subject *subj, markdown_co
         break;
     case '\\':
         new_inl = try_extensions(parser, parent, c, subj);
-        if (new_inl == NULL) {
+        if (new_inl == NULL && !parser->oom && !subj->oom) {
             new_inl = handle_backslash(parser, subj);
         }
         break;
@@ -2243,7 +2255,7 @@ static int parse_inline(markdown_core_parser *parser, subject *subj, markdown_co
         break;
     case '[':
         new_inl = try_extensions(parser, parent, c, subj);
-        if (new_inl != NULL) {
+        if (new_inl != NULL || parser->oom || subj->oom) {
             break;
         }
         advance(subj);
@@ -2262,7 +2274,7 @@ static int parse_inline(markdown_core_parser *parser, subject *subj, markdown_co
         break;
     case '!':
         new_inl = try_extensions(parser, parent, c, subj);
-        if (new_inl != NULL) {
+        if (new_inl != NULL || parser->oom || subj->oom) {
             break;
         }
 
@@ -2279,7 +2291,7 @@ static int parse_inline(markdown_core_parser *parser, subject *subj, markdown_co
         break;
     default:
         new_inl = try_extensions(parser, parent, c, subj);
-        if (new_inl != NULL) {
+        if (new_inl != NULL || parser->oom || subj->oom) {
             break;
         }
 
@@ -2337,6 +2349,11 @@ append:
     }
     if (new_inl != NULL) {
         append_child(parent, new_inl);
+        bool has_fields = false;
+        markdown_core_visit_inline_subtrees(new_inl, has_inline_field, &has_fields);
+        if (has_fields) {
+            subj->pending_fields = new_inl;
+        }
     }
     return 1;
 }
@@ -2357,7 +2374,11 @@ static void start_inlines(markdown_core_parser *parser, markdown_core_node *pare
     }
     subject_from_buf(parser, parser->mem, parent->start_line, subj, &content, refmap);
     subj->owner = parent;
-    markdown_core_chunk_rtrim(&subj->input);
+    /* Block buffers include their terminating line ending. An inline field
+     * ends at its owner's delimiter: its trailing spaces are body content. */
+    if (!MARKDOWN_CORE_NODE_TYPE_INLINE_P(parent->kind)) {
+        markdown_core_chunk_rtrim(&subj->input);
+    }
 
     if (parent->kind == MARKDOWN_CORE_NODE_HEADING) {
         bufsize_t line = subj->input.len;
@@ -2427,31 +2448,46 @@ static void clear_inlines(subject *subj) {
 }
 
 static void finish_inlines(markdown_core_parser *parser, subject *subj) {
-    while (!parser->oom && !subj->oom && !is_eof(subj) && parse_inline(parser, subj, subj->owner))
-        ;
+    while (!parser->oom && !subj->oom) {
+        if (subj->pending_fields) {
+            /* Field delimiters have their own stack, but ordinary whitespace
+             * in their content also separates enclosing script candidates.
+             * Their parser reports this fact without rescanning raw source or
+             * mistaking decoded entities / opaque literals for whitespace. */
+            if (markdown_core_parse_inline_subtrees(parser, subj->pending_fields, subj->refmap)) {
+                subj->script_boundary = subj->pos;
+            }
+            subj->pending_fields = NULL;
+        }
+        if (parser->oom || is_eof(subj) || !parse_inline(parser, subj, subj->owner)) {
+            break;
+        }
+    }
     if (!parser->oom && !subj->oom) {
         process_emphasis(parser, subj, 0);
     }
     clear_inlines(subj);
 }
 
-void markdown_core_parse_inlines(markdown_core_parser *parser, markdown_core_node *parent, markdown_core_map *refmap) {
+bool markdown_core_parse_inlines(markdown_core_parser *parser, markdown_core_node *parent, markdown_core_map *refmap) {
     subject subj;
     start_inlines(parser, parent, refmap, &subj);
     finish_inlines(parser, &subj);
+    return subj.script_boundary > 0;
 }
 
 void markdown_core_prepare_heading(markdown_core_parser *parser, markdown_core_heading_parse *heading) {
     subject subj;
     start_inlines(parser, heading->node, parser->refmap, &subj);
-    while (!parser->oom && !subj.oom && !is_eof(&subj)) {
+    while (!parser->oom && !subj.oom) {
         unsigned char c = peek_char(&subj);
         /* Attribute ownership and opaque tokens are decided by the same
          * cursor as every inline. A live bracket makes this declaration
          * unwritable as a reference label; only its remaining inlines depend
          * on the document's completed symbol table. */
-        if (subj.pos != subj.heading_content_end && subj.pos >= subj.opaque_end &&
-            (c == '[' || c == ']' || ((c == '!' || c == '^') && peek_char_n(&subj, 1) == '['))) {
+        if (subj.pending_fields ||
+            (subj.pos != subj.heading_content_end && subj.pos >= subj.opaque_end &&
+             (c == '[' || c == ']' || ((c == '!' || c == '^') && peek_char_n(&subj, 1) == '[')))) {
             heading->pending = parser->mem->calloc(1, sizeof(subj));
             if (heading->pending) {
                 *heading->pending = subj;
@@ -2460,7 +2496,7 @@ void markdown_core_prepare_heading(markdown_core_parser *parser, markdown_core_h
             subj.oom = 1;
             break;
         }
-        if (!parse_inline(parser, &subj, heading->node)) {
+        if (is_eof(&subj) || !parse_inline(parser, &subj, heading->node)) {
             break;
         }
     }

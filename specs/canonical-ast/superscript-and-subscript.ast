@@ -1,17 +1,77 @@
-Document scope=1:1..1:29 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:29 anchor=null attributes={} children=9
-    ├── Text scope=1:1..1:1 anchor=null attributes={} literal="2" children=0
-    ├── Superscript scope=1:2..1:5 anchor=null attributes={} children=1
-    │   └── Text scope=1:3..1:4 anchor=null attributes={} literal="10" children=0
-    ├── Text scope=1:6..1:7 anchor=null attributes={} literal=" H" children=0
-    ├── Subscript scope=1:8..1:10 anchor=null attributes={} children=1
-    │   └── Text scope=1:9..1:9 anchor=null attributes={} literal="2" children=0
-    ├── Text scope=1:11..1:12 anchor=null attributes={} literal="O " children=0
-    ├── Superscript scope=1:13..1:20 anchor=null attributes={} children=1
-    │   └── Emphasis scope=1:14..1:19 anchor=null attributes={} children=1
-    │       └── Text scope=1:15..1:18 anchor=null attributes={} literal="a b" children=0
-    ├── Text scope=1:21..1:21 anchor=null attributes={} literal=" " children=0
-    ├── Subscript scope=1:22..1:26 anchor=null attributes={} children=1
-    │   └── Superscript scope=1:23..1:25 anchor=null attributes={} children=1
-    │       └── Text scope=1:24..1:24 anchor=null attributes={} literal="x" children=0
-    └── Text scope=1:27..1:29 anchor=null attributes={} literal=" ^^" children=0
+Document scope=1:1..9:48 anchor=null attributes={} children=5
+├── Paragraph scope=1:1..1:29 anchor=null attributes={} children=9
+│   ├── Text scope=1:1..1:1 anchor=null attributes={} literal="2" children=0
+│   ├── Superscript scope=1:2..1:5 anchor=null attributes={} children=1
+│   │   └── Text scope=1:3..1:4 anchor=null attributes={} literal="10" children=0
+│   ├── Text scope=1:6..1:7 anchor=null attributes={} literal=" H" children=0
+│   ├── Subscript scope=1:8..1:10 anchor=null attributes={} children=1
+│   │   └── Text scope=1:9..1:9 anchor=null attributes={} literal="2" children=0
+│   ├── Text scope=1:11..1:12 anchor=null attributes={} literal="O " children=0
+│   ├── Superscript scope=1:13..1:20 anchor=null attributes={} children=1
+│   │   └── Emphasis scope=1:14..1:19 anchor=null attributes={} children=1
+│   │       └── Text scope=1:15..1:18 anchor=null attributes={} literal="a b" children=0
+│   ├── Text scope=1:21..1:21 anchor=null attributes={} literal=" " children=0
+│   ├── Subscript scope=1:22..1:26 anchor=null attributes={} children=1
+│   │   └── Superscript scope=1:23..1:25 anchor=null attributes={} children=1
+│   │       └── Text scope=1:24..1:24 anchor=null attributes={} literal="x" children=0
+│   └── Text scope=1:27..1:29 anchor=null attributes={} literal=" ^^" children=0
+├── Paragraph scope=3:1..3:19 anchor=null attributes={} children=5
+│   ├── Text scope=3:1..3:1 anchor=null attributes={} literal="^" children=0
+│   ├── Directive scope=3:2..3:8 anchor=null attributes={} name="d" children=0
+│   │   └── DirectiveLabel scope=3:4..3:8 anchor=null attributes={} children=1
+│   │       └── Text scope=3:5..3:7 anchor=null attributes={} literal="a b" children=0
+│   ├── Text scope=3:9..3:11 anchor=null attributes={} literal="^ ~" children=0
+│   ├── Directive scope=3:12..3:18 anchor=null attributes={} name="d" children=0
+│   │   └── DirectiveLabel scope=3:14..3:18 anchor=null attributes={} children=1
+│   │       └── Text scope=3:15..3:17 anchor=null attributes={} literal="a b" children=0
+│   └── Text scope=3:19..3:19 anchor=null attributes={} literal="~" children=0
+├── Paragraph scope=5:1..5:30 anchor=null attributes={} children=5
+│   ├── Superscript scope=5:1..5:10 anchor=null attributes={} children=1
+│   │   └── Directive scope=5:2..5:9 anchor=null attributes={} name="d" children=0
+│   │       └── DirectiveLabel scope=5:4..5:9 anchor=null attributes={} children=1
+│   │           └── Text scope=5:5..5:8 anchor=null attributes={} literal="a b" children=0
+│   ├── Text scope=5:11..5:11 anchor=null attributes={} literal=" " children=0
+│   ├── Subscript scope=5:12..5:21 anchor=null attributes={} children=1
+│   │   └── Directive scope=5:13..5:20 anchor=null attributes={} name="d" children=0
+│   │       └── DirectiveLabel scope=5:15..5:20 anchor=null attributes={} children=1
+│   │           └── Text scope=5:16..5:19 anchor=null attributes={} literal="a b" children=0
+│   ├── Text scope=5:22..5:22 anchor=null attributes={} literal=" " children=0
+│   └── Directive scope=5:23..5:30 anchor=null attributes={} name="d" children=0
+│       └── DirectiveLabel scope=5:25..5:30 anchor=null attributes={} children=1
+│           └── Text scope=5:26..5:29 anchor=null attributes={} literal="a\\ b" children=0
+├── Paragraph scope=7:1..7:33 anchor=null attributes={} children=6
+│   ├── Text scope=7:1..7:1 anchor=null attributes={} literal="^" children=0
+│   ├── Directive scope=7:2..7:12 anchor=null attributes={} name="d" children=0
+│   │   └── DirectiveLabel scope=7:4..7:12 anchor=null attributes={} children=1
+│   │       └── Directive scope=7:5..7:11 anchor=null attributes={} name="n" children=0
+│   │           └── DirectiveLabel scope=7:7..7:11 anchor=null attributes={} children=1
+│   │               └── Text scope=7:8..7:10 anchor=null attributes={} literal="a b" children=0
+│   ├── Text scope=7:13..7:14 anchor=null attributes={} literal="^ " children=0
+│   ├── Subscript scope=7:15..7:28 anchor=null attributes={} children=1
+│   │   └── Directive scope=7:16..7:27 anchor=null attributes={} name="d" children=0
+│   │       └── DirectiveLabel scope=7:18..7:27 anchor=null attributes={} children=1
+│   │           └── Directive scope=7:19..7:26 anchor=null attributes={} name="n" children=0
+│   │               └── DirectiveLabel scope=7:21..7:26 anchor=null attributes={} children=1
+│   │                   └── Text scope=7:22..7:25 anchor=null attributes={} literal="a b" children=0
+│   ├── Text scope=7:29..7:29 anchor=null attributes={} literal=" " children=0
+│   └── Superscript scope=7:30..7:33 anchor=null attributes={} children=1
+│       └── Text scope=7:31..7:32 anchor=null attributes={} literal="ok" children=0
+└── Paragraph scope=9:1..9:48 anchor=null attributes={} children=6
+    ├── Text scope=9:1..9:1 anchor=null attributes={} literal="^" children=0
+    ├── Directive scope=9:2..9:9 anchor=null attributes={} name="d" children=0
+    │   └── DirectiveLabel scope=9:4..9:9 anchor=null attributes={} children=1
+    │       └── Text scope=9:5..9:8 anchor=null attributes={} literal="a\\ b" children=0
+    ├── Text scope=9:10..9:14 anchor=null attributes={} literal=" c^ ~" children=0
+    ├── Directive scope=9:15..9:24 anchor=null attributes={} name="d" children=0
+    │   └── DirectiveLabel scope=9:17..9:24 anchor=null attributes={} children=1
+    │       └── Superscript scope=9:18..9:23 anchor=null attributes={} children=1
+    │           └── Text scope=9:19..9:22 anchor=null attributes={} literal="a b" children=0
+    ├── Text scope=9:25..9:28 anchor=null attributes={} literal=" c~ " children=0
+    └── Superscript scope=9:29..9:48 anchor=null attributes={} children=1
+        └── Directive scope=9:30..9:47 anchor=null attributes={} name="d" children=0
+            └── DirectiveLabel scope=9:32..9:47 anchor=null attributes={} children=2
+                ├── Directive scope=9:33..9:42 anchor=null attributes={} name="n" children=0
+                │   └── DirectiveLabel scope=9:35..9:42 anchor=null attributes={} children=1
+                │       └── Superscript scope=9:36..9:41 anchor=null attributes={} children=1
+                │           └── Text scope=9:37..9:40 anchor=null attributes={} literal="a b" children=0
+                └── Text scope=9:43..9:46 anchor=null attributes={} literal="x y" children=0

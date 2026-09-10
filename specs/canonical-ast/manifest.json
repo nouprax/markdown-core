@@ -769,7 +769,16 @@
             "input": "superscript-and-subscript.md",
             "expected": "superscript-and-subscript.ast",
             "coverage": {
-                "kinds": ["Document", "Paragraph", "Text", "Superscript", "Subscript", "Emphasis"],
+                "kinds": [
+                    "Document",
+                    "Paragraph",
+                    "Text",
+                    "Superscript",
+                    "Subscript",
+                    "Emphasis",
+                    "Directive",
+                    "DirectiveLabel"
+                ],
                 "states": ["scope.positive", "children.populated"],
                 "orders": ["inline.source-order"]
             }
@@ -815,7 +824,9 @@
                     "Superscript",
                     "Subscript",
                     "Paragraph",
-                    "Link"
+                    "Link",
+                    "Directive",
+                    "DirectiveLabel"
                 ],
                 "states": ["markup.anchor.value", "scope.positive", "children.populated"],
                 "orders": ["document.source-order"]

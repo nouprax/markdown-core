@@ -176,6 +176,51 @@ Document scope=1:1..1:9 anchor=null attributes={} children=1
 A `^` or `~` owned by an autolink, code span, HTML token, comment, formula,
 or cross link is opaque.
 
+Owned inline fields, including directive labels, participate in the enclosing
+script's whitespace and escape rules. Their delimiter stacks stay local to the
+field, but ordinary raw whitespace invalidates the enclosing candidate too.
+An escaped space is decoded only after the complete ownership tree is known;
+it inherits an enclosing script through any number of owned fields. Opaque
+content and character references retain the rules above. An inline field ends
+at its closing delimiter, so its trailing whitespace is content, unlike a
+block buffer's terminating line ending.
+
+```````````````````````````````` example
+^:d[a b]^ ~:d[a b]~
+.
+Document scope=1:1..1:19 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:19 anchor=null attributes={} children=5
+    ├── Text scope=1:1..1:1 anchor=null attributes={} literal="^" children=0
+    ├── Directive scope=1:2..1:8 anchor=null attributes={} name="d" children=0
+    │   └── DirectiveLabel scope=1:4..1:8 anchor=null attributes={} children=1
+    │       └── Text scope=1:5..1:7 anchor=null attributes={} literal="a b" children=0
+    ├── Text scope=1:9..1:11 anchor=null attributes={} literal="^ ~" children=0
+    ├── Directive scope=1:12..1:18 anchor=null attributes={} name="d" children=0
+    │   └── DirectiveLabel scope=1:14..1:18 anchor=null attributes={} children=1
+    │       └── Text scope=1:15..1:17 anchor=null attributes={} literal="a b" children=0
+    └── Text scope=1:19..1:19 anchor=null attributes={} literal="~" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+^:d[a\ b]^ ~:d[a\ b]~ :d[a\ b]
+.
+Document scope=1:1..1:30 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:30 anchor=null attributes={} children=5
+    ├── Superscript scope=1:1..1:10 anchor=null attributes={} children=1
+    │   └── Directive scope=1:2..1:9 anchor=null attributes={} name="d" children=0
+    │       └── DirectiveLabel scope=1:4..1:9 anchor=null attributes={} children=1
+    │           └── Text scope=1:5..1:8 anchor=null attributes={} literal="a b" children=0
+    ├── Text scope=1:11..1:11 anchor=null attributes={} literal=" " children=0
+    ├── Subscript scope=1:12..1:21 anchor=null attributes={} children=1
+    │   └── Directive scope=1:13..1:20 anchor=null attributes={} name="d" children=0
+    │       └── DirectiveLabel scope=1:15..1:20 anchor=null attributes={} children=1
+    │           └── Text scope=1:16..1:19 anchor=null attributes={} literal="a b" children=0
+    ├── Text scope=1:22..1:22 anchor=null attributes={} literal=" " children=0
+    └── Directive scope=1:23..1:30 anchor=null attributes={} name="d" children=0
+        └── DirectiveLabel scope=1:25..1:30 anchor=null attributes={} children=1
+            └── Text scope=1:26..1:29 anchor=null attributes={} literal="a\\ b" children=0
+````````````````````````````````
+
 ## Fallback
 
 Escaped delimiters are text:

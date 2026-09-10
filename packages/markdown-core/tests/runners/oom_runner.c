@@ -45,6 +45,8 @@ static const char OOM_PROPERTIES_ARRAY_CORPUS[] = "---\nname: x[\nauthors: [\"tw
                                                   "date: 4\ncomment: \"bad\\q\"\nkeywords: []\nstate: ready\n---\n";
 
 static const char OOM_HEADING_CORPUS[] = "# [Rich *Title*]{.c} ^a\\ b^ ~x~\n\n[owner]{#rich-title-a-b-x}\n\n"
+                                         "# ^:d[:n[a\\ b [Later]]]^\n\n# Later\n\n"
+                                         "# ~:d[a b]~\n\n# :d[]\n\n"
                                          "[2^10^]\n\n# 2^10^\n\n"
                                          "[First] [First][] [go][First]{#own .c}\n\n"
                                          "# *`prefix` [First]*\n\n# First\n\n# First\n\n# !!!\n\n"
@@ -55,6 +57,8 @@ static const char OOM_HEADING_CORPUS[] = "# [Rich *Title*]{.c} ^a\\ b^ ~x~\n\n[o
 
 static const char OOM_CORPUS[] = "[a *b*]{#id .a k=1 k=2} []{} [outer [inner](u)]{.x} ![x]{.c} ![^1]\n"
                                  "^a\\ b^ ~*c\\ d*~ ^^ ^a b^ ~x~ ~~y~~\n"
+                                 "^:d[:n[a b]]^ ~:d[:n[a\\ b]]~ ^:d[`a b`]^ ~:d[a&#32;b]~\n"
+                                 "^:d[a\\ ]^ ^:d[a ]^ :d[a\\ b] ^:d[^[a\\ b]]^\n"
                                  "[x]{.a [y]{.b} ^[[^1]] [r]{.span}\n\n"
                                  "[r]: /u\n\n"
                                  "`x`{#c .one .two k=1 k=2} <https://example.com>{.external}\n\n"

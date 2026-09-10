@@ -1362,6 +1362,25 @@ its behavior, with no separate publication step.
   Span ID. The original P4 occurrence-attribute input is retained and its new
   P5 Span output is recorded.
 
+  PR #226 review follow-up (2026-09-11): owned directive labels now report
+  ordinary raw whitespace to the enclosing script boundary through the shared
+  inline parser. Each source buffer parses once; a heading suspends at a token
+  with an owned label until forward references are available. The completion
+  walk inherits script depth through owned fields while document-owned footnotes
+  keep an independent context. Inline-field trailing spaces remain body content.
+  Ten new package cases cover nested labels, raw and escaped whitespace, opaque
+  content, local delimiters and failed outer candidates; eight fail before the
+  fix. Two existing canonical cases gain these compositions and heading cases.
+  Size-doubling counters and strict allocation-failure sweeps cover the new
+  paths. Label source maps now reuse the enclosing source view, including line
+  breaks and escaped table pipes; one existing table golden's Text endpoint is
+  corrected from column 22 to 23 with its input unchanged. Allocation failure
+  after extension consumption stops before any ordinary-text fallback.
+  Validation passes for C correctness/conformance, ASan/UBSan/TSan, all host
+  bindings and canonical cases, the six oracle gates, 400-input seed-1 fuzz
+  runs, unchanged position/reference ledgers, `pnpm verify` and the host
+  release dry run.
+
 - [ ] **P7 — `citations`.** Recognize bare and braced keys, bracketed groups
       with semicolon items and prefix, mode marker, key, and suffix scopes,
       author-in-text keys with an optional bracketed tail, `-@` for
