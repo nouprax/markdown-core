@@ -202,10 +202,13 @@ enum markdown_core_node__internal_flags {
     // before list layout and inline parsing observe the semantic children.
     MARKDOWN_CORE_NODE__REFERENCE_DEFINITION_ONLY = (1 << 5),
 
+    // Deferred contextual escape token, decoded when inline ownership is final.
+    MARKDOWN_CORE_NODE__ESCAPED_SPACE = (1 << 6),
+
     // The first bit an extension may claim. Extension flags are compile-time
     // constants owned by the extension that uses them; there is no runtime
     // registration and no allocator to run out of bits.
-    MARKDOWN_CORE_NODE__EXTENSION_FIRST = (1 << 6),
+    MARKDOWN_CORE_NODE__EXTENSION_FIRST = (1 << 7),
 };
 
 typedef uint16_t markdown_core_node_internal_flags;

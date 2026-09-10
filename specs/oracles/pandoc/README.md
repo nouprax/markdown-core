@@ -43,10 +43,18 @@ host executable explicitly with `scripts/init-environment.sh --install oracle-pa
 runs CLI canaries, both parsers and the fail-closed digest registry. Normal
 builds and tests never install the executable or access the network.
 
-The active corpus has five agreements, one documented attribute-merge
-divergence and nineteen missing-feature gaps assigned to later landing items.
-Every difference pins input/reader, oracle projection and product projection
-SHA-256 digests. New, changed, stale, duplicate and unknown entries fail.
+The active corpus has 16 agreements, 7 documented divergences
+and 12 missing-feature gaps assigned to later landing items. Every difference
+pins input/reader, oracle projection and product projection SHA-256 digests.
+New, changed, stale, duplicate and unknown entries fail. P5's span and shared
+attribute grammar cases now agree, including empty containers, nesting,
+shortcut precedence, complete link tails and malformed fallback. P6's ordinary
+superscript/subscript case agrees. Empty bodies, contextual escaped spaces,
+Unicode whitespace, decoded TAB preservation, maximal tilde runs and code-token
+opacity retain exact deliberate-difference witnesses. Inline-footnote composition
+is tested in the product fixtures, where the document-owned footnote model and
+source scopes are observable.
+
 `inline-code-attributes`, `header-attributes`, `fenced-code-attributes` and
 `link-and-image-attributes` agree; `pandoc-reference-attribute-merge` remains an
 exact deliberate difference, with an executable `combineAttr` canary.

@@ -59,6 +59,12 @@ public interface Visitor<Result> {
 
     public fun visitInsertion(node: Insertion): Result
 
+    public fun visitSpan(node: Span): Result
+
+    public fun visitSuperscript(node: Superscript): Result
+
+    public fun visitSubscript(node: Subscript): Result
+
     public fun visitLink(node: Link): Result
 
     public fun visitMedia(node: Media): Result

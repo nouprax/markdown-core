@@ -185,6 +185,15 @@ markdown_core_node_kind markdown_core_node_get_kind(const markdown_core_node *no
     if (node->kind == MARKDOWN_CORE_NODE_INSERTION) {
         return MARKDOWN_CORE_KIND_INSERTION;
     }
+    if (node->kind == MARKDOWN_CORE_NODE_SPAN) {
+        return MARKDOWN_CORE_KIND_SPAN;
+    }
+    if (node->kind == MARKDOWN_CORE_NODE_SUPERSCRIPT) {
+        return MARKDOWN_CORE_KIND_SUPERSCRIPT;
+    }
+    if (node->kind == MARKDOWN_CORE_NODE_SUBSCRIPT) {
+        return MARKDOWN_CORE_KIND_SUBSCRIPT;
+    }
     if (node->kind == MARKDOWN_CORE_NODE_STRONG) {
         return MARKDOWN_CORE_KIND_STRONG;
     }
@@ -270,9 +279,12 @@ const char *markdown_core_node_kind_name(markdown_core_node_kind kind) {
         "CrossLink",
         "Mark",
         "CrossEmbedded",
-        "Insertion"};
+        "Insertion",
+        "Span",
+        "Superscript",
+        "Subscript"};
     /* clang-format on */
-    if (kind < MARKDOWN_CORE_KIND_NONE || kind > MARKDOWN_CORE_KIND_INSERTION) {
+    if (kind < MARKDOWN_CORE_KIND_NONE || kind > MARKDOWN_CORE_KIND_SUBSCRIPT) {
         return "None";
     }
     return names[kind];
@@ -1648,6 +1660,9 @@ static void dump_node(dump_buffer *buffer, const markdown_core_node *node, size_
     case MARKDOWN_CORE_KIND_STRONG:
     case MARKDOWN_CORE_KIND_MARK:
     case MARKDOWN_CORE_KIND_INSERTION:
+    case MARKDOWN_CORE_KIND_SPAN:
+    case MARKDOWN_CORE_KIND_SUPERSCRIPT:
+    case MARKDOWN_CORE_KIND_SUBSCRIPT:
     case MARKDOWN_CORE_KIND_STRIKETHROUGH:
     case MARKDOWN_CORE_KIND_LINK:
     case MARKDOWN_CORE_KIND_MEDIA:

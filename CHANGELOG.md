@@ -6,6 +6,15 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
+- Add always-on bracketed spans (`[text]{.class}`), superscript (`^text^`)
+  and subscript (`~text~`) across C, Swift, Kotlin and ES, with typed models,
+  exhaustive/walking visitors, transports, attributes and source scopes.
+  Span uses the shared bracket and attribute operations. Script units use the
+  shared delimiter stack, reject raw whitespace and empty bodies, and decode
+  escaped spaces to NBSP only within a completed body. Single tilde now belongs
+  to Subscript; Strikethrough requires two. Pin the deliberate oracle differences
+  and cover nesting, opacity, allocation failure and linear source work.
+
 - Attach normalized attributes to inline code, ATX/Setext headings, fenced code,
   links and media. Reference occurrences inherit definition attributes while
   retaining local anchors, duplicate declarations, typed dimensions and exact

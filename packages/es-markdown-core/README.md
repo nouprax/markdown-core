@@ -115,6 +115,14 @@ is limited to the item's opening line and removes the prefix before deciding
 its first block. Empty or multi-scalar markers and a missing separator remain
 literal text.
 
+Bracketed spans (`[text]{.class}`) produce `Span(content)` with the shared
+anchor and attributes. Superscript (`^text^`) and subscript (`~text~`) retain
+parsed inline content; their bodies must be non-empty and contain no raw
+whitespace. An escaped ASCII space within a completed body becomes NBSP.
+Strikethrough uses `~~text~~`. All three kinds support typed visitors and
+walking visitors, and their scopes include their authored delimiters.
+Their ES kind tags are `"span"`, `"superscript"` and `"subscript"`.
+
 ## Traverse and Inspect
 
 `visit(markup, visitor)` dispatches exactly one node to an exhaustive typed

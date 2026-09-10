@@ -2,8 +2,8 @@
 
 Status: normative module of the [Markdown Core dialect](../dialect.md).
 Source: Pandoc's `superscript` and `subscript` extensions. Executable
-oracle: the Pandoc 3.11 CLI under `specs/oracles/pandoc/`. Landing: `P6`,
-which also removes the engine's unused double-tilde strikethrough flag. The
+oracle: the Pandoc 3.11 CLI under `specs/oracles/pandoc/`. Landing: `P6`. Single tildes belong exclusively to Subscript;
+strikethrough requires two tildes. The
 [example format](../dialect.md#examples) is defined by the index.
 
 ## Model

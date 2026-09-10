@@ -667,6 +667,13 @@
             "input": "`x`{k=\"a\" m=\"> &amp;\" q=\\}b} :n{.directive}\n",
             "authority": "docs/specs/dialect/attributes.md; P2a–P2d",
             "note": "packages/markdown-core/tests/fixtures/dialect-attributes.txt:697: the dialect attaches normalized attributes at code, heading and link sites and inherits reference-definition values; remark has no such attachment sites. Fenced-code info remains the authored text outside the container. Its competing base/extension parse is preserved as exact evidence."
+        },
+        {
+            "id": "span-after-failed-directive",
+            "input": ":n{.a=b}::note[Label]{.c}\n",
+            "authority": "docs/specs/dialect/bracketed-spans.md (P5)",
+            "summary": "A rejected directive envelope leaves its balanced bracket pair eligible for a Span with the immediate attribute container.",
+            "why": "Remark has no bracketed-span syntax. This minimized seeded-fuzz witness preserves its competing literal interpretation while the product fixture pins the Span and source scopes."
         }
     ],
     "baselineBacklog": [],

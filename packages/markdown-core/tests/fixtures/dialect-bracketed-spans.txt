@@ -1,0 +1,445 @@
+# bracketed-spans
+
+```````````````````````````````` example
+[text]{.class} [x]{#id .c k="v"}
+.
+Document scope=1:1..1:32 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:32 anchor=null attributes={} children=3
+    ├── Span scope=1:1..1:14 anchor=null attributes={.class} children=1
+    │   └── Text scope=1:2..1:5 anchor=null attributes={} literal="text" children=0
+    ├── Text scope=1:15..1:15 anchor=null attributes={} literal=" " children=0
+    └── Span scope=1:16..1:32 anchor="id" attributes={.c k="v"} children=1
+        └── Text scope=1:17..1:17 anchor=null attributes={} literal="x" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+[]{}
+.
+Document scope=1:1..1:4 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:4 anchor=null attributes={} children=1
+    └── Span scope=1:1..1:4 anchor=null attributes={} children=0
+````````````````````````````````
+
+```````````````````````````````` example
+[*a* b]{.c} [a [b] c]{.c}
+.
+Document scope=1:1..1:25 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:25 anchor=null attributes={} children=3
+    ├── Span scope=1:1..1:11 anchor=null attributes={.c} children=2
+    │   ├── Emphasis scope=1:2..1:4 anchor=null attributes={} children=1
+    │   │   └── Text scope=1:3..1:3 anchor=null attributes={} literal="a" children=0
+    │   └── Text scope=1:5..1:6 anchor=null attributes={} literal=" b" children=0
+    ├── Text scope=1:12..1:12 anchor=null attributes={} literal=" " children=0
+    └── Span scope=1:13..1:25 anchor=null attributes={.c} children=1
+        └── Text scope=1:14..1:20 anchor=null attributes={} literal="a [b] c" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+[text]{.key}
+
+[text]: /u
+.
+Document scope=1:1..3:10 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:12 anchor=null attributes={} children=1
+    └── Span scope=1:1..1:12 anchor=null attributes={.key} children=1
+        └── Text scope=1:2..1:5 anchor=null attributes={} literal="text" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+[text](/u){.c} [text][r]{.c}
+
+[r]: /r
+.
+Document scope=1:1..3:7 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:28 anchor=null attributes={} children=3
+    ├── Link scope=1:1..1:14 anchor=null attributes={.c} dest=url("/u") title=null children=1
+    │   └── Text scope=1:2..1:5 anchor=null attributes={} literal="text" children=0
+    ├── Text scope=1:15..1:15 anchor=null attributes={} literal=" " children=0
+    └── Link scope=1:16..1:28 anchor=null attributes={.c} dest=url("/r") title=null children=1
+        └── Text scope=1:17..1:20 anchor=null attributes={} literal="text" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+[see [a](/u) here]{.c}
+.
+Document scope=1:1..1:22 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:22 anchor=null attributes={} children=1
+    └── Span scope=1:1..1:22 anchor=null attributes={.c} children=3
+        ├── Text scope=1:2..1:5 anchor=null attributes={} literal="see " children=0
+        ├── Link scope=1:6..1:12 anchor=null attributes={} dest=url("/u") title=null children=1
+        │   └── Text scope=1:7..1:7 anchor=null attributes={} literal="a" children=0
+        └── Text scope=1:13..1:17 anchor=null attributes={} literal=" here" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+[[wiki]]{.x}
+.
+Document scope=1:1..1:12 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:12 anchor=null attributes={} children=2
+    ├── CrossLink scope=1:1..1:8 anchor=null attributes={} dest=cross(path="wiki",anchor=null) label=null children=0
+    └── Text scope=1:9..1:12 anchor=null attributes={} literal="{.x}" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+:a[[x]{.c}]
+.
+Document scope=1:1..1:11 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:11 anchor=null attributes={} children=1
+    └── Directive scope=1:1..1:11 anchor=null attributes={} name="a" children=0
+        └── DirectiveLabel scope=1:3..1:11 anchor=null attributes={} children=1
+            └── Span scope=1:4..1:10 anchor=null attributes={.c} children=1
+                └── Text scope=1:5..1:5 anchor=null attributes={} literal="x" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+[text]{.c [text] {.c} [text]{.1}
+.
+Document scope=1:1..1:32 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:32 anchor=null attributes={} children=1
+    └── Text scope=1:1..1:32 anchor=null attributes={} literal="[text]{.c [text] {.c} [text]{.1}" children=0
+````````````````````````````````
+
+## Composition and fallback
+
+```````````````````````````````` example
+[x]{} []{#empty} [x]{#first #last .a .a id=record class="b b" k=1 k=2 empty=}
+.
+Document scope=1:1..1:77 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:77 anchor=null attributes={} children=5
+    ├── Span scope=1:1..1:5 anchor=null attributes={} children=1
+    │   └── Text scope=1:2..1:2 anchor=null attributes={} literal="x" children=0
+    ├── Text scope=1:6..1:6 anchor=null attributes={} literal=" " children=0
+    ├── Span scope=1:7..1:16 anchor="empty" attributes={} children=0
+    ├── Text scope=1:17..1:17 anchor=null attributes={} literal=" " children=0
+    └── Span scope=1:18..1:77 anchor="record" attributes={.a .a .b .b k="1" k="2" empty=""} children=1
+        └── Text scope=1:19..1:19 anchor=null attributes={} literal="x" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+[a\]b]{.c} [`]`]{.c} [a\[b]{.c}
+.
+Document scope=1:1..1:31 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:31 anchor=null attributes={} children=5
+    ├── Span scope=1:1..1:10 anchor=null attributes={.c} children=1
+    │   └── Text scope=1:2..1:5 anchor=null attributes={} literal="a]b" children=0
+    ├── Text scope=1:11..1:11 anchor=null attributes={} literal=" " children=0
+    ├── Span scope=1:12..1:20 anchor=null attributes={.c} children=1
+    │   └── Code scope=1:13..1:15 anchor=null attributes={} literal="]" children=0
+    ├── Text scope=1:21..1:21 anchor=null attributes={} literal=" " children=0
+    └── Span scope=1:22..1:31 anchor=null attributes={.c} children=1
+        └── Text scope=1:23..1:26 anchor=null attributes={} literal="a[b" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+[a
+b]{.c}
+.
+Document scope=1:1..2:6 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..2:6 anchor=null attributes={} children=1
+    └── Span scope=1:1..2:6 anchor=null attributes={.c} children=3
+        ├── Text scope=1:2..1:2 anchor=null attributes={} literal="a" children=0
+        ├── SoftBreak scope=1:3..1:3 anchor=null attributes={} children=0
+        └── Text scope=2:1..2:1 anchor=null attributes={} literal="b" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+[[wiki]]{.x} ![[wiki]]{.x}
+.
+Document scope=1:1..1:26 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:26 anchor=null attributes={} children=4
+    ├── CrossLink scope=1:1..1:8 anchor=null attributes={} dest=cross(path="wiki",anchor=null) label=null children=0
+    ├── Text scope=1:9..1:13 anchor=null attributes={} literal="{.x} " children=0
+    ├── CrossEmbedded scope=1:14..1:22 anchor=null attributes={} dest=cross(path="wiki",anchor=null) label=null dimensions=null children=0
+    └── Text scope=1:23..1:26 anchor=null attributes={} literal="{.x}" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+[x](u){.c} [x][r]{.c} [r][]{.c} [r]{.span}
+
+[r]: /u {.inherited}
+.
+Document scope=1:1..3:20 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:42 anchor=null attributes={} children=7
+    ├── Link scope=1:1..1:10 anchor=null attributes={.c} dest=url("u") title=null children=1
+    │   └── Text scope=1:2..1:2 anchor=null attributes={} literal="x" children=0
+    ├── Text scope=1:11..1:11 anchor=null attributes={} literal=" " children=0
+    ├── Link scope=1:12..1:21 anchor=null attributes={.inherited .c} dest=url("/u") title=null children=1
+    │   └── Text scope=1:13..1:13 anchor=null attributes={} literal="x" children=0
+    ├── Text scope=1:22..1:22 anchor=null attributes={} literal=" " children=0
+    ├── Link scope=1:23..1:31 anchor=null attributes={.inherited .c} dest=url("/u") title=null children=1
+    │   └── Text scope=1:24..1:24 anchor=null attributes={} literal="r" children=0
+    ├── Text scope=1:32..1:32 anchor=null attributes={} literal=" " children=0
+    └── Span scope=1:33..1:42 anchor=null attributes={.span} children=1
+        └── Text scope=1:34..1:34 anchor=null attributes={} literal="r" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+[r]{.1} [r] {.x} [x]{.c [y]{.d}
+
+[r]: /u
+.
+Document scope=1:1..3:7 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:31 anchor=null attributes={} children=5
+    ├── Link scope=1:1..1:3 anchor=null attributes={} dest=url("/u") title=null children=1
+    │   └── Text scope=1:2..1:2 anchor=null attributes={} literal="r" children=0
+    ├── Text scope=1:4..1:8 anchor=null attributes={} literal="{.1} " children=0
+    ├── Link scope=1:9..1:11 anchor=null attributes={} dest=url("/u") title=null children=1
+    │   └── Text scope=1:10..1:10 anchor=null attributes={} literal="r" children=0
+    ├── Text scope=1:12..1:24 anchor=null attributes={} literal=" {.x} [x]{.c " children=0
+    └── Span scope=1:25..1:31 anchor=null attributes={.d} children=1
+        └── Text scope=1:26..1:26 anchor=null attributes={} literal="y" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+[a [b]{} c]{} [[x]{}]{}
+.
+Document scope=1:1..1:23 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:23 anchor=null attributes={} children=3
+    ├── Span scope=1:1..1:13 anchor=null attributes={} children=3
+    │   ├── Text scope=1:2..1:3 anchor=null attributes={} literal="a " children=0
+    │   ├── Span scope=1:4..1:8 anchor=null attributes={} children=1
+    │   │   └── Text scope=1:5..1:5 anchor=null attributes={} literal="b" children=0
+    │   └── Text scope=1:9..1:10 anchor=null attributes={} literal=" c" children=0
+    ├── Text scope=1:14..1:14 anchor=null attributes={} literal=" " children=0
+    └── Span scope=1:15..1:23 anchor=null attributes={} children=1
+        └── Span scope=1:16..1:20 anchor=null attributes={} children=1
+            └── Text scope=1:17..1:17 anchor=null attributes={} literal="x" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+[outer [inner](u)]{.c} [outer [inner]{}](u)
+.
+Document scope=1:1..1:43 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:43 anchor=null attributes={} children=3
+    ├── Span scope=1:1..1:22 anchor=null attributes={.c} children=2
+    │   ├── Text scope=1:2..1:7 anchor=null attributes={} literal="outer " children=0
+    │   └── Link scope=1:8..1:17 anchor=null attributes={} dest=url("u") title=null children=1
+    │       └── Text scope=1:9..1:13 anchor=null attributes={} literal="inner" children=0
+    ├── Text scope=1:23..1:23 anchor=null attributes={} literal=" " children=0
+    └── Link scope=1:24..1:43 anchor=null attributes={} dest=url("u") title=null children=2
+        ├── Text scope=1:25..1:30 anchor=null attributes={} literal="outer " children=0
+        └── Span scope=1:31..1:39 anchor=null attributes={} children=1
+            └── Text scope=1:32..1:36 anchor=null attributes={} literal="inner" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+[^n]{.x} [^[note]]{.x} ^[note]{.x}
+
+[^n]: note
+.
+Document scope=1:1..3:10 anchor=null attributes={} children=1
+├── Paragraph scope=1:1..1:34 anchor=null attributes={} children=6
+│   ├── Span scope=1:1..1:8 anchor=null attributes={.x} children=1
+│   │   └── Text scope=1:2..1:3 anchor=null attributes={} literal="^n" children=0
+│   ├── Text scope=1:9..1:9 anchor=null attributes={} literal=" " children=0
+│   ├── Span scope=1:10..1:22 anchor=null attributes={.x} children=1
+│   │   └── Cite scope=1:11..1:17 anchor=null attributes={} children=1
+│   │       └── Citation scope=1:13..1:16 referent=footnote(id="inline-1") children=0
+│   │           ├── CitationPrefix children=0
+│   │           └── CitationSuffix children=0
+│   ├── Text scope=1:23..1:23 anchor=null attributes={} literal=" " children=0
+│   ├── Cite scope=1:24..1:30 anchor=null attributes={} children=1
+│   │   └── Citation scope=1:26..1:29 referent=footnote(id="inline-2") children=0
+│   │       ├── CitationPrefix children=0
+│   │       └── CitationSuffix children=0
+│   └── Text scope=1:31..1:34 anchor=null attributes={} literal="{.x}" children=0
+├── Footnote scope=1:11..1:17 id="inline-1" children=1
+│   └── Text scope=1:13..1:16 anchor=null attributes={} literal="note" children=0
+├── Footnote scope=1:24..1:30 id="inline-2" children=1
+│   └── Text scope=1:26..1:29 anchor=null attributes={} literal="note" children=0
+└── Footnote scope=3:1..3:10 id="n" children=1
+    └── Paragraph scope=3:7..3:10 anchor=null attributes={} children=1
+        └── Text scope=3:7..3:10 anchor=null attributes={} literal="note" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+`[x]{.c}` <i title="[x]{.c}"> %%[x]{.c}%% $[x]{.c}$ [[note|[x]{.c}]]
+.
+Document scope=1:1..1:68 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:68 anchor=null attributes={} children=10
+    ├── Code scope=1:1..1:9 anchor=null attributes={} literal="[x]{.c}" children=0
+    ├── Text scope=1:10..1:10 anchor=null attributes={} literal=" " children=0
+    ├── HTML scope=1:11..1:29 anchor=null attributes={} literal="<i title=\"[x]{.c}\">" children=0
+    ├── Text scope=1:30..1:30 anchor=null attributes={} literal=" " children=0
+    ├── Comment scope=1:31..1:41 anchor=null attributes={} literal="[x]{.c}" children=0
+    ├── Text scope=1:42..1:42 anchor=null attributes={} literal=" " children=0
+    ├── Formula scope=1:43..1:51 anchor=null attributes={} mode=embedded literal="[x]{.c}" children=0
+    ├── Text scope=1:52..1:59 anchor=null attributes={} literal=" [[note|" children=0
+    ├── Span scope=1:60..1:66 anchor=null attributes={.c} children=1
+    │   └── Text scope=1:61..1:61 anchor=null attributes={} literal="x" children=0
+    └── Text scope=1:67..1:68 anchor=null attributes={} literal="]]" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+[a <!-- ] --> b]{.c} [a %%]%% b]{.c} [a $]$ b]{.c}
+.
+Document scope=1:1..1:50 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:50 anchor=null attributes={} children=5
+    ├── Span scope=1:1..1:20 anchor=null attributes={.c} children=3
+    │   ├── Text scope=1:2..1:3 anchor=null attributes={} literal="a " children=0
+    │   ├── Comment scope=1:4..1:13 anchor=null attributes={} literal=" ] " children=0
+    │   └── Text scope=1:14..1:15 anchor=null attributes={} literal=" b" children=0
+    ├── Text scope=1:21..1:21 anchor=null attributes={} literal=" " children=0
+    ├── Span scope=1:22..1:36 anchor=null attributes={.c} children=3
+    │   ├── Text scope=1:23..1:24 anchor=null attributes={} literal="a " children=0
+    │   ├── Comment scope=1:25..1:29 anchor=null attributes={} literal="]" children=0
+    │   └── Text scope=1:30..1:31 anchor=null attributes={} literal=" b" children=0
+    ├── Text scope=1:37..1:37 anchor=null attributes={} literal=" " children=0
+    └── Span scope=1:38..1:50 anchor=null attributes={.c} children=3
+        ├── Text scope=1:39..1:40 anchor=null attributes={} literal="a " children=0
+        ├── Formula scope=1:41..1:43 anchor=null attributes={} mode=embedded literal="]" children=0
+        └── Text scope=1:44..1:45 anchor=null attributes={} literal=" b" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+[x]{k="a
+b"} [x]{.a}{.b} ![x]{.a}
+.
+Document scope=1:1..2:24 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..2:24 anchor=null attributes={} children=5
+    ├── Span scope=1:1..2:3 anchor=null attributes={k="a b"} children=1
+    │   └── Text scope=1:2..1:2 anchor=null attributes={} literal="x" children=0
+    ├── Text scope=2:4..2:4 anchor=null attributes={} literal=" " children=0
+    ├── Span scope=2:5..2:11 anchor=null attributes={.a} children=1
+    │   └── Text scope=2:6..2:6 anchor=null attributes={} literal="x" children=0
+    ├── Text scope=2:12..2:17 anchor=null attributes={} literal="{.b} !" children=0
+    └── Span scope=2:18..2:24 anchor=null attributes={.a} children=1
+        └── Text scope=2:19..2:19 anchor=null attributes={} literal="x" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+> [^*x*^ and ~y~]{#id}
+.
+Document scope=1:1..1:22 anchor=null attributes={} children=1
+└── Callout scope=1:1..1:22 anchor=null attributes={} variant=null collapsed=null children=1
+    └── Paragraph scope=1:3..1:22 anchor=null attributes={} children=1
+        └── Span scope=1:3..1:22 anchor="id" attributes={} children=3
+            ├── Superscript scope=1:4..1:8 anchor=null attributes={} children=1
+            │   └── Emphasis scope=1:5..1:7 anchor=null attributes={} children=1
+            │       └── Text scope=1:6..1:6 anchor=null attributes={} literal="x" children=0
+            ├── Text scope=1:9..1:13 anchor=null attributes={} literal=" and " children=0
+            └── Subscript scope=1:14..1:16 anchor=null attributes={} children=1
+                └── Text scope=1:15..1:15 anchor=null attributes={} literal="y" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+[^n][r]{.c} [^n](u){.link}
+
+[^n]: note
+
+[r]: /u
+.
+Document scope=1:1..5:7 anchor=null attributes={} children=1
+├── Paragraph scope=1:1..1:26 anchor=null attributes={} children=3
+│   ├── Link scope=1:1..1:11 anchor=null attributes={.c} dest=url("/u") title=null children=1
+│   │   └── Text scope=1:2..1:3 anchor=null attributes={} literal="^n" children=0
+│   ├── Text scope=1:12..1:12 anchor=null attributes={} literal=" " children=0
+│   └── Link scope=1:13..1:26 anchor=null attributes={.link} dest=url("u") title=null children=1
+│       └── Text scope=1:14..1:15 anchor=null attributes={} literal="^n" children=0
+└── Footnote scope=3:1..4:0 id="n" children=1
+    └── Paragraph scope=3:7..3:10 anchor=null attributes={} children=1
+        └── Text scope=3:7..3:10 anchor=null attributes={} literal="note" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+[This is *some text*]{.class #key rank="1"}
+.
+Document scope=1:1..1:43 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:43 anchor=null attributes={} children=1
+    └── Span scope=1:1..1:43 anchor="key" attributes={.class rank="1"} children=2
+        ├── Text scope=1:2..1:9 anchor=null attributes={} literal="This is " children=0
+        └── Emphasis scope=1:10..1:20 anchor=null attributes={} children=1
+            └── Text scope=1:11..1:19 anchor=null attributes={} literal="some text" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+[text]{#one.two .three.four #one:two .three:four}
+.
+Document scope=1:1..1:49 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:49 anchor=null attributes={} children=1
+    └── Span scope=1:1..1:49 anchor="one:two" attributes={.three.four .three:four} children=1
+        └── Text scope=1:2..1:5 anchor=null attributes={} literal="text" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+[text]{#first #last .a .a id=final class="b b" k=1 k=2 empty=}
+.
+Document scope=1:1..1:62 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:62 anchor=null attributes={} children=1
+    └── Span scope=1:1..1:62 anchor="final" attributes={.a .a .b .b k="1" k="2" empty=""} children=1
+        └── Text scope=1:2..1:5 anchor=null attributes={} literal="text" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+[text]{quoted="&amp;" unquoted=&amp; escaped=a\}b}
+.
+Document scope=1:1..1:50 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:50 anchor=null attributes={} children=1
+    └── Span scope=1:1..1:50 anchor=null attributes={quoted="&" unquoted="&amp;" escaped="a}b"} children=1
+        └── Text scope=1:2..1:5 anchor=null attributes={} literal="text" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+[text]{-}
+.
+Document scope=1:1..1:9 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:9 anchor=null attributes={} children=1
+    └── Span scope=1:1..1:9 anchor=null attributes={.unnumbered} children=1
+        └── Text scope=1:2..1:5 anchor=null attributes={} literal="text" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+[text]{disabled}
+.
+Document scope=1:1..1:16 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:16 anchor=null attributes={} children=1
+    └── Text scope=1:1..1:16 anchor=null attributes={} literal="[text]{disabled}" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+![x]{.c} ![]{}
+.
+Document scope=1:1..1:14 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:14 anchor=null attributes={} children=4
+    ├── Text scope=1:1..1:1 anchor=null attributes={} literal="!" children=0
+    ├── Span scope=1:2..1:8 anchor=null attributes={.c} children=1
+    │   └── Text scope=1:3..1:3 anchor=null attributes={} literal="x" children=0
+    ├── Text scope=1:9..1:10 anchor=null attributes={} literal=" !" children=0
+    └── Span scope=1:11..1:14 anchor=null attributes={} children=0
+````````````````````````````````
+
+```````````````````````````````` example
+![^n]{.c} ![^n]
+
+[^n]: note
+.
+Document scope=1:1..3:10 anchor=null attributes={} children=1
+├── Paragraph scope=1:1..1:15 anchor=null attributes={} children=4
+│   ├── Text scope=1:1..1:1 anchor=null attributes={} literal="!" children=0
+│   ├── Span scope=1:2..1:9 anchor=null attributes={.c} children=1
+│   │   └── Text scope=1:3..1:4 anchor=null attributes={} literal="^n" children=0
+│   ├── Text scope=1:10..1:11 anchor=null attributes={} literal=" !" children=0
+│   └── Cite scope=1:12..1:15 anchor=null attributes={} children=1
+│       └── Citation scope=1:13..1:14 referent=footnote(id="n") children=0
+│           ├── CitationPrefix children=0
+│           └── CitationSuffix children=0
+└── Footnote scope=3:1..3:10 id="n" children=1
+    └── Paragraph scope=3:7..3:10 anchor=null attributes={} children=1
+        └── Text scope=3:7..3:10 anchor=null attributes={} literal="note" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+![[x](u)]{.c} [![x]{.c}]{.outer}
+.
+Document scope=1:1..1:32 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:32 anchor=null attributes={} children=4
+    ├── Text scope=1:1..1:1 anchor=null attributes={} literal="!" children=0
+    ├── Span scope=1:2..1:13 anchor=null attributes={.c} children=1
+    │   └── Link scope=1:3..1:8 anchor=null attributes={} dest=url("u") title=null children=1
+    │       └── Text scope=1:4..1:4 anchor=null attributes={} literal="x" children=0
+    ├── Text scope=1:14..1:14 anchor=null attributes={} literal=" " children=0
+    └── Span scope=1:15..1:32 anchor=null attributes={.outer} children=2
+        ├── Text scope=1:16..1:16 anchor=null attributes={} literal="!" children=0
+        └── Span scope=1:17..1:23 anchor=null attributes={.c} children=1
+            └── Text scope=1:18..1:18 anchor=null attributes={} literal="x" children=0
+````````````````````````````````

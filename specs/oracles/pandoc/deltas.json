@@ -2,64 +2,10 @@
     "schemaVersion": 1,
     "entries": [
         {
-            "id": "bracketed-spans",
-            "item": "P5",
-            "status": "gap",
-            "reason": "The P5 syntax has not landed; retain this exact semantic evidence until its implementing item.",
-            "inputDigest": "ed41d35e400bafbd1ac81634fe994cd95950e08018ec4fd51a923b70ff483890",
-            "oracleDigest": "16f726cc0d2dbb94d366b613c35b4944cb1cecc4b4a4815b9fc7e9697e917bf8",
-            "coreDigest": "0beb7834cc7ff8e719df16238d569163276bb2bc7bb92344d74c838e35d8f31c"
-        },
-        {
-            "id": "pandoc-shorthand-boundaries",
-            "item": "P5",
-            "status": "gap",
-            "reason": "The P5 syntax has not landed; retain this exact semantic evidence until its implementing item.",
-            "inputDigest": "1420ac406594236f3e2b229171d37f3605f43782d31657d67a268f4202421372",
-            "oracleDigest": "b129f4da266fdd75ffce672f4d66522f3794f62880c7d266ccf954f77165e48e",
-            "coreDigest": "abcc4776ee3d453b7f380b4fe863bd299a8b46086dafb440fcd53486dbdc4315"
-        },
-        {
-            "id": "pandoc-attribute-components-and-duplicates",
-            "item": "P5",
-            "status": "gap",
-            "reason": "The P5 syntax has not landed; retain this exact semantic evidence until its implementing item.",
-            "inputDigest": "ed0079236655fb5520d642ef551edb31eaa17274b2c8294f0ffc89131711de0b",
-            "oracleDigest": "062bab5b93e68e8f735bfc3c0d746b1fdf7793ab659405eea06b261dad18b3f5",
-            "coreDigest": "17f4907c813a895e89494c2bfcec73b0617c264810f5e9aa5b0afbe4dc20772b"
-        },
-        {
-            "id": "pandoc-attribute-value-decoding",
-            "item": "P5",
-            "status": "gap",
-            "reason": "The P5 syntax has not landed; retain this exact semantic evidence until its implementing item.",
-            "inputDigest": "ee6f05549f46b724e274d0d6e2631d22d12b8684933c8d7637d12178d6e78c4b",
-            "oracleDigest": "a555aaa92bb78bbcb26a513bd4026dbc752ddea61994502151f6a938b16eead1",
-            "coreDigest": "eb38a8c53e51c638427f79d643344f4348beeec875cb4282dba268309850c67f"
-        },
-        {
-            "id": "pandoc-special-unnumbered",
-            "item": "P5",
-            "status": "gap",
-            "reason": "The P5 syntax has not landed; retain this exact semantic evidence until its implementing item.",
-            "inputDigest": "bc6f5bcc0f136d4527e8b1ddc020f3c774dbad666e7c12c308f15241aa4b4f43",
-            "oracleDigest": "c30a9d1ba09db4f01e5d49d394882f926eaf51335130893675ac7ec701899bca",
-            "coreDigest": "a76e995aaaf8db7b4eedf1d6adb555095407a1aec22069956c1c1adfa39d4a3b"
-        },
-        {
-            "id": "superscript-and-subscript",
-            "item": "P6",
-            "status": "gap",
-            "reason": "The P6 syntax has not landed; retain this exact semantic evidence until its implementing item.",
-            "inputDigest": "726ea288e2fcb22f2b366a37af55cfd4524722a781f2a37431145991466a06c3",
-            "oracleDigest": "9a07c916f35fffe800e97f2d8967e1dabc3d69a6f4a50a1bf04151eb8cfaf3c2",
-            "coreDigest": "1c143618993aaf0d16516ee8a9289859e34f54a8d53bfcd9c94c2e79386573d1"
-        },
-        {
             "id": "empty-superscript-and-subscript",
             "item": "P6",
-            "status": "gap",
-            "reason": "The P6 syntax has not landed; retain this exact semantic evidence until its implementing item.",
+            "status": "projection",
+            "reason": "Empty script bodies remain text. The pinned reader accepts empty Superscript/Subscript nodes; the dialect requires non-empty bodies and reserves double tilde for strikethrough.",
             "inputDigest": "1015835f9eced9f8a7222f9d0a6af3eba44c3e747aa6ae2075e8084bc8350ee0",
             "oracleDigest": "7c4d76e54d6fe6d271470482d636a7ccfcc5751e361a1c02b1132d4e2e440c8a",
             "coreDigest": "31fa99134634c81b5b2d2bc30a7aad2a68d23aec1baac3112405096fa07f0e80"
@@ -180,6 +126,51 @@
             "inputDigest": "ead7761f90c8140b7bf927889c8aaefeefa6eb8b861231ef7319f707c56bd467",
             "oracleDigest": "b04070c42872ef2b3c64f7174849e429fcdbb46e8d73eb9d0f617237e9d3c2ba",
             "coreDigest": "b2f78a5ebccb5087a5fd5e1fb58850db1a62e19d596c7f1d3506920d4bc36b3e"
+        },
+        {
+            "id": "p6-escaped-space",
+            "item": "P6",
+            "status": "projection",
+            "reason": "Only a committed script body decodes an escaped ASCII space to NBSP. A failed body retains the inherited literal escape spelling and whitespace.",
+            "inputDigest": "19046a6c43943f58548dbed4c9d6bd087fd48c07babc5dfe648b5084922843b2",
+            "oracleDigest": "7e568729c1c324d5a4b47a93b30ca2cc2e20fb6146e65259882b7f0c7ed3c66e",
+            "coreDigest": "59eed74fc828cc575d90c963da225666b7149252edeec37ede516213d9b030fc"
+        },
+        {
+            "id": "p6-whitespace-recovery",
+            "item": "P6",
+            "status": "projection",
+            "reason": "Every raw Unicode whitespace scalar invalidates unmatched script openers. A subsequent delimiter can open a new candidate immediately.",
+            "inputDigest": "f6815ecc7c11d067190bce97b4ef104e1fef92c4f33cb6dd8ecd1b99dc29556e",
+            "oracleDigest": "beede7e0311744ab14f4fd393cc37ee907497d45dd270a522df0facc38fb12c0",
+            "coreDigest": "c595c1a5889ceab289562c4277eeb63efe33f5a16f28ca7598bc332f0d636f7d"
+        },
+        {
+            "id": "p6-entity-space",
+            "item": "P6",
+            "status": "projection",
+            "reason": "Character-reference whitespace is decoded content and never a raw-whitespace boundary for script matching. Markdown Core preserves a decoded TAB; Pandoc normalizes it to an ASCII space.",
+            "inputDigest": "71208f74dbac5839a26d621ea863246175b2030d2d4bd7e9ceff96438320334d",
+            "oracleDigest": "1f0932e3b6133eb5bf8f5e8a60af31cacc5b7a71db2a939770b99bc0d3acea17",
+            "coreDigest": "02b161c2f7b85381757c267cf1e149848297be925f93d07a0bb24f8ea8ee4793"
+        },
+        {
+            "id": "p6-pairing-and-tilde-runs",
+            "item": "P6",
+            "status": "projection",
+            "reason": "Script units pair left to right, empty bodies are text, two tildes belong exclusively to strikethrough, and longer tilde runs are literal.",
+            "inputDigest": "43dad7a377f0bd0c44597628456e2b968ad53f0a4f927e4d201e11628da7c3f8",
+            "oracleDigest": "e4ca40eb0ee3b049cf8bbed79ecec2ac0421e240e93afc17d1fb4446a5609aa2",
+            "coreDigest": "2b42a1bccbfaf7471c3ed6b4dc21d27ebd1b88f4096dd16daa30f94604063ad0"
+        },
+        {
+            "id": "p6-opaque-tokens",
+            "item": "P6",
+            "status": "projection",
+            "reason": "Complete code tokens own their bytes, including whitespace and script delimiter characters, before the delimiter engine sees them.",
+            "inputDigest": "26ec65cd32798f4cccce239899808ae1b6239661f75185e0f549a136bfc728f9",
+            "oracleDigest": "da16bab79c2a0c2c937e11629fbcf7daac5bed825646a348d7cdb3c752a06081",
+            "coreDigest": "c35c206f4535e0059f844578117a1ce53afb9a7919411b5e8e2e3326119bd6ae"
         }
     ]
 }

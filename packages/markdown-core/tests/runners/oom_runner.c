@@ -44,7 +44,11 @@ static const char OOM_PROPERTIES_CORPUS[] =
 static const char OOM_PROPERTIES_ARRAY_CORPUS[] = "---\nname: x[\nauthors: [\"two\", 3]\nabstract: {nested: 1}\n"
                                                   "date: 4\ncomment: \"bad\\q\"\nkeywords: []\nstate: ready\n---\n";
 
-static const char OOM_CORPUS[] = "`x`{#c .one .two k=1 k=2} <https://example.com>{.external}\n\n"
+static const char OOM_CORPUS[] = "[a *b*]{#id .a k=1 k=2} []{} [outer [inner](u)]{.x} ![x]{.c} ![^1]\n"
+                                 "^a\\ b^ ~*c\\ d*~ ^^ ^a b^ ~x~ ~~y~~\n"
+                                 "[x]{.a [y]{.b} ^[[^1]] [r]{.span}\n\n"
+                                 "[r]: /u\n\n"
+                                 "`x`{#c .one .two k=1 k=2} <https://example.com>{.external}\n\n"
                                  "# Heading ## {#h .header}\n\nSetext {#s}\n===\n\n"
                                  "~~~Python {#f .numberLines startFrom=10}\nx\n~~~\n\n"
                                  "[x][attrs]{#own .a k=2} ![x|20x30][attrs]{width=50%}\n\n"

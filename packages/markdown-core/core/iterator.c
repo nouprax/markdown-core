@@ -83,6 +83,19 @@ int markdown_core_consolidate_text_nodes(markdown_core_node *root) {
     return markdown_core_consolidate_text_nodes_with_parser(NULL, root);
 }
 
+/* Decode a contextual space escape only after inline ownership is final.
+ * Both spellings are two bytes, and retain the authored two-byte source map.
+ * Failed script candidates therefore keep the inherited literal unchanged. */
+static void decode_space_escape(markdown_core_node *node, int script_depth) {
+    if (node->flags & MARKDOWN_CORE_NODE__ESCAPED_SPACE) {
+        if (script_depth > 0) {
+            markdown_core_chunk_free(node->content.mem, node->as.literal);
+            *node->as.literal = markdown_core_chunk_literal("\xC2\xA0");
+        }
+        node->flags &= ~MARKDOWN_CORE_NODE__ESCAPED_SPACE;
+    }
+}
+
 /* The surviving Text owns the concatenated literal and a concatenation of
  * its operands' source runs. A caller outside a parse has no parser-owned
  * map to retain and uses the public entry point with NULL. */
@@ -95,6 +108,7 @@ int markdown_core_consolidate_text_nodes_with_parser(markdown_core_parser *parse
     markdown_core_event_type ev_type;
     markdown_core_node *cur, *tmp, *next;
     int ok = 1;
+    int script_depth = 0;
 
     if (!iter) {
         return 0;
@@ -106,9 +120,13 @@ int markdown_core_consolidate_text_nodes_with_parser(markdown_core_parser *parse
      * happened to be safe; with the contract total it is a use-after-free. */
     while ((ev_type = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
         cur = markdown_core_iter_get_node(iter);
+        if (cur->kind == MARKDOWN_CORE_NODE_SUPERSCRIPT || cur->kind == MARKDOWN_CORE_NODE_SUBSCRIPT) {
+            script_depth += ev_type == MARKDOWN_CORE_EVENT_ENTER ? 1 : -1;
+        }
         if (ev_type != MARKDOWN_CORE_EVENT_EXIT || cur->kind != MARKDOWN_CORE_NODE_TEXT) {
             continue;
         }
+        decode_space_escape(cur, script_depth);
 
         if (cur->next && cur->next->kind == MARKDOWN_CORE_NODE_TEXT) {
             markdown_core_node combined_map = {0};
@@ -127,6 +145,7 @@ int markdown_core_consolidate_text_nodes_with_parser(markdown_core_parser *parse
                  * now, where a suppressed EXIT used to make one enough. */
                 markdown_core_iter_next(iter); /* tmp ENTER */
                 markdown_core_iter_next(iter); /* tmp EXIT  */
+                decode_space_escape(tmp, script_depth);
                 if (parser && !markdown_core_parser_append_content_marks(parser, tmp, &combined_map, 0,
                                                                          tmp->as.literal->len, buf.size)) {
                     goto failed;

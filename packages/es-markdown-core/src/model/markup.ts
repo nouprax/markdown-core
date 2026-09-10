@@ -24,6 +24,9 @@ import type { SoftBreak } from "./soft-break.js";
 import type { Strikethrough } from "./strikethrough.js";
 import type { Mark } from "./mark.js";
 import type { Insertion } from "./insertion.js";
+import type { Span } from "./span.js";
+import type { Superscript } from "./superscript.js";
+import type { Subscript } from "./subscript.js";
 import type { Strong } from "./strong.js";
 import type { Table, TableCell, TableRow } from "./table.js";
 import type { Text } from "./text.js";
@@ -59,6 +62,9 @@ export type Markup =
     | Strikethrough
     | Mark
     | Insertion
+    | Span
+    | Superscript
+    | Subscript
     | Link
     | Media
     | Directive

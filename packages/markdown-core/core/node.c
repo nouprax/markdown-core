@@ -40,6 +40,9 @@ bool markdown_core_node_can_contain_type(markdown_core_node *node, markdown_core
     case MARKDOWN_CORE_NODE_STRONG:
     case MARKDOWN_CORE_NODE_MARK:
     case MARKDOWN_CORE_NODE_INSERTION:
+    case MARKDOWN_CORE_NODE_SPAN:
+    case MARKDOWN_CORE_NODE_SUPERSCRIPT:
+    case MARKDOWN_CORE_NODE_SUBSCRIPT:
     case MARKDOWN_CORE_NODE_LINK:
     case MARKDOWN_CORE_NODE_MEDIA:
         return MARKDOWN_CORE_NODE_TYPE_INLINE_P(child_type);
@@ -439,6 +442,12 @@ const char *markdown_core_node_get_type_string(markdown_core_node *node) {
         return "mark";
     case MARKDOWN_CORE_NODE_INSERTION:
         return "insertion";
+    case MARKDOWN_CORE_NODE_SPAN:
+        return "span";
+    case MARKDOWN_CORE_NODE_SUPERSCRIPT:
+        return "superscript";
+    case MARKDOWN_CORE_NODE_SUBSCRIPT:
+        return "subscript";
     case MARKDOWN_CORE_NODE_LINK:
         return "link";
     case MARKDOWN_CORE_NODE_MEDIA:

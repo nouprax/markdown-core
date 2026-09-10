@@ -138,9 +138,11 @@ that settled it.
 - The `\\(` and `\\[` formula forms are Pandoc's `tex_math_double_backslash`
   spelling; the single-backslash spelling stays a CommonMark escape. The
   implemented engine and its fixtures.
-- A direct link tail beats a footnote call, so `[^a](u)` is a link whose
-  text is `^a`, while every other tail after a defined call is text.
-  cmark-gfm's bracket handling, the defining source of the referenced form.
+- The shared bracket procedure tests direct and resolving reference tails,
+  spans and cite groups before a defined footnote call. Thus `[^a](u)` is a
+  link and `[^a]{.x}` is a span, both containing the text `^a`. M4 fixed this
+  order in the index and links-and-images module; P5 supplies the span branch.
+  cmark-gfm owns the inherited reference-before-footnote order.
 - Bare URL and `www.` autolinks are inline scanner steps whose run is opaque
   to every later construct, and only the email form is a post-pass over
   `Text`; a cross link, code span, formula, or mark that begins inside a URL

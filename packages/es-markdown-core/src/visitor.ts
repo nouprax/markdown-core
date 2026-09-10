@@ -25,6 +25,9 @@ import type { SoftBreak } from "./model/soft-break.js";
 import type { Strikethrough } from "./model/strikethrough.js";
 import type { Mark } from "./model/mark.js";
 import type { Insertion } from "./model/insertion.js";
+import type { Span } from "./model/span.js";
+import type { Superscript } from "./model/superscript.js";
+import type { Subscript } from "./model/subscript.js";
 import type { Strong } from "./model/strong.js";
 import type { Table, TableCell, TableRow } from "./model/table.js";
 import type { Text } from "./model/text.js";
@@ -60,6 +63,9 @@ export interface Visitor<Result> {
     visitStrikethrough(this: void, node: Strikethrough): Result;
     visitMark(this: void, node: Mark): Result;
     visitInsertion(this: void, node: Insertion): Result;
+    visitSpan(this: void, node: Span): Result;
+    visitSuperscript(this: void, node: Superscript): Result;
+    visitSubscript(this: void, node: Subscript): Result;
     visitLink(this: void, node: Link): Result;
     visitMedia(this: void, node: Media): Result;
     visitDirective(this: void, node: Directive): Result;
@@ -126,6 +132,12 @@ export function visit<Result>(node: Markup, visitor: Visitor<Result>): Result {
             return visitor.visitMark(node);
         case "insertion":
             return visitor.visitInsertion(node);
+        case "span":
+            return visitor.visitSpan(node);
+        case "superscript":
+            return visitor.visitSuperscript(node);
+        case "subscript":
+            return visitor.visitSubscript(node);
         case "link":
             return visitor.visitLink(node);
         case "media":

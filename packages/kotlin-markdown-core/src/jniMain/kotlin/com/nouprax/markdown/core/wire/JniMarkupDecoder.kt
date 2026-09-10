@@ -147,6 +147,18 @@ private class JniTreeDecoder(
                 readChildren { consume(Insertion(it, scope, anchor, attributes)) }
             }
 
+            JniNodeKind.SPAN -> {
+                readChildren { consume(Span(it, scope, anchor, attributes)) }
+            }
+
+            JniNodeKind.SUPERSCRIPT -> {
+                readChildren { consume(Superscript(it, scope, anchor, attributes)) }
+            }
+
+            JniNodeKind.SUBSCRIPT -> {
+                readChildren { consume(Subscript(it, scope, anchor, attributes)) }
+            }
+
             JniNodeKind.LINK -> {
                 val resource = resource()
                 readChildren {

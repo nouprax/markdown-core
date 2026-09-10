@@ -39,6 +39,9 @@
             "Strikethrough",
             "Mark",
             "Insertion",
+            "Span",
+            "Superscript",
+            "Subscript",
             "Link",
             "Media",
             "Directive",
@@ -139,7 +142,9 @@
             "footnote.content.inline",
             "footnote.content.block",
             "document.footnotes.empty",
-            "document.footnotes.populated"
+            "document.footnotes.populated",
+            "span.content.empty",
+            "span.content.populated"
         ],
         "orders": [
             "callout.title-before-content",
@@ -747,6 +752,26 @@
                     "media.dimensions.width-height"
                 ],
                 "orders": ["document.source-order", "inline.source-order"]
+            }
+        },
+        {
+            "name": "bracketed-spans",
+            "input": "bracketed-spans.md",
+            "expected": "bracketed-spans.ast",
+            "coverage": {
+                "kinds": ["Document", "Paragraph", "Span", "Text", "Emphasis", "Link"],
+                "states": ["scope.positive", "children.populated", "span.content.empty", "span.content.populated"],
+                "orders": ["inline.source-order"]
+            }
+        },
+        {
+            "name": "superscript-and-subscript",
+            "input": "superscript-and-subscript.md",
+            "expected": "superscript-and-subscript.ast",
+            "coverage": {
+                "kinds": ["Document", "Paragraph", "Text", "Superscript", "Subscript", "Emphasis"],
+                "states": ["scope.positive", "children.populated"],
+                "orders": ["inline.source-order"]
             }
         }
     ]
