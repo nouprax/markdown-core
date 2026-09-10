@@ -56,7 +56,7 @@ provisional until it is settled.
 | remark/micromark extensions                         | `micromark-extension-directive` 4.0.0, `micromark-extension-math` 3.1.0, `remark-gfm` 4 through the lockfile | unified/remark, `specs/oracles/remark/`                              | `pnpm check:mdast-parity`    |
 | Obsidian Flavored Markdown                          | `obsidianmd/obsidian-help` at `d780d6b48a92ee6a150304b40ee888f322bf43bf`      | `@quartz-community/remark-obsidian` 0.2.4 and `yaml` 2.9.0, `specs/oracles/obsidian/` | `pnpm check:obsidian-parity` |
 | Pandoc's Markdown                                   | Pandoc 3.11 at `b913622e1ff87c69ab8b1a606577122e220925cd`, `specs/oracles/pandoc/source.json` | the official Pandoc 3.11 CLI with `--to=json`, `specs/oracles/pandoc/` | `pnpm check:pandoc-parity` |
-| `markdown-it-ins`                                   | 4.0.0 with `markdown-it` 13.0.2, `docs/specs/dialect/insertion.md`         | `markdown-it` with the plugin, `specs/oracles/markdown-it-ins/`      | `pnpm check:ins-parity` |
+| `markdown-it-ins`                                   | 4.0.0 with `markdown-it` 14.2.0, `docs/specs/dialect/insertion.md`         | `markdown-it` with the plugin, `specs/oracles/markdown-it-ins/`      | `pnpm check:ins-parity` |
 
 Each oracle is locked to the features whose rows below name it. An oracle has
 no opinion outside those features: cmark-gfm does not judge CommonMark, Pandoc
