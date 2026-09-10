@@ -91,9 +91,9 @@ struct markdown_core_chunk;
  * when the inline parser has matched opener and closer delimiters
  * created by the extension together.
  *
- * It is then the responsibility of the extension to modify
- * and populate the opener inline text node, and to remove
- * the necessary delimiters from the delimiter stack.
+ * Parsed inline containers use the shared rule constructor. An opaque-body
+ * extension supplies only its AST construction/decoding hook; the core owns
+ * delimiter-stack reduction and endpoint removal.
  *
  * Finally, the extension should return NULL if its scan didn't
  * match its syntax rules.
@@ -159,19 +159,11 @@ typedef enum {
 
 /** The delimiter stack's element, OPAQUE.
  *
- * The struct was spelled out here under the comment "Exposed raw for now" from
- * 1.0 until Step 3, which made every field part of the extension surface. The
- * three extensions that push delimiters read eight fields between them and
- * write none; those eight reads are the accessors below and the definition now
- * lives in `core/delimiter.h`.
+ * Extensions only receive marker entries through the construction hook.
+ * Source boundaries and token-completion events are private to the engine;
+ * extensions cannot traverse or mutate the stack.
  */
 typedef struct delimiter delimiter;
-
-MARKDOWN_CORE_EXPORT
-delimiter *markdown_core_delimiter_previous(const delimiter *delim);
-
-MARKDOWN_CORE_EXPORT
-delimiter *markdown_core_delimiter_next(const delimiter *delim);
 
 /** The literal text node the delimiter was pushed for. */
 MARKDOWN_CORE_EXPORT
@@ -211,10 +203,12 @@ typedef markdown_core_node *(*markdown_core_match_inline_func)(const markdown_co
                                                                unsigned char character,
                                                                markdown_core_inline_parser *inline_parser);
 
-typedef delimiter *(*markdown_core_inline_from_delim_func)(const markdown_core_extension *extension,
-                                                           markdown_core_parser *parser,
-                                                           markdown_core_inline_parser *inline_parser,
-                                                           delimiter *opener, delimiter *closer);
+/* Builds the opaque AST value only. The matcher owns all delimiter removal,
+ * including the matched endpoints, on success and failure alike. */
+typedef void (*markdown_core_inline_from_delim_func)(const markdown_core_extension *extension,
+                                                     markdown_core_parser *parser,
+                                                     markdown_core_inline_parser *inline_parser, delimiter *opener,
+                                                     delimiter *closer);
 
 /** Returned by a 'markdown_core_match_block_func' when 'input' is the
  *  container's own closing line.
@@ -640,14 +634,6 @@ MARKDOWN_CORE_EXPORT
 void markdown_core_inline_parser_push_delimiter(markdown_core_inline_parser *parser,
                                                 const markdown_core_extension *owner, markdown_core_delimiter_rule rule,
                                                 int can_open, int can_close, markdown_core_node *inl_text);
-
-/** Remove 'delim' from the delimiter stack
- */
-MARKDOWN_CORE_EXPORT
-void markdown_core_inline_parser_remove_delimiter(markdown_core_inline_parser *parser, delimiter *delim);
-
-MARKDOWN_CORE_EXPORT
-delimiter *markdown_core_inline_parser_get_last_delimiter(markdown_core_inline_parser *parser);
 
 /** Whether the delimiters of `rule` on the stack that can open outnumber
  * those that can close. The counts are kept at every push and removal, so the

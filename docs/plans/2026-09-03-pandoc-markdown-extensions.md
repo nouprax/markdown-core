@@ -184,8 +184,8 @@ selected Pandoc extension participates.
 - [x] Add bracketed spans to the existing bracket stack so complete attribute
       suffixes, links/images, citations, implicit references, and literal fallback
       are decided by one ownership algorithm. P5 lands the current bracket
-      alternatives; bibliography and implicit-heading-reference composition
-      remain assigned to P7 and P4 respectively.
+      alternatives and P4 implicit-heading-reference composition; bibliography
+      composition remains assigned to P7.
 - [x] Add superscript and subscript through the delimiter engine with their exact
       escape/whitespace boundaries. Do not rescan Text nodes after inline parsing.
 - [ ] Add Pandoc bibliography syntax to the shared citation builder. Preserve
