@@ -142,7 +142,7 @@ function pandocNode({ t, c }) {
         case "Span":
             return node("Span", {}, sequence(c[1]), c[0]);
         case "Div":
-            return node("DirectiveBlock", { name: "" }, sequence(c[1]), c[0]);
+            return node("DirectiveBlock", { name: null }, sequence(c[1]), c[0]);
         case "BlockQuote":
             return node("Callout", { variant: null, collapsed: null }, sequence(c));
         case "HorizontalRule":
@@ -181,10 +181,21 @@ function pandocNode({ t, c }) {
                 "DefinitionList",
                 {},
                 c.map(([term, definitions]) =>
-                    node("DefinitionItem", {}, [
-                        node("DefinitionTerm", {}, sequence(term)),
-                        ...definitions.map((blocks) => node("DefinitionBody", {}, sequence(blocks)))
-                    ])
+                    node(
+                        "Definition",
+                        {
+                            compact:
+                                definitions[0]?.[0]?.t === "Plain"
+                                    ? true
+                                    : definitions[0]?.[0]?.t === "Para"
+                                      ? false
+                                      : null
+                        },
+                        [
+                            node("DefinitionTerm", {}, sequence(term)),
+                            ...definitions.map((blocks) => node("DefinitionBody", {}, sequence(blocks)))
+                        ]
+                    )
                 )
             );
         case "Cite":
@@ -316,7 +327,8 @@ export function fromCanonical(value) {
         result.rowspan = Number(f.rowspan);
         result.colspan = Number(f.colspan);
     }
-    if (value.kind === "Directive" || value.kind === "DirectiveBlock") result.name = f.name;
+    if (value.kind === "Directive" || value.kind === "DirectiveBlock") result.name = optional("name");
+    if (value.kind === "Definition") result.compact = f.compact === "true";
     return result;
 }
 

@@ -45,9 +45,16 @@
             "Link",
             "Media",
             "Directive",
-            "Cite"
+            "Cite",
+            "DefinitionList",
+            "Definition"
         ],
         "states": [
+            "directiveBlock.name.null",
+            "definition.compact.true",
+            "definition.compact.false",
+            "definition.bodies.multiple",
+            "definition.body.empty",
             "crossEmbedded.dimensions.width",
             "crossEmbedded.dimensions.width-height",
             "crossEmbedded.dimensions.null",
@@ -165,6 +172,7 @@
             "span.content.populated"
         ],
         "orders": [
+            "definition.term-before-bodies",
             "callout.title-before-content",
             "document.source-order",
             "table.head-content-foot",
@@ -914,6 +922,54 @@
                     "scope.positive"
                 ],
                 "orders": ["document.source-order"]
+            }
+        },
+        {
+            "name": "nameless-directives",
+            "input": "nameless-directives.md",
+            "expected": "nameless-directives.ast",
+            "coverage": {
+                "kinds": [
+                    "Document",
+                    "Heading",
+                    "Text",
+                    "DirectiveBlock",
+                    "DefinitionList",
+                    "Definition",
+                    "Paragraph",
+                    "Cite",
+                    "Link",
+                    "DirectiveLabel"
+                ],
+                "states": ["directiveBlock.name.null"],
+                "orders": ["document.source-order", "definition.term-before-bodies"]
+            }
+        },
+        {
+            "name": "definition-lists",
+            "input": "definition-lists.md",
+            "expected": "definition-lists.ast",
+            "coverage": {
+                "kinds": [
+                    "Document",
+                    "DefinitionList",
+                    "Definition",
+                    "Emphasis",
+                    "Text",
+                    "Code",
+                    "Paragraph",
+                    "Callout",
+                    "List",
+                    "ListItem",
+                    "CodeBlock"
+                ],
+                "states": [
+                    "definition.compact.true",
+                    "definition.compact.false",
+                    "definition.bodies.multiple",
+                    "definition.body.empty"
+                ],
+                "orders": ["document.source-order", "definition.term-before-bodies"]
             }
         }
     ]

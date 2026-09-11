@@ -1406,7 +1406,7 @@ its behavior, with no separate publication step.
       whichever of `P7` and `P3` merges later. A complete cite beating the
       shortcut reference of a virtual heading definition is a cross-item case
       owned by whichever of `P7` and `P4` merges later. Requires `P5`, `P9b`.
-- [ ] **P8 — Nameless container directives.** Open a `DirectiveBlock` with
+- [x] **P8 — Nameless container directives.** Open a `DirectiveBlock` with
       `name=null` on a line of three or more colons followed, after `{` or
       whitespace, by a braced attribute container or one unbraced class word,
       Pandoc's fenced-div spelling; a colon run followed
@@ -1476,7 +1476,7 @@ its behavior, with no separate publication step.
   `pnpm verify`; and the host release dry run. The latter stages and verifies
   local packages only; release publication remains gated by R1.
 
-- [ ] **P10 — `definition_lists`.** Recognize a one-line term, an optional
+- [x] **P10 — `definition_lists`.** Recognize a one-line term, an optional
       single blank line, and a first marker line by bounded non-consuming
       lookahead before paragraph fallback; feed each body's lines to the
       ordinary block parser in place; set `Definition.compact` from the term
@@ -1488,6 +1488,47 @@ its behavior, with no separate publication step.
       lookahead with `P11a` and again for each later table form with `P11b`,
       `P11c`, and `P11d`, and a body ending at an enclosing nameless-container
       close with `P8`. Requires `P0`, `M7`.
+  P8/P10 implementation (2026-09-11): named and nameless directives share
+  opener attributes, the open-container stack and one deferred closer decision.
+  The innermost container owns its fence; an open code, HTML, comment or formula
+  block retains its own lines. `DirectiveBlock.name` is nullable on every
+  surface; inline directive names remain required. Definition terms use bounded
+  prefix lookahead only at paragraph fallback. Bodies use the ordinary block
+  parser, shared item padding and continuation, with private body roots exposed
+  solely as ordered collections. The owned-inline walker includes terms in all
+  completion phases. See [block containers](../architecture/block-containers.md).
+
+  Module fixtures preserve the normative examples and add nested, empty, opaque,
+  indentation, reference and container-boundary cases. One old normative fallback
+  expected `:x` as Text; ordinary paragraph fallback still runs inline parsing,
+  so that line correctly emits Directive(name="x"). Two inherited fenced-code
+  golden scopes previously included a line outside their enclosing quote; losing
+  the parent prefix now ends code on the preceding line, clearing two containment
+  ledger rows without weakening the invariant. Two canonical cases cover the
+  nullable name, all compact/body branches, P3 anchor reservation and the P8/P10
+  closing boundary. The shared manifest has 33 cases and all 38 Markup kinds.
+
+  The two definition-list and nested-div Pandoc gaps close by agreement. Exact
+  differences retain fence width, global ID reservation and authored compact
+  flags when Pandoc has no Plain/Para block from which to observe them. The
+  oracle compares every term and ordered body and never drops the product flag.
+  Its corpus has 86 cases and four later-feature gaps remain. Remark's named-only
+  grammar retains eleven exact-input differences for nameless container cases.
+  A reduced Remark witness records inherited quote/directive lazy continuation,
+  verified unchanged against a rebuilt 9cbb83e5. Recombination also reproduced
+  O5's registered newline task-separator boundary; its existing fuzz exclusion
+  now covers zero trailing spaces. Caption/table precedence compositions remain
+  owned by P11a–P11d as specified.
+
+  Validation passes 86 C correctness and two conformance checks; full
+  ASan/UBSan/TSan runs and strict OOM; Swift, Kotlin JVM/Android host/macOS
+  Native and ES tests and shared conformance; all six oracle gates; seed-1
+  400-input CommonMark/GFM/Remark fuzz runs; position/reference audits;
+  `pnpm verify`; and the host release dry run. The final closer-state cleanup
+  also passes the focused TSan facade, concurrency, directive, definition and
+  fuzz checks. C export lists and Kotlin JVM/Klib ABI baselines include the
+  planned public additions. Packages are staged locally; nothing is published.
+
 - [ ] **P11a — `table_captions`.** Recognize a `Table:`, `table:`, or `:`
       caption line as a table-candidate block start parsed in one lookahead with
       the table that follows it, releasing the bytes to paragraph parsing when

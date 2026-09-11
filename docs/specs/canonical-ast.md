@@ -125,7 +125,7 @@ other five kinds the placement is constant and therefore implied by the kind:
 | Type | Its one value, now implied by the kind |
 | --- | --- |
 | `Directive` | `name: String`, `label: DirectiveLabel?` | letter-first name; attributes use the inherited fields; label is a typed Markup field spanning its brackets, never content; absent and empty labels remain distinct; leaf |
-| `DirectiveBlock` | `name: String`, `label: DirectiveLabel?`, `content: [Markup]` | letter-first name; attributes use the inherited fields; label is a typed Markup field spanning its brackets, never content; absent and empty labels remain distinct; block content |
+| `DirectiveBlock` | `name: String?`, `label: DirectiveLabel?`, `content: [Markup]` | letter-first name; attributes use the inherited fields; label is a typed Markup field spanning its brackets, never content; absent and empty labels remain distinct; block content |
 | `Code` | `literal: String` | mode is `embedded`; leaf |
 | `CodeBlock` | `info: String?`, `language: String?`, `literal: String`, `fenced: Bool`, `closed: Bool` | mode is `standalone`; `info` is the complete raw info string; `language` is its first non-whitespace token; indented blocks have `fenced=false, closed=true` |
 | `FormulaBlock` | `literal: String` | mode is `standalone` |
@@ -306,6 +306,8 @@ and returns no document.
 | `Media` | `dest: Destination`, `title: String?`, `dimensions: Dimensions?`, `content: [Markup]` | `dest` is the tagged `Destination` value and is never absent, for the reason `Link.dest` is not; every `Media` owns the `url` branch; absent and empty title remain distinct; content is parsed alt-text inline content |
 | `Directive` | `name: String`, `label: DirectiveLabel?` | letter-first name; attributes use the inherited fields; label is a typed Markup field spanning its brackets, never content; absent and empty labels remain distinct; leaf |
 | `Cite` | `citations: [Citation]` | one or more items in source order; every item has exactly one referent and one cite never mixes referent families; an inherited `[^label]` call is one item with a `footnote` referent whose id is the normalized label without the caret and with empty affixes; its items are scoped values, never children, so it is a leaf |
+| `DefinitionList` | `definitions: [Definition]` | non-empty ordered associations |
+| `Definition` | `term: [Markup]`, `content: [[Markup]]`, `compact: Bool` | inline term; non-empty outer content; each inner collection is one block body; compact records the absence of a blank term gap; visit term then bodies |
 
 Every row also has the ordered inherited fields `scope: Scope`,
 `anchor: String?`, and `attributes: Attributes`; they are not repeated in the table. The `url` of a `Link` or `Media` destination, and
@@ -509,3 +511,28 @@ variants. Its retained affix whitespace, malformed-group fallback, underscore
 boundary, unresolved reference tails, conditional startnum behavior and example
 number rendering remain exact differences in the Pandoc registry. No projection
 turns specimen IDs into numbers or discards duplicate definitions.
+
+### Nameless containers and definition lists
+
+P8/P10 add the nullable `DirectiveBlock.name` and the `DefinitionList` /
+`Definition` model from the [directives](dialect/directives.md) and
+[definition lists](dialect/definition-lists.md) modules. The body collections
+are ordered values, not additional Markup wrappers; walking visits the term
+before every body's content. `compact` records the authored term gap.
+
+Pandoc agrees on ordinary compact/loose definitions and nested fenced divs.
+Exact differences in `specs/oracles/pandoc/deltas.json` retain our shared
+minimum-fence-width rule and global explicit-ID reservation. Pandoc represents
+definition tightness with Plain/Para; when the first body starts with code,
+a nested definition list or no block it exposes no compact flag. The oracle
+projects that absence to null while preserving our boolean and both sides'
+complete term/body structure. No comparison erases compactness or body boundaries.
+Remark has no nameless opener grammar; the eleven exact `p8-nameless-container-*`
+witnesses preserve its literal interpretation, including nested and opaque cases.
+
+The reduced `directive-inherited-lazy-parent` Remark witness records the
+existing inherited paragraph continuation through a quote containing a
+DirectiveBlock. A pre-P8 build produces the same tree. Remark closes that
+container when the quote prefix disappears. The fixed-seed fuzz run also
+reproduced O5's registered line-ending task separator boundary; its existing
+fragment exclusion now includes zero trailing whitespace as well as spaces.

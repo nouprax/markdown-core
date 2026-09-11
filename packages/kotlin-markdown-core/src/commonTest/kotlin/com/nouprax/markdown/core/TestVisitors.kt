@@ -63,6 +63,10 @@ internal class KindVisitor : Visitor<String> {
 
     override fun visitSuperscript(node: Superscript): String = name(node)
 
+    override fun visitDefinitionList(node: DefinitionList): String = name(node)
+
+    override fun visitDefinition(node: Definition): String = name(node)
+
     override fun visitSubscript(node: Subscript): String = name(node)
 
     override fun visitLink(node: Link): String = name(node)
@@ -138,6 +142,10 @@ internal class RecordingVisitor : Visitor<Unit> {
     override fun visitSpan(node: Span): Unit = record(node)
 
     override fun visitSuperscript(node: Superscript): Unit = record(node)
+
+    override fun visitDefinitionList(node: DefinitionList): Unit = record(node)
+
+    override fun visitDefinition(node: Definition): Unit = record(node)
 
     override fun visitSubscript(node: Subscript): Unit = record(node)
 
@@ -339,6 +347,16 @@ internal class RecordingWalkingVisitor(
 
     override fun visitSuperscript(
         node: Superscript,
+        phase: WalkPhase,
+    ): Unit = record(node, phase)
+
+    override fun visitDefinitionList(
+        node: DefinitionList,
+        phase: WalkPhase,
+    ): Unit = record(node, phase)
+
+    override fun visitDefinition(
+        node: Definition,
         phase: WalkPhase,
     ): Unit = record(node, phase)
 

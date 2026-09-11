@@ -56,24 +56,6 @@
             "coreDigest": "dc5a425f0f3584571d3d101f6fd5032f62c9cd4042c3d66c7dd65248f3367d86"
         },
         {
-            "id": "definition-list-loose-and-multiple-bodies",
-            "item": "P10",
-            "status": "gap",
-            "reason": "The P10 syntax has not landed; retain this exact semantic evidence until its implementing item.",
-            "inputDigest": "7b3cf40a43e662f0d764558d4cf5cb3349770ee21ec99170b4587381c5a34b6c",
-            "oracleDigest": "bd304b79425434773287012392466a0e697900ac637c01a8e2d9d671abcbca07",
-            "coreDigest": "d42fad78bee1aa8703bc31ed2f88b0114e5767bec1631550db6fbe9d5bc115bb"
-        },
-        {
-            "id": "definition-list-compact",
-            "item": "P10",
-            "status": "gap",
-            "reason": "The P10 syntax has not landed; retain this exact semantic evidence until its implementing item.",
-            "inputDigest": "00484e1a513cf498e03b1c4a017aac21bc862b89e0854351f2298a5983531241",
-            "oracleDigest": "a40f82d626c56da2be4b2ceaaeec6542a2e5e41c202a5cc938e342d4dee454ad",
-            "coreDigest": "d28c10c13fc2eb2412a91173d2f8b3da2933b080ebbca154e5b5d1d1bee302db"
-        },
-        {
             "id": "example-lists-and-reference",
             "item": "P9b",
             "status": "projection",
@@ -81,15 +63,6 @@
             "inputDigest": "c362a23129b82d354226ddb641bd135c9e77c2f1a291f16bb4942c95e5ed37cf",
             "oracleDigest": "6cf71986484b5ea0b161dc2abfab3ed04f36d97c8971feabae12901c885d3de6",
             "coreDigest": "80d74029749f4d3f0de01267a017061d397ea8c382665d828d78bd209096f11b"
-        },
-        {
-            "id": "fenced-divs-nested",
-            "item": "P8",
-            "status": "gap",
-            "reason": "The P8 syntax has not landed; retain this exact semantic evidence until its implementing item.",
-            "inputDigest": "3346c57ddcbae338cf3576adeffd93510099e974422a5b7e974848597d68c877",
-            "oracleDigest": "0f9013d8f989567e6ed9fc667b52b619b66c2951912dbf2f5dd8703b08370824",
-            "coreDigest": "7431fef9e20692ea936368ae5b965c6c02f69d0fc0e785c96dd457f25b0c68c5"
         },
         {
             "id": "p6-escaped-space",
@@ -297,6 +270,51 @@
             "inputDigest": "cf72bc9feae4e064516f8cc69fa05457f99513729dadae0c6fcbfa9ba9ca367b",
             "oracleDigest": "b2b25238a5aece656b99d1f4cae16ef62668a4cf5ec2c81f8d58eed69ad0b076",
             "coreDigest": "d7a5482878676b3d1a0e5d23930503458704b1ff7db82894ded0bcb21041b080"
+        },
+        {
+            "id": "p8-closer-width",
+            "item": "P8",
+            "status": "projection",
+            "reason": "Named and nameless containers share one closer rule: the colon run must be at least as long as the opening fence. Pandoc closes with any run of three or more.",
+            "inputDigest": "0b033d2dbebbfd8e2346620c7efdf28c689e156970eaae232de0fd67a432ecea",
+            "oracleDigest": "989ef93a38e4b86d0ab8fa2afd79a9eb9e51f9ce3b9e6ee36ba00828a2a64085",
+            "coreDigest": "533354eb48cfc5ab941c8e7570fd1ee06b7ad04e6c7e5b608ae7afaa089fa221"
+        },
+        {
+            "id": "p8-explicit-anchor-reservation",
+            "item": "P8",
+            "status": "projection",
+            "reason": "The document reserves every explicit anchor before synthesizing heading anchors (P3). Pandoc gives the earlier heading the later div ID as well; Markdown Core allocates reserved-1.",
+            "inputDigest": "c56b024236a89fa87a33edf5f0ba4cf1835c92eed97346aeee13c54deda1af33",
+            "oracleDigest": "73bcf79ef51bd83aee81dc5134b59ee093b7710cff0c6b9c9c29702f9ffd3c9b",
+            "coreDigest": "ec34b64acbaab69a29fd9b543b9c86a732d34b1989f9a63f58b0643ba4e59ab3"
+        },
+        {
+            "id": "p10-nested-and-lazy",
+            "item": "P10",
+            "status": "projection",
+            "reason": "The product retains the authored term-gap compact flag even when the first body contains no top-level paragraph (nested definition list, code or an empty body). Pandoc stores tightness through Plain/Para and has no corresponding flag in these shapes; its projection records null rather than inventing one. All terms and ordered bodies remain compared.",
+            "inputDigest": "8e3e7f73d9aff0b2af2e493dd18808cb83905ff3629872d5d230d50482b1b51b",
+            "oracleDigest": "91c897c137d541ce6285794e1376a64fd0bd47337d6279fc45786050f7739f27",
+            "coreDigest": "992633b7885e75e5dc0f66d4e243cec5d605dcc86f09260a3eacaae7e7f82aa7"
+        },
+        {
+            "id": "p10-padding-and-tabs",
+            "item": "P10",
+            "status": "projection",
+            "reason": "The product retains the authored term-gap compact flag even when the first body contains no top-level paragraph (nested definition list, code or an empty body). Pandoc stores tightness through Plain/Para and has no corresponding flag in these shapes; its projection records null rather than inventing one. All terms and ordered bodies remain compared.",
+            "inputDigest": "737ae32153bb0efb9ea04c4b47a88f3d7d05bf8a99624859bc656ff88bcd30de",
+            "oracleDigest": "9efbed758550d4a8d52a4e785b7040031ef5589de6c0e78bf65010b9779645c1",
+            "coreDigest": "9c85c57dc4a9e6b9f5a8a7722d40f0293dc1b6eca6fa37c7912942e2b78d748d"
+        },
+        {
+            "id": "p10-empty-bodies",
+            "item": "P10",
+            "status": "projection",
+            "reason": "The product retains the authored term-gap compact flag even when the first body contains no top-level paragraph (nested definition list, code or an empty body). Pandoc stores tightness through Plain/Para and has no corresponding flag in these shapes; its projection records null rather than inventing one. All terms and ordered bodies remain compared.",
+            "inputDigest": "aa9761ac5e76a6fd7613aec290e0ce6bd74250e894b2a9bb8ac14214c303f1fe",
+            "oracleDigest": "96e43afb3551c27d17de97b989d846761f96a313dc4ff10ffc4fe2ee0e511eb3",
+            "coreDigest": "2f3c875f743498bf6ff60936ba42d22342e5d502c1fb1abf28ebfd7fc722d012"
         }
     ]
 }

@@ -19,8 +19,7 @@
 
 static size_t nodes_visited;
 
-static int traverse(const markdown_core_node *node) {
-    const markdown_core_node *child;
+static int inspect_node(const markdown_core_node *node, void *context) {
     markdown_core_scope scope;
     markdown_core_string value;
     markdown_core_optional_string marker;
@@ -42,11 +41,8 @@ static int traverse(const markdown_core_node *node) {
     (void)markdown_core_node_list_item_marker(node, &marker);
     int64_t rowspan, colspan;
     (void)markdown_core_node_table_cell_spans(node, &rowspan, &colspan);
-    for (child = markdown_core_node_get_first_child(node); child; child = markdown_core_node_get_next_sibling(child)) {
-        if (traverse(child) != 0) {
-            return -1;
-        }
-    }
+    (void)markdown_core_node_directive_properties(node, &marker);
+    (void)markdown_core_node_definition_compact(node, &flag);
     return 0;
 }
 
@@ -75,7 +71,7 @@ static int smoke(const uint8_t *bytes, size_t length, const char *label) {
         return 0;
     }
 
-    if (traverse(markdown_core_document_root(document)) != 0) {
+    if (ts_ast_walk(markdown_core_document_root(document), inspect_node, NULL) != 0) {
         fprintf(stderr, "%s: traversal produced an invalid scope\n", label);
         goto done;
     }

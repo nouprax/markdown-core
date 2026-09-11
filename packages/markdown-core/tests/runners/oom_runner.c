@@ -219,7 +219,15 @@ static const char OOM_CITATION_CORPUS[] = "@a [@b [@c [@d [@e [@f [@g [@h [@i [@
                                           "(@spec) duplicate\n\n(@) anonymous\n\n"
                                           "iv. first\nv. next\n\n(A) upper\n(B) next\n\n";
 
+static const char OOM_DEFINITION_LIST_CORPUS[] =
+    "# Reserved\n\n::: {#reserved .box k=value}\n*Term* @key\n: first ^[footnote]\n: second\n\n"
+    "Loose\n\n~ inner\n  : body\n\n    continued\n\n"
+    "Code\n: ```\n  :::\n  ```\n\n"
+    "[reference]: /url {.attr}\n\nT\n: [reference]\n::: \n\n::: warning\n:::\n\n::: {}\n:::\n";
+
 static const oom_case OOM_CASES[] = {
+    {"definition term/body ownership and nameless containers", OOM_DEFINITION_LIST_CORPUS,
+     sizeof(OOM_DEFINITION_LIST_CORPUS) - 1},
     {"citation ownership and specimen definitions", OOM_CITATION_CORPUS, sizeof(OOM_CITATION_CORPUS) - 1},
     {"heading declarations and anchors", OOM_HEADING_CORPUS, sizeof(OOM_HEADING_CORPUS) - 1},
     {"inline ownership composition", OOM_INLINE_OWNERSHIP_CORPUS, sizeof(OOM_INLINE_OWNERSHIP_CORPUS) - 1},

@@ -65,6 +65,10 @@ public interface Visitor<Result> {
 
     public fun visitSubscript(node: Subscript): Result
 
+    public fun visitDefinitionList(node: DefinitionList): Result
+
+    public fun visitDefinition(node: Definition): Result
+
     public fun visitLink(node: Link): Result
 
     public fun visitMedia(node: Media): Result

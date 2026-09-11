@@ -27,6 +27,7 @@ import type { Mark } from "./model/mark.js";
 import type { Insertion } from "./model/insertion.js";
 import type { Span } from "./model/span.js";
 import type { Superscript } from "./model/superscript.js";
+import type { DefinitionList, Definition } from "./model/definition-list.js";
 import type { Subscript } from "./model/subscript.js";
 import type { Strong } from "./model/strong.js";
 import type { Table, TableCell, TableRow } from "./model/table.js";
@@ -66,6 +67,8 @@ export interface Visitor<Result> {
     visitSpan(this: void, node: Span): Result;
     visitSuperscript(this: void, node: Superscript): Result;
     visitSubscript(this: void, node: Subscript): Result;
+    visitDefinitionList(this: void, node: DefinitionList): Result;
+    visitDefinition(this: void, node: Definition): Result;
     visitLink(this: void, node: Link): Result;
     visitMedia(this: void, node: Media): Result;
     visitDirective(this: void, node: Directive): Result;
@@ -136,6 +139,10 @@ export function visit<Result>(node: Markup, visitor: Visitor<Result>): Result {
             return visitor.visitSpan(node);
         case "superscript":
             return visitor.visitSuperscript(node);
+        case "definitionList":
+            return visitor.visitDefinitionList(node);
+        case "definition":
+            return visitor.visitDefinition(node);
         case "subscript":
             return visitor.visitSubscript(node);
         case "link":

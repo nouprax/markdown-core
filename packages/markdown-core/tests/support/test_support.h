@@ -64,7 +64,7 @@ markdown_core_document *ts_ast_parse(const uint8_t *bytes, size_t length);
 
 typedef int (*ts_ast_visit_fn)(const markdown_core_node *node, void *context);
 
-/* Iterative pre-order walk over the subtree rooted at `root` (call it on the
+/* Iterative pre-order walk over all owned Markup fields rooted at `root` (call it on the
  * document root; following siblings of `root` are walked too).  Never
  * recurses, so pathologically deep trees are safe.  Returns the first
  * non-zero visitor result, 0 on completion, or -1 on allocation failure. */
@@ -74,7 +74,7 @@ int ts_ast_walk(const markdown_core_node *root, ts_ast_visit_fn visit, void *con
  * TS_KIND_COUNT entries. Returns 0 on success, -1 if traversal fails or a
  * node kind exceeds the counter capacity. */
 int ts_ast_count_kinds(const markdown_core_node *root, size_t *counts);
-#define TS_KIND_COUNT (MARKDOWN_CORE_KIND_SUBSCRIPT + 1)
+#define TS_KIND_COUNT (MARKDOWN_CORE_KIND_DEFINITION + 1)
 
 /* Concatenates the literals of every Text node in pre-order into a malloc'd
  * NUL-terminated buffer (embedded NULs impossible: parser replaces them). */

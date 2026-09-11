@@ -76,6 +76,11 @@ function taskMarkers(tree) {
 }
 
 const stateValidators = {
+    "directiveBlock.name.null": (tree) => /DirectiveBlock scope=.* name=null /.test(tree),
+    "definition.compact.true": (tree) => /Definition scope=.* compact=true /.test(tree),
+    "definition.compact.false": (tree) => /Definition scope=.* compact=false /.test(tree),
+    "definition.bodies.multiple": (tree) => /Definition scope=.* children=(?:[2-9]|[1-9]\d+)(?:\n|$)/.test(tree),
+    "definition.body.empty": (tree) => /DefinitionBody children=0/.test(tree),
     "crossEmbedded.dimensions.width": (tree) =>
         /CrossEmbedded scope=.* dimensions=\(width=[1-9][0-9]*,height=null\) /.test(tree),
     "crossEmbedded.dimensions.width-height": (tree) =>
@@ -249,6 +254,8 @@ const stateValidators = {
     "span.content.populated": (tree) => /Span scope=.* children=[1-9]\d*(?:\n|$)/.test(tree)
 };
 const orderValidators = {
+    "definition.term-before-bodies": (tree) =>
+        /Definition scope=.*\n[^\n]*DefinitionTerm children=[1-9]\d*[\s\S]*DefinitionBody children=/.test(tree),
     "callout.title-before-content": (tree) =>
         /Callout scope=.* children=[1-9]\d*\n[^\n]*Title children=[1-9]\d*[\s\S]*Paragraph scope=/.test(tree),
     "document.source-order": (tree) => tree.startsWith("Document scope="),
@@ -258,7 +265,7 @@ const orderValidators = {
         /DirectiveBlock scope=.* children=[1-9]\d*\n[\s\S]*DirectiveLabel scope=[\s\S]*Paragraph scope=/.test(tree),
     "markup.attributes.source-order": (tree) =>
         /DirectiveBlock scope=.*attributes=\{[^}]*properties=".*" metadata=".*"\}/.test(tree),
-    "inline.source-order": (tree) => /Paragraph scope=.* children=[2-9]\d*/.test(tree),
+    "inline.source-order": (tree) => /Paragraph scope=.* children=(?:[2-9]|[1-9]\d+)(?:\n|$)/.test(tree),
     // Every `Footnote` value nests under `Document` after the last content
     // line (M4).
     "document.content-before-footnotes": (tree) => {
@@ -345,7 +352,16 @@ const treeLine =
 // A group line nests a node-valued list under its owner with no scope and no
 // fields; the names are the dump grammar's.
 const groupLine = /^(?:(?:│ {3}| {4})*(?:├──|└──) )([A-Z][A-Za-z]+) children=\d+$/;
-const GROUPS = new Set(["Title", "CitationPrefix", "CitationSuffix", "TableHead", "TableBody", "TableFoot"]);
+const GROUPS = new Set([
+    "DefinitionTerm",
+    "DefinitionBody",
+    "Title",
+    "CitationPrefix",
+    "CitationSuffix",
+    "TableHead",
+    "TableBody",
+    "TableFoot"
+]);
 // A scoped value prints as a value line -- scope, its scalar fields, children
 // -- without being a kind (M4).
 const scopedValues = Object.fromEntries(

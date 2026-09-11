@@ -43,8 +43,8 @@ host executable explicitly with `scripts/init-environment.sh --install oracle-pa
 runs CLI canaries, both parsers and the fail-closed digest registry. Normal
 builds and tests never install the executable or access the network.
 
-The active corpus has 74 cases: 41 agreements, 26 documented divergences
-and 7 missing-feature gaps assigned to later landing items. Every difference
+The active corpus has 86 cases: 51 agreements, 31 documented divergences
+and 4 missing-feature gaps assigned to later landing items. Every difference
 pins input/reader, oracle projection and product projection SHA-256 digests.
 New, changed, stale, duplicate and unknown entries fail. P5's span and shared
 attribute grammar cases now agree, including empty containers, nesting,
@@ -110,3 +110,12 @@ author tails, malformed candidates, underscore boundaries and unresolved
 reference tails retain isolated witnesses. Direct/resolving tails and Spans,
 complete citation versus virtual heading shortcut, ordinary author tails,
 alphabetic/Roman/default markers and capital-period spacing have agreements.
+
+P8/P10 retire both definition-list gaps and `fenced-divs-nested` by agreement.
+The Div projection uses `name=null`. DefinitionList projects each term and its
+ordered body collections to Definition, including empty bodies. A first body
+starting with Plain means compact, with Para means loose; other first-body
+shapes expose no flag, so Pandoc projects null and the product boolean remains
+compared. Exact differences cover those unobservable flags, the dialect's
+minimum closer width, and global explicit-ID reservation. Unit tests detect
+changed names, compact flags, terms and body grouping independently.

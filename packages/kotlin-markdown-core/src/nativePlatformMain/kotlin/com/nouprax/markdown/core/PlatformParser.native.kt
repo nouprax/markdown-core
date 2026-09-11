@@ -25,6 +25,8 @@ import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_CODE_BLOCK
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_COMMENT
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_CROSS_EMBEDDED
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_CROSS_LINK
+import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_DEFINITION
+import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_DEFINITION_LIST
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_DIRECTIVE
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_DIRECTIVE_LABEL
@@ -90,6 +92,8 @@ import com.nouprax.markdown.core.internal.capi.markdown_core_citation_prefix
 import com.nouprax.markdown.core.internal.capi.markdown_core_citation_referent
 import com.nouprax.markdown.core.internal.capi.markdown_core_citation_scope
 import com.nouprax.markdown.core.internal.capi.markdown_core_citation_suffix
+import com.nouprax.markdown.core.internal.capi.markdown_core_definition_body_content
+import com.nouprax.markdown.core.internal.capi.markdown_core_definition_body_next
 import com.nouprax.markdown.core.internal.capi.markdown_core_destination
 import com.nouprax.markdown.core.internal.capi.markdown_core_document_free
 import com.nouprax.markdown.core.internal.capi.markdown_core_document_parse
@@ -125,6 +129,9 @@ import com.nouprax.markdown.core.internal.capi.markdown_core_node_child_count
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_cite_citations
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_code_block_properties
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_cross_label
+import com.nouprax.markdown.core.internal.capi.markdown_core_node_definition_bodies
+import com.nouprax.markdown.core.internal.capi.markdown_core_node_definition_compact
+import com.nouprax.markdown.core.internal.capi.markdown_core_node_definition_term
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_destination
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_dimensions
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_directive_label
@@ -235,6 +242,9 @@ private data class NativeNodeRecord(
     var valueCount: Int = 0,
     var specimenStart: Int = 0,
     var specimenCount: Int = 0,
+    var termStart: Int = 0,
+    var termCount: Int = 0,
+    var bodies: kotlin.collections.List<NativeBodyRecord> = emptyList(),
 )
 
 /** One item a cite owns; its prefix and suffix nodes are recorded like children. */
@@ -251,6 +261,11 @@ private class NativeFootnoteRecord(
     val pointer: CPointer<markdown_core_footnote>,
     val contentStart: Int,
     val contentCount: Int,
+)
+
+private class NativeBodyRecord(
+    val start: Int,
+    val count: Int,
 )
 
 private class NativeSpecimenRecord(
@@ -318,6 +333,20 @@ private class NativeTreeBuilder(
                     // holds at least one node, so its count is its presence.
                     record.titleStart = records.size
                     record.titleCount = recordChain(markdown_core_node_callout_title(record.pointer))
+                }
+
+                MARKDOWN_CORE_KIND_DEFINITION -> {
+                    record.termStart = records.size
+                    record.termCount = recordChain(markdown_core_node_definition_term(record.pointer))
+                    val bodies = mutableListOf<NativeBodyRecord>()
+                    var body = markdown_core_node_definition_bodies(record.pointer)
+                    while (body != null) {
+                        val start = records.size
+                        val count = recordChain(markdown_core_definition_body_content(body))
+                        bodies += NativeBodyRecord(start, count)
+                        body = markdown_core_definition_body_next(body)
+                    }
+                    record.bodies = bodies
                 }
 
                 MARKDOWN_CORE_KIND_DOCUMENT -> {
@@ -421,6 +450,35 @@ private class NativeTreeBuilder(
             MARKDOWN_CORE_KIND_CALLOUT -> {
                 val (variant, collapsed) = scratch.callout(node)
                 Callout(variant, collapsed, title(record), children, scope, anchor, attributes)
+            }
+
+            MARKDOWN_CORE_KIND_DEFINITION_LIST -> {
+                require(children.isNotEmpty()) { "empty definition list" }
+                DefinitionList(
+                    immutableList(children.size) { offset ->
+                        val child = children[offset]
+                        require(child is Definition) { "invalid definition list child" }
+                        child
+                    },
+                    scope,
+                    anchor,
+                    attributes,
+                )
+            }
+
+            MARKDOWN_CORE_KIND_DEFINITION -> {
+                require(record.bodies.isNotEmpty()) { "definition has no bodies" }
+                Definition(
+                    nodes(record.termStart, record.termCount, "definition term"),
+                    immutableList(record.bodies.size) { offset ->
+                        val body = record.bodies[offset]
+                        nodes(body.start, body.count, "definition body")
+                    },
+                    scratch.definitionCompact(node),
+                    scope,
+                    anchor,
+                    attributes,
+                )
             }
 
             MARKDOWN_CORE_KIND_PARAGRAPH -> {
@@ -681,6 +739,11 @@ private class NativeScratch(
     private val destination = scope.alloc<markdown_core_destination>()
     private val referent = scope.alloc<markdown_core_referent>()
 
+    fun definitionCompact(node: CPointer<markdown_core_node>): Boolean {
+        require(markdown_core_node_definition_compact(node, firstBoolean.ptr)) { "invalid definition" }
+        return firstBoolean.value
+    }
+
     fun headingLevel(node: CPointer<markdown_core_node>): Int {
         require(markdown_core_node_heading_level(node, integer.ptr)) { "invalid heading node" }
         return integer.value
@@ -885,12 +948,18 @@ private class NativeScratch(
     ): Directive {
         require(children.isEmpty()) { "inline directive contains block content" }
         val properties = directiveProperties(node)
-        return Directive(properties, label, scope, anchor, attributes)
+        return Directive(
+            requireNotNull(properties) { "inline directive requires a name" },
+            label,
+            scope,
+            anchor,
+            attributes,
+        )
     }
 
-    private fun directiveProperties(node: CPointer<markdown_core_node>): String {
-        require(markdown_core_node_directive_properties(node, firstString.ptr)) { "invalid directive node" }
-        return firstString.copyString()
+    private fun directiveProperties(node: CPointer<markdown_core_node>): String? {
+        require(markdown_core_node_directive_properties(node, firstOptionalString.ptr)) { "invalid directive node" }
+        return firstOptionalString.copyOptionalString()
     }
 
     fun attributes(value: CPointer<markdown_core_attribute_value>?): Attributes {

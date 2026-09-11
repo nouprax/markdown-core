@@ -160,3 +160,34 @@ test("citation projection compares keys, modes and ordered affixes without fallb
         assert.notDeepEqual(actual, fromPandoc(make(...args)));
     }
 });
+
+test("definition projection preserves compactness, terms, body boundaries and nameless names", () => {
+    const make = (first = "Plain", term = "T", bodies = [[{ t: first, c: [{ t: "Str", c: "body" }] }], []]) => ({
+        blocks: [
+            { t: "Div", c: [["", ["box"], []], [{ t: "DefinitionList", c: [[[{ t: "Str", c: term }], bodies]] }]] }
+        ]
+    });
+    const dump =
+        "Document scope=1:1..4:3 anchor=null attributes={} children=1\n" +
+        "└── DirectiveBlock scope=1:1..4:3 anchor=null attributes={.box} name=null children=1\n" +
+        "    └── DefinitionList scope=2:1..3:6 anchor=null attributes={} children=1\n" +
+        "        └── Definition scope=2:1..3:6 anchor=null attributes={} compact=true children=2\n" +
+        "            ├── DefinitionTerm children=1\n" +
+        '            │   └── Text scope=2:1..2:1 anchor=null attributes={} literal="T" children=0\n' +
+        "            ├── DefinitionBody children=1\n" +
+        "            │   └── Paragraph scope=3:3..3:6 anchor=null attributes={} children=1\n" +
+        '            │       └── Text scope=3:3..3:6 anchor=null attributes={} literal="body" children=0\n' +
+        "            └── DefinitionBody children=0\n";
+    const actual = fromCanonical(parseCanonicalDump(dump));
+    assert.deepEqual(actual, fromPandoc(make()));
+    assert.notDeepEqual(actual, fromPandoc(make("Para")));
+    assert.notDeepEqual(actual, fromPandoc(make("Plain", "other")));
+    assert.notDeepEqual(actual, fromPandoc(make("Plain", "T", [[], [{ t: "Plain", c: [{ t: "Str", c: "body" }] }]])));
+    assert.notDeepEqual(actual, fromCanonical(parseCanonicalDump(dump.replace("compact=true", "compact=false"))));
+    assert.notDeepEqual(actual, fromCanonical(parseCanonicalDump(dump.replace("name=null", 'name="box"'))));
+    for (const bodies of [[[]], [[{ t: "CodeBlock", c: [["", [], []], "code"] }]]]) {
+        const definition = fromPandoc(make("Plain", "T", bodies)).children[0].children[0].children[0];
+        assert.equal(definition.compact, null);
+        assert.equal(definition.children.length, bodies.length + 1);
+    }
+});

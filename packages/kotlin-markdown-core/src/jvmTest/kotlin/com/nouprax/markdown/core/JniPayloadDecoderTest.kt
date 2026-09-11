@@ -22,6 +22,65 @@ private fun jniPayload(vararg parts: Any): ByteArray {
 
 class JniPayloadDecoderTest {
     @Test
+    fun definitionsRequireBodiesAndTypedListMembers() {
+        fun payload(
+            bodyCount: Int = 1,
+            compact: Byte = 1,
+            childKind: Byte = 38,
+        ): ByteArray =
+            jniPayload(
+                "MKJ1",
+                0.toByte(),
+                1.toByte(),
+                1,
+                1,
+                2,
+                1,
+                -1,
+                0,
+                0,
+                0.toByte(),
+                1,
+                37.toByte(),
+                1,
+                1,
+                2,
+                1,
+                -1,
+                0,
+                0,
+                1,
+                childKind,
+                1,
+                1,
+                2,
+                1,
+                -1,
+                0,
+                0,
+                *if (childKind == 38.toByte()) arrayOf<Any>(compact, 0, bodyCount, 0) else arrayOf<Any>(0),
+                0,
+                0,
+            )
+        val bytes = payload()
+        val definition =
+            (
+                JniPayloadDecoder
+                    .decodeDocument(
+                        bytes,
+                    ).content
+                    .single() as DefinitionList
+            ).definitions.single()
+        bytes.fill(0)
+        assertTrue(definition.compact)
+        assertTrue(definition.term.isEmpty())
+        assertEquals(listOf(emptyList()), definition.content)
+        assertFailsWith<IllegalArgumentException> { JniPayloadDecoder.decodeDocument(payload(bodyCount = 0)) }
+        assertFailsWith<IllegalStateException> { JniPayloadDecoder.decodeDocument(payload(compact = 2)) }
+        assertFailsWith<IllegalArgumentException> { JniPayloadDecoder.decodeDocument(payload(childKind = 3)) }
+    }
+
+    @Test
     fun definitionAttributePayloadGrowthIsIndependentOfOccurrences() {
         // Exercise the private JNI entry point without adding a public payload API.
         Document.parse("")

@@ -145,10 +145,12 @@ const ORACLES = {
         // An empty task prefix creates no paragraph here; remark can lazily
         // continue the paragraph it forms before stripping that prefix.
         // Recombination and truncation reproduce this registered boundary.
+        // Zero trailing spaces reaches task-prefix-line-ending-separator:
+        // a newline cannot supply the task marker's required separator.
         // P5: a directive label with attributes can become a bracketed Span
         // when recombination invalidates its enclosing directive. Remark has
         // no Span syntax; span-after-failed-directive pins the exact witness.
-        excludeFragments: ["]{", "$", "[^", "://", /^[\s>]*(?:[-*+]|\d+[.)])\s+\[[ xX]\][ \t\v\f]+$/]
+        excludeFragments: ["]{", "$", "[^", "://", /^[\s>]*(?:[-*+]|\d+[.)])\s+\[[ xX]\][ \t\v\f]*$/]
     }
 };
 const oracle = ORACLES[oracleName];

@@ -317,47 +317,74 @@ markdown_core_document *ts_ast_parse(const uint8_t *bytes, size_t length) {
     return document;
 }
 
-int ts_ast_walk(const markdown_core_node *root, ts_ast_visit_fn visit, void *context) {
-    const markdown_core_node **stack;
-    size_t depth = 0;
-    size_t capacity = 256;
-    int result = 0;
+typedef struct {
+    const markdown_core_node **nodes;
+    size_t count, capacity;
+    bool failed;
+} ts_walk_stack;
 
-    if (!root) {
-        return 0;
+static void ts_walk_push(ts_walk_stack *stack, const markdown_core_node *node) {
+    if (!node || stack->failed) {
+        return;
     }
-    stack = (const markdown_core_node **)malloc(capacity * sizeof(*stack));
-    if (!stack) {
-        return -1;
+    if (stack->count == stack->capacity) {
+        size_t capacity = stack->capacity ? stack->capacity * 2 : 256;
+        const markdown_core_node **nodes = realloc(stack->nodes, capacity * sizeof(*nodes));
+        if (!nodes) {
+            stack->failed = true;
+            return;
+        }
+        stack->nodes = nodes;
+        stack->capacity = capacity;
     }
-    stack[depth++] = root;
-    while (depth > 0) {
-        const markdown_core_node *node = stack[--depth];
-        const markdown_core_node *sibling = markdown_core_node_get_next_sibling(node);
-        const markdown_core_node *child = markdown_core_node_get_first_child(node);
+    stack->nodes[stack->count++] = node;
+}
+
+int ts_ast_walk(const markdown_core_node *root, ts_ast_visit_fn visit, void *context) {
+    ts_walk_stack stack = {0};
+    int result = 0;
+    ts_walk_push(&stack, root);
+    while (stack.count && !stack.failed) {
+        const markdown_core_node *node = stack.nodes[--stack.count];
         result = visit(node, context);
-        if (result != 0) {
+        if (result) {
             break;
         }
-        if (depth + 2 > capacity) {
-            const markdown_core_node **grown;
-            capacity *= 2;
-            grown = (const markdown_core_node **)realloc((void *)stack, capacity * sizeof(*stack));
-            if (!grown) {
-                result = -1;
-                break;
-            }
-            stack = grown;
+        ts_walk_push(&stack, markdown_core_node_get_next_sibling(node));
+        size_t start = stack.count;
+        /* Collect owned roots in source traversal order, then reverse this
+         * stack segment. Every root uses the same sibling-chain algorithm. */
+        ts_walk_push(&stack, markdown_core_node_directive_label(node));
+        ts_walk_push(&stack, markdown_core_node_callout_title(node));
+        ts_walk_push(&stack, markdown_core_node_definition_term(node));
+        ts_walk_push(&stack, markdown_core_node_get_first_child(node));
+        for (const markdown_core_definition_body *body = markdown_core_node_definition_bodies(node); body;
+             body = markdown_core_definition_body_next(body)) {
+            ts_walk_push(&stack, markdown_core_definition_body_content(body));
         }
-        /* Push the sibling first so the child is visited before it. */
-        if (sibling) {
-            stack[depth++] = sibling;
+        for (const markdown_core_citation *citation = markdown_core_node_cite_citations(node); citation;
+             citation = markdown_core_citation_next(citation)) {
+            ts_walk_push(&stack, markdown_core_citation_prefix(citation));
+            ts_walk_push(&stack, markdown_core_citation_suffix(citation));
         }
-        if (child) {
-            stack[depth++] = child;
+        for (const markdown_core_footnote *footnote = markdown_core_node_document_footnotes(node); footnote;
+             footnote = markdown_core_footnote_next(footnote)) {
+            ts_walk_push(&stack, markdown_core_footnote_content(footnote));
+        }
+        for (const markdown_core_specimen *specimen = markdown_core_node_document_specimens(node); specimen;
+             specimen = markdown_core_specimen_next(specimen)) {
+            ts_walk_push(&stack, markdown_core_specimen_content(specimen));
+        }
+        for (size_t left = start, right = stack.count; left < right && left < --right; left++) {
+            const markdown_core_node *swap = stack.nodes[left];
+            stack.nodes[left] = stack.nodes[right];
+            stack.nodes[right] = swap;
         }
     }
-    free((void *)stack);
+    if (stack.failed) {
+        result = -1;
+    }
+    free(stack.nodes);
     return result;
 }
 

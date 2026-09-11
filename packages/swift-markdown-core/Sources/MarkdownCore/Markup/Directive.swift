@@ -24,11 +24,12 @@ public struct Directive: Markup {
 extension Directive {
     init(from node: OpaquePointer, label: DirectiveLabel?) {
         let values = DirectiveValues(from: node)
+        guard let name = values.name else { preconditionFailure("Inline directive requires a name") }
         self.init(
             scope: Self.scope(from: node),
             anchor: markdown_core_node_anchor(node).string,
             attributes: Attributes(from: node),
-            name: values.name,
+            name: name,
             label: label
         )
     }

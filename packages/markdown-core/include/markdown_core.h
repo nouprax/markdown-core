@@ -207,7 +207,9 @@ typedef enum markdown_core_node_kind {
     MARKDOWN_CORE_KIND_INSERTION,
     MARKDOWN_CORE_KIND_SPAN,
     MARKDOWN_CORE_KIND_SUPERSCRIPT,
-    MARKDOWN_CORE_KIND_SUBSCRIPT
+    MARKDOWN_CORE_KIND_SUBSCRIPT,
+    MARKDOWN_CORE_KIND_DEFINITION_LIST,
+    MARKDOWN_CORE_KIND_DEFINITION
 } markdown_core_node_kind;
 
 typedef enum markdown_core_list_flavor {
@@ -326,7 +328,9 @@ MARKDOWN_CORE_API markdown_core_scope markdown_core_node_scope(const markdown_co
 /** A directive's `label` is a separate node-valued field and is not part of
  * its child sequence. For a `DirectiveBlock`, these functions traverse only
  * block `content`; an inline `Directive` has no children. Read its label with
- * `markdown_core_node_directive_label`. */
+ * `markdown_core_node_directive_label`. DefinitionList exposes its Definition
+ * members here. Definition has no generic children: its term and ordered body
+ * collections are read through the definition accessors below. */
 MARKDOWN_CORE_API const markdown_core_node *markdown_core_node_get_first_child(const markdown_core_node *node);
 MARKDOWN_CORE_API const markdown_core_node *markdown_core_node_get_next_sibling(const markdown_core_node *node);
 MARKDOWN_CORE_API size_t markdown_core_node_child_count(const markdown_core_node *node);
@@ -366,11 +370,22 @@ MARKDOWN_CORE_API bool markdown_core_node_table_column_at(const markdown_core_no
                                                           markdown_core_table_column *column);
 MARKDOWN_CORE_API bool markdown_core_node_table_cell_spans(const markdown_core_node *node, int64_t *rowspan,
                                                            int64_t *colspan);
-/** A directive's properties. There is no `mode`: an inline `Directive` is
+/** A directive's name is absent only for a nameless DirectiveBlock. There is no `mode`: an inline `Directive` is
  * always embedded and a `DirectiveBlock` always standalone, so the value was
  * implied by the kind and four surfaces had to keep a constant in step (Q29). */
 MARKDOWN_CORE_API bool markdown_core_node_directive_properties(const markdown_core_node *node,
-                                                               markdown_core_string *name);
+                                                               markdown_core_optional_string *name);
+/** Definition collections preserve the term/body boundary. Body cursors are
+ * borrowed collection roots, not Markup nodes. All pointers live with Document. */
+typedef struct markdown_core_definition_body markdown_core_definition_body;
+MARKDOWN_CORE_API bool markdown_core_node_definition_compact(const markdown_core_node *node, bool *compact);
+MARKDOWN_CORE_API const markdown_core_node *markdown_core_node_definition_term(const markdown_core_node *node);
+MARKDOWN_CORE_API const markdown_core_definition_body *
+markdown_core_node_definition_bodies(const markdown_core_node *node);
+MARKDOWN_CORE_API const markdown_core_definition_body *
+markdown_core_definition_body_next(const markdown_core_definition_body *body);
+MARKDOWN_CORE_API const markdown_core_node *
+markdown_core_definition_body_content(const markdown_core_definition_body *body);
 /** Universal fields. Classes and records retain source order and duplicates.
  * An out-of-range index returns false; absent attributes have zero counts. */
 MARKDOWN_CORE_API markdown_core_optional_string markdown_core_node_anchor(const markdown_core_node *node);

@@ -2803,7 +2803,7 @@ static void universal_values(test_batch_runner *runner) {
  * candidates share one extent, so they cannot rescan each other's suffixes. */
 typedef struct {
     size_t cross_link, opaque, delimiters, comment, lookahead, footnote_body, block_identifier, callout, dimensions;
-    size_t registered_definitions;
+    size_t registered_definitions, definition_lists;
     bool footnote_collection_allocated, footnotes_owned, heading_collection_disposed;
     size_t attributes, anchors, definitions, definition_resources, whitespace, brackets, citations, list_markers,
         specimens;
@@ -2838,6 +2838,7 @@ static markdown_core_node *record_inline_work(const markdown_core_extension *ext
     work->heading_collection_disposed = parser->headings.values == NULL && parser->headings.count == 0;
     work->footnote_body = parser->footnote_body_work;
     work->registered_definitions = parser->definition_registration_work;
+    work->definition_lists = parser->definition_list_work;
     work->footnote_collection_allocated = parser->footnotes.values != NULL;
     work->footnotes_owned = true;
     for (markdown_core_node *note = root->as.document->footnotes; note; note = note->next) {
@@ -2883,6 +2884,71 @@ static void ordered_numeral_ceiling(test_batch_runner *runner) {
         }
     }
     markdown_core_strbuf_free(&source);
+}
+
+static void definition_list_linear_work(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    static const char *const units[] = {"Term\n: body\n\n", ": body\n", "literal\n\n", "Term\n\n\n: body\n\n",
+                                        "[x]: /u\n: body\n\n"};
+    for (size_t shape = 0; shape < sizeof(units) / sizeof(*units); shape++) {
+        for (size_t count = 128; count <= 8192; count *= 2) {
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+            markdown_core_strbuf_puts(&source, "First\n: body\n");
+            for (size_t i = 0; i < count; i++) {
+                markdown_core_strbuf_puts(&source, units[shape]);
+            }
+            inline_work work = {0};
+            markdown_core_node *root =
+                markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
+            OK(runner, root != NULL, "definition body/term input parses: shape=%zu count=%zu", shape, count);
+            OK(runner, work.definition_lists + work.lookahead <= 32 * (size_t)source.size,
+               "definition lookahead is bounded: shape=%zu count=%zu work=%zu", shape, count,
+               work.definition_lists + work.lookahead);
+            if (root) {
+                markdown_core_node_free(root);
+            }
+            markdown_core_strbuf_free(&source);
+        }
+    }
+    for (size_t depth = 32; depth <= 1024; depth *= 2) {
+        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+        markdown_core_strbuf_puts(&source, "T\n");
+        for (size_t i = 0; i < depth; i++) {
+            for (size_t j = 0; j < i; j++) {
+                markdown_core_strbuf_puts(&source, "  ");
+            }
+            markdown_core_strbuf_puts(&source, ": T\n");
+        }
+        for (size_t i = 0; i < depth * 2; i++) {
+            markdown_core_strbuf_putc(&source, '\n');
+        }
+        for (size_t i = 0; i < depth; i++) {
+            markdown_core_strbuf_puts(&source, "  ");
+        }
+        markdown_core_strbuf_puts(&source, "last\n");
+        inline_work work = {0};
+        markdown_core_node *root =
+            markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
+        OK(runner, root != NULL, "nested definition ownership parses and releases: depth=%zu", depth);
+        OK(runner, work.definition_lists + work.lookahead <= 32 * (size_t)source.size,
+           "nested definition blank runs keep bounded work: depth=%zu", depth);
+        size_t definitions = 0;
+        markdown_core_iter *iter = root ? markdown_core_iter_new(root) : NULL;
+        if (iter) {
+            while (markdown_core_iter_next(iter) != MARKDOWN_CORE_EVENT_DONE) {
+                if (markdown_core_iter_get_event_type(iter) == MARKDOWN_CORE_EVENT_ENTER &&
+                    markdown_core_iter_get_node(iter)->kind == MARKDOWN_CORE_NODE_DEFINITION) {
+                    definitions++;
+                }
+            }
+            markdown_core_iter_free(iter);
+        }
+        INT_EQ(runner, definitions, depth, "one association per committed nested term");
+        if (root) {
+            markdown_core_node_free(root);
+        }
+        markdown_core_strbuf_free(&source);
+    }
 }
 
 static void citation_linear_work(test_batch_runner *runner) {
@@ -4332,6 +4398,7 @@ int main(void) {
     heading_reference_resource_lifetime(runner);
     heading_label_length_boundary(runner);
     ordered_numeral_ceiling(runner);
+    definition_list_linear_work(runner);
     citation_linear_work(runner);
     cross_link_linear_work(runner);
     inline_footnote_linear_work(runner);

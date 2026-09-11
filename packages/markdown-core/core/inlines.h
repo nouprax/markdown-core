@@ -39,7 +39,8 @@ bool markdown_core_parse_inline_subtrees(markdown_core_parser *parser, markdown_
  * label and the resource it states in `refmap`, and returns the number of
  * bytes it consumed -- 0 if the front of `input` is not a definition. The
  * definition produces no node (M2): it is consumed, and every reference that
- * resolves to it is the `Link` or `Media` it names. */
+ * resolves to it is the `Link` or `Media` it names. A NULL refmap performs the
+ * same recognition without registering or allocating a definition resource. */
 bufsize_t markdown_core_parse_reference_inline(markdown_core_mem *mem, markdown_core_chunk *input,
                                                markdown_core_map *refmap, markdown_core_attribute_parser *attributes);
 

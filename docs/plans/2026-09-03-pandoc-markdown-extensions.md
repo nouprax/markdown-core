@@ -163,7 +163,7 @@ selected Pandoc extension participates.
       source-faithful scope; definition inheritance transfers semantic values
       only and never expands, unions, or substitutes the occurrence scope.
       Failed suffixes release source transactionally.
-- [ ] Attach bracketed-Span and fenced-Div attributes with `P5` and `P8`.
+- [x] Attach bracketed-Span and fenced-Div attributes with `P5` and `P8`.
 - [x] Finalize explicit and generated heading anchors in one document registry.
       Use the specified GFM algorithm, reserve every explicit anchor from every
       rule before synthesis, generate headings in source order,
@@ -206,7 +206,7 @@ selected Pandoc extension participates.
 
 ## Phase 4 — block containers, lists, and definitions
 
-- [ ] Recognize Pandoc's fenced divs as nameless container directives in the
+- [x] Recognize Pandoc's fenced divs as nameless container directives in the
       existing container stack. An attribute container or class word is
       required on the opener, closing fences have no separate semantic node,
       nesting is unbounded and stack-safe as the dialect index requires, and
@@ -217,12 +217,12 @@ selected Pandoc extension participates.
 - [x] Register specimen labels document-wide and preserve document-owned
       definitions, authored labels and effective first-in-group resets.
       References store IDs; numbering remains derived by consumers.
-- [ ] Add definition lists before paragraph fallback using bounded lookahead for a
+- [x] Add definition lists before paragraph fallback using bounded lookahead for a
       complete term/first-marker prefix. Feed each definition body directly to the
       shared block parser and preserve multiple bodies without an intermediate
       item node or a reparse pass.
 
-- [ ] **Exit criterion:** container and list ownership is unambiguous, compact and loose
+- [x] **Exit criterion:** container and list ownership is unambiguous, compact and loose
       definitions share one algorithm, list variant changes split at the specified
       boundary, example resets/duplicates resolve deterministically, and OOM/nesting
       failures unwind through existing ownership paths.

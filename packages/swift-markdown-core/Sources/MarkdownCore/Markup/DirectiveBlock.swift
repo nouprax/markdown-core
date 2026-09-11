@@ -1,10 +1,9 @@
 import MarkdownCoreC
 
-/// A container directive — `:::name[label]{key=value}` and its closing fence.
+/// A named leaf or container directive, or a nameless fenced container.
 ///
-/// Requires the `directives` extension. A malformed label or attribute block
-/// leaves the directive standing and the punctuation as prose rather than
-/// failing the parse.
+/// Nameless containers use `::: {.class}` or `::: class` and have a nil name.
+/// All container forms share the same closing-fence and block-content rules.
 public struct DirectiveBlock: Markup {
     /// Where it is, opening fence through closing fence. See ``Scope``.
     public let scope: Scope
@@ -12,8 +11,8 @@ public struct DirectiveBlock: Markup {
     public let anchor: String?
     /// Ordered classes and records, including duplicates.
     public let attributes: Attributes
-    /// The directive's name, without its colons.
-    public let name: String
+    /// The directive's name without colons, or nil for a nameless container.
+    public let name: String?
     /// The bracketed label, or `nil` when the source wrote none.
     public let label: DirectiveLabel?
     /// The block content the fence encloses.

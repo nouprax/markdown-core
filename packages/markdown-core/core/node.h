@@ -170,6 +170,17 @@ typedef struct {
     bool has_start;
 } markdown_core_specimen_value;
 
+typedef struct {
+    struct markdown_core_node *term;
+    bool compact;
+} markdown_core_definition;
+
+typedef struct {
+    int continuation;
+    /* The next carried nonblank line, shared by its preceding blank run. */
+    int continuation_line;
+} markdown_core_definition_body_value;
+
 /* THE DOCUMENT's own footnotes (M4): committed inline bodies enter this
  * node-valued field immediately. Before tree transforms, finalization moves
  * authored definitions out of the block tree and orders all values by scope.
@@ -246,6 +257,8 @@ typedef union {
     markdown_core_footnote_value *footnote;
     markdown_core_specimen_value *specimen;
     markdown_core_document_value *document;
+    markdown_core_definition *definition;
+    markdown_core_definition_body_value *definition_body;
     markdown_core_html_block *html_block;
     markdown_core_table_cell *table_cell;
 } markdown_core_node_data;

@@ -248,7 +248,7 @@ private class DumpVisitor(
         state.line(
             "DirectiveBlock",
             node,
-            listOf("name=${jsonString(node.name)}"),
+            listOf("name=${optionalString(node.name)}"),
             children = node.content.size,
         )
         state.nested(node.content.size + if (node.label == null) 0 else 1) {
@@ -331,6 +331,22 @@ private class DumpVisitor(
 
     override fun visitSuperscript(node: Superscript) {
         state.container("Superscript", node, children = node.content)
+    }
+
+    override fun visitDefinitionList(node: DefinitionList) {
+        state.container("DefinitionList", node, children = node.definitions)
+    }
+
+    override fun visitDefinition(node: Definition) {
+        state.line("Definition", node, listOf("compact=${node.compact}"), node.content.size)
+        state.nested(node.content.size + 1) {
+            state.group("DefinitionTerm", node.term.size)
+            state.nested(node.term.size) { node.term.forEach(state::dump) }
+            for (body in node.content) {
+                state.group("DefinitionBody", body.size)
+                state.nested(body.size) { body.forEach(state::dump) }
+            }
+        }
     }
 
     override fun visitSubscript(node: Subscript) {

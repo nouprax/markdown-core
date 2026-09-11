@@ -3467,6 +3467,10 @@ bufsize_t markdown_core_parse_reference_inline(markdown_core_mem *mem, markdown_
             return 0;
         }
     }
+    if (!refmap) {
+        markdown_core_attributes_free(mem, &value);
+        return subj.pos;
+    }
     // The definition is consumed into the map, which owns its resource ONCE
     // and lends it to every occurrence that resolves to the label (M2). The
     // destination and title are cleaned here, the way a direct link's are, so

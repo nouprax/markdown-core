@@ -29,6 +29,7 @@ import type { Mark } from "./model/mark.js";
 import type { Insertion } from "./model/insertion.js";
 import type { Span } from "./model/span.js";
 import type { Superscript } from "./model/superscript.js";
+import type { DefinitionList, Definition } from "./model/definition-list.js";
 import type { Subscript } from "./model/subscript.js";
 import type { Strong } from "./model/strong.js";
 import type { Table, TableCell, TableRow } from "./model/table.js";
@@ -79,6 +80,8 @@ export interface WalkingVisitor {
     visitSpan(this: void, node: Span, phase: WalkPhase): void;
     visitSuperscript(this: void, node: Superscript, phase: WalkPhase): void;
     visitSubscript(this: void, node: Subscript, phase: WalkPhase): void;
+    visitDefinitionList(this: void, node: DefinitionList, phase: WalkPhase): void;
+    visitDefinition(this: void, node: Definition, phase: WalkPhase): void;
     visitLink(this: void, node: Link, phase: WalkPhase): void;
     visitMedia(this: void, node: Media, phase: WalkPhase): void;
     visitDirective(this: void, node: Directive, phase: WalkPhase): void;
@@ -315,6 +318,19 @@ export function walk(root: Markup, walkingVisitor: WalkingVisitor): void {
             walkingVisitor.visitSuperscript(node, phase);
             scheduleExit(node);
             if (phase === "entering") schedule(node.content);
+        },
+        visitDefinitionList: (node) => {
+            walkingVisitor.visitDefinitionList(node, phase);
+            scheduleExit(node);
+            if (phase === "entering") schedule(node.definitions);
+        },
+        visitDefinition: (node) => {
+            walkingVisitor.visitDefinition(node, phase);
+            scheduleExit(node);
+            if (phase === "entering") {
+                for (let index = node.content.length - 1; index >= 0; --index) schedule(node.content[index]!);
+                schedule(node.term);
+            }
         },
         visitSubscript: (node) => {
             walkingVisitor.visitSubscript(node, phase);

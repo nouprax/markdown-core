@@ -371,6 +371,66 @@
             "id": "p9a-start-always-authored",
             "from": "markdown_strict+fancy_lists",
             "input": "h. eight\ni. nine\n"
+        },
+        {
+            "id": "p8-closer-width",
+            "from": "markdown_strict+fenced_divs",
+            "input": ":::: {.outer}\n::: \nx\n::::\ny\n"
+        },
+        {
+            "id": "p8-class-and-empty",
+            "from": "markdown_strict+fenced_divs",
+            "input": "::: warning\nx\n:::\n\n::: {}\n:::\n"
+        },
+        {
+            "id": "p8-opaque-and-nested",
+            "from": "markdown_strict+fenced_divs+backtick_code_blocks+raw_html",
+            "input": "::: {.outer}\n```\n:::\n```\n\n:::: {.inner}\nx\n::::\ny\n:::\n"
+        },
+        {
+            "id": "p8-explicit-anchor-reservation",
+            "from": "markdown_strict+fenced_divs+header_attributes+auto_identifiers+gfm_auto_identifiers",
+            "input": "# Reserved\n\n::: {#reserved}\nx\n:::\n"
+        },
+        {
+            "id": "p8-p10-closing-boundary",
+            "from": "markdown_strict+fenced_divs+definition_lists",
+            "input": "::: {.box}\nTerm\n: body\n:::\nafter\n"
+        },
+        {
+            "id": "p10-nested-and-lazy",
+            "from": "markdown_strict+definition_lists",
+            "input": "T\n: inner\n  : d\n\nA\n: one\nB\n: two\n"
+        },
+        {
+            "id": "p10-term-inline",
+            "from": "markdown_strict+definition_lists",
+            "input": "*Term* `code`\n: d\n\nTail\\\n: d\n"
+        },
+        {
+            "id": "p10-padding-and-tabs",
+            "from": "markdown_strict+definition_lists",
+            "input": "T\n:\tx\n\nU\n:     code\n\nV\n\n:     code\n"
+        },
+        {
+            "id": "p10-marker-only",
+            "from": "markdown_strict+definition_lists",
+            "input": "Term\n~\n    body\n"
+        },
+        {
+            "id": "p10-empty-bodies",
+            "from": "markdown_strict+definition_lists",
+            "input": "Term\n:\n\n: second\n"
+        },
+        {
+            "id": "p10-paragraph-fallback",
+            "from": "markdown_strict+definition_lists",
+            "input": "para\nmore\n: x\n\nTerm\n\n\n: body\n"
+        },
+        {
+            "id": "p10-code-and-list-boundaries",
+            "from": "markdown_strict+definition_lists+backtick_code_blocks+raw_html",
+            "input": "Term\n: body\n- list\n\nT\n: d\n```\nx\n```\n"
         }
     ]
 }

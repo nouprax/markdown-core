@@ -147,6 +147,7 @@ struct markdown_core_parser {
     size_t list_marker_work;
     size_t specimen_work;
     size_t citation_work;
+    size_t definition_list_work;
     /* THE SOURCE AFTER THE LINE BEING PROCESSED. `S_parse_source` sets the
      * cursor to the first byte of the next raw line before it hands each line
      * to `S_process_line`, so a block start whose grammar needs a later line --

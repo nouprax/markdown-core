@@ -178,6 +178,16 @@ public interface WalkingVisitor {
         phase: WalkPhase,
     )
 
+    public fun visitDefinitionList(
+        node: DefinitionList,
+        phase: WalkPhase,
+    )
+
+    public fun visitDefinition(
+        node: Definition,
+        phase: WalkPhase,
+    )
+
     public fun visitSubscript(
         node: Subscript,
         phase: WalkPhase,
@@ -515,6 +525,21 @@ private class WalkingDriver(
         visitor.visitSuperscript(node, phase)
         scheduleExit(node)
         if (phase == WalkPhase.ENTERING) schedule(node.content)
+    }
+
+    override fun visitDefinitionList(node: DefinitionList) {
+        visitor.visitDefinitionList(node, phase)
+        scheduleExit(node)
+        if (phase == WalkPhase.ENTERING) schedule(node.definitions)
+    }
+
+    override fun visitDefinition(node: Definition) {
+        visitor.visitDefinition(node, phase)
+        scheduleExit(node)
+        if (phase == WalkPhase.ENTERING) {
+            for (body in node.content.asReversed()) schedule(body)
+            schedule(node.term)
+        }
     }
 
     override fun visitSubscript(node: Subscript) {

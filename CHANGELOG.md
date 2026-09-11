@@ -6,6 +6,15 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
+- Parse nameless fenced containers with nullable `DirectiveBlock.name` across
+  C, Swift, Kotlin and ES. Named and nameless forms share attributes, nesting
+  and closer ownership; code and other opaque blocks retain their own fences.
+  Add typed `DefinitionList` and `Definition` with inline terms, ordered block
+  bodies and authored compactness. Reuse item indentation, block parsing and
+  owned-field completion, with stack-safe traversal and allocation-failure tests.
+  Close three Pandoc feature gaps and fix fenced-code scopes when a parent
+  container's prefix ends before the code fence.
+
 - Parse bibliography keys, citation groups and author tails into typed Cite
   values with ordered affixes, modes and scopes across C, Swift, Kotlin and ES.
   Resolve bare specimen labels document-wide while preserving every definition,

@@ -46,6 +46,7 @@ separated by exactly one space; a kind with no fields prints
 `children` counts the node's structural children: `content.count` for every
 content-bearing kind, `items.count` for `List`, `cells.count` for `TableRow`,
 `head.count + content.count + foot.count` for `Table`, `citations.count` for `Cite`,
+`definitions.count` for `DefinitionList`, the number of bodies for `Definition`,
 and zero for every leaf and for `Directive`. A directive's optional `label`
 is a separate Markup-valued field and is not included in that number, and
 neither are `Document.metadata`, `Document.footnotes` and `Document.specimens`.
@@ -106,6 +107,12 @@ scope and no fields, at the callout's nesting depth, and the title's inline
 nodes one level below it. A null title prints no line. `N` is the number of
 title nodes, never zero because a present title holds at least one node, and
 it is never counted by the callout's own `children`.
+
+A `Definition` prints its inline term in a `DefinitionTerm children=N` group,
+then each ordered block body in a `DefinitionBody children=N` group. The groups
+have no scope and are not Markup. An empty body still prints its group with
+zero children. The definition's `children` counts bodies only, while its
+`compact` flag records the authored term gap.
 
 A table prints its columns as compact `alignment:relative` values, for example
 `columns=[left:0.25,none:null]`. A double uses the shortest decimal that
@@ -169,6 +176,8 @@ that the dump represents as nested descendants.
 | `Media` | `anchor`, `attributes`, `dest`, `title`, `dimensions` |
 | `Directive` | `anchor`, `attributes`, `name` |
 | `Cite` | `anchor`, `attributes` |
+| `DefinitionList` | `anchor`, `attributes` |
+| `Definition` | `anchor`, `attributes`, `compact` |
 
 Example:
 

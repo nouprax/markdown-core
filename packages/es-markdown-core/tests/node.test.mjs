@@ -1244,3 +1244,80 @@ test("ast: P2 attributes preserve native arrays, inheritance, dimensions and occ
     assert.ok(Array.isArray(link.attributes.classes));
     assert.ok(document.dump().includes('anchor="definition"'));
 });
+
+test("ast: definition terms and ordered bodies are owned and walk without body wrapper nodes", () => {
+    const bytes = nativeResult("::: box\n*T*\n: one\n~\n\nU\n\n: two\n:::\n");
+    const block = new NodeDecoder(bytes).decodeDocument().content[0];
+    bytes.fill(0);
+    assert.equal(block.name, null);
+    assert.deepEqual(block.attributes.classes, ["box"]);
+    const list = block.content[0];
+    assert.equal(list.kind, "definitionList");
+    assert.equal(visit(list, kindVisitor), "definitionList");
+    const first = list.definitions[0];
+    assert.equal(visit(first, kindVisitor), "definition");
+    assert.equal(first.compact, true);
+    assert.equal(first.term[0].content[0].literal, "T");
+    assert.equal(first.content[0][0].content[0].literal, "one");
+    assert.deepEqual(first.content[1], []);
+    assert.equal(list.definitions[1].compact, false);
+    const events = [];
+    walk(
+        list,
+        walkingVisitor((node, phase) => events.push(`${phase}:${nodeKindName(node)}`))
+    );
+    assert.deepEqual(events, [
+        "entering:DefinitionList",
+        "entering:Definition",
+        "entering:Emphasis",
+        "entering:Text",
+        "exiting:Text",
+        "exiting:Emphasis",
+        "entering:Paragraph",
+        "entering:Text",
+        "exiting:Text",
+        "exiting:Paragraph",
+        "exiting:Definition",
+        "entering:Definition",
+        "entering:Text",
+        "exiting:Text",
+        "entering:Paragraph",
+        "entering:Text",
+        "exiting:Text",
+        "exiting:Paragraph",
+        "exiting:Definition",
+        "exiting:DefinitionList"
+    ]);
+});
+
+test("errors: definition body values cannot leak into markup or accept markup in their place", () => {
+    const original = nativeResult("Term\n: body\n");
+    const body = findNode(original, 0x105);
+    const definition = findNode(original, kinds.indexOf("definition"));
+    const malformed = (change, pattern) => {
+        const bytes = original.slice();
+        change(new DataView(bytes.buffer));
+        assert.throws(() => new NodeDecoder(bytes).decodeDocument(), pattern);
+    };
+    malformed((v) => v.setUint32(body, kinds.indexOf("paragraph"), true), /invalid definition body/);
+    malformed((v) => v.setUint32(definition, kinds.indexOf("paragraph"), true), /not uniquely owned|non-markup/);
+    malformed((v) => v.setUint32(definition + 4, 2, true), /flags/);
+    malformed(
+        (v) => v.setUint32(findNode(original, kinds.indexOf("definitionList")), 0x105, true),
+        /child is a value, not a node/
+    );
+    const emptyList = nativeResult("text\n");
+    new DataView(emptyList.buffer).setUint32(
+        findNode(emptyList, kinds.indexOf("text")),
+        kinds.indexOf("definitionList"),
+        true
+    );
+    assert.throws(() => new NodeDecoder(emptyList).decodeDocument(), /empty definition list/);
+    const noBodies = nativeResult("Term\n");
+    new DataView(noBodies.buffer).setUint32(
+        findNode(noBodies, kinds.indexOf("text")),
+        kinds.indexOf("definition"),
+        true
+    );
+    assert.throws(() => new NodeDecoder(noBodies).decodeDocument(), /definition has no bodies/);
+});

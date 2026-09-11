@@ -191,11 +191,28 @@ private struct DumpVisitor: MarkupVisitor {
         }
     }
 
+    mutating func visit(_ node: DefinitionList) {
+        state.line("DefinitionList", node, fields: [], children: node.definitions.count)
+        state.nested(node.definitions.count) { for definition in node.definitions { state.dump(definition) } }
+    }
+
+    mutating func visit(_ node: Definition) {
+        state.line("Definition", node, fields: ["compact=\(node.compact)"], children: node.content.count)
+        state.nested(node.content.count + 1) {
+            state.group("DefinitionTerm", children: node.term.count)
+            state.nested(node.term.count) { node.term.forEach(state.dump) }
+            for body in node.content {
+                state.group("DefinitionBody", children: body.count)
+                state.nested(body.count) { body.forEach(state.dump) }
+            }
+        }
+    }
+
     mutating func visit(_ node: DirectiveBlock) {
         state.line(
             "DirectiveBlock",
             node,
-            fields: ["name=\(jsonString(node.name))"],
+            fields: ["name=\(optionalString(node.name))"],
             children: node.content.count
         )
         state.nested(node.content.count + (node.label == nil ? 0 : 1)) {
