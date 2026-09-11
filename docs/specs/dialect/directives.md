@@ -7,10 +7,7 @@ whose fenced div is the nameless container of this module. Executable
 oracles: remark under `specs/oracles/remark/`, for the envelope, label, and
 attachment position; the Pandoc 3.11 CLI under `specs/oracles/pandoc/` for
 the nameless container. The attribute member grammar is the dialect's own,
-stated by the [attributes](attributes.md) module. Landing: present for the
-named forms; the attribute model migrates to the universal fields and the
-letter-first name rule lands with `M7`, and the nameless container lands
-with `P8`. The [example format](../dialect.md#examples) is defined by the
+stated by the [attributes](attributes.md) module. Landing: present (`M7`, `P8`). The [example format](../dialect.md#examples) is defined by the
 index.
 
 ## Model
@@ -265,6 +262,25 @@ Document scope=1:1..2:3 anchor=null attributes={} children=1
     ├── Text scope=1:1..1:5 anchor=null attributes={} literal="::a[b" children=0
     ├── SoftBreak scope=1:6..1:6 anchor=null attributes={} children=0
     └── Text scope=2:1..2:3 anchor=null attributes={} literal=":::" children=0
+````````````````````````````````
+
+Paragraphs inside directives use the inherited lazy continuation of enclosing
+quotes and list items. A missing outer prefix alone does not end a paragraph
+when the following line can continue it lazily. This differs from Remark's
+container directive boundary and applies equally to named and nameless forms:
+
+```````````````````````````````` example
+> :::a
+> text
+lazy
+.
+Document scope=1:1..3:4 anchor=null attributes={} children=1
+└── Callout scope=1:1..3:4 anchor=null attributes={} variant=null collapsed=null children=1
+    └── DirectiveBlock scope=1:3..3:4 anchor=null attributes={} name="a" children=1
+        └── Paragraph scope=2:3..3:4 anchor=null attributes={} children=3
+            ├── Text scope=2:3..2:6 anchor=null attributes={} literal="text" children=0
+            ├── SoftBreak scope=2:7..2:7 anchor=null attributes={} children=0
+            └── Text scope=3:1..3:4 anchor=null attributes={} literal="lazy" children=0
 ````````````````````````````````
 
 A closer line inside fenced code, an HTML block, or another opaque block is

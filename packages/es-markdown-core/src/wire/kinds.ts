@@ -34,7 +34,9 @@ export type NativeKind =
     | "insertion"
     | "span"
     | "superscript"
-    | "subscript";
+    | "subscript"
+    | "definitionList"
+    | "definition";
 
 export const kinds: readonly (NativeKind | "none")[] = Object.freeze([
     "none",
@@ -73,5 +75,7 @@ export const kinds: readonly (NativeKind | "none")[] = Object.freeze([
     "insertion",
     "span",
     "superscript",
-    "subscript"
+    "subscript",
+    "definitionList",
+    "definition"
 ]);

@@ -1,0 +1,708 @@
+# Definition lists
+
+
+```````````````````````````````` example
+Term
+: definition
+.
+Document scope=1:1..2:12 anchor=null attributes={} children=1
+└── DefinitionList scope=1:1..2:12 anchor=null attributes={} children=1
+    └── Definition scope=1:1..2:12 anchor=null attributes={} compact=true children=1
+        ├── DefinitionTerm children=1
+        │   └── Text scope=1:1..1:4 anchor=null attributes={} literal="Term" children=0
+        └── DefinitionBody children=1
+            └── Paragraph scope=2:3..2:12 anchor=null attributes={} children=1
+                └── Text scope=2:3..2:12 anchor=null attributes={} literal="definition" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+Term
+
+: definition
+.
+Document scope=1:1..3:12 anchor=null attributes={} children=1
+└── DefinitionList scope=1:1..3:12 anchor=null attributes={} children=1
+    └── Definition scope=1:1..3:12 anchor=null attributes={} compact=false children=1
+        ├── DefinitionTerm children=1
+        │   └── Text scope=1:1..1:4 anchor=null attributes={} literal="Term" children=0
+        └── DefinitionBody children=1
+            └── Paragraph scope=3:3..3:12 anchor=null attributes={} children=1
+                └── Text scope=3:3..3:12 anchor=null attributes={} literal="definition" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+T1
+: one
+: two
+
+T2
+: d2
+.
+Document scope=1:1..6:4 anchor=null attributes={} children=1
+└── DefinitionList scope=1:1..6:4 anchor=null attributes={} children=2
+    ├── Definition scope=1:1..3:5 anchor=null attributes={} compact=true children=2
+    │   ├── DefinitionTerm children=1
+    │   │   └── Text scope=1:1..1:2 anchor=null attributes={} literal="T1" children=0
+    │   ├── DefinitionBody children=1
+    │   │   └── Paragraph scope=2:3..2:5 anchor=null attributes={} children=1
+    │   │       └── Text scope=2:3..2:5 anchor=null attributes={} literal="one" children=0
+    │   └── DefinitionBody children=1
+    │       └── Paragraph scope=3:3..3:5 anchor=null attributes={} children=1
+    │           └── Text scope=3:3..3:5 anchor=null attributes={} literal="two" children=0
+    └── Definition scope=5:1..6:4 anchor=null attributes={} compact=true children=1
+        ├── DefinitionTerm children=1
+        │   └── Text scope=5:1..5:2 anchor=null attributes={} literal="T2" children=0
+        └── DefinitionBody children=1
+            └── Paragraph scope=6:3..6:4 anchor=null attributes={} children=1
+                └── Text scope=6:3..6:4 anchor=null attributes={} literal="d2" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+Term
+~
+    body
+.
+Document scope=1:1..3:8 anchor=null attributes={} children=1
+└── DefinitionList scope=1:1..3:8 anchor=null attributes={} children=1
+    └── Definition scope=1:1..3:8 anchor=null attributes={} compact=true children=1
+        ├── DefinitionTerm children=1
+        │   └── Text scope=1:1..1:4 anchor=null attributes={} literal="Term" children=0
+        └── DefinitionBody children=1
+            └── Paragraph scope=3:5..3:8 anchor=null attributes={} children=1
+                └── Text scope=3:5..3:8 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+*Term* `code`
+: d
+.
+Document scope=1:1..2:3 anchor=null attributes={} children=1
+└── DefinitionList scope=1:1..2:3 anchor=null attributes={} children=1
+    └── Definition scope=1:1..2:3 anchor=null attributes={} compact=true children=1
+        ├── DefinitionTerm children=3
+        │   ├── Emphasis scope=1:1..1:6 anchor=null attributes={} children=1
+        │   │   └── Text scope=1:2..1:5 anchor=null attributes={} literal="Term" children=0
+        │   ├── Text scope=1:7..1:7 anchor=null attributes={} literal=" " children=0
+        │   └── Code scope=1:8..1:13 anchor=null attributes={} literal="code" children=0
+        └── DefinitionBody children=1
+            └── Paragraph scope=2:3..2:3 anchor=null attributes={} children=1
+                └── Text scope=2:3..2:3 anchor=null attributes={} literal="d" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+Term
+: first
+
+  second
+.
+Document scope=1:1..4:8 anchor=null attributes={} children=1
+└── DefinitionList scope=1:1..4:8 anchor=null attributes={} children=1
+    └── Definition scope=1:1..4:8 anchor=null attributes={} compact=true children=1
+        ├── DefinitionTerm children=1
+        │   └── Text scope=1:1..1:4 anchor=null attributes={} literal="Term" children=0
+        └── DefinitionBody children=2
+            ├── Paragraph scope=2:3..2:7 anchor=null attributes={} children=1
+            │   └── Text scope=2:3..2:7 anchor=null attributes={} literal="first" children=0
+            └── Paragraph scope=4:3..4:8 anchor=null attributes={} children=1
+                └── Text scope=4:3..4:8 anchor=null attributes={} literal="second" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+T
+: inner
+  : d
+.
+Document scope=1:1..3:5 anchor=null attributes={} children=1
+└── DefinitionList scope=1:1..3:5 anchor=null attributes={} children=1
+    └── Definition scope=1:1..3:5 anchor=null attributes={} compact=true children=1
+        ├── DefinitionTerm children=1
+        │   └── Text scope=1:1..1:1 anchor=null attributes={} literal="T" children=0
+        └── DefinitionBody children=1
+            └── DefinitionList scope=2:3..3:5 anchor=null attributes={} children=1
+                └── Definition scope=2:3..3:5 anchor=null attributes={} compact=true children=1
+                    ├── DefinitionTerm children=1
+                    │   └── Text scope=2:3..2:7 anchor=null attributes={} literal="inner" children=0
+                    └── DefinitionBody children=1
+                        └── Paragraph scope=3:5..3:5 anchor=null attributes={} children=1
+                            └── Text scope=3:5..3:5 anchor=null attributes={} literal="d" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+Term1
+: d1
+Term2
+: d2
+.
+Document scope=1:1..4:4 anchor=null attributes={} children=1
+└── DefinitionList scope=1:1..4:4 anchor=null attributes={} children=1
+    └── Definition scope=1:1..4:4 anchor=null attributes={} compact=true children=2
+        ├── DefinitionTerm children=1
+        │   └── Text scope=1:1..1:5 anchor=null attributes={} literal="Term1" children=0
+        ├── DefinitionBody children=1
+        │   └── Paragraph scope=2:3..3:5 anchor=null attributes={} children=3
+        │       ├── Text scope=2:3..2:4 anchor=null attributes={} literal="d1" children=0
+        │       ├── SoftBreak scope=2:5..2:5 anchor=null attributes={} children=0
+        │       └── Text scope=3:1..3:5 anchor=null attributes={} literal="Term2" children=0
+        └── DefinitionBody children=1
+            └── Paragraph scope=4:3..4:4 anchor=null attributes={} children=1
+                └── Text scope=4:3..4:4 anchor=null attributes={} literal="d2" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+para
+more
+: x
+
+para
+
+Term
+: x
+.
+Document scope=1:1..8:3 anchor=null attributes={} children=3
+├── Paragraph scope=1:1..3:3 anchor=null attributes={} children=5
+│   ├── Text scope=1:1..1:4 anchor=null attributes={} literal="para" children=0
+│   ├── SoftBreak scope=1:5..1:5 anchor=null attributes={} children=0
+│   ├── Text scope=2:1..2:4 anchor=null attributes={} literal="more" children=0
+│   ├── SoftBreak scope=2:5..2:5 anchor=null attributes={} children=0
+│   └── Text scope=3:1..3:3 anchor=null attributes={} literal=": x" children=0
+├── Paragraph scope=5:1..5:4 anchor=null attributes={} children=1
+│   └── Text scope=5:1..5:4 anchor=null attributes={} literal="para" children=0
+└── DefinitionList scope=7:1..8:3 anchor=null attributes={} children=1
+    └── Definition scope=7:1..8:3 anchor=null attributes={} compact=true children=1
+        ├── DefinitionTerm children=1
+        │   └── Text scope=7:1..7:4 anchor=null attributes={} literal="Term" children=0
+        └── DefinitionBody children=1
+            └── Paragraph scope=8:3..8:3 anchor=null attributes={} children=1
+                └── Text scope=8:3..8:3 anchor=null attributes={} literal="x" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+Term
+:x
+.
+Document scope=1:1..2:2 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..2:2 anchor=null attributes={} children=3
+    ├── Text scope=1:1..1:4 anchor=null attributes={} literal="Term" children=0
+    ├── SoftBreak scope=1:5..1:5 anchor=null attributes={} children=0
+    └── Directive scope=2:1..2:2 anchor=null attributes={} name="x" children=0
+````````````````````````````````
+
+## def-div-boundary
+
+```````````````````````````````` example
+::: {.box}
+Term
+: body
+:::
+after
+.
+Document scope=1:1..5:5 anchor=null attributes={} children=2
+├── DirectiveBlock scope=1:1..4:3 anchor=null attributes={.box} name=null children=1
+│   └── DefinitionList scope=2:1..3:6 anchor=null attributes={} children=1
+│       └── Definition scope=2:1..3:6 anchor=null attributes={} compact=true children=1
+│           ├── DefinitionTerm children=1
+│           │   └── Text scope=2:1..2:4 anchor=null attributes={} literal="Term" children=0
+│           └── DefinitionBody children=1
+│               └── Paragraph scope=3:3..3:6 anchor=null attributes={} children=1
+│                   └── Text scope=3:3..3:6 anchor=null attributes={} literal="body" children=0
+└── Paragraph scope=5:1..5:5 anchor=null attributes={} children=1
+    └── Text scope=5:1..5:5 anchor=null attributes={} literal="after" children=0
+````````````````````````````````
+
+## body-list-fence
+
+```````````````````````````````` example
+Term
+: body
+- list
+
+T
+: d
+```
+x
+```
+.
+Document scope=1:1..9:3 anchor=null attributes={} children=4
+├── DefinitionList scope=1:1..2:6 anchor=null attributes={} children=1
+│   └── Definition scope=1:1..2:6 anchor=null attributes={} compact=true children=1
+│       ├── DefinitionTerm children=1
+│       │   └── Text scope=1:1..1:4 anchor=null attributes={} literal="Term" children=0
+│       └── DefinitionBody children=1
+│           └── Paragraph scope=2:3..2:6 anchor=null attributes={} children=1
+│               └── Text scope=2:3..2:6 anchor=null attributes={} literal="body" children=0
+├── List scope=3:1..4:0 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+│   └── ListItem scope=3:1..4:0 anchor=null attributes={} marker=null children=1
+│       └── Paragraph scope=3:3..3:6 anchor=null attributes={} children=1
+│           └── Text scope=3:3..3:6 anchor=null attributes={} literal="list" children=0
+├── DefinitionList scope=5:1..6:3 anchor=null attributes={} children=1
+│   └── Definition scope=5:1..6:3 anchor=null attributes={} compact=true children=1
+│       ├── DefinitionTerm children=1
+│       │   └── Text scope=5:1..5:1 anchor=null attributes={} literal="T" children=0
+│       └── DefinitionBody children=1
+│           └── Paragraph scope=6:3..6:3 anchor=null attributes={} children=1
+│               └── Text scope=6:3..6:3 anchor=null attributes={} literal="d" children=0
+└── CodeBlock scope=7:1..9:3 anchor=null attributes={} info=null language=null literal="x\n" fenced=true closed=true children=0
+````````````````````````````````
+
+## body-shapes
+
+```````````````````````````````` example
+Term
+: first
+
+  > [!NOTE] Title
+  > body
+
+  - list
+
+  | a | b |
+  | - | - |
+  | c | d |
+
+Other
+
+~ last
+.
+Document scope=1:1..15:6 anchor=null attributes={} children=1
+└── DefinitionList scope=1:1..15:6 anchor=null attributes={} children=2
+    ├── Definition scope=1:1..11:11 anchor=null attributes={} compact=true children=1
+    │   ├── DefinitionTerm children=1
+    │   │   └── Text scope=1:1..1:4 anchor=null attributes={} literal="Term" children=0
+    │   └── DefinitionBody children=4
+    │       ├── Paragraph scope=2:3..2:7 anchor=null attributes={} children=1
+    │       │   └── Text scope=2:3..2:7 anchor=null attributes={} literal="first" children=0
+    │       ├── Callout scope=4:3..5:8 anchor=null attributes={} variant="NOTE" collapsed=null children=1
+    │       │   ├── Title children=1
+    │       │   │   └── Text scope=4:13..4:17 anchor=null attributes={} literal="Title" children=0
+    │       │   └── Paragraph scope=5:5..5:8 anchor=null attributes={} children=1
+    │       │       └── Text scope=5:5..5:8 anchor=null attributes={} literal="body" children=0
+    │       ├── List scope=7:3..8:0 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+    │       │   └── ListItem scope=7:3..8:0 anchor=null attributes={} marker=null children=1
+    │       │       └── Paragraph scope=7:5..7:8 anchor=null attributes={} children=1
+    │       │           └── Text scope=7:5..7:8 anchor=null attributes={} literal="list" children=0
+    │       └── Table scope=9:3..11:11 anchor=null attributes={} columns=[none:null,none:null] children=2
+    │           ├── TableHead children=1
+    │           │   └── TableRow scope=9:3..9:11 anchor=null attributes={} children=2
+    │           │       ├── TableCell scope=9:4..9:6 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │           │       │   └── Text scope=9:5..9:5 anchor=null attributes={} literal="a" children=0
+    │           │       └── TableCell scope=9:8..9:10 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │           │           └── Text scope=9:9..9:9 anchor=null attributes={} literal="b" children=0
+    │           ├── TableBody children=1
+    │           │   └── TableRow scope=11:3..11:11 anchor=null attributes={} children=2
+    │           │       ├── TableCell scope=11:4..11:6 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │           │       │   └── Text scope=11:5..11:5 anchor=null attributes={} literal="c" children=0
+    │           │       └── TableCell scope=11:8..11:10 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │           │           └── Text scope=11:9..11:9 anchor=null attributes={} literal="d" children=0
+    │           └── TableFoot children=0
+    └── Definition scope=13:1..15:6 anchor=null attributes={} compact=false children=1
+        ├── DefinitionTerm children=1
+        │   └── Text scope=13:1..13:5 anchor=null attributes={} literal="Other" children=0
+        └── DefinitionBody children=1
+            └── Paragraph scope=15:3..15:6 anchor=null attributes={} children=1
+                └── Text scope=15:3..15:6 anchor=null attributes={} literal="last" children=0
+````````````````````````````````
+
+## blank-body
+
+```````````````````````````````` example
+T
+:
+
+: second
+
+U
+~
+.
+Document scope=1:1..7:1 anchor=null attributes={} children=1
+└── DefinitionList scope=1:1..7:1 anchor=null attributes={} children=2
+    ├── Definition scope=1:1..4:8 anchor=null attributes={} compact=true children=2
+    │   ├── DefinitionTerm children=1
+    │   │   └── Text scope=1:1..1:1 anchor=null attributes={} literal="T" children=0
+    │   ├── DefinitionBody children=0
+    │   └── DefinitionBody children=1
+    │       └── Paragraph scope=4:3..4:8 anchor=null attributes={} children=1
+    │           └── Text scope=4:3..4:8 anchor=null attributes={} literal="second" children=0
+    └── Definition scope=6:1..7:1 anchor=null attributes={} compact=true children=1
+        ├── DefinitionTerm children=1
+        │   └── Text scope=6:1..6:1 anchor=null attributes={} literal="U" children=0
+        └── DefinitionBody children=0
+````````````````````````````````
+
+## references
+
+```````````````````````````````` example
+[x]: /u
+: text
+
+Term
+: [x] @key
+
+Term\
+: body
+.
+Document scope=1:1..8:6 anchor=null attributes={} children=2
+├── Paragraph scope=2:1..2:6 anchor=null attributes={} children=1
+│   └── Text scope=2:1..2:6 anchor=null attributes={} literal=": text" children=0
+└── DefinitionList scope=4:1..8:6 anchor=null attributes={} children=2
+    ├── Definition scope=4:1..5:10 anchor=null attributes={} compact=true children=1
+    │   ├── DefinitionTerm children=1
+    │   │   └── Text scope=4:1..4:4 anchor=null attributes={} literal="Term" children=0
+    │   └── DefinitionBody children=1
+    │       └── Paragraph scope=5:3..5:10 anchor=null attributes={} children=3
+    │           ├── Link scope=5:3..5:5 anchor=null attributes={} dest=url("/u") title=null children=1
+    │           │   └── Text scope=5:4..5:4 anchor=null attributes={} literal="x" children=0
+    │           ├── Text scope=5:6..5:6 anchor=null attributes={} literal=" " children=0
+    │           └── Cite scope=5:7..5:10 anchor=null attributes={} children=1
+    │               └── Citation scope=5:7..5:10 referent=bib(key="key",mode=authorInText) children=0
+    │                   ├── CitationPrefix children=0
+    │                   └── CitationSuffix children=0
+    └── Definition scope=7:1..8:6 anchor=null attributes={} compact=true children=1
+        ├── DefinitionTerm children=1
+        │   └── Text scope=7:1..7:5 anchor=null attributes={} literal="Term\\" children=0
+        └── DefinitionBody children=1
+            └── Paragraph scope=8:3..8:6 anchor=null attributes={} children=1
+                └── Text scope=8:3..8:6 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## padding
+
+```````````````````````````````` example
+T1
+: x
+
+T2
+:  x
+
+T3
+:   x
+
+T4
+:    x
+
+T5
+:     x
+
+T6
+:      x
+
+T7
+:       x
+
+T8
+:        x
+
+T9
+:         x
+
+.
+Document scope=1:1..27:0 anchor=null attributes={} children=1
+└── DefinitionList scope=1:1..26:11 anchor=null attributes={} children=9
+    ├── Definition scope=1:1..2:3 anchor=null attributes={} compact=true children=1
+    │   ├── DefinitionTerm children=1
+    │   │   └── Text scope=1:1..1:2 anchor=null attributes={} literal="T1" children=0
+    │   └── DefinitionBody children=1
+    │       └── Paragraph scope=2:3..2:3 anchor=null attributes={} children=1
+    │           └── Text scope=2:3..2:3 anchor=null attributes={} literal="x" children=0
+    ├── Definition scope=4:1..5:4 anchor=null attributes={} compact=true children=1
+    │   ├── DefinitionTerm children=1
+    │   │   └── Text scope=4:1..4:2 anchor=null attributes={} literal="T2" children=0
+    │   └── DefinitionBody children=1
+    │       └── Paragraph scope=5:4..5:4 anchor=null attributes={} children=1
+    │           └── Text scope=5:4..5:4 anchor=null attributes={} literal="x" children=0
+    ├── Definition scope=7:1..8:5 anchor=null attributes={} compact=true children=1
+    │   ├── DefinitionTerm children=1
+    │   │   └── Text scope=7:1..7:2 anchor=null attributes={} literal="T3" children=0
+    │   └── DefinitionBody children=1
+    │       └── Paragraph scope=8:5..8:5 anchor=null attributes={} children=1
+    │           └── Text scope=8:5..8:5 anchor=null attributes={} literal="x" children=0
+    ├── Definition scope=10:1..11:6 anchor=null attributes={} compact=true children=1
+    │   ├── DefinitionTerm children=1
+    │   │   └── Text scope=10:1..10:2 anchor=null attributes={} literal="T4" children=0
+    │   └── DefinitionBody children=1
+    │       └── Paragraph scope=11:6..11:6 anchor=null attributes={} children=1
+    │           └── Text scope=11:6..11:6 anchor=null attributes={} literal="x" children=0
+    ├── Definition scope=13:1..14:7 anchor=null attributes={} compact=true children=1
+    │   ├── DefinitionTerm children=1
+    │   │   └── Text scope=13:1..13:2 anchor=null attributes={} literal="T5" children=0
+    │   └── DefinitionBody children=1
+    │       └── CodeBlock scope=14:7..14:7 anchor=null attributes={} info=null language=null literal="x\n" fenced=false closed=true children=0
+    ├── Definition scope=16:1..17:8 anchor=null attributes={} compact=true children=1
+    │   ├── DefinitionTerm children=1
+    │   │   └── Text scope=16:1..16:2 anchor=null attributes={} literal="T6" children=0
+    │   └── DefinitionBody children=1
+    │       └── CodeBlock scope=17:7..17:8 anchor=null attributes={} info=null language=null literal=" x\n" fenced=false closed=true children=0
+    ├── Definition scope=19:1..20:9 anchor=null attributes={} compact=true children=1
+    │   ├── DefinitionTerm children=1
+    │   │   └── Text scope=19:1..19:2 anchor=null attributes={} literal="T7" children=0
+    │   └── DefinitionBody children=1
+    │       └── CodeBlock scope=20:7..20:9 anchor=null attributes={} info=null language=null literal="  x\n" fenced=false closed=true children=0
+    ├── Definition scope=22:1..23:10 anchor=null attributes={} compact=true children=1
+    │   ├── DefinitionTerm children=1
+    │   │   └── Text scope=22:1..22:2 anchor=null attributes={} literal="T8" children=0
+    │   └── DefinitionBody children=1
+    │       └── CodeBlock scope=23:7..23:10 anchor=null attributes={} info=null language=null literal="   x\n" fenced=false closed=true children=0
+    └── Definition scope=25:1..26:11 anchor=null attributes={} compact=true children=1
+        ├── DefinitionTerm children=1
+        │   └── Text scope=25:1..25:2 anchor=null attributes={} literal="T9" children=0
+        └── DefinitionBody children=1
+            └── CodeBlock scope=26:7..26:11 anchor=null attributes={} info=null language=null literal="    x\n" fenced=false closed=true children=0
+````````````````````````````````
+
+## indent
+
+```````````````````````````````` example
+T0
+: d
+  next
+
+T1
+ : d
+   next
+
+T2
+  : d
+    next
+
+T3
+   : d
+     next
+
+.
+Document scope=1:1..16:0 anchor=null attributes={} children=1
+└── DefinitionList scope=1:1..15:9 anchor=null attributes={} children=4
+    ├── Definition scope=1:1..3:6 anchor=null attributes={} compact=true children=1
+    │   ├── DefinitionTerm children=1
+    │   │   └── Text scope=1:1..1:2 anchor=null attributes={} literal="T0" children=0
+    │   └── DefinitionBody children=1
+    │       └── Paragraph scope=2:3..3:6 anchor=null attributes={} children=3
+    │           ├── Text scope=2:3..2:3 anchor=null attributes={} literal="d" children=0
+    │           ├── SoftBreak scope=2:4..2:4 anchor=null attributes={} children=0
+    │           └── Text scope=3:3..3:6 anchor=null attributes={} literal="next" children=0
+    ├── Definition scope=5:1..7:7 anchor=null attributes={} compact=true children=1
+    │   ├── DefinitionTerm children=1
+    │   │   └── Text scope=5:1..5:2 anchor=null attributes={} literal="T1" children=0
+    │   └── DefinitionBody children=1
+    │       └── Paragraph scope=6:4..7:7 anchor=null attributes={} children=3
+    │           ├── Text scope=6:4..6:4 anchor=null attributes={} literal="d" children=0
+    │           ├── SoftBreak scope=6:5..6:5 anchor=null attributes={} children=0
+    │           └── Text scope=7:4..7:7 anchor=null attributes={} literal="next" children=0
+    ├── Definition scope=9:1..11:8 anchor=null attributes={} compact=true children=1
+    │   ├── DefinitionTerm children=1
+    │   │   └── Text scope=9:1..9:2 anchor=null attributes={} literal="T2" children=0
+    │   └── DefinitionBody children=1
+    │       └── Paragraph scope=10:5..11:8 anchor=null attributes={} children=3
+    │           ├── Text scope=10:5..10:5 anchor=null attributes={} literal="d" children=0
+    │           ├── SoftBreak scope=10:6..10:6 anchor=null attributes={} children=0
+    │           └── Text scope=11:5..11:8 anchor=null attributes={} literal="next" children=0
+    └── Definition scope=13:1..15:9 anchor=null attributes={} compact=true children=1
+        ├── DefinitionTerm children=1
+        │   └── Text scope=13:1..13:2 anchor=null attributes={} literal="T3" children=0
+        └── DefinitionBody children=1
+            └── Paragraph scope=14:6..15:9 anchor=null attributes={} children=3
+                ├── Text scope=14:6..14:6 anchor=null attributes={} literal="d" children=0
+                ├── SoftBreak scope=14:7..14:7 anchor=null attributes={} children=0
+                └── Text scope=15:6..15:9 anchor=null attributes={} literal="next" children=0
+````````````````````````````````
+
+## def-in-container
+
+```````````````````````````````` example
+> Term
+> : body
+
+- Term
+  : body
+
+[^n]: Term
+    : body
+
+(@s) Term
+    : body
+.
+Document scope=1:1..11:10 anchor=null attributes={} children=2
+├── Callout scope=1:1..2:8 anchor=null attributes={} variant=null collapsed=null children=1
+│   └── DefinitionList scope=1:3..2:8 anchor=null attributes={} children=1
+│       └── Definition scope=1:3..2:8 anchor=null attributes={} compact=true children=1
+│           ├── DefinitionTerm children=1
+│           │   └── Text scope=1:3..1:6 anchor=null attributes={} literal="Term" children=0
+│           └── DefinitionBody children=1
+│               └── Paragraph scope=2:5..2:8 anchor=null attributes={} children=1
+│                   └── Text scope=2:5..2:8 anchor=null attributes={} literal="body" children=0
+├── List scope=4:1..6:0 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+│   └── ListItem scope=4:1..6:0 anchor=null attributes={} marker=null children=1
+│       └── DefinitionList scope=4:3..5:8 anchor=null attributes={} children=1
+│           └── Definition scope=4:3..5:8 anchor=null attributes={} compact=true children=1
+│               ├── DefinitionTerm children=1
+│               │   └── Text scope=4:3..4:6 anchor=null attributes={} literal="Term" children=0
+│               └── DefinitionBody children=1
+│                   └── Paragraph scope=5:5..5:8 anchor=null attributes={} children=1
+│                       └── Text scope=5:5..5:8 anchor=null attributes={} literal="body" children=0
+├── Footnote scope=7:1..9:0 id="n" children=1
+│   └── DefinitionList scope=7:7..8:10 anchor=null attributes={} children=1
+│       └── Definition scope=7:7..8:10 anchor=null attributes={} compact=true children=1
+│           ├── DefinitionTerm children=1
+│           │   └── Text scope=7:7..7:10 anchor=null attributes={} literal="Term" children=0
+│           └── DefinitionBody children=1
+│               └── Paragraph scope=8:7..8:10 anchor=null attributes={} children=1
+│                   └── Text scope=8:7..8:10 anchor=null attributes={} literal="body" children=0
+└── Specimen scope=10:1..11:10 id="s" start=null children=1
+    └── DefinitionList scope=10:6..11:10 anchor=null attributes={} children=1
+        └── Definition scope=10:6..11:10 anchor=null attributes={} compact=true children=1
+            ├── DefinitionTerm children=1
+            │   └── Text scope=10:6..10:9 anchor=null attributes={} literal="Term" children=0
+            └── DefinitionBody children=1
+                └── Paragraph scope=11:7..11:10 anchor=null attributes={} children=1
+                    └── Text scope=11:7..11:10 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
+## tab-padding-and-continuation
+
+```````````````````````````````` example
+T
+:→x
+
+U
+:→→x
+
+V
+~→
+→continued
+.
+Document scope=1:1..9:10 anchor=null attributes={} children=1
+└── DefinitionList scope=1:1..9:10 anchor=null attributes={} children=3
+    ├── Definition scope=1:1..2:3 anchor=null attributes={} compact=true children=1
+    │   ├── DefinitionTerm children=1
+    │   │   └── Text scope=1:1..1:1 anchor=null attributes={} literal="T" children=0
+    │   └── DefinitionBody children=1
+    │       └── Paragraph scope=2:3..2:3 anchor=null attributes={} children=1
+    │           └── Text scope=2:3..2:3 anchor=null attributes={} literal="x" children=0
+    ├── Definition scope=4:1..5:4 anchor=null attributes={} compact=true children=1
+    │   ├── DefinitionTerm children=1
+    │   │   └── Text scope=4:1..4:1 anchor=null attributes={} literal="U" children=0
+    │   └── DefinitionBody children=1
+    │       └── CodeBlock scope=5:3..5:4 anchor=null attributes={} info=null language=null literal="  x\n" fenced=false closed=true children=0
+    └── Definition scope=7:1..9:10 anchor=null attributes={} compact=true children=1
+        ├── DefinitionTerm children=1
+        │   └── Text scope=7:1..7:1 anchor=null attributes={} literal="V" children=0
+        └── DefinitionBody children=1
+            └── Paragraph scope=9:2..9:10 anchor=null attributes={} children=1
+                └── Text scope=9:2..9:10 anchor=null attributes={} literal="continued" children=0
+````````````````````````````````
+
+## invalid-prefixes
+
+```````````````````````````````` example
+Term
+
+
+: body
+
+  Term
+    : body
+
+→Term
+: body
+
+[r]: /target
+: body
+
+[r]
+.
+Document scope=1:1..15:3 anchor=null attributes={} children=7
+├── Paragraph scope=1:1..1:4 anchor=null attributes={} children=1
+│   └── Text scope=1:1..1:4 anchor=null attributes={} literal="Term" children=0
+├── Paragraph scope=4:1..4:6 anchor=null attributes={} children=1
+│   └── Text scope=4:1..4:6 anchor=null attributes={} literal=": body" children=0
+├── Paragraph scope=6:3..7:10 anchor=null attributes={} children=3
+│   ├── Text scope=6:3..6:6 anchor=null attributes={} literal="Term" children=0
+│   ├── SoftBreak scope=6:7..6:7 anchor=null attributes={} children=0
+│   └── Text scope=7:5..7:10 anchor=null attributes={} literal=": body" children=0
+├── CodeBlock scope=9:2..9:5 anchor=null attributes={} info=null language=null literal="Term\n" fenced=false closed=true children=0
+├── Paragraph scope=10:1..10:6 anchor=null attributes={} children=1
+│   └── Text scope=10:1..10:6 anchor=null attributes={} literal=": body" children=0
+├── Paragraph scope=13:1..13:6 anchor=null attributes={} children=1
+│   └── Text scope=13:1..13:6 anchor=null attributes={} literal=": body" children=0
+└── Paragraph scope=15:1..15:3 anchor=null attributes={} children=1
+    └── Link scope=15:1..15:3 anchor=null attributes={} dest=url("/target") title=null children=1
+        └── Text scope=15:2..15:2 anchor=null attributes={} literal="r" children=0
+````````````````````````````````
+
+## table-precedence
+
+```````````````````````````````` example
+| term |
+| --- |
+: body
+
+Term
+: | a |
+  | --- |
+  | b |
+.
+Document scope=1:1..8:7 anchor=null attributes={} children=2
+├── Table scope=1:1..3:6 anchor=null attributes={} columns=[none:null] children=2
+│   ├── TableHead children=1
+│   │   └── TableRow scope=1:1..1:8 anchor=null attributes={} children=1
+│   │       └── TableCell scope=1:2..1:7 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │           └── Text scope=1:3..1:6 anchor=null attributes={} literal="term" children=0
+│   ├── TableBody children=1
+│   │   └── TableRow scope=3:1..3:6 anchor=null attributes={} children=1
+│   │       └── TableCell scope=3:1..3:6 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │           └── Text scope=3:1..3:6 anchor=null attributes={} literal=": body" children=0
+│   └── TableFoot children=0
+└── DefinitionList scope=5:1..8:7 anchor=null attributes={} children=1
+    └── Definition scope=5:1..8:7 anchor=null attributes={} compact=true children=1
+        ├── DefinitionTerm children=1
+        │   └── Text scope=5:1..5:4 anchor=null attributes={} literal="Term" children=0
+        └── DefinitionBody children=1
+            └── Table scope=6:3..8:7 anchor=null attributes={} columns=[none:null] children=2
+                ├── TableHead children=1
+                │   └── TableRow scope=6:3..6:7 anchor=null attributes={} children=1
+                │       └── TableCell scope=6:4..6:6 anchor=null attributes={} rowspan=1 colspan=1 children=1
+                │           └── Text scope=6:5..6:5 anchor=null attributes={} literal="a" children=0
+                ├── TableBody children=1
+                │   └── TableRow scope=8:3..8:7 anchor=null attributes={} children=1
+                │       └── TableCell scope=8:4..8:6 anchor=null attributes={} rowspan=1 colspan=1 children=1
+                │           └── Text scope=8:5..8:5 anchor=null attributes={} literal="b" children=0
+                └── TableFoot children=0
+````````````````````````````````
+
+## opaque-body-closers
+
+```````````````````````````````` example
+::: outer
+T
+: <!--
+  :::
+  -->
+
+: $$
+  :::
+  $$
+
+: ```
+  :::
+  ```
+
+: last
+:::
+after
+.
+Document scope=1:1..17:5 anchor=null attributes={} children=2
+├── DirectiveBlock scope=1:1..16:3 anchor=null attributes={.outer} name=null children=1
+│   └── DefinitionList scope=2:1..15:6 anchor=null attributes={} children=1
+│       └── Definition scope=2:1..15:6 anchor=null attributes={} compact=true children=4
+│           ├── DefinitionTerm children=1
+│           │   └── Text scope=2:1..2:1 anchor=null attributes={} literal="T" children=0
+│           ├── DefinitionBody children=1
+│           │   └── Comment scope=3:3..5:5 anchor=null attributes={} literal="\n:::\n" children=0
+│           ├── DefinitionBody children=1
+│           │   └── FormulaBlock scope=7:3..9:4 anchor=null attributes={} literal=":::" children=0
+│           ├── DefinitionBody children=1
+│           │   └── CodeBlock scope=11:3..13:5 anchor=null attributes={} info=null language=null literal=":::\n" fenced=true closed=true children=0
+│           └── DefinitionBody children=1
+│               └── Paragraph scope=15:3..15:6 anchor=null attributes={} children=1
+│                   └── Text scope=15:3..15:6 anchor=null attributes={} literal="last" children=0
+└── Paragraph scope=17:1..17:5 anchor=null attributes={} children=1
+    └── Text scope=17:1..17:5 anchor=null attributes={} literal="after" children=0
+````````````````````````````````

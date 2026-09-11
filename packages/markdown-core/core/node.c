@@ -24,13 +24,20 @@ bool markdown_core_node_can_contain_type(markdown_core_node *node, markdown_core
     case MARKDOWN_CORE_NODE_DOCUMENT:
     case MARKDOWN_CORE_NODE_CALLOUT:
     case MARKDOWN_CORE_NODE_SPECIMEN:
+    case MARKDOWN_CORE_NODE_DEFINITION_BODY:
     case MARKDOWN_CORE_NODE_LIST_ITEM:
-        return MARKDOWN_CORE_NODE_TYPE_BLOCK_P(child_type) && child_type != MARKDOWN_CORE_NODE_LIST_ITEM;
+        return MARKDOWN_CORE_NODE_TYPE_BLOCK_P(child_type) && child_type != MARKDOWN_CORE_NODE_LIST_ITEM &&
+               child_type != MARKDOWN_CORE_NODE_DEFINITION && child_type != MARKDOWN_CORE_NODE_DEFINITION_BODY;
 
     case MARKDOWN_CORE_NODE_FOOTNOTE:
-        return (MARKDOWN_CORE_NODE_TYPE_BLOCK_P(child_type) && child_type != MARKDOWN_CORE_NODE_LIST_ITEM) ||
+        return (MARKDOWN_CORE_NODE_TYPE_BLOCK_P(child_type) && child_type != MARKDOWN_CORE_NODE_LIST_ITEM &&
+                child_type != MARKDOWN_CORE_NODE_DEFINITION && child_type != MARKDOWN_CORE_NODE_DEFINITION_BODY) ||
                MARKDOWN_CORE_NODE_TYPE_INLINE_P(child_type);
 
+    case MARKDOWN_CORE_NODE_DEFINITION_LIST:
+        return child_type == MARKDOWN_CORE_NODE_DEFINITION;
+    case MARKDOWN_CORE_NODE_DEFINITION:
+        return child_type == MARKDOWN_CORE_NODE_DEFINITION_BODY;
     case MARKDOWN_CORE_NODE_LIST:
         return child_type == MARKDOWN_CORE_NODE_LIST_ITEM;
 
@@ -105,6 +112,12 @@ static void *S_initial_payload(markdown_core_node *node) { return (markdown_core
 static size_t S_node_payload_size(markdown_core_node_type type) {
     size_t size = 0;
     switch ((uint16_t)type) {
+    case MARKDOWN_CORE_NODE_DEFINITION:
+        size = sizeof(markdown_core_definition);
+        break;
+    case MARKDOWN_CORE_NODE_DEFINITION_BODY:
+        size = sizeof(markdown_core_definition_body_value);
+        break;
     case MARKDOWN_CORE_NODE_DOCUMENT:
         size = sizeof(markdown_core_document_value);
         break;
@@ -170,6 +183,7 @@ static void S_init_node_as(markdown_core_node_type type, markdown_core_node_data
         break;
     case MARKDOWN_CORE_NODE_LIST:
         as->list->list_type = MARKDOWN_CORE_BULLET_LIST;
+        as->list->variant.kind = MARKDOWN_CORE_ORDERED_LIST_VARIANT_DECIMAL;
         break;
     default:
         break;
@@ -295,6 +309,9 @@ static void S_splice_after(markdown_core_node *e, markdown_core_node *first) {
  * Kind conversion uses a separate walk so its siblings remain untouched. */
 static void S_splice_owned_fields(markdown_core_node *owner, markdown_core_node *after) {
     switch (owner->kind) {
+    case MARKDOWN_CORE_NODE_DEFINITION:
+        S_splice_after(after, owner->as.definition->term);
+        break;
     case MARKDOWN_CORE_NODE_CALLOUT:
         S_splice_after(after, owner->as.callout->title);
         break;
@@ -402,6 +419,12 @@ const char *markdown_core_node_get_type_string(markdown_core_node *node) {
         return "document";
     case MARKDOWN_CORE_NODE_CALLOUT:
         return "callout";
+    case MARKDOWN_CORE_NODE_DEFINITION_LIST:
+        return "definition_list";
+    case MARKDOWN_CORE_NODE_DEFINITION:
+        return "definition";
+    case MARKDOWN_CORE_NODE_DEFINITION_BODY:
+        return "definition_body";
     case MARKDOWN_CORE_NODE_LIST:
         return "list";
     case MARKDOWN_CORE_NODE_LIST_ITEM:
@@ -650,7 +673,14 @@ markdown_core_delim_type markdown_core_node_get_list_delim(markdown_core_node *n
     }
 
     if (node->kind == MARKDOWN_CORE_NODE_LIST) {
-        return node->as.list->delimiter;
+        const markdown_core_ordered_list_delimiter value = node->as.list->delimiter;
+        if (value.kind == MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PERIOD) {
+            return MARKDOWN_CORE_PERIOD_DELIM;
+        }
+        if (value.kind == MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PARENTHESIS && !value.closed) {
+            return MARKDOWN_CORE_PAREN_DELIM;
+        }
+        return MARKDOWN_CORE_NO_DELIM;
     } else {
         return MARKDOWN_CORE_NO_DELIM;
     }
@@ -666,7 +696,10 @@ int markdown_core_node_set_list_delim(markdown_core_node *node, markdown_core_de
     }
 
     if (node->kind == MARKDOWN_CORE_NODE_LIST) {
-        node->as.list->delimiter = delim;
+        node->as.list->delimiter = (markdown_core_ordered_list_delimiter){
+            delim == MARKDOWN_CORE_PERIOD_DELIM ? MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PERIOD
+                                                : MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PARENTHESIS,
+            false};
         return 1;
     } else {
         return 0;

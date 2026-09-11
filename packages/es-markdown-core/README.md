@@ -123,6 +123,14 @@ Strikethrough uses `~~text~~`. All three kinds support typed visitors and
 walking visitors, and their scopes include their authored delimiters.
 Their ES kind tags are `"span"`, `"superscript"` and `"subscript"`.
 
+Nameless fenced containers (`::: {.class}` or `::: class`) expose
+`DirectiveBlock.name` as null; named and nameless forms share closing and nesting
+rules. A term followed by `: body` or `~ body` produces `DefinitionList` with
+ordered `definitions`. Each `Definition` has an inline `term`, ordered block-body
+arrays in `content`, and `compact` determined by the blank line before its first
+body. A body can be empty. Walking visits the term and then the bodies without
+introducing extra Markup wrappers.
+
 ## Traverse and Inspect
 
 `visit(markup, visitor)` dispatches exactly one node to an exhaustive typed

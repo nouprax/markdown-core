@@ -6,7 +6,7 @@
     "corpus": "every example in packages/markdown-core/tests/fixtures/*.txt",
     "expected": [
         {
-            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:285",
+            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:282",
             "input": "^[a ^[b] c]\n",
             "findings": [
                 {
@@ -21,7 +21,7 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:459",
+            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:456",
             "input": "[^a] ^[top [^a]]\n\n[^a]: ^[nested [^a]] [^b]\n[^b]: [^a]\n",
             "findings": [
                 {
@@ -36,7 +36,7 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:942",
+            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:939",
             "input": "^[before ^[http://example.com] after] :d[^[www.example.com]]\n",
             "findings": [
                 {
@@ -177,22 +177,6 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/spec.txt:1919",
-            "input": "> ```\n> aaa\n\nbbb\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.0",
-                    "violation": "containment",
-                    "kind": "CodeBlock",
-                    "scope": "1:3..3:0",
-                    "parentKind": "Callout",
-                    "parentScope": "1:1..2:5",
-                    "class": "child-ends-at-a-boundary-its-parent-does-not-reach",
-                    "closedBy": "none -- upstream cmark-gfm reports the identical pair, byte for byte"
-                }
-            ]
-        },
-        {
             "source": "packages/markdown-core/tests/fixtures/spec.txt:3684",
             "input": "| abc | def |\n| --- | --- |\n| bar | baz |\nbar\n\nbar\n",
             "findings": [
@@ -204,21 +188,6 @@
                     "previousKind": "TableCell",
                     "previousScope": "4:1..4:3",
                     "closedBy": "Q44's cost, accepted by the owner 2026-08-23: an autocompleted cell points AT the place it was completed -- the row's last byte -- and the cell before it ends on that byte too. An empty range past it would need column len+1, which is off the line."
-                }
-            ]
-        },
-        {
-            "source": "packages/markdown-core/tests/fixtures/spec.txt:3998",
-            "input": "> ```\nfoo\n```\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.0",
-                    "violation": "containment",
-                    "kind": "CodeBlock",
-                    "scope": "1:3..2:3",
-                    "parentKind": "Callout",
-                    "parentScope": "1:1..1:5",
-                    "closedBy": "H14 (§11.4) — finalize reads an empty curline as end-of-input; unowned by any step"
                 }
             ]
         }

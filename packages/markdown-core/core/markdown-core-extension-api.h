@@ -223,10 +223,16 @@ typedef void (*markdown_core_inline_from_delim_func)(const markdown_core_extensi
  *  unaffected.
  */
 #define MARKDOWN_CORE_BLOCK_CLOSED 2
+/* A DirectiveBlock fence competes with deeper containers and opaque blocks. Leave
+ * the cursor unchanged: the shared spine walk commits the deepest carried
+ * container's closer only after descendant ownership is known. Both matching
+ * and non-consuming continuation hooks may return this result. */
+#define MARKDOWN_CORE_BLOCK_PENDING_CLOSE 3
 
 /** Should return 'true' if 'input' can be contained in 'container',
  *  'false' otherwise, or MARKDOWN_CORE_BLOCK_CLOSED if 'input' is the
- *  container's own closing line.
+ *  container's own closing line. A DirectiveBlock returns
+ *  MARKDOWN_CORE_BLOCK_PENDING_CLOSE until descendant ownership is known.
  */
 typedef int (*markdown_core_match_block_func)(const markdown_core_extension *extension, markdown_core_parser *parser,
                                               unsigned char *input, int len, markdown_core_node *container);

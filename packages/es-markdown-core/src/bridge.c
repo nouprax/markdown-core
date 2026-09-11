@@ -65,7 +65,8 @@ enum {
     ES_KIND_FOOTNOTE = 0x101,
     ES_KIND_SPECIMEN = 0x102,
     ES_KIND_METADATA = 0x103,
-    ES_KIND_METADATA_VALUE = 0x104
+    ES_KIND_METADATA_VALUE = 0x104,
+    ES_KIND_DEFINITION_BODY = 0x105
 };
 
 typedef struct es_source_attributes {
@@ -80,6 +81,7 @@ typedef struct es_source_node {
     const markdown_core_citation *citation;
     const markdown_core_footnote *footnote;
     const markdown_core_specimen *specimen;
+    const markdown_core_definition_body *definition_body;
     const markdown_core_metadata *metadata;
     const markdown_core_metadata_value *metadata_value;
     es_source_attributes attributes, inherited_attributes;
@@ -415,10 +417,12 @@ static void collect_value_topology(es_build *build, size_t cursor) {
     const markdown_core_citation *citation = build->nodes[cursor].citation;
     const markdown_core_footnote *footnote = build->nodes[cursor].footnote;
     const markdown_core_specimen *specimen = build->nodes[cursor].specimen;
+    const markdown_core_definition_body *body = build->nodes[cursor].definition_body;
     size_t count;
     build->nodes[cursor].child_start = (uint32_t)build->edge_count;
     count = append_chain(build, citation   ? markdown_core_citation_prefix(citation)
                                 : footnote ? markdown_core_footnote_content(footnote)
+                                : body     ? markdown_core_definition_body_content(body)
                                            : markdown_core_specimen_content(specimen));
     if (count == SIZE_MAX) {
         return;
@@ -467,6 +471,26 @@ static void collect_topology(es_build *build, const markdown_core_node *root) {
                 }
                 build->nodes[cursor].metadata_index = index;
             }
+        }
+        if (kind == MARKDOWN_CORE_KIND_DEFINITION) {
+            build->nodes[cursor].aux_start = (uint32_t)build->edge_count;
+            count = append_chain(build, markdown_core_node_definition_term(node));
+            if (count == SIZE_MAX) {
+                break;
+            }
+            build->nodes[cursor].aux_count = (uint32_t)count;
+            build->nodes[cursor].child_start = (uint32_t)build->edge_count;
+            for (const markdown_core_definition_body *body = markdown_core_node_definition_bodies(node); body;
+                 body = markdown_core_definition_body_next(body)) {
+                es_source_node value = {.wire_kind = ES_KIND_DEFINITION_BODY, .definition_body = body};
+                uint32_t index = append_record(build, value);
+                if (index == ES_NO_INDEX) {
+                    break;
+                }
+                append_edge(build, index);
+                build->nodes[cursor].child_count++;
+            }
+            continue;
         }
         if (kind == MARKDOWN_CORE_KIND_CITE) {
             /* A cite's items are its child range: value records rather than
@@ -575,6 +599,9 @@ static void collect_topology(es_build *build, const markdown_core_node *root) {
  * its bib mode the integer, and its key or id the first string; a footnote's
  * id is the first string. */
 static void collect_value_fields(es_build *build, es_source_node *record) {
+    if (record->definition_body) {
+        return;
+    }
     if (record->metadata) {
         return;
     }
@@ -849,13 +876,24 @@ static void collect_node_fields(es_build *build, size_t node_index) {
         }
         break;
     }
-    case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
-    case MARKDOWN_CORE_KIND_DIRECTIVE: {
-        if (!markdown_core_node_directive_properties(node, &first)) {
+    case MARKDOWN_CORE_KIND_DEFINITION: {
+        bool compact;
+        if (!markdown_core_node_definition_compact(node, &compact)) {
             build->failure = ES_BUILD_INTERNAL;
             break;
         }
-        record->strings[0] = required_string(first);
+        record->flags = compact ? 1 : 0;
+        break;
+    }
+    case MARKDOWN_CORE_KIND_DEFINITION_LIST:
+        break;
+    case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
+    case MARKDOWN_CORE_KIND_DIRECTIVE: {
+        if (!markdown_core_node_directive_properties(node, &optional_first)) {
+            build->failure = ES_BUILD_INTERNAL;
+            break;
+        }
+        record->strings[0] = optional_first;
         break;
     }
     case MARKDOWN_CORE_KIND_CROSS_LINK:

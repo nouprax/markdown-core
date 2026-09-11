@@ -56,58 +56,13 @@
             "coreDigest": "dc5a425f0f3584571d3d101f6fd5032f62c9cd4042c3d66c7dd65248f3367d86"
         },
         {
-            "id": "fancy-list-and-startnum",
-            "item": "P9a",
-            "status": "gap",
-            "reason": "The P9a syntax has not landed; retain this exact semantic evidence until its implementing item.",
-            "inputDigest": "97f2084101a800e56105304c8413653c745a0aa95a9620a10553ab0c91eae9ec",
-            "oracleDigest": "6802901f0a8d34093e9d978ce237e5ccad5995fde1038face9afda8aba5c31f4",
-            "coreDigest": "e9f4659aa4a25fd2d77a55bb0de738713a4bf74bca035f287f8b842d2e1617cc"
-        },
-        {
-            "id": "definition-list-loose-and-multiple-bodies",
-            "item": "P10",
-            "status": "gap",
-            "reason": "The P10 syntax has not landed; retain this exact semantic evidence until its implementing item.",
-            "inputDigest": "7b3cf40a43e662f0d764558d4cf5cb3349770ee21ec99170b4587381c5a34b6c",
-            "oracleDigest": "bd304b79425434773287012392466a0e697900ac637c01a8e2d9d671abcbca07",
-            "coreDigest": "d42fad78bee1aa8703bc31ed2f88b0114e5767bec1631550db6fbe9d5bc115bb"
-        },
-        {
-            "id": "definition-list-compact",
-            "item": "P10",
-            "status": "gap",
-            "reason": "The P10 syntax has not landed; retain this exact semantic evidence until its implementing item.",
-            "inputDigest": "00484e1a513cf498e03b1c4a017aac21bc862b89e0854351f2298a5983531241",
-            "oracleDigest": "a40f82d626c56da2be4b2ceaaeec6542a2e5e41c202a5cc938e342d4dee454ad",
-            "coreDigest": "d28c10c13fc2eb2412a91173d2f8b3da2933b080ebbca154e5b5d1d1bee302db"
-        },
-        {
             "id": "example-lists-and-reference",
             "item": "P9b",
-            "status": "gap",
-            "reason": "The P9b syntax has not landed; retain this exact semantic evidence until its implementing item.",
+            "status": "projection",
+            "reason": "Markdown Core retains every specimen as a document-owned definition in source order, including anonymous and duplicate labels, and stores references by exact id. Pandoc emits example List items and replaces references with derived numbering; those values are not projected away.",
             "inputDigest": "c362a23129b82d354226ddb641bd135c9e77c2f1a291f16bb4942c95e5ed37cf",
             "oracleDigest": "6cf71986484b5ea0b161dc2abfab3ed04f36d97c8971feabae12901c885d3de6",
-            "coreDigest": "f8e6f6fea7c9fa895887f46a632de34662f745b63d497abf8cb0c0de7327ae70"
-        },
-        {
-            "id": "fenced-divs-nested",
-            "item": "P8",
-            "status": "gap",
-            "reason": "The P8 syntax has not landed; retain this exact semantic evidence until its implementing item.",
-            "inputDigest": "3346c57ddcbae338cf3576adeffd93510099e974422a5b7e974848597d68c877",
-            "oracleDigest": "0f9013d8f989567e6ed9fc667b52b619b66c2951912dbf2f5dd8703b08370824",
-            "coreDigest": "7431fef9e20692ea936368ae5b965c6c02f69d0fc0e785c96dd457f25b0c68c5"
-        },
-        {
-            "id": "bibliography-citations",
-            "item": "P7",
-            "status": "gap",
-            "reason": "The P7 syntax has not landed; retain this exact semantic evidence until its implementing item.",
-            "inputDigest": "ead7761f90c8140b7bf927889c8aaefeefa6eb8b861231ef7319f707c56bd467",
-            "oracleDigest": "b04070c42872ef2b3c64f7174849e429fcdbb46e8d73eb9d0f617237e9d3c2ba",
-            "coreDigest": "b2f78a5ebccb5087a5fd5e1fb58850db1a62e19d596c7f1d3506920d4bc36b3e"
+            "coreDigest": "80d74029749f4d3f0de01267a017061d397ea8c382665d828d78bd209096f11b"
         },
         {
             "id": "p6-escaped-space",
@@ -216,6 +171,150 @@
             "inputDigest": "2055b964d37c4db99a3e45993563c979dd034fd1ccc0dc194e9f2d8e5de0a634",
             "oracleDigest": "fd963a15f9df3d9678c1f4017a8424bb81559346e85974ef691e4ea8da4609a7",
             "coreDigest": "7e09425bb31b3140f95ed9cda3bdc692005783c81b87f36e750ceb1a04e21545"
+        },
+        {
+            "id": "p7-tail-and-nesting",
+            "item": "P7",
+            "status": "projection",
+            "reason": "Both affixes exclude raw leading and trailing whitespace under the citation module. Pandoc retains a leading suffix space before nested brackets; nested owners and their content remain compared.",
+            "inputDigest": "d647e74535314a31f86439f124b9c98a46f1f2c33863447eaac858344be332d5",
+            "oracleDigest": "af5aaffff309f1cc1964a93e6288320167c943ade50a5be9f7fc9e38fd8d3fcc",
+            "coreDigest": "6551dd2bc0167dde00ddcaf5a60a68dc975ee95d515e9ac8f954743b91959250"
+        },
+        {
+            "id": "p7-tail-later-author",
+            "item": "P7",
+            "status": "projection",
+            "reason": "The first author-tail section is suffix inline content, so a later @key belongs to its own authorInText Cite. Pandoc promotes that key into another normal item of the outer Cite.",
+            "inputDigest": "6326dc4e316d481ae8ac7f3905a1fd81627d87985e28525c380f45c7100a73be",
+            "oracleDigest": "cceaffe5c3c455065f799067d8ef5a854cad0afa890029ede29ce233e127883b",
+            "coreDigest": "13cc2c85aacd7be8ee9f2723499468a2389b600e2b3d9bc51e163e8773f8f1bf"
+        },
+        {
+            "id": "p7-malformed-group",
+            "item": "P7",
+            "status": "projection",
+            "reason": "An item without a key invalidates the complete bracketed group; its unclaimed keys remain raw Text. Pandoc reparses those keys as authorInText citations.",
+            "inputDigest": "30e87f411e8d78aaa7b56d95882759b25fb37ab3c9c267547d4bf2909dc42978",
+            "oracleDigest": "2cf9c13b7502cf687377d437fb198e8f5e7f626c2d63c59fc2f98cc651733645",
+            "coreDigest": "144392a4abd716bb4fe09cf2e1dc2cdc950ad53df7a126c6ed72ac90cff46c63"
+        },
+        {
+            "id": "p7-heading-projection",
+            "item": "P7",
+            "status": "projection",
+            "reason": "Generated anchors concatenate the stored, trimmed citation prefix, @key and suffix per item. Pandoc uses the authored fallback spelling with separator spaces; its suffix also retains a leading space.",
+            "inputDigest": "55f8c0363676f0b33330af4fe0556d2365f84c18d730dff723c8c340fd06eff2",
+            "oracleDigest": "3d329b41afce6f733b5fa7ae4324de40cddb66565959e38d7f7fc4f96aecf19a",
+            "coreDigest": "25c231d85e73fbd26fee5e990c5579b6bcf17f0083ca1fe59a3d9b0378280c4c"
+        },
+        {
+            "id": "p7-unicode-boundary",
+            "item": "P7",
+            "status": "projection",
+            "reason": "The key opener precondition forbids a preceding underscore as well as Unicode letters and numbers. Pandoc accepts a citation after underscore.",
+            "inputDigest": "82c0ff172f37471600d586d9477967fd3dbc235ac1c3318356433ae7e1df909d",
+            "oracleDigest": "b9dcc1e746659c275ecc61cfee69f9281a7c3b9d9a321480f513b6b159fd4da7",
+            "coreDigest": "79a6ebd7f7ab845137dff2adde9c8df7ec8b772f5e8b8e912d784628e6bfd9f6"
+        },
+        {
+            "id": "p9a-nested-start",
+            "item": "P9a",
+            "status": "projection",
+            "reason": "A nested ordered list must start at one; a rejected marker remains in the existing paragraph under the inherited lazy-continuation rules. Pandoc splits that line into another paragraph.",
+            "inputDigest": "11d1326111651e1a794d50ff2c70dd8cce41d1dbbe9ffb00bd20c94d2a3c2799",
+            "oracleDigest": "3b93874978d474ee55e3060ade6d783537714f7fe73a49d2ee9e97b0b4589b5a",
+            "coreDigest": "bed428bdb1ae20ad27b10cd76a772d716c606ffb60d8c1a7856eaccedf0dcc99"
+        },
+        {
+            "id": "p9b-resolution",
+            "item": "P9b",
+            "status": "projection",
+            "reason": "Markdown Core retains every specimen as a document-owned definition in source order, including anonymous and duplicate labels, and stores references by exact id. Pandoc emits example List items and replaces references with derived numbering; those values are not projected away.",
+            "inputDigest": "e41cef4799656300451d9c0610c47307ba3a0172624e7ad9498a4dbf844f5517",
+            "oracleDigest": "b809b23baf38eee4e3dd2e7d32da04d3787d5fac7f0bcaa5c7f6a1044b794d7f",
+            "coreDigest": "07fb8b14f25b553badc8a54e4cfb56c183e18b9e72bd38bc9ea13ce60351fc96"
+        },
+        {
+            "id": "p9b-heading",
+            "item": "P9b",
+            "status": "projection",
+            "reason": "Markdown Core retains every specimen as a document-owned definition in source order, including anonymous and duplicate labels, and stores references by exact id. Pandoc emits example List items and replaces references with derived numbering; those values are not projected away. Heading projection uses @id before anchor filtering.",
+            "inputDigest": "07ef4c87398b919fd819f914c30618c4b6dc2ace3c23730a55fa217c316ba011",
+            "oracleDigest": "a78132383bd3b236f5e7e9771d82be635d178ad4b0d01cf165256c9730c917d4",
+            "coreDigest": "53f7520cc2d35aa8a8e2179ac7c490073838c8901de87ed9c6e6fb35af2648db"
+        },
+        {
+            "id": "p7-unresolved-reference-tail",
+            "item": "P7",
+            "status": "projection",
+            "reason": "A non-resolving reference tail does not block a complete bibliography group. Pandoc leaves the first brackets literal and parses their key as authorInText.",
+            "inputDigest": "3324f82add6926352634dcd58d221c1bc44a2ce9f91da6de4b5a61216711ba3b",
+            "oracleDigest": "2c71f9e7747c2a32cdeefc920c2e3fa670891aa1c8b37d1f4d5eb5dd0e1d5c72",
+            "coreDigest": "6c73626c5401db2e46037ad58dd36163d3ae81d5f5a3526573032709a158fdaf"
+        },
+        {
+            "id": "p7-explicit-citation-shortcut",
+            "item": "P7",
+            "status": "projection",
+            "reason": "The inherited reference-definition grammar registers the authored @a label, but a complete citation group wins over its shortcut. Pandoc parses the declaration-shaped line as a citation followed by text.",
+            "inputDigest": "12863bd84b31e5855f95af8b61d6a2a42a5ce1fe352286e00a0a39e9fa4f1d70",
+            "oracleDigest": "15557628361006194ce2c3f1eee766882aad365f9374d554fb498d9cabc9e11f",
+            "coreDigest": "fb71d0b2075b7aa441b48b66f787868b313cc702e2b2bd566787abf41bd73c80"
+        },
+        {
+            "id": "p9a-start-always-authored",
+            "item": "P9a",
+            "status": "projection",
+            "reason": "List.start always stores the first authored numeral for every variant. Pandoc without startnum replaces that value with one.",
+            "inputDigest": "cf72bc9feae4e064516f8cc69fa05457f99513729dadae0c6fcbfa9ba9ca367b",
+            "oracleDigest": "b2b25238a5aece656b99d1f4cae16ef62668a4cf5ec2c81f8d58eed69ad0b076",
+            "coreDigest": "d7a5482878676b3d1a0e5d23930503458704b1ff7db82894ded0bcb21041b080"
+        },
+        {
+            "id": "p8-closer-width",
+            "item": "P8",
+            "status": "projection",
+            "reason": "Named and nameless containers share one closer rule: the colon run must be at least as long as the opening fence. Pandoc closes with any run of three or more.",
+            "inputDigest": "0b033d2dbebbfd8e2346620c7efdf28c689e156970eaae232de0fd67a432ecea",
+            "oracleDigest": "989ef93a38e4b86d0ab8fa2afd79a9eb9e51f9ce3b9e6ee36ba00828a2a64085",
+            "coreDigest": "533354eb48cfc5ab941c8e7570fd1ee06b7ad04e6c7e5b608ae7afaa089fa221"
+        },
+        {
+            "id": "p8-explicit-anchor-reservation",
+            "item": "P8",
+            "status": "projection",
+            "reason": "The document reserves every explicit anchor before synthesizing heading anchors (P3). Pandoc gives the earlier heading the later div ID as well; Markdown Core allocates reserved-1.",
+            "inputDigest": "c56b024236a89fa87a33edf5f0ba4cf1835c92eed97346aeee13c54deda1af33",
+            "oracleDigest": "73bcf79ef51bd83aee81dc5134b59ee093b7710cff0c6b9c9c29702f9ffd3c9b",
+            "coreDigest": "ec34b64acbaab69a29fd9b543b9c86a732d34b1989f9a63f58b0643ba4e59ab3"
+        },
+        {
+            "id": "p10-nested-and-lazy",
+            "item": "P10",
+            "status": "projection",
+            "reason": "The product retains the authored term-gap compact flag even when the first body contains no top-level paragraph (nested definition list, code or an empty body). Pandoc stores tightness through Plain/Para and has no corresponding flag in these shapes; its projection records null rather than inventing one. All terms and ordered bodies remain compared.",
+            "inputDigest": "8e3e7f73d9aff0b2af2e493dd18808cb83905ff3629872d5d230d50482b1b51b",
+            "oracleDigest": "91c897c137d541ce6285794e1376a64fd0bd47337d6279fc45786050f7739f27",
+            "coreDigest": "992633b7885e75e5dc0f66d4e243cec5d605dcc86f09260a3eacaae7e7f82aa7"
+        },
+        {
+            "id": "p10-padding-and-tabs",
+            "item": "P10",
+            "status": "projection",
+            "reason": "The product retains the authored term-gap compact flag even when the first body contains no top-level paragraph (nested definition list, code or an empty body). Pandoc stores tightness through Plain/Para and has no corresponding flag in these shapes; its projection records null rather than inventing one. All terms and ordered bodies remain compared.",
+            "inputDigest": "737ae32153bb0efb9ea04c4b47a88f3d7d05bf8a99624859bc656ff88bcd30de",
+            "oracleDigest": "9efbed758550d4a8d52a4e785b7040031ef5589de6c0e78bf65010b9779645c1",
+            "coreDigest": "9c85c57dc4a9e6b9f5a8a7722d40f0293dc1b6eca6fa37c7912942e2b78d748d"
+        },
+        {
+            "id": "p10-empty-bodies",
+            "item": "P10",
+            "status": "projection",
+            "reason": "The product retains the authored term-gap compact flag even when the first body contains no top-level paragraph (nested definition list, code or an empty body). Pandoc stores tightness through Plain/Para and has no corresponding flag in these shapes; its projection records null rather than inventing one. All terms and ordered bodies remain compared.",
+            "inputDigest": "aa9761ac5e76a6fd7613aec290e0ce6bd74250e894b2a9bb8ac14214c303f1fe",
+            "oracleDigest": "96e43afb3551c27d17de97b989d846761f96a313dc4ff10ffc4fe2ee0e511eb3",
+            "coreDigest": "2f3c875f743498bf6ff60936ba42d22342e5d502c1fb1abf28ebfd7fc722d012"
         }
     ]
 }

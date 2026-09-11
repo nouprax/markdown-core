@@ -7,6 +7,49 @@ import kotlin.test.assertTrue
 
 class AstTest {
     @Test
+    fun definitionTermsAndOrderedBodiesSurviveNativeReleaseAndWalkWithoutWrappers() {
+        val block = Document.parse("::: box\n*T*\n: one\n~\n\nU\n\n: two\n:::\n").content.single() as DirectiveBlock
+        assertNull(block.name)
+        assertEquals(listOf("box"), block.attributes.classes)
+        val list = block.content.single() as DefinitionList
+        assertEquals(2, list.definitions.size)
+        val first = list.definitions[0]
+        assertTrue(first.compact)
+        assertEquals(2, first.content.size)
+        assertTrue(first.content[1].isEmpty())
+        assertEquals("T", ((first.term.single() as Emphasis).content.single() as Text).literal)
+        assertEquals("one", ((first.content[0].single() as Paragraph).content.single() as Text).literal)
+        assertTrue(!list.definitions[1].compact)
+        val visitor = RecordingWalkingVisitor()
+        list.walk(visitor)
+        assertEquals(
+            listOf(
+                "entering:DefinitionList",
+                "entering:Definition",
+                "entering:Emphasis",
+                "entering:Text",
+                "exiting:Text",
+                "exiting:Emphasis",
+                "entering:Paragraph",
+                "entering:Text",
+                "exiting:Text",
+                "exiting:Paragraph",
+                "exiting:Definition",
+                "entering:Definition",
+                "entering:Text",
+                "exiting:Text",
+                "entering:Paragraph",
+                "entering:Text",
+                "exiting:Text",
+                "exiting:Paragraph",
+                "exiting:Definition",
+                "exiting:DefinitionList",
+            ),
+            visitor.events,
+        )
+    }
+
+    @Test
     fun universalAttributesPreserveOrderAndEscapedClassDumping() {
         val document = Document.parse(":n{#id .a class=\"a b}c\" k=1 k=2}")
         val directive = (document.content.single() as Paragraph).content.single() as Directive
@@ -92,6 +135,7 @@ class AstTest {
                 "\$\$\ny\n\$\$\n",
                 "a <!-- b --> c\n\n<!-- block -->\n",
                 "[[Note]] ![[#^block|]]\n",
+                "Term\n: body\n",
             )
         val documents = sources.map { Document.parse(it) }
         val kinds = documents.flatMap { dumpKinds(it.dump()) }.toSet()
@@ -104,6 +148,8 @@ class AstTest {
                 "ThematicBreak",
                 "List",
                 "ListItem",
+                "DefinitionList",
+                "Definition",
                 "CodeBlock",
                 "HTMLBlock",
                 "FormulaBlock",

@@ -43,8 +43,8 @@ host executable explicitly with `scripts/init-environment.sh --install oracle-pa
 runs CLI canaries, both parsers and the fail-closed digest registry. Normal
 builds and tests never install the executable or access the network.
 
-The active corpus has 55 cases: 31 agreements, 14 documented divergences
-and 10 missing-feature gaps assigned to later landing items. Every difference
+The active corpus has 86 cases: 51 agreements, 31 documented divergences
+and 4 missing-feature gaps assigned to later landing items. Every difference
 pins input/reader, oracle projection and product projection SHA-256 digests.
 New, changed, stale, duplicate and unknown entries fail. P5's span and shared
 attribute grammar cases now agree, including empty containers, nesting,
@@ -97,3 +97,25 @@ their order; the records sequence may not collapse into a unique-key map.
 Table comparison retains column alignment and width, row groups, cell spans and
 cell content. Pandoc-only cell alignment is outside the canonical intersection.
 Ordered-list variants and delimiters map to the canonical value spelling.
+
+P7/P9a/P9b retire the bibliography, fancy-list and example-list feature gaps.
+Cite comparison keeps every key, mode and ordered prefix/suffix tree. Pandoc's
+second Cite tuple member is fallback rendering for consumers without citation
+processing, not another semantic child list; it has no canonical counterpart.
+The key and affix trees are compared directly, with unit tests ensuring a
+changed key, mode, prefix or suffix cannot pass. Specimen definitions retain
+id/start/content and reference IDs on the product side. Pandoc's example lists
+and rendered numbers remain exact model differences. Affix trimming, nested
+author tails, malformed candidates, underscore boundaries and unresolved
+reference tails retain isolated witnesses. Direct/resolving tails and Spans,
+complete citation versus virtual heading shortcut, ordinary author tails,
+alphabetic/Roman/default markers and capital-period spacing have agreements.
+
+P8/P10 retire both definition-list gaps and `fenced-divs-nested` by agreement.
+The Div projection uses `name=null`. DefinitionList projects each term and its
+ordered body collections to Definition, including empty bodies. A first body
+starting with Plain means compact, with Para means loose; other first-body
+shapes expose no flag, so Pandoc projects null and the product boolean remains
+compared. Exact differences cover those unobservable flags, the dialect's
+minimum closer width, and global explicit-ID reservation. Unit tests detect
+changed names, compact flags, terms and body grouping independently.

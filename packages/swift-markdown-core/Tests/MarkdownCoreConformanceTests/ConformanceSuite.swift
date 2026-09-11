@@ -20,6 +20,7 @@ private typealias Comment = Testing.Comment
             "$$\ny\n$$\n",
             "a <!-- b --> c\n\n<!-- block -->\n",
             "[[Note]] ![[#^block|]]\n",
+            "Term\n: body\n",
         ]
         let documents = try sources.map { try Document.parse($0) }
         let kinds = Set(documents.flatMap { dumpKinds($0.dump()) })
@@ -29,7 +30,8 @@ private typealias Comment = Testing.Comment
             "DirectiveBlock", "DirectiveLabel", "Text", "SoftBreak",
             "LineBreak",
             "Code", "HTML", "Comment", "CrossLink", "CrossEmbedded", "Formula", "Emphasis", "Strong",
-            "Strikethrough", "Mark", "Insertion", "Span", "Superscript", "Subscript", "Link", "Media", "Directive",
+            "Strikethrough", "Mark", "Insertion", "Span", "Superscript", "Subscript", "DefinitionList", "Definition",
+            "Link", "Media", "Directive",
             "Cite",
             "TableRow", "TableCell",
         ]

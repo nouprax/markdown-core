@@ -45,9 +45,16 @@
             "Link",
             "Media",
             "Directive",
-            "Cite"
+            "Cite",
+            "DefinitionList",
+            "Definition"
         ],
         "states": [
+            "directiveBlock.name.null",
+            "definition.compact.true",
+            "definition.compact.false",
+            "definition.bodies.multiple",
+            "definition.body.empty",
             "crossEmbedded.dimensions.width",
             "crossEmbedded.dimensions.width-height",
             "crossEmbedded.dimensions.null",
@@ -143,10 +150,29 @@
             "footnote.content.block",
             "document.footnotes.empty",
             "document.footnotes.populated",
+            "list.variant.alpha.lower",
+            "list.variant.alpha.upper",
+            "list.variant.roman.lower",
+            "list.variant.roman.upper",
+            "list.variant.default",
+            "list.delimiter.default",
+            "list.delimiter.parenthesis.closed",
+            "citation.bib.mode.normal",
+            "citation.bib.mode.authorInText",
+            "citation.bib.mode.suppressAuthor",
+            "citation.referent.specimen",
+            "citation.prefix.populated",
+            "citation.suffix.populated",
+            "document.specimens.populated",
+            "specimen.id.null",
+            "specimen.id.value",
+            "specimen.start.null",
+            "specimen.start.value",
             "span.content.empty",
             "span.content.populated"
         ],
         "orders": [
+            "definition.term-before-bodies",
             "callout.title-before-content",
             "document.source-order",
             "table.head-content-foot",
@@ -154,6 +180,7 @@
             "markup.attributes.source-order",
             "inline.source-order",
             "document.content-before-footnotes",
+            "document.specimens-source-order",
             "cite.items-in-order"
         ]
     },
@@ -830,6 +857,119 @@
                 ],
                 "states": ["markup.anchor.value", "scope.positive", "children.populated"],
                 "orders": ["document.source-order"]
+            }
+        },
+        {
+            "name": "citations",
+            "input": "citations.md",
+            "expected": "citations.ast",
+            "coverage": {
+                "kinds": [
+                    "Document",
+                    "Paragraph",
+                    "Heading",
+                    "DirectiveLabel",
+                    "Text",
+                    "Emphasis",
+                    "Span",
+                    "Link",
+                    "Directive",
+                    "Cite"
+                ],
+                "states": [
+                    "citation.bib.mode.normal",
+                    "citation.bib.mode.authorInText",
+                    "citation.bib.mode.suppressAuthor",
+                    "citation.prefix.populated",
+                    "citation.suffix.populated",
+                    "scope.positive"
+                ],
+                "orders": ["document.source-order", "cite.items-in-order"]
+            }
+        },
+        {
+            "name": "specimens",
+            "input": "specimens.md",
+            "expected": "specimens.ast",
+            "coverage": {
+                "kinds": ["Document", "Callout", "Paragraph", "Heading", "Text", "Emphasis", "Cite"],
+                "states": [
+                    "citation.referent.specimen",
+                    "document.specimens.populated",
+                    "specimen.id.null",
+                    "specimen.id.value",
+                    "specimen.start.null",
+                    "specimen.start.value",
+                    "scope.positive"
+                ],
+                "orders": ["document.source-order", "document.specimens-source-order"]
+            }
+        },
+        {
+            "name": "fancy-lists",
+            "input": "fancy-lists.md",
+            "expected": "fancy-lists.ast",
+            "coverage": {
+                "kinds": ["Document", "Paragraph", "List", "ListItem", "Text", "SoftBreak"],
+                "states": [
+                    "list.variant.alpha.lower",
+                    "list.variant.alpha.upper",
+                    "list.variant.roman.lower",
+                    "list.variant.roman.upper",
+                    "list.variant.default",
+                    "list.delimiter.default",
+                    "list.delimiter.parenthesis.closed",
+                    "scope.positive"
+                ],
+                "orders": ["document.source-order"]
+            }
+        },
+        {
+            "name": "nameless-directives",
+            "input": "nameless-directives.md",
+            "expected": "nameless-directives.ast",
+            "coverage": {
+                "kinds": [
+                    "Document",
+                    "Heading",
+                    "Text",
+                    "DirectiveBlock",
+                    "DefinitionList",
+                    "Definition",
+                    "Paragraph",
+                    "Cite",
+                    "Link",
+                    "DirectiveLabel"
+                ],
+                "states": ["directiveBlock.name.null"],
+                "orders": ["document.source-order", "definition.term-before-bodies"]
+            }
+        },
+        {
+            "name": "definition-lists",
+            "input": "definition-lists.md",
+            "expected": "definition-lists.ast",
+            "coverage": {
+                "kinds": [
+                    "Document",
+                    "DefinitionList",
+                    "Definition",
+                    "Emphasis",
+                    "Text",
+                    "Code",
+                    "Paragraph",
+                    "Callout",
+                    "List",
+                    "ListItem",
+                    "CodeBlock"
+                ],
+                "states": [
+                    "definition.compact.true",
+                    "definition.compact.false",
+                    "definition.bodies.multiple",
+                    "definition.body.empty"
+                ],
+                "orders": ["document.source-order", "definition.term-before-bodies"]
             }
         }
     ]

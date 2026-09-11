@@ -129,6 +129,12 @@ markdown_core_node_kind markdown_core_node_get_kind(const markdown_core_node *no
     if (!node) {
         return MARKDOWN_CORE_KIND_NONE;
     }
+    if (node->kind == MARKDOWN_CORE_NODE_DEFINITION_LIST) {
+        return MARKDOWN_CORE_KIND_DEFINITION_LIST;
+    }
+    if (node->kind == MARKDOWN_CORE_NODE_DEFINITION) {
+        return MARKDOWN_CORE_KIND_DEFINITION;
+    }
     if (node->kind == MARKDOWN_CORE_NODE_DOCUMENT) {
         return MARKDOWN_CORE_KIND_DOCUMENT;
     }
@@ -282,9 +288,11 @@ const char *markdown_core_node_kind_name(markdown_core_node_kind kind) {
         "Insertion",
         "Span",
         "Superscript",
-        "Subscript"};
+        "Subscript",
+        "DefinitionList",
+        "Definition"};
     /* clang-format on */
-    if (kind < MARKDOWN_CORE_KIND_NONE || kind > MARKDOWN_CORE_KIND_SUBSCRIPT) {
+    if (kind < MARKDOWN_CORE_KIND_NONE || kind > MARKDOWN_CORE_KIND_DEFINITION) {
         return "None";
     }
     return names[kind];
@@ -306,7 +314,7 @@ static bool is_directive(const markdown_core_node *node) {
 }
 
 const markdown_core_node *markdown_core_node_get_first_child(const markdown_core_node *node) {
-    return node ? node->first_child : NULL;
+    return node && node->kind != MARKDOWN_CORE_NODE_DEFINITION ? node->first_child : NULL;
 }
 
 const markdown_core_node *markdown_core_node_get_next_sibling(const markdown_core_node *node) {
@@ -341,12 +349,8 @@ bool markdown_core_node_list_properties(const markdown_core_node *node, markdown
                                                                      : MARKDOWN_CORE_LIST_FLAVOR_BULLET;
     start->has_value = *flavor == MARKDOWN_CORE_LIST_FLAVOR_ORDERED;
     start->value = node->as.list->start;
-    variant->kind = MARKDOWN_CORE_ORDERED_LIST_VARIANT_DECIMAL;
-    variant->lowercased = false;
-    delimiter->kind = node->as.list->delimiter == MARKDOWN_CORE_PAREN_DELIM
-                          ? MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PARENTHESIS
-                          : MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PERIOD;
-    delimiter->closed = false;
+    *variant = node->as.list->variant;
+    *delimiter = node->as.list->delimiter;
     *tight = node->as.list->tight;
     return true;
 }
@@ -481,13 +485,37 @@ bool markdown_core_node_table_cell_spans(const markdown_core_node *node, int64_t
     return true;
 }
 
-bool markdown_core_node_directive_properties(const markdown_core_node *node, markdown_core_string *name) {
+bool markdown_core_node_directive_properties(const markdown_core_node *node, markdown_core_optional_string *name) {
     if (!node || !name || !is_directive(node)) {
         return false;
     }
     const char *value = markdown_core_extensions_get_directive_name((markdown_core_node *)node);
-    *name = (markdown_core_string){(const uint8_t *)value, value ? strlen(value) : 0};
+    *name = (markdown_core_optional_string){value != NULL, {(const uint8_t *)value, value ? strlen(value) : 0}};
     return true;
+}
+
+bool markdown_core_node_definition_compact(const markdown_core_node *node, bool *compact) {
+    if (!node || node->kind != MARKDOWN_CORE_NODE_DEFINITION || !compact) {
+        return false;
+    }
+    *compact = node->as.definition->compact;
+    return true;
+}
+const markdown_core_node *markdown_core_node_definition_term(const markdown_core_node *node) {
+    return node && node->kind == MARKDOWN_CORE_NODE_DEFINITION && node->as.definition->term
+               ? node->as.definition->term->first_child
+               : NULL;
+}
+const markdown_core_definition_body *markdown_core_node_definition_bodies(const markdown_core_node *node) {
+    return node && node->kind == MARKDOWN_CORE_NODE_DEFINITION
+               ? (const markdown_core_definition_body *)node->first_child
+               : NULL;
+}
+const markdown_core_definition_body *markdown_core_definition_body_next(const markdown_core_definition_body *body) {
+    return body ? (const markdown_core_definition_body *)((const markdown_core_node *)body)->next : NULL;
+}
+const markdown_core_node *markdown_core_definition_body_content(const markdown_core_definition_body *body) {
+    return body ? ((const markdown_core_node *)body)->first_child : NULL;
 }
 
 static markdown_core_string chunk_string(markdown_core_chunk value) {
@@ -752,12 +780,12 @@ bool markdown_core_citation_referent(const markdown_core_citation *citation, mar
 
 const markdown_core_node *markdown_core_citation_prefix(const markdown_core_citation *citation) {
     const markdown_core_node *node = citation_node(citation);
-    return node ? node->as.citation->prefix : NULL;
+    return node && node->as.citation->prefix ? node->as.citation->prefix->first_child : NULL;
 }
 
 const markdown_core_node *markdown_core_citation_suffix(const markdown_core_citation *citation) {
     const markdown_core_node *node = citation_node(citation);
-    return node ? node->as.citation->suffix : NULL;
+    return node && node->as.citation->suffix ? node->as.citation->suffix->first_child : NULL;
 }
 
 const markdown_core_footnote *markdown_core_node_document_footnotes(const markdown_core_node *node) {
@@ -1080,6 +1108,11 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
         buffer_cstr(buffer, " collapsed=");
         buffer_optional_bool(buffer, collapsed);
         break;
+    case MARKDOWN_CORE_KIND_DEFINITION:
+        markdown_core_node_definition_compact(node, &x);
+        buffer_cstr(buffer, " compact=");
+        buffer_cstr(buffer, x ? "true" : "false");
+        break;
     case MARKDOWN_CORE_KIND_HEADING:
         markdown_core_node_heading_level(node, &level);
         buffer_cstr(buffer, " level=");
@@ -1203,9 +1236,9 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
     }
     case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
     case MARKDOWN_CORE_KIND_DIRECTIVE:
-        markdown_core_node_directive_properties(node, &a);
+        markdown_core_node_directive_properties(node, &oa);
         buffer_cstr(buffer, " name=");
-        buffer_json_string(buffer, a);
+        buffer_optional_string(buffer, oa);
         break;
     /* A DESTINATION IS REQUIRED (Q26): `dest=` is the tagged value and is
      * never `null`. `[a]()` used to print `destination=null`, which said the
@@ -1428,8 +1461,10 @@ static void dump_cite_nodes(dump_buffer *buffer, const markdown_core_node *node,
         buffer_cstr(buffer, " referent=");
         buffer_referent(buffer, referent);
         buffer_cstr(buffer, " children=0\n");
-        dump_affix_group(buffer, "CitationPrefix", item->as.citation->prefix, depth + 1, true);
-        dump_affix_group(buffer, "CitationSuffix", item->as.citation->suffix, depth + 1, false);
+        dump_affix_group(buffer, "CitationPrefix", markdown_core_citation_prefix((const markdown_core_citation *)item),
+                         depth + 1, true);
+        dump_affix_group(buffer, "CitationSuffix", markdown_core_citation_suffix((const markdown_core_citation *)item),
+                         depth + 1, false);
     }
 }
 
@@ -1575,12 +1610,28 @@ static void dump_document_nodes(dump_buffer *buffer, const markdown_core_node *n
     }
 }
 
+static void dump_definition_nodes(dump_buffer *buffer, const markdown_core_node *node, size_t depth) {
+    const markdown_core_node *term = markdown_core_node_definition_term(node);
+    dump_group_line(buffer, "DefinitionTerm", chain_length(term), depth, true);
+    for (const markdown_core_node *child = term; child; child = child->next) {
+        dump_nested_node(buffer, child, depth + 1, child->next != NULL);
+    }
+    for (const markdown_core_node *body = node->first_child; body; body = body->next) {
+        size_t count = markdown_core_node_child_count(body);
+        dump_group_line(buffer, "DefinitionBody", count, depth, body->next != NULL);
+        dump_children(buffer, body, depth + 1, count);
+    }
+}
+
 static void dump_node(dump_buffer *buffer, const markdown_core_node *node, size_t depth) {
     markdown_core_node_kind kind = markdown_core_node_get_kind(node);
     markdown_core_scope scope = markdown_core_node_scope(node);
     /* `children` counts structural children: a cite's are its items. */
     size_t child_count =
         kind == MARKDOWN_CORE_KIND_CITE ? chain_length(node->as.cite->citations) : markdown_core_node_child_count(node);
+    if (kind == MARKDOWN_CORE_KIND_DEFINITION) {
+        child_count = chain_length(node->first_child);
+    }
     if (kind == MARKDOWN_CORE_KIND_NONE) {
         buffer->failed = true;
         return;
@@ -1634,6 +1685,9 @@ static void dump_node(dump_buffer *buffer, const markdown_core_node *node, size_
      * emitted.  Generic child traversal never discovers fields. A directive
      * explicitly emits its label field before its independent content list. */
     switch (kind) {
+    case MARKDOWN_CORE_KIND_DEFINITION:
+        dump_definition_nodes(buffer, node, depth);
+        break;
     case MARKDOWN_CORE_KIND_TABLE:
         dump_table_nodes(buffer, node, depth);
         break;
@@ -1652,6 +1706,7 @@ static void dump_node(dump_buffer *buffer, const markdown_core_node *node, size_
         break;
     case MARKDOWN_CORE_KIND_PARAGRAPH:
     case MARKDOWN_CORE_KIND_HEADING:
+    case MARKDOWN_CORE_KIND_DEFINITION_LIST:
     case MARKDOWN_CORE_KIND_LIST:
     case MARKDOWN_CORE_KIND_LIST_ITEM:
     case MARKDOWN_CORE_KIND_TABLE_ROW:

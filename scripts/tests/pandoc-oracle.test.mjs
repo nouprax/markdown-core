@@ -111,3 +111,83 @@ test("list variants and table columns compare as values rather than wire spellin
         { alignment: "right", relative: 0.25 }
     ]);
 });
+
+test("citation projection compares keys, modes and ordered affixes without fallback rendering", () => {
+    const make = (key = "key", mode = "SuppressAuthor", prefix = "pre", suffix = "tail") => ({
+        blocks: [
+            {
+                t: "Para",
+                c: [
+                    {
+                        t: "Cite",
+                        c: [
+                            [
+                                {
+                                    citationId: key,
+                                    citationMode: { t: mode },
+                                    citationPrefix: [{ t: "Str", c: prefix }],
+                                    citationSuffix: [{ t: "Emph", c: [{ t: "Str", c: suffix }] }]
+                                }
+                            ],
+                            [{ t: "Str", c: "[pre -@key tail]" }]
+                        ]
+                    }
+                ]
+            }
+        ]
+    });
+    const actual = fromCanonical(
+        parseCanonicalDump(
+            "Document scope=1:1..1:16 anchor=null attributes={} children=1\n" +
+                "└── Paragraph scope=1:1..1:16 anchor=null attributes={} children=1\n" +
+                "    └── Cite scope=1:1..1:16 anchor=null attributes={} children=1\n" +
+                '        └── Citation scope=1:2..1:15 referent=bib(key="key",mode=suppressAuthor) children=0\n' +
+                "            ├── CitationPrefix children=1\n" +
+                '            │   └── Text scope=1:2..1:4 anchor=null attributes={} literal="pre" children=0\n' +
+                "            └── CitationSuffix children=1\n" +
+                "                └── Emphasis scope=1:12..1:15 anchor=null attributes={} children=1\n" +
+                '                    └── Text scope=1:12..1:15 anchor=null attributes={} literal="tail" children=0\n'
+        )
+    );
+    assert.deepEqual(actual, fromPandoc(make()));
+    for (const args of [
+        ["other"],
+        ["key", "NormalCitation"],
+        ["key", "AuthorInText"],
+        ["key", "SuppressAuthor", "different"],
+        ["key", "SuppressAuthor", "pre", "different"]
+    ]) {
+        assert.notDeepEqual(actual, fromPandoc(make(...args)));
+    }
+});
+
+test("definition projection preserves compactness, terms, body boundaries and nameless names", () => {
+    const make = (first = "Plain", term = "T", bodies = [[{ t: first, c: [{ t: "Str", c: "body" }] }], []]) => ({
+        blocks: [
+            { t: "Div", c: [["", ["box"], []], [{ t: "DefinitionList", c: [[[{ t: "Str", c: term }], bodies]] }]] }
+        ]
+    });
+    const dump =
+        "Document scope=1:1..4:3 anchor=null attributes={} children=1\n" +
+        "└── DirectiveBlock scope=1:1..4:3 anchor=null attributes={.box} name=null children=1\n" +
+        "    └── DefinitionList scope=2:1..3:6 anchor=null attributes={} children=1\n" +
+        "        └── Definition scope=2:1..3:6 anchor=null attributes={} compact=true children=2\n" +
+        "            ├── DefinitionTerm children=1\n" +
+        '            │   └── Text scope=2:1..2:1 anchor=null attributes={} literal="T" children=0\n' +
+        "            ├── DefinitionBody children=1\n" +
+        "            │   └── Paragraph scope=3:3..3:6 anchor=null attributes={} children=1\n" +
+        '            │       └── Text scope=3:3..3:6 anchor=null attributes={} literal="body" children=0\n' +
+        "            └── DefinitionBody children=0\n";
+    const actual = fromCanonical(parseCanonicalDump(dump));
+    assert.deepEqual(actual, fromPandoc(make()));
+    assert.notDeepEqual(actual, fromPandoc(make("Para")));
+    assert.notDeepEqual(actual, fromPandoc(make("Plain", "other")));
+    assert.notDeepEqual(actual, fromPandoc(make("Plain", "T", [[], [{ t: "Plain", c: [{ t: "Str", c: "body" }] }]])));
+    assert.notDeepEqual(actual, fromCanonical(parseCanonicalDump(dump.replace("compact=true", "compact=false"))));
+    assert.notDeepEqual(actual, fromCanonical(parseCanonicalDump(dump.replace("name=null", 'name="box"'))));
+    for (const bodies of [[[]], [[{ t: "CodeBlock", c: [["", [], []], "code"] }]]]) {
+        const definition = fromPandoc(make("Plain", "T", bodies)).children[0].children[0].children[0];
+        assert.equal(definition.compact, null);
+        assert.equal(definition.children.length, bodies.length + 1);
+    }
+});

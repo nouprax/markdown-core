@@ -2,7 +2,7 @@
 
 Status: normative module of the [Markdown Core dialect](../dialect.md).
 Source: Pandoc's `definition_lists`, including its compact form. Executable
-oracle: the Pandoc 3.11 CLI under `specs/oracles/pandoc/`. Landing: `P10`.
+oracle: the Pandoc 3.11 CLI under `specs/oracles/pandoc/`. Landing: present (`P10`).
 The [example format](../dialect.md#examples) is defined by the index.
 
 ## Model
@@ -296,8 +296,11 @@ Document scope=1:1..2:2 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..2:2 anchor=null attributes={} children=3
     ├── Text scope=1:1..1:4 anchor=null attributes={} literal="Term" children=0
     ├── SoftBreak scope=1:5..1:5 anchor=null attributes={} children=0
-    └── Text scope=2:1..2:2 anchor=null attributes={} literal=":x" children=0
+    └── Directive scope=2:1..2:2 anchor=null attributes={} name="x" children=0
 ````````````````````````````````
+
+The fallback paragraph still runs the ordinary inline grammar: `:x` above
+is a named inline directive under the [directives](directives.md) module.
 
 After commitment an invalid later marker ends the body or list under the
 ordinary block rules; it is never repaired. Block parsing inside bodies uses

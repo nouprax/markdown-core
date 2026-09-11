@@ -578,6 +578,54 @@ static void check_table_model(void) {
     markdown_core_document_free(document);
 }
 
+static void check_definition_model(void) {
+    static const uint8_t input[] = "::: box\n*T*\n: one\n~\n\nU\n\n: two\n:::\n\n:::named\n:::\n";
+    markdown_core_document *document = markdown_core_document_parse(input, sizeof(input) - 1, NULL);
+    check(document != NULL, "definition model parses");
+    if (!document) {
+        return;
+    }
+    const markdown_core_node *root = markdown_core_document_root(document);
+    const markdown_core_node *block = markdown_core_node_get_first_child(root);
+    const markdown_core_node *list = markdown_core_node_get_first_child(block);
+    const markdown_core_node *definition = markdown_core_node_get_first_child(list);
+    markdown_core_optional_string name;
+    check(markdown_core_node_directive_properties(block, &name) && !name.has_value, "nameless block name is absent");
+    check(markdown_core_node_directive_properties(markdown_core_node_get_next_sibling(block), &name) &&
+              name.has_value && name.value.length == 5,
+          "named block retains its name");
+    check(!markdown_core_node_directive_properties(root, &name) &&
+              !markdown_core_node_directive_properties(block, NULL),
+          "directive property kind and output boundaries");
+    check(markdown_core_node_get_kind(list) == MARKDOWN_CORE_KIND_DEFINITION_LIST &&
+              markdown_core_node_child_count(list) == 2,
+          "definition list has typed members");
+    check(markdown_core_node_get_kind(definition) == MARKDOWN_CORE_KIND_DEFINITION, "definition kind");
+    check(markdown_core_node_child_count(definition) == 0 && !markdown_core_node_get_first_child(definition),
+          "body collection roots never enter generic Markup traversal");
+    bool compact = false;
+    check(markdown_core_node_definition_compact(definition, &compact) && compact, "compact term gap");
+    check(markdown_core_node_definition_compact(markdown_core_node_get_next_sibling(definition), &compact) && !compact,
+          "loose term gap");
+    check(markdown_core_node_get_kind(markdown_core_node_definition_term(definition)) == MARKDOWN_CORE_KIND_EMPHASIS,
+          "term is a separate inline field");
+    const markdown_core_definition_body *body = markdown_core_node_definition_bodies(definition);
+    check(body &&
+              markdown_core_node_get_kind(markdown_core_definition_body_content(body)) == MARKDOWN_CORE_KIND_PARAGRAPH,
+          "first body exposes ordinary blocks");
+    body = markdown_core_definition_body_next(body);
+    check(body && !markdown_core_definition_body_content(body) && !markdown_core_definition_body_next(body),
+          "empty second body retains its position");
+    check(!markdown_core_node_definition_compact(root, &compact) &&
+              !markdown_core_node_definition_compact(definition, NULL),
+          "definition property kind and output boundaries");
+    check(!markdown_core_node_definition_term(root) && !markdown_core_node_definition_bodies(root),
+          "definition collections reject other kinds");
+    check(!markdown_core_definition_body_next(NULL) && !markdown_core_definition_body_content(NULL),
+          "null body cursor is empty");
+    markdown_core_document_free(document);
+}
+
 int main(int argc, char **argv) {
     const char *fixture_dir;
     int i;
@@ -588,6 +636,7 @@ int main(int argc, char **argv) {
     fixture_dir = argv[2];
     check_api();
     check_table_model();
+    check_definition_model();
     check_dialect_is_whole();
     check_null_and_empty();
     check_resource_identity();

@@ -1,0 +1,81 @@
+Document scope=1:1..35:11 anchor=null attributes={} children=12
+├── List scope=1:1..3:0 anchor=null attributes={} flavor=ordered start=3 variant=decimal delimiter=period tight=true children=2
+│   ├── ListItem scope=1:1..1:10 anchor=null attributes={} marker=null children=1
+│   │   └── Paragraph scope=1:4..1:10 anchor=null attributes={} children=1
+│   │       └── Text scope=1:4..1:10 anchor=null attributes={} literal="decimal" children=0
+│   └── ListItem scope=2:1..3:0 anchor=null attributes={} marker=null children=1
+│       └── Paragraph scope=2:4..2:7 anchor=null attributes={} children=1
+│           └── Text scope=2:4..2:7 anchor=null attributes={} literal="next" children=0
+├── List scope=4:1..6:0 anchor=null attributes={} flavor=ordered start=1 variant=alpha(lowercased=true) delimiter=parenthesis(closed=false) tight=true children=2
+│   ├── ListItem scope=4:1..4:8 anchor=null attributes={} marker=null children=1
+│   │   └── Paragraph scope=4:4..4:8 anchor=null attributes={} children=1
+│   │       └── Text scope=4:4..4:8 anchor=null attributes={} literal="alpha" children=0
+│   └── ListItem scope=5:1..6:0 anchor=null attributes={} marker=null children=1
+│       └── Paragraph scope=5:4..5:7 anchor=null attributes={} children=1
+│           └── Text scope=5:4..5:7 anchor=null attributes={} literal="next" children=0
+├── List scope=7:1..9:0 anchor=null attributes={} flavor=ordered start=1 variant=alpha(lowercased=false) delimiter=parenthesis(closed=true) tight=true children=2
+│   ├── ListItem scope=7:1..7:9 anchor=null attributes={} marker=null children=1
+│   │   └── Paragraph scope=7:5..7:9 anchor=null attributes={} children=1
+│   │       └── Text scope=7:5..7:9 anchor=null attributes={} literal="upper" children=0
+│   └── ListItem scope=8:1..9:0 anchor=null attributes={} marker=null children=1
+│       └── Paragraph scope=8:5..8:8 anchor=null attributes={} children=1
+│           └── Text scope=8:5..8:8 anchor=null attributes={} literal="next" children=0
+├── List scope=10:1..12:0 anchor=null attributes={} flavor=ordered start=4 variant=roman(lowercased=true) delimiter=period tight=true children=2
+│   ├── ListItem scope=10:1..10:9 anchor=null attributes={} marker=null children=1
+│   │   └── Paragraph scope=10:5..10:9 anchor=null attributes={} children=1
+│   │       └── Text scope=10:5..10:9 anchor=null attributes={} literal="roman" children=0
+│   └── ListItem scope=11:1..12:0 anchor=null attributes={} marker=null children=1
+│       └── Paragraph scope=11:4..11:7 anchor=null attributes={} children=1
+│           └── Text scope=11:4..11:7 anchor=null attributes={} literal="next" children=0
+├── List scope=13:1..15:0 anchor=null attributes={} flavor=ordered start=4 variant=roman(lowercased=false) delimiter=parenthesis(closed=false) tight=true children=2
+│   ├── ListItem scope=13:1..13:15 anchor=null attributes={} marker=null children=1
+│   │   └── Paragraph scope=13:5..13:15 anchor=null attributes={} children=1
+│   │       └── Text scope=13:5..13:15 anchor=null attributes={} literal="upper roman" children=0
+│   └── ListItem scope=14:1..15:0 anchor=null attributes={} marker=null children=1
+│       └── Paragraph scope=14:4..14:7 anchor=null attributes={} children=1
+│           └── Text scope=14:4..14:7 anchor=null attributes={} literal="next" children=0
+├── Paragraph scope=16:1..16:9 anchor=null attributes={} children=1
+│   └── Text scope=16:1..16:9 anchor=null attributes={} literal="separator" children=0
+├── List scope=18:1..20:0 anchor=null attributes={} flavor=ordered start=1 variant=default delimiter=default tight=true children=2
+│   ├── ListItem scope=18:1..18:10 anchor=null attributes={} marker=null children=1
+│   │   └── Paragraph scope=18:4..18:10 anchor=null attributes={} children=1
+│   │       └── Text scope=18:4..18:10 anchor=null attributes={} literal="default" children=0
+│   └── ListItem scope=19:1..20:0 anchor=null attributes={} marker=null children=1
+│       └── Paragraph scope=19:4..19:7 anchor=null attributes={} children=1
+│           └── Text scope=19:4..19:7 anchor=null attributes={} literal="next" children=0
+├── Paragraph scope=21:1..21:9 anchor=null attributes={} children=1
+│   └── Text scope=21:1..21:9 anchor=null attributes={} literal="separator" children=0
+├── List scope=23:1..25:0 anchor=null attributes={} flavor=ordered start=1 variant=default delimiter=parenthesis(closed=true) tight=true children=2
+│   ├── ListItem scope=23:1..23:20 anchor=null attributes={} marker=null children=1
+│   │   └── Paragraph scope=23:5..23:20 anchor=null attributes={} children=1
+│   │       └── Text scope=23:5..23:20 anchor=null attributes={} literal="default enclosed" children=0
+│   └── ListItem scope=24:1..25:0 anchor=null attributes={} marker=null children=1
+│       └── Paragraph scope=24:5..24:8 anchor=null attributes={} children=1
+│           └── Text scope=24:5..24:8 anchor=null attributes={} literal="next" children=0
+├── List scope=26:1..29:0 anchor=null attributes={} flavor=ordered start=8 variant=alpha(lowercased=true) delimiter=period tight=true children=3
+│   ├── ListItem scope=26:1..26:4 anchor=null attributes={} marker=null children=1
+│   │   └── Paragraph scope=26:4..26:4 anchor=null attributes={} children=1
+│   │       └── Text scope=26:4..26:4 anchor=null attributes={} literal="h" children=0
+│   ├── ListItem scope=27:2..27:5 anchor=null attributes={} marker=null children=1
+│   │   └── Paragraph scope=27:5..27:5 anchor=null attributes={} children=1
+│   │       └── Text scope=27:5..27:5 anchor=null attributes={} literal="i" children=0
+│   └── ListItem scope=28:2..29:0 anchor=null attributes={} marker=null children=1
+│       └── Paragraph scope=28:5..28:5 anchor=null attributes={} children=1
+│           └── Text scope=28:5..28:5 anchor=null attributes={} literal="j" children=0
+├── List scope=30:1..32:0 anchor=null attributes={} flavor=ordered start=1 variant=roman(lowercased=false) delimiter=period tight=true children=2
+│   ├── ListItem scope=30:1..30:7 anchor=null attributes={} marker=null children=1
+│   │   └── Paragraph scope=30:5..30:7 anchor=null attributes={} children=1
+│   │       └── Text scope=30:5..30:7 anchor=null attributes={} literal="one" children=0
+│   └── ListItem scope=31:1..32:0 anchor=null attributes={} marker=null children=1
+│       └── Paragraph scope=31:5..31:7 anchor=null attributes={} children=1
+│           └── Text scope=31:5..31:7 anchor=null attributes={} literal="two" children=0
+└── List scope=33:1..35:11 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+    └── ListItem scope=33:1..35:11 anchor=null attributes={} marker=null children=2
+        ├── Paragraph scope=33:3..34:12 anchor=null attributes={} children=3
+        │   ├── Text scope=33:3..33:8 anchor=null attributes={} literal="parent" children=0
+        │   ├── SoftBreak scope=33:9..33:9 anchor=null attributes={} children=0
+        │   └── Text scope=34:3..34:12 anchor=null attributes={} literal="2. literal" children=0
+        └── List scope=35:3..35:11 anchor=null attributes={} flavor=ordered start=1 variant=decimal delimiter=period tight=true children=1
+            └── ListItem scope=35:3..35:11 anchor=null attributes={} marker=null children=1
+                └── Paragraph scope=35:6..35:11 anchor=null attributes={} children=1
+                    └── Text scope=35:6..35:11 anchor=null attributes={} literal="nested" children=0

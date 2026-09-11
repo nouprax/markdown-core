@@ -1,10 +1,17 @@
 MARKDOWN_CORE_1.0 {
   global:
+    markdown_core_attribute_value_anchor;
+    markdown_core_attribute_value_class_at;
+    markdown_core_attribute_value_class_count;
+    markdown_core_attribute_value_record_at;
+    markdown_core_attribute_value_record_count;
     markdown_core_citation_next;
     markdown_core_citation_prefix;
     markdown_core_citation_referent;
     markdown_core_citation_scope;
     markdown_core_citation_suffix;
+    markdown_core_definition_body_content;
+    markdown_core_definition_body_next;
     markdown_core_document_dump;
     markdown_core_document_free;
     markdown_core_document_parse;
@@ -33,13 +40,6 @@ MARKDOWN_CORE_1.0 {
     markdown_core_metadata_value_item_count;
     markdown_core_metadata_value_scalar;
     markdown_core_node_anchor;
-    markdown_core_node_primary_attributes;
-    markdown_core_node_inherited_attributes;
-    markdown_core_attribute_value_anchor;
-    markdown_core_attribute_value_class_count;
-    markdown_core_attribute_value_class_at;
-    markdown_core_attribute_value_record_count;
-    markdown_core_attribute_value_record_at;
     markdown_core_node_attribute_class_at;
     markdown_core_node_attribute_class_count;
     markdown_core_node_attribute_record_at;
@@ -50,6 +50,9 @@ MARKDOWN_CORE_1.0 {
     markdown_core_node_cite_citations;
     markdown_core_node_code_block_properties;
     markdown_core_node_cross_label;
+    markdown_core_node_definition_bodies;
+    markdown_core_node_definition_compact;
+    markdown_core_node_definition_term;
     markdown_core_node_destination;
     markdown_core_node_dimensions;
     markdown_core_node_directive_label;
@@ -62,10 +65,12 @@ MARKDOWN_CORE_1.0 {
     markdown_core_node_get_kind;
     markdown_core_node_get_next_sibling;
     markdown_core_node_heading_level;
+    markdown_core_node_inherited_attributes;
     markdown_core_node_kind_name;
     markdown_core_node_list_item_marker;
     markdown_core_node_list_properties;
     markdown_core_node_literal;
+    markdown_core_node_primary_attributes;
     markdown_core_node_resource;
     markdown_core_node_scope;
     markdown_core_node_table_cell_spans;

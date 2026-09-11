@@ -91,14 +91,15 @@ markdown_core_formula_mode markdown_core_extensions_get_formula_mode(markdown_co
 MARKDOWN_CORE_EXPORT
 int markdown_core_extensions_set_formula_mode(markdown_core_node *node, markdown_core_formula_mode mode);
 
-/** Returns the directive name for directive extension nodes, or NULL on
+/** Returns the directive name, NULL for a nameless block, or NULL on
  * error.
  */
 MARKDOWN_CORE_EXPORT
 const char *markdown_core_extensions_get_directive_name(markdown_core_node *node);
 
 /** Sets the directive name for directive extension nodes, returning 1
- * on success and 0 on error.
+ * on success and 0 on error. NULL selects a nameless DirectiveBlock; an inline
+ * directive requires a valid nonempty name.
  */
 MARKDOWN_CORE_EXPORT
 int markdown_core_extensions_set_directive_name(markdown_core_node *node, const char *name);

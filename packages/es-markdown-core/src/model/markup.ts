@@ -26,6 +26,7 @@ import type { Mark } from "./mark.js";
 import type { Insertion } from "./insertion.js";
 import type { Span } from "./span.js";
 import type { Superscript } from "./superscript.js";
+import type { DefinitionList, Definition } from "./definition-list.js";
 import type { Subscript } from "./subscript.js";
 import type { Strong } from "./strong.js";
 import type { Table, TableCell, TableRow } from "./table.js";
@@ -64,6 +65,8 @@ export type Markup =
     | Insertion
     | Span
     | Superscript
+    | DefinitionList
+    | Definition
     | Subscript
     | Link
     | Media

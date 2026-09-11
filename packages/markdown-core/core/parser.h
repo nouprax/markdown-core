@@ -41,20 +41,20 @@ typedef struct {
  * stay attached until the block phase finishes processing identifiers. */
 void markdown_core_parser_finalize_paragraph(struct markdown_core_parser *parser, struct markdown_core_node *node);
 
-/* Parse-time edges used only to assign document-local ids. Every footnote
- * is already owned by the document, either in its block tree or value field.
+/* Parse-time edges for document-owned footnote and specimen definitions.
+ * Every definition is already owned in the block tree or a value field.
  * The index is discarded before any mutating postprocessor runs. */
 typedef struct {
-    struct markdown_core_node *footnote;
+    struct markdown_core_node *definition;
     struct markdown_core_node *citation;
-} markdown_core_footnote_entry;
+} markdown_core_definition_entry;
 
 typedef struct {
-    markdown_core_footnote_entry *values;
+    markdown_core_definition_entry *values;
     size_t count;
     size_t capacity;
     struct markdown_core_node *last_inline;
-} markdown_core_footnote_collection;
+} markdown_core_definition_collection;
 
 /* A heading is registered once when its block closes. Headings are leaves
  * in block grammar, so closure order is source order, including in footnotes.
@@ -79,7 +79,9 @@ struct markdown_core_parser {
      * block phase fills it as each definition opens; the inline phase reads it
      * to decide whether a `[^label]` is a call at all. */
     struct markdown_core_map *footnote_defs;
-    markdown_core_footnote_collection footnotes;
+    markdown_core_definition_collection footnotes;
+    markdown_core_definition_collection specimens;
+    markdown_core_key_index specimen_ids;
     markdown_core_heading_collection headings;
     /* The root node of the parser, always a MARKDOWN_CORE_NODE_DOCUMENT */
     struct markdown_core_node *root;
@@ -120,7 +122,7 @@ struct markdown_core_parser {
     size_t cross_link_scan_work;
     size_t opaque_scan_work;
     size_t footnote_body_work;
-    size_t footnote_registration_work;
+    size_t definition_registration_work;
     /* Run bytes, opener comparisons, and child moves in the shared delimiter algorithm. */
     size_t delimiter_work;
     /* Ordinary whitespace scalars and contextual-space lookahead bytes. */
@@ -142,6 +144,12 @@ struct markdown_core_parser {
     size_t anchor_work;
     /* Ordinary image-label bytes and bounded dimension work for Media and embeds. */
     size_t dimension_work;
+    size_t list_marker_work;
+    size_t specimen_work;
+    size_t citation_work;
+    /* Cumulative capacity bytes reserved for per-subject brace event records. */
+    size_t citation_brace_bytes;
+    size_t definition_list_work;
     /* THE SOURCE AFTER THE LINE BEING PROCESSED. `S_parse_source` sets the
      * cursor to the first byte of the next raw line before it hands each line
      * to `S_process_line`, so a block start whose grammar needs a later line --
@@ -258,8 +266,8 @@ void markdown_core_parser_lookahead_end(markdown_core_block_lookahead *lookahead
 /* Register committed syntax. A citation transfers its detached inline body
  * into Document.footnotes; an authored definition remains in the block tree
  * until inline parsing finishes. Allocation failure aborts the whole parse. */
-bool markdown_core_parser_register_footnote(markdown_core_parser *parser, struct markdown_core_node *footnote,
-                                            struct markdown_core_node *citation);
+bool markdown_core_parser_register_definition(markdown_core_parser *parser, struct markdown_core_node *definition,
+                                              struct markdown_core_node *citation);
 
 /* The engine has one parse operation. `setup`, when present, configures the
  * fresh parser after the complete dialect is attached, before any source is

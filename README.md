@@ -377,6 +377,13 @@ See [LICENSE](LICENSE), [COPYING](COPYING), and [UPSTREAM.md](UPSTREAM.md).
 
 Attributes attach to inline code (``x`{.code}`), ATX and Setext headings,
 fenced code, direct links/media, resolved references and angle autolinks.
+Nameless fenced containers (`::: {.class}` or `::: class`) produce
+`DirectiveBlock` with `name=null`; named and nameless containers share nesting
+and closing rules. Definition lists (`Term` followed by `: body` or `~ body`)
+produce `DefinitionList.definitions`. Each `Definition` owns its inline `term`,
+ordered `content` body collections, and a `compact` boolean determined by the
+blank line before its first body. Walking visits the term before the bodies.
+
 Reference definitions can supply an anchor, classes and records. An occurrence's
 nonempty anchor wins; its classes and records follow inherited declarations,
 including duplicates. Image dimension suffixes and dimension attribute records

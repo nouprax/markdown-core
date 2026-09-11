@@ -32,7 +32,9 @@ typedef enum jni_payload_action_kind {
     /* One citation -- scope, referent, prefix, suffix -- then the rest. */
     JNI_PAYLOAD_WRITE_CITATION,
     /* A citation's suffix, after its prefix has been written. */
-    JNI_PAYLOAD_WRITE_SUFFIX
+    JNI_PAYLOAD_WRITE_SUFFIX,
+    JNI_PAYLOAD_WRITE_DEFINITION_BODIES,
+    JNI_PAYLOAD_WRITE_DEFINITION_BODY
 } jni_payload_action_kind;
 
 typedef struct jni_payload_action {
@@ -42,6 +44,7 @@ typedef struct jni_payload_action {
     const markdown_core_citation *citation;
     size_t remaining;
     const markdown_core_specimen *specimen;
+    const markdown_core_definition_body *body;
 } jni_payload_action;
 
 typedef struct jni_payload_stack {
@@ -609,6 +612,7 @@ static void write_node(jni_payload_buffer *buffer, jni_payload_stack *stack, jni
     case MARKDOWN_CORE_KIND_INSERTION:
     case MARKDOWN_CORE_KIND_SPAN:
     case MARKDOWN_CORE_KIND_SUPERSCRIPT:
+    case MARKDOWN_CORE_KIND_DEFINITION_LIST:
     case MARKDOWN_CORE_KIND_SUBSCRIPT:
     case MARKDOWN_CORE_KIND_STRIKETHROUGH:
     case MARKDOWN_CORE_KIND_TABLE_ROW:
@@ -735,15 +739,28 @@ static void write_node(jni_payload_buffer *buffer, jni_payload_stack *stack, jni
         schedule_children(buffer, stack, node);
         break;
     }
+    case MARKDOWN_CORE_KIND_DEFINITION: {
+        bool compact;
+        if (!markdown_core_node_definition_compact(node, &compact)) {
+            buffer->failure = JNI_PAYLOAD_INTERNAL;
+            return;
+        }
+        put_u8(buffer, compact ? 1 : 0);
+        jni_payload_action bodies = {.kind = JNI_PAYLOAD_WRITE_DEFINITION_BODIES,
+                                     .body = markdown_core_node_definition_bodies(node)};
+        push_action(buffer, stack, bodies);
+        schedule_chain(buffer, stack, markdown_core_node_definition_term(node));
+        break;
+    }
     case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
     case MARKDOWN_CORE_KIND_DIRECTIVE: {
         /* A label is a node-valued field, not directive content. Preserve that
          * boundary on the wire instead of flattening it into the child list. */
-        if (!markdown_core_node_directive_properties(node, &first)) {
+        if (!markdown_core_node_directive_properties(node, &optional_first)) {
             buffer->failure = JNI_PAYLOAD_INTERNAL;
             return;
         }
-        put_string(buffer, first, true);
+        put_optional_string(buffer, optional_first);
         const markdown_core_node *label = markdown_core_node_directive_label(node);
         put_u8(buffer, label ? 1 : 0);
         if (label != NULL) {
@@ -900,6 +917,30 @@ static void write_tree(jni_payload_buffer *buffer, const markdown_core_node *roo
         case JNI_PAYLOAD_WRITE_CITATION:
             write_citation(buffer, &stack, action);
             break;
+        case JNI_PAYLOAD_WRITE_DEFINITION_BODIES: {
+            size_t count = 0;
+            for (const markdown_core_definition_body *body = action.body; body;
+                 body = markdown_core_definition_body_next(body)) {
+                count++;
+            }
+            if (!count || count > INT32_MAX) {
+                buffer->failure = JNI_PAYLOAD_INTERNAL;
+                break;
+            }
+            put_i32(buffer, (int32_t)count);
+            action.kind = JNI_PAYLOAD_WRITE_DEFINITION_BODY;
+            push_action(buffer, &stack, action);
+            break;
+        }
+        case JNI_PAYLOAD_WRITE_DEFINITION_BODY: {
+            const markdown_core_definition_body *body = action.body;
+            action.body = markdown_core_definition_body_next(body);
+            if (action.body) {
+                push_action(buffer, &stack, action);
+            }
+            schedule_chain(buffer, &stack, markdown_core_definition_body_content(body));
+            break;
+        }
         case JNI_PAYLOAD_WRITE_SUFFIX:
             schedule_chain(buffer, &stack, markdown_core_citation_suffix(action.citation));
             break;

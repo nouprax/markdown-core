@@ -76,6 +76,11 @@ function taskMarkers(tree) {
 }
 
 const stateValidators = {
+    "directiveBlock.name.null": (tree) => /DirectiveBlock scope=.* name=null /.test(tree),
+    "definition.compact.true": (tree) => /Definition scope=.* compact=true /.test(tree),
+    "definition.compact.false": (tree) => /Definition scope=.* compact=false /.test(tree),
+    "definition.bodies.multiple": (tree) => /Definition scope=.* children=(?:[2-9]|[1-9]\d+)(?:\n|$)/.test(tree),
+    "definition.body.empty": (tree) => /DefinitionBody children=0/.test(tree),
     "crossEmbedded.dimensions.width": (tree) =>
         /CrossEmbedded scope=.* dimensions=\(width=[1-9][0-9]*,height=null\) /.test(tree),
     "crossEmbedded.dimensions.width-height": (tree) =>
@@ -224,10 +229,33 @@ const stateValidators = {
     "document.footnotes.empty": (tree) =>
         tree.startsWith("Document scope=") && !/^(?:├──|└──) Footnote scope=/m.test(tree),
     "document.footnotes.populated": (tree) => /^(?:├──|└──) Footnote scope=\S+ id="[^"]*" children=\d+$/m.test(tree),
+    "list.variant.alpha.lower": (tree) => /^.*List scope=.* variant=alpha\(lowercased=true\) /m.test(tree),
+    "list.variant.alpha.upper": (tree) => /^.*List scope=.* variant=alpha\(lowercased=false\) /m.test(tree),
+    "list.variant.roman.lower": (tree) => /^.*List scope=.* variant=roman\(lowercased=true\) /m.test(tree),
+    "list.variant.roman.upper": (tree) => /^.*List scope=.* variant=roman\(lowercased=false\) /m.test(tree),
+    "list.variant.default": (tree) => /^.*List scope=.* variant=default /m.test(tree),
+    "list.delimiter.default": (tree) => /^.*List scope=.* delimiter=default /m.test(tree),
+    "list.delimiter.parenthesis.closed": (tree) => /^.*List scope=.* delimiter=parenthesis\(closed=true\) /m.test(tree),
+    "citation.bib.mode.normal": (tree) =>
+        /Citation scope=\S+ referent=bib\(key="(?:\\.|[^"\\])*",mode=normal\)/.test(tree),
+    "citation.bib.mode.authorInText": (tree) =>
+        /Citation scope=\S+ referent=bib\(key="(?:\\.|[^"\\])*",mode=authorInText\)/.test(tree),
+    "citation.bib.mode.suppressAuthor": (tree) =>
+        /Citation scope=\S+ referent=bib\(key="(?:\\.|[^"\\])*",mode=suppressAuthor\)/.test(tree),
+    "citation.referent.specimen": (tree) => /Citation scope=\S+ referent=specimen\(id="[^"\n]+"\)/.test(tree),
+    "citation.prefix.populated": (tree) => /CitationPrefix children=[1-9]\d*/.test(tree),
+    "citation.suffix.populated": (tree) => /CitationSuffix children=[1-9]\d*/.test(tree),
+    "document.specimens.populated": (tree) => /^(?:├──|└──) Specimen scope=/m.test(tree),
+    "specimen.id.null": (tree) => /Specimen scope=\S+ id=null /.test(tree),
+    "specimen.id.value": (tree) => /Specimen scope=\S+ id="[^"\n]+" /.test(tree),
+    "specimen.start.null": (tree) => /Specimen scope=\S+ id=\S+ start=null /.test(tree),
+    "specimen.start.value": (tree) => /Specimen scope=\S+ id=\S+ start=[1-9]\d* /.test(tree),
     "span.content.empty": (tree) => /Span scope=.* children=0(?:\n|$)/.test(tree),
     "span.content.populated": (tree) => /Span scope=.* children=[1-9]\d*(?:\n|$)/.test(tree)
 };
 const orderValidators = {
+    "definition.term-before-bodies": (tree) =>
+        /Definition scope=.*\n[^\n]*DefinitionTerm children=[1-9]\d*[\s\S]*DefinitionBody children=/.test(tree),
     "callout.title-before-content": (tree) =>
         /Callout scope=.* children=[1-9]\d*\n[^\n]*Title children=[1-9]\d*[\s\S]*Paragraph scope=/.test(tree),
     "document.source-order": (tree) => tree.startsWith("Document scope="),
@@ -237,7 +265,7 @@ const orderValidators = {
         /DirectiveBlock scope=.* children=[1-9]\d*\n[\s\S]*DirectiveLabel scope=[\s\S]*Paragraph scope=/.test(tree),
     "markup.attributes.source-order": (tree) =>
         /DirectiveBlock scope=.*attributes=\{[^}]*properties=".*" metadata=".*"\}/.test(tree),
-    "inline.source-order": (tree) => /Paragraph scope=.* children=[2-9]\d*/.test(tree),
+    "inline.source-order": (tree) => /Paragraph scope=.* children=(?:[2-9]|[1-9]\d+)(?:\n|$)/.test(tree),
     // Every `Footnote` value nests under `Document` after the last content
     // line (M4).
     "document.content-before-footnotes": (tree) => {
@@ -246,7 +274,19 @@ const orderValidators = {
             .filter((line) => /^(?:├──|└──) /.test(line))
             .map((line) => line.slice(4).split(" ", 1)[0]);
         const first = top.indexOf("Footnote");
-        return first >= 0 && top.slice(first).every((kind) => kind === "Footnote");
+        return first >= 0 && top.slice(first).every((kind) => kind === "Footnote" || kind === "Specimen");
+    },
+    "document.specimens-source-order": (tree) => {
+        const definitions = [...tree.matchAll(/^(?:├──|└──) Specimen scope=(\d+):(\d+)\.\./gm)];
+        return (
+            definitions.length > 1 &&
+            definitions.every(
+                (entry, i) =>
+                    i === 0 ||
+                    Number(entry[1]) > Number(definitions[i - 1][1]) ||
+                    (entry[1] === definitions[i - 1][1] && Number(entry[2]) > Number(definitions[i - 1][2]))
+            )
+        );
     },
     // A `Cite` nests its items in source order: their scopes ascend (M4).
     "cite.items-in-order": (tree) => {
@@ -262,7 +302,7 @@ const orderValidators = {
                 const itemMarker = item.search(/[├└]/);
                 if (itemMarker <= marker) break;
                 const match = /^Citation scope=(\d+):(\d+)\.\./.exec(item.slice(itemMarker + 4));
-                if (match === null) continue;
+                if (match === null || itemMarker !== marker + 4) continue;
                 const start = [Number(match[1]), Number(match[2])];
                 if (previous && (start[0] < previous[0] || (start[0] === previous[0] && start[1] <= previous[1]))) {
                     ordered = false;
@@ -312,7 +352,16 @@ const treeLine =
 // A group line nests a node-valued list under its owner with no scope and no
 // fields; the names are the dump grammar's.
 const groupLine = /^(?:(?:│ {3}| {4})*(?:├──|└──) )([A-Z][A-Za-z]+) children=\d+$/;
-const GROUPS = new Set(["Title", "CitationPrefix", "CitationSuffix", "TableHead", "TableBody", "TableFoot"]);
+const GROUPS = new Set([
+    "DefinitionTerm",
+    "DefinitionBody",
+    "Title",
+    "CitationPrefix",
+    "CitationSuffix",
+    "TableHead",
+    "TableBody",
+    "TableFoot"
+]);
 // A scoped value prints as a value line -- scope, its scalar fields, children
 // -- without being a kind (M4).
 const scopedValues = Object.fromEntries(

@@ -142,8 +142,20 @@ class DumpState {
         visitTableRow: (node: TableRow) => this.container("TableRow", node, [], node.cells),
         visitTableCell: (node: TableCell) =>
             this.container("TableCell", node, [`rowspan=${node.rowspan}`, `colspan=${node.colspan}`], node.content),
+        visitDefinitionList: (node) => this.container("DefinitionList", node, [], node.definitions),
+        visitDefinition: (node) => {
+            this.line("Definition", node, [`compact=${node.compact}`], node.content.length);
+            this.nested(node.content.length + 1, () => {
+                this.group("DefinitionTerm", node.term.length);
+                this.nested(node.term.length, () => node.term.forEach((child) => this.dump(child)));
+                for (const body of node.content) {
+                    this.group("DefinitionBody", body.length);
+                    this.nested(body.length, () => body.forEach((child) => this.dump(child)));
+                }
+            });
+        },
         visitDirectiveBlock: (node: DirectiveBlock) => {
-            this.line("DirectiveBlock", node, [`name=${jsonString(node.name)}`], node.content.length);
+            this.line("DirectiveBlock", node, [`name=${optionalString(node.name)}`], node.content.length);
             this.nested(node.content.length + (node.label === null ? 0 : 1), () => {
                 if (node.label !== null) this.dump(node.label);
                 for (const child of node.content) this.dump(child);

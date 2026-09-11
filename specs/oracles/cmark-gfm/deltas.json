@@ -100,6 +100,12 @@
             "kind": "deliberate-difference",
             "summary": "A single tilde is a subscript delimiter with non-empty, raw-whitespace-free content. Only a two-tilde run can be strikethrough; longer runs stay literal.",
             "handling": "The four historical single-tilde inputs remain in the corpus and are registered exactly. Product fixtures cover the complete P6 tilde and whitespace rules."
+        },
+        {
+            "id": "bibliography-citations",
+            "kind": "deliberate-difference",
+            "summary": "The citations module recognizes @key at a valid Unicode word boundary and stores a typed bibliography Cite. The inherited base/GFM grammar has no bibliography citations.",
+            "handling": "Retain exact changed inputs; citation keys, modes, affixes and scopes are covered by the Pandoc oracle and canonical conformance fixtures."
         }
     ],
     "expectedDivergences": [
@@ -237,6 +243,11 @@
             "id": "single-tilde-subscript",
             "input": "These are ~not strikethroughs.\n\nNo, they are not~\n\nThis ~is ~ legit~ isn't ~ legit.\n\nThis is not ~~~~~one~~~~~ huge strikethrough.\n\n~one~ ~~two~~ ~~~three~~~\n\nNo ~mismatch~~\n",
             "note": "P6 gives single tildes to Subscript and rejects raw whitespace inside a candidate; double tildes remain Strikethrough."
+        },
+        {
+            "id": "bibliography-citations",
+            "input": "These should not link:\n\n* @a.b.c@. x\n* n@.  b\n",
+            "note": "P7: @a.b.c opens at the inline start; n@ does not satisfy the key opener precondition."
         }
     ],
     "notDeltas": [],

@@ -114,6 +114,26 @@ public final class com/nouprax/markdown/core/CrossLink : com/nouprax/markdown/co
 	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 }
 
+public final class com/nouprax/markdown/core/Definition : com/nouprax/markdown/core/Markup {
+	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
+	public fun dump ()Ljava/lang/String;
+	public fun getAnchor ()Ljava/lang/String;
+	public fun getAttributes ()Lcom/nouprax/markdown/core/Attributes;
+	public final fun getCompact ()Z
+	public final fun getContent ()Ljava/util/List;
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+	public final fun getTerm ()Ljava/util/List;
+}
+
+public final class com/nouprax/markdown/core/DefinitionList : com/nouprax/markdown/core/Markup {
+	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
+	public fun dump ()Ljava/lang/String;
+	public fun getAnchor ()Ljava/lang/String;
+	public fun getAttributes ()Lcom/nouprax/markdown/core/Attributes;
+	public final fun getDefinitions ()Ljava/util/List;
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+}
+
 public abstract interface class com/nouprax/markdown/core/Destination {
 }
 
@@ -717,6 +737,8 @@ public abstract interface class com/nouprax/markdown/core/Visitor {
 	public abstract fun visitComment (Lcom/nouprax/markdown/core/Comment;)Ljava/lang/Object;
 	public abstract fun visitCrossEmbedded (Lcom/nouprax/markdown/core/CrossEmbedded;)Ljava/lang/Object;
 	public abstract fun visitCrossLink (Lcom/nouprax/markdown/core/CrossLink;)Ljava/lang/Object;
+	public abstract fun visitDefinition (Lcom/nouprax/markdown/core/Definition;)Ljava/lang/Object;
+	public abstract fun visitDefinitionList (Lcom/nouprax/markdown/core/DefinitionList;)Ljava/lang/Object;
 	public abstract fun visitDirective (Lcom/nouprax/markdown/core/Directive;)Ljava/lang/Object;
 	public abstract fun visitDirectiveBlock (Lcom/nouprax/markdown/core/DirectiveBlock;)Ljava/lang/Object;
 	public abstract fun visitDirectiveLabel (Lcom/nouprax/markdown/core/DirectiveLabel;)Ljava/lang/Object;
@@ -765,6 +787,8 @@ public abstract interface class com/nouprax/markdown/core/WalkingVisitor {
 	public abstract fun visitComment (Lcom/nouprax/markdown/core/Comment;Lcom/nouprax/markdown/core/WalkPhase;)V
 	public abstract fun visitCrossEmbedded (Lcom/nouprax/markdown/core/CrossEmbedded;Lcom/nouprax/markdown/core/WalkPhase;)V
 	public abstract fun visitCrossLink (Lcom/nouprax/markdown/core/CrossLink;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visitDefinition (Lcom/nouprax/markdown/core/Definition;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visitDefinitionList (Lcom/nouprax/markdown/core/DefinitionList;Lcom/nouprax/markdown/core/WalkPhase;)V
 	public abstract fun visitDirective (Lcom/nouprax/markdown/core/Directive;Lcom/nouprax/markdown/core/WalkPhase;)V
 	public abstract fun visitDirectiveBlock (Lcom/nouprax/markdown/core/DirectiveBlock;Lcom/nouprax/markdown/core/WalkPhase;)V
 	public abstract fun visitDirectiveLabel (Lcom/nouprax/markdown/core/DirectiveLabel;Lcom/nouprax/markdown/core/WalkPhase;)V

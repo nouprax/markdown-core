@@ -84,6 +84,31 @@ private class JniTreeDecoder(
                 readTable(scope, anchor, attributes, consume)
             }
 
+            JniNodeKind.DEFINITION_LIST -> {
+                readChildren { children ->
+                    require(children.isNotEmpty()) { "empty definition list" }
+                    val definitions =
+                        immutableList(children.size) { index ->
+                            val child = children[index]
+                            require(child is Definition) { "invalid definition list child" }
+                            child
+                        }
+                    consume(DefinitionList(definitions, scope, anchor, attributes))
+                }
+            }
+
+            JniNodeKind.DEFINITION -> {
+                val compact = reader.boolean()
+                var term: kotlin.collections.List<Markup>? = null
+                actions.addLast {
+                    readValues("definition body", ::readChildren) { bodies ->
+                        require(bodies.isNotEmpty()) { "definition has no bodies" }
+                        consume(Definition(requireNotNull(term), bodies, compact, scope, anchor, attributes))
+                    }
+                }
+                actions.addLast { readChildren { term = it } }
+            }
+
             JniNodeKind.DIRECTIVE_BLOCK -> {
                 readDirectiveBlock(scope, anchor, attributes, consume)
             }
@@ -397,7 +422,7 @@ private class JniTreeDecoder(
         attributes: Attributes,
         consume: (Markup) -> Unit,
     ) {
-        val name = reader.requiredString()
+        val name = reader.string()
         readDirectiveRelations { label, children ->
             consume(DirectiveBlock(name, label, children, scope, anchor, attributes))
         }

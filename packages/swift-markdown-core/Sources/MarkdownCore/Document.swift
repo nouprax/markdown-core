@@ -82,6 +82,8 @@ private struct NativeNodeRecord {
     var children: [Int] = []
     var label: Int?
     var title: [Int]?
+    var term: [Int] = []
+    var bodies: [[Int]] = []
     /// The document's footnotes, each with the records of its content.
     var footnotes: [NativeFootnoteRecord] = []
     var specimens: [NativeSpecimenRecord] = []
@@ -111,6 +113,8 @@ struct NativeRelations {
     let children: [any Markup]
     let label: DirectiveLabel?
     let title: [any Markup]?
+    let term: [any Markup]
+    let bodies: [[any Markup]]
     let footnotes: [Footnote]
     let specimens: [Specimen]
     let citations: [Citation]
@@ -175,6 +179,14 @@ private struct NativeTreeBuilder {
             if let titleNode = markdown_core_node_callout_title(node) {
                 let title = recordChain(titleNode)
                 records[recordIndex].title = title
+            }
+        case MARKDOWN_CORE_KIND_DEFINITION:
+            records[recordIndex].term = recordChain(markdown_core_node_definition_term(node))
+            var body = markdown_core_node_definition_bodies(node)
+            while let current = body {
+                let content = recordChain(markdown_core_definition_body_content(current))
+                records[recordIndex].bodies.append(content)
+                body = markdown_core_definition_body_next(current)
             }
         case MARKDOWN_CORE_KIND_DOCUMENT:
             recordFootnotes(of: node, at: recordIndex)
@@ -249,6 +261,8 @@ private struct NativeTreeBuilder {
                 children: nodes(record.children, "child"),
                 label: label,
                 title: record.title.map { nodes($0, "callout title") },
+                term: nodes(record.term, "definition term"),
+                bodies: record.bodies.map { nodes($0, "definition body") },
                 footnotes: record.footnotes.map { footnote in
                     Footnote(from: footnote.footnote, content: nodes(footnote.content, "footnote content"))
                 },
@@ -289,6 +303,8 @@ func markup(
             specimens: relations.specimens
         )
     case MARKDOWN_CORE_KIND_CALLOUT: Callout(from: node, title: relations.title, content: relations.children)
+    case MARKDOWN_CORE_KIND_DEFINITION_LIST: DefinitionList(from: node, children: relations.children)
+    case MARKDOWN_CORE_KIND_DEFINITION: Definition(from: node, term: relations.term, content: relations.bodies)
     case MARKDOWN_CORE_KIND_PARAGRAPH: Paragraph(from: node, content: relations.children)
     case MARKDOWN_CORE_KIND_HEADING: Heading(from: node, content: relations.children)
     case MARKDOWN_CORE_KIND_THEMATIC_BREAK: ThematicBreak(from: node)

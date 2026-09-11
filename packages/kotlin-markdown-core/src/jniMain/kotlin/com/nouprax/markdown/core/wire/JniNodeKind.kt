@@ -39,6 +39,8 @@ internal enum class JniNodeKind(
     SPAN(34),
     SUPERSCRIPT(35),
     SUBSCRIPT(36),
+    DEFINITION_LIST(37),
+    DEFINITION(38),
     ;
 
     companion object {

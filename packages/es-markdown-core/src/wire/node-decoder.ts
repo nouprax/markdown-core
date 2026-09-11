@@ -41,16 +41,18 @@ const noIndex = 0xffff_ffff;
  * a footnote's content is its child range, a cite's items are its child
  * range, and the document's definitions are its auxiliary range.
  */
-type ValueKind = "citation" | "footnote" | "specimen" | "metadata" | "metadataValue";
+type ValueKind = "definitionBody" | "citation" | "footnote" | "specimen" | "metadata" | "metadataValue";
 const valueKindBase = 0x100;
 const valueKinds: readonly ValueKind[] = Object.freeze([
     "citation",
     "footnote",
     "specimen",
     "metadata",
-    "metadataValue"
+    "metadataValue",
+    "definitionBody"
 ]);
-type Decoded = Markup | Citation | Footnote | Specimen | Metadata | MetadataValue;
+type DefinitionBody = { readonly body: readonly Markup[] };
+type Decoded = DefinitionBody | Markup | Citation | Footnote | Specimen | Metadata | MetadataValue;
 const isMarkup = (value: Decoded): value is Markup => "kind" in value && "scope" in value;
 
 const header = {
@@ -157,7 +159,10 @@ export class NodeDecoder {
             if (record.kind === "citation") values[index] = this.citation(record);
             else if (record.kind === "footnote") values[index] = this.footnote(record);
             else if (record.kind === "specimen") values[index] = this.specimen(record);
-            else if (record.kind === "metadata") values[index] = this.metadata(record);
+            else if (record.kind === "definitionBody") {
+                this.flags(record, 0);
+                values[index] = { body: this.content(record) };
+            } else if (record.kind === "metadata") values[index] = this.metadata(record);
             else if (record.kind === "metadataValue") values[index] = this.metadataValue(record);
             else values[index] = this.markup(this.value(record));
         }
@@ -314,7 +319,14 @@ export class NodeDecoder {
             }
             // The document's definitions and a citation's suffix are owned
             // through the auxiliary range as well (M4).
-            const auxiliary = record.kind === "document" ? "definitions" : record.kind === "citation" ? "suffix" : null;
+            const auxiliary =
+                record.kind === "document"
+                    ? "definitions"
+                    : record.kind === "citation"
+                      ? "suffix"
+                      : record.kind === "definition"
+                        ? "term"
+                        : null;
             if (auxiliary !== null && record.auxiliaryCount !== 0) {
                 this.range(record.auxiliaryStart, record.auxiliaryCount, this.layout.edgeCount, `${auxiliary} range`);
                 for (let offset = 0; offset < record.auxiliaryCount; ++offset) {
@@ -355,7 +367,8 @@ export class NodeDecoder {
             kind === "footnote" ||
             kind === "specimen" ||
             kind === "metadata" ||
-            kind === "metadataValue"
+            kind === "metadataValue" ||
+            kind === "definitionBody"
         ) {
             throw new Error(`native result places a ${kind} value where a node belongs`);
         }
@@ -448,10 +461,33 @@ export class NodeDecoder {
                 } as MarkupValue;
             case "table":
                 return this.table(record);
+            case "definitionList": {
+                this.flags(record, 0);
+                const definitions = this.content(record).map((child) => {
+                    if (child.kind !== "definition") throw new Error("invalid definition list child");
+                    return child;
+                });
+                if (definitions.length === 0) throw new Error("empty definition list");
+                return { ...base, definitions } as MarkupValue;
+            }
+            case "definition": {
+                this.flags(record, 1);
+                const term = this.edgeRange(record.auxiliaryStart, record.auxiliaryCount, "term").map((value) => {
+                    if (!isMarkup(value)) throw new Error("invalid definition term");
+                    return value;
+                });
+                const content = this.edgeRange(record.childStart, record.childCount, "body").map((value) => {
+                    if (!("body" in value)) throw new Error("invalid definition body");
+                    return value.body;
+                });
+                if (content.length === 0) throw new Error("definition has no bodies");
+                return { ...base, term, content, compact: (record.flags & 1) !== 0 } as MarkupValue;
+            }
             case "directiveBlock":
                 return { ...base, ...this.directiveFields(record) } as MarkupValue;
             case "directive": {
                 const fields = this.directiveFields(record);
+                if (fields.name === null) throw new Error("inline directive requires a name");
                 if (fields.content.length !== 0) throw new Error("inline directive contains block content");
                 return {
                     ...base,
@@ -619,13 +655,13 @@ export class NodeDecoder {
     }
 
     private directiveFields(record: NodeRecord): {
-        readonly name: string;
+        readonly name: string | null;
         readonly label: DirectiveLabel | null;
         readonly content: readonly Markup[];
     } {
         this.flags(record, 0);
         return {
-            name: this.requiredString(record, 0),
+            name: this.string(record, 0),
             label: this.directiveLabel(record),
             content: this.content(record)
         };

@@ -267,7 +267,7 @@
                 {
                     "name": "name",
                     "type": "String",
-                    "optional": false
+                    "optional": true
                 },
                 {
                     "name": "label",
@@ -280,7 +280,7 @@
                     "optional": false
                 }
             ],
-            "invariants": "letter-first name; attributes use the inherited fields; label is a typed Markup field spanning its brackets, never content; absent and empty labels remain distinct; block content"
+            "invariants": "block content; name is null for a nameless container and required for a named leaf/container; nameless containers have no label; all container forms share the closer and nesting rules"
         },
         {
             "name": "DirectiveLabel",
@@ -561,6 +561,38 @@
                 }
             ],
             "invariants": "one or more items in source order; every item has exactly one referent and one cite never mixes referent families; an inherited `[^label]` call is one item with a `footnote` referent whose id is the normalized label without the caret and with empty affixes; its items are scoped values, never children, so it is a leaf"
+        },
+        {
+            "name": "DefinitionList",
+            "fields": [
+                {
+                    "name": "definitions",
+                    "type": "[Definition]",
+                    "optional": false
+                }
+            ],
+            "invariants": "non-empty ordered definitions; each association owns its term and bodies"
+        },
+        {
+            "name": "Definition",
+            "fields": [
+                {
+                    "name": "term",
+                    "type": "[Markup]",
+                    "optional": false
+                },
+                {
+                    "name": "content",
+                    "type": "[[Markup]]",
+                    "optional": false
+                },
+                {
+                    "name": "compact",
+                    "type": "Bool",
+                    "optional": false
+                }
+            ],
+            "invariants": "inline term; non-empty outer content collection, each inner collection is one body of block content; compact is true iff no blank line separates the term and its first marker; visit term then bodies in source order"
         }
     ],
     "values": {

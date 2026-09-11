@@ -46,3 +46,14 @@ against boolean-only mdast and cmark-gfm XML. Those oracles cannot attest to
 `x` versus `X`; exact authored markers remain covered by canonical fixtures
 and binding tests. An unchecked marker followed by literal `[x]` still
 exposes the registered upstream task-state defect.
+
+P8 adds nameless containers to the shared directives corpus. Remark implements
+named directive envelopes only, so eleven exact-input witnesses retain its
+literal fallback for the new openers and their nested or opaque content.
+Pandoc independently checks nameless recognition and definition-list content.
+
+The reduced `directive-inherited-lazy-parent` witness retains the product's
+pre-P8 lazy paragraph continuation through quoted directives. Rebuilding the
+previous commit confirms unchanged behavior; Remark ends at the missing prefix.
+The O5 task-prefix exclusion covers the already registered newline-only separator
+case as well as empty task bodies followed by spaces.
