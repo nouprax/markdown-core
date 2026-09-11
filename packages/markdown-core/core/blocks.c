@@ -1842,33 +1842,18 @@ static bool parse_callout_prefix(markdown_core_parser *parser, markdown_core_chu
     return res;
 }
 
-static bool parse_footnote_definition_block_prefix(markdown_core_parser *parser, markdown_core_chunk *input,
-                                                   markdown_core_node *container) {
-    if (parser->indent >= 4) {
-        S_advance_offset(parser, input, 4, true);
-        return true;
-    } else if (input->len > 0 && S_is_line_end_char((char)input->data[0])) {
-        /* An empty line. The line reader hands `curline` LF-terminated, and a
-         * lookahead line keeps its own terminator, CR included: the test is on
-         * the kind of the first byte, not its spelling. */
-        return true;
-    }
-
-    return false;
-}
-
-static bool parse_item_prefix(markdown_core_parser *parser, markdown_core_chunk *input, int continuation,
-                              bool accepts_blank) {
+static bool parse_indented_container_prefix(markdown_core_parser *parser, markdown_core_chunk *input, int continuation,
+                                            bool accepts_blank) {
     bool res = false;
 
     if (parser->indent >= continuation) {
         S_advance_offset(parser, input, continuation, true);
         res = true;
     } else if (parser->blank && accepts_blank) {
-        // A list item permits blank continuation after its first block (or
-        // a pending block during lookahead). A definition body first decides
-        // whether the blank run leads to a carried line, then uses this same
-        // indentation operation.
+        // Blankness is relative to the cursor after ancestor prefixes. Lists
+        // require a first block; definition-list bodies first check whether
+        // the blank run leads to a carried line. Footnotes and specimens
+        // accept blank continuation directly, including during lookahead.
         S_advance_offset(parser, input, parser->first_nonspace - parser->offset, false);
         res = true;
     }
@@ -1941,7 +1926,7 @@ static bool parse_html_block_prefix(markdown_core_parser *parser, markdown_core_
 
 /* ONE CONTAINER'S CLAIM ON THE LINE at the parser's cursor, for the kinds whose
  * prefix the core knows: the block quote's `>`, the list item's indentation,
- * the footnote definition's four columns, and the list's rule for consecutive
+ * a footnote or specimen's four columns, and the list's rule for consecutive
  * blank lines. `check_open_blocks` asks it walking down the open spine, and
  * the block-start lookahead asks the same question of the same containers on
  * later lines, so a candidate's decision and the parse that follows it cannot
@@ -1969,13 +1954,14 @@ static bool S_container_prefix_matches(markdown_core_parser *parser, markdown_co
         }
         return true;
     case MARKDOWN_CORE_NODE_LIST_ITEM:
-        return parse_item_prefix(parser, input, container->as.list->marker_offset + container->as.list->padding,
-                                 container->first_child != NULL || joining == container);
+        return parse_indented_container_prefix(parser, input,
+                                               container->as.list->marker_offset + container->as.list->padding,
+                                               container->first_child != NULL || joining == container);
     case MARKDOWN_CORE_NODE_DEFINITION_BODY:
-        return parse_item_prefix(parser, input, container->as.definition_body->continuation, true);
+        return parse_indented_container_prefix(parser, input, container->as.definition_body->continuation, true);
     case MARKDOWN_CORE_NODE_FOOTNOTE:
     case MARKDOWN_CORE_NODE_SPECIMEN:
-        return parse_footnote_definition_block_prefix(parser, input, container);
+        return parse_indented_container_prefix(parser, input, 4, true);
     default:
         return true;
     }

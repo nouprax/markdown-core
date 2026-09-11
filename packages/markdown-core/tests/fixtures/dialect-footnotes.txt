@@ -8,6 +8,33 @@ license: '[CC-BY-SA 4.0](http://creativecommons.org/licenses/by-sa/4.0/)'
 
 ## Referenced footnotes
 
+```````````````````````````````` example
+> - [^a]: first
+>
+>       Term
+>
+>       : body
+>
+> outside
+.
+Document scope=1:1..7:9 anchor=null attributes={} children=1
+├── Callout scope=1:1..7:9 anchor=null attributes={} variant=null collapsed=null children=2
+│   ├── List scope=1:3..6:1 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+│   │   └── ListItem scope=1:3..6:1 anchor=null attributes={} marker=null children=0
+│   └── Paragraph scope=7:3..7:9 anchor=null attributes={} children=1
+│       └── Text scope=7:3..7:9 anchor=null attributes={} literal="outside" children=0
+└── Footnote scope=1:5..6:1 id="a" children=2
+    ├── Paragraph scope=1:11..1:15 anchor=null attributes={} children=1
+    │   └── Text scope=1:11..1:15 anchor=null attributes={} literal="first" children=0
+    └── DefinitionList scope=3:9..5:14 anchor=null attributes={} children=1
+        └── Definition scope=3:9..5:14 anchor=null attributes={} compact=false children=1
+            ├── DefinitionTerm children=1
+            │   └── Text scope=3:9..3:12 anchor=null attributes={} literal="Term" children=0
+            └── DefinitionBody children=1
+                └── Paragraph scope=5:11..5:14 anchor=null attributes={} children=1
+                    └── Text scope=5:11..5:14 anchor=null attributes={} literal="body" children=0
+````````````````````````````````
+
 Every example of the [footnotes module](../../../../docs/specs/dialect/footnotes.md)
 is retained byte for byte, followed by the O4 conformance boundaries. Referenced
 and inline forms share the same citation and document footnote model.

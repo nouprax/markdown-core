@@ -2117,6 +2117,69 @@ static void specimen_values(test_batch_runner *runner) {
     INT_EQ(runner, marker_free_count, 1, "document frees its owned specimen label exactly once");
 }
 
+/* Blank continuation belongs to the definition after ancestor prefixes have
+ * been consumed. The same rule must hold during block-start lookahead. */
+static void definition_blank_continuation(test_batch_runner *runner) {
+    static const struct {
+        const char *opening, *continuation, *blank;
+    } containers[] = {
+        {"", "", ""}, {"> ", "> ", ">"}, {"- ", "  ", "  "}, {"> - ", ">   ", ">"}, {"- > ", "  > ", "  >"}};
+    static const char *markers[] = {"(@a) ", "[^a]: "};
+    static const char *endings[] = {"\n", "\r\n", "\r"};
+    static const char *whitespace[] = {"", " ", "   ", "\t"};
+    for (size_t family = 0; family < 2; family++) {
+        for (size_t shape = 0; shape < sizeof(containers) / sizeof(*containers); shape++) {
+            for (size_t ending = 0; ending < 3; ending++) {
+                for (size_t blank = 0; blank < 4; blank++) {
+                    for (int definition_list = 0; definition_list <= 1; definition_list++) {
+                        char source[512];
+                        const char *eol = endings[ending];
+                        const char *prefix = containers[shape].continuation;
+                        const char *blank_prefix = containers[shape].blank;
+                        const char *spaces = whitespace[blank];
+                        int length = snprintf(source, sizeof(source), "%s%sfirst%s%s%s%s%s    %s%s",
+                                              containers[shape].opening, markers[family], eol, blank_prefix, spaces,
+                                              eol, prefix, definition_list ? "Term" : "second", eol);
+                        if (definition_list) {
+                            length += snprintf(source + length, sizeof(source) - (size_t)length, "%s%s%s%s    : body%s",
+                                               blank_prefix, spaces, eol, prefix, eol);
+                        }
+                        snprintf(source + length, sizeof(source) - (size_t)length, "%s%s%s%soutside", blank_prefix,
+                                 spaces, eol, prefix);
+                        markdown_core_node *root = markdown_core_parse_document(source, strlen(source));
+                        OK(runner, root != NULL, "definition continuation parses");
+                        if (!root) {
+                            continue;
+                        }
+                        markdown_core_node *value =
+                            family ? root->as.document->footnotes : root->as.document->specimens;
+                        markdown_core_node *first = markdown_core_node_first_child(value);
+                        markdown_core_node *second = markdown_core_node_next(first);
+                        OK(runner, value && !value->next && first && second && !second->next,
+                           "definition owns exactly two blocks: family=%zu shape=%zu ending=%zu blank=%zu list=%d",
+                           family, shape, ending, blank, definition_list);
+                        STR_EQ(runner, markdown_core_node_get_literal(markdown_core_node_first_child(first)), "first",
+                               "blank line ends the first paragraph");
+                        INT_EQ(runner, markdown_core_node_get_type(second),
+                               definition_list ? MARKDOWN_CORE_NODE_DEFINITION_LIST : MARKDOWN_CORE_NODE_PARAGRAPH,
+                               "continued body and lookahead retain the block kind");
+                        if (second) {
+                            INT_EQ(runner, second->start_line, 3, "continued block retains its source start");
+                            INT_EQ(runner, second->end_line, definition_list ? 5 : 3,
+                                   "unindented text stays outside the definition body");
+                            if (!definition_list) {
+                                STR_EQ(runner, markdown_core_node_get_literal(second->first_child), "second",
+                                       "continued paragraph retains its text");
+                            }
+                        }
+                        markdown_core_node_free(root);
+                    }
+                }
+            }
+        }
+    }
+}
+
 static void set_kind_keeps_extension_data_beside_the_arm(test_batch_runner *runner) {
     /* Converting a formula to a link installs default link data and preserves
      * the extension's opaque data. Destruction releases both exactly once. */
@@ -4444,6 +4507,7 @@ int main(void) {
     task_marker_tab_structure(runner);
     task_marker_ownership(runner);
     specimen_values(runner);
+    definition_blank_continuation(runner);
     set_kind_keeps_extension_data_beside_the_arm(runner);
     citation_and_footnote_values(runner);
     autolink_source_pos(runner);
