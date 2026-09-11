@@ -1366,9 +1366,14 @@ static bufsize_t parse_specimen_marker(markdown_core_parser *parser, markdown_co
 static bool ordered_numeral(markdown_core_parser *parser, markdown_core_chunk *input, bufsize_t begin, bufsize_t end,
                             markdown_core_ordered_list_variant variant, int *value) {
     int number = 0;
-    if (variant.kind == MARKDOWN_CORE_ORDERED_LIST_VARIANT_DEFAULT) {
+    // An automatic marker has value 1 in every variant, including the
+    // variant inherited from a preceding authored marker.
+    if (end == begin + 1 && input->data[begin] == '#') {
         *value = 1;
-        return end == begin + 1 && input->data[begin] == '#';
+        return true;
+    }
+    if (variant.kind == MARKDOWN_CORE_ORDERED_LIST_VARIANT_DEFAULT) {
+        return false;
     }
     if (variant.kind == MARKDOWN_CORE_ORDERED_LIST_VARIANT_ALPHA) {
         unsigned char first = variant.lowercased ? 'a' : 'A';
@@ -1476,11 +1481,9 @@ static bufsize_t parse_list_marker(markdown_core_parser *parser, markdown_core_c
                              : markdown_core_isdigit(c)                 ? MARKDOWN_CORE_ORDERED_LIST_VARIANT_DECIMAL
                              : end == begin + 1 && c != 'i' && c != 'I' ? MARKDOWN_CORE_ORDERED_LIST_VARIANT_ALPHA
                                                                         : MARKDOWN_CORE_ORDERED_LIST_VARIANT_ROMAN;
-        int start;
         if (committed && committed->list_type == MARKDOWN_CORE_ORDERED_LIST &&
-            (c == '#' || ordered_numeral(parser, input, begin, end, committed->variant, &start))) {
+            ordered_numeral(parser, input, begin, end, committed->variant, &data->start)) {
             data->variant = committed->variant;
-            data->start = c == '#' ? 1 : start;
         } else if (!ordered_numeral(parser, input, begin, end, data->variant, &data->start)) {
             return 0;
         }
