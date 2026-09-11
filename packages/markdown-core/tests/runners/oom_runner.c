@@ -211,6 +211,7 @@ static const char OOM_INLINE_OWNERSHIP_CORPUS[] = "> [!tip]+ ==<i title=\"==hidd
                                                   "> - [✓] ==a %%==b%% c== ^[![[asset|100x145]]] #item#\n";
 
 static const char OOM_CITATION_CORPUS[] = "@a [@b [@c [@d [@e [@f [@g [@h [@i [@j [tail]]]]]]]]]]\n\n"
+                                          "@{{{{{{{{{{{{{{{{{{key}}}}}}}}}}}}}}}}}} @{unclosed @{inner}\n\n"
                                           "# [pre *em* @a [@b [tail]]; -@{x{y}} {p. 3}]\n\n"
                                           "@a [@b [x]] [@a [x]] [@a [@b]] [@a[x]; no key]\n"
                                           "[@a[x]](u) [@a[x]]{.c} [@a [x]][r] @a[x] @spec (@spec) [@spec]\n\n"

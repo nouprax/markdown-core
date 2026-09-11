@@ -43,9 +43,15 @@ typedef struct {
 } citation_tokens;
 
 typedef struct {
-    bufsize_t end, previous;
+    bufsize_t start, end, previous;
     bool valid, content;
 } citation_brace;
+
+typedef struct {
+    citation_brace *entries;
+    size_t count, cursor;
+    bool ready;
+} citation_brace_index;
 
 typedef enum { BRACKET_LINK, BRACKET_IMAGE, BRACKET_FOOTNOTE } bracket_kind;
 
@@ -114,7 +120,7 @@ typedef struct subject {
     int delim_closers[MARKDOWN_CORE_DELIM_RULE_COUNT];
     bracket *last_bracket;
     citation_tokens citations;
-    citation_brace *citation_braces;
+    citation_brace_index citation_braces;
     bracket *pending_brackets;
     /* One past the last consumed byte other than SP/TAB. This lets every
      * inline-note closer test its body's non-empty rule in constant time. */
@@ -382,7 +388,7 @@ static void subject_from_buf(markdown_core_parser *parser, markdown_core_mem *me
     memset(e->delim_closers, 0, sizeof(e->delim_closers));
     e->last_bracket = NULL;
     e->citations = (citation_tokens){0};
-    e->citation_braces = NULL;
+    e->citation_braces = (citation_brace_index){0};
     e->pending_brackets = NULL;
     e->nonblank_end = 0;
     e->backticks = NULL;
@@ -944,13 +950,13 @@ static bool source_escaped(subject *subj, bufsize_t at, bufsize_t begin) {
 
 /* Balanced braced keys share one lexical index per input extent. A failed
  * outer candidate leaves every inner key available without rescanning its
- * suffix. Opaque code/tag tokens contribute bytes but no brace events. */
+ * suffix. Only opening brace events allocate records; their previous indices
+ * form the balancing stack. Opaque code/tag tokens contribute bytes but no
+ * brace events. Queries follow the inline token cursor in source order. */
 static void prepare_citation_braces(subject *subj) {
-    subj->citation_braces = subj->mem->calloc((size_t)subj->input.len, sizeof(*subj->citation_braces));
-    if (!subj->citation_braces) {
-        subj->oom = 1;
-        return;
-    }
+    citation_brace_index *index = &subj->citation_braces;
+    index->ready = true;
+    size_t capacity = 0;
     bufsize_t top = -1;
     unsigned html_flags = 0;
     for (bufsize_t at = 0; at < subj->input.len;) {
@@ -987,9 +993,9 @@ static void prepare_citation_braces(subject *subj) {
                 int width = markdown_core_utf8proc_iterate(subj->input.data + at, opaque_end - at, &scalar);
                 subj->owner_parser->citation_work++;
                 if (top >= 0) {
-                    subj->citation_braces[top].content = true;
+                    index->entries[top].content = true;
                     if (markdown_core_utf8proc_is_space(scalar)) {
-                        subj->citation_braces[top].valid = false;
+                        index->entries[top].valid = false;
                     }
                 }
                 at += width > 0 ? width : 1;
@@ -998,25 +1004,40 @@ static void prepare_citation_braces(subject *subj) {
         }
         subj->owner_parser->citation_work++;
         if (c == '{') {
-            subj->citation_braces[at] = (citation_brace){.previous = top, .valid = true};
-            top = at++;
+            if (index->count == capacity) {
+                if (capacity > SIZE_MAX / sizeof(*index->entries) / 2) {
+                    subj->oom = 1;
+                    return;
+                }
+                size_t grown = capacity ? capacity * 2 : 8;
+                void *entries = subj->mem->realloc(index->entries, grown * sizeof(*index->entries));
+                if (!entries) {
+                    subj->oom = 1;
+                    return;
+                }
+                index->entries = entries;
+                subj->owner_parser->citation_brace_bytes += (grown - capacity) * sizeof(*index->entries);
+                capacity = grown;
+            }
+            index->entries[index->count] = (citation_brace){.start = at++, .previous = top, .valid = true};
+            top = (bufsize_t)index->count++;
         } else if (c == '}' && top >= 0) {
-            citation_brace *brace = &subj->citation_braces[top];
+            citation_brace *brace = &index->entries[top];
             bool valid = brace->valid && brace->content;
             brace->end = valid ? at + 1 : 0;
             top = brace->previous;
             if (top >= 0) {
-                subj->citation_braces[top].valid &= valid;
-                subj->citation_braces[top].content = true;
+                index->entries[top].valid &= valid;
+                index->entries[top].content = true;
             }
             at++;
         } else {
             int32_t scalar;
             int width = markdown_core_utf8proc_iterate(subj->input.data + at, subj->input.len - at, &scalar);
             if (top >= 0) {
-                subj->citation_braces[top].content = true;
+                index->entries[top].content = true;
                 if (markdown_core_utf8proc_is_space(scalar)) {
-                    subj->citation_braces[top].valid = false;
+                    index->entries[top].valid = false;
                 }
             }
             at += width > 0 ? width : 1;
@@ -1039,14 +1060,23 @@ static bool scan_citation_key(subject *subj, bufsize_t start, citation_token *to
     }
     pos++;
     if (peek_at(subj, pos) == '{') {
-        if (!subj->citation_braces) {
+        citation_brace_index *index = &subj->citation_braces;
+        if (!index->ready) {
             prepare_citation_braces(subj);
         }
-        if (!subj->citation_braces || !subj->citation_braces[pos].end) {
+        if (subj->oom) {
+            return false;
+        }
+        while (index->cursor < index->count && index->entries[index->cursor].start < pos) {
+            subj->owner_parser->citation_work++;
+            index->cursor++;
+        }
+        if (index->cursor == index->count || index->entries[index->cursor].start != pos ||
+            !index->entries[index->cursor].end) {
             return false;
         }
         token->key_start = pos + 1;
-        token->end = subj->citation_braces[pos].end;
+        token->end = index->entries[index->cursor].end;
         token->key_end = token->end - 1;
         return true;
     }
@@ -3257,8 +3287,8 @@ static void start_inlines(markdown_core_parser *parser, markdown_core_node *pare
 static void clear_inlines(subject *subj) {
     markdown_core_parser *parser = subj->owner_parser;
     free_citation_tokens(subj, &subj->citations);
-    subj->mem->free(subj->citation_braces);
-    subj->citation_braces = NULL;
+    subj->mem->free(subj->citation_braces.entries);
+    subj->citation_braces = (citation_brace_index){0};
     subj->mem->free(subj->backticks);
     subj->backticks = NULL;
     // free bracket and delim stack

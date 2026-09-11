@@ -2866,7 +2866,7 @@ static void universal_values(test_batch_runner *runner) {
  * candidates share one extent, so they cannot rescan each other's suffixes. */
 typedef struct {
     size_t cross_link, opaque, delimiters, comment, lookahead, footnote_body, block_identifier, callout, dimensions;
-    size_t registered_definitions, definition_lists;
+    size_t registered_definitions, definition_lists, citation_brace_bytes;
     bool footnote_collection_allocated, footnotes_owned, heading_collection_disposed;
     size_t attributes, anchors, definitions, definition_resources, whitespace, brackets, citations, list_markers,
         specimens;
@@ -2884,6 +2884,7 @@ static markdown_core_node *record_inline_work(const markdown_core_extension *ext
     work->whitespace = parser->whitespace_work;
     work->brackets = parser->bracket_work;
     work->citations = parser->citation_work;
+    work->citation_brace_bytes = parser->citation_brace_bytes;
     work->specimens = parser->specimen_work;
     work->list_markers = parser->list_marker_work;
     work->comment = parser->comment_scan_work;
@@ -3046,6 +3047,45 @@ static void citation_linear_work(test_batch_runner *runner) {
                "citation ranges share bounded delimiter reduction: case=%zu count=%zu", c, count);
             OK(runner, work.list_markers <= 20 * (size_t)source.size && work.specimens <= 20 * (size_t)source.size,
                "list marker scans are bounded: case=%zu count=%zu", c, count);
+            markdown_core_node_free(root);
+            markdown_core_strbuf_free(&source);
+        }
+    }
+}
+
+static void citation_sparse_brace_storage(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    static const struct {
+        const char *prefix, *suffix;
+        char fill;
+    } cases[] = {{"", " @{key}", 'x'},
+                 {"@{key} ", "", 'x'},
+                 {"@{key} `", "`", '{'},
+                 {"@{broken ", " @{key}", 'x'},
+                 {"@{key} <i title=\"", "\">", '{'}};
+    for (size_t shape = 0; shape < sizeof(cases) / sizeof(*cases); shape++) {
+        for (size_t length = 256; length <= 1048576; length *= 16) {
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+            markdown_core_strbuf_puts(&source, cases[shape].prefix);
+            for (size_t i = 0; i < length; i++) {
+                markdown_core_strbuf_putc(&source, cases[shape].fill);
+            }
+            markdown_core_strbuf_puts(&source, cases[shape].suffix);
+            inline_work work = {0};
+            markdown_core_node *root = markdown_core_parse_document_with_mem((char *)source.ptr, (size_t)source.size,
+                                                                             mem, measure_inline_work, &work);
+            OK(runner, root != NULL, "sparse braced citations parse: shape=%zu length=%zu", shape, length);
+            OK(runner, work.citation_brace_bytes <= 256,
+               "brace index storage is independent of ordinary/opaque bytes: shape=%zu length=%zu bytes=%zu", shape,
+               length, work.citation_brace_bytes);
+            OK(runner, work.citations <= 20 * (size_t)source.size, "sparse index keeps linear scan work");
+            size_t citations = 0;
+            markdown_core_node *paragraph = markdown_core_node_first_child(root);
+            for (markdown_core_node *node = markdown_core_node_first_child(paragraph); node; node = node->next) {
+                citations += node->kind == MARKDOWN_CORE_NODE_CITE;
+            }
+            INT_EQ(runner, citations, 1,
+                   "valid inner key survives sparse text, opaque braces, and an invalid outer key");
             markdown_core_node_free(root);
             markdown_core_strbuf_free(&source);
         }
@@ -4461,6 +4501,7 @@ int main(void) {
     heading_reference_resource_lifetime(runner);
     heading_label_length_boundary(runner);
     ordered_numeral_ceiling(runner);
+    citation_sparse_brace_storage(runner);
     definition_list_linear_work(runner);
     citation_linear_work(runner);
     cross_link_linear_work(runner);
