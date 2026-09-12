@@ -195,6 +195,8 @@ struct markdown_core_parser {
      * geometry is released by the query; the allocation dies with the parser. */
     struct markdown_core_table_source_line *table_lines;
     size_t table_lines_capacity;
+    markdown_core_llist *prefix_extensions;
+    markdown_core_llist *marker_extensions;
     markdown_core_llist *extensions;
     markdown_core_llist *inline_extensions;
     markdown_core_ispunct_func backslash_ispunct;
@@ -202,6 +204,9 @@ struct markdown_core_parser {
      * the special/emphasis-skip characters of the attached inline extensions.
      * Parser-local so concurrent parsers with different extension sets never
      * observe each other's characters. */
+    const markdown_core_extension *delimiter_owners[MARKDOWN_CORE_DELIM_RULE_COUNT];
+    markdown_core_delimiter_rule delimiter_chars[256];
+    bool (*inline_start_predicates[256])(markdown_core_inline_parser *, bufsize_t);
     int8_t special_chars[256];
     int8_t skip_chars[256];
     /* The content-to-source map (see markdown_core_line_mark). It is read while the
@@ -313,11 +318,14 @@ int markdown_core_parser_lookahead_next(markdown_core_block_lookahead *lookahead
                                         int *first_nonspace, int *indent, int *blank_lines);
 void markdown_core_parser_lookahead_end(markdown_core_block_lookahead *lookahead);
 
-/* Register committed syntax. A citation transfers its detached inline body
- * into Document.footnotes; an authored definition remains in the block tree
- * until inline parsing finishes. Allocation failure aborts the whole parse. */
-bool markdown_core_parser_register_definition(markdown_core_parser *parser, struct markdown_core_node *definition,
-                                              struct markdown_core_node *citation);
+/* Register an element's committed definition in its borrowed parse index.
+ * inline_owner, when present, adopts the detached body into its AST value
+ * chain. Otherwise the block tree retains ownership until resolution ends.
+ * Allocation failure leaves ownership unchanged and aborts the transaction. */
+bool markdown_core_parser_register_definition(markdown_core_parser *parser,
+                                              markdown_core_definition_collection *collection,
+                                              markdown_core_node *definition, markdown_core_node *citation,
+                                              markdown_core_node **inline_owner);
 
 /* The engine has one parse operation. `setup`, when present, configures the
  * fresh parser after the complete dialect is attached, before any source is

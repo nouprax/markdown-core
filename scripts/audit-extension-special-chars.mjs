@@ -115,6 +115,10 @@ for (const { file: entry, source, body: descriptor } of descriptors) {
     const terminates = setOf("terminates_text");
     const dispatch = setOf("dispatch");
     const transparent = setOf("flanking_transparent");
+    const delimiterCharacter = /\.delimiter_character\s*=\s*'([^'\\])'/.exec(descriptor)?.[1];
+    if (delimiterCharacter && !terminates.includes(delimiterCharacter.charCodeAt(0))) {
+        failures.push(`${entry}: its default delimiter byte must terminate text and reach dispatch.`);
+    }
 
     // Opaque scanners claim whole tokens at their openers. Every remaining
     // ']' is owned by the shared bracket procedure, with no extension branch.

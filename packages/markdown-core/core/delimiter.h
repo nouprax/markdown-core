@@ -17,6 +17,19 @@ typedef enum {
     DELIMITER_AFFIX_BOUNDARY
 } delimiter_kind;
 
+/* Run spelling, pair ambiguity and body grammar are independent rule
+ * properties. Every parsed body uses the same matcher and constructor;
+ * opaque bodies retain their extension's literal decoder. */
+typedef enum { DELIMITER_INLINE_BODY, DELIMITER_WORD_BODY } delimiter_body;
+typedef struct {
+    bufsize_t minimum_width, maximum_width;
+    bufsize_t run_limit; /* zero means a maximal run */
+    bool rule_of_three;
+    delimiter_body body;
+    markdown_core_node_type single_kind, double_kind;
+    bool exact_run;
+} delimiter_rule_spec;
+
 struct delimiter {
     struct delimiter *previous;
     struct delimiter *next;

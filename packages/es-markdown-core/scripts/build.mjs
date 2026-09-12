@@ -9,8 +9,6 @@ const dist = path.join(packageDirectory, "dist");
 const core = [
     "markdown_core.c",
     "node.c",
-    "attributes.c",
-    "metadata.c",
     "iterator.c",
     "blocks.c",
     "inlines.c",
@@ -24,16 +22,33 @@ const core = [
     "linked_list.c"
 ].map((file) => path.join(root, "packages/markdown-core/core", file));
 const extensions = [
-    "core-extensions.c",
     "ast.c",
-    "table.c",
-    "strikethrough.c",
+    "attributes.c",
     "autolink.c",
-    "formula.c",
+    "block_identifier.c",
+    "callout.c",
+    "citation.c",
     "comment.c",
+    "core-extensions.c",
     "cross_link.c",
+    "definition_list.c",
     "directive.c",
     "ext_scanners.c",
+    "footnote.c",
+    "formula.c",
+    "heading.c",
+    "insertion.c",
+    "link.c",
+    "list.c",
+    "mark.c",
+    "media.c",
+    "properties.c",
+    "span.c",
+    "specimen.c",
+    "strikethrough.c",
+    "subscript.c",
+    "superscript.c",
+    "table.c",
     "tasklist.c"
 ].map((file) => path.join(root, "packages/markdown-core/extensions", file));
 

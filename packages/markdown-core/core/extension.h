@@ -5,6 +5,7 @@
 #include "markdown-core-extension-api.h"
 #include "config.h"
 #include "chunk.h"
+#include "delimiter.h"
 
 /* A speculative opener reads following lines through its caller's source
  * view. Captured and streaming inputs therefore use the same grammar without
@@ -29,7 +30,24 @@ typedef int (*markdown_core_visit_owned_subtrees_func)(const markdown_core_exten
                                                        markdown_core_node *node,
                                                        markdown_core_owned_subtree_visitor visitor, void *context);
 
+/* Block grammar precedence is independent of attach order and syntax origin.
+ * Container prefixes precede leaf blocks; list/definition markers follow
+ * headings, fences, HTML, setext and thematic breaks. Both slots use the same
+ * non-consuming recognition contract and committed-open callback. */
+typedef enum {
+    MARKDOWN_CORE_BLOCK_PREFIX,
+    MARKDOWN_CORE_BLOCK_MARKER,
+    MARKDOWN_CORE_BLOCK_PRECEDENCE_COUNT
+} markdown_core_block_precedence;
+struct markdown_core_block_start_context;
+struct markdown_core_block_start;
+
 struct markdown_core_extension {
+    markdown_core_block_precedence block_precedence;
+    bool (*scan_block_start)(markdown_core_parser *, struct markdown_core_block_start_context *,
+                             struct markdown_core_block_start *);
+    /* Last refusal before an ordinary paragraph, after opaque blocks/tables. */
+    markdown_core_open_block_func try_opening_paragraph;
     markdown_core_match_block_func last_block_matches;
     /* The speculative form of `last_block_matches` a block-start lookahead asks
      * (see the typedef); required of an extension whose blocks contain blocks. */
@@ -39,6 +57,15 @@ struct markdown_core_extension {
      * Shares the producer's grammar; may report allocation failure, but never
      * opens a node or claims source. */
     markdown_core_probe_block_func probe_block;
+    /* Parsed delimiter semantics are declared by their element. Pairing,
+     * run classification and node construction stay in the shared engine. */
+    markdown_core_delimiter_rule delimiter_rule;
+    unsigned char delimiter_character;
+    delimiter_rule_spec delimiter;
+    /* Optional non-consuming token predicate. Text scanning consults the
+     * parser's byte-indexed projection; all owners of a shared byte must
+     * agree, otherwise that byte always reaches ordinary extension dispatch. */
+    bool (*is_inline_start)(markdown_core_inline_parser *, bufsize_t);
     markdown_core_match_inline_func match_inline;
     markdown_core_inline_from_delim_func insert_inline_from_delim;
     /* THREE byte sets, not one list.

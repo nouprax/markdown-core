@@ -30,4 +30,7 @@ int markdown_core_isalpha(char c);
 }
 #endif
 
+/* Source-line boundaries use ASCII CR/LF in every syntax scanner. */
+static inline int markdown_core_is_line_end(unsigned char c) { return c == '\n' || c == '\r'; }
+
 #endif

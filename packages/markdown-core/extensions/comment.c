@@ -1,4 +1,6 @@
 #include "comment.h"
+#include "inline_internal.h"
+#include "block_internal.h"
 #include "extension.h"
 #include "node.h"
 #include "parser.h"
@@ -104,7 +106,7 @@ static int block_matches(const markdown_core_extension *extension, markdown_core
     return 1;
 }
 
-static int accepts_lines(const markdown_core_extension *extension, markdown_core_node *node) {
+static int comment_accepts_lines(const markdown_core_extension *extension, markdown_core_node *node) {
     return node && node->kind == MARKDOWN_CORE_NODE_COMMENT_BLOCK;
 }
 
@@ -168,7 +170,72 @@ const markdown_core_extension MARKDOWN_CORE_EXTENSION_COMMENT = {
     .try_opening_block = open_block,
     .probe_block = probe_comment_block,
     .get_type_string_func = type_string,
-    .accepts_lines_func = accepts_lines,
+    .accepts_lines_func = comment_accepts_lines,
     .terminates_text = "%",
     .dispatch = "%",
 };
+
+void markdown_core_block_convert_comment_block(markdown_core_parser *parser, markdown_core_node *b) {
+    markdown_core_chunk *literal = &b->as.html_block->literal;
+    unsigned char *data = literal->data;
+    bufsize_t len = literal->len;
+    bufsize_t open = 0;
+    bufsize_t close;
+    bufsize_t body_start;
+    bufsize_t body_len;
+    bufsize_t rest;
+
+    while (open < len && (data[open] == ' ' || data[open] == '\t')) {
+        open++;
+    }
+    if (len - open < 4 || memcmp(data + open, "<!--", 4) != 0) {
+        return;
+    }
+    for (close = open + 2; close + 3 <= len; close++) {
+        if (data[close] == '-' && data[close + 1] == '-' && data[close + 2] == '>') {
+            break;
+        }
+    }
+    if (close + 3 > len) {
+        return;
+    }
+    rest = close + 3;
+    while (rest < len && (data[rest] == ' ' || data[rest] == '\t')) {
+        rest++;
+    }
+    if (rest < len && data[rest] == '\r') {
+        rest++;
+    }
+    if (rest < len && data[rest] == '\n') {
+        rest++;
+    }
+    if (rest != len) {
+        return;
+    }
+
+    body_start = open + 4;
+    body_len = close > body_start ? close - body_start : 0;
+    /* Keep ownership of the HTML literal across the kind change. Restore it
+     * on failure; on success the comment record takes it before trimming. */
+    assert(literal->alloc);
+    markdown_core_chunk owned_literal = *literal;
+    *literal = (markdown_core_chunk)MARKDOWN_CORE_CHUNK_EMPTY;
+    markdown_core_node_set_kind_result result = markdown_core_node_set_kind(b, MARKDOWN_CORE_NODE_COMMENT_BLOCK);
+    if (result != MARKDOWN_CORE_NODE_SET_KIND_OK) {
+        *literal = owned_literal;
+        if (result == MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED) {
+            parser->oom = true;
+        }
+        return;
+    }
+    *b->as.literal = owned_literal;
+    literal = b->as.literal;
+    memmove(data, data + body_start, body_len);
+    data[body_len] = '\0';
+    literal->len = body_len;
+}
+
+markdown_core_node *markdown_core_comment_make_inline(markdown_core_inline_parser *subj, int from, int to,
+                                                      markdown_core_chunk literal) {
+    return markdown_core_inline_make_literal(subj, MARKDOWN_CORE_NODE_COMMENT, from, to, literal);
+}

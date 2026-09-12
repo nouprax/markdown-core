@@ -1188,3 +1188,26 @@ const markdown_core_chunk *markdown_core_node_anchor_chunk(const markdown_core_n
     }
     return &node->attributes.anchor;
 }
+
+int markdown_core_visit_inline_subtrees(markdown_core_node *node, markdown_core_owned_subtree_visitor visitor,
+                                        void *context) {
+    if (node->kind == MARKDOWN_CORE_NODE_DEFINITION && node->as.definition->term &&
+        !visitor(&node->as.definition->term, context)) {
+        return 0;
+    }
+    if (node->kind == MARKDOWN_CORE_NODE_CALLOUT && node->as.callout->title &&
+        !visitor(&node->as.callout->title, context)) {
+        return 0;
+    }
+    if (node->kind == MARKDOWN_CORE_NODE_CITE) {
+        for (markdown_core_node *item = node->as.cite->citations; item; item = item->next) {
+            if ((item->as.citation->prefix && !visitor(&item->as.citation->prefix, context)) ||
+                (item->as.citation->suffix && !visitor(&item->as.citation->suffix, context))) {
+                return 0;
+            }
+        }
+    }
+    const markdown_core_extension *extension = node->extension;
+    return !extension || !extension->visit_owned_subtrees_func ||
+           extension->visit_owned_subtrees_func(extension, node, visitor, context);
+}

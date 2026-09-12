@@ -1,4 +1,5 @@
 #include "attributes.h"
+#include "../core/attributes.h"
 #include "houdini.h"
 #include "markdown_core_ctype.h"
 #include "utf8.h"
@@ -359,4 +360,51 @@ oom:
     markdown_core_strbuf_free(&decoded);
     markdown_core_attributes_free(p->mem, &value);
     return 0;
+}
+
+#include "inline_internal.h"
+#include "block_internal.h"
+int markdown_core_inline_parser_attributes(markdown_core_inline_parser *parser, bufsize_t start,
+                                           markdown_core_attributes *value, bufsize_t *end) {
+    if (start == parser->heading_attributes_start) {
+        return 0;
+    }
+    if (!parser->attributes.mem) {
+        parser->attributes.mem = parser->mem;
+        parser->attributes.data = parser->input.data;
+        parser->attributes.length = parser->input.len;
+    }
+    int matched = markdown_core_attributes_parse(&parser->attributes, start, value, end);
+    if (parser->attributes.oom) {
+        parser->oom = 1;
+    }
+    return matched;
+}
+
+void markdown_core_inline_attach_inline_attributes(subject *subj, markdown_core_node *node, bufsize_t from) {
+    bufsize_t end;
+    if (markdown_core_inline_parser_attributes(subj, subj->pos, &node->attributes, &end)) {
+        subj->pos = end;
+        markdown_core_inline_parser_place(subj, node, from, end - 1);
+    }
+}
+
+bufsize_t markdown_core_attributes_attach_tail(markdown_core_parser *parser, markdown_core_node *node,
+                                               const unsigned char *source, bufsize_t length) {
+    bufsize_t info_end = length, attribute_end;
+    while (info_end > 0 && markdown_core_block_is_space_or_tab(source[info_end - 1])) {
+        info_end--;
+    }
+    markdown_core_attribute_parser attributes = {.mem = parser->mem, .data = source, .length = length};
+    bufsize_t attribute_start = markdown_core_attributes_tail(&attributes, 0, info_end);
+    if (attribute_start >= 0 &&
+        markdown_core_attributes_parse(&attributes, attribute_start, &node->attributes, &attribute_end)) {
+        info_end = attribute_start;
+    }
+    if (attributes.oom) {
+        parser->oom = true;
+    }
+    parser->attribute_work += attributes.work;
+    markdown_core_attribute_parser_free(&attributes);
+    return info_end;
 }

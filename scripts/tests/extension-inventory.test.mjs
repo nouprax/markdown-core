@@ -59,3 +59,40 @@ test("identity mismatches fail even when descriptor counts agree", () => {
     assert.throws(() => parseExtensionInventory(sources(["FIRST"], ["FIRST", "FIRST"])), /duplicate CORE_EXTENSIONS/);
     assert.throws(() => parseExtensionInventory(sources(["FIRST", "FIRST"], ["FIRST"])), /duplicate descriptor/);
 });
+
+test("delimiter projections cannot silently overwrite another element", () => {
+    const input = sources(["FIRST", "SECOND"]);
+    const rule = (name, character) =>
+        `.delimiter_rule = MARKDOWN_CORE_DELIM_RULE_${name},\n` +
+        `.delimiter_character = '${character}',\n` +
+        ".delimiter = {.minimum_width = 2, .maximum_width = 2},\n";
+    const set = (index, fields) => {
+        input[index].source = definition(index === 1 ? "FIRST" : "SECOND").replace(".dispatch", `${fields}.dispatch`);
+    };
+    set(1, rule("MARK", "="));
+    set(2, rule("INSERTION", "+"));
+    assert.doesNotThrow(() => parseExtensionInventory(input));
+    set(2, rule("MARK", "+"));
+    assert.throws(() => parseExtensionInventory(input), /duplicate delimiter rule/);
+    set(2, rule("INSERTION", "="));
+    assert.throws(() => parseExtensionInventory(input), /duplicate default delimiter character/);
+    set(2, rule("EMPHASIS", "*"));
+    assert.throws(() => parseExtensionInventory(input), /reserved by the engine/);
+    set(2, rule("INSERTION", "+").replace("minimum_width = 2", "minimum_width = 3"));
+    assert.throws(() => parseExtensionInventory(input), /invalid parsed delimiter widths/);
+});
+
+test("block scanners declare their grammar precedence", () => {
+    const input = sources(["FIRST"]);
+    const set = (fields) => {
+        input[1].source = definition("FIRST").replace(".dispatch", `${fields}.dispatch`);
+    };
+    set(".scan_block_start = scan,\n");
+    assert.throws(() => parseExtensionInventory(input), /explicit grammar precedence/);
+    set(".block_precedence = MARKDOWN_CORE_BLOCK_PREFIX,\n");
+    assert.throws(() => parseExtensionInventory(input), /explicit grammar precedence/);
+    set(".scan_block_start = scan,\n.block_precedence = MARKDOWN_CORE_BLOCK_PREFIX,\n");
+    assert.doesNotThrow(() => parseExtensionInventory(input));
+    set(".scan_block_start = scan,\n.block_precedence = MARKDOWN_CORE_BLOCK_MARKER,\n");
+    assert.doesNotThrow(() => parseExtensionInventory(input));
+});

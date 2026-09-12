@@ -37,6 +37,4 @@ struct markdown_core_metadata {
 /* The document owns the committed result; decoder temporaries use the same allocator. */
 void markdown_core_metadata_free(markdown_core_mem *mem, markdown_core_metadata *metadata);
 
-size_t markdown_core_metadata_parse(markdown_core_parser *parser, const unsigned char *source, size_t length);
-
 #endif

@@ -3,18 +3,35 @@ set(STATICLIBRARY "libmarkdown-core-extensions_static")
 set(PUBLIC_STATIC_LIBRARY "libmarkdown-core-public-static")
 set(LIBRARY_SOURCES
     ast.c
-    core-extensions.c
-    table.c
-    strikethrough.c
+    attributes.c
     autolink.c
-    formula.c
+    block_identifier.c
+    callout.c
+    citation.c
     comment.c
+    core-extensions.c
     cross_link.c
+    definition_list.c
     directive.c
     ext_scanners.c
+    footnote.c
+    formula.c
+    heading.c
+    insertion.c
+    link.c
+    list.c
+    mark.c
+    media.c
+    properties.c
+    span.c
+    specimen.c
+    strikethrough.c
+    subscript.c
+    superscript.c
+    table.c
+    tasklist.c
     ext_scanners.re
-    ext_scanners.h
-    tasklist.c)
+    ext_scanners.h)
 
 include_directories(${MARKDOWN_CORE_CORE_SOURCE_DIR} ${MARKDOWN_CORE_CORE_BINARY_DIR}
                     ${CMAKE_CURRENT_SOURCE_DIR}/../include)

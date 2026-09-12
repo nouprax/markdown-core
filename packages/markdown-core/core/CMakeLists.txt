@@ -21,6 +21,8 @@ set(HEADERS
     utf8.h
     scanners.h
     inlines.h
+    inline_internal.h
+    block_internal.h
     houdini.h
     markdown_core_ctype.h
     extension.h
@@ -28,8 +30,6 @@ set(HEADERS
 set(LIBRARY_SOURCES
     markdown_core.c
     node.c
-    attributes.c
-    metadata.c
     iterator.c
     blocks.c
     inlines.c

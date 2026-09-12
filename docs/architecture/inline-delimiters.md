@@ -31,13 +31,17 @@ and inline footnotes. See [heading resolution](heading-resolution.md).
 
 ## Rule grammar and pairing
 
-The rule table declares minimum/maximum consumed width, lexical run limit,
-rule-of-three ambiguity and body grammar. Inline bodies use inherited flanking;
+Each element's extension descriptor declares minimum/maximum consumed width,
+lexical run limit, rule-of-three ambiguity and body grammar. The engine retains
+the two inherited emphasis rules and projects attached declarations by rule.
+See [syntax extension ownership](syntax-extensions.md) for the element inventory
+and parser boundary. Inline bodies use inherited flanking;
 word bodies use non-empty content without ordinary raw whitespace. The table
 selects the same shared constructor for every parsed body. The maximal tilde
 lexer retains its distinct spelling rule: one tilde is Subscript, exactly two
 are Strikethrough, and longer runs are text. The inherited strikethrough
-flanking classifier and `~` transparency remain unchanged.
+flanking semantics and `~` transparency remain unchanged; Strikethrough now
+uses the same classifier and constructor as the other parsed delimiters.
 
 The matcher walks forward and searches backward using the existing
 `openers_bottom[length % 3][rule]` memo. A boundary advances those same memo

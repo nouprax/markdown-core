@@ -47,6 +47,44 @@ export function parseExtensionInventory(sources) {
     for (const symbol of descriptors.keys()) {
         if (!attached.has(symbol)) throw new Error(`${symbol}: descriptor has no CORE_EXTENSIONS[] entry`);
     }
+    // These projections are indexed by semantic rule and default source byte
+    // in the parser. A collision would otherwise silently change ownership
+    // with attach order. Shared dispatch bytes remain valid: a scanner can
+    // select a non-default rule, as the two tilde elements do.
+    const rules = new Map();
+    const characters = new Map();
+    for (const { symbol, body } of ordered) {
+        const rule = /\.delimiter_rule\s*=\s*(MARKDOWN_CORE_DELIM_RULE_\w+)/.exec(body)?.[1];
+        const character = /\.delimiter_character\s*=\s*'([^'\\])'/.exec(body)?.[1];
+        if (/\.delimiter_rule\s*=/.test(body) && !rule) {
+            throw new Error(`${symbol}: unreadable delimiter rule`);
+        }
+        if (/\.delimiter_character\s*=/.test(body) && !character) {
+            throw new Error(`${symbol}: default delimiter character must be one printable literal byte`);
+        }
+        if (character && !rule) throw new Error(`${symbol}: delimiter character has no rule`);
+        if (rule) {
+            if (/_(NONE|COUNT|EMPHASIS|UNDERSCORE)$/.test(rule)) {
+                throw new Error(`${symbol}: ${rule} is reserved by the engine`);
+            }
+            if (rules.has(rule)) throw new Error(`${symbol}: duplicate delimiter rule ${rule}`);
+            rules.set(rule, symbol);
+            const minimum = Number(/\.minimum_width\s*=\s*(\d+)/.exec(body)?.[1]);
+            const maximum = Number(/\.maximum_width\s*=\s*(\d+)/.exec(body)?.[1]);
+            if (!(minimum > 0 && maximum >= minimum)) {
+                throw new Error(`${symbol}: invalid parsed delimiter widths`);
+            }
+        }
+        if (character) {
+            if (characters.has(character)) throw new Error(`${symbol}: duplicate default delimiter character`);
+            characters.set(character, symbol);
+        }
+        const scanner = /\.scan_block_start\s*=/.test(body);
+        const precedence = /\.block_precedence\s*=\s*MARKDOWN_CORE_BLOCK_(PREFIX|MARKER)\b/.test(body);
+        if (scanner !== precedence || (/\.block_precedence\s*=/.test(body) && !precedence)) {
+            throw new Error(`${symbol}: block scanner requires an explicit grammar precedence`);
+        }
+    }
     return { descriptors: [...descriptors.values()], ordered };
 }
 

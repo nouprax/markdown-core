@@ -1,3 +1,4 @@
+#include "properties.h"
 #include "metadata.h"
 #include "parser.h"
 #include "node.h"
@@ -723,7 +724,7 @@ static void payload(properties *p, size_t start, size_t end) {
         cursor = boundary;
     }
 }
-size_t markdown_core_metadata_parse(markdown_core_parser *parser, const unsigned char *source, size_t length) {
+size_t markdown_core_properties_parse(markdown_core_parser *parser, const unsigned char *source, size_t length) {
     size_t bom = length >= 3 && memcmp(source, "\xef\xbb\xbf", 3) == 0 ? 3 : 0;
     size_t opening = line_end(source, bom, length);
     if (opening != bom + 3 || opening == length || memcmp(source + bom, "---", 3)) {
