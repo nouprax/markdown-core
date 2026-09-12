@@ -616,17 +616,86 @@ Document scope=1:1..8:16 anchor=null attributes={} children=1
 ## Grid tables
 
 A grid table's lines begin and end with `|` or `+` at the table margin.
-Its column boundaries are the union of `+` positions connected to the outer
-border by horizontal `-` or `=` segments (with optional edge colons).
-Other `+` and `|` characters remain cell content, including nested grids.
+Its column boundaries are the union, across the table, of `+` positions
+connected to the outer border by horizontal `-` or `=` segments (with optional
+edge colons). A column position alone does not make every `+` at that position
+structural: markers inside a completed cell remain content, including nested
+grids.
 
-Source boundary lines define elementary row/column regions. A missing vertical
-wall on any physical content line joins neighboring regions; a missing
+Candidate boundary lines define elementary row/column regions. A missing vertical
+wall on any physical line, including its boundary endpoints, joins neighboring regions; a missing
 horizontal segment joins regions above and below it. Every connected region
 must form one rectangle within one row group. Its width and height are the
 cell's `colspan` and `rowspan`; the cell is stored once in its starting row.
 This checks the complete cell boundary, including a wall present on only some
-of its content lines. A nonrectangular region rejects the candidate.
+of its content lines. A nonrectangular region rejects the candidate. Logical
+rows are then defined by the completed cells' top and bottom edges and by `+`
+markers along their vertical edges. Such a marker does not need a horizontal
+segment on its own line. A `+` inside a cell contributes no row or span.
+
+For example, the middle `+` below lies on a complete vertical edge. Like
+Pandoc 3.11, the parser keeps two logical rows and two `rowspan=2` cells;
+the second row has no starting cells. Requiring a horizontal segment on
+that line would change the syntax incorrectly.
+
+```````````````````````````````` example
++---+---+
+| a + b |
++---+---+
+.
+Document scope=1:1..3:9 anchor=null attributes={} children=1
+└── Table scope=1:1..3:9 anchor=null attributes={} columns=[none:0.5,none:0.5] children=2
+    ├── TableHead children=0
+    ├── TableBody children=2
+    │   ├── TableRow scope=2:1..2:9 anchor=null attributes={} children=2
+    │   │   ├── TableCell scope=2:2..2:4 anchor=null attributes={} rowspan=2 colspan=1 children=1
+    │   │   │   └── Paragraph scope=2:3..2:3 anchor=null attributes={} children=1
+    │   │   │       └── Text scope=2:3..2:3 anchor=null attributes={} literal="a" children=0
+    │   │   └── TableCell scope=2:6..2:8 anchor=null attributes={} rowspan=2 colspan=1 children=1
+    │   │       └── Paragraph scope=2:7..2:7 anchor=null attributes={} children=1
+    │   │           └── Text scope=2:7..2:7 anchor=null attributes={} literal="b" children=0
+    │   └── TableRow scope=3:1..3:9 anchor=null attributes={} children=0
+    └── TableFoot children=0
+````````````````````````````````
+
+If the top border does not establish that vertical edge, or a content line
+interrupts it, the middle `+` belongs to the merged cell instead. These
+examples each contain one row and one `colspan=2` cell:
+
+```````````````````````````````` example
++-------+
+| a + b |
++---+---+
+.
+Document scope=1:1..3:9 anchor=null attributes={} children=1
+└── Table scope=1:1..3:9 anchor=null attributes={} columns=[none:0.5,none:0.5] children=1
+    ├── TableHead children=0
+    ├── TableBody children=1
+    │   └── TableRow scope=2:1..2:9 anchor=null attributes={} children=1
+    │       └── TableCell scope=2:2..2:8 anchor=null attributes={} rowspan=1 colspan=2 children=1
+    │           └── Paragraph scope=2:3..2:7 anchor=null attributes={} children=1
+    │               └── Text scope=2:3..2:7 anchor=null attributes={} literal="a + b" children=0
+    └── TableFoot children=0
+````````````````````````````````
+
+```````````````````````````````` example
++---+---+
+| a + b |
+| cd    |
++---+---+
+.
+Document scope=1:1..4:9 anchor=null attributes={} children=1
+└── Table scope=1:1..4:9 anchor=null attributes={} columns=[none:0.5,none:0.5] children=1
+    ├── TableHead children=0
+    ├── TableBody children=1
+    │   └── TableRow scope=2:1..3:9 anchor=null attributes={} children=1
+    │       └── TableCell scope=2:2..3:8 anchor=null attributes={} rowspan=1 colspan=2 children=1
+    │           └── Paragraph scope=2:3..3:4 anchor=null attributes={} children=3
+    │               ├── Text scope=2:3..2:7 anchor=null attributes={} literal="a + b" children=0
+    │               ├── SoftBreak scope=2:10..2:10 anchor=null attributes={} children=0
+    │               └── Text scope=3:3..3:4 anchor=null attributes={} literal="cd" children=0
+    └── TableFoot children=0
+````````````````````````````````
 
 A line whose segments are all `=` is a head separator when it is the first
 such line and there is no foot yet, and the foot is the final row group

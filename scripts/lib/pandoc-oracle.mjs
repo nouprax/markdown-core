@@ -496,7 +496,81 @@ function assertTableCanaries(run, product) {
     const cell = (blocks, rowspan = 1, colspan = 1) => [attr, { t: "AlignDefault" }, rowspan, colspan, blocks];
     const row = (...cells) => [attr, cells];
     const paras = (...values) => values.map((value) => ({ ...plain(value), t: "Para" }));
+    const sum = [{ t: "Str", c: "a" }, { t: "Space" }, { t: "Str", c: "+" }, { t: "Space" }, { t: "Str", c: "b" }];
+    const merged = row(cell([{ t: "Plain", c: [...sum, { t: "SoftBreak" }, { t: "Str", c: "cd" }] }], 1, 2));
+    const separated = row(cell([plain("e")]), cell([plain("f")]));
     const grids = [
+        // A '+' on a complete vertical edge is a row marker even without a
+        // horizontal segment. A '+' inside the resulting cell is content.
+        {
+            input: "+---+---+\n| a + b |\n+---+---+\n",
+            rows: [row(cell([plain("a")], 2), cell([plain("b")], 2)), row()]
+        },
+        {
+            input: "+---+---+\n| a+b   |\n+---+---+\n",
+            rows: [row(cell([plain("a+b")], 1, 2))]
+        },
+        ...[false, true].map((reversed) => ({
+            input: [reversed ? "+---+---+" : "+-------+", "| a + b |", reversed ? "+-------+" : "+---+---+", ""].join(
+                "\n"
+            ),
+            rows: [row(cell([{ t: "Plain", c: sum }], 1, 2))]
+        })),
+        ...[false, true].map((reversed) => ({
+            input: [
+                "+---+---+",
+                ...(reversed ? ["| cd    |", "| a + b |"] : ["| a + b |", "| cd    |"]),
+                "+---+---+",
+                ""
+            ].join("\n"),
+            rows: [
+                row(
+                    cell(
+                        [
+                            {
+                                t: "Plain",
+                                c: reversed
+                                    ? [{ t: "Str", c: "cd" }, { t: "SoftBreak" }, ...sum]
+                                    : [...sum, { t: "SoftBreak" }, { t: "Str", c: "cd" }]
+                            }
+                        ],
+                        1,
+                        2
+                    )
+                )
+            ]
+        })),
+        {
+            input: "+---+---+\n| a + b |\n| c | d |\n+---+---+\n",
+            rows: [
+                row(
+                    cell([{ t: "Plain", c: [{ t: "Str", c: "a" }, { t: "SoftBreak" }, { t: "Str", c: "c" }] }], 2),
+                    cell([{ t: "Plain", c: [{ t: "Str", c: "b" }, { t: "SoftBreak" }, { t: "Str", c: "d" }] }], 2)
+                ),
+                row()
+            ]
+        },
+        {
+            input: "+---+---+\n| a + b |\n| cd    |\n+---+---+\n| e | f |\n+---+---+\n",
+            rows: [merged, separated]
+        },
+        {
+            input: "+---+---+\n| a + b |\n| cd    |\n+===+===+\n| e | f |\n+---+---+\n",
+            head: [merged],
+            rows: [separated]
+        },
+        {
+            input: "+---+---+\n| e | f |\n+===+===+\n| a + b |\n| cd    |\n+===+===+\n",
+            head: [separated],
+            rows: [],
+            foot: [merged]
+        },
+        {
+            input: "+---+---+\n| h | j |\n+===+===+\n| a + b |\n| cd    |\n+===+===+\n| e | f |\n+===+===+\n",
+            head: [row(cell([plain("h")]), cell([plain("j")]))],
+            rows: [merged],
+            foot: [separated]
+        },
         {
             input: "+---+---+\n| a     |\n+   +---+\n| b | c |\n+   +   +\n| d     |\n+---+---+\n",
             rows: [
@@ -597,17 +671,17 @@ function assertTableCanaries(run, product) {
             rows: [row(cell([plain("a")], 1, 2)), row(cell([plain("b")]), cell([plain("c")]))]
         }
     ];
-    for (const { input, rows } of grids) {
+    for (const { input, rows, head = [], foot = [] } of grids) {
         const { blocks } = run(input, "markdown_strict+grid_tables");
         assert.equal(blocks.length, 1);
         assert.equal(blocks[0].t, "Table");
-        assert.deepEqual(blocks[0].c[3], [attr, []], "unexpected grid head");
+        assert.deepEqual(blocks[0].c[3], [attr, head], "unexpected grid head");
         assert.deepEqual(
             blocks[0].c[4],
             [[attr, 0, [], rows]],
             `Pandoc grid ownership changed: ${JSON.stringify(input)}`
         );
-        assert.deepEqual(blocks[0].c[5], [attr, []], "unexpected grid foot");
+        assert.deepEqual(blocks[0].c[5], [attr, foot], "unexpected grid foot");
         if (product) {
             const actual = product(input);
             assert.equal(actual.children.length, 1);

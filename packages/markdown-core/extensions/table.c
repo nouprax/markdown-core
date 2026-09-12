@@ -1357,12 +1357,76 @@ static uint64_t table_region_source_key(const void *entry) {
     return ((uint64_t)region->top << 32) | region->left;
 }
 
+/* Candidate subdivisions are not yet logical rows: a '+' inside a completed
+ * cell is content. Derive row coordinates from the cell perimeters, retaining
+ * intermediate '+' markers on vertical edges even when no cell starts there.
+ * Disjoint regions bound the total perimeter work by the source grid area. */
+static bool table_grid_rows(table_source *source, table_candidate *candidate, const int *columns, size_t *boundaries,
+                            size_t row_count, table_grid_region *regions, size_t count) {
+    size_t *indices = source->parser->mem->calloc(row_count + 1, sizeof(*indices));
+    if (!indices) {
+        source->parser->oom = true;
+        return false;
+    }
+    for (size_t i = 0; i < count; i++) {
+        table_grid_region *region = &regions[i];
+        indices[region->top] = 1;
+        indices[region->bottom + 1] = 1;
+        for (size_t b = region->top + 1; b <= region->bottom; b++) {
+            table_source_line *line = &source->lines[boundaries[b]];
+            if (table_character(line, columns[region->left]) == '+' ||
+                table_character(line, columns[region->right + 1]) == '+') {
+                indices[b] = 1;
+            }
+        }
+    }
+    size_t boundary_count = 0;
+    for (size_t b = 0; b <= row_count; b++) {
+        bool keep = indices[b] != 0;
+        indices[b] = boundary_count;
+        if (keep) {
+            boundaries[boundary_count++] = boundaries[b];
+        }
+    }
+    candidate->head_count = indices[candidate->head_count];
+    candidate->foot_count = boundary_count - 1 - indices[row_count - candidate->foot_count];
+    for (size_t i = 0; i < count; i++) {
+        regions[i].top = indices[regions[i].top];
+        regions[i].bottom = indices[regions[i].bottom + 1] - 1;
+    }
+    source->parser->mem->free(indices);
+    size_t cell_index = 0, width = candidate->column_count;
+    for (size_t r = 0; r + 1 < boundary_count; r++) {
+        size_t first = boundaries[r] + 1, next_line = boundaries[r + 1];
+        size_t last = table_horizontal(&source->lines[next_line], columns[0], columns[width]) && next_line > first
+                          ? next_line - 1
+                          : next_line;
+        if (!table_add_row(source, candidate, first, last)) {
+            return false;
+        }
+        while (cell_index < count && regions[cell_index].top == r) {
+            table_grid_region *region = &regions[cell_index++];
+            size_t end = boundaries[region->bottom + 1] - 1;
+            table_source_line *begin = &source->lines[first], *finish = &source->lines[end < first ? first : end];
+            int left = columns[region->left] + 1, right = columns[region->right + 1];
+            if (!table_add_cell(source, candidate, first, end, left, right, table_byte(begin, left) + 1,
+                                table_byte(finish, right))) {
+                return false;
+            }
+            table_source_cell *cell = &candidate->cells[candidate->cell_count - 1];
+            cell->rowspan = (int64_t)(region->bottom - region->top + 1);
+            cell->colspan = (int64_t)(region->right - region->left + 1);
+        }
+    }
+    return true;
+}
+
 /* A connected region can acquire missing parts through a later row, so test
  * its rectangle only when it leaves the frontier. Compact surviving roots at
  * each row: union state is bounded by two row widths, even when one cell covers
  * the whole source. Closed regions are exactly the candidate's output cells. */
-static bool table_grid_cells(table_source *source, table_candidate *candidate, const int *columns,
-                             const size_t *boundaries, size_t row_count) {
+static bool table_grid_cells(table_source *source, table_candidate *candidate, const int *columns, size_t *boundaries,
+                             size_t row_count) {
     size_t width = candidate->column_count;
     if (row_count > SIZE_MAX / width || row_count * width > INT_MAX || width > INT_MAX / 2) {
         source->parser->oom = true;
@@ -1395,7 +1459,7 @@ static bool table_grid_cells(table_source *source, table_candidate *candidate, c
         }
         for (size_t c = 1; c < width; c++) {
             bool wall = true;
-            for (size_t line = boundaries[r] + 1; line < boundaries[r + 1]; line++) {
+            for (size_t line = boundaries[r]; line <= boundaries[r + 1]; line++) {
                 int ch = table_character(&source->lines[line], columns[c]);
                 if (ch != '|' && ch != '+') {
                     wall = false;
@@ -1450,30 +1514,7 @@ static bool table_grid_cells(table_source *source, table_candidate *candidate, c
         goto done;
     }
     source->parser->table_scan_work += 16 * closed_count;
-    size_t cell_index = 0;
-    for (size_t r = 0; r < row_count; r++) {
-        size_t first = boundaries[r] + 1, next_line = boundaries[r + 1];
-        size_t last = table_horizontal(&source->lines[next_line], columns[0], columns[width]) && next_line > first
-                          ? next_line - 1
-                          : next_line;
-        if (!table_add_row(source, candidate, first, last)) {
-            goto done;
-        }
-        while (cell_index < closed_count && closed[cell_index].top == r) {
-            table_grid_region *region = &closed[cell_index++];
-            size_t end = boundaries[region->bottom + 1] - 1;
-            table_source_line *begin = &source->lines[first], *finish = &source->lines[end < first ? first : end];
-            int left = columns[region->left] + 1, right = columns[region->right + 1];
-            if (!table_add_cell(source, candidate, first, end, left, right, table_byte(begin, left) + 1,
-                                table_byte(finish, right))) {
-                goto done;
-            }
-            table_source_cell *cell = &candidate->cells[candidate->cell_count - 1];
-            cell->rowspan = (int64_t)(region->bottom - region->top + 1);
-            cell->colspan = (int64_t)(region->right - region->left + 1);
-        }
-    }
-    valid = true;
+    valid = table_grid_rows(source, candidate, columns, boundaries, row_count, closed, closed_count);
 done:
     source->parser->mem->free(parents);
     source->parser->mem->free(sizes);

@@ -243,6 +243,39 @@
             ]
         },
         {
+            "source": "packages/markdown-core/tests/fixtures/dialect-tables.txt:1890",
+            "input": "+---+---+\n| a + b |\n| c | d |\n+---+---+\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.1.0.0",
+                    "violation": "containment",
+                    "kind": "TableCell",
+                    "scope": "2:2..3:4",
+                    "parentKind": "TableRow",
+                    "parentScope": "2:1..2:9",
+                    "closedBy": "P11 grid-plus control: complete vertical edges retain sparse rows and rowspan cells. Authored cell rectangles extend below their starting row and overlap as linear intervals; this is the existing grid scope model, independently confirmed by the native Pandoc ownership canary."
+                },
+                {
+                    "nodePath": "0.0.1.0.1",
+                    "violation": "containment",
+                    "kind": "TableCell",
+                    "scope": "2:6..3:8",
+                    "parentKind": "TableRow",
+                    "parentScope": "2:1..2:9",
+                    "closedBy": "P11 grid-plus control: complete vertical edges retain sparse rows and rowspan cells. Authored cell rectangles extend below their starting row and overlap as linear intervals; this is the existing grid scope model, independently confirmed by the native Pandoc ownership canary."
+                },
+                {
+                    "nodePath": "0.0.1.0.1",
+                    "violation": "sibling-overlap",
+                    "kind": "TableCell",
+                    "scope": "2:6..3:8",
+                    "previousKind": "TableCell",
+                    "previousScope": "2:2..3:4",
+                    "closedBy": "P11 grid-plus control: complete vertical edges retain sparse rows and rowspan cells. Authored cell rectangles extend below their starting row and overlap as linear intervals; this is the existing grid scope model, independently confirmed by the native Pandoc ownership canary."
+                }
+            ]
+        },
+        {
             "source": "packages/markdown-core/tests/fixtures/extensions.txt:262",
             "input": "| a | b | c |\n| --- | --- | ---\n| x\n| a | b\n| 1 | 2 | 3 | 4 | 5 |\n",
             "findings": [

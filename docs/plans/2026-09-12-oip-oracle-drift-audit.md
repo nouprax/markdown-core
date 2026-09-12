@@ -15,6 +15,8 @@ or require full Pandoc compatibility.
 - [x] Add seven independent agreement witnesses and clarify misleading documents.
 - [x] Resolve the empty-caret reversal and the two citation choices below, then
       change their grammar, implementation, fixtures and delta entries together.
+- [x] Verify the later grid-plus review with native Pandoc and distinguish its
+      false example from neighboring cell-boundary defects.
 
 ## Completed follow-up, 2026-09-12
 
@@ -56,6 +58,39 @@ allocation sweep pass, all six oracle gates pass, and canonical coverage,
 source-scope containment, C warnings, formatting and repository/test-topology
 audits pass. Scope containment retains its existing 27 exact exceptions and
 introduces none.
+
+### Grid-plus review follow-up
+
+The [grid-plus review](https://github.com/nouprax/markdown-core/pull/229#discussion_r3996046115)
+asserted that `+---+---+ / | a + b | / +---+---+` should keep the middle plus
+inside one colspan cell. Pandoc 3.11 with `markdown_strict+grid_tables` instead
+produces two logical rows and two `rowspan=2` cells, just as the product does.
+The second row has no starting cells. A plus on a complete vertical cell edge
+does not require its own horizontal segment to mark a row; the proposed
+per-line horizontal requirement would introduce a semantic regression.
+
+Independent controls exposed actual defects nearby. Replacing the opening or
+closing border with `+-------+`, or interrupting the vertical edge with
+`| cd    |`, makes that plus cell content in Pandoc. The product previously
+lost the plus or retained an extra row and incorrect rowspan. Vertical walls
+now include their boundary endpoints, and logical row coordinates are derived
+from the completed rectangular cell perimeters. Interior plus signs no longer
+contribute rows; real perimeter markers and empty sparse rows remain intact.
+
+Eleven permanent native-AST/product canaries cover the review example, a plus
+outside the discovered columns, both border variants, both interruption orders,
+a continuous edge, subsequent rows, and head/body/foot ownership. The product
+fixtures also verify the resulting source scopes. These use the existing table
+ownership projection and do not add or refresh any difference waiver. Tall and
+wide adversarial cases check source-work bounds, row/cell counts and the existing
+two-row-width frontier bound; allocation-failure cases cover the new row map.
+
+Validation: all 88 C suites, the three targeted ASan suites (including the full
+allocation sweep), all six oracle gates, C warnings, formatting and canonical
+coverage pass. The new continuous-edge fixture adds three exact position-ledger
+observations of the existing rectangular-scope invariant: two rowspan cells
+extend below their owning row and their linear intervals overlap. All 27 prior
+observations are unchanged; each new observation is annotated with that reason.
 
 The findings below describe the baseline before these corrections.
 

@@ -229,6 +229,9 @@ static const char OOM_DEFINITION_LIST_CORPUS[] =
     "[reference]: /url {.attr}\n\nT\n: [reference]\n::: \n\n::: warning\n:::\n\n::: {}\n:::\n";
 
 static const char OOM_TABLE_CORPUS[] =
+    "+---+---+\n| a + b |\n+---+---+\n\n"
+    "+-------+\n| a + b |\n+---+---+\n\n"
+    "+---+---+\n| a + b |\n| cd    |\n+===+===+\n| e | f |\n+---+---+\n\n"
     "- -\n- - -\n- - - -\n--- ---\na   b\n--- ---\n\n"
     "+------------------------+------------------------+\n| [r]: /first            | [r]: /second           |\n|       "
     "                 |                        |\n| # Same                 | # Same                 |\n|               "

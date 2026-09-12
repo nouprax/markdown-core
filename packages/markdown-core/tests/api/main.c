@@ -4590,7 +4590,7 @@ static void block_identifier_ownership(test_batch_runner *runner) {
  * candidate algorithm. Work counts source inspections, independent of time. */
 static void table_candidate_work(test_batch_runner *runner) {
     markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
-    for (size_t shape = 0; shape < 9; shape++) {
+    for (size_t shape = 0; shape < 13; shape++) {
         for (size_t n = 32; n <= 512; n *= 2) {
             markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
             size_t tables = 0;
@@ -4647,11 +4647,42 @@ static void table_candidate_work(test_batch_runner *runner) {
                 }
                 tables = 1;
             }
-            if (shape >= 7) {
+            if (shape == 7 || shape == 8) {
                 for (size_t i = 0; i < n; i++) {
                     markdown_core_strbuf_puts(&source, shape == 7 ? "ordinary paragraph\n\n"
                                                                   : "> header with Unicode: 表\n> ---x ---\n> \n");
                 }
+            }
+            if (shape >= 9 && shape <= 11) {
+                markdown_core_strbuf_puts(&source, shape == 11 ? "+-------+\n" : "+---+---+\n");
+                for (size_t i = 0; i < n; i++) {
+                    markdown_core_strbuf_puts(&source, "| a + b |\n");
+                }
+                if (shape == 9) {
+                    markdown_core_strbuf_puts(&source, "| cd    |\n");
+                }
+                markdown_core_strbuf_puts(&source, "+---+---+\n");
+                tables = 1;
+            }
+            if (shape == 12) {
+                markdown_core_strbuf_putc(&source, '+');
+                for (size_t i = 0; i < n; i++) {
+                    markdown_core_strbuf_puts(&source, "---+");
+                }
+                markdown_core_strbuf_puts(&source, "\n|");
+                for (size_t i = 0; i < n; i++) {
+                    markdown_core_strbuf_puts(&source, i + 1 == n ? " a |" : " a +");
+                }
+                markdown_core_strbuf_puts(&source, "\n|");
+                for (size_t i = 0; i < n; i++) {
+                    markdown_core_strbuf_puts(&source, i + 1 == n ? " b |" : " b  ");
+                }
+                markdown_core_strbuf_puts(&source, "\n+");
+                for (size_t i = 0; i < n; i++) {
+                    markdown_core_strbuf_puts(&source, "---+");
+                }
+                markdown_core_strbuf_putc(&source, '\n');
+                tables = 1;
             }
             inline_work work = {0};
             markdown_core_node *root =
@@ -4660,13 +4691,19 @@ static void table_candidate_work(test_batch_runner *runner) {
             if (root) {
                 INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_TABLE), tables,
                        "table grammar result: shape=%zu n=%zu", shape, n);
-                if (shape >= 7) {
+                if (shape == 7 || shape == 8) {
                     OK(runner, work.table_workspace_growth <= 1, "failed candidates reuse the source workspace");
                     INT_EQ(runner, work.table_geometry_lines, 0, "rejected separators allocate no column geometry");
                     OK(runner, work.table_separator_scans <= 2 * n,
                        "each captured line is lexed once despite several candidate grammars");
                 }
-                OK(runner, work.table_frontier <= (shape == 3 ? 2 * n : 4),
+                if (shape >= 9) {
+                    INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_TABLE_ROW), shape == 10 ? n + 1 : 1,
+                           "only perimeter plus signs define rows: shape=%zu n=%zu", shape, n);
+                    INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_TABLE_CELL), shape == 10 ? 2 : 1,
+                           "complete vertical walls define cells: shape=%zu n=%zu", shape, n);
+                }
+                OK(runner, work.table_frontier <= (shape == 3 || shape == 12 ? 2 * n : 4),
                    "grid frontier depends on columns, not rows or spans: shape=%zu n=%zu slots=%zu", shape, n,
                    work.table_frontier);
                 OK(runner, work.tables + work.lookahead <= 100 * (size_t)source.size,
