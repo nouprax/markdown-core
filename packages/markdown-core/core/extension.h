@@ -4,6 +4,18 @@
 #include "markdown-core.h"
 #include "markdown-core-extension-api.h"
 #include "config.h"
+#include "chunk.h"
+
+/* A speculative opener reads following lines through its caller's source
+ * view. Captured and streaming inputs therefore use the same grammar without
+ * nesting parser transactions or changing tree ownership. */
+typedef struct markdown_core_block_reader {
+    void *context;
+    int (*next)(void *context, markdown_core_chunk *input, int *first, int *indent);
+} markdown_core_block_reader;
+
+typedef int (*markdown_core_probe_block_func)(markdown_core_parser *parser, markdown_core_chunk *input, int first,
+                                              int indent, markdown_core_block_reader *reader);
 
 /* Node-valued fields are independent child-tree roots. This internal hook
  * exposes their owning slots only to parser phases; it does not change the
@@ -23,6 +35,10 @@ struct markdown_core_extension {
      * (see the typedef); required of an extension whose blocks contain blocks. */
     markdown_core_continues_block_func continues_block;
     markdown_core_open_block_func try_opening_block;
+    /* Non-consuming recognition before this extension's block-opening slot.
+     * Shares the producer's grammar; may report allocation failure, but never
+     * opens a node or claims source. */
+    markdown_core_probe_block_func probe_block;
     markdown_core_match_inline_func match_inline;
     markdown_core_inline_from_delim_func insert_inline_from_delim;
     /* THREE byte sets, not one list.

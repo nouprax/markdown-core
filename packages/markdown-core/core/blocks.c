@@ -1514,10 +1514,10 @@ static bool list_facts_match(const markdown_core_list *list, const markdown_core
 /* Recognition is non-consuming and allocation-free. Only a complete marker
  * returns authored facts to the ordinary block ownership/padding operation. */
 static bufsize_t parse_list_marker(markdown_core_parser *parser, markdown_core_chunk *input, bufsize_t pos,
-                                   markdown_core_node *container, int first_column, markdown_core_list *data) {
+                                   markdown_core_node *container, int first_column, bool interrupts_paragraph,
+                                   markdown_core_list *data) {
     bufsize_t startpos = pos;
     unsigned char c = peek_at(input, pos);
-    bool interrupts_paragraph = container->kind == MARKDOWN_CORE_NODE_PARAGRAPH;
     const markdown_core_list *committed = container->kind == MARKDOWN_CORE_NODE_LIST ? container->as.list : NULL;
     *data = (markdown_core_list){0};
     parser->list_marker_work++;
@@ -1607,19 +1607,6 @@ static bufsize_t parse_list_marker(markdown_core_parser *parser, markdown_core_c
         }
     }
     return pos - startpos;
-}
-
-/* A captured table header must be eligible for the same block-start slot as
- * a streaming header. Reuse core marker grammars without opening any block. */
-bool markdown_core_parser_table_header_allowed(markdown_core_parser *parser, markdown_core_node *parent,
-                                               markdown_core_chunk *input, int first, int column, int indent) {
-    markdown_core_list list;
-    markdown_core_specimen_value specimen;
-    return indent < 4 && peek_at(input, first) != '>' && !scan_atx_heading_start(input, first) &&
-           !scan_open_code_fence(input, first) && !scan_html_block_start(input, first) &&
-           !scan_html_block_start_7(input, first) && !scan_footnote_definition(input, first) &&
-           !parse_specimen_marker(parser, input, first, &specimen) &&
-           !parse_list_marker(parser, input, first, parent, column, &list);
 }
 
 /* List layout depends on semantic children, after definitions are removed.
@@ -1876,7 +1863,7 @@ static void S_parse_source(markdown_core_parser *parser, const unsigned char *so
 // "...three or more hyphens, asterisks,
 // or underscores on a line by themselves. If you wish, you may use
 // spaces between the hyphens or asterisks."
-static int S_scan_thematic_break(markdown_core_parser *parser, markdown_core_chunk *input, bufsize_t offset) {
+static int S_scan_thematic_break(markdown_core_chunk *input, bufsize_t offset, bufsize_t *kill_pos) {
     bufsize_t i;
     char c;
     char nextc = '\0';
@@ -1884,7 +1871,7 @@ static int S_scan_thematic_break(markdown_core_parser *parser, markdown_core_chu
     i = offset;
     c = peek_at(input, i);
     if (!(c == '*' || c == '_' || c == '-')) {
-        parser->thematic_break_kill_pos = i;
+        *kill_pos = i;
         return 0;
     }
     count = 1;
@@ -1898,7 +1885,7 @@ static int S_scan_thematic_break(markdown_core_parser *parser, markdown_core_chu
     if (count >= 3 && (nextc == '\r' || nextc == '\n')) {
         return (i - offset) + 1;
     } else {
-        parser->thematic_break_kill_pos = i;
+        *kill_pos = i;
         return 0;
     }
 }
@@ -2816,17 +2803,101 @@ static markdown_core_node *open_definition(markdown_core_parser *parser, markdow
     return definition;
 }
 
+/* Recognition produces facts; committing them belongs to open_new_blocks.
+ * Captions and captured table headers ask this same operation without opening
+ * nodes or changing the streaming line's thematic-break cache. */
+typedef struct {
+    markdown_core_node *container;
+    markdown_core_chunk *input;
+    int first, column, indent;
+    bool paragraph, lazy, all_matched;
+    size_t depth;
+    bufsize_t thematic_kill;
+} block_start_context;
+
+typedef struct {
+    markdown_core_node_type kind;
+    bufsize_t matched;
+    bool setext, fenced;
+    markdown_core_list list;
+    markdown_core_specimen_value specimen;
+} block_start;
+
+static block_start scan_block_start(markdown_core_parser *parser, block_start_context *context) {
+    block_start start = {0};
+    markdown_core_chunk *input = context->input;
+    int first = context->first;
+    if (context->indent >= CODE_INDENT) {
+        if (!context->lazy && !S_is_line_end_char(peek_at(input, first))) {
+            start.kind = MARKDOWN_CORE_NODE_CODE_BLOCK;
+        }
+        return start;
+    }
+    if (context->container->kind == MARKDOWN_CORE_NODE_DEFINITION && definition_marker(input, first, context->indent)) {
+        start.kind = MARKDOWN_CORE_NODE_DEFINITION_BODY;
+    } else if (peek_at(input, first) == '>') {
+        start.kind = MARKDOWN_CORE_NODE_CALLOUT;
+    } else if ((start.matched = scan_atx_heading_start(input, first))) {
+        start.kind = MARKDOWN_CORE_NODE_HEADING;
+    } else if ((start.matched = scan_open_code_fence(input, first))) {
+        start.kind = MARKDOWN_CORE_NODE_CODE_BLOCK;
+        start.fenced = true;
+    } else if ((start.matched = scan_html_block_start(input, first)) ||
+               (!context->paragraph && !context->lazy && (start.matched = scan_html_block_start_7(input, first)))) {
+        start.kind = MARKDOWN_CORE_NODE_HTML_BLOCK;
+    } else if (context->paragraph && (start.matched = scan_setext_heading_line(input, first))) {
+        start.kind = MARKDOWN_CORE_NODE_HEADING;
+        start.setext = true;
+    } else if (!(context->paragraph && !context->all_matched) && context->thematic_kill <= first &&
+               (start.matched = S_scan_thematic_break(input, first, &context->thematic_kill))) {
+        start.kind = MARKDOWN_CORE_NODE_THEMATIC_BREAK;
+    } else if (context->depth < MAX_FOOTNOTE_DEPTH && (start.matched = scan_footnote_definition(input, first))) {
+        start.kind = MARKDOWN_CORE_NODE_FOOTNOTE;
+    } else if (!context->paragraph && (start.matched = parse_specimen_marker(parser, input, first, &start.specimen))) {
+        start.kind = MARKDOWN_CORE_NODE_SPECIMEN;
+    } else if ((start.matched = parse_list_marker(parser, input, first, context->container, context->column,
+                                                  context->paragraph, &start.list))) {
+        start.kind = MARKDOWN_CORE_NODE_LIST;
+    }
+    return start;
+}
+
+bool markdown_core_parser_has_block_start(markdown_core_parser *parser, markdown_core_node *parent,
+                                          markdown_core_chunk *input, int first, int column, int indent, bool paragraph,
+                                          markdown_core_block_reader *reader) {
+    block_start_context context = {.container = parent,
+                                   .input = input,
+                                   .first = first,
+                                   .column = column,
+                                   .indent = indent,
+                                   .paragraph = paragraph,
+                                   .lazy = paragraph,
+                                   .all_matched = true,
+                                   .depth = 1};
+    if (scan_block_start(parser, &context).kind != MARKDOWN_CORE_NODE_NONE) {
+        return true;
+    }
+    for (markdown_core_llist *entry = parser->extensions; entry; entry = entry->next) {
+        const markdown_core_extension *extension = entry->data;
+        if (extension == &MARKDOWN_CORE_EXTENSION_TABLE) {
+            break;
+        }
+        if (extension->probe_block && extension->probe_block(parser, input, first, indent, reader)) {
+            return true;
+        }
+        if (parser->oom) {
+            break;
+        }
+    }
+    return false;
+}
+
 static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **container, markdown_core_chunk *input,
                             bool all_matched) {
     bool indented;
     markdown_core_node *candidate_table;
-    markdown_core_specimen_value specimen;
-    markdown_core_list marker;
-    markdown_core_list *data = &marker;
     bool maybe_lazy = S_type(parser->current) == MARKDOWN_CORE_NODE_PARAGRAPH;
     markdown_core_node_type cont_type = S_type(*container);
-    bufsize_t matched = 0;
-    int lev = 0;
     bool has_content;
     size_t depth = 0;
 
@@ -2840,9 +2911,23 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
          * region start before its own scope. Measured before it was fixed --
          * 52 rows of an indented code block's four spaces alone. */
         indented = parser->indent >= CODE_INDENT;
+        block_start_context context = {.container = *container,
+                                       .input = input,
+                                       .first = parser->first_nonspace,
+                                       .column = parser->first_nonspace_column,
+                                       .indent = parser->indent,
+                                       .paragraph = cont_type == MARKDOWN_CORE_NODE_PARAGRAPH,
+                                       .lazy = maybe_lazy,
+                                       .all_matched = all_matched,
+                                       .depth = depth,
+                                       .thematic_kill = parser->thematic_break_kill_pos};
+        block_start start = scan_block_start(parser, &context);
+        parser->thematic_break_kill_pos = context.thematic_kill;
+        bufsize_t matched = start.matched;
+        markdown_core_specimen_value specimen = start.specimen;
+        markdown_core_list *data = &start.list;
 
-        if (cont_type == MARKDOWN_CORE_NODE_DEFINITION &&
-            definition_marker(input, parser->first_nonspace, parser->indent)) {
+        if (start.kind == MARKDOWN_CORE_NODE_DEFINITION_BODY) {
             int continuation = parser->indent + consume_item_marker(parser, input, 1);
             *container = add_child(parser, *container, MARKDOWN_CORE_NODE_DEFINITION_BODY, parser->first_nonspace + 1);
             if (!*container) {
@@ -2851,7 +2936,7 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
             (*container)->as.definition_body->continuation = continuation;
             (*container)->internal_offset =
                 markdown_core_parser_source_column(parser, parser->line_number, input->len - 1);
-        } else if (!indented && peek_at(input, parser->first_nonspace) == '>') {
+        } else if (start.kind == MARKDOWN_CORE_NODE_CALLOUT) {
 
             bufsize_t blockquote_startpos = parser->first_nonspace;
 
@@ -2869,7 +2954,7 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
                 return;
             }
 
-        } else if (!indented && (matched = scan_atx_heading_start(input, parser->first_nonspace))) {
+        } else if (start.kind == MARKDOWN_CORE_NODE_HEADING && !start.setext) {
             bufsize_t hashpos;
             int level = 0;
             bufsize_t heading_startpos = parser->first_nonspace;
@@ -2891,7 +2976,7 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
             (*container)->as.heading->setext = false;
             (*container)->internal_offset = matched;
 
-        } else if (!indented && (matched = scan_open_code_fence(input, parser->first_nonspace))) {
+        } else if (start.kind == MARKDOWN_CORE_NODE_CODE_BLOCK && start.fenced) {
             *container = add_child(parser, *container, MARKDOWN_CORE_NODE_CODE_BLOCK, parser->first_nonspace + 1);
             if (!*container) {
                 return;
@@ -2908,9 +2993,7 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
             (*container)->as.code->info = markdown_core_optional_chunk_absent();
             S_advance_offset(parser, input, parser->first_nonspace + matched - parser->offset, false);
 
-        } else if (!indented && ((matched = scan_html_block_start(input, parser->first_nonspace)) ||
-                                 (cont_type != MARKDOWN_CORE_NODE_PARAGRAPH && !maybe_lazy &&
-                                  (matched = scan_html_block_start_7(input, parser->first_nonspace))))) {
+        } else if (start.kind == MARKDOWN_CORE_NODE_HTML_BLOCK) {
             *container = add_child(parser, *container, MARKDOWN_CORE_NODE_HTML_BLOCK, parser->first_nonspace + 1);
             if (!*container) {
                 return;
@@ -2918,8 +3001,7 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
             (*container)->as.html_block->block_type = matched;
             // note, we don't adjust parser->offset because the tag is part of the
             // text
-        } else if (!indented && cont_type == MARKDOWN_CORE_NODE_PARAGRAPH &&
-                   (lev = scan_setext_heading_line(input, parser->first_nonspace))) {
+        } else if (start.kind == MARKDOWN_CORE_NODE_HEADING && start.setext) {
             // finalize paragraph, resolving reference links
             has_content = resolve_reference_link_definitions(parser, *container);
 
@@ -2933,7 +3015,7 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
                     }
                     return;
                 }
-                (*container)->as.heading->level = lev;
+                (*container)->as.heading->level = matched;
                 (*container)->as.heading->setext = true;
                 S_advance_offset(parser, input, input->len - 1 - parser->offset, false);
             }
@@ -2942,17 +3024,14 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
                    (candidate_table = markdown_core_table_try_open(parser, *container, input->data, input->len))) {
             *container = candidate_table;
             return;
-        } else if (!indented && !(cont_type == MARKDOWN_CORE_NODE_PARAGRAPH && !all_matched) &&
-                   (parser->thematic_break_kill_pos <= parser->first_nonspace) &&
-                   (matched = S_scan_thematic_break(parser, input, parser->first_nonspace))) {
+        } else if (start.kind == MARKDOWN_CORE_NODE_THEMATIC_BREAK) {
             // it's only now that we know the line is not part of a setext heading:
             *container = add_child(parser, *container, MARKDOWN_CORE_NODE_THEMATIC_BREAK, parser->first_nonspace + 1);
             if (!*container) {
                 return;
             }
             S_advance_offset(parser, input, input->len - 1 - parser->offset, false);
-        } else if (!indented && depth < MAX_FOOTNOTE_DEPTH &&
-                   (matched = scan_footnote_definition(input, parser->first_nonspace))) {
+        } else if (start.kind == MARKDOWN_CORE_NODE_FOOTNOTE) {
             markdown_core_chunk c = markdown_core_chunk_dup(input, parser->first_nonspace + 2, matched - 2);
             unsigned char *id;
             int lost = 0;
@@ -3017,8 +3096,7 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
             markdown_core_chunk_free(parser->mem, &c);
 
             (*container)->internal_offset = matched;
-        } else if (!indented && (*container)->kind != MARKDOWN_CORE_NODE_PARAGRAPH &&
-                   (matched = parse_specimen_marker(parser, input, parser->first_nonspace, &specimen))) {
+        } else if (start.kind == MARKDOWN_CORE_NODE_SPECIMEN) {
             if (specimen.id.has_value && !markdown_core_chunk_to_cstr(parser->mem, &specimen.id.value)) {
                 parser->oom = true;
                 return;
@@ -3041,9 +3119,7 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
                 S_advance_offset(parser, input, 1, true);
                 parser->specimen_work++;
             }
-        } else if ((!indented || cont_type == MARKDOWN_CORE_NODE_LIST) && parser->indent < 4 &&
-                   (matched = parse_list_marker(parser, input, parser->first_nonspace, *container,
-                                                parser->first_nonspace_column, data))) {
+        } else if (start.kind == MARKDOWN_CORE_NODE_LIST) {
 
             data->padding = consume_item_marker(parser, input, matched);
 
@@ -3072,7 +3148,7 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
             if (parser->oom) {
                 return;
             }
-        } else if (indented && !maybe_lazy && !parser->blank) {
+        } else if (start.kind == MARKDOWN_CORE_NODE_CODE_BLOCK) {
             S_advance_offset(parser, input, CODE_INDENT, true);
             *container = add_child(parser, *container, MARKDOWN_CORE_NODE_CODE_BLOCK, parser->offset + 1);
             if (!*container) {

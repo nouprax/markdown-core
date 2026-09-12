@@ -575,37 +575,45 @@ static int parse_nameless_suffix(markdown_core_mem *mem, unsigned char *data, bu
     return 1;
 }
 
+static bufsize_t scan_directive_block(markdown_core_parser *parser, unsigned char *input, int len, int first,
+                                      int indent, parsed_directive *parsed) {
+    memset(parsed, 0, sizeof(*parsed));
+    if (indent >= 4) {
+        return 0;
+    }
+    bufsize_t colon_count = count_colons(input, (bufsize_t)len, first);
+    if (colon_count < 2) {
+        return 0;
+    }
+
+    bufsize_t suffix = first + colon_count;
+    bool nameless = colon_count >= 3 && suffix < len && (ascii_is_line_space(input[suffix]) || input[suffix] == '{');
+    int matched = nameless ? parse_nameless_suffix(parser->mem, input, len, suffix, parsed)
+                           : parse_directive_suffix(parser->mem, input, len, suffix, parsed);
+    parser->oom |= parsed->oom;
+    return matched && has_only_spaces_until_line_end(input, len, parsed->end) ? colon_count : 0;
+}
+
+static int probe_directive_block(markdown_core_parser *parser, markdown_core_chunk *input, int first, int indent,
+                                 markdown_core_block_reader *reader) {
+    (void)reader;
+    parsed_directive parsed;
+    bool matched = scan_directive_block(parser, input->data, input->len, first, indent, &parsed) != 0;
+    free_parsed_directive(parser->mem, &parsed);
+    return matched;
+}
+
 static markdown_core_node *open_directive_block(const markdown_core_extension *extension, int indented,
                                                 markdown_core_parser *parser, markdown_core_node *parent_container,
                                                 unsigned char *input, int len) {
+    (void)indented;
     bufsize_t first_nonspace = (bufsize_t)markdown_core_parser_get_first_nonspace(parser);
-    bufsize_t colon_count;
     parsed_directive parsed;
+    bufsize_t colon_count =
+        scan_directive_block(parser, input, len, first_nonspace, markdown_core_parser_get_indent(parser), &parsed);
     markdown_core_node *node;
     node_directive *directive;
-
-    if (indented) {
-        return NULL;
-    }
-
-    colon_count = count_colons(input, (bufsize_t)len, first_nonspace);
-    if (colon_count < 2) {
-        return NULL;
-    }
-
-    bufsize_t suffix = first_nonspace + colon_count;
-    bool nameless = colon_count >= 3 && suffix < len && (ascii_is_line_space(input[suffix]) || input[suffix] == '{');
-    int matched = nameless ? parse_nameless_suffix(parser->mem, input, len, suffix, &parsed)
-                           : parse_directive_suffix(parser->mem, input, len, suffix, &parsed);
-    if (!matched) {
-        if (parsed.oom) {
-            parser->oom = true;
-        }
-        free_parsed_directive(parser->mem, &parsed);
-        return NULL;
-    }
-
-    if (!has_only_spaces_until_line_end(input, (bufsize_t)len, parsed.end)) {
+    if (!colon_count) {
         free_parsed_directive(parser->mem, &parsed);
         return NULL;
     }
@@ -754,6 +762,7 @@ const markdown_core_extension MARKDOWN_CORE_EXTENSION_DIRECTIVE = {
     .last_block_matches = directive_block_matches,
     .continues_block = directive_block_continues,
     .try_opening_block = open_directive_block,
+    .probe_block = probe_directive_block,
     .get_type_string_func = get_type_string,
     .can_contain_func = can_contain,
     .contains_inlines_func = contains_inlines,

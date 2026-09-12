@@ -1023,11 +1023,34 @@ static bool table_set_columns(table_source *source, table_candidate *candidate, 
     return true;
 }
 
-static bool table_header_allowed(table_source *source, size_t index) {
+typedef struct {
+    table_source *source;
+    size_t index;
+} table_block_reader;
+
+static int table_read_block_line(void *context, markdown_core_chunk *input, int *first, int *indent) {
+    table_block_reader *reader = context;
+    if (!table_source_get(reader->source, ++reader->index)) {
+        return 0;
+    }
+    table_source_line *line = &reader->source->lines[reader->index];
+    *input = (markdown_core_chunk){(unsigned char *)line->data, line->length + 1, 0};
+    *first = line->first;
+    *indent = line->indent;
+    return 1;
+}
+
+static bool table_has_block_start(table_source *source, size_t index, bool paragraph) {
     table_source_line *line = &source->lines[index];
     markdown_core_chunk chunk = {(unsigned char *)line->data, line->length + 1, 0};
-    return markdown_core_parser_table_header_allowed(source->parser, source->lookahead.parent, &chunk, line->first,
-                                                     line->first_column, line->indent);
+    table_block_reader context = {source, index};
+    markdown_core_block_reader reader = {&context, table_read_block_line};
+    return markdown_core_parser_has_block_start(source->parser, source->lookahead.parent, &chunk, line->first,
+                                                line->first_column, line->indent, paragraph, &reader);
+}
+
+static bool table_header_allowed(table_source *source, size_t index) {
+    return !table_has_block_start(source, index, false);
 }
 
 static bool table_parse_simple(table_source *source, size_t start, table_candidate *candidate) {
@@ -1857,9 +1880,7 @@ static bool table_after_caption(table_source *source, size_t *caption_last, tabl
             return true;
         }
         table_source_line *line = &source->lines[next];
-        markdown_core_chunk chunk = {(unsigned char *)line->data, line->length + 1, 0};
-        if (line->blanks ||
-            (line->indent < 4 && (line->data[line->first] == '>' || scan_atx_heading_start(&chunk, line->first)))) {
+        if (line->blanks || table_has_block_start(source, next, true) || source->parser->oom) {
             break;
         }
         *caption_last = next;

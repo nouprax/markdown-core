@@ -4581,7 +4581,7 @@ static void block_identifier_ownership(test_batch_runner *runner) {
  * candidate algorithm. Work counts source inspections, independent of time. */
 static void table_candidate_work(test_batch_runner *runner) {
     markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
-    for (size_t shape = 0; shape < 6; shape++) {
+    for (size_t shape = 0; shape < 7; shape++) {
         for (size_t n = 32; n <= 512; n *= 2) {
             markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
             size_t tables = 0;
@@ -4631,6 +4631,13 @@ static void table_candidate_work(test_batch_runner *runner) {
                 markdown_core_strbuf_puts(&source, "+---+---+\n");
                 tables = 1;
             }
+            if (shape == 6) {
+                markdown_core_strbuf_puts(&source, "| h |\n| - |\n| b |\n: cap\n%%\n");
+                for (size_t i = 0; i < n; i++) {
+                    markdown_core_strbuf_puts(&source, "unclosed comment and caption content\n");
+                }
+                tables = 1;
+            }
             inline_work work = {0};
             markdown_core_node *root =
                 markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
@@ -4648,6 +4655,95 @@ static void table_candidate_work(test_batch_runner *runner) {
             markdown_core_node_free(root);
             markdown_core_strbuf_free(&source);
         }
+    }
+}
+
+/* A caption is a paragraph: the same block openers interrupt it, while
+ * non-interrupting list markers, HTML and indentation remain inline content.
+ * Exercise every table producer and a real container-prefix source view. */
+static void table_caption_boundaries(test_batch_runner *runner) {
+    const char *tables[] = {"| h |\n| - |\n| b |\n", "h    i\n---- ----\na    b\n\n",
+                            "---------\nh    i\n---- ----\na    b\n\nc    d\n---------\n\n", "+---+\n| x |\n+---+\n"};
+    const struct {
+        const char *source;
+        markdown_core_node_type kind;
+    } blocks[] = {{"```c\ncode\n```\n", MARKDOWN_CORE_NODE_CODE_BLOCK},
+                  {"~~~\ncode\n~~~\n", MARKDOWN_CORE_NODE_CODE_BLOCK},
+                  {"# heading\n", MARKDOWN_CORE_NODE_HEADING},
+                  {"> quote\n", MARKDOWN_CORE_NODE_CALLOUT},
+                  {"1. item\n", MARKDOWN_CORE_NODE_LIST},
+                  {"- item\n", MARKDOWN_CORE_NODE_LIST},
+                  {"(a) item\n", MARKDOWN_CORE_NODE_LIST},
+                  {"***\n", MARKDOWN_CORE_NODE_THEMATIC_BREAK},
+                  {"<div>\nbody\n</div>\n", MARKDOWN_CORE_NODE_HTML_BLOCK},
+                  {"<!-- comment -->\n", MARKDOWN_CORE_NODE_COMMENT_BLOCK},
+                  {"$$\nx\n$$\n", MARKDOWN_CORE_NODE_FORMULA_BLOCK},
+                  {"\\\\[\nx\n\\\\]\n", MARKDOWN_CORE_NODE_FORMULA_BLOCK},
+                  {":::note\nbody\n:::\n", MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK},
+                  {"::: {.note}\nbody\n:::\n", MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK},
+                  {"::note[label]\n", MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK},
+                  {"%%\ncomment\n%%\n", MARKDOWN_CORE_NODE_COMMENT_BLOCK}};
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    for (size_t t = 0; t < sizeof(tables) / sizeof(*tables); t++) {
+        int caption_line = 1;
+        for (const char *at = tables[t]; *at; at++) {
+            caption_line += *at == '\n';
+        }
+        for (size_t b = 0; b < sizeof(blocks) / sizeof(*blocks); b++) {
+            for (int quoted = 0; quoted < 2; quoted++) {
+                markdown_core_strbuf input = MARKDOWN_CORE_BUF_INIT(mem), source = MARKDOWN_CORE_BUF_INIT(mem);
+                markdown_core_strbuf_puts(&input, tables[t]);
+                markdown_core_strbuf_puts(&input, ": cap\n");
+                markdown_core_strbuf_puts(&input, blocks[b].source);
+                for (int at = 0; at < input.size; at++) {
+                    if (quoted && (at == 0 || input.ptr[at - 1] == '\n')) {
+                        markdown_core_strbuf_puts(&source, "> ");
+                    }
+                    markdown_core_strbuf_putc(&source, input.ptr[at]);
+                }
+                markdown_core_node *root = parse((char *)source.ptr);
+                markdown_core_node *owner = root && quoted ? root->first_child : root;
+                markdown_core_node *table = owner ? owner->first_child : NULL;
+                OK(runner, table && table->kind == MARKDOWN_CORE_NODE_TABLE,
+                   "caption table survives interruption: table=%zu block=%zu quoted=%d", t, b, quoted);
+                if (table && table->kind == MARKDOWN_CORE_NODE_TABLE) {
+                    markdown_core_node *caption = ((markdown_core_table *)table->opaque)->caption;
+                    OK(runner, caption && caption->first_child, "caption owns its paragraph content");
+                    if (caption && caption->first_child) {
+                        STR_EQ(runner, markdown_core_node_get_literal(caption->first_child), "cap",
+                               "block bytes do not enter caption text");
+                        INT_EQ(runner, caption->end_line, caption_line, "caption scope ends before the block");
+                    }
+                    INT_EQ(runner, table->end_line, caption_line, "table scope ends with its caption");
+                    OK(runner, table->next && table->next->kind == blocks[b].kind,
+                       "ordinary block owns its source: table=%zu block=%zu quoted=%d", t, b, quoted);
+                    if (table->next) {
+                        INT_EQ(runner, table->next->start_line, caption_line + 1, "block retains source line");
+                    }
+                }
+                markdown_core_node_free(root);
+                markdown_core_strbuf_free(&source);
+                markdown_core_strbuf_free(&input);
+            }
+        }
+    }
+    const char *continuations[] = {"2. stays\n",         "<x>\n",          "    text\n", "+ \n",
+                                   ":::note[unclosed\n", "%%\nno closer\n"};
+    for (size_t i = 0; i < sizeof(continuations) / sizeof(*continuations); i++) {
+        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+        markdown_core_strbuf_puts(&source, tables[0]);
+        markdown_core_strbuf_puts(&source, ": cap\n");
+        markdown_core_strbuf_puts(&source, continuations[i]);
+        markdown_core_node *root = parse((char *)source.ptr);
+        markdown_core_node *table = root ? root->first_child : NULL;
+        OK(runner, table && table->kind == MARKDOWN_CORE_NODE_TABLE && !table->next,
+           "non-interrupting source stays in caption: case=%zu", i);
+        if (table && table->kind == MARKDOWN_CORE_NODE_TABLE) {
+            markdown_core_node *caption = ((markdown_core_table *)table->opaque)->caption;
+            OK(runner, caption && caption->end_line > 4, "caption continues past its first line: case=%zu", i);
+        }
+        markdown_core_node_free(root);
+        markdown_core_strbuf_free(&source);
     }
 }
 
@@ -4812,6 +4908,7 @@ int main(void) {
     table_source_map_growth(runner);
     table_values(runner);
     table_candidate_work(runner);
+    table_caption_boundaries(runner);
     table_mapped_ownership(runner);
     table_nested_inputs(runner);
     strbuf_overflow(runner);

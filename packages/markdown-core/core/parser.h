@@ -279,8 +279,13 @@ typedef struct {
 int markdown_core_order_source_entries(markdown_core_mem *mem, void *entries, size_t count, size_t stride,
                                        uint64_t (*key)(const void *));
 
-bool markdown_core_parser_table_header_allowed(markdown_core_parser *parser, markdown_core_node *parent,
-                                               markdown_core_chunk *input, int first, int column, int indent);
+struct markdown_core_block_reader;
+/* Query the ordinary block-start rules before the table slot. Paragraph
+ * continuation uses its real interruption rules (notably list starts, type-7
+ * HTML and indentation); following lines come from the caller's source view. */
+bool markdown_core_parser_has_block_start(markdown_core_parser *parser, markdown_core_node *parent,
+                                          markdown_core_chunk *input, int first, int column, int indent, bool paragraph,
+                                          struct markdown_core_block_reader *reader);
 
 /* Schedule an already owned node's mapped content for the ordinary block
  * parser. No nested parse transaction, document, registry or C recursion. */

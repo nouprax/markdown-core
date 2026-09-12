@@ -144,6 +144,15 @@ The lookahead cache belongs to the active input and resets only its used slots.
 Failed multiline suffix queries retain container-and-offset-qualified absence
 facts so later candidates do not repeatedly scan the same suffix.
 
+Streaming block opening and captured table/caption queries share one core
+prefix recognizer. It returns borrowed marker facts; only streaming commitment
+opens nodes. Extension probes share their producers' grammar and obtain later
+lines through a caller-owned reader, using either the current container
+lookahead or captured source lines. Probing a comment closer therefore does
+not nest a parser transaction. Paragraph interruption keeps its real list,
+HTML and indentation rules, and queries do not alter the streaming line's
+thematic-break failure cache.
+
 Deferred cells can register headings and references out of physical order.
 Document completion stably orders entries by original line and column using a
 fixed-pass radix sort. Explicit reference definitions take priority over

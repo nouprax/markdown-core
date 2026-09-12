@@ -281,8 +281,12 @@ caption-line = *3SP ( "Table:" / "table:" / ":" ) rest
 where for the `:` form the next scalar is not punctuation, the word forms are
 case-sensitive, and `rest` may be empty. A caption paragraph is one whose
 first line is a caption line; its content is the paragraph's parsed inline
-content after removing the marker and the whitespace after it. A caption
-paragraph is claimed by a table of any syntax that it precedes or follows
+content after removing the marker and the whitespace after it. It ends at the
+same interrupting block starts as an ordinary paragraph, including core and
+extension openers; non-interrupting indentation, list markers and type-7 HTML
+remain paragraph content. A preceding caption does not change which block
+opener owns a prospective table header. A caption paragraph is claimed by a
+table of any syntax that it precedes or follows
 with zero or more blank lines and nothing else between:
 
 ```````````````````````````````` example

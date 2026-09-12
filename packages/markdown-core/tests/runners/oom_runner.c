@@ -234,7 +234,11 @@ static const char OOM_TABLE_CORPUS[] =
     "|\n+------------------------+------------------------+\n\n[r] [Same] [^f]\n\n+-------------------------------+\n| "
     "+------------+------------+   |\n| | # Nest     | text       |   |\n| +------------+------------+   "
     "|\n+-------------------------------+\n\nTable: *caption*\n\nh   j\n--- ---\nv   w\n\n-------\nh   j\n--- ---\nv   "
-    "w\n\nx   y\n-------\n\nTable: after\n\n+---+---+\n| a | b |\n+   +   +\n| c | d |\n+---+---+\n";
+    "w\n\nx   y\n-------\n\nTable: after\n\n+---+---+\n| a | b |\n+   +   +\n| c | d |\n+---+---+\n"
+    "\n: candidate\n:::note[label]{#id .class k=value}\n---- ----\na    b\n:::\n\n"
+    "| h |\n| - |\n| b |\n: cap\n::: {.note}\nbody\n:::\n\n"
+    "| h |\n| - |\n| b |\n: cap\n%%\ncomment\n%%\n\n"
+    "| h |\n| - |\n| b |\n: cap\n:::note[bad\n%%\nunclosed\n";
 
 static const oom_case OOM_CASES[] = {
     {"table candidates and mapped owned inputs", OOM_TABLE_CORPUS, sizeof(OOM_TABLE_CORPUS) - 1},

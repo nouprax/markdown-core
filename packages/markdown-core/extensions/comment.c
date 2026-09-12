@@ -41,16 +41,30 @@ static int is_fence_line(const unsigned char *data, int len, int first_nonspace)
     return i >= len || data[i] == '\n' || data[i] == '\r';
 }
 
+static int probe_comment_block(markdown_core_parser *parser, markdown_core_chunk *input, int first, int indent,
+                               markdown_core_block_reader *reader) {
+    if (indent >= 4 || !is_fence_line(input->data, input->len, first)) {
+        return 0;
+    }
+    markdown_core_chunk line;
+    while (reader->next(reader->context, &line, &first, &indent)) {
+        if (indent < 4 && is_fence_line(line.data, line.len, first)) {
+            return !parser->oom;
+        }
+    }
+    return 0;
+}
+
+static int read_block_line(void *context, markdown_core_chunk *input, int *first, int *indent) {
+    int blanks;
+    return markdown_core_parser_lookahead_next(context, input, first, indent, &blanks);
+}
+
 static markdown_core_node *open_block(const markdown_core_extension *extension, int indented,
                                       markdown_core_parser *parser, markdown_core_node *parent_container,
                                       unsigned char *input, int len) {
     int first_nonspace = markdown_core_parser_get_first_nonspace(parser);
     markdown_core_block_lookahead lookahead;
-    markdown_core_chunk line;
-    int line_first_nonspace;
-    int indent;
-    int blank_lines;
-    bool closed = false;
     markdown_core_node *node;
 
     if (indented || !is_fence_line(input, len, first_nonspace)) {
@@ -59,12 +73,9 @@ static markdown_core_node *open_block(const markdown_core_extension *extension, 
     if (!markdown_core_parser_lookahead_begin(parser, parent_container, MARKDOWN_CORE_NODE_COMMENT_BLOCK, &lookahead)) {
         return NULL;
     }
-    while (markdown_core_parser_lookahead_next(&lookahead, &line, &line_first_nonspace, &indent, &blank_lines)) {
-        if (indent <= 3 && is_fence_line(line.data, (int)line.len, line_first_nonspace)) {
-            closed = true;
-            break;
-        }
-    }
+    markdown_core_chunk line = {input, len, 0};
+    markdown_core_block_reader reader = {&lookahead, read_block_line};
+    bool closed = probe_comment_block(parser, &line, first_nonspace, parser->indent, &reader);
     markdown_core_parser_lookahead_end(&lookahead);
     if (!closed || parser->oom) {
         return NULL;
@@ -155,6 +166,7 @@ const markdown_core_extension MARKDOWN_CORE_EXTENSION_COMMENT = {
     .match_inline = match,
     .last_block_matches = block_matches,
     .try_opening_block = open_block,
+    .probe_block = probe_comment_block,
     .get_type_string_func = type_string,
     .accepts_lines_func = accepts_lines,
     .terminates_text = "%",
