@@ -141,5 +141,5 @@ entries include normative recognition differences. P12 requires implementation
 and regression evidence for the selected modules, with zero missing-feature
 gaps; it does not require full Pandoc compatibility. The exact registry alone
 does not establish implementation completeness. The
-[34-case review list](../../../docs/plans/2026-09-12-pandoc-differences.md)
+[34-case review list](differences.md)
 explains each retained difference without treating it as a missing feature.

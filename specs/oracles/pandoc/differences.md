@@ -9,8 +9,8 @@ feature，也不是 34 个需要追加支持的 Pandoc extension。同一条规�
 功能范围。parser 保留语法与语义事实，编号、坐标展开和排版仍由 consumer
 完成。差异仍须逐项解释，不能因为登记过就掩盖功能缺失。
 
-原始输入和 reader 配置见 [corpus.json](../../specs/oracles/pandoc/corpus.json)，
-精确结果摘要和说明见 [deltas.json](../../specs/oracles/pandoc/deltas.json)。
+原始输入和 reader 配置见 [corpus.json](corpus.json)，
+精确结果摘要和说明见 [deltas.json](deltas.json)。
 以下编号与登记表顺序一致；历史 `projection` 标签不表示所有条目都只是
 AST 表示不同。
 
@@ -58,10 +58,10 @@ AST 表示不同。
 - 12、16、18、31：同一全局显式 ID 预留规则，覆盖四种声明位置。
 - 32–34：同一 compact 信息差异，覆盖嵌套块、代码块和空 body。
 
-这些记录分别由现有模块约束：[上下标](../specs/dialect/superscript-and-subscript.md)、
-[属性](../specs/dialect/attributes.md)、[表格](../specs/dialect/tables.md)、
-[例句](../specs/dialect/specimens.md)、[锚点](../specs/dialect/anchors.md)、
-[链接](../specs/dialect/links-and-images.md)、[文献引用](../specs/dialect/citations.md)、
-[列表](../specs/dialect/lists.md)、[容器](../specs/dialect/directives.md)、
-[定义列表](../specs/dialect/definition-lists.md)。是否存在实现缺口，应据对应模块
+这些记录分别由现有模块约束：[上下标](../../../docs/specs/dialect/superscript-and-subscript.md)、
+[属性](../../../docs/specs/dialect/attributes.md)、[表格](../../../docs/specs/dialect/tables.md)、
+[例句](../../../docs/specs/dialect/specimens.md)、[锚点](../../../docs/specs/dialect/anchors.md)、
+[链接](../../../docs/specs/dialect/links-and-images.md)、[文献引用](../../../docs/specs/dialect/citations.md)、
+[列表](../../../docs/specs/dialect/lists.md)、[容器](../../../docs/specs/dialect/directives.md)、
+[定义列表](../../../docs/specs/dialect/definition-lists.md)。是否存在实现缺口，应据对应模块
 的功能、边界和组合测试判断，不能用差异条目数量代替。

@@ -131,7 +131,7 @@ rules, reference adjacency, citation recovery/affixes, list-start restrictions,
 fence closure, definition compactness and document-owned example lists. Their
 exact cases and explanations remain in
 [`deltas.json`](../../specs/oracles/pandoc/deltas.json). The
-[34-case review list](2026-09-12-pandoc-differences.md) distinguishes source
+[34-case review list](../../specs/oracles/pandoc/differences.md) distinguishes source
 recognition, field semantics, model/information and reader-configuration
 differences. Some entries are historically called `projection` even though
 their own explanation describes a semantic difference; that label does not
