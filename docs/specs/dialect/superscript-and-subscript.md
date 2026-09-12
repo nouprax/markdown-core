@@ -1,324 +1,49 @@
 # Superscript and subscript
 
-Status: normative module of the [Markdown Core dialect](../dialect.md).
-Source: Pandoc's `superscript` and `subscript` extensions. Executable
-oracle: the Pandoc 3.11 CLI under `specs/oracles/pandoc/`. Landing: `P6`. Single tildes belong exclusively to Subscript;
-strikethrough requires two tildes. The
-[example format](../dialect.md#examples) is defined by the index.
+[Syntax guide](../dialect.md) · [Documentation](../README.md)
 
-## Model
+Wrap text in carets for superscript or single tildes for subscript.
 
-```text
-Superscript(content: [Markup])
-Subscript(content: [Markup])
+```markdown
+2^10^ and H~2~O
 ```
 
-Both are inline kinds whose content is parsed by the shared inline parser.
+This produces `Superscript` containing `10` and `Subscript` containing `2`.
+The numbers are text, not values calculated by the parser.
 
-```````````````````````````````` example
-2^10^ and H~2~O
-.
-Document scope=1:1..1:15 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:15 anchor=null attributes={} children=5
-    ├── Text scope=1:1..1:1 anchor=null attributes={} literal="2" children=0
-    ├── Superscript scope=1:2..1:5 anchor=null attributes={} children=1
-    │   └── Text scope=1:3..1:4 anchor=null attributes={} literal="10" children=0
-    ├── Text scope=1:6..1:11 anchor=null attributes={} literal=" and H" children=0
-    ├── Subscript scope=1:12..1:14 anchor=null attributes={} children=1
-    │   └── Text scope=1:13..1:13 anchor=null attributes={} literal="2" children=0
-    └── Text scope=1:15..1:15 anchor=null attributes={} literal="O" children=0
-````````````````````````````````
+## Include formatting or spaces
 
-```````````````````````````````` example
-^*x*^
-.
-Document scope=1:1..1:5 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:5 anchor=null attributes={} children=1
-    └── Superscript scope=1:1..1:5 anchor=null attributes={} children=1
-        └── Emphasis scope=1:2..1:4 anchor=null attributes={} children=1
-            └── Text scope=1:3..1:3 anchor=null attributes={} literal="x" children=0
-````````````````````````````````
+The body supports inline formatting, but raw whitespace invalidates a script
+pair. Escape an ASCII space when the intended script contains multiple words:
 
-## Syntax
+```markdown
+x^a\ b^ and y~*small*~
+```
 
-Every unescaped `^` is a delimiter unit at inline step C4, and tildes are
-delimiter units at step C3 under the tilde rule below. Units of one kind match by this procedure, applied left
-to right within one inline container:
+The superscript contains `a`, a non-breaking space (U+00A0), and `b`. The
+subscript contains emphasis. The escape-to-NBSP conversion applies only inside
+a successfully completed script; outside it, backslash-space stays literal.
+A character reference that decodes to whitespace does not invalidate the
+pair, because this restriction applies to the authored source.
 
-- A unit that finds an unmatched opener of its own kind on the stack closes
-  it; otherwise it opens. Same-kind delimiters therefore never nest.
-- When the scanner reaches an unescaped whitespace scalar or a line ending, or
-  the end of the inline container, every unmatched opener of both kinds is
-  removed and its byte is text. A body therefore never contains unescaped
-  whitespace.
-- Inside a body candidate, `\ ` (a backslash followed by an ASCII space) is
-  not whitespace and yields U+00A0 NO-BREAK SPACE in the content; elsewhere
-  the inherited literal applies.
-- A body may be empty: an adjacent opener and closer form an empty
-  Superscript. The separate tilde run rule still assigns `~~` to strikethrough.
+Raw whitespace in a nested inline field, such as a directive label, also
+invalidates its enclosing script. Literal bodies owned by code, formulas,
+comments, HTML tokens, and cross links keep their own contents.
 
-```````````````````````````````` example
-^a b^ ~a b~
+## Delimiter boundaries
 
-P~a\ cat~
-.
-Document scope=1:1..3:9 anchor=null attributes={} children=2
-├── Paragraph scope=1:1..1:11 anchor=null attributes={} children=1
-│   └── Text scope=1:1..1:11 anchor=null attributes={} literal="^a b^ ~a b~" children=0
-└── Paragraph scope=3:1..3:9 anchor=null attributes={} children=2
-    ├── Text scope=3:1..3:1 anchor=null attributes={} literal="P" children=0
-    └── Subscript scope=3:2..3:9 anchor=null attributes={} children=1
-        └── Text scope=3:3..3:8 anchor=null attributes={} literal="a cat" children=0
-````````````````````````````````
+Same-kind scripts do not nest: a matching delimiter closes the pending script
+before another can open. `^^` is a valid empty superscript. `~~` belongs to
+[strikethrough](strikethrough.md), so it is not an empty subscript; runs of three
+or more tildes remain literal inline text.
 
-A character reference that decodes to whitespace never invalidates a
-candidate:
+```markdown
+x^two words^ and x~two words~
+```
 
-```````````````````````````````` example
-^a&#32;b^
-.
-Document scope=1:1..1:9 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:9 anchor=null attributes={} children=1
-    └── Superscript scope=1:1..1:9 anchor=null attributes={} children=1
-        └── Text scope=1:2..1:8 anchor=null attributes={} literal="a b" children=0
-````````````````````````````````
+These pairs remain text because their bodies contain raw spaces. Unmatched
+and escaped delimiters are text as well.
 
-`^^` produces an empty Superscript. An unmatched `~~` run remains text
-under the tilde rule rather than two subscript units:
-
-```````````````````````````````` example
-^^ a~~b
-.
-Document scope=1:1..1:7 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:7 anchor=null attributes={} children=2
-    ├── Superscript scope=1:1..1:2 anchor=null attributes={} children=0
-    └── Text scope=1:3..1:7 anchor=null attributes={} literal=" a~~b" children=0
-````````````````````````````````
-
-An unmatched delimiter is text and cannot hide a later valid candidate:
-
-```````````````````````````````` example
-x^y ^z
-.
-Document scope=1:1..1:6 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:6 anchor=null attributes={} children=1
-    └── Text scope=1:1..1:6 anchor=null attributes={} literal="x^y ^z" children=0
-````````````````````````````````
-
-Because a unit closes whenever an opener of its kind is open, consecutive
-pairs alternate:
-
-```````````````````````````````` example
-^a^b^c^
-.
-Document scope=1:1..1:7 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:7 anchor=null attributes={} children=3
-    ├── Superscript scope=1:1..1:3 anchor=null attributes={} children=1
-    │   └── Text scope=1:2..1:2 anchor=null attributes={} literal="a" children=0
-    ├── Text scope=1:4..1:4 anchor=null attributes={} literal="b" children=0
-    └── Superscript scope=1:5..1:7 anchor=null attributes={} children=1
-        └── Text scope=1:6..1:6 anchor=null attributes={} literal="c" children=0
-````````````````````````````````
-
-### Tildes
-
-A run of one tilde is a subscript unit and never a strikethrough delimiter.
-A run of two tildes is never subscript syntax: it is a strikethrough
-delimiter unit matched under the [strikethrough](strikethrough.md) rules, so
-an unmatched double run is text; runs of three or more are text. The
-[conflicts](conflicts.md) register records this ruling.
-
-```````````````````````````````` example
-~~a~~ ~b~
-
-~~x~ ~~~y~~~
-.
-Document scope=1:1..3:12 anchor=null attributes={} children=2
-├── Paragraph scope=1:1..1:9 anchor=null attributes={} children=3
-│   ├── Strikethrough scope=1:1..1:5 anchor=null attributes={} children=1
-│   │   └── Text scope=1:3..1:3 anchor=null attributes={} literal="a" children=0
-│   ├── Text scope=1:6..1:6 anchor=null attributes={} literal=" " children=0
-│   └── Subscript scope=1:7..1:9 anchor=null attributes={} children=1
-│       └── Text scope=1:8..1:8 anchor=null attributes={} literal="b" children=0
-└── Paragraph scope=3:1..3:12 anchor=null attributes={} children=1
-    └── Text scope=3:1..3:12 anchor=null attributes={} literal="~~x~ ~~~y~~~" children=0
-````````````````````````````````
-
-### Carets
-
-An unescaped `^` immediately followed by `[` is an inline-footnote opener,
-tested before this module:
-
-```````````````````````````````` example
-text^[note]
-.
-Document scope=1:1..1:11 anchor=null attributes={} children=1
-├── Paragraph scope=1:1..1:11 anchor=null attributes={} children=2
-│   ├── Text scope=1:1..1:4 anchor=null attributes={} literal="text" children=0
-│   └── Cite scope=1:5..1:11 anchor=null attributes={} children=1
-│       └── Citation scope=1:7..1:10 referent=footnote(id="inline-1") children=0
-│           ├── CitationPrefix children=0
-│           └── CitationSuffix children=0
-└── Footnote scope=1:5..1:11 id="inline-1" children=1
-    └── Text scope=1:7..1:10 anchor=null attributes={} literal="note" children=0
-````````````````````````````````
-
-To begin a superscript body with `[` rather than open an inline footnote,
-escape that leading bracket:
-
-```````````````````````````````` example
-^\[note]^
-.
-Document scope=1:1..1:9 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:9 anchor=null attributes={} children=1
-    └── Superscript scope=1:1..1:9 anchor=null attributes={} children=1
-        └── Text scope=1:2..1:8 anchor=null attributes={} literal="[note]" children=0
-````````````````````````````````
-
-A `^` or `~` owned by an autolink, code span, HTML token, comment, formula,
-or cross link is opaque.
-
-Owned inline fields, including directive labels, participate in the enclosing
-script's whitespace and escape rules. Their delimiter stacks stay local to the
-field, but ordinary raw whitespace invalidates the enclosing candidate too.
-An escaped space is decoded only after the complete ownership tree is known;
-it inherits an enclosing script through any number of owned fields. Opaque
-content and character references retain the rules above. An inline field ends
-at its closing delimiter, so its trailing whitespace is content, unlike a
-block buffer's terminating line ending.
-
-```````````````````````````````` example
-^:d[a b]^ ~:d[a b]~
-.
-Document scope=1:1..1:19 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:19 anchor=null attributes={} children=5
-    ├── Text scope=1:1..1:1 anchor=null attributes={} literal="^" children=0
-    ├── Directive scope=1:2..1:8 anchor=null attributes={} name="d" children=0
-    │   └── DirectiveLabel scope=1:4..1:8 anchor=null attributes={} children=1
-    │       └── Text scope=1:5..1:7 anchor=null attributes={} literal="a b" children=0
-    ├── Text scope=1:9..1:11 anchor=null attributes={} literal="^ ~" children=0
-    ├── Directive scope=1:12..1:18 anchor=null attributes={} name="d" children=0
-    │   └── DirectiveLabel scope=1:14..1:18 anchor=null attributes={} children=1
-    │       └── Text scope=1:15..1:17 anchor=null attributes={} literal="a b" children=0
-    └── Text scope=1:19..1:19 anchor=null attributes={} literal="~" children=0
-````````````````````````````````
-
-```````````````````````````````` example
-^:d[a\ b]^ ~:d[a\ b]~ :d[a\ b]
-.
-Document scope=1:1..1:30 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:30 anchor=null attributes={} children=5
-    ├── Superscript scope=1:1..1:10 anchor=null attributes={} children=1
-    │   └── Directive scope=1:2..1:9 anchor=null attributes={} name="d" children=0
-    │       └── DirectiveLabel scope=1:4..1:9 anchor=null attributes={} children=1
-    │           └── Text scope=1:5..1:8 anchor=null attributes={} literal="a b" children=0
-    ├── Text scope=1:11..1:11 anchor=null attributes={} literal=" " children=0
-    ├── Subscript scope=1:12..1:21 anchor=null attributes={} children=1
-    │   └── Directive scope=1:13..1:20 anchor=null attributes={} name="d" children=0
-    │       └── DirectiveLabel scope=1:15..1:20 anchor=null attributes={} children=1
-    │           └── Text scope=1:16..1:19 anchor=null attributes={} literal="a b" children=0
-    ├── Text scope=1:22..1:22 anchor=null attributes={} literal=" " children=0
-    └── Directive scope=1:23..1:30 anchor=null attributes={} name="d" children=0
-        └── DirectiveLabel scope=1:25..1:30 anchor=null attributes={} children=1
-            └── Text scope=1:26..1:29 anchor=null attributes={} literal="a\\ b" children=0
-````````````````````````````````
-
-## Fallback
-
-Escaped delimiters are text:
-
-```````````````````````````````` example
-\^a\^ \~b\~
-.
-Document scope=1:1..1:11 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:11 anchor=null attributes={} children=1
-    └── Text scope=1:1..1:11 anchor=null attributes={} literal="^a^ ~b~" children=0
-````````````````````````````````
-
-A failed candidate is text and cannot hide a later valid candidate.
-Delimiter scalars enter a body only through the shared escape mechanism.
-
-## Scopes
-
-Both scopes cover the two delimiters and the body, including an escaped
-space.
-
-## Oracle drift regressions
-
-```````````````````````````````` example
-^^
-.
-Document scope=1:1..1:2 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:2 anchor=null attributes={} children=1
-    └── Superscript scope=1:1..1:2 anchor=null attributes={} children=0
-````````````````````````````````
-
-```````````````````````````````` example
-^^^^ ^^x^y^ *^^*
-.
-Document scope=1:1..1:16 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:16 anchor=null attributes={} children=8
-    ├── Superscript scope=1:1..1:2 anchor=null attributes={} children=0
-    ├── Superscript scope=1:3..1:4 anchor=null attributes={} children=0
-    ├── Text scope=1:5..1:5 anchor=null attributes={} literal=" " children=0
-    ├── Superscript scope=1:6..1:7 anchor=null attributes={} children=0
-    ├── Text scope=1:8..1:8 anchor=null attributes={} literal="x" children=0
-    ├── Superscript scope=1:9..1:11 anchor=null attributes={} children=1
-    │   └── Text scope=1:10..1:10 anchor=null attributes={} literal="y" children=0
-    ├── Text scope=1:12..1:12 anchor=null attributes={} literal=" " children=0
-    └── Emphasis scope=1:13..1:16 anchor=null attributes={} children=1
-        └── Superscript scope=1:14..1:15 anchor=null attributes={} children=0
-````````````````````````````````
-
-```````````````````````````````` example
-[^^]{} [^^](u) ![^^](i) :d[^^] ^[^^]
-.
-Document scope=1:1..1:36 anchor=null attributes={} children=1
-├── Paragraph scope=1:1..1:36 anchor=null attributes={} children=9
-│   ├── Span scope=1:1..1:6 anchor=null attributes={} children=1
-│   │   └── Superscript scope=1:2..1:3 anchor=null attributes={} children=0
-│   ├── Text scope=1:7..1:7 anchor=null attributes={} literal=" " children=0
-│   ├── Link scope=1:8..1:14 anchor=null attributes={} dest=url("u") title=null children=1
-│   │   └── Superscript scope=1:9..1:10 anchor=null attributes={} children=0
-│   ├── Text scope=1:15..1:16 anchor=null attributes={} literal=" !" children=0
-│   ├── Link scope=1:17..1:23 anchor=null attributes={} dest=url("i") title=null children=1
-│   │   └── Superscript scope=1:18..1:19 anchor=null attributes={} children=0
-│   ├── Text scope=1:24..1:24 anchor=null attributes={} literal=" " children=0
-│   ├── Directive scope=1:25..1:30 anchor=null attributes={} name="d" children=0
-│   │   └── DirectiveLabel scope=1:27..1:30 anchor=null attributes={} children=1
-│   │       └── Superscript scope=1:28..1:29 anchor=null attributes={} children=0
-│   ├── Text scope=1:31..1:31 anchor=null attributes={} literal=" " children=0
-│   └── Cite scope=1:32..1:36 anchor=null attributes={} children=1
-│       └── Citation scope=1:34..1:35 referent=footnote(id="inline-1") children=0
-│           ├── CitationPrefix children=0
-│           └── CitationSuffix children=0
-└── Footnote scope=1:32..1:36 id="inline-1" children=1
-    └── Superscript scope=1:34..1:35 anchor=null attributes={} children=0
-````````````````````````````````
-
-```````````````````````````````` example
-`^^` \^\^ ~^^~ ^^~x~ ^^ ^x^
-.
-Document scope=1:1..1:27 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:27 anchor=null attributes={} children=10
-    ├── Code scope=1:1..1:4 anchor=null attributes={} literal="^^" children=0
-    ├── Text scope=1:5..1:10 anchor=null attributes={} literal=" ^^ " children=0
-    ├── Subscript scope=1:11..1:14 anchor=null attributes={} children=1
-    │   └── Superscript scope=1:12..1:13 anchor=null attributes={} children=0
-    ├── Text scope=1:15..1:15 anchor=null attributes={} literal=" " children=0
-    ├── Superscript scope=1:16..1:17 anchor=null attributes={} children=0
-    ├── Subscript scope=1:18..1:20 anchor=null attributes={} children=1
-    │   └── Text scope=1:19..1:19 anchor=null attributes={} literal="x" children=0
-    ├── Text scope=1:21..1:21 anchor=null attributes={} literal=" " children=0
-    ├── Superscript scope=1:22..1:23 anchor=null attributes={} children=0
-    ├── Text scope=1:24..1:24 anchor=null attributes={} literal=" " children=0
-    └── Superscript scope=1:25..1:27 anchor=null attributes={} children=1
-        └── Text scope=1:26..1:26 anchor=null attributes={} literal="x" children=0
-````````````````````````````````
-
-## Required conformance cases
-
-Every example of this module is a package fixture. Tests also cover adjacent
-and intraword forms, Unicode whitespace and newlines inside candidates, code,
-comments, HTML, formulas, autolinks, and other inline nesting, exact scopes,
-allocation failure, and adversarial caret and tilde runs.
+A caret immediately followed by `[` first attempts an
+[inline footnote](footnotes.md#inline-footnotes). Write `^\[note]^` if a
+superscript should begin with a literal opening bracket.

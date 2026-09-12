@@ -179,7 +179,7 @@
                     "optional": false
                 }
             ],
-            "invariants": "mode is `standalone`; `info` is the complete raw info string; `language` is its first non-whitespace token; indented blocks have `fenced=false, closed=true`"
+            "invariants": "mode is `standalone`; `info` is trimmed, escape/entity-decoded, and excludes attached attributes; `language` is its first space/tab-delimited token; indented blocks have `fenced=false, closed=true`"
         },
         {
             "name": "HTMLBlock",
@@ -638,7 +638,7 @@
             "dump": "url(\"...\") or cross(path=\"...\",anchor=null)"
         },
         "CitationReferent": {
-            "purpose": "A tagged value, not a node: it has no scope, and a branch's fields exist only in that branch. The bib branch is first produced by the citations module with P7; every referenced or inline footnote call produces the footnote branch, whose id names the Footnote in Document.footnotes with the equal id. The specimen branch names the first Specimen in Document.specimens with the equal non-null id; syntax production lands with P9b.",
+            "purpose": "A tagged value, not a node: it has no scope, and a branch's fields exist only in that branch. The bib branch is produced by bibliography citations; every referenced or inline footnote call produces the footnote branch, whose id names the Footnote in Document.footnotes with the equal id. The specimen branch names the first Specimen in Document.specimens with the equal non-null id.",
             "branches": {
                 "bib": [
                     {
@@ -769,7 +769,7 @@
             "dump": "decimal, alpha(lowercased=true|false), roman(lowercased=true|false), or default"
         },
         "Specimen": {
-            "purpose": "One document-owned specimen definition: a scoped value, never Markup or a structural child. All definitions, including duplicates and anonymous definitions, remain in scope-start order. id is the authored label or null. start is an effective explicit counter reset or null for continuation; displayed numbers are derived, never stored. P9b produces this value from source.",
+            "purpose": "One document-owned specimen definition: a scoped value, never Markup or a structural child. All definitions, including duplicates and anonymous definitions, remain in scope-start order. id is the authored label or null. start is an effective explicit counter reset or null for continuation; displayed numbers are derived, never stored. Specimen markers produce this value from source.",
             "scoped": true,
             "fields": [
                 {

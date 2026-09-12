@@ -1014,7 +1014,7 @@ its behavior, with no separate publication step.
       feature-table row `present`; document every Obsidian feature in the README
       and the binding READMEs. Requires `O1` through `O9`.
 
-  CodeBlock evidence follows the [base language contract](../specs/dialect/base.md#code)
+  CodeBlock evidence follows the [code syntax guide](../specs/dialect/code.md)
   for preserved info/language and opaque literal bodies. Consumers interpret
   those fields; no CodeBlock subkinds or per-language fixture checklist is
   introduced. Existing generic fixtures discharge these requirements.

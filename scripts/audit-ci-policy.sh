@@ -32,7 +32,7 @@ fi
 # trigger under `on:`): starts at the named 4-space key and ends at the next
 # 4-space key, whatever it is. Policy assertions must slice structurally so
 # that reordering neighbouring jobs cannot silently change what they inspect
-# (implementation layout is not CI contract; see test-architecture.md §8).
+# (implementation layout is not CI contract; see docs/architecture/testing.md).
 job_body() {
     awk -v key="$1" '
         BEGIN { target = "    " key ":" }
