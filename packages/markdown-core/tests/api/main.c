@@ -4716,8 +4716,8 @@ static void table_candidate_work(test_batch_runner *runner) {
     }
 }
 
-/* A nonblank run has one possible footer. Failed geometries must not hide a
- * later matching opener, and both byte work and line visits stay bounded. */
+/* Failed geometries must not hide a later matching opener/footer, and both
+ * byte work and line visits stay bounded across distinct exact interval keys. */
 static void simple_table_footer_work(test_batch_runner *runner) {
     markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
     for (size_t shape = 0; shape < 5; shape++) {
@@ -4741,7 +4741,7 @@ static void simple_table_footer_work(test_batch_runner *runner) {
                 markdown_core_strbuf_putc(&source, '\n');
             }
             if (shape == 4) {
-                markdown_core_strbuf_puts(&source, "--- ---\na   b\n--- ---");
+                markdown_core_strbuf_puts(&source, "--- ---\na   b\n--- ---\nfollowing prose");
             }
             inline_work work = {0};
             markdown_core_node *root =
@@ -4757,6 +4757,57 @@ static void simple_table_footer_work(test_batch_runner *runner) {
                    work.table_geometry_lines);
                 OK(runner, work.tables + work.lookahead <= 32 * (size_t)source.size,
                    "distinct footer comparisons have bounded byte work: shape=%zu n=%zu work=%zu", shape, n,
+                   work.tables + work.lookahead);
+                markdown_core_node_free(root);
+            }
+            markdown_core_strbuf_free(&source);
+        }
+    }
+}
+
+/* Caption queries and ordinary opening queries share negative grid facts.
+ * A failed extent or row-group search must leave valid suffixes eligible. */
+static void grid_caption_search_work(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    for (size_t shape = 0; shape < 6; shape++) {
+        for (size_t n = 32; n <= 512; n *= 2) {
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+            const char *prefix = shape == 1 ? "> " : "";
+            const char *border = shape == 2 ? "+-------+-------+-------+-------+\n" : "+---+\n";
+            const char *equal = shape == 2 ? "+=======+=======+=======+=======+\n" : "+===+\n";
+            const char *body = shape == 2 ? "| a     | b     | c     | d     |\n" : "| a |\n";
+            markdown_core_strbuf_puts(&source, prefix);
+            markdown_core_strbuf_puts(&source, "Table: cap\n");
+            for (size_t i = 0; i < n; i++) {
+                markdown_core_strbuf_puts(&source, prefix);
+                markdown_core_strbuf_puts(&source, border);
+            }
+            if (shape == 4) {
+                markdown_core_strbuf_puts(&source, "+-----+\n| abc |\n+-----+\n");
+            } else if (shape == 3) {
+                markdown_core_strbuf_puts(&source, "| a |\n");
+            } else {
+                for (size_t i = 0; i < (shape == 5 ? 4u : 2u); i++) {
+                    markdown_core_strbuf_puts(&source, prefix);
+                    markdown_core_strbuf_puts(&source, equal);
+                    markdown_core_strbuf_puts(&source, prefix);
+                    markdown_core_strbuf_puts(&source, body);
+                }
+                markdown_core_strbuf_puts(&source, prefix);
+                markdown_core_strbuf_puts(&source, shape == 5 ? equal : border);
+            }
+            inline_work work = {0};
+            markdown_core_node *root =
+                markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
+            OK(runner, root != NULL, "grid caption query completes: shape=%zu n=%zu", shape, n);
+            if (root) {
+                INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_TABLE), shape == 3 ? 0 : 1,
+                       "negative grid facts preserve the valid suffix: shape=%zu n=%zu", shape, n);
+                const markdown_core_node *owner = shape == 1 ? root->first_child->first_child : root->first_child;
+                OK(runner, (markdown_core_node_table_caption(owner) != NULL) == (shape != 3),
+                   "the caption is claimed only by a valid suffix: shape=%zu n=%zu", shape, n);
+                OK(runner, work.tables + work.lookahead <= 128 * (size_t)source.size,
+                   "grid suffix work is source-linear: shape=%zu n=%zu bytes=%d work=%zu", shape, n, source.size,
                    work.tables + work.lookahead);
                 markdown_core_node_free(root);
             }
@@ -5130,6 +5181,7 @@ int main(void) {
     bounded_scanners(runner);
     simple_table_body_boundaries(runner);
     simple_table_footer_work(runner);
+    grid_caption_search_work(runner);
     table_caption_boundaries(runner);
     table_mapped_ownership(runner);
     table_nested_inputs(runner);

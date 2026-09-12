@@ -1067,7 +1067,12 @@ static bool table_header_allowed(table_source *source, size_t index) {
     return !table_has_block_start(source, index, false);
 }
 
-enum { TABLE_NO_SEGMENTED_SEPARATOR = 1u, TABLE_NO_CLOSING_BOUNDARY = 2u, TABLE_NO_SIMPLE_FOOTER = 4u };
+enum {
+    TABLE_NO_SEGMENTED_SEPARATOR = 1u,
+    TABLE_NO_CLOSING_BOUNDARY = 2u,
+    TABLE_NO_SIMPLE_FOOTER = 4u,
+    TABLE_NO_GRID = 8u
+};
 
 static markdown_core_lookahead_entry *table_search_fact(table_source *source, size_t index) {
     table_source_line *line = &source->lines[index];
@@ -1116,20 +1121,99 @@ static bool table_same_dashes(table_source *source, size_t left, size_t right) {
     return true;
 }
 
-/* Only the last nonblank line can be a footer. After a failed headerless
- * search, compare that line with every possible suffix opener once. Matching
- * openers remain eligible; all other suffixes reuse the negative result under
- * the same container/offset. Thus even distinct separator geometries cannot
- * cause repeated scans, and a later valid table is never suppressed. */
+typedef struct {
+    const table_interval *runs;
+    size_t count, line;
+} table_separator_key;
+
+typedef struct {
+    size_t first, count, digit;
+} table_separator_group;
+
+/* Exact interval keys use sixteen radix digits per start/end pair and a
+ * terminator. A variable-length radix traversal visits only existing key
+ * digits, so distinct widths, offsets and column counts cost source-linear
+ * work without hashing or repeatedly comparing long shared prefixes. */
+static unsigned table_separator_digit(table_source *source, table_separator_key key, size_t digit) {
+    source->parser->table_scan_work++;
+    if (digit / 16 >= key.count) {
+        return 0;
+    }
+    table_interval run = key.runs[digit / 16];
+    uint32_t position = (uint32_t)(digit % 16 < 8 ? run.start : run.end);
+    return 1 + ((position >> (28 - 4 * (digit % 8))) & 15);
+}
+
+/* A failed headerless search has captured the whole nonblank run. Group its
+ * separator geometries once: only the final occurrence of each exact key has
+ * no later footer. Other occurrences remain eligible, including valid suffix
+ * tables. Facts retain the shared container/offset ownership. */
 static void table_simple_search_finish(table_source *source, size_t first, size_t last) {
-    for (size_t i = first; i <= last && !source->parser->oom; i++) {
-        if (i == last || !table_same_dashes(source, i, last)) {
-            markdown_core_lookahead_entry *fact = table_search_fact(source, i);
-            if (fact && !source->parser->oom) {
+    size_t capacity = last - first + 1, count = 0;
+    table_separator_key *keys = source->parser->mem->calloc(capacity, sizeof(*keys));
+    table_separator_key *scratch = source->parser->mem->calloc(capacity, sizeof(*scratch));
+    table_separator_group *groups = source->parser->mem->calloc(capacity, sizeof(*groups));
+    if (!keys || !scratch || !groups) {
+        source->parser->oom = true;
+        goto done;
+    }
+    for (size_t i = first; i <= last; i++) {
+        size_t columns = table_dash_count(source, i);
+        if (columns > 1) {
+            const table_interval *runs = table_dashes(source, i);
+            if (!runs) {
+                goto done;
+            }
+            keys[count++] = (table_separator_key){runs, columns, i};
+        }
+    }
+    size_t pending = 1;
+    groups[0] = (table_separator_group){0, count, 0};
+    while (pending) {
+        table_separator_group group = groups[--pending];
+        if (group.count == 1) {
+            markdown_core_lookahead_entry *fact = table_search_fact(source, keys[group.first].line);
+            if (fact) {
+                fact->table_absent |= TABLE_NO_SIMPLE_FOOTER;
+            }
+            continue;
+        }
+        size_t lengths[17] = {0}, offsets[17], cursors[17];
+        for (size_t i = group.first; i < group.first + group.count; i++) {
+            lengths[table_separator_digit(source, keys[i], group.digit)]++;
+        }
+        size_t offset = group.first;
+        for (size_t b = 0; b < 17; b++) {
+            cursors[b] = offsets[b] = offset;
+            offset += lengths[b];
+        }
+        for (size_t i = group.first; i < group.first + group.count; i++) {
+            unsigned bucket = table_separator_digit(source, keys[i], group.digit);
+            scratch[cursors[bucket]++] = keys[i];
+        }
+        memcpy(keys + group.first, scratch + group.first, group.count * sizeof(*keys));
+        if (lengths[0]) {
+            size_t final = 0;
+            for (size_t i = offsets[0]; i < offsets[0] + lengths[0]; i++) {
+                if (keys[i].line > final) {
+                    final = keys[i].line;
+                }
+            }
+            markdown_core_lookahead_entry *fact = table_search_fact(source, final);
+            if (fact) {
                 fact->table_absent |= TABLE_NO_SIMPLE_FOOTER;
             }
         }
+        for (size_t b = 1; b < 17; b++) {
+            if (lengths[b]) {
+                groups[pending++] = (table_separator_group){offsets[b], lengths[b], group.digit + 1};
+            }
+        }
     }
+done:
+    source->parser->mem->free(keys);
+    source->parser->mem->free(scratch);
+    source->parser->mem->free(groups);
 }
 
 static bool table_parse_simple(table_source *source, size_t start, table_candidate *candidate) {
@@ -1150,16 +1234,20 @@ static bool table_parse_simple(table_source *source, size_t start, table_candida
     if (!runs) {
         goto failed;
     }
+    bool footer = false;
     /* Simple rows own inline text until a blank/valid footer. Pandoc 3.11
      * retains heading, quote and fence markers here; the header/caption
      * paragraph-interruption rules do not apply to an existing body. */
     for (size_t i = body; table_source_get(source, i) && !source->lines[i].blanks; i++) {
         end = i;
+        if (table_same_dashes(source, delimiter, i)) {
+            footer = true;
+            break;
+        }
     }
     if (source->parser->oom) {
         goto failed;
     }
-    bool footer = end > delimiter && table_same_dashes(source, delimiter, end);
     if (headerless && !footer) {
         table_simple_search_finish(source, delimiter, end);
     }
@@ -1526,21 +1614,56 @@ done:
     return valid;
 }
 
+static bool table_grid_bounds(table_source *source, size_t index, int *left, int *right) {
+    if (!table_source_get(source, index) || source->lines[index].indent > 3 ||
+        source->lines[index].first >= source->lines[index].length ||
+        source->lines[index].data[source->lines[index].first] != '+' || !table_source_columns(source, index)) {
+        return false;
+    }
+    table_source_line *line = &source->lines[index];
+    *left = table_column(line, line->first);
+    *right = line->columns - 1;
+    while (*right > *left && table_character(line, *right) == ' ') {
+        (*right)--;
+    }
+    return *right - *left >= 2 && table_character(line, *right) == '+';
+}
+
+/* A run's extent and full-width '=' separators are shared by suffix openers
+ * with the same outer margins. Walk backwards once to prove which suffixes
+ * cannot satisfy the closing/head/foot grammar. Different margins and suffixes
+ * with valid separator counts remain eligible for full region validation. */
+static bool table_grid_search_finish(table_source *source, size_t first, size_t last, int left, int right,
+                                     bool complete) {
+    int closing = complete ? table_horizontal(&source->lines[last], left, right) : 0;
+    size_t equals = 0;
+    bool valid = false;
+    for (size_t i = last;; i--) {
+        if (closing && table_horizontal(&source->lines[i], left, right) == '=') {
+            equals++;
+        }
+        valid = i < last && closing && (closing == '=' ? equals >= 2 && equals <= 3 : equals <= 1);
+        int a, b;
+        if (!valid && table_grid_bounds(source, i, &a, &b) && a == left && b == right) {
+            markdown_core_lookahead_entry *fact = table_search_fact(source, i);
+            if (fact) {
+                fact->table_absent |= TABLE_NO_GRID;
+            }
+        }
+        if (i == first) {
+            break;
+        }
+    }
+    return valid;
+}
+
 static bool table_parse_grid(table_source *source, size_t start, table_candidate *candidate) {
     int *parents = NULL, *positions = NULL, *sizes = NULL;
     size_t *boundaries = NULL;
     size_t boundary_count = 0, boundary_capacity = 0;
-    if (!table_source_get(source, start) || source->lines[start].first >= source->lines[start].length ||
-        source->lines[start].data[source->lines[start].first] != '+' || !table_source_columns(source, start)) {
-        return false;
-    }
-    table_source_line *opening = &source->lines[start];
-    int left = table_column(opening, opening->first), right = opening->columns - 1;
-    while (right > left && table_character(opening, right) == ' ') {
-        right--;
-    }
-    if (opening->indent > 3 || right - left < 2 || table_character(opening, left) != '+' ||
-        table_character(opening, right) != '+') {
+    int left, right;
+    if (!table_source_get(source, start) || table_search_absent(source, start, TABLE_NO_GRID) ||
+        !table_grid_bounds(source, start, &left, &right)) {
         return false;
     }
     parents = source->parser->mem->calloc((size_t)right + 1, sizeof(*parents));
@@ -1572,6 +1695,7 @@ static bool table_parse_grid(table_source *source, size_t start, table_candidate
             last--;
         }
         if (last != right || (table_character(line, right) != '+' && table_character(line, right) != '|')) {
+            table_grid_search_finish(source, start, end, left, right, false);
             goto failed;
         }
         int previous = -1;
@@ -1590,7 +1714,8 @@ static bool table_parse_grid(table_source *source, size_t start, table_candidate
         }
         end = i;
     }
-    if (end == start || table_grid_root(source, parents, left) != table_grid_root(source, parents, right)) {
+    if (source->parser->oom || !table_grid_search_finish(source, start, end, left, right, true) ||
+        table_grid_root(source, parents, left) != table_grid_root(source, parents, right)) {
         goto failed;
     }
     int root = table_grid_root(source, parents, left);
@@ -1635,7 +1760,7 @@ static bool table_parse_grid(table_source *source, size_t start, table_candidate
     candidate->last = end;
     candidate->block_content = true;
     candidate->padding_limit = 1;
-    size_t first_equal = SIZE_MAX, last_equal = SIZE_MAX, previous_equal = SIZE_MAX, equals = 0;
+    size_t first_equal = SIZE_MAX, last_equal = SIZE_MAX, previous_equal = SIZE_MAX;
     for (size_t b = 0; b < boundary_count; b++) {
         size_t boundary = boundaries[b];
         table_source_line *line = &source->lines[boundary];
@@ -1646,7 +1771,6 @@ static bool table_parse_grid(table_source *source, size_t start, table_candidate
             }
             previous_equal = last_equal;
             last_equal = b;
-            equals++;
         }
     }
     if (first_equal != SIZE_MAX && first_equal < boundary_count - 1) {
@@ -1654,11 +1778,6 @@ static bool table_parse_grid(table_source *source, size_t start, table_candidate
     }
     if (last_equal == boundary_count - 1 && previous_equal != SIZE_MAX) {
         candidate->foot_count = boundary_count - 1 - previous_equal;
-    }
-    size_t allowed = (first_equal != SIZE_MAX && first_equal < boundary_count - 1 ? 1u : 0u) +
-                     (candidate->foot_count ? (previous_equal == first_equal ? 1u : 2u) : 0u);
-    if (equals != allowed) {
-        goto failed;
     }
     if (!table_grid_cells(source, candidate, positions, boundaries, boundary_count - 1)) {
         goto failed;

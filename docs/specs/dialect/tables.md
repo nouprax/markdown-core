@@ -387,6 +387,12 @@ Document scope=1:1..1:20 anchor=null attributes={} children=1
 A caption line is tested before the definition-list step, as the
 [definition lists](definition-lists.md) module states.
 
+This attachment rule applies after the table syntax has ended. A caption
+marker does not interrupt an unfinished simple-table body: without a blank
+line or matching footer it is cell text. A footer ends the table immediately,
+so a caption may follow it with no blank line. The simple-table examples below
+and the pinned oracle corpus verify all three caption markers at these boundaries.
+
 ## Column arithmetic
 
 All column positions in the syntaxes below count Unicode scalars of the line
@@ -406,9 +412,136 @@ dash-run  = 1*"-"
 
 The header line is the nonblank line immediately before the separator and
 must be the first line of a paragraph candidate. Body rows are every following
-line until a blank line, or until a footer line of the same shape as the
-separator followed by a blank line or the end of the document; at least one
-body row or a footer is required.
+line until a blank line or the first footer line with exactly the separator's
+dash-run intervals. The footer needs no following blank line; at least one
+body row or a footer is required. Subsequent caption or prose lines belong to
+ordinary block parsing outside the completed table.
+
+```````````````````````````````` example
+h   j
+--- ---
+v   w
+: cap
+.
+Document scope=1:1..4:5 anchor=null attributes={} children=1
+└── Table scope=1:1..4:5 anchor=null attributes={} columns=[left:null,left:null] children=3
+    ├── TableHead children=1
+    │   └── TableRow scope=1:1..1:5 anchor=null attributes={} children=2
+    │       ├── TableCell scope=1:1..1:1 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       │   └── Text scope=1:1..1:1 anchor=null attributes={} literal="h" children=0
+    │       └── TableCell scope=1:5..1:5 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │           └── Text scope=1:5..1:5 anchor=null attributes={} literal="j" children=0
+    ├── TableBody children=2
+    │   ├── TableRow scope=3:1..3:5 anchor=null attributes={} children=2
+    │   │   ├── TableCell scope=3:1..3:1 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │   │   │   └── Text scope=3:1..3:1 anchor=null attributes={} literal="v" children=0
+    │   │   └── TableCell scope=3:5..3:5 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │   │       └── Text scope=3:5..3:5 anchor=null attributes={} literal="w" children=0
+    │   └── TableRow scope=4:1..4:5 anchor=null attributes={} children=2
+    │       ├── TableCell scope=4:1..4:4 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       │   └── Text scope=4:1..4:4 anchor=null attributes={} literal=": ca" children=0
+    │       └── TableCell scope=4:5..4:5 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │           └── Text scope=4:5..4:5 anchor=null attributes={} literal="p" children=0
+    └── TableFoot children=0
+````````````````````````````````
+
+```````````````````````````````` example
+h   j
+--- ---
+v   w
+
+: cap
+.
+Document scope=1:1..5:5 anchor=null attributes={} children=1
+└── Table scope=1:1..5:5 anchor=null attributes={} columns=[left:null,left:null] children=2
+    ├── TableCaption scope=5:1..5:5 anchor=null attributes={} children=1
+    │   └── Text scope=5:3..5:5 anchor=null attributes={} literal="cap" children=0
+    ├── TableHead children=1
+    │   └── TableRow scope=1:1..1:5 anchor=null attributes={} children=2
+    │       ├── TableCell scope=1:1..1:1 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       │   └── Text scope=1:1..1:1 anchor=null attributes={} literal="h" children=0
+    │       └── TableCell scope=1:5..1:5 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │           └── Text scope=1:5..1:5 anchor=null attributes={} literal="j" children=0
+    ├── TableBody children=1
+    │   └── TableRow scope=3:1..3:5 anchor=null attributes={} children=2
+    │       ├── TableCell scope=3:1..3:1 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       │   └── Text scope=3:1..3:1 anchor=null attributes={} literal="v" children=0
+    │       └── TableCell scope=3:5..3:5 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │           └── Text scope=3:5..3:5 anchor=null attributes={} literal="w" children=0
+    └── TableFoot children=0
+````````````````````````````````
+
+```````````````````````````````` example
+h   j
+--- ---
+v   w
+--- ---
+: cap
+.
+Document scope=1:1..5:5 anchor=null attributes={} children=1
+└── Table scope=1:1..5:5 anchor=null attributes={} columns=[left:null,left:null] children=2
+    ├── TableCaption scope=5:1..5:5 anchor=null attributes={} children=1
+    │   └── Text scope=5:3..5:5 anchor=null attributes={} literal="cap" children=0
+    ├── TableHead children=1
+    │   └── TableRow scope=1:1..1:5 anchor=null attributes={} children=2
+    │       ├── TableCell scope=1:1..1:1 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       │   └── Text scope=1:1..1:1 anchor=null attributes={} literal="h" children=0
+    │       └── TableCell scope=1:5..1:5 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │           └── Text scope=1:5..1:5 anchor=null attributes={} literal="j" children=0
+    ├── TableBody children=1
+    │   └── TableRow scope=3:1..3:5 anchor=null attributes={} children=2
+    │       ├── TableCell scope=3:1..3:1 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       │   └── Text scope=3:1..3:1 anchor=null attributes={} literal="v" children=0
+    │       └── TableCell scope=3:5..3:5 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │           └── Text scope=3:5..3:5 anchor=null attributes={} literal="w" children=0
+    └── TableFoot children=0
+````````````````````````````````
+
+```````````````````````````````` example
+--- ---
+v   w
+--- ---
+Table: cap
+.
+Document scope=1:1..4:10 anchor=null attributes={} children=1
+└── Table scope=1:1..4:10 anchor=null attributes={} columns=[left:null,left:null] children=1
+    ├── TableCaption scope=4:1..4:10 anchor=null attributes={} children=1
+    │   └── Text scope=4:8..4:10 anchor=null attributes={} literal="cap" children=0
+    ├── TableHead children=0
+    ├── TableBody children=1
+    │   └── TableRow scope=2:1..2:5 anchor=null attributes={} children=2
+    │       ├── TableCell scope=2:1..2:1 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       │   └── Text scope=2:1..2:1 anchor=null attributes={} literal="v" children=0
+    │       └── TableCell scope=2:5..2:5 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │           └── Text scope=2:5..2:5 anchor=null attributes={} literal="w" children=0
+    └── TableFoot children=0
+````````````````````````````````
+
+```````````````````````````````` example
+h   j
+--- ---
+v   w
+--- ---
+prose
+.
+Document scope=1:1..5:5 anchor=null attributes={} children=2
+├── Table scope=1:1..4:7 anchor=null attributes={} columns=[left:null,left:null] children=2
+│   ├── TableHead children=1
+│   │   └── TableRow scope=1:1..1:5 anchor=null attributes={} children=2
+│   │       ├── TableCell scope=1:1..1:1 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │       │   └── Text scope=1:1..1:1 anchor=null attributes={} literal="h" children=0
+│   │       └── TableCell scope=1:5..1:5 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │           └── Text scope=1:5..1:5 anchor=null attributes={} literal="j" children=0
+│   ├── TableBody children=1
+│   │   └── TableRow scope=3:1..3:5 anchor=null attributes={} children=2
+│   │       ├── TableCell scope=3:1..3:1 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │       │   └── Text scope=3:1..3:1 anchor=null attributes={} literal="v" children=0
+│   │       └── TableCell scope=3:5..3:5 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │           └── Text scope=3:5..3:5 anchor=null attributes={} literal="w" children=0
+│   └── TableFoot children=0
+└── Paragraph scope=5:1..5:5 anchor=null attributes={} children=1
+    └── Text scope=5:1..5:5 anchor=null attributes={} literal="prose" children=0
+````````````````````````````````
 
 Within a simple-table body, lines beginning with `#`, `>`, or code fences
 remain rows and their cells are parsed as inline content. Shared block-start
@@ -849,7 +982,8 @@ A Setext heading beats every candidate: a single dash run without internal
 whitespace that the inherited grammar reads as an underline is an underline.
 A complete simple, multiline, or grid candidate beats a thematic break and a
 paragraph; a dash line that completes no candidate is a thematic break; a
-code fence is never claimed. Each line is scanned at most twice. Multiline
+code fence is never claimed. Failed grammar searches reuse facts under the
+same container and offset. Multiline
 and grid candidates commit only after a valid opening structure establishes a
 rectangular grid, and a malformed or nonrectangular candidate restarts
 inherited block parsing at its first line with no partial table. Code and

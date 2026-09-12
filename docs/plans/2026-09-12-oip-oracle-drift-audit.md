@@ -40,13 +40,15 @@ nodes/scopes, and the author-tail compound retains only declared affix trimming.
 No new difference waiver was introduced.
 
 The [new simple-footer review](https://github.com/nouprax/markdown-core/pull/229#discussion_r3995958184)
-also exposed repeated failed suffix scans. A simple footer must be the last
-nonblank line of the current container view. A failed search now compares this
-sole possible footer with each suffix opener once and publishes exact negative
-facts keyed by container and offset. Matching geometries remain eligible. Tests
-count both line visits and byte work for varying run counts, widths and offsets,
-container prefixes, and a later successful table. No hash, cardinality cutoff
-or alternative parser is involved.
+also exposed repeated failed suffix scans. Its initial optimization incorrectly
+assumed that a footer must be the final nonblank line. The later caption review
+below exposed that mistake; the current grammar closes at the first exact
+matching footer. A failed search groups separator interval keys once and marks
+only each key's last occurrence as having no later footer, under the same
+container and offset. Variable-length radix traversal bounds the work by the
+authored key digits, without hashing or a cardinality cutoff. Tests count line
+visits and byte work for varying run counts, widths and offsets, container
+prefixes, and a later successful table followed immediately by prose.
 
 The new work bounds fail 74 assertions against the unchanged baseline table
 implementation and pass against the corrected implementation. The allocation
@@ -111,6 +113,42 @@ a partial table. Its candidate-extent wording and concrete separation examples
 are now explicit, with product fixtures. Runtime behavior is unchanged; neither
 Pandoc's source loss nor the review's different prefix-recovery rule is adopted.
 No oracle waiver or registered output digest changes in this follow-up.
+
+### Caption search and simple-footer follow-up
+
+The [grid caption-search review](https://github.com/nouprax/markdown-core/pull/229#discussion_r3996148754)
+is confirmed: failed row-group validation rescanned each remaining grid suffix.
+Grid extent and full-width `=` counts now establish negative facts for suffix
+openers with the same outer margins. A backwards pass proves which suffixes
+cannot satisfy the closing/head/foot grammar; different margins and valid
+separator counts remain eligible for full rectangular-region validation.
+The caption producer and definition-term probe reuse the existing per-container,
+per-offset fact ownership. Six size-doubling shapes cover excess separators,
+width changes, incomplete closing boundaries and quoted inputs. The new checks
+fail 17 assertions against the unchanged `1cbdfbc5` baseline, including the
+simple footer before prose, and pass with these corrections.
+
+All six grid shapes retain byte-identical dumps against that baseline. On the
+local Release CLI, after one warmup and taking the median of three processes,
+the reported caption workload takes 0.415 s / 1.623 s at 8,000 / 16,000 lines
+before this change and 0.0091 s / 0.0170 s afterwards. These measurements include
+process startup; the deterministic work counters provide the regression gate.
+
+The [simple caption review](https://github.com/nouprax/markdown-core/pull/229#discussion_r3996148760)
+has a false direct premise: without a blank or footer, native Pandoc also treats
+`: cap`, `Table: cap` and `table: cap` as body cells. Its adjacent controls expose
+the real footer defect described above: a matching footer ends the table before
+any following prose or caption, with no blank line required. Seventeen exact
+oracle agreements cover all three markers with/without a footer and blank,
+headerless captions and ordinary prose after a footer. The corpus now has
+130 cases / 97 agreements / 33 registered differences, with no new waiver or
+changed delta digest. The caption attachment wording now explicitly requires
+the source table syntax to have ended first.
+
+Validation: all 88 C suites, four targeted ASan suites including the complete
+allocation-failure sweep, all six oracle gates, the oracle harness unit tests,
+C warnings, formatting, canonical coverage and test-topology checks pass.
+The 30 exact position-ledger observations remain unchanged.
 
 The findings below describe the baseline before these corrections.
 
