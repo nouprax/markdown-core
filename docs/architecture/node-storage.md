@@ -1,6 +1,6 @@
 # Node storage and lifetime
 
-The engine node contains its tree links, source mapping, attributes, extension
+The engine node contains its tree links, source mapping, attributes, element
 state, and a union of typed node data pointers. Every union arm is a pointer;
 adding fields to one kind cannot enlarge the common node. A kind with no
 kind-specific fields has no data record. Field-bearing kinds own a
@@ -41,7 +41,7 @@ failure. Parser callers decline rejected conversions and set the OOM flag only
 for allocation failure. Either failure leaves the original kind and all owned
 values intact. A successful conversion releases node-valued fields through the
 same iterative destruction walk used for ordinary tree destruction. The
-extension's opaque state belongs to the node and extension, so it survives a
+element's opaque state belongs to the node and element, so it survives a
 kind conversion.
 
 HTML blocks keep their recognition state and eventual literal in distinct
@@ -99,8 +99,8 @@ namespaces, so their total is bounded by F plus the authored-id count.
 After every allocation succeeds, finalization moves the values into one
 source-ordered document chain and discards the parser collection.
 
-Consolidation and extension postprocessing begin only after finalization.
-Their common tree-phase walker visits Document.footnotes and extension-owned
+Consolidation and element postprocessing begin only after finalization.
+Their common tree-phase walker visits Document.footnotes and element-owned
 fields from their live owner slots. Callbacks receive resolved ids and the
 completed ownership model; removing a document value cannot leave a pointer
 in a parser index. OOM cleanup uses the document's existing ownership graph,
@@ -112,13 +112,13 @@ Only `^[` terminates an ordinary text run; other carets incur the same
 allocation work as other text. Bare autolinks use the enclosing inline
 context's start and closing delimiter, preserving the footnote boundary.
 
-Extension-owned fields participate in the same iterative destruction walk.
-Before freeing an extension payload, the core visits its owned-root slots,
-splices their chains into the walk, and clears the slots. The extension frees
+Element-owned fields participate in the same iterative destruction walk.
+Before freeing an element payload, the core visits its owned-root slots,
+splices their chains into the walk, and clears the slots. The element frees
 only its remaining value storage. Directive labels use this contract, and
 table captions use the same operation. The operation allocates nothing and does
 not recurse through field nesting. Kind conversion continues to preserve the
-extension's opaque state, including its owned fields.
+element's opaque state, including its owned fields.
 
 ## Mapped table block inputs
 
@@ -159,7 +159,7 @@ header precedence is queried only after its separator grammar matches.
 
 Streaming block opening and captured table/caption queries share one core
 prefix recognizer. It returns borrowed marker facts; only streaming commitment
-opens nodes. Extension probes share their producers' grammar and obtain later
+opens nodes. Element probes share their producers' grammar and obtain later
 lines through a caller-owned reader, using either the current container
 lookahead or captured source lines. Probing a comment closer therefore does
 not nest a parser transaction. Paragraph interruption keeps its real list,
@@ -171,7 +171,7 @@ Document completion stably orders entries by original line and column using a
 fixed-pass radix sort. Explicit reference definitions take priority over
 implicit heading definitions, then the earliest authored definition wins.
 
-The table caption is an independent extension-owned root, visited before rows.
+The table caption is an independent element-owned root, visited before rows.
 C exposes it through `markdown_core_node_table_caption`; Swift, Kotlin and ES
 copy it with the rest of the immutable result. JNI uses the shared optional
 node-field continuation, and Wasm's fixed node record uses its owner-typed

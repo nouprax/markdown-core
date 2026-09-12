@@ -42,8 +42,8 @@ typedef enum {
      * a document-owned `Footnote` value once the document finalizes, when
      * every one leaves the tree for the root's own footnote chain. */
     MARKDOWN_CORE_NODE_FOOTNOTE = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x000a,
-    /* 0x000b through 0x000f are taken by the extension block types in
-     * extensions/markdown-core-extensions.h, numbered when 0x000a was the last
+    /* 0x000b through 0x000f are taken by the element block types in
+     * elements/markdown-core-elements.h, numbered when 0x000a was the last
      * core block. A new core block therefore starts at 0x0010 rather than at
      * the next free value. The internal type value is NOT the wire ordinal --
      * markdown_core_node_kind numbers the facade's kinds -- so the gap costs
@@ -82,9 +82,9 @@ typedef enum {
      * chain of CITATION nodes it owns beside its children, which it never
      * has. */
     MARKDOWN_CORE_NODE_CITE = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x000a,
-    /* 0x000b through 0x000e are the extension INLINE types; the core values
+    /* 0x000b through 0x000e are the element INLINE types; the core values
      * continue at 0x000f. The block class had no such value -- its
-     * extensions run to 0x000f -- which is why its next core type starts at
+     * elements run to 0x000f -- which is why its next core type starts at
      * 0x0010 and this one does not. The two classes are numbered
      * independently; the class bits are what separate them.
      *
@@ -113,7 +113,7 @@ typedef struct markdown_core_node markdown_core_node;
 #endif
 typedef struct markdown_core_parser markdown_core_parser;
 typedef struct markdown_core_iter markdown_core_iter;
-typedef struct markdown_core_extension markdown_core_extension;
+typedef struct markdown_core_element markdown_core_element;
 
 /**
  * ## Custom memory allocator support
@@ -186,11 +186,11 @@ MARKDOWN_CORE_EXPORT markdown_core_node *markdown_core_node_new_with_mem(markdow
                                                                          markdown_core_mem *mem);
 
 MARKDOWN_CORE_EXPORT markdown_core_node *markdown_core_node_new_with_ext(markdown_core_node_type type,
-                                                                         const markdown_core_extension *extension);
+                                                                         const markdown_core_element *element);
 
-MARKDOWN_CORE_EXPORT markdown_core_node *
-markdown_core_node_new_with_mem_and_ext(markdown_core_node_type type, markdown_core_mem *mem,
-                                        const markdown_core_extension *extension);
+MARKDOWN_CORE_EXPORT markdown_core_node *markdown_core_node_new_with_mem_and_ext(markdown_core_node_type type,
+                                                                                 markdown_core_mem *mem,
+                                                                                 const markdown_core_element *element);
 
 /** Frees the memory allocated for a node and any children.
  */

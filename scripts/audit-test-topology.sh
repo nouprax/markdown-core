@@ -16,7 +16,7 @@ note() {
     echo "ok: $1"
 }
 
-# 1. Test corpora have one owner. Extension correctness fixtures belong to the
+# 1. Test corpora have one owner. Element correctness fixtures belong to the
 # C package and are also used as INPUT by the external parity gates. The
 # `specs/oracles` tree owns only external pins, comparison policy, deltas, and
 # purpose-built oracle input. Product-owned golden dumps there would recreate
@@ -177,7 +177,7 @@ if [ -n "$BUILD_DIR" ]; then
         }
 
         tests_all=$(ctest_inventory -N | normalize_lines | sed -n 's/^  Test *#[0-9]*: //p')
-        for label in api facade conformance consumer spec extensions regression pathological fuzz packaging; do
+        for label in api facade conformance consumer spec elements regression pathological fuzz packaging; do
             count=$(ctest_inventory -N -L "^${label}$" | normalize_lines | sed -n 's/^Total Tests: //p')
             if [ "${count:-0}" -lt 1 ]; then
                 fail "no CTest tests carry label '$label'"

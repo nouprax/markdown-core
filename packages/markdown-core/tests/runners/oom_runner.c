@@ -117,17 +117,17 @@ static const char OOM_LINE_AND_CORE_CORPUS[] = "\xef\xbb\xbf# bom\r\n"
                                                "\n"
                                                "[shortcut]: <https://example.com/a(b)> 'title'\n";
 
-static const char OOM_EXTENSION_EDGE_CORPUS[] = ":inline[label]{.a class=\"\" .b id=x id=y entity=&amp;}\n"
-                                                "\n"
-                                                ":::outer[lab]{empty=\"\" key='value'}\n"
-                                                ":::inner\n"
-                                                "body \\(x+y\\) and $`z`$\n"
-                                                ":::\n"
-                                                ":::\n"
-                                                "\n"
-                                                "| escaped \\| pipe | second |\n"
-                                                "| :--- | ---: |\n"
-                                                "| a | b |\n";
+static const char OOM_ELEMENT_EDGE_CORPUS[] = ":inline[label]{.a class=\"\" .b id=x id=y entity=&amp;}\n"
+                                              "\n"
+                                              ":::outer[lab]{empty=\"\" key='value'}\n"
+                                              ":::inner\n"
+                                              "body \\(x+y\\) and $`z`$\n"
+                                              ":::\n"
+                                              ":::\n"
+                                              "\n"
+                                              "| escaped \\| pipe | second |\n"
+                                              "| :--- | ---: |\n"
+                                              "| a | b |\n";
 
 /* Nested values, field owners, all reserved suffixes, and unsuccessful
  * candidates must remain one all-or-nothing ownership transaction. */
@@ -269,7 +269,7 @@ static const oom_case OOM_CASES[] = {
     {"inserted text", OOM_INSERTION_CORPUS, sizeof(OOM_INSERTION_CORPUS) - 1},
     {"full-feature", OOM_CORPUS, sizeof(OOM_CORPUS) - 1},
     {"line-and-core", OOM_LINE_AND_CORE_CORPUS, sizeof(OOM_LINE_AND_CORE_CORPUS) - 1},
-    {"extension-edges", OOM_EXTENSION_EDGE_CORPUS, sizeof(OOM_EXTENSION_EDGE_CORPUS) - 1},
+    {"element-edges", OOM_ELEMENT_EDGE_CORPUS, sizeof(OOM_ELEMENT_EDGE_CORPUS) - 1},
 };
 
 static markdown_core_document *parse_with_sweep(const oom_case *test, markdown_core_error **error) {

@@ -5,7 +5,7 @@ It is a statement of the current repository, not a staged implementation plan
 and not a record of abandoned designs.
 
 Markdown Core is a renamed cmark-family Markdown parser with repository-owned
-parser extensions and an immutable, typed document model. It parses one owned
+parser elements and an immutable, typed document model. It parses one owned
 source buffer into one owned `Document`. It does not render output and it does
 not expose a parser lifecycle, incremental mutation, streaming, CST, or
 diagnostic subsystem.
@@ -18,7 +18,7 @@ to this repository.
 ## 1. Lineage and reconstruction boundary
 
 The C engine retains cmark's block parser, inline parser, UTF-8 handling,
-reference resolution, node ownership, and extension machinery. Its CommonMark
+reference resolution, node ownership, and shared element machinery. Its CommonMark
 layer follows the newest stable cmark release rather than freezing at the
 cmark-gfm fork's 0.29 base. The public product name and symbols are
 `markdown-core` / `markdown_core_*`; upstream `cmark_*` product symbols are not
@@ -27,7 +27,7 @@ a second supported API.
 The reconstruction makes four deliberate product changes:
 
 1. Rename the cmark-derived parser as Markdown Core.
-2. Attach the repository's parser extensions to the one parse transaction.
+2. Attach the repository's parser elements to the one parse transaction.
 3. Project the parse result into the canonical immutable AST exposed by C,
    Swift, Kotlin, and ECMAScript.
 4. Remove cmark's renderers and its caller-driven feed/finish lifecycle.
@@ -41,16 +41,16 @@ removed lifecycle or render APIs.
 The semantic operation is:
 
 ```text
-owned source bytes + parse options -> Document | ParseError
+owned source bytes -> Document | ParseError
 ```
 
 The facade owns the complete source for the duration of parsing. Internally it
-creates one private parser, attaches the configured parser extensions, parses
+creates one private parser, attaches the complete element table, parses
 the full buffer, finishes the document, and destroys the parser before it
 returns. Parser state never escapes that transaction.
 
 The engine has no writable process-global parser state and no initialization
-registry. Its file-scope tables and extension descriptors are immutable.
+registry. Its file-scope tables and element descriptors are immutable.
 Distinct parse transactions, traversal, dumps, and frees may run concurrently
 without a library lock. A single returned document may be read concurrently;
 its owner must synchronize the final free after all readers have finished.
@@ -70,17 +70,18 @@ The following interfaces do not exist:
 The CLI follows the same rule: it reads the selected input completely and
 invokes the same one-shot parse transaction used by library consumers.
 
-## 3. Parser extensions
+## 3. Parser elements
 
-Extensions participate only in parser construction. They may register block
-or inline syntax, node types, and parser-local state, but they do not create a
-second parse path or a caller-visible lifecycle.
+All syntax, including inherited CommonMark, belongs to element modules under
+`packages/markdown-core/elements/`. Immutable descriptors provide block and
+inline recognition, construction, source ownership and lifecycle callbacks.
+The shared engines retain dispatch, traversal, source mapping and delimiter
+reduction. Every parse attaches the same complete element table; callers cannot
+select a subset of the dialect.
 
-The repository-owned language includes current cmark CommonMark behavior plus
-the enabled extension set represented by the current implementation and
-fixtures: tables, strikethrough, task lists, autolinks, footnotes, directives,
-and formula. The extension attach order is part of the grammar and is audited
-because it affects delimiter and block precedence.
+Element attachment order is part of the grammar and is audited because it
+affects delimiter and block precedence. The complete inventory and ownership
+boundaries are documented in [Syntax elements](architecture/syntax-elements.md).
 
 Upstream authority is layered. The newest stable cmark is the sole primary
 CommonMark oracle. Dormant cmark-gfm is consulted only for its GFM extension
@@ -96,8 +97,8 @@ shared parser algorithm. Renderer, streaming API, mutable tree API, CLI-format,
 and build/install changes are excluded because those surfaces do not exist in
 this product. `specs/oracles/cmark/IMPORTS.md` records the current audit.
 
-Each extension must obey the same ownership and failure contract as the core:
-an allocation failure terminates the entire parse. An extension may not omit a
+Each element must obey the same ownership and failure contract as the core:
+an allocation failure terminates the entire parse. An element may not omit a
 feature, switch algorithms, or return a smaller but apparently valid tree in
 order to survive OOM.
 
@@ -146,7 +147,7 @@ OOM has one repository-wide meaning:
 any required allocation fails -> no Document + ALLOCATION_FAILED
 ```
 
-This applies to core nodes, parser buffers, references, extension state,
+This applies to core nodes, parser buffers, references, element state,
 attributes, indexes, facade projection, and any other allocation required by
 the transaction. There is no fallback to sorting, linear scans, reduced
 indexing, truncated data, feature omission, alternate parsing, retry, or
@@ -170,7 +171,7 @@ document happens to match the expected AST.
 
 The installed C package exposes one facade header,
 `include/markdown_core.h`, and an exact export allowlist. Internal parser and
-extension headers are not installed.
+element headers are not installed.
 
 Swift, Kotlin, and ECMAScript expose the same concepts:
 
@@ -202,7 +203,7 @@ own natural foreign-function boundary:
   fixed-width node records, relation indexes, and UTF-8 bytes from linear
   memory before freeing it; bottom-up reconstruction is iterative.
 
-The parser's extension postprocessing is depth-independent as well. In
+The parser's element postprocessing is depth-independent as well. In
 particular, enabling formulas must not recursively visit every node in a deep
 document that contains no formula. Correctness tests parse and inspect 10,000
 nested lists through every binding boundary.

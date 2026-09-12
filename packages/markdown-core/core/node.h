@@ -9,7 +9,7 @@ extern "C" {
 #include <stdint.h>
 
 #include "markdown-core.h"
-#include "markdown-core-extension-api.h"
+#include "markdown-core-element-api.h"
 #include "buffer.h"
 #include "chunk.h"
 #include "attributes.h"
@@ -219,10 +219,10 @@ enum markdown_core_node__internal_flags {
     // Deferred contextual escape token, decoded when inline ownership is final.
     MARKDOWN_CORE_NODE__ESCAPED_SPACE = (1 << 6),
 
-    // The first bit an extension may claim. Extension flags are compile-time
-    // constants owned by the extension that uses them; there is no runtime
+    // The first bit an element may claim. Element flags are compile-time
+    // constants owned by the element that uses them; there is no runtime
     // registration and no allocator to run out of bits.
-    MARKDOWN_CORE_NODE__EXTENSION_FIRST = (1 << 7),
+    MARKDOWN_CORE_NODE__ELEMENT_FIRST = (1 << 7),
 };
 
 typedef uint16_t markdown_core_node_internal_flags;
@@ -291,8 +291,8 @@ struct markdown_core_node {
     uint16_t kind;
     markdown_core_node_internal_flags flags;
 
-    const markdown_core_extension *extension;
-    /* Extension-owned data, allocated by opaque_alloc_func and released by
+    const markdown_core_element *element;
+    /* Element-owned data, allocated by opaque_alloc_func and released by
      * opaque_free_func. It survives kind changes independently of `as`. */
     void *opaque;
 
@@ -353,6 +353,12 @@ static MARKDOWN_CORE_INLINE bool MARKDOWN_CORE_NODE_INLINE_P(markdown_core_node 
 
 MARKDOWN_CORE_EXPORT bool markdown_core_node_can_contain_type(markdown_core_node *node,
                                                               markdown_core_node_type child_type);
+
+typedef int (*markdown_core_owned_subtree_visitor)(markdown_core_node **root_slot, void *context);
+int markdown_core_visit_inline_subtrees(markdown_core_node *node, markdown_core_owned_subtree_visitor visitor,
+                                        void *context);
+int markdown_core_visit_block_subtrees(markdown_core_node *node, markdown_core_owned_subtree_visitor visitor,
+                                       void *context);
 
 #ifdef __cplusplus
 }

@@ -11,14 +11,14 @@
 //
 //   stress       Threads hammer the parse transaction over a matrix of
 //                inputs and byte-compare every dump against a per-input
-//                reference.  Every parse attaches the same extensions, so
+//                reference.  Every parse attaches the same elements, so
 //                this pins instance locality: no parse may observe another's
 //                delimiter stack, reference map, or special-character
 //                table, and no parse may leave state behind for the next.
 //
 //   lifecycle    Repeated parse/free cycles interleaved with failure paths
 //                must not affect a later parser instance — the last parse
-//                must still attach every extension and dump identically to
+//                must still attach every element and dump identically to
 //                the first.
 //
 // The runner uses raw native threads (pthread / Win32) on purpose: the
@@ -125,7 +125,7 @@ static void thread_join(thread_handle handle) { pthread_join(handle, NULL); }
 #define THREAD_COUNT 8
 #define STRESS_ITERATIONS 200
 
-// Inputs cover every core extension plus emphasis flanking around '~' and
+// Inputs cover every core element plus emphasis flanking around '~' and
 // '$', which is exactly the surface the parser-local skip-character tables
 // change when strikethrough/formula are toggled.
 static const char *const INPUTS[] = {

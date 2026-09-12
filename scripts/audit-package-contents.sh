@@ -16,7 +16,7 @@ fi
 
 renderer_api_pattern='markdown_core_(markdown_to_html|render_)|markdown_core_(syntax_)?extension_set_(commonmark_render|plaintext_render|latex_render|xml_attr|man_render|html_render|html_filter|commonmark_escape)'
 if grep -R -I -n -E "$renderer_api_pattern" \
-    packages/markdown-core/core packages/markdown-core/extensions \
+    packages/markdown-core/core packages/markdown-core/elements \
     packages/markdown-core/include Package.swift Makefile scripts; then
     echo "Renderer API remains in repository source" >&2
     exit 1
@@ -24,7 +24,7 @@ fi
 
 retired_parser_api_pattern='markdown_core_parser_(new|new_with_mem|feed|feed_reentrant|finish|free|retain_concrete)|markdown_core_parse_file|markdown_core_document_(source|line_count|line_start|diagnostic_(count|at))|markdown_core_concrete|markdown_core_diagnostic_code_name'
 if grep -R -I -n -E "$retired_parser_api_pattern" \
-    packages/markdown-core/core packages/markdown-core/extensions \
+    packages/markdown-core/core packages/markdown-core/elements \
     packages/markdown-core/include packages/swift-markdown-core/Sources \
     packages/kotlin-markdown-core/src/commonMain packages/es-markdown-core/src; then
     echo "Retired parser, feed, or diagnostic API remains in active source" >&2
@@ -124,7 +124,7 @@ const cTarget = manifest.targets.find((candidate) => candidate.name === "Markdow
 if (!cTarget || cTarget.path !== "packages/markdown-core") {
     throw new Error("SwiftPM internal C target path changed unexpectedly");
 }
-const allowedPrefixes = ["core/", "extensions/"];
+const allowedPrefixes = ["core/", "elements/"];
 const unexpected = cTarget.sources.filter(
     (source) => !allowedPrefixes.some((prefix) => source.startsWith(prefix))
 );
@@ -244,8 +244,8 @@ find "$temp_dir/cmake-prefix-static" \( -type f -o -type l \) | while IFS= read 
 done
 
 for prefix in "$temp_dir/cmake-prefix" "$temp_dir/cmake-prefix-static"; do
-    if grep -R -I -n 'markdown-core-extensions' "$prefix"; then
-        echo "Installed C metadata exposes the private extensions target" >&2
+    if grep -R -I -n -E 'markdown-core-(elements|extensions)' "$prefix"; then
+        echo "Installed C metadata exposes the private elements target" >&2
         exit 1
     fi
 done

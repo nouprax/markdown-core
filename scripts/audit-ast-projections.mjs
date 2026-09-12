@@ -180,7 +180,7 @@ const modelProjections = [
         label: "Kotlin model",
         directories: ["packages/kotlin-markdown-core/src/commonMain/kotlin"],
         // Both spellings: most kinds take an `internal constructor`, the two
-        // extension kinds take a plain one. A reader that knew only the first
+        // element kinds take a plain one. A reader that knew only the first
         // reported them as missing.
         declaration: (kind) => new RegExp(`^public (?:data )?class ${kind}\\b[^\\n]*\\(`, "m"),
         field: /(?:public |override )?val `?([A-Za-z]+)`?\s*:\s*([^\n=]+?)(?:\s*=[^\n]*)?,?\s*$/gm,
@@ -220,7 +220,7 @@ const structural = (field) =>
 let failed = false;
 
 {
-    const source = read("packages/markdown-core/extensions/ast.c");
+    const source = read("packages/markdown-core/elements/ast.c");
     const start = source.lastIndexOf("static void dump_node(");
     const prefix = source.slice(start, source.indexOf("dump_fields(buffer, node, kind)", start));
     const fields = [...prefix.matchAll(/buffer_cstr\(buffer, " ([A-Za-z]+)=/g)].map((match) => match[1]);
@@ -280,7 +280,7 @@ const kindSurfaces = [
     {
         label: "C dump kind names",
         expect: [...kinds.keys()],
-        actual: namedKinds("packages/markdown-core/extensions/ast.c", /^\s+"([A-Za-z]+)"[,}]/gm).filter(
+        actual: namedKinds("packages/markdown-core/elements/ast.c", /^\s+"([A-Za-z]+)"[,}]/gm).filter(
             (name) => name !== "None"
         )
     },
@@ -387,7 +387,7 @@ for (const { label, expect, actual } of kindSurfaces) {
  * structural children; in particular, a directive may visually nest its
  * `label` field without counting or exposing that field as a child. */
 {
-    const source = read("packages/markdown-core/extensions/ast.c");
+    const source = read("packages/markdown-core/elements/ast.c");
     const body = source.slice(source.indexOf("static void dump_fields"));
     const arms = new Map();
     let pending = [];

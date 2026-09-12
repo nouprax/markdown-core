@@ -12,7 +12,7 @@ The private stack contains five source-ordered entry kinds:
 
 | Entry | Meaning | Completion |
 | --- | --- | --- |
-| Marker | Borrowed Text, rule, width, opening/closing eligibility, extension owner | Paired by the shared matcher or left as authored text |
+| Marker | Borrowed Text, rule, width, opening/closing eligibility, element owner | Paired by the shared matcher or left as authored text |
 | Boundary | Ordinary raw whitespace has occurred at this source position | Advances the standard opener-search floor for word bodies |
 | Citation token | A raw key or semicolon awaiting its bracket owner, or a suspended range endpoint | Becomes an affix boundary or is removed when ownership is decided |
 | Affix boundary | A committed item splits prefix, key and suffix inline fields | Advances every rule's opener-search floor |
@@ -21,7 +21,7 @@ The private stack contains five source-ordered entry kinds:
 Every entry uses the same allocation, linking and removal operations. Fields
 borrow their token owner; the AST owns the field trees. A field event is always
 the last entry when token scanning pauses. Completing it cannot change the
-parent stack because each field has its own inline subject. No script cursor boundary or per-marker boundary snapshot is retained.
+parent stack because each field has its own inline state. No script cursor boundary or per-marker boundary snapshot is retained.
 
 A heading can suspend with a field event on its ordinary stack. Its label
 contains live brackets, so it cannot declare an implicit reference; its
@@ -31,13 +31,17 @@ and inline footnotes. See [heading resolution](heading-resolution.md).
 
 ## Rule grammar and pairing
 
-The rule table declares minimum/maximum consumed width, lexical run limit,
-rule-of-three ambiguity and body grammar. Inline bodies use inherited flanking;
+Each element's element descriptor declares minimum/maximum consumed width,
+lexical run limit, rule-of-three ambiguity and body grammar. The engine retains
+no reserved syntax rules and projects every attached declaration by rule.
+See [syntax element ownership](syntax-elements.md) for the element inventory
+and parser boundary. Inline bodies use inherited flanking;
 word bodies use non-empty content without ordinary raw whitespace. The table
 selects the same shared constructor for every parsed body. The maximal tilde
 lexer retains its distinct spelling rule: one tilde is Subscript, exactly two
 are Strikethrough, and longer runs are text. The inherited strikethrough
-flanking classifier and `~` transparency remain unchanged.
+flanking semantics and `~` transparency remain unchanged; Strikethrough now
+uses the same classifier and constructor as the other parsed delimiters.
 
 The matcher walks forward and searches backward using the existing
 `openers_bottom[length % 3][rule]` memo. A boundary advances those same memo
@@ -111,7 +115,7 @@ Allocation failure frees continuations independently of the AST they borrow.
 Each populated affix owns a private inline root, exposed through the public
 Citation's prefix/suffix collections. Source trimming only changes raw edge
 whitespace; nested markup keeps its authored scope. Completion, consolidation,
-validation and extension postprocessing traverse all owned inline roots using
+validation and element postprocessing traverse all owned inline roots using
 one explicit stack. Field order and inherited script depth are retained, and a
 phase may replace its root only after its nested fields finish. Definition
 families start independent contexts. Disposal splices the same owned roots into

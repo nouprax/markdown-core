@@ -18,7 +18,7 @@ public struct FormulaBlock: Markup {
 extension FormulaBlock {
     init(from node: OpaquePointer) {
         // A formula BLOCK is always standalone -- the engine's own
-        // `markdown_core_extensions_set_formula_mode` refuses any other value
+        // `markdown_core_elements_set_formula_mode` refuses any other value
         // for this kind -- so the mode is the kind and the model does not
         // repeat it. `Formula` is the one kind where it varies (Q29).
         var mode = MARKDOWN_CORE_PLACEMENT_STANDALONE

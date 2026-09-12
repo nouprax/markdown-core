@@ -242,7 +242,7 @@ fun KotlinNativeTarget.configureNativeFacade() {
     val buildDirectory = layout.buildDirectory.dir("native/$name")
     val archiveDirectory = layout.buildDirectory.dir("native/$name/archives")
     val coreArchive = archiveDirectory.map { it.file("libmarkdown-core.a") }
-    val extensionsArchive = archiveDirectory.map { it.file("libmarkdown-core-extensions.a") }
+    val elementsArchive = archiveDirectory.map { it.file("libmarkdown-core-elements.a") }
     val generatedDefinitionDirectory = layout.buildDirectory.dir("generated/cinterop/$name")
     val embedNativeLibraries = !isIdeModelImport
     val configureTask =
@@ -250,7 +250,7 @@ fun KotlinNativeTarget.configureNativeFacade() {
             inputs.files(
                 repositoryRoot.files("CMakeLists.txt"),
                 repositoryRoot.dir("packages/markdown-core/core"),
-                repositoryRoot.dir("packages/markdown-core/extensions"),
+                repositoryRoot.dir("packages/markdown-core/elements"),
                 layout.projectDirectory.dir("src/native"),
             )
             outputs.file(buildDirectory.map { it.file("CMakeCache.txt") })
@@ -272,10 +272,10 @@ fun KotlinNativeTarget.configureNativeFacade() {
             dependsOn(configureTask)
             inputs.files(
                 repositoryRoot.dir("packages/markdown-core/core"),
-                repositoryRoot.dir("packages/markdown-core/extensions"),
+                repositoryRoot.dir("packages/markdown-core/elements"),
                 layout.projectDirectory.dir("src/native"),
             )
-            outputs.files(coreArchive, extensionsArchive)
+            outputs.files(coreArchive, elementsArchive)
             commandLine(
                 "cmake",
                 "--build",
@@ -283,7 +283,7 @@ fun KotlinNativeTarget.configureNativeFacade() {
                 "--config",
                 "Release",
                 "--target",
-                "libmarkdown-core-extensions_static",
+                "libmarkdown-core-elements_static",
                 "libmarkdown-core_static",
                 "--parallel",
             )
@@ -335,7 +335,7 @@ val configureDesktopJni =
         inputs.files(
             repositoryRoot.files("CMakeLists.txt"),
             repositoryRoot.dir("packages/markdown-core/core"),
-            repositoryRoot.dir("packages/markdown-core/extensions"),
+            repositoryRoot.dir("packages/markdown-core/elements"),
             layout.projectDirectory.dir("src/native"),
         )
         inputs.property("desktopPlatform", desktopPlatform ?: "unsupported")
@@ -366,7 +366,7 @@ val buildDesktopJni =
         dependsOn(configureDesktopJni)
         inputs.files(
             repositoryRoot.dir("packages/markdown-core/core"),
-            repositoryRoot.dir("packages/markdown-core/extensions"),
+            repositoryRoot.dir("packages/markdown-core/elements"),
             layout.projectDirectory.dir("src/native"),
         )
         val libraryName =

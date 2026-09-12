@@ -8,7 +8,7 @@ set(LIBRARY "libmarkdown-core")
 set(STATICLIBRARY "libmarkdown-core_static")
 set(HEADERS
     markdown-core.h
-    markdown-core-extension-api.h
+    markdown-core-element-api.h
     parser.h
     buffer.h
     node.h
@@ -19,22 +19,19 @@ set(HEADERS
     references.h
     map.h
     utf8.h
-    scanners.h
     inlines.h
+    inline_internal.h
+    block_internal.h
     houdini.h
     markdown_core_ctype.h
-    extension.h
+    element.h
     delimiter.h)
 set(LIBRARY_SOURCES
     markdown_core.c
     node.c
-    attributes.c
-    metadata.c
     iterator.c
     blocks.c
     inlines.c
-    scanners.c
-    scanners.re
     utf8.c
     buffer.c
     references.c
@@ -45,9 +42,9 @@ set(LIBRARY_SOURCES
     ${HEADERS})
 
 # Keep the engine target private, but make its sources available to the
-# extensions directory so the public static archive can contain the complete
+# elements directory so the public static archive can contain the complete
 # parser and facade implementation. Relative paths here would otherwise be
-# resolved against the extensions source directory.
+# resolved against the elements source directory.
 set(MARKDOWN_CORE_ENGINE_SOURCES "")
 foreach(source IN LISTS LIBRARY_SOURCES)
     list(APPEND MARKDOWN_CORE_ENGINE_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/${source}")
@@ -60,7 +57,7 @@ set(PROGRAM "markdown-core")
 set(PROGRAM_SOURCES main.c)
 
 include_directories(. ${CMAKE_CURRENT_BINARY_DIR})
-include_directories(${MARKDOWN_CORE_EXTENSIONS_BINARY_DIR})
+include_directories(${MARKDOWN_CORE_ELEMENTS_BINARY_DIR})
 
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/markdown-core-version.h.in
                ${CMAKE_CURRENT_BINARY_DIR}/markdown-core-version.h)
@@ -77,7 +74,7 @@ target_link_libraries(${PROGRAM} libmarkdown-core-public-static)
 
 # Disable the PUBLIC declarations when compiling the executable:
 set_target_properties(${PROGRAM} PROPERTIES COMPILE_FLAGS
-                                            "-DMARKDOWN_CORE_STATIC_DEFINE -DMARKDOWN_CORE_EXTENSIONS_STATIC_DEFINE")
+                                            "-DMARKDOWN_CORE_STATIC_DEFINE -DMARKDOWN_CORE_ELEMENTS_STATIC_DEFINE")
 
 # Check integrity of node structure when compiled as debug:
 set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -DMARKDOWN_CORE_DEBUG_NODES -DDEBUG")

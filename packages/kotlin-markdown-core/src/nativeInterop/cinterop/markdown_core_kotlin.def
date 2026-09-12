@@ -1,6 +1,6 @@
 headers = markdown_core.h
 headerFilter = markdown_core.h
 package = com.nouprax.markdown.core.internal.capi
-staticLibraries = libmarkdown-core-extensions.a libmarkdown-core.a
+staticLibraries = libmarkdown-core-elements.a libmarkdown-core.a
 libraryPaths = @LIBRARY_PATH@
 noStringConversion = markdown_core_document_parse

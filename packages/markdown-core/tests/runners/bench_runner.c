@@ -278,7 +278,7 @@ static int workload_deep_nesting(const bench_options *options) {
     return bench_doubling("deep_nesting", options, build_deep_nesting, scales, 3);
 }
 
-static char *build_extension_document(const bench_options *options, size_t scale, size_t *length) {
+static char *build_element_document(const bench_options *options, size_t scale, size_t *length) {
     size_t sample_length = 0;
     char *sample = load_sample(options, "directive.md", &sample_length);
     char *input;
@@ -290,9 +290,9 @@ static char *build_extension_document(const bench_options *options, size_t scale
     return input;
 }
 
-static int workload_extensions(const bench_options *options) {
+static int workload_elements(const bench_options *options) {
     static const size_t scales[] = {100, 200, 400};
-    return bench_doubling("extensions", options, build_extension_document, scales, 3);
+    return bench_doubling("elements", options, build_element_document, scales, 3);
 }
 
 static char *build_adversarial_links(const bench_options *options, size_t scale, size_t *length) {
@@ -349,7 +349,7 @@ static const bench_workload WORKLOADS[] = {
     {"representative", workload_representative},
     {"large_document", workload_large_document},
     {"deep_nesting", workload_deep_nesting},
-    {"extensions", workload_extensions},
+    {"elements", workload_elements},
     {"tables", workload_tables},
     {"adversarial", workload_adversarial},
 };

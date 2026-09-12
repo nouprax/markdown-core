@@ -51,9 +51,9 @@ jobs:
                   pnpm audit:ci
                   pnpm audit:tests
                   pnpm audit:surface
-                  pnpm check:extension-inventory
-                  pnpm audit:extension-special-chars
-                  pnpm audit:extension-attach-order
+                  pnpm check:element-inventory
+                  pnpm audit:element-special-chars
+                  pnpm audit:element-attach-order
                   pnpm audit:source-lists
                   pnpm audit:ast-projections
 

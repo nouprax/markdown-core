@@ -1,7 +1,7 @@
 # CTest is the single source of truth for the C test graph.  Suites are
 # grouped by label:
 #
-#   api facade consumer spec extensions regression pathological fuzz packaging
+#   api facade consumer spec elements regression pathological fuzz packaging
 #
 # The default correctness preset excludes conformance. Performance measurement
 # is not part of the test graph unless MARKDOWN_CORE_BENCHMARKS is explicitly
@@ -77,7 +77,7 @@ if(NOT (MARKDOWN_CORE_SHARED OR MARKDOWN_CORE_STATIC))
 endif()
 
 if(MARKDOWN_CORE_SHARED)
-    set(MARKDOWN_CORE_TEST_LIBRARIES libmarkdown-core-extensions)
+    set(MARKDOWN_CORE_TEST_LIBRARIES libmarkdown-core-elements)
 else()
     set(MARKDOWN_CORE_TEST_LIBRARIES libmarkdown-core-public-static)
 endif()
@@ -88,8 +88,7 @@ endif()
 # one parse entry, and nothing in the test tree reaches past them.
 set(MARKDOWN_CORE_TEST_SUPPORT_INCLUDES
     "${CMAKE_CURRENT_SOURCE_DIR}/support" "${CMAKE_CURRENT_SOURCE_DIR}/../include" "${MARKDOWN_CORE_CORE_SOURCE_DIR}"
-    "${MARKDOWN_CORE_CORE_BINARY_DIR}" "${MARKDOWN_CORE_EXTENSIONS_SOURCE_DIR}"
-    "${MARKDOWN_CORE_EXTENSIONS_BINARY_DIR}")
+    "${MARKDOWN_CORE_CORE_BINARY_DIR}" "${MARKDOWN_CORE_ELEMENTS_SOURCE_DIR}" "${MARKDOWN_CORE_ELEMENTS_BINARY_DIR}")
 add_library(markdown-core-test-support STATIC support/test_support.c support/test_support.h)
 target_include_directories(markdown-core-test-support PUBLIC ${MARKDOWN_CORE_TEST_SUPPORT_INCLUDES})
 target_link_libraries(markdown-core-test-support PUBLIC ${MARKDOWN_CORE_TEST_LIBRARIES})
@@ -108,7 +107,7 @@ if(MARKDOWN_CORE_STATIC)
     add_executable(oom_runner runners/oom_runner.c)
     target_include_directories(
         oom_runner PRIVATE "${MARKDOWN_CORE_CORE_SOURCE_DIR}" "${MARKDOWN_CORE_CORE_BINARY_DIR}"
-                           "${MARKDOWN_CORE_EXTENSIONS_SOURCE_DIR}" "${MARKDOWN_CORE_EXTENSIONS_BINARY_DIR}")
+                           "${MARKDOWN_CORE_ELEMENTS_SOURCE_DIR}" "${MARKDOWN_CORE_ELEMENTS_BINARY_DIR}")
     target_link_libraries(oom_runner libmarkdown-core-public-static)
 endif()
 markdown_core_add_runner(entity_runner runners/entity_runner.c)
@@ -201,7 +200,7 @@ markdown_core_add_test(
     "${MARKDOWN_CORE_CANONICAL_AST_DIR}"
     ${MARKDOWN_CORE_CANONICAL_NAMES})
 
-# spec: the product-owned GFM 0.29 golden (base examples plus tagged extension
+# spec: the product-owned GFM 0.29 golden (base examples plus tagged element
 # sections), punctuation stored as written, and entities. Current CommonMark
 # authority is the separately pinned cmark parity gate, not this historical
 # golden. The runner also asserts dump determinism per example.
@@ -220,23 +219,22 @@ if(MARKDOWN_CORE_STATIC)
     markdown_core_add_test(regression_strict_oom regression 240 oom_runner --case strict_oom)
 endif()
 
-# extensions: the product's reviewed requirements for the GFM extensions,
+# elements: the product's reviewed requirements for the GFM elements,
 # formulas, and directives. Every suite parses the one dialect, exactly as a
 # consumer would; a fence tag classifies an example for the oracle corpora and
 # selects nothing.
-markdown_core_add_test(extensions_gfm extensions 240 spec_runner --spec
-                       "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/extensions.txt")
-markdown_core_add_test(extensions_formula_github extensions 120 spec_runner --spec
-                       "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/extensions-formula-github.txt")
-markdown_core_add_test(extensions_formula_latex extensions 120 spec_runner --spec
-                       "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/extensions-formula-latex.txt")
-markdown_core_add_test(extensions_formula_conflicts extensions 120 spec_runner --spec
-                       "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/extensions-formula-conflicts.txt")
-markdown_core_add_test(extensions_directive extensions 120 spec_runner --spec
-                       "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/extensions-directive.txt")
-# extensions: attaching one extension must not change another's block opener.
-markdown_core_add_test(extensions_conflicts extensions 120 spec_runner --spec
-                       "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/extensions-conflicts.txt")
+markdown_core_add_test(elements_gfm elements 240 spec_runner --spec "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/elements.txt")
+markdown_core_add_test(elements_formula_github elements 120 spec_runner --spec
+                       "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/elements-formula-github.txt")
+markdown_core_add_test(elements_formula_latex elements 120 spec_runner --spec
+                       "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/elements-formula-latex.txt")
+markdown_core_add_test(elements_formula_conflicts elements 120 spec_runner --spec
+                       "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/elements-formula-conflicts.txt")
+markdown_core_add_test(elements_directive elements 120 spec_runner --spec
+                       "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/elements-directive.txt")
+# elements: attaching one element must not change another's block opener.
+markdown_core_add_test(elements_conflicts elements 120 spec_runner --spec
+                       "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/elements-conflicts.txt")
 
 # spec: the examples of each dialect module whose behavior has landed, byte for
 # byte in the dump grammar of today; one fixture per module.
@@ -415,7 +413,7 @@ if(MARKDOWN_CORE_BENCHMARKS)
         representative
         large_document
         deep_nesting
-        extensions
+        elements
         tables
         adversarial)
     foreach(workload IN LISTS MARKDOWN_CORE_BENCH_WORKLOADS)
@@ -434,8 +432,8 @@ endif()
 
 if(WIN32 AND MARKDOWN_CORE_SHARED)
     file(TO_NATIVE_PATH ${MARKDOWN_CORE_CORE_BINARY_DIR} WIN_SRC_DLL_DIR)
-    file(TO_NATIVE_PATH ${MARKDOWN_CORE_EXTENSIONS_BINARY_DIR} WIN_EXTENSIONS_DLL_DIR)
-    set(NEWPATH "${WIN_SRC_DLL_DIR};${WIN_EXTENSIONS_DLL_DIR};$ENV{PATH}")
+    file(TO_NATIVE_PATH ${MARKDOWN_CORE_ELEMENTS_BINARY_DIR} WIN_ELEMENTS_DLL_DIR)
+    set(NEWPATH "${WIN_SRC_DLL_DIR};${WIN_ELEMENTS_DLL_DIR};$ENV{PATH}")
     string(REPLACE ";" "\\;" NEWPATH "${NEWPATH}")
     set_tests_properties(${MARKDOWN_CORE_ALL_TESTS} PROPERTIES ENVIRONMENT "PATH=${NEWPATH}")
 endif()

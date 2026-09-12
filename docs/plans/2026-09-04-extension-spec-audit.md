@@ -367,7 +367,7 @@ A transitional finding names the landing-plan item that resolves it.
   is GFM's: a row shorter than the delimiter row is completed with empty cells
   and excess cells are dropped, so every row has the delimiter-row column count;
   a completed cell was never written and its scope is the row's end, as
-  `extensions/table.c` records and `specs/positions/containment.json` registers.
+  `elements/table.c` records and `specs/positions/containment.json` registers.
 - **CA-12** `:147` and `canonical-ast.json:218` — D (rule 2) — "inline content".
   Rule: `content` holds either only inline kinds or only block kinds as the
   owning table syntax states; pipe-table cells hold inline content; no cell is
@@ -413,12 +413,12 @@ A transitional finding names the landing-plan item that resolves it.
   line holding only the matching `$$` or `\\]` gives `FormulaBlock`; inline
   `\\(...\\)`, two authored backslashes, gives embedded and `\\[...\\]`
   standalone, while single-backslash `\(` and `\[` stay ordinary escapes as
-  `extensions-formula-latex.txt` fixes; `` $`...`$ `` gives embedded with the
+  `elements-formula-latex.txt` fixes; `` $`...`$ `` gives embedded with the
   code span's body; an opening `$` must be followed by a non-whitespace code
   point and a closing `$` must be preceded by non-whitespace and not followed by
   an ASCII digit; bodies are opaque and are recognized at their opening
   delimiter during the scan, before the delimiter pass; `\$` is literal. Derive
-  the exact rules from `extensions/formula.c` and cite them as implemented
+  the exact rules from `elements/formula.c` and cite them as implemented
   behavior.
 - **CA-22** `:194,197` — B — the effect of `smartPunctuation` and
   `stripHTMLComments` on the AST is stated nowhere. Rule: `smartPunctuation`
@@ -1741,7 +1741,7 @@ resolution checklist assumes them; nothing here is open.
 - **D-6 Pipe-table rows with too few or too many cells.** Settled by the GFM
   oracle, which the engine already implements: a row shorter than the delimiter
   row is completed with empty cells and excess cells are dropped; a completed
-  cell was never written, so its scope is the row's end, as `extensions/table.c`
+  cell was never written, so its scope is the row's end, as `elements/table.c`
   records (CA-11).
 - **D-7 Callout `variant` case.** Settled by the store-as-written ground rule:
   `variant` holds the authored bytes and matching is consumer policy (OK-9), as

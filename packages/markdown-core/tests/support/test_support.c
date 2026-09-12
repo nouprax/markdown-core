@@ -99,7 +99,7 @@ fail:
 
 static const char TS_EXAMPLE_FENCE[] = "````````````````````````````````"; /* 32 backticks */
 
-static int ts_case_push_extension(ts_spec_case *test_case, const char *name, size_t length) {
+static int ts_case_push_element(ts_spec_case *test_case, const char *name, size_t length) {
     char *copy;
     if (test_case->tag_count >= TS_MAX_TAGS) {
         return -1;
@@ -186,7 +186,7 @@ int ts_spec_load(const char *path, ts_spec_file *out) {
                 if (cursor > word_start) {
                     if (cursor - word_start == 8 && strncmp(word_start, "disabled", 8) == 0) {
                         disabled = 1;
-                    } else if (ts_case_push_extension(&pending, word_start, (size_t)(cursor - word_start)) != 0) {
+                    } else if (ts_case_push_element(&pending, word_start, (size_t)(cursor - word_start)) != 0) {
                         goto fail;
                     }
                 }

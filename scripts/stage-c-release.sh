@@ -42,8 +42,8 @@ find "$prefix" \( -type f -o -type l \) | while IFS= read -r artifact; do
         *) echo "unexpected C release artifact: $relative" >&2; exit 1 ;;
     esac
 done
-if grep -R -I -n -E 'canonical-ast|markdown-core-extensions|markdown_core_(markdown_to_html|render_)' "$prefix"; then
-    echo "C release artifact exposes test data, private extensions, or renderer API" >&2
+if grep -R -I -n -E 'canonical-ast|markdown-core-(elements|extensions)|markdown_core_(markdown_to_html|render_)' "$prefix"; then
+    echo "C release artifact exposes test data, private elements, or renderer API" >&2
     exit 1
 fi
 

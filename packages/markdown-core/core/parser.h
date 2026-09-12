@@ -5,6 +5,7 @@
 #include "references.h"
 #include "node.h"
 #include "buffer.h"
+#include "../elements/heading_state.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -36,11 +37,6 @@ typedef struct {
     int indent;
 } markdown_core_line_mark;
 
-/* Finalize the semantics of an already positioned, attached paragraph whose
- * content retains its normalized line terminators. Definition-only paragraphs
- * stay attached until the block phase finishes processing identifiers. */
-void markdown_core_parser_finalize_paragraph(struct markdown_core_parser *parser, struct markdown_core_node *node);
-
 /* Parse-time edges for document-owned footnote and specimen definitions.
  * Every definition is already owned in the block tree or a value field.
  * The index is discarded before any mutating postprocessor runs. */
@@ -56,21 +52,6 @@ typedef struct {
     struct markdown_core_node *last_inline;
 } markdown_core_definition_collection;
 
-/* A heading is registered once when its block closes. Source order is settled
- * before resolution, independently of the order in which mapped inputs close.
- * Pending holds the ordinary inline cursor at its declaration dependency;
- * nodes and resources remain owned by the tree and reference map. */
-typedef struct {
-    markdown_core_node *node;
-    markdown_core_inline_parser *pending;
-    markdown_core_resource *resource;
-} markdown_core_heading_parse;
-
-typedef struct {
-    markdown_core_heading_parse *values;
-    size_t count, capacity;
-} markdown_core_heading_collection;
-
 struct markdown_core_parser {
     struct markdown_core_mem *mem;
     /* A hashtable of urls in the current document for cross-references */
@@ -83,6 +64,8 @@ struct markdown_core_parser {
     markdown_core_definition_collection specimens;
     markdown_core_key_index specimen_ids;
     markdown_core_heading_collection headings;
+    anchor_registry anchors;
+    const markdown_core_element *document_structure, *text_structure;
     /* The root node of the parser, always a MARKDOWN_CORE_NODE_DOCUMENT */
     struct markdown_core_node *root;
     /* The active block grammar boundary. The document and mapped cell inputs
@@ -164,7 +147,7 @@ struct markdown_core_parser {
     size_t list_marker_work;
     size_t specimen_work;
     size_t citation_work;
-    /* Cumulative capacity bytes reserved for per-subject brace event records. */
+    /* Cumulative capacity bytes reserved for per-inline state brace event records. */
     size_t citation_brace_bytes;
     size_t definition_list_work;
     /* THE SOURCE AFTER THE LINE BEING PROCESSED. `S_parse_source` sets the
@@ -195,13 +178,26 @@ struct markdown_core_parser {
      * geometry is released by the query; the allocation dies with the parser. */
     struct markdown_core_table_source_line *table_lines;
     size_t table_lines_capacity;
-    markdown_core_llist *extensions;
-    markdown_core_llist *inline_extensions;
+    markdown_core_llist *block_elements;
+    /* Fallback/opening-boundary participants, excluding inline-only owners. */
+    markdown_core_llist *block_alternatives;
+    markdown_core_llist *elements;
+    markdown_core_llist *inline_elements;
+    /* Only descriptors with inline state lifecycle work; ordinary token owners
+     * must not be visited for each inline state's initialization and disposal. */
+    markdown_core_llist *inline_lifecycle_elements;
+    /* Stable descriptor order projected by byte once before inline parsing.
+     * Each token visits only its possible owners; offsets include an end sentinel. */
+    size_t inline_dispatch_offsets[257];
+    const markdown_core_element **inline_dispatch;
     markdown_core_ispunct_func backslash_ispunct;
     /* Inline special-character tables for this parser: the core defaults plus
-     * the special/emphasis-skip characters of the attached inline extensions.
-     * Parser-local so concurrent parsers with different extension sets never
+     * the special/emphasis-skip characters of the attached inline elements.
+     * Parser-local so concurrent parsers with different element sets never
      * observe each other's characters. */
+    const markdown_core_element *delimiter_owners[MARKDOWN_CORE_DELIM_RULE_COUNT];
+    markdown_core_delimiter_rule delimiter_chars[256];
+    bool (*inline_start_predicates[256])(markdown_core_inline_state *, bufsize_t);
     int8_t special_chars[256];
     int8_t skip_chars[256];
     /* The content-to-source map (see markdown_core_line_mark). It is read while the
@@ -313,11 +309,14 @@ int markdown_core_parser_lookahead_next(markdown_core_block_lookahead *lookahead
                                         int *first_nonspace, int *indent, int *blank_lines);
 void markdown_core_parser_lookahead_end(markdown_core_block_lookahead *lookahead);
 
-/* Register committed syntax. A citation transfers its detached inline body
- * into Document.footnotes; an authored definition remains in the block tree
- * until inline parsing finishes. Allocation failure aborts the whole parse. */
-bool markdown_core_parser_register_definition(markdown_core_parser *parser, struct markdown_core_node *definition,
-                                              struct markdown_core_node *citation);
+/* Register an element's committed definition in its borrowed parse index.
+ * inline_owner, when present, adopts the detached body into its AST value
+ * chain. Otherwise the block tree retains ownership until resolution ends.
+ * Allocation failure leaves ownership unchanged and aborts the transaction. */
+bool markdown_core_parser_register_definition(markdown_core_parser *parser,
+                                              markdown_core_definition_collection *collection,
+                                              markdown_core_node *definition, markdown_core_node *citation,
+                                              markdown_core_node **inline_owner);
 
 /* The engine has one parse operation. `setup`, when present, configures the
  * fresh parser after the complete dialect is attached, before any source is

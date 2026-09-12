@@ -516,7 +516,7 @@ when unclosed. `DirectiveLabel.scope` covers its brackets.
 ## Required conformance cases
 
 Every example of this module is a package fixture, and the directive fixtures
-`extensions-directive.txt` stays the oracle of record for the named forms. Tests also cover Unicode names,
+`elements-directive.txt` stays the oracle of record for the named forms. Tests also cover Unicode names,
 names beginning with a digit, `-`, or `_`, nesting to depths 32 and 33,
 multi-line labels, every container success and failure, closer lines inside
 opaque blocks, closers longer than the opener, empty nameless content,

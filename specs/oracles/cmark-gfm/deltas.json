@@ -263,7 +263,7 @@
             "note": "Only regressions tagged with one or more GFM extensions are selected."
         },
         {
-            "file": "packages/markdown-core/tests/fixtures/extensions.txt",
+            "file": "packages/markdown-core/tests/fixtures/elements.txt",
             "note": "Repository-owned tests for table, strikethrough, autolink, task-list, and footnote extensions."
         },
         {

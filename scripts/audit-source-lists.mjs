@@ -39,7 +39,7 @@ function cmakeSources(relative, variable) {
 
 const authority = {
     core: cmakeSources("packages/markdown-core/core/CMakeLists.txt", "LIBRARY_SOURCES"),
-    extensions: cmakeSources("packages/markdown-core/extensions/CMakeLists.txt", "LIBRARY_SOURCES")
+    elements: cmakeSources("packages/markdown-core/elements/CMakeLists.txt", "LIBRARY_SOURCES")
 };
 
 /** The `*.c` names a follower lists for one directory.
@@ -107,19 +107,19 @@ const SWIFT_RELEASE = "packages/swift-markdown-core/Package.release.swift";
 const declared = {
     "Package.swift": follower("Package.swift", () => ({
         core: names("Package.swift", "core", swiftPattern("core")),
-        extensions: names("Package.swift", "extensions", swiftPattern("extensions"))
+        elements: names("Package.swift", "elements", swiftPattern("elements"))
     })),
     [SWIFT_RELEASE]: follower(SWIFT_RELEASE, () => ({
         core: names(SWIFT_RELEASE, "core", swiftPattern("core")),
-        extensions: names(SWIFT_RELEASE, "extensions", swiftPattern("extensions"))
+        elements: names(SWIFT_RELEASE, "elements", swiftPattern("elements"))
     })),
     [ANDROID_CMAKE]: follower(ANDROID_CMAKE, () => ({
         core: names(ANDROID_CMAKE, "core", androidPattern("CORE")),
-        extensions: names(ANDROID_CMAKE, "extensions", androidPattern("EXTENSIONS"))
+        elements: names(ANDROID_CMAKE, "elements", androidPattern("ELEMENTS"))
     })),
     [ES_BUILD]: follower(ES_BUILD, () => ({
         core: esArray(ES_BUILD, "core"),
-        extensions: esArray(ES_BUILD, "extensions")
+        elements: esArray(ES_BUILD, "elements")
     }))
 };
 
@@ -139,7 +139,7 @@ const report = (message) => {
 const androidSources = names(ANDROID_CMAKE, "complete Android target", /"(?<file>[^"\n]+\.c)"/g);
 const expectedAndroidSources = [
     ...authority.core.map((file) => `\${MARKDOWN_CORE_CORE_DIR}/${file}`),
-    ...authority.extensions.map((file) => `\${MARKDOWN_CORE_EXTENSIONS_DIR}/${file}`),
+    ...authority.elements.map((file) => `\${MARKDOWN_CORE_ELEMENTS_DIR}/${file}`),
     "${MARKDOWN_CORE_ROOT}/packages/kotlin-markdown-core/src/native/markdown_core_kotlin_jni_payload.c",
     "${MARKDOWN_CORE_ROOT}/packages/kotlin-markdown-core/src/native/markdown_core_kotlin_jni.c"
 ];
@@ -159,7 +159,7 @@ if (androidSources.length !== actualAndroidSet.size) {
 
 // Existence first: a list naming a file that is not there is the failure all
 // three of the rotted lists actually had.
-const directories = { core: "packages/markdown-core/core", extensions: "packages/markdown-core/extensions" };
+const directories = { core: "packages/markdown-core/core", elements: "packages/markdown-core/elements" };
 for (const [name, buckets] of [["CMake (authority)", authority], ...Object.entries(followers)]) {
     for (const [bucket, files] of Object.entries(buckets)) {
         for (const file of files) {
@@ -172,14 +172,11 @@ for (const [name, buckets] of [["CMake (authority)", authority], ...Object.entri
 
 const expected = new Set([
     ...authority.core.map((f) => `core/${f}`),
-    ...authority.extensions.map((f) => `extensions/${f}`)
+    ...authority.elements.map((f) => `elements/${f}`)
 ]);
 
 for (const [name, buckets] of Object.entries(followers)) {
-    const actual = new Set([
-        ...buckets.core.map((f) => `core/${f}`),
-        ...buckets.extensions.map((f) => `extensions/${f}`)
-    ]);
+    const actual = new Set([...buckets.core.map((f) => `core/${f}`), ...buckets.elements.map((f) => `elements/${f}`)]);
     const missing = [...expected].filter((f) => !actual.has(f)).sort();
     const extra = [...actual].filter((f) => !expected.has(f)).sort();
     if (missing.length) {
