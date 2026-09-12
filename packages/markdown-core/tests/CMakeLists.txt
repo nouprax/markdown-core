@@ -410,8 +410,14 @@ if(MARKDOWN_CORE_BENCHMARKS)
     markdown_core_add_runner(bench_runner runners/bench_runner.c)
     target_include_directories(bench_runner PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../include")
     markdown_core_add_test(benchmark_corpus_guard benchmark 60 corpus_guard --root "${CMAKE_SOURCE_DIR}")
-    set(MARKDOWN_CORE_BENCH_WORKLOADS binding_baseline representative large_document deep_nesting extensions tables
-                                      adversarial)
+    set(MARKDOWN_CORE_BENCH_WORKLOADS
+        binding_baseline
+        representative
+        large_document
+        deep_nesting
+        extensions
+        tables
+        adversarial)
     foreach(workload IN LISTS MARKDOWN_CORE_BENCH_WORKLOADS)
         markdown_core_add_test(
             benchmark_${workload}
