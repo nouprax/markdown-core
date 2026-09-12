@@ -3196,7 +3196,7 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
             }
 
             if (!new_container) {
-                bool compact;
+                bool compact = false;
                 bool definition = !maybe_lazy && cont_type != MARKDOWN_CORE_NODE_PARAGRAPH &&
                                   definition_prefix(parser, *container, input, &compact);
                 if (parser->oom) {
