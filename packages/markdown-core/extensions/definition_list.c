@@ -11,6 +11,9 @@ static markdown_core_node *markdown_core_block_open_definition(markdown_core_par
 static bool markdown_core_definition_list_scan(markdown_core_parser *parser, block_start_context *context,
                                                block_start *start);
 bool markdown_core_block_definition_body_blank_continues(markdown_core_parser *parser, markdown_core_node *body) {
+    if (body->kind != MARKDOWN_CORE_NODE_DEFINITION_BODY) {
+        return true;
+    }
     parser->definition_list_work++;
     if (body->as.definition_body->continuation_line > parser->line_number) {
         return true;
@@ -159,9 +162,29 @@ static markdown_core_node *try_paragraph(const markdown_core_extension *self, in
     return markdown_core_block_open_definition(parser, parent, &input, compact);
 }
 
+static bool continue_container(markdown_core_parser *parser, markdown_core_node *node, markdown_core_chunk *input,
+                               const markdown_core_node *joining, bool *taken) {
+    return node->kind != MARKDOWN_CORE_NODE_DEFINITION_BODY ||
+           markdown_core_definition_list_continue(parser, node, input);
+}
+static void complete_block(markdown_core_parser *parser, markdown_core_node *node) {
+    markdown_core_definition_list_complete(node);
+}
+static void finalize_block(markdown_core_parser *parser, markdown_core_node *node) {
+    if (node->kind == MARKDOWN_CORE_NODE_DEFINITION_BODY) {
+        markdown_core_definition_list_close_body(node);
+    }
+}
+
 const markdown_core_extension MARKDOWN_CORE_EXTENSION_DEFINITION_LIST = {
+    .complete_block = complete_block,
+    .finalize_block = finalize_block,
+
+    .accepts_blank = markdown_core_block_definition_body_blank_continues,
+
     .name = "definition_list",
-    .block_precedence = MARKDOWN_CORE_BLOCK_PREFIX,
+    .continue_container = continue_container,
+    .maximum_block_indent = 3,
     .scan_block_start = markdown_core_definition_list_scan,
     .try_opening_paragraph = try_paragraph,
 };

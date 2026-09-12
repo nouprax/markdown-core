@@ -1,3 +1,6 @@
+#include "autolink_scanners.h"
+#include "inline_internal.h"
+#include "attributes.h"
 #include "autolink.h"
 #include "extension.h"
 #include <iterator.h>
@@ -11,6 +14,95 @@
 #else
 #include <strings.h>
 #endif
+
+static markdown_core_node *make_str_with_entities(subject *subj, int start_column, int end_column,
+                                                  markdown_core_chunk *content) {
+    markdown_core_strbuf unescaped = MARKDOWN_CORE_BUF_INIT(subj->mem);
+
+    if (houdini_unescape_html(&unescaped, content->data, content->len)) {
+        if (unescaped.oom) {
+            subj->oom = 1;
+        }
+        return make_str(subj, start_column, end_column, markdown_core_chunk_buf_detach(&unescaped));
+    } else {
+        return make_str(subj, start_column, end_column, *content);
+    }
+}
+
+static markdown_core_chunk markdown_core_clean_autolink(subject *subj, markdown_core_chunk *url, int is_email) {
+    markdown_core_strbuf buf = MARKDOWN_CORE_BUF_INIT(subj->mem);
+
+    markdown_core_chunk_trim(url);
+
+    if (url->len == 0) {
+        markdown_core_chunk result = MARKDOWN_CORE_CHUNK_EMPTY;
+        return result;
+    }
+
+    if (is_email) {
+        markdown_core_strbuf_puts(&buf, "mailto:");
+    }
+
+    houdini_unescape_html_f(&buf, url->data, url->len);
+    if (buf.oom) {
+        subj->oom = 1;
+    }
+    return markdown_core_chunk_buf_detach(&buf);
+}
+
+static MARKDOWN_CORE_INLINE markdown_core_node *make_autolink(subject *subj, int start_column, int end_column,
+                                                              markdown_core_chunk url, int is_email) {
+    markdown_core_node *link = markdown_core_inline_make_simple(subj->mem, MARKDOWN_CORE_NODE_LINK);
+    markdown_core_node *text;
+    if (!link) {
+        subj->oom = 1;
+        return NULL;
+    }
+    {
+        // No title here: an autolink has no syntax for one, so the resource is
+        // built with absence. It used to be set to an empty title, and
+        // `extensions.txt` records both spellings of one construct on one line
+        // disagreeing about it three columns apart.
+        markdown_core_chunk destination = markdown_core_clean_autolink(subj, &url, is_email);
+        link->as.link->resource =
+            markdown_core_resource_new(subj->mem, destination, markdown_core_optional_chunk_absent());
+        if (!link->as.link->resource) {
+            subj->oom = 1;
+            markdown_core_chunk_free(subj->mem, &destination);
+            markdown_core_node_free(link);
+            return NULL;
+        }
+    }
+
+    // Both offsets, like every other column in this file. This was the one site
+    // that turned a raw subject-buffer offset into a column without them, so an
+    // autolink inside a block quote, or on any line but the first of its
+    // paragraph, produced a Link that did not contain its own Text.
+    markdown_core_inline_parser_place(subj, link, start_column, end_column);
+    text = make_str_with_entities(subj, start_column + 1, end_column - 1, &url);
+    if (text) {
+        markdown_core_inline_append_child(link, text);
+    }
+    markdown_core_inline_attach_inline_attributes(subj, link, start_column);
+    /* The pointy braces are the syntax; what they enclose is the text. */
+    return link;
+}
+
+static markdown_core_node *match_angle(subject *subj) {
+    bufsize_t from = subj->pos + 1;
+    bufsize_t length = scan_autolink_uri(&subj->input, from);
+    bool email = false;
+    if (!length) {
+        length = scan_autolink_email(&subj->input, from);
+        email = true;
+    }
+    if (!length) {
+        return NULL;
+    }
+    markdown_core_chunk content = markdown_core_chunk_dup(&subj->input, from, length - 1);
+    subj->pos = from + length;
+    return make_autolink(subj, from - 1, subj->pos - 1, content, email);
+}
 
 static int is_valid_hostchar(const uint8_t *link, size_t link_len) {
     int32_t ch;
@@ -408,6 +500,10 @@ static markdown_core_node *address_match(markdown_core_parser *parser, markdown_
 static markdown_core_node *match(const markdown_core_extension *ext, markdown_core_parser *parser,
                                  markdown_core_node *parent, unsigned char c,
                                  markdown_core_inline_parser *inline_parser) {
+    if (c == '<') {
+        return match_angle(inline_parser);
+    }
+
     int in_bracket = markdown_core_inline_parser_in_bracket(inline_parser, false) ||
                      markdown_core_inline_parser_in_bracket(inline_parser, true);
 
@@ -718,6 +814,6 @@ const markdown_core_extension MARKDOWN_CORE_EXTENSION_AUTOLINK = {
     .name = "autolink",
     .match_inline = match,
     .postprocess_func = postprocess,
-    .terminates_text = ":w",
-    .dispatch = ":w",
+    .terminates_text = "<:w",
+    .dispatch = "<:w",
 };

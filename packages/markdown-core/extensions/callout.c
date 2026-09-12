@@ -144,8 +144,21 @@ bool markdown_core_callout_open_lazy_body(markdown_core_parser *parser) {
     return true;
 }
 
+static bool continue_container(markdown_core_parser *parser, markdown_core_node *node, markdown_core_chunk *input,
+                               const markdown_core_node *joining, bool *taken) {
+    return markdown_core_block_parse_callout_prefix(parser, input);
+}
+static markdown_core_node *open_lazy(markdown_core_parser *parser, markdown_core_node *node) {
+    return markdown_core_callout_open_lazy_body(parser) ? parser->current : NULL;
+}
+
 const markdown_core_extension MARKDOWN_CORE_EXTENSION_CALLOUT = {
+    .accepts_lazy = markdown_core_callout_accepts_lazy_body,
+    .open_lazy = open_lazy,
+
     .name = "callout",
-    .block_precedence = MARKDOWN_CORE_BLOCK_PREFIX,
+    .continue_container = continue_container,
+    .blank_opaque = true,
+    .maximum_block_indent = 3,
     .scan_block_start = markdown_core_callout_scan,
 };

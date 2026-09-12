@@ -1,3 +1,4 @@
+#include "heading_scanners.h"
 #include "citation.h"
 #include "heading.h"
 #include "link.h"
@@ -294,7 +295,7 @@ void markdown_core_prepare_heading(markdown_core_parser *parser, markdown_core_h
          * unwritable as a reference label; only its remaining inlines depend
          * on the document's completed symbol table. */
         if ((subj.last_delim && subj.last_delim->kind == DELIMITER_FIELD) ||
-            (subj.pos != subj.heading_content_end && subj.pos >= subj.opaque_end &&
+            (subj.pos != subj.text_end && subj.pos >= subj.opaque_end &&
              (c == '[' || c == ']' || ((c == '!' || c == '^') && markdown_core_inline_peek_char_n(&subj, 1) == '[')))) {
             heading->pending = parser->mem->calloc(1, sizeof(subj));
             if (heading->pending) {
@@ -377,7 +378,7 @@ void markdown_core_heading_begin_inlines(markdown_core_parser *parser, subject *
                     }
                 }
             }
-            subj->heading_content_end = end;
+            subj->text_end = end;
         } else if (!parent->as.heading->setext) {
             bufsize_t hashes = subj->input.len;
             while (hashes > 0 && subj->input.data[hashes - 1] == '#') {
@@ -398,11 +399,11 @@ void markdown_core_heading_begin_inlines(markdown_core_parser *parser, subject *
 }
 
 bool markdown_core_heading_claim_tail(subject *subj, markdown_core_node *parent) {
-    if (subj->pos == subj->heading_content_end) {
+    if (subj->pos == subj->text_end) {
         bufsize_t end;
         if (markdown_core_attributes_parse(&subj->attributes, subj->heading_attributes_start, &parent->attributes,
                                            &end)) {
-            subj->heading_label_end = subj->heading_content_end;
+            subj->heading_label_end = subj->text_end;
             subj->pos = subj->input.len;
         }
         if (subj->attributes.oom) {
@@ -412,3 +413,85 @@ bool markdown_core_heading_claim_tail(subject *subj, markdown_core_node *parent)
     }
     return false;
 }
+
+#define peek_at(input, at) ((input)->data[(at)])
+static bool open_atx(markdown_core_parser *parser, markdown_core_node **container, markdown_core_chunk *input,
+                     block_start *start) {
+    bufsize_t matched = start->matched;
+
+    bufsize_t hashpos;
+    int level = 0;
+    bufsize_t heading_startpos = parser->first_nonspace;
+
+    markdown_core_block_advance_offset(parser, input, parser->first_nonspace + matched - parser->offset, false);
+    *container = markdown_core_parser_add_child(parser, *container, MARKDOWN_CORE_NODE_HEADING, heading_startpos + 1);
+    if (!*container) {
+        return false;
+    }
+
+    hashpos = markdown_core_chunk_strchr(input, '#', parser->first_nonspace);
+
+    while (peek_at(input, hashpos) == '#') {
+        level++;
+        hashpos++;
+    }
+
+    (*container)->as.heading->level = level;
+    (*container)->as.heading->setext = false;
+    (*container)->internal_offset = matched;
+
+    return true;
+}
+static bool open_setext(markdown_core_parser *parser, markdown_core_node **container, markdown_core_chunk *input,
+                        block_start *start) {
+    bufsize_t matched = start->matched;
+    bool has_content;
+    // markdown_core_block_finalize paragraph, resolving reference links
+    has_content = markdown_core_block_resolve_reference_link_definitions(parser, *container);
+
+    if (has_content) {
+
+        markdown_core_node_set_kind_result result = markdown_core_node_set_kind(*container, MARKDOWN_CORE_NODE_HEADING);
+        if (result != MARKDOWN_CORE_NODE_SET_KIND_OK) {
+            if (result == MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED) {
+                parser->oom = true;
+            }
+            return false;
+        }
+        (*container)->as.heading->level = matched;
+        (*container)->as.heading->setext = true;
+        markdown_core_block_advance_offset(parser, input, input->len - 1 - parser->offset, false);
+    }
+
+    return true;
+}
+static bool scan_heading(markdown_core_parser *parser, block_start_context *context, block_start *start) {
+    if ((start->matched = scan_atx_heading_start(context->input, context->first))) {
+        start->open = open_atx;
+    } else if (context->paragraph && (start->matched = scan_setext_heading_line(context->input, context->first))) {
+        start->open = open_setext;
+    } else {
+        return false;
+    }
+    start->kind = MARKDOWN_CORE_NODE_HEADING;
+    return true;
+}
+static int continue_heading(const markdown_core_extension *self, markdown_core_parser *parser, unsigned char *data,
+                            int length, markdown_core_node *container) {
+    return 0;
+}
+
+const markdown_core_extension MARKDOWN_CORE_EXTENSION_HEADING = {
+    .begin_inline = markdown_core_heading_begin_inlines,
+    .claim_inline_tail = markdown_core_heading_claim_tail,
+
+    .name = "heading",
+    .maximum_block_indent = 3,
+    .scan_block_start = scan_heading,
+    .last_block_matches = continue_heading,
+    .content_mode = MARKDOWN_CORE_CONTENT_PROSE,
+    .inline_content = true,
+    .deferred_inlines = true,
+    .finalize_block = markdown_core_block_register_heading,
+    .blank_opaque = true,
+};

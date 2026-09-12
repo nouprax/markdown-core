@@ -64,7 +64,7 @@ export function parseExtensionInventory(sources) {
         }
         if (character && !rule) throw new Error(`${symbol}: delimiter character has no rule`);
         if (rule) {
-            if (/_(NONE|COUNT|EMPHASIS|UNDERSCORE)$/.test(rule)) {
+            if (/_(NONE|COUNT)$/.test(rule)) {
                 throw new Error(`${symbol}: ${rule} is reserved by the engine`);
             }
             if (rules.has(rule)) throw new Error(`${symbol}: duplicate delimiter rule ${rule}`);
@@ -79,10 +79,8 @@ export function parseExtensionInventory(sources) {
             if (characters.has(character)) throw new Error(`${symbol}: duplicate default delimiter character`);
             characters.set(character, symbol);
         }
-        const scanner = /\.scan_block_start\s*=/.test(body);
-        const precedence = /\.block_precedence\s*=\s*MARKDOWN_CORE_BLOCK_(PREFIX|MARKER)\b/.test(body);
-        if (scanner !== precedence || (/\.block_precedence\s*=/.test(body) && !precedence)) {
-            throw new Error(`${symbol}: block scanner requires an explicit grammar precedence`);
+        if (/\.scan_block_start\s*=/.test(body) && !/\.maximum_block_indent\s*=\s*(?:\d+|INT_MAX)\b/.test(body)) {
+            throw new Error(`${symbol}: block scanner requires an explicit indentation bound`);
         }
     }
     return { descriptors: [...descriptors.values()], ordered };

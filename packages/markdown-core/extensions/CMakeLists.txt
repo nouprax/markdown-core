@@ -5,23 +5,38 @@ set(LIBRARY_SOURCES
     ast.c
     attributes.c
     autolink.c
+    autolink_scanners.c
     block_identifier.c
     callout.c
     citation.c
+    code.c
+    code_block.c
+    code_block_scanners.c
     comment.c
+    comment_scanners.c
     core-extensions.c
     cross_link.c
     definition_list.c
     directive.c
-    ext_scanners.c
+    document.c
+    emphasis.c
     footnote.c
+    footnote_scanners.c
     formula.c
+    formula_scanners.c
     heading.c
+    heading_scanners.c
+    html.c
+    html_block.c
+    html_scanners.c
     insertion.c
+    line_break.c
     link.c
+    link_scanners.c
     list.c
     mark.c
     media.c
+    paragraph.c
     properties.c
     span.c
     specimen.c
@@ -29,9 +44,11 @@ set(LIBRARY_SOURCES
     subscript.c
     superscript.c
     table.c
+    table_scanners.c
     tasklist.c
-    ext_scanners.re
-    ext_scanners.h)
+    text.c
+    text_scanners.c
+    thematic_break.c)
 
 include_directories(${MARKDOWN_CORE_CORE_SOURCE_DIR} ${MARKDOWN_CORE_CORE_BINARY_DIR}
                     ${CMAKE_CURRENT_SOURCE_DIR}/../include)
@@ -42,7 +59,18 @@ set(CMAKE_C_FLAGS_PROFILE "${CMAKE_C_FLAGS_RELEASE} -pg")
 set(CMAKE_LINKER_PROFILE "${CMAKE_LINKER_FLAGS_RELEASE} -pg")
 
 if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
-    set_source_files_properties(ext_scanners.c PROPERTIES COMPILE_FLAGS "-Wno-unused-variable")
+    set_source_files_properties(
+        autolink_scanners.c
+        code_block_scanners.c
+        comment_scanners.c
+        footnote_scanners.c
+        formula_scanners.c
+        heading_scanners.c
+        html_scanners.c
+        link_scanners.c
+        table_scanners.c
+        text_scanners.c
+        PROPERTIES COMPILE_FLAGS "-Wno-unused-variable")
 endif()
 
 if(MARKDOWN_CORE_SHARED)

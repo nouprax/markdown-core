@@ -1,7 +1,16 @@
+#include "autolink_scanners.h"
+#include "code_block_scanners.h"
+#include "comment_scanners.h"
+#include "footnote_scanners.h"
+#include "formula_scanners.h"
+#include "heading_scanners.h"
+#include "html_scanners.h"
+#include "link_scanners.h"
+#include "table_scanners.h"
+#include "text_scanners.h"
 #include <stdio.h>
 #include "table.h"
 #include "scanners.h"
-#include "ext_scanners.h"
 #include "autolink.h"
 #include "formula.h"
 #include "directive.h"
@@ -1298,6 +1307,65 @@ static void stray_delimiter_parse(test_batch_runner *runner, const markdown_core
 static void stray_delimiter(test_batch_runner *runner) {
     stray_delimiter_parse(runner, &STRAY_UNOWNED, "a rule and no owner");
     stray_delimiter_parse(runner, &STRAY_UNNAMED, "a rule outside the enum");
+}
+
+typedef struct dispatch_observation {
+    char calls[16];
+    size_t count;
+} dispatch_observation;
+
+static markdown_core_node *observe_dispatch(const markdown_core_extension *self, markdown_core_parser *parser,
+                                            markdown_core_node *parent, unsigned char character,
+                                            markdown_core_inline_parser *inline_parser) {
+    (void)parent;
+    (void)character;
+    dispatch_observation *observation = parser->root->user_data;
+    if (observation->count + 1 < sizeof(observation->calls)) {
+        observation->calls[observation->count++] = self->name[0];
+    }
+    if (self->name[0] == 'c') {
+        markdown_core_inline_parser_advance_offset(inline_parser);
+    }
+    return NULL;
+}
+
+static bool attach_dispatch_observers(markdown_core_parser *parser, void *context) {
+    /* Attach the fallback first, repeat a set member, and include a disjoint
+     * scanner. These are grammar/ordering contracts, independent of the index. */
+    static const markdown_core_extension fallback = {.name = "fallback-observer",
+                                                     .inline_precedence = MARKDOWN_CORE_INLINE_FALLBACK,
+                                                     .match_inline = observe_dispatch,
+                                                     .terminates_text = "!",
+                                                     .dispatch = "!"};
+    static const markdown_core_extension decline = {
+        .name = "decline-observer", .match_inline = observe_dispatch, .terminates_text = "!", .dispatch = "!!"};
+    static const markdown_core_extension consume = {
+        .name = "consume-observer", .match_inline = observe_dispatch, .terminates_text = "!", .dispatch = "!"};
+    static const markdown_core_extension disjoint = {
+        .name = "unrelated-observer", .match_inline = observe_dispatch, .terminates_text = "?", .dispatch = "?"};
+    parser->root->user_data = context;
+    return markdown_core_parser_attach_extension(parser, &fallback) &&
+           markdown_core_parser_attach_extension(parser, &decline) &&
+           markdown_core_parser_attach_extension(parser, &consume) &&
+           markdown_core_parser_attach_extension(parser, &disjoint);
+}
+
+static void inline_dispatch_ownership(test_batch_runner *runner) {
+    const char source[] = "`!` ! tail";
+    dispatch_observation observation = {0};
+    markdown_core_node *root = markdown_core_parse_document_with_mem(
+        source, sizeof(source) - 1, markdown_core_get_default_mem_allocator(), attach_dispatch_observers, &observation);
+    OK(runner, root != NULL, "overlapping inline owners complete the parse");
+    STR_EQ(runner, observation.calls, "dc",
+           "each matching owner runs once in precedence order; consuming NULL commits the token");
+    if (root) {
+        markdown_core_node *code = root->first_child->first_child;
+        INT_EQ(runner, code->kind, MARKDOWN_CORE_NODE_CODE, "protected tokens retain their contents");
+        STR_EQ(runner, markdown_core_node_get_literal(code), "!", "dispatch does not inspect an opaque token body");
+        STR_EQ(runner, markdown_core_node_get_literal(code->next), "  tail",
+               "consumed input is not offered to fallbacks");
+    }
+    markdown_core_node_free(root);
 }
 
 /* A1. An allocation failure is a fact about the write that failed, not a
@@ -5240,6 +5308,7 @@ int main(void) {
     strbuf_overflow(runner);
     strbuf_failure_is_a_transaction(runner);
     stray_delimiter(runner);
+    inline_dispatch_ownership(runner);
     no_node_is_its_own_ancestor(runner);
     iterator_contract_is_total(runner);
 

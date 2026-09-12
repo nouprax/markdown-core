@@ -1,3 +1,5 @@
+#include "link.h"
+#include "footnote_scanners.h"
 #define MAX_FOOTNOTE_DEPTH 100
 #include "citation.h"
 #include "footnote.h"
@@ -145,9 +147,14 @@ static markdown_core_node *match(const markdown_core_extension *self, markdown_c
     }
     return node;
 }
+static bool continue_container(markdown_core_parser *parser, markdown_core_node *node, markdown_core_chunk *input,
+                               const markdown_core_node *joining, bool *taken) {
+    return markdown_core_footnote_continue(parser, node, input);
+}
 const markdown_core_extension MARKDOWN_CORE_EXTENSION_FOOTNOTE = {
     .name = "footnote",
-    .block_precedence = MARKDOWN_CORE_BLOCK_MARKER,
+    .continue_container = continue_container,
+    .maximum_block_indent = 3,
     .scan_block_start = markdown_core_footnote_scan,
 
     .match_inline = match,

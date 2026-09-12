@@ -34,7 +34,6 @@ set(LIBRARY_SOURCES
     blocks.c
     inlines.c
     scanners.c
-    scanners.re
     utf8.c
     buffer.c
     references.c

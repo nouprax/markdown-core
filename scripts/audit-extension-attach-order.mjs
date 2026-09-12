@@ -36,12 +36,30 @@ import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { readExtensionInventory } from "./lib/extension-inventory.mjs";
+import { auditParserBoundaries } from "./lib/parser-boundaries.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const pkg = path.join(root, "packages/markdown-core");
 const read = (relative) => fs.readFileSync(path.join(pkg, relative), "utf8");
 
 const failures = [];
+const elementHeaders = fs
+    .readdirSync(path.join(pkg, "extensions"))
+    .filter((file) => file.endsWith(".h") && file !== "markdown-core-extensions.h");
+const sharedScanners = new Set([...read("core/scanners.h").matchAll(/\b(_?scan_\w+)\s*\(/g)].map((match) => match[1]));
+const syntaxScanners = elementHeaders
+    .filter((file) => file.endsWith("_scanners.h"))
+    .flatMap((file) => [...read(`extensions/${file}`).matchAll(/\b(_?scan_\w+)\s*\(/g)].map((match) => match[1]))
+    .filter((name) => !sharedScanners.has(name));
+failures.push(
+    ...auditParserBoundaries(
+        ["core/inlines.c", "core/blocks.c", "core/scanners.c"].map((file) => ({ file, source: read(file) })),
+        { elementHeaders, syntaxScanners }
+    )
+);
+if (fs.readdirSync(path.join(pkg, "core")).some((file) => file.endsWith(".re"))) {
+    failures.push("generated lexical grammar belongs to element extensions, not core");
+}
 const ATTACH = "markdown_core_parser_attach_extension";
 
 /** Every `*.c` under `core/` and `extensions/` — the shipped library, no tests. */

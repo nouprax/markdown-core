@@ -1,3 +1,4 @@
+#include "table_scanners.h"
 #include <markdown-core-extension-api.h>
 #include "extension.h"
 #include <inlines.h>
@@ -8,9 +9,9 @@
 #include "utf8.h"
 #include "scanners.h"
 
-#include "ext_scanners.h"
 #include "strikethrough.h"
 #include "table.h"
+#include "paragraph.h"
 #include "markdown-core-extensions.h"
 
 // Limit to prevent a malicious input from causing a denial of service.
@@ -642,6 +643,9 @@ static int can_contain(const markdown_core_extension *extension, markdown_core_n
 static int contains_inlines(const markdown_core_extension *extension, markdown_core_node *node) {
     /* Block inputs have consumed their source before the inline phase. Their
      * children, rather than the cell wrapper, own the remaining inline text. */
+    if (node->kind == MARKDOWN_CORE_NODE_TABLE_CAPTION) {
+        return true;
+    }
     return node->kind == MARKDOWN_CORE_NODE_TABLE_CAPTION ||
            (node->kind == MARKDOWN_CORE_NODE_TABLE_CELL && node->content.size > 0);
 }
@@ -2196,9 +2200,28 @@ done:
 
 /* A block-only extension: no byte ends a text run for it, no byte is offered to an
  * inline hook it does not have, and no byte is transparent to flanking. */
+static markdown_core_node *try_interrupting_block(markdown_core_parser *parser, markdown_core_node *node,
+                                                  markdown_core_chunk *input, bool lazy) {
+    if (parser->indent >= 4 || lazy || node->kind == MARKDOWN_CORE_NODE_PARAGRAPH ||
+        input->data[parser->first_nonspace] != '-') {
+        return NULL;
+    }
+    return markdown_core_table_try_open(parser, node, input->data, input->len);
+}
+
+static void dispose_parser(markdown_core_parser *parser) {
+    parser->mem->free(parser->table_lines);
+    parser->table_lines = NULL;
+}
+
 const markdown_core_extension MARKDOWN_CORE_EXTENSION_TABLE = {
+    .dispose_parser = dispose_parser,
+
+    .try_interrupting_block = try_interrupting_block,
+
     .name = "table",
     .last_block_matches = matches,
+    .maximum_block_indent = 3,
     .try_opening_block = try_opening_table_block,
     .get_type_string_func = get_type_string,
     .can_contain_func = can_contain,

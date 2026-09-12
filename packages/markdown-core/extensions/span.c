@@ -1,3 +1,4 @@
+#include "link.h"
 #include "inline_internal.h"
 #include "attributes.h"
 #include "citation.h"

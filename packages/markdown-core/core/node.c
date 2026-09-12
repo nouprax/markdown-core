@@ -1211,3 +1211,20 @@ int markdown_core_visit_inline_subtrees(markdown_core_node *node, markdown_core_
     return !extension || !extension->visit_owned_subtrees_func ||
            extension->visit_owned_subtrees_func(extension, node, visitor, context);
 }
+
+/* Document-owned definition values are independent roots, not child edges. */
+int markdown_core_visit_block_subtrees(markdown_core_node *node, markdown_core_owned_subtree_visitor visitor,
+                                       void *context) {
+    if (node->kind != MARKDOWN_CORE_NODE_DOCUMENT) {
+        return 1;
+    }
+    markdown_core_node **families[] = {&node->as.document->footnotes, &node->as.document->specimens};
+    for (size_t i = 0; i < sizeof(families) / sizeof(*families); i++) {
+        for (markdown_core_node **slot = families[i]; *slot; slot = &(*slot)->next) {
+            if (!visitor(slot, context)) {
+                return 0;
+            }
+        }
+    }
+    return 1;
+}

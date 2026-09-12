@@ -408,3 +408,14 @@ bufsize_t markdown_core_attributes_attach_tail(markdown_core_parser *parser, mar
     markdown_core_attribute_parser_free(&attributes);
     return info_end;
 }
+
+static void dispose_inline(subject *subj) {
+    if (subj->attributes.mem) {
+        subj->owner_parser->attribute_work += subj->attributes.work;
+        markdown_core_attribute_parser_free(&subj->attributes);
+    }
+}
+const markdown_core_extension MARKDOWN_CORE_EXTENSION_ATTRIBUTES = {
+    .name = "attributes",
+    .dispose_inline = dispose_inline,
+};

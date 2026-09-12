@@ -1,3 +1,4 @@
+#include "link.h"
 #include "media.h"
 #include "inline_internal.h"
 #include "block_internal.h"
@@ -83,3 +84,30 @@ void markdown_core_media_record_text(markdown_core_parser *parser, subject *subj
         }
     }
 }
+
+static markdown_core_node *match(const markdown_core_extension *self, markdown_core_parser *parser,
+                                 markdown_core_node *parent, unsigned char character,
+                                 markdown_core_inline_parser *subj) {
+    if (character != '!') {
+        return NULL;
+    }
+    subj->pos++;
+    if (markdown_core_inline_peek_char(subj) == '[' && markdown_core_inline_peek_char_n(subj, 1) != '^') {
+        subj->pos++;
+        markdown_core_node *text = make_str(subj, subj->pos - 2, subj->pos - 1, markdown_core_chunk_literal("!["));
+        if (text) {
+            markdown_core_inline_push_bracket(subj, BRACKET_IMAGE, text);
+        }
+        return text;
+    }
+    return make_str(subj, subj->pos - 1, subj->pos - 1, markdown_core_chunk_literal("!"));
+}
+
+const markdown_core_extension MARKDOWN_CORE_EXTENSION_MEDIA = {
+    .inline_precedence = MARKDOWN_CORE_INLINE_FALLBACK,
+
+    .name = "media",
+    .match_inline = match,
+    .terminates_text = "!",
+    .dispatch = "!",
+};

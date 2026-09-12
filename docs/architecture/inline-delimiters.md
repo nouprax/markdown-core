@@ -33,7 +33,7 @@ and inline footnotes. See [heading resolution](heading-resolution.md).
 
 Each element's extension descriptor declares minimum/maximum consumed width,
 lexical run limit, rule-of-three ambiguity and body grammar. The engine retains
-the two inherited emphasis rules and projects attached declarations by rule.
+no reserved syntax rules and projects every attached declaration by rule.
 See [syntax extension ownership](syntax-extensions.md) for the element inventory
 and parser boundary. Inline bodies use inherited flanking;
 word bodies use non-empty content without ordinary raw whitespace. The table

@@ -7,4 +7,5 @@ void markdown_core_inline_attach_inline_attributes(markdown_core_inline_parser *
                                                    bufsize_t from);
 bufsize_t markdown_core_attributes_attach_tail(markdown_core_parser *parser, markdown_core_node *node,
                                                const unsigned char *source, bufsize_t length);
+extern const markdown_core_extension MARKDOWN_CORE_EXTENSION_ATTRIBUTES;
 #endif

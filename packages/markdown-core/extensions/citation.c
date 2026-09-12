@@ -1,3 +1,7 @@
+#include "link.h"
+#include "autolink_scanners.h"
+#include "code.h"
+#include "html.h"
 #include "citation.h"
 #include "inline_internal.h"
 #include "block_internal.h"
@@ -727,7 +731,22 @@ static markdown_core_node *match(const markdown_core_extension *self, markdown_c
     }
     return NULL;
 }
+static void finish_inline(subject *subj) {
+    for (bracket *open = subj->last_bracket; open; open = open->previous) {
+        markdown_core_inline_finish_citation_tokens(subj, &open->citations);
+    }
+    markdown_core_inline_finish_citation_tokens(subj, &subj->citations);
+}
+static void dispose_inline(subject *subj) {
+    markdown_core_inline_free_citation_tokens(subj, &subj->citations);
+    subj->mem->free(subj->citation_braces.entries);
+    subj->citation_braces = (citation_brace_index){0};
+}
+
 const markdown_core_extension MARKDOWN_CORE_EXTENSION_CITATION = {
+    .finish_inline = finish_inline,
+    .dispose_inline = dispose_inline,
+
     .name = "citation",
     .match_inline = match,
     .is_inline_start = is_inline_start,

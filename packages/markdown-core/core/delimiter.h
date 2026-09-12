@@ -25,6 +25,7 @@ typedef struct {
     bufsize_t minimum_width, maximum_width;
     bufsize_t run_limit; /* zero means a maximal run */
     bool rule_of_three;
+    bool punctuation_bound;
     delimiter_body body;
     markdown_core_node_type single_kind, double_kind;
     bool exact_run;

@@ -1,3 +1,4 @@
+#include "formula_scanners.h"
 #include "formula.h"
 #include "extension.h"
 
@@ -10,8 +11,6 @@
 #include <markdown_core_ctype.h>
 #include <node.h>
 #include <parser.h>
-
-#include "ext_scanners.h"
 
 /* These were four SENTINEL BYTES -- 1, 2, 3, 4 -- because a delimiter carried a
  * byte and four kinds of formula opener had to be told apart by it. They were
@@ -794,10 +793,14 @@ static markdown_core_node *postprocess(const markdown_core_extension *extension,
  * set and NOT the terminator set: `is_core_special_character` refuses it there
  * anyway, and it must stay in dispatch because `handle_backslash` asks whether any
  * extension claims `\\` before taking a core fast path. */
+
 const markdown_core_extension MARKDOWN_CORE_EXTENSION_FORMULA = {
+    .interrupts_paragraph = true,
+
     .name = "formula",
     .match_inline = match,
     .last_block_matches = formula_block_matches,
+    .maximum_block_indent = 3,
     .try_opening_block = try_opening_formula_block,
     .probe_block = probe_formula_block,
     .postprocess_func = postprocess,

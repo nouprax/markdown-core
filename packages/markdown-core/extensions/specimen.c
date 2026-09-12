@@ -115,9 +115,14 @@ bool markdown_core_specimen_continue(markdown_core_parser *parser, markdown_core
     return markdown_core_block_continue_indented(parser, input, 4, true);
 }
 
+static bool continue_container(markdown_core_parser *parser, markdown_core_node *node, markdown_core_chunk *input,
+                               const markdown_core_node *joining, bool *taken) {
+    return markdown_core_specimen_continue(parser, node, input);
+}
 const markdown_core_extension MARKDOWN_CORE_EXTENSION_SPECIMEN = {
     .name = "specimen",
-    .block_precedence = MARKDOWN_CORE_BLOCK_MARKER,
+    .continue_container = continue_container,
+    .maximum_block_indent = 3,
     .scan_block_start = markdown_core_specimen_scan,
 };
 

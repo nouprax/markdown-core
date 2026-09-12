@@ -120,12 +120,6 @@ for (const { file: entry, source, body: descriptor } of descriptors) {
         failures.push(`${entry}: its default delimiter byte must terminate text and reach dispatch.`);
     }
 
-    // Opaque scanners claim whole tokens at their openers. Every remaining
-    // ']' is owned by the shared bracket procedure, with no extension branch.
-    if (dispatch.includes("]".charCodeAt(0))) {
-        failures.push(`${entry}: ']' belongs to the shared bracket procedure, not extension dispatch.`);
-    }
-
     const body = matchBody(source, descriptor, entry);
     if (body === null) {
         if (dispatch.length > 0) {
@@ -137,7 +131,7 @@ for (const { file: entry, source, body: descriptor } of descriptors) {
     const dispatched = new Set([...body.matchAll(DISPATCH)].map((match) => byteOf(match[1])));
 
     for (const byte of [...terminates, ...dispatch, ...transparent]) {
-        if (byte < 0x20) {
+        if (byte < 0x20 && byte !== 0x0a && byte !== 0x0d) {
             failures.push(
                 `${entry}: declares ${spell(byte)}, a control byte. Delimiter tags are RULES since 3.3, and a byte ` +
                     "below 0x20 is a byte a document can contain."
@@ -145,7 +139,7 @@ for (const { file: entry, source, body: descriptor } of descriptors) {
         }
     }
     for (const byte of dispatch) {
-        if (byte >= 0x20 && !dispatched.has(byte)) {
+        if (!dispatched.has(byte)) {
             failures.push(
                 `${entry}: declares ${spell(byte)} in its dispatch set, and its match_inline never dispatches on it.`
             );

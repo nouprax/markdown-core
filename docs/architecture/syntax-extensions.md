@@ -1,9 +1,10 @@
 # Syntax extension ownership
 
-The changes after `2d9dc333e2bbd7007e205c64a6e280333aef3584` are
-organized by the syntax element they produce. Development milestones and
-upstream dialects do not define implementation modules. One element owns all
-of its spellings, including spellings shared by several dialects.
+Every syntax, including inherited CommonMark, belongs to its element's
+extension unit. Development milestones and upstream dialects do not define
+implementation modules. One element owns all of its spellings, including
+spellings shared by several dialects. The inventory also accounts for every
+feature commit after `2d9dc333e2bbd7007e205c64a6e280333aef3584`.
 
 ## Element inventory
 
@@ -12,9 +13,20 @@ Commit abbreviations identify the reviewed history, not implementation layers.
 
 | Element or syntax | Implementation | Reviewed feature commits |
 | --- | --- | --- |
+| Document: source envelope, definition dependencies and resolution order | `document.c`, invoking the participating element services | Inherited and shared document grammar |
+| Paragraph: default prose, reference-only cleanup and lazy continuation | `paragraph.c` | Inherited |
+| Text: literals, entities, escapes and contextual escaped spaces | `text.c` | Inherited; script-space semantics from `0c68bd1d` |
+| SoftBreak and LineBreak: authored line endings and hard breaks | `line_break.c`, with escaped breaks recognized by Text | Inherited |
+| Emphasis and Strong: asterisk and underscore rules | `emphasis.c`, declaring both spellings to the shared delimiter engine | Inherited |
+| Strikethrough: double-tilde delimiters | `strikethrough.c` | Inherited |
+| Code: backtick spans and normalized literal bodies | `code.c` | Inherited |
+| CodeBlock: indented/fenced openers, continuation, info and literal finalization | `code_block.c` | Inherited |
+| HTML: inline tokens and block start/end conditions | `html.c`, `html_block.c`; Comment owns comment values | Inherited |
+| ThematicBreak: marker runs and failed-suffix cache | `thematic_break.c` | Inherited |
+| Autolink: angle-delimited URI/email and bare links | `autolink.c` | Inherited |
 | Comment: HTML comments and `%%` inline/block comments | `comment.c` | `ab01af37`, `b7dc8daf` |
 | Link: direct destinations, shared reference resources, reference definitions, attribute attachment | `link.c`, using `attributes.c` | `18602b2e`, `1c5c7a39`, `8d9177fa` |
-| Media: image destinations and authored label dimensions | `link.c` for the shared link grammar; `media.c` for dimensions | `18602b2e`, `1c5c7a39`, `9ab6dfee` |
+| Media: image prefix, destinations and authored label dimensions | `media.c`, using Link's shared destination and bracket grammar | `18602b2e`, `1c5c7a39`, `9ab6dfee` |
 | CrossLink and CrossEmbedded: `[[...]]` and `![[...]]` | `cross_link.c`, using the same `media.c` dimension parser | `4853f2ad`, `9ab6dfee` |
 | Callout: quote container, variant/fold metadata and inline title | `callout.c` | `b6a11e50`, `d53b6f53` |
 | Citation: bibliography groups, author forms, affixes and specimen references | `citation.c` | `078cf4cf`, `012cb4e1`, `5f5a516c` |
@@ -25,7 +37,7 @@ Commit abbreviations identify the reviewed history, not implementation layers.
 | DefinitionList: terms, bodies, compactness, indentation and lookahead | `definition_list.c` | `5f5a516c` |
 | Table: groups, columns, spans, pipe/grid/simple/multiline forms and captions | `table.c` | `798717b7`, `a540b69e` |
 | Attributes: one brace grammar and attachment operations | `attributes.c` | `1ad40aed`, `8d9177fa` |
-| Heading: explicit suffix ownership, generated anchors and implicit heading references | `heading.c` | `25282384`, `8d9177fa` |
+| Heading: ATX/setext openers, suffix ownership, generated anchors and implicit references | `heading.c` | Inherited; `25282384`, `8d9177fa` |
 | Block identifier: `#anchor-id#` suffix and separate-line attachment | `block_identifier.c`, writing the shared anchor value | `d6abfbd0` |
 | Properties: document metadata envelope, fixed fields and literal prose | `properties.c` | `2640f0da` |
 | Mark: `==...==` | `mark.c` | `8a2b1462` |
@@ -46,40 +58,60 @@ validation, rather than new syntax modules.
 
 ## Parser boundary
 
-`core/inlines.c` owns the cursor, text and source projection, bracket stack,
+`core/inlines.c` owns the cursor, source projection, token dispatch,
 delimiter events, pairing, range reduction and inline-field continuation.
 `core/blocks.c` owns the open-container spine, indentation advancement,
-streaming and mapped inputs, lookahead, source marks and document-phase order.
-Inherited CommonMark leaf recognition remains in the engine. Canonical node
-storage, resource identity and owned-field traversal remain shared model
-operations, independent of a syntax's spelling.
+streaming and mapped inputs, lookahead, source marks and lifecycle dispatch.
+Neither driver recognizes element spellings or reads element-specific AST
+payloads. Canonical node storage, resource identity and owned-field traversal
+remain shared model operations, independent of a syntax's spelling.
 
 Extensions own lexical rules, recognition results, element construction,
 attachment and element resolution. `inline_internal.h` and `block_internal.h`
 expose the shared parser services and typed borrowed cursors; they do not
-create another parser or transfer AST ownership. Citation's token records are
-declared in `citation_state.h`, alongside their implementation owner.
+create another parser or transfer AST ownership. Citation, bracket and heading
+state records live beside their grammar owners. Subject resources are released
+through their owners' disposal hooks, including on allocation failure.
+
+The immutable registry projects node kinds to syntax descriptors separately
+from scanner precedence. Syntax follows a node's current kind; its existing
+`extension` pointer continues to own opaque payload and containment callbacks,
+including across kind conversion. A containment policy cannot suppress the
+underlying paragraph's parsing or Text's completion rules.
 
 There are two kinds of integration, chosen by lifecycle:
 
 - Scanner extensions have immutable descriptors in the single
-  `CORE_EXTENSIONS` table. Mark, Insertion, Superscript, Subscript and
-  Strikethrough declare their delimiter semantics there. Citation and
-  Footnote own their inline prefixes. Callout, List, Footnote, Specimen and
-  DefinitionList register non-consuming block recognition.
+  `CORE_EXTENSIONS` table. Emphasis, Strong, Mark, Insertion, Superscript,
+  Subscript and Strikethrough use declared delimiter semantics. Basic block
+  openers and newer container grammars use the same non-consuming recognition
+  and committed-open contract, with explicit indentation bounds.
 - Operations on an existing owner use explicit lifecycle services. Examples
   are a Span alternative at a shared bracket close, an attribute suffix on
   an already recognized owner, dimensions on a media label, a task marker
   when a list item opens, and heading resolution after definitions are known.
-  These operations do not acquire fake standalone scanner descriptors or
-  postprocess the tree to rediscover syntax.
+  A lifecycle-only descriptor does not pretend to scan source, and a service
+  invoked by its existing owner does not rediscover syntax in a tree pass.
 
 Block recognition returns a typed candidate and its committed-open callback.
-Container prefixes precede leaf recognition; definition/list markers follow
-the inherited heading, fence, HTML, setext and thematic-break rules. These are
-grammar precedence boundaries, independent of project history. Streaming
-parsing and lookahead ask the same recognition operation. Definition terms
-have a paragraph-fallback hook after ordinary extensions and tables decline.
+The registry orders all openers; the engine has no reserved recognition slot
+for inherited grammar. Streaming parsing and lookahead ask the same operation.
+Definition terms have a fallback hook after ordinary extensions and tables
+decline. Table owns its dash-led interruption rule. Elements also declare
+literal/prose content, continuation, blank-line propagation and closing hooks.
+The same continuation and speculative-state contracts serve real input and
+cached lookahead.
+
+Inline descriptors declare protected-token, ordinary-alternative or literal-
+fallback precedence. One ordered dispatch loop handles all three. Its byte index
+is built once per parse, preserving candidate order and set membership without
+walking unrelated descriptors for each token. Subject lifecycle and block
+alternative lists likewise include only participating descriptors, in registry
+order. A successful
+alternative may consume input without emitting a node, as bracket commitment
+does. Ordinary extensions, including test probes, still run before the literal
+`!`, `[` and backslash fallbacks. Every text-terminating byte comes from a
+descriptor; the engine has no built-in byte table.
 
 ## Shared algorithms and failure behavior
 
@@ -89,7 +121,8 @@ by rule and default byte once when attaching the dialect. Two syntax owners
 cannot overwrite the same rule or default byte. Shared dispatch is distinct:
 the double-tilde scanner selects Strikethrough before Subscript can select a
 single tilde; Footnote claims `^[` before Superscript. All parsed delimiters,
-including Strikethrough, use the same flanking classifier and constructor.
+including Emphasis and Strikethrough, use the same flanking classifier and
+constructor. Underscore's punctuation-bound flanking is a rule property.
 
 Citation's non-consuming text predicate is also projected by byte. If multiple
 owners disagree on a predicate, the byte reaches ordinary extension dispatch.
@@ -97,7 +130,7 @@ There is no input-size threshold or second text-scanning algorithm. The shared
 text scanner retains its cached maximal delimiter run, so literal `=` and `+`
 runs do not create unnecessary Text nodes or get rescanned at dispatch.
 
-The shared bracket owner arbitrates explicit Link/Media tails, Span, citation
+Link's shared bracket owner arbitrates explicit Link/Media tails, Span, citation
 tails/groups, shortcut links and named footnotes. Each alternative consumes
 the existing parsed range; none reparses bracket contents. Heading suspension,
 field completion, ordinary whitespace boundaries and source positions use
@@ -110,11 +143,27 @@ if attachment failed partway through. Extension code uses the same source
 mapping, indentation and lookahead services, preserving their linear-work
 invariants.
 
+## Generated lexical rules
+
+The handwritten grammar and its generated lexer share the same element owner.
+Autolink, CodeBlock, Comment, Footnote, Formula, Heading, HTML, Link, Table and
+Text each have an `*_scanners.re` source, private header and committed generated
+`*_scanners.c` in `extensions/`. Shared byte-cursor configuration and Text's
+whitespace/escape primitives are included once as source definitions. The
+previous combined core and extension grammar files are removed.
+
+`core/scanners.c` only invokes a scanner on a bounded borrowed byte slice and
+adapts a chunk to that operation. It contains no lexical rules. The generator
+retains each grammar's encoding, and the Makefile and reproducibility check
+use the same pinned re2c command. Ordinary builds consume committed C files.
+
 ## Verification
 
 The C correctness suites cover source positions, overlapping syntax, OOM,
 deep containers, shared delimiter work, source-order resolution and mapped
 tables. The extension inventory additionally rejects conflicting delimiter
-projections and block scanners without an explicit precedence. The source-list
+projections and block scanners without an explicit indentation bound. The
+parser-boundary audit rejects concrete element kinds, payload access, scanner
+calls and spelling dispatch in either engine. The source-list
 audit compares CMake, both Swift manifests, Android CMake and the ES/Wasm
 build, so moving an implementation cannot leave a binding on an old source.

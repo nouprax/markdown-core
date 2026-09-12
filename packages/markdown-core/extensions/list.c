@@ -262,8 +262,50 @@ bool markdown_core_list_continue(markdown_core_parser *parser, markdown_core_nod
     return true;
 }
 
+static bool continue_container(markdown_core_parser *parser, markdown_core_node *node, markdown_core_chunk *input,
+                               const markdown_core_node *joining, bool *taken) {
+    return markdown_core_list_continue(parser, node, input, joining, taken);
+}
+static void complete_block(markdown_core_parser *parser, markdown_core_node *node) {
+    if (node->kind == MARKDOWN_CORE_NODE_LIST) {
+        markdown_core_block_finalize_list(node);
+    }
+}
+static bool blank_line(markdown_core_parser *parser, markdown_core_node *node) {
+    return !(node->kind == MARKDOWN_CORE_NODE_LIST_ITEM && !node->first_child &&
+             node->start_line == parser->line_number);
+}
+
 const markdown_core_extension MARKDOWN_CORE_EXTENSION_LIST = {
+    .complete_block = complete_block,
+    .blank_line = blank_line,
+    .speculative_flags = MARKDOWN_CORE_NODE__LIST_LAST_LINE_BLANK,
+
     .name = "list",
-    .block_precedence = MARKDOWN_CORE_BLOCK_MARKER,
+    .continue_container = continue_container,
+    .propagates_child_blank = true,
+    .blank_runs = true,
+    .maximum_block_indent = 3,
     .scan_block_start = markdown_core_list_scan,
 };
+
+int markdown_core_block_consume_item_marker(markdown_core_parser *parser, markdown_core_chunk *input,
+                                            int marker_width) {
+    markdown_core_block_advance_offset(parser, input, parser->first_nonspace + marker_width - parser->offset, false);
+    int offset = parser->offset, column = parser->column;
+    bool partial = parser->partially_consumed_tab;
+    while (parser->column - column < 5 && markdown_core_block_is_space_or_tab(input->data[parser->offset])) {
+        markdown_core_block_advance_offset(parser, input, 1, true);
+    }
+    int padding = parser->column - column;
+    if (padding < 1 || padding >= 5 || markdown_core_is_line_end(input->data[parser->offset])) {
+        parser->offset = offset;
+        parser->column = column;
+        parser->partially_consumed_tab = partial;
+        if (padding > 0) {
+            markdown_core_block_advance_offset(parser, input, 1, true);
+        }
+        padding = 1;
+    }
+    return marker_width + padding;
+}

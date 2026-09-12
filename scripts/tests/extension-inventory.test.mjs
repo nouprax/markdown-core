@@ -77,22 +77,22 @@ test("delimiter projections cannot silently overwrite another element", () => {
     set(2, rule("INSERTION", "="));
     assert.throws(() => parseExtensionInventory(input), /duplicate default delimiter character/);
     set(2, rule("EMPHASIS", "*"));
+    assert.doesNotThrow(() => parseExtensionInventory(input));
+    set(2, rule("NONE", "*"));
     assert.throws(() => parseExtensionInventory(input), /reserved by the engine/);
     set(2, rule("INSERTION", "+").replace("minimum_width = 2", "minimum_width = 3"));
     assert.throws(() => parseExtensionInventory(input), /invalid parsed delimiter widths/);
 });
 
-test("block scanners declare their grammar precedence", () => {
+test("block scanners declare their indentation bound", () => {
     const input = sources(["FIRST"]);
     const set = (fields) => {
         input[1].source = definition("FIRST").replace(".dispatch", `${fields}.dispatch`);
     };
     set(".scan_block_start = scan,\n");
-    assert.throws(() => parseExtensionInventory(input), /explicit grammar precedence/);
-    set(".block_precedence = MARKDOWN_CORE_BLOCK_PREFIX,\n");
-    assert.throws(() => parseExtensionInventory(input), /explicit grammar precedence/);
-    set(".scan_block_start = scan,\n.block_precedence = MARKDOWN_CORE_BLOCK_PREFIX,\n");
+    assert.throws(() => parseExtensionInventory(input), /explicit indentation bound/);
+    set(".scan_block_start = scan,\n.maximum_block_indent = 3,\n");
     assert.doesNotThrow(() => parseExtensionInventory(input));
-    set(".scan_block_start = scan,\n.block_precedence = MARKDOWN_CORE_BLOCK_MARKER,\n");
+    set(".scan_block_start = scan,\n.maximum_block_indent = INT_MAX,\n");
     assert.doesNotThrow(() => parseExtensionInventory(input));
 });

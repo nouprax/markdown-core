@@ -1,3 +1,4 @@
+#include "attributes.h"
 #include "directive.h"
 #include "extension.h"
 
@@ -14,8 +15,6 @@
 #include <node.h>
 #include <parser.h>
 #include <utf8.h>
-
-#include "ext_scanners.h"
 
 typedef struct {
     markdown_core_chunk name;
@@ -756,11 +755,17 @@ static int visit_owned_subtrees(const markdown_core_extension *extension, markdo
 
 /* The opener consumes the complete token; the shared inline parser parses its
  * owned label before continuing beyond it. No close-bracket dispatch exists. */
+
 const markdown_core_extension MARKDOWN_CORE_EXTENSION_DIRECTIVE = {
+    .interrupts_paragraph = true,
+
+    .pending_close = true,
+
     .name = "directive",
     .match_inline = match,
     .last_block_matches = directive_block_matches,
     .continues_block = directive_block_continues,
+    .maximum_block_indent = 3,
     .try_opening_block = open_directive_block,
     .probe_block = probe_directive_block,
     .get_type_string_func = get_type_string,

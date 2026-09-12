@@ -1,3 +1,9 @@
+#include "link_scanners.h"
+#include "text_scanners.h"
+#include "citation.h"
+#include "footnote.h"
+#include "span.h"
+#define advance(subj) ((subj)->pos += 1)
 #include "attributes.h"
 #include "citation.h"
 #include "link.h"
@@ -523,4 +529,200 @@ bool markdown_core_link_commit(markdown_core_parser *parser, subject *subj, brac
     }
 
     return true;
+}
+
+/* Claim the parsed body of one balanced bracket pair. Span, links/images,
+ * and document-owned inline notes share this transfer; their callers decide
+ * where the resulting owner lives and when its delimiter boundary closes. */
+void markdown_core_inline_take_bracket_content(markdown_core_parser *parser, bracket *opener,
+                                               markdown_core_node *owner) {
+    markdown_core_node *child = opener->inl_text->next;
+    while (child != opener->close_text) {
+        markdown_core_node *next = child->next;
+        markdown_core_node_unlink(child);
+        markdown_core_inline_append_child(owner, child);
+        parser->bracket_work++;
+        child = next;
+    }
+}
+
+void markdown_core_inline_pop_bracket(subject *subj) {
+    bracket *b;
+    if (subj->last_bracket == NULL) {
+        return;
+    }
+    b = subj->last_bracket;
+    subj->last_bracket = subj->last_bracket->previous;
+    if (b->close_text) {
+        if (b->pending_previous) {
+            b->pending_previous->pending_next = b->pending_next;
+        } else {
+            subj->pending_brackets = b->pending_next;
+        }
+        if (b->pending_next) {
+            b->pending_next->pending_previous = b->pending_previous;
+        }
+        markdown_core_inline_remove_delimiter(subj, b->delim_end);
+    }
+    markdown_core_inline_free_citation_tokens(subj, &b->citations);
+    subj->mem->free(b);
+}
+
+void markdown_core_inline_push_bracket(subject *subj, bracket_kind kind, markdown_core_node *inl_text) {
+    bracket *b = (bracket *)subj->mem->calloc(1, sizeof(bracket));
+    if (!b) {
+        subj->oom = 1;
+        return;
+    }
+    if (subj->last_bracket != NULL) {
+        subj->last_bracket->bracket_after = true;
+        if (kind != BRACKET_FOOTNOTE) {
+            b->in_bracket_image0 = subj->last_bracket->in_bracket_image0;
+            b->in_bracket_image1 = subj->last_bracket->in_bracket_image1;
+        }
+    }
+    b->kind = kind;
+    markdown_core_citation_open_bracket(subj, b);
+    b->outer_no_link_openers = subj->no_link_openers;
+    b->active = true;
+    b->inl_text = inl_text;
+    b->previous = subj->last_bracket;
+    b->position = subj->pos;
+    b->image_pipe = -1;
+    b->bracket_after = false;
+    if (kind == BRACKET_IMAGE) {
+        b->in_bracket_image1 = true;
+    } else if (kind == BRACKET_LINK) {
+        b->in_bracket_image0 = true;
+    }
+    subj->last_bracket = b;
+    if (kind != BRACKET_IMAGE) {
+        subj->no_link_openers = false;
+    }
+}
+
+void markdown_core_inline_replace_bracket_opener(subject *subj, bracket *opener, markdown_core_node *replacement) {
+    if (opener->kind == BRACKET_IMAGE) {
+        opener->inl_text->as.literal->len = 1;
+        markdown_core_inline_parser_place(subj, opener->inl_text, opener->position - 2, opener->position - 2);
+        markdown_core_node_insert_after(opener->inl_text, replacement);
+    } else {
+        markdown_core_node_insert_before(opener->inl_text, replacement);
+        markdown_core_node_free(opener->inl_text);
+    }
+}
+
+markdown_core_node *markdown_core_inline_handle_close_bracket(markdown_core_parser *parser, subject *subj) {
+    parser->bracket_work++;
+    advance(subj);
+    bufsize_t initial_pos = subj->pos;
+    bracket *opener = subj->last_bracket;
+    if (!opener) {
+        return make_str(subj, initial_pos - 1, initial_pos - 1, markdown_core_chunk_literal("]"));
+    }
+    if (opener->kind == BRACKET_FOOTNOTE) {
+        return markdown_core_inline_close_inline_footnote(parser, subj, opener);
+    }
+
+    /* One bracket owns its parsed children. Alternatives only claim that
+     * existing range, in syntax precedence order; none reparses its body. */
+    markdown_core_link_candidate link = {0};
+    markdown_core_link_match match = markdown_core_link_recognize(subj, opener, &link);
+    if (match == LINK_EXPLICIT) {
+        if (markdown_core_link_commit(parser, subj, opener, &link, initial_pos)) {
+            return NULL;
+        }
+        goto no_match;
+    }
+    subj->pos = initial_pos;
+    markdown_core_bracket_match span = markdown_core_span_close(parser, subj, opener);
+    if (span == BRACKET_MATCHED) {
+        return NULL;
+    }
+    if (span == BRACKET_REJECTED) {
+        goto no_match;
+    }
+    markdown_core_node *close = NULL;
+    if (markdown_core_citation_defer_tail(subj, opener, &close)) {
+        return close;
+    }
+    if (markdown_core_inline_close_bibliography(parser, subj, opener)) {
+        return NULL;
+    }
+    if (match == LINK_SHORTCUT) {
+        if (markdown_core_link_commit(parser, subj, opener, &link, initial_pos)) {
+            return NULL;
+        }
+        goto no_match;
+    }
+    if (markdown_core_footnote_close_reference(parser, subj, opener)) {
+        return NULL;
+    }
+
+no_match:
+    markdown_core_inline_finish_citation_tokens(subj, &opener->citations);
+    markdown_core_inline_pop_bracket(subj);
+    subj->pos = initial_pos;
+    return make_str(subj, initial_pos - 1, initial_pos - 1, markdown_core_chunk_literal("]"));
+}
+
+static markdown_core_node *match_bracket(const markdown_core_extension *self, markdown_core_parser *parser,
+                                         markdown_core_node *parent, unsigned char character,
+                                         markdown_core_inline_parser *subj) {
+    if (character == ']') {
+        return markdown_core_inline_handle_close_bracket(parser, subj);
+    }
+    if (character == '[') {
+        advance(subj);
+        markdown_core_node *text = make_str(subj, subj->pos - 1, subj->pos - 1, markdown_core_chunk_literal("["));
+        if (text) {
+            markdown_core_inline_push_bracket(subj, BRACKET_LINK, text);
+        }
+        return text;
+    }
+    return NULL;
+}
+static void dispose_inline(subject *subj) {
+    while (subj->last_bracket) {
+        markdown_core_inline_pop_bracket(subj);
+    }
+    while (subj->pending_brackets) {
+        bracket *next = subj->pending_brackets->pending_next;
+        markdown_core_inline_free_citation_tokens(subj, &subj->pending_brackets->citations);
+        subj->mem->free(subj->pending_brackets);
+        subj->pending_brackets = next;
+    }
+}
+
+static void init_inline(subject *subj) { subj->no_link_openers = true; }
+
+const markdown_core_extension MARKDOWN_CORE_EXTENSION_LINK = {
+    .init_inline = init_inline,
+
+    .inline_precedence = MARKDOWN_CORE_INLINE_FALLBACK,
+    .dispose_inline = dispose_inline,
+
+    .name = "link",
+    .match_inline = match_bracket,
+    .terminates_text = "[]",
+    .dispatch = "[]",
+};
+
+int markdown_core_inline_parser_in_bracket(markdown_core_inline_parser *parser, int image) {
+    bracket *b = parser->last_bracket;
+    if (!b) {
+        return 0;
+    }
+    if (image != 0) {
+        return b->in_bracket_image1;
+    } else {
+        return b->in_bracket_image0;
+    }
+}
+unsigned char markdown_core_inline_parser_closing_bracket(markdown_core_inline_parser *parser) {
+    return parser->last_bracket ? ']' : 0;
+}
+int markdown_core_inline_parser_context_start(markdown_core_inline_parser *parser) {
+    bracket *opener = parser->last_bracket;
+    return opener && opener->kind == BRACKET_FOOTNOTE ? opener->position : 0;
 }

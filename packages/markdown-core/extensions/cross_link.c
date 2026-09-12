@@ -1,3 +1,4 @@
+#include "media.h"
 #include "cross_link.h"
 #include "extension.h"
 #include "inlines.h"

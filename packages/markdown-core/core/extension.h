@@ -6,6 +6,7 @@
 #include "config.h"
 #include "chunk.h"
 #include "delimiter.h"
+#include "node.h"
 
 /* A speculative opener reads following lines through its caller's source
  * view. Captured and streaming inputs therefore use the same grammar without
@@ -25,25 +26,64 @@ typedef int (*markdown_core_probe_block_func)(markdown_core_parser *parser, mark
  * before opaque_free_func releases the extension payload. That callback must
  * not recursively destroy node-valued fields. Kind conversion preserves the
  * extension payload and these roots. */
-typedef int (*markdown_core_owned_subtree_visitor)(markdown_core_node **root_slot, void *context);
 typedef int (*markdown_core_visit_owned_subtrees_func)(const markdown_core_extension *extension,
                                                        markdown_core_node *node,
                                                        markdown_core_owned_subtree_visitor visitor, void *context);
 
-/* Block grammar precedence is independent of attach order and syntax origin.
- * Container prefixes precede leaf blocks; list/definition markers follow
- * headings, fences, HTML, setext and thematic breaks. Both slots use the same
- * non-consuming recognition contract and committed-open callback. */
-typedef enum {
-    MARKDOWN_CORE_BLOCK_PREFIX,
-    MARKDOWN_CORE_BLOCK_MARKER,
-    MARKDOWN_CORE_BLOCK_PRECEDENCE_COUNT
-} markdown_core_block_precedence;
 struct markdown_core_block_start_context;
 struct markdown_core_block_start;
 
+typedef enum {
+    MARKDOWN_CORE_INLINE_TOKEN = -1,
+    MARKDOWN_CORE_INLINE_DEFAULT,
+    MARKDOWN_CORE_INLINE_FALLBACK
+} markdown_core_inline_precedence;
+
+typedef enum {
+    MARKDOWN_CORE_CONTENT_CONTAINER,
+    MARKDOWN_CORE_CONTENT_PROSE,
+    MARKDOWN_CORE_CONTENT_LITERAL
+} markdown_core_content_mode;
+const markdown_core_extension *markdown_core_syntax_for_kind(markdown_core_node_type kind);
+const markdown_core_extension *markdown_core_node_syntax(const markdown_core_node *node);
+
 struct markdown_core_extension {
-    markdown_core_block_precedence block_precedence;
+    /* Negative/zero/positive precedence separates protected tokens, ordinary
+     * alternatives, and literal fallbacks without a second dispatch algorithm. */
+    markdown_core_inline_precedence inline_precedence;
+    markdown_core_node *(*parse_text)(markdown_core_parser *, markdown_core_inline_parser *, bufsize_t);
+    void (*init_inline)(markdown_core_inline_parser *);
+    void (*begin_inline)(markdown_core_parser *, markdown_core_inline_parser *, markdown_core_node *);
+    bool (*claim_inline_tail)(markdown_core_inline_parser *, markdown_core_node *);
+    void (*finish_inline)(markdown_core_inline_parser *);
+    void (*dispose_inline)(markdown_core_inline_parser *);
+    void (*complete_inline)(markdown_core_parser *, markdown_core_node *, int);
+    markdown_core_node *(*open_lazy)(markdown_core_parser *, markdown_core_node *);
+    bool (*accepts_lazy)(markdown_core_parser *, markdown_core_node *);
+    unsigned speculative_flags;
+    markdown_core_content_mode content_mode;
+    bool inline_content, deferred_inlines, paragraph, blank_opaque, blank_runs, propagates_child_blank, pending_close;
+    int maximum_block_indent;
+    void (*init_document)(markdown_core_parser *);
+    void (*dispose_parser)(markdown_core_parser *);
+    void (*dispose_document)(markdown_core_parser *);
+    size_t (*read_document_prefix)(markdown_core_parser *, const unsigned char *, size_t);
+    void (*prepare_document)(markdown_core_parser *);
+    void (*finish_document)(markdown_core_parser *);
+    void (*observe_inline)(markdown_core_parser *, markdown_core_node *);
+    markdown_core_node *(*open_text_block)(markdown_core_parser *, markdown_core_node *, markdown_core_chunk *);
+    markdown_core_node *(*try_interrupting_block)(markdown_core_parser *, markdown_core_node *, markdown_core_chunk *,
+                                                  bool);
+    bool interrupts_paragraph;
+
+    bool (*continue_container)(markdown_core_parser *, markdown_core_node *, markdown_core_chunk *,
+                               const markdown_core_node *, bool *);
+    bool (*accepts_blank)(markdown_core_parser *, markdown_core_node *);
+    bool (*blank_line)(markdown_core_parser *, markdown_core_node *);
+    bool (*ends_block)(markdown_core_parser *, markdown_core_node *, markdown_core_chunk *);
+    void (*finalize_block)(markdown_core_parser *, markdown_core_node *);
+    void (*complete_block)(markdown_core_parser *, markdown_core_node *);
+
     bool (*scan_block_start)(markdown_core_parser *, struct markdown_core_block_start_context *,
                              struct markdown_core_block_start *);
     /* Last refusal before an ordinary paragraph, after opaque blocks/tables. */

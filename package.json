@@ -27,7 +27,7 @@
         "build:c": "cmake --preset default && cmake --build --preset default --parallel",
         "build:swift": "swift build",
         "check:contracts": "node scripts/check-canonical-ast-fixtures.mjs && scripts/gradle.sh :packages:kotlin-markdown-core:contracts:list-naming:compileKotlin",
-        "check:extension-inventory": "node --test scripts/tests/extension-inventory.test.mjs",
+        "check:extension-inventory": "node --test scripts/tests/extension-inventory.test.mjs scripts/tests/parser-boundaries.test.mjs",
         "check:gradle-model": "scripts/gradle-model-smoke.sh",
         "check:commonmark-parity": "node scripts/check-upstream-parity.mjs --oracle commonmark",
         "check:gfm-parity": "node scripts/check-upstream-parity.mjs --oracle gfm",

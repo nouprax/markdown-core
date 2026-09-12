@@ -1,3 +1,5 @@
+#include "comment_scanners.h"
+#include "html.h"
 #include "comment.h"
 #include "inline_internal.h"
 #include "block_internal.h"
@@ -163,10 +165,17 @@ static const char *type_string(const markdown_core_extension *extension, markdow
 }
 
 /* `%` ends a text run and is offered to the scanner, and that is the whole set. */
+static void finalize_comment(markdown_core_parser *, markdown_core_node *);
+
 const markdown_core_extension MARKDOWN_CORE_EXTENSION_COMMENT = {
+    .interrupts_paragraph = true,
+
+    .finalize_block = finalize_comment,
+
     .name = "comment",
     .match_inline = match,
     .last_block_matches = block_matches,
+    .maximum_block_indent = 3,
     .try_opening_block = open_block,
     .probe_block = probe_comment_block,
     .get_type_string_func = type_string,
@@ -238,4 +247,48 @@ void markdown_core_block_convert_comment_block(markdown_core_parser *parser, mar
 markdown_core_node *markdown_core_comment_make_inline(markdown_core_inline_parser *subj, int from, int to,
                                                       markdown_core_chunk literal) {
     return markdown_core_inline_make_literal(subj, MARKDOWN_CORE_NODE_COMMENT, from, to, literal);
+}
+
+static void finalize_comment(markdown_core_parser *parser, markdown_core_node *b) {
+    markdown_core_strbuf *node_content = &b->content;
+
+    /* O3: a `%%` block comment arrives here with its lines in `content`:
+     * the opener line contributed nothing, because the extension that
+     * opened it consumed the line, and the closer line is not there,
+     * because its matcher closed the block before the line could be
+     * added. The literal is those lines, indentation and line endings as
+     * written after container-prefix removal. An HTML block comment never
+     * takes this arm: it is finalized as the HTML block it was parsed as
+     * and retyped above. */
+    *b->as.literal = markdown_core_chunk_buf_detach(node_content);
+    if (!b->as.literal->data) {
+        parser->oom = true;
+    }
+}
+
+bool markdown_core_comment_scan_html(subject *subj, bufsize_t pos, unsigned *flags, bufsize_t *length) {
+    if (subj->input.data[pos] != '!' || subj->input.data[pos + 1] != '-' || subj->input.data[pos + 2] != '-') {
+        return false;
+    }
+    if (subj->input.data[pos + 3] == '>') {
+        *length = 4;
+    } else if (subj->input.data[pos + 3] == '-' && subj->input.data[pos + 4] == '>') {
+        *length = 5;
+    } else {
+        *length = scan_html_comment(&subj->input, pos + 1);
+        if (*length > 0) {
+            *length += 1; // prefix "<"
+        } else {          // no match through end of input: set a flag so
+                          // we don't reparse looking for -->:
+            *flags |= FLAG_SKIP_HTML_COMMENT;
+        }
+    }
+    return true;
+}
+markdown_core_node *markdown_core_comment_make_html(subject *subj, bufsize_t pos, bufsize_t length) {
+    /* The empty short forms have overlapping opening and closing markers. */
+    bufsize_t body_length = length > 6 ? length - 6 : 0;
+    markdown_core_chunk body = markdown_core_chunk_dup(&subj->input, pos + 3, body_length);
+    subj->pos = pos + length;
+    return markdown_core_comment_make_inline(subj, pos - 1, subj->pos - 1, body);
 }

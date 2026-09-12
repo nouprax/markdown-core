@@ -8,7 +8,6 @@
 #include <string.h>
 #include "markdown_core_ctype.h"
 #include "utf8.h"
-#include "scanners.h"
 #include "houdini.h"
 #include "iterator.h"
 #include "inlines.h"
@@ -50,7 +49,6 @@ typedef struct markdown_core_block_start {
                  struct markdown_core_block_start *);
     markdown_core_node_type kind;
     bufsize_t matched;
-    bool setext, fenced;
     markdown_core_list list;
     markdown_core_specimen_value specimen;
 } block_start;
@@ -58,4 +56,7 @@ int markdown_core_block_consume_item_marker(markdown_core_parser *parser, markdo
 void markdown_core_block_find_first_nonspace(markdown_core_parser *parser, markdown_core_chunk *input);
 bool markdown_core_block_continue_indented(markdown_core_parser *parser, markdown_core_chunk *input, int continuation,
                                            bool has_content);
+void markdown_core_block_add_line(markdown_core_node *node, markdown_core_chunk *input, markdown_core_parser *parser);
+markdown_core_node *markdown_core_block_parent_for(markdown_core_parser *parser, markdown_core_node *parent,
+                                                   markdown_core_node_type kind);
 #endif

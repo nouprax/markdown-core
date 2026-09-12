@@ -90,12 +90,5 @@ distclean: clean
 
 # Maintenance-only source generation; the generated files are tracked, so
 # these never run during normal build or test.
-$(SRCDIR)/scanners.c: $(SRCDIR)/scanners.re
-	@test "$$(re2c --version)" = "re2c 4.6" || { echo "re2c 4.6 is required"; exit 1; }
-	re2c -W -Werror --case-insensitive -b -i --no-generation-date \
-		--encoding-policy substitute -o $@ $<
-
-$(EXTDIR)/ext_scanners.c: $(EXTDIR)/ext_scanners.re
-	@test "$$(re2c --version)" = "re2c 4.6" || { echo "re2c 4.6 is required"; exit 1; }
-	re2c -W -Werror --case-insensitive -b -i --no-generation-date -8 \
-		--encoding-policy substitute -o $@ $<
+$(EXTDIR)/%_scanners.c: $(EXTDIR)/%_scanners.re $(EXTDIR)/scanner_config.re $(EXTDIR)/text_grammar.re
+	scripts/check-generated-scanners.sh --write $<
