@@ -43,11 +43,14 @@ host executable explicitly with `scripts/init-environment.sh --install oracle-pa
 runs CLI canaries, both parsers and the fail-closed digest registry. Normal
 builds and tests never install the executable or access the network.
 
-The active corpus has 86 cases: 52 agreements, 34 documented differences and no
+The active corpus has 99 cases: 65 agreements, 34 documented differences and no
 missing-feature gaps. Three width differences retain the normative interior
 ratios and the oracle's page-relative widths without hiding either value. Every difference
 pins input/reader, oracle projection and product projection SHA-256 digests.
-New, changed, stale, duplicate and unknown entries fail. P5's span and shared
+New, changed, stale, duplicate and unknown entries fail. Registration proves
+reproducibility, not product intent; the [O/I/P provenance audit](../../../docs/plans/2026-09-12-oip-oracle-drift-audit.md)
+identifies the historical empty-script reversal and the compound entries that
+must not be treated as blanket approval. P5's span and shared
 attribute grammar cases now agree, including empty containers, nesting,
 shortcut precedence, complete link tails and malformed fallback. P6's ordinary
 superscript/subscript case agrees. Four isolated agreement cases separately pin
@@ -55,11 +58,22 @@ superscript/subscript case agrees. Four isolated agreement cases separately pin
 as Superscript containing a decoded space; no difference waiver applies to
 these assertions. Empty bodies, contextual escaped spaces,
 Unicode whitespace, decoded TAB preservation, maximal tilde runs and code-token
-opacity retain exact deliberate-difference witnesses. Inline-footnote composition
+opacity retain exact drift witnesses, subject to the provenance qualifications
+above. Inline-footnote composition
 is tested in the product fixtures, where the document-owned footnote model and
 source scopes are observable. P3/P4 compositions agree for heading text,
 script-bearing heading references and Span precedence over implicit shortcuts;
 the later Span ID reservation retains its exact global-reservation difference.
+
+Seven isolated audit controls verify implicit image references, authored versus
+plain heading labels, connector/combining-mark retention, and successful script
+space escaping. The last control enables `all_symbols_escapable` solely as the
+Pandoc reader prerequisite for the adopted script escape. It does not adopt that
+extension's unrelated grammar into the product. The older `p6-escaped-space`
+compound case retains a different reader and mixes this configuration effect
+with the product's intentional preservation of escapes outside committed
+scripts. It must not be cited as evidence that successful script escapes
+necessarily differ from Pandoc.
 
 `inline-code-attributes`, `header-attributes`, `fenced-code-attributes` and
 `link-and-image-attributes` agree; `pandoc-reference-attribute-merge` remains an

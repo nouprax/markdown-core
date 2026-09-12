@@ -5,7 +5,7 @@
             "id": "empty-superscript-and-subscript",
             "item": "P6",
             "status": "projection",
-            "reason": "Empty script bodies remain text. The pinned reader accepts empty Superscript/Subscript nodes; the dialect requires non-empty bodies and reserves double tilde for strikethrough.",
+            "reason": "The current parser leaves empty scripts as text while Pandoc emits empty nodes. The O/I/P provenance audit found that an example rewrite reversed the original empty-caret contract under a false Pandoc premise; this entry records current output, not verified intent. Double-tilde strikethrough ownership is a separate decision.",
             "inputDigest": "1015835f9eced9f8a7222f9d0a6af3eba44c3e747aa6ae2075e8084bc8350ee0",
             "oracleDigest": "7c4d76e54d6fe6d271470482d636a7ccfcc5751e361a1c02b1132d4e2e440c8a",
             "coreDigest": "31fa99134634c81b5b2d2bc30a7aad2a68d23aec1baac3112405096fa07f0e80"
@@ -59,7 +59,7 @@
             "id": "p6-escaped-space",
             "item": "P6",
             "status": "projection",
-            "reason": "Only a committed script body decodes an escaped ASCII space to NBSP. A failed body retains the inherited literal escape spelling and whitespace.",
+            "reason": "This compound reader omits all_symbols_escapable, so successful script escapes also differ because of oracle configuration. An isolated control with that prerequisite agrees. The real contextual difference is that only committed product scripts decode escaped ASCII space to NBSP; outside or failed scripts retain inherited literal spelling.",
             "inputDigest": "19046a6c43943f58548dbed4c9d6bd087fd48c07babc5dfe648b5084922843b2",
             "oracleDigest": "7e568729c1c324d5a4b47a93b30ca2cc2e20fb6146e65259882b7f0c7ed3c66e",
             "coreDigest": "59eed74fc828cc575d90c963da225666b7149252edeec37ede516213d9b030fc"
@@ -86,7 +86,7 @@
             "id": "p6-pairing-and-tilde-runs",
             "item": "P6",
             "status": "projection",
-            "reason": "Script units pair left to right, empty bodies are text, two tildes belong exclusively to strikethrough, and longer tilde runs are literal.",
+            "reason": "Nonempty script units pair left to right. Two tildes belong exclusively to strikethrough and longer runs are literal. The empty-caret portions also reproduce the historical reversal identified by the O/I/P audit and must not be treated as approved merely because this compound entry is registered.",
             "inputDigest": "43dad7a377f0bd0c44597628456e2b968ad53f0a4f927e4d201e11628da7c3f8",
             "oracleDigest": "e4ca40eb0ee3b049cf8bbed79ecec2ac0421e240e93afc17d1fb4446a5609aa2",
             "coreDigest": "2b42a1bccbfaf7471c3ed6b4dc21d27ebd1b88f4096dd16daa30f94604063ad0"
@@ -176,7 +176,7 @@
             "id": "p7-tail-later-author",
             "item": "P7",
             "status": "projection",
-            "reason": "The first author-tail section is suffix inline content, so a later @key belongs to its own authorInText Cite. Pandoc promotes that key into another normal item of the outer Cite.",
+            "reason": "The current first author-tail section is suffix inline content, so a later @key becomes a nested authorInText Cite. Pandoc makes it another normal item of the outer Cite. The O/I/P audit flags this grouping/mode choice for semantic review; ordinary bracket-group nesting does not establish the author-tail rule.",
             "inputDigest": "6326dc4e316d481ae8ac7f3905a1fd81627d87985e28525c380f45c7100a73be",
             "oracleDigest": "cceaffe5c3c455065f799067d8ef5a854cad0afa890029ede29ce233e127883b",
             "coreDigest": "13cc2c85aacd7be8ee9f2723499468a2389b600e2b3d9bc51e163e8773f8f1bf"
@@ -185,7 +185,7 @@
             "id": "p7-malformed-group",
             "item": "P7",
             "status": "projection",
-            "reason": "An item without a key invalidates the complete bracketed group; its unclaimed keys remain raw Text. Pandoc reparses those keys as authorInText citations.",
+            "reason": "An item without a key invalidates the complete bracketed group; the current product leaves its unclaimed keys as raw Text while Pandoc retains authorInText citations. The O/I/P audit flags the blanket literal example against the transactional fallback rule for semantic review.",
             "inputDigest": "30e87f411e8d78aaa7b56d95882759b25fb37ab3c9c267547d4bf2909dc42978",
             "oracleDigest": "2cf9c13b7502cf687377d437fb198e8f5e7f626c2d63c59fc2f98cc651733645",
             "coreDigest": "144392a4abd716bb4fe09cf2e1dc2cdc950ad53df7a126c6ed72ac90cff46c63"

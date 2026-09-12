@@ -12,8 +12,14 @@ does not absorb.
 
 ## Open for decision
 
-Nothing is open. Every collision below is settled, and a new collision is
-added here with its alternatives until the product rules on it.
+The [O/I/P provenance audit](../../plans/2026-09-12-oip-oracle-drift-audit.md)
+reopens the empty-superscript decision: the original contract accepted `^^`,
+but a later example rewrite reversed it while incorrectly attributing rejection
+to Pandoc. The current module rejects it; restoring the original contract is
+the audit recommendation. Double-tilde ownership is a separate collision with
+strikethrough and must not be decided implicitly by the empty-caret case.
+The audit also records two citation choices that need semantic review, without
+treating every oracle difference as a missing feature.
 
 ## Settled
 
@@ -147,9 +153,11 @@ that settled it.
   to every later construct, and only the email form is a post-pass over
   `Text`; a cross link, code span, formula, or mark that begins inside a URL
   run is URL text. cmark-gfm's autolink extension, the defining source.
-- An empty superscript or subscript body is invalid: `^^` is text, and an
-  unmatched `~~` run under `subscript` is text. Pandoc's reader, the defining
-  source.
+- The current script module rejects empty bodies and reserves double tildes
+  for strikethrough. The former attribution of empty-body rejection to Pandoc
+  was incorrect: the pinned reader emits empty script nodes. The empty-caret
+  reversal is reopened above; the current grammar remains observable until
+  that review is resolved.
 
 ## Deliberate exclusions
 

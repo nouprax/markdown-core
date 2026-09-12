@@ -196,9 +196,14 @@ optional ATX closing sequence, and an actually attached trailing attribute conta
 by the inherited reference-label normalization. The virtual definition
 targets `#` followed by the final anchor and has `title=null`, `anchor=null`,
 and `Attributes.empty` for `merge`. The full, collapsed, and shortcut forms
-all resolve to an ordinary `Link` through the resolver of the
+resolve through the ordinary reference resolver: link spellings produce `Link`
+and image spellings produce `Media`. A virtual definition is not link-only.
+The resolver belongs to the
 [links and images](links-and-images.md) module, in the same order-independent
-document finalization that resolves specimen labels:
+document finalization that resolves specimen labels. In particular, `# *Foo*`
+defines the normalized authored label `*Foo*`, so `[*Foo*]` resolves and `[Foo]`
+alone does not. The pinned Pandoc corpus tests both spellings separately to
+avoid its whitespace-separated full-reference syntax masking this distinction:
 
 ```````````````````````````````` example
 # First chapter

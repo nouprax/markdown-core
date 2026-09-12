@@ -14,6 +14,11 @@ feature，也不是 34 个需要追加支持的 Pandoc extension。同一条规�
 以下编号与登记表顺序一致；历史 `projection` 标签不表示所有条目都只是
 AST 表示不同。
 
+2026-09-12 的 [O/I/P 来源审计](../../../docs/plans/2026-09-12-oip-oracle-drift-audit.md)
+发现：第 1、10 项包含原规范被反向改写的空上标行为，不能据登记视为已确认的
+预期差异；第 7 项混入 reader 配置差异；第 20、21 项需要单独复核 citation
+结构与失败回退的取舍。下表描述当前结果，不构成这些取舍的批准。
+
 | 编号 | 用例 ID／主题 | Core 与 Pandoc 的具体差异 |
 | --- | --- | --- |
 | 1 | `empty-superscript-and-subscript`：空上下标 | Core 将 `^^`、`~~` 保留为文本，要求上下标内容非空；此例的 Pandoc reader 生成空 Superscript/Subscript。Core 的双波浪线用于删除线。 |

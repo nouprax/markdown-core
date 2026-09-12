@@ -461,6 +461,41 @@
             "id": "simple-table-fence-after-blank",
             "from": "markdown_strict+simple_tables+backtick_code_blocks+auto_identifiers+gfm_auto_identifiers",
             "input": "h    i\n---- ----\na    b\n\n```\ncode\n```\n"
+        },
+        {
+            "id": "p4-image-shortcut-heading-reference",
+            "from": "markdown_strict+implicit_header_references+auto_identifiers+gfm_auto_identifiers",
+            "input": "# H\n\n![H]\n"
+        },
+        {
+            "id": "p4-image-collapsed-heading-reference",
+            "from": "markdown_strict+implicit_header_references+auto_identifiers+gfm_auto_identifiers",
+            "input": "# H\n\n![H][]\n"
+        },
+        {
+            "id": "p4-image-full-heading-reference",
+            "from": "markdown_strict+implicit_header_references+auto_identifiers+gfm_auto_identifiers",
+            "input": "# H\n\n![alt][H]\n"
+        },
+        {
+            "id": "p4-isolated-plain-heading-label",
+            "from": "markdown_strict+implicit_header_references+auto_identifiers+gfm_auto_identifiers",
+            "input": "# *Foo*\n\n[Foo]\n"
+        },
+        {
+            "id": "p4-isolated-authored-heading-label",
+            "from": "markdown_strict+implicit_header_references+auto_identifiers+gfm_auto_identifiers",
+            "input": "# *Foo*\n\n[*Foo*]\n"
+        },
+        {
+            "id": "p3-connector-and-combining-mark",
+            "from": "markdown_strict+auto_identifiers+gfm_auto_identifiers",
+            "input": "# A‿B é\n"
+        },
+        {
+            "id": "p6-escaped-space-with-reader-dependency",
+            "from": "markdown_strict+superscript+subscript+all_symbols_escapable",
+            "input": "^a\\ b^\n"
         }
     ]
 }
