@@ -42,6 +42,7 @@ public protocol MarkupVisitor {
     mutating func visit(_ node: Media) -> Result
     mutating func visit(_ node: Directive) -> Result
     mutating func visit(_ node: Cite) -> Result
+    mutating func visit(_ node: TableCaption) -> Result
     mutating func visit(_ node: TableRow) -> Result
     mutating func visit(_ node: TableCell) -> Result
 }

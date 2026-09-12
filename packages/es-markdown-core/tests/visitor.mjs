@@ -12,6 +12,7 @@ export const kindVisitor = {
     visitHTMLBlock: (node) => node.kind,
     visitFormulaBlock: (node) => node.kind,
     visitTable: (node) => node.kind,
+    visitTableCaption: (node) => node.kind,
     visitTableRow: (node) => node.kind,
     visitTableCell: (node) => node.kind,
     visitDirectiveBlock: (node) => node.kind,

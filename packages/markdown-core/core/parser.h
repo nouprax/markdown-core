@@ -56,8 +56,8 @@ typedef struct {
     struct markdown_core_node *last_inline;
 } markdown_core_definition_collection;
 
-/* A heading is registered once when its block closes. Headings are leaves
- * in block grammar, so closure order is source order, including in footnotes.
+/* A heading is registered once when its block closes. Source order is settled
+ * before resolution, independently of the order in which mapped inputs close.
  * Pending holds the ordinary inline cursor at its declaration dependency;
  * nodes and resources remain owned by the tree and reference map. */
 typedef struct {
@@ -85,6 +85,21 @@ struct markdown_core_parser {
     markdown_core_heading_collection headings;
     /* The root node of the parser, always a MARKDOWN_CORE_NODE_DOCUMENT */
     struct markdown_core_node *root;
+    /* The active block grammar boundary. The document and mapped cell inputs
+     * share this parser and all document registries. Input roots stay owned by
+     * the AST; the queue only borrows them until their block content is read. */
+    struct markdown_core_node *block_root;
+    struct markdown_core_node *matched_container;
+    struct markdown_core_node **block_inputs;
+    size_t block_input_count, block_input_capacity, block_input_cursor;
+    bufsize_t *input_line_offsets;
+    size_t input_line_count, input_line_capacity;
+    int input_first_line;
+    /* A complete candidate may consume through a later source boundary. The
+     * source driver advances to it after the current line has finished. */
+    const unsigned char *claimed_cursor;
+    int claimed_line;
+    bufsize_t claimed_last_column;
     /* The last open block after a line is fully processed */
     struct markdown_core_node *current;
     /* See the documentation for markdown_core_parser_get_line_number() in markdown_core.h */
@@ -133,6 +148,8 @@ struct markdown_core_parser {
      * the linearity gates of both. */
     size_t comment_scan_work;
     size_t block_lookahead_work;
+    size_t table_scan_work, table_frontier_peak;
+    size_t table_workspace_growth, table_geometry_lines, table_separator_scans;
     /* Properties work: source ranges decoded once at their owning boundary. */
     size_t metadata_decoded_bytes;
     /* Bytes examined by the shared block-identifier suffix scanner. */
@@ -172,7 +189,12 @@ struct markdown_core_parser {
     int lookahead_chain_alloc;
     struct markdown_core_lookahead_entry *lookahead_entries;
     int lookahead_entries_alloc;
+    int lookahead_entries_used;
     int lookahead_base_line;
+    /* One active table query borrows this reusable line workspace. Per-line
+     * geometry is released by the query; the allocation dies with the parser. */
+    struct markdown_core_table_source_line *table_lines;
+    size_t table_lines_capacity;
     markdown_core_llist *extensions;
     markdown_core_llist *inline_extensions;
     markdown_core_ispunct_func backslash_ispunct;
@@ -200,6 +222,10 @@ struct markdown_core_parser {
  * earlier one matched, and every (container, line) prefix is matched at most
  * once per parse. `container` is NULL for a line no scan has recorded. */
 typedef struct markdown_core_lookahead_entry {
+    /* Table grammar search facts under one matched container prefix. */
+    const struct markdown_core_node *table_container;
+    int table_offset;
+    unsigned table_absent;
     const struct markdown_core_node *container;
     /* Its distance from the document root: chain[depth] == container. */
     int depth;
@@ -218,6 +244,7 @@ typedef struct markdown_core_lookahead_entry {
     int run_end;
     const unsigned char *run_end_cursor;
 } markdown_core_lookahead_entry;
+markdown_core_lookahead_entry *markdown_core_parser_lookahead_entry(markdown_core_parser *parser, int line);
 
 /* A NON-CONSUMING LOOKAHEAD over the lines after the one being processed.
  *
@@ -252,6 +279,29 @@ typedef struct {
     bool saved_partially_consumed_tab;
     bool active;
 } markdown_core_block_lookahead;
+
+/* Stable source-coordinate ordering, shared by deferred nodes and cell geometry. */
+int markdown_core_order_source_entries(markdown_core_mem *mem, void *entries, size_t count, size_t stride,
+                                       uint64_t (*key)(const void *));
+
+struct markdown_core_block_reader;
+/* Query the ordinary block-start rules before the table slot. Paragraph
+ * continuation uses its real interruption rules (notably list starts, type-7
+ * HTML and indentation); following lines come from the caller's source view. */
+bool markdown_core_parser_has_block_start(markdown_core_parser *parser, markdown_core_node *parent,
+                                          markdown_core_chunk *input, int first, int column, int indent, bool paragraph,
+                                          struct markdown_core_block_reader *reader);
+
+/* Schedule an already owned node's mapped content for the ordinary block
+ * parser. No nested parse transaction, document, registry or C recursion. */
+void markdown_core_parser_finalize_unmatched_blocks(markdown_core_parser *parser);
+bool markdown_core_parser_queue_block_input(markdown_core_parser *parser, markdown_core_node *owner);
+/* Project a byte column in the active input to its original source column.
+ * Line numbers already name physical source lines. Column zero stays a
+ * line-ending sentinel. Producers call this when assigning node scopes. */
+int markdown_core_parser_source_column(markdown_core_parser *parser, int line, int column);
+int markdown_core_parser_append_source_marks(markdown_core_parser *parser, markdown_core_node *node, int line,
+                                             int column, bufsize_t length, bufsize_t offset);
 
 bool markdown_core_parser_lookahead_begin(markdown_core_parser *parser, struct markdown_core_node *parent_container,
                                           markdown_core_node_type child, markdown_core_block_lookahead *lookahead);

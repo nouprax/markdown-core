@@ -22,6 +22,8 @@ public struct TableColumn: Sendable {
 
 /// One table model for every table syntax. Rows belong to their named group.
 public struct Table: Markup {
+    /// The independently owned inline caption, visited before all rows.
+    public let caption: TableCaption?
     /// The non-empty logical column grid.
     public let columns: [TableColumn]
     /// Header rows in stored order.
@@ -42,7 +44,7 @@ public struct Table: Markup {
 }
 
 extension Table {
-    init(from node: OpaquePointer, children: [any Markup]) {
+    init(from node: OpaquePointer, caption: TableCaption?, children: [any Markup]) {
         var count = 0
         var headCount = 0
         var contentCount = 0
@@ -59,6 +61,7 @@ extension Table {
         let rows: [TableRow] = Self.typedChildren(children)
         precondition(headCount + contentCount + footCount == rows.count)
         self.init(
+            caption: caption,
             columns: columns,
             head: Array(rows[..<headCount]),
             content: Array(rows[headCount..<(headCount + contentCount)]),
@@ -123,6 +126,32 @@ extension TableCell {
         self.init(
             rowspan: Int(rowspan),
             colspan: Int(colspan),
+            content: content,
+            scope: Self.scope(from: node),
+            anchor: markdown_core_node_anchor(node).string,
+            attributes: Attributes(from: node)
+        )
+    }
+}
+
+/// A table's authored caption, with ordinary inline content.
+public struct TableCaption: Markup {
+    /// Inline content after removing the caption marker.
+    public let content: [any Markup]
+    /// Authored source extent, including the caption marker.
+    public let scope: Scope
+    /// The explicit anchor, absent when none was attached.
+    public let anchor: String?
+    /// Ordered classes and records, including duplicates.
+    public let attributes: Attributes
+
+    /// Dispatches to this node kind's visitor callback.
+    public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
+}
+
+extension TableCaption {
+    init(from node: OpaquePointer, content: [any Markup]) {
+        self.init(
             content: content,
             scope: Self.scope(from: node),
             anchor: markdown_core_node_anchor(node).string,

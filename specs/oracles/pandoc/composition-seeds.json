@@ -1,0 +1,78 @@
+{
+    "schemaVersion": 1,
+    "description": "Reviewed feature witnesses in corpus.json, composed in both orders without inheriting single-case difference waivers. This inventory seeds adjacency probes, not the full P12 exit criterion.",
+    "features": [
+        {
+            "feature": "auto_anchors",
+            "case": "gfm-auto-anchors"
+        },
+        {
+            "feature": "bracketed_spans",
+            "case": "bracketed-spans"
+        },
+        {
+            "feature": "citations",
+            "case": "bibliography-citations"
+        },
+        {
+            "feature": "definition_lists",
+            "case": "definition-list-loose-and-multiple-bodies"
+        },
+        {
+            "feature": "directives",
+            "case": "fenced-divs-nested"
+        },
+        {
+            "feature": "example_lists",
+            "case": "example-lists-and-reference"
+        },
+        {
+            "feature": "fancy_lists",
+            "case": "fancy-list-and-startnum"
+        },
+        {
+            "feature": "fenced_code_attributes",
+            "case": "fenced-code-attributes"
+        },
+        {
+            "feature": "grid_tables",
+            "case": "grid-table-row-and-column-spans"
+        },
+        {
+            "feature": "heading_attributes",
+            "case": "header-attributes"
+        },
+        {
+            "feature": "implicit_heading_references",
+            "case": "implicit-header-references"
+        },
+        {
+            "feature": "inline_code_attributes",
+            "case": "inline-code-attributes"
+        },
+        {
+            "feature": "link_attributes",
+            "case": "link-and-image-attributes"
+        },
+        {
+            "feature": "multiline_tables",
+            "case": "multiline-table"
+        },
+        {
+            "feature": "simple_tables",
+            "case": "simple-table-with-caption"
+        },
+        {
+            "feature": "subscript",
+            "case": "superscript-and-subscript"
+        },
+        {
+            "feature": "superscript",
+            "case": "p6-isolated-nonempty-superscript"
+        },
+        {
+            "feature": "table_captions",
+            "case": "grid-table-block-cells"
+        }
+    ]
+}

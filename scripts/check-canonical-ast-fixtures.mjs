@@ -122,6 +122,18 @@ const stateValidators = {
     "codeBlock.fenced.true": (tree) => /^.*CodeBlock scope=.* fenced=true /m.test(tree),
     "codeBlock.closed.false": (tree) => /^.*CodeBlock scope=.* closed=false /m.test(tree),
     "codeBlock.closed.true": (tree) => /^.*CodeBlock scope=.* closed=true /m.test(tree),
+    "table.caption.null": (tree) => /Table scope=.+\n[^\n]*TableHead/.test(tree),
+    "table.caption.populated": (tree) => /TableCaption scope=.* children=[1-9]/.test(tree),
+    "table.caption.empty": (tree) => /TableCaption scope=.* children=0/.test(tree),
+    "table.column.relative.value": (tree) => /Table scope=.* columns=\[[^\]]*:[0-9]/.test(tree),
+    "tableCell.span.rows": (tree) => /TableCell scope=.* rowspan=[2-9]/.test(tree),
+    "tableCell.span.columns": (tree) => /TableCell scope=.* colspan=[2-9]/.test(tree),
+    "tableCell.content.block": (tree) =>
+        parentEdges(tree).some((edge) => edge.parent === "TableCell" && edge.kind === "Paragraph"),
+    "tableCell.content.empty": (tree) => /TableCell scope=.* children=0/.test(tree),
+    "tableRow.cells.empty": (tree) => /TableRow scope=.* children=0/.test(tree),
+    "table.head.empty": (tree) => /TableHead children=0/.test(tree),
+    "table.foot.populated": (tree) => /TableFoot children=[1-9]/.test(tree),
     "table.column.relative.null": (tree) => /Table scope=.* columns=\[(?:[a-z]+:null)(?:,[a-z]+:null)*\]/.test(tree),
     "tableCell.span.one": (tree) => /TableCell scope=.* rowspan=1 colspan=1 /.test(tree),
     "tableCell.content.inline": (tree) =>
@@ -259,6 +271,8 @@ const orderValidators = {
     "callout.title-before-content": (tree) =>
         /Callout scope=.* children=[1-9]\d*\n[^\n]*Title children=[1-9]\d*[\s\S]*Paragraph scope=/.test(tree),
     "document.source-order": (tree) => tree.startsWith("Document scope="),
+    "table.caption-head-content-foot": (tree) =>
+        /TableCaption scope=[\s\S]*TableHead children=[\s\S]*TableBody children=[\s\S]*TableFoot children=/.test(tree),
     "table.head-content-foot": (tree) =>
         /TableHead children=\d+[\s\S]*TableBody children=\d+[\s\S]*TableFoot children=\d+/.test(tree),
     "directive.label-before-content": (tree) =>

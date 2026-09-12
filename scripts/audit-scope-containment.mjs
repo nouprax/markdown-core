@@ -99,7 +99,12 @@ for (const example of fixtureCorpus(root)) {
                       children.filter(({ child }) => child.kind === "Footnote"),
                       children.filter(({ child }) => child.kind === "Specimen")
                   ]
-                : [children];
+                : node.kind === "Table"
+                  ? [
+                        children.filter(({ child }) => child.kind === "TableCaption"),
+                        children.filter(({ child }) => child.kind !== "TableCaption")
+                    ]
+                  : [children];
         for (const siblings of sequences)
             for (let index = 1; index < siblings.length; index += 1) {
                 const left = siblings[index - 1];

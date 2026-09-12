@@ -210,7 +210,9 @@ static const char OOM_CALLOUT_CORPUS[] =
 static const char OOM_INLINE_OWNERSHIP_CORPUS[] = "> [!tip]+ ==<i title=\"==hidden==\">title</i>==\n"
                                                   "> - [✓] ==a %%==b%% c== ^[![[asset|100x145]]] #item#\n";
 
-static const char OOM_CITATION_CORPUS[] = "@a [@b [@c [@d [@e [@f [@g [@h [@i [@j [tail]]]]]]]]]]\n\n"
+static const char OOM_CITATION_CORPUS[] = "^^ *^^* ^^^^ [^^]{} ^[^^]\n\n"
+                                          "@a [p. -@b, s; @c] [@a [p. @b];] [@a;]\n\n"
+                                          "@a [@b [@c [@d [@e [@f [@g [@h [@i [@j [tail]]]]]]]]]]\n\n"
                                           "@{{{{{{{{{{{{{{{{{{key}}}}}}}}}}}}}}}}}} @{unclosed @{inner}\n\n"
                                           "# [pre *em* @a [@b [tail]]; -@{x{y}} {p. 3}]\n\n"
                                           "@a [@b [x]] [@a [x]] [@a [@b]] [@a[x]; no key]\n"
@@ -226,7 +228,30 @@ static const char OOM_DEFINITION_LIST_CORPUS[] =
     "Code\n: ```\n  :::\n  ```\n\n"
     "[reference]: /url {.attr}\n\nT\n: [reference]\n::: \n\n::: warning\n:::\n\n::: {}\n:::\n";
 
+static const char OOM_TABLE_CORPUS[] =
+    "+---\t\t---+\nnext\n\n+-------x---+\nnext\n\n"
+    "  +---+ \t\n  | a |\t\n  +---+\t \n\n"
+    "Table: cap\n+---+\n+---+\n+===+\n| a |\n+===+\n| b |\n+---+\n\n"
+    "h   j\n--- ---\nv   w\n--- ---\nTable: after footer\n\n"
+    "+---+---+\n| a + b |\n+---+---+\n\n"
+    "+-------+\n| a + b |\n+---+---+\n\n"
+    "+---+---+\n| a + b |\n| cd    |\n+===+===+\n| e | f |\n+---+---+\n\n"
+    "- -\n- - -\n- - - -\n--- ---\na   b\n--- ---\n\n"
+    "+------------------------+------------------------+\n| [r]: /first            | [r]: /second           |\n|       "
+    "                 |                        |\n| # Same                 | # Same                 |\n|               "
+    "         |                        |\n| [^f]: first            | [^f]: second           |\n|                       "
+    " |                        |\n| [r] [^f]               | [r] [^f]               "
+    "|\n+------------------------+------------------------+\n\n[r] [Same] [^f]\n\n+-------------------------------+\n| "
+    "+------------+------------+   |\n| | # Nest     | text       |   |\n| +------------+------------+   "
+    "|\n+-------------------------------+\n\nTable: *caption*\n\nh   j\n--- ---\nv   w\n\n-------\nh   j\n--- ---\nv   "
+    "w\n\nx   y\n-------\n\nTable: after\n\n+---+---+\n| a | b |\n+   +   +\n| c | d |\n+---+---+\n"
+    "\n: candidate\n:::note[label]{#id .class k=value}\n---- ----\na    b\n:::\n\n"
+    "| h |\n| - |\n| b |\n: cap\n::: {.note}\nbody\n:::\n\n"
+    "| h |\n| - |\n| b |\n: cap\n%%\ncomment\n%%\n\n"
+    "| h |\n| - |\n| b |\n: cap\n:::note[bad\n%%\nunclosed\n";
+
 static const oom_case OOM_CASES[] = {
+    {"table candidates and mapped owned inputs", OOM_TABLE_CORPUS, sizeof(OOM_TABLE_CORPUS) - 1},
     {"definition term/body ownership and nameless containers", OOM_DEFINITION_LIST_CORPUS,
      sizeof(OOM_DEFINITION_LIST_CORPUS) - 1},
     {"citation ownership and specimen definitions", OOM_CITATION_CORPUS, sizeof(OOM_CITATION_CORPUS) - 1},

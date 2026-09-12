@@ -29,7 +29,11 @@ const html = `<!doctype html><meta charset="utf-8"><title>RUNNING</title><body i
   try {
     const api = await import('/index.js');
     const parsed = api.Document.parse('# Browser 🌍');
-    const valid = parsed.content[0].kind === 'heading' &&
+    const grid = api.Document.parse(': Caption\\n\\n+---+---+\\n| a | b |\\n+   +   +\\n| c | d |\\n+---+---+\\n').content[0];
+    const valid = grid.caption.kind === 'tableCaption' && grid.caption.content[0].literal === 'Caption' &&
+      grid.content.length === 2 && grid.content[1].cells.length === 0 &&
+      grid.content[0].cells[0].rowspan === 2 && grid.content[0].cells[0].content[1].content[0].literal === 'c' &&
+      parsed.content[0].kind === 'heading' &&
       parsed.content[0].content[0].literal === 'Browser 🌍' &&
       !('memory' in api) && !('initialize' in api);
     document.title = valid ? 'PASS' : 'FAIL';

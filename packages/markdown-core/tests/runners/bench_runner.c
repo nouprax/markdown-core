@@ -313,6 +313,32 @@ static int workload_adversarial(const bench_options *options) {
     return bench_doubling("adversarial_emphasis", options, build_adversarial_emphasis, scales, 3);
 }
 
+/* Table parsing and rejection are measured independently of the ordinary
+ * paragraph baseline. Workloads share the same parser entry and sample count. */
+static int workload_tables(const bench_options *options) {
+    const struct {
+        const char *name, *unit;
+    } cases[] = {{"tables_pipe_caption", ": caption\n| h |\n| - |\n| b |\n\n"},
+                 {"tables_simple", "h    i\n---- ----\na    b\n\n"},
+                 {"tables_multiline", "---------\nh    i\n---- ----\na    b\n\nc    d\n---------\n\n"},
+                 {"tables_grid", "+---+---+\n| a | b |\n+---+---+\n\n"},
+                 {"tables_rejected", "header with Unicode: 表\n---x ---\n\n"}};
+    for (size_t i = 0; i < sizeof(cases) / sizeof(*cases); i++) {
+        size_t length;
+        double median_ms;
+        char *input = repeat_block(cases[i].unit, strlen(cases[i].unit), 2000, &length);
+        if (!input) {
+            return -1;
+        }
+        int result = bench_measure(cases[i].name, input, length, options, &median_ms);
+        free(input);
+        if (result) {
+            return result;
+        }
+    }
+    return 0;
+}
+
 typedef struct bench_workload {
     const char *name;
     int (*run)(const bench_options *options);
@@ -324,6 +350,7 @@ static const bench_workload WORKLOADS[] = {
     {"large_document", workload_large_document},
     {"deep_nesting", workload_deep_nesting},
     {"extensions", workload_extensions},
+    {"tables", workload_tables},
     {"adversarial", workload_adversarial},
 };
 

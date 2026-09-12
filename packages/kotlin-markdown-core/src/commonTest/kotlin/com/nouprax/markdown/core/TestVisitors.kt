@@ -23,6 +23,8 @@ internal class KindVisitor : Visitor<String> {
 
     override fun visitTable(node: Table): String = name(node)
 
+    override fun visitTableCaption(node: TableCaption): String = name(node)
+
     override fun visitTableRow(node: TableRow): String = "row"
 
     override fun visitTableCell(node: TableCell): String = "cell"
@@ -102,6 +104,8 @@ internal class RecordingVisitor : Visitor<Unit> {
     override fun visitFormulaBlock(node: FormulaBlock): Unit = record(node)
 
     override fun visitTable(node: Table): Unit = record(node)
+
+    override fun visitTableCaption(node: TableCaption): Unit = record(node)
 
     override fun visitTableRow(node: TableRow): Unit = record(node)
 
@@ -244,6 +248,11 @@ internal class RecordingWalkingVisitor(
 
     override fun visitTable(
         node: Table,
+        phase: WalkPhase,
+    ): Unit = record(node, phase)
+
+    override fun visitTableCaption(
+        node: TableCaption,
         phase: WalkPhase,
     ): Unit = record(node, phase)
 

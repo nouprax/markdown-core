@@ -42,7 +42,8 @@ bool markdown_core_parse_inline_subtrees(markdown_core_parser *parser, markdown_
  * resolves to it is the `Link` or `Media` it names. A NULL refmap performs the
  * same recognition without registering or allocating a definition resource. */
 bufsize_t markdown_core_parse_reference_inline(markdown_core_mem *mem, markdown_core_chunk *input,
-                                               markdown_core_map *refmap, markdown_core_attribute_parser *attributes);
+                                               markdown_core_map *refmap, markdown_core_attribute_parser *attributes,
+                                               uint64_t source_key);
 
 /* The special-character tables live in the parser (parser-local, never
  * process-global); reset installs the core defaults. */

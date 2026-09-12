@@ -41,7 +41,7 @@ enum es_node_offset {
     ES_NODE_SCOPE = 8,
     ES_NODE_CHILD_START = 24,
     ES_NODE_CHILD_COUNT = 28,
-    ES_NODE_LABEL_INDEX = 32,
+    ES_NODE_FIELD_INDEX = 32,
     ES_NODE_AUX_START = 36,
     ES_NODE_AUX_COUNT = 40,
     ES_NODE_SCALAR0 = 44,
@@ -92,7 +92,7 @@ typedef struct es_source_node {
     uint32_t wire_kind;
     uint32_t child_start;
     uint32_t child_count;
-    uint32_t label_index;
+    uint32_t field_index;
     uint32_t aux_start;
     uint32_t aux_count;
     uint32_t flags;
@@ -210,7 +210,7 @@ static uint32_t append_record(es_build *build, es_source_node value) {
         build->failure = ES_BUILD_ALLOCATION;
         return ES_NO_INDEX;
     }
-    value.label_index = ES_NO_INDEX;
+    value.field_index = ES_NO_INDEX;
     value.metadata_index = ES_NO_INDEX;
     value.aux_start = ES_NO_INDEX;
     value.resource_first = ES_NO_INDEX;
@@ -508,14 +508,16 @@ static void collect_topology(es_build *build, const markdown_core_node *root) {
             }
             continue;
         }
-        if (is_directive(kind)) {
-            const markdown_core_node *label = markdown_core_node_directive_label(node);
+        if (is_directive(kind) || kind == MARKDOWN_CORE_KIND_TABLE) {
+            const markdown_core_node *label = kind == MARKDOWN_CORE_KIND_TABLE
+                                                  ? markdown_core_node_table_caption(node)
+                                                  : markdown_core_node_directive_label(node);
             if (label != NULL) {
-                uint32_t label_index = append_node(build, label);
-                if (label_index == ES_NO_INDEX) {
+                uint32_t field_index = append_node(build, label);
+                if (field_index == ES_NO_INDEX) {
                     break;
                 }
-                build->nodes[cursor].label_index = label_index;
+                build->nodes[cursor].field_index = field_index;
             }
         }
 
@@ -774,6 +776,7 @@ static void collect_node_fields(es_build *build, size_t node_index) {
     case MARKDOWN_CORE_KIND_SUPERSCRIPT:
     case MARKDOWN_CORE_KIND_SUBSCRIPT:
     case MARKDOWN_CORE_KIND_STRIKETHROUGH:
+    case MARKDOWN_CORE_KIND_TABLE_CAPTION:
     case MARKDOWN_CORE_KIND_TABLE_ROW:
     case MARKDOWN_CORE_KIND_DIRECTIVE_LABEL:
         break;
@@ -1091,7 +1094,7 @@ static uint8_t *success_result(const es_build *build, es_build_failure *failure)
         put_i32(output, node_offset + ES_NODE_SCOPE + 12, scope.end.column);
         put_u32(output, node_offset + ES_NODE_CHILD_START, source->child_start);
         put_u32(output, node_offset + ES_NODE_CHILD_COUNT, source->child_count);
-        put_u32(output, node_offset + ES_NODE_LABEL_INDEX, source->label_index);
+        put_u32(output, node_offset + ES_NODE_FIELD_INDEX, source->field_index);
         put_u32(output, node_offset + ES_NODE_AUX_START, source->aux_start);
         put_u32(output, node_offset + ES_NODE_AUX_COUNT, source->aux_count);
         put_i32(output, node_offset + ES_NODE_SCALAR0, source->scalar0);

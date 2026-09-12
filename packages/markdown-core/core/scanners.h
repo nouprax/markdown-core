@@ -8,31 +8,32 @@
 extern "C" {
 #endif
 
-bufsize_t _scan_at(bufsize_t (*scanner)(const unsigned char *), markdown_core_chunk *c, bufsize_t offset);
-bufsize_t _scan_scheme(const unsigned char *p);
-bufsize_t _scan_autolink_uri(const unsigned char *p);
-bufsize_t _scan_autolink_email(const unsigned char *p);
-bufsize_t _scan_html_tag(const unsigned char *p);
-bufsize_t _scan_html_comment(const unsigned char *p);
-bufsize_t _scan_html_pi(const unsigned char *p);
-bufsize_t _scan_html_declaration(const unsigned char *p);
-bufsize_t _scan_html_cdata(const unsigned char *p);
-bufsize_t _scan_html_block_start(const unsigned char *p);
-bufsize_t _scan_html_block_start_7(const unsigned char *p);
-bufsize_t _scan_html_block_end_1(const unsigned char *p);
-bufsize_t _scan_html_block_end_2(const unsigned char *p);
-bufsize_t _scan_html_block_end_3(const unsigned char *p);
-bufsize_t _scan_html_block_end_4(const unsigned char *p);
-bufsize_t _scan_html_block_end_5(const unsigned char *p);
-bufsize_t _scan_link_title(const unsigned char *p);
-bufsize_t _scan_spacechars(const unsigned char *p);
-bufsize_t _scan_atx_heading_start(const unsigned char *p);
-bufsize_t _scan_setext_heading_line(const unsigned char *p);
-bufsize_t _scan_open_code_fence(const unsigned char *p);
-bufsize_t _scan_close_code_fence(const unsigned char *p);
-bufsize_t _scan_entity(const unsigned char *p);
-bufsize_t _scan_dangerous_url(const unsigned char *p);
-bufsize_t _scan_footnote_definition(const unsigned char *p);
+bufsize_t _scan_at(bufsize_t (*scanner)(const unsigned char *, const unsigned char *), const markdown_core_chunk *c,
+                   bufsize_t offset);
+bufsize_t _scan_scheme(const unsigned char *p, const unsigned char *limit);
+bufsize_t _scan_autolink_uri(const unsigned char *p, const unsigned char *limit);
+bufsize_t _scan_autolink_email(const unsigned char *p, const unsigned char *limit);
+bufsize_t _scan_html_tag(const unsigned char *p, const unsigned char *limit);
+bufsize_t _scan_html_comment(const unsigned char *p, const unsigned char *limit);
+bufsize_t _scan_html_pi(const unsigned char *p, const unsigned char *limit);
+bufsize_t _scan_html_declaration(const unsigned char *p, const unsigned char *limit);
+bufsize_t _scan_html_cdata(const unsigned char *p, const unsigned char *limit);
+bufsize_t _scan_html_block_start(const unsigned char *p, const unsigned char *limit);
+bufsize_t _scan_html_block_start_7(const unsigned char *p, const unsigned char *limit);
+bufsize_t _scan_html_block_end_1(const unsigned char *p, const unsigned char *limit);
+bufsize_t _scan_html_block_end_2(const unsigned char *p, const unsigned char *limit);
+bufsize_t _scan_html_block_end_3(const unsigned char *p, const unsigned char *limit);
+bufsize_t _scan_html_block_end_4(const unsigned char *p, const unsigned char *limit);
+bufsize_t _scan_html_block_end_5(const unsigned char *p, const unsigned char *limit);
+bufsize_t _scan_link_title(const unsigned char *p, const unsigned char *limit);
+bufsize_t _scan_spacechars(const unsigned char *p, const unsigned char *limit);
+bufsize_t _scan_atx_heading_start(const unsigned char *p, const unsigned char *limit);
+bufsize_t _scan_setext_heading_line(const unsigned char *p, const unsigned char *limit);
+bufsize_t _scan_open_code_fence(const unsigned char *p, const unsigned char *limit);
+bufsize_t _scan_close_code_fence(const unsigned char *p, const unsigned char *limit);
+bufsize_t _scan_entity(const unsigned char *p, const unsigned char *limit);
+bufsize_t _scan_dangerous_url(const unsigned char *p, const unsigned char *limit);
+bufsize_t _scan_footnote_definition(const unsigned char *p, const unsigned char *limit);
 
 #define scan_scheme(c, n) _scan_at(&_scan_scheme, c, n)
 #define scan_autolink_uri(c, n) _scan_at(&_scan_autolink_uri, c, n)

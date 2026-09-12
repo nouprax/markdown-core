@@ -334,6 +334,7 @@ class JniPayloadDecoderTest {
                     head,
                     1,
                     1,
+                    0.toByte(), // no caption
                     3,
                 ) // group counts and total rows
             repeat(3) { index ->

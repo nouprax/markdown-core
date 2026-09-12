@@ -17,6 +17,7 @@
 #include "../extensions/markdown-core-extensions.h"
 #include "../extensions/tasklist.h"
 #include "../extensions/directive.h"
+#include "../extensions/table.h"
 #include "config.h"
 #include "parser.h"
 #include "markdown-core.h"
@@ -143,6 +144,8 @@ static void S_parser_dispose(markdown_core_parser *parser) {
     /* This index never owns nodes and is never read during destruction. */
     parser->mem->free(parser->footnotes.values);
     parser->mem->free(parser->specimens.values);
+    parser->mem->free(parser->block_inputs);
+    parser->mem->free(parser->input_line_offsets);
     markdown_core_key_index_free(&parser->specimen_ids);
     if (parser->root) {
         markdown_core_node_free(parser->root);
@@ -173,6 +176,7 @@ static void S_parser_dispose(markdown_core_parser *parser) {
     parser->mem->free(parser->lookahead_chain);
     parser->mem->free(parser->lookahead_chain_flags);
     parser->mem->free(parser->lookahead_entries);
+    parser->mem->free(parser->table_lines);
     parser->lookahead_chain = NULL;
     parser->lookahead_chain_flags = NULL;
     parser->lookahead_chain_alloc = 0;
@@ -200,6 +204,7 @@ static markdown_core_parser *S_parser_new(markdown_core_mem *mem) {
     parser->refmap = markdown_core_reference_map_new(parser->mem);
     parser->footnote_defs = markdown_core_footnote_definition_map_new(parser->mem);
     parser->root = document;
+    parser->block_root = document;
     parser->current = document;
 
     /* A transaction that could not build its initial structures is poisoned:
@@ -246,7 +251,6 @@ static void register_heading(markdown_core_parser *parser, markdown_core_node *n
         headings->values = values;
         headings->capacity = capacity;
     }
-    assert(!headings->count || headings->values[headings->count - 1].node->start_line < node->start_line);
     headings->values[headings->count++] = (markdown_core_heading_parse){.node = node};
 }
 
@@ -267,6 +271,7 @@ static void S_set_end_to_current_line(markdown_core_parser *parser, markdown_cor
     if (b->end_column && parser->curline.ptr[b->end_column - 1] == '\r') {
         b->end_column -= 1;
     }
+    b->end_column = markdown_core_parser_source_column(parser, b->end_line, b->end_column);
 }
 
 // Returns true if line has only space characters, else false.
@@ -311,7 +316,8 @@ static MARKDOWN_CORE_INLINE bool contains_inlines(markdown_core_node *node) {
         return node->extension->contains_inlines_func(node->extension, node) != 0;
     }
 
-    return (node->kind == MARKDOWN_CORE_NODE_PARAGRAPH || node->kind == MARKDOWN_CORE_NODE_HEADING);
+    return (node->kind == MARKDOWN_CORE_NODE_PARAGRAPH || node->kind == MARKDOWN_CORE_NODE_HEADING ||
+            node->kind == MARKDOWN_CORE_NODE_TABLE_CAPTION);
 }
 
 /* Record where the bytes about to be appended to `node`'s content came from.
@@ -379,9 +385,9 @@ int markdown_core_parser_append_content_mark(markdown_core_parser *parser, markd
                                  (markdown_core_line_mark){offset, line, column, source_width, source_step, 0});
 }
 
-static void S_record_content_mark(markdown_core_parser *parser, markdown_core_node *node, bufsize_t column) {
-    S_append_content_mark(
-        parser, node, (markdown_core_line_mark){node->content.size, parser->line_number, column, 1, 1, parser->indent});
+static void S_record_content_mark(markdown_core_parser *parser, markdown_core_node *node, bufsize_t column,
+                                  bufsize_t length) {
+    markdown_core_parser_append_source_marks(parser, node, parser->line_number, column, length, node->content.size);
 }
 
 static void add_line(markdown_core_node *node, markdown_core_chunk *ch, markdown_core_parser *parser) {
@@ -399,7 +405,7 @@ static void add_line(markdown_core_node *node, markdown_core_chunk *ch, markdown
         /* The spaces below stand for the tail of the tab at parser->offset and
          * have no source bytes of their own, so they are marked against the
          * tab itself and the copied bytes get a mark of their own. */
-        S_record_content_mark(parser, node, parser->offset + 1);
+        S_record_content_mark(parser, node, parser->offset + 1, 1);
         parser->offset += 1; // skip over tab
         // add space characters:
         chars_to_tab = TAB_STOP - (parser->column % TAB_STOP);
@@ -407,7 +413,7 @@ static void add_line(markdown_core_node *node, markdown_core_chunk *ch, markdown
             markdown_core_strbuf_putc(&node->content, ' ');
         }
     }
-    S_record_content_mark(parser, node, parser->offset + 1);
+    S_record_content_mark(parser, node, parser->offset + 1, ch->len - parser->offset);
     markdown_core_strbuf_put(&node->content, ch->data + parser->offset, ch->len - parser->offset);
     if (node->content.oom) {
         parser->oom = true;
@@ -480,6 +486,58 @@ int markdown_core_parser_append_content_marks(markdown_core_parser *parser, mark
         }
     }
     return 1;
+}
+
+int markdown_core_parser_source_column(markdown_core_parser *parser, int line, int column) {
+    if (column < 0 || parser->block_root == parser->root) {
+        return column;
+    }
+    size_t index = (size_t)(line - parser->input_first_line);
+    assert(line >= parser->input_first_line && index < parser->input_line_count);
+    int source_line, source_column;
+    if (!markdown_core_parser_content_end_place(parser, parser->block_root,
+                                                parser->input_line_offsets[index] + (column ? column - 1 : 0),
+                                                &source_line, &source_column)) {
+        parser->oom = true;
+        return column;
+    }
+    assert(source_line == line);
+    return source_column - (column == 0 ? 1 : 0);
+}
+
+int markdown_core_parser_append_source_marks(markdown_core_parser *parser, markdown_core_node *node, int line,
+                                             int column, bufsize_t length, bufsize_t offset) {
+    if (parser->block_root == parser->root) {
+        return S_append_content_mark(parser, node,
+                                     (markdown_core_line_mark){offset, line, column, 1, 1, parser->indent});
+    }
+    size_t index = (size_t)(line - parser->input_first_line);
+    assert(line >= parser->input_first_line && index < parser->input_line_count);
+    return markdown_core_parser_append_content_marks(parser, parser->block_root, node,
+                                                     parser->input_line_offsets[index] + column - 1, length, offset);
+}
+
+bool markdown_core_parser_queue_block_input(markdown_core_parser *parser, markdown_core_node *owner) {
+    if (!owner->content.size) {
+        return true;
+    }
+    assert(owner->content_mark_count && owner->parent);
+    if (parser->block_input_count == parser->block_input_capacity) {
+        size_t capacity = parser->block_input_capacity ? 2 * parser->block_input_capacity : 16;
+        if (capacity > SIZE_MAX / sizeof(*parser->block_inputs)) {
+            parser->oom = true;
+            return false;
+        }
+        void *inputs = parser->mem->realloc(parser->block_inputs, capacity * sizeof(*parser->block_inputs));
+        if (!inputs) {
+            parser->oom = true;
+            return false;
+        }
+        parser->block_inputs = inputs;
+        parser->block_input_capacity = capacity;
+    }
+    parser->block_inputs[parser->block_input_count++] = owner;
+    return true;
 }
 
 /* Requirement 10: for any block with a content buffer and any byte offset
@@ -597,8 +655,14 @@ static bool resolve_reference_link_definitions(markdown_core_parser *parser, mar
     markdown_core_strbuf *node_content = &b->content;
     markdown_core_chunk chunk = {node_content->ptr, node_content->size, 0};
     markdown_core_attribute_parser attributes = {.mem = parser->mem, .data = chunk.data, .length = chunk.len};
-    while (chunk.len && chunk.data[0] == '[' &&
-           (pos = markdown_core_parse_reference_inline(parser->mem, &chunk, parser->refmap, &attributes))) {
+    while (chunk.len && chunk.data[0] == '[') {
+        int line = b->start_line, column = b->start_column;
+        markdown_core_parser_content_place(parser, b, (bufsize_t)(chunk.data - node_content->ptr), &line, &column);
+        uint64_t source_key = ((uint64_t)(uint32_t)line << 32) | (uint32_t)column;
+        pos = markdown_core_parse_reference_inline(parser->mem, &chunk, parser->refmap, &attributes, source_key);
+        if (!pos) {
+            break;
+        }
         chunk.data += pos;
         chunk.len -= pos;
     }
@@ -994,6 +1058,16 @@ static markdown_core_node *finalize(markdown_core_parser *parser, markdown_core_
 
 /* Finalize to the container that will own the next block-level construct,
  * including a detached identifier, which contributes no child node. */
+/* A source-owning block candidate commits only after the prior open path has
+ * closed at this line's matched boundary. This is also the ordinary text path's
+ * transition; caption attachment therefore cannot strand an open preceding table. */
+void markdown_core_parser_finalize_unmatched_blocks(markdown_core_parser *parser) {
+    while (parser->current != parser->matched_container && !parser->oom) {
+        parser->current = finalize(parser, parser->current);
+        assert(parser->current);
+    }
+}
+
 static markdown_core_node *S_parent_for_block(markdown_core_parser *parser, markdown_core_node *parent,
                                               markdown_core_node_type block_type) {
     assert(parent);
@@ -1011,7 +1085,9 @@ static markdown_core_node *add_child(markdown_core_parser *parser, markdown_core
                                      markdown_core_node_type block_type, int start_column) {
     parent = S_parent_for_block(parser, parent, block_type);
 
-    markdown_core_node *child = make_block(parser->mem, block_type, parser->line_number, start_column);
+    markdown_core_node *child =
+        make_block(parser->mem, block_type, parser->line_number,
+                   markdown_core_parser_source_column(parser, parser->line_number, start_column));
     if (!child || child->content.oom) {
         parser->oom = true;
         if (child) {
@@ -1439,10 +1515,10 @@ static bool list_facts_match(const markdown_core_list *list, const markdown_core
 /* Recognition is non-consuming and allocation-free. Only a complete marker
  * returns authored facts to the ordinary block ownership/padding operation. */
 static bufsize_t parse_list_marker(markdown_core_parser *parser, markdown_core_chunk *input, bufsize_t pos,
-                                   markdown_core_node *container, markdown_core_list *data) {
+                                   markdown_core_node *container, int first_column, bool interrupts_paragraph,
+                                   markdown_core_list *data) {
     bufsize_t startpos = pos;
     unsigned char c = peek_at(input, pos);
-    bool interrupts_paragraph = container->kind == MARKDOWN_CORE_NODE_PARAGRAPH;
     const markdown_core_list *committed = container->kind == MARKDOWN_CORE_NODE_LIST ? container->as.list : NULL;
     *data = (markdown_core_list){0};
     parser->list_marker_work++;
@@ -1503,7 +1579,7 @@ static bufsize_t parse_list_marker(markdown_core_parser *parser, markdown_core_c
             }
         }
         if (end == begin + 1 && c >= 'A' && c <= 'Z' && delim == '.') {
-            int column = parser->first_nonspace_column + (pos - startpos);
+            int column = first_column + (pos - startpos);
             int initial_column = column;
             bufsize_t at = pos;
             while (S_is_space_or_tab(peek_at(input, at))) {
@@ -1591,8 +1667,64 @@ static markdown_core_node *finalize_document(markdown_core_parser *parser) {
 
     finalize(parser, parser->root);
 
-    S_complete_block_tree(parser->root);
     return parser->root;
+}
+
+static void S_parse_block_inputs(markdown_core_parser *parser) {
+    while (parser->block_input_cursor < parser->block_input_count && !parser->oom) {
+        markdown_core_node *owner = parser->block_inputs[parser->block_input_cursor++];
+        parser->block_root = owner;
+        parser->current = owner;
+        parser->input_line_count = 0;
+        parser->input_first_line = parser->line_marks[owner->content_mark].line;
+        parser->line_number = parser->input_first_line - 1;
+        parser->last_line_length = 0;
+        parser->lookahead_base_line = 0;
+        parser->lookahead_last_line_ready = false;
+        if (parser->lookahead_entries_used) {
+            memset(parser->lookahead_entries, 0,
+                   (size_t)parser->lookahead_entries_used * sizeof(*parser->lookahead_entries));
+            parser->lookahead_entries_used = 0;
+        }
+        for (bufsize_t offset = 0; offset < owner->content.size && !parser->oom;) {
+            if (parser->input_line_count == parser->input_line_capacity) {
+                size_t capacity = parser->input_line_capacity ? parser->input_line_capacity * 2 : 16;
+                if (capacity > SIZE_MAX / sizeof(*parser->input_line_offsets)) {
+                    parser->oom = true;
+                    break;
+                }
+                void *offsets =
+                    parser->mem->realloc(parser->input_line_offsets, capacity * sizeof(*parser->input_line_offsets));
+                if (!offsets) {
+                    parser->oom = true;
+                    break;
+                }
+                parser->input_line_offsets = offsets;
+                parser->input_line_capacity = capacity;
+            }
+            parser->input_line_offsets[parser->input_line_count++] = offset;
+            while (offset < owner->content.size && !S_is_line_end_char(owner->content.ptr[offset])) {
+                offset++;
+            }
+            if (offset < owner->content.size && owner->content.ptr[offset] == '\r') {
+                offset++;
+            }
+            if (offset < owner->content.size && owner->content.ptr[offset] == '\n') {
+                offset++;
+            }
+        }
+        owner->flags |= MARKDOWN_CORE_NODE__OPEN;
+        S_parse_source(parser, owner->content.ptr, (size_t)owner->content.size);
+        while (parser->current != owner && !parser->oom) {
+            parser->current = finalize(parser, parser->current);
+        }
+        owner->flags &= ~MARKDOWN_CORE_NODE__OPEN;
+        markdown_core_strbuf_clear(&owner->content);
+        owner->content_mark_count = 0;
+        owner->content_mark_offset = 0;
+    }
+    parser->block_root = parser->root;
+    parser->current = parser->root;
 }
 
 markdown_core_node *markdown_core_parse_document(const char *buffer, size_t len) {
@@ -1646,7 +1778,8 @@ static bool S_line_scratch_reserve(markdown_core_parser *parser, int64_t add) {
 }
 
 static void S_parse_source(markdown_core_parser *parser, const unsigned char *source, size_t length) {
-    size_t metadata_length = markdown_core_metadata_parse(parser, source, length);
+    size_t metadata_length =
+        parser->block_root == parser->root ? markdown_core_metadata_parse(parser, source, length) : 0;
     const unsigned char *cursor = source + metadata_length;
     const unsigned char *end = source + length;
     static const uint8_t repl[] = {239, 191, 189};
@@ -1707,6 +1840,13 @@ static void S_parse_source(markdown_core_parser *parser, const unsigned char *so
                 }
             }
         }
+        if (parser->claimed_cursor) {
+            assert(parser->claimed_cursor >= cursor && parser->claimed_cursor <= end);
+            cursor = parser->claimed_cursor;
+            parser->line_number = parser->claimed_line;
+            parser->last_line_length = parser->claimed_last_column;
+            parser->claimed_cursor = NULL;
+        }
     }
 
     /* A final NUL has no line terminator to trigger the completed line. */
@@ -1724,7 +1864,7 @@ static void S_parse_source(markdown_core_parser *parser, const unsigned char *so
 // "...three or more hyphens, asterisks,
 // or underscores on a line by themselves. If you wish, you may use
 // spaces between the hyphens or asterisks."
-static int S_scan_thematic_break(markdown_core_parser *parser, markdown_core_chunk *input, bufsize_t offset) {
+static int S_scan_thematic_break(markdown_core_chunk *input, bufsize_t offset, bufsize_t *kill_pos) {
     bufsize_t i;
     char c;
     char nextc = '\0';
@@ -1732,7 +1872,7 @@ static int S_scan_thematic_break(markdown_core_parser *parser, markdown_core_chu
     i = offset;
     c = peek_at(input, i);
     if (!(c == '*' || c == '_' || c == '-')) {
-        parser->thematic_break_kill_pos = i;
+        *kill_pos = i;
         return 0;
     }
     count = 1;
@@ -1746,7 +1886,7 @@ static int S_scan_thematic_break(markdown_core_parser *parser, markdown_core_chu
     if (count >= 3 && (nextc == '\r' || nextc == '\n')) {
         return (i - offset) + 1;
     } else {
-        parser->thematic_break_kill_pos = i;
+        *kill_pos = i;
         return 0;
     }
 }
@@ -2043,7 +2183,7 @@ static markdown_core_node *check_open_blocks(markdown_core_parser *parser, markd
                                              bool *all_matched) {
     bool should_continue = true;
     *all_matched = false;
-    markdown_core_node *container = parser->root;
+    markdown_core_node *container = parser->block_root;
     markdown_core_node *closing = NULL;
     markdown_core_node_type cont_type;
 
@@ -2206,14 +2346,13 @@ static bool S_lookahead_reserve_chain(markdown_core_parser *parser, int depth) {
  * source order and each begins at the line after its own, so no lookahead
  * asks about an earlier line. NULL when the cache could not grow, with the
  * parse marked lost. */
-static markdown_core_lookahead_entry *S_lookahead_entry(markdown_core_parser *parser, int line) {
+markdown_core_lookahead_entry *markdown_core_parser_lookahead_entry(markdown_core_parser *parser, int line) {
     int index;
 
-    if (parser->lookahead_entries_alloc == 0) {
+    if (parser->lookahead_base_line == 0) {
         parser->lookahead_base_line = line;
     }
     index = line - parser->lookahead_base_line;
-    assert(index >= 0);
     if (index < 0) {
         /* Unreachable by the ordering argument above; a line before the base
          * is matched without the cache rather than through it. */
@@ -2239,13 +2378,17 @@ static markdown_core_lookahead_entry *S_lookahead_entry(markdown_core_parser *pa
         parser->lookahead_entries = entries;
         parser->lookahead_entries_alloc = capacity;
     }
+    if (parser->lookahead_entries_used <= index) {
+        parser->lookahead_entries_used = index + 1;
+    }
     return &parser->lookahead_entries[index];
 }
 
 /* The blank run that began at `run_start` ends before `line`, which begins at `cursor`. */
 static void S_lookahead_close_run(markdown_core_block_lookahead *lookahead, int line, const unsigned char *cursor) {
     if (lookahead->run_start) {
-        markdown_core_lookahead_entry *entry = S_lookahead_entry(lookahead->parser, lookahead->run_start);
+        markdown_core_lookahead_entry *entry =
+            markdown_core_parser_lookahead_entry(lookahead->parser, lookahead->run_start);
         if (entry) {
             entry->run_end = line;
             entry->run_end_cursor = cursor;
@@ -2279,14 +2422,14 @@ bool markdown_core_parser_lookahead_begin(markdown_core_parser *parser, markdown
     while (parent->parent && !markdown_core_node_can_contain_type(parent, child)) {
         parent = parent->parent;
     }
-    for (node = parent; node; node = node->parent) {
+    for (node = parent; node; node = node == parser->block_root ? NULL : node->parent) {
         depth++;
     }
     if (!S_lookahead_reserve_chain(parser, depth)) {
         return false;
     }
     i = depth;
-    for (node = parent; node; node = node->parent) {
+    for (node = parent; node; node = node == parser->block_root ? NULL : node->parent) {
         i--;
         parser->lookahead_chain[i] = node;
         parser->lookahead_chain_flags[i] = node->flags;
@@ -2374,7 +2517,7 @@ int markdown_core_parser_lookahead_next(markdown_core_block_lookahead *lookahead
         parser->blank = false;
         parser->partially_consumed_tab = false;
 
-        entry = S_lookahead_entry(parser, this_line);
+        entry = markdown_core_parser_lookahead_entry(parser, this_line);
         if (!entry && parser->oom) {
             return 0;
         }
@@ -2543,10 +2686,11 @@ static bool S_parse_callout_metadata(markdown_core_parser *parser, markdown_core
         }
         node->as.callout->title = title;
         title->start_line = title->end_line = parser->line_number;
-        title->start_column = pos + 1;
-        title->end_column = end;
+        title->start_column = markdown_core_parser_source_column(parser, parser->line_number, pos + 1);
+        title->end_column = markdown_core_parser_source_column(parser, parser->line_number, end);
         markdown_core_strbuf_put(&title->content, input->data + pos, end - pos);
-        if (title->content.oom || !markdown_core_parser_mark_content(parser, title, parser->line_number, pos + 1)) {
+        if (title->content.oom || !markdown_core_parser_append_source_marks(parser, title, parser->line_number, pos + 1,
+                                                                            title->content.size, 0)) {
             parser->oom = true;
         }
     }
@@ -2592,7 +2736,7 @@ static bool definition_prefix(markdown_core_parser *parser, markdown_core_node *
     if (term.data[0] == '[') {
         parser->definition_list_work += term.len;
         markdown_core_attribute_parser attributes = {.mem = parser->mem, .data = term.data, .length = term.len};
-        bool reference = markdown_core_parse_reference_inline(parser->mem, &term, NULL, &attributes) != 0;
+        bool reference = markdown_core_parse_reference_inline(parser->mem, &term, NULL, &attributes, 0) != 0;
         parser->attribute_work += attributes.work;
         parser->oom |= attributes.oom;
         markdown_core_attribute_parser_free(&attributes);
@@ -2608,6 +2752,9 @@ static bool definition_prefix(markdown_core_parser *parser, markdown_core_node *
     int first, indent, blanks;
     bool matched = markdown_core_parser_lookahead_next(&lookahead, &next, &first, &indent, &blanks) && blanks <= 1 &&
                    definition_marker(&next, first, indent);
+    if (matched && next.data[first] == ':') {
+        matched = !markdown_core_table_caption_probe(&lookahead, &next, first, indent);
+    }
     if (matched) {
         *compact = blanks == 0;
     }
@@ -2646,26 +2793,111 @@ static markdown_core_node *open_definition(markdown_core_parser *parser, markdow
     }
     parser->definition_list_work += end - begin;
     term->start_line = term->end_line = parser->line_number;
-    term->start_column = begin + 1;
-    term->end_column = end;
+    term->start_column = markdown_core_parser_source_column(parser, parser->line_number, begin + 1);
+    term->end_column = markdown_core_parser_source_column(parser, parser->line_number, end);
     markdown_core_strbuf_put(&term->content, input->data + begin, end - begin);
-    if (term->content.oom || !markdown_core_parser_mark_content(parser, term, parser->line_number, begin + 1)) {
+    if (term->content.oom || !markdown_core_parser_append_source_marks(parser, term, parser->line_number, begin + 1,
+                                                                       term->content.size, 0)) {
         parser->oom = true;
     }
     S_advance_offset(parser, input, input->len - 1 - parser->offset, false);
     return definition;
 }
 
+/* Recognition produces facts; committing them belongs to open_new_blocks.
+ * Captions and captured table headers ask this same operation without opening
+ * nodes or changing the streaming line's thematic-break cache. */
+typedef struct {
+    markdown_core_node *container;
+    markdown_core_chunk *input;
+    int first, column, indent;
+    bool paragraph, lazy, all_matched;
+    size_t depth;
+    bufsize_t thematic_kill;
+} block_start_context;
+
+typedef struct {
+    markdown_core_node_type kind;
+    bufsize_t matched;
+    bool setext, fenced;
+    markdown_core_list list;
+    markdown_core_specimen_value specimen;
+} block_start;
+
+static block_start scan_block_start(markdown_core_parser *parser, block_start_context *context) {
+    block_start start = {0};
+    markdown_core_chunk *input = context->input;
+    int first = context->first;
+    if (context->indent >= CODE_INDENT) {
+        if (!context->lazy && !S_is_line_end_char(peek_at(input, first))) {
+            start.kind = MARKDOWN_CORE_NODE_CODE_BLOCK;
+        }
+        return start;
+    }
+    if (context->container->kind == MARKDOWN_CORE_NODE_DEFINITION && definition_marker(input, first, context->indent)) {
+        start.kind = MARKDOWN_CORE_NODE_DEFINITION_BODY;
+    } else if (peek_at(input, first) == '>') {
+        start.kind = MARKDOWN_CORE_NODE_CALLOUT;
+    } else if ((start.matched = scan_atx_heading_start(input, first))) {
+        start.kind = MARKDOWN_CORE_NODE_HEADING;
+    } else if ((start.matched = scan_open_code_fence(input, first))) {
+        start.kind = MARKDOWN_CORE_NODE_CODE_BLOCK;
+        start.fenced = true;
+    } else if ((start.matched = scan_html_block_start(input, first)) ||
+               (!context->paragraph && !context->lazy && (start.matched = scan_html_block_start_7(input, first)))) {
+        start.kind = MARKDOWN_CORE_NODE_HTML_BLOCK;
+    } else if (context->paragraph && (start.matched = scan_setext_heading_line(input, first))) {
+        start.kind = MARKDOWN_CORE_NODE_HEADING;
+        start.setext = true;
+    } else if (!(context->paragraph && !context->all_matched) && context->thematic_kill <= first &&
+               (start.matched = S_scan_thematic_break(input, first, &context->thematic_kill))) {
+        start.kind = MARKDOWN_CORE_NODE_THEMATIC_BREAK;
+    } else if (context->depth < MAX_FOOTNOTE_DEPTH && (start.matched = scan_footnote_definition(input, first))) {
+        start.kind = MARKDOWN_CORE_NODE_FOOTNOTE;
+    } else if (!context->paragraph && (start.matched = parse_specimen_marker(parser, input, first, &start.specimen))) {
+        start.kind = MARKDOWN_CORE_NODE_SPECIMEN;
+    } else if ((start.matched = parse_list_marker(parser, input, first, context->container, context->column,
+                                                  context->paragraph, &start.list))) {
+        start.kind = MARKDOWN_CORE_NODE_LIST;
+    }
+    return start;
+}
+
+bool markdown_core_parser_has_block_start(markdown_core_parser *parser, markdown_core_node *parent,
+                                          markdown_core_chunk *input, int first, int column, int indent, bool paragraph,
+                                          markdown_core_block_reader *reader) {
+    block_start_context context = {.container = parent,
+                                   .input = input,
+                                   .first = first,
+                                   .column = column,
+                                   .indent = indent,
+                                   .paragraph = paragraph,
+                                   .lazy = paragraph,
+                                   .all_matched = true,
+                                   .depth = 1};
+    if (scan_block_start(parser, &context).kind != MARKDOWN_CORE_NODE_NONE) {
+        return true;
+    }
+    for (markdown_core_llist *entry = parser->extensions; entry; entry = entry->next) {
+        const markdown_core_extension *extension = entry->data;
+        if (extension == &MARKDOWN_CORE_EXTENSION_TABLE) {
+            break;
+        }
+        if (extension->probe_block && extension->probe_block(parser, input, first, indent, reader)) {
+            return true;
+        }
+        if (parser->oom) {
+            break;
+        }
+    }
+    return false;
+}
+
 static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **container, markdown_core_chunk *input,
                             bool all_matched) {
     bool indented;
-    markdown_core_specimen_value specimen;
-    markdown_core_list marker;
-    markdown_core_list *data = &marker;
     bool maybe_lazy = S_type(parser->current) == MARKDOWN_CORE_NODE_PARAGRAPH;
     markdown_core_node_type cont_type = S_type(*container);
-    bufsize_t matched = 0;
-    int lev = 0;
     bool has_content;
     size_t depth = 0;
 
@@ -2679,17 +2911,47 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
          * region start before its own scope. Measured before it was fixed --
          * 52 rows of an indented code block's four spaces alone. */
         indented = parser->indent >= CODE_INDENT;
+        block_start_context context = {.container = *container,
+                                       .input = input,
+                                       .first = parser->first_nonspace,
+                                       .column = parser->first_nonspace_column,
+                                       .indent = parser->indent,
+                                       .paragraph = cont_type == MARKDOWN_CORE_NODE_PARAGRAPH,
+                                       .lazy = maybe_lazy,
+                                       .all_matched = all_matched,
+                                       .depth = depth,
+                                       .thematic_kill = parser->thematic_break_kill_pos};
+        block_start start = scan_block_start(parser, &context);
+        parser->thematic_break_kill_pos = context.thematic_kill;
+        bufsize_t matched = start.matched;
+        markdown_core_specimen_value specimen = start.specimen;
+        markdown_core_list *data = &start.list;
 
-        if (cont_type == MARKDOWN_CORE_NODE_DEFINITION &&
-            definition_marker(input, parser->first_nonspace, parser->indent)) {
+        /* Dash-led tables precede thematic breaks and lists. An opener may
+         * close the old path before an allocation fails; OOM is terminal,
+         * never a grammar miss that can try another owner on that path. */
+        if (!indented && !maybe_lazy && cont_type != MARKDOWN_CORE_NODE_PARAGRAPH &&
+            peek_at(input, parser->first_nonspace) == '-') {
+            markdown_core_node *table = markdown_core_table_try_open(parser, *container, input->data, input->len);
+            if (parser->oom) {
+                return;
+            }
+            if (table) {
+                *container = table;
+                return;
+            }
+        }
+
+        if (start.kind == MARKDOWN_CORE_NODE_DEFINITION_BODY) {
             int continuation = parser->indent + consume_item_marker(parser, input, 1);
             *container = add_child(parser, *container, MARKDOWN_CORE_NODE_DEFINITION_BODY, parser->first_nonspace + 1);
             if (!*container) {
                 return;
             }
             (*container)->as.definition_body->continuation = continuation;
-            (*container)->internal_offset = input->len - 1;
-        } else if (!indented && peek_at(input, parser->first_nonspace) == '>') {
+            (*container)->internal_offset =
+                markdown_core_parser_source_column(parser, parser->line_number, input->len - 1);
+        } else if (start.kind == MARKDOWN_CORE_NODE_CALLOUT) {
 
             bufsize_t blockquote_startpos = parser->first_nonspace;
 
@@ -2707,7 +2969,7 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
                 return;
             }
 
-        } else if (!indented && (matched = scan_atx_heading_start(input, parser->first_nonspace))) {
+        } else if (start.kind == MARKDOWN_CORE_NODE_HEADING && !start.setext) {
             bufsize_t hashpos;
             int level = 0;
             bufsize_t heading_startpos = parser->first_nonspace;
@@ -2729,7 +2991,7 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
             (*container)->as.heading->setext = false;
             (*container)->internal_offset = matched;
 
-        } else if (!indented && (matched = scan_open_code_fence(input, parser->first_nonspace))) {
+        } else if (start.kind == MARKDOWN_CORE_NODE_CODE_BLOCK && start.fenced) {
             *container = add_child(parser, *container, MARKDOWN_CORE_NODE_CODE_BLOCK, parser->first_nonspace + 1);
             if (!*container) {
                 return;
@@ -2746,9 +3008,7 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
             (*container)->as.code->info = markdown_core_optional_chunk_absent();
             S_advance_offset(parser, input, parser->first_nonspace + matched - parser->offset, false);
 
-        } else if (!indented && ((matched = scan_html_block_start(input, parser->first_nonspace)) ||
-                                 (cont_type != MARKDOWN_CORE_NODE_PARAGRAPH && !maybe_lazy &&
-                                  (matched = scan_html_block_start_7(input, parser->first_nonspace))))) {
+        } else if (start.kind == MARKDOWN_CORE_NODE_HTML_BLOCK) {
             *container = add_child(parser, *container, MARKDOWN_CORE_NODE_HTML_BLOCK, parser->first_nonspace + 1);
             if (!*container) {
                 return;
@@ -2756,8 +3016,7 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
             (*container)->as.html_block->block_type = matched;
             // note, we don't adjust parser->offset because the tag is part of the
             // text
-        } else if (!indented && cont_type == MARKDOWN_CORE_NODE_PARAGRAPH &&
-                   (lev = scan_setext_heading_line(input, parser->first_nonspace))) {
+        } else if (start.kind == MARKDOWN_CORE_NODE_HEADING && start.setext) {
             // finalize paragraph, resolving reference links
             has_content = resolve_reference_link_definitions(parser, *container);
 
@@ -2771,21 +3030,18 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
                     }
                     return;
                 }
-                (*container)->as.heading->level = lev;
+                (*container)->as.heading->level = matched;
                 (*container)->as.heading->setext = true;
                 S_advance_offset(parser, input, input->len - 1 - parser->offset, false);
             }
-        } else if (!indented && !(cont_type == MARKDOWN_CORE_NODE_PARAGRAPH && !all_matched) &&
-                   (parser->thematic_break_kill_pos <= parser->first_nonspace) &&
-                   (matched = S_scan_thematic_break(parser, input, parser->first_nonspace))) {
+        } else if (start.kind == MARKDOWN_CORE_NODE_THEMATIC_BREAK) {
             // it's only now that we know the line is not part of a setext heading:
             *container = add_child(parser, *container, MARKDOWN_CORE_NODE_THEMATIC_BREAK, parser->first_nonspace + 1);
             if (!*container) {
                 return;
             }
             S_advance_offset(parser, input, input->len - 1 - parser->offset, false);
-        } else if (!indented && depth < MAX_FOOTNOTE_DEPTH &&
-                   (matched = scan_footnote_definition(input, parser->first_nonspace))) {
+        } else if (start.kind == MARKDOWN_CORE_NODE_FOOTNOTE) {
             markdown_core_chunk c = markdown_core_chunk_dup(input, parser->first_nonspace + 2, matched - 2);
             unsigned char *id;
             int lost = 0;
@@ -2850,8 +3106,7 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
             markdown_core_chunk_free(parser->mem, &c);
 
             (*container)->internal_offset = matched;
-        } else if (!indented && (*container)->kind != MARKDOWN_CORE_NODE_PARAGRAPH &&
-                   (matched = parse_specimen_marker(parser, input, parser->first_nonspace, &specimen))) {
+        } else if (start.kind == MARKDOWN_CORE_NODE_SPECIMEN) {
             if (specimen.id.has_value && !markdown_core_chunk_to_cstr(parser->mem, &specimen.id.value)) {
                 parser->oom = true;
                 return;
@@ -2874,8 +3129,7 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
                 S_advance_offset(parser, input, 1, true);
                 parser->specimen_work++;
             }
-        } else if ((!indented || cont_type == MARKDOWN_CORE_NODE_LIST) && parser->indent < 4 &&
-                   (matched = parse_list_marker(parser, input, parser->first_nonspace, *container, data))) {
+        } else if (start.kind == MARKDOWN_CORE_NODE_LIST) {
 
             data->padding = consume_item_marker(parser, input, matched);
 
@@ -2904,7 +3158,7 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
             if (parser->oom) {
                 return;
             }
-        } else if (indented && !maybe_lazy && !parser->blank) {
+        } else if (start.kind == MARKDOWN_CORE_NODE_CODE_BLOCK) {
             S_advance_offset(parser, input, CODE_INDENT, true);
             *container = add_child(parser, *container, MARKDOWN_CORE_NODE_CODE_BLOCK, parser->offset + 1);
             if (!*container) {
@@ -2927,18 +3181,28 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
 
                 if (ext->try_opening_block) {
                     new_container = ext->try_opening_block(ext, indented, parser, *container, input->data, input->len);
+                    if (parser->oom) {
+                        return;
+                    }
 
                     if (new_container) {
                         *container = new_container;
+                        if (parser->claimed_cursor) {
+                            return;
+                        }
                         break;
                     }
                 }
             }
 
             if (!new_container) {
-                bool compact;
-                if (!maybe_lazy && cont_type != MARKDOWN_CORE_NODE_PARAGRAPH &&
-                    definition_prefix(parser, *container, input, &compact)) {
+                bool compact = false;
+                bool definition = !maybe_lazy && cont_type != MARKDOWN_CORE_NODE_PARAGRAPH &&
+                                  definition_prefix(parser, *container, input, &compact);
+                if (parser->oom) {
+                    return;
+                }
+                if (definition) {
                     *container = open_definition(parser, *container, input, compact);
                     return;
                 }
@@ -3025,7 +3289,7 @@ static void add_text_to_container(markdown_core_parser *parser, markdown_core_no
     S_set_last_line_blank(container, last_line_blank);
 
     tmp = container;
-    while (tmp->parent) {
+    while (tmp != parser->block_root && tmp->parent) {
         S_set_last_line_blank(tmp->parent, false);
         tmp = tmp->parent;
     }
@@ -3054,10 +3318,7 @@ static void add_text_to_container(markdown_core_parser *parser, markdown_core_no
         add_line(parser->current, input, parser);
     } else { // not a lazy continuation
         // Finalize any blocks that were not matched and set cur to container:
-        while (parser->current != last_matched_container) {
-            parser->current = finalize(parser, parser->current);
-            assert(parser->current != NULL);
-        }
+        markdown_core_parser_finalize_unmatched_blocks(parser);
 
         if (S_type(container) == MARKDOWN_CORE_NODE_CODE_BLOCK) {
             add_line(container, input, parser);
@@ -3176,10 +3437,16 @@ static void S_process_line(markdown_core_parser *parser, const unsigned char *bu
     }
 
     container = last_matched_container;
+    parser->matched_container = last_matched_container;
 
     open_new_blocks(parser, &container, &input, all_matched);
 
     if (container == NULL || parser->oom) {
+        goto finished;
+    }
+
+    if (parser->claimed_cursor) {
+        parser->current = container->flags & MARKDOWN_CORE_NODE__OPEN ? container : container->parent;
         goto finished;
     }
 
@@ -3196,6 +3463,8 @@ finished:
     if (parser->last_line_length && parser->curline.ptr[parser->last_line_length - 1] == '\r') {
         parser->last_line_length -= 1;
     }
+    parser->last_line_length =
+        markdown_core_parser_source_column(parser, parser->line_number, parser->last_line_length);
 
     markdown_core_strbuf_clear(&parser->curline);
 }
@@ -3261,42 +3530,56 @@ bool markdown_core_parser_register_definition(markdown_core_parser *parser, mark
     return true;
 }
 
-static uint64_t definition_source_key(const markdown_core_node *node) {
+static uint64_t definition_source_key(const void *entry) {
+    markdown_core_node *node;
+    memcpy(&node, entry, sizeof(node));
     return ((uint64_t)(uint32_t)node->start_line << 32) | (uint32_t)node->start_column;
 }
 
 /* Eight stable byte passes order the two nonnegative 32-bit coordinates.
  * This bound holds for every source shape on every libc; there is no
  * comparison-sort worst case or input-size-dependent alternate path. */
-static int order_definitions(markdown_core_mem *mem, markdown_core_definition_collection *collection) {
-    markdown_core_definition_entry *scratch = mem->calloc(collection->count, sizeof(*scratch));
-    markdown_core_definition_entry *source = collection->values;
-    markdown_core_definition_entry *target = scratch;
+int markdown_core_order_source_entries(markdown_core_mem *mem, void *entries, size_t count, size_t stride,
+                                       uint64_t (*key)(const void *)) {
+    if (!count) {
+        return 1;
+    }
+    if (count > SIZE_MAX / stride) {
+        return 0;
+    }
+    unsigned char *scratch = mem->calloc(count, stride);
+    unsigned char *source = entries;
+    unsigned char *target = scratch;
     if (!scratch) {
         return 0;
     }
     for (unsigned shift = 0; shift < 64; shift += 8) {
         size_t offsets[256] = {0};
         size_t offset = 0;
-        for (size_t i = 0; i < collection->count; i++) {
-            offsets[(definition_source_key(source[i].definition) >> shift) & 255]++;
+        for (size_t i = 0; i < count; i++) {
+            offsets[(key(source + i * stride) >> shift) & 255]++;
         }
         for (size_t byte = 0; byte < 256; byte++) {
-            size_t count = offsets[byte];
+            size_t length = offsets[byte];
             offsets[byte] = offset;
-            offset += count;
+            offset += length;
         }
-        for (size_t i = 0; i < collection->count; i++) {
-            target[offsets[(definition_source_key(source[i].definition) >> shift) & 255]++] = source[i];
+        for (size_t i = 0; i < count; i++) {
+            size_t destination = offsets[(key(source + i * stride) >> shift) & 255]++;
+            memcpy(target + destination * stride, source + i * stride, stride);
         }
-        markdown_core_definition_entry *swap = source;
+        unsigned char *swap = source;
         source = target;
         target = swap;
     }
-    /* An even number of passes leaves the result in the original array. */
-    assert(source == collection->values);
+    assert(source == entries);
     mem->free(scratch);
     return 1;
+}
+
+static int order_definitions(markdown_core_mem *mem, markdown_core_definition_collection *collection) {
+    return markdown_core_order_source_entries(mem, collection->values, collection->count, sizeof(*collection->values),
+                                              definition_source_key);
 }
 
 static void own_definitions(markdown_core_definition_collection *collection, markdown_core_node **slot) {
@@ -3391,8 +3674,13 @@ done:
 }
 
 static void prepare_headings(markdown_core_parser *parser, markdown_core_heading_collection *headings) {
-    /* Explicit definitions already precede virtual records in the map's
-     * declaration order. Its first-definition rule handles both priorities. */
+    if (!markdown_core_order_source_entries(parser->mem, headings->values, headings->count, sizeof(*headings->values),
+                                            definition_source_key)) {
+        parser->oom = true;
+        return;
+    }
+    /* The reference map compares explicitness and original source positions,
+     * independently of mapped-input scheduling and declaration closure order. */
     for (size_t i = 0; i < headings->count && !parser->oom; i++) {
         markdown_core_prepare_heading(parser, &headings->values[i]);
         if (parser->refmap->oom) {
@@ -3648,6 +3936,8 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
     }
 
     finalize_document(parser);
+    S_parse_block_inputs(parser);
+    S_complete_block_tree(parser->root);
     if (!parser->oom) {
         prepare_specimens(parser);
     }

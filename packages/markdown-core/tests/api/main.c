@@ -1,5 +1,7 @@
 #include <stdio.h>
 #include "table.h"
+#include "scanners.h"
+#include "ext_scanners.h"
 #include "autolink.h"
 #include "formula.h"
 #include "directive.h"
@@ -1814,6 +1816,101 @@ static void node_payload_lifecycle(test_batch_runner *runner) {
     INT_EQ(runner, payload_live, 0, "conversion and destruction release payloads, fields, and affixes exactly once");
 }
 
+/* Extension fields use the same nonrecursive ownership walk as typed fields.
+ * The probe has two independent roots and ordinary children, so a destructor
+ * that visits only the content chain cannot satisfy the lifetime contract. */
+typedef struct {
+    markdown_core_node *first, *second;
+} owned_field_probe;
+static size_t owned_field_releases, owned_field_uncleared;
+
+static void owned_field_alloc(const markdown_core_extension *extension, markdown_core_mem *mem,
+                              markdown_core_node *node) {
+    (void)extension;
+    node->opaque = mem->calloc(1, sizeof(owned_field_probe));
+}
+
+static int owned_field_visit(const markdown_core_extension *extension, markdown_core_node *node,
+                             markdown_core_owned_subtree_visitor visitor, void *context) {
+    (void)extension;
+    owned_field_probe *fields = node->opaque;
+    return !fields || (visitor(&fields->first, context) && visitor(&fields->second, context));
+}
+
+static void owned_field_free(const markdown_core_extension *extension, markdown_core_mem *mem,
+                             markdown_core_node *node) {
+    (void)extension;
+    owned_field_probe *fields = node->opaque;
+    owned_field_releases++;
+    owned_field_uncleared += fields->first != NULL || fields->second != NULL;
+    /* Clean up even on a failing test against the old destructor. */
+    if (fields->first) {
+        markdown_core_node_free(fields->first);
+    }
+    if (fields->second) {
+        markdown_core_node_free(fields->second);
+    }
+    mem->free(fields);
+    node->opaque = NULL;
+}
+
+static const markdown_core_extension OWNED_FIELD_PROBE = {
+    .name = "owned-field-lifetime-probe",
+    .opaque_alloc_func = owned_field_alloc,
+    .opaque_free_func = owned_field_free,
+    .visit_owned_subtrees_func = owned_field_visit,
+};
+
+static void extension_owned_field_lifecycle(test_batch_runner *runner) {
+    payload_allocations = payload_fail_at = payload_live = 0;
+    owned_field_releases = owned_field_uncleared = 0;
+    markdown_core_node *root = NULL;
+    const size_t depth = 4096;
+    for (size_t i = 0; i < depth; i++) {
+        markdown_core_node *owner = markdown_core_node_new_with_mem_and_ext(MARKDOWN_CORE_NODE_PARAGRAPH,
+                                                                            &payload_test_mem, &OWNED_FIELD_PROBE);
+        owned_field_probe *fields = owner->opaque;
+        fields->first = root;
+        fields->second = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_TEXT, &payload_test_mem);
+        markdown_core_node_append_child(owner,
+                                        markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_TEXT, &payload_test_mem));
+        root = owner;
+    }
+    markdown_core_node *document = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_DOCUMENT, &payload_test_mem);
+    markdown_core_node_append_child(document, root);
+    owned_field_probe *retained = root->opaque;
+    markdown_core_node *retained_first = retained->first;
+    OK(runner,
+       markdown_core_node_set_kind(root, MARKDOWN_CORE_NODE_HEADING) == MARKDOWN_CORE_NODE_SET_KIND_OK &&
+           root->opaque == retained && retained->first == retained_first,
+       "kind conversion preserves the extension's opaque state and owned fields");
+    size_t before = payload_allocations;
+    payload_fail_at = before + 1;
+    markdown_core_node_free(document);
+    INT_EQ(runner, payload_allocations, before, "extension-owned tree destruction allocates nothing");
+    INT_EQ(runner, owned_field_releases, depth, "each extension payload is released exactly once");
+    INT_EQ(runner, owned_field_uncleared, 0, "the shared destructor takes each field before releasing its payload");
+    INT_EQ(runner, payload_live, 0, "deep owned fields and ordinary children release every allocation");
+    payload_fail_at = 0;
+    const char *source = ":a[label]\n";
+    document = markdown_core_parse_document_with_mem(source, strlen(source), &payload_test_mem, NULL, NULL);
+    OK(runner, document != NULL, "directive with an owned label parses using the tracked allocator");
+    if (document) {
+        markdown_core_node *directive = document->first_child->first_child;
+        markdown_core_node *label = markdown_core_directive_label(directive);
+        OK(runner,
+           label &&
+               markdown_core_node_set_kind(directive, MARKDOWN_CORE_NODE_EMPHASIS) == MARKDOWN_CORE_NODE_SET_KIND_OK,
+           "directive kind conversion preserves its extension-owned label");
+        before = payload_allocations;
+        payload_fail_at = before + 1;
+        markdown_core_node_free(document);
+        INT_EQ(runner, payload_allocations, before, "converted directive destruction allocates nothing");
+        INT_EQ(runner, payload_live, 0, "a converted directive releases fields hidden by its new kind");
+        payload_fail_at = 0;
+    }
+}
+
 typedef struct {
     markdown_core_node_type rejected_kind;
     size_t rejections;
@@ -2866,7 +2963,8 @@ static void universal_values(test_batch_runner *runner) {
  * candidates share one extent, so they cannot rescan each other's suffixes. */
 typedef struct {
     size_t cross_link, opaque, delimiters, comment, lookahead, footnote_body, block_identifier, callout, dimensions;
-    size_t registered_definitions, definition_lists, citation_brace_bytes;
+    size_t registered_definitions, definition_lists, citation_brace_bytes, tables, table_frontier;
+    size_t table_workspace_growth, table_geometry_lines, table_separator_scans;
     bool footnote_collection_allocated, footnotes_owned, heading_collection_disposed;
     size_t attributes, anchors, definitions, definition_resources, whitespace, brackets, citations, list_markers,
         specimens;
@@ -2889,6 +2987,11 @@ static markdown_core_node *record_inline_work(const markdown_core_extension *ext
     work->list_markers = parser->list_marker_work;
     work->comment = parser->comment_scan_work;
     work->lookahead = parser->block_lookahead_work;
+    work->tables = parser->table_scan_work;
+    work->table_frontier = parser->table_frontier_peak;
+    work->table_workspace_growth = parser->table_workspace_growth;
+    work->table_geometry_lines = parser->table_geometry_lines;
+    work->table_separator_scans = parser->table_separator_scans;
     work->block_identifier = parser->block_identifier_work;
     work->callout = parser->callout_scan_work;
     work->dimensions = parser->dimension_work;
@@ -3024,7 +3127,8 @@ static void citation_linear_work(test_batch_runner *runner) {
         {"", "[@a ", "]", ""},    {"[", "*pre* @a [@b [x]]; ", "", "@z]"},
         {"", "@{", "", " key}"},  {"", "@{a", "}", ""},
         {"", "@a [x] ", "", ""},  {"", "(@label) body\n\n", "", "@label"},
-        {"", "M", "", ".  body"},
+        {"", "M", "", ".  body"}, {"[", "@a [", "]", ";]"},
+        {"", "[@a;] ", "", ""},
     };
     for (size_t c = 0; c < sizeof(cases) / sizeof(*cases); c++) {
         for (size_t count = 128; count <= 8192; count *= 2) {
@@ -3531,7 +3635,9 @@ static void span_and_script_linear_work(test_batch_runner *runner) {
         {"[a]{.c ", "", "", 0},   {"[", "", "", 0},     {"[a^b", "x", "]{.c}", 1}, {"[a~b", "x", "]{.c}", 1},
     };
     static const paired_delimiter_case superscripts[] = {
-        {"^", "", "", 0},
+        {"^^", "", "", 1},
+        {"^^x^y^ ", "", "", 2},
+        {"*^^* ", "", "", 1},
         {"^a^ ", "", "", 1},
         {"^a^b^c^ ", "", "", 2},
         {"^a ", "", "", 0},
@@ -3714,7 +3820,7 @@ static void comment_inline_linear_work(test_batch_runner *runner) {
  * prefix bytes matched, and stays within a constant of the input size. */
 static void comment_block_linear_work(test_batch_runner *runner) {
     markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
-    for (int shape = 0; shape < 5; shape++) {
+    for (int shape = 0; shape < 6; shape++) {
         for (size_t depth = 16; depth <= 128; depth *= 2) {
             markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
             size_t expected_comments = 0;
@@ -4228,7 +4334,7 @@ static size_t count_anchors(markdown_core_node *root) {
 static void image_dimension_linear_work(test_batch_runner *runner) {
     markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
     for (size_t count = 128; count <= 8192; count *= 2) {
-        for (int shape = 0; shape < 5; shape++) {
+        for (int shape = 0; shape < 6; shape++) {
             markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
             if (shape < 2) {
                 markdown_core_strbuf_puts(&source, "![alt|");
@@ -4480,6 +4586,573 @@ static void block_identifier_ownership(test_batch_runner *runner) {
     }
 }
 
+/* Invalid opening borders remain ordinary text without materializing scalar
+ * columns or grid topology. Track live allocations as well as geometry work,
+ * including long valid prefixes whose rejection occurs near the line end. */
+static void grid_opening_memory(test_batch_runner *runner) {
+    markdown_core_mem mem = {properties_calloc, properties_realloc, properties_free};
+    const char *runs[] = {"\t", " ", "表", "-", "="};
+    for (size_t shape = 0; shape < sizeof(runs) / sizeof(*runs); shape++) {
+        for (size_t count = 4096; count <= 1048576; count *= 16) {
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(markdown_core_get_default_mem_allocator());
+            markdown_core_strbuf_puts(&source, "x---");
+            for (size_t i = 0; i < count; i++) {
+                markdown_core_strbuf_puts(&source, runs[shape]);
+            }
+            markdown_core_strbuf_puts(&source, shape == 3 ? "x---+\nnext\n" : "---+\nnext\n");
+            size_t baseline = 0;
+            for (int grid = 0; grid <= 1; grid++) {
+                source.ptr[0] = grid ? '+' : 'x';
+                properties_live_bytes = properties_peak_bytes = 0;
+                inline_work work = {0};
+                markdown_core_node *root = markdown_core_parse_document_with_mem((const char *)source.ptr, source.size,
+                                                                                 &mem, measure_inline_work, &work);
+                OK(runner, root != NULL, "invalid grid opener parses: shape=%zu count=%zu grid=%d", shape, count, grid);
+                if (root) {
+                    INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_TABLE), 0, "invalid border stays text");
+                    INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_PARAGRAPH), 1,
+                           "invalid opener and continuation remain one paragraph");
+                    const char *literal = markdown_core_node_get_literal(root->first_child->first_child);
+                    OK(runner,
+                       literal && strlen(literal) == (size_t)source.size - 6 &&
+                           !memcmp(literal, source.ptr, (size_t)source.size - 6),
+                       "fallback preserves the complete opening line");
+                    INT_EQ(runner, work.table_geometry_lines, 0,
+                           "invalid grid opening allocates no column geometry: shape=%zu count=%zu", shape, count);
+                    OK(runner, work.tables + work.lookahead <= 32 * (size_t)source.size,
+                       "invalid opening rejection has bounded source work");
+                }
+                markdown_core_node_free(root);
+                if (!grid) {
+                    baseline = properties_peak_bytes;
+                }
+                OK(runner, properties_peak_bytes <= 2 * baseline,
+                   "invalid grid memory stays within paragraph fallback: shape=%zu count=%zu grid=%d peak=%zu "
+                   "baseline=%zu",
+                   shape, count, grid, properties_peak_bytes, baseline);
+                INT_EQ(runner, properties_live_bytes, 0, "invalid grid fallback releases all tracked allocations");
+            }
+            markdown_core_strbuf_free(&source);
+        }
+    }
+}
+
+/* Failed grammar searches, row growth and column growth all use the same
+ * candidate algorithm. Work counts source inspections, independent of time. */
+static void table_candidate_work(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    for (size_t shape = 0; shape < 13; shape++) {
+        for (size_t n = 32; n <= 512; n *= 2) {
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+            size_t tables = 0;
+            if (shape == 0) {
+                for (size_t i = 0; i < n; i++) {
+                    markdown_core_strbuf_puts(&source, "--------\n");
+                }
+            }
+            if (shape == 1) {
+                for (size_t i = 0; i < n; i++) {
+                    markdown_core_strbuf_puts(&source, "--- ---\nvalue\n\n");
+                }
+            }
+            if (shape == 2) {
+                markdown_core_strbuf_puts(&source, "+---+---+\n");
+                for (size_t i = 0; i < n; i++) {
+                    markdown_core_strbuf_puts(&source, "| a | b |\n+---+---+\n");
+                }
+                tables = 1;
+            }
+            if (shape == 3) {
+                markdown_core_strbuf_putc(&source, '+');
+                for (size_t i = 0; i < n; i++) {
+                    markdown_core_strbuf_puts(&source, "---+");
+                }
+                markdown_core_strbuf_puts(&source, "\n|");
+                for (size_t i = 0; i < n; i++) {
+                    markdown_core_strbuf_puts(&source, " a |");
+                }
+                markdown_core_strbuf_puts(&source, "\n+");
+                for (size_t i = 0; i < n; i++) {
+                    markdown_core_strbuf_puts(&source, "---+");
+                }
+                markdown_core_strbuf_putc(&source, '\n');
+                tables = 1;
+            }
+            if (shape == 4) {
+                for (size_t i = 0; i < n; i++) {
+                    markdown_core_strbuf_puts(&source, "> --------\n");
+                }
+            }
+            if (shape == 5) {
+                markdown_core_strbuf_puts(&source, "+---+---+\n| a | b |\n");
+                for (size_t i = 0; i < n; i++) {
+                    markdown_core_strbuf_puts(&source, "+   +   +\n| a | b |\n");
+                }
+                markdown_core_strbuf_puts(&source, "+---+---+\n");
+                tables = 1;
+            }
+            if (shape == 6) {
+                markdown_core_strbuf_puts(&source, "| h |\n| - |\n| b |\n: cap\n%%\n");
+                for (size_t i = 0; i < n; i++) {
+                    markdown_core_strbuf_puts(&source, "unclosed comment and caption content\n");
+                }
+                tables = 1;
+            }
+            if (shape == 7 || shape == 8) {
+                for (size_t i = 0; i < n; i++) {
+                    markdown_core_strbuf_puts(&source, shape == 7 ? "ordinary paragraph\n\n"
+                                                                  : "> header with Unicode: 表\n> ---x ---\n> \n");
+                }
+            }
+            if (shape >= 9 && shape <= 11) {
+                markdown_core_strbuf_puts(&source, shape == 11 ? "+-------+\n" : "+---+---+\n");
+                for (size_t i = 0; i < n; i++) {
+                    markdown_core_strbuf_puts(&source, "| a + b |\n");
+                }
+                if (shape == 9) {
+                    markdown_core_strbuf_puts(&source, "| cd    |\n");
+                }
+                markdown_core_strbuf_puts(&source, "+---+---+\n");
+                tables = 1;
+            }
+            if (shape == 12) {
+                markdown_core_strbuf_putc(&source, '+');
+                for (size_t i = 0; i < n; i++) {
+                    markdown_core_strbuf_puts(&source, "---+");
+                }
+                markdown_core_strbuf_puts(&source, "\n|");
+                for (size_t i = 0; i < n; i++) {
+                    markdown_core_strbuf_puts(&source, i + 1 == n ? " a |" : " a +");
+                }
+                markdown_core_strbuf_puts(&source, "\n|");
+                for (size_t i = 0; i < n; i++) {
+                    markdown_core_strbuf_puts(&source, i + 1 == n ? " b |" : " b  ");
+                }
+                markdown_core_strbuf_puts(&source, "\n+");
+                for (size_t i = 0; i < n; i++) {
+                    markdown_core_strbuf_puts(&source, "---+");
+                }
+                markdown_core_strbuf_putc(&source, '\n');
+                tables = 1;
+            }
+            inline_work work = {0};
+            markdown_core_node *root =
+                markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
+            OK(runner, root != NULL, "table candidate succeeds transactionally: shape=%zu n=%zu", shape, n);
+            if (root) {
+                INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_TABLE), tables,
+                       "table grammar result: shape=%zu n=%zu", shape, n);
+                if (shape == 7 || shape == 8) {
+                    OK(runner, work.table_workspace_growth <= 1, "failed candidates reuse the source workspace");
+                    INT_EQ(runner, work.table_geometry_lines, 0, "rejected separators allocate no column geometry");
+                    OK(runner, work.table_separator_scans <= 2 * n,
+                       "each captured line is lexed once despite several candidate grammars");
+                }
+                if (shape >= 9) {
+                    INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_TABLE_ROW), shape == 10 ? n + 1 : 1,
+                           "only perimeter plus signs define rows: shape=%zu n=%zu", shape, n);
+                    INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_TABLE_CELL), shape == 10 ? 2 : 1,
+                           "complete vertical walls define cells: shape=%zu n=%zu", shape, n);
+                }
+                OK(runner, work.table_frontier <= (shape == 3 || shape == 12 ? 2 * n : 4),
+                   "grid frontier depends on columns, not rows or spans: shape=%zu n=%zu slots=%zu", shape, n,
+                   work.table_frontier);
+                OK(runner, work.tables + work.lookahead <= 100 * (size_t)source.size,
+                   "table source work is bounded: shape=%zu n=%zu bytes=%d work=%zu", shape, n, source.size,
+                   work.tables + work.lookahead);
+            }
+            markdown_core_node_free(root);
+            markdown_core_strbuf_free(&source);
+        }
+    }
+}
+
+/* Failed geometries must not hide a later matching opener/footer, and both
+ * byte work and line visits stay bounded across distinct exact interval keys. */
+static void simple_table_footer_work(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    for (size_t shape = 0; shape < 5; shape++) {
+        for (size_t n = 32; n <= 512; n *= 2) {
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+            for (size_t i = 0; i < n; i++) {
+                if (shape == 3) {
+                    markdown_core_strbuf_puts(&source, "> ");
+                }
+                if (shape == 1 || shape == 2) {
+                    markdown_core_strbuf_puts(&source, "-- ");
+                    for (size_t j = 0; j <= i; j++) {
+                        markdown_core_strbuf_putc(&source, shape == 2 ? ' ' : '-');
+                    }
+                    markdown_core_strbuf_puts(&source, "--");
+                } else {
+                    for (size_t j = 0; j < i + 2; j++) {
+                        markdown_core_strbuf_puts(&source, j ? " -" : "-");
+                    }
+                }
+                markdown_core_strbuf_putc(&source, '\n');
+            }
+            if (shape == 4) {
+                markdown_core_strbuf_puts(&source, "--- ---\na   b\n--- ---\nfollowing prose");
+            }
+            inline_work work = {0};
+            markdown_core_node *root =
+                markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
+            OK(runner, root != NULL, "distinct simple candidates parse: shape=%zu n=%zu", shape, n);
+            if (root) {
+                INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_TABLE), shape == 4 ? 1 : 0,
+                       "failed footer facts preserve later matching geometry");
+                OK(runner, work.table_separator_scans <= 8 * n + 32,
+                   "separator visits are linear: shape=%zu n=%zu scans=%zu", shape, n, work.table_separator_scans);
+                OK(runner, work.table_geometry_lines <= 3 * n + 16,
+                   "failed suffixes do not rebuild column maps: shape=%zu n=%zu lines=%zu", shape, n,
+                   work.table_geometry_lines);
+                OK(runner, work.tables + work.lookahead <= 32 * (size_t)source.size,
+                   "distinct footer comparisons have bounded byte work: shape=%zu n=%zu work=%zu", shape, n,
+                   work.tables + work.lookahead);
+                markdown_core_node_free(root);
+            }
+            markdown_core_strbuf_free(&source);
+        }
+    }
+}
+
+/* Caption queries and ordinary opening queries share negative grid facts.
+ * A failed extent or row-group search must leave valid suffixes eligible. */
+static void grid_caption_search_work(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    for (size_t shape = 0; shape < 6; shape++) {
+        for (size_t n = 32; n <= 512; n *= 2) {
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+            const char *prefix = shape == 1 ? "> " : "";
+            const char *border = shape == 2 ? "+-------+-------+-------+-------+\n" : "+---+\n";
+            const char *equal = shape == 2 ? "+=======+=======+=======+=======+\n" : "+===+\n";
+            const char *body = shape == 2 ? "| a     | b     | c     | d     |\n" : "| a |\n";
+            markdown_core_strbuf_puts(&source, prefix);
+            markdown_core_strbuf_puts(&source, "Table: cap\n");
+            for (size_t i = 0; i < n; i++) {
+                markdown_core_strbuf_puts(&source, prefix);
+                markdown_core_strbuf_puts(&source, border);
+            }
+            if (shape == 4) {
+                markdown_core_strbuf_puts(&source, "+-----+\n| abc |\n+-----+\n");
+            } else if (shape == 3) {
+                markdown_core_strbuf_puts(&source, "| a |\n");
+            } else {
+                for (size_t i = 0; i < (shape == 5 ? 4u : 2u); i++) {
+                    markdown_core_strbuf_puts(&source, prefix);
+                    markdown_core_strbuf_puts(&source, equal);
+                    markdown_core_strbuf_puts(&source, prefix);
+                    markdown_core_strbuf_puts(&source, body);
+                }
+                markdown_core_strbuf_puts(&source, prefix);
+                markdown_core_strbuf_puts(&source, shape == 5 ? equal : border);
+            }
+            inline_work work = {0};
+            markdown_core_node *root =
+                markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
+            OK(runner, root != NULL, "grid caption query completes: shape=%zu n=%zu", shape, n);
+            if (root) {
+                INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_TABLE), shape == 3 ? 0 : 1,
+                       "negative grid facts preserve the valid suffix: shape=%zu n=%zu", shape, n);
+                const markdown_core_node *owner = shape == 1 ? root->first_child->first_child : root->first_child;
+                OK(runner, (markdown_core_node_table_caption(owner) != NULL) == (shape != 3),
+                   "the caption is claimed only by a valid suffix: shape=%zu n=%zu", shape, n);
+                OK(runner, work.tables + work.lookahead <= 128 * (size_t)source.size,
+                   "grid suffix work is source-linear: shape=%zu n=%zu bytes=%d work=%zu", shape, n, source.size,
+                   work.tables + work.lookahead);
+                markdown_core_node_free(root);
+            }
+            markdown_core_strbuf_free(&source);
+        }
+    }
+}
+
+/* Exact slices may be read-only and need neither a NUL nor padding. Every
+ * scanner exercises successful syntax and all truncated prefixes, with ASan
+ * guarding an allocation that ends precisely at each prefix boundary. */
+static void bounded_scanners(test_batch_runner *runner) {
+    typedef bufsize_t (*scanner)(const unsigned char *, const unsigned char *);
+    const struct {
+        scanner scan;
+        const char *text;
+        int expected;
+    } cases[] = {{_scan_scheme, "https:", -1},
+                 {_scan_autolink_uri, "https://example.com>", -1},
+                 {_scan_autolink_email, "a@example.com>", -1},
+                 {_scan_html_tag, "x a='b'>", -1},
+                 {_scan_html_comment, "--hi-->", -1},
+                 {_scan_html_pi, "x?>", 1},
+                 {_scan_html_declaration, "DOCTYPE html>", 12},
+                 {_scan_html_cdata, "CDATA[x]]>", 7},
+                 {_scan_html_block_start, "<script>", 1},
+                 {_scan_html_block_start_7, "<x>\n", 7},
+                 {_scan_html_block_end_1, "body</script>", -1},
+                 {_scan_html_block_end_2, "x-->", -1},
+                 {_scan_html_block_end_3, "x?>", -1},
+                 {_scan_html_block_end_4, "x>", -1},
+                 {_scan_html_block_end_5, "x]]>", -1},
+                 {_scan_link_title, "\"title\"", -1},
+                 {_scan_spacechars, " \t\n", -1},
+                 {_scan_atx_heading_start, "## ", -1},
+                 {_scan_setext_heading_line, "---\n", 2},
+                 {_scan_open_code_fence, "```lang\n", 3},
+                 {_scan_close_code_fence, "``` \n", 3},
+                 {_scan_entity, "&amp;", -1},
+                 {_scan_dangerous_url, "javascript:", -1},
+                 {_scan_footnote_definition, "[^note]: ", -1},
+                 {_scan_table_start, "| - | :--: |\n", -1},
+                 {_scan_table_cell, "x\\|y", -1},
+                 {_scan_table_cell_end, "| \t", -1},
+                 {_scan_table_row_end, " \r\n", -1},
+                 {_scan_formula_dollar_inline_open, "$", -1},
+                 {_scan_formula_dollar_backtick_open, "$`", -1},
+                 {_scan_formula_dollar_display_open, "$$", -1},
+                 {_scan_formula_latex_backslash_inline_open, "\\\\(", -1},
+                 {_scan_formula_latex_backslash_display_open, "\\\\[", -1}};
+    for (size_t i = 0; i < sizeof(cases) / sizeof(*cases); i++) {
+        size_t length = strlen(cases[i].text);
+        markdown_core_chunk literal = {(unsigned char *)cases[i].text, (bufsize_t)length, 0};
+        int expected = cases[i].expected < 0 ? (int)length : cases[i].expected;
+        INT_EQ(runner, _scan_at(cases[i].scan, &literal, 0), expected, "read-only core scan: case=%zu", i);
+        INT_EQ(runner, _ext_scan_at(cases[i].scan, (const unsigned char *)cases[i].text, (int)length, 0), expected,
+               "read-only extension scan: case=%zu", i);
+        for (size_t end = 0; end <= length; end++) {
+            unsigned char *exact = malloc(end ? end : 1);
+            memcpy(exact, cases[i].text, end);
+            bufsize_t got = cases[i].scan(exact, exact + end);
+            INT_EQ(runner, got,
+                   cases[i].scan((const unsigned char *)cases[i].text, (const unsigned char *)cases[i].text + end),
+                   "suffix outside slice is invisible: case=%zu end=%zu", i, end);
+            OK(runner, !memcmp(exact, cases[i].text, end), "scanning never changes borrowed bytes");
+            free(exact);
+        }
+    }
+    const unsigned char embedded[] = {'+', '-', '+', 0, '+', '-', '+'};
+    INT_EQ(runner, _scan_table_horizontal(embedded, embedded + sizeof(embedded)), 0,
+           "embedded NUL cannot terminate a grid boundary");
+}
+
+/* Oracle-confirmed simple-body ownership is invariant under line ending,
+ * EOF termination and block-looking inline cell content. */
+static void simple_table_body_boundaries(test_batch_runner *runner) {
+    const char *tails[] = {"# heading\nbody\n", "> quote\n> next\n", "```\ncode\n```\n"};
+    const markdown_core_node_type kinds[] = {MARKDOWN_CORE_NODE_HEADING, MARKDOWN_CORE_NODE_CALLOUT,
+                                             MARKDOWN_CORE_NODE_CODE_BLOCK};
+    const char *endings[] = {"\n", "\r", "\r\n"};
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    for (size_t tail = 0; tail < 3; tail++) {
+        for (size_t ending = 0; ending < 3; ending++) {
+            for (int gap = 0; gap < 2; gap++) {
+                for (int terminated = 0; terminated < 2; terminated++) {
+                    markdown_core_strbuf normalized = MARKDOWN_CORE_BUF_INIT(mem), source = MARKDOWN_CORE_BUF_INIT(mem);
+                    markdown_core_strbuf_puts(&normalized, "h    i\n---- ----\na    b\n");
+                    if (gap) {
+                        markdown_core_strbuf_putc(&normalized, '\n');
+                    }
+                    markdown_core_strbuf_puts(&normalized, tails[tail]);
+                    for (int i = 0; i < normalized.size - !terminated; i++) {
+                        if (normalized.ptr[i] == '\n') {
+                            markdown_core_strbuf_puts(&source, endings[ending]);
+                        } else {
+                            markdown_core_strbuf_putc(&source, normalized.ptr[i]);
+                        }
+                    }
+                    markdown_core_node *root = parse((const char *)source.ptr),
+                                       *table = root ? root->first_child : NULL;
+                    OK(runner, table && table->kind == MARKDOWN_CORE_NODE_TABLE,
+                       "simple body survives line ending and EOF");
+                    if (table && table->kind == MARKDOWN_CORE_NODE_TABLE) {
+                        markdown_core_table *value = table->opaque;
+                        INT_EQ(runner, value->content_count, gap ? 1 : (tail == 2 ? 4 : 3),
+                               "body owns every adjacent source line");
+                        OK(runner, gap ? table->next && table->next->kind == kinds[tail] : !table->next,
+                           "only blank-separated block syntax opens a sibling");
+                        INT_EQ(runner, table->end_line, gap ? 3 : (tail == 2 ? 6 : 5),
+                               "simple table retains authored scope");
+                    }
+                    markdown_core_node_free(root);
+                    markdown_core_strbuf_free(&source);
+                    markdown_core_strbuf_free(&normalized);
+                }
+            }
+        }
+    }
+}
+
+/* A caption is a paragraph: the same block openers interrupt it, while
+ * non-interrupting list markers, HTML and indentation remain inline content.
+ * Exercise every table producer and a real container-prefix source view. */
+static void table_caption_boundaries(test_batch_runner *runner) {
+    const char *tables[] = {"| h |\n| - |\n| b |\n", "h    i\n---- ----\na    b\n\n",
+                            "---------\nh    i\n---- ----\na    b\n\nc    d\n---------\n\n", "+---+\n| x |\n+---+\n"};
+    const struct {
+        const char *source;
+        markdown_core_node_type kind;
+    } blocks[] = {{"```c\ncode\n```\n", MARKDOWN_CORE_NODE_CODE_BLOCK},
+                  {"~~~\ncode\n~~~\n", MARKDOWN_CORE_NODE_CODE_BLOCK},
+                  {"# heading\n", MARKDOWN_CORE_NODE_HEADING},
+                  {"> quote\n", MARKDOWN_CORE_NODE_CALLOUT},
+                  {"1. item\n", MARKDOWN_CORE_NODE_LIST},
+                  {"- item\n", MARKDOWN_CORE_NODE_LIST},
+                  {"(a) item\n", MARKDOWN_CORE_NODE_LIST},
+                  {"***\n", MARKDOWN_CORE_NODE_THEMATIC_BREAK},
+                  {"<div>\nbody\n</div>\n", MARKDOWN_CORE_NODE_HTML_BLOCK},
+                  {"<!-- comment -->\n", MARKDOWN_CORE_NODE_COMMENT_BLOCK},
+                  {"$$\nx\n$$\n", MARKDOWN_CORE_NODE_FORMULA_BLOCK},
+                  {"\\\\[\nx\n\\\\]\n", MARKDOWN_CORE_NODE_FORMULA_BLOCK},
+                  {":::note\nbody\n:::\n", MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK},
+                  {"::: {.note}\nbody\n:::\n", MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK},
+                  {"::note[label]\n", MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK},
+                  {"%%\ncomment\n%%\n", MARKDOWN_CORE_NODE_COMMENT_BLOCK}};
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    for (size_t t = 0; t < sizeof(tables) / sizeof(*tables); t++) {
+        int caption_line = 1;
+        for (const char *at = tables[t]; *at; at++) {
+            caption_line += *at == '\n';
+        }
+        for (size_t b = 0; b < sizeof(blocks) / sizeof(*blocks); b++) {
+            for (int quoted = 0; quoted < 2; quoted++) {
+                markdown_core_strbuf input = MARKDOWN_CORE_BUF_INIT(mem), source = MARKDOWN_CORE_BUF_INIT(mem);
+                markdown_core_strbuf_puts(&input, tables[t]);
+                markdown_core_strbuf_puts(&input, ": cap\n");
+                markdown_core_strbuf_puts(&input, blocks[b].source);
+                for (int at = 0; at < input.size; at++) {
+                    if (quoted && (at == 0 || input.ptr[at - 1] == '\n')) {
+                        markdown_core_strbuf_puts(&source, "> ");
+                    }
+                    markdown_core_strbuf_putc(&source, input.ptr[at]);
+                }
+                markdown_core_node *root = parse((char *)source.ptr);
+                markdown_core_node *owner = root && quoted ? root->first_child : root;
+                markdown_core_node *table = owner ? owner->first_child : NULL;
+                OK(runner, table && table->kind == MARKDOWN_CORE_NODE_TABLE,
+                   "caption table survives interruption: table=%zu block=%zu quoted=%d", t, b, quoted);
+                if (table && table->kind == MARKDOWN_CORE_NODE_TABLE) {
+                    markdown_core_node *caption = ((markdown_core_table *)table->opaque)->caption;
+                    OK(runner, caption && caption->first_child, "caption owns its paragraph content");
+                    if (caption && caption->first_child) {
+                        STR_EQ(runner, markdown_core_node_get_literal(caption->first_child), "cap",
+                               "block bytes do not enter caption text");
+                        INT_EQ(runner, caption->end_line, caption_line, "caption scope ends before the block");
+                    }
+                    INT_EQ(runner, table->end_line, caption_line, "table scope ends with its caption");
+                    OK(runner, table->next && table->next->kind == blocks[b].kind,
+                       "ordinary block owns its source: table=%zu block=%zu quoted=%d", t, b, quoted);
+                    if (table->next) {
+                        INT_EQ(runner, table->next->start_line, caption_line + 1, "block retains source line");
+                    }
+                }
+                markdown_core_node_free(root);
+                markdown_core_strbuf_free(&source);
+                markdown_core_strbuf_free(&input);
+            }
+        }
+    }
+    const char *continuations[] = {"2. stays\n",         "<x>\n",          "    text\n", "+ \n",
+                                   ":::note[unclosed\n", "%%\nno closer\n"};
+    for (size_t i = 0; i < sizeof(continuations) / sizeof(*continuations); i++) {
+        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+        markdown_core_strbuf_puts(&source, tables[0]);
+        markdown_core_strbuf_puts(&source, ": cap\n");
+        markdown_core_strbuf_puts(&source, continuations[i]);
+        markdown_core_node *root = parse((char *)source.ptr);
+        markdown_core_node *table = root ? root->first_child : NULL;
+        OK(runner, table && table->kind == MARKDOWN_CORE_NODE_TABLE && !table->next,
+           "non-interrupting source stays in caption: case=%zu", i);
+        if (table && table->kind == MARKDOWN_CORE_NODE_TABLE) {
+            markdown_core_node *caption = ((markdown_core_table *)table->opaque)->caption;
+            OK(runner, caption && caption->end_line > 4, "caption continues past its first line: case=%zu", i);
+        }
+        markdown_core_node_free(root);
+        markdown_core_strbuf_free(&source);
+    }
+}
+
+static void table_mapped_ownership(test_batch_runner *runner) {
+    const char *source =
+        "+------------------------+------------------------+\n| [r]: /first            | [r]: /second           |\n|   "
+        "                     |                        |\n| # Same                 | # Same                 |\n|       "
+        "                 |                        |\n| [^f]: first            | [^f]: second           |\n|           "
+        "             |                        |\n| [r] [^f]               | [r] [^f]               "
+        "|\n+------------------------+------------------------+\n\n[r] [Same] [^f]\n";
+    markdown_core_node *root = markdown_core_parse_document(source, strlen(source));
+    OK(runner, root != NULL, "mapped cell block parsing completes");
+    if (!root) {
+        return;
+    }
+    markdown_core_node *table = root->first_child, *row = table->first_child;
+    markdown_core_node *first = row->first_child, *second = first->next;
+    STR_EQ(runner, (const char *)first->first_child->attributes.anchor.data, "same",
+           "first cell heading owns unsuffixed anchor");
+    STR_EQ(runner, (const char *)second->first_child->attributes.anchor.data, "same-1",
+           "same-line later heading is ordered by original column");
+    INT_EQ(runner, second->first_child->start_column, 28, "mapped block starts in original source column");
+    for (markdown_core_node *cell = first; cell; cell = cell->next) {
+        markdown_core_destination dest;
+        OK(runner, markdown_core_node_destination(cell->last_child->first_child, &dest),
+           "cell resolves document-shared reference");
+        OK(runner, dest.url.length == 6 && !memcmp(dest.url.data, "/first", 6),
+           "first authored definition wins across queued cells");
+    }
+    markdown_core_node *notes = root->as.document->footnotes;
+    OK(runner, notes && notes->next && !notes->next->next, "both cell definitions are owned by document");
+    if (notes && notes->next) {
+        INT_EQ(runner, notes->start_column, 3, "first definition original column");
+        INT_EQ(runner, notes->next->start_column, 28, "second definition original column");
+    }
+    markdown_core_node_free(root);
+}
+
+/* Nested mapped inputs use the parser queue; source depth does not recurse
+ * into another document parser, and the innermost scope stays physical. */
+static void table_nested_inputs(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    for (int depth = 16; depth <= 128; depth *= 2) {
+        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+        int width = 1;
+        markdown_core_strbuf_puts(&source, "x\n");
+        for (int level = 0; level < depth; level++) {
+            markdown_core_strbuf outer = MARKDOWN_CORE_BUF_INIT(mem);
+            markdown_core_strbuf_putc(&outer, '+');
+            for (int c = 0; c < width + 2; c++) {
+                markdown_core_strbuf_putc(&outer, '-');
+            }
+            markdown_core_strbuf_puts(&outer, "+\n");
+            int first = 0;
+            for (int i = 0; i < source.size; i++) {
+                if (source.ptr[i] != '\n') {
+                    continue;
+                }
+                markdown_core_strbuf_puts(&outer, "| ");
+                markdown_core_strbuf_put(&outer, source.ptr + first, i - first);
+                markdown_core_strbuf_puts(&outer, " |\n");
+                first = i + 1;
+            }
+            markdown_core_strbuf_putc(&outer, '+');
+            for (int c = 0; c < width + 2; c++) {
+                markdown_core_strbuf_putc(&outer, '-');
+            }
+            markdown_core_strbuf_puts(&outer, "+\n");
+            markdown_core_strbuf_free(&source);
+            source = outer;
+            width += 4;
+        }
+        markdown_core_node *root = markdown_core_parse_document((char *)source.ptr, source.size);
+        OK(runner, root != NULL, "nested mapped block inputs parse: depth=%d", depth);
+        if (root) {
+            INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_TABLE), depth, "one table per authored grid");
+            markdown_core_node *leaf = root;
+            while (leaf->first_child) {
+                leaf = leaf->first_child;
+            }
+            INT_EQ(runner, leaf->start_line, depth + 1, "nested physical line is preserved");
+            INT_EQ(runner, leaf->start_column, 2 * depth + 1, "nested physical column is preserved");
+        }
+        markdown_core_node_free(root);
+        markdown_core_strbuf_free(&source);
+    }
+}
+
 int main(void) {
     int retval;
     test_batch_runner *runner = test_batch_runner_new();
@@ -4518,6 +5191,7 @@ int main(void) {
     percent_comment_nodes(runner);
     cross_link_fields(runner);
     node_payload_lifecycle(runner);
+    extension_owned_field_lifecycle(runner);
     kind_conversion_containment(runner);
     version(runner);
     node_type_values(runner);
@@ -4554,6 +5228,15 @@ int main(void) {
     autolink_source_pos(runner);
     table_source_map_growth(runner);
     table_values(runner);
+    grid_opening_memory(runner);
+    table_candidate_work(runner);
+    bounded_scanners(runner);
+    simple_table_body_boundaries(runner);
+    simple_table_footer_work(runner);
+    grid_caption_search_work(runner);
+    table_caption_boundaries(runner);
+    table_mapped_ownership(runner);
+    table_nested_inputs(runner);
     strbuf_overflow(runner);
     strbuf_failure_is_a_transaction(runner);
     stray_delimiter(runner);

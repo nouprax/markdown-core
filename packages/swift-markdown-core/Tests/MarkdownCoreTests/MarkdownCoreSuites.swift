@@ -363,6 +363,7 @@ private struct KindVisitor: MarkupVisitor {
     mutating func visit(_ node: Media) -> String { kindName(node) }
     mutating func visit(_ node: Directive) -> String { kindName(node) }
     mutating func visit(_ node: Cite) -> String { kindName(node) }
+    mutating func visit(_ node: TableCaption) -> String { kindName(node) }
     mutating func visit(_ node: TableRow) -> String { "row" }
     mutating func visit(_ node: TableCell) -> String { "cell" }
 }
@@ -432,6 +433,7 @@ struct RecordingWalkingVisitor: MarkupWalkingVisitor {
     mutating func visit(_ node: Media, phase: WalkPhase) { record(node, phase) }
     mutating func visit(_ node: Directive, phase: WalkPhase) { record(node, phase) }
     mutating func visit(_ node: Cite, phase: WalkPhase) { record(node, phase) }
+    mutating func visit(_ node: TableCaption, phase: WalkPhase) { record(node, phase) }
     mutating func visit(_ node: TableRow, phase: WalkPhase) {
         record(node, phase)
         if phase == .entering { tableRowKinds.append(Int(node.scope.start.line)) }

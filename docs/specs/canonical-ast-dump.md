@@ -151,6 +151,7 @@ that the dump represents as nested descendants.
 | `HTMLBlock` | `anchor`, `attributes`, `literal` |
 | `FormulaBlock` | `anchor`, `attributes`, `literal` |
 | `Table` | `anchor`, `attributes`, `columns` |
+| `TableCaption` | `anchor`, `attributes` |
 | `TableRow` | `anchor`, `attributes` |
 | `TableCell` | `anchor`, `attributes`, `rowspan`, `colspan` |
 | `DirectiveBlock` | `anchor`, `attributes`, `name` |

@@ -5,8 +5,7 @@ owns the one table model and every table syntax. Sources: cmark-gfm's table exte
 `simple_tables`, `multiline_tables`, and `grid_tables`. Executable oracles:
 cmark-gfm for pipe tables; the Pandoc 3.11 CLI for the other forms. Landing:
 the model with `M6`; captions with `P11a`; simple, multiline, and grid tables
-with `P11b`, `P11c`, and `P11d`. The unified table model and pipe syntax are present; captions and the other
-forms land with their named items. The
+with `P11b`, `P11c`, and `P11d`. All four table forms and captions are implemented on every public surface. The
 [example format](../dialect.md#examples) is defined by the index.
 
 ## Model
@@ -92,6 +91,14 @@ occupancy array of `columns.count` entries:
 
 A candidate that would violate any step is not a table and follows the
 syntax's fallback; the parser never emits a table that needs repair.
+The parser records source-defined rows and each starting cell once, with its
+authored spans and content. It does not expand spans into a dense grid, insert
+placeholder cells at covered coordinates, or synthesize rows for layout.
+An explicit source boundary can define a row with no starting cells; that row
+is retained with `cells=[]`. This differs from an authored empty cell, which
+is a `TableCell` with empty `content`. Reconstructing occupied coordinates and
+laying out the table are consumer responsibilities; temporary geometry used
+to validate the source candidate does not become another public table model.
 
 ## Pipe tables
 
@@ -164,7 +171,7 @@ Document scope=1:1..5:5 anchor=null attributes={} children=2
 ````````````````````````````````
 
 Column alignment comes from the markers' colons: left, right, both, or none.
-Every following line is a body row until a blank line or a line that a block
+For pipe tables, every following line is a body row until a blank line or a line that a block
 start of steps 1 through 9, 11, or 12 claims; a line without pipes is a
 one-cell row. A row with fewer cells than the delimiter row is completed
 with empty cells whose scope is the row's end; excess cells are dropped, so
@@ -274,8 +281,12 @@ caption-line = *3SP ( "Table:" / "table:" / ":" ) rest
 where for the `:` form the next scalar is not punctuation, the word forms are
 case-sensitive, and `rest` may be empty. A caption paragraph is one whose
 first line is a caption line; its content is the paragraph's parsed inline
-content after removing the marker and the whitespace after it. A caption
-paragraph is claimed by a table of any syntax that it precedes or follows
+content after removing the marker and the whitespace after it. It ends at the
+same interrupting block starts as an ordinary paragraph, including core and
+extension openers; non-interrupting indentation, list markers and type-7 HTML
+remain paragraph content. A preceding caption does not change which block
+opener owns a prospective table header. A caption paragraph is claimed by a
+table of any syntax that it precedes or follows
 with zero or more blank lines and nothing else between:
 
 ```````````````````````````````` example
@@ -322,10 +333,14 @@ Document scope=1:1..5:6 anchor=null attributes={} children=1
     └── TableFoot children=0
 ````````````````````````````````
 
-A multi-line caption contributes `SoftBreak` nodes. When both surround one
-table, the preceding caption owns it and the following paragraph stays a
-paragraph; a caption paragraph between two tables belongs to the preceding
-one. Placement is not stored:
+A multi-line caption contributes `SoftBreak` nodes. A table claims its
+preceding caption if present, otherwise its following caption. A table with
+a preceding caption leaves the following caption candidate unconsumed: it can
+become the preceding caption of the next table, or a paragraph when no table
+follows. Thus `caption A / table 1 / caption B / table 2` gives A to table 1
+and B to table 2; without A, B belongs to table 1. The pinned Pandoc canaries
+verify both cases for every table form and caption marker. Placement is not
+stored:
 
 ```````````````````````````````` example
 table: first
@@ -372,6 +387,12 @@ Document scope=1:1..1:20 anchor=null attributes={} children=1
 A caption line is tested before the definition-list step, as the
 [definition lists](definition-lists.md) module states.
 
+This attachment rule applies after the table syntax has ended. A caption
+marker does not interrupt an unfinished simple-table body: without a blank
+line or matching footer it is cell text. A footer ends the table immediately,
+so a caption may follow it with no blank line. The simple-table examples below
+and the pinned oracle corpus verify all three caption markers at these boundaries.
+
 ## Column arithmetic
 
 All column positions in the syntaxes below count Unicode scalars of the line
@@ -391,9 +412,177 @@ dash-run  = 1*"-"
 
 The header line is the nonblank line immediately before the separator and
 must be the first line of a paragraph candidate. Body rows are every following
-line until a blank line, or until a footer line of the same shape as the
-separator followed by a blank line or the end of the document; at least one
-body row or a footer is required.
+line until a blank line or the first footer line with exactly the separator's
+dash-run intervals. The footer needs no following blank line; at least one
+body row or a footer is required. Subsequent caption or prose lines belong to
+ordinary block parsing outside the completed table.
+
+```````````````````````````````` example
+h   j
+--- ---
+v   w
+: cap
+.
+Document scope=1:1..4:5 anchor=null attributes={} children=1
+└── Table scope=1:1..4:5 anchor=null attributes={} columns=[left:null,left:null] children=3
+    ├── TableHead children=1
+    │   └── TableRow scope=1:1..1:5 anchor=null attributes={} children=2
+    │       ├── TableCell scope=1:1..1:1 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       │   └── Text scope=1:1..1:1 anchor=null attributes={} literal="h" children=0
+    │       └── TableCell scope=1:5..1:5 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │           └── Text scope=1:5..1:5 anchor=null attributes={} literal="j" children=0
+    ├── TableBody children=2
+    │   ├── TableRow scope=3:1..3:5 anchor=null attributes={} children=2
+    │   │   ├── TableCell scope=3:1..3:1 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │   │   │   └── Text scope=3:1..3:1 anchor=null attributes={} literal="v" children=0
+    │   │   └── TableCell scope=3:5..3:5 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │   │       └── Text scope=3:5..3:5 anchor=null attributes={} literal="w" children=0
+    │   └── TableRow scope=4:1..4:5 anchor=null attributes={} children=2
+    │       ├── TableCell scope=4:1..4:4 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       │   └── Text scope=4:1..4:4 anchor=null attributes={} literal=": ca" children=0
+    │       └── TableCell scope=4:5..4:5 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │           └── Text scope=4:5..4:5 anchor=null attributes={} literal="p" children=0
+    └── TableFoot children=0
+````````````````````````````````
+
+```````````````````````````````` example
+h   j
+--- ---
+v   w
+
+: cap
+.
+Document scope=1:1..5:5 anchor=null attributes={} children=1
+└── Table scope=1:1..5:5 anchor=null attributes={} columns=[left:null,left:null] children=2
+    ├── TableCaption scope=5:1..5:5 anchor=null attributes={} children=1
+    │   └── Text scope=5:3..5:5 anchor=null attributes={} literal="cap" children=0
+    ├── TableHead children=1
+    │   └── TableRow scope=1:1..1:5 anchor=null attributes={} children=2
+    │       ├── TableCell scope=1:1..1:1 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       │   └── Text scope=1:1..1:1 anchor=null attributes={} literal="h" children=0
+    │       └── TableCell scope=1:5..1:5 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │           └── Text scope=1:5..1:5 anchor=null attributes={} literal="j" children=0
+    ├── TableBody children=1
+    │   └── TableRow scope=3:1..3:5 anchor=null attributes={} children=2
+    │       ├── TableCell scope=3:1..3:1 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       │   └── Text scope=3:1..3:1 anchor=null attributes={} literal="v" children=0
+    │       └── TableCell scope=3:5..3:5 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │           └── Text scope=3:5..3:5 anchor=null attributes={} literal="w" children=0
+    └── TableFoot children=0
+````````````````````````````````
+
+```````````````````````````````` example
+h   j
+--- ---
+v   w
+--- ---
+: cap
+.
+Document scope=1:1..5:5 anchor=null attributes={} children=1
+└── Table scope=1:1..5:5 anchor=null attributes={} columns=[left:null,left:null] children=2
+    ├── TableCaption scope=5:1..5:5 anchor=null attributes={} children=1
+    │   └── Text scope=5:3..5:5 anchor=null attributes={} literal="cap" children=0
+    ├── TableHead children=1
+    │   └── TableRow scope=1:1..1:5 anchor=null attributes={} children=2
+    │       ├── TableCell scope=1:1..1:1 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       │   └── Text scope=1:1..1:1 anchor=null attributes={} literal="h" children=0
+    │       └── TableCell scope=1:5..1:5 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │           └── Text scope=1:5..1:5 anchor=null attributes={} literal="j" children=0
+    ├── TableBody children=1
+    │   └── TableRow scope=3:1..3:5 anchor=null attributes={} children=2
+    │       ├── TableCell scope=3:1..3:1 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       │   └── Text scope=3:1..3:1 anchor=null attributes={} literal="v" children=0
+    │       └── TableCell scope=3:5..3:5 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │           └── Text scope=3:5..3:5 anchor=null attributes={} literal="w" children=0
+    └── TableFoot children=0
+````````````````````````````````
+
+```````````````````````````````` example
+--- ---
+v   w
+--- ---
+Table: cap
+.
+Document scope=1:1..4:10 anchor=null attributes={} children=1
+└── Table scope=1:1..4:10 anchor=null attributes={} columns=[left:null,left:null] children=1
+    ├── TableCaption scope=4:1..4:10 anchor=null attributes={} children=1
+    │   └── Text scope=4:8..4:10 anchor=null attributes={} literal="cap" children=0
+    ├── TableHead children=0
+    ├── TableBody children=1
+    │   └── TableRow scope=2:1..2:5 anchor=null attributes={} children=2
+    │       ├── TableCell scope=2:1..2:1 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       │   └── Text scope=2:1..2:1 anchor=null attributes={} literal="v" children=0
+    │       └── TableCell scope=2:5..2:5 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │           └── Text scope=2:5..2:5 anchor=null attributes={} literal="w" children=0
+    └── TableFoot children=0
+````````````````````````````````
+
+```````````````````````````````` example
+h   j
+--- ---
+v   w
+--- ---
+prose
+.
+Document scope=1:1..5:5 anchor=null attributes={} children=2
+├── Table scope=1:1..4:7 anchor=null attributes={} columns=[left:null,left:null] children=2
+│   ├── TableHead children=1
+│   │   └── TableRow scope=1:1..1:5 anchor=null attributes={} children=2
+│   │       ├── TableCell scope=1:1..1:1 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │       │   └── Text scope=1:1..1:1 anchor=null attributes={} literal="h" children=0
+│   │       └── TableCell scope=1:5..1:5 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │           └── Text scope=1:5..1:5 anchor=null attributes={} literal="j" children=0
+│   ├── TableBody children=1
+│   │   └── TableRow scope=3:1..3:5 anchor=null attributes={} children=2
+│   │       ├── TableCell scope=3:1..3:1 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │       │   └── Text scope=3:1..3:1 anchor=null attributes={} literal="v" children=0
+│   │       └── TableCell scope=3:5..3:5 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │           └── Text scope=3:5..3:5 anchor=null attributes={} literal="w" children=0
+│   └── TableFoot children=0
+└── Paragraph scope=5:1..5:5 anchor=null attributes={} children=1
+    └── Text scope=5:1..5:5 anchor=null attributes={} literal="prose" children=0
+````````````````````````````````
+
+Within a simple-table body, lines beginning with `#`, `>`, or code fences
+remain rows and their cells are parsed as inline content. Shared block-start
+precedence decides whether a table can open at its header and whether a caption
+paragraph continues; it does not interrupt these already-owned simple rows.
+A blank line ends the body and lets a following heading, quote, or code fence
+open its own block. The input-only Pandoc 3.11 witnesses
+`simple-table-{heading,quote,fence}-{in-body,after-blank}` in the
+[oracle corpus](../../../specs/oracles/pandoc/corpus.json) verify both sides
+of this boundary without a compatibility waiver.
+
+```````````````````````````````` example
+h    i
+---- ----
+a    b
+# h
+
+# outside
+.
+Document scope=1:1..6:9 anchor=null attributes={} children=2
+├── Table scope=1:1..4:3 anchor=null attributes={} columns=[left:null,left:null] children=3
+│   ├── TableHead children=1
+│   │   └── TableRow scope=1:1..1:6 anchor=null attributes={} children=2
+│   │       ├── TableCell scope=1:1..1:1 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │       │   └── Text scope=1:1..1:1 anchor=null attributes={} literal="h" children=0
+│   │       └── TableCell scope=1:6..1:6 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │           └── Text scope=1:6..1:6 anchor=null attributes={} literal="i" children=0
+│   ├── TableBody children=2
+│   │   ├── TableRow scope=3:1..3:6 anchor=null attributes={} children=2
+│   │   │   ├── TableCell scope=3:1..3:1 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │   │   │   └── Text scope=3:1..3:1 anchor=null attributes={} literal="a" children=0
+│   │   │   └── TableCell scope=3:6..3:6 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │   │       └── Text scope=3:6..3:6 anchor=null attributes={} literal="b" children=0
+│   │   └── TableRow scope=4:1..4:3 anchor=null attributes={} children=2
+│   │       ├── TableCell scope=4:1..4:3 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │       │   └── Text scope=4:1..4:3 anchor=null attributes={} literal="# h" children=0
+│   │       └── TableCell scope=4:3..4:3 anchor=null attributes={} rowspan=1 colspan=1 children=0
+│   └── TableFoot children=0
+└── Heading scope=6:1..6:9 anchor="outside" attributes={} level=1 children=1
+    └── Text scope=6:3..6:9 anchor=null attributes={} literal="outside" children=0
+````````````````````````````````
 
 Columns are cut at the start position of each dash run: bytes before the
 first run belong to column one, bytes from the last run's start to the end
@@ -510,8 +699,10 @@ of the document. Without a header it begins at the segment boundary and
 followed directly by the closing boundary unless it is the only row, in which
 case the candidate is retried as a simple table and otherwise follows the
 inherited fallback. A row's physical lines are cut at the segment boundary's
-column positions; each cell's per-line segments are joined with LF and parsed
-as a block sequence. `w[i]` is the scalar count from the start of dash run
+column positions. Right-trim each segment and remove the common leading-space
+indent of the cell's nonempty segments, preserving relative indentation within
+the cell. Join those segments with LF and parse them as a block sequence,
+including header cells. `w[i]` is the scalar count from the start of dash run
 `i` to the start of run `i+1`, the last run being its own length. Alignment
 follows the simple-table rule, and every span is one:
 
@@ -530,9 +721,11 @@ Document scope=1:1..8:16 anchor=null attributes={} children=1
     ├── TableHead children=1
     │   └── TableRow scope=2:1..2:16 anchor=null attributes={} children=2
     │       ├── TableCell scope=2:1..2:8 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │       │   └── Text scope=2:1..2:4 anchor=null attributes={} literal="Left" children=0
+    │       │   └── Paragraph scope=2:1..2:4 anchor=null attributes={} children=1
+    │       │       └── Text scope=2:1..2:4 anchor=null attributes={} literal="Left" children=0
     │       └── TableCell scope=2:9..2:16 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │           └── Text scope=2:12..2:16 anchor=null attributes={} literal="Right" children=0
+    │           └── Paragraph scope=2:12..2:16 anchor=null attributes={} children=1
+    │               └── Text scope=2:12..2:16 anchor=null attributes={} literal="Right" children=0
     ├── TableBody children=2
     │   ├── TableRow scope=4:1..5:1 anchor=null attributes={} children=2
     │   │   ├── TableCell scope=4:1..5:1 anchor=null attributes={} rowspan=1 colspan=1 children=1
@@ -555,15 +748,157 @@ Document scope=1:1..8:16 anchor=null attributes={} children=1
 
 ## Grid tables
 
-A grid table's lines begin and end with `|` or `+` at
-the table margin, and the column boundary set is the union of the `+`
-positions on every horizontal boundary line; every `+` and `|` must sit at a
-boundary position or the candidate fails. Between adjacent boundary positions
-a segment is horizontal (all `-` or all `=`, with optional edge colons) or
-cell text. A cell anchored at row `r` and column `c` spans right until a `|`
-or `+` at a boundary position and down until the first line on which its
-full width is horizontal; the result is `colspan` and `rowspan` stored once
-in the anchor row, and the logical grid rules above validate the result.
+A grid table's lines begin and end with `|` or `+` at the table margin.
+The candidate includes consecutive nonblank lines beginning with either marker
+at its left margin. A blank line or a line without that opening marker ends
+the candidate. A marker-led line with the wrong width or ending makes the
+candidate malformed, and the complete candidate follows ordinary block parsing.
+A full horizontal line can be an interior row separator, so its presence does
+not commit a table prefix before later candidate lines have been validated.
+
+For literal prose beginning with `|` or `+` after a grid table, separate it with
+a blank line. Without that separation, `| prose` below invalidates the candidate.
+Pandoc 3.11 behaves differently: it consumes that line and emits only the table,
+discarding the prose. It does not emit a table followed by a paragraph. This
+module retains the existing transactional fallback described under
+[Block-start order and fallback](#block-start-order-and-fallback).
+
+```````````````````````````````` example
++---+
+| a |
++---+
+| prose
+.
+Document scope=1:1..4:7 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..4:7 anchor=null attributes={} children=7
+    ├── Text scope=1:1..1:5 anchor=null attributes={} literal="+---+" children=0
+    ├── SoftBreak scope=1:6..1:6 anchor=null attributes={} children=0
+    ├── Text scope=2:1..2:5 anchor=null attributes={} literal="| a |" children=0
+    ├── SoftBreak scope=2:6..2:6 anchor=null attributes={} children=0
+    ├── Text scope=3:1..3:5 anchor=null attributes={} literal="+---+" children=0
+    ├── SoftBreak scope=3:6..3:6 anchor=null attributes={} children=0
+    └── Text scope=4:1..4:7 anchor=null attributes={} literal="| prose" children=0
+````````````````````````````````
+
+```````````````````````````````` example
++---+
+| a |
++---+
+
+| prose
+.
+Document scope=1:1..5:7 anchor=null attributes={} children=2
+├── Table scope=1:1..3:5 anchor=null attributes={} columns=[none:1] children=1
+│   ├── TableHead children=0
+│   ├── TableBody children=1
+│   │   └── TableRow scope=2:1..2:5 anchor=null attributes={} children=1
+│   │       └── TableCell scope=2:2..2:4 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │           └── Paragraph scope=2:3..2:3 anchor=null attributes={} children=1
+│   │               └── Text scope=2:3..2:3 anchor=null attributes={} literal="a" children=0
+│   └── TableFoot children=0
+└── Paragraph scope=5:1..5:7 anchor=null attributes={} children=1
+    └── Text scope=5:1..5:7 anchor=null attributes={} literal="| prose" children=0
+````````````````````````````````
+
+```````````````````````````````` example
++---+
+| a |
++---+
+prose
+.
+Document scope=1:1..4:5 anchor=null attributes={} children=2
+├── Table scope=1:1..3:5 anchor=null attributes={} columns=[none:1] children=1
+│   ├── TableHead children=0
+│   ├── TableBody children=1
+│   │   └── TableRow scope=2:1..2:5 anchor=null attributes={} children=1
+│   │       └── TableCell scope=2:2..2:4 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │           └── Paragraph scope=2:3..2:3 anchor=null attributes={} children=1
+│   │               └── Text scope=2:3..2:3 anchor=null attributes={} literal="a" children=0
+│   └── TableFoot children=0
+└── Paragraph scope=4:1..4:5 anchor=null attributes={} children=1
+    └── Text scope=4:1..4:5 anchor=null attributes={} literal="prose" children=0
+````````````````````````````````
+
+Its column boundaries are the union, across the table, of `+` positions
+connected to the outer border by horizontal `-` or `=` segments (with optional
+edge colons). A column position alone does not make every `+` at that position
+structural: markers inside a completed cell remain content, including nested
+grids.
+
+Candidate boundary lines define elementary row/column regions. A missing vertical
+wall on any physical line, including its boundary endpoints, joins neighboring regions; a missing
+horizontal segment joins regions above and below it. Every connected region
+must form one rectangle within one row group. Its width and height are the
+cell's `colspan` and `rowspan`; the cell is stored once in its starting row.
+This checks the complete cell boundary, including a wall present on only some
+of its content lines. A nonrectangular region rejects the candidate. Logical
+rows are then defined by the completed cells' top and bottom edges and by `+`
+markers along their vertical edges. Such a marker does not need a horizontal
+segment on its own line. A `+` inside a cell contributes no row or span.
+
+For example, the middle `+` below lies on a complete vertical edge. Like
+Pandoc 3.11, the parser keeps two logical rows and two `rowspan=2` cells;
+the second row has no starting cells. Requiring a horizontal segment on
+that line would change the syntax incorrectly.
+
+```````````````````````````````` example
++---+---+
+| a + b |
++---+---+
+.
+Document scope=1:1..3:9 anchor=null attributes={} children=1
+└── Table scope=1:1..3:9 anchor=null attributes={} columns=[none:0.5,none:0.5] children=2
+    ├── TableHead children=0
+    ├── TableBody children=2
+    │   ├── TableRow scope=2:1..2:9 anchor=null attributes={} children=2
+    │   │   ├── TableCell scope=2:2..2:4 anchor=null attributes={} rowspan=2 colspan=1 children=1
+    │   │   │   └── Paragraph scope=2:3..2:3 anchor=null attributes={} children=1
+    │   │   │       └── Text scope=2:3..2:3 anchor=null attributes={} literal="a" children=0
+    │   │   └── TableCell scope=2:6..2:8 anchor=null attributes={} rowspan=2 colspan=1 children=1
+    │   │       └── Paragraph scope=2:7..2:7 anchor=null attributes={} children=1
+    │   │           └── Text scope=2:7..2:7 anchor=null attributes={} literal="b" children=0
+    │   └── TableRow scope=3:1..3:9 anchor=null attributes={} children=0
+    └── TableFoot children=0
+````````````````````````````````
+
+If the top border does not establish that vertical edge, or a content line
+interrupts it, the middle `+` belongs to the merged cell instead. These
+examples each contain one row and one `colspan=2` cell:
+
+```````````````````````````````` example
++-------+
+| a + b |
++---+---+
+.
+Document scope=1:1..3:9 anchor=null attributes={} children=1
+└── Table scope=1:1..3:9 anchor=null attributes={} columns=[none:0.5,none:0.5] children=1
+    ├── TableHead children=0
+    ├── TableBody children=1
+    │   └── TableRow scope=2:1..2:9 anchor=null attributes={} children=1
+    │       └── TableCell scope=2:2..2:8 anchor=null attributes={} rowspan=1 colspan=2 children=1
+    │           └── Paragraph scope=2:3..2:7 anchor=null attributes={} children=1
+    │               └── Text scope=2:3..2:7 anchor=null attributes={} literal="a + b" children=0
+    └── TableFoot children=0
+````````````````````````````````
+
+```````````````````````````````` example
++---+---+
+| a + b |
+| cd    |
++---+---+
+.
+Document scope=1:1..4:9 anchor=null attributes={} children=1
+└── Table scope=1:1..4:9 anchor=null attributes={} columns=[none:0.5,none:0.5] children=1
+    ├── TableHead children=0
+    ├── TableBody children=1
+    │   └── TableRow scope=2:1..3:9 anchor=null attributes={} children=1
+    │       └── TableCell scope=2:2..3:8 anchor=null attributes={} rowspan=1 colspan=2 children=1
+    │           └── Paragraph scope=2:3..3:4 anchor=null attributes={} children=3
+    │               ├── Text scope=2:3..2:7 anchor=null attributes={} literal="a + b" children=0
+    │               ├── SoftBreak scope=2:10..2:10 anchor=null attributes={} children=0
+    │               └── Text scope=3:3..3:4 anchor=null attributes={} literal="cd" children=0
+    └── TableFoot children=0
+````````````````````````````````
 
 A line whose segments are all `=` is a head separator when it is the first
 such line and there is no foot yet, and the foot is the final row group
@@ -602,9 +937,12 @@ Cell text is, per line, the scalars strictly between the cell's boundary
 positions, right-trimmed; if every non-empty line begins with a space, one
 space is removed from each; the lines are joined with LF and parsed by the
 block parser, so cells hold paragraphs, code, lists, headings, nested tables,
-and every enabled block. A logical row begins at every line on which a cell
-is anchored, and a cell that spans down is owned by the row of its anchor
-line, and its scope extends below that row's last line:
+and every enabled block. Logical rows are defined by the source's structural
+boundary lines, independently of whether any cell starts in the row. An
+interior boundary such as `+   +   +` retains both cells across the boundary
+and starts another row with no new cells; the parser preserves that row's
+empty `cells` array. A cell that spans down is owned by the row in which it
+starts, and its scope extends below that row's last line:
 
 ```````````````````````````````` example
 +-------+-------+
@@ -644,7 +982,8 @@ A Setext heading beats every candidate: a single dash run without internal
 whitespace that the inherited grammar reads as an underline is an underline.
 A complete simple, multiline, or grid candidate beats a thematic break and a
 paragraph; a dash line that completes no candidate is a thematic break; a
-code fence is never claimed. Each line is scanned at most twice. Multiline
+code fence is never claimed. Failed grammar searches reuse facts under the
+same container and offset. Multiline
 and grid candidates commit only after a valid opening structure establishes a
 rectangular grid, and a malformed or nonrectangular candidate restarts
 inherited block parsing at its first line with no partial table. Code and
@@ -662,10 +1001,14 @@ row's end. A simple-table row covers its line, and a simple cell covers its
 segment trimmed of leading and trailing whitespace, or the one byte at the
 segment's start when the segment is empty, or the line's last byte when the
 segment lies beyond the line's end. A multiline row covers its physical
-lines and a grid row the lines from its anchor line to the line before the
-next row's anchor line. A multiline or grid cell covers the region between
+lines and a grid row its physical lines following its opening boundary,
+through the line before the next row begins (excluding the table's final
+closing boundary). A row with no physical body lines uses its closing boundary
+line as its source extent. Rows do not require a starting cell to have a scope.
+A multiline or grid cell covers the region between
 its column boundaries on its first line through the same region on its last
-line, clipped to each line's end; its descendants use original-source
+line, clipped to each line's end. A grid cell with no physical body lines uses
+the corresponding segment of its closing boundary. Its descendants use original-source
 coordinates, so a `SoftBreak` produced by joining two segments covers the
 physical line ending of the earlier segment's line, and such a range may
 include other cells' bytes. A grid cell whose `rowspan` exceeds one ends
@@ -683,7 +1026,8 @@ colon, and definition-list precedence; for simple tables, closing
 separators, a second line before the separator, and Setext and
 thematic-break precedence;
 for multiline tables, headerless forms and the one-row rule; for grid
-tables, multi-row heads, interleaved active spans, fully covered rows,
+tables, multi-row heads, interleaved active spans, source-defined fully covered
+rows with `cells=[]`, authored empty cells with `content=[]`,
 alignment, foot, and rejection of overlap, overrun, uncovered coordinates,
 cross-group spans, and stray `=` lines; and for all, exact table, caption,
 row, and cell scopes, allocation failure, deep nested cells, and size-doubling rows, columns, and boundaries.

@@ -1,4 +1,4 @@
-Document scope=1:1..18:8 anchor=null attributes={} children=6
+Document scope=1:1..18:8 anchor=null attributes={} children=5
 ├── CodeBlock scope=1:5..2:0 anchor=null attributes={} info=null language=null literal="indented\n" fenced=false closed=true children=0
 ├── List scope=3:1..8:0 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=false children=2
 │   ├── ListItem scope=3:1..4:0 anchor=null attributes={} marker=" " children=1
@@ -18,14 +18,13 @@ Document scope=1:1..18:8 anchor=null attributes={} children=6
 │   ├── Text scope=9:30..9:30 anchor=null attributes={} literal=" " children=0
 │   └── Media scope=9:31..9:40 anchor=null attributes={} dest=url("/i") title=null dimensions=null children=1
 │       └── Text scope=9:33..9:35 anchor=null attributes={} literal="alt" children=0
-├── Paragraph scope=11:1..11:54 anchor=null attributes={} children=5
-│   ├── Directive scope=11:1..11:6 anchor=null attributes={} name="plain" children=0
-│   ├── Text scope=11:7..11:7 anchor=null attributes={} literal=" " children=0
-│   ├── Directive scope=11:8..11:17 anchor=null attributes={} name="empty" children=0
-│   │   └── DirectiveLabel scope=11:14..11:15 anchor=null attributes={} children=0
-│   ├── Text scope=11:18..11:18 anchor=null attributes={} literal=" " children=0
-│   └── Directive scope=11:19..11:54 anchor="kept" attributes={.a .b .a k="1" k="2"} name="attrs" children=0
-├── Table scope=13:1..15:8 anchor=null attributes={} columns=[none:null] children=2
+├── Table scope=11:1..15:8 anchor=null attributes={} columns=[none:null] children=2
+│   ├── TableCaption scope=11:1..11:54 anchor=null attributes={} children=4
+│   │   ├── Text scope=11:2..11:7 anchor=null attributes={} literal="plain " children=0
+│   │   ├── Directive scope=11:8..11:17 anchor=null attributes={} name="empty" children=0
+│   │   │   └── DirectiveLabel scope=11:14..11:15 anchor=null attributes={} children=0
+│   │   ├── Text scope=11:18..11:18 anchor=null attributes={} literal=" " children=0
+│   │   └── Directive scope=11:19..11:54 anchor="kept" attributes={.a .b .a k="1" k="2"} name="attrs" children=0
 │   ├── TableHead children=1
 │   │   └── TableRow scope=13:1..13:8 anchor=null attributes={} children=1
 │   │       └── TableCell scope=13:2..13:7 anchor=null attributes={} rowspan=1 colspan=1 children=1

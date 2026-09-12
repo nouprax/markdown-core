@@ -89,12 +89,16 @@ inline or as a block when both `%%` fences stand on lines of their own under
 the same container prefixes. The body is opaque and stored as written, nothing
 is stripped, and a consumer that does not want comments drops the nodes.
 
-Tables expose `columns: [TableColumn]` and three ordered row groups: `head`,
-`content`, and `foot`. Each column carries alignment and an optional relative
-width; each cell carries positive `rowspan`/`colspan` and its parsed `content`.
-Pipe tables produce one head row, no foot rows, null widths, and unit spans.
-Their inline content stays directly in the cell. Walkers visit the three groups
-in that order. This replaces `alignments`, `header`, `rows`, and `isHeader`.
+Pipe, simple, multiline and grid tables share one model. `caption` is an
+optional `TableCaption` with inline `content`; `Table:`, `table:` and `:` accept
+a preceding or following caption. Between tables, an uncaptained preceding
+table claims it first. Walkers visit the caption before `head`, `content`, and
+`foot`. Multiline and grid cells use ordinary block content and authored relative
+widths; pipe and simple cells use inline content and null widths. Grid cells
+carry `rowspan` and `colspan` once in their starting row. Source-defined rows
+with no starting cells retain `cells=[]`; an authored empty cell retains
+`content=[]`. Consumers derive occupied coordinates and layout from these rows
+and spans.
 
 ### Swift
 
@@ -397,3 +401,15 @@ anchors anywhere in the document are reserved first. `[Hello World]`,
 before the heading; an explicit reference definition takes priority. Labels
 use authored heading text, so `# *Title*` is referenced by `[*Title*]`.
 Heading attributes stay on the heading, and generated targets add no scope.
+
+### Pandoc-derived syntax
+
+The always-on dialect includes inline code, heading, fenced code and link
+attributes; automatic anchors and implicit heading references; bracketed spans;
+superscript and subscript; bibliography citations; named and nameless fenced
+containers; fancy ordered lists and example lists; definition lists; table
+captions; and simple, multiline and grid tables. These 18 feature groups use
+one immutable AST and the same behavior on every binding. The
+[dialect contract](docs/specs/dialect.md) specifies syntax, precedence and intentional differences
+from the pinned Pandoc reader. Citation numbering, example-list resolution,
+table coordinate expansion and rendering remain consumer responsibilities.

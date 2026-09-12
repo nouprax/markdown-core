@@ -79,7 +79,7 @@ const nodeField = {
     scope: 8,
     childStart: 24,
     childCount: 28,
-    labelIndex: 32,
+    fieldIndex: 32,
     auxiliaryStart: 36,
     auxiliaryCount: 40,
     scalar0: 44,
@@ -129,7 +129,7 @@ interface NodeRecord {
     readonly scope: Scope;
     readonly childStart: number;
     readonly childCount: number;
-    readonly labelIndex: number;
+    readonly fieldIndex: number;
     readonly auxiliaryStart: number;
     readonly auxiliaryCount: number;
     readonly scalar0: number;
@@ -260,7 +260,7 @@ export class NodeDecoder {
             },
             childStart: this.uint(offset + nodeField.childStart),
             childCount: this.uint(offset + nodeField.childCount),
-            labelIndex: this.uint(offset + nodeField.labelIndex),
+            fieldIndex: this.uint(offset + nodeField.fieldIndex),
             auxiliaryStart: this.uint(offset + nodeField.auxiliaryStart),
             auxiliaryCount: this.uint(offset + nodeField.auxiliaryCount),
             scalar0: this.int(offset + nodeField.scalar0),
@@ -302,11 +302,11 @@ export class NodeDecoder {
                     this.uint(record.offset + nodeField.dimensions + 4) !== 0)
             )
                 throw new Error("dimensions require Media or CrossEmbedded");
-            if (record.labelIndex !== noIndex) {
-                if (record.kind !== "directive" && record.kind !== "directiveBlock") {
-                    throw new Error("only a directive may own a label relation");
+            if (record.fieldIndex !== noIndex) {
+                if (record.kind !== "directive" && record.kind !== "directiveBlock" && record.kind !== "table") {
+                    throw new Error("node kind cannot own a singular field relation");
                 }
-                this.recordRelation(record, record.labelIndex, incoming, "label");
+                this.recordRelation(record, record.fieldIndex, incoming, "owned node");
             }
             if (record.kind === "callout" && record.auxiliaryCount !== 0) {
                 // The title's nodes are owned through the auxiliary range, as
@@ -459,6 +459,9 @@ export class NodeDecoder {
                     mode: this.placement(record.scalar0),
                     literal: this.requiredString(record, 0)
                 } as MarkupValue;
+            case "tableCaption":
+                this.flags(record, 0);
+                return { ...this.base(record, "tableCaption"), content: this.content(record) };
             case "table":
                 return this.table(record);
             case "definitionList": {
@@ -636,8 +639,13 @@ export class NodeDecoder {
         ) {
             throw new Error("invalid table row groups");
         }
+        const caption = record.fieldIndex === noIndex ? null : this.values[record.fieldIndex];
+        if (caption !== null && (caption === undefined || !isMarkup(caption) || caption.kind !== "tableCaption")) {
+            throw new Error("table caption field contains a non-caption node");
+        }
         return {
             ...this.base(record, "table"),
+            caption,
             columns,
             head: rows.slice(0, headCount),
             content: rows.slice(headCount, headCount + contentCount),
@@ -668,8 +676,8 @@ export class NodeDecoder {
     }
 
     private directiveLabel(record: NodeRecord): DirectiveLabel | null {
-        if (record.labelIndex === noIndex) return null;
-        const label = this.values[record.labelIndex];
+        if (record.fieldIndex === noIndex) return null;
+        const label = this.values[record.fieldIndex];
         if (label === undefined || !isMarkup(label) || label.kind !== "directiveLabel") {
             throw new Error("directive label field contains a non-label node");
         }

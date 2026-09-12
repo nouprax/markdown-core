@@ -78,6 +78,7 @@ class AstTest {
         for ((width, expected) in widths) {
             val table =
                 Table(
+                    null,
                     listOf(TableColumn(TableAlignment.NONE, width)),
                     emptyList(),
                     emptyList(),
@@ -104,6 +105,7 @@ class AstTest {
             }
         val table =
             Table(
+                null,
                 listOf(TableColumn(TableAlignment.LEFT, 0.1), TableColumn(TableAlignment.NONE, null)),
                 listOf(rows[0]),
                 listOf(rows[1]),

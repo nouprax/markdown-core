@@ -1529,19 +1529,30 @@ its behavior, with no separate publication step.
   fuzz checks. C export lists and Kotlin JVM/Klib ABI baselines include the
   planned public additions. Packages are staged locally; nothing is published.
 
-- [ ] **P11a — `table_captions`.** Recognize a `Table:`, `table:`, or `:`
+P11 implementation and P12 evidence (2026-09-12): [delivery and validation
+record](2026-09-12-pandoc-tables-and-compositions.md). All four table items are
+implemented across C, Swift, Kotlin and ES. The 488-case composition diagnostic
+and zero-gap Pandoc corpus preserve all remaining semantic differences. P12 is
+complete for the selected feature inventory and the normative dialect. The
+2026-09-12 scope clarification confirms that full Pandoc compatibility is not
+an acceptance requirement; parser/consumer ownership remains unchanged.
+
+- [x] **P11a — `table_captions`.** Recognize a `Table:`, `table:`, or `:`
       caption line as a table-candidate block start parsed in one lookahead with
       the table that follows it, releasing the bytes to paragraph parsing when
-      no table follows, and claim a caption paragraph after a table, a caption
-      between two tables belonging to the preceding one; strip the marker into
+      no table follows, and claim a caption paragraph after a table only when
+      it has no preceding caption. Between two tables, the caption belongs to
+      the preceding table if that table has no caption; otherwise it remains
+      available as the next table's preceding caption. Strip the marker into
       `TableCaption.content`, and extend `Table.scope` over both. Add
       `Table.caption: TableCaption?`
       and the `TableCaption` kind together on every surface, fixtures for
-      before, after, both, multiline, and empty captions, and canonical cases
+      before, after, both, between tables with and without an earlier caption,
+      multiline, and empty captions, and canonical cases
       for `table.caption.null` and `table.caption.populated`. An identifier line
       after a table's caption attaching to the `Table` is a cross-item case
       owned by whichever of `P11a` and `O7` merges later. Requires `P0`, `M7`.
-- [ ] **P11b — `simple_tables`.** Establish column ranges from the dash
+- [x] **P11b — `simple_tables`.** Establish column ranges from the dash
       separator line, derive alignment from header placement, accept the
       headerless closing-separator form, and end at a blank line or closing
       separator, under the block-start order of the tables module: a Setext
@@ -1557,7 +1568,7 @@ its behavior, with no separate publication step.
       `Table` is a cross-item case owned by whichever of `P11b` and `O7` merges
       later. An escaped wikilink pipe inside a simple-table cell is a cross-item
       case owned by whichever of `P11b` and `O1` merges later. Requires `P11a`.
-- [ ] **P11c — `multiline_tables`.** Recognize full-width and segmented dash
+- [x] **P11c — `multiline_tables`.** Recognize full-width and segmented dash
       boundaries, combine physical lines into logical rows separated by blank
       lines, populate `TableColumn.relative` from source widths, require the
       blank separator for a one-row table, and accept the headerless form.
@@ -1568,14 +1579,18 @@ its behavior, with no separate publication step.
       whichever of `P11c` and `O7` merges later. An escaped wikilink pipe inside
       a multiline-table cell is a cross-item case owned by whichever of `P11c`
       and `O1` merges later. Requires `P11b`.
-- [ ] **P11d — `grid_tables`.** Parse `+`, `-`, `=`, and `|` boundaries with the
+- [x] **P11d — `grid_tables`.** Parse `+`, `-`, `=`, and `|` boundaries with the
       column boundary set the union of the `+` positions on every horizontal
       boundary line, as the tables module states, `=` separators selecting
       head and foot, cell
       bodies through the ordinary block parser, missing segments as `rowspan`
-      and `colspan` stored once in the upper-left anchor row, a row-width
-      occupancy array validating overlap, overrun, uncovered coordinates, and
-      cross-group spans, and alignment colons and widths. Ledger the row-span
+      and `colspan` stored once in the upper-left anchor row, source-defined
+      fully covered rows retained with `cells=[]`, and authored empty cells
+      retained with `content=[]`. Keep coordinate expansion and layout in
+      consumers; emit neither covered-coordinate placeholders nor layout-only
+      rows. Use a compacted row frontier to validate connected source rectangles and
+      cross-group spans, with authored alignment colons and widths. Temporary
+      geometry is bounded by columns plus source rows and output cells. Ledger the row-span
       containment exception the tables module states in
       `specs/positions/containment.json` with its reason. Remove the
       `grid-table-block-cells` and `grid-table-row-and-column-spans` gaps. Grid
@@ -1587,13 +1602,18 @@ its behavior, with no separate publication step.
       identifier line after a caption on this table form attaching to the
       `Table` is a cross-item case owned by whichever of `P11d` and `O7` merges
       later. Requires `P11c`.
-- [ ] **P12 — Pandoc evidence closure.** Add composition fixtures for every
-      Pandoc feature beside every other, deterministic fuzz seeds and
+- [x] **P12 — Selected Pandoc feature evidence closure.** Add composition fixtures for every
+      selected feature beside every other, deterministic fuzz seeds and
       size-doubling cases for brackets, attributes, `@`, braces, carets, tildes,
-      colons, numerals, and grids, and canonical cases until every Pandoc kind,
-      state, and order is covered; empty the Pandoc `deltas.json` of everything
-      except general documented projections with canaries; document every
-      Pandoc feature in the README and the binding READMEs. Requires `P2a`
+      colons, numerals, and grids, and canonical cases covering the selected
+      features' canonical kinds, states, and order. Close every missing-feature
+      gap against the normative modules. Keep exact documented oracle
+      differences for inherited language rules, selected-feature semantics and
+      the canonical consumer model; a registered difference is not proof of
+      implementation, and no projection may hide missing syntax or content.
+      Document every selected feature in the README and the binding READMEs.
+      Unselected Pandoc extensions, its rendering choices and full AST equality
+      are outside this acceptance scope. Requires `P2a`
       through `P11d`.
 - **Pandoc track exit criterion**, verified in the `P12` pull request: the Phase
   6 exit criterion of the Pandoc implementation plan holds, with every selected

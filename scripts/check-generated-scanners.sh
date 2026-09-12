@@ -5,13 +5,8 @@
 # runs during normal build or test, so drift between scanners.re and
 # scanners.c is otherwise invisible until the next manual regeneration.
 #
-# The check runs only when the pinned re2c is available; otherwise it reports
-# an explicit SKIP (it must not be read as a verified pass). ext_scanners.c is
-# not covered: its committed copy predates the raw-output policy and carries
-# hand formatting on top of the generated code. That used to cite
-# docs/deprecated/specs/c-naming.md, WHICH IS NOT IN THIS REPOSITORY -- the
-# citation outlived the document, and Step 15A found it while making sure no
-# executable file points into docs/deprecated/.
+# Both scanner families are raw, reproducible output of the pinned generator.
+# A missing/different generator reports SKIP, never a verified pass.
 set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -31,14 +26,18 @@ fi
 temp_dir=$(mktemp -d)
 trap 'rm -rf "$temp_dir"' EXIT
 
-# Exactly the Makefile maintenance rule for $(SRCDIR)/scanners.c.
-re2c -W -Werror --case-insensitive -b -i --no-generation-date \
-    --encoding-policy substitute \
-    -o "$temp_dir/scanners.c" \
-    "$root/packages/markdown-core/core/scanners.re"
-if ! cmp "$temp_dir/scanners.c" "$root/packages/markdown-core/core/scanners.c"; then
-    echo "committed packages/markdown-core/core/scanners.c is not the $expected_re2c" \
-        "output of scanners.re with the Makefile flags" >&2
-    exit 1
-fi
-echo "committed scanners.c is reproducible from scanners.re with $expected_re2c"
+# Exactly the Makefile maintenance rules, including the extension encoding.
+for family in core/scanners extensions/ext_scanners; do
+    flags=(-W -Werror --case-insensitive -b -i --no-generation-date --encoding-policy substitute)
+    if [ "$family" = extensions/ext_scanners ]; then
+        flags+=(-8)
+    fi
+    generated="$temp_dir/$(basename "$family").c"
+    re2c "${flags[@]}" \
+        -o "$generated" "$root/packages/markdown-core/$family.re"
+    if ! cmp "$generated" "$root/packages/markdown-core/$family.c"; then
+        echo "$family.c is not reproducible with $expected_re2c" >&2
+        exit 1
+    fi
+    echo "$family.c is reproducible with $expected_re2c"
+done

@@ -111,6 +111,7 @@ abstract interface <#A: kotlin/Any?> com.nouprax.markdown.core/Visitor { // com.
     abstract fun visitSubscript(com.nouprax.markdown.core/Subscript): #A // com.nouprax.markdown.core/Visitor.visitSubscript|visitSubscript(com.nouprax.markdown.core.Subscript){}[0]
     abstract fun visitSuperscript(com.nouprax.markdown.core/Superscript): #A // com.nouprax.markdown.core/Visitor.visitSuperscript|visitSuperscript(com.nouprax.markdown.core.Superscript){}[0]
     abstract fun visitTable(com.nouprax.markdown.core/Table): #A // com.nouprax.markdown.core/Visitor.visitTable|visitTable(com.nouprax.markdown.core.Table){}[0]
+    abstract fun visitTableCaption(com.nouprax.markdown.core/TableCaption): #A // com.nouprax.markdown.core/Visitor.visitTableCaption|visitTableCaption(com.nouprax.markdown.core.TableCaption){}[0]
     abstract fun visitTableCell(com.nouprax.markdown.core/TableCell): #A // com.nouprax.markdown.core/Visitor.visitTableCell|visitTableCell(com.nouprax.markdown.core.TableCell){}[0]
     abstract fun visitTableRow(com.nouprax.markdown.core/TableRow): #A // com.nouprax.markdown.core/Visitor.visitTableRow|visitTableRow(com.nouprax.markdown.core.TableRow){}[0]
     abstract fun visitText(com.nouprax.markdown.core/Text): #A // com.nouprax.markdown.core/Visitor.visitText|visitText(com.nouprax.markdown.core.Text){}[0]
@@ -155,6 +156,7 @@ abstract interface com.nouprax.markdown.core/WalkingVisitor { // com.nouprax.mar
     abstract fun visitSubscript(com.nouprax.markdown.core/Subscript, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitSubscript|visitSubscript(com.nouprax.markdown.core.Subscript;com.nouprax.markdown.core.WalkPhase){}[0]
     abstract fun visitSuperscript(com.nouprax.markdown.core/Superscript, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitSuperscript|visitSuperscript(com.nouprax.markdown.core.Superscript;com.nouprax.markdown.core.WalkPhase){}[0]
     abstract fun visitTable(com.nouprax.markdown.core/Table, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitTable|visitTable(com.nouprax.markdown.core.Table;com.nouprax.markdown.core.WalkPhase){}[0]
+    abstract fun visitTableCaption(com.nouprax.markdown.core/TableCaption, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitTableCaption|visitTableCaption(com.nouprax.markdown.core.TableCaption;com.nouprax.markdown.core.WalkPhase){}[0]
     abstract fun visitTableCell(com.nouprax.markdown.core/TableCell, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitTableCell|visitTableCell(com.nouprax.markdown.core.TableCell;com.nouprax.markdown.core.WalkPhase){}[0]
     abstract fun visitTableRow(com.nouprax.markdown.core/TableRow, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitTableRow|visitTableRow(com.nouprax.markdown.core.TableRow;com.nouprax.markdown.core.WalkPhase){}[0]
     abstract fun visitText(com.nouprax.markdown.core/Text, com.nouprax.markdown.core/WalkPhase) // com.nouprax.markdown.core/WalkingVisitor.visitText|visitText(com.nouprax.markdown.core.Text;com.nouprax.markdown.core.WalkPhase){}[0]
@@ -1007,6 +1009,8 @@ final class com.nouprax.markdown.core/Table : com.nouprax.markdown.core/Markup {
         final fun <get-anchor>(): kotlin/String? // com.nouprax.markdown.core/Table.anchor.<get-anchor>|<get-anchor>(){}[0]
     final val attributes // com.nouprax.markdown.core/Table.attributes|{}attributes[0]
         final fun <get-attributes>(): com.nouprax.markdown.core/Attributes // com.nouprax.markdown.core/Table.attributes.<get-attributes>|<get-attributes>(){}[0]
+    final val caption // com.nouprax.markdown.core/Table.caption|{}caption[0]
+        final fun <get-caption>(): com.nouprax.markdown.core/TableCaption? // com.nouprax.markdown.core/Table.caption.<get-caption>|<get-caption>(){}[0]
     final val columns // com.nouprax.markdown.core/Table.columns|{}columns[0]
         final fun <get-columns>(): kotlin.collections/List<com.nouprax.markdown.core/TableColumn> // com.nouprax.markdown.core/Table.columns.<get-columns>|<get-columns>(){}[0]
     final val content // com.nouprax.markdown.core/Table.content|{}content[0]
@@ -1019,6 +1023,19 @@ final class com.nouprax.markdown.core/Table : com.nouprax.markdown.core/Markup {
         final fun <get-scope>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/Table.scope.<get-scope>|<get-scope>(){}[0]
 
     final fun <#A1: kotlin/Any?> accept(com.nouprax.markdown.core/Visitor<#A1>): #A1 // com.nouprax.markdown.core/Table.accept|accept(com.nouprax.markdown.core.Visitor<0:0>){0§<kotlin.Any?>}[0]
+}
+
+final class com.nouprax.markdown.core/TableCaption : com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core/TableCaption|null[0]
+    final val anchor // com.nouprax.markdown.core/TableCaption.anchor|{}anchor[0]
+        final fun <get-anchor>(): kotlin/String? // com.nouprax.markdown.core/TableCaption.anchor.<get-anchor>|<get-anchor>(){}[0]
+    final val attributes // com.nouprax.markdown.core/TableCaption.attributes|{}attributes[0]
+        final fun <get-attributes>(): com.nouprax.markdown.core/Attributes // com.nouprax.markdown.core/TableCaption.attributes.<get-attributes>|<get-attributes>(){}[0]
+    final val content // com.nouprax.markdown.core/TableCaption.content|{}content[0]
+        final fun <get-content>(): kotlin.collections/List<com.nouprax.markdown.core/Markup> // com.nouprax.markdown.core/TableCaption.content.<get-content>|<get-content>(){}[0]
+    final val scope // com.nouprax.markdown.core/TableCaption.scope|{}scope[0]
+        final fun <get-scope>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/TableCaption.scope.<get-scope>|<get-scope>(){}[0]
+
+    final fun <#A1: kotlin/Any?> accept(com.nouprax.markdown.core/Visitor<#A1>): #A1 // com.nouprax.markdown.core/TableCaption.accept|accept(com.nouprax.markdown.core.Visitor<0:0>){0§<kotlin.Any?>}[0]
 }
 
 final class com.nouprax.markdown.core/TableCell : com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core/TableCell|null[0]

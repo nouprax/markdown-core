@@ -19,7 +19,9 @@ const policy = read("deltas");
 const entries = validatePolicy(policy, cases);
 const cli = path.join(root, "build/cmake/packages/markdown-core/core/markdown-core");
 withOracle((run) => {
-    assertCanaries(run);
+    assertCanaries(run, (input) =>
+        fromCanonical(parseCanonicalDump(execFileSync(cli, [], { input, encoding: "utf8" })))
+    );
     let differences = 0;
     const failures = [];
     for (const testCase of cases) {

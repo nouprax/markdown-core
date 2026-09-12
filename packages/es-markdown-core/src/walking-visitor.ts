@@ -32,7 +32,7 @@ import type { Superscript } from "./model/superscript.js";
 import type { DefinitionList, Definition } from "./model/definition-list.js";
 import type { Subscript } from "./model/subscript.js";
 import type { Strong } from "./model/strong.js";
-import type { Table, TableCell, TableRow } from "./model/table.js";
+import type { Table, TableCaption, TableCell, TableRow } from "./model/table.js";
 import type { Text } from "./model/text.js";
 import type { ThematicBreak } from "./model/thematic-break.js";
 import { visit, type Visitor } from "./visitor.js";
@@ -59,6 +59,7 @@ export interface WalkingVisitor {
     visitHTMLBlock(this: void, node: HTMLBlock, phase: WalkPhase): void;
     visitFormulaBlock(this: void, node: FormulaBlock, phase: WalkPhase): void;
     visitTable(this: void, node: Table, phase: WalkPhase): void;
+    visitTableCaption(this: void, node: TableCaption, phase: WalkPhase): void;
     visitTableRow(this: void, node: TableRow, phase: WalkPhase): void;
     visitTableCell(this: void, node: TableCell, phase: WalkPhase): void;
     visitDirectiveBlock(this: void, node: DirectiveBlock, phase: WalkPhase): void;
@@ -223,7 +224,13 @@ export function walk(root: Markup, walkingVisitor: WalkingVisitor): void {
                 schedule(node.foot);
                 schedule(node.content);
                 schedule(node.head);
+                if (node.caption) schedule([node.caption]);
             }
+        },
+        visitTableCaption: (node) => {
+            walkingVisitor.visitTableCaption(node, phase);
+            scheduleExit(node);
+            if (phase === "entering") schedule(node.content);
         },
         visitTableRow: (node) => {
             walkingVisitor.visitTableRow(node, phase);

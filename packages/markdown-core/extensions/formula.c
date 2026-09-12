@@ -206,6 +206,13 @@ static int scan_formula_block_close(const unsigned char *data, bufsize_t len, bu
     return 0;
 }
 
+static int probe_formula_block(markdown_core_parser *parser, markdown_core_chunk *input, int first, int indent,
+                               markdown_core_block_reader *reader) {
+    (void)parser;
+    (void)reader;
+    return indent < 4 && scan_formula_block_open(input->data, input->len, first) != FORMULA_BLOCK_DELIM_NONE;
+}
+
 static markdown_core_node *try_opening_formula_block(const markdown_core_extension *extension, int indented,
                                                      markdown_core_parser *parser, markdown_core_node *parent_container,
                                                      unsigned char *input, int len) {
@@ -792,6 +799,7 @@ const markdown_core_extension MARKDOWN_CORE_EXTENSION_FORMULA = {
     .match_inline = match,
     .last_block_matches = formula_block_matches,
     .try_opening_block = try_opening_formula_block,
+    .probe_block = probe_formula_block,
     .postprocess_func = postprocess,
     .get_type_string_func = get_type_string,
     .can_contain_func = can_contain,

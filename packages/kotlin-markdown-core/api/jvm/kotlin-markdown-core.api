@@ -665,6 +665,7 @@ public final class com/nouprax/markdown/core/Table : com/nouprax/markdown/core/M
 	public fun dump ()Ljava/lang/String;
 	public fun getAnchor ()Ljava/lang/String;
 	public fun getAttributes ()Lcom/nouprax/markdown/core/Attributes;
+	public final fun getCaption ()Lcom/nouprax/markdown/core/TableCaption;
 	public final fun getColumns ()Ljava/util/List;
 	public final fun getContent ()Ljava/util/List;
 	public final fun getFoot ()Ljava/util/List;
@@ -680,6 +681,15 @@ public final class com/nouprax/markdown/core/TableAlignment : java/lang/Enum {
 	public static fun getEntries ()Lkotlin/enums/EnumEntries;
 	public static fun valueOf (Ljava/lang/String;)Lcom/nouprax/markdown/core/TableAlignment;
 	public static fun values ()[Lcom/nouprax/markdown/core/TableAlignment;
+}
+
+public final class com/nouprax/markdown/core/TableCaption : com/nouprax/markdown/core/Markup {
+	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
+	public fun dump ()Ljava/lang/String;
+	public fun getAnchor ()Ljava/lang/String;
+	public fun getAttributes ()Lcom/nouprax/markdown/core/Attributes;
+	public final fun getContent ()Ljava/util/List;
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 }
 
 public final class com/nouprax/markdown/core/TableCell : com/nouprax/markdown/core/Markup {
@@ -764,6 +774,7 @@ public abstract interface class com/nouprax/markdown/core/Visitor {
 	public abstract fun visitSubscript (Lcom/nouprax/markdown/core/Subscript;)Ljava/lang/Object;
 	public abstract fun visitSuperscript (Lcom/nouprax/markdown/core/Superscript;)Ljava/lang/Object;
 	public abstract fun visitTable (Lcom/nouprax/markdown/core/Table;)Ljava/lang/Object;
+	public abstract fun visitTableCaption (Lcom/nouprax/markdown/core/TableCaption;)Ljava/lang/Object;
 	public abstract fun visitTableCell (Lcom/nouprax/markdown/core/TableCell;)Ljava/lang/Object;
 	public abstract fun visitTableRow (Lcom/nouprax/markdown/core/TableRow;)Ljava/lang/Object;
 	public abstract fun visitText (Lcom/nouprax/markdown/core/Text;)Ljava/lang/Object;
@@ -816,6 +827,7 @@ public abstract interface class com/nouprax/markdown/core/WalkingVisitor {
 	public abstract fun visitSubscript (Lcom/nouprax/markdown/core/Subscript;Lcom/nouprax/markdown/core/WalkPhase;)V
 	public abstract fun visitSuperscript (Lcom/nouprax/markdown/core/Superscript;Lcom/nouprax/markdown/core/WalkPhase;)V
 	public abstract fun visitTable (Lcom/nouprax/markdown/core/Table;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visitTableCaption (Lcom/nouprax/markdown/core/TableCaption;Lcom/nouprax/markdown/core/WalkPhase;)V
 	public abstract fun visitTableCell (Lcom/nouprax/markdown/core/TableCell;Lcom/nouprax/markdown/core/WalkPhase;)V
 	public abstract fun visitTableRow (Lcom/nouprax/markdown/core/TableRow;Lcom/nouprax/markdown/core/WalkPhase;)V
 	public abstract fun visitText (Lcom/nouprax/markdown/core/Text;Lcom/nouprax/markdown/core/WalkPhase;)V

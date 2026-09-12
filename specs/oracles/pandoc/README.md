@@ -43,22 +43,41 @@ host executable explicitly with `scripts/init-environment.sh --install oracle-pa
 runs CLI canaries, both parsers and the fail-closed digest registry. Normal
 builds and tests never install the executable or access the network.
 
-The active corpus has 86 cases: 51 agreements, 31 documented divergences
-and 4 missing-feature gaps assigned to later landing items. Every difference
+The active corpus has 113 cases: 80 agreements, 33 documented differences and no
+missing-feature gaps. Three width differences retain the normative interior
+ratios and the oracle's page-relative widths without hiding either value. Every difference
 pins input/reader, oracle projection and product projection SHA-256 digests.
-New, changed, stale, duplicate and unknown entries fail. P5's span and shared
+New, changed, stale, duplicate and unknown entries fail. Registration proves
+reproducibility, not product intent; the [O/I/P provenance audit](../../../docs/plans/2026-09-12-oip-oracle-drift-audit.md)
+identified the historical empty-script reversal and two citation choices.
+All three have now been corrected at the product's request. Fourteen new
+unwaived controls verify empty scripts, first-key tail ownership and ordinary
+fallback, and `p7-malformed-group` is now an agreement. The remaining compound
+entries describe only their residual tilde, adjacent-node or affix-trimming
+differences; they do not waive the repaired semantics. P5's span and shared
 attribute grammar cases now agree, including empty containers, nesting,
 shortcut precedence, complete link tails and malformed fallback. P6's ordinary
 superscript/subscript case agrees. Four isolated agreement cases separately pin
 `^a b^` and `~a b~` as text, `^ab^` as Superscript, and `^a&#32;b^`
 as Superscript containing a decoded space; no difference waiver applies to
-these assertions. Empty bodies, contextual escaped spaces,
+these assertions. Contextual escaped spaces,
 Unicode whitespace, decoded TAB preservation, maximal tilde runs and code-token
-opacity retain exact deliberate-difference witnesses. Inline-footnote composition
+opacity retain exact drift witnesses, subject to the provenance qualifications
+above. Inline-footnote composition
 is tested in the product fixtures, where the document-owned footnote model and
 source scopes are observable. P3/P4 compositions agree for heading text,
 script-bearing heading references and Span precedence over implicit shortcuts;
 the later Span ID reservation retains its exact global-reservation difference.
+
+Seven isolated audit controls verify implicit image references, authored versus
+plain heading labels, connector/combining-mark retention, and successful script
+space escaping. The last control enables `all_symbols_escapable` solely as the
+Pandoc reader prerequisite for the adopted script escape. It does not adopt that
+extension's unrelated grammar into the product. The older `p6-escaped-space`
+compound case retains a different reader and mixes this configuration effect
+with the product's intentional preservation of escapes outside committed
+scripts. It must not be cited as evidence that successful script escapes
+necessarily differ from Pandoc.
 
 `inline-code-attributes`, `header-attributes`, `fenced-code-attributes` and
 `link-and-image-attributes` agree; `pandoc-reference-attribute-merge` remains an
@@ -72,8 +91,9 @@ differences retain global explicit-anchor reservation (including inline code),
 Unicode simple lowercase, `White_Space`, permitted scalars without emoji aliases,
 and CommonMark reference adjacency. CLI canaries independently pin these Pandoc
 behaviors; the projections preserve both sides rather than erase differences.
-The `multiline-table` gap retains its missing recognition and now records the
-generated anchor on the product's existing heading fallback; `P11c` owns it.
+P11 implements captions, simple, multiline and grid tables on all surfaces.
+The three former multiline/grid gap entries now compare identical non-width
+content and retain their explicit width-semantic difference.
 
 Representation projections are shared by concept, not selected by case:
 `Plain` uses paragraph content, Pandoc spaces join adjacent Text values, empty
@@ -97,6 +117,15 @@ their order; the records sequence may not collapse into a unique-key map.
 Table comparison retains column alignment and width, row groups, cell spans and
 cell content. Pandoc-only cell alignment is outside the canonical intersection.
 Ordered-list variants and delimiters map to the canonical value spelling.
+Native-JSON canaries additionally pin caption ownership in 48 combinations of
+placement, table form and marker: a table claims a preceding caption, otherwise
+a following one; a following candidate stays available to the next table when
+the preceding table already has a caption. Eleven grid canaries preserve sparse
+cell ownership, source-defined fully covered rows, boundary-only rows, and
+authored empty cells. A native `Row` with `cells=[]` is retained; it is not
+expanded into placeholders. These assertions check both native oracle constructors and product ownership.
+The [delivery record](../../../docs/plans/2026-09-12-pandoc-tables-and-compositions.md)
+records the source geometry and parser/consumer boundary.
 
 P7/P9a/P9b retire the bibliography, fancy-list and example-list feature gaps.
 Cite comparison keeps every key, mode and ordered prefix/suffix tree. Pandoc's
@@ -119,3 +148,16 @@ shapes expose no flag, so Pandoc projects null and the product boolean remains
 compared. Exact differences cover those unobservable flags, the dialect's
 minimum closer width, and global explicit-ID reservation. Unit tests detect
 changed names, compact flags, terms and body grouping independently.
+
+The composition runner now exercises 488 inputs: 306 ordered pairs, 54 nested or
+opaque wrappers, and 128 fixed-seed mutations with all selected extensions. The
+current report has 233 exact agreements and 255 visible differences. It is a
+diagnostic; `--require-agreement` fails on any difference and no corpus waiver
+is inherited. See the [P11/P12 delivery record](../../../docs/plans/2026-09-12-pandoc-tables-and-compositions.md)
+for validation and the selected-feature acceptance scope. Historical `projection`
+entries include normative recognition differences. P12 requires implementation
+and regression evidence for the selected modules, with zero missing-feature
+gaps; it does not require full Pandoc compatibility. The exact registry alone
+does not establish implementation completeness. The
+[original 34-case review list](differences.md)
+explains each retained difference without treating it as a missing feature.

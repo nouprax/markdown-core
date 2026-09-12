@@ -48,6 +48,7 @@ const visitor: Visitor<string> = {
     visitHTMLBlock: (node) => node.kind,
     visitFormulaBlock: (node) => node.kind,
     visitTable: (node) => node.kind,
+    visitTableCaption: (node) => node.kind,
     visitTableRow: () => "row",
     visitTableCell: (node) => node.kind,
     visitDirectiveBlock: (node) => node.kind,

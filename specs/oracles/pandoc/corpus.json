@@ -431,6 +431,226 @@
             "id": "p10-code-and-list-boundaries",
             "from": "markdown_strict+definition_lists+backtick_code_blocks+raw_html",
             "input": "Term\n: body\n- list\n\nT\n: d\n```\nx\n```\n"
+        },
+        {
+            "id": "simple-table-heading-in-body",
+            "from": "markdown_strict+simple_tables+backtick_code_blocks+auto_identifiers+gfm_auto_identifiers",
+            "input": "h    i\n---- ----\na    b\n# heading\nbody\n"
+        },
+        {
+            "id": "simple-table-heading-after-blank",
+            "from": "markdown_strict+simple_tables+backtick_code_blocks+auto_identifiers+gfm_auto_identifiers",
+            "input": "h    i\n---- ----\na    b\n\n# heading\nbody\n"
+        },
+        {
+            "id": "simple-table-quote-in-body",
+            "from": "markdown_strict+simple_tables+backtick_code_blocks+auto_identifiers+gfm_auto_identifiers",
+            "input": "h    i\n---- ----\na    b\n> quote\n> next\n"
+        },
+        {
+            "id": "simple-table-quote-after-blank",
+            "from": "markdown_strict+simple_tables+backtick_code_blocks+auto_identifiers+gfm_auto_identifiers",
+            "input": "h    i\n---- ----\na    b\n\n> quote\n> next\n"
+        },
+        {
+            "id": "simple-table-fence-in-body",
+            "from": "markdown_strict+simple_tables+backtick_code_blocks+auto_identifiers+gfm_auto_identifiers",
+            "input": "h    i\n---- ----\na    b\n```\ncode\n```\n"
+        },
+        {
+            "id": "simple-table-fence-after-blank",
+            "from": "markdown_strict+simple_tables+backtick_code_blocks+auto_identifiers+gfm_auto_identifiers",
+            "input": "h    i\n---- ----\na    b\n\n```\ncode\n```\n"
+        },
+        {
+            "id": "p4-image-shortcut-heading-reference",
+            "from": "markdown_strict+implicit_header_references+auto_identifiers+gfm_auto_identifiers",
+            "input": "# H\n\n![H]\n"
+        },
+        {
+            "id": "p4-image-collapsed-heading-reference",
+            "from": "markdown_strict+implicit_header_references+auto_identifiers+gfm_auto_identifiers",
+            "input": "# H\n\n![H][]\n"
+        },
+        {
+            "id": "p4-image-full-heading-reference",
+            "from": "markdown_strict+implicit_header_references+auto_identifiers+gfm_auto_identifiers",
+            "input": "# H\n\n![alt][H]\n"
+        },
+        {
+            "id": "p4-isolated-plain-heading-label",
+            "from": "markdown_strict+implicit_header_references+auto_identifiers+gfm_auto_identifiers",
+            "input": "# *Foo*\n\n[Foo]\n"
+        },
+        {
+            "id": "p4-isolated-authored-heading-label",
+            "from": "markdown_strict+implicit_header_references+auto_identifiers+gfm_auto_identifiers",
+            "input": "# *Foo*\n\n[*Foo*]\n"
+        },
+        {
+            "id": "p3-connector-and-combining-mark",
+            "from": "markdown_strict+auto_identifiers+gfm_auto_identifiers",
+            "input": "# A‿B é\n"
+        },
+        {
+            "id": "p6-escaped-space-with-reader-dependency",
+            "from": "markdown_strict+superscript+subscript+all_symbols_escapable",
+            "input": "^a\\ b^\n"
+        },
+        {
+            "id": "p6-empty-caret",
+            "from": "markdown_strict+superscript",
+            "input": "^^\n"
+        },
+        {
+            "id": "p6-empty-caret-in-text",
+            "from": "markdown_strict+superscript",
+            "input": "before ^^ after\n"
+        },
+        {
+            "id": "p6-empty-caret-emphasis",
+            "from": "markdown_strict+superscript",
+            "input": "*^^*\n"
+        },
+        {
+            "id": "p6-empty-caret-link",
+            "from": "markdown_strict+superscript",
+            "input": "[^^](u)\n"
+        },
+        {
+            "id": "p6-empty-caret-pairing",
+            "from": "markdown_strict+superscript",
+            "input": "^^x^y^\n"
+        },
+        {
+            "id": "p7-tail-first-key",
+            "from": "markdown_strict+citations",
+            "input": "@a [@b]\n"
+        },
+        {
+            "id": "p7-tail-first-key-prefix",
+            "from": "markdown_strict+citations",
+            "input": "@a [p. @b]\n"
+        },
+        {
+            "id": "p7-tail-first-key-mode",
+            "from": "markdown_strict+citations",
+            "input": "@a [p. -@b, s; @c]\n"
+        },
+        {
+            "id": "p7-tail-first-key-markup",
+            "from": "markdown_strict+citations",
+            "input": "@a [*pre* @b, *suf*; @c]\n"
+        },
+        {
+            "id": "p7-tail-key-free-first-section",
+            "from": "markdown_strict+citations",
+            "input": "@a [s1; p. @b]\n"
+        },
+        {
+            "id": "p7-failed-group-inner-key",
+            "from": "markdown_strict+citations",
+            "input": "[@a;]\n"
+        },
+        {
+            "id": "p7-failed-group-inner-tail",
+            "from": "markdown_strict+citations",
+            "input": "[@a [p. @b];]\n"
+        },
+        {
+            "id": "p7-failed-group-separators",
+            "from": "markdown_strict+citations",
+            "input": "[@a;; @b] [; @a] [@a; no key]\n"
+        },
+        {
+            "id": "p7-failed-tail-literal",
+            "from": "markdown_strict+citations",
+            "input": "@a [s1;]\n"
+        },
+        {
+            "id": "simple-table-colon-caption-body",
+            "from": "markdown_strict+simple_tables+table_captions",
+            "input": "h   j\n--- ---\nv   w\n: cap\n"
+        },
+        {
+            "id": "simple-table-colon-caption-blank",
+            "from": "markdown_strict+simple_tables+table_captions",
+            "input": "h   j\n--- ---\nv   w\n\n: cap\n"
+        },
+        {
+            "id": "simple-table-colon-caption-footer",
+            "from": "markdown_strict+simple_tables+table_captions",
+            "input": "h   j\n--- ---\nv   w\n--- ---\n: cap\n"
+        },
+        {
+            "id": "simple-table-colon-caption-footer-blank",
+            "from": "markdown_strict+simple_tables+table_captions",
+            "input": "h   j\n--- ---\nv   w\n--- ---\n\n: cap\n"
+        },
+        {
+            "id": "simple-table-headerless-colon-caption-footer",
+            "from": "markdown_strict+simple_tables+table_captions",
+            "input": "--- ---\nv   w\n--- ---\n: cap\n"
+        },
+        {
+            "id": "simple-table-upper-caption-body",
+            "from": "markdown_strict+simple_tables+table_captions",
+            "input": "h   j\n--- ---\nv   w\nTable: cap\n"
+        },
+        {
+            "id": "simple-table-upper-caption-blank",
+            "from": "markdown_strict+simple_tables+table_captions",
+            "input": "h   j\n--- ---\nv   w\n\nTable: cap\n"
+        },
+        {
+            "id": "simple-table-upper-caption-footer",
+            "from": "markdown_strict+simple_tables+table_captions",
+            "input": "h   j\n--- ---\nv   w\n--- ---\nTable: cap\n"
+        },
+        {
+            "id": "simple-table-upper-caption-footer-blank",
+            "from": "markdown_strict+simple_tables+table_captions",
+            "input": "h   j\n--- ---\nv   w\n--- ---\n\nTable: cap\n"
+        },
+        {
+            "id": "simple-table-headerless-upper-caption-footer",
+            "from": "markdown_strict+simple_tables+table_captions",
+            "input": "--- ---\nv   w\n--- ---\nTable: cap\n"
+        },
+        {
+            "id": "simple-table-lower-caption-body",
+            "from": "markdown_strict+simple_tables+table_captions",
+            "input": "h   j\n--- ---\nv   w\ntable: cap\n"
+        },
+        {
+            "id": "simple-table-lower-caption-blank",
+            "from": "markdown_strict+simple_tables+table_captions",
+            "input": "h   j\n--- ---\nv   w\n\ntable: cap\n"
+        },
+        {
+            "id": "simple-table-lower-caption-footer",
+            "from": "markdown_strict+simple_tables+table_captions",
+            "input": "h   j\n--- ---\nv   w\n--- ---\ntable: cap\n"
+        },
+        {
+            "id": "simple-table-lower-caption-footer-blank",
+            "from": "markdown_strict+simple_tables+table_captions",
+            "input": "h   j\n--- ---\nv   w\n--- ---\n\ntable: cap\n"
+        },
+        {
+            "id": "simple-table-headerless-lower-caption-footer",
+            "from": "markdown_strict+simple_tables+table_captions",
+            "input": "--- ---\nv   w\n--- ---\ntable: cap\n"
+        },
+        {
+            "id": "simple-table-headed-footer-before-prose",
+            "from": "markdown_strict+simple_tables+table_captions",
+            "input": "h   j\n--- ---\nv   w\n--- ---\nprose\n"
+        },
+        {
+            "id": "simple-table-headerless-footer-before-prose",
+            "from": "markdown_strict+simple_tables+table_captions",
+            "input": "--- ---\nv   w\n--- ---\nprose\n"
         }
     ]
 }

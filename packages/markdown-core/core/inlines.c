@@ -76,7 +76,6 @@ typedef struct bracket {
     delimiter *delim_end;
     bufsize_t close_position;
     bool pending_no_link_openers;
-    markdown_core_map_record *pending_reference;
     struct bracket *pending_previous, *pending_next;
 } bracket;
 
@@ -1309,16 +1308,6 @@ static void process_delimiters(markdown_core_parser *parser, subject *subj, bufs
             }
             old_closer = closer;
 
-            /* Empty script pairs consume both units as text. Neither unit is
-             * available to turn a later byte into a different pairing. */
-            if (opener_found && DELIMITER_RULES[closer->rule].body == DELIMITER_WORD_BODY &&
-                opener->position == closer->position - closer->length) {
-                closer = closer->next;
-                remove_delimiter(subj, opener);
-                remove_delimiter(subj, old_closer);
-                continue;
-            }
-
             if (opener_found) {
                 reduce_delimiter_range(subj, opener, closer);
                 const delimiter_rule_spec *spec = &DELIMITER_RULES[closer->rule];
@@ -2105,15 +2094,13 @@ static void materialize_citation_key(subject *subj, citation_token *token) {
     token->node = cite;
 }
 
-/* Complete bare keys when another bracket owner wins. Failed groups preserve
- * their unclaimed source tokens; nested committed constructs keep their tree. */
-static void finish_citation_tokens(subject *subj, citation_tokens *tokens, bool ordinary) {
+/* Unclaimed keys resume ordinary inline recognition, whether a competing
+ * owner wins or the bracket fails. Committed nested constructs keep their tree. */
+static void finish_citation_tokens(subject *subj, citation_tokens *tokens) {
     for (citation_token *token = tokens->first; token && !subj->oom; token = token->next) {
-        resolve_citation_tail(subj, token, ordinary);
+        resolve_citation_tail(subj, token, true);
         citation_boundary(subj, token, false);
-        if (ordinary) {
-            materialize_citation_key(subj, token);
-        }
+        materialize_citation_key(subj, token);
     }
 }
 
@@ -2197,7 +2184,7 @@ static markdown_core_node *close_inline_footnote(markdown_core_parser *parser, s
         return NULL;
     }
     S_place_inline(subj, footnote, opener->position - 2, subj->pos - 1);
-    finish_citation_tokens(subj, &opener->citations, true);
+    finish_citation_tokens(subj, &opener->citations);
     process_delimiters(parser, subj, opener->position, opener->delim_end);
     take_bracket_content(parser, opener, footnote);
     markdown_core_node_insert_before(opener->inl_text, cite);
@@ -2290,7 +2277,7 @@ static bool close_bibliography(markdown_core_parser *parser, subject *subj, brac
         !markdown_core_node_can_contain_type(opener->inl_text->parent, MARKDOWN_CORE_NODE_CITE)) {
         return false;
     }
-    bool first = !tail;
+    bool first = true;
     for (citation_token *token = opener->citations.first; token && !subj->oom; token = token->next) {
         if (!token->key) {
             citation_boundary(subj, token, true);
@@ -2333,6 +2320,9 @@ static bool close_bibliography(markdown_core_parser *parser, subject *subj, brac
     citation_token *token = opener->citations.first;
     markdown_core_node *last = NULL;
     bool author_item = tail;
+    /* A key in the first tail section gives that section to a normal item.
+     * Only a key-free section contributes a suffix to the external author. */
+    bool tail_starts_item = tail && token && token->key;
     while ((author_item || token) && !subj->oom) {
         citation_token *key = author_item ? opener->author : token;
         assert(key->key);
@@ -2341,7 +2331,8 @@ static bool close_bibliography(markdown_core_parser *parser, subject *subj, brac
             separator = separator->next;
         }
         bufsize_t item_end = separator ? separator->start : subj->pos - 1;
-        bufsize_t scope_start = author_item ? key->start : item_start, scope_end = item_end;
+        bufsize_t scope_start = author_item ? key->start : item_start;
+        bufsize_t scope_end = author_item && tail_starts_item ? key->end : item_end;
         trim_citation_source(subj, &scope_start, &scope_end);
         markdown_core_node *item = new_bib_item(subj, cite, last, key, !author_item);
         if (!item) {
@@ -2353,6 +2344,10 @@ static bool close_bibliography(markdown_core_parser *parser, subject *subj, brac
             take_citation_affix(subj, &item->as.citation->prefix, content, key->node, item_start, key->start);
             content = key->node->next;
             markdown_core_node_free(key->node);
+        }
+        if (author_item && tail_starts_item) {
+            author_item = false;
+            continue;
         }
         take_citation_affix(subj, &item->as.citation->suffix, content, separator ? separator->node : opener->close_text,
                             author_item ? item_start : key->end, item_end);
@@ -2505,7 +2500,7 @@ static markdown_core_node *handle_close_bracket(markdown_core_parser *parser, su
             inl->attributes = attributes;
             subj->pos = end;
             S_place_inline(subj, inl, opener->position - 1, end - 1);
-            finish_citation_tokens(subj, &opener->citations, true);
+            finish_citation_tokens(subj, &opener->citations);
             process_delimiters(parser, subj, opener->position, opener->delim_end);
             take_bracket_content(parser, opener, inl);
             replace_bracket_opener(subj, opener, inl);
@@ -2528,7 +2523,6 @@ static markdown_core_node *handle_close_bracket(markdown_core_parser *parser, su
         opener->close_position = initial_pos - 1;
         opener->delim_end = end;
         opener->pending_no_link_openers = subj->no_link_openers;
-        opener->pending_reference = record;
         opener->author->tail = opener;
         opener->pending_next = subj->pending_brackets;
         if (subj->pending_brackets) {
@@ -2655,13 +2649,13 @@ static markdown_core_node *handle_close_bracket(markdown_core_parser *parser, su
     }
 
 no_match:
-    finish_citation_tokens(subj, &opener->citations, false);
+    finish_citation_tokens(subj, &opener->citations);
     pop_bracket(subj); // remove this opener from delimiter list
     subj->pos = initial_pos;
     return make_str(subj, subj->pos - 1, subj->pos - 1, markdown_core_chunk_literal("]"));
 
 match:
-    finish_citation_tokens(subj, &opener->citations, true);
+    finish_citation_tokens(subj, &opener->citations);
     if (!markdown_core_node_can_contain_type(opener->inl_text->parent,
                                              is_image ? MARKDOWN_CORE_NODE_MEDIA : MARKDOWN_CORE_NODE_LINK)) {
         markdown_core_chunk_free(subj->mem, &url);
@@ -2782,7 +2776,7 @@ typedef struct {
 static citation_resolution citation_resolution_for(citation_token *key, bool ordinary) {
     bracket *pending = key->tail;
     bool group = !ordinary && citation_group_valid(&pending->citations, false);
-    return (citation_resolution){key, pending->citations.first, ordinary, ordinary || group, !ordinary};
+    return (citation_resolution){key, pending->citations.first, ordinary, ordinary || group, true};
 }
 
 /* Resolve bracket dependencies in postorder without using the C call stack.
@@ -2827,7 +2821,7 @@ static void resolve_citation_tail(subject *subj, citation_token *token, bool ord
                 child_ordinary = !frame->first;
                 frame->first = !child->key;
             } else {
-                child_ordinary = frame->key->tail->pending_reference != NULL;
+                child_ordinary = true;
             }
             if (child->tail) {
                 next = citation_resolution_for(child, child_ordinary);
@@ -3323,9 +3317,9 @@ static bool finish_inlines(markdown_core_parser *parser, subject *subj) {
     }
     if (!parser->oom && !subj->oom) {
         for (bracket *open = subj->last_bracket; open; open = open->previous) {
-            finish_citation_tokens(subj, &open->citations, true);
+            finish_citation_tokens(subj, &open->citations);
         }
-        finish_citation_tokens(subj, &subj->citations, true);
+        finish_citation_tokens(subj, &subj->citations);
         process_delimiters(parser, subj, 0, NULL);
     }
     bool whitespace = subj->last_delim && subj->last_delim->kind == DELIMITER_BOUNDARY;
@@ -3364,7 +3358,7 @@ void markdown_core_prepare_heading(markdown_core_parser *parser, markdown_core_h
         }
     }
     if (!parser->oom && !subj.oom) {
-        finish_citation_tokens(&subj, &subj.citations, true);
+        finish_citation_tokens(&subj, &subj.citations);
         process_delimiters(parser, &subj, 0, NULL);
         markdown_core_chunk label = {subj.input.data, subj.heading_label_end, 0};
         if (label.len > 0 && label.len <= MAX_LINK_LABEL_LENGTH &&
@@ -3376,6 +3370,11 @@ void markdown_core_prepare_heading(markdown_core_parser *parser, markdown_core_h
             } else {
                 markdown_core_map_record *record =
                     markdown_core_reference_create(parser->mem, parser->refmap, &label, resource);
+                if (record) {
+                    record->implicit = true;
+                    record->source_key =
+                        ((uint64_t)(uint32_t)heading->node->start_line << 32) | (uint32_t)heading->node->start_column;
+                }
                 heading->resource = record ? record->resource : NULL;
             }
         }
@@ -3431,7 +3430,8 @@ static bool reference_tail(subject *subj, markdown_core_attribute_parser *attrib
 }
 
 bufsize_t markdown_core_parse_reference_inline(markdown_core_mem *mem, markdown_core_chunk *input,
-                                               markdown_core_map *refmap, markdown_core_attribute_parser *attributes) {
+                                               markdown_core_map *refmap, markdown_core_attribute_parser *attributes,
+                                               uint64_t source_key) {
     subject subj;
     markdown_core_resource *resource;
     int lost = 0;
@@ -3517,7 +3517,10 @@ bufsize_t markdown_core_parse_reference_inline(markdown_core_mem *mem, markdown_
     }
     if (resource) {
         resource->attributes = value;
-        markdown_core_reference_create(mem, refmap, &lab, resource);
+        markdown_core_map_record *record = markdown_core_reference_create(mem, refmap, &lab, resource);
+        if (record) {
+            record->source_key = source_key;
+        }
     } else {
         markdown_core_attributes_free(mem, &value);
     }

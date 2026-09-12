@@ -211,6 +211,24 @@ test("api: the dialect has no switches, so a plain parse recognizes every featur
     }
 });
 
+test("ast: captions and sparse rows survive native release and walk in ownership order", () => {
+    const table = Document.parse(": Caption\n\n+---+---+\n| a | b |\n+   +   +\n| c | d |\n+---+---+\n").content[0];
+    assert.equal(table.caption.kind, "tableCaption");
+    assert.equal(table.caption.content[0].literal, "Caption");
+    assert.deepEqual(table.content[1].cells, []);
+    assert.equal(table.content[0].cells[0].rowspan, 2);
+    assert.equal(table.content[0].cells[0].content[1].content[0].literal, "c");
+    const events = [];
+    walk(
+        table,
+        walkingVisitor((node, phase) => {
+            if (phase === "entering") events.push(node.kind);
+        })
+    );
+    assert.deepEqual(events.slice(0, 4), ["table", "tableCaption", "text", "tableRow"]);
+    assert.deepEqual(table.caption.scope, { start: { line: 1, column: 1 }, end: { line: 1, column: 9 } });
+});
+
 test("ast: typed fields are copied from the native result", () => {
     const document = Document.parse("3. item\n\n| a |\n| :-: |\n| b |\n");
     assert.equal(document.content[0].flavor, "ordered");
@@ -768,9 +786,9 @@ test("errors: malformed native values are rejected before they enter the AST", (
     // contract exists to preserve.
     const malformedDirective = nativeResult(":note[label]\n");
     const directiveOffset = findNode(malformedDirective, kinds.indexOf("directive"));
-    const labelIndex = new DataView(malformedDirective.buffer).getUint32(directiveOffset + 32, true);
+    const fieldIndex = new DataView(malformedDirective.buffer).getUint32(directiveOffset + 32, true);
     const nodesOffset = new DataView(malformedDirective.buffer).getUint32(40, true);
-    new DataView(malformedDirective.buffer).setUint32(nodesOffset + labelIndex * 160, 3, true);
+    new DataView(malformedDirective.buffer).setUint32(nodesOffset + fieldIndex * 160, 3, true);
     assert.throws(
         () => new NodeDecoder(malformedDirective).decodeDocument(),
         /directive label field contains a non-label node/u

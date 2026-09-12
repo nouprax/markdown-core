@@ -183,7 +183,8 @@ private struct DumpVisitor: MarkupVisitor {
         )
         let count = node.head.count + node.content.count + node.foot.count
         state.line("Table", node, fields: ["columns=[\(columns)]"], children: count)
-        state.nested(3) {
+        state.nested(3 + (node.caption == nil ? 0 : 1)) {
+            if let caption = node.caption { state.dump(caption) }
             for (name, rows) in [("TableHead", node.head), ("TableBody", node.content), ("TableFoot", node.foot)] {
                 state.group(name, children: rows.count)
                 state.nested(rows.count) { rows.forEach(state.dump) }
@@ -345,6 +346,11 @@ private struct DumpVisitor: MarkupVisitor {
         state.nested(node.citations.count) {
             for citation in node.citations { dumpCitation(citation) }
         }
+    }
+
+    mutating func visit(_ node: TableCaption) {
+        state.line("TableCaption", node, children: node.content.count)
+        state.nested(node.content.count) { node.content.forEach(state.dump) }
     }
 
     mutating func visit(_ node: TableRow) {

@@ -52,6 +52,7 @@ import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_STRONG
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_SUBSCRIPT
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_SUPERSCRIPT
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_TABLE
+import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_TABLE_CAPTION
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_TABLE_CELL
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_TABLE_ROW
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_TEXT
@@ -151,6 +152,7 @@ import com.nouprax.markdown.core.internal.capi.markdown_core_node_literal
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_primary_attributes
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_resource
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_scope
+import com.nouprax.markdown.core.internal.capi.markdown_core_node_table_caption
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_table_cell_spans
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_table_column_at
 import com.nouprax.markdown.core.internal.capi.markdown_core_node_table_properties
@@ -234,6 +236,7 @@ private data class NativeNodeRecord(
     val pointer: CPointer<markdown_core_node>,
     var childStart: Int = 0,
     var childCount: Int = 0,
+    var captionIndex: Int = -1,
     var labelIndex: Int = -1,
     var titleStart: Int = 0,
     var titleCount: Int = 0,
@@ -317,6 +320,13 @@ private class NativeTreeBuilder(
         while (index < records.size) {
             val record = records[index]
             when (markdown_core_node_get_kind(record.pointer)) {
+                MARKDOWN_CORE_KIND_TABLE -> {
+                    markdown_core_node_table_caption(record.pointer)?.let { caption ->
+                        record.captionIndex = records.size
+                        records += NativeNodeRecord(caption)
+                    }
+                }
+
                 MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK,
                 MARKDOWN_CORE_KIND_DIRECTIVE,
                 -> {
@@ -516,7 +526,7 @@ private class NativeTreeBuilder(
             }
 
             MARKDOWN_CORE_KIND_TABLE -> {
-                scratch.table(node, children, scope, anchor, attributes)
+                scratch.table(node, caption(record), children, scope, anchor, attributes)
             }
 
             MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK -> {
@@ -619,6 +629,10 @@ private class NativeTreeBuilder(
                 Cite(citations(record), scope, anchor, attributes)
             }
 
+            MARKDOWN_CORE_KIND_TABLE_CAPTION -> {
+                TableCaption(children, scope, anchor, attributes)
+            }
+
             MARKDOWN_CORE_KIND_TABLE_ROW -> {
                 scratch.tableRow(children, scope, anchor, attributes)
             }
@@ -684,6 +698,11 @@ private class NativeTreeBuilder(
         immutableList(count) { offset ->
             requireNotNull(built[start + offset]) { "native $what was not materialized" }
         }
+
+    private fun caption(record: NativeNodeRecord): TableCaption? {
+        if (record.captionIndex < 0) return null
+        return requireNotNull(built[record.captionIndex] as? TableCaption) { "invalid native table caption kind" }
+    }
 
     private fun label(record: NativeNodeRecord): DirectiveLabel? {
         if (record.labelIndex < 0) return null
@@ -863,6 +882,7 @@ private class NativeScratch(
 
     fun table(
         node: CPointer<markdown_core_node>,
+        caption: TableCaption?,
         children: kotlin.collections.List<Markup>,
         scope: Scope,
         anchor: String?,
@@ -892,6 +912,7 @@ private class NativeScratch(
         require(head.toLong() + content + foot == children.size.toLong()) { "invalid table row groups" }
         val rows = children.immutableMap { requireNotNull(it as? TableRow) { "table contains a non-row node" } }
         return Table(
+            caption,
             columns,
             immutableList(head) { rows[it] },
             immutableList(content) { rows[head + it] },

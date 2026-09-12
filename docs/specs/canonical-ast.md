@@ -280,7 +280,8 @@ and returns no document.
 | `CodeBlock` | `info: String?`, `language: String?`, `literal: String`, `fenced: Bool`, `closed: Bool` | mode is `standalone`; `info` is the complete raw info string; `language` is its first non-whitespace token; indented blocks have `fenced=false, closed=true` |
 | `HTMLBlock` | `literal: String` | raw HTML is preserved; a block that opens with `<!--` and whose end line holds only whitespace after the first `-->` is a `Comment` |
 | `FormulaBlock` | `literal: String` | mode is `standalone` |
-| `Table` | `columns: [TableColumn]`, `head: [TableRow]`, `content: [TableRow]`, `foot: [TableRow]` | non-empty columns define the logical grid; rows are owned exactly once in head/content/foot order; pipe tables have one head row, no foot rows, null relative widths, and unit spans; no span crosses a group boundary |
+| `Table` | `caption: TableCaption?`, `columns: [TableColumn]`, `head: [TableRow]`, `content: [TableRow]`, `foot: [TableRow]` | non-empty columns define the logical grid; rows are owned exactly once in head/content/foot order; pipe tables have one head row, no foot rows, null relative widths, and unit spans; no span crosses a group boundary |
+| `TableCaption` | `content: [Markup]` | independently owned inline caption, visited before the table row groups |
 | `TableRow` | `cells: [TableCell]` | cells whose upper-left coordinate starts in this row, in logical order; no row-local header state |
 | `TableCell` | `rowspan: Int`, `colspan: Int`, `content: [Markup]` | positive spans; inline or block content is stored as parsed without paragraph normalization |
 | `DirectiveBlock` | `name: String`, `label: DirectiveLabel?`, `content: [Markup]` | letter-first name; attributes use the inherited fields; label is a typed Markup field spanning its brackets, never content; absent and empty labels remain distinct; block content |
@@ -300,7 +301,7 @@ and returns no document.
 | `Mark` | `content: [Markup]` | inline content |
 | `Insertion` | `content: [Markup]` | inline content |
 | `Span` | `content: [Markup]` | inline content; may be empty |
-| `Superscript` | `content: [Markup]` | inline content; non-empty body |
+| `Superscript` | `content: [Markup]` | inline content; empty bodies are retained |
 | `Subscript` | `content: [Markup]` | inline content; non-empty body |
 | `Link` | `dest: Destination`, `title: String?`, `content: [Markup]` | `dest` is the tagged `Destination` value and is never absent: `[a]()` and `[a](<>)` wrote one and wrote nothing in it, so it is `url("")`; a reference occurrence answers the destination its definition stated, and an unresolved reference is the inherited literal text; every `Link` owns the `url` branch; absent and empty title remain distinct; inline content |
 | `Media` | `dest: Destination`, `title: String?`, `dimensions: Dimensions?`, `content: [Markup]` | `dest` is the tagged `Destination` value and is never absent, for the reason `Link.dest` is not; every `Media` owns the `url` branch; absent and empty title remain distinct; content is parsed alt-text inline content |
@@ -321,7 +322,8 @@ unresolved reference is the inherited literal text with its brackets.
 ### Typed table ownership
 
 ```text
-Table(columns: [TableColumn], head: [TableRow], content: [TableRow], foot: [TableRow], scope)
+Table(caption: TableCaption?, columns: [TableColumn], head: [TableRow], content: [TableRow], foot: [TableRow], scope)
+TableCaption(content: [Markup], scope)
 TableColumn(alignment: TableAlignment, relative: Double?)
 TableRow(cells: [TableCell], scope)
 TableCell(rowspan: Int, colspan: Int, content: [Markup], scope)
@@ -330,16 +332,27 @@ TableCell(rowspan: Int, colspan: Int, content: [Markup], scope)
 Tables, rows, and cells are immutable `Markup`; a column is an unscoped value.
 The C child chain contains the rows in head/content/foot order, partitioned by
 counts stored on the table. No row duplicates its owning group's identity.
-Bindings expose the three named arrays directly, and walkers traverse them in
-that order. Pipe tables produce one head row, body rows in `content`, empty
+Bindings expose the three named arrays directly. Walkers visit the independently
+owned caption first, then the three row groups in that order. Pipe tables produce one head row, body rows in `content`, empty
 `foot`, `relative=null`, and unit spans. Missing cells keep their scope at the
-row's end. Inherited cells keep their inline nodes directly; later block-cell
-syntax stores the parsed block sequence in the same `content` field.
+row's end. Pipe and simple cells keep their inline nodes directly; multiline and grid
+cells store the ordinary parsed block sequence in the same `content` field.
 
 The [tables module](dialect/tables.md#logical-grid) defines placement, span
 occupancy, and group boundaries. `columns` is non-empty; a present `relative`
-is a positive finite authored width share. The caption field arrives with its
-kind and syntax in P11a.
+is a positive finite authored width share. `TableCaption.content` contains
+inlines, and its scope includes its authored marker. Table scope includes the
+caption, whether it precedes or follows the grid. The colon marker accepts a
+following non-punctuation scalar: `:badge[short]` after an uncaptained table
+begins a caption, whose continuation remains caption content. Remark/GFM
+instead retains such lines as body cells; the oracle records this syntax
+difference without discarding either tree.
+Rows retain source-defined boundaries, including a row with `cells=[]` when
+all its coordinates are covered by earlier spans. An authored empty cell is
+instead a `TableCell` with empty `content`. A spanning cell is stored once in
+its starting row; the parser does not emit covered-coordinate placeholders or
+layout-derived rows. Consumers recover coordinate occupancy and layout from
+the ordered rows and spans.
 
 The dialect recognizes complete double-bracket cross links before inherited link
 and image bracket handling, including the inner reference of triple brackets.

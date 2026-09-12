@@ -80,6 +80,7 @@ public struct Document: Markup {
 private struct NativeNodeRecord {
     let node: OpaquePointer
     var children: [Int] = []
+    var caption: Int?
     var label: Int?
     var title: [Int]?
     var term: [Int] = []
@@ -111,6 +112,7 @@ private struct NativeCitationRecord {
 /// children, its node-valued fields, and the scoped values it owns.
 struct NativeRelations {
     let children: [any Markup]
+    let caption: TableCaption?
     let label: DirectiveLabel?
     let title: [any Markup]?
     let term: [any Markup]
@@ -163,15 +165,23 @@ private struct NativeTreeBuilder {
         return indices
     }
 
+    private mutating func recordNode(_ node: OpaquePointer?) -> Int? {
+        guard let node else { return nil }
+        let index = records.count
+        records.append(NativeNodeRecord(node: node))
+        return index
+    }
+
     /// The relations a kind owns beside its children: a directive's label, a
     /// callout's title, the document's footnotes, and a cite's items.
     private mutating func recordOwnedRelations(of node: OpaquePointer, at recordIndex: Int) {
         switch markdown_core_node_get_kind(node) {
+        case MARKDOWN_CORE_KIND_TABLE:
+            let caption = recordNode(markdown_core_node_table_caption(node))
+            records[recordIndex].caption = caption
         case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK, MARKDOWN_CORE_KIND_DIRECTIVE:
-            if let label = markdown_core_node_directive_label(node) {
-                records[recordIndex].label = records.count
-                records.append(NativeNodeRecord(node: label))
-            }
+            let label = recordNode(markdown_core_node_directive_label(node))
+            records[recordIndex].label = label
         case MARKDOWN_CORE_KIND_CALLOUT:
             // The title is a sibling chain the callout owns beside its
             // content; its nodes are recorded like children, and the
@@ -233,6 +243,15 @@ private struct NativeTreeBuilder {
         precondition(!records[recordIndex].citations.isEmpty, "native cite holds no citation")
     }
 
+    private func field<Value: Markup>(_ index: Int?, in values: [(any Markup)?], as type: Value.Type) -> Value? {
+        index.map {
+            guard let value = values[$0] as? Value else {
+                preconditionFailure("native owned field has the wrong kind")
+            }
+            return value
+        }
+    }
+
     func document() -> Document {
         var values: [(any Markup)?] = Array(repeating: nil, count: records.count)
         // Every occurrence of one reference definition shares one resource in
@@ -248,18 +267,10 @@ private struct NativeTreeBuilder {
         }
         for index in records.indices.reversed() {
             let record = records[index]
-            let label: DirectiveLabel?
-            if let labelIndex = record.label {
-                guard let builtLabel = values[labelIndex] as? DirectiveLabel else {
-                    preconditionFailure("native directive label has the wrong kind")
-                }
-                label = builtLabel
-            } else {
-                label = nil
-            }
             let relations = NativeRelations(
                 children: nodes(record.children, "child"),
-                label: label,
+                caption: field(record.caption, in: values, as: TableCaption.self),
+                label: field(record.label, in: values, as: DirectiveLabel.self),
                 title: record.title.map { nodes($0, "callout title") },
                 term: nodes(record.term, "definition term"),
                 bodies: record.bodies.map { nodes($0, "definition body") },
@@ -313,7 +324,7 @@ func markup(
     case MARKDOWN_CORE_KIND_CODE_BLOCK: CodeBlock(from: node)
     case MARKDOWN_CORE_KIND_HTML_BLOCK: HTMLBlock(from: node)
     case MARKDOWN_CORE_KIND_FORMULA_BLOCK: FormulaBlock(from: node)
-    case MARKDOWN_CORE_KIND_TABLE: Table(from: node, children: relations.children)
+    case MARKDOWN_CORE_KIND_TABLE: Table(from: node, caption: relations.caption, children: relations.children)
     case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
         DirectiveBlock(from: node, label: relations.label, content: relations.children)
     case MARKDOWN_CORE_KIND_TEXT: Text(from: node)
@@ -337,6 +348,7 @@ func markup(
     case MARKDOWN_CORE_KIND_MEDIA: Media(from: node, content: relations.children, resources: &resources)
     case MARKDOWN_CORE_KIND_DIRECTIVE: Directive(from: node, label: relations.label)
     case MARKDOWN_CORE_KIND_CITE: Cite(from: node, citations: relations.citations)
+    case MARKDOWN_CORE_KIND_TABLE_CAPTION: TableCaption(from: node, content: relations.children)
     case MARKDOWN_CORE_KIND_TABLE_ROW: TableRow(from: node, children: relations.children)
     case MARKDOWN_CORE_KIND_TABLE_CELL: TableCell(from: node, content: relations.children)
     case MARKDOWN_CORE_KIND_DIRECTIVE_LABEL: DirectiveLabel(from: node, content: relations.children)

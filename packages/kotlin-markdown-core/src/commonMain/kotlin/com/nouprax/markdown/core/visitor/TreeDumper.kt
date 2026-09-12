@@ -227,7 +227,8 @@ private class DumpVisitor(
                 ",",
             ) { "${it.alignment.token()}:${it.relative?.let(::decimal) ?: "null"}" }
         state.line("Table", node, listOf("columns=[$columns]"), node.head.size + node.content.size + node.foot.size)
-        state.nested(3) {
+        state.nested(3 + if (node.caption == null) 0 else 1) {
+            node.caption?.let(state::dump)
             for ((name, rows) in listOf(
                 "TableHead" to node.head,
                 "TableBody" to node.content,
@@ -238,6 +239,9 @@ private class DumpVisitor(
             }
         }
     }
+
+    override fun visitTableCaption(node: TableCaption): Unit =
+        state.container("TableCaption", node, emptyList(), node.content)
 
     override fun visitTableRow(node: TableRow): Unit = state.container("TableRow", node, emptyList(), node.cells)
 

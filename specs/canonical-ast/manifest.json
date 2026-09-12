@@ -21,6 +21,7 @@
             "HTMLBlock",
             "FormulaBlock",
             "Table",
+            "TableCaption",
             "TableRow",
             "TableCell",
             "DirectiveBlock",
@@ -92,6 +93,17 @@
             "codeBlock.fenced.true",
             "codeBlock.closed.false",
             "codeBlock.closed.true",
+            "table.caption.null",
+            "table.caption.populated",
+            "table.caption.empty",
+            "table.column.relative.value",
+            "tableCell.span.rows",
+            "tableCell.span.columns",
+            "tableCell.content.block",
+            "tableCell.content.empty",
+            "tableRow.cells.empty",
+            "table.head.empty",
+            "table.foot.populated",
             "table.column.relative.null",
             "tableCell.span.one",
             "tableCell.content.inline",
@@ -175,6 +187,7 @@
             "definition.term-before-bodies",
             "callout.title-before-content",
             "document.source-order",
+            "table.caption-head-content-foot",
             "table.head-content-foot",
             "directive.label-before-content",
             "markup.attributes.source-order",
@@ -279,6 +292,7 @@
                     "Directive",
                     "DirectiveLabel",
                     "Table",
+                    "TableCaption",
                     "TableRow",
                     "TableCell"
                 ],
@@ -804,7 +818,9 @@
                     "Subscript",
                     "Emphasis",
                     "Directive",
-                    "DirectiveLabel"
+                    "DirectiveLabel",
+                    "Cite",
+                    "Span"
                 ],
                 "states": ["scope.positive", "children.populated"],
                 "orders": ["inline.source-order"]
@@ -970,6 +986,70 @@
                     "definition.body.empty"
                 ],
                 "orders": ["document.source-order", "definition.term-before-bodies"]
+            }
+        },
+        {
+            "name": "table-syntax",
+            "input": "table-syntax.md",
+            "expected": "table-syntax.ast",
+            "coverage": {
+                "kinds": [
+                    "Document",
+                    "Paragraph",
+                    "ThematicBreak",
+                    "Table",
+                    "TableCaption",
+                    "TableRow",
+                    "TableCell",
+                    "Text",
+                    "SoftBreak",
+                    "Emphasis"
+                ],
+                "states": [
+                    "table.caption.null",
+                    "table.caption.populated",
+                    "table.caption.empty",
+                    "table.column.relative.value",
+                    "tableCell.content.block",
+                    "table.head.empty"
+                ],
+                "orders": ["table.caption-head-content-foot"]
+            }
+        },
+        {
+            "name": "table-sparse",
+            "input": "table-sparse.md",
+            "expected": "table-sparse.ast",
+            "coverage": {
+                "kinds": [
+                    "Document",
+                    "Paragraph",
+                    "Table",
+                    "TableCaption",
+                    "TableRow",
+                    "TableCell",
+                    "Text",
+                    "Emphasis",
+                    "SoftBreak"
+                ],
+                "states": [
+                    "tableCell.span.rows",
+                    "tableCell.span.columns",
+                    "tableCell.content.empty",
+                    "tableRow.cells.empty",
+                    "table.foot.populated"
+                ],
+                "orders": []
+            }
+        },
+        {
+            "name": "table-mapped",
+            "input": "table-mapped.md",
+            "expected": "table-mapped.ast",
+            "coverage": {
+                "kinds": ["Document", "Paragraph", "Heading", "Table", "TableRow", "TableCell", "Text", "Link", "Cite"],
+                "states": [],
+                "orders": []
             }
         }
     ]

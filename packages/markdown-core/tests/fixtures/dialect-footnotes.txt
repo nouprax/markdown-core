@@ -994,19 +994,25 @@ Document scope=1:1..1:60 anchor=null attributes={} children=1
         └── Text scope=1:44..1:58 anchor=null attributes={} literal="www.example.com" children=0
 ````````````````````````````````
 
-Literal caret runs end exactly where a footnote opener starts:
+Caret pairs end exactly where a footnote opener starts:
 
 ```````````````````````````````` example
 ^^^^text^^word^^^[note]^^end^
 .
 Document scope=1:1..1:29 anchor=null attributes={} children=1
-├── Paragraph scope=1:1..1:29 anchor=null attributes={} children=3
-│   ├── Text scope=1:1..1:16 anchor=null attributes={} literal="^^^^text^^word^^" children=0
+├── Paragraph scope=1:1..1:29 anchor=null attributes={} children=9
+│   ├── Superscript scope=1:1..1:2 anchor=null attributes={} children=0
+│   ├── Superscript scope=1:3..1:4 anchor=null attributes={} children=0
+│   ├── Text scope=1:5..1:8 anchor=null attributes={} literal="text" children=0
+│   ├── Superscript scope=1:9..1:10 anchor=null attributes={} children=0
+│   ├── Text scope=1:11..1:14 anchor=null attributes={} literal="word" children=0
+│   ├── Superscript scope=1:15..1:16 anchor=null attributes={} children=0
 │   ├── Cite scope=1:17..1:23 anchor=null attributes={} children=1
 │   │   └── Citation scope=1:19..1:22 referent=footnote(id="inline-1") children=0
 │   │       ├── CitationPrefix children=0
 │   │       └── CitationSuffix children=0
-│   └── Text scope=1:24..1:29 anchor=null attributes={} literal="^^end^" children=0
+│   ├── Superscript scope=1:24..1:25 anchor=null attributes={} children=0
+│   └── Text scope=1:26..1:29 anchor=null attributes={} literal="end^" children=0
 └── Footnote scope=1:17..1:23 id="inline-1" children=1
     └── Text scope=1:19..1:22 anchor=null attributes={} literal="note" children=0
 ````````````````````````````````
