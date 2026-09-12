@@ -73,8 +73,8 @@ create another parser or transfer AST ownership. Citation, bracket and heading
 state records live beside their grammar owners. Subject resources are released
 through their owners' disposal hooks, including on allocation failure.
 
-The immutable registry projects node kinds to syntax descriptors separately
-from scanner precedence. Syntax follows a node's current kind; its existing
+The immutable registry projects node kinds to element structure descriptors separately
+from scanner precedence. Structure follows a node's current kind; its existing
 `extension` pointer continues to own opaque payload and containment callbacks,
 including across kind conversion. A containment policy cannot suppress the
 underlying paragraph's parsing or Text's completion rules.

@@ -116,7 +116,7 @@ int markdown_core_parser_attach_extension(markdown_core_parser *parser, const ma
         return 0;
     }
     if (extension->parse_text) {
-        parser->text_syntax = extension;
+        parser->text_structure = extension;
     }
     if (extension->init_inline || extension->finish_inline || extension->dispose_inline) {
         if (!S_extension_list_append(parser->mem, &parser->inline_lifecycle_extensions, extension)) {
@@ -160,13 +160,13 @@ int markdown_core_parser_attach_extension(markdown_core_parser *parser, const ma
 
 static void S_parser_dispose(markdown_core_parser *parser) {
     for (markdown_core_llist *entry = parser->extensions; entry; entry = entry->next) {
-        const markdown_core_extension *syntax = entry->data;
-        if (syntax->dispose_parser) {
-            syntax->dispose_parser(parser);
+        const markdown_core_extension *structure = entry->data;
+        if (structure->dispose_parser) {
+            structure->dispose_parser(parser);
         }
     }
-    if (parser->document_syntax) {
-        parser->document_syntax->dispose_document(parser);
+    if (parser->document_structure) {
+        parser->document_structure->dispose_document(parser);
     }
     parser->mem->free(parser->block_inputs);
     parser->mem->free(parser->input_line_offsets);
@@ -213,8 +213,8 @@ static markdown_core_parser *S_parser_new(markdown_core_mem *mem) {
     markdown_core_strbuf_init(parser->mem, &parser->lookahead_last_line, 0);
 
     document = make_document(parser->mem);
-    parser->document_syntax = markdown_core_syntax_for_kind(MARKDOWN_CORE_NODE_DOCUMENT);
-    parser->document_syntax->init_document(parser);
+    parser->document_structure = markdown_core_structure_for_kind(MARKDOWN_CORE_NODE_DOCUMENT);
+    parser->document_structure->init_document(parser);
     parser->root = document;
     parser->block_root = document;
     parser->current = document;
@@ -288,22 +288,22 @@ bool markdown_core_block_is_blank(markdown_core_strbuf *s, bufsize_t offset) {
 }
 
 static bool extension_accepts_lines(markdown_core_node *node) {
-    const markdown_core_extension *syntax = markdown_core_node_syntax(node);
-    return syntax && (syntax->content_mode == MARKDOWN_CORE_CONTENT_LITERAL ||
-                      (syntax->accepts_lines_func && syntax->accepts_lines_func(syntax, node)));
+    const markdown_core_extension *structure = markdown_core_node_structure(node);
+    return structure && (structure->content_mode == MARKDOWN_CORE_CONTENT_LITERAL ||
+                         (structure->accepts_lines_func && structure->accepts_lines_func(structure, node)));
 }
 bool markdown_core_block_accepts_lines(markdown_core_node *node) {
-    const markdown_core_extension *syntax = markdown_core_node_syntax(node);
-    return extension_accepts_lines(node) || (syntax && syntax->content_mode == MARKDOWN_CORE_CONTENT_PROSE);
+    const markdown_core_extension *structure = markdown_core_node_structure(node);
+    return extension_accepts_lines(node) || (structure && structure->content_mode == MARKDOWN_CORE_CONTENT_PROSE);
 }
 static bool contains_inlines(markdown_core_node *node) {
-    const markdown_core_extension *syntax = markdown_core_node_syntax(node);
-    return syntax &&
-           (syntax->inline_content || (syntax->contains_inlines_func && syntax->contains_inlines_func(syntax, node)));
+    const markdown_core_extension *structure = markdown_core_node_structure(node);
+    return structure && (structure->inline_content ||
+                         (structure->contains_inlines_func && structure->contains_inlines_func(structure, node)));
 }
 static bool is_paragraph(markdown_core_node *node) {
-    const markdown_core_extension *syntax = markdown_core_node_syntax(node);
-    return syntax && syntax->paragraph;
+    const markdown_core_extension *structure = markdown_core_node_structure(node);
+    return structure && structure->paragraph;
 }
 
 /* Record where the bytes about to be appended to `node`'s content came from.
@@ -582,7 +582,7 @@ void markdown_core_block_rebase_content_marks(markdown_core_parser *parser, mark
 bool markdown_core_block_ends_with_blank_line(markdown_core_node *node) {
     markdown_core_node *last = node;
     while (!S_last_line_checked(last) &&
-           (markdown_core_node_syntax(last) && markdown_core_node_syntax(last)->propagates_child_blank) &&
+           (markdown_core_node_structure(last) && markdown_core_node_structure(last)->propagates_child_blank) &&
            last->last_child) {
         last = last->last_child;
     }
@@ -641,9 +641,9 @@ markdown_core_node *markdown_core_block_finalize(markdown_core_parser *parser, m
      * Placed after the scope is settled and before the switch, because what a
      * close hook has to say is about the whole block. */
 
-    const markdown_core_extension *syntax = markdown_core_node_syntax(b);
-    if (syntax && syntax->finalize_block) {
-        syntax->finalize_block(parser, b);
+    const markdown_core_extension *structure = markdown_core_node_structure(b);
+    if (structure && structure->finalize_block) {
+        structure->finalize_block(parser, b);
     }
 
     return parent;
@@ -799,7 +799,7 @@ static bool process_inline_tree(markdown_core_parser *parser, markdown_core_node
         cur = markdown_core_iter_get_node(iter);
         if (ev_type == MARKDOWN_CORE_EVENT_ENTER) {
             if (contains_inlines(cur)) {
-                if (!markdown_core_node_syntax(cur)->deferred_inlines) {
+                if (!markdown_core_node_structure(cur)->deferred_inlines) {
                     whitespace |= markdown_core_parse_inlines(parser, cur, refmap);
                 }
                 markdown_core_iter_reset(iter, cur, MARKDOWN_CORE_EVENT_EXIT);
@@ -937,12 +937,12 @@ static int walk_owned_trees(markdown_core_parser *parser, markdown_core_node **s
 
 static void complete_inline_node(markdown_core_parser *parser, markdown_core_node *node, int script_depth,
                                  void *context) {
-    const markdown_core_extension *syntax = markdown_core_node_syntax(node);
-    if (syntax && syntax->complete_inline) {
-        syntax->complete_inline(parser, node, script_depth);
+    const markdown_core_extension *structure = markdown_core_node_structure(node);
+    if (structure && structure->complete_inline) {
+        structure->complete_inline(parser, node, script_depth);
     }
-    if (parser->document_syntax->observe_inline) {
-        parser->document_syntax->observe_inline(parser, node);
+    if (parser->document_structure->observe_inline) {
+        parser->document_structure->observe_inline(parser, node);
     }
 }
 
@@ -980,9 +980,9 @@ static void S_complete_block_tree(markdown_core_parser *parser, markdown_core_no
     while (node) {
         markdown_core_node *parent = node->parent;
         markdown_core_node *next = node->next;
-        const markdown_core_extension *syntax = markdown_core_node_syntax(node);
-        if (syntax && syntax->complete_block) {
-            syntax->complete_block(parser, node);
+        const markdown_core_extension *structure = markdown_core_node_structure(node);
+        if (structure && structure->complete_block) {
+            structure->complete_block(parser, node);
         }
         node = next ? next : parent;
         if (next) {
@@ -1111,8 +1111,9 @@ static bool S_line_scratch_reserve(markdown_core_parser *parser, int64_t add) {
 }
 
 static void S_parse_source(markdown_core_parser *parser, const unsigned char *source, size_t length) {
-    size_t metadata_length =
-        parser->block_root == parser->root ? parser->document_syntax->read_document_prefix(parser, source, length) : 0;
+    size_t metadata_length = parser->block_root == parser->root
+                                 ? parser->document_structure->read_document_prefix(parser, source, length)
+                                 : 0;
     const unsigned char *cursor = source + metadata_length;
     const unsigned char *end = source + length;
     static const uint8_t repl[] = {239, 191, 189};
@@ -1307,22 +1308,22 @@ bool markdown_core_block_continue_indented(markdown_core_parser *parser, markdow
  * block a lookahead is about to add, or NULL in the real pass. */
 static bool S_container_prefix_matches(markdown_core_parser *parser, markdown_core_node *container,
                                        markdown_core_chunk *input, const markdown_core_node *joining, bool *taken) {
-    const markdown_core_extension *syntax = markdown_core_node_syntax(container);
-    return !syntax || !syntax->continue_container ||
-           syntax->continue_container(parser, container, input, joining, taken);
+    const markdown_core_extension *structure = markdown_core_node_structure(container);
+    return !structure || !structure->continue_container ||
+           structure->continue_container(parser, container, input, joining, taken);
 }
 
 static bool parse_extension_block(markdown_core_parser *parser, markdown_core_node *container,
                                   markdown_core_chunk *input, bool *should_continue, markdown_core_node **closing) {
     int matched;
-    const markdown_core_extension *syntax = markdown_core_node_syntax(container);
+    const markdown_core_extension *structure = markdown_core_node_structure(container);
 
-    if (!syntax->last_block_matches) {
+    if (!structure->last_block_matches) {
         return false;
     }
 
-    matched = syntax->last_block_matches(syntax, parser, input->data, input->len, container);
-    if (matched && syntax->pending_close) {
+    matched = structure->last_block_matches(structure, parser, input->data, input->len, container);
+    if (matched && structure->pending_close) {
         *closing = matched == MARKDOWN_CORE_BLOCK_PENDING_CLOSE ? container : NULL;
     } else if (matched && extension_accepts_lines(container)) {
         *closing = NULL;
@@ -1363,14 +1364,15 @@ static markdown_core_node *check_open_blocks(markdown_core_parser *parser, markd
 
         markdown_core_block_find_first_nonspace(parser, input);
 
-        const markdown_core_extension *syntax = markdown_core_node_syntax(container);
-        if (syntax && syntax->last_block_matches) {
+        const markdown_core_extension *structure = markdown_core_node_structure(container);
+        if (structure && structure->last_block_matches) {
             if (!parse_extension_block(parser, container, input, &should_continue, &closing)) {
                 goto done;
             }
         } else {
             bool taken = false;
-            if (syntax && syntax->accepts_blank && parser->blank && !syntax->accepts_blank(parser, container)) {
+            if (structure && structure->accepts_blank && parser->blank &&
+                !structure->accepts_blank(parser, container)) {
                 goto done;
             }
             if (!S_container_prefix_matches(parser, container, input, NULL, &taken)) {
@@ -1538,8 +1540,8 @@ static void S_lookahead_close_run(markdown_core_block_lookahead *lookahead, int 
 static bool S_lookahead_extras_accept_blank(const markdown_core_parser *parser, int from, int depth) {
     int i;
     for (i = from; i < depth; i++) {
-        const markdown_core_extension *syntax = markdown_core_node_syntax(parser->lookahead_chain[i]);
-        if (!syntax || !syntax->blank_runs) {
+        const markdown_core_extension *structure = markdown_core_node_structure(parser->lookahead_chain[i]);
+        if (!structure || !structure->blank_runs) {
             return false;
         }
     }
@@ -1676,13 +1678,13 @@ int markdown_core_parser_lookahead_next(markdown_core_block_lookahead *lookahead
         for (i = from; i < lookahead->depth && carried && !taken; i++) {
             markdown_core_node *container = parser->lookahead_chain[i];
             markdown_core_block_find_first_nonspace(parser, &input);
-            const markdown_core_extension *syntax = markdown_core_node_syntax(container);
-            if (syntax && syntax->last_block_matches) {
-                int match = syntax->continues_block
-                                ? syntax->continues_block(syntax, parser, input.data, (int)input.len, container)
+            const markdown_core_extension *structure = markdown_core_node_structure(container);
+            if (structure && structure->last_block_matches) {
+                int match = structure->continues_block
+                                ? structure->continues_block(structure, parser, input.data, (int)input.len, container)
                                 : 0;
                 carried = match != 0;
-                if (carried && syntax->pending_close) {
+                if (carried && structure->pending_close) {
                     closing = match == MARKDOWN_CORE_BLOCK_PENDING_CLOSE;
                 }
             } else {
@@ -1748,8 +1750,8 @@ void markdown_core_parser_lookahead_end(markdown_core_block_lookahead *lookahead
     }
     for (i = 0; i < lookahead->depth; i++) {
         markdown_core_node *node = parser->lookahead_chain[i];
-        const markdown_core_extension *syntax = markdown_core_node_syntax(node);
-        unsigned mask = syntax ? syntax->speculative_flags : 0;
+        const markdown_core_extension *structure = markdown_core_node_structure(node);
+        unsigned mask = structure ? structure->speculative_flags : 0;
         node->flags =
             (markdown_core_node_internal_flags)((node->flags & ~mask) | (parser->lookahead_chain_flags[i] & mask));
     }
@@ -1944,10 +1946,10 @@ static void add_text_to_container(markdown_core_parser *parser, markdown_core_no
     // and we don't count blanks in fenced code for purposes of tight/loose
     // lists or breaking out of lists.  we also don't set last_line_blank
     // on an empty list item.
-    const markdown_core_extension *syntax = markdown_core_node_syntax(container);
-    const bool last_line_blank = parser->blank && !(syntax && syntax->blank_opaque) &&
-                                 (!extension_accepts_lines(container) || (syntax && syntax->blank_line)) &&
-                                 (!syntax || !syntax->blank_line || syntax->blank_line(parser, container));
+    const markdown_core_extension *structure = markdown_core_node_structure(container);
+    const bool last_line_blank = parser->blank && !(structure && structure->blank_opaque) &&
+                                 (!extension_accepts_lines(container) || (structure && structure->blank_line)) &&
+                                 (!structure || !structure->blank_line || structure->blank_line(parser, container));
 
     S_set_last_line_blank(container, last_line_blank);
 
@@ -1963,10 +1965,11 @@ static void add_text_to_container(markdown_core_parser *parser, markdown_core_no
     // and the line isn't blank,
     // then treat this as a "lazy continuation line" and add it to
     // the open paragraph.
-    const markdown_core_extension *current_syntax = markdown_core_node_syntax(parser->current);
+    const markdown_core_extension *current_structure = markdown_core_node_structure(parser->current);
     if (parser->current != last_matched_container && container == last_matched_container && !parser->blank &&
-        current_syntax && current_syntax->accepts_lazy && current_syntax->accepts_lazy(parser, parser->current)) {
-        parser->current = current_syntax->open_lazy(parser, parser->current);
+        current_structure && current_structure->accepts_lazy &&
+        current_structure->accepts_lazy(parser, parser->current)) {
+        parser->current = current_structure->open_lazy(parser, parser->current);
         if (!parser->current) {
             return;
         }
@@ -1977,7 +1980,7 @@ static void add_text_to_container(markdown_core_parser *parser, markdown_core_no
 
         if (extension_accepts_lines(container)) {
             markdown_core_block_add_line(container, input, parser);
-            if (syntax && syntax->ends_block && syntax->ends_block(parser, container, input)) {
+            if (structure && structure->ends_block && structure->ends_block(parser, container, input)) {
                 container->flags |= MARKDOWN_CORE_NODE__CLOSED_BY_END_CONDITION;
                 container = markdown_core_block_finalize(parser, container);
             }
@@ -1987,7 +1990,7 @@ static void add_text_to_container(markdown_core_parser *parser, markdown_core_no
             markdown_core_block_advance_offset(parser, input, parser->first_nonspace - parser->offset, false);
             markdown_core_block_add_line(container, input, parser);
         } else {
-            container = parser->document_syntax->open_text_block(parser, container, input);
+            container = parser->document_structure->open_text_block(parser, container, input);
             if (!container) {
                 return;
             }
@@ -2252,14 +2255,14 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
     if (!parser->oom) {
         markdown_core_manage_extensions_special_characters(parser, true);
         if (!parser->oom) {
-            parser->document_syntax->prepare_document(parser);
+            parser->document_structure->prepare_document(parser);
         }
     }
     if (!parser->oom) {
         process_inlines(parser, parser->refmap, NULL);
     }
     if (!parser->oom) {
-        parser->document_syntax->finish_document(parser);
+        parser->document_structure->finish_document(parser);
     }
     if (parser->oom) {
         goto failed;
@@ -2295,7 +2298,7 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
     return res;
 
 failed:
-    parser->document_syntax->dispose_document(parser);
+    parser->document_structure->dispose_document(parser);
     markdown_core_node_free(parser->root);
     parser->root = NULL;
     return NULL;

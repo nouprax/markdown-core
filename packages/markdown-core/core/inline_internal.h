@@ -69,32 +69,33 @@ typedef struct subject {
     int oom;
 } subject;
 
-#define make_str(subj, sc, ec, s) markdown_core_inline_make_literal(subj, MARKDOWN_CORE_NODE_TEXT, sc, ec, s)
+#define make_str(inline_parser, sc, ec, s)                                                                             \
+    markdown_core_inline_make_literal(inline_parser, MARKDOWN_CORE_NODE_TEXT, sc, ec, s)
 
-markdown_core_node *markdown_core_inline_make_literal(subject *subj, markdown_core_node_type t, int start_column,
-                                                      int end_column, markdown_core_chunk s);
+markdown_core_node *markdown_core_inline_make_literal(subject *inline_parser, markdown_core_node_type t,
+                                                      int start_column, int end_column, markdown_core_chunk s);
 markdown_core_node *markdown_core_inline_make_simple(markdown_core_mem *mem, markdown_core_node_type t);
-markdown_core_node *markdown_core_inline_make_simple_subj(subject *subj, markdown_core_node_type t);
+markdown_core_node *markdown_core_inline_make_simple_subj(subject *inline_parser, markdown_core_node_type t);
 void markdown_core_inline_append_child(markdown_core_node *node, markdown_core_node *child);
 void markdown_core_inline_subject_from_buf(markdown_core_parser *parser, markdown_core_mem *mem, int line_number,
                                            subject *e, markdown_core_chunk *chunk, markdown_core_map *refmap);
-unsigned char markdown_core_inline_peek_char_n(subject *subj, bufsize_t n);
-unsigned char markdown_core_inline_peek_char(subject *subj);
-unsigned char markdown_core_inline_peek_at(subject *subj, bufsize_t pos);
-int markdown_core_inline_is_eof(subject *subj);
-bool markdown_core_inline_skip_spaces(subject *subj);
-bool markdown_core_inline_skip_line_end(subject *subj);
-void markdown_core_inline_remove_delimiter(subject *subj, delimiter *delim);
-delimiter *markdown_core_inline_push_delimiter_entry(subject *subj, delimiter_kind kind, bufsize_t position);
-void markdown_core_inline_process_delimiters(markdown_core_parser *parser, subject *subj, bufsize_t stack_bottom,
-                                             delimiter *after);
-int markdown_core_inline_parse_inline(markdown_core_parser *parser, subject *subj, markdown_core_node *parent);
+unsigned char markdown_core_inline_peek_char_n(subject *inline_parser, bufsize_t n);
+unsigned char markdown_core_inline_peek_char(subject *inline_parser);
+unsigned char markdown_core_inline_peek_at(subject *inline_parser, bufsize_t pos);
+int markdown_core_inline_is_eof(subject *inline_parser);
+bool markdown_core_inline_skip_spaces(subject *inline_parser);
+bool markdown_core_inline_skip_line_end(subject *inline_parser);
+void markdown_core_inline_remove_delimiter(subject *inline_parser, delimiter *delim);
+delimiter *markdown_core_inline_push_delimiter_entry(subject *inline_parser, delimiter_kind kind, bufsize_t position);
+void markdown_core_inline_process_delimiters(markdown_core_parser *parser, subject *inline_parser,
+                                             bufsize_t stack_bottom, delimiter *after);
+int markdown_core_inline_parse_inline(markdown_core_parser *parser, subject *inline_parser, markdown_core_node *parent);
 void markdown_core_inline_start_inlines(markdown_core_parser *parser, markdown_core_node *parent,
-                                        markdown_core_map *refmap, subject *subj);
-void markdown_core_inline_clear_inlines(subject *subj);
-bool markdown_core_inline_finish_inlines(markdown_core_parser *parser, subject *subj);
+                                        markdown_core_map *refmap, subject *inline_parser);
+void markdown_core_inline_clear_inlines(subject *inline_parser);
+bool markdown_core_inline_finish_inlines(markdown_core_parser *parser, subject *inline_parser);
 markdown_core_node *markdown_core_inline_match_delimiter(const markdown_core_extension *extension,
-                                                         markdown_core_inline_parser *subj);
+                                                         markdown_core_inline_parser *inline_parser);
 int markdown_core_byte_set_has(const char *set, unsigned char character);
-void markdown_core_inline_push_boundary(subject *subj, bufsize_t position);
+void markdown_core_inline_push_boundary(subject *inline_parser, bufsize_t position);
 #endif

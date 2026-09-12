@@ -398,11 +398,11 @@ static bool number(markdown_core_string s) {
     }
     return i == s.length;
 }
-static bool scalar(decoder *d, scalar_context syntax, markdown_core_metadata_value *value) {
+static bool scalar(decoder *d, scalar_context structure, markdown_core_metadata_value *value) {
     const unsigned char *s = d->owner->source;
     markdown_core_string text = {0};
     bool quoted_style = d->pos < d->end && (s[d->pos] == '"' || s[d->pos] == '\'');
-    bool valid = quoted_style ? quoted(d, &text) : plain(d, syntax != PROPERTY_SCALAR, false, &text);
+    bool valid = quoted_style ? quoted(d, &text) : plain(d, structure != PROPERTY_SCALAR, false, &text);
     if (!valid || (!quoted_style && !text.length) || !single_line(text)) {
         d->owner->parser->mem->free((void *)text.data);
         return false;
@@ -424,9 +424,9 @@ static bool scalar(decoder *d, scalar_context syntax, markdown_core_metadata_val
     }
     return valid && !d->owner->parser->oom;
 }
-static bool list_item(decoder *d, scalar_context syntax, markdown_core_metadata_value *list, size_t *capacity) {
+static bool list_item(decoder *d, scalar_context structure, markdown_core_metadata_value *list, size_t *capacity) {
     markdown_core_metadata_value value = {0};
-    bool valid = scalar(d, syntax, &value);
+    bool valid = scalar(d, structure, &value);
     if (!valid || (value.as.scalar.kind != MARKDOWN_CORE_METADATA_NUMBER &&
                    value.as.scalar.kind != MARKDOWN_CORE_METADATA_TEXT)) {
         free_value(d->owner->parser->mem, &value);

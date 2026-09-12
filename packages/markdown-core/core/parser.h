@@ -65,7 +65,7 @@ struct markdown_core_parser {
     markdown_core_key_index specimen_ids;
     markdown_core_heading_collection headings;
     anchor_registry anchors;
-    const markdown_core_extension *document_syntax, *text_syntax;
+    const markdown_core_extension *document_structure, *text_structure;
     /* The root node of the parser, always a MARKDOWN_CORE_NODE_DOCUMENT */
     struct markdown_core_node *root;
     /* The active block grammar boundary. The document and mapped cell inputs

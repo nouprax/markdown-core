@@ -44,8 +44,8 @@ typedef enum {
     MARKDOWN_CORE_CONTENT_PROSE,
     MARKDOWN_CORE_CONTENT_LITERAL
 } markdown_core_content_mode;
-const markdown_core_extension *markdown_core_syntax_for_kind(markdown_core_node_type kind);
-const markdown_core_extension *markdown_core_node_syntax(const markdown_core_node *node);
+const markdown_core_extension *markdown_core_structure_for_kind(markdown_core_node_type kind);
+const markdown_core_extension *markdown_core_node_structure(const markdown_core_node *node);
 
 struct markdown_core_extension {
     /* Negative/zero/positive precedence separates protected tokens, ordinary

@@ -286,39 +286,41 @@ void markdown_core_block_finalize_heading_anchors(markdown_core_parser *parser,
 }
 
 void markdown_core_prepare_heading(markdown_core_parser *parser, markdown_core_heading_parse *heading) {
-    subject subj;
-    markdown_core_inline_start_inlines(parser, heading->node, parser->refmap, &subj);
-    while (!parser->oom && !subj.oom) {
-        unsigned char c = markdown_core_inline_peek_char(&subj);
+    subject inline_parser;
+    markdown_core_inline_start_inlines(parser, heading->node, parser->refmap, &inline_parser);
+    while (!parser->oom && !inline_parser.oom) {
+        unsigned char c = markdown_core_inline_peek_char(&inline_parser);
         /* Attribute ownership and opaque tokens are decided by the same
          * cursor as every inline. A live bracket makes this declaration
          * unwritable as a reference label; only its remaining inlines depend
          * on the document's completed symbol table. */
-        if ((subj.last_delim && subj.last_delim->kind == DELIMITER_FIELD) ||
-            (subj.pos != subj.text_end && subj.pos >= subj.opaque_end &&
-             (c == '[' || c == ']' || ((c == '!' || c == '^') && markdown_core_inline_peek_char_n(&subj, 1) == '[')))) {
-            heading->pending = parser->mem->calloc(1, sizeof(subj));
+        if ((inline_parser.last_delim && inline_parser.last_delim->kind == DELIMITER_FIELD) ||
+            (inline_parser.pos != inline_parser.text_end && inline_parser.pos >= inline_parser.opaque_end &&
+             (c == '[' || c == ']' ||
+              ((c == '!' || c == '^') && markdown_core_inline_peek_char_n(&inline_parser, 1) == '[')))) {
+            heading->pending = parser->mem->calloc(1, sizeof(inline_parser));
             if (heading->pending) {
-                *heading->pending = subj;
+                *heading->pending = inline_parser;
                 return;
             }
-            subj.oom = 1;
+            inline_parser.oom = 1;
             break;
         }
-        if (markdown_core_inline_is_eof(&subj) || !markdown_core_inline_parse_inline(parser, &subj, heading->node)) {
+        if (markdown_core_inline_is_eof(&inline_parser) ||
+            !markdown_core_inline_parse_inline(parser, &inline_parser, heading->node)) {
             break;
         }
     }
-    if (!parser->oom && !subj.oom) {
-        markdown_core_inline_finish_citation_tokens(&subj, &subj.citations);
-        markdown_core_inline_process_delimiters(parser, &subj, 0, NULL);
-        markdown_core_chunk label = {subj.input.data, subj.heading_label_end, 0};
+    if (!parser->oom && !inline_parser.oom) {
+        markdown_core_inline_finish_citation_tokens(&inline_parser, &inline_parser.citations);
+        markdown_core_inline_process_delimiters(parser, &inline_parser, 0, NULL);
+        markdown_core_chunk label = {inline_parser.input.data, inline_parser.heading_label_end, 0};
         if (label.len > 0 && label.len <= MAX_LINK_LABEL_LENGTH &&
             markdown_core_inline_reference_label_length(label.data, label.len) == label.len) {
             markdown_core_resource *resource = markdown_core_resource_new(parser->mem, markdown_core_chunk_literal(""),
                                                                           markdown_core_optional_chunk_absent());
             if (!resource) {
-                subj.oom = 1;
+                inline_parser.oom = 1;
             } else {
                 markdown_core_map_record *record =
                     markdown_core_reference_create(parser->mem, parser->refmap, &label, resource);
@@ -331,7 +333,7 @@ void markdown_core_prepare_heading(markdown_core_parser *parser, markdown_core_h
             }
         }
     }
-    markdown_core_inline_clear_inlines(&subj);
+    markdown_core_inline_clear_inlines(&inline_parser);
 }
 
 void markdown_core_finish_heading(markdown_core_parser *parser, markdown_core_heading_parse *heading) {
@@ -351,63 +353,67 @@ void markdown_core_dispose_heading(markdown_core_heading_parse *heading) {
     }
 }
 
-void markdown_core_heading_begin_inlines(markdown_core_parser *parser, subject *subj, markdown_core_node *parent) {
+void markdown_core_heading_begin_inlines(markdown_core_parser *parser, subject *inline_parser,
+                                         markdown_core_node *parent) {
     if (parent->kind == MARKDOWN_CORE_NODE_HEADING) {
-        bufsize_t line = subj->input.len;
-        while (line > 0 && !markdown_core_is_line_end(subj->input.data[line - 1])) {
+        bufsize_t line = inline_parser->input.len;
+        while (line > 0 && !markdown_core_is_line_end(inline_parser->input.data[line - 1])) {
             line--;
         }
-        subj->attributes =
-            (markdown_core_attribute_parser){.mem = parser->mem, .data = subj->input.data, .length = subj->input.len};
-        subj->heading_attributes_start = markdown_core_attributes_tail(&subj->attributes, line, subj->input.len);
-        if (subj->heading_attributes_start >= 0) {
-            bufsize_t end = subj->heading_attributes_start;
-            while (end > line && (subj->input.data[end - 1] == ' ' || subj->input.data[end - 1] == '\t')) {
+        inline_parser->attributes = (markdown_core_attribute_parser){
+            .mem = parser->mem, .data = inline_parser->input.data, .length = inline_parser->input.len};
+        inline_parser->heading_attributes_start =
+            markdown_core_attributes_tail(&inline_parser->attributes, line, inline_parser->input.len);
+        if (inline_parser->heading_attributes_start >= 0) {
+            bufsize_t end = inline_parser->heading_attributes_start;
+            while (end > line &&
+                   (inline_parser->input.data[end - 1] == ' ' || inline_parser->input.data[end - 1] == '\t')) {
                 end--;
             }
             if (!parent->as.heading->setext) {
                 bufsize_t hashes = end;
-                while (hashes > line && subj->input.data[hashes - 1] == '#') {
+                while (hashes > line && inline_parser->input.data[hashes - 1] == '#') {
                     hashes--;
                 }
-                if (hashes < end &&
-                    (hashes == line || (subj->input.data[hashes - 1] == ' ' || subj->input.data[hashes - 1] == '\t'))) {
+                if (hashes < end && (hashes == line || (inline_parser->input.data[hashes - 1] == ' ' ||
+                                                        inline_parser->input.data[hashes - 1] == '\t'))) {
                     end = hashes;
-                    while (end > line && (subj->input.data[end - 1] == ' ' || subj->input.data[end - 1] == '\t')) {
+                    while (end > line &&
+                           (inline_parser->input.data[end - 1] == ' ' || inline_parser->input.data[end - 1] == '\t')) {
                         end--;
                     }
                 }
             }
-            subj->text_end = end;
+            inline_parser->text_end = end;
         } else if (!parent->as.heading->setext) {
-            bufsize_t hashes = subj->input.len;
-            while (hashes > 0 && subj->input.data[hashes - 1] == '#') {
+            bufsize_t hashes = inline_parser->input.len;
+            while (hashes > 0 && inline_parser->input.data[hashes - 1] == '#') {
                 hashes--;
             }
-            if (hashes < subj->input.len &&
-                (hashes == 0 || (subj->input.data[hashes - 1] == ' ' || subj->input.data[hashes - 1] == '\t'))) {
-                subj->input.len = hashes;
-                markdown_core_chunk_rtrim(&subj->input);
+            if (hashes < inline_parser->input.len && (hashes == 0 || (inline_parser->input.data[hashes - 1] == ' ' ||
+                                                                      inline_parser->input.data[hashes - 1] == '\t'))) {
+                inline_parser->input.len = hashes;
+                markdown_core_chunk_rtrim(&inline_parser->input);
             }
         }
-        if (subj->attributes.oom) {
-            subj->oom = 1;
+        if (inline_parser->attributes.oom) {
+            inline_parser->oom = 1;
         }
     }
 
-    subj->heading_label_end = subj->input.len;
+    inline_parser->heading_label_end = inline_parser->input.len;
 }
 
-bool markdown_core_heading_claim_tail(subject *subj, markdown_core_node *parent) {
-    if (subj->pos == subj->text_end) {
+bool markdown_core_heading_claim_tail(subject *inline_parser, markdown_core_node *parent) {
+    if (inline_parser->pos == inline_parser->text_end) {
         bufsize_t end;
-        if (markdown_core_attributes_parse(&subj->attributes, subj->heading_attributes_start, &parent->attributes,
-                                           &end)) {
-            subj->heading_label_end = subj->text_end;
-            subj->pos = subj->input.len;
+        if (markdown_core_attributes_parse(&inline_parser->attributes, inline_parser->heading_attributes_start,
+                                           &parent->attributes, &end)) {
+            inline_parser->heading_label_end = inline_parser->text_end;
+            inline_parser->pos = inline_parser->input.len;
         }
-        if (subj->attributes.oom) {
-            subj->oom = 1;
+        if (inline_parser->attributes.oom) {
+            inline_parser->oom = 1;
         }
         return true;
     }

@@ -381,11 +381,11 @@ int markdown_core_inline_parser_attributes(markdown_core_inline_parser *parser, 
     return matched;
 }
 
-void markdown_core_inline_attach_inline_attributes(subject *subj, markdown_core_node *node, bufsize_t from) {
+void markdown_core_inline_attach_inline_attributes(subject *inline_parser, markdown_core_node *node, bufsize_t from) {
     bufsize_t end;
-    if (markdown_core_inline_parser_attributes(subj, subj->pos, &node->attributes, &end)) {
-        subj->pos = end;
-        markdown_core_inline_parser_place(subj, node, from, end - 1);
+    if (markdown_core_inline_parser_attributes(inline_parser, inline_parser->pos, &node->attributes, &end)) {
+        inline_parser->pos = end;
+        markdown_core_inline_parser_place(inline_parser, node, from, end - 1);
     }
 }
 
@@ -409,10 +409,10 @@ bufsize_t markdown_core_attributes_attach_tail(markdown_core_parser *parser, mar
     return info_end;
 }
 
-static void dispose_inline(subject *subj) {
-    if (subj->attributes.mem) {
-        subj->owner_parser->attribute_work += subj->attributes.work;
-        markdown_core_attribute_parser_free(&subj->attributes);
+static void dispose_inline(subject *inline_parser) {
+    if (inline_parser->attributes.mem) {
+        inline_parser->owner_parser->attribute_work += inline_parser->attributes.work;
+        markdown_core_attribute_parser_free(&inline_parser->attributes);
     }
 }
 const markdown_core_extension MARKDOWN_CORE_EXTENSION_ATTRIBUTES = {

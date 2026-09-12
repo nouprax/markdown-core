@@ -90,7 +90,7 @@ int markdown_core_core_extensions_attach(markdown_core_parser *parser) {
     return 1;
 }
 
-static const markdown_core_extension *const BLOCK_SYNTAX[] = {
+static const markdown_core_extension *const BLOCK_STRUCTURE[] = {
     [MARKDOWN_CORE_NODE_TABLE & MARKDOWN_CORE_NODE_VALUE_MASK] = &MARKDOWN_CORE_EXTENSION_TABLE,
     [MARKDOWN_CORE_NODE_TABLE_ROW & MARKDOWN_CORE_NODE_VALUE_MASK] = &MARKDOWN_CORE_EXTENSION_TABLE,
     [MARKDOWN_CORE_NODE_TABLE_CELL & MARKDOWN_CORE_NODE_VALUE_MASK] = &MARKDOWN_CORE_EXTENSION_TABLE,
@@ -115,7 +115,7 @@ static const markdown_core_extension *const BLOCK_SYNTAX[] = {
     [MARKDOWN_CORE_NODE_TABLE_CAPTION & MARKDOWN_CORE_NODE_VALUE_MASK] = &MARKDOWN_CORE_EXTENSION_TABLE,
 };
 
-static const markdown_core_extension *const INLINE_SYNTAX[] = {
+static const markdown_core_extension *const INLINE_STRUCTURE[] = {
     [MARKDOWN_CORE_NODE_CITE & MARKDOWN_CORE_NODE_VALUE_MASK] = &MARKDOWN_CORE_EXTENSION_CITATION,
     [MARKDOWN_CORE_NODE_CITATION & MARKDOWN_CORE_NODE_VALUE_MASK] = &MARKDOWN_CORE_EXTENSION_CITATION,
     [MARKDOWN_CORE_NODE_COMMENT & MARKDOWN_CORE_NODE_VALUE_MASK] = &MARKDOWN_CORE_EXTENSION_COMMENT,
@@ -141,13 +141,13 @@ static const markdown_core_extension *const INLINE_SYNTAX[] = {
     [MARKDOWN_CORE_NODE_MEDIA & MARKDOWN_CORE_NODE_VALUE_MASK] = &MARKDOWN_CORE_EXTENSION_MEDIA,
 };
 
-const markdown_core_extension *markdown_core_syntax_for_kind(markdown_core_node_type kind) {
+const markdown_core_extension *markdown_core_structure_for_kind(markdown_core_node_type kind) {
     unsigned index = kind & MARKDOWN_CORE_NODE_VALUE_MASK;
     if (MARKDOWN_CORE_NODE_TYPE_INLINE_P(kind)) {
-        return index < sizeof(INLINE_SYNTAX) / sizeof(*INLINE_SYNTAX) ? INLINE_SYNTAX[index] : NULL;
+        return index < sizeof(INLINE_STRUCTURE) / sizeof(*INLINE_STRUCTURE) ? INLINE_STRUCTURE[index] : NULL;
     }
-    return index < sizeof(BLOCK_SYNTAX) / sizeof(*BLOCK_SYNTAX) ? BLOCK_SYNTAX[index] : NULL;
+    return index < sizeof(BLOCK_STRUCTURE) / sizeof(*BLOCK_STRUCTURE) ? BLOCK_STRUCTURE[index] : NULL;
 }
-const markdown_core_extension *markdown_core_node_syntax(const markdown_core_node *node) {
-    return node ? markdown_core_syntax_for_kind(node->kind) : NULL;
+const markdown_core_extension *markdown_core_node_structure(const markdown_core_node *node) {
+    return node ? markdown_core_structure_for_kind(node->kind) : NULL;
 }
