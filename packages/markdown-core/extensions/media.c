@@ -43,19 +43,18 @@ bool markdown_core_parse_dimensions(markdown_core_chunk label, bufsize_t suffix,
     return true;
 }
 
-void markdown_core_inline_apply_image_dimensions(subject *inline_parser, const bracket *opener,
+void markdown_core_inline_apply_image_dimensions(markdown_core_inline_state *inline_state, const bracket *opener,
                                                  markdown_core_node *image, bufsize_t end) {
     /* Earlier inline allocation failure may have omitted the final text run.
      * The transaction is already failed; do not consume its incomplete tree. */
-    if (inline_parser->oom || inline_parser->owner_parser->oom) {
+    if (inline_state->oom || inline_state->owner_parser->oom) {
         return;
     }
     bufsize_t suffix = opener->image_pipe >= 0 ? opener->image_pipe : opener->position;
     markdown_core_dimensions dimensions;
-    markdown_core_chunk label =
-        markdown_core_chunk_dup(&inline_parser->input, opener->position, end - opener->position);
+    markdown_core_chunk label = markdown_core_chunk_dup(&inline_state->input, opener->position, end - opener->position);
     if (!markdown_core_parse_dimensions(label, suffix - opener->position, opener->image_pipe >= 0 ? 1 : 0, &dimensions,
-                                        &inline_parser->owner_parser->dimension_work)) {
+                                        &inline_state->owner_parser->dimension_work)) {
         return;
     }
 
@@ -69,18 +68,19 @@ void markdown_core_inline_apply_image_dimensions(subject *inline_parser, const b
     if (tail->as.literal->len == 0) {
         markdown_core_node_free(tail);
     } else {
-        markdown_core_inline_parser_place(inline_parser, tail, start, suffix - 1);
+        markdown_core_inline_state_place(inline_state, tail, start, suffix - 1);
     }
     image->as.link->dimensions.value = dimensions;
     image->as.link->dimensions.has_value = true;
 }
 
-void markdown_core_media_record_text(markdown_core_parser *parser, subject *inline_parser, bufsize_t endpos) {
-    if (inline_parser->last_bracket && inline_parser->last_bracket->kind == BRACKET_IMAGE) {
-        for (bufsize_t i = inline_parser->pos; i < endpos; i++) {
+void markdown_core_media_record_text(markdown_core_parser *parser, markdown_core_inline_state *inline_state,
+                                     bufsize_t endpos) {
+    if (inline_state->last_bracket && inline_state->last_bracket->kind == BRACKET_IMAGE) {
+        for (bufsize_t i = inline_state->pos; i < endpos; i++) {
             parser->dimension_work++;
-            if (inline_parser->input.data[i] == '|') {
-                inline_parser->last_bracket->image_pipe = i;
+            if (inline_state->input.data[i] == '|') {
+                inline_state->last_bracket->image_pipe = i;
             }
         }
     }
@@ -88,22 +88,22 @@ void markdown_core_media_record_text(markdown_core_parser *parser, subject *inli
 
 static markdown_core_node *match(const markdown_core_extension *self, markdown_core_parser *parser,
                                  markdown_core_node *parent, unsigned char character,
-                                 markdown_core_inline_parser *inline_parser) {
+                                 markdown_core_inline_state *inline_state) {
     if (character != '!') {
         return NULL;
     }
-    inline_parser->pos++;
-    if (markdown_core_inline_peek_char(inline_parser) == '[' &&
-        markdown_core_inline_peek_char_n(inline_parser, 1) != '^') {
-        inline_parser->pos++;
+    inline_state->pos++;
+    if (markdown_core_inline_peek_char(inline_state) == '[' &&
+        markdown_core_inline_peek_char_n(inline_state, 1) != '^') {
+        inline_state->pos++;
         markdown_core_node *text =
-            make_str(inline_parser, inline_parser->pos - 2, inline_parser->pos - 1, markdown_core_chunk_literal("!["));
+            make_str(inline_state, inline_state->pos - 2, inline_state->pos - 1, markdown_core_chunk_literal("!["));
         if (text) {
-            markdown_core_inline_push_bracket(inline_parser, BRACKET_IMAGE, text);
+            markdown_core_inline_push_bracket(inline_state, BRACKET_IMAGE, text);
         }
         return text;
     }
-    return make_str(inline_parser, inline_parser->pos - 1, inline_parser->pos - 1, markdown_core_chunk_literal("!"));
+    return make_str(inline_state, inline_state->pos - 1, inline_state->pos - 1, markdown_core_chunk_literal("!"));
 }
 
 const markdown_core_extension MARKDOWN_CORE_EXTENSION_MEDIA = {

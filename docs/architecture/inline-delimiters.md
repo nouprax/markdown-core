@@ -21,7 +21,7 @@ The private stack contains five source-ordered entry kinds:
 Every entry uses the same allocation, linking and removal operations. Fields
 borrow their token owner; the AST owns the field trees. A field event is always
 the last entry when token scanning pauses. Completing it cannot change the
-parent stack because each field has its own inline subject. No script cursor boundary or per-marker boundary snapshot is retained.
+parent stack because each field has its own inline state. No script cursor boundary or per-marker boundary snapshot is retained.
 
 A heading can suspend with a field event on its ordinary stack. Its label
 contains live brackets, so it cannot declare an implicit reference; its

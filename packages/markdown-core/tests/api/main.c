@@ -1253,41 +1253,40 @@ static void no_node_is_its_own_ancestor(test_batch_runner *runner) {
  * They are `static const` descriptors, like every extension since 3.4. A test
  * may still build one -- what 3.4 removed is the ability to REGISTER one, look
  * one up by name, or mutate one after the fact. */
-static markdown_core_node *stray_delimiter_push(markdown_core_parser *parser,
-                                                markdown_core_inline_parser *inline_parser, unsigned char character,
-                                                markdown_core_delimiter_rule rule) {
+static markdown_core_node *stray_delimiter_push(markdown_core_parser *parser, markdown_core_inline_state *inline_state,
+                                                unsigned char character, markdown_core_delimiter_rule rule) {
     markdown_core_node *node;
 
     (void)parser;
     if (character != '@') {
         return NULL;
     }
-    markdown_core_inline_parser_advance_offset(inline_parser);
+    markdown_core_inline_state_advance_offset(inline_state);
     node = markdown_core_node_new(MARKDOWN_CORE_NODE_TEXT);
     if (!node) {
         return NULL;
     }
     markdown_core_node_set_literal(node, "@");
-    int offset = markdown_core_inline_parser_get_offset(inline_parser);
-    markdown_core_inline_parser_place(inline_parser, node, offset - 1, offset - 1);
-    markdown_core_inline_parser_push_delimiter(inline_parser, NULL, rule, 0, 1, node);
+    int offset = markdown_core_inline_state_get_offset(inline_state);
+    markdown_core_inline_state_place(inline_state, node, offset - 1, offset - 1);
+    markdown_core_inline_state_push_delimiter(inline_state, NULL, rule, 0, 1, node);
     return node;
 }
 
 static markdown_core_node *stray_unowned_match(const markdown_core_extension *self, markdown_core_parser *parser,
                                                markdown_core_node *parent, unsigned char character,
-                                               markdown_core_inline_parser *inline_parser) {
+                                               markdown_core_inline_state *inline_state) {
     (void)self;
     (void)parent;
-    return stray_delimiter_push(parser, inline_parser, character, MARKDOWN_CORE_DELIM_RULE_STRIKETHROUGH);
+    return stray_delimiter_push(parser, inline_state, character, MARKDOWN_CORE_DELIM_RULE_STRIKETHROUGH);
 }
 
 static markdown_core_node *stray_unnamed_match(const markdown_core_extension *self, markdown_core_parser *parser,
                                                markdown_core_node *parent, unsigned char character,
-                                               markdown_core_inline_parser *inline_parser) {
+                                               markdown_core_inline_state *inline_state) {
     (void)self;
     (void)parent;
-    return stray_delimiter_push(parser, inline_parser, character, (markdown_core_delimiter_rule)200);
+    return stray_delimiter_push(parser, inline_state, character, (markdown_core_delimiter_rule)200);
 }
 
 static const markdown_core_extension STRAY_UNOWNED = {
@@ -1316,7 +1315,7 @@ typedef struct dispatch_observation {
 
 static markdown_core_node *observe_dispatch(const markdown_core_extension *self, markdown_core_parser *parser,
                                             markdown_core_node *parent, unsigned char character,
-                                            markdown_core_inline_parser *inline_parser) {
+                                            markdown_core_inline_state *inline_state) {
     (void)parent;
     (void)character;
     dispatch_observation *observation = parser->root->user_data;
@@ -1324,7 +1323,7 @@ static markdown_core_node *observe_dispatch(const markdown_core_extension *self,
         observation->calls[observation->count++] = self->name[0];
     }
     if (self->name[0] == 'c') {
-        markdown_core_inline_parser_advance_offset(inline_parser);
+        markdown_core_inline_state_advance_offset(inline_state);
     }
     return NULL;
 }
@@ -2001,10 +2000,9 @@ static int conversion_can_contain(const markdown_core_extension *extension, mark
  * delimiter, with every production extension still in its fixed order. */
 static markdown_core_node *conversion_match_inline(const markdown_core_extension *extension,
                                                    markdown_core_parser *parser, markdown_core_node *parent,
-                                                   unsigned char character,
-                                                   markdown_core_inline_parser *inline_parser) {
+                                                   unsigned char character, markdown_core_inline_state *inline_state) {
     (void)character;
-    (void)inline_parser;
+    (void)inline_state;
     parent->extension = extension;
     parent->user_data = parser->root->user_data;
     return NULL;

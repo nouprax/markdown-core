@@ -364,28 +364,29 @@ oom:
 
 #include "inline_internal.h"
 #include "block_internal.h"
-int markdown_core_inline_parser_attributes(markdown_core_inline_parser *parser, bufsize_t start,
-                                           markdown_core_attributes *value, bufsize_t *end) {
-    if (start == parser->heading_attributes_start) {
+int markdown_core_inline_state_attributes(markdown_core_inline_state *inline_state, bufsize_t start,
+                                          markdown_core_attributes *value, bufsize_t *end) {
+    if (start == inline_state->heading_attributes_start) {
         return 0;
     }
-    if (!parser->attributes.mem) {
-        parser->attributes.mem = parser->mem;
-        parser->attributes.data = parser->input.data;
-        parser->attributes.length = parser->input.len;
+    if (!inline_state->attributes.mem) {
+        inline_state->attributes.mem = inline_state->mem;
+        inline_state->attributes.data = inline_state->input.data;
+        inline_state->attributes.length = inline_state->input.len;
     }
-    int matched = markdown_core_attributes_parse(&parser->attributes, start, value, end);
-    if (parser->attributes.oom) {
-        parser->oom = 1;
+    int matched = markdown_core_attributes_parse(&inline_state->attributes, start, value, end);
+    if (inline_state->attributes.oom) {
+        inline_state->oom = 1;
     }
     return matched;
 }
 
-void markdown_core_inline_attach_inline_attributes(subject *inline_parser, markdown_core_node *node, bufsize_t from) {
+void markdown_core_inline_attach_inline_attributes(markdown_core_inline_state *inline_state, markdown_core_node *node,
+                                                   bufsize_t from) {
     bufsize_t end;
-    if (markdown_core_inline_parser_attributes(inline_parser, inline_parser->pos, &node->attributes, &end)) {
-        inline_parser->pos = end;
-        markdown_core_inline_parser_place(inline_parser, node, from, end - 1);
+    if (markdown_core_inline_state_attributes(inline_state, inline_state->pos, &node->attributes, &end)) {
+        inline_state->pos = end;
+        markdown_core_inline_state_place(inline_state, node, from, end - 1);
     }
 }
 
@@ -409,10 +410,10 @@ bufsize_t markdown_core_attributes_attach_tail(markdown_core_parser *parser, mar
     return info_end;
 }
 
-static void dispose_inline(subject *inline_parser) {
-    if (inline_parser->attributes.mem) {
-        inline_parser->owner_parser->attribute_work += inline_parser->attributes.work;
-        markdown_core_attribute_parser_free(&inline_parser->attributes);
+static void dispose_inline(markdown_core_inline_state *inline_state) {
+    if (inline_state->attributes.mem) {
+        inline_state->owner_parser->attribute_work += inline_state->attributes.work;
+        markdown_core_attribute_parser_free(&inline_state->attributes);
     }
 }
 const markdown_core_extension MARKDOWN_CORE_EXTENSION_ATTRIBUTES = {

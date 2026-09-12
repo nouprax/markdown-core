@@ -51,12 +51,12 @@ struct markdown_core_extension {
     /* Negative/zero/positive precedence separates protected tokens, ordinary
      * alternatives, and literal fallbacks without a second dispatch algorithm. */
     markdown_core_inline_precedence inline_precedence;
-    markdown_core_node *(*parse_text)(markdown_core_parser *, markdown_core_inline_parser *, bufsize_t);
-    void (*init_inline)(markdown_core_inline_parser *);
-    void (*begin_inline)(markdown_core_parser *, markdown_core_inline_parser *, markdown_core_node *);
-    bool (*claim_inline_tail)(markdown_core_inline_parser *, markdown_core_node *);
-    void (*finish_inline)(markdown_core_inline_parser *);
-    void (*dispose_inline)(markdown_core_inline_parser *);
+    markdown_core_node *(*parse_text)(markdown_core_parser *, markdown_core_inline_state *, bufsize_t);
+    void (*init_inline)(markdown_core_inline_state *);
+    void (*begin_inline)(markdown_core_parser *, markdown_core_inline_state *, markdown_core_node *);
+    bool (*claim_inline_tail)(markdown_core_inline_state *, markdown_core_node *);
+    void (*finish_inline)(markdown_core_inline_state *);
+    void (*dispose_inline)(markdown_core_inline_state *);
     void (*complete_inline)(markdown_core_parser *, markdown_core_node *, int);
     markdown_core_node *(*open_lazy)(markdown_core_parser *, markdown_core_node *);
     bool (*accepts_lazy)(markdown_core_parser *, markdown_core_node *);
@@ -105,7 +105,7 @@ struct markdown_core_extension {
     /* Optional non-consuming token predicate. Text scanning consults the
      * parser's byte-indexed projection; all owners of a shared byte must
      * agree, otherwise that byte always reaches ordinary extension dispatch. */
-    bool (*is_inline_start)(markdown_core_inline_parser *, bufsize_t);
+    bool (*is_inline_start)(markdown_core_inline_state *, bufsize_t);
     markdown_core_match_inline_func match_inline;
     markdown_core_inline_from_delim_func insert_inline_from_delim;
     /* THREE byte sets, not one list.
@@ -124,7 +124,7 @@ struct markdown_core_extension {
      * Each set is a NUL-terminated byte list; NUL itself is never a member
      * because source normalization replaces it before inlines run. A NULL set
      * is empty. */
-    const char *terminates_text;      /* ends a text run: subject_find_special_char */
+    const char *terminates_text;      /* ends a text run: inline_state_find_special_char */
     const char *dispatch;             /* offered to match_inline, and owns a delimiter tag */
     const char *flanking_transparent; /* scan_delims looks through it */
     const char *name;

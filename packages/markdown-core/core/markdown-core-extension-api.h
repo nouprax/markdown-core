@@ -69,7 +69,7 @@ struct markdown_core_chunk;
  * its `match_inline` hook
  * will get called, it is the responsibility of the extension
  * to scan the characters located at the current inline parsing offset
- * with the markdown_core_inline_parser API.
+ * with the markdown_core_inline_state API.
  *
  * Depending on the type of the extension, it can either:
  *
@@ -102,7 +102,7 @@ struct markdown_core_chunk;
  * with its own private state,
  * and optionally define a free function for this data.
  */
-typedef struct subject markdown_core_inline_parser;
+typedef struct markdown_core_inline_state markdown_core_inline_state;
 
 /** A delimiter names its RULE, not a byte.
  *
@@ -151,7 +151,7 @@ typedef enum {
     MARKDOWN_CORE_DELIM_RULE_FORMULA_LATEX_DISPLAY,
     MARKDOWN_CORE_DELIM_RULE_DIRECTIVE_LABEL,
     /* A rule id also names an opaque-body search (see
-     * markdown_core_inline_parser_find_opaque_close): the `%%` comment pushes
+     * markdown_core_inline_state_find_opaque_close): the `%%` comment pushes
      * no delimiter, but its closer search caches its failures under this id. */
     MARKDOWN_CORE_DELIM_RULE_COMMENT,
     MARKDOWN_CORE_DELIM_RULE_COUNT
@@ -172,7 +172,7 @@ markdown_core_node *markdown_core_delimiter_node(const delimiter *delim);
 MARKDOWN_CORE_EXPORT
 markdown_core_delimiter_rule markdown_core_delimiter_rule_of(const delimiter *delim);
 
-/** The subject offset just past the delimiter's last byte. */
+/** The inline state offset just past the delimiter's last byte. */
 MARKDOWN_CORE_EXPORT
 bufsize_t markdown_core_delimiter_position(const delimiter *delim);
 
@@ -201,13 +201,13 @@ typedef markdown_core_node *(*markdown_core_open_block_func)(const markdown_core
 typedef markdown_core_node *(*markdown_core_match_inline_func)(const markdown_core_extension *extension,
                                                                markdown_core_parser *parser, markdown_core_node *parent,
                                                                unsigned char character,
-                                                               markdown_core_inline_parser *inline_parser);
+                                                               markdown_core_inline_state *inline_state);
 
 /* Builds the opaque AST value only. The matcher owns all delimiter removal,
  * including the matched endpoints, on success and failure alike. */
 typedef void (*markdown_core_inline_from_delim_func)(const markdown_core_extension *extension,
                                                      markdown_core_parser *parser,
-                                                     markdown_core_inline_parser *inline_parser, delimiter *opener,
+                                                     markdown_core_inline_state *inline_state, delimiter *opener,
                                                      delimiter *closer);
 
 /** Returned by a 'markdown_core_match_block_func' when 'input' is the
@@ -418,7 +418,8 @@ int markdown_core_parser_append_content_marks(markdown_core_parser *parser, mark
                                               markdown_core_node *node, bufsize_t from, bufsize_t length,
                                               bufsize_t offset);
 /** Project a logical inline range, including its Text literal mapping. */
-void markdown_core_inline_parser_place(markdown_core_inline_parser *parser, markdown_core_node *node, int from, int to);
+void markdown_core_inline_state_place(markdown_core_inline_state *inline_state, markdown_core_node *node, int from,
+                                      int to);
 /** The inclusive end of the authored bytes represented by a content byte.
  * Uses the same run lookup as content_place, which returns its start. */
 int markdown_core_parser_content_end_place(markdown_core_parser *parser, markdown_core_node *node, bufsize_t offset,
@@ -564,34 +565,34 @@ typedef int (*markdown_core_inline_predicate)(int c);
 
 /** Advance the current inline parsing offset */
 MARKDOWN_CORE_EXPORT
-void markdown_core_inline_parser_advance_offset(markdown_core_inline_parser *parser);
+void markdown_core_inline_state_advance_offset(markdown_core_inline_state *inline_state);
 
 /** Get the current inline parsing offset */
 MARKDOWN_CORE_EXPORT
-int markdown_core_inline_parser_get_offset(markdown_core_inline_parser *parser);
+int markdown_core_inline_state_get_offset(markdown_core_inline_state *inline_state);
 
-/** Set the offset in bytes in the chunk being processed by the given inline parser.
+/** Set the offset in bytes in the chunk being processed by the given inline state.
  */
 MARKDOWN_CORE_EXPORT
-void markdown_core_inline_parser_set_offset(markdown_core_inline_parser *parser, int offset);
+void markdown_core_inline_state_set_offset(markdown_core_inline_state *inline_state, int offset);
 
-/** Gets the markdown_core_chunk being operated on by the given inline parser.
- * Use markdown_core_inline_parser_get_offset to get our current position in the chunk.
+/** Gets the markdown_core_chunk being operated on by the given inline state.
+ * Use markdown_core_inline_state_get_offset to get our current position in the chunk.
  */
 MARKDOWN_CORE_EXPORT
-struct markdown_core_chunk *markdown_core_inline_parser_get_chunk(markdown_core_inline_parser *parser);
+struct markdown_core_chunk *markdown_core_inline_state_get_chunk(markdown_core_inline_state *inline_state);
 
 /** The surrounding bracket's closing byte, or zero outside brackets.
  * Bare token scanners preserve an unescaped closer for the shared algorithm. */
-unsigned char markdown_core_inline_parser_closing_bracket(markdown_core_inline_parser *parser);
+unsigned char markdown_core_inline_state_closing_bracket(markdown_core_inline_state *inline_state);
 
-/** The start of the current independent inline body (subject or footnote). */
-int markdown_core_inline_parser_context_start(markdown_core_inline_parser *parser);
+/** The start of the current independent inline body. */
+int markdown_core_inline_state_context_start(markdown_core_inline_state *inline_state);
 
-/** Returns 1 if the inline parser is currently in a bracket; pass 1 for 'image'
+/** Returns 1 if the inline state is currently in a bracket; pass 1 for 'image'
  * if you want to know about an image-type bracket, 0 for link-type. */
 MARKDOWN_CORE_EXPORT
-int markdown_core_inline_parser_in_bracket(markdown_core_inline_parser *parser, int image);
+int markdown_core_inline_state_in_bracket(markdown_core_inline_state *inline_state, int image);
 
 /** Remove the last n characters from the last child of the given node.
  * This only works where all n characters are in the single last child, and the last
@@ -603,23 +604,24 @@ void markdown_core_node_unput(markdown_core_parser *parser, markdown_core_node *
 /** Get the character located at the current inline parsing offset
  */
 MARKDOWN_CORE_EXPORT
-unsigned char markdown_core_inline_parser_peek_char(markdown_core_inline_parser *parser);
+unsigned char markdown_core_inline_state_peek_char(markdown_core_inline_state *inline_state);
 
 /** Get the character located 'pos' bytes in the current line.
  */
 MARKDOWN_CORE_EXPORT
-unsigned char markdown_core_inline_parser_peek_at(markdown_core_inline_parser *parser, int pos);
+unsigned char markdown_core_inline_state_peek_at(markdown_core_inline_state *inline_state, int pos);
 
-/** Whether the inline parser has reached the end of the current line
+/** Whether the inline state has reached the end of the current line
  */
 MARKDOWN_CORE_EXPORT
-int markdown_core_inline_parser_is_eof(markdown_core_inline_parser *parser);
+int markdown_core_inline_state_is_eof(markdown_core_inline_state *inline_state);
 
 /** Get the characters located after the current inline parsing offset
  * while 'pred' matches. Free after usage.
  */
 MARKDOWN_CORE_EXPORT
-char *markdown_core_inline_parser_take_while(markdown_core_inline_parser *parser, markdown_core_inline_predicate pred);
+char *markdown_core_inline_state_take_while(markdown_core_inline_state *inline_state,
+                                            markdown_core_inline_predicate pred);
 
 /* A delimiter scanner describes one lexical unit: its width and whether it
  * closes this rule. The shared cursor caches failed suffix searches per rule,
@@ -627,19 +629,19 @@ char *markdown_core_inline_parser_take_while(markdown_core_inline_parser *parser
  * owning extension still constructs its node through the delimiter stack. */
 typedef int (*markdown_core_opaque_delimiter_scanner)(const unsigned char *data, int length, int offset,
                                                       markdown_core_delimiter_rule rule, bool *closes);
-void markdown_core_inline_parser_set_opaque_body_end(markdown_core_inline_parser *parser, int end);
-int markdown_core_inline_parser_find_opaque_close(markdown_core_inline_parser *parser,
-                                                  markdown_core_delimiter_rule rule, int from,
-                                                  markdown_core_opaque_delimiter_scanner scan);
+void markdown_core_inline_state_set_opaque_body_end(markdown_core_inline_state *inline_state, int end);
+int markdown_core_inline_state_find_opaque_close(markdown_core_inline_state *inline_state,
+                                                 markdown_core_delimiter_rule rule, int from,
+                                                 markdown_core_opaque_delimiter_scanner scan);
 
 /** Push a delimiter on the delimiter stack.
  * See <<http://spec.commonmark.org/0.24/#phase-2-inline-structure> for
  * more information on the parameters
  */
 MARKDOWN_CORE_EXPORT
-void markdown_core_inline_parser_push_delimiter(markdown_core_inline_parser *parser,
-                                                const markdown_core_extension *owner, markdown_core_delimiter_rule rule,
-                                                int can_open, int can_close, markdown_core_node *inl_text);
+void markdown_core_inline_state_push_delimiter(markdown_core_inline_state *inline_state,
+                                               const markdown_core_extension *owner, markdown_core_delimiter_rule rule,
+                                               int can_open, int can_close, markdown_core_node *inl_text);
 
 /** Whether the delimiters of `rule` on the stack that can open outnumber
  * those that can close. The counts are kept at every push and removal, so the
@@ -654,14 +656,14 @@ void markdown_core_inline_parser_push_delimiter(markdown_core_inline_parser *par
  * before it and no pair ever spans another of the rule.
  */
 MARKDOWN_CORE_EXPORT
-int markdown_core_inline_parser_has_unmatched_opener(markdown_core_inline_parser *parser,
-                                                     markdown_core_delimiter_rule rule);
+int markdown_core_inline_state_has_unmatched_opener(markdown_core_inline_state *inline_state,
+                                                    markdown_core_delimiter_rule rule);
 
 MARKDOWN_CORE_EXPORT
-int markdown_core_inline_parser_get_line(markdown_core_inline_parser *parser);
+int markdown_core_inline_state_get_line(markdown_core_inline_state *inline_state);
 
 MARKDOWN_CORE_EXPORT
-int markdown_core_inline_parser_get_column(markdown_core_inline_parser *parser);
+int markdown_core_inline_state_get_column(markdown_core_inline_state *inline_state);
 
 /** Make the Text node a delimiter run stands as: its literal is the bytes
  * [from, to] of the block's content and its position is a projection of that
@@ -674,8 +676,8 @@ int markdown_core_inline_parser_get_column(markdown_core_inline_parser *parser);
  * has not consumed the run yet still has to.
  */
 MARKDOWN_CORE_EXPORT
-markdown_core_node *markdown_core_inline_parser_make_delimiter_text(markdown_core_inline_parser *parser, int from,
-                                                                    int to);
+markdown_core_node *markdown_core_inline_state_make_delimiter_text(markdown_core_inline_state *inline_state, int from,
+                                                                   int to);
 
 /** Convenience function to scan a given delimiter.
  *
@@ -692,9 +694,9 @@ markdown_core_node *markdown_core_inline_parser_make_delimiter_text(markdown_cor
  * of 'max_delims', and advances the inline parsing offset.
  */
 MARKDOWN_CORE_EXPORT
-int markdown_core_inline_parser_scan_delimiters(markdown_core_inline_parser *parser, int max_delims, unsigned char c,
-                                                int *left_flanking, int *right_flanking, int *punct_before,
-                                                int *punct_after);
+int markdown_core_inline_state_scan_delimiters(markdown_core_inline_state *inline_state, int max_delims,
+                                               unsigned char c, int *left_flanking, int *right_flanking,
+                                               int *punct_before, int *punct_after);
 
 MARKDOWN_CORE_EXPORT
 void markdown_core_manage_extensions_special_characters(markdown_core_parser *parser, int add);

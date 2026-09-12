@@ -268,20 +268,20 @@ static int formula_block_matches(const markdown_core_extension *extension, markd
     return 1;
 }
 
-static markdown_core_node *make_delimiter_text(markdown_core_parser *parser, markdown_core_inline_parser *inline_parser,
+static markdown_core_node *make_delimiter_text(markdown_core_parser *parser, markdown_core_inline_state *inline_state,
                                                bufsize_t len) {
-    bufsize_t offset = (bufsize_t)markdown_core_inline_parser_get_offset(inline_parser);
+    bufsize_t offset = (bufsize_t)markdown_core_inline_state_get_offset(inline_state);
     markdown_core_node *node;
 
     (void)parser;
     /* The cursor is at the run's FIRST byte here, and at its last in
      * `strikethrough` -- which is why each of them used to compute the columns
      * from a different end. The shared constructor is told the range. */
-    node = markdown_core_inline_parser_make_delimiter_text(inline_parser, (int)offset, (int)(offset + len - 1));
+    node = markdown_core_inline_state_make_delimiter_text(inline_state, (int)offset, (int)(offset + len - 1));
     if (!node) {
         return NULL;
     }
-    markdown_core_inline_parser_set_offset(inline_parser, (int)(offset + len));
+    markdown_core_inline_state_set_offset(inline_state, (int)(offset + len));
     return node;
 }
 
@@ -289,19 +289,19 @@ static int scan_formula_closer(const unsigned char *data, int length, int at, ma
                                bool *closes);
 
 static markdown_core_node *match_formula_delimiter(const markdown_core_extension *self, markdown_core_parser *parser,
-                                                   markdown_core_inline_parser *inline_parser,
+                                                   markdown_core_inline_state *inline_state,
                                                    markdown_core_delimiter_rule rule, bufsize_t len, int can_open,
                                                    int can_close) {
     if (can_open) {
-        int from = markdown_core_inline_parser_get_offset(inline_parser) + len;
-        int close = markdown_core_inline_parser_find_opaque_close(inline_parser, rule, from, scan_formula_closer);
-        markdown_core_chunk *input = markdown_core_inline_parser_get_chunk(inline_parser);
+        int from = markdown_core_inline_state_get_offset(inline_state) + len;
+        int close = markdown_core_inline_state_find_opaque_close(inline_state, rule, from, scan_formula_closer);
+        markdown_core_chunk *input = markdown_core_inline_state_get_chunk(inline_state);
         if (close >= 0 && (rule != FORMULA_DELIM_DOLLAR_INLINE || input->data[from] != '`' ||
                            (close - from >= 2 && input->data[close - 1] == '`'))) {
-            markdown_core_inline_parser_set_opaque_body_end(inline_parser, close);
+            markdown_core_inline_state_set_opaque_body_end(inline_state, close);
         }
     }
-    markdown_core_node *node = make_delimiter_text(parser, inline_parser, len);
+    markdown_core_node *node = make_delimiter_text(parser, inline_state, len);
 
     if (!node) {
         parser->oom = true;
@@ -309,7 +309,7 @@ static markdown_core_node *match_formula_delimiter(const markdown_core_extension
     }
 
     if (can_open || can_close) {
-        markdown_core_inline_parser_push_delimiter(inline_parser, self, rule, can_open, can_close, node);
+        markdown_core_inline_state_push_delimiter(inline_state, self, rule, can_open, can_close, node);
     }
     return node;
 }
@@ -397,9 +397,9 @@ static int scan_formula_closer(const unsigned char *data, int length, int at, ma
  * being a reference (CommonMark 0.31.2 example 558). */
 static markdown_core_node *match(const markdown_core_extension *extension, markdown_core_parser *parser,
                                  markdown_core_node *parent, unsigned char character,
-                                 markdown_core_inline_parser *inline_parser) {
-    markdown_core_chunk *chunk = markdown_core_inline_parser_get_chunk(inline_parser);
-    int offset = markdown_core_inline_parser_get_offset(inline_parser);
+                                 markdown_core_inline_state *inline_state) {
+    markdown_core_chunk *chunk = markdown_core_inline_state_get_chunk(inline_state);
+    int offset = markdown_core_inline_state_get_offset(inline_state);
     int len = (int)chunk->len;
     bufsize_t opener_len;
     bufsize_t closer_len;
@@ -407,45 +407,43 @@ static markdown_core_node *match(const markdown_core_extension *extension, markd
 
     if (character == '$') {
         if (scan_formula_dollar_display_open(chunk->data, len, offset)) {
-            open = markdown_core_inline_parser_has_unmatched_opener(inline_parser, FORMULA_DELIM_DOLLAR_DISPLAY);
-            return match_formula_delimiter(extension, parser, inline_parser, FORMULA_DELIM_DOLLAR_DISPLAY, 2, !open,
+            open = markdown_core_inline_state_has_unmatched_opener(inline_state, FORMULA_DELIM_DOLLAR_DISPLAY);
+            return match_formula_delimiter(extension, parser, inline_state, FORMULA_DELIM_DOLLAR_DISPLAY, 2, !open,
                                            open);
         }
 
         if (scan_formula_dollar_inline_open(chunk->data, len, offset)) {
-            open = markdown_core_inline_parser_has_unmatched_opener(inline_parser, FORMULA_DELIM_DOLLAR_INLINE);
-            return match_formula_delimiter(extension, parser, inline_parser, FORMULA_DELIM_DOLLAR_INLINE, 1,
+            open = markdown_core_inline_state_has_unmatched_opener(inline_state, FORMULA_DELIM_DOLLAR_INLINE);
+            return match_formula_delimiter(extension, parser, inline_state, FORMULA_DELIM_DOLLAR_INLINE, 1,
                                            !open && dollar_inline_can_open(chunk, (bufsize_t)offset),
                                            open && dollar_inline_can_close(chunk, (bufsize_t)offset));
         }
     } else if (character == '\\') {
         opener_len = scan_formula_latex_backslash_display_open(chunk->data, len, offset);
         if (opener_len) {
-            open =
-                markdown_core_inline_parser_has_unmatched_opener(inline_parser, FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY);
-            return match_formula_delimiter(extension, parser, inline_parser, FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY,
+            open = markdown_core_inline_state_has_unmatched_opener(inline_state, FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY);
+            return match_formula_delimiter(extension, parser, inline_state, FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY,
                                            opener_len, !open, 0);
         }
 
         opener_len = scan_formula_latex_backslash_inline_open(chunk->data, len, offset);
         if (opener_len) {
-            open =
-                markdown_core_inline_parser_has_unmatched_opener(inline_parser, FORMULA_DELIM_LATEX_BACKSLASH_INLINE);
-            return match_formula_delimiter(extension, parser, inline_parser, FORMULA_DELIM_LATEX_BACKSLASH_INLINE,
+            open = markdown_core_inline_state_has_unmatched_opener(inline_state, FORMULA_DELIM_LATEX_BACKSLASH_INLINE);
+            return match_formula_delimiter(extension, parser, inline_state, FORMULA_DELIM_LATEX_BACKSLASH_INLINE,
                                            opener_len, !open, 0);
         }
 
         closer_len = scan_backslash_close(chunk->data, chunk->len, offset, ']', 2);
         if (closer_len &&
-            markdown_core_inline_parser_has_unmatched_opener(inline_parser, FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY)) {
-            return match_formula_delimiter(extension, parser, inline_parser, FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY,
+            markdown_core_inline_state_has_unmatched_opener(inline_state, FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY)) {
+            return match_formula_delimiter(extension, parser, inline_state, FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY,
                                            closer_len, 0, 1);
         }
 
         closer_len = scan_backslash_close(chunk->data, chunk->len, offset, ')', 2);
         if (closer_len &&
-            markdown_core_inline_parser_has_unmatched_opener(inline_parser, FORMULA_DELIM_LATEX_BACKSLASH_INLINE)) {
-            return match_formula_delimiter(extension, parser, inline_parser, FORMULA_DELIM_LATEX_BACKSLASH_INLINE,
+            markdown_core_inline_state_has_unmatched_opener(inline_state, FORMULA_DELIM_LATEX_BACKSLASH_INLINE)) {
+            return match_formula_delimiter(extension, parser, inline_state, FORMULA_DELIM_LATEX_BACKSLASH_INLINE,
                                            closer_len, 0, 1);
         }
     }
@@ -557,8 +555,8 @@ static markdown_core_node *make_formula_node(const markdown_core_extension *exte
  * read once, because `match` lets one formula of a form open at a time and
  * so no pair ever spans another of its form. */
 static void insert_formula(const markdown_core_extension *extension, markdown_core_parser *parser,
-                           markdown_core_inline_parser *inline_parser, delimiter *opener, delimiter *closer) {
-    markdown_core_chunk *chunk = markdown_core_inline_parser_get_chunk(inline_parser);
+                           markdown_core_inline_state *inline_state, delimiter *opener, delimiter *closer) {
+    markdown_core_chunk *chunk = markdown_core_inline_state_get_chunk(inline_state);
     markdown_core_node *opener_node = markdown_core_delimiter_node(opener);
     markdown_core_node *closer_node = markdown_core_delimiter_node(closer);
     markdown_core_node *formula;

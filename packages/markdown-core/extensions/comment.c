@@ -124,9 +124,9 @@ static int scan_closer(const unsigned char *data, int length, int at, markdown_c
 
 static markdown_core_node *match(const markdown_core_extension *extension, markdown_core_parser *parser,
                                  markdown_core_node *parent, unsigned char character,
-                                 markdown_core_inline_parser *inlines) {
-    markdown_core_chunk *input = markdown_core_inline_parser_get_chunk(inlines);
-    int start = markdown_core_inline_parser_get_offset(inlines);
+                                 markdown_core_inline_state *inline_state) {
+    markdown_core_chunk *input = markdown_core_inline_state_get_chunk(inline_state);
+    int start = markdown_core_inline_state_get_offset(inline_state);
     int close;
     markdown_core_node *node;
 
@@ -137,8 +137,8 @@ static markdown_core_node *match(const markdown_core_extension *extension, markd
     if (start + 1 >= input->len || input->data[start + 1] != '%') {
         return NULL;
     }
-    close = markdown_core_inline_parser_find_opaque_close(inlines, MARKDOWN_CORE_DELIM_RULE_COMMENT, start + 2,
-                                                          scan_closer);
+    close = markdown_core_inline_state_find_opaque_close(inline_state, MARKDOWN_CORE_DELIM_RULE_COMMENT, start + 2,
+                                                         scan_closer);
     if (close < 0) {
         return NULL;
     }
@@ -156,7 +156,7 @@ static markdown_core_node *match(const markdown_core_extension *extension, markd
     /* The scope covers both delimiters and the body. */
     markdown_core_parser_content_place(parser, parent, start, &node->start_line, &node->start_column);
     markdown_core_parser_content_end_place(parser, parent, close + 1, &node->end_line, &node->end_column);
-    markdown_core_inline_parser_set_offset(inlines, close + 2);
+    markdown_core_inline_state_set_offset(inline_state, close + 2);
     return node;
 }
 
@@ -244,9 +244,9 @@ void markdown_core_block_convert_comment_block(markdown_core_parser *parser, mar
     literal->len = body_len;
 }
 
-markdown_core_node *markdown_core_comment_make_inline(markdown_core_inline_parser *inline_parser, int from, int to,
+markdown_core_node *markdown_core_comment_make_inline(markdown_core_inline_state *inline_state, int from, int to,
                                                       markdown_core_chunk literal) {
-    return markdown_core_inline_make_literal(inline_parser, MARKDOWN_CORE_NODE_COMMENT, from, to, literal);
+    return markdown_core_inline_make_literal(inline_state, MARKDOWN_CORE_NODE_COMMENT, from, to, literal);
 }
 
 static void finalize_comment(markdown_core_parser *parser, markdown_core_node *b) {
@@ -266,17 +266,18 @@ static void finalize_comment(markdown_core_parser *parser, markdown_core_node *b
     }
 }
 
-bool markdown_core_comment_scan_html(subject *inline_parser, bufsize_t pos, unsigned *flags, bufsize_t *length) {
-    if (inline_parser->input.data[pos] != '!' || inline_parser->input.data[pos + 1] != '-' ||
-        inline_parser->input.data[pos + 2] != '-') {
+bool markdown_core_comment_scan_html(markdown_core_inline_state *inline_state, bufsize_t pos, unsigned *flags,
+                                     bufsize_t *length) {
+    if (inline_state->input.data[pos] != '!' || inline_state->input.data[pos + 1] != '-' ||
+        inline_state->input.data[pos + 2] != '-') {
         return false;
     }
-    if (inline_parser->input.data[pos + 3] == '>') {
+    if (inline_state->input.data[pos + 3] == '>') {
         *length = 4;
-    } else if (inline_parser->input.data[pos + 3] == '-' && inline_parser->input.data[pos + 4] == '>') {
+    } else if (inline_state->input.data[pos + 3] == '-' && inline_state->input.data[pos + 4] == '>') {
         *length = 5;
     } else {
-        *length = scan_html_comment(&inline_parser->input, pos + 1);
+        *length = scan_html_comment(&inline_state->input, pos + 1);
         if (*length > 0) {
             *length += 1; // prefix "<"
         } else {          // no match through end of input: set a flag so
@@ -286,10 +287,11 @@ bool markdown_core_comment_scan_html(subject *inline_parser, bufsize_t pos, unsi
     }
     return true;
 }
-markdown_core_node *markdown_core_comment_make_html(subject *inline_parser, bufsize_t pos, bufsize_t length) {
+markdown_core_node *markdown_core_comment_make_html(markdown_core_inline_state *inline_state, bufsize_t pos,
+                                                    bufsize_t length) {
     /* The empty short forms have overlapping opening and closing markers. */
     bufsize_t body_length = length > 6 ? length - 6 : 0;
-    markdown_core_chunk body = markdown_core_chunk_dup(&inline_parser->input, pos + 3, body_length);
-    inline_parser->pos = pos + length;
-    return markdown_core_comment_make_inline(inline_parser, pos - 1, inline_parser->pos - 1, body);
+    markdown_core_chunk body = markdown_core_chunk_dup(&inline_state->input, pos + 3, body_length);
+    inline_state->pos = pos + length;
+    return markdown_core_comment_make_inline(inline_state, pos - 1, inline_state->pos - 1, body);
 }

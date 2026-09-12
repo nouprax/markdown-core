@@ -2,11 +2,11 @@
 #include "inline_internal.h"
 static markdown_core_node *match(const markdown_core_extension *self, markdown_core_parser *parser,
                                  markdown_core_node *parent, unsigned char character,
-                                 markdown_core_inline_parser *inline_parser) {
+                                 markdown_core_inline_state *inline_state) {
     if (character != '=') {
         return NULL;
     }
-    return markdown_core_inline_match_delimiter(self, inline_parser);
+    return markdown_core_inline_match_delimiter(self, inline_state);
 }
 const markdown_core_extension MARKDOWN_CORE_EXTENSION_MARK = {
     .name = "mark",

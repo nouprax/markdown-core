@@ -3,7 +3,7 @@
 #include "inlines.h"
 #include "bracket_state.h"
 bufsize_t markdown_core_inline_reference_label_length(const unsigned char *data, bufsize_t length);
-int markdown_core_inline_link_label(markdown_core_inline_parser *inline_parser, markdown_core_chunk *raw_label);
+int markdown_core_inline_link_label(markdown_core_inline_state *inline_state, markdown_core_chunk *raw_label);
 bool markdown_core_block_resolve_reference_link_definitions(markdown_core_parser *parser, markdown_core_node *b);
 typedef enum { LINK_UNMATCHED, LINK_SHORTCUT, LINK_EXPLICIT } markdown_core_link_match;
 typedef struct {
@@ -12,9 +12,9 @@ typedef struct {
     markdown_core_optional_chunk title;
     bool explicit_tail;
 } markdown_core_link_candidate;
-markdown_core_link_match markdown_core_link_recognize(markdown_core_inline_parser *inline_parser,
-                                                      struct bracket *opener, markdown_core_link_candidate *candidate);
-bool markdown_core_link_commit(markdown_core_parser *parser, markdown_core_inline_parser *inline_parser,
+markdown_core_link_match markdown_core_link_recognize(markdown_core_inline_state *inline_state, struct bracket *opener,
+                                                      markdown_core_link_candidate *candidate);
+bool markdown_core_link_commit(markdown_core_parser *parser, markdown_core_inline_state *inline_state,
                                struct bracket *opener, markdown_core_link_candidate *candidate, bufsize_t initial_pos);
 extern const markdown_core_extension MARKDOWN_CORE_EXTENSION_LINK;
 markdown_core_chunk markdown_core_clean_url(markdown_core_mem *mem, markdown_core_chunk *url, int *lost);
@@ -30,14 +30,14 @@ bufsize_t markdown_core_parse_reference_inline(markdown_core_mem *mem, markdown_
                                                markdown_core_map *refmap, markdown_core_attribute_parser *attributes,
                                                uint64_t source_key);
 
-void markdown_core_inline_pop_bracket(markdown_core_inline_parser *inline_parser);
+void markdown_core_inline_pop_bracket(markdown_core_inline_state *inline_state);
 markdown_core_node *markdown_core_inline_handle_close_bracket(markdown_core_parser *parser,
-                                                              markdown_core_inline_parser *inline_parser);
+                                                              markdown_core_inline_state *inline_state);
 void markdown_core_inline_take_bracket_content(markdown_core_parser *parser, bracket *opener,
                                                markdown_core_node *owner);
-void markdown_core_inline_replace_bracket_opener(markdown_core_inline_parser *inline_parser, bracket *opener,
+void markdown_core_inline_replace_bracket_opener(markdown_core_inline_state *inline_state, bracket *opener,
                                                  markdown_core_node *replacement);
-void markdown_core_inline_push_bracket(markdown_core_inline_parser *inline_parser, bracket_kind kind,
+void markdown_core_inline_push_bracket(markdown_core_inline_state *inline_state, bracket_kind kind,
                                        markdown_core_node *inl_text);
 
 #endif

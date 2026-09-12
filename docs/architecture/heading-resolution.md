@@ -34,13 +34,13 @@ brackets inside an attached attribute value are not part of the heading label.
 Each heading starts the ordinary inline parser. It can finish and declare its
 label without reference lookup until it encounters a live unescaped bracket.
 That bracket makes the authored label unwritable under the inherited reference
-label grammar. The parser retains that same inline subject, including its
+label grammar. The parser retains that same inline state, including its
 cursor and delimiter state, and resumes it after all writable heading labels
 have been declared. There is no second inline recognizer, reparsed prefix,
 placeholder AST, or later replacement of literal Text with Links.
 
 A consumed directive with an owned label is also a suspension boundary: that
-label has live brackets and may contain references of its own. The subject
+label has live brackets and may contain references of its own. The inline state
 retains a field-completion event on its delimiter stack, including when the
 token ends the heading.
 A directive without a label does not suspend declaration.
@@ -61,7 +61,7 @@ on the enclosing delimiter stack, excluding entities and opaque tokens. The stru
 skips emitted inline trees, so every source buffer is parsed once. Field-local
 delimiters remain independent of those in the enclosing content.
 The [delimiter model](inline-delimiters.md) owns pairing and scope reduction.
-The heading's ordinary inline subject is the sole owner of its temporary
+The heading's ordinary inline state is the sole owner of its temporary
 caches and delimiter/bracket stacks. Backtick caches allocate lazily, bounded
 by the input length and the inherited backtick limit; a pending heading does
 not retain a maximum-sized cache for source that never needs one.
@@ -128,11 +128,11 @@ retained across headings rather than discarded when a value is attached.
 ## Lifetime and bounds
 
 The heading collection and anchor indices borrow nodes and strings only until
-finalization completes. Pending subjects own their temporary parser state.
+finalization completes. Pending inline states own their temporary parser state.
 The reference map and occurrences own resources through existing reference
 counts; freeing the heading or document does not invalidate a detached Link.
 Every failure joins the parser's terminal allocation-failure transaction and
-disposes pending subjects before their nodes. Parse-time indices are discarded
+disposes pending inline states before their nodes. Parse-time indices are discarded
 before consolidation or extension postprocessing can replace nodes.
 
 Expected work is proportional to parsed input, visited nodes, and produced

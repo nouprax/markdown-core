@@ -3,6 +3,5 @@
 #include "inline_internal.h"
 struct bracket;
 markdown_core_bracket_match markdown_core_span_close(markdown_core_parser *parser,
-                                                     markdown_core_inline_parser *inline_parser,
-                                                     struct bracket *opener);
+                                                     markdown_core_inline_state *inline_state, struct bracket *opener);
 #endif

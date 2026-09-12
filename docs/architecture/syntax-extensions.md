@@ -68,9 +68,10 @@ remain shared model operations, independent of a syntax's spelling.
 
 Extensions own lexical rules, recognition results, element construction,
 attachment and element resolution. `inline_internal.h` and `block_internal.h`
-expose the shared parser services and typed borrowed cursors; they do not
+expose the shared parser services and the single `markdown_core_inline_state`
+type, whose parameters are named `inline_state`; they do not
 create another parser or transfer AST ownership. Citation, bracket and heading
-state records live beside their grammar owners. Subject resources are released
+state records live beside their grammar owners. Inline state resources are released
 through their owners' disposal hooks, including on allocation failure.
 
 The immutable registry projects node kinds to element structure descriptors separately
@@ -105,7 +106,7 @@ cached lookahead.
 Inline descriptors declare protected-token, ordinary-alternative or literal-
 fallback precedence. One ordered dispatch loop handles all three. Its byte index
 is built once per parse, preserving candidate order and set membership without
-walking unrelated descriptors for each token. Subject lifecycle and block
+walking unrelated descriptors for each token. Inline state lifecycle and block
 alternative lists likewise include only participating descriptors, in registry
 order. A successful
 alternative may consume input without emitting a node, as bracket commitment

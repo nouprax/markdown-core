@@ -402,7 +402,7 @@ static markdown_core_node *make_directive_node(const markdown_core_extension *ex
  * Scanning it here also means the bytes are CONSUMED here, so no other
  * extension is ever offered them. There is nothing left to protect. */
 static markdown_core_node *match_colon_directive(const markdown_core_extension *extension, markdown_core_parser *parser,
-                                                 markdown_core_node *parent, markdown_core_inline_parser *inline_parser,
+                                                 markdown_core_node *parent, markdown_core_inline_state *inline_state,
                                                  markdown_core_chunk *chunk, bufsize_t offset) {
     bufsize_t name_start;
     bufsize_t name_len;
@@ -415,8 +415,8 @@ static markdown_core_node *match_colon_directive(const markdown_core_extension *
     markdown_core_node *node;
     markdown_core_node *label_node = NULL;
     node_directive *directive;
-    int start_line = markdown_core_inline_parser_get_line(inline_parser);
-    int start_column = markdown_core_inline_parser_get_column(inline_parser);
+    int start_line = markdown_core_inline_state_get_line(inline_state);
+    int start_column = markdown_core_inline_state_get_column(inline_state);
 
     memset(&attributes, 0, sizeof(attributes));
 
@@ -453,7 +453,7 @@ static markdown_core_node *match_colon_directive(const markdown_core_extension *
     }
 
     if (pos < chunk->len && chunk->data[pos] == '{') {
-        markdown_core_inline_parser_attributes(inline_parser, pos, &attributes, &pos);
+        markdown_core_inline_state_attributes(inline_state, pos, &attributes, &pos);
     }
 
     node = make_directive_node(extension, parser, chunk->data + name_start, name_len, start_line, start_column,
@@ -468,20 +468,20 @@ static markdown_core_node *match_colon_directive(const markdown_core_extension *
 
     if (has_label) {
         /* Consume to the `]` first and read the label's end back from the
-         * subject, because a label may span a line ending and a column
+         * inline state, because a label may span a line ending and a column
          * computed from the start plus a length states it in the wrong line's
          * frame -- 0a.10's rule, and the reason D22 was a defect. */
         int label_line = start_line;
         int label_column = start_column + (int)(label_open - offset);
-        markdown_core_inline_parser_set_offset(inline_parser, (int)(label_start + label_len + 1));
+        markdown_core_inline_state_set_offset(inline_state, (int)(label_start + label_len + 1));
         label_node = make_label_node(extension, parser->mem, chunk->data + label_start, label_len, label_line,
-                                     label_column, markdown_core_inline_parser_get_column(inline_parser) - 1);
+                                     label_column, markdown_core_inline_state_get_column(inline_state) - 1);
         if (!label_node) {
             markdown_core_node_free(node);
             parser->oom = true;
             return NULL;
         }
-        label_node->end_line = markdown_core_inline_parser_get_line(inline_parser);
+        label_node->end_line = markdown_core_inline_state_get_line(inline_state);
         if (directive->label) {
             markdown_core_node_free(label_node);
             markdown_core_node_free(node);
@@ -494,9 +494,9 @@ static markdown_core_node *match_colon_directive(const markdown_core_extension *
         markdown_core_parser_adopt_content_marks(parser, parent, label_node, label_start, label_len);
     }
 
-    markdown_core_inline_parser_set_offset(inline_parser, (int)pos);
-    node->end_line = markdown_core_inline_parser_get_line(inline_parser);
-    node->end_column = markdown_core_inline_parser_get_column(inline_parser) - 1;
+    markdown_core_inline_state_set_offset(inline_state, (int)pos);
+    node->end_line = markdown_core_inline_state_get_line(inline_state);
+    node->end_column = markdown_core_inline_state_get_column(inline_state) - 1;
 
     return node;
 }
@@ -507,12 +507,12 @@ static markdown_core_node *match_colon_directive(const markdown_core_extension *
  * is what makes `[a](b)` inside a label work like any other link. */
 static markdown_core_node *match(const markdown_core_extension *extension, markdown_core_parser *parser,
                                  markdown_core_node *parent, unsigned char character,
-                                 markdown_core_inline_parser *inline_parser) {
-    markdown_core_chunk *chunk = markdown_core_inline_parser_get_chunk(inline_parser);
-    bufsize_t offset = (bufsize_t)markdown_core_inline_parser_get_offset(inline_parser);
+                                 markdown_core_inline_state *inline_state) {
+    markdown_core_chunk *chunk = markdown_core_inline_state_get_chunk(inline_state);
+    bufsize_t offset = (bufsize_t)markdown_core_inline_state_get_offset(inline_state);
 
     if (character == ':') {
-        return match_colon_directive(extension, parser, parent, inline_parser, chunk, offset);
+        return match_colon_directive(extension, parser, parent, inline_state, chunk, offset);
     }
 
     return NULL;

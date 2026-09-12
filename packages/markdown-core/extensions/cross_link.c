@@ -12,10 +12,10 @@
  * forms. A successful embed then inspects only its bounded numeric suffix. */
 static markdown_core_node *match(const markdown_core_extension *extension, markdown_core_parser *parser,
                                  markdown_core_node *parent, unsigned char character,
-                                 markdown_core_inline_parser *inlines) {
-    markdown_core_chunk *input = markdown_core_inline_parser_get_chunk(inlines);
+                                 markdown_core_inline_state *inline_state) {
+    markdown_core_chunk *input = markdown_core_inline_state_get_chunk(inline_state);
     const unsigned char *s = input->data;
-    bufsize_t start = markdown_core_inline_parser_get_offset(inlines);
+    bufsize_t start = markdown_core_inline_state_get_offset(inline_state);
     bool embedded = character == '!';
     bufsize_t opener_length = embedded ? 3 : 2;
     bufsize_t body;
@@ -118,7 +118,7 @@ static markdown_core_node *match(const markdown_core_extension *extension, markd
     }
     markdown_core_parser_content_place(parser, parent, start, &node->start_line, &node->start_column);
     markdown_core_parser_content_end_place(parser, parent, i + 1, &node->end_line, &node->end_column);
-    markdown_core_inline_parser_set_offset(inlines, i + 2);
+    markdown_core_inline_state_set_offset(inline_state, i + 2);
     return node;
 }
 

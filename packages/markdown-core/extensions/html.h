@@ -2,7 +2,7 @@
 #define MARKDOWN_CORE_EXT_HTML_H
 #include "extension.h"
 extern const markdown_core_extension MARKDOWN_CORE_EXTENSION_HTML;
-bufsize_t markdown_core_inline_scan_inline_html(markdown_core_inline_parser *inline_parser, bufsize_t pos,
+bufsize_t markdown_core_inline_scan_inline_html(markdown_core_inline_state *inline_state, bufsize_t pos,
                                                 unsigned *flags, bool *is_comment);
 #define FLAG_SKIP_HTML_CDATA (1u << 0)
 #define FLAG_SKIP_HTML_DECLARATION (1u << 1)

@@ -1,75 +1,76 @@
 #include "code.h"
 #include "inline_internal.h"
 #include "attributes.h"
-#define advance(inline_parser) ((inline_parser)->pos += 1)
+#define advance(inline_state) ((inline_state)->pos += 1)
 
 #define MAXBACKTICKS 80
 
 static MARKDOWN_CORE_INLINE int isbacktick(int c) { return (c == '`'); }
 
-static MARKDOWN_CORE_INLINE markdown_core_chunk take_while(subject *inline_parser, int (*f)(int)) {
+static MARKDOWN_CORE_INLINE markdown_core_chunk take_while(markdown_core_inline_state *inline_state, int (*f)(int)) {
     unsigned char c;
-    bufsize_t startpos = inline_parser->pos;
+    bufsize_t startpos = inline_state->pos;
     bufsize_t len = 0;
 
-    while ((c = markdown_core_inline_peek_char(inline_parser)) && (*f)(c)) {
-        advance(inline_parser);
+    while ((c = markdown_core_inline_peek_char(inline_state)) && (*f)(c)) {
+        advance(inline_state);
         len++;
     }
 
-    return markdown_core_chunk_dup(&inline_parser->input, startpos, len);
+    return markdown_core_chunk_dup(&inline_state->input, startpos, len);
 }
 
 // Try to process a backtick code span that began with a
 // span of ticks of length openticklength length (already
 // parsed).  Return 0 if you don't find matching closing
-// backticks, otherwise return the position in the subject
+// backticks, otherwise return the position in the inline state
 // after the closing backticks.
-bufsize_t markdown_core_inline_scan_to_closing_backticks(subject *inline_parser, bufsize_t openticklength) {
+bufsize_t markdown_core_inline_scan_to_closing_backticks(markdown_core_inline_state *inline_state,
+                                                         bufsize_t openticklength) {
 
     bool found = false;
     if (openticklength > MAXBACKTICKS) {
-        // we limit backtick string length because of the array inline_parser->backticks:
+        // we limit backtick string length because of the array inline_state->backticks:
         return 0;
     }
-    if (!inline_parser->backticks) {
-        inline_parser->backtick_capacity =
-            inline_parser->input.len < MAXBACKTICKS ? inline_parser->input.len : MAXBACKTICKS;
-        inline_parser->backticks =
-            inline_parser->mem->calloc((size_t)inline_parser->backtick_capacity + 1, sizeof(*inline_parser->backticks));
-        if (!inline_parser->backticks) {
-            inline_parser->oom = 1;
+    if (!inline_state->backticks) {
+        inline_state->backtick_capacity =
+            inline_state->input.len < MAXBACKTICKS ? inline_state->input.len : MAXBACKTICKS;
+        inline_state->backticks =
+            inline_state->mem->calloc((size_t)inline_state->backtick_capacity + 1, sizeof(*inline_state->backticks));
+        if (!inline_state->backticks) {
+            inline_state->oom = 1;
             return 0;
         }
     }
-    if (inline_parser->scanned_for_backticks && inline_parser->backticks[openticklength] <= inline_parser->pos) {
+    if (inline_state->scanned_for_backticks && inline_state->backticks[openticklength] <= inline_state->pos) {
         // return if we already know there's no closer
         return 0;
     }
     while (!found) {
         // read non backticks
         unsigned char c;
-        while ((c = markdown_core_inline_peek_char(inline_parser)) && c != '`') {
-            advance(inline_parser);
+        while ((c = markdown_core_inline_peek_char(inline_state)) && c != '`') {
+            advance(inline_state);
         }
-        if (markdown_core_inline_is_eof(inline_parser)) {
+        if (markdown_core_inline_is_eof(inline_state)) {
             break;
         }
         bufsize_t numticks = 0;
-        while (markdown_core_inline_peek_char(inline_parser) == '`') {
-            advance(inline_parser);
+        while (markdown_core_inline_peek_char(inline_state) == '`') {
+            advance(inline_state);
             numticks++;
         }
         // store position of ender
-        if (numticks <= inline_parser->backtick_capacity) {
-            inline_parser->backticks[numticks] = inline_parser->pos - numticks;
+        if (numticks <= inline_state->backtick_capacity) {
+            inline_state->backticks[numticks] = inline_state->pos - numticks;
         }
         if (numticks == openticklength) {
-            return (inline_parser->pos);
+            return (inline_state->pos);
         }
     }
     // got through whole input without finding closer
-    inline_parser->scanned_for_backticks = true;
+    inline_state->scanned_for_backticks = true;
     return 0;
 }
 
@@ -108,28 +109,28 @@ static void S_normalize_code(markdown_core_strbuf *s) {
 }
 
 // Parse backtick code section or raw backticks, return an inline.
-// Assumes that the subject has a backtick at the current position.
-static markdown_core_node *handle_backticks(subject *inline_parser) {
-    markdown_core_chunk openticks = take_while(inline_parser, isbacktick);
-    bufsize_t startpos = inline_parser->pos;
-    bufsize_t endpos = markdown_core_inline_scan_to_closing_backticks(inline_parser, openticks.len);
+// Assumes that the inline state has a backtick at the current position.
+static markdown_core_node *handle_backticks(markdown_core_inline_state *inline_state) {
+    markdown_core_chunk openticks = take_while(inline_state, isbacktick);
+    bufsize_t startpos = inline_state->pos;
+    bufsize_t endpos = markdown_core_inline_scan_to_closing_backticks(inline_state, openticks.len);
 
-    if (endpos == 0) {                 // not found
-        inline_parser->pos = startpos; // rewind
+    if (endpos == 0) {                // not found
+        inline_state->pos = startpos; // rewind
         /* The run stands as its own literal, so it covers ITS OWN BYTES:
          * `startpos` is one past the last of them and the run is
-         * `openticks.len` long. Both offsets used to be `inline_parser->pos`, one past
+         * `openticks.len` long. Both offsets used to be `inline_state->pos`, one past
          * the run, so the literal was placed one column right -- and
          * consolidation then carried that end onto the whole merged text run:
          * `hi`lo` reported Text 1:5..1:8 inside a seven-byte paragraph. */
-        return make_str(inline_parser, inline_parser->pos - openticks.len, inline_parser->pos - 1, openticks);
+        return make_str(inline_state, inline_state->pos - openticks.len, inline_state->pos - 1, openticks);
     } else {
-        markdown_core_strbuf buf = MARKDOWN_CORE_BUF_INIT(inline_parser->mem);
+        markdown_core_strbuf buf = MARKDOWN_CORE_BUF_INIT(inline_state->mem);
 
-        markdown_core_strbuf_set(&buf, inline_parser->input.data + startpos, endpos - startpos - openticks.len);
+        markdown_core_strbuf_set(&buf, inline_state->input.data + startpos, endpos - startpos - openticks.len);
         S_normalize_code(&buf);
         if (buf.oom) {
-            inline_parser->oom = 1;
+            inline_state->oom = 1;
         }
 
         /* A CODE SPAN COVERS ITS BACKTICKS (Q45, answered 2026-08-23). Every
@@ -144,12 +145,12 @@ static markdown_core_node *handle_backticks(subject *inline_parser) {
          * that is not a place: `` `` `` alone on a line put the span at column
          * 3 of a two-byte line. */
         markdown_core_node *node =
-            markdown_core_inline_make_literal(inline_parser, MARKDOWN_CORE_NODE_CODE, startpos - openticks.len,
+            markdown_core_inline_make_literal(inline_state, MARKDOWN_CORE_NODE_CODE, startpos - openticks.len,
                                               endpos - 1, markdown_core_chunk_buf_detach(&buf));
         if (!node) {
             return NULL;
         }
-        markdown_core_inline_attach_inline_attributes(inline_parser, node, startpos - openticks.len);
+        markdown_core_inline_attach_inline_attributes(inline_state, node, startpos - openticks.len);
         /* The ticks reach no literal and the bytes between them do. */
         return node;
     }
@@ -157,12 +158,12 @@ static markdown_core_node *handle_backticks(subject *inline_parser) {
 
 static markdown_core_node *match(const markdown_core_extension *self, markdown_core_parser *parser,
                                  markdown_core_node *parent, unsigned char character,
-                                 markdown_core_inline_parser *inline_parser) {
-    return character == '`' ? handle_backticks(inline_parser) : NULL;
+                                 markdown_core_inline_state *inline_state) {
+    return character == '`' ? handle_backticks(inline_state) : NULL;
 }
-static void dispose_inline(subject *inline_parser) {
-    inline_parser->mem->free(inline_parser->backticks);
-    inline_parser->backticks = NULL;
+static void dispose_inline(markdown_core_inline_state *inline_state) {
+    inline_state->mem->free(inline_state->backticks);
+    inline_state->backticks = NULL;
 }
 
 const markdown_core_extension MARKDOWN_CORE_EXTENSION_CODE = {

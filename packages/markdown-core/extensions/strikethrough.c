@@ -6,12 +6,12 @@
 
 static markdown_core_node *match(const markdown_core_extension *self, markdown_core_parser *parser,
                                  markdown_core_node *parent, unsigned char character,
-                                 markdown_core_inline_parser *inline_parser) {
-    if (character != '~' || markdown_core_inline_parser_peek_at(
-                                inline_parser, markdown_core_inline_parser_get_offset(inline_parser) + 1) != '~') {
+                                 markdown_core_inline_state *inline_state) {
+    if (character != '~' || markdown_core_inline_state_peek_at(
+                                inline_state, markdown_core_inline_state_get_offset(inline_state) + 1) != '~') {
         return NULL;
     }
-    return markdown_core_inline_match_delimiter(self, inline_parser);
+    return markdown_core_inline_match_delimiter(self, inline_state);
 }
 
 static const char *get_type_string(const markdown_core_extension *extension, markdown_core_node *node) {

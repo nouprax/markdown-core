@@ -147,7 +147,7 @@ struct markdown_core_parser {
     size_t list_marker_work;
     size_t specimen_work;
     size_t citation_work;
-    /* Cumulative capacity bytes reserved for per-subject brace event records. */
+    /* Cumulative capacity bytes reserved for per-inline state brace event records. */
     size_t citation_brace_bytes;
     size_t definition_list_work;
     /* THE SOURCE AFTER THE LINE BEING PROCESSED. `S_parse_source` sets the
@@ -183,8 +183,8 @@ struct markdown_core_parser {
     markdown_core_llist *block_alternatives;
     markdown_core_llist *extensions;
     markdown_core_llist *inline_extensions;
-    /* Only descriptors with subject lifecycle work; ordinary token owners
-     * must not be visited for each subject's initialization and disposal. */
+    /* Only descriptors with inline state lifecycle work; ordinary token owners
+     * must not be visited for each inline state's initialization and disposal. */
     markdown_core_llist *inline_lifecycle_extensions;
     /* Stable descriptor order projected by byte once before inline parsing.
      * Each token visits only its possible owners; offsets include an end sentinel. */
@@ -197,7 +197,7 @@ struct markdown_core_parser {
      * observe each other's characters. */
     const markdown_core_extension *delimiter_owners[MARKDOWN_CORE_DELIM_RULE_COUNT];
     markdown_core_delimiter_rule delimiter_chars[256];
-    bool (*inline_start_predicates[256])(markdown_core_inline_parser *, bufsize_t);
+    bool (*inline_start_predicates[256])(markdown_core_inline_state *, bufsize_t);
     int8_t special_chars[256];
     int8_t skip_chars[256];
     /* The content-to-source map (see markdown_core_line_mark). It is read while the
