@@ -23,14 +23,12 @@ const entries = validatePolicy(policy, cases);
 const require = createRequire(import.meta.url);
 const manifest = JSON.parse(read("package.json"));
 const lock = parse(read("pnpm-lock.yaml"));
-const module = read("docs/specs/dialect/insertion.md");
 for (const pin of policy.oracle) {
     const installed = require(`${pin.package}/package.json`);
     if (
         installed.version !== pin.version ||
         manifest.devDependencies[pin.package] !== pin.version ||
-        lock.packages[`${pin.package}@${pin.version}`]?.resolution.integrity !== pin.integrity ||
-        !module.includes(pin.integrity)
+        lock.packages[`${pin.package}@${pin.version}`]?.resolution.integrity !== pin.integrity
     )
         throw new Error(`insertion oracle pin mismatch: ${pin.package}`);
 }

@@ -57,6 +57,15 @@ fi
 
 target_specs_missing=0
 for target_spec in \
+    docs/specs/README.md \
+    docs/architecture/testing.md \
+    docs/architecture/syntax-conformance.md \
+    docs/specs/dialect/code.md \
+    docs/specs/dialect/emphasis.md \
+    docs/specs/dialect/headings.md \
+    docs/specs/dialect/html.md \
+    docs/specs/dialect/line-breaks.md \
+    docs/specs/dialect/thematic-breaks.md \
     docs/specs/dialect.md \
     docs/specs/dialect/anchors.md \
     docs/specs/dialect/attributes.md \

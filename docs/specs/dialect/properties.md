@@ -1,21 +1,32 @@
 # Properties
 
-Status: normative module of the [Markdown Core dialect](../dialect.md), owned
-by [O6](../../plans/2026-09-04-canonical-vnext-landing-plan.md).
+[Syntax guide](../dialect.md) · [Documentation](../README.md)
 
-The user-directed contract of 2026-09-08 defines a fixed metadata field set.
-It borrows field/list notation from [Obsidian Properties](https://help.obsidian.md/properties)
-and the indented literal `|` form from
-[Pandoc metadata](https://pandoc.org/MANUAL.html#extension-yaml_metadata_block).
-It does not implement either application's complete metadata language or YAML.
-In particular, Pandoc requires a valid YAML object; ignoring unsupported input
-member by member is this repository's rule, not a claim about Pandoc behavior.
+Place a properties envelope at the very beginning of a document, between two
+lines containing exactly `---`.
 
-## Fields
+```markdown
+---
+title: Field notes
+authors: [Ada, Lin]
+keywords:
+  - Markdown
+  - parsing
+state: draft
+---
+The document body starts here.
+```
 
-Only these exact, case-sensitive decoded names populate fields:
+The document has a `Metadata` value with title text, author and keyword lists,
+and state text. The envelope is excluded from ordinary document content; the
+body starts after its closing fence with its original source coordinates.
+Metadata text is atomic and is not parsed as Markdown.
 
-| Name | Meaning |
+## Supported fields
+
+Only these exact, case-sensitive names are recognized:
+
+| Name | Intended use |
 | --- | --- |
 | `name` | Document name |
 | `title` | Title |
@@ -24,210 +35,107 @@ Only these exact, case-sensitive decoded names populate fields:
 | `date` | Date |
 | `authors` | Authors |
 | `keywords` | Keywords |
-| `abstract` | Abstract; also accepts indented literal text with `: |` |
+| `abstract` | Abstract; also supports literal prose |
 | `state` | State |
-| `comment` | Authored comment field; also accepts `: |` |
+| `comment` | Comment data; also supports literal prose |
 
-`authors` and `keywords` each accept a single string, a bracketed array
-(`authors: [Ada, Lin]`), or a block list (`- Ada` on following lines). A single
-string stays a text scalar; both list spellings produce the same list model.
+All fields use the same scalar/list value domain. Names suggest how an
+application may use a value; they do not cause date parsing, state validation,
+or type coercion. Authors and keywords can be a single text value or a list;
+a single value remains scalar.
 
-The parser does not infer date/time formats, validate a state vocabulary, or
-coerce values from a field name. The shared scalar/list domain below applies
-to these fields. `abstract` and `comment` additionally accept literal prose.
-Unknown names, unnamed text, `#` comments, `...`, invalid values, unsupported
-syntax, and later duplicate names are ignored. Only the first successfully
-decoded occurrence reserves a name; an invalid occurrence does not prevent a
-later valid one. Each of the ten fields is assigned at most once.
+## Values
 
-## Model
-
-```text
-Document(content: [Markup], metadata: Metadata?, footnotes: [Footnote])
-Metadata(
-  name: MetadataValue?, title: MetadataValue?, subtitle: MetadataValue?,
-  time: MetadataValue?, date: MetadataValue?, authors: MetadataValue?,
-  keywords: MetadataValue?, abstract: MetadataValue?, state: MetadataValue?,
-  comment: MetadataValue?, scope: Scope
-)
-MetadataScalar   = null | bool(Bool) | number(String) | text(String)
-MetadataListItem = number(String) | text(String)
-MetadataValue    = scalar(MetadataScalar) | list([MetadataListItem])
+```markdown
+---
+name: ""
+title: null
+subtitle: []
+time: 1.50
+date: 2026-09-13
+authors: ['Ada Lovelace', Lin]
+state: true
+---
 ```
 
-`Metadata` exposes these ten named optional values directly. It has no content
-collection, record wrapper, name lookup map, or retained source order. Missing
-fields are absent (`nil`/`null`); a successfully authored `null` is a present
-`scalar(null)`, and empty text and empty lists remain distinct values. The
-named `comment` field is ordinary data. Only the metadata envelope has a
-scope; individual values are located by their owner's scope.
+Empty text, authored null, an empty list, the exact number spelling `1.50`,
+date text, a text list, and a boolean are distinct values. A missing field is
+also distinct from a present null. Numbers retain their decimal spelling;
+they are not converted to a host floating-point value.
 
-Metadata is not Markup, has no anchors/attributes, and receives no visitor
-callbacks. Values remain atomic, including Markdown-looking text in an
-abstract. Public constructors create ordinary owned values; parsing owns
-field recognition. A missing or unclosed envelope gives `metadata == null`.
-A complete envelope with no valid fields gives present metadata with ten
-absent fields. Ignored source has no AST representation and never becomes
-part of the Markdown body.
+A field uses `name: value`, with whitespace after the colon unless the value
+is empty. Names may also be quoted. Supported values are:
 
-```````````````````````````````` example
----
-name: Note
-authors: [Ada, Lin]
-unknown: ignored
-free text
-state: draft
----
-Body
-.
-Document scope=1:1..8:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..7:3 name=scalar(text("Note")) title=null subtitle=null time=null date=null authors=list([text("Ada"),text("Lin")]) keywords=null abstract=null state=scalar(text("draft")) comment=null children=0
-└── Paragraph scope=8:1..8:4 anchor=null attributes={} children=1
-    └── Text scope=8:1..8:4 anchor=null attributes={} literal="Body" children=0
-````````````````````````````````
+- Empty or plain `null`: a null scalar.
+- Plain `true` or `false`: a boolean scalar.
+- A plain number matching `^-?(0|[1-9][0-9]*)(\.[0-9]*)?([eE][-+]?[0-9]+)?$`:
+  an exact number string.
+- Supported plain text or a quoted string: a text scalar.
+- A bracketed comma-separated list, or following `- ` lines: a list of text
+  and number items only. Optional trailing commas and indentless block lists
+  are accepted; blank/comment lines do not split a block list.
 
-## Envelope
+`authors: - Ada` is text, not a list. A single quote is escaped by doubling it
+inside single-quoted text. Double-quoted strings accept JSON-style escapes and
+valid `\uXXXX` surrogate pairs. A decoded CR or LF invalidates a single-line
+field. Quoted strings are always text.
 
-Recognition runs once before inherited Markdown block starts, at the beginning
-of the document after an optional UTF-8 BOM. The opening and closing lines
-must each be exactly `---` at column one, without trailing whitespace. The
-opening line must have a line ending; the closing line may end the file.
-LF, CR, and CRLF are accepted. The first later exact closing line ends the
-block. Only one envelope attaches; subsequent fences are Markdown.
-
-`...` does not close the block. Indented `---` is payload, including inside
-literal text. A complete envelope always attaches, regardless of its payload.
-Only an absent or unclosed envelope leaves those bytes for Markdown parsing.
-Allocation failure fails the whole parse; it never becomes ignored syntax or
-a Markdown fallback. The body is parsed once after the closing fence.
-
-```````````````````````````````` example
----
-...
-# ignored
----
-body
-.
-Document scope=1:1..5:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..4:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
-└── Paragraph scope=5:1..5:4 anchor=null attributes={} children=1
-    └── Text scope=5:1..5:4 anchor=null attributes={} literal="body" children=0
-````````````````````````````````
-
-## Values and notation
-
-A property uses `name: value`, with whitespace after the colon unless its value
-is empty. Names may be plain or single-/double-quoted on one physical line;
-recognition and uniqueness use decoded names without case conversion.
-
-- An empty value or plain `null` is null, distinct from `""` and `[]`.
-- Plain `true` and `false` are booleans.
-- A plain value matching
-  `^-?(0|[1-9][0-9]*)(\.[0-9]*)?([eE][-+]?[0-9]+)?$` is a number. Its exact
-  spelling is stored, without host integer or floating-point conversion.
-- Other supported plain values and quoted values are text. Except for the
-  literal form below, text is authored on one physical line and contains no
-  decoded CR/LF. Dates, times, URLs and quoted links remain text.
-- Lists contain only text and number scalars. They may be bracketed,
-  comma-separated lists (an optional trailing comma is allowed), or `- ` items
-  on following lines. A dash on the field line is ordinary text:
-  `authors: - Ada` is the string `"- Ada"`. Indentless lists are accepted;
-  comment-only and blank lines between items do not split them. Empty lists are distinct from null.
-
-A single-quoted string escapes a quote by doubling it. Double-quoted strings
-support these escapes: `\"`, `\\`, `\/`, `\b`, `\f`, `\n`, `\r`, `\t`, and
-`\uXXXX`; valid surrogate pairs decode to one Unicode scalar. Decoded CR/LF
-make a single-line field invalid. Other YAML escapes and multiline quoted or
-plain folding are unsupported. Plain text does not begin with reserved
-indicators such as `&`, `*`, `!`, `|`, `>`, `[` or `{`; quoted occurrences are
-ordinary text. A separated `#` begins an ignored comment outside quotes or
-literal prose. A separated colon inside a plain value is unsupported.
-
-There is no JSON root-object form. Bracketed arrays are field values in the
-field-line grammar; they do not enable JSON documents or object-valued fields.
-
-Anchors, aliases, tags, merge/complex keys, nested lists/objects, and folded
-scalars are unsupported. There is no alias binding, expansion, rollback, or
-expansion budget. The shared core implements this bounded grammar directly;
-no general YAML parser or alternate fallback parser is added.
+Plain text cannot start with reserved indicators such as `&`, `*`, `!`, `|`,
+`>`, `[`, or `{`; quote them to store text. A separated `#` starts an ignored
+comment outside quotes, and a separated colon within plain text is unsupported.
 
 ## Literal prose
 
-Only `abstract: |` and `comment: |` introduce a literal block. An optional
-separated header comment is ignored. The first nonblank body line establishes
-its space indentation, which must exceed the field line's indentation. Every
-later nonblank body line must have at least that indentation. The decoder
-removes exactly that prefix, preserving extra indentation, internal blank
-lines, hashes, colons, quotes, and Markdown-looking text literally.
+Use a bare `|` on `abstract` or `comment` for multiple lines:
 
-Line endings normalize to LF. The default literal behavior clips trailing
-blank lines to one final LF after the last nonblank content line. An empty or
-all-blank block is empty text. A field at the same or smaller indentation ends
-the block. An insufficiently indented continuation invalidates the owning
-member; recovery then proceeds to the next independent member.
-
-Only the bare `|` header is supported: no `>`, `|-`, `|+`, explicit indentation
-indicator, literal list items, or literal forms on other fields. This is a
-single prose feature, not general YAML block-scalar support.
-
-```````````````````````````````` example
+```markdown
 ---
 abstract: |
   First paragraph.
 
-  Second paragraph.
+  **Still literal text.**
 comment: |
-  # literal text
-  name: still prose
+  # An editor's note
+  title: this remains prose
 state: ready
 ---
-Body
-.
-Document scope=1:1..11:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..10:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=scalar(text("First paragraph.\n\nSecond paragraph.\n")) state=scalar(text("ready")) comment=scalar(text("# literal text\nname: still prose\n")) children=0
-└── Paragraph scope=11:1..11:4 anchor=null attributes={} children=1
-    └── Text scope=11:1..11:4 anchor=null attributes={} literal="Body" children=0
-````````````````````````````````
+Body.
+```
 
-## Ownership, recovery, and scopes
+The abstract is the text `First paragraph.\n\n**Still literal text.**\n`.
+The comment keeps its hash and colon; they are not a heading or another field.
+Each value has LF line endings and one final LF after its last nonblank line.
+An empty/all-blank literal block becomes empty text.
 
-A property owns its indented continuations and flat list items. A new member
-at the same or smaller indentation ends it unless a bracketed value is still
-open. All source inside that collection stays with its owner, including
-field-looking lines at column one, quoted commas and unsupported nested
-values. If the collection never closes, the remaining payload is ignored up
-to the metadata's closing `---`; no later field is recovered from its interior.
-Brackets in ordinary plain, quoted or literal text do not open a collection.
-Interior colons are never retried as a different field. Each valid member
-assigns its named field; each invalid member is skipped as a whole.
+The first nonblank body line establishes space indentation greater than the
+field line's. That prefix is removed from each body line, preserving extra
+indentation. A field at the same or lower indentation ends the block; an
+insufficiently indented continuation invalidates the member. Only bare `|`
+with an optional separated comment is supported: no folding `>`, `|-`, `|+`,
+explicit indent indicators, or literal blocks on other fields.
 
-`Metadata.scope` starts at the opening fence's first hyphen and ends at the
-closing fence's third hyphen. The body keeps its original source coordinates.
-No individual field scopes or source order are retained. The dump prints all
-ten fields in the model's fixed order, including absent fields as `null`.
+## Envelope and recovery
 
-Field/list/string allocations belong to the document. C accessors borrow
-those values; Swift, Kotlin/JNI/Native and ES/Wasm copy them before releasing
-the native document or payload. Cleanup reads only active value branches.
-Each source member is decoded at most once and assigned directly to its
-field; an already-present value also supplies the duplicate check. No record
-array, separate name-state table, bracket index or line-start index is built.
-The envelope scan counts lines as it locates the closing fence. Text is read
-directly, and array boundaries are scanned as part of their owning member.
-There is no recursive value expansion or per-member suffix retry.
+The opening and closing lines must be exactly `---` at column one, without
+trailing spaces. An optional UTF-8 BOM may precede the opener. The opener needs
+a line ending; the closer can end the file. The first later exact closer wins.
+Only one envelope is recognized, at the document's start. Without a closer,
+the input follows normal Markdown parsing.
 
-## Verification
+A complete envelope is accepted even when some or all members are unsupported.
+Unknown names, unnamed lines, comments, `...`, invalid values, and later valid
+duplicates are ignored. `...` neither closes nor invalidates the envelope.
+The first successfully decoded occurrence of a field wins; an invalid earlier
+occurrence does not reserve its name. A present envelope with no valid fields
+still produces metadata with all fields absent.
 
-The pinned `yaml@2.9.0` Document/CST oracle compares only this grammar's valid
-intersection, including bare literal prose. It is test tooling, not a runtime
-dependency or authority for extra syntax. It must reject out-of-domain oracle
-inputs. Direct core fixtures test the product's own rules for ignoring
-unsupported members and retaining field-line dash text, which is outside
-the YAML oracle's domain. Exact numeric spelling and the envelope range remain
-oracle evidence. Pandoc Markdown parsing of string values is outside this AST model.
+Each member owns its continuation lines and list items. An unclosed bracketed
+collection owns the remaining envelope payload, so apparent fields inside it
+are not recovered as independent properties. Invalid members are skipped as
+a whole, with no partial values.
 
-Fixtures cover all ten names, quoted names, duplicates and retry after an
-invalid occurrence, empty metadata, ignored content, literal indentation and
-blank lines, supported scalar/list values, unsupported YAML forms, source
-coordinates, body separation, long malformed input, flat list complexity,
-allocation failures, and owned values on every binding.
+This is a bounded properties language, not general YAML: nested objects/lists,
+aliases, tags, merge keys, JSON root objects, and multiline quoted/plain folding
+are unsupported. Metadata has one envelope scope, no individual field scopes,
+and no markup visitor callbacks. The named `comment` field is data, not a
+`Comment` node.

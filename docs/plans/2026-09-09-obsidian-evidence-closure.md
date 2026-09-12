@@ -44,7 +44,7 @@ reviewed in the shared golden. Existing module fixtures remain unchanged.
 
 ## Recognition and ownership evidence
 
-The [dialect recognition order](../specs/dialect.md#recognition-order) owns
+The [dialect recognition order](../specs/dialect/conflicts.md#block-recognition) owns
 scanner precedence, bracket-tail precedence, delimiter reduction, attachment,
 and email finalization. O10 verifies actual ownership and failure boundaries;
 it does not require a Cartesian product of feature names.
