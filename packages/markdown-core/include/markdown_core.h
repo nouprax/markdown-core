@@ -209,7 +209,8 @@ typedef enum markdown_core_node_kind {
     MARKDOWN_CORE_KIND_SUPERSCRIPT,
     MARKDOWN_CORE_KIND_SUBSCRIPT,
     MARKDOWN_CORE_KIND_DEFINITION_LIST,
-    MARKDOWN_CORE_KIND_DEFINITION
+    MARKDOWN_CORE_KIND_DEFINITION,
+    MARKDOWN_CORE_KIND_TABLE_CAPTION
 } markdown_core_node_kind;
 
 typedef enum markdown_core_list_flavor {
@@ -368,6 +369,8 @@ MARKDOWN_CORE_API bool markdown_core_node_table_properties(const markdown_core_n
                                                            size_t *foot_count);
 MARKDOWN_CORE_API bool markdown_core_node_table_column_at(const markdown_core_node *node, size_t index,
                                                           markdown_core_table_column *column);
+/** The independently owned caption field, or NULL when absent or not a table. */
+MARKDOWN_CORE_API const markdown_core_node *markdown_core_node_table_caption(const markdown_core_node *node);
 MARKDOWN_CORE_API bool markdown_core_node_table_cell_spans(const markdown_core_node *node, int64_t *rowspan,
                                                            int64_t *colspan);
 /** A directive's name is absent only for a nameless DirectiveBlock. There is no `mode`: an inline `Directive` is

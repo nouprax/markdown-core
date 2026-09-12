@@ -7,7 +7,11 @@
 
 /* Node-valued fields are independent child-tree roots. This internal hook
  * exposes their owning slots only to parser phases; it does not change the
- * public child iterator or make a field a parent/child edge. */
+ * public child iterator or make a field a parent/child edge. Destruction
+ * transfers these roots to the shared iterative walk and clears their slots
+ * before opaque_free_func releases the extension payload. That callback must
+ * not recursively destroy node-valued fields. Kind conversion preserves the
+ * extension payload and these roots. */
 typedef int (*markdown_core_owned_subtree_visitor)(markdown_core_node **root_slot, void *context);
 typedef int (*markdown_core_visit_owned_subtrees_func)(const markdown_core_extension *extension,
                                                        markdown_core_node *node,

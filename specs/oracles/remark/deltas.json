@@ -753,6 +753,13 @@
             "authority": "docs/specs/dialect/directives.md; inherited paragraph continuation",
             "summary": "A paragraph within a directive retains ordinary lazy continuation through its enclosing quote or list item. Remark ends the directive when the outer prefix disappears.",
             "why": "Reduced from the P8 corpus recombination. A build of pre-P8 commit 9cbb83e5 produces the identical product tree; this records an existing boundary rather than changing the parser to satisfy recombination."
+        },
+        {
+            "id": "table-caption-before-inline-directive",
+            "input": "| a | b |\n| - | - |\n:badge[short]\n| first | second | ignored |\n\n> | a | b | c |\n> | - | - | - |\n> short\n> | first | second | third | ignored |\n",
+            "authority": "docs/specs/dialect/tables.md#captions; Pandoc 3.11 table_captions",
+            "summary": "A colon followed by a non-punctuation scalar starts an available table caption, including :badge[short]. The caption owns its paragraph continuation; remark-gfm keeps those lines as table cells.",
+            "why": "P11 applies the normative caption grammar to all table forms. Both projected trees retain their complete content and ownership; this exact conflict remains visible."
         }
     ],
     "baselineBacklog": [],

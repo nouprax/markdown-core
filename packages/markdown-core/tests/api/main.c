@@ -1814,6 +1814,101 @@ static void node_payload_lifecycle(test_batch_runner *runner) {
     INT_EQ(runner, payload_live, 0, "conversion and destruction release payloads, fields, and affixes exactly once");
 }
 
+/* Extension fields use the same nonrecursive ownership walk as typed fields.
+ * The probe has two independent roots and ordinary children, so a destructor
+ * that visits only the content chain cannot satisfy the lifetime contract. */
+typedef struct {
+    markdown_core_node *first, *second;
+} owned_field_probe;
+static size_t owned_field_releases, owned_field_uncleared;
+
+static void owned_field_alloc(const markdown_core_extension *extension, markdown_core_mem *mem,
+                              markdown_core_node *node) {
+    (void)extension;
+    node->opaque = mem->calloc(1, sizeof(owned_field_probe));
+}
+
+static int owned_field_visit(const markdown_core_extension *extension, markdown_core_node *node,
+                             markdown_core_owned_subtree_visitor visitor, void *context) {
+    (void)extension;
+    owned_field_probe *fields = node->opaque;
+    return !fields || (visitor(&fields->first, context) && visitor(&fields->second, context));
+}
+
+static void owned_field_free(const markdown_core_extension *extension, markdown_core_mem *mem,
+                             markdown_core_node *node) {
+    (void)extension;
+    owned_field_probe *fields = node->opaque;
+    owned_field_releases++;
+    owned_field_uncleared += fields->first != NULL || fields->second != NULL;
+    /* Clean up even on a failing test against the old destructor. */
+    if (fields->first) {
+        markdown_core_node_free(fields->first);
+    }
+    if (fields->second) {
+        markdown_core_node_free(fields->second);
+    }
+    mem->free(fields);
+    node->opaque = NULL;
+}
+
+static const markdown_core_extension OWNED_FIELD_PROBE = {
+    .name = "owned-field-lifetime-probe",
+    .opaque_alloc_func = owned_field_alloc,
+    .opaque_free_func = owned_field_free,
+    .visit_owned_subtrees_func = owned_field_visit,
+};
+
+static void extension_owned_field_lifecycle(test_batch_runner *runner) {
+    payload_allocations = payload_fail_at = payload_live = 0;
+    owned_field_releases = owned_field_uncleared = 0;
+    markdown_core_node *root = NULL;
+    const size_t depth = 4096;
+    for (size_t i = 0; i < depth; i++) {
+        markdown_core_node *owner = markdown_core_node_new_with_mem_and_ext(MARKDOWN_CORE_NODE_PARAGRAPH,
+                                                                            &payload_test_mem, &OWNED_FIELD_PROBE);
+        owned_field_probe *fields = owner->opaque;
+        fields->first = root;
+        fields->second = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_TEXT, &payload_test_mem);
+        markdown_core_node_append_child(owner,
+                                        markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_TEXT, &payload_test_mem));
+        root = owner;
+    }
+    markdown_core_node *document = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_DOCUMENT, &payload_test_mem);
+    markdown_core_node_append_child(document, root);
+    owned_field_probe *retained = root->opaque;
+    markdown_core_node *retained_first = retained->first;
+    OK(runner,
+       markdown_core_node_set_kind(root, MARKDOWN_CORE_NODE_HEADING) == MARKDOWN_CORE_NODE_SET_KIND_OK &&
+           root->opaque == retained && retained->first == retained_first,
+       "kind conversion preserves the extension's opaque state and owned fields");
+    size_t before = payload_allocations;
+    payload_fail_at = before + 1;
+    markdown_core_node_free(document);
+    INT_EQ(runner, payload_allocations, before, "extension-owned tree destruction allocates nothing");
+    INT_EQ(runner, owned_field_releases, depth, "each extension payload is released exactly once");
+    INT_EQ(runner, owned_field_uncleared, 0, "the shared destructor takes each field before releasing its payload");
+    INT_EQ(runner, payload_live, 0, "deep owned fields and ordinary children release every allocation");
+    payload_fail_at = 0;
+    const char *source = ":a[label]\n";
+    document = markdown_core_parse_document_with_mem(source, strlen(source), &payload_test_mem, NULL, NULL);
+    OK(runner, document != NULL, "directive with an owned label parses using the tracked allocator");
+    if (document) {
+        markdown_core_node *directive = document->first_child->first_child;
+        markdown_core_node *label = markdown_core_directive_label(directive);
+        OK(runner,
+           label &&
+               markdown_core_node_set_kind(directive, MARKDOWN_CORE_NODE_EMPHASIS) == MARKDOWN_CORE_NODE_SET_KIND_OK,
+           "directive kind conversion preserves its extension-owned label");
+        before = payload_allocations;
+        payload_fail_at = before + 1;
+        markdown_core_node_free(document);
+        INT_EQ(runner, payload_allocations, before, "converted directive destruction allocates nothing");
+        INT_EQ(runner, payload_live, 0, "a converted directive releases fields hidden by its new kind");
+        payload_fail_at = 0;
+    }
+}
+
 typedef struct {
     markdown_core_node_type rejected_kind;
     size_t rejections;
@@ -2866,7 +2961,7 @@ static void universal_values(test_batch_runner *runner) {
  * candidates share one extent, so they cannot rescan each other's suffixes. */
 typedef struct {
     size_t cross_link, opaque, delimiters, comment, lookahead, footnote_body, block_identifier, callout, dimensions;
-    size_t registered_definitions, definition_lists, citation_brace_bytes;
+    size_t registered_definitions, definition_lists, citation_brace_bytes, tables, table_frontier;
     bool footnote_collection_allocated, footnotes_owned, heading_collection_disposed;
     size_t attributes, anchors, definitions, definition_resources, whitespace, brackets, citations, list_markers,
         specimens;
@@ -2889,6 +2984,8 @@ static markdown_core_node *record_inline_work(const markdown_core_extension *ext
     work->list_markers = parser->list_marker_work;
     work->comment = parser->comment_scan_work;
     work->lookahead = parser->block_lookahead_work;
+    work->tables = parser->table_scan_work;
+    work->table_frontier = parser->table_frontier_peak;
     work->block_identifier = parser->block_identifier_work;
     work->callout = parser->callout_scan_work;
     work->dimensions = parser->dimension_work;
@@ -3714,7 +3811,7 @@ static void comment_inline_linear_work(test_batch_runner *runner) {
  * prefix bytes matched, and stays within a constant of the input size. */
 static void comment_block_linear_work(test_batch_runner *runner) {
     markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
-    for (int shape = 0; shape < 5; shape++) {
+    for (int shape = 0; shape < 6; shape++) {
         for (size_t depth = 16; depth <= 128; depth *= 2) {
             markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
             size_t expected_comments = 0;
@@ -4228,7 +4325,7 @@ static size_t count_anchors(markdown_core_node *root) {
 static void image_dimension_linear_work(test_batch_runner *runner) {
     markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
     for (size_t count = 128; count <= 8192; count *= 2) {
-        for (int shape = 0; shape < 5; shape++) {
+        for (int shape = 0; shape < 6; shape++) {
             markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
             if (shape < 2) {
                 markdown_core_strbuf_puts(&source, "![alt|");
@@ -4480,6 +4577,165 @@ static void block_identifier_ownership(test_batch_runner *runner) {
     }
 }
 
+/* Failed grammar searches, row growth and column growth all use the same
+ * candidate algorithm. Work counts source inspections, independent of time. */
+static void table_candidate_work(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    for (size_t shape = 0; shape < 6; shape++) {
+        for (size_t n = 32; n <= 512; n *= 2) {
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+            size_t tables = 0;
+            if (shape == 0) {
+                for (size_t i = 0; i < n; i++) {
+                    markdown_core_strbuf_puts(&source, "--------\n");
+                }
+            }
+            if (shape == 1) {
+                for (size_t i = 0; i < n; i++) {
+                    markdown_core_strbuf_puts(&source, "--- ---\nvalue\n\n");
+                }
+            }
+            if (shape == 2) {
+                markdown_core_strbuf_puts(&source, "+---+---+\n");
+                for (size_t i = 0; i < n; i++) {
+                    markdown_core_strbuf_puts(&source, "| a | b |\n+---+---+\n");
+                }
+                tables = 1;
+            }
+            if (shape == 3) {
+                markdown_core_strbuf_putc(&source, '+');
+                for (size_t i = 0; i < n; i++) {
+                    markdown_core_strbuf_puts(&source, "---+");
+                }
+                markdown_core_strbuf_puts(&source, "\n|");
+                for (size_t i = 0; i < n; i++) {
+                    markdown_core_strbuf_puts(&source, " a |");
+                }
+                markdown_core_strbuf_puts(&source, "\n+");
+                for (size_t i = 0; i < n; i++) {
+                    markdown_core_strbuf_puts(&source, "---+");
+                }
+                markdown_core_strbuf_putc(&source, '\n');
+                tables = 1;
+            }
+            if (shape == 4) {
+                for (size_t i = 0; i < n; i++) {
+                    markdown_core_strbuf_puts(&source, "> --------\n");
+                }
+            }
+            if (shape == 5) {
+                markdown_core_strbuf_puts(&source, "+---+---+\n| a | b |\n");
+                for (size_t i = 0; i < n; i++) {
+                    markdown_core_strbuf_puts(&source, "+   +   +\n| a | b |\n");
+                }
+                markdown_core_strbuf_puts(&source, "+---+---+\n");
+                tables = 1;
+            }
+            inline_work work = {0};
+            markdown_core_node *root =
+                markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
+            OK(runner, root != NULL, "table candidate succeeds transactionally: shape=%zu n=%zu", shape, n);
+            if (root) {
+                INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_TABLE), tables,
+                       "table grammar result: shape=%zu n=%zu", shape, n);
+                OK(runner, work.table_frontier <= (shape == 3 ? 2 * n : 4),
+                   "grid frontier depends on columns, not rows or spans: shape=%zu n=%zu slots=%zu", shape, n,
+                   work.table_frontier);
+                OK(runner, work.tables + work.lookahead <= 100 * (size_t)source.size,
+                   "table source work is bounded: shape=%zu n=%zu bytes=%d work=%zu", shape, n, source.size,
+                   work.tables + work.lookahead);
+            }
+            markdown_core_node_free(root);
+            markdown_core_strbuf_free(&source);
+        }
+    }
+}
+
+static void table_mapped_ownership(test_batch_runner *runner) {
+    const char *source =
+        "+------------------------+------------------------+\n| [r]: /first            | [r]: /second           |\n|   "
+        "                     |                        |\n| # Same                 | # Same                 |\n|       "
+        "                 |                        |\n| [^f]: first            | [^f]: second           |\n|           "
+        "             |                        |\n| [r] [^f]               | [r] [^f]               "
+        "|\n+------------------------+------------------------+\n\n[r] [Same] [^f]\n";
+    markdown_core_node *root = markdown_core_parse_document(source, strlen(source));
+    OK(runner, root != NULL, "mapped cell block parsing completes");
+    if (!root) {
+        return;
+    }
+    markdown_core_node *table = root->first_child, *row = table->first_child;
+    markdown_core_node *first = row->first_child, *second = first->next;
+    STR_EQ(runner, (const char *)first->first_child->attributes.anchor.data, "same",
+           "first cell heading owns unsuffixed anchor");
+    STR_EQ(runner, (const char *)second->first_child->attributes.anchor.data, "same-1",
+           "same-line later heading is ordered by original column");
+    INT_EQ(runner, second->first_child->start_column, 28, "mapped block starts in original source column");
+    for (markdown_core_node *cell = first; cell; cell = cell->next) {
+        markdown_core_destination dest;
+        OK(runner, markdown_core_node_destination(cell->last_child->first_child, &dest),
+           "cell resolves document-shared reference");
+        OK(runner, dest.url.length == 6 && !memcmp(dest.url.data, "/first", 6),
+           "first authored definition wins across queued cells");
+    }
+    markdown_core_node *notes = root->as.document->footnotes;
+    OK(runner, notes && notes->next && !notes->next->next, "both cell definitions are owned by document");
+    if (notes && notes->next) {
+        INT_EQ(runner, notes->start_column, 3, "first definition original column");
+        INT_EQ(runner, notes->next->start_column, 28, "second definition original column");
+    }
+    markdown_core_node_free(root);
+}
+
+/* Nested mapped inputs use the parser queue; source depth does not recurse
+ * into another document parser, and the innermost scope stays physical. */
+static void table_nested_inputs(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    for (int depth = 16; depth <= 128; depth *= 2) {
+        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+        int width = 1;
+        markdown_core_strbuf_puts(&source, "x\n");
+        for (int level = 0; level < depth; level++) {
+            markdown_core_strbuf outer = MARKDOWN_CORE_BUF_INIT(mem);
+            markdown_core_strbuf_putc(&outer, '+');
+            for (int c = 0; c < width + 2; c++) {
+                markdown_core_strbuf_putc(&outer, '-');
+            }
+            markdown_core_strbuf_puts(&outer, "+\n");
+            int first = 0;
+            for (int i = 0; i < source.size; i++) {
+                if (source.ptr[i] != '\n') {
+                    continue;
+                }
+                markdown_core_strbuf_puts(&outer, "| ");
+                markdown_core_strbuf_put(&outer, source.ptr + first, i - first);
+                markdown_core_strbuf_puts(&outer, " |\n");
+                first = i + 1;
+            }
+            markdown_core_strbuf_putc(&outer, '+');
+            for (int c = 0; c < width + 2; c++) {
+                markdown_core_strbuf_putc(&outer, '-');
+            }
+            markdown_core_strbuf_puts(&outer, "+\n");
+            markdown_core_strbuf_free(&source);
+            source = outer;
+            width += 4;
+        }
+        markdown_core_node *root = markdown_core_parse_document((char *)source.ptr, source.size);
+        OK(runner, root != NULL, "nested mapped block inputs parse: depth=%d", depth);
+        if (root) {
+            INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_TABLE), depth, "one table per authored grid");
+            markdown_core_node *leaf = root;
+            while (leaf->first_child) {
+                leaf = leaf->first_child;
+            }
+            INT_EQ(runner, leaf->start_line, depth + 1, "nested physical line is preserved");
+            INT_EQ(runner, leaf->start_column, 2 * depth + 1, "nested physical column is preserved");
+        }
+        markdown_core_node_free(root);
+        markdown_core_strbuf_free(&source);
+    }
+}
+
 int main(void) {
     int retval;
     test_batch_runner *runner = test_batch_runner_new();
@@ -4518,6 +4774,7 @@ int main(void) {
     percent_comment_nodes(runner);
     cross_link_fields(runner);
     node_payload_lifecycle(runner);
+    extension_owned_field_lifecycle(runner);
     kind_conversion_containment(runner);
     version(runner);
     node_type_values(runner);
@@ -4554,6 +4811,9 @@ int main(void) {
     autolink_source_pos(runner);
     table_source_map_growth(runner);
     table_values(runner);
+    table_candidate_work(runner);
+    table_mapped_ownership(runner);
+    table_nested_inputs(runner);
     strbuf_overflow(runner);
     strbuf_failure_is_a_transaction(runner);
     stray_delimiter(runner);

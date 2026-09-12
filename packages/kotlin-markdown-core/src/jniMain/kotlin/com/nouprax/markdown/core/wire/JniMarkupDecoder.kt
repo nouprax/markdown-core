@@ -226,6 +226,10 @@ private class JniTreeDecoder(
                 readCitations { consume(Cite(it, scope, anchor, attributes)) }
             }
 
+            JniNodeKind.TABLE_CAPTION -> {
+                readChildren { consume(TableCaption(it, scope, anchor, attributes)) }
+            }
+
             JniNodeKind.TABLE_ROW -> {
                 readTableRow(scope, anchor, attributes, consume)
             }
@@ -423,7 +427,8 @@ private class JniTreeDecoder(
         consume: (Markup) -> Unit,
     ) {
         val name = reader.string()
-        readDirectiveRelations { label, children ->
+        readNodeFieldAndChildren { field, children ->
+            val label = field?.let { requireNotNull(it as? DirectiveLabel) { "invalid directive label kind" } }
             consume(DirectiveBlock(name, label, children, scope, anchor, attributes))
         }
     }
@@ -435,7 +440,8 @@ private class JniTreeDecoder(
         consume: (Markup) -> Unit,
     ) {
         val name = reader.requiredString()
-        readDirectiveRelations { label, children ->
+        readNodeFieldAndChildren { field, children ->
+            val label = field?.let { requireNotNull(it as? DirectiveLabel) { "invalid directive label kind" } }
             require(children.isEmpty()) { "inline directive contains block content" }
             consume(Directive(name, label, scope, anchor, attributes))
         }
@@ -472,19 +478,19 @@ private class JniTreeDecoder(
         }
     }
 
-    /** Reads the independent node-valued label field before directive content. */
-    private fun readDirectiveRelations(consume: (DirectiveLabel?, kotlin.collections.List<Markup>) -> Unit) {
+    /** Reads a singular owned field before the ordinary child chain. */
+    private fun readNodeFieldAndChildren(consume: (Markup?, kotlin.collections.List<Markup>) -> Unit) {
         if (!reader.boolean()) {
             readChildren { consume(null, it) }
             return
         }
-        var label: DirectiveLabel? = null
+        var field: Markup? = null
         actions.addLast {
-            readChildren { children -> consume(requireNotNull(label), children) }
+            readChildren { children -> consume(requireNotNull(field), children) }
         }
         actions.addLast {
             readNode { node ->
-                label = requireNotNull(node as? DirectiveLabel) { "directive label field contains a non-label node" }
+                field = node
             }
         }
     }
@@ -578,11 +584,13 @@ private class JniTreeDecoder(
         val content = reader.int()
         val foot = reader.int()
         require(head >= 0 && content >= 0 && foot >= 0) { "invalid table row groups" }
-        readChildren { children ->
+        readNodeFieldAndChildren { field, children ->
+            val caption = field?.let { requireNotNull(it as? TableCaption) { "invalid table caption kind" } }
             require(head.toLong() + content + foot == children.size.toLong()) { "invalid table row groups" }
             val rows = children.immutableMap { requireNotNull(it as? TableRow) { "table contains a non-row node" } }
             consume(
                 Table(
+                    caption,
                     columns,
                     immutableList(head) { rows[it] },
                     immutableList(content) { rows[head + it] },

@@ -43,8 +43,9 @@ host executable explicitly with `scripts/init-environment.sh --install oracle-pa
 runs CLI canaries, both parsers and the fail-closed digest registry. Normal
 builds and tests never install the executable or access the network.
 
-The active corpus has 86 cases: 51 agreements, 31 documented divergences
-and 4 missing-feature gaps assigned to later landing items. Every difference
+The active corpus has 86 cases: 52 agreements, 34 documented differences and no
+missing-feature gaps. Three width differences retain the normative interior
+ratios and the oracle's page-relative widths without hiding either value. Every difference
 pins input/reader, oracle projection and product projection SHA-256 digests.
 New, changed, stale, duplicate and unknown entries fail. P5's span and shared
 attribute grammar cases now agree, including empty containers, nesting,
@@ -72,8 +73,9 @@ differences retain global explicit-anchor reservation (including inline code),
 Unicode simple lowercase, `White_Space`, permitted scalars without emoji aliases,
 and CommonMark reference adjacency. CLI canaries independently pin these Pandoc
 behaviors; the projections preserve both sides rather than erase differences.
-The `multiline-table` gap retains its missing recognition and now records the
-generated anchor on the product's existing heading fallback; `P11c` owns it.
+P11 implements captions, simple, multiline and grid tables on all surfaces.
+The three former multiline/grid gap entries now compare identical non-width
+content and retain their explicit width-semantic difference.
 
 Representation projections are shared by concept, not selected by case:
 `Plain` uses paragraph content, Pandoc spaces join adjacent Text values, empty
@@ -97,6 +99,15 @@ their order; the records sequence may not collapse into a unique-key map.
 Table comparison retains column alignment and width, row groups, cell spans and
 cell content. Pandoc-only cell alignment is outside the canonical intersection.
 Ordered-list variants and delimiters map to the canonical value spelling.
+Native-JSON canaries additionally pin caption ownership in 48 combinations of
+placement, table form and marker: a table claims a preceding caption, otherwise
+a following one; a following candidate stays available to the next table when
+the preceding table already has a caption. Eleven grid canaries preserve sparse
+cell ownership, source-defined fully covered rows, boundary-only rows, and
+authored empty cells. A native `Row` with `cells=[]` is retained; it is not
+expanded into placeholders. These assertions check both native oracle constructors and product ownership.
+The [delivery record](../../../docs/plans/2026-09-12-pandoc-tables-and-compositions.md)
+records the source geometry and parser/consumer boundary.
 
 P7/P9a/P9b retire the bibliography, fancy-list and example-list feature gaps.
 Cite comparison keeps every key, mode and ordered prefix/suffix tree. Pandoc's
@@ -119,3 +130,16 @@ shapes expose no flag, so Pandoc projects null and the product boolean remains
 compared. Exact differences cover those unobservable flags, the dialect's
 minimum closer width, and global explicit-ID reservation. Unit tests detect
 changed names, compact flags, terms and body grouping independently.
+
+The composition runner now exercises 488 inputs: 306 ordered pairs, 54 nested or
+opaque wrappers, and 128 fixed-seed mutations with all selected extensions. The
+current report has 233 exact agreements and 255 visible differences. It is a
+diagnostic; `--require-agreement` fails on any difference and no corpus waiver
+is inherited. See the [P11/P12 delivery record](../../../docs/plans/2026-09-12-pandoc-tables-and-compositions.md)
+for validation and the selected-feature acceptance scope. Historical `projection`
+entries include normative recognition differences. P12 requires implementation
+and regression evidence for the selected modules, with zero missing-feature
+gaps; it does not require full Pandoc compatibility. The exact registry alone
+does not establish implementation completeness. The
+[34-case review list](../../../docs/plans/2026-09-12-pandoc-differences.md)
+explains each retained difference without treating it as a missing feature.

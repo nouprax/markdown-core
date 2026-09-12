@@ -127,7 +127,7 @@ selected Pandoc extension participates.
       audit atomically. While 3.0.0 is unreleased, identifiers, wire layouts,
       and manifest order may be renumbered by any later item; nothing is
       reserved in advance.
-- [ ] Land every Pandoc feature always on: the dialect has no switches, so no
+- [ ] Land every selected Pandoc feature always on: the dialect has no switches, so no
       extension receives an option. Automatic anchors compose the two pinned
       Pandoc extension rules internally, compact definition syntax is part of
       definition lists, and start numbers are always honored.
@@ -229,48 +229,68 @@ selected Pandoc extension participates.
 
 ## Phase 5 — one table parser and logical grid
 
-- [ ] Generalize the current table construction path so inherited pipe, simple,
+- [x] Generalize the current table construction path so inherited pipe, simple,
       multiline, and grid recognition all emit one Table model. Syntax-specific
       scanners may discover boundaries, but they must share cell block parsing,
       caption attachment, allocation, scope construction, and final validation.
-- [ ] Implement captions as an attachment candidate claimed by the nearest
-      complete eligible table. Do not emit a caption paragraph and later repair
-      the AST.
-- [ ] For simple and multiline forms, derive alignment from established column
-      ranges and relative widths for multiline tables only, and store inline
-      cell content directly without normalizing it to a paragraph.
-- [ ] For grid tables, maintain a row-width occupancy array. Store a spanning cell
+- [x] Implement captions as an attachment candidate: a table claims its
+      preceding caption if present, otherwise its following caption. A table
+      with a preceding caption leaves the following candidate available for
+      the next table. Do not emit a caption paragraph and later repair the AST.
+- [x] For simple and multiline forms, derive alignment from established column
+      ranges and relative widths for multiline tables only. Simple cells keep
+      inline content directly; multiline cells keep the ordinary block parser's
+      block sequence, including Paragraph, in both header and body cells.
+- [x] For grid tables, maintain a compacted connected-region frontier. Store a spanning cell
       once in the row containing its upper-left coordinate; validate every
       occupied coordinate and prevent a span from crossing head/content/foot
-      boundaries.
-- [ ] Decide table, thematic-break, Setext-heading, fenced-code, definition-list,
+      boundaries. Retain source-defined fully covered rows with `cells=[]` and
+      distinguish them from authored empty cells with `content=[]`. Do not
+      expand spans into placeholder cells or add layout-derived rows; coordinate
+      reconstruction and rendering belong to consumers.
+- [x] Decide table, thematic-break, Setext-heading, fenced-code, definition-list,
       and caption precedence before commitment. Malformed candidates must return
       all unowned source to the inherited block parser.
 
-- [ ] **Exit criterion:** all source forms produce the same canonical shape, interleaved
+- [x] **Exit criterion:** all source forms produce the same canonical shape, interleaved
       row/column spans validate without placeholders, nested block cells use the
-      ordinary parser, boundary work is linear in bytes plus emitted cells, and
-      adversarial grids use memory proportional to row width plus output.
+      ordinary parser, boundary work is O(source × α(columns)) plus linear source-anchor ordering,
+      and auxiliary geometry uses memory proportional to column count plus
+      source rows and output cells, apart from captured input and provenance.
 
 ## Phase 6 — conformance, bindings, and release evidence
 
-- [ ] Add package-owned fixtures mapped to every normative Pandoc module. Cover
+See the [P11/P12 validation record](2026-09-12-pandoc-tables-and-compositions.md).
+All selected syntax producers and the local P12 evidence are implemented.
+The 2026-09-12 scope clarification confirms that closure requires the requested
+features under the normative modules, not all Pandoc extensions or identical
+Pandoc ASTs. Documented language and consumer-model differences remain visible;
+they are not missing-feature gaps. Parser/consumer responsibilities do not move
+to satisfy an oracle comparison.
+
+- [x] Add package-owned fixtures mapped to every normative Pandoc module. Cover
       official positive examples, negative boundaries, extension conflicts, exact scopes, allocation failures, nesting limits, and
       adversarial size-doubling inputs.
-- [ ] Extend the shared canonical AST corpus with every new kind, enum case,
+- [x] Extend the shared canonical AST corpus with every new kind, enum case,
       nullable field, universal anchor and attributes state, citation branch,
       list form, definition body shape, and table span arrangement.
-- [ ] Remove each parity gap in the implementation commit that closes it. Any
+- [x] Remove each missing-feature gap when its implementation closes it. Keep
+      intentional differences required by the normative modules documented and
+      checked against their exact evidence. Any
       intentional consumer-model projection must be general, documented, and
       exercised by a canary; it cannot conceal a source-recognition difference.
-- [ ] Run native correctness/conformance, Swift macOS, Kotlin JVM, ES Node and
+- [x] Run native correctness/conformance, Swift macOS, Kotlin JVM, ES Node and
       browser, static audits, fuzz seeds, and the complete external oracle suite.
       Supported-host CI supplies the remaining release evidence.
 
-- [ ] **Exit criterion:** every selected extension is always on, all four
+- [x] **Exit criterion:** every selected extension is always on and implements
+      its normative model, recognition, fallback and precedence, all four
       surfaces expose one canonical model, the pinned Pandoc corpus has no
-      unregistered divergence, the inherited layers remain green, and no test or build
-      step fetches mutable external state.
+      missing-feature gap or unregistered divergence, the inherited layers
+      remain green, and no test or build step fetches mutable external state.
+      This criterion does not require implementing unselected extensions,
+      reproducing Pandoc's rendering or removing differences required by the
+      existing dialect and consumer contract.
 
 ## Delivery sequence
 

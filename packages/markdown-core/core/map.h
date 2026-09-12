@@ -19,6 +19,8 @@ struct markdown_core_resource;
 struct markdown_core_map_record {
     struct markdown_core_map_record *next;
     struct markdown_core_resource *resource;
+    uint64_t source_key;
+    bool implicit;
     unsigned char label[];
 };
 

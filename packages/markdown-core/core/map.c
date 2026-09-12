@@ -206,13 +206,23 @@ static int index_map(markdown_core_map *map) {
     if (!markdown_core_key_index_init(&map->index, map->mem, map->size)) {
         return 0;
     }
-    /* Records are linked newest-first. Replacing while traversing therefore
-     * leaves the oldest (first source) definition in each slot. */
+    /* Construction order is independent of source order for mapped block
+     * inputs. Explicit definitions precede implicit heading declarations;
+     * within either class the first authored occurrence wins. */
     for (record = map->records; record; record = record->next) {
-        if (!markdown_core_key_index_insert(&map->index, record->label, (bufsize_t)strlen((char *)record->label),
-                                            record, 1, NULL)) {
+        bufsize_t length = (bufsize_t)strlen((char *)record->label);
+        markdown_core_key_index_slot *slot = markdown_core_key_index_entry(&map->index, record->label, length);
+        if (!slot) {
             markdown_core_key_index_free(&map->index);
             return 0;
+        }
+        markdown_core_map_record *existing = slot->key ? slot->value.pointer : NULL;
+        if (!existing || (existing->implicit && !record->implicit) ||
+            (existing->implicit == record->implicit && record->source_key <= existing->source_key)) {
+            if (!existing) {
+                markdown_core_key_index_commit(&map->index, slot, record->label);
+            }
+            slot->value.pointer = record;
         }
     }
     map->size = map->index.size;

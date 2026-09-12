@@ -33,7 +33,7 @@ export type { Span } from "./model/span.js";
 export type { Superscript } from "./model/superscript.js";
 export type { Subscript } from "./model/subscript.js";
 export type { Strong } from "./model/strong.js";
-export type { Table, TableCell, TableRow, TableColumn } from "./model/table.js";
+export type { Table, TableCaption, TableCell, TableRow, TableColumn } from "./model/table.js";
 export type { Text } from "./model/text.js";
 export type { ThematicBreak } from "./model/thematic-break.js";
 export { ParseError } from "./parse-error.js";

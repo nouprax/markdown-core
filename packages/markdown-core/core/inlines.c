@@ -3376,6 +3376,11 @@ void markdown_core_prepare_heading(markdown_core_parser *parser, markdown_core_h
             } else {
                 markdown_core_map_record *record =
                     markdown_core_reference_create(parser->mem, parser->refmap, &label, resource);
+                if (record) {
+                    record->implicit = true;
+                    record->source_key =
+                        ((uint64_t)(uint32_t)heading->node->start_line << 32) | (uint32_t)heading->node->start_column;
+                }
                 heading->resource = record ? record->resource : NULL;
             }
         }
@@ -3431,7 +3436,8 @@ static bool reference_tail(subject *subj, markdown_core_attribute_parser *attrib
 }
 
 bufsize_t markdown_core_parse_reference_inline(markdown_core_mem *mem, markdown_core_chunk *input,
-                                               markdown_core_map *refmap, markdown_core_attribute_parser *attributes) {
+                                               markdown_core_map *refmap, markdown_core_attribute_parser *attributes,
+                                               uint64_t source_key) {
     subject subj;
     markdown_core_resource *resource;
     int lost = 0;
@@ -3517,7 +3523,10 @@ bufsize_t markdown_core_parse_reference_inline(markdown_core_mem *mem, markdown_
     }
     if (resource) {
         resource->attributes = value;
-        markdown_core_reference_create(mem, refmap, &lab, resource);
+        markdown_core_map_record *record = markdown_core_reference_create(mem, refmap, &lab, resource);
+        if (record) {
+            record->source_key = source_key;
+        }
     } else {
         markdown_core_attributes_free(mem, &value);
     }

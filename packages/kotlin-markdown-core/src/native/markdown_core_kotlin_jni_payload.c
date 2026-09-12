@@ -615,6 +615,7 @@ static void write_node(jni_payload_buffer *buffer, jni_payload_stack *stack, jni
     case MARKDOWN_CORE_KIND_DEFINITION_LIST:
     case MARKDOWN_CORE_KIND_SUBSCRIPT:
     case MARKDOWN_CORE_KIND_STRIKETHROUGH:
+    case MARKDOWN_CORE_KIND_TABLE_CAPTION:
     case MARKDOWN_CORE_KIND_TABLE_ROW:
         schedule_children(buffer, stack, node);
         break;
@@ -736,7 +737,16 @@ static void write_node(jni_payload_buffer *buffer, jni_payload_stack *stack, jni
         put_i32(buffer, (int32_t)head);
         put_i32(buffer, (int32_t)content);
         put_i32(buffer, (int32_t)foot);
-        schedule_children(buffer, stack, node);
+        const markdown_core_node *caption = markdown_core_node_table_caption(node);
+        put_u8(buffer, caption ? 1 : 0);
+        if (caption) {
+            jni_payload_action children = {.kind = JNI_PAYLOAD_WRITE_CHILDREN, .node = node};
+            jni_payload_action field = {.kind = JNI_PAYLOAD_WRITE_NODE, .node = caption};
+            push_action(buffer, stack, children);
+            push_action(buffer, stack, field);
+        } else {
+            schedule_children(buffer, stack, node);
+        }
         break;
     }
     case MARKDOWN_CORE_KIND_DEFINITION: {

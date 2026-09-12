@@ -28,6 +28,7 @@ public class TableRow internal constructor(
 }
 
 public class Table internal constructor(
+    public val caption: TableCaption?,
     public val columns: kotlin.collections.List<TableColumn>,
     public val head: kotlin.collections.List<TableRow>,
     public val content: kotlin.collections.List<TableRow>,
@@ -37,4 +38,14 @@ public class Table internal constructor(
     override val attributes: Attributes,
 ) : Markup {
     override fun <Result> accept(visitor: Visitor<Result>): Result = visitor.visitTable(this)
+}
+
+/** An independently owned table caption with ordinary inline content. */
+public class TableCaption internal constructor(
+    public val content: kotlin.collections.List<Markup>,
+    override val scope: Scope,
+    override val anchor: String?,
+    override val attributes: Attributes,
+) : Markup {
+    override fun <Result> accept(visitor: Visitor<Result>): Result = visitor.visitTableCaption(this)
 }

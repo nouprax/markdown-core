@@ -640,15 +640,14 @@ Term
   | b |
 .
 Document scope=1:1..8:7 anchor=null attributes={} children=2
-├── Table scope=1:1..3:6 anchor=null attributes={} columns=[none:null] children=2
+├── Table scope=1:1..3:6 anchor=null attributes={} columns=[none:null] children=1
+│   ├── TableCaption scope=3:1..3:6 anchor=null attributes={} children=1
+│   │   └── Text scope=3:3..3:6 anchor=null attributes={} literal="body" children=0
 │   ├── TableHead children=1
 │   │   └── TableRow scope=1:1..1:8 anchor=null attributes={} children=1
 │   │       └── TableCell scope=1:2..1:7 anchor=null attributes={} rowspan=1 colspan=1 children=1
 │   │           └── Text scope=1:3..1:6 anchor=null attributes={} literal="term" children=0
-│   ├── TableBody children=1
-│   │   └── TableRow scope=3:1..3:6 anchor=null attributes={} children=1
-│   │       └── TableCell scope=3:1..3:6 anchor=null attributes={} rowspan=1 colspan=1 children=1
-│   │           └── Text scope=3:1..3:6 anchor=null attributes={} literal=": body" children=0
+│   ├── TableBody children=0
 │   └── TableFoot children=0
 └── DefinitionList scope=5:1..8:7 anchor=null attributes={} children=1
     └── Definition scope=5:1..8:7 anchor=null attributes={} compact=true children=1

@@ -77,7 +77,8 @@
         "test:swift-ios-simulator": "scripts/run-swift-ios-tests.sh MarkdownCoreTests",
         "test:swift-macos": "CLANG_MODULE_CACHE_PATH=build/swift-module-cache swift test --disable-sandbox --filter '^MarkdownCoreTests\\.' && CLANG_MODULE_CACHE_PATH=build/swift-module-cache swift test --disable-sandbox --package-path packages/swift-markdown-core/Tests/Consumer",
         "verify": "pnpm run format:check && pnpm run lint && pnpm run check:contracts && pnpm run check:gradle-model && pnpm run release:check-version && pnpm run audit:repository && pnpm run audit:ci && pnpm run audit:tests && pnpm run audit:surface && pnpm run check:extension-inventory && pnpm run audit:extension-special-chars && pnpm run audit:extension-attach-order && pnpm run audit:source-lists && pnpm run audit:ast-projections && pnpm run audit:packages",
-        "check:pandoc-parity": "node --test scripts/tests/pandoc-oracle.test.mjs && node scripts/check-pandoc-parity.mjs"
+        "check:pandoc-parity": "node --test scripts/tests/pandoc-oracle.test.mjs scripts/tests/pandoc-compositions.test.mjs && node scripts/check-pandoc-parity.mjs",
+        "probe:pandoc-composition": "node --test scripts/tests/pandoc-compositions.test.mjs && node scripts/check-pandoc-compositions.mjs"
     },
     "devDependencies": {
         "@eslint/js": "10.0.1",

@@ -23,6 +23,8 @@ public interface Visitor<Result> {
 
     public fun visitTable(node: Table): Result
 
+    public fun visitTableCaption(node: TableCaption): Result
+
     public fun visitTableRow(node: TableRow): Result
 
     public fun visitTableCell(node: TableCell): Result

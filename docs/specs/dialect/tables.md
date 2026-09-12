@@ -5,8 +5,7 @@ owns the one table model and every table syntax. Sources: cmark-gfm's table exte
 `simple_tables`, `multiline_tables`, and `grid_tables`. Executable oracles:
 cmark-gfm for pipe tables; the Pandoc 3.11 CLI for the other forms. Landing:
 the model with `M6`; captions with `P11a`; simple, multiline, and grid tables
-with `P11b`, `P11c`, and `P11d`. The unified table model and pipe syntax are present; captions and the other
-forms land with their named items. The
+with `P11b`, `P11c`, and `P11d`. All four table forms and captions are implemented on every public surface. The
 [example format](../dialect.md#examples) is defined by the index.
 
 ## Model
@@ -92,6 +91,14 @@ occupancy array of `columns.count` entries:
 
 A candidate that would violate any step is not a table and follows the
 syntax's fallback; the parser never emits a table that needs repair.
+The parser records source-defined rows and each starting cell once, with its
+authored spans and content. It does not expand spans into a dense grid, insert
+placeholder cells at covered coordinates, or synthesize rows for layout.
+An explicit source boundary can define a row with no starting cells; that row
+is retained with `cells=[]`. This differs from an authored empty cell, which
+is a `TableCell` with empty `content`. Reconstructing occupied coordinates and
+laying out the table are consumer responsibilities; temporary geometry used
+to validate the source candidate does not become another public table model.
 
 ## Pipe tables
 
@@ -322,10 +329,14 @@ Document scope=1:1..5:6 anchor=null attributes={} children=1
     └── TableFoot children=0
 ````````````````````````````````
 
-A multi-line caption contributes `SoftBreak` nodes. When both surround one
-table, the preceding caption owns it and the following paragraph stays a
-paragraph; a caption paragraph between two tables belongs to the preceding
-one. Placement is not stored:
+A multi-line caption contributes `SoftBreak` nodes. A table claims its
+preceding caption if present, otherwise its following caption. A table with
+a preceding caption leaves the following caption candidate unconsumed: it can
+become the preceding caption of the next table, or a paragraph when no table
+follows. Thus `caption A / table 1 / caption B / table 2` gives A to table 1
+and B to table 2; without A, B belongs to table 1. The pinned Pandoc canaries
+verify both cases for every table form and caption marker. Placement is not
+stored:
 
 ```````````````````````````````` example
 table: first
@@ -510,8 +521,10 @@ of the document. Without a header it begins at the segment boundary and
 followed directly by the closing boundary unless it is the only row, in which
 case the candidate is retried as a simple table and otherwise follows the
 inherited fallback. A row's physical lines are cut at the segment boundary's
-column positions; each cell's per-line segments are joined with LF and parsed
-as a block sequence. `w[i]` is the scalar count from the start of dash run
+column positions. Right-trim each segment and remove the common leading-space
+indent of the cell's nonempty segments, preserving relative indentation within
+the cell. Join those segments with LF and parse them as a block sequence,
+including header cells. `w[i]` is the scalar count from the start of dash run
 `i` to the start of run `i+1`, the last run being its own length. Alignment
 follows the simple-table rule, and every span is one:
 
@@ -530,9 +543,11 @@ Document scope=1:1..8:16 anchor=null attributes={} children=1
     ├── TableHead children=1
     │   └── TableRow scope=2:1..2:16 anchor=null attributes={} children=2
     │       ├── TableCell scope=2:1..2:8 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │       │   └── Text scope=2:1..2:4 anchor=null attributes={} literal="Left" children=0
+    │       │   └── Paragraph scope=2:1..2:4 anchor=null attributes={} children=1
+    │       │       └── Text scope=2:1..2:4 anchor=null attributes={} literal="Left" children=0
     │       └── TableCell scope=2:9..2:16 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │           └── Text scope=2:12..2:16 anchor=null attributes={} literal="Right" children=0
+    │           └── Paragraph scope=2:12..2:16 anchor=null attributes={} children=1
+    │               └── Text scope=2:12..2:16 anchor=null attributes={} literal="Right" children=0
     ├── TableBody children=2
     │   ├── TableRow scope=4:1..5:1 anchor=null attributes={} children=2
     │   │   ├── TableCell scope=4:1..5:1 anchor=null attributes={} rowspan=1 colspan=1 children=1
@@ -555,15 +570,18 @@ Document scope=1:1..8:16 anchor=null attributes={} children=1
 
 ## Grid tables
 
-A grid table's lines begin and end with `|` or `+` at
-the table margin, and the column boundary set is the union of the `+`
-positions on every horizontal boundary line; every `+` and `|` must sit at a
-boundary position or the candidate fails. Between adjacent boundary positions
-a segment is horizontal (all `-` or all `=`, with optional edge colons) or
-cell text. A cell anchored at row `r` and column `c` spans right until a `|`
-or `+` at a boundary position and down until the first line on which its
-full width is horizontal; the result is `colspan` and `rowspan` stored once
-in the anchor row, and the logical grid rules above validate the result.
+A grid table's lines begin and end with `|` or `+` at the table margin.
+Its column boundaries are the union of `+` positions connected to the outer
+border by horizontal `-` or `=` segments (with optional edge colons).
+Other `+` and `|` characters remain cell content, including nested grids.
+
+Source boundary lines define elementary row/column regions. A missing vertical
+wall on any physical content line joins neighboring regions; a missing
+horizontal segment joins regions above and below it. Every connected region
+must form one rectangle within one row group. Its width and height are the
+cell's `colspan` and `rowspan`; the cell is stored once in its starting row.
+This checks the complete cell boundary, including a wall present on only some
+of its content lines. A nonrectangular region rejects the candidate.
 
 A line whose segments are all `=` is a head separator when it is the first
 such line and there is no foot yet, and the foot is the final row group
@@ -602,9 +620,12 @@ Cell text is, per line, the scalars strictly between the cell's boundary
 positions, right-trimmed; if every non-empty line begins with a space, one
 space is removed from each; the lines are joined with LF and parsed by the
 block parser, so cells hold paragraphs, code, lists, headings, nested tables,
-and every enabled block. A logical row begins at every line on which a cell
-is anchored, and a cell that spans down is owned by the row of its anchor
-line, and its scope extends below that row's last line:
+and every enabled block. Logical rows are defined by the source's structural
+boundary lines, independently of whether any cell starts in the row. An
+interior boundary such as `+   +   +` retains both cells across the boundary
+and starts another row with no new cells; the parser preserves that row's
+empty `cells` array. A cell that spans down is owned by the row in which it
+starts, and its scope extends below that row's last line:
 
 ```````````````````````````````` example
 +-------+-------+
@@ -662,10 +683,14 @@ row's end. A simple-table row covers its line, and a simple cell covers its
 segment trimmed of leading and trailing whitespace, or the one byte at the
 segment's start when the segment is empty, or the line's last byte when the
 segment lies beyond the line's end. A multiline row covers its physical
-lines and a grid row the lines from its anchor line to the line before the
-next row's anchor line. A multiline or grid cell covers the region between
+lines and a grid row its physical lines following its opening boundary,
+through the line before the next row begins (excluding the table's final
+closing boundary). A row with no physical body lines uses its closing boundary
+line as its source extent. Rows do not require a starting cell to have a scope.
+A multiline or grid cell covers the region between
 its column boundaries on its first line through the same region on its last
-line, clipped to each line's end; its descendants use original-source
+line, clipped to each line's end. A grid cell with no physical body lines uses
+the corresponding segment of its closing boundary. Its descendants use original-source
 coordinates, so a `SoftBreak` produced by joining two segments covers the
 physical line ending of the earlier segment's line, and such a range may
 include other cells' bytes. A grid cell whose `rowspan` exceeds one ends
@@ -683,7 +708,8 @@ colon, and definition-list precedence; for simple tables, closing
 separators, a second line before the separator, and Setext and
 thematic-break precedence;
 for multiline tables, headerless forms and the one-row rule; for grid
-tables, multi-row heads, interleaved active spans, fully covered rows,
+tables, multi-row heads, interleaved active spans, source-defined fully covered
+rows with `cells=[]`, authored empty cells with `content=[]`,
 alignment, foot, and rejection of overlap, overrun, uncovered coordinates,
 cross-group spans, and stray `=` lines; and for all, exact table, caption,
 row, and cell scopes, allocation failure, deep nested cells, and size-doubling rows, columns, and boundaries.

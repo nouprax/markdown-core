@@ -227,7 +227,23 @@ function pandocNode({ t, c }) {
                     }))
                 },
                 [
-                    ...(c[1][1].length ? [node("TableCaption", {}, sequence(c[1][1]))] : []),
+                    ...(c[1][1].length
+                        ? [
+                              node(
+                                  "TableCaption",
+                                  {},
+                                  sequence(
+                                      c[1][1].flatMap((block) => {
+                                          assert.ok(
+                                              block.t === "Plain" || block.t === "Para",
+                                              "caption contains a non-inline block"
+                                          );
+                                          return block.c;
+                                      })
+                                  )
+                              )
+                          ]
+                        : []),
                     node("TableHead", {}, c[3][1].map(row)),
                     node(
                         "TableBody",
@@ -324,6 +340,24 @@ export function fromCanonical(value) {
                       });
     }
     if (value.kind === "TableCell") {
+        // Inline cells and a single Plain/Para cell carry the same content.
+        // Keep every actual block boundary; only introduce the missing wrapper.
+        const blocks = new Set([
+            "Paragraph",
+            "Heading",
+            "CodeBlock",
+            "HTMLBlock",
+            "FormulaBlock",
+            "List",
+            "Callout",
+            "Table",
+            "DirectiveBlock",
+            "DefinitionList",
+            "ThematicBreak"
+        ]);
+        if (children.length && !blocks.has(children[0].kind)) {
+            result.children = [node("Paragraph", {}, children)];
+        }
         result.rowspan = Number(f.rowspan);
         result.colspan = Number(f.colspan);
     }
@@ -332,7 +366,7 @@ export function fromCanonical(value) {
     return result;
 }
 
-export function assertCanaries(run) {
+export function assertCanaries(run, product) {
     const from = "markdown_strict+inline_code_attributes";
     const input = "`你好🧭`{#id .same .same k=1 k=2}\n";
     const expected = node("Document", {}, [
@@ -396,6 +430,195 @@ export function assertCanaries(run) {
     const adjacent = fromPandoc(run("# H\n\n[H] [H]\n", anchors + "+implicit_header_references"));
     assert.equal(adjacent.children[1].children.length, 1, "Pandoc permits whitespace before a full reference tail");
     assert.equal(adjacent.children[1].children[0].dest.value, "#h");
+    assertTableCanaries(run, product);
+}
+
+function assertTableCanaries(run, product) {
+    const plain = (value) => ({ t: "Plain", c: [{ t: "Str", c: value }] });
+    const caption = (value) => ["Table", [null, value === null ? [] : [plain(value)]]];
+    const paragraph = (marker, value) => ["Para", [{ t: "Str", c: marker }, { t: "Space" }, { t: "Str", c: value }]];
+    const forms = {
+        pipe_tables: "| h |\n|---|\n| v |",
+        simple_tables: "h   j\n--- ---\nv   w",
+        multiline_tables: "-------\nh   j\n--- ---\nv   w\n\nx   y\n-------",
+        grid_tables: "+---+---+\n| h | j |\n+===+===+\n| v | w |\n+---+---+"
+    };
+    for (const [extension, table] of Object.entries(forms))
+        for (const marker of ["Table:", "table:", ":"]) {
+            const cases = [
+                [
+                    [table, `${marker} B`, table],
+                    [caption("B"), caption(null)]
+                ],
+                [
+                    [`${marker} A`, table, `${marker} B`, table],
+                    [caption("A"), caption("B")]
+                ],
+                [
+                    [`${marker} A`, table, `${marker} B`],
+                    [caption("A"), paragraph(marker, "B")]
+                ],
+                [
+                    [`${marker} A`, table, `${marker} B`, table, `${marker} C`],
+                    [caption("A"), caption("B"), paragraph(marker, "C")]
+                ]
+            ];
+            for (const [parts, expected] of cases) {
+                const input = parts.join("\n\n") + "\n";
+                const { blocks } = run(input, `markdown_strict+${extension}+table_captions`);
+                assert.deepEqual(
+                    blocks.map(({ t, c }) => [t, t === "Table" ? c[1] : c]),
+                    expected,
+                    `Pandoc caption ownership changed: ${extension}, ${JSON.stringify(input)}`
+                );
+                if (product) {
+                    const ownership = (values) =>
+                        values.map((value) =>
+                            value.kind === "Table"
+                                ? {
+                                      kind: "Table",
+                                      caption: value.children.find((child) => child.kind === "TableCaption") ?? null
+                                  }
+                                : value
+                        );
+                    assert.deepEqual(
+                        ownership(product(input).children),
+                        ownership(fromPandoc({ blocks }).children),
+                        `product caption ownership differs: ${extension}, ${JSON.stringify(input)}`
+                    );
+                }
+            }
+        }
+
+    // Assert the native sparse rows, before any product-model projection. A row
+    // with no starting cells differs from an authored cell with empty content.
+    const attr = ["", [], []];
+    const cell = (blocks, rowspan = 1, colspan = 1) => [attr, { t: "AlignDefault" }, rowspan, colspan, blocks];
+    const row = (...cells) => [attr, cells];
+    const paras = (...values) => values.map((value) => ({ ...plain(value), t: "Para" }));
+    const grids = [
+        {
+            input: "+---+---+\n| a     |\n+   +---+\n| b | c |\n+   +   +\n| d     |\n+---+---+\n",
+            rows: [
+                row(
+                    cell(
+                        [
+                            {
+                                t: "Plain",
+                                c: [
+                                    { t: "Str", c: "a" },
+                                    { t: "SoftBreak" },
+                                    { t: "Str", c: "+---" },
+                                    { t: "SoftBreak" },
+                                    { t: "Str", c: "b" },
+                                    { t: "Space" },
+                                    { t: "Str", c: "|" },
+                                    { t: "Space" },
+                                    { t: "Str", c: "c" },
+                                    { t: "SoftBreak" },
+                                    { t: "Str", c: "+" },
+                                    { t: "SoftBreak" },
+                                    { t: "Str", c: "d" }
+                                ]
+                            }
+                        ],
+                        3,
+                        2
+                    )
+                ),
+                row(),
+                row()
+            ]
+        },
+        ...[false, true].map((reversed) => {
+            const lines = ["| a | b |", "| c     |"];
+            if (reversed) lines.reverse();
+            const first = [
+                { t: "Str", c: "a" },
+                { t: "Space" },
+                { t: "Str", c: "|" },
+                { t: "Space" },
+                { t: "Str", c: "b" }
+            ];
+            const last = [{ t: "Str", c: "c" }];
+            return {
+                input: ["+---+---+", ...lines, "+---+---+", ""].join("\n"),
+                rows: [
+                    row(
+                        cell(
+                            [
+                                {
+                                    t: "Plain",
+                                    c: [...(reversed ? last : first), { t: "SoftBreak" }, ...(reversed ? first : last)]
+                                }
+                            ],
+                            1,
+                            2
+                        )
+                    )
+                ]
+            };
+        }),
+        {
+            input: "+---+---+\n| a | b |\n| c | d |\n+---+---+\n",
+            rows: [
+                row(
+                    cell([{ t: "Plain", c: [{ t: "Str", c: "a" }, { t: "SoftBreak" }, { t: "Str", c: "c" }] }]),
+                    cell([{ t: "Plain", c: [{ t: "Str", c: "b" }, { t: "SoftBreak" }, { t: "Str", c: "d" }] }])
+                )
+            ]
+        },
+        {
+            input: "+---+---+\n| a | b |\n|   +---+\n|   | c |\n+---+---+\n",
+            rows: [row(cell([plain("a")], 2), cell([plain("b")])), row(cell([plain("c")]))]
+        },
+        {
+            input: "+---+---+\n| a | b |\n+   +   +\n| c | d |\n+---+---+\n",
+            rows: [row(cell(paras("a", "c"), 2), cell(paras("b", "d"), 2)), row()]
+        },
+        {
+            input: "+---+---+\n| a | b |\n+   +   +\n| c | d |\n+   +   +\n| e | f |\n+---+---+\n",
+            rows: [row(cell(paras("a", "c", "e"), 3), cell(paras("b", "d", "f"), 3)), row(), row()]
+        },
+        {
+            input: "+---+---+\n| a | b |\n+   +   +\n+---+---+\n",
+            rows: [row(cell([plain("a")], 2), cell([plain("b")], 2)), row()]
+        },
+        {
+            input: "+---+---+\n| a | b |\n+---+---+\n+---+---+\n",
+            rows: [row(cell([plain("a")]), cell([plain("b")])), row(cell([]), cell([]))]
+        },
+        {
+            input: "+---+---+\n|   | b |\n+---+---+\n| c |   |\n+---+---+\n",
+            rows: [row(cell([]), cell([plain("b")])), row(cell([plain("c")]), cell([]))]
+        },
+        {
+            input: "+---+---+\n| a     |\n+---+---+\n| b | c |\n+---+---+\n",
+            rows: [row(cell([plain("a")], 1, 2)), row(cell([plain("b")]), cell([plain("c")]))]
+        }
+    ];
+    for (const { input, rows } of grids) {
+        const { blocks } = run(input, "markdown_strict+grid_tables");
+        assert.equal(blocks.length, 1);
+        assert.equal(blocks[0].t, "Table");
+        assert.deepEqual(blocks[0].c[3], [attr, []], "unexpected grid head");
+        assert.deepEqual(
+            blocks[0].c[4],
+            [[attr, 0, [], rows]],
+            `Pandoc grid ownership changed: ${JSON.stringify(input)}`
+        );
+        assert.deepEqual(blocks[0].c[5], [attr, []], "unexpected grid foot");
+        if (product) {
+            const actual = product(input);
+            assert.equal(actual.children.length, 1);
+            assert.equal(actual.children[0].kind, "Table");
+            assert.deepEqual(
+                actual.children[0].children,
+                fromPandoc({ blocks }).children[0].children,
+                `product grid ownership differs: ${JSON.stringify(input)}`
+            );
+        }
+    }
 }
 
 export function validatePolicy(policy, cases) {

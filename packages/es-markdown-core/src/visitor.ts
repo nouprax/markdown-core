@@ -30,7 +30,7 @@ import type { Superscript } from "./model/superscript.js";
 import type { DefinitionList, Definition } from "./model/definition-list.js";
 import type { Subscript } from "./model/subscript.js";
 import type { Strong } from "./model/strong.js";
-import type { Table, TableCell, TableRow } from "./model/table.js";
+import type { Table, TableCaption, TableCell, TableRow } from "./model/table.js";
 import type { Text } from "./model/text.js";
 import type { ThematicBreak } from "./model/thematic-break.js";
 
@@ -46,6 +46,7 @@ export interface Visitor<Result> {
     visitHTMLBlock(this: void, node: HTMLBlock): Result;
     visitFormulaBlock(this: void, node: FormulaBlock): Result;
     visitTable(this: void, node: Table): Result;
+    visitTableCaption(this: void, node: TableCaption): Result;
     visitTableRow(this: void, node: TableRow): Result;
     visitTableCell(this: void, node: TableCell): Result;
     visitDirectiveBlock(this: void, node: DirectiveBlock): Result;
@@ -99,6 +100,8 @@ export function visit<Result>(node: Markup, visitor: Visitor<Result>): Result {
             return visitor.visitFormulaBlock(node);
         case "table":
             return visitor.visitTable(node);
+        case "tableCaption":
+            return visitor.visitTableCaption(node);
         case "tableRow":
             return visitor.visitTableRow(node);
         case "tableCell":

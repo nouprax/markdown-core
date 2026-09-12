@@ -13,6 +13,7 @@ extension APISuite {
         ]
         for (width, expected) in widths {
             let table = Table(
+                caption: nil,
                 columns: [TableColumn(alignment: .none, relative: width)],
                 head: [],
                 content: [],
@@ -31,6 +32,7 @@ extension APISuite {
         let body = try Document.parse("body")
         let foot = try Document.parse("---")
         let table = Table(
+            caption: nil,
             columns: [TableColumn(alignment: .left, relative: 0.1), TableColumn(alignment: .none, relative: nil)],
             head: [row(head)],
             content: [row(body)],
@@ -51,6 +53,7 @@ extension APISuite {
         #expect(table.dump().contains("columns=[left:0.1,none:null] children=3"))
         #expect(table.dump().contains("TableFoot children=1"))
         let empty = Table(
+            caption: nil,
             columns: table.columns,
             head: [],
             content: [],

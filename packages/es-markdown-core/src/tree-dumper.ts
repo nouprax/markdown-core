@@ -32,7 +32,7 @@ import type { Span } from "./model/span.js";
 import type { Superscript } from "./model/superscript.js";
 import type { Subscript } from "./model/subscript.js";
 import type { Strong } from "./model/strong.js";
-import type { Table, TableCell, TableRow } from "./model/table.js";
+import type { Table, TableCaption, TableCell, TableRow } from "./model/table.js";
 import type { Text } from "./model/text.js";
 import type { ThematicBreak } from "./model/thematic-break.js";
 import type { CitationReferent, Destination, OrderedListDelimiter, OrderedListVariant, Scope } from "./values.js";
@@ -126,7 +126,8 @@ class DumpState {
                 [`columns=[${columns}]`],
                 node.head.length + node.content.length + node.foot.length
             );
-            this.nested(3, () => {
+            this.nested(3 + (node.caption ? 1 : 0), () => {
+                if (node.caption) this.dump(node.caption);
                 for (const [name, rows] of [
                     ["TableHead", node.head],
                     ["TableBody", node.content],
@@ -139,6 +140,7 @@ class DumpState {
                 }
             });
         },
+        visitTableCaption: (node: TableCaption) => this.container("TableCaption", node, [], node.content),
         visitTableRow: (node: TableRow) => this.container("TableRow", node, [], node.cells),
         visitTableCell: (node: TableCell) =>
             this.container("TableCell", node, [`rowspan=${node.rowspan}`, `colspan=${node.colspan}`], node.content),

@@ -157,10 +157,16 @@ On JDK 26 and later, JVM applications should launch with
 `--enable-native-access=ALL-UNNAMED` so the package-private JNI loader can load
 the bundled native library without a restricted-native-access warning.
 
-Tables expose `columns`, `head`, `content`, and `foot`. Each `TableColumn` has
-`alignment` and nullable `relative`; each `TableCell` has `rowspan`, `colspan`,
-and direct inline or block `content`. Rows carry their cells and scope; group
-ownership belongs to the table. Pipe tables have unit spans and no authored widths.
+Pipe, simple, multiline and grid tables share one model. `caption` is an
+optional `TableCaption` with inline `content`; `Table:`, `table:` and `:` accept
+a preceding or following caption. Between tables, an uncaptained preceding
+table claims it first. Walkers visit the caption before `head`, `content`, and
+`foot`. Multiline and grid cells use ordinary block content and authored relative
+widths; pipe and simple cells use inline content and null widths. Grid cells
+carry `rowspan` and `colspan` once in their starting row. Source-defined rows
+with no starting cells retain `cells=[]`; an authored empty cell retains
+`content=[]`. Consumers derive occupied coordinates and layout from these rows
+and spans.
 
 Attributes attach to inline code (``x`{.code}`), ATX and Setext headings,
 fenced code, direct links/media, resolved references and angle autolinks.
@@ -177,3 +183,15 @@ anchors anywhere in the document are reserved first. `[Hello World]`,
 before the heading; an explicit reference definition takes priority. Labels
 use authored heading text, so `# *Title*` is referenced by `[*Title*]`.
 Heading attributes stay on the heading, and generated targets add no scope.
+
+### Pandoc-derived syntax
+
+The always-on dialect includes inline code, heading, fenced code and link
+attributes; automatic anchors and implicit heading references; bracketed spans;
+superscript and subscript; bibliography citations; named and nameless fenced
+containers; fancy ordered lists and example lists; definition lists; table
+captions; and simple, multiline and grid tables. These 18 feature groups use
+one immutable AST and the same behavior on every binding. The
+[dialect contract](../../docs/specs/dialect.md) specifies syntax, precedence and intentional differences
+from the pinned Pandoc reader. Citation numbering, example-list resolution,
+table coordinate expansion and rendering remain consumer responsibilities.

@@ -12,7 +12,7 @@ static void S_node_unlink(markdown_core_node *node);
 #define NODE_MEM(node) markdown_core_node_mem(node)
 
 bool markdown_core_node_can_contain_type(markdown_core_node *node, markdown_core_node_type child_type) {
-    if (child_type == MARKDOWN_CORE_NODE_DOCUMENT) {
+    if (child_type == MARKDOWN_CORE_NODE_DOCUMENT || child_type == MARKDOWN_CORE_NODE_TABLE_CAPTION) {
         return false;
     }
 
@@ -42,6 +42,7 @@ bool markdown_core_node_can_contain_type(markdown_core_node *node, markdown_core
         return child_type == MARKDOWN_CORE_NODE_LIST_ITEM;
 
     case MARKDOWN_CORE_NODE_PARAGRAPH:
+    case MARKDOWN_CORE_NODE_TABLE_CAPTION:
     case MARKDOWN_CORE_NODE_HEADING:
     case MARKDOWN_CORE_NODE_EMPHASIS:
     case MARKDOWN_CORE_NODE_STRONG:
@@ -305,6 +306,12 @@ static void S_splice_after(markdown_core_node *e, markdown_core_node *first) {
     e->next = first;
 }
 
+static int S_release_owned_subtree(markdown_core_node **slot, void *context) {
+    S_splice_after(context, *slot);
+    *slot = NULL;
+    return 1;
+}
+
 /* The node-valued fields join the same iterative free walk as content.
  * Kind conversion uses a separate walk so its siblings remain untouched. */
 static void S_splice_owned_fields(markdown_core_node *owner, markdown_core_node *after) {
@@ -341,6 +348,9 @@ static void S_free_nodes(markdown_core_node *e) {
             e->user_data_free_func(NODE_MEM(e), e->user_data);
         }
 
+        if (e->extension && e->extension->visit_owned_subtrees_func) {
+            e->extension->visit_owned_subtrees_func(e->extension, e, S_release_owned_subtree, e);
+        }
         if (e->opaque && e->extension && e->extension->opaque_free_func) {
             e->extension->opaque_free_func(e->extension, NODE_MEM(e), e);
         }
@@ -425,6 +435,8 @@ const char *markdown_core_node_get_type_string(markdown_core_node *node) {
         return "definition";
     case MARKDOWN_CORE_NODE_DEFINITION_BODY:
         return "definition_body";
+    case MARKDOWN_CORE_NODE_TABLE_CAPTION:
+        return "table_caption";
     case MARKDOWN_CORE_NODE_LIST:
         return "list";
     case MARKDOWN_CORE_NODE_LIST_ITEM:

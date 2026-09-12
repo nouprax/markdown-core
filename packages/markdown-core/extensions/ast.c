@@ -227,6 +227,9 @@ markdown_core_node_kind markdown_core_node_get_kind(const markdown_core_node *no
     if (node->kind == MARKDOWN_CORE_NODE_TABLE_CELL) {
         return MARKDOWN_CORE_KIND_TABLE_CELL;
     }
+    if (node->kind == MARKDOWN_CORE_NODE_TABLE_CAPTION) {
+        return MARKDOWN_CORE_KIND_TABLE_CAPTION;
+    }
     if (node->kind == MARKDOWN_CORE_NODE_STRIKETHROUGH) {
         return MARKDOWN_CORE_KIND_STRIKETHROUGH;
     }
@@ -290,9 +293,10 @@ const char *markdown_core_node_kind_name(markdown_core_node_kind kind) {
         "Superscript",
         "Subscript",
         "DefinitionList",
-        "Definition"};
+        "Definition",
+        "TableCaption"};
     /* clang-format on */
-    if (kind < MARKDOWN_CORE_KIND_NONE || kind > MARKDOWN_CORE_KIND_DEFINITION) {
+    if (kind < MARKDOWN_CORE_KIND_NONE || kind > MARKDOWN_CORE_KIND_TABLE_CAPTION) {
         return "None";
     }
     return names[kind];
@@ -483,6 +487,11 @@ bool markdown_core_node_table_cell_spans(const markdown_core_node *node, int64_t
     *rowspan = node->as.table_cell->rowspan;
     *colspan = node->as.table_cell->colspan;
     return true;
+}
+
+const markdown_core_node *markdown_core_node_table_caption(const markdown_core_node *node) {
+    const markdown_core_table *table = node && node->kind == MARKDOWN_CORE_NODE_TABLE ? node->opaque : NULL;
+    return table ? table->caption : NULL;
 }
 
 bool markdown_core_node_directive_properties(const markdown_core_node *node, markdown_core_optional_string *name) {
@@ -1373,6 +1382,10 @@ static void dump_table_nodes(dump_buffer *buffer, const markdown_core_node *node
     size_t columns, counts[3];
     static const char *names[] = {"TableHead", "TableBody", "TableFoot"};
     markdown_core_node_table_properties(node, &columns, &counts[0], &counts[1], &counts[2]);
+    const markdown_core_node *caption = markdown_core_node_table_caption(node);
+    if (caption) {
+        dump_nested_node(buffer, caption, depth, true);
+    }
     const markdown_core_node *row = markdown_core_node_get_first_child(node);
     for (size_t group = 0; group < 3; group++) {
         dump_group_line(buffer, names[group], counts[group], depth, group < 2);
@@ -1711,6 +1724,7 @@ static void dump_node(dump_buffer *buffer, const markdown_core_node *node, size_
     case MARKDOWN_CORE_KIND_LIST_ITEM:
     case MARKDOWN_CORE_KIND_TABLE_ROW:
     case MARKDOWN_CORE_KIND_TABLE_CELL:
+    case MARKDOWN_CORE_KIND_TABLE_CAPTION:
     case MARKDOWN_CORE_KIND_DIRECTIVE_LABEL:
     case MARKDOWN_CORE_KIND_EMPHASIS:
     case MARKDOWN_CORE_KIND_STRONG:

@@ -228,9 +228,7 @@ static void directive_opaque_free(const markdown_core_extension *extension, mark
         return;
     }
 
-    if (directive->label) {
-        markdown_core_node_free(directive->label);
-    }
+    /* Owned roots are released by the shared iterative node destructor. */
     markdown_core_chunk_free(mem, &directive->name);
     mem->free(directive);
     node->opaque = NULL;
@@ -738,7 +736,9 @@ static int accepts_lines(const markdown_core_extension *extension, markdown_core
 
 static int visit_owned_subtrees(const markdown_core_extension *extension, markdown_core_node *node,
                                 markdown_core_owned_subtree_visitor visitor, void *context) {
-    node_directive *directive = get_directive(node);
+    /* The extension payload survives kind conversion. Its ownership slots
+     * remain live even when the new kind is no longer a directive. */
+    node_directive *directive = node->opaque;
     (void)extension;
     if (!directive || !directive->label) {
         return 1;

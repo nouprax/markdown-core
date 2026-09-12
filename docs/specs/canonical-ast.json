@@ -207,6 +207,11 @@
             "name": "Table",
             "fields": [
                 {
+                    "name": "caption",
+                    "type": "TableCaption",
+                    "optional": true
+                },
+                {
                     "name": "columns",
                     "type": "[TableColumn]",
                     "optional": false
@@ -228,6 +233,17 @@
                 }
             ],
             "invariants": "non-empty columns define the logical grid; rows are owned exactly once in head/content/foot order; pipe tables have one head row, no foot rows, null relative widths, and unit spans; no span crosses a group boundary"
+        },
+        {
+            "name": "TableCaption",
+            "fields": [
+                {
+                    "name": "content",
+                    "type": "[Markup]",
+                    "optional": false
+                }
+            ],
+            "invariants": "independently owned inline caption, visited before the table row groups"
         },
         {
             "name": "TableRow",

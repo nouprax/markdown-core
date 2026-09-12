@@ -78,6 +78,11 @@ public interface WalkingVisitor {
         phase: WalkPhase,
     )
 
+    public fun visitTableCaption(
+        node: TableCaption,
+        phase: WalkPhase,
+    )
+
     public fun visitTableRow(
         node: TableRow,
         phase: WalkPhase,
@@ -410,7 +415,14 @@ private class WalkingDriver(
             schedule(node.foot)
             schedule(node.content)
             schedule(node.head)
+            node.caption?.let { schedule(listOf(it)) }
         }
+    }
+
+    override fun visitTableCaption(node: TableCaption) {
+        visitor.visitTableCaption(node, phase)
+        scheduleExit(node)
+        if (phase == WalkPhase.ENTERING) schedule(node.content)
     }
 
     override fun visitTableRow(node: TableRow) {

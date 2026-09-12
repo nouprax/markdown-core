@@ -58,6 +58,7 @@ public protocol MarkupWalkingVisitor {
     mutating func visit(_ node: Media, phase: WalkPhase)
     mutating func visit(_ node: Directive, phase: WalkPhase)
     mutating func visit(_ node: Cite, phase: WalkPhase)
+    mutating func visit(_ node: TableCaption, phase: WalkPhase)
     mutating func visit(_ node: TableRow, phase: WalkPhase)
     mutating func visit(_ node: TableCell, phase: WalkPhase)
     mutating func visit(_ value: Citation, phase: WalkPhase)
@@ -272,6 +273,7 @@ extension WalkingDriver: MarkupVisitor {
             for row in node.foot.reversed() { actions.append(.enter(row)) }
             for row in node.content.reversed() { actions.append(.enter(row)) }
             for row in node.head.reversed() { actions.append(.enter(row)) }
+            if let caption = node.caption { actions.append(.enter(caption)) }
         }
     }
 
@@ -422,6 +424,14 @@ extension WalkingDriver: MarkupVisitor {
         scheduleExit(node)
         if phase == .entering {
             for citation in node.citations.reversed() { actions.append(.enterCitation(citation)) }
+        }
+    }
+
+    mutating func visit(_ node: TableCaption) {
+        visitor.visit(node, phase: phase)
+        scheduleExit(node)
+        if phase == .entering {
+            for child in node.content.reversed() { actions.append(.enter(child)) }
         }
     }
 

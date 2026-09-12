@@ -75,6 +75,7 @@ MARKDOWN_CORE_1.0 {
     markdown_core_node_scope;
     markdown_core_node_table_cell_spans;
     markdown_core_node_table_column_at;
+    markdown_core_node_table_caption;
     markdown_core_node_table_properties;
     markdown_core_node_title;
     markdown_core_specimen_content;

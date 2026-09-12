@@ -10,14 +10,31 @@ const commonmark = unified().use(remarkParse);
  * activate P4; this composition belongs to the anchors fixtures and Pandoc
  * oracle. This is conservative: it does not try to implement P4 label matching.
  * Resolved explicit references and brackets in opaque literals stay in scope.
+ * Custom task prefixes and definition markers in base-language paragraphs
+ * likewise belong to their Obsidian/Pandoc gates, not to these base oracles.
  */
 export function outsideSharedFuzzScope(input) {
-    if (!input.includes("[")) return null;
+    if (!/[[:~]/u.test(input)) return null;
     const pending = [commonmark.parse(input)];
     let heading = false;
     let unresolvedBracket = false;
     while (pending.length) {
         const node = pending.pop();
+        // These extension envelopes belong to the Obsidian and Pandoc gates.
+        // Inspect an independent base parse, never the product's recognized
+        // kinds; opaque code/HTML cannot activate either boundary.
+        if (node.type === "listItem" && node.children[0]?.type === "paragraph") {
+            const first = node.children[0];
+            const raw = input.slice(first.position.start.offset, first.position.end.offset);
+            const marker = /^\[([^[\]\p{White_Space}])\][ \t\v\f]/u.exec(raw)?.[1];
+            if (marker && ![" ", "x", "X"].includes(marker)) return "custom-task-markers";
+        }
+        if (node.type === "paragraph") {
+            const raw = input.slice(node.position.start.offset, node.position.end.offset);
+            if (/(?:^|\n)[^\r\n]+\r?\n(?:[ \t]*\r?\n)?[ \t]*[:~](?:[ \t]|\r?\n|$)/u.test(raw)) {
+                return "definition-lists";
+            }
+        }
         heading ||= node.type === "heading";
         const literal = node.type === "text" ? node.value : node.type === "image" ? node.alt : null;
         if (literal?.includes("[")) {

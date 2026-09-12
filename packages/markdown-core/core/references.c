@@ -37,6 +37,7 @@ static markdown_core_map_record *definition_create(markdown_core_mem *mem, markd
     }
     memcpy(record->label, reflabel->ptr, (size_t)reflabel->size + 1);
     record->resource = resource;
+    record->source_key = map->size;
     record->next = map->records;
 
     map->records = record;

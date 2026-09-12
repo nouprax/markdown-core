@@ -111,3 +111,47 @@ consumed token ranges, so rejecting empty bodies never rescans nested bodies.
 Only `^[` terminates an ordinary text run; other carets incur the same
 allocation work as other text. Bare autolinks use the enclosing inline
 context's start and closing delimiter, preserving the footnote boundary.
+
+Extension-owned fields participate in the same iterative destruction walk.
+Before freeing an extension payload, the core visits its owned-root slots,
+splices their chains into the walk, and clears the slots. The extension frees
+only its remaining value storage. Directive labels use this contract, and
+table captions use the same operation. The operation allocates nothing and does
+not recurse through field nesting. Kind conversion continues to preserve the
+extension's opaque state, including its owned fields.
+
+## Mapped table block inputs
+
+Table candidates retain source slices and temporary geometry until recognition
+succeeds. A grid uses connected source regions to validate complete rectangles and group
+boundaries, then emits sparse anchor cells. Its compacted active frontier holds
+at most twice the column count; closed regions are the final candidate cells,
+ordered by their source anchors with the shared stable radix operation. Temporary
+geometry is released on acceptance, rejection, or allocation failure. No
+occupied-coordinate matrix becomes part of the public AST.
+
+Multiline and grid cell bodies enqueue mapped inputs on their owning nodes.
+The parser drains that queue, including newly discovered nested cells, before
+running document-wide completion and inline parsing. Each input uses the same
+block parser, reference map, heading registry and definition owner. The active
+block root bounds finalization without creating a second Document or recursing
+into the document parser. Content marks compose through nested slices when
+blocks and inline payloads are created; scopes are never repaired afterward.
+
+Queued inputs borrow nodes owned by the document. Cell buffers and maps live
+until their block parse ends; pending buffers remain node-owned on failure.
+The lookahead cache belongs to the active input and resets only its used slots.
+Failed multiline suffix queries retain container-and-offset-qualified absence
+facts so later candidates do not repeatedly scan the same suffix.
+
+Deferred cells can register headings and references out of physical order.
+Document completion stably orders entries by original line and column using a
+fixed-pass radix sort. Explicit reference definitions take priority over
+implicit heading definitions, then the earliest authored definition wins.
+
+The table caption is an independent extension-owned root, visited before rows.
+C exposes it through `markdown_core_node_table_caption`; Swift, Kotlin and ES
+copy it with the rest of the immutable result. JNI uses the shared optional
+node-field continuation, and Wasm's fixed node record uses its owner-typed
+`fieldIndex` for either a directive label or a table caption. The row chain and
+its head/body/foot counts continue to describe rows alone.

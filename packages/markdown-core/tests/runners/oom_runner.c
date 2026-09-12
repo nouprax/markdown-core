@@ -226,7 +226,18 @@ static const char OOM_DEFINITION_LIST_CORPUS[] =
     "Code\n: ```\n  :::\n  ```\n\n"
     "[reference]: /url {.attr}\n\nT\n: [reference]\n::: \n\n::: warning\n:::\n\n::: {}\n:::\n";
 
+static const char OOM_TABLE_CORPUS[] =
+    "+------------------------+------------------------+\n| [r]: /first            | [r]: /second           |\n|       "
+    "                 |                        |\n| # Same                 | # Same                 |\n|               "
+    "         |                        |\n| [^f]: first            | [^f]: second           |\n|                       "
+    " |                        |\n| [r] [^f]               | [r] [^f]               "
+    "|\n+------------------------+------------------------+\n\n[r] [Same] [^f]\n\n+-------------------------------+\n| "
+    "+------------+------------+   |\n| | # Nest     | text       |   |\n| +------------+------------+   "
+    "|\n+-------------------------------+\n\nTable: *caption*\n\nh   j\n--- ---\nv   w\n\n-------\nh   j\n--- ---\nv   "
+    "w\n\nx   y\n-------\n\nTable: after\n\n+---+---+\n| a | b |\n+   +   +\n| c | d |\n+---+---+\n";
+
 static const oom_case OOM_CASES[] = {
+    {"table candidates and mapped owned inputs", OOM_TABLE_CORPUS, sizeof(OOM_TABLE_CORPUS) - 1},
     {"definition term/body ownership and nameless containers", OOM_DEFINITION_LIST_CORPUS,
      sizeof(OOM_DEFINITION_LIST_CORPUS) - 1},
     {"citation ownership and specimen definitions", OOM_CITATION_CORPUS, sizeof(OOM_CITATION_CORPUS) - 1},
