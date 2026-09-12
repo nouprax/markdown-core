@@ -5,16 +5,17 @@
 extern "C" {
 #endif
 
-bufsize_t _ext_scan_at(bufsize_t (*scanner)(const unsigned char *), unsigned char *ptr, int len, bufsize_t offset);
-bufsize_t _scan_table_start(const unsigned char *p);
-bufsize_t _scan_table_cell(const unsigned char *p);
-bufsize_t _scan_table_cell_end(const unsigned char *p);
-bufsize_t _scan_table_row_end(const unsigned char *p);
-bufsize_t _scan_formula_dollar_inline_open(const unsigned char *p);
-bufsize_t _scan_formula_dollar_backtick_open(const unsigned char *p);
-bufsize_t _scan_formula_dollar_display_open(const unsigned char *p);
-bufsize_t _scan_formula_latex_backslash_inline_open(const unsigned char *p);
-bufsize_t _scan_formula_latex_backslash_display_open(const unsigned char *p);
+bufsize_t _ext_scan_at(bufsize_t (*scanner)(const unsigned char *, const unsigned char *), const unsigned char *ptr,
+                       int len, bufsize_t offset);
+bufsize_t _scan_table_start(const unsigned char *p, const unsigned char *limit);
+bufsize_t _scan_table_cell(const unsigned char *p, const unsigned char *limit);
+bufsize_t _scan_table_cell_end(const unsigned char *p, const unsigned char *limit);
+bufsize_t _scan_table_row_end(const unsigned char *p, const unsigned char *limit);
+bufsize_t _scan_formula_dollar_inline_open(const unsigned char *p, const unsigned char *limit);
+bufsize_t _scan_formula_dollar_backtick_open(const unsigned char *p, const unsigned char *limit);
+bufsize_t _scan_formula_dollar_display_open(const unsigned char *p, const unsigned char *limit);
+bufsize_t _scan_formula_latex_backslash_inline_open(const unsigned char *p, const unsigned char *limit);
+bufsize_t _scan_formula_latex_backslash_display_open(const unsigned char *p, const unsigned char *limit);
 
 #define scan_table_start(c, l, n) _ext_scan_at(&_scan_table_start, c, l, n)
 #define scan_table_cell(c, l, n) _ext_scan_at(&_scan_table_cell, c, l, n)
@@ -27,6 +28,9 @@ bufsize_t _scan_formula_latex_backslash_display_open(const unsigned char *p);
     _ext_scan_at(&_scan_formula_latex_backslash_inline_open, c, l, n)
 #define scan_formula_latex_backslash_display_open(c, l, n)                                                             \
     _ext_scan_at(&_scan_formula_latex_backslash_display_open, c, l, n)
+
+int _scan_table_dash(const unsigned char **cursor, const unsigned char *limit, const unsigned char **from);
+int _scan_table_horizontal(const unsigned char *p, const unsigned char *limit);
 
 #ifdef __cplusplus
 }

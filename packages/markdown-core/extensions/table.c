@@ -669,9 +669,16 @@ static int visit_owned_subtrees(const markdown_core_extension *self, markdown_co
 /* Source candidates own geometry only. Public nodes are allocated after a
  * complete candidate has passed validation; failed candidates consume nothing. */
 typedef struct {
+    int start, end;
+} table_interval;
+
+typedef struct markdown_core_table_source_line {
     const unsigned char *data, *after;
     markdown_core_parser *parser;
-    int length, offset, first, first_column, indent, line, blanks;
+    int length, input_length, offset, first, first_column, indent, line, blanks;
+    bool dashes_scanned, full_boundary;
+    size_t dash_count;
+    table_interval *dashes;
     int *bytes;
     int columns;
 } table_source_line;
@@ -680,13 +687,10 @@ typedef struct {
     markdown_core_parser *parser;
     markdown_core_block_lookahead lookahead;
     table_source_line *lines;
-    size_t count, capacity;
+    size_t count;
     bool ended;
 } table_source;
 
-typedef struct {
-    int start, end;
-} table_interval;
 typedef struct {
     size_t first, last;
     int left, right;
@@ -736,26 +740,21 @@ static bool table_reserve(markdown_core_parser *parser, void **values, size_t *c
 }
 
 static bool table_source_push(table_source *source, table_source_line line) {
-    if (!table_reserve(source->parser, (void **)&source->lines, &source->capacity, source->count + 1,
+    markdown_core_parser *parser = source->parser;
+    size_t capacity = parser->table_lines_capacity;
+    if (!table_reserve(parser, (void **)&parser->table_lines, &parser->table_lines_capacity, source->count + 1,
                        sizeof(*source->lines))) {
         return false;
     }
+    source->lines = parser->table_lines;
+    parser->table_workspace_growth += parser->table_lines_capacity != capacity;
+    line.input_length = line.length;
     while (line.length && (line.data[line.length - 1] == '\n' || line.data[line.length - 1] == '\r')) {
         line.length--;
     }
-    /* The inherited bounded scanners temporarily write their NUL sentinel.
-     * Candidate input is immutable borrowed source, so each captured line owns
-     * one normalized, terminated scanner buffer throughout candidate parsing. */
-    unsigned char *bytes = source->parser->mem->calloc((size_t)line.length + 2, 1);
-    if (!bytes) {
-        source->parser->oom = true;
-        return false;
-    }
-    memcpy(bytes, line.data, (size_t)line.length);
-    bytes[line.length] = '\n';
-    line.data = bytes;
+    /* The current streaming line, immutable document source and normalized
+     * EOF line all outlive this non-nested query, including its commitment. */
     line.parser = source->parser;
-    source->parser->table_scan_work += (size_t)line.length;
     source->lines[source->count++] = line;
     return true;
 }
@@ -787,9 +786,8 @@ static void table_source_free(table_source *source) {
     markdown_core_parser_lookahead_end(&source->lookahead);
     for (size_t i = 0; i < source->count; i++) {
         source->parser->mem->free(source->lines[i].bytes);
-        source->parser->mem->free((void *)source->lines[i].data);
+        source->parser->mem->free(source->lines[i].dashes);
     }
-    source->parser->mem->free(source->lines);
 }
 
 static void table_candidate_free(markdown_core_parser *parser, table_candidate *candidate) {
@@ -810,6 +808,7 @@ static bool table_source_columns(table_source *source, size_t index) {
     if (line->bytes) {
         return true;
     }
+    source->parser->table_geometry_lines++;
     size_t capacity = 0;
     for (int byte = line->offset, column = 0;;) {
         if (!table_reserve(source->parser, (void **)&line->bytes, &capacity, (size_t)column + 5,
@@ -862,54 +861,69 @@ static int table_column(const table_source_line *line, int byte) {
     return low;
 }
 
-static bool table_dashes(table_source *source, size_t index, table_interval **runs, size_t *count) {
-    *runs = NULL;
-    *count = 0;
-    if (!table_source_get(source, index) || source->lines[index].indent > 3 ||
-        source->lines[index].first >= source->lines[index].length ||
-        source->lines[index].data[source->lines[index].first] != '-') {
-        return false;
-    }
-    if (!table_source_columns(source, index)) {
-        return false;
+/* Cache lexical facts before allocating any separator geometry. The same
+ * re2c iterator validates a line and later materializes its authored intervals. */
+static size_t table_dash_count(table_source *source, size_t index) {
+    if (!table_source_get(source, index)) {
+        return 0;
     }
     table_source_line *line = &source->lines[index];
-    if (line->indent > 3) {
-        return false;
+    if (!line->dashes_scanned) {
+        line->dashes_scanned = true;
+        source->parser->table_separator_scans++;
+        if (line->indent > 3) {
+            return 0;
+        }
+        const unsigned char *p = line->data + line->offset, *from, *before;
+        int result;
+        do {
+            before = p;
+            result = _scan_table_dash(&p, line->data + line->length, &from);
+            source->parser->table_scan_work += (size_t)(p - before) + 1;
+            if (result > 0) {
+                line->dash_count++;
+                line->full_boundary = line->dash_count == 1 && p - from >= 3;
+            }
+        } while (result > 0);
+        if (result < 0) {
+            line->dash_count = 0;
+            line->full_boundary = false;
+        }
     }
-    size_t capacity = 0;
-    int column = 0;
-    while (column < line->columns) {
-        while (table_character(line, column) == ' ') {
-            column++;
-        }
-        if (column == line->columns) {
-            break;
-        }
-        int start = column;
-        while (table_character(line, column) == '-') {
-            column++;
-        }
-        if (column == start || (column < line->columns && table_character(line, column) != ' ')) {
-            source->parser->mem->free(*runs);
-            *runs = NULL;
-            *count = 0;
-            return false;
-        }
-        if (!table_reserve(source->parser, (void **)runs, &capacity, *count + 1, sizeof(**runs))) {
-            return false;
-        }
-        (*runs)[(*count)++] = (table_interval){start, column};
+    return line->dash_count;
+}
+
+static const table_interval *table_dashes(table_source *source, size_t index) {
+    size_t count = table_dash_count(source, index);
+    if (!count) {
+        return NULL;
     }
-    return *count > 0;
+    table_source_line *line = &source->lines[index];
+    if (!line->dashes) {
+        line->dashes = source->parser->mem->calloc(count, sizeof(*line->dashes));
+        if (!line->dashes) {
+            source->parser->oom = true;
+            return NULL;
+        }
+        const unsigned char *p = line->data + line->offset, *from, *before = p;
+        int column = 0;
+        for (size_t i = 0; i < count; i++) {
+            _scan_table_dash(&p, line->data + line->length, &from);
+            source->parser->table_scan_work += (size_t)(p - before);
+            while (before < from) {
+                column += *before++ == '\t' ? 4 - column % 4 : 1;
+            }
+            int start = column;
+            column += (int)(p - from);
+            line->dashes[i] = (table_interval){start, column};
+            before = p;
+        }
+    }
+    return line->dashes;
 }
 
 static bool table_full_boundary(table_source *source, size_t index) {
-    table_interval *runs = NULL;
-    size_t count = 0;
-    bool result = table_dashes(source, index, &runs, &count) && count == 1 && runs[0].end - runs[0].start >= 3;
-    source->parser->mem->free(runs);
-    return result;
+    return table_dash_count(source, index) == 1 && source->lines[index].full_boundary;
 }
 
 static bool table_add_row(table_source *source, table_candidate *candidate, size_t first, size_t last) {
@@ -982,8 +996,8 @@ static bool table_rectangular_row(table_source *source, table_candidate *candida
     return true;
 }
 
-static bool table_set_columns(table_source *source, table_candidate *candidate, table_interval *runs, size_t count,
-                              size_t alignment_line, bool widths) {
+static bool table_set_columns(table_source *source, table_candidate *candidate, const table_interval *runs,
+                              size_t count, size_t alignment_line, bool widths) {
     if (!table_source_columns(source, alignment_line)) {
         return false;
     }
@@ -1034,7 +1048,7 @@ static int table_read_block_line(void *context, markdown_core_chunk *input, int 
         return 0;
     }
     table_source_line *line = &reader->source->lines[reader->index];
-    *input = (markdown_core_chunk){(unsigned char *)line->data, line->length + 1, 0};
+    *input = (markdown_core_chunk){(unsigned char *)line->data, line->input_length, 0};
     *first = line->first;
     *indent = line->indent;
     return 1;
@@ -1042,7 +1056,7 @@ static int table_read_block_line(void *context, markdown_core_chunk *input, int 
 
 static bool table_has_block_start(table_source *source, size_t index, bool paragraph) {
     table_source_line *line = &source->lines[index];
-    markdown_core_chunk chunk = {(unsigned char *)line->data, line->length + 1, 0};
+    markdown_core_chunk chunk = {(unsigned char *)line->data, line->input_length, 0};
     table_block_reader context = {source, index};
     markdown_core_block_reader reader = {&context, table_read_block_line};
     return markdown_core_parser_has_block_start(source->parser, source->lookahead.parent, &chunk, line->first,
@@ -1054,33 +1068,33 @@ static bool table_header_allowed(table_source *source, size_t index) {
 }
 
 static bool table_parse_simple(table_source *source, size_t start, table_candidate *candidate) {
-    table_interval *runs = NULL;
-    size_t count = 0;
-    bool headerless = table_dashes(source, start, &runs, &count) && count > 1;
+    const table_interval *runs = NULL;
+    size_t count = table_dash_count(source, start);
+    bool headerless = count > 1;
     if (!headerless) {
-        if (!table_header_allowed(source, start)) {
-            goto failed;
-        }
-        source->parser->mem->free(runs);
-        runs = NULL;
         if (!table_source_get(source, start + 1) || source->lines[start + 1].blanks ||
-            !table_dashes(source, start + 1, &runs, &count) || count < 2) {
+            (count = table_dash_count(source, start + 1)) < 2 || !table_header_allowed(source, start)) {
             goto failed;
         }
     }
     size_t delimiter = start + (headerless ? 0 : 1), body = delimiter + 1, end = delimiter;
+    runs = table_dashes(source, delimiter);
+    if (!runs) {
+        goto failed;
+    }
+    /* Simple rows own inline text until a blank/valid footer. Pandoc 3.11
+     * retains heading, quote and fence markers here; the header/caption
+     * paragraph-interruption rules do not apply to an existing body. */
     bool footer = false;
     for (size_t i = body; table_source_get(source, i); i++) {
         if (source->lines[i].blanks) {
             break;
         }
-        table_interval *closing = NULL;
-        size_t n = 0;
-        bool closes = table_dashes(source, i, &closing, &n) && n == count;
+        const table_interval *closing = table_dash_count(source, i) == count ? table_dashes(source, i) : NULL;
+        bool closes = closing != NULL;
         for (size_t j = 0; closes && j < count; j++) {
             closes = closing[j].start == runs[j].start && closing[j].end == runs[j].end;
         }
-        source->parser->mem->free(closing);
         if (closes && (!table_source_get(source, i + 1) || source->lines[i + 1].blanks)) {
             end = i;
             footer = true;
@@ -1111,10 +1125,8 @@ static bool table_parse_simple(table_source *source, size_t start, table_candida
             goto failed;
         }
     }
-    source->parser->mem->free(runs);
     return true;
 failed:
-    source->parser->mem->free(runs);
     table_candidate_free(source->parser, candidate);
     return false;
 }
@@ -1149,7 +1161,7 @@ static void table_search_finish(table_source *source, size_t first, size_t after
 }
 
 static bool table_parse_multiline(table_source *source, size_t start, table_candidate *candidate) {
-    table_interval *runs = NULL;
+    const table_interval *runs = NULL;
     size_t count = 0;
     bool header = table_full_boundary(source, start);
     size_t delimiter = start;
@@ -1162,11 +1174,9 @@ static bool table_parse_multiline(table_source *source, size_t start, table_cand
                 table_search_finish(source, start, delimiter, TABLE_NO_SEGMENTED_SEPARATOR);
                 goto failed;
             }
-            if (table_dashes(source, delimiter, &runs, &count) && count > 1) {
+            if ((count = table_dash_count(source, delimiter)) > 1) {
                 break;
             }
-            source->parser->mem->free(runs);
-            runs = NULL;
         }
         if (delimiter >= source->count) {
             table_search_finish(source, start, source->count, TABLE_NO_SEGMENTED_SEPARATOR);
@@ -1174,7 +1184,7 @@ static bool table_parse_multiline(table_source *source, size_t start, table_cand
         if (delimiter == start + 1 || delimiter >= source->count || count < 2) {
             goto failed;
         }
-    } else if (!table_dashes(source, start, &runs, &count) || count < 2) {
+    } else if ((count = table_dash_count(source, start)) < 2) {
         goto failed;
     }
     if (table_search_absent(source, delimiter, TABLE_NO_CLOSING_BOUNDARY)) {
@@ -1193,6 +1203,10 @@ static bool table_parse_multiline(table_source *source, size_t start, table_cand
         table_search_finish(source, delimiter, source->count, TABLE_NO_CLOSING_BOUNDARY);
     }
     if (end >= source->count || end == delimiter + 1) {
+        goto failed;
+    }
+    runs = table_dashes(source, delimiter);
+    if (!runs) {
         goto failed;
     }
     candidate->block_content = true;
@@ -1219,10 +1233,8 @@ static bool table_parse_multiline(table_source *source, size_t start, table_cand
     if (body_count == 1 && !source->lines[end].blanks) {
         goto failed;
     }
-    source->parser->mem->free(runs);
     return true;
 failed:
-    source->parser->mem->free(runs);
     table_candidate_free(source->parser, candidate);
     return false;
 }
@@ -1244,24 +1256,12 @@ static int table_grid_root(table_source *source, int *parents, int column) {
 }
 
 static int table_horizontal(const table_source_line *line, int left, int right) {
-    if (table_character(line, left) != '+' || table_character(line, right) != '+') {
+    if (left < 0 || right >= line->columns || left >= right) {
         return 0;
     }
-    int kind = 0;
-    for (int i = left + 1; i < right; i++) {
-        int c = table_character(line, i);
-        if (c == '+' || (c == ':' && (i == left + 1 || i == right - 1))) {
-            continue;
-        }
-        if (c != '-' && c != '=') {
-            return 0;
-        }
-        if (kind && kind != c) {
-            return 0;
-        }
-        kind = c;
-    }
-    return kind;
+    int first = table_byte(line, left), last = table_byte(line, right) + 1;
+    line->parser->table_scan_work += (size_t)(last - first);
+    return _scan_table_horizontal(line->data + first, line->data + last);
 }
 
 static void table_grid_join(table_source *source, int *parents, int *sizes, int a, int b) {
@@ -1622,19 +1622,21 @@ failed:
 }
 
 static bool table_parse_pipe_header(table_source *source, size_t start, table_candidate *candidate) {
-    if (!table_source_columns(source, start) || !table_source_get(source, start + 1) ||
-        source->lines[start + 1].blanks || !table_header_allowed(source, start)) {
+    if (!table_source_get(source, start + 1) || source->lines[start + 1].blanks) {
         return false;
     }
     table_source_line *head = &source->lines[start], *delimiter = &source->lines[start + 1];
-    if (!scan_table_start((unsigned char *)delimiter->data, delimiter->length + 1, delimiter->first)) {
+    if (!scan_table_start(delimiter->data, delimiter->input_length, delimiter->first) ||
+        !table_header_allowed(source, start) || !table_source_columns(source, start)) {
         return false;
     }
+    head = &source->lines[start];
+    delimiter = &source->lines[start + 1];
     table_row *header = row_from_string(&MARKDOWN_CORE_EXTENSION_TABLE, source->parser,
-                                        (unsigned char *)head->data + head->first, head->length + 1 - head->first);
-    table_row *markers =
-        row_from_string(&MARKDOWN_CORE_EXTENSION_TABLE, source->parser,
-                        (unsigned char *)delimiter->data + delimiter->first, delimiter->length + 1 - delimiter->first);
+                                        (unsigned char *)head->data + head->first, head->input_length - head->first);
+    table_row *markers = row_from_string(&MARKDOWN_CORE_EXTENSION_TABLE, source->parser,
+                                         (unsigned char *)delimiter->data + delimiter->first,
+                                         delimiter->input_length - delimiter->first);
     bool matches = header && markers && header->n_columns == markers->n_columns;
     if (!matches) {
         goto done;
@@ -1681,9 +1683,10 @@ static bool table_parse_candidate(table_source *source, size_t start, table_cand
     if (!table_source_get(source, start) || source->lines[start].indent >= 4) {
         return false;
     }
-    if (table_parse_grid(source, start, candidate) ||
-        (table_full_boundary(source, start) && table_parse_multiline(source, start, candidate)) ||
-        table_parse_simple(source, start, candidate) || table_parse_multiline(source, start, candidate)) {
+    bool boundary = table_full_boundary(source, start);
+    if (table_parse_grid(source, start, candidate) || (boundary && table_parse_multiline(source, start, candidate)) ||
+        table_parse_simple(source, start, candidate) ||
+        (!boundary && table_parse_multiline(source, start, candidate))) {
         return true;
     }
     return pipe && table_parse_pipe_header(source, start, candidate);
@@ -1892,7 +1895,7 @@ static bool table_after_caption(table_source *source, size_t *caption_last, tabl
 bool markdown_core_table_caption_probe(markdown_core_block_lookahead *lookahead, markdown_core_chunk *input, int first,
                                        int indent) {
     markdown_core_parser *parser = lookahead->parser;
-    table_source source = {.parser = parser, .lookahead = *lookahead};
+    table_source source = {.parser = parser, .lookahead = *lookahead, .lines = parser->table_lines};
     lookahead->active = false; /* Transfer the transaction; source_free ends it. */
     table_candidate candidate = {0};
     size_t last = 0;
@@ -1925,7 +1928,7 @@ markdown_core_node *markdown_core_table_try_open(markdown_core_parser *parser, m
         (!parent->last_child || parent->last_child->kind != MARKDOWN_CORE_NODE_TABLE)) {
         return NULL;
     }
-    table_source source = {.parser = parser};
+    table_source source = {.parser = parser, .lines = parser->table_lines};
     table_candidate candidate = {0};
     markdown_core_node *result = NULL;
     if (!markdown_core_parser_lookahead_begin(parser, parent, MARKDOWN_CORE_NODE_TABLE, &source.lookahead)) {

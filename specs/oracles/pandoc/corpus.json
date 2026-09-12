@@ -431,6 +431,36 @@
             "id": "p10-code-and-list-boundaries",
             "from": "markdown_strict+definition_lists+backtick_code_blocks+raw_html",
             "input": "Term\n: body\n- list\n\nT\n: d\n```\nx\n```\n"
+        },
+        {
+            "id": "simple-table-heading-in-body",
+            "from": "markdown_strict+simple_tables+backtick_code_blocks+auto_identifiers+gfm_auto_identifiers",
+            "input": "h    i\n---- ----\na    b\n# heading\nbody\n"
+        },
+        {
+            "id": "simple-table-heading-after-blank",
+            "from": "markdown_strict+simple_tables+backtick_code_blocks+auto_identifiers+gfm_auto_identifiers",
+            "input": "h    i\n---- ----\na    b\n\n# heading\nbody\n"
+        },
+        {
+            "id": "simple-table-quote-in-body",
+            "from": "markdown_strict+simple_tables+backtick_code_blocks+auto_identifiers+gfm_auto_identifiers",
+            "input": "h    i\n---- ----\na    b\n> quote\n> next\n"
+        },
+        {
+            "id": "simple-table-quote-after-blank",
+            "from": "markdown_strict+simple_tables+backtick_code_blocks+auto_identifiers+gfm_auto_identifiers",
+            "input": "h    i\n---- ----\na    b\n\n> quote\n> next\n"
+        },
+        {
+            "id": "simple-table-fence-in-body",
+            "from": "markdown_strict+simple_tables+backtick_code_blocks+auto_identifiers+gfm_auto_identifiers",
+            "input": "h    i\n---- ----\na    b\n```\ncode\n```\n"
+        },
+        {
+            "id": "simple-table-fence-after-blank",
+            "from": "markdown_strict+simple_tables+backtick_code_blocks+auto_identifiers+gfm_auto_identifiers",
+            "input": "h    i\n---- ----\na    b\n\n```\ncode\n```\n"
         }
     ]
 }

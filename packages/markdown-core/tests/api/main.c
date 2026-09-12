@@ -1,5 +1,7 @@
 #include <stdio.h>
 #include "table.h"
+#include "scanners.h"
+#include "ext_scanners.h"
 #include "autolink.h"
 #include "formula.h"
 #include "directive.h"
@@ -2962,6 +2964,7 @@ static void universal_values(test_batch_runner *runner) {
 typedef struct {
     size_t cross_link, opaque, delimiters, comment, lookahead, footnote_body, block_identifier, callout, dimensions;
     size_t registered_definitions, definition_lists, citation_brace_bytes, tables, table_frontier;
+    size_t table_workspace_growth, table_geometry_lines, table_separator_scans;
     bool footnote_collection_allocated, footnotes_owned, heading_collection_disposed;
     size_t attributes, anchors, definitions, definition_resources, whitespace, brackets, citations, list_markers,
         specimens;
@@ -2986,6 +2989,9 @@ static markdown_core_node *record_inline_work(const markdown_core_extension *ext
     work->lookahead = parser->block_lookahead_work;
     work->tables = parser->table_scan_work;
     work->table_frontier = parser->table_frontier_peak;
+    work->table_workspace_growth = parser->table_workspace_growth;
+    work->table_geometry_lines = parser->table_geometry_lines;
+    work->table_separator_scans = parser->table_separator_scans;
     work->block_identifier = parser->block_identifier_work;
     work->callout = parser->callout_scan_work;
     work->dimensions = parser->dimension_work;
@@ -4581,7 +4587,7 @@ static void block_identifier_ownership(test_batch_runner *runner) {
  * candidate algorithm. Work counts source inspections, independent of time. */
 static void table_candidate_work(test_batch_runner *runner) {
     markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
-    for (size_t shape = 0; shape < 7; shape++) {
+    for (size_t shape = 0; shape < 9; shape++) {
         for (size_t n = 32; n <= 512; n *= 2) {
             markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
             size_t tables = 0;
@@ -4638,6 +4644,12 @@ static void table_candidate_work(test_batch_runner *runner) {
                 }
                 tables = 1;
             }
+            if (shape >= 7) {
+                for (size_t i = 0; i < n; i++) {
+                    markdown_core_strbuf_puts(&source, shape == 7 ? "ordinary paragraph\n\n"
+                                                                  : "> header with Unicode: 表\n> ---x ---\n> \n");
+                }
+            }
             inline_work work = {0};
             markdown_core_node *root =
                 markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
@@ -4645,6 +4657,12 @@ static void table_candidate_work(test_batch_runner *runner) {
             if (root) {
                 INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_TABLE), tables,
                        "table grammar result: shape=%zu n=%zu", shape, n);
+                if (shape >= 7) {
+                    OK(runner, work.table_workspace_growth <= 1, "failed candidates reuse the source workspace");
+                    INT_EQ(runner, work.table_geometry_lines, 0, "rejected separators allocate no column geometry");
+                    OK(runner, work.table_separator_scans <= 2 * n,
+                       "each captured line is lexed once despite several candidate grammars");
+                }
                 OK(runner, work.table_frontier <= (shape == 3 ? 2 * n : 4),
                    "grid frontier depends on columns, not rows or spans: shape=%zu n=%zu slots=%zu", shape, n,
                    work.table_frontier);
@@ -4654,6 +4672,118 @@ static void table_candidate_work(test_batch_runner *runner) {
             }
             markdown_core_node_free(root);
             markdown_core_strbuf_free(&source);
+        }
+    }
+}
+
+/* Exact slices may be read-only and need neither a NUL nor padding. Every
+ * scanner exercises successful syntax and all truncated prefixes, with ASan
+ * guarding an allocation that ends precisely at each prefix boundary. */
+static void bounded_scanners(test_batch_runner *runner) {
+    typedef bufsize_t (*scanner)(const unsigned char *, const unsigned char *);
+    const struct {
+        scanner scan;
+        const char *text;
+        int expected;
+    } cases[] = {{_scan_scheme, "https:", -1},
+                 {_scan_autolink_uri, "https://example.com>", -1},
+                 {_scan_autolink_email, "a@example.com>", -1},
+                 {_scan_html_tag, "x a='b'>", -1},
+                 {_scan_html_comment, "--hi-->", -1},
+                 {_scan_html_pi, "x?>", 1},
+                 {_scan_html_declaration, "DOCTYPE html>", 12},
+                 {_scan_html_cdata, "CDATA[x]]>", 7},
+                 {_scan_html_block_start, "<script>", 1},
+                 {_scan_html_block_start_7, "<x>\n", 7},
+                 {_scan_html_block_end_1, "body</script>", -1},
+                 {_scan_html_block_end_2, "x-->", -1},
+                 {_scan_html_block_end_3, "x?>", -1},
+                 {_scan_html_block_end_4, "x>", -1},
+                 {_scan_html_block_end_5, "x]]>", -1},
+                 {_scan_link_title, "\"title\"", -1},
+                 {_scan_spacechars, " \t\n", -1},
+                 {_scan_atx_heading_start, "## ", -1},
+                 {_scan_setext_heading_line, "---\n", 2},
+                 {_scan_open_code_fence, "```lang\n", 3},
+                 {_scan_close_code_fence, "``` \n", 3},
+                 {_scan_entity, "&amp;", -1},
+                 {_scan_dangerous_url, "javascript:", -1},
+                 {_scan_footnote_definition, "[^note]: ", -1},
+                 {_scan_table_start, "| - | :--: |\n", -1},
+                 {_scan_table_cell, "x\\|y", -1},
+                 {_scan_table_cell_end, "| \t", -1},
+                 {_scan_table_row_end, " \r\n", -1},
+                 {_scan_formula_dollar_inline_open, "$", -1},
+                 {_scan_formula_dollar_backtick_open, "$`", -1},
+                 {_scan_formula_dollar_display_open, "$$", -1},
+                 {_scan_formula_latex_backslash_inline_open, "\\\\(", -1},
+                 {_scan_formula_latex_backslash_display_open, "\\\\[", -1}};
+    for (size_t i = 0; i < sizeof(cases) / sizeof(*cases); i++) {
+        size_t length = strlen(cases[i].text);
+        markdown_core_chunk literal = {(unsigned char *)cases[i].text, (bufsize_t)length, 0};
+        int expected = cases[i].expected < 0 ? (int)length : cases[i].expected;
+        INT_EQ(runner, _scan_at(cases[i].scan, &literal, 0), expected, "read-only core scan: case=%zu", i);
+        INT_EQ(runner, _ext_scan_at(cases[i].scan, (const unsigned char *)cases[i].text, (int)length, 0), expected,
+               "read-only extension scan: case=%zu", i);
+        for (size_t end = 0; end <= length; end++) {
+            unsigned char *exact = malloc(end ? end : 1);
+            memcpy(exact, cases[i].text, end);
+            bufsize_t got = cases[i].scan(exact, exact + end);
+            INT_EQ(runner, got,
+                   cases[i].scan((const unsigned char *)cases[i].text, (const unsigned char *)cases[i].text + end),
+                   "suffix outside slice is invisible: case=%zu end=%zu", i, end);
+            OK(runner, !memcmp(exact, cases[i].text, end), "scanning never changes borrowed bytes");
+            free(exact);
+        }
+    }
+    const unsigned char embedded[] = {'+', '-', '+', 0, '+', '-', '+'};
+    INT_EQ(runner, _scan_table_horizontal(embedded, embedded + sizeof(embedded)), 0,
+           "embedded NUL cannot terminate a grid boundary");
+}
+
+/* Oracle-confirmed simple-body ownership is invariant under line ending,
+ * EOF termination and block-looking inline cell content. */
+static void simple_table_body_boundaries(test_batch_runner *runner) {
+    const char *tails[] = {"# heading\nbody\n", "> quote\n> next\n", "```\ncode\n```\n"};
+    const markdown_core_node_type kinds[] = {MARKDOWN_CORE_NODE_HEADING, MARKDOWN_CORE_NODE_CALLOUT,
+                                             MARKDOWN_CORE_NODE_CODE_BLOCK};
+    const char *endings[] = {"\n", "\r", "\r\n"};
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    for (size_t tail = 0; tail < 3; tail++) {
+        for (size_t ending = 0; ending < 3; ending++) {
+            for (int gap = 0; gap < 2; gap++) {
+                for (int terminated = 0; terminated < 2; terminated++) {
+                    markdown_core_strbuf normalized = MARKDOWN_CORE_BUF_INIT(mem), source = MARKDOWN_CORE_BUF_INIT(mem);
+                    markdown_core_strbuf_puts(&normalized, "h    i\n---- ----\na    b\n");
+                    if (gap) {
+                        markdown_core_strbuf_putc(&normalized, '\n');
+                    }
+                    markdown_core_strbuf_puts(&normalized, tails[tail]);
+                    for (int i = 0; i < normalized.size - !terminated; i++) {
+                        if (normalized.ptr[i] == '\n') {
+                            markdown_core_strbuf_puts(&source, endings[ending]);
+                        } else {
+                            markdown_core_strbuf_putc(&source, normalized.ptr[i]);
+                        }
+                    }
+                    markdown_core_node *root = parse((const char *)source.ptr),
+                                       *table = root ? root->first_child : NULL;
+                    OK(runner, table && table->kind == MARKDOWN_CORE_NODE_TABLE,
+                       "simple body survives line ending and EOF");
+                    if (table && table->kind == MARKDOWN_CORE_NODE_TABLE) {
+                        markdown_core_table *value = table->opaque;
+                        INT_EQ(runner, value->content_count, gap ? 1 : (tail == 2 ? 4 : 3),
+                               "body owns every adjacent source line");
+                        OK(runner, gap ? table->next && table->next->kind == kinds[tail] : !table->next,
+                           "only blank-separated block syntax opens a sibling");
+                        INT_EQ(runner, table->end_line, gap ? 3 : (tail == 2 ? 6 : 5),
+                               "simple table retains authored scope");
+                    }
+                    markdown_core_node_free(root);
+                    markdown_core_strbuf_free(&source);
+                    markdown_core_strbuf_free(&normalized);
+                }
+            }
         }
     }
 }
@@ -4908,6 +5038,8 @@ int main(void) {
     table_source_map_growth(runner);
     table_values(runner);
     table_candidate_work(runner);
+    bounded_scanners(runner);
+    simple_table_body_boundaries(runner);
     table_caption_boundaries(runner);
     table_mapped_ownership(runner);
     table_nested_inputs(runner);

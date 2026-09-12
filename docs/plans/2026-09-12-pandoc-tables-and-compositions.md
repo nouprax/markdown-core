@@ -13,6 +13,8 @@ separate delivery work.
 - [x] Add adjacency, nesting, opacity and deterministic mutation probes.
 - [x] Document the public syntax and remaining oracle differences.
 - [x] Verify selected-feature completion without expanding scope to full Pandoc compatibility.
+- [x] Reduce candidate copying, allocation and repeated scanning; measure the shared parser path.
+- [x] Verify simple-table body interruption review against the pinned oracle and clarify the dialect.
 
 ## Delivered table behavior
 
@@ -80,10 +82,58 @@ operations; ordinary tests do not fetch dependencies.
 
 Pandoc canaries assert native JSON before projection: 48 caption arrangements
 across all forms and markers, plus 11 sparse/merged-grid cases. Product assertions
-check the same ownership and geometry. The corpus has 86 cases, 52 agreements,
+check the same ownership and geometry. The corpus has 92 cases, 58 agreements,
 34 exact documented differences, and zero missing-feature gaps. A new exact
 remark conflict records the normative `:badge[short]` caption prefix after an
 uncaptained table; neither projected tree discards its content.
+
+The six simple-table body witnesses compare heading, quote and fence markers
+with and without a preceding blank line. Pandoc 3.11 retains the unseparated
+markers inside inline cells and opens independent blocks after a blank, agreeing
+with the parser in all six cases. The dialect now scopes shared block-start
+interruption to pipe rows and caption paragraphs; simple rows retain their own
+termination grammar. API tests also cover LF, CR, CRLF and unterminated EOF.
+
+## Candidate performance follow-up
+
+Table queries borrow input slices and reuse one parser-owned line workspace.
+Readonly bounded scanners remove the write-and-restore sentinel requirement
+that previously forced captured-line copies. Cached dash-run facts serve all
+candidate grammars; interval and column geometry allocation waits until it is
+needed. Invalid separators reject before header precedence work, and a failed
+full-boundary multiline candidate is not parsed twice. Dash runs and horizontal
+grid boundaries use generated re2c scanners. Both scanner families regenerate
+exactly with the pinned re2c version.
+
+Counted-work tests cover ordinary paragraphs and malformed Unicode headers as
+well as table shapes. They enforce bounded workspace growth, zero column
+geometry for rejected candidates and linear separator scans. Exact-allocation
+scanner tests cover every truncated prefix and invisible out-of-slice suffixes
+under ASan. Strict OOM checks retain the parser ownership contract.
+
+Local Release measurements compare `c7f57b88` with this follow-up using the same
+compiler, `-O3 -DNDEBUG`, shared public library and benchmark runner source.
+The ordinary-document benchmark uses seven alternating rounds, five warmups
+and 31 repetitions per round; medians improve from 3.723 ms to 3.537 ms (5.0%).
+The main-base revision `5f5a516c` measures 3.306 ms on the same run, leaving a
+7.0% overhead for the full feature change.
+
+The `tables` workload adds pipe/caption, simple, multiline, grid and rejected
+candidate inputs. Three alternating rounds with two warmups and nine repetitions
+per round give the following medians; these timings are diagnostic evidence,
+while the counted-work assertions gate complexity.
+
+| Workload | Before (ms) | After (ms) | Time reduction |
+| --- | ---: | ---: | ---: |
+| Pipe with caption | 3.421 | 3.129 | 8.5% |
+| Simple | 2.934 | 2.676 | 8.8% |
+| Multiline | 6.250 | 5.381 | 13.9% |
+| Grid | 4.728 | 4.630 | 2.1% |
+| Rejected candidate | 1.915 | 1.601 | 16.4% |
+
+The representative corpus, extension workload and doubled adversarial link and
+emphasis workloads were also compared. All correctness, conformance, external
+oracle and source-position gates pass with the follow-up.
 
 ## Composition evidence
 

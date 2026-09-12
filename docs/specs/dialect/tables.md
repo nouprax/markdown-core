@@ -171,7 +171,7 @@ Document scope=1:1..5:5 anchor=null attributes={} children=2
 ````````````````````````````````
 
 Column alignment comes from the markers' colons: left, right, both, or none.
-Every following line is a body row until a blank line or a line that a block
+For pipe tables, every following line is a body row until a blank line or a line that a block
 start of steps 1 through 9, 11, or 12 claims; a line without pipes is a
 one-cell row. A row with fewer cells than the delimiter row is completed
 with empty cells whose scope is the row's end; excess cells are dropped, so
@@ -409,6 +409,47 @@ must be the first line of a paragraph candidate. Body rows are every following
 line until a blank line, or until a footer line of the same shape as the
 separator followed by a blank line or the end of the document; at least one
 body row or a footer is required.
+
+Within a simple-table body, lines beginning with `#`, `>`, or code fences
+remain rows and their cells are parsed as inline content. Shared block-start
+precedence decides whether a table can open at its header and whether a caption
+paragraph continues; it does not interrupt these already-owned simple rows.
+A blank line ends the body and lets a following heading, quote, or code fence
+open its own block. The input-only Pandoc 3.11 witnesses
+`simple-table-{heading,quote,fence}-{in-body,after-blank}` in the
+[oracle corpus](../../../specs/oracles/pandoc/corpus.json) verify both sides
+of this boundary without a compatibility waiver.
+
+```````````````````````````````` example
+h    i
+---- ----
+a    b
+# h
+
+# outside
+.
+Document scope=1:1..6:9 anchor=null attributes={} children=2
+├── Table scope=1:1..4:3 anchor=null attributes={} columns=[left:null,left:null] children=3
+│   ├── TableHead children=1
+│   │   └── TableRow scope=1:1..1:6 anchor=null attributes={} children=2
+│   │       ├── TableCell scope=1:1..1:1 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │       │   └── Text scope=1:1..1:1 anchor=null attributes={} literal="h" children=0
+│   │       └── TableCell scope=1:6..1:6 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │           └── Text scope=1:6..1:6 anchor=null attributes={} literal="i" children=0
+│   ├── TableBody children=2
+│   │   ├── TableRow scope=3:1..3:6 anchor=null attributes={} children=2
+│   │   │   ├── TableCell scope=3:1..3:1 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │   │   │   └── Text scope=3:1..3:1 anchor=null attributes={} literal="a" children=0
+│   │   │   └── TableCell scope=3:6..3:6 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │   │       └── Text scope=3:6..3:6 anchor=null attributes={} literal="b" children=0
+│   │   └── TableRow scope=4:1..4:3 anchor=null attributes={} children=2
+│   │       ├── TableCell scope=4:1..4:3 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │       │   └── Text scope=4:1..4:3 anchor=null attributes={} literal="# h" children=0
+│   │       └── TableCell scope=4:3..4:3 anchor=null attributes={} rowspan=1 colspan=1 children=0
+│   └── TableFoot children=0
+└── Heading scope=6:1..6:9 anchor="outside" attributes={} level=1 children=1
+    └── Text scope=6:3..6:9 anchor=null attributes={} literal="outside" children=0
+````````````````````````````````
 
 Columns are cut at the start position of each dash run: bytes before the
 first run belong to column one, bytes from the last run's start to the end

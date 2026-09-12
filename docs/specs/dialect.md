@@ -109,10 +109,10 @@ that makes the row `present`.
 | fancy lists                         | [lists](dialect/lists.md)                                         | Pandoc                                 | Pandoc                               | present                  |
 | specimens                           | [specimens](dialect/specimens.md)                                         | Pandoc                                 | Pandoc                               | present                  |
 | definition lists                    | [definition lists](dialect/definition-lists.md)                   | Pandoc                                 | Pandoc                               | present, `P10`                  |
-| table captions                      | [tables](dialect/tables.md)                                       | Pandoc                                 | Pandoc                               | missing, `P11a`                 |
-| simple tables                       | [tables](dialect/tables.md)                                       | Pandoc                                 | Pandoc                               | missing, `P11b`                 |
-| multiline tables                    | [tables](dialect/tables.md)                                       | Pandoc                                 | Pandoc                               | missing, `P11c`                 |
-| grid tables                         | [tables](dialect/tables.md)                                       | Pandoc                                 | Pandoc                               | missing, `P11d`                 |
+| table captions                      | [tables](dialect/tables.md)                                       | Pandoc                                 | Pandoc                               | present, `P11a`                 |
+| simple tables                       | [tables](dialect/tables.md)                                       | Pandoc                                 | Pandoc                               | present, `P11b`                 |
+| multiline tables                    | [tables](dialect/tables.md)                                       | Pandoc                                 | Pandoc                               | present, `P11c`                 |
+| grid tables                         | [tables](dialect/tables.md)                                       | Pandoc                                 | Pandoc                               | present, `P11d`                 |
 
 The parser publishes no switch: `Document.parse(source)` is the one entry
 point on every surface, and smart punctuation is not part of the language,

@@ -176,6 +176,7 @@ static void S_parser_dispose(markdown_core_parser *parser) {
     parser->mem->free(parser->lookahead_chain);
     parser->mem->free(parser->lookahead_chain_flags);
     parser->mem->free(parser->lookahead_entries);
+    parser->mem->free(parser->table_lines);
     parser->lookahead_chain = NULL;
     parser->lookahead_chain_flags = NULL;
     parser->lookahead_chain_alloc = 0;

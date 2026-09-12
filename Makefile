@@ -91,21 +91,11 @@ distclean: clean
 # Maintenance-only source generation; the generated files are tracked, so
 # these never run during normal build or test.
 $(SRCDIR)/scanners.c: $(SRCDIR)/scanners.re
-	@case "$$(re2c -v)" in \
-	    *\ 0.13.*|*\ 0.14|*\ 0.14.1) \
-		echo "re2c >= 0.14.2 is required"; \
-		false; \
-		;; \
-	esac
+	@test "$$(re2c --version)" = "re2c 4.6" || { echo "re2c 4.6 is required"; exit 1; }
 	re2c -W -Werror --case-insensitive -b -i --no-generation-date \
 		--encoding-policy substitute -o $@ $<
 
 $(EXTDIR)/ext_scanners.c: $(EXTDIR)/ext_scanners.re
-	@case "$$(re2c -v)" in \
-	    *\ 0.13.*|*\ 0.14|*\ 0.14.1) \
-		echo "re2c >= 0.14.2 is required"; \
-		false; \
-		;; \
-	esac
-	re2c --case-insensitive -b -i --no-generation-date -8 \
+	@test "$$(re2c --version)" = "re2c 4.6" || { echo "re2c 4.6 is required"; exit 1; }
+	re2c -W -Werror --case-insensitive -b -i --no-generation-date -8 \
 		--encoding-policy substitute -o $@ $<

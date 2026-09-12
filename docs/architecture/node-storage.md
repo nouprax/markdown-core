@@ -144,6 +144,19 @@ The lookahead cache belongs to the active input and resets only its used slots.
 Failed multiline suffix queries retain container-and-offset-qualified absence
 facts so later candidates do not repeatedly scan the same suffix.
 
+Generated scanners accept exact read-only slices. Their cursor and marker
+are offsets; a virtual NUL at the slice limit handles termination without
+writing a sentinel, requiring padding or forming an out-of-bounds pointer.
+Both scanner families are reproducible raw output of the pinned re2c version.
+
+A table query borrows its current line, immutable input lines and the parser's
+normalized EOF line until commitment finishes. One parser-owned line workspace
+is reused between queries; per-query column geometry and separator intervals
+are released before the next query. Deferred cell parsing starts after this
+borrow ends. Dash-run facts are scanned once per captured line and reused by
+all candidate grammars. Intervals are materialized only when needed; paragraph
+header precedence is queried only after its separator grammar matches.
+
 Streaming block opening and captured table/caption queries share one core
 prefix recognizer. It returns borrowed marker facts; only streaming commitment
 opens nodes. Extension probes share their producers' grammar and obtain later

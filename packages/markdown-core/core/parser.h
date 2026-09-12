@@ -149,6 +149,7 @@ struct markdown_core_parser {
     size_t comment_scan_work;
     size_t block_lookahead_work;
     size_t table_scan_work, table_frontier_peak;
+    size_t table_workspace_growth, table_geometry_lines, table_separator_scans;
     /* Properties work: source ranges decoded once at their owning boundary. */
     size_t metadata_decoded_bytes;
     /* Bytes examined by the shared block-identifier suffix scanner. */
@@ -190,6 +191,10 @@ struct markdown_core_parser {
     int lookahead_entries_alloc;
     int lookahead_entries_used;
     int lookahead_base_line;
+    /* One active table query borrows this reusable line workspace. Per-line
+     * geometry is released by the query; the allocation dies with the parser. */
+    struct markdown_core_table_source_line *table_lines;
+    size_t table_lines_capacity;
     markdown_core_llist *extensions;
     markdown_core_llist *inline_extensions;
     markdown_core_ispunct_func backslash_ispunct;
