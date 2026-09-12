@@ -245,14 +245,21 @@ Document scope=1:1..1:35 anchor=null attributes={} children=1
 ````````````````````````````````
 
 A group in which any item lacks a key is not a citation, and the bracket pair
-continues at the shortcut-reference alternative:
+continues at the shortcut-reference alternative. If that alternative also
+fails, its contents resume ordinary inline recognition: valid inner keys
+become author-in-text citations, including their own valid tails:
 
 ```````````````````````````````` example
 [see p. 3] [@foo; no key]
 .
 Document scope=1:1..1:25 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:25 anchor=null attributes={} children=1
-    └── Text scope=1:1..1:25 anchor=null attributes={} literal="[see p. 3] [@foo; no key]" children=0
+└── Paragraph scope=1:1..1:25 anchor=null attributes={} children=3
+    ├── Text scope=1:1..1:12 anchor=null attributes={} literal="[see p. 3] [" children=0
+    ├── Cite scope=1:13..1:16 anchor=null attributes={} children=1
+    │   └── Citation scope=1:13..1:16 referent=bib(key="foo",mode=authorInText) children=0
+    │       ├── CitationPrefix children=0
+    │       └── CitationSuffix children=0
+    └── Text scope=1:17..1:25 anchor=null attributes={} literal="; no key]" children=0
 ````````````````````````````````
 
 A non-resolving reference tail does not block a group, and a direct tail
@@ -316,11 +323,15 @@ Document scope=1:1..3:18 anchor=null attributes={} children=2
     └── Text scope=3:8..3:18 anchor=null attributes={} literal=" says blah." children=0
 ````````````````````````````````
 
-An immediately following bracketed tail belongs to the sole item's suffix
-without its brackets. Optional spaces or tabs and at most one line ending may
-separate the key from the `[`. A tail that itself contains items produces one
-`Cite` whose first item is author-in-text with the first suffix, followed by
-the further items:
+An immediately following bracketed tail is split into semicolon-separated
+sections without its brackets. Optional spaces or tabs and at most one line
+ending may separate the key from the `[`. When the first section contains no
+candidate key, it becomes the external author's suffix. When it contains a key,
+it is a normal citation item, including any prefix before that key, and the
+external author's suffix is empty. Each further section requires a key and is
+another item. The first key of each keyed section owns the item; later keys in
+that section remain nested suffix content under the ordinary bracket-group rule.
+The external author and the tail items belong to one `Cite`:
 
 ```````````````````````````````` example
 @smith04 [p. 33] says blah.
@@ -365,7 +376,9 @@ written through the [attributes](attributes.md) module and does nothing else.
 
 ## Fallback
 
-A failed candidate releases its opener and consumes nothing. Inline code,
+A failed candidate releases its opener and consumes nothing. This rejects only
+the failed outer group; valid citations and other inline constructs inside it
+keep their ordinary meaning. Inline code,
 comment bodies, HTML tokens, formulas, and cross links are opaque; a
 semicolon inside an opaque child is not an item separator. A line the
 inherited grammar accepts as a link reference definition is one regardless of
@@ -378,10 +391,208 @@ A bracketed `Cite.scope` covers its outer brackets and contents. Each
 the last non-whitespace byte before `;` or `]`. An author-in-text `Cite`
 runs from the mode marker or `@` through the tail's closing `]`, or through
 the key when no tail is claimed. Its first item starts at the same byte and
-ends at the key when no tail is claimed, and otherwise at the last
-non-whitespace byte before the tail's first `;` or its `]`, so an item never
-includes a closing bracket or a semicolon; the further items of a tail follow
-the bracketed rule. Affix child scopes cover visible authored content only.
+ends at the key when no tail is claimed or the first tail section contains a
+key. Otherwise it ends at the last non-whitespace byte of its suffix before
+`;` or `]`. An item never includes a closing bracket or a semicolon; every
+keyed section of a tail follows the bracketed scope rule. Affix child scopes cover visible authored content only.
+
+## Oracle drift regressions
+
+```````````````````````````````` example
+@a [p. @b]
+.
+Document scope=1:1..1:10 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:10 anchor=null attributes={} children=1
+    └── Cite scope=1:1..1:10 anchor=null attributes={} children=2
+        ├── Citation scope=1:1..1:2 referent=bib(key="a",mode=authorInText) children=0
+        │   ├── CitationPrefix children=0
+        │   └── CitationSuffix children=0
+        └── Citation scope=1:5..1:9 referent=bib(key="b",mode=normal) children=0
+            ├── CitationPrefix children=1
+            │   └── Text scope=1:5..1:6 anchor=null attributes={} literal="p." children=0
+            └── CitationSuffix children=0
+````````````````````````````````
+
+```````````````````````````````` example
+@a [p. -@b, s; @c]
+.
+Document scope=1:1..1:18 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:18 anchor=null attributes={} children=1
+    └── Cite scope=1:1..1:18 anchor=null attributes={} children=3
+        ├── Citation scope=1:1..1:2 referent=bib(key="a",mode=authorInText) children=0
+        │   ├── CitationPrefix children=0
+        │   └── CitationSuffix children=0
+        ├── Citation scope=1:5..1:13 referent=bib(key="b",mode=suppressAuthor) children=0
+        │   ├── CitationPrefix children=1
+        │   │   └── Text scope=1:5..1:6 anchor=null attributes={} literal="p." children=0
+        │   └── CitationSuffix children=1
+        │       └── Text scope=1:11..1:13 anchor=null attributes={} literal=", s" children=0
+        └── Citation scope=1:16..1:17 referent=bib(key="c",mode=normal) children=0
+            ├── CitationPrefix children=0
+            └── CitationSuffix children=0
+````````````````````````````````
+
+```````````````````````````````` example
+[@a;]
+.
+Document scope=1:1..1:5 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:5 anchor=null attributes={} children=3
+    ├── Text scope=1:1..1:1 anchor=null attributes={} literal="[" children=0
+    ├── Cite scope=1:2..1:3 anchor=null attributes={} children=1
+    │   └── Citation scope=1:2..1:3 referent=bib(key="a",mode=authorInText) children=0
+    │       ├── CitationPrefix children=0
+    │       └── CitationSuffix children=0
+    └── Text scope=1:4..1:5 anchor=null attributes={} literal=";]" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+[@a [p. @b];]
+.
+Document scope=1:1..1:13 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:13 anchor=null attributes={} children=3
+    ├── Text scope=1:1..1:1 anchor=null attributes={} literal="[" children=0
+    ├── Cite scope=1:2..1:11 anchor=null attributes={} children=2
+    │   ├── Citation scope=1:2..1:3 referent=bib(key="a",mode=authorInText) children=0
+    │   │   ├── CitationPrefix children=0
+    │   │   └── CitationSuffix children=0
+    │   └── Citation scope=1:6..1:10 referent=bib(key="b",mode=normal) children=0
+    │       ├── CitationPrefix children=1
+    │       │   └── Text scope=1:6..1:7 anchor=null attributes={} literal="p." children=0
+    │       └── CitationSuffix children=0
+    └── Text scope=1:12..1:13 anchor=null attributes={} literal=";]" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+@a [s1;] [@a;; @b] [; @a] [@a; no key]
+.
+Document scope=1:1..1:38 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:38 anchor=null attributes={} children=10
+    ├── Cite scope=1:1..1:2 anchor=null attributes={} children=1
+    │   └── Citation scope=1:1..1:2 referent=bib(key="a",mode=authorInText) children=0
+    │       ├── CitationPrefix children=0
+    │       └── CitationSuffix children=0
+    ├── Text scope=1:3..1:10 anchor=null attributes={} literal=" [s1;] [" children=0
+    ├── Cite scope=1:11..1:12 anchor=null attributes={} children=1
+    │   └── Citation scope=1:11..1:12 referent=bib(key="a",mode=authorInText) children=0
+    │       ├── CitationPrefix children=0
+    │       └── CitationSuffix children=0
+    ├── Text scope=1:13..1:15 anchor=null attributes={} literal=";; " children=0
+    ├── Cite scope=1:16..1:17 anchor=null attributes={} children=1
+    │   └── Citation scope=1:16..1:17 referent=bib(key="b",mode=authorInText) children=0
+    │       ├── CitationPrefix children=0
+    │       └── CitationSuffix children=0
+    ├── Text scope=1:18..1:22 anchor=null attributes={} literal="] [; " children=0
+    ├── Cite scope=1:23..1:24 anchor=null attributes={} children=1
+    │   └── Citation scope=1:23..1:24 referent=bib(key="a",mode=authorInText) children=0
+    │       ├── CitationPrefix children=0
+    │       └── CitationSuffix children=0
+    ├── Text scope=1:25..1:27 anchor=null attributes={} literal="] [" children=0
+    ├── Cite scope=1:28..1:29 anchor=null attributes={} children=1
+    │   └── Citation scope=1:28..1:29 referent=bib(key="a",mode=authorInText) children=0
+    │       ├── CitationPrefix children=0
+    │       └── CitationSuffix children=0
+    └── Text scope=1:30..1:38 anchor=null attributes={} literal="; no key]" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+@a [*pre* @b *suf*; @c] [@a [p. @b]]
+.
+Document scope=1:1..1:36 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:36 anchor=null attributes={} children=3
+    ├── Cite scope=1:1..1:23 anchor=null attributes={} children=3
+    │   ├── Citation scope=1:1..1:2 referent=bib(key="a",mode=authorInText) children=0
+    │   │   ├── CitationPrefix children=0
+    │   │   └── CitationSuffix children=0
+    │   ├── Citation scope=1:5..1:18 referent=bib(key="b",mode=normal) children=0
+    │   │   ├── CitationPrefix children=1
+    │   │   │   └── Emphasis scope=1:5..1:9 anchor=null attributes={} children=1
+    │   │   │       └── Text scope=1:6..1:8 anchor=null attributes={} literal="pre" children=0
+    │   │   └── CitationSuffix children=1
+    │   │       └── Emphasis scope=1:14..1:18 anchor=null attributes={} children=1
+    │   │           └── Text scope=1:15..1:17 anchor=null attributes={} literal="suf" children=0
+    │   └── Citation scope=1:21..1:22 referent=bib(key="c",mode=normal) children=0
+    │       ├── CitationPrefix children=0
+    │       └── CitationSuffix children=0
+    ├── Text scope=1:24..1:24 anchor=null attributes={} literal=" " children=0
+    └── Cite scope=1:25..1:36 anchor=null attributes={} children=1
+        └── Citation scope=1:26..1:35 referent=bib(key="a",mode=normal) children=0
+            ├── CitationPrefix children=0
+            └── CitationSuffix children=1
+                └── Cite scope=1:29..1:35 anchor=null attributes={} children=1
+                    └── Citation scope=1:30..1:34 referent=bib(key="b",mode=normal) children=0
+                        ├── CitationPrefix children=1
+                        │   └── Text scope=1:30..1:31 anchor=null attributes={} literal="p." children=0
+                        └── CitationSuffix children=0
+````````````````````````````````
+
+```````````````````````````````` example
+[@a [@b [@c [tail]]];] [@a;](/u) [@a;]{.c}
+.
+Document scope=1:1..1:42 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:42 anchor=null attributes={} children=6
+    ├── Text scope=1:1..1:1 anchor=null attributes={} literal="[" children=0
+    ├── Cite scope=1:2..1:20 anchor=null attributes={} children=2
+    │   ├── Citation scope=1:2..1:3 referent=bib(key="a",mode=authorInText) children=0
+    │   │   ├── CitationPrefix children=0
+    │   │   └── CitationSuffix children=0
+    │   └── Citation scope=1:6..1:19 referent=bib(key="b",mode=normal) children=0
+    │       ├── CitationPrefix children=0
+    │       └── CitationSuffix children=1
+    │           └── Cite scope=1:9..1:19 anchor=null attributes={} children=1
+    │               └── Citation scope=1:10..1:18 referent=bib(key="c",mode=normal) children=0
+    │                   ├── CitationPrefix children=0
+    │                   └── CitationSuffix children=1
+    │                       └── Text scope=1:13..1:18 anchor=null attributes={} literal="[tail]" children=0
+    ├── Text scope=1:21..1:23 anchor=null attributes={} literal=";] " children=0
+    ├── Link scope=1:24..1:32 anchor=null attributes={} dest=url("/u") title=null children=2
+    │   ├── Cite scope=1:25..1:26 anchor=null attributes={} children=1
+    │   │   └── Citation scope=1:25..1:26 referent=bib(key="a",mode=authorInText) children=0
+    │   │       ├── CitationPrefix children=0
+    │   │       └── CitationSuffix children=0
+    │   └── Text scope=1:27..1:27 anchor=null attributes={} literal=";" children=0
+    ├── Text scope=1:33..1:33 anchor=null attributes={} literal=" " children=0
+    └── Span scope=1:34..1:42 anchor=null attributes={.c} children=2
+        ├── Cite scope=1:35..1:36 anchor=null attributes={} children=1
+        │   └── Citation scope=1:35..1:36 referent=bib(key="a",mode=authorInText) children=0
+        │       ├── CitationPrefix children=0
+        │       └── CitationSuffix children=0
+        └── Text scope=1:37..1:37 anchor=null attributes={} literal=";" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+![alt [@a;]](/u) :d[[@a;]] ^[[@a;]]
+.
+Document scope=1:1..1:35 anchor=null attributes={} children=1
+├── Paragraph scope=1:1..1:35 anchor=null attributes={} children=5
+│   ├── Media scope=1:1..1:16 anchor=null attributes={} dest=url("/u") title=null dimensions=null children=3
+│   │   ├── Text scope=1:3..1:7 anchor=null attributes={} literal="alt [" children=0
+│   │   ├── Cite scope=1:8..1:9 anchor=null attributes={} children=1
+│   │   │   └── Citation scope=1:8..1:9 referent=bib(key="a",mode=authorInText) children=0
+│   │   │       ├── CitationPrefix children=0
+│   │   │       └── CitationSuffix children=0
+│   │   └── Text scope=1:10..1:11 anchor=null attributes={} literal=";]" children=0
+│   ├── Text scope=1:17..1:17 anchor=null attributes={} literal=" " children=0
+│   ├── Directive scope=1:18..1:26 anchor=null attributes={} name="d" children=0
+│   │   └── DirectiveLabel scope=1:20..1:26 anchor=null attributes={} children=3
+│   │       ├── Text scope=1:21..1:21 anchor=null attributes={} literal="[" children=0
+│   │       ├── Cite scope=1:22..1:23 anchor=null attributes={} children=1
+│   │       │   └── Citation scope=1:22..1:23 referent=bib(key="a",mode=authorInText) children=0
+│   │       │       ├── CitationPrefix children=0
+│   │       │       └── CitationSuffix children=0
+│   │       └── Text scope=1:24..1:25 anchor=null attributes={} literal=";]" children=0
+│   ├── Text scope=1:27..1:27 anchor=null attributes={} literal=" " children=0
+│   └── Cite scope=1:28..1:35 anchor=null attributes={} children=1
+│       └── Citation scope=1:30..1:34 referent=footnote(id="inline-1") children=0
+│           ├── CitationPrefix children=0
+│           └── CitationSuffix children=0
+└── Footnote scope=1:28..1:35 id="inline-1" children=3
+    ├── Text scope=1:30..1:30 anchor=null attributes={} literal="[" children=0
+    ├── Cite scope=1:31..1:32 anchor=null attributes={} children=1
+    │   └── Citation scope=1:31..1:32 referent=bib(key="a",mode=authorInText) children=0
+    │       ├── CitationPrefix children=0
+    │       └── CitationSuffix children=0
+    └── Text scope=1:33..1:34 anchor=null attributes={} literal=";]" children=0
+````````````````````````````````
 
 ## Required conformance cases
 

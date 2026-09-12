@@ -2896,7 +2896,6 @@ bool markdown_core_parser_has_block_start(markdown_core_parser *parser, markdown
 static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **container, markdown_core_chunk *input,
                             bool all_matched) {
     bool indented;
-    markdown_core_node *candidate_table;
     bool maybe_lazy = S_type(parser->current) == MARKDOWN_CORE_NODE_PARAGRAPH;
     markdown_core_node_type cont_type = S_type(*container);
     bool has_content;
@@ -2927,6 +2926,21 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
         bufsize_t matched = start.matched;
         markdown_core_specimen_value specimen = start.specimen;
         markdown_core_list *data = &start.list;
+
+        /* Dash-led tables precede thematic breaks and lists. An opener may
+         * close the old path before an allocation fails; OOM is terminal,
+         * never a grammar miss that can try another owner on that path. */
+        if (!indented && !maybe_lazy && cont_type != MARKDOWN_CORE_NODE_PARAGRAPH &&
+            peek_at(input, parser->first_nonspace) == '-') {
+            markdown_core_node *table = markdown_core_table_try_open(parser, *container, input->data, input->len);
+            if (parser->oom) {
+                return;
+            }
+            if (table) {
+                *container = table;
+                return;
+            }
+        }
 
         if (start.kind == MARKDOWN_CORE_NODE_DEFINITION_BODY) {
             int continuation = parser->indent + consume_item_marker(parser, input, 1);
@@ -3020,11 +3034,6 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
                 (*container)->as.heading->setext = true;
                 S_advance_offset(parser, input, input->len - 1 - parser->offset, false);
             }
-        } else if (!indented && !maybe_lazy && cont_type != MARKDOWN_CORE_NODE_PARAGRAPH &&
-                   peek_at(input, parser->first_nonspace) == '-' &&
-                   (candidate_table = markdown_core_table_try_open(parser, *container, input->data, input->len))) {
-            *container = candidate_table;
-            return;
         } else if (start.kind == MARKDOWN_CORE_NODE_THEMATIC_BREAK) {
             // it's only now that we know the line is not part of a setext heading:
             *container = add_child(parser, *container, MARKDOWN_CORE_NODE_THEMATIC_BREAK, parser->first_nonspace + 1);
@@ -3172,6 +3181,9 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
 
                 if (ext->try_opening_block) {
                     new_container = ext->try_opening_block(ext, indented, parser, *container, input->data, input->len);
+                    if (parser->oom) {
+                        return;
+                    }
 
                     if (new_container) {
                         *container = new_container;
@@ -3185,8 +3197,12 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
 
             if (!new_container) {
                 bool compact;
-                if (!maybe_lazy && cont_type != MARKDOWN_CORE_NODE_PARAGRAPH &&
-                    definition_prefix(parser, *container, input, &compact)) {
+                bool definition = !maybe_lazy && cont_type != MARKDOWN_CORE_NODE_PARAGRAPH &&
+                                  definition_prefix(parser, *container, input, &compact);
+                if (parser->oom) {
+                    return;
+                }
+                if (definition) {
                     *container = open_definition(parser, *container, input, compact);
                     return;
                 }

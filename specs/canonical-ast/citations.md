@@ -14,3 +14,7 @@
 
 [r]: /reference
 [x]: /x
+
+@a [p. -@b, s; @c]
+
+[@a [p. @b];] [@a;]

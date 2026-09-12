@@ -1067,71 +1067,7 @@ static bool table_header_allowed(table_source *source, size_t index) {
     return !table_has_block_start(source, index, false);
 }
 
-static bool table_parse_simple(table_source *source, size_t start, table_candidate *candidate) {
-    const table_interval *runs = NULL;
-    size_t count = table_dash_count(source, start);
-    bool headerless = count > 1;
-    if (!headerless) {
-        if (!table_source_get(source, start + 1) || source->lines[start + 1].blanks ||
-            (count = table_dash_count(source, start + 1)) < 2 || !table_header_allowed(source, start)) {
-            goto failed;
-        }
-    }
-    size_t delimiter = start + (headerless ? 0 : 1), body = delimiter + 1, end = delimiter;
-    runs = table_dashes(source, delimiter);
-    if (!runs) {
-        goto failed;
-    }
-    /* Simple rows own inline text until a blank/valid footer. Pandoc 3.11
-     * retains heading, quote and fence markers here; the header/caption
-     * paragraph-interruption rules do not apply to an existing body. */
-    bool footer = false;
-    for (size_t i = body; table_source_get(source, i); i++) {
-        if (source->lines[i].blanks) {
-            break;
-        }
-        const table_interval *closing = table_dash_count(source, i) == count ? table_dashes(source, i) : NULL;
-        bool closes = closing != NULL;
-        for (size_t j = 0; closes && j < count; j++) {
-            closes = closing[j].start == runs[j].start && closing[j].end == runs[j].end;
-        }
-        if (closes && (!table_source_get(source, i + 1) || source->lines[i + 1].blanks)) {
-            end = i;
-            footer = true;
-            break;
-        }
-        if (!table_source_columns(source, i)) {
-            goto failed;
-        }
-        end = i;
-    }
-    if (end == delimiter || (headerless && !footer)) {
-        goto failed;
-    }
-    if (!table_source_columns(source, start) || !table_source_columns(source, body)) {
-        goto failed;
-    }
-    if (!table_set_columns(source, candidate, runs, count, headerless ? body : start, false)) {
-        goto failed;
-    }
-    candidate->first = start;
-    candidate->last = end;
-    candidate->head_count = headerless ? 0 : 1;
-    if (!headerless && !table_rectangular_row(source, candidate, start, start, runs)) {
-        goto failed;
-    }
-    for (size_t i = body; i <= end - (footer ? 1u : 0u); i++) {
-        if (!table_rectangular_row(source, candidate, i, i, runs)) {
-            goto failed;
-        }
-    }
-    return true;
-failed:
-    table_candidate_free(source->parser, candidate);
-    return false;
-}
-
-enum { TABLE_NO_SEGMENTED_SEPARATOR = 1u, TABLE_NO_CLOSING_BOUNDARY = 2u };
+enum { TABLE_NO_SEGMENTED_SEPARATOR = 1u, TABLE_NO_CLOSING_BOUNDARY = 2u, TABLE_NO_SIMPLE_FOOTER = 4u };
 
 static markdown_core_lookahead_entry *table_search_fact(table_source *source, size_t index) {
     table_source_line *line = &source->lines[index];
@@ -1158,6 +1094,99 @@ static void table_search_finish(table_source *source, size_t first, size_t after
             fact->table_absent |= grammar;
         }
     }
+}
+
+/* A simple footer must match every authored interval, not merely the number
+ * of columns or a hash. Each comparison visits at most the opener's bytes. */
+static bool table_same_dashes(table_source *source, size_t left, size_t right) {
+    size_t count = table_dash_count(source, left);
+    if (count < 2 || table_dash_count(source, right) != count) {
+        return false;
+    }
+    const table_interval *a = table_dashes(source, left), *b = table_dashes(source, right);
+    if (!a || !b) {
+        return false;
+    }
+    for (size_t i = 0; i < count; i++) {
+        source->parser->table_scan_work++;
+        if (a[i].start != b[i].start || a[i].end != b[i].end) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/* Only the last nonblank line can be a footer. After a failed headerless
+ * search, compare that line with every possible suffix opener once. Matching
+ * openers remain eligible; all other suffixes reuse the negative result under
+ * the same container/offset. Thus even distinct separator geometries cannot
+ * cause repeated scans, and a later valid table is never suppressed. */
+static void table_simple_search_finish(table_source *source, size_t first, size_t last) {
+    for (size_t i = first; i <= last && !source->parser->oom; i++) {
+        if (i == last || !table_same_dashes(source, i, last)) {
+            markdown_core_lookahead_entry *fact = table_search_fact(source, i);
+            if (fact && !source->parser->oom) {
+                fact->table_absent |= TABLE_NO_SIMPLE_FOOTER;
+            }
+        }
+    }
+}
+
+static bool table_parse_simple(table_source *source, size_t start, table_candidate *candidate) {
+    const table_interval *runs = NULL;
+    size_t count = table_dash_count(source, start);
+    bool headerless = count > 1;
+    if (headerless && table_search_absent(source, start, TABLE_NO_SIMPLE_FOOTER)) {
+        goto failed;
+    }
+    if (!headerless) {
+        if (!table_source_get(source, start + 1) || source->lines[start + 1].blanks ||
+            (count = table_dash_count(source, start + 1)) < 2 || !table_header_allowed(source, start)) {
+            goto failed;
+        }
+    }
+    size_t delimiter = start + (headerless ? 0 : 1), body = delimiter + 1, end = delimiter;
+    runs = table_dashes(source, delimiter);
+    if (!runs) {
+        goto failed;
+    }
+    /* Simple rows own inline text until a blank/valid footer. Pandoc 3.11
+     * retains heading, quote and fence markers here; the header/caption
+     * paragraph-interruption rules do not apply to an existing body. */
+    for (size_t i = body; table_source_get(source, i) && !source->lines[i].blanks; i++) {
+        end = i;
+    }
+    if (source->parser->oom) {
+        goto failed;
+    }
+    bool footer = end > delimiter && table_same_dashes(source, delimiter, end);
+    if (headerless && !footer) {
+        table_simple_search_finish(source, delimiter, end);
+    }
+    if (end == delimiter || (headerless && !footer) || source->parser->oom) {
+        goto failed;
+    }
+    if (!table_source_columns(source, start) || !table_source_columns(source, body)) {
+        goto failed;
+    }
+    if (!table_set_columns(source, candidate, runs, count, headerless ? body : start, false)) {
+        goto failed;
+    }
+    candidate->first = start;
+    candidate->last = end;
+    candidate->head_count = headerless ? 0 : 1;
+    if (!headerless && !table_rectangular_row(source, candidate, start, start, runs)) {
+        goto failed;
+    }
+    for (size_t i = body; i <= end - (footer ? 1u : 0u); i++) {
+        if (!table_rectangular_row(source, candidate, i, i, runs)) {
+            goto failed;
+        }
+    }
+    return true;
+failed:
+    table_candidate_free(source->parser, candidate);
+    return false;
 }
 
 static bool table_parse_multiline(table_source *source, size_t start, table_candidate *candidate) {

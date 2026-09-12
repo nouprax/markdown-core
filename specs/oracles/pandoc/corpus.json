@@ -496,6 +496,76 @@
             "id": "p6-escaped-space-with-reader-dependency",
             "from": "markdown_strict+superscript+subscript+all_symbols_escapable",
             "input": "^a\\ b^\n"
+        },
+        {
+            "id": "p6-empty-caret",
+            "from": "markdown_strict+superscript",
+            "input": "^^\n"
+        },
+        {
+            "id": "p6-empty-caret-in-text",
+            "from": "markdown_strict+superscript",
+            "input": "before ^^ after\n"
+        },
+        {
+            "id": "p6-empty-caret-emphasis",
+            "from": "markdown_strict+superscript",
+            "input": "*^^*\n"
+        },
+        {
+            "id": "p6-empty-caret-link",
+            "from": "markdown_strict+superscript",
+            "input": "[^^](u)\n"
+        },
+        {
+            "id": "p6-empty-caret-pairing",
+            "from": "markdown_strict+superscript",
+            "input": "^^x^y^\n"
+        },
+        {
+            "id": "p7-tail-first-key",
+            "from": "markdown_strict+citations",
+            "input": "@a [@b]\n"
+        },
+        {
+            "id": "p7-tail-first-key-prefix",
+            "from": "markdown_strict+citations",
+            "input": "@a [p. @b]\n"
+        },
+        {
+            "id": "p7-tail-first-key-mode",
+            "from": "markdown_strict+citations",
+            "input": "@a [p. -@b, s; @c]\n"
+        },
+        {
+            "id": "p7-tail-first-key-markup",
+            "from": "markdown_strict+citations",
+            "input": "@a [*pre* @b, *suf*; @c]\n"
+        },
+        {
+            "id": "p7-tail-key-free-first-section",
+            "from": "markdown_strict+citations",
+            "input": "@a [s1; p. @b]\n"
+        },
+        {
+            "id": "p7-failed-group-inner-key",
+            "from": "markdown_strict+citations",
+            "input": "[@a;]\n"
+        },
+        {
+            "id": "p7-failed-group-inner-tail",
+            "from": "markdown_strict+citations",
+            "input": "[@a [p. @b];]\n"
+        },
+        {
+            "id": "p7-failed-group-separators",
+            "from": "markdown_strict+citations",
+            "input": "[@a;; @b] [; @a] [@a; no key]\n"
+        },
+        {
+            "id": "p7-failed-tail-literal",
+            "from": "markdown_strict+citations",
+            "input": "@a [s1;]\n"
         }
     ]
 }

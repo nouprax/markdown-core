@@ -818,7 +818,9 @@
                     "Subscript",
                     "Emphasis",
                     "Directive",
-                    "DirectiveLabel"
+                    "DirectiveLabel",
+                    "Cite",
+                    "Span"
                 ],
                 "states": ["scope.positive", "children.populated"],
                 "orders": ["inline.source-order"]

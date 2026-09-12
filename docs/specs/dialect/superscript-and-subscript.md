@@ -54,8 +54,8 @@ to right within one inline container:
 - Inside a body candidate, `\ ` (a backslash followed by an ASCII space) is
   not whitespace and yields U+00A0 NO-BREAK SPACE in the content; elsewhere
   the inherited literal applies.
-- A body is non-empty: a closer immediately after its opener matches nothing,
-  and both bytes are text.
+- A body may be empty: an adjacent opener and closer form an empty
+  Superscript. The separate tilde run rule still assigns `~~` to strikethrough.
 
 ```````````````````````````````` example
 ^a b^ ~a b~
@@ -83,15 +83,16 @@ Document scope=1:1..1:9 anchor=null attributes={} children=1
         └── Text scope=1:2..1:8 anchor=null attributes={} literal="a b" children=0
 ````````````````````````````````
 
-An empty body is not a body. `^^` is text, and an unmatched `~~` run is text
+`^^` produces an empty Superscript. An unmatched `~~` run remains text
 under the tilde rule rather than two subscript units:
 
 ```````````````````````````````` example
 ^^ a~~b
 .
 Document scope=1:1..1:7 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:7 anchor=null attributes={} children=1
-    └── Text scope=1:1..1:7 anchor=null attributes={} literal="^^ a~~b" children=0
+└── Paragraph scope=1:1..1:7 anchor=null attributes={} children=2
+    ├── Superscript scope=1:1..1:2 anchor=null attributes={} children=0
+    └── Text scope=1:3..1:7 anchor=null attributes={} literal=" a~~b" children=0
 ````````````````````````````````
 
 An unmatched delimiter is text and cannot hide a later valid candidate:
@@ -241,6 +242,79 @@ Delimiter scalars enter a body only through the shared escape mechanism.
 
 Both scopes cover the two delimiters and the body, including an escaped
 space.
+
+## Oracle drift regressions
+
+```````````````````````````````` example
+^^
+.
+Document scope=1:1..1:2 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:2 anchor=null attributes={} children=1
+    └── Superscript scope=1:1..1:2 anchor=null attributes={} children=0
+````````````````````````````````
+
+```````````````````````````````` example
+^^^^ ^^x^y^ *^^*
+.
+Document scope=1:1..1:16 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:16 anchor=null attributes={} children=8
+    ├── Superscript scope=1:1..1:2 anchor=null attributes={} children=0
+    ├── Superscript scope=1:3..1:4 anchor=null attributes={} children=0
+    ├── Text scope=1:5..1:5 anchor=null attributes={} literal=" " children=0
+    ├── Superscript scope=1:6..1:7 anchor=null attributes={} children=0
+    ├── Text scope=1:8..1:8 anchor=null attributes={} literal="x" children=0
+    ├── Superscript scope=1:9..1:11 anchor=null attributes={} children=1
+    │   └── Text scope=1:10..1:10 anchor=null attributes={} literal="y" children=0
+    ├── Text scope=1:12..1:12 anchor=null attributes={} literal=" " children=0
+    └── Emphasis scope=1:13..1:16 anchor=null attributes={} children=1
+        └── Superscript scope=1:14..1:15 anchor=null attributes={} children=0
+````````````````````````````````
+
+```````````````````````````````` example
+[^^]{} [^^](u) ![^^](i) :d[^^] ^[^^]
+.
+Document scope=1:1..1:36 anchor=null attributes={} children=1
+├── Paragraph scope=1:1..1:36 anchor=null attributes={} children=9
+│   ├── Span scope=1:1..1:6 anchor=null attributes={} children=1
+│   │   └── Superscript scope=1:2..1:3 anchor=null attributes={} children=0
+│   ├── Text scope=1:7..1:7 anchor=null attributes={} literal=" " children=0
+│   ├── Link scope=1:8..1:14 anchor=null attributes={} dest=url("u") title=null children=1
+│   │   └── Superscript scope=1:9..1:10 anchor=null attributes={} children=0
+│   ├── Text scope=1:15..1:16 anchor=null attributes={} literal=" !" children=0
+│   ├── Link scope=1:17..1:23 anchor=null attributes={} dest=url("i") title=null children=1
+│   │   └── Superscript scope=1:18..1:19 anchor=null attributes={} children=0
+│   ├── Text scope=1:24..1:24 anchor=null attributes={} literal=" " children=0
+│   ├── Directive scope=1:25..1:30 anchor=null attributes={} name="d" children=0
+│   │   └── DirectiveLabel scope=1:27..1:30 anchor=null attributes={} children=1
+│   │       └── Superscript scope=1:28..1:29 anchor=null attributes={} children=0
+│   ├── Text scope=1:31..1:31 anchor=null attributes={} literal=" " children=0
+│   └── Cite scope=1:32..1:36 anchor=null attributes={} children=1
+│       └── Citation scope=1:34..1:35 referent=footnote(id="inline-1") children=0
+│           ├── CitationPrefix children=0
+│           └── CitationSuffix children=0
+└── Footnote scope=1:32..1:36 id="inline-1" children=1
+    └── Superscript scope=1:34..1:35 anchor=null attributes={} children=0
+````````````````````````````````
+
+```````````````````````````````` example
+`^^` \^\^ ~^^~ ^^~x~ ^^ ^x^
+.
+Document scope=1:1..1:27 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:27 anchor=null attributes={} children=10
+    ├── Code scope=1:1..1:4 anchor=null attributes={} literal="^^" children=0
+    ├── Text scope=1:5..1:10 anchor=null attributes={} literal=" ^^ " children=0
+    ├── Subscript scope=1:11..1:14 anchor=null attributes={} children=1
+    │   └── Superscript scope=1:12..1:13 anchor=null attributes={} children=0
+    ├── Text scope=1:15..1:15 anchor=null attributes={} literal=" " children=0
+    ├── Superscript scope=1:16..1:17 anchor=null attributes={} children=0
+    ├── Subscript scope=1:18..1:20 anchor=null attributes={} children=1
+    │   └── Text scope=1:19..1:19 anchor=null attributes={} literal="x" children=0
+    ├── Text scope=1:21..1:21 anchor=null attributes={} literal=" " children=0
+    ├── Superscript scope=1:22..1:23 anchor=null attributes={} children=0
+    ├── Text scope=1:24..1:24 anchor=null attributes={} literal=" " children=0
+    └── Superscript scope=1:25..1:27 anchor=null attributes={} children=1
+        └── Text scope=1:26..1:26 anchor=null attributes={} literal="x" children=0
+````````````````````````````````
 
 ## Required conformance cases
 

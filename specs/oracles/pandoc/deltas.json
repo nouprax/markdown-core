@@ -5,10 +5,10 @@
             "id": "empty-superscript-and-subscript",
             "item": "P6",
             "status": "projection",
-            "reason": "The current parser leaves empty scripts as text while Pandoc emits empty nodes. The O/I/P provenance audit found that an example rewrite reversed the original empty-caret contract under a false Pandoc premise; this entry records current output, not verified intent. Double-tilde strikethrough ownership is a separate decision.",
+            "reason": "Empty carets now agree as Superscript([]). The remaining difference is double-tilde ownership: an unmatched ~~ is Text under the shared strikethrough rule, while this Pandoc reader emits Subscript([]).",
             "inputDigest": "1015835f9eced9f8a7222f9d0a6af3eba44c3e747aa6ae2075e8084bc8350ee0",
             "oracleDigest": "7c4d76e54d6fe6d271470482d636a7ccfcc5751e361a1c02b1132d4e2e440c8a",
-            "coreDigest": "31fa99134634c81b5b2d2bc30a7aad2a68d23aec1baac3112405096fa07f0e80"
+            "coreDigest": "4d2306d9c6fd9d56fceaf0ddfe9d43672523a8dfbf28c9e4d524dfb5b23478f7"
         },
         {
             "id": "pandoc-reference-attribute-merge",
@@ -86,10 +86,10 @@
             "id": "p6-pairing-and-tilde-runs",
             "item": "P6",
             "status": "projection",
-            "reason": "Nonempty script units pair left to right. Two tildes belong exclusively to strikethrough and longer runs are literal. The empty-caret portions also reproduce the historical reversal identified by the O/I/P audit and must not be treated as approved merely because this compound entry is registered.",
+            "reason": "Empty carets now form Superscript nodes. Core retains each authored adjacent pair and its scope (^^^^ gives two empty nodes); Pandoc combines adjacent Superscript values. The remaining tilde differences follow maximal-run ownership: two tildes are strikethrough, longer runs are text.",
             "inputDigest": "43dad7a377f0bd0c44597628456e2b968ad53f0a4f927e4d201e11628da7c3f8",
             "oracleDigest": "e4ca40eb0ee3b049cf8bbed79ecec2ac0421e240e93afc17d1fb4446a5609aa2",
-            "coreDigest": "2b42a1bccbfaf7471c3ed6b4dc21d27ebd1b88f4096dd16daa30f94604063ad0"
+            "coreDigest": "986ad6a5ca5a1ed057f7268ea8883e6809d9f4d51c39515b8573e7dab9c3343f"
         },
         {
             "id": "p6-opaque-tokens",
@@ -176,19 +176,10 @@
             "id": "p7-tail-later-author",
             "item": "P7",
             "status": "projection",
-            "reason": "The current first author-tail section is suffix inline content, so a later @key becomes a nested authorInText Cite. Pandoc makes it another normal item of the outer Cite. The O/I/P audit flags this grouping/mode choice for semantic review; ordinary bracket-group nesting does not establish the author-tail rule.",
+            "reason": "The tail key now belongs to the outer Cite as a normal item, agreeing with Pandoc. Only the declared affix trimming remains different: Core stores [p. 7] while Pandoc retains the leading space before that suffix.",
             "inputDigest": "6326dc4e316d481ae8ac7f3905a1fd81627d87985e28525c380f45c7100a73be",
             "oracleDigest": "cceaffe5c3c455065f799067d8ef5a854cad0afa890029ede29ce233e127883b",
-            "coreDigest": "13cc2c85aacd7be8ee9f2723499468a2389b600e2b3d9bc51e163e8773f8f1bf"
-        },
-        {
-            "id": "p7-malformed-group",
-            "item": "P7",
-            "status": "projection",
-            "reason": "An item without a key invalidates the complete bracketed group; the current product leaves its unclaimed keys as raw Text while Pandoc retains authorInText citations. The O/I/P audit flags the blanket literal example against the transactional fallback rule for semantic review.",
-            "inputDigest": "30e87f411e8d78aaa7b56d95882759b25fb37ab3c9c267547d4bf2909dc42978",
-            "oracleDigest": "2cf9c13b7502cf687377d437fb198e8f5e7f626c2d63c59fc2f98cc651733645",
-            "coreDigest": "144392a4abd716bb4fe09cf2e1dc2cdc950ad53df7a126c6ed72ac90cff46c63"
+            "coreDigest": "0c525724337749b05474b7d7002db4a3f7afcfafdacab589df69a871a62784eb"
         },
         {
             "id": "p7-heading-projection",

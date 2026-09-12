@@ -3127,7 +3127,8 @@ static void citation_linear_work(test_batch_runner *runner) {
         {"", "[@a ", "]", ""},    {"[", "*pre* @a [@b [x]]; ", "", "@z]"},
         {"", "@{", "", " key}"},  {"", "@{a", "}", ""},
         {"", "@a [x] ", "", ""},  {"", "(@label) body\n\n", "", "@label"},
-        {"", "M", "", ".  body"},
+        {"", "M", "", ".  body"}, {"[", "@a [", "]", ";]"},
+        {"", "[@a;] ", "", ""},
     };
     for (size_t c = 0; c < sizeof(cases) / sizeof(*cases); c++) {
         for (size_t count = 128; count <= 8192; count *= 2) {
@@ -3634,7 +3635,9 @@ static void span_and_script_linear_work(test_batch_runner *runner) {
         {"[a]{.c ", "", "", 0},   {"[", "", "", 0},     {"[a^b", "x", "]{.c}", 1}, {"[a~b", "x", "]{.c}", 1},
     };
     static const paired_delimiter_case superscripts[] = {
-        {"^", "", "", 0},
+        {"^^", "", "", 1},
+        {"^^x^y^ ", "", "", 2},
+        {"*^^* ", "", "", 1},
         {"^a^ ", "", "", 1},
         {"^a^b^c^ ", "", "", 2},
         {"^a ", "", "", 0},
@@ -4676,6 +4679,55 @@ static void table_candidate_work(test_batch_runner *runner) {
     }
 }
 
+/* A nonblank run has one possible footer. Failed geometries must not hide a
+ * later matching opener, and both byte work and line visits stay bounded. */
+static void simple_table_footer_work(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    for (size_t shape = 0; shape < 5; shape++) {
+        for (size_t n = 32; n <= 512; n *= 2) {
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+            for (size_t i = 0; i < n; i++) {
+                if (shape == 3) {
+                    markdown_core_strbuf_puts(&source, "> ");
+                }
+                if (shape == 1 || shape == 2) {
+                    markdown_core_strbuf_puts(&source, "-- ");
+                    for (size_t j = 0; j <= i; j++) {
+                        markdown_core_strbuf_putc(&source, shape == 2 ? ' ' : '-');
+                    }
+                    markdown_core_strbuf_puts(&source, "--");
+                } else {
+                    for (size_t j = 0; j < i + 2; j++) {
+                        markdown_core_strbuf_puts(&source, j ? " -" : "-");
+                    }
+                }
+                markdown_core_strbuf_putc(&source, '\n');
+            }
+            if (shape == 4) {
+                markdown_core_strbuf_puts(&source, "--- ---\na   b\n--- ---");
+            }
+            inline_work work = {0};
+            markdown_core_node *root =
+                markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
+            OK(runner, root != NULL, "distinct simple candidates parse: shape=%zu n=%zu", shape, n);
+            if (root) {
+                INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_TABLE), shape == 4 ? 1 : 0,
+                       "failed footer facts preserve later matching geometry");
+                OK(runner, work.table_separator_scans <= 8 * n + 32,
+                   "separator visits are linear: shape=%zu n=%zu scans=%zu", shape, n, work.table_separator_scans);
+                OK(runner, work.table_geometry_lines <= 3 * n + 16,
+                   "failed suffixes do not rebuild column maps: shape=%zu n=%zu lines=%zu", shape, n,
+                   work.table_geometry_lines);
+                OK(runner, work.tables + work.lookahead <= 32 * (size_t)source.size,
+                   "distinct footer comparisons have bounded byte work: shape=%zu n=%zu work=%zu", shape, n,
+                   work.tables + work.lookahead);
+                markdown_core_node_free(root);
+            }
+            markdown_core_strbuf_free(&source);
+        }
+    }
+}
+
 /* Exact slices may be read-only and need neither a NUL nor padding. Every
  * scanner exercises successful syntax and all truncated prefixes, with ASan
  * guarding an allocation that ends precisely at each prefix boundary. */
@@ -5040,6 +5092,7 @@ int main(void) {
     table_candidate_work(runner);
     bounded_scanners(runner);
     simple_table_body_boundaries(runner);
+    simple_table_footer_work(runner);
     table_caption_boundaries(runner);
     table_mapped_ownership(runner);
     table_nested_inputs(runner);

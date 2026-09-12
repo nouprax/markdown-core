@@ -13,8 +13,51 @@ or require full Pandoc compatibility.
 - [x] Separate expected model/grammar differences from a historical reversal,
       reader-configuration effects and unresolved semantic choices.
 - [x] Add seven independent agreement witnesses and clarify misleading documents.
-- [ ] Resolve the empty-caret reversal and the two citation choices below, then
+- [x] Resolve the empty-caret reversal and the two citation choices below, then
       change their grammar, implementation, fixtures and delta entries together.
+
+## Completed follow-up, 2026-09-12
+
+The product requested fixing all three semantic drifts after reviewing this
+audit. Empty carets now use the shared delimiter constructor; the obsolete
+empty-pair rejection is removed. Author tails give their first keyed section
+to a normal outer item. Failed groups use the same ordinary fallback as other
+unclaimed inline content, removing the text-only branch and its saved reference
+state. Group-key ownership is also applied in the iterative dependency resolver,
+so nested tails retain the same semantics without C-stack recursion.
+
+Fourteen independent oracle agreements cover these corrections. The original
+`p7-malformed-group` also becomes an unwaived agreement. The corpus now has
+113 cases / 80 agreements / 33 remaining differences. The original 34-entry
+inventory below records the pre-fix audit; current remaining differences are
+in the updated oracle registry. The empty-script compound now differs only on
+tilde ownership, the pairing compound also retains separate authored adjacent
+nodes/scopes, and the author-tail compound retains only declared affix trimming.
+No new difference waiver was introduced.
+
+The [new simple-footer review](https://github.com/nouprax/markdown-core/pull/229#discussion_r3995958184)
+also exposed repeated failed suffix scans. A simple footer must be the last
+nonblank line of the current container view. A failed search now compares this
+sole possible footer with each suffix opener once and publishes exact negative
+facts keyed by container and offset. Matching geometries remain eligible. Tests
+count both line visits and byte work for varying run counts, widths and offsets,
+container prefixes, and a later successful table. No hash, cardinality cutoff
+or alternative parser is involved.
+
+The new work bounds fail 74 assertions against the unchanged baseline table
+implementation and pass against the corrected implementation. The allocation
+sweep also exposed a closed-block assertion: a failed opener returned OOM but
+the dispatcher continued into another grammar. Dash-table, extension and
+definition dispatch now stop at that failure boundary. The ASan allocation
+sweep passes without weakening the closed-block invariant.
+
+Validation: all 88 native C suites pass, the targeted ASan suites and complete
+allocation sweep pass, all six oracle gates pass, and canonical coverage,
+source-scope containment, C warnings, formatting and repository/test-topology
+audits pass. Scope containment retains its existing 27 exact exceptions and
+introduces none.
+
+The findings below describe the baseline before these corrections.
 
 ## Conclusion and evidence standard
 

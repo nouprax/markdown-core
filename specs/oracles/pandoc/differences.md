@@ -1,4 +1,4 @@
-# Pandoc 差异用例逐项说明（34 项）
+# Pandoc 差异用例逐项说明（原 34 项，现存 33 项）
 
 这里的 34 项是差异登记表中的 **34 个输入用例**，不是 34 个未实现的
 feature，也不是 34 个需要追加支持的 Pandoc extension。同一条规则可以
@@ -11,17 +11,17 @@ feature，也不是 34 个需要追加支持的 Pandoc extension。同一条规�
 
 原始输入和 reader 配置见 [corpus.json](corpus.json)，
 精确结果摘要和说明见 [deltas.json](deltas.json)。
-以下编号与登记表顺序一致；历史 `projection` 标签不表示所有条目都只是
+以下保留原始审计编号；第 21 项已修复并退出差异登记。历史 `projection` 标签不表示所有条目都只是
 AST 表示不同。
 
 2026-09-12 的 [O/I/P 来源审计](../../../docs/plans/2026-09-12-oip-oracle-drift-audit.md)
-发现：第 1、10 项包含原规范被反向改写的空上标行为，不能据登记视为已确认的
-预期差异；第 7 项混入 reader 配置差异；第 20、21 项需要单独复核 citation
-结构与失败回退的取舍。下表描述当前结果，不构成这些取舍的批准。
+发现的空上标、author-tail 引用分组和畸形组回退已按用户要求修复。
+第 1、10、20 项仅保留各自尚存的独立差异；第 21 项现在是无豁免的一致用例。
+第 7 项仍需区分 reader 配置与失败回退的差异。
 
 | 编号 | 用例 ID／主题 | Core 与 Pandoc 的具体差异 |
 | --- | --- | --- |
-| 1 | `empty-superscript-and-subscript`：空上下标 | Core 将 `^^`、`~~` 保留为文本，要求上下标内容非空；此例的 Pandoc reader 生成空 Superscript/Subscript。Core 的双波浪线用于删除线。 |
+| 1 | `empty-superscript-and-subscript`：空上下标 | `^^` 已在两边生成空 Superscript。剩余差异仅是 `~~`：Core 的双波浪线用于删除线，未配对时为文本；此例 Pandoc reader 生成空 Subscript。 |
 | 2 | `pandoc-reference-attribute-merge`：引用属性合并 | Core 按“定义处、使用处”的顺序保留类名和属性记录，包括重复项；Pandoc 去重、覆盖并调整顺序。例如 `k=def ... k=occ` 在 Core 中都保留，Pandoc 只保留使用处的 `k=occ`。 |
 | 3 | `multiline-table`：多行表格列宽 | Core 保存源码列宽占总列宽的比例；Pandoc 把分隔部分计入宽度，再相对于默认页面宽度计算。差异是列宽数值，表格内容已经实现并一致。 |
 | 4 | `grid-table-block-cells`：块内容网格表的列宽 | 与第 3 项同属列宽语义差异。源码内部列宽为 15、15、20 时，Core 为 `0.3, 0.3, 0.4`，Pandoc 为 `16/72, 16/72, 21/72`。单元格中的段落、列表等块内容一致。 |
@@ -30,7 +30,7 @@ AST 表示不同。
 | 7 | `p6-escaped-space`：上下标中的转义空格 | 对 `^a\ b^` 和 `~*c\ d*~`，Core 生成上下标并把其中的转义空格解码为 NBSP；此例 Pandoc reader 不生成上下标。Core 在候选失败或上下标外保留原来的反斜线与空白，不做全局替换。 |
 | 8 | `p6-whitespace-recovery`：Unicode 空白与上下标 | Core 把源码中的所有 Unicode White_Space 都视为上下标配对边界；Pandoc 接受含 U+2003 EM SPACE 的 `^a b^`，Core 保留为文本。此例前面的 ASCII 空格失败恢复，两边一致。 |
 | 9 | `p6-entity-space`：实体解码出的空白 | `~a&Tab;b~` 中，Core 保留解码出的 TAB，Pandoc 将其归一化为空格。实体解码出的空白不等同于源码中的原始空白分界。 |
-| 10 | `p6-pairing-and-tilde-runs`：空配对和连续波浪线 | Core 将空上下标、三个以上连续波浪线及未完成的双波浪线候选保留为文本；Pandoc 可生成空上下标，并把 `~~~c~~~` 解析成下标 `c`。普通非空配对与 `~~a~~` 删除线在此例中一致。 |
+| 10 | `p6-pairing-and-tilde-runs`：空配对和连续波浪线 | `^^` 已一致。`^^^^` 在 Core 中保留两个有独立 scope 的空 Superscript，Pandoc 合并相邻同类节点。Core 将三个以上连续波浪线及未配对的双波浪线保留为文本；Pandoc 可生成空下标，并把 `~~~c~~~` 解析成下标 `c`。 |
 | 11 | `p6-opaque-tokens`：上下标内的代码跨度 | 对包含代码 `x y` 的外层上下标候选，Core 先识别完整代码跨度，其内部空格不打断外层上下标；Pandoc 不识别该外层上下标。独立代码内部的 `^`、`~` 在两边都保持代码文本。 |
 | 12 | `anchor-global-reservation`：后置标题显式 ID | Core 先预留全篇显式 ID，再生成自动 ID：前面的 `# x` 在后面存在 `{#x}` 时取得 `x-1`。Pandoc 先生成前面的 `x`，后面显式 ID 也为 `x`。 |
 | 13 | `anchor-permitted-scalars`：emoji 与锚点 | Core 按字符规则过滤，不把 emoji 转成名字；Pandoc 的 GFM 锚点算法把 😀 转成 `grinning`。本例锚点分别为 `a‿b--` 与 `a‿b--grinning`。 |
@@ -40,8 +40,8 @@ AST 表示不同。
 | 17 | `implicit-reference-adjacency`：引用方括号是否必须相邻 | Core 沿用 CommonMark 的相邻要求，将 `[Foo] [Foo][] [go][Foo]` 分别解析成三个标题链接；Pandoc 跨过空格合并前两个方括号组，并留下不同的文本和链接结构。 |
 | 18 | `p5-heading-span-reservation`：Span 的显式 ID 预留 | 与第 12 项同一规则，显式 ID 这次来自 `[owner]{#taken}`。Core 前面的 `# Taken` 为 `taken-1`，Pandoc 为 `taken`。 |
 | 19 | `p7-tail-and-nesting`：引用前后缀的边缘空白 | Core 去除 citation prefix/suffix 源码两端的空白；Pandoc 在嵌套方括号之前保留 suffix 的前导空格。嵌套内容仍逐项比较。 |
-| 20 | `p7-tail-later-author`：作者式引用尾部的另一个引用 | 对 `@a [@b [p. 7]]`，Core 将尾部当作 suffix 行内内容，`@b` 成为其中独立的 authorInText Cite；Pandoc 将 `@b` 提升为外层 Cite 的另一个 normal citation。 |
-| 21 | `p7-malformed-group`：畸形 citation 组的回退 | 对含无 key 项的组，例如 `[@a; no key]`，Core 让整组失败，并将未被其他语法占有的 key 保留为文本；Pandoc 会再次把其中的 key 识别为 authorInText citation。 |
+| 20 | `p7-tail-later-author`：作者式引用尾部的另一个引用 | 对 `@a [@b [p. 7]]`，两边现在都将 `@b` 保留为外层 Cite 的 normal item。仅剩前后缀空白规则：Core 的 suffix 为 `[p. 7]`，Pandoc 保留前导空格。 |
+| 21 | `p7-malformed-group`：畸形 citation 组的回退 | **已修复并退出登记。** 外层组失败后继续普通行内解析，内部合法 key 成为 authorInText citation，合法 tail 也保留；原用例已与 Pandoc 一致。 |
 | 22 | `p7-heading-projection`：citation 参与标题锚点生成 | 对 `## [pre @a suffix; @b]`，Core 从存储的引用内容生成 `preasuffixb`；Pandoc 从保留分隔空格的原始显示文本生成 `pre-a-suffix-b`。 |
 | 23 | `p7-unicode-boundary`：下划线之后的引用起点 | `_@a` 在 Core 中不能开始 citation，因为起点前不能是下划线、Unicode 字母或数字；Pandoc 接受下划线之后的 citation。 |
 | 24 | `p9a-nested-start`：非 1 起始的嵌套列表候选 | 在父列表段落后，缩进的 `2. ordinary` 不能启动 Core 的嵌套列表，按 lazy continuation 留在原段落；Pandoc 将这行放到另一个 Plain 块。随后 `1. nested` 在两边都成为嵌套列表。 |

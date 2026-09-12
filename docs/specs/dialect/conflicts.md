@@ -12,14 +12,8 @@ does not absorb.
 
 ## Open for decision
 
-The [O/I/P provenance audit](../../plans/2026-09-12-oip-oracle-drift-audit.md)
-reopens the empty-superscript decision: the original contract accepted `^^`,
-but a later example rewrite reversed it while incorrectly attributing rejection
-to Pandoc. The current module rejects it; restoring the original contract is
-the audit recommendation. Double-tilde ownership is a separate collision with
-strikethrough and must not be decided implicitly by the empty-caret case.
-The audit also records two citation choices that need semantic review, without
-treating every oracle difference as a missing feature.
+No open entries. The three O/I/P audit findings were resolved by the product
+on 2026-09-12 as recorded below.
 
 ## Settled
 
@@ -76,6 +70,19 @@ modules state the ruled behavior and the ruling is final.
   parser feature. Nothing disables a feature, not even a comparison: the
   oracle gates parse the one language and register where the dialect leaves
   an oracle's. Product ruling on 2026-09-06.
+
+### O/I/P audit corrections, 2026-09-12
+
+The product requested correction of all three semantic drifts identified by the
+[provenance audit](../../plans/2026-09-12-oip-oracle-drift-audit.md):
+
+- Restore empty `^^` as Superscript under the shared pair matcher. Each authored
+  pair retains its own node and scope; double tildes still belong to strikethrough.
+- An author tail's first keyed section is an additional normal citation item,
+  with its own prefix and suffix. A key-free first section is the external
+  author's suffix. Ordinary bracket-group nesting remains the same.
+- A failed citation group releases its contents to ordinary inline parsing,
+  retaining valid inner citations and their independently valid tails.
 
 ### Earlier decisions
 
@@ -153,11 +160,9 @@ that settled it.
   to every later construct, and only the email form is a post-pass over
   `Text`; a cross link, code span, formula, or mark that begins inside a URL
   run is URL text. cmark-gfm's autolink extension, the defining source.
-- The current script module rejects empty bodies and reserves double tildes
-  for strikethrough. The former attribution of empty-body rejection to Pandoc
-  was incorrect: the pinned reader emits empty script nodes. The empty-caret
-  reversal is reopened above; the current grammar remains observable until
-  that review is resolved.
+- Empty carets are accepted; double tildes remain reserved for strikethrough.
+  The former attribution of empty-body rejection to Pandoc was incorrect and
+  the resulting rule was reversed by the 2026-09-12 audit correction.
 
 ## Deliberate exclusions
 

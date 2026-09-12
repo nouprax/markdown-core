@@ -43,20 +43,24 @@ host executable explicitly with `scripts/init-environment.sh --install oracle-pa
 runs CLI canaries, both parsers and the fail-closed digest registry. Normal
 builds and tests never install the executable or access the network.
 
-The active corpus has 99 cases: 65 agreements, 34 documented differences and no
+The active corpus has 113 cases: 80 agreements, 33 documented differences and no
 missing-feature gaps. Three width differences retain the normative interior
 ratios and the oracle's page-relative widths without hiding either value. Every difference
 pins input/reader, oracle projection and product projection SHA-256 digests.
 New, changed, stale, duplicate and unknown entries fail. Registration proves
 reproducibility, not product intent; the [O/I/P provenance audit](../../../docs/plans/2026-09-12-oip-oracle-drift-audit.md)
-identifies the historical empty-script reversal and the compound entries that
-must not be treated as blanket approval. P5's span and shared
+identified the historical empty-script reversal and two citation choices.
+All three have now been corrected at the product's request. Fourteen new
+unwaived controls verify empty scripts, first-key tail ownership and ordinary
+fallback, and `p7-malformed-group` is now an agreement. The remaining compound
+entries describe only their residual tilde, adjacent-node or affix-trimming
+differences; they do not waive the repaired semantics. P5's span and shared
 attribute grammar cases now agree, including empty containers, nesting,
 shortcut precedence, complete link tails and malformed fallback. P6's ordinary
 superscript/subscript case agrees. Four isolated agreement cases separately pin
 `^a b^` and `~a b~` as text, `^ab^` as Superscript, and `^a&#32;b^`
 as Superscript containing a decoded space; no difference waiver applies to
-these assertions. Empty bodies, contextual escaped spaces,
+these assertions. Contextual escaped spaces,
 Unicode whitespace, decoded TAB preservation, maximal tilde runs and code-token
 opacity retain exact drift witnesses, subject to the provenance qualifications
 above. Inline-footnote composition
@@ -155,5 +159,5 @@ entries include normative recognition differences. P12 requires implementation
 and regression evidence for the selected modules, with zero missing-feature
 gaps; it does not require full Pandoc compatibility. The exact registry alone
 does not establish implementation completeness. The
-[34-case review list](differences.md)
+[original 34-case review list](differences.md)
 explains each retained difference without treating it as a missing feature.

@@ -210,7 +210,9 @@ static const char OOM_CALLOUT_CORPUS[] =
 static const char OOM_INLINE_OWNERSHIP_CORPUS[] = "> [!tip]+ ==<i title=\"==hidden==\">title</i>==\n"
                                                   "> - [✓] ==a %%==b%% c== ^[![[asset|100x145]]] #item#\n";
 
-static const char OOM_CITATION_CORPUS[] = "@a [@b [@c [@d [@e [@f [@g [@h [@i [@j [tail]]]]]]]]]]\n\n"
+static const char OOM_CITATION_CORPUS[] = "^^ *^^* ^^^^ [^^]{} ^[^^]\n\n"
+                                          "@a [p. -@b, s; @c] [@a [p. @b];] [@a;]\n\n"
+                                          "@a [@b [@c [@d [@e [@f [@g [@h [@i [@j [tail]]]]]]]]]]\n\n"
                                           "@{{{{{{{{{{{{{{{{{{key}}}}}}}}}}}}}}}}}} @{unclosed @{inner}\n\n"
                                           "# [pre *em* @a [@b [tail]]; -@{x{y}} {p. 3}]\n\n"
                                           "@a [@b [x]] [@a [x]] [@a [@b]] [@a[x]; no key]\n"
@@ -227,6 +229,7 @@ static const char OOM_DEFINITION_LIST_CORPUS[] =
     "[reference]: /url {.attr}\n\nT\n: [reference]\n::: \n\n::: warning\n:::\n\n::: {}\n:::\n";
 
 static const char OOM_TABLE_CORPUS[] =
+    "- -\n- - -\n- - - -\n--- ---\na   b\n--- ---\n\n"
     "+------------------------+------------------------+\n| [r]: /first            | [r]: /second           |\n|       "
     "                 |                        |\n| # Same                 | # Same                 |\n|               "
     "         |                        |\n| [^f]: first            | [^f]: second           |\n|                       "
