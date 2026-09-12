@@ -191,6 +191,23 @@ The middle `+` lies on a complete vertical edge. The result has two logical
 rows and two cells with `rowspan=2`; the second row has `cells=[]`. That differs
 from an authored empty cell, whose own `content` is empty.
 
+### Foot rows
+
+Enclose the final row group between full `=` boundaries to give it a foot:
+
+```markdown
++-------+-------+
+| Item  | Count |
++=======+=======+
+| Apple | 4     |
++=======+=======+
+| Total | 4     |
++=======+=======+
+```
+
+The result has one head row, one body row, and one foot row. `Total` belongs
+to the foot group; it is ordinary authored text, not a calculated aggregate.
+
 ### Boundaries and row groups
 
 Column boundaries are connected `+` positions across the table's horizontal
