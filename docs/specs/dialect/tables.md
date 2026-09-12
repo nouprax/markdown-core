@@ -616,6 +616,76 @@ Document scope=1:1..8:16 anchor=null attributes={} children=1
 ## Grid tables
 
 A grid table's lines begin and end with `|` or `+` at the table margin.
+The candidate includes consecutive nonblank lines beginning with either marker
+at its left margin. A blank line or a line without that opening marker ends
+the candidate. A marker-led line with the wrong width or ending makes the
+candidate malformed, and the complete candidate follows ordinary block parsing.
+A full horizontal line can be an interior row separator, so its presence does
+not commit a table prefix before later candidate lines have been validated.
+
+For literal prose beginning with `|` or `+` after a grid table, separate it with
+a blank line. Without that separation, `| prose` below invalidates the candidate.
+Pandoc 3.11 behaves differently: it consumes that line and emits only the table,
+discarding the prose. It does not emit a table followed by a paragraph. This
+module retains the existing transactional fallback described under
+[Block-start order and fallback](#block-start-order-and-fallback).
+
+```````````````````````````````` example
++---+
+| a |
++---+
+| prose
+.
+Document scope=1:1..4:7 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..4:7 anchor=null attributes={} children=7
+    ├── Text scope=1:1..1:5 anchor=null attributes={} literal="+---+" children=0
+    ├── SoftBreak scope=1:6..1:6 anchor=null attributes={} children=0
+    ├── Text scope=2:1..2:5 anchor=null attributes={} literal="| a |" children=0
+    ├── SoftBreak scope=2:6..2:6 anchor=null attributes={} children=0
+    ├── Text scope=3:1..3:5 anchor=null attributes={} literal="+---+" children=0
+    ├── SoftBreak scope=3:6..3:6 anchor=null attributes={} children=0
+    └── Text scope=4:1..4:7 anchor=null attributes={} literal="| prose" children=0
+````````````````````````````````
+
+```````````````````````````````` example
++---+
+| a |
++---+
+
+| prose
+.
+Document scope=1:1..5:7 anchor=null attributes={} children=2
+├── Table scope=1:1..3:5 anchor=null attributes={} columns=[none:1] children=1
+│   ├── TableHead children=0
+│   ├── TableBody children=1
+│   │   └── TableRow scope=2:1..2:5 anchor=null attributes={} children=1
+│   │       └── TableCell scope=2:2..2:4 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │           └── Paragraph scope=2:3..2:3 anchor=null attributes={} children=1
+│   │               └── Text scope=2:3..2:3 anchor=null attributes={} literal="a" children=0
+│   └── TableFoot children=0
+└── Paragraph scope=5:1..5:7 anchor=null attributes={} children=1
+    └── Text scope=5:1..5:7 anchor=null attributes={} literal="| prose" children=0
+````````````````````````````````
+
+```````````````````````````````` example
++---+
+| a |
++---+
+prose
+.
+Document scope=1:1..4:5 anchor=null attributes={} children=2
+├── Table scope=1:1..3:5 anchor=null attributes={} columns=[none:1] children=1
+│   ├── TableHead children=0
+│   ├── TableBody children=1
+│   │   └── TableRow scope=2:1..2:5 anchor=null attributes={} children=1
+│   │       └── TableCell scope=2:2..2:4 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │           └── Paragraph scope=2:3..2:3 anchor=null attributes={} children=1
+│   │               └── Text scope=2:3..2:3 anchor=null attributes={} literal="a" children=0
+│   └── TableFoot children=0
+└── Paragraph scope=4:1..4:5 anchor=null attributes={} children=1
+    └── Text scope=4:1..4:5 anchor=null attributes={} literal="prose" children=0
+````````````````````````````````
+
 Its column boundaries are the union, across the table, of `+` positions
 connected to the outer border by horizontal `-` or `=` segments (with optional
 edge colons). A column position alone does not make every `+` at that position

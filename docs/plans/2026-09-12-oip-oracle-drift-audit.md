@@ -17,6 +17,8 @@ or require full Pandoc compatibility.
       change their grammar, implementation, fixtures and delta entries together.
 - [x] Verify the later grid-plus review with native Pandoc and distinguish its
       false example from neighboring cell-boundary defects.
+- [x] Verify the grid-termination review and document the oracle's discarded
+      continuation versus the existing transactional fallback.
 
 ## Completed follow-up, 2026-09-12
 
@@ -91,6 +93,24 @@ coverage pass. The new continuous-edge fixture adds three exact position-ledger
 observations of the existing rectangular-scope invariant: two rowspan cells
 extend below their owning row and their linear intervals overlap. All 27 prior
 observations are unchanged; each new observation is annotated with that reason.
+
+### Grid-termination review follow-up
+
+The [next grid review](https://github.com/nouprax/markdown-core/pull/229#discussion_r3996094656)
+expects `+---+ / | a | / +---+ / | prose` to produce a table followed by a
+paragraph. Native Pandoc 3.11 produces only the table: the marker-led trailing
+line is consumed and its prose is absent from the AST. Five native canaries
+confirm that behavior for wrong widths/endings and an unfinished, correctly
+aligned row. Separate controls confirm that an intervening blank line or prose
+without an outer marker produces the table and paragraph in both parsers.
+
+The product's existing rule instead rejects a malformed candidate as a whole,
+preserving all four lines through ordinary block parsing. The source module
+already requires malformed candidates to restart at their first line without
+a partial table. Its candidate-extent wording and concrete separation examples
+are now explicit, with product fixtures. Runtime behavior is unchanged; neither
+Pandoc's source loss nor the review's different prefix-recovery rule is adopted.
+No oracle waiver or registered output digest changes in this follow-up.
 
 The findings below describe the baseline before these corrections.
 

@@ -443,6 +443,37 @@ function assertTableCanaries(run, product) {
         multiline_tables: "-------\nh   j\n--- ---\nv   w\n\nx   y\n-------",
         grid_tables: "+---+---+\n| h | j |\n+===+===+\n| v | w |\n+---+---+"
     };
+    // The native reader consumes incomplete marker-led continuation lines;
+    // it does not return them as paragraphs after the completed table prefix.
+    // The product's transactional malformed-grid fallback is specified and
+    // tested separately. Keep this oracle fact explicit when reviewing it.
+    const gridPrefix = "+---+\n| a |\n+---+\n";
+    const gridReader = "markdown_strict+grid_tables";
+    const gridBlocks = run(gridPrefix, gridReader).blocks;
+    assert.equal(gridBlocks.length, 1);
+    assert.equal(gridBlocks[0].t, "Table");
+    for (const tail of ["| prose", "| x", "| a |", "| x | more", "+prose"]) {
+        assert.deepEqual(
+            run(gridPrefix + tail + "\n", gridReader).blocks,
+            gridBlocks,
+            `Pandoc incomplete grid continuation changed: ${JSON.stringify(tail)}`
+        );
+    }
+    for (const [gap, tail] of [
+        ["", "prose"],
+        ["\n", "| prose"]
+    ]) {
+        const input = gridPrefix + gap + tail + "\n";
+        const expected = [...gridBlocks, ...run(tail + "\n", "markdown_strict").blocks];
+        assert.deepEqual(run(input, gridReader).blocks, expected, "Pandoc grid termination changed");
+        if (product) {
+            assert.deepEqual(
+                product(input).children,
+                [...product(gridPrefix).children, ...fromPandoc({ blocks: expected.slice(1) }).children],
+                "product grid termination lost the following paragraph"
+            );
+        }
+    }
     for (const [extension, table] of Object.entries(forms))
         for (const marker of ["Table:", "table:", ":"]) {
             const cases = [
