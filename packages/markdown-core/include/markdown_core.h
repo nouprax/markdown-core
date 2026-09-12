@@ -11,7 +11,7 @@
  *
  * Initialization: there is no process-level initialization, registry, cache,
  * teardown, or re-initialization path. The library contains only immutable
- * process-lifetime tables and constants. Every parser, extension attachment,
+ * process-lifetime tables and constants. Every parser, element attachment,
  * allocation, and failure flag belongs to one parse transaction. Concurrent
  * first calls from any number of threads therefore require no warmup,
  * external lock, or explicit init call.
@@ -45,7 +45,7 @@
  */
 
 #if defined(_WIN32) && !defined(MARKDOWN_CORE_STATIC_DEFINE)
-#if defined(MARKDOWN_CORE_EXTENSIONS_EXPORTS)
+#if defined(MARKDOWN_CORE_ELEMENTS_EXPORTS)
 #define MARKDOWN_CORE_API __declspec(dllexport)
 #else
 #define MARKDOWN_CORE_API __declspec(dllimport)

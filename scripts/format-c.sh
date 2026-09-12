@@ -37,7 +37,7 @@ find packages/markdown-core \
     packages/kotlin-markdown-core/src/native \
     -type f \
     \( -name '*.c' -o -name '*.h' -o -name '*.cpp' \) \
-    ! -path 'packages/markdown-core/extensions/*_scanners.c' \
+    ! -path 'packages/markdown-core/elements/*_scanners.c' \
     ! -path 'packages/markdown-core/core/include/markdown-core-export.h' \
     ! -path 'packages/markdown-core/core/include/markdown-core-version.h' \
     ! -path 'packages/markdown-core/core/include/config.h' \

@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "markdown-core.h"
-#include "markdown-core-extensions.h"
+#include "markdown-core-elements.h"
 #include "parser.h"
 #include <sys/types.h>
 #include <sys/stat.h>

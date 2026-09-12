@@ -11,8 +11,8 @@
 #include "houdini.h"
 #include "iterator.h"
 #include "inlines.h"
-#include "extension.h"
-#include "../extensions/markdown-core-extensions.h"
+#include "element.h"
+#include "../elements/markdown-core-elements.h"
 #define CODE_INDENT 4
 #define TAB_STOP 4
 #ifndef MIN

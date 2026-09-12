@@ -3,14 +3,14 @@
 #include <stdlib.h>
 #include <string.h>
 #include "markdown-core.h"
-#include "markdown-core-extensions.h"
+#include "markdown-core-elements.h"
 #include "parser.h"
 
 int LLVMFuzzerInitialize(int *argc, char ***argv) { return 0; }
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     /* The whole input is Markdown, parsed as the one dialect: the engine always
-     * attaches every extension. The dialect has no
+     * attaches every element. The dialect has no
      * switches, so there is no configuration prefix to fuzz. */
     markdown_core_node *doc = markdown_core_parse_document_with_mem(
         (const char *)data, size, markdown_core_get_default_mem_allocator(), NULL, NULL);

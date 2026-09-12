@@ -12,7 +12,7 @@ The private stack contains five source-ordered entry kinds:
 
 | Entry | Meaning | Completion |
 | --- | --- | --- |
-| Marker | Borrowed Text, rule, width, opening/closing eligibility, extension owner | Paired by the shared matcher or left as authored text |
+| Marker | Borrowed Text, rule, width, opening/closing eligibility, element owner | Paired by the shared matcher or left as authored text |
 | Boundary | Ordinary raw whitespace has occurred at this source position | Advances the standard opener-search floor for word bodies |
 | Citation token | A raw key or semicolon awaiting its bracket owner, or a suspended range endpoint | Becomes an affix boundary or is removed when ownership is decided |
 | Affix boundary | A committed item splits prefix, key and suffix inline fields | Advances every rule's opener-search floor |
@@ -31,10 +31,10 @@ and inline footnotes. See [heading resolution](heading-resolution.md).
 
 ## Rule grammar and pairing
 
-Each element's extension descriptor declares minimum/maximum consumed width,
+Each element's element descriptor declares minimum/maximum consumed width,
 lexical run limit, rule-of-three ambiguity and body grammar. The engine retains
 no reserved syntax rules and projects every attached declaration by rule.
-See [syntax extension ownership](syntax-extensions.md) for the element inventory
+See [syntax element ownership](syntax-elements.md) for the element inventory
 and parser boundary. Inline bodies use inherited flanking;
 word bodies use non-empty content without ordinary raw whitespace. The table
 selects the same shared constructor for every parsed body. The maximal tilde
@@ -115,7 +115,7 @@ Allocation failure frees continuations independently of the AST they borrow.
 Each populated affix owns a private inline root, exposed through the public
 Citation's prefix/suffix collections. Source trimming only changes raw edge
 whitespace; nested markup keeps its authored scope. Completion, consolidation,
-validation and extension postprocessing traverse all owned inline roots using
+validation and element postprocessing traverse all owned inline roots using
 one explicit stack. Field order and inherited script depth are retained, and a
 phase may replace its root only after its nested fields finish. Definition
 families start independent contexts. Disposal splices the same owned roots into

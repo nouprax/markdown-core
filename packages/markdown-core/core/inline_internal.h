@@ -11,10 +11,10 @@
 #include "houdini.h"
 #include "iterator.h"
 #include "inlines.h"
-#include "extension.h"
-#include "../extensions/markdown-core-extensions.h"
-#include "../extensions/citation_state.h"
-#include "../extensions/bracket_state.h"
+#include "element.h"
+#include "../elements/markdown-core-elements.h"
+#include "../elements/citation_state.h"
+#include "../elements/bracket_state.h"
 
 /* One maximal parsed delimiter run, classified from immutable source bytes. The text
  * scanner may retain one lookahead run for delimiter dispatch to consume. */
@@ -99,7 +99,7 @@ void markdown_core_inline_start_inlines(markdown_core_parser *parser, markdown_c
                                         markdown_core_map *refmap, markdown_core_inline_state *inline_state);
 void markdown_core_inline_clear_inlines(markdown_core_inline_state *inline_state);
 bool markdown_core_inline_finish_inlines(markdown_core_parser *parser, markdown_core_inline_state *inline_state);
-markdown_core_node *markdown_core_inline_match_delimiter(const markdown_core_extension *extension,
+markdown_core_node *markdown_core_inline_match_delimiter(const markdown_core_element *element,
                                                          markdown_core_inline_state *inline_state);
 int markdown_core_byte_set_has(const char *set, unsigned char character);
 void markdown_core_inline_push_boundary(markdown_core_inline_state *inline_state, bufsize_t position);

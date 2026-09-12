@@ -3,7 +3,7 @@
 #include <cstring>
 
 #include "markdown-core.h"
-#include "markdown-core-extensions.h"
+#include "markdown-core-elements.h"
 #include "parser.h"
 #include "markdown_core.h"
 #include "cplusplus.h"

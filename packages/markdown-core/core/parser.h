@@ -5,7 +5,7 @@
 #include "references.h"
 #include "node.h"
 #include "buffer.h"
-#include "../extensions/heading_state.h"
+#include "../elements/heading_state.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -65,7 +65,7 @@ struct markdown_core_parser {
     markdown_core_key_index specimen_ids;
     markdown_core_heading_collection headings;
     anchor_registry anchors;
-    const markdown_core_extension *document_structure, *text_structure;
+    const markdown_core_element *document_structure, *text_structure;
     /* The root node of the parser, always a MARKDOWN_CORE_NODE_DOCUMENT */
     struct markdown_core_node *root;
     /* The active block grammar boundary. The document and mapped cell inputs
@@ -178,24 +178,24 @@ struct markdown_core_parser {
      * geometry is released by the query; the allocation dies with the parser. */
     struct markdown_core_table_source_line *table_lines;
     size_t table_lines_capacity;
-    markdown_core_llist *block_extensions;
+    markdown_core_llist *block_elements;
     /* Fallback/opening-boundary participants, excluding inline-only owners. */
     markdown_core_llist *block_alternatives;
-    markdown_core_llist *extensions;
-    markdown_core_llist *inline_extensions;
+    markdown_core_llist *elements;
+    markdown_core_llist *inline_elements;
     /* Only descriptors with inline state lifecycle work; ordinary token owners
      * must not be visited for each inline state's initialization and disposal. */
-    markdown_core_llist *inline_lifecycle_extensions;
+    markdown_core_llist *inline_lifecycle_elements;
     /* Stable descriptor order projected by byte once before inline parsing.
      * Each token visits only its possible owners; offsets include an end sentinel. */
     size_t inline_dispatch_offsets[257];
-    const markdown_core_extension **inline_dispatch;
+    const markdown_core_element **inline_dispatch;
     markdown_core_ispunct_func backslash_ispunct;
     /* Inline special-character tables for this parser: the core defaults plus
-     * the special/emphasis-skip characters of the attached inline extensions.
-     * Parser-local so concurrent parsers with different extension sets never
+     * the special/emphasis-skip characters of the attached inline elements.
+     * Parser-local so concurrent parsers with different element sets never
      * observe each other's characters. */
-    const markdown_core_extension *delimiter_owners[MARKDOWN_CORE_DELIM_RULE_COUNT];
+    const markdown_core_element *delimiter_owners[MARKDOWN_CORE_DELIM_RULE_COUNT];
     markdown_core_delimiter_rule delimiter_chars[256];
     bool (*inline_start_predicates[256])(markdown_core_inline_state *, bufsize_t);
     int8_t special_chars[256];

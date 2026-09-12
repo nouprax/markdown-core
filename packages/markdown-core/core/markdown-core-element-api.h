@@ -1,0 +1,634 @@
+#ifndef MARKDOWN_CORE_ELEMENT_API_H
+#define MARKDOWN_CORE_ELEMENT_API_H
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#include "markdown-core.h"
+#include <stdbool.h>
+
+struct markdown_core_chunk;
+
+/** Internal element parsing API.
+ *
+ * Every parse attaches the complete immutable element table. Elements own
+ * lexical recognition, node construction and element-specific state; shared
+ * block and inline engines own traversal, dispatch, source mapping and
+ * delimiter reduction. This is private implementation machinery, not a public
+ * mechanism for selecting or extending the dialect.
+ *
+ * Block callbacks continue existing containers and recognize new blocks in
+ * descriptor order. A declined opener returns NULL without consuming input.
+ *
+ * Inline callbacks receive markdown_core_inline_state at the current source
+ * offset. They may construct a token directly or push delimiters for the
+ * shared engine to reduce. Parsed containers use the shared rule constructor;
+ * opaque-body elements provide only their construction and decoding hook.
+ * A callback may consume an internal token without returning a node. A decline
+ * leaves both the cursor and the tree unchanged.
+ *
+ * Element state follows the descriptor's parser, inline and node lifecycle
+ * callbacks. Owned subtree roots participate in the shared iterative walks.
+ */
+typedef struct markdown_core_inline_state markdown_core_inline_state;
+
+/** A delimiter names its RULE, not a byte.
+ *
+ * It used to carry an `unsigned char delim_char`, and three separate things
+ * were derived from that byte:
+ *
+ *   WHO OWNS IT -- `get_element_for_special_char` walked the attached
+ *   elements and returned the first whose dispatch set contained the byte.
+ *   Two elements may claim one byte (`autolink` and `directive` both claim
+ *   `:`), so the answer was attach order; and if no element claimed it the
+ *   answer was NULL, which `process_emphasis`'s `else if` chain then fell
+ *   straight through -- **without advancing the cursor** -- freeing the
+ *   delimiter and reading it again on the next turn. Measured: ASan
+ *   `heap-use-after-free`, READ of size 1 in `process_emphasis`, from an
+ *   element that pushes a byte it does not itself dispatch; with
+ *   `can_open` set it is an infinite loop instead. That is **D33**.
+ *
+ *   WHICH OPENER MATCHES -- `opener->delim_char == closer->delim_char`, which
+ *   is why `formula` needed four distinct sentinel BYTES (0x01-0x04) to keep
+ *   `$x$` from matching `$$x$$`, and `directive` a fifth (0x08). Those bytes
+ *   are ordinary file bytes: a literal 0x01 in a document split a text run and
+ *   was offered to `formula`'s inline hook.
+ *
+ *   WHERE THE OPENER MEMO LIVES -- `openers_bottom[length % 3][delim_char]`,
+ *   an array declared `[3][128]` and indexed by a byte the PUBLIC push
+ *   accepts unconstrained. `openers_bottom[2][200]` is offset 456 into 384
+ *   elements.
+ *
+ * A dense rule id answers all three: the owner is on the delimiter, matching is
+ * `opener->rule == closer->rule`, and the memo is sized by construction.
+ */
+typedef enum {
+    MARKDOWN_CORE_DELIM_RULE_NONE = 0,
+    /* Core. */
+    MARKDOWN_CORE_DELIM_RULE_EMPHASIS,    /* `*` */
+    MARKDOWN_CORE_DELIM_RULE_UNDERSCORE,  /* `_` */
+    MARKDOWN_CORE_DELIM_RULE_MARK,        /* `==`, pairwise, no rule of three */
+    MARKDOWN_CORE_DELIM_RULE_INSERTION,   /* `++`, pairwise, no rule of three */
+    MARKDOWN_CORE_DELIM_RULE_SUPERSCRIPT, /* `^`, empty allowed, no raw whitespace */
+    MARKDOWN_CORE_DELIM_RULE_SUBSCRIPT,   /* `~`, single-run units, no raw whitespace */
+    /* Elements. One entry per rule, not per element and not per byte. */
+    MARKDOWN_CORE_DELIM_RULE_STRIKETHROUGH,
+    MARKDOWN_CORE_DELIM_RULE_FORMULA_DOLLAR_INLINE,
+    MARKDOWN_CORE_DELIM_RULE_FORMULA_DOLLAR_DISPLAY,
+    MARKDOWN_CORE_DELIM_RULE_FORMULA_LATEX_INLINE,
+    MARKDOWN_CORE_DELIM_RULE_FORMULA_LATEX_DISPLAY,
+    MARKDOWN_CORE_DELIM_RULE_DIRECTIVE_LABEL,
+    /* A rule id also names an opaque-body search (see
+     * markdown_core_inline_state_find_opaque_close): the `%%` comment pushes
+     * no delimiter, but its closer search caches its failures under this id. */
+    MARKDOWN_CORE_DELIM_RULE_COMMENT,
+    MARKDOWN_CORE_DELIM_RULE_COUNT
+} markdown_core_delimiter_rule;
+
+/** The delimiter stack's element, OPAQUE.
+ *
+ * Elements only receive marker entries through the construction hook.
+ * Source boundaries and token-completion events are private to the engine;
+ * elements cannot traverse or mutate the stack.
+ */
+typedef struct delimiter delimiter;
+
+/** The literal text node the delimiter was pushed for. */
+MARKDOWN_CORE_EXPORT
+markdown_core_node *markdown_core_delimiter_node(const delimiter *delim);
+
+MARKDOWN_CORE_EXPORT
+markdown_core_delimiter_rule markdown_core_delimiter_rule_of(const delimiter *delim);
+
+/** The inline state offset just past the delimiter's last byte. */
+MARKDOWN_CORE_EXPORT
+bufsize_t markdown_core_delimiter_position(const delimiter *delim);
+
+/** How many bytes the delimiter run owns. */
+MARKDOWN_CORE_EXPORT
+bufsize_t markdown_core_delimiter_length(const delimiter *delim);
+
+MARKDOWN_CORE_EXPORT
+int markdown_core_delimiter_can_open(const delimiter *delim);
+
+MARKDOWN_CORE_EXPORT
+int markdown_core_delimiter_can_close(const delimiter *delim);
+
+/** Should create and add a new open block to 'parent_container' if
+ * 'input' matches a syntax rule for that block type. It is allowed
+ * to modify the type of 'parent_container'.
+ *
+ * Should return the newly created block if there is one, or
+ * 'parent_container' if its type was modified, or NULL.
+ */
+typedef markdown_core_node *(*markdown_core_open_block_func)(const markdown_core_element *element, int indented,
+                                                             markdown_core_parser *parser,
+                                                             markdown_core_node *parent_container, unsigned char *input,
+                                                             int len);
+
+typedef markdown_core_node *(*markdown_core_match_inline_func)(const markdown_core_element *element,
+                                                               markdown_core_parser *parser, markdown_core_node *parent,
+                                                               unsigned char character,
+                                                               markdown_core_inline_state *inline_state);
+
+/* Builds the opaque AST value only. The matcher owns all delimiter removal,
+ * including the matched endpoints, on success and failure alike. */
+typedef void (*markdown_core_inline_from_delim_func)(const markdown_core_element *element, markdown_core_parser *parser,
+                                                     markdown_core_inline_state *inline_state, delimiter *opener,
+                                                     delimiter *closer);
+
+/** Returned by a 'markdown_core_match_block_func' when 'input' is the
+ *  container's own closing line.
+ *
+ *  The parser closes the container and every block still open inside it, ends
+ *  the container at THIS line, and stops processing the line. Returning 1 and
+ *  consuming the fence is not enough: the container stays open, and the next
+ *  non-blank line is taken as a lazy paragraph continuation and pulled inside
+ *  it, on the wrong line.
+ *
+ *  0 and 1 keep their meanings, so an element that never returns this is
+ *  unaffected.
+ */
+#define MARKDOWN_CORE_BLOCK_CLOSED 2
+/* A DirectiveBlock fence competes with deeper containers and opaque blocks. Leave
+ * the cursor unchanged: the shared spine walk commits the deepest carried
+ * container's closer only after descendant ownership is known. Both matching
+ * and non-consuming continuation hooks may return this result. */
+#define MARKDOWN_CORE_BLOCK_PENDING_CLOSE 3
+
+/** Should return 'true' if 'input' can be contained in 'container',
+ *  'false' otherwise, or MARKDOWN_CORE_BLOCK_CLOSED if 'input' is the
+ *  container's own closing line. A DirectiveBlock returns
+ *  MARKDOWN_CORE_BLOCK_PENDING_CLOSE until descendant ownership is known.
+ */
+typedef int (*markdown_core_match_block_func)(const markdown_core_element *element, markdown_core_parser *parser,
+                                              unsigned char *input, int len, markdown_core_node *container);
+
+/** Whether 'input' would continue 'container', asked AHEAD OF TIME.
+ *
+ *  A block start may look at the lines after its own before it opens (see
+ *  markdown_core_parser_lookahead_begin in the core), and it then asks every
+ *  open container whether each later line carries its prefix. That question
+ *  must leave no trace: 'last_block_matches' consumes the line, closes the
+ *  container on its fence and records state on the node, so it cannot be
+ *  asked speculatively. An element that opens block CONTAINERS provides this
+ *  hook as the same test with none of those effects: 1 when 'input' continues
+ *  'container', 0 when it does not or is the container's own closing line. It
+ *  must not change the parser beyond the cursor fields the core resets, the
+ *  container, or any node. A container whose element provides no hook ends
+ *  every lookahead at its next line.
+ */
+typedef int (*markdown_core_continues_block_func)(const markdown_core_element *element, markdown_core_parser *parser,
+                                                  const unsigned char *input, int len, markdown_core_node *container);
+
+typedef const char *(*markdown_core_get_type_string_func)(const markdown_core_element *element,
+                                                          markdown_core_node *node);
+
+typedef int (*markdown_core_can_contain_func)(const markdown_core_element *element, markdown_core_node *node,
+                                              markdown_core_node_type child);
+
+typedef int (*markdown_core_contains_inlines_func)(const markdown_core_element *element, markdown_core_node *node);
+
+typedef int (*markdown_core_accepts_lines_func)(const markdown_core_element *element, markdown_core_node *node);
+
+typedef markdown_core_node *(*markdown_core_postprocess_func)(const markdown_core_element *element,
+                                                              markdown_core_parser *parser, markdown_core_node *root);
+
+typedef int (*markdown_core_ispunct_func)(char c);
+
+typedef void (*markdown_core_opaque_alloc_func)(const markdown_core_element *element, markdown_core_mem *mem,
+                                                markdown_core_node *node);
+
+typedef void (*markdown_core_opaque_free_func)(const markdown_core_element *element, markdown_core_mem *mem,
+                                               markdown_core_node *node);
+
+/** A parser element is a `static const` descriptor in a fixed compile-time
+ * table (`elements/core-elements.c`), not an object built at run time.
+ *
+ * The inherited API used to expose a constructor, sixteen setters, a `free`,
+ * and a `priv`/`free_function` pair no element in this repository ever used.
+ * Between them they made the descriptor mutable, heap-allocated from a hidden
+ * process-global allocator, and reachable only through a process-global
+ * registry keyed by name. All of it is gone: every hook takes a `const`
+ * descriptor, so "carries no mutable state" is a fact the compiler checks
+ * rather than a convention.
+ */
+
+/** See the documentation for 'markdown_core_element'
+ */
+MARKDOWN_CORE_EXPORT
+void markdown_core_parser_set_backslash_ispunct_func(markdown_core_parser *parser, markdown_core_ispunct_func func);
+
+/** Return the index of the line currently being parsed, starting with 1.
+ */
+MARKDOWN_CORE_EXPORT
+int markdown_core_parser_get_line_number(markdown_core_parser *parser);
+
+/** Return the offset in bytes in the line being processed.
+ *
+ * Example:
+ *
+ * ### foo
+ *
+ * Here, offset will first be 0, then 5 (the index of the 'f' character).
+ */
+MARKDOWN_CORE_EXPORT
+int markdown_core_parser_get_offset(markdown_core_parser *parser);
+
+/**
+ * Return the offset in 'columns' in the line being processed.
+ *
+ * This value may differ from the value returned by
+ * markdown_core_parser_get_offset() in that each complete Unicode scalar
+ * counts as one column and tabs expand to the next multiple of four. This
+ * value should not be used as an index in the current line's
+ * buffer.
+ *
+ * Example:
+ *
+ * markdown_core_parser_advance_offset() can be called to advance the
+ * offset by a number of columns, instead of a number of bytes.
+ *
+ * In that case, if offset falls "in the middle" of a tab
+ * character, 'column' and offset will differ.
+ *
+ * ```
+ * foo                 \t bar
+ * ^                   ^^
+ * offset (0)          20
+ * ```
+ *
+ * If markdown_core_parser_advance_offset is called here with 'columns'
+ * set to 'true' and 'offset' set to 22, markdown_core_parser_get_offset()
+ * will return 20, whereas markdown_core_parser_get_column() will return
+ * 22.
+ *
+ * Additionally, as tabs expand to the next multiple of 4 column,
+ * markdown_core_parser_has_partially_consumed_tab() will now return
+ * 'true'.
+ */
+MARKDOWN_CORE_EXPORT
+int markdown_core_parser_get_column(markdown_core_parser *parser);
+
+/** Return the absolute index in bytes of the first nonspace
+ * character coming after the offset as returned by
+ * markdown_core_parser_get_offset() in the line currently being processed.
+ *
+ * Example:
+ *
+ * ```
+ *   foo        bar            baz  \n
+ * ^               ^           ^
+ * 0            offset (16) first_nonspace (28)
+ * ```
+ */
+MARKDOWN_CORE_EXPORT
+int markdown_core_parser_get_first_nonspace(markdown_core_parser *parser);
+
+/** Declare that 'node''s content -- which the caller SET rather than the parser
+ * parsing it -- begins at (line, column) in the source, and runs on from there
+ * without a break. Returns 1, or 0 if it could not be recorded, in which case
+ * the parse is marked lost.
+ *
+ * A block whose content the parser copied in line by line gets this from
+ * `add_line`. A block whose content an element handed it -- a table cell cut
+ * out of a row, a directive's label -- has none, and every position inside it
+ * then falls back to arithmetic on the block's own start column, which is right
+ * only while the content is one line beginning where the block does. One mark
+ * is the whole answer for content that is one line long, which is what all of
+ * those are.
+ */
+/** Share the immutable marks covering [from, from + length) of 'owner''s
+ * content with 'node', with its content origin at 'from'. Returns 1, or 0
+ * when there is nothing to map. This does not allocate.
+ *
+ * For content that is a SLICE of another block's content and more than one line
+ * long -- the paragraph a table was split out of -- where one mark would put
+ * every line of it on the first line's row.
+ */
+MARKDOWN_CORE_EXPORT
+int markdown_core_parser_adopt_content_marks(markdown_core_parser *parser, markdown_core_node *owner,
+                                             markdown_core_node *node, bufsize_t from, bufsize_t length);
+
+MARKDOWN_CORE_EXPORT
+int markdown_core_parser_mark_content(markdown_core_parser *parser, markdown_core_node *node, int line, int column);
+
+/** Name the source line and BYTE column, both counted from 1, of the byte at
+ * 'content_offset' in 'node''s content buffer, and return 1. Returns 0,
+ * leaving both outputs untouched, for a node that never took a line.
+ *
+ * A block's content is the concatenation of the line slices the parser copied
+ * into it with the container prefix stripped, so an offset in it is NOT a
+ * column: `"> foo\nbar"` strips two bytes from the first line and none from
+ * the second, and the two lines of one paragraph's content then start at
+ * different source columns. This is the only thing that knows which.
+ *
+ * The map is live for as long as the parse is: an element may ask while the
+ * block is open, and the inline phase may ask after every block has closed.
+ * the parse transaction releases it with the rest of the parse state.
+ */
+MARKDOWN_CORE_EXPORT
+int markdown_core_parser_content_place(markdown_core_parser *parser, markdown_core_node *node, bufsize_t content_offset,
+                                       int *line, int *column);
+
+/** Append a source run for content already assembled by a producer. Runs
+ * must be contiguous in the parser vector and have increasing content offsets.
+ * source_width is the authored width represented by each logical byte, and
+ * source_step is the source-column stride. Allocation failure marks the parse lost. */
+int markdown_core_parser_append_content_mark(markdown_core_parser *parser, markdown_core_node *node, bufsize_t offset,
+                                             int line, int column, int source_width, int source_step);
+/** Append the source runs covering a literal slice to a growing result map.
+ * Each source run is copied once; producers use adopt_content_marks for a
+ * read-only slice that needs no allocation. */
+int markdown_core_parser_append_content_marks(markdown_core_parser *parser, markdown_core_node *owner,
+                                              markdown_core_node *node, bufsize_t from, bufsize_t length,
+                                              bufsize_t offset);
+/** Project a logical inline range, including its Text literal mapping. */
+void markdown_core_inline_state_place(markdown_core_inline_state *inline_state, markdown_core_node *node, int from,
+                                      int to);
+/** The inclusive end of the authored bytes represented by a content byte.
+ * Uses the same run lookup as content_place, which returns its start. */
+int markdown_core_parser_content_end_place(markdown_core_parser *parser, markdown_core_node *node, bufsize_t offset,
+                                           int *line, int *column);
+
+/** Return the absolute index of the first nonspace column coming after 'offset'
+ * in the line currently being processed, counting tabs as multiple
+ * columns as appropriate.
+ *
+ * See the documentation for markdown_core_parser_get_first_nonspace() and
+ * markdown_core_parser_get_column() for more information.
+ */
+MARKDOWN_CORE_EXPORT
+int markdown_core_parser_get_first_nonspace_column(markdown_core_parser *parser);
+
+/** Return the difference between the values returned by
+ * markdown_core_parser_get_first_nonspace_column() and
+ * markdown_core_parser_get_column().
+ *
+ * This is not a byte offset, as it can count one tab as multiple
+ * characters.
+ */
+MARKDOWN_CORE_EXPORT
+int markdown_core_parser_get_indent(markdown_core_parser *parser);
+
+/** Return 'true' if the line currently being processed has been entirely
+ * consumed, 'false' otherwise.
+ *
+ * Example:
+ *
+ * ```
+ *   foo        bar            baz  \n
+ * ^
+ * offset
+ * ```
+ *
+ * This function will return 'false' here.
+ *
+ * ```
+ *   foo        bar            baz  \n
+ *                 ^
+ *              offset
+ * ```
+ * This function will still return 'false'.
+ *
+ * ```
+ *   foo        bar            baz  \n
+ *                                ^
+ *                             offset
+ * ```
+ *
+ * At this point, this function will now return 'true'.
+ */
+MARKDOWN_CORE_EXPORT
+int markdown_core_parser_is_blank(markdown_core_parser *parser);
+
+/** Return 'true' if the value returned by markdown_core_parser_get_offset()
+ * is 'inside' an expanded tab.
+ *
+ * See the documentation for markdown_core_parser_get_column() for more
+ * information.
+ */
+MARKDOWN_CORE_EXPORT
+int markdown_core_parser_has_partially_consumed_tab(markdown_core_parser *parser);
+
+/** Return the length in bytes of the previously processed line, excluding potential
+ * newline (\n) and carriage return (\r) trailing characters.
+ */
+MARKDOWN_CORE_EXPORT
+int markdown_core_parser_get_last_line_length(markdown_core_parser *parser);
+
+/** Add a child to 'parent' during the parsing process.
+ *
+ * If 'parent' isn't the kind of node that can accept this child,
+ * this function will back up till it hits a node that can, closing
+ * blocks as appropriate.
+ */
+MARKDOWN_CORE_EXPORT
+markdown_core_node *markdown_core_parser_add_child(markdown_core_parser *parser, markdown_core_node *parent,
+                                                   markdown_core_node_type block_type, int start_column);
+
+/** Advance the 'offset' of the parser in the current line.
+ *
+ * See the documentation of markdown_core_parser_get_offset() and
+ * markdown_core_parser_get_column() for more information.
+ */
+MARKDOWN_CORE_EXPORT
+void markdown_core_parser_advance_offset(markdown_core_parser *parser, const char *input, int count, int columns);
+
+/** Attach 'element' to 'parser' as part of the complete element table.
+ *  See the documentation for markdown_core_element for more information.
+ *
+ *  Returns 'true' if the 'element' was successfully attached,
+ *  'false' otherwise.
+ */
+MARKDOWN_CORE_EXPORT
+int markdown_core_parser_attach_element(markdown_core_parser *parser, const markdown_core_element *element);
+
+typedef enum {
+    MARKDOWN_CORE_NODE_SET_KIND_OK,
+    MARKDOWN_CORE_NODE_SET_KIND_REJECTED,
+    MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED,
+} markdown_core_node_set_kind_result;
+
+/** Change 'node' to the internal kind encoded by 'kind'.
+ *
+ * Return OK on success, REJECTED when parent containment disallows the change,
+ * or ALLOCATION_FAILED when replacement node data cannot be allocated.
+ * Either failure preserves the original kind, data, and tree links.
+ *
+ * A change releases values owned by the old kind and installs the new kind's
+ * defaults. Node identity and element-owned opaque data are preserved.
+ * Setting the current kind succeeds without allocating or changing its data.
+ */
+MARKDOWN_CORE_EXPORT markdown_core_node_set_kind_result markdown_core_node_set_kind(markdown_core_node *node,
+                                                                                    markdown_core_node_type kind);
+
+/** Return the string content for all types of 'node'.
+ *  The pointer stays valid as long as 'node' isn't freed.
+ */
+MARKDOWN_CORE_EXPORT const char *markdown_core_node_get_string_content(markdown_core_node *node);
+
+/** Set the string 'content' for all types of 'node'.
+ *  Copies 'content'.
+ */
+MARKDOWN_CORE_EXPORT int markdown_core_node_set_string_content(markdown_core_node *node, const char *content);
+
+/** Set the parser element responsible for creating 'node'.
+ */
+MARKDOWN_CORE_EXPORT int markdown_core_node_set_element(markdown_core_node *node, const markdown_core_element *element);
+
+/**
+ * ## Inline parser element helpers
+ *
+ * The inline parsing process is described in detail at
+ * <http://spec.commonmark.org/0.24/#phase-2-inline-structure>
+ */
+
+/** Should return 'true' if the predicate matches 'c', 'false' otherwise
+ */
+typedef int (*markdown_core_inline_predicate)(int c);
+
+/** Advance the current inline parsing offset */
+MARKDOWN_CORE_EXPORT
+void markdown_core_inline_state_advance_offset(markdown_core_inline_state *inline_state);
+
+/** Get the current inline parsing offset */
+MARKDOWN_CORE_EXPORT
+int markdown_core_inline_state_get_offset(markdown_core_inline_state *inline_state);
+
+/** Set the offset in bytes in the chunk being processed by the given inline state.
+ */
+MARKDOWN_CORE_EXPORT
+void markdown_core_inline_state_set_offset(markdown_core_inline_state *inline_state, int offset);
+
+/** Gets the markdown_core_chunk being operated on by the given inline state.
+ * Use markdown_core_inline_state_get_offset to get our current position in the chunk.
+ */
+MARKDOWN_CORE_EXPORT
+struct markdown_core_chunk *markdown_core_inline_state_get_chunk(markdown_core_inline_state *inline_state);
+
+/** The surrounding bracket's closing byte, or zero outside brackets.
+ * Bare token scanners preserve an unescaped closer for the shared algorithm. */
+unsigned char markdown_core_inline_state_closing_bracket(markdown_core_inline_state *inline_state);
+
+/** The start of the current independent inline body. */
+int markdown_core_inline_state_context_start(markdown_core_inline_state *inline_state);
+
+/** Returns 1 if the inline state is currently in a bracket; pass 1 for 'image'
+ * if you want to know about an image-type bracket, 0 for link-type. */
+MARKDOWN_CORE_EXPORT
+int markdown_core_inline_state_in_bracket(markdown_core_inline_state *inline_state, int image);
+
+/** Remove the last n characters from the last child of the given node.
+ * This only works where all n characters are in the single last child, and the last
+ * child is MARKDOWN_CORE_NODE_TEXT.
+ */
+MARKDOWN_CORE_EXPORT
+void markdown_core_node_unput(markdown_core_parser *parser, markdown_core_node *node, int n);
+
+/** Get the character located at the current inline parsing offset
+ */
+MARKDOWN_CORE_EXPORT
+unsigned char markdown_core_inline_state_peek_char(markdown_core_inline_state *inline_state);
+
+/** Get the character located 'pos' bytes in the current line.
+ */
+MARKDOWN_CORE_EXPORT
+unsigned char markdown_core_inline_state_peek_at(markdown_core_inline_state *inline_state, int pos);
+
+/** Whether the inline state has reached the end of the current line
+ */
+MARKDOWN_CORE_EXPORT
+int markdown_core_inline_state_is_eof(markdown_core_inline_state *inline_state);
+
+/** Get the characters located after the current inline parsing offset
+ * while 'pred' matches. Free after usage.
+ */
+MARKDOWN_CORE_EXPORT
+char *markdown_core_inline_state_take_while(markdown_core_inline_state *inline_state,
+                                            markdown_core_inline_predicate pred);
+
+/* A delimiter scanner describes one lexical unit: its width and whether it
+ * closes this rule. The shared cursor caches failed suffix searches per rule,
+ * then treats a recognized body as raw text until the closing delimiter. The
+ * owning element still constructs its node through the delimiter stack. */
+typedef int (*markdown_core_opaque_delimiter_scanner)(const unsigned char *data, int length, int offset,
+                                                      markdown_core_delimiter_rule rule, bool *closes);
+void markdown_core_inline_state_set_opaque_body_end(markdown_core_inline_state *inline_state, int end);
+int markdown_core_inline_state_find_opaque_close(markdown_core_inline_state *inline_state,
+                                                 markdown_core_delimiter_rule rule, int from,
+                                                 markdown_core_opaque_delimiter_scanner scan);
+
+/** Push a delimiter on the delimiter stack.
+ * See <<http://spec.commonmark.org/0.24/#phase-2-inline-structure> for
+ * more information on the parameters
+ */
+MARKDOWN_CORE_EXPORT
+void markdown_core_inline_state_push_delimiter(markdown_core_inline_state *inline_state,
+                                               const markdown_core_element *owner, markdown_core_delimiter_rule rule,
+                                               int can_open, int can_close, markdown_core_node *inl_text);
+
+/** Whether the delimiters of `rule` on the stack that can open outnumber
+ * those that can close. The counts are kept at every push and removal, so the
+ * answer costs the same however deep the stack is. For a rule whose closers
+ * are pushed only when this answers yes, that is exactly whether an opener is
+ * still unmatched: an element whose closers may not stand alone -- a
+ * formula's `\\)` is CommonMark's escaped backslash and a parenthesis unless
+ * something opened it -- asks here before pushing one, so a closer that would
+ * never pair stays with the base language. A rule whose openers may not nest
+ * asks the same question before pushing an opener, and its delimiters then
+ * alternate on the stack, so every closer pairs with the opener directly
+ * before it and no pair ever spans another of the rule.
+ */
+MARKDOWN_CORE_EXPORT
+int markdown_core_inline_state_has_unmatched_opener(markdown_core_inline_state *inline_state,
+                                                    markdown_core_delimiter_rule rule);
+
+MARKDOWN_CORE_EXPORT
+int markdown_core_inline_state_get_line(markdown_core_inline_state *inline_state);
+
+MARKDOWN_CORE_EXPORT
+int markdown_core_inline_state_get_column(markdown_core_inline_state *inline_state);
+
+/** Make the Text node a delimiter run stands as: its literal is the bytes
+ * [from, to] of the block's content and its position is a projection of that
+ * range. Returns NULL for a range outside the content.
+ *
+ * ONE constructor, because there were two hand-written copies of it -- one in
+ * `formula`, one in `strikethrough` -- and they disagreed about where the
+ * cursor was when they ran, so each computed the run's columns from a different
+ * end. Passing the range says it once. The cursor is NOT moved: a caller that
+ * has not consumed the run yet still has to.
+ */
+MARKDOWN_CORE_EXPORT
+markdown_core_node *markdown_core_inline_state_make_delimiter_text(markdown_core_inline_state *inline_state, int from,
+                                                                   int to);
+
+/** Convenience function to scan a given delimiter.
+ *
+ * 'left_flanking' and 'right_flanking' will be set to true if they
+ * respectively precede and follow a non-space, non-punctuation
+ * character.
+ *
+ * Additionally, 'punct_before' and 'punct_after' will respectively be set
+ * if the preceding or following character is a punctuation character.
+ *
+ * Note that 'left_flanking' and 'right_flanking' can both be 'true'.
+ *
+ * Returns the number of delimiters encountered, in the limit
+ * of 'max_delims', and advances the inline parsing offset.
+ */
+MARKDOWN_CORE_EXPORT
+int markdown_core_inline_state_scan_delimiters(markdown_core_inline_state *inline_state, int max_delims,
+                                               unsigned char c, int *left_flanking, int *right_flanking,
+                                               int *punct_before, int *punct_after);
+
+MARKDOWN_CORE_EXPORT
+void markdown_core_manage_elements_special_characters(markdown_core_parser *parser, int add);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif

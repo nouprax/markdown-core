@@ -131,7 +131,7 @@ the two implementation plans are unchanged.
 - Contract: JSON, prose, and dump grammar updated together; `pnpm
   audit:ast-projections`, `pnpm check:contracts`, and `pnpm audit:surface` pass.
 - C: engine node type, facade accessors, `core/exports/markdown_core.map` and
-  `markdown_core.exports`, the `extensions/ast.c` dump, the CLI, and the
+  `markdown_core.exports`, the `elements/ast.c` dump, the CLI, and the
   extension table position; `ctest --preset correctness` and `conformance`,
   ASan, UBSan, TSan, and the strict OOM runner pass.
 - Bindings: Swift `Markup/`, `Visitor/`, and `NativeValues.swift`; Kotlin

@@ -1,4 +1,4 @@
-/** Source grammar belongs to element extensions. The drivers may depend on
+/** Source grammar belongs to elements. The drivers may depend on
  * structural roots and Text's shared source map, but cannot inspect another
  * element's payload or dispatch a spelling themselves. */
 export function auditParserBoundaries(sources, { elementHeaders = [], syntaxScanners = [] } = {}) {

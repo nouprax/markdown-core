@@ -1,0 +1,6 @@
+#ifndef MARKDOWN_CORE_ELEMENT_EMPHASIS_H
+#define MARKDOWN_CORE_ELEMENT_EMPHASIS_H
+#include "element.h"
+extern const markdown_core_element MARKDOWN_CORE_ELEMENT_EMPHASIS;
+extern const markdown_core_element MARKDOWN_CORE_ELEMENT_EMPHASIS_UNDERSCORE;
+#endif

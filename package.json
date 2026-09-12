@@ -10,8 +10,8 @@
     "scripts": {
         "audit:ast-projections": "node scripts/audit-ast-projections.mjs",
         "audit:ci": "scripts/audit-ci-policy.sh",
-        "audit:extension-attach-order": "node scripts/audit-extension-attach-order.mjs",
-        "audit:extension-special-chars": "node scripts/audit-extension-special-chars.mjs",
+        "audit:element-attach-order": "node scripts/audit-element-attach-order.mjs",
+        "audit:element-special-chars": "node scripts/audit-element-special-chars.mjs",
         "audit:inline-sourcepos": "node scripts/audit-inline-sourcepos.mjs",
         "audit:packages": "scripts/audit-package-contents.sh",
         "audit:position-places": "node scripts/audit-position-places.mjs",
@@ -27,7 +27,7 @@
         "build:c": "cmake --preset default && cmake --build --preset default --parallel",
         "build:swift": "swift build",
         "check:contracts": "node scripts/check-canonical-ast-fixtures.mjs && scripts/gradle.sh :packages:kotlin-markdown-core:contracts:list-naming:compileKotlin",
-        "check:extension-inventory": "node --test scripts/tests/extension-inventory.test.mjs scripts/tests/parser-boundaries.test.mjs",
+        "check:element-inventory": "node --test scripts/tests/element-inventory.test.mjs scripts/tests/parser-boundaries.test.mjs",
         "check:gradle-model": "scripts/gradle-model-smoke.sh",
         "check:commonmark-parity": "node scripts/check-upstream-parity.mjs --oracle commonmark",
         "check:gfm-parity": "node scripts/check-upstream-parity.mjs --oracle gfm",
@@ -76,7 +76,7 @@
         "test:kotlin-macos-arm64": "scripts/gradle.sh :packages:kotlin-markdown-core:macosArm64Test",
         "test:swift-ios-simulator": "scripts/run-swift-ios-tests.sh MarkdownCoreTests",
         "test:swift-macos": "CLANG_MODULE_CACHE_PATH=build/swift-module-cache swift test --disable-sandbox --filter '^MarkdownCoreTests\\.' && CLANG_MODULE_CACHE_PATH=build/swift-module-cache swift test --disable-sandbox --package-path packages/swift-markdown-core/Tests/Consumer",
-        "verify": "pnpm run format:check && pnpm run lint && pnpm run check:contracts && pnpm run check:gradle-model && pnpm run release:check-version && pnpm run audit:repository && pnpm run audit:ci && pnpm run audit:tests && pnpm run audit:surface && pnpm run check:extension-inventory && pnpm run audit:extension-special-chars && pnpm run audit:extension-attach-order && pnpm run audit:source-lists && pnpm run audit:ast-projections && pnpm run audit:packages",
+        "verify": "pnpm run format:check && pnpm run lint && pnpm run check:contracts && pnpm run check:gradle-model && pnpm run release:check-version && pnpm run audit:repository && pnpm run audit:ci && pnpm run audit:tests && pnpm run audit:surface && pnpm run check:element-inventory && pnpm run audit:element-special-chars && pnpm run audit:element-attach-order && pnpm run audit:source-lists && pnpm run audit:ast-projections && pnpm run audit:packages",
         "check:pandoc-parity": "node --test scripts/tests/pandoc-oracle.test.mjs scripts/tests/pandoc-compositions.test.mjs && node scripts/check-pandoc-parity.mjs",
         "probe:pandoc-composition": "node --test scripts/tests/pandoc-compositions.test.mjs && node scripts/check-pandoc-compositions.mjs"
     },

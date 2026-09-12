@@ -10,9 +10,9 @@ present. The [example format](../dialect.md#examples) is defined by the
 index.
 
 The module states the grammar the parser implements in
-`packages/markdown-core/extensions/formula.c`; the fixtures
-`extensions-formula-github.txt`, `extensions-formula-latex.txt`,
-and `extensions-formula-conflicts.txt` are its oracle of record.
+`packages/markdown-core/elements/formula.c`; the fixtures
+`elements-formula-github.txt`, `elements-formula-latex.txt`,
+and `elements-formula-conflicts.txt` are its oracle of record.
 
 ## Model
 

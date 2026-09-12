@@ -2,7 +2,7 @@
 
 The [anchors module](../specs/dialect/anchors.md) owns the language contract.
 Parsing establishes heading labels before reference lookup, then fills their
-shared targets after every explicit anchor is known. Consumers and extension
+shared targets after every explicit anchor is known. Consumers and element
 postprocessors receive only the completed document.
 
 ## Declaration order and inline ownership
@@ -133,7 +133,7 @@ The reference map and occurrences own resources through existing reference
 counts; freeing the heading or document does not invalidate a detached Link.
 Every failure joins the parser's terminal allocation-failure transaction and
 disposes pending inline states before their nodes. Parse-time indices are discarded
-before consolidation or extension postprocessing can replace nodes.
+before consolidation or element postprocessing can replace nodes.
 
 Expected work is proportional to parsed input, visited nodes, and produced
 anchor/target bytes, using the shared hash index's normal bounds. Memory is

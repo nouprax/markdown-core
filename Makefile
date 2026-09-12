@@ -5,7 +5,7 @@
 # their presets.
 
 SRCDIR=packages/markdown-core/core
-EXTDIR=packages/markdown-core/extensions
+ELEMENTSDIR=packages/markdown-core/elements
 BUILDDIR=build/cmake
 ASAN_BUILDDIR=build/asan
 UBSAN_BUILDDIR=build/ubsan
@@ -90,5 +90,5 @@ distclean: clean
 
 # Maintenance-only source generation; the generated files are tracked, so
 # these never run during normal build or test.
-$(EXTDIR)/%_scanners.c: $(EXTDIR)/%_scanners.re $(EXTDIR)/scanner_config.re $(EXTDIR)/text_grammar.re
+$(ELEMENTSDIR)/%_scanners.c: $(ELEMENTSDIR)/%_scanners.re $(ELEMENTSDIR)/scanner_common.re
 	scripts/check-generated-scanners.sh --write $<

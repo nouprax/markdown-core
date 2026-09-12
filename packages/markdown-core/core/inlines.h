@@ -8,7 +8,7 @@ extern "C" {
 #include "references.h"
 #include "attributes.h"
 #include "parser.h"
-#include "extension.h"
+#include "element.h"
 
 MARKDOWN_CORE_EXPORT
 bool markdown_core_parse_inlines(markdown_core_parser *parser, markdown_core_node *parent, markdown_core_map *refmap);

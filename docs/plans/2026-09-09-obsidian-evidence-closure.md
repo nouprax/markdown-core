@@ -32,7 +32,7 @@ which all four public surfaces consume; no second case list drives execution.
 | [Callouts](../specs/dialect/callouts.md) | `dialect-callouts.txt` | `callouts` |
 | [Links and images](../specs/dialect/links-and-images.md) | `dialect-links-and-images.txt` | `references`, `media-dimensions` |
 | [Tables](../specs/dialect/tables.md) | `dialect-tables.txt`; cross-link and media fixtures own their escaped-cell compositions | `structure`, `cross-links`, `media-dimensions` |
-| [Formulas](../specs/dialect/formulas.md) | `extensions-formula-github.txt`, `extensions-formula-latex.txt`, `extensions-formula-conflicts.txt` | `formulas` |
+| [Formulas](../specs/dialect/formulas.md) | `elements-formula-github.txt`, `elements-formula-latex.txt`, `elements-formula-conflicts.txt` | `formulas` |
 | [Base language](../specs/dialect/base.md) | `spec.txt`, `regression.txt` | `blocks`, `inlines`, `scopes`, `completeness` |
 
 The new `obsidian-integration` canonical case composes Properties, HTML tokens
@@ -61,7 +61,7 @@ it does not require a Cartesian product of feature names.
 
 ## Inline caller audit
 
-The single attachment list is `extensions/core-extensions.c`. The inventory,
+The single attachment list is `elements/core-elements.c`. The inventory,
 special-character, attachment-order and public-surface audits verify its callers
 and the absence of a dialect selector. The source review covers every inline
 descriptor and the core handlers:

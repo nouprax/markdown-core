@@ -40,8 +40,8 @@ endif()
 
 set(MARKDOWN_CORE_CORE_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/core")
 set(MARKDOWN_CORE_CORE_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/core")
-set(MARKDOWN_CORE_EXTENSIONS_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/extensions")
-set(MARKDOWN_CORE_EXTENSIONS_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/extensions")
+set(MARKDOWN_CORE_ELEMENTS_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/elements")
+set(MARKDOWN_CORE_ELEMENTS_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/elements")
 set(MARKDOWN_CORE_TESTS_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/tests")
 set(MARKDOWN_CORE_TESTS_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/tests")
 
@@ -53,7 +53,7 @@ if(MARKDOWN_CORE_FUZZ_QUADRATIC)
     set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} ${FUZZER_FLAGS}")
 endif()
 
-# Sanitizer build types instrument the whole package (core, extensions, and
+# Sanitizer build types instrument the whole package (core, elements, and
 # test runners), not just the core directory.
 if(CMAKE_BUILD_TYPE STREQUAL "Ubsan")
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize=undefined -g -fno-omit-frame-pointer")
@@ -68,7 +68,7 @@ if(CMAKE_BUILD_TYPE STREQUAL "Tsan")
 endif()
 
 add_subdirectory(core)
-add_subdirectory(extensions)
+add_subdirectory(elements)
 
 if(MARKDOWN_CORE_SHARED OR MARKDOWN_CORE_STATIC)
     include(CMakePackageConfigHelpers)

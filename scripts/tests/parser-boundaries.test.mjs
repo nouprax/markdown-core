@@ -5,7 +5,7 @@ import { auditParserBoundaries } from "../lib/parser-boundaries.mjs";
 const audit = (source) =>
     auditParserBoundaries([{ file: "engine.c", source }], {
         elementHeaders: ["heading.h", "footnote_scanners.h"],
-        syntaxScanners: ["scan_atx_heading_start", "_scan_footnote_definition"]
+        syntaxScanners: ["scan_atx_heading_start", "scan_footnote_definition"]
     });
 
 test("engine boundaries allow shared model and descriptor operations", () => {
@@ -24,10 +24,10 @@ test("grammar cannot drift back into either engine", () => {
     for (const source of [
         "node->kind == MARKDOWN_CORE_NODE_HEADING",
         "node->as.code->fenced",
-        "scan_atx_heading_start(input, offset)",
-        "_scan_footnote_definition(cursor, end)",
+        "scan_atx_heading_start(input, length, offset)",
+        "scan_footnote_definition(input, length, offset)",
         "switch (byte) { case '*': break; }",
-        '#include "../extensions/heading.h"',
+        '#include "../elements/heading.h"',
         '#include "heading.h"',
         '#include "footnote_scanners.h"'
     ]) {

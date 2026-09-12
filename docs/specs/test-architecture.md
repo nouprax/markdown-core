@@ -76,7 +76,7 @@ artifact producers；任何 producer 失败、取消、跳过或缺失都会阻�
   (`audit:tests`、`audit:packages`)属于 `verify` 链,不属于 correctness 测试
   路由。
 - 扩展审计共用 descriptor 定义与实际挂接表的清单，按标识逐项校验，不能写死
-  扩展数量。`scripts/tests/extension-inventory.test.mjs` 验证清单增长、缺失、重复、
+  扩展数量。`scripts/tests/element-inventory.test.mjs` 验证清单增长、缺失、重复、
   同数量但标识不一致及无法读取的声明；它和扩展、源文件清单、AST 投影审计同时
   进入本地 `verify` 与 CI repository health check。
 
@@ -125,7 +125,7 @@ C 侧 CTest label taxonomy(每个测试恰有一个 label):
 | `conformance` | 公开 facade/schema shape 与 reviewed canonical dumps(`facade_native`、`facade_dump_cli`)；不进入 correctness preset |
 | `consumer` | C++ consumer 编译/链接/运行(`consumer_facade_cplusplus`) |
 | `spec` | GFM 0.29 product golden、punctuation stored as written、entities（全部为 canonical AST dump 断言；CommonMark 0.31.2 由 pinned cmark oracle 判断，GFM extension 层由 pinned cmark-gfm 0.29.0.gfm.13 判断） |
-| `extensions` | GFM/formula/directive extension specs，全部以完整方言解析 |
+| `elements` | GFM/formula/directive extension specs，全部以完整方言解析 |
 | `regression` | 固定回归语料、实例生命周期与严格 OOM 语义(`regression_commonmark`、`regression_instance_lifecycle`、`regression_strict_oom`) |
 | `pathological` | 逐 case 注册的对抗输入、固定资源上界与语义断言(`pathological_*`) |
 | `fuzz` | 确定性 fuzz smoke(`fuzz_smoke`) |
@@ -233,7 +233,7 @@ execution platform 独立的 required gate，也不复制 suite/case discovery�
 - Size-doubling case 的统一定义：对同一构造分别以 n 与 2n 字节的输入解析，断言固定
   的 AST 形状与有界的 output/source byte ratio；各 dialect module 要求的 adversarial
   用例都按此定义编写。
-- C spec/extension fixtures 位于 `packages/markdown-core/tests/fixtures/`
+- C spec/element fixtures 位于 `packages/markdown-core/tests/fixtures/`
   (CommonMark 32-backtick example 格式)。`docs/specs/dialect/` 各模块的示例使用
   同一格式且 fence 行不带 tag:dialect 没有开关,每个示例都以完整方言解析;
   package fixture 的 fence tag(`table`、`footnotes`、`directive`……)只为 oracle
@@ -249,7 +249,7 @@ execution platform 独立的 required gate，也不复制 suite/case discovery�
   确定性)并与 expected byte-for-byte 比较。`spec_runner --rewrite` 是显式维护
   模式,用当前 parser 重新生成 expected;生成的 fixture diff 必须经人工审查后
   才能提交,不得用于隐藏未经批准的 parser drift。
-- 上述 package-local fixture 是 extension correctness requirement 的唯一副本，
+- 上述 package-local fixture 是 element correctness requirement 的唯一副本，
   同时作为 external parity gate 的输入 corpus。`specs/` 只保存跨平台 contract、
   外部 oracle policy/delta 与 position ledger；`specs/oracles/` 保存 cmark、
   cmark-gfm、remark/micromark、Obsidian 与 Pandoc oracle 的 pin、comparison policy
@@ -272,12 +272,12 @@ execution platform 独立的 required gate，也不复制 suite/case discovery�
 - Timeout 由 runner 声明层持有。CTest `TIMEOUT` 属性逐测试为(单位秒):
   `api_engine`、`facade_native`、`consumer_facade_cplusplus`、
   `facade_dump_cli`、`regression_cli_refuses_switches`、
-  `regression_commonmark`、`spec_punctuation`、`extensions_formula_github`、
-  `extensions_formula_latex`、`extensions_formula_conflicts`、
-  `extensions_directive`、`extensions_conflicts` 为 120;
+  `regression_commonmark`、`spec_punctuation`、`elements_formula_github`、
+  `elements_formula_latex`、`elements_formula_conflicts`、
+  `elements_directive`、`elements_conflicts` 为 120;
   `facade_concurrent_first_parse`、`regression_instance_lifecycle`、
   `regression_strict_oom`(仅 static 构建)、`spec_gfm_golden`、
-  `spec_entities`、`extensions_gfm`、`fuzz_smoke` 为 240;
+  `spec_entities`、`elements_gfm`、`fuzz_smoke` 为 240;
   `facade_concurrent_stress` 与 `pathological_stress_large_document`、
   `pathological_stress_deep_nesting`、`pathological_stress_repeated_release`
   为 600;`pathological_<case>` 每个 case 为 30;`packaging_corpus_guard` 与
@@ -307,7 +307,7 @@ execution platform 独立的 required gate，也不复制 suite/case discovery�
 - Benchmark 是显式 C 工具，不是测试层、required gate 或发布流水线。它使用独立
   benchmark preset 与 build tree；本地入口覆盖
   representative documents、large input(采样块重复至历史 Pro Git 语料同一量
-  级)、deep nesting、extensions 与 adversarial size-doubling cases。
+  级)、deep nesting、elements 与 adversarial size-doubling cases。
 - Swift、Kotlin 与 ES 不保留原先为 PR metrics collector 服务的少量 wall-clock/RSS
   scripts；它们既没有受控环境，也没有趋势存储，并且 Swift executable target 会被
   `swift test` 无条件编译，直接污染测试成本与 artifact graph。

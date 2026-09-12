@@ -12,7 +12,6 @@ const core = [
     "iterator.c",
     "blocks.c",
     "inlines.c",
-    "scanners.c",
     "utf8.c",
     "buffer.c",
     "references.c",
@@ -21,7 +20,7 @@ const core = [
     "markdown_core_ctype.c",
     "linked_list.c"
 ].map((file) => path.join(root, "packages/markdown-core/core", file));
-const extensions = [
+const elements = [
     "code.c",
     "code_block.c",
     "document.c",
@@ -49,7 +48,7 @@ const extensions = [
     "callout.c",
     "citation.c",
     "comment.c",
-    "core-extensions.c",
+    "core-elements.c",
     "cross_link.c",
     "definition_list.c",
     "directive.c",
@@ -69,7 +68,7 @@ const extensions = [
     "superscript.c",
     "table.c",
     "tasklist.c"
-].map((file) => path.join(root, "packages/markdown-core/extensions", file));
+].map((file) => path.join(root, "packages/markdown-core/elements", file));
 
 await rm(dist, { recursive: true, force: true });
 await mkdir(dist, { recursive: true });
@@ -79,7 +78,7 @@ const result = spawnSync(
     "emcc",
     [
         ...core,
-        ...extensions,
+        ...elements,
         path.join(packageDirectory, "src/bridge.c"),
         "-O3",
         "-std=c99",
@@ -96,9 +95,9 @@ const result = spawnSync(
         "--no-entry",
         `-sEXPORTED_FUNCTIONS=${JSON.stringify(exported)}`,
         "-DMARKDOWN_CORE_STATIC_DEFINE",
-        "-DMARKDOWN_CORE_EXTENSIONS_STATIC_DEFINE",
+        "-DMARKDOWN_CORE_ELEMENTS_STATIC_DEFINE",
         `-I${path.join(root, "packages/markdown-core/core")}`,
-        `-I${path.join(root, "packages/markdown-core/extensions")}`,
+        `-I${path.join(root, "packages/markdown-core/elements")}`,
         `-I${path.join(root, "packages/markdown-core/include")}`,
         `-I${path.join(root, "packages/markdown-core/core/include")}`,
         "-o",

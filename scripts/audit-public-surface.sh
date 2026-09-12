@@ -15,21 +15,25 @@ if [ "$public_headers" != "packages/markdown-core/include/markdown_core.h" ]; th
     fail "the C package must install exactly one facade header"
 fi
 
-test -f packages/markdown-core/core/extension.h \
-    || fail "the internal parser-extension descriptor header is missing"
-test ! -e packages/markdown-core/core/syntax_extension.h \
-    || fail "the retired syntax_extension.h header still exists"
+test -f packages/markdown-core/core/element.h \
+    || fail "the internal parser-element descriptor header is missing"
+for retired_header in syntax_extension.h extension.h markdown-core-extension-api.h; do
+    test ! -e "packages/markdown-core/core/$retired_header" \
+        || fail "the retired $retired_header header still exists"
+done
+test ! -e packages/markdown-core/extensions \
+    || fail "the retired extensions directory still exists"
 if grep -R -n -E \
-    'markdown_core_syntax_extension|markdown_core_[a-z0-9_]*_syntax_extensions?|syntax_extension\.h' \
+    'markdown_core_[a-z0-9_]*extension|MARKDOWN_CORE_[A-Z0-9_]*EXTENSION|syntax_extension\.h' \
     packages/markdown-core scripts --exclude-dir=build --exclude=audit-public-surface.sh; then
-    fail "the retired syntax-extension identifier family still exists"
+    fail "the retired extension identifier family still exists"
 fi
-grep -q 'typedef struct markdown_core_extension markdown_core_extension;' \
+grep -q 'typedef struct markdown_core_element markdown_core_element;' \
     packages/markdown-core/core/markdown-core.h \
-    || fail "the parser-extension descriptor does not use markdown_core_extension"
-grep -q 'markdown_core_parser_attach_extension' \
-    packages/markdown-core/core/markdown-core-extension-api.h \
-    || fail "the parser-extension attachment API was not renamed coherently"
+    || fail "the parser-element descriptor does not use markdown_core_element"
+grep -q 'markdown_core_parser_attach_element' \
+    packages/markdown-core/core/markdown-core-element-api.h \
+    || fail "the parser-element attachment API was not renamed coherently"
 if grep -R -n 'markdown_core_map_entry' packages/markdown-core --exclude-dir=build; then
     fail "the retired map-entry type still exists"
 fi
@@ -214,7 +218,7 @@ grep -q '^headers = markdown_core.h$' \
     packages/kotlin-markdown-core/src/nativeInterop/cinterop/markdown_core_kotlin.def \
     && grep -q '^package = com.nouprax.markdown.core.internal.capi$' \
         packages/kotlin-markdown-core/src/nativeInterop/cinterop/markdown_core_kotlin.def \
-    && grep -q '^staticLibraries = libmarkdown-core-extensions.a libmarkdown-core.a$' \
+    && grep -q '^staticLibraries = libmarkdown-core-elements.a libmarkdown-core.a$' \
         packages/kotlin-markdown-core/src/nativeInterop/cinterop/markdown_core_kotlin.def \
     && grep -q 'markdown_core_document_parse' \
         packages/kotlin-markdown-core/src/nativePlatformMain/kotlin/com/nouprax/markdown/core/PlatformParser.native.kt \

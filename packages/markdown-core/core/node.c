@@ -4,8 +4,8 @@
 #include "config.h"
 #include "node.h"
 #include "references.h"
-#include "extension.h"
-#include "../extensions/markdown-core-extensions.h"
+#include "element.h"
+#include "../elements/markdown-core-elements.h"
 
 static void S_node_unlink(markdown_core_node *node);
 
@@ -16,8 +16,8 @@ bool markdown_core_node_can_contain_type(markdown_core_node *node, markdown_core
         return false;
     }
 
-    if (node->extension && node->extension->can_contain_func) {
-        return node->extension->can_contain_func(node->extension, node, child_type) != 0;
+    if (node->element && node->element->can_contain_func) {
+        return node->element->can_contain_func(node->element, node, child_type) != 0;
     }
 
     switch (node->kind) {
@@ -192,7 +192,7 @@ static void S_init_node_as(markdown_core_node_type type, markdown_core_node_data
 }
 
 markdown_core_node *markdown_core_node_new_with_mem_and_ext(markdown_core_node_type type, markdown_core_mem *mem,
-                                                            const markdown_core_extension *extension) {
+                                                            const markdown_core_element *element) {
     /* Construction gives the node and its record one aligned allocation. */
     size_t payload_size = S_node_payload_size(type);
     markdown_core_node *node =
@@ -202,20 +202,20 @@ markdown_core_node *markdown_core_node_new_with_mem_and_ext(markdown_core_node_t
     }
     markdown_core_strbuf_init(mem, &node->content, 0);
     node->kind = (uint16_t)type;
-    node->extension = extension;
+    node->element = element;
     node->as.data = payload_size ? S_initial_payload(node) : NULL;
     S_init_node_as(type, &node->as);
 
-    if (node->extension && node->extension->opaque_alloc_func) {
-        node->extension->opaque_alloc_func(node->extension, mem, node);
+    if (node->element && node->element->opaque_alloc_func) {
+        node->element->opaque_alloc_func(node->element, mem, node);
     }
 
     return node;
 }
 
 markdown_core_node *markdown_core_node_new_with_ext(markdown_core_node_type type,
-                                                    const markdown_core_extension *extension) {
-    return markdown_core_node_new_with_mem_and_ext(type, markdown_core_get_default_mem_allocator(), extension);
+                                                    const markdown_core_element *element) {
+    return markdown_core_node_new_with_mem_and_ext(type, markdown_core_get_default_mem_allocator(), element);
 }
 
 markdown_core_node *markdown_core_node_new_with_mem(markdown_core_node_type type, markdown_core_mem *mem) {
@@ -348,11 +348,11 @@ static void S_free_nodes(markdown_core_node *e) {
             e->user_data_free_func(NODE_MEM(e), e->user_data);
         }
 
-        if (e->extension && e->extension->visit_owned_subtrees_func) {
-            e->extension->visit_owned_subtrees_func(e->extension, e, S_release_owned_subtree, e);
+        if (e->element && e->element->visit_owned_subtrees_func) {
+            e->element->visit_owned_subtrees_func(e->element, e, S_release_owned_subtree, e);
         }
-        if (e->opaque && e->extension && e->extension->opaque_free_func) {
-            e->extension->opaque_free_func(e->extension, NODE_MEM(e), e);
+        if (e->opaque && e->element && e->element->opaque_free_func) {
+            e->element->opaque_free_func(e->element, NODE_MEM(e), e);
         }
 
         S_splice_owned_fields(e, e);
@@ -418,8 +418,8 @@ const char *markdown_core_node_get_type_string(markdown_core_node *node) {
         return "NONE";
     }
 
-    if (node->extension && node->extension->get_type_string_func) {
-        return node->extension->get_type_string_func(node->extension, node);
+    if (node->element && node->element->get_type_string_func) {
+        return node->element->get_type_string_func(node->element, node);
     }
 
     switch (node->kind) {
@@ -904,11 +904,11 @@ void markdown_core_resource_release(markdown_core_mem *mem, markdown_core_resour
     mem->free(resource);
 }
 
-int markdown_core_node_set_extension(markdown_core_node *node, const markdown_core_extension *extension) {
+int markdown_core_node_set_element(markdown_core_node *node, const markdown_core_element *element) {
     if (node == NULL) {
         return 0;
     }
-    node->extension = extension;
+    node->element = element;
     return 1;
 }
 
@@ -1207,9 +1207,9 @@ int markdown_core_visit_inline_subtrees(markdown_core_node *node, markdown_core_
             }
         }
     }
-    const markdown_core_extension *extension = node->extension;
-    return !extension || !extension->visit_owned_subtrees_func ||
-           extension->visit_owned_subtrees_func(extension, node, visitor, context);
+    const markdown_core_element *element = node->element;
+    return !element || !element->visit_owned_subtrees_func ||
+           element->visit_owned_subtrees_func(element, node, visitor, context);
 }
 
 /* Document-owned definition values are independent roots, not child edges. */

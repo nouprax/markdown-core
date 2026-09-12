@@ -30,7 +30,7 @@ temp_dir=$(mktemp -d)
 trap 'rm -rf "$temp_dir"' EXIT
 
 if [ "$#" = 0 ]; then
-    set -- "$root"/packages/markdown-core/extensions/*_scanners.re
+    set -- "$root"/packages/markdown-core/elements/*_scanners.re
 fi
 for source in "$@"; do
     flags=(-W -Werror --case-insensitive -b -i --no-generation-date --encoding-policy substitute)
