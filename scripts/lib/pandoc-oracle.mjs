@@ -449,6 +449,30 @@ function assertTableCanaries(run, product) {
     // tested separately. Keep this oracle fact explicit when reviewing it.
     const gridPrefix = "+---+\n| a |\n+---+\n";
     const gridReader = "markdown_strict+grid_tables";
+    // A leading '+' is only a dispatch hint. Reject an invalid full border
+    // before constructing grid geometry, while retaining ordinary source text.
+    for (const line of ["+---\t\t---+", "+---    ---+", "+---表---+", "+-------x---+", "+---====---+"]) {
+        const input = line + "\nnext\n";
+        assert.deepEqual(
+            run(input, gridReader).blocks,
+            run(input, "markdown_strict").blocks,
+            "invalid opening border must remain an ordinary paragraph"
+        );
+        if (product) {
+            const actual = product(input).children;
+            assert.equal(actual.length, 1);
+            assert.equal(actual[0].kind, "Paragraph");
+            assert.deepEqual(
+                actual[0].children.map(({ kind, literal }) => [kind, literal]),
+                [
+                    ["Text", line],
+                    ["SoftBreak", undefined],
+                    ["Text", "next"]
+                ],
+                "invalid border fallback must preserve all authored text"
+            );
+        }
+    }
     const gridBlocks = run(gridPrefix, gridReader).blocks;
     assert.equal(gridBlocks.length, 1);
     assert.equal(gridBlocks[0].t, "Table");
@@ -531,6 +555,14 @@ function assertTableCanaries(run, product) {
     const merged = row(cell([{ t: "Plain", c: [...sum, { t: "SoftBreak" }, { t: "Str", c: "cd" }] }], 1, 2));
     const separated = row(cell([plain("e")]), cell([plain("f")]));
     const grids = [
+        {
+            input: "  +---+ \t\n  | a |\t\n  +---+\t \n",
+            rows: [row(cell([plain("a")]))]
+        },
+        {
+            input: "+-------+\n|\t表   |\n+-------+\n",
+            rows: [row(cell([plain("表")]))]
+        },
         // A '+' on a complete vertical edge is a row marker even without a
         // horizontal segment. A '+' inside the resulting cell is content.
         {

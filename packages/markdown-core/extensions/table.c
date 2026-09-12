@@ -1372,13 +1372,16 @@ static int table_grid_root(table_source *source, int *parents, int column) {
     return root;
 }
 
+static int table_horizontal_bytes(const table_source_line *line, int first, int last) {
+    line->parser->table_scan_work += (size_t)(last - first);
+    return _scan_table_horizontal(line->data + first, line->data + last);
+}
+
 static int table_horizontal(const table_source_line *line, int left, int right) {
     if (left < 0 || right >= line->columns || left >= right) {
         return 0;
     }
-    int first = table_byte(line, left), last = table_byte(line, right) + 1;
-    line->parser->table_scan_work += (size_t)(last - first);
-    return _scan_table_horizontal(line->data + first, line->data + last);
+    return table_horizontal_bytes(line, table_byte(line, left), table_byte(line, right) + 1);
 }
 
 static void table_grid_join(table_source *source, int *parents, int *sizes, int a, int b) {
@@ -1614,19 +1617,27 @@ done:
     return valid;
 }
 
-static bool table_grid_bounds(table_source *source, size_t index, int *left, int *right) {
+/* Establish the opening grammar in borrowed source bytes before allocating
+ * scalar columns or topology. Interior whitespace is not a horizontal border;
+ * expanding its tabs first would amplify ordinary paragraph fallback storage. */
+static bool table_grid_opening(table_source *source, size_t index, int *left, int *right) {
     if (!table_source_get(source, index) || source->lines[index].indent > 3 ||
         source->lines[index].first >= source->lines[index].length ||
-        source->lines[index].data[source->lines[index].first] != '+' || !table_source_columns(source, index)) {
+        source->lines[index].data[source->lines[index].first] != '+') {
         return false;
     }
     table_source_line *line = &source->lines[index];
-    *left = table_column(line, line->first);
-    *right = line->columns - 1;
-    while (*right > *left && table_character(line, *right) == ' ') {
-        (*right)--;
+    int last = line->length;
+    while (last > line->first && (line->data[last - 1] == ' ' || line->data[last - 1] == '\t')) {
+        line->parser->table_scan_work++;
+        last--;
     }
-    return *right - *left >= 2 && table_character(line, *right) == '+';
+    if (!table_horizontal_bytes(line, line->first, last) || !table_source_columns(source, index)) {
+        return false;
+    }
+    *left = table_column(line, line->first);
+    *right = table_column(line, last - 1);
+    return true;
 }
 
 /* A run's extent and full-width '=' separators are shared by suffix openers
@@ -1644,7 +1655,7 @@ static bool table_grid_search_finish(table_source *source, size_t first, size_t 
         }
         valid = i < last && closing && (closing == '=' ? equals >= 2 && equals <= 3 : equals <= 1);
         int a, b;
-        if (!valid && table_grid_bounds(source, i, &a, &b) && a == left && b == right) {
+        if (!valid && table_grid_opening(source, i, &a, &b) && a == left && b == right) {
             markdown_core_lookahead_entry *fact = table_search_fact(source, i);
             if (fact) {
                 fact->table_absent |= TABLE_NO_GRID;
@@ -1663,7 +1674,7 @@ static bool table_parse_grid(table_source *source, size_t start, table_candidate
     size_t boundary_count = 0, boundary_capacity = 0;
     int left, right;
     if (!table_source_get(source, start) || table_search_absent(source, start, TABLE_NO_GRID) ||
-        !table_grid_bounds(source, start, &left, &right)) {
+        !table_grid_opening(source, start, &left, &right)) {
         return false;
     }
     parents = source->parser->mem->calloc((size_t)right + 1, sizeof(*parents));
@@ -1752,8 +1763,7 @@ static bool table_parse_grid(table_source *source, size_t start, table_candidate
             boundaries[boundary_count++] = i;
         }
     }
-    if (boundary_count < 2 || boundaries[boundary_count - 1] != end ||
-        !table_horizontal(&source->lines[start], left, right) || !table_horizontal(&source->lines[end], left, right)) {
+    if (boundary_count < 2 || boundaries[boundary_count - 1] != end) {
         goto failed;
     }
     candidate->first = start;

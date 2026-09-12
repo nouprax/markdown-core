@@ -4586,6 +4586,57 @@ static void block_identifier_ownership(test_batch_runner *runner) {
     }
 }
 
+/* Invalid opening borders remain ordinary text without materializing scalar
+ * columns or grid topology. Track live allocations as well as geometry work,
+ * including long valid prefixes whose rejection occurs near the line end. */
+static void grid_opening_memory(test_batch_runner *runner) {
+    markdown_core_mem mem = {properties_calloc, properties_realloc, properties_free};
+    const char *runs[] = {"\t", " ", "表", "-", "="};
+    for (size_t shape = 0; shape < sizeof(runs) / sizeof(*runs); shape++) {
+        for (size_t count = 4096; count <= 1048576; count *= 16) {
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(markdown_core_get_default_mem_allocator());
+            markdown_core_strbuf_puts(&source, "x---");
+            for (size_t i = 0; i < count; i++) {
+                markdown_core_strbuf_puts(&source, runs[shape]);
+            }
+            markdown_core_strbuf_puts(&source, shape == 3 ? "x---+\nnext\n" : "---+\nnext\n");
+            size_t baseline = 0;
+            for (int grid = 0; grid <= 1; grid++) {
+                source.ptr[0] = grid ? '+' : 'x';
+                properties_live_bytes = properties_peak_bytes = 0;
+                inline_work work = {0};
+                markdown_core_node *root = markdown_core_parse_document_with_mem((const char *)source.ptr, source.size,
+                                                                                 &mem, measure_inline_work, &work);
+                OK(runner, root != NULL, "invalid grid opener parses: shape=%zu count=%zu grid=%d", shape, count, grid);
+                if (root) {
+                    INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_TABLE), 0, "invalid border stays text");
+                    INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_PARAGRAPH), 1,
+                           "invalid opener and continuation remain one paragraph");
+                    const char *literal = markdown_core_node_get_literal(root->first_child->first_child);
+                    OK(runner,
+                       literal && strlen(literal) == (size_t)source.size - 6 &&
+                           !memcmp(literal, source.ptr, (size_t)source.size - 6),
+                       "fallback preserves the complete opening line");
+                    INT_EQ(runner, work.table_geometry_lines, 0,
+                           "invalid grid opening allocates no column geometry: shape=%zu count=%zu", shape, count);
+                    OK(runner, work.tables + work.lookahead <= 32 * (size_t)source.size,
+                       "invalid opening rejection has bounded source work");
+                }
+                markdown_core_node_free(root);
+                if (!grid) {
+                    baseline = properties_peak_bytes;
+                }
+                OK(runner, properties_peak_bytes <= 2 * baseline,
+                   "invalid grid memory stays within paragraph fallback: shape=%zu count=%zu grid=%d peak=%zu "
+                   "baseline=%zu",
+                   shape, count, grid, properties_peak_bytes, baseline);
+                INT_EQ(runner, properties_live_bytes, 0, "invalid grid fallback releases all tracked allocations");
+            }
+            markdown_core_strbuf_free(&source);
+        }
+    }
+}
+
 /* Failed grammar searches, row growth and column growth all use the same
  * candidate algorithm. Work counts source inspections, independent of time. */
 static void table_candidate_work(test_batch_runner *runner) {
@@ -5177,6 +5228,7 @@ int main(void) {
     autolink_source_pos(runner);
     table_source_map_growth(runner);
     table_values(runner);
+    grid_opening_memory(runner);
     table_candidate_work(runner);
     bounded_scanners(runner);
     simple_table_body_boundaries(runner);

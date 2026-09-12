@@ -150,6 +150,40 @@ allocation-failure sweep, all six oracle gates, the oracle harness unit tests,
 C warnings, formatting, canonical coverage and test-topology checks pass.
 The 30 exact position-ledger observations remain unchanged.
 
+### Grid opening allocation follow-up
+
+The [grid scratch-space review](https://github.com/nouprax/markdown-core/pull/229#discussion_r3996253272)
+is confirmed. At `3486c844`, `+---` followed by 1,048,576 tabs and
+`---+\nnext\n` allocated a scalar-column map and three topology arrays before
+rejecting the invalid opening border. The allocation-tracked API test measured
+85,465,616 peak live bytes, versus 4,203,550 for the same text with its first
+character replaced by `x`. These are requested live allocation bytes, not RSS.
+
+The existing bounded re2c horizontal-border scanner now validates the borrowed
+opening bytes before either column mapping or topology allocation. The opener
+and suffix-negative-fact producer share that predicate; subsequent horizontal
+wall checks retain the same scanner. Trailing spaces/tabs remain outside the
+border slice. No geometry limit or alternative parsing algorithm is introduced.
+The corrected standalone allocator probe measures 4,203,534 peak live bytes for
+both the malformed grid and the ordinary-text control, with no live allocations
+after freeing either document.
+
+Five rejection shapes (tabs, spaces, Unicode, a long valid prefix followed by
+text, and mixed dash/equal borders) exercise three sizes up to 1,048,576 repeated
+units. They require zero column geometry, bounded source work, intact paragraph
+text and peak allocations within twice the corresponding ordinary paragraph.
+The new tests fail 29 assertions on the unchanged baseline and pass after the
+fix. The full allocation-failure corpus also includes malformed and valid
+openers with tabs. Native Pandoc canaries confirm paragraph fallback and keep
+valid indented/trailing-whitespace borders and tab/Unicode cell contents.
+
+All 270 combinations of these opening forms with indentation, quote/list
+containers, line endings and trailing whitespace have byte-identical product
+dumps before and after the change. All 88 C suites, four targeted ASan suites,
+all six oracle gates and oracle unit tests pass. The Pandoc registry remains at
+130 cases / 97 agreements / 33 exact differences; all 30 scope-ledger
+observations remain unchanged.
+
 The findings below describe the baseline before these corrections.
 
 ## Conclusion and evidence standard

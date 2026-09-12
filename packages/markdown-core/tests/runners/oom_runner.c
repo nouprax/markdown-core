@@ -229,6 +229,8 @@ static const char OOM_DEFINITION_LIST_CORPUS[] =
     "[reference]: /url {.attr}\n\nT\n: [reference]\n::: \n\n::: warning\n:::\n\n::: {}\n:::\n";
 
 static const char OOM_TABLE_CORPUS[] =
+    "+---\t\t---+\nnext\n\n+-------x---+\nnext\n\n"
+    "  +---+ \t\n  | a |\t\n  +---+\t \n\n"
     "Table: cap\n+---+\n+---+\n+===+\n| a |\n+===+\n| b |\n+---+\n\n"
     "h   j\n--- ---\nv   w\n--- ---\nTable: after footer\n\n"
     "+---+---+\n| a + b |\n+---+---+\n\n"
