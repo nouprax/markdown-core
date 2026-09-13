@@ -9,6 +9,7 @@
 #include "table_scanners.h"
 #include "text_scanners.h"
 #include <stdio.h>
+#include <signal.h>
 #include "table.h"
 #include "autolink.h"
 #include "formula.h"
@@ -21,6 +22,8 @@
 #include "buffer.h"
 #include "parser.h"
 #include "element.h"
+#include "inline_internal.h"
+#include "text.h"
 #include "markdown-core-elements.h"
 
 #include <markdown_core.h>
@@ -1468,6 +1471,48 @@ static bool attach_dispatch_observers(markdown_core_parser *parser, void *contex
            markdown_core_parser_attach_element(parser, &disjoint);
 }
 
+static bool start_a(markdown_core_inline_state *state, bufsize_t at) {
+    return at + 1 < state->input.len && state->input.data[at + 1] == 'a';
+}
+static bool start_b(markdown_core_inline_state *state, bufsize_t at) {
+    return at + 1 < state->input.len && state->input.data[at + 1] == 'b';
+}
+static markdown_core_node *observe_predicate(const markdown_core_element *self, markdown_core_parser *parser,
+                                             markdown_core_node *parent, unsigned char character,
+                                             markdown_core_inline_state *state) {
+    (void)parent;
+    (void)character;
+    dispatch_observation *observation = parser->root->user_data;
+    if (observation->count < sizeof(observation->calls)) {
+        observation->calls[observation->count++] = self->name[0];
+    }
+    int start = state->pos++;
+    return markdown_core_inline_state_make_source_text(state, start, start);
+}
+static bool attach_predicate_observers(markdown_core_parser *parser, void *context) {
+    static const markdown_core_element a = {.name = "a-predicate",
+                                            .match_inline = observe_predicate,
+                                            .can_start = start_a,
+                                            .terminates_text = "?",
+                                            .dispatch = "?"};
+    static const markdown_core_element b = {.name = "b-predicate",
+                                            .match_inline = observe_predicate,
+                                            .can_start = start_b,
+                                            .terminates_text = "?",
+                                            .dispatch = "?"};
+    parser->root->user_data = context;
+    return markdown_core_parser_attach_element(parser, &a) && markdown_core_parser_attach_element(parser, &b);
+}
+static void inline_predicate_arbitration(test_batch_runner *runner) {
+    const char *input = "x?x x?a x?b x?";
+    dispatch_observation observation = {0};
+    markdown_core_node *document = markdown_core_parse_document_with_mem(
+        input, strlen(input), markdown_core_get_default_mem_allocator(), attach_predicate_observers, &observation);
+    OK(runner, document && observation.count == 2 && !memcmp(observation.calls, "ab", 2),
+       "distinct predicates on a shared byte accept by OR and dispatch only eligible owners");
+    markdown_core_node_free(document);
+}
+
 static void inline_dispatch_ownership(test_batch_runner *runner) {
     const char source[] = "`!` ! tail";
     dispatch_observation observation = {0};
@@ -2912,8 +2957,9 @@ typedef union {
     long double alignment;
     void *pointer;
 } properties_allocation;
-static size_t properties_live_bytes, properties_peak_bytes;
+static size_t properties_live_bytes, properties_peak_bytes, properties_requested_bytes;
 static void properties_account(size_t old_size, size_t new_size) {
+    properties_requested_bytes += new_size;
     properties_live_bytes = properties_live_bytes - old_size + new_size;
     if (properties_live_bytes > properties_peak_bytes) {
         properties_peak_bytes = properties_live_bytes;
@@ -3196,6 +3242,401 @@ static const markdown_core_element WORK_RECORDER = {.name = "work-recorder", .po
 static bool measure_inline_work(markdown_core_parser *parser, void *context) {
     parser->root->user_data = context;
     return markdown_core_parser_attach_element(parser, &WORK_RECORDER);
+}
+
+/* Source-order endpoints share one forward walk; bracket/tail re-placement
+ * may revisit any earlier run without invalidating that amortized bound. */
+static void inline_content_projection(test_batch_runner *runner) {
+    enum { LINES = 4096, WIDTH = 8 };
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    markdown_core_parser parser = {.mem = mem};
+    markdown_core_node owner = {0};
+    unsigned char *bytes = malloc(LINES * WIDTH);
+    memset(bytes, 'x', LINES * WIDTH);
+    for (int i = 0; i < LINES; i++) {
+        markdown_core_parser_append_content_mark(&parser, &owner, i * WIDTH, i + 1, 3, 2, 2);
+    }
+    markdown_core_chunk input = {bytes, LINES * WIDTH, 0};
+    markdown_core_inline_state state;
+    markdown_core_inline_state_from_buf(&parser, mem, 1, &state, &input, NULL);
+    state.owner = &owner;
+    bool scopes = true, views = true;
+    for (int i = 0; i < LINES; i++) {
+        markdown_core_node *text = markdown_core_inline_state_make_source_text(&state, i * WIDTH, i * WIDTH + 2);
+        scopes &= text && text->start_line == i + 1 && text->end_line == i + 1 && text->start_column == 3 &&
+                  text->end_column == 8;
+        views &= text && text->content_mark == i && text->content_mark_count == 1 &&
+                 text->content_mark_offset == i * WIDTH && text->as.literal->data == bytes + i * WIDTH;
+        markdown_core_node_free(text);
+    }
+    OK(runner, scopes && views, "forward Text placement preserves transformed source columns and borrowed maps");
+    OK(runner, parser.content_map_work <= 5 * LINES, "forward endpoints inspect runs in linear total work");
+    parser.content_map_work = 0;
+    for (int i = LINES - 1; i >= 0; i--) {
+        markdown_core_node *text = markdown_core_inline_state_make_source_text(&state, i * WIDTH, input.len - 1);
+        scopes &= text && text->start_line == i + 1 && text->end_line == LINES && text->end_column == 18;
+        views &= text && text->content_mark == i && text->content_mark_count == LINES - i;
+        markdown_core_node_free(text);
+    }
+    OK(runner, scopes && views, "backward openers and forward closers preserve multiline source slices");
+    OK(runner, state.content_mark_cursor == LINES - 1 && parser.content_map_work <= 16 * LINES,
+       "revisited endpoints use logarithmic work without rewinding the forward cursor");
+    markdown_core_node *decoded = make_str(&state, 0, 2, markdown_core_chunk_literal("&"));
+    OK(runner,
+       decoded && decoded->content_mark_count == 1 && parser.line_marks[decoded->content_mark].source_width == 6 &&
+           parser.line_marks[decoded->content_mark].source_step == 0,
+       "decoded text retains its complete authored token width");
+    markdown_core_node_free(decoded);
+    markdown_core_inline_clear_inlines(&state);
+    mem->free(parser.line_marks);
+    free(bytes);
+}
+
+typedef struct {
+    test_batch_runner *runner;
+    markdown_core_strbuf *source;
+    size_t boundary;
+} whitespace_probe;
+
+/* Inspect the boundary before delimiter completion removes it, using the
+ * normal parser setup, registered elements, owner and source-mark lifecycle. */
+static bool inspect_text_boundary(markdown_core_parser *parser, void *context) {
+    whitespace_probe *probe = context;
+    test_batch_runner *runner = probe->runner;
+    markdown_core_node *owner = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_PARAGRAPH, parser->mem);
+    owner->start_line = owner->start_column = 1;
+    markdown_core_strbuf_put(&owner->content, probe->source->ptr, probe->source->size);
+    markdown_core_inline_state state;
+    markdown_core_inline_start_inlines(parser, owner, parser->refmap, &state);
+    markdown_core_node *text = MARKDOWN_CORE_ELEMENT_TEXT.parse_text(parser, &state, state.input.len);
+    OK(runner, text && state.last_delim && state.last_delim->kind == DELIMITER_BOUNDARY,
+       "ordinary text records its whitespace boundary");
+    if (state.last_delim) {
+        INT_EQ(runner, state.last_delim->position, probe->boundary, "the exact Unicode whitespace set is preserved");
+        OK(runner, !state.last_delim->previous, "one barrier summarizes the complete text slice");
+    }
+    OK(runner, parser->whitespace_work <= 9, "only the suffix after the final boundary is inspected");
+    OK(runner, text && text->content_mark_count > 0, "text placement uses the owner's source map");
+    markdown_core_node_free(text);
+    markdown_core_inline_clear_inlines(&state);
+    markdown_core_node_free(owner);
+    return true;
+}
+
+/* Verify every ASCII class and Unicode boundary, then their pairwise
+ * flanking decisions through the registered delimiter owners. */
+static bool inspect_delimiter_classes(markdown_core_parser *parser, void *context) {
+    test_batch_runner *runner = context;
+    int32_t scalars[180];
+    size_t count = 0;
+    for (int32_t c = 0; c < 128; c++) {
+        scalars[count++] = c;
+    }
+    static const int32_t unicode[] = {128,  133,  160,  161,  169,  170,  171,   5760,   8191,   8192,
+                                      8202, 8203, 8232, 8233, 8239, 8287, 12288, 0x6587, 0x1f600};
+    for (size_t i = 0; i < sizeof(unicode) / sizeof(*unicode); i++) {
+        scalars[count++] = unicode[i];
+    }
+    bool classes = true, flanking = true;
+    for (size_t i = 0; i < count; i++) {
+        markdown_core_char_class actual = markdown_core_utf8proc_classify(scalars[i]);
+        classes &= (actual == MARKDOWN_CORE_CHAR_SPACE) == !!markdown_core_utf8proc_is_space(scalars[i]);
+        classes &=
+            (actual == MARKDOWN_CORE_CHAR_PUNCT) == !!markdown_core_utf8proc_is_punctuation_or_symbol(scalars[i]);
+    }
+    markdown_core_node *owner = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_PARAGRAPH, parser->mem);
+    owner->start_line = owner->start_column = 1;
+    for (size_t r = 1; r < MARKDOWN_CORE_DELIM_RULE_COUNT; r++) {
+        const markdown_core_element *element = parser->delimiter_owners[r];
+        if (!element || !element->delimiter_character || element->delimiter.body == DELIMITER_WORD_BODY) {
+            continue;
+        }
+        for (size_t i = 0; i < count; i++) {
+            for (size_t j = 0; j < count; j++) {
+                int32_t before = scalars[i], after = scalars[j];
+                if (before == 0 || after == 0 || before == element->delimiter_character ||
+                    after == element->delimiter_character || (before < 256 && parser->skip_chars[before]) ||
+                    (after < 256 && parser->skip_chars[after])) {
+                    continue;
+                }
+                markdown_core_strbuf_clear(&owner->content);
+                markdown_core_utf8proc_encode_char(before, &owner->content);
+                bufsize_t start = owner->content.size;
+                for (bufsize_t n = 0; n < element->delimiter.minimum_width; n++) {
+                    markdown_core_strbuf_putc(&owner->content, element->delimiter_character);
+                }
+                markdown_core_utf8proc_encode_char(after, &owner->content);
+                markdown_core_strbuf_putc(&owner->content, 'x');
+                markdown_core_inline_state state;
+                markdown_core_inline_start_inlines(parser, owner, parser->refmap, &state);
+                state.pos = start;
+                markdown_core_node *text = markdown_core_inline_match_delimiter(element, &state);
+                bool sb = markdown_core_utf8proc_is_space(before), sa = markdown_core_utf8proc_is_space(after);
+                bool pb = markdown_core_utf8proc_is_punctuation_or_symbol(before);
+                bool pa = markdown_core_utf8proc_is_punctuation_or_symbol(after);
+                bool left = !sa && (!pa || sb || pb), right = !sb && (!pb || sa || pa);
+                flanking &=
+                    state.cached_run.can_open == (left && (!element->delimiter.punctuation_bound || !right || pb));
+                flanking &=
+                    state.cached_run.can_close == (right && (!element->delimiter.punctuation_bound || !left || pa));
+                markdown_core_inline_clear_inlines(&state);
+                if (text) {
+                    markdown_core_node_free(text);
+                }
+            }
+        }
+    }
+    OK(runner, classes, "ASCII and Unicode flanking classes preserve the exact whitespace and punctuation sets");
+    OK(runner, flanking, "every neighboring class pair preserves all registered delimiter flanking rules");
+    markdown_core_node_free(owner);
+    return true;
+}
+
+static void delimiter_character_classes(test_batch_runner *runner) {
+    markdown_core_node *root = markdown_core_parse_document_with_mem("", 0, markdown_core_get_default_mem_allocator(),
+                                                                     inspect_delimiter_classes, runner);
+    OK(runner, root != NULL, "delimiter matrix completes the parse transaction");
+    markdown_core_node_free(root);
+}
+
+static void text_whitespace_boundary(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    const int32_t scalars[] = {9,    10,   12,   13,   32,   160,  5760,  8192, 8193, 8194, 8195, 8196, 8197,   8198,
+                               8199, 8200, 8201, 8202, 8239, 8287, 12288, 11,   133,  8203, 8232, 8233, 0x1f600};
+    for (size_t i = 0; i < sizeof(scalars) / sizeof(*scalars); i++) {
+        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+        for (size_t n = 0; n < 1024; n++) {
+            markdown_core_strbuf_puts(&source, "word ");
+        }
+        size_t previous = (size_t)source.size;
+        markdown_core_utf8proc_encode_char(scalars[i], &source);
+        size_t boundary = markdown_core_utf8proc_is_space(scalars[i]) ? (size_t)source.size : previous;
+        markdown_core_strbuf_puts(&source, "文z");
+        whitespace_probe probe = {runner, &source, boundary};
+        markdown_core_node *root = markdown_core_parse_document_with_mem("", 0, mem, inspect_text_boundary, &probe);
+        OK(runner, root != NULL, "boundary inspection completes the parse transaction");
+        markdown_core_node_free(root);
+        markdown_core_strbuf_free(&source);
+    }
+}
+
+/* Radix structure is the complexity witness, independent of timing or hash
+ * distribution. Every edge advances a byte or a bit; leaves match borrowed
+ * binary keys, including empty keys, embedded NULs and prefix chains. */
+static void key_index_radix(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    enum { COUNT = 4096, WIDTH = 32 };
+    unsigned char (*keys)[WIDTH] = calloc(COUNT, WIDTH);
+    for (size_t order = 0; order < 3; order++) {
+        markdown_core_key_index index;
+        OK(runner, markdown_core_key_index_init(&index, mem, order ? COUNT : 0), "radix index initializes");
+        for (size_t i = 0; i < COUNT; i++) {
+            size_t k = order == 1 ? COUNT - 1 - i : order == 2 ? (i * 2053) % COUNT : i;
+            memset(keys[k], 'a', WIDTH);
+            keys[k][WIDTH - 2] = (unsigned char)(k >> 8);
+            keys[k][WIDTH - 1] = (unsigned char)k;
+            OK(runner, markdown_core_key_index_insert(&index, keys[k], WIDTH, &keys[k], 0, NULL),
+               "binary key inserts in any order");
+        }
+        for (size_t k = 0; k < COUNT; k++) {
+            OK(runner, markdown_core_key_index_lookup(&index, keys[k], WIDTH) == &keys[k], "binary lookup agrees");
+            markdown_core_key_index_slot *slot = markdown_core_key_index_entry(&index, keys[k], WIDTH);
+            OK(runner, slot && slot->key == keys[k], "duplicate entry preserves the first key");
+        }
+        INT_EQ(runner, index.size, COUNT, "duplicates do not grow the index");
+        for (size_t i = 1; i < index.size; i++) {
+            markdown_core_key_index_node *parent = &index.nodes[i];
+            OK(runner, parent->mask && parent->mask <= 256 && !(parent->mask & (parent->mask - 1)),
+               "one distinguishing bit per branch");
+            for (size_t side = 0; side < 2; side++) {
+                size_t ref = parent->children[side];
+                OK(runner, ref && (ref >> 1) <= index.size, "branch refers to a live record");
+                if (!(ref & 1)) {
+                    markdown_core_key_index_node *child = &index.nodes[(ref >> 1) - 1];
+                    OK(runner,
+                       child->byte > parent->byte || (child->byte == parent->byte && child->mask < parent->mask),
+                       "each branch advances the key: bounded by its bytes, never the key count");
+                }
+            }
+        }
+        for (bufsize_t length = 0; length < WIDTH; length++) {
+            OK(runner, !markdown_core_key_index_lookup(&index, keys[0], length), "shorter absent prefix misses");
+            OK(runner, markdown_core_key_index_insert(&index, keys[0], length, &keys[length], 0, NULL),
+               "all prefix lengths insert");
+        }
+        for (bufsize_t length = 0; length < WIDTH; length++) {
+            OK(runner, markdown_core_key_index_lookup(&index, keys[0], length) == &keys[length],
+               "presence bits distinguish prefixes including empty");
+        }
+        void *existing = NULL;
+        OK(runner, markdown_core_key_index_insert(&index, keys[0], WIDTH, &index, 1, &existing),
+           "replacement succeeds");
+        OK(runner, existing == &keys[0] && markdown_core_key_index_lookup(&index, keys[0], WIDTH) == &index,
+           "replacement reports the original value");
+        markdown_core_key_index_free(&index);
+    }
+    free(keys);
+}
+
+/* All presence/value bits participate: a zero key has a prefix at every
+ * length and a neighbour differing at each bit. Its path reaches 9 * WIDTH
+ * branches; checking the actual tree makes this independent of host timing. */
+static void key_index_adversarial(test_batch_runner *runner) {
+    enum { WIDTH = MAX_LINK_LABEL_LENGTH, COUNT = 9 * WIDTH + 1 };
+    unsigned char (*keys)[WIDTH] = calloc(COUNT, WIDTH);
+    bufsize_t *lengths = calloc(COUNT, sizeof(*lengths));
+    for (int k = 0; k < COUNT; k++) {
+        lengths[k] = k < WIDTH ? k : WIDTH;
+        if (k >= WIDTH && k < COUNT - 1) {
+            keys[k][(k - WIDTH) / 8] = (unsigned char)(1u << ((k - WIDTH) % 8));
+        }
+    }
+    for (size_t order = 0; order < 3; order++) {
+        markdown_core_key_index index;
+        OK(runner, markdown_core_key_index_init(&index, markdown_core_get_default_mem_allocator(), 0),
+           "adversarial index initializes");
+        bool valid = true;
+        for (size_t i = 0; i < COUNT; i++) {
+            size_t k = order == 0 ? i : order == 1 ? COUNT - 1 - i : (i * 2) % COUNT;
+            valid &= markdown_core_key_index_insert(&index, keys[k], lengths[k], &lengths[k], 0, NULL) != 0;
+        }
+        size_t total = 0, maximum = 0;
+        for (size_t k = 0; k < COUNT && valid; k++) {
+            valid &= markdown_core_key_index_lookup(&index, keys[k], lengths[k]) == &lengths[k];
+            size_t ref = index.root, visits = 0;
+            bufsize_t previous_byte = -1;
+            unsigned previous_mask = 0;
+            while (ref && !(ref & 1) && visits <= 9 * (size_t)lengths[k] + 1) {
+                if ((ref >> 1) > index.size) {
+                    valid = false;
+                    break;
+                }
+                markdown_core_key_index_node *node = &index.nodes[(ref >> 1) - 1];
+                valid &= node->byte > previous_byte || (node->byte == previous_byte && node->mask < previous_mask);
+                previous_byte = node->byte;
+                previous_mask = node->mask;
+                unsigned direction =
+                    node->byte < lengths[k] && (node->mask == 256 || (keys[k][node->byte] & node->mask));
+                ref = node->children[direction];
+                visits++;
+            }
+            valid &= ref && (ref & 1) && visits <= 9 * (size_t)lengths[k] + 1;
+            total += visits;
+            if (visits > maximum) {
+                maximum = visits;
+            }
+        }
+        OK(runner, valid,
+           "prefix-first, extension-first and permuted trees preserve every key and strict bit progress");
+        INT_EQ(runner, maximum, 9 * WIDTH, "adversarial path reaches the complete key-length branch bound");
+        OK(runner, total <= (size_t)COUNT * (9 * WIDTH + 1), "all lookups have a deterministic key-byte work bound");
+        markdown_core_key_index_free(&index);
+    }
+    free(lengths);
+    free(keys);
+}
+
+/* OOM ends the owner transaction. Exercise destruction both when vector
+ * growth fails and when the caller cannot allocate a prepared entry's key. */
+static void key_index_failure(test_batch_runner *runner) {
+    unsigned char keys[129];
+    for (size_t capacity = 1; capacity <= 128; capacity *= 2) {
+        for (int fail_key = 0; fail_key <= 1; fail_key++) {
+            payload_allocations = payload_fail_at = payload_live = 0;
+            markdown_core_key_index index;
+            OK(runner, markdown_core_key_index_init(&index, &payload_test_mem, capacity), "failure index initializes");
+            for (size_t k = 0; k < capacity; k++) {
+                keys[k] = (unsigned char)k;
+                OK(runner, markdown_core_key_index_insert(&index, &keys[k], 1, &keys[k], 0, NULL),
+                   "fill reserved index");
+            }
+            keys[capacity] = (unsigned char)capacity;
+            if (!fail_key) {
+                payload_fail_at = payload_allocations + 1;
+            }
+            markdown_core_key_index_slot *slot = markdown_core_key_index_entry(&index, &keys[capacity], 1);
+            if (fail_key) {
+                OK(runner, slot && !slot->key, "prepare an entry before the caller's key allocation");
+                payload_fail_at = payload_allocations + 1;
+                OK(runner, !payload_test_calloc(1, 1), "the caller cannot allocate a durable key");
+            } else {
+                OK(runner, !slot, "growth failure propagates to the owner");
+            }
+            markdown_core_key_index_free(&index);
+            INT_EQ(runner, payload_live, 0, "OOM releases the complete index, including any pending entry");
+            payload_fail_at = 0;
+        }
+    }
+}
+
+/* Exhaust all short lexical shapes, including embedded NUL and potential
+ * future table punctuation. Fresh scans are the oracle for every memo hit. */
+static void table_dash_suffixes(test_batch_runner *runner) {
+    static const unsigned char alphabet[] = {'-', ' ', '\t', ':', '|', '+', 'x', 0};
+    unsigned char line[7];
+    size_t cases = 0;
+    bool valid = true;
+    for (size_t length = 0, combinations = 1; length <= 6; length++, combinations *= sizeof(alphabet)) {
+        for (size_t encoded = 0; encoded < combinations; encoded++) {
+            size_t remaining = encoded;
+            for (size_t i = 0; i < length; i++, remaining /= sizeof(alphabet)) {
+                line[i] = alphabet[remaining % sizeof(alphabet)];
+            }
+            line[length] = 0;
+            const unsigned char *kill = line;
+            for (size_t start = 0; start <= length; start++) {
+                const unsigned char *cursor = line + start, *from;
+                int result;
+                do {
+                    result = scan_table_dash(&cursor, line + length, &from);
+                } while (result > 0);
+                if (line + start < kill) {
+                    valid &= result < 0 && cursor == kill;
+                }
+                if (result < 0) {
+                    kill = cursor;
+                }
+                cases++;
+            }
+        }
+    }
+    OK(runner, valid, "every memoized rejection agrees with a fresh suffix scan (%zu queries)", cases);
+}
+
+static size_t count_kind(markdown_core_node *root, markdown_core_node_type kind);
+
+static void nested_block_lookahead(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    for (size_t shape = 0; shape < 3; shape++) {
+        for (size_t depth = 16; depth <= 8192; depth *= 2) {
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+            for (size_t i = 0; i < depth; i++) {
+                markdown_core_strbuf_puts(&source, shape == 2 ? "> " : "- ");
+            }
+            markdown_core_strbuf_puts(&source, "leaf\n");
+            if (shape) {
+                for (size_t i = 0; i < depth; i++) {
+                    markdown_core_strbuf_puts(&source, shape == 2 ? "> " : "  ");
+                }
+                markdown_core_strbuf_puts(&source, "more\n");
+            }
+            inline_work work = {0};
+            markdown_core_node *root = markdown_core_parse_document_with_mem((const char *)source.ptr, source.size, mem,
+                                                                             measure_inline_work, &work);
+            OK(runner, root != NULL, "nested continuation parses");
+            if (root) {
+                INT_EQ(runner, count_kind(root, shape == 2 ? MARKDOWN_CORE_NODE_CALLOUT : MARKDOWN_CORE_NODE_LIST_ITEM),
+                       depth, "container depth is preserved");
+                INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_SOFT_BREAK), shape != 0,
+                       "continuation belongs to the deepest paragraph");
+                INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_TABLE), 0, "list content is not a table");
+            }
+            OK(runner, work.lookahead + work.tables <= 16 * (size_t)source.size,
+               "candidate bytes AND ancestor setup/restore stay bounded by input size");
+            markdown_core_node_free(root);
+            markdown_core_strbuf_free(&source);
+        }
+    }
 }
 
 /* Depth and width vary independently. Construction transfers disjoint
@@ -3708,10 +4149,15 @@ static void speculative_probe_allocations(test_batch_runner *runner) {
         markdown_core_parser parser = {.mem = &mem};
         markdown_core_chunk input = {(unsigned char *)directives[i], (bufsize_t)strlen(directives[i]), 0};
         text_allocation_calls = 0;
+        markdown_core_attribute_parser recognition = {.mem = &mem, .data = input.data, .length = input.len};
+        markdown_core_attributes_end(&recognition, 4);
+        markdown_core_attribute_parser_free(&recognition);
+        size_t recognition_allocations = text_allocation_calls;
+        text_allocation_calls = 0;
         int matched = MARKDOWN_CORE_ELEMENT_DIRECTIVE.probe_block(&parser, &input, 0, 0, NULL);
         INT_EQ(runner, matched, i == 1 || i == 3, "directive probe validates the complete opener");
-        OK(runner, text_allocation_calls <= (i == 2 || i == 3 ? 0 : 1),
-           "directive probes allocate no semantic attributes");
+        INT_EQ(runner, text_allocation_calls, recognition_allocations,
+               "directive probes allocate only recognition facts, never semantic attributes");
         if (i != 2 && i != 3) {
             OK(runner, parser.attribute_work > 0, "probe attribute recognition work is accounted");
         }
@@ -3769,6 +4215,17 @@ static void literal_text_allocations(test_batch_runner *runner) {
     static const struct {
         const char *prefix, *unit;
     } cases[] = {
+        {"a", "the world is here and now we know "},
+        {"a", "a! b! c! "},
+        {"a", "a: b: c: "},
+        {"a", "a < b < c "},
+        {"a", "a % b % c "},
+        {"a", "a $ b $ c "},
+        {"a", "a & b & c "},
+        {"a", "a ] b ] c "},
+        {"a", "a ~ b ~ c "},
+        {"a", "a ~~ b ~~ c "},
+        {"a", "a ~~~ b ~~~ c "},
         {"a", "@@@ "},
         {"a", "-; "},
         {"a", "a+"},
@@ -3850,12 +4307,17 @@ static void literal_text_allocations(test_batch_runner *runner) {
                 }
                 size_t delimiter_bytes = 0;
                 for (size_t i = prefix_length; i < length; i++) {
-                    if (strchr("*_+=", source[i])) {
+                    if (strchr("*_+=~", source[i])) {
                         delimiter_bytes++;
                     }
                 }
-                INT_EQ(runner, work.delimiters, ordinary_work + delimiter_bytes,
-                       "known-literal delimiter runs are scanned once without matching work");
+                if (strchr(cases[shape].unit, '~')) {
+                    OK(runner, work.delimiters <= ordinary_work + 2 * delimiter_bytes,
+                       "shared tilde owners inspect each literal run at most once each");
+                } else {
+                    INT_EQ(runner, work.delimiters, ordinary_work + delimiter_bytes,
+                           "known-literal delimiter runs are scanned once without matching work");
+                }
                 if (root) {
                     markdown_core_node *text = root->first_child->last_child;
                     if (!pass) {
@@ -4230,7 +4692,9 @@ static void comment_block_linear_work(test_batch_runner *runner) {
             markdown_core_node *root =
                 markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
             OK(runner, root != NULL, "nested block comment candidates parse successfully");
-            OK(runner, work.lookahead <= 4 * (size_t)source.size,
+            /* Includes the three ancestor passes (count, snapshot, restore),
+             * previously omitted from this metric, as well as prefix visits. */
+            OK(runner, work.lookahead <= 12 * (size_t)source.size,
                "block lookahead work is linear: shape=%d size=%d work=%zu", shape, source.size, work.lookahead);
             INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_COMMENT_BLOCK), expected_comments,
                    "only a closed candidate is a block comment: shape=%d depth=%zu", shape, depth);
@@ -4348,6 +4812,69 @@ static void cross_link_fields(test_batch_runner *runner) {
            !markdown_core_node_cross_label(markdown_core_document_root(doc)).has_value,
        "cross label is absent for null and unrelated nodes");
     markdown_core_document_free(doc);
+}
+
+/* Recognition storage follows grammar facts, never the surrounding paragraph.
+ * Requested bytes include all growth; peak counts live native allocations. */
+static void attribute_sparse_memory(test_batch_runner *runner) {
+    markdown_core_mem mem = {properties_calloc, properties_realloc, properties_free};
+    for (size_t size = 16384; size <= 1048576; size *= 4) {
+        char *source = malloc(size + 16);
+        for (int front = 0; front < 2; front++) {
+            for (int valid = 0; valid < 2; valid++) {
+                memset(source, 'a', size + 16);
+                size_t at = front ? 0 : size;
+                const char *candidate = valid ? "{.c}" : "{?}";
+                memcpy(source + at, candidate, strlen(candidate));
+                markdown_core_attribute_parser parser = {
+                    .mem = &mem, .data = (const unsigned char *)source, .length = (bufsize_t)(size + 16)};
+                properties_live_bytes = properties_peak_bytes = properties_requested_bytes = 0;
+                INT_EQ(runner, markdown_core_attributes_end(&parser, (bufsize_t)at), valid ? at + strlen(candidate) : 0,
+                       "sparse candidates preserve exact recognition");
+                OK(runner, parser.work <= 16 && properties_peak_bytes <= 256 && properties_requested_bytes <= 256,
+                   "a sparse candidate has constant work and storage at either end of an arbitrary extent");
+                size_t work = parser.work, requested = properties_requested_bytes;
+                for (int repeat = 0; repeat < 1024; repeat++) {
+                    markdown_core_attributes_end(&parser, (bufsize_t)at);
+                }
+                INT_EQ(runner, parser.work - work, 2048, "repeated success and failure query facts without rescanning");
+                INT_EQ(runner, properties_requested_bytes, requested, "memoized queries allocate nothing");
+                markdown_core_attribute_parser_free(&parser);
+                INT_EQ(runner, properties_live_bytes, 0, "all sparse recognition storage is released");
+            }
+        }
+        free(source);
+    }
+    for (size_t count = 128; count <= 8192; count *= 2) {
+        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(markdown_core_get_default_mem_allocator());
+        for (size_t i = 0; i < count; i++) {
+            markdown_core_strbuf_puts(&source, "{k=");
+        }
+        markdown_core_strbuf_puts(&source, "v ");
+        for (size_t i = 0; i < count; i++) {
+            markdown_core_strbuf_puts(&source, ".a ");
+        }
+        markdown_core_strbuf_putc(&source, '}');
+        for (size_t order = 0; order < 3; order++) {
+            markdown_core_attribute_parser parser = {.mem = &mem, .data = source.ptr, .length = source.size};
+            properties_live_bytes = properties_peak_bytes = properties_requested_bytes = 0;
+            bool exact = true;
+            for (size_t i = 0; i < count; i++) {
+                size_t k = order == 0 ? i : order == 1 ? count - i - 1 : (i * 2053) % count;
+                exact &= markdown_core_attributes_end(&parser, (bufsize_t)(3 * k)) == source.size;
+            }
+            OK(runner, exact, "overlapping values join the same exact member suffix in every query order");
+            OK(runner, parser.work <= 20 * (size_t)source.size,
+               "both lexical overlap and long shared grammar tails have linear work");
+            OK(runner,
+               parser.facts.size <= count + 1 && properties_peak_bytes <= 192 * (count + 1) &&
+                   properties_requested_bytes <= 288 * (count + 1),
+               "only candidate and join facts allocate, with bounded peak and cumulative growth");
+            markdown_core_attribute_parser_free(&parser);
+            INT_EQ(runner, properties_live_bytes, 0, "overlapping recognition releases all native allocations");
+        }
+        markdown_core_strbuf_free(&source);
+    }
 }
 
 static void attribute_linear_work(test_batch_runner *runner) {
@@ -4973,6 +5500,36 @@ static void grid_opening_memory(test_batch_runner *runner) {
 
 /* Failed grammar searches, row growth and column growth all use the same
  * candidate algorithm. Work counts source inspections, independent of time. */
+/* Plain headers require an adjacent separator. Rejected paragraph starts
+ * must share one next-line query and never allocate a table workspace. */
+static void ordinary_block_peek_work(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    static const char *units[] = {"- item\n", "word\n\n", "> word\n>\n", "- [label](/url)\n"};
+    for (size_t shape = 0; shape < sizeof(units) / sizeof(*units); shape++) {
+        for (size_t n = 128; n <= 8192; n *= 2) {
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+            for (size_t i = 0; i < n; i++) {
+                markdown_core_strbuf_puts(&source, units[shape]);
+            }
+            inline_work work = {0};
+            markdown_core_node *root = markdown_core_parse_document_with_mem((const char *)source.ptr, source.size, mem,
+                                                                             measure_inline_work, &work);
+            OK(runner, root && count_kind(root, MARKDOWN_CORE_NODE_PARAGRAPH) == n,
+               "ordinary block starts preserve every paragraph: shape=%zu n=%zu", shape, n);
+            OK(runner,
+               work.table_workspace_growth == 0 && work.table_separator_scans == 0 && work.table_geometry_lines == 0,
+               "plain text without a following separator never enters table recognition");
+            OK(runner, work.lookahead <= 12 * n + 16,
+               "table and definition checks share one prefix-matched peek: shape=%zu n=%zu work=%zu", shape, n,
+               work.lookahead);
+            if (root) {
+                markdown_core_node_free(root);
+            }
+            markdown_core_strbuf_free(&source);
+        }
+    }
+}
+
 static void table_candidate_work(test_batch_runner *runner) {
     markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
     for (size_t shape = 0; shape < 13; shape++) {
@@ -5497,7 +6054,39 @@ static void table_nested_inputs(test_batch_runner *runner) {
     }
 }
 
-int main(void) {
+/* Each misuse runs in its own CTest process. Only SIGABRT is success:
+ * falling through, a segfault, or an assertion disabled by NDEBUG fails. */
+static void expected_key_index_abort(int signal_number) { _Exit(signal_number == SIGABRT ? 0 : 1); }
+
+static int key_index_misuse(const char *operation) {
+    markdown_core_key_index index;
+    const unsigned char key[] = "key";
+    if (!markdown_core_key_index_init(&index, markdown_core_get_default_mem_allocator(), 0)) {
+        return 1;
+    }
+    markdown_core_key_index_slot *slot = markdown_core_key_index_entry(&index, key, 3);
+    if (!slot || signal(SIGABRT, expected_key_index_abort) == SIG_ERR) {
+        return 1;
+    }
+    if (!strcmp(operation, "reentry")) {
+        markdown_core_key_index_entry(&index, key, 3);
+    } else if (!strcmp(operation, "wrong-slot")) {
+        markdown_core_key_index_slot wrong = {0};
+        markdown_core_key_index_commit(&index, &wrong, key);
+    } else if (!strcmp(operation, "null-key")) {
+        markdown_core_key_index_commit(&index, slot, NULL);
+    } else if (!strcmp(operation, "double-commit")) {
+        markdown_core_key_index_commit(&index, slot, key);
+        markdown_core_key_index_commit(&index, slot, key);
+    }
+    markdown_core_key_index_free(&index);
+    return 1;
+}
+
+int main(int argc, char **argv) {
+    if (argc == 3 && !strcmp(argv[1], "--key-index-misuse")) {
+        return key_index_misuse(argv[2]);
+    }
     int retval;
     test_batch_runner *runner = test_batch_runner_new();
 
@@ -5511,6 +6100,7 @@ int main(void) {
     image_dimension_linear_work(runner);
     block_identifier_ownership(runner);
     reference_definition_lifetime(runner);
+    attribute_sparse_memory(runner);
     attribute_linear_work(runner);
     attribute_attachment_linear_work(runner);
     heading_completion_invariants(runner);
@@ -5518,6 +6108,14 @@ int main(void) {
     heading_reference_resource_lifetime(runner);
     heading_label_length_boundary(runner);
     autolink_domain_linear_work(runner);
+    inline_content_projection(runner);
+    text_whitespace_boundary(runner);
+    delimiter_character_classes(runner);
+    key_index_radix(runner);
+    key_index_adversarial(runner);
+    key_index_failure(runner);
+    table_dash_suffixes(runner);
+    nested_block_lookahead(runner);
     deep_inline_construction(runner);
     ordered_numeral_ceiling(runner);
     citation_sparse_brace_storage(runner);
@@ -5578,6 +6176,7 @@ int main(void) {
     table_values(runner);
     grid_opening_memory(runner);
     table_candidate_work(runner);
+    ordinary_block_peek_work(runner);
     bounded_scanners(runner);
     simple_table_body_boundaries(runner);
     simple_table_footer_work(runner);
@@ -5588,6 +6187,7 @@ int main(void) {
     strbuf_overflow(runner);
     strbuf_failure_is_a_transaction(runner);
     stray_delimiter(runner);
+    inline_predicate_arbitration(runner);
     inline_dispatch_ownership(runner);
     no_node_is_its_own_ancestor(runner);
     iterator_contract_is_total(runner);

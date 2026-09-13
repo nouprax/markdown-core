@@ -101,10 +101,11 @@ struct markdown_core_element {
     markdown_core_delimiter_rule delimiter_rule;
     unsigned char delimiter_character;
     delimiter_rule_spec delimiter;
-    /* Optional non-consuming token predicate. Text scanning consults the
-     * parser's byte-indexed projection; all owners of a shared byte must
-     * agree, otherwise that byte always reaches ordinary element dispatch. */
-    bool (*is_inline_start)(markdown_core_inline_state *, bufsize_t);
+    /* Optional non-consuming candidate predicate. False rules this owner out;
+     * true still requires a full match. Text scanning consults the parser's
+     * byte-indexed projection: any eligible owner can terminate text, and a
+     * missing predicate accepts unconditionally. */
+    bool (*can_start)(markdown_core_inline_state *, bufsize_t);
     markdown_core_match_inline_func match_inline;
     markdown_core_inline_from_delim_func insert_inline_from_delim;
     /* THREE byte sets, not one list.

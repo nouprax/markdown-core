@@ -131,6 +131,11 @@ add_executable(facade_test facade.c)
 target_include_directories(facade_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../include")
 target_link_libraries(facade_test ${MARKDOWN_CORE_TEST_LIBRARIES})
 
+# Compile-time accounting must not change the facade's canonical semantics.
+add_executable(facade_diagnostics_test facade.c)
+target_include_directories(facade_diagnostics_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../include")
+target_link_libraries(facade_diagnostics_test markdown-core-diagnostics)
+
 add_executable(facade_cplusplus_test facade_cplusplus.cpp)
 target_include_directories(facade_cplusplus_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../include")
 target_link_libraries(facade_cplusplus_test ${MARKDOWN_CORE_TEST_LIBRARIES})
@@ -148,6 +153,9 @@ endfunction()
 
 # api: legacy engine API harness (native C/C++).
 markdown_core_add_test(api_engine api 120 api_test)
+foreach(operation reentry wrong-slot null-key double-commit)
+    markdown_core_add_test(api_key_index_${operation} api 10 api_test --key-index-misuse ${operation})
+endforeach()
 
 # conformance: public facade/schema shape and every manifest-owned canonical dump.
 markdown_core_add_test(
@@ -155,6 +163,14 @@ markdown_core_add_test(
     conformance
     120
     facade_test
+    --fixtures
+    "${MARKDOWN_CORE_CANONICAL_AST_DIR}"
+    ${MARKDOWN_CORE_CANONICAL_NAMES})
+markdown_core_add_test(
+    facade_diagnostics
+    regression
+    120
+    facade_diagnostics_test
     --fixtures
     "${MARKDOWN_CORE_CANONICAL_AST_DIR}"
     ${MARKDOWN_CORE_CANONICAL_NAMES})
@@ -314,6 +330,7 @@ set(MARKDOWN_CORE_PATHOLOGICAL_CASES
     comment_nested_item_blank_runs
     tables
     reference_collisions
+    reference_unresolved_scale
     reference_expansion_bound
     directive_unclosed_labels
     directive_unclosed_attributes

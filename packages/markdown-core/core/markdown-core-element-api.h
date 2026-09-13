@@ -591,38 +591,13 @@ int markdown_core_inline_state_get_line(markdown_core_inline_state *inline_state
 MARKDOWN_CORE_EXPORT
 int markdown_core_inline_state_get_column(markdown_core_inline_state *inline_state);
 
-/** Make the Text node a delimiter run stands as: its literal is the bytes
- * [from, to] of the block's content and its position is a projection of that
- * range. Returns NULL for a range outside the content.
- *
- * ONE constructor, because there were two hand-written copies of it -- one in
- * `formula`, one in `strikethrough` -- and they disagreed about where the
- * cursor was when they ran, so each computed the run's columns from a different
- * end. Passing the range says it once. The cursor is NOT moved: a caller that
- * has not consumed the run yet still has to.
+/** Borrow the unchanged source bytes [from, to] as a Text node and project
+ * their source extent. Returns NULL for an invalid range or allocation failure.
+ * Does not move the inline cursor. Decoded text uses an owned literal instead.
  */
 MARKDOWN_CORE_EXPORT
-markdown_core_node *markdown_core_inline_state_make_delimiter_text(markdown_core_inline_state *inline_state, int from,
-                                                                   int to);
-
-/** Convenience function to scan a given delimiter.
- *
- * 'left_flanking' and 'right_flanking' will be set to true if they
- * respectively precede and follow a non-space, non-punctuation
- * character.
- *
- * Additionally, 'punct_before' and 'punct_after' will respectively be set
- * if the preceding or following character is a punctuation character.
- *
- * Note that 'left_flanking' and 'right_flanking' can both be 'true'.
- *
- * Returns the number of delimiters encountered, in the limit
- * of 'max_delims', and advances the inline parsing offset.
- */
-MARKDOWN_CORE_EXPORT
-int markdown_core_inline_state_scan_delimiters(markdown_core_inline_state *inline_state, int max_delims,
-                                               unsigned char c, int *left_flanking, int *right_flanking,
-                                               int *punct_before, int *punct_after);
+markdown_core_node *markdown_core_inline_state_make_source_text(markdown_core_inline_state *inline_state, int from,
+                                                                int to);
 
 MARKDOWN_CORE_EXPORT
 void markdown_core_manage_elements_special_characters(markdown_core_parser *parser, int add);

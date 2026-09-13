@@ -2,6 +2,7 @@
 #define MARKDOWN_CORE_PARSER_H
 
 #include <stdint.h>
+#include "diagnostics.h"
 #include "references.h"
 #include "node.h"
 #include "buffer.h"
@@ -52,9 +53,26 @@ typedef struct {
     struct markdown_core_node *last_inline;
 } markdown_core_definition_collection;
 
+/* One byte may terminate text and/or dispatch to this owner. The roles are
+ * independent; the common index preserves descriptor precedence for both. */
+typedef struct {
+    const markdown_core_element *element;
+    bool dispatches, terminates;
+} markdown_core_inline_candidate;
+
+/* First nonblank line under one prospective block parent. Shared by block
+ * owners during a single block-start arbitration; no speculative state or
+ * owned storage survives here. Reset before the parser mutates that context. */
+typedef struct {
+    struct markdown_core_node *parent;
+    markdown_core_chunk input;
+    int first, indent, blanks;
+    bool available;
+} markdown_core_block_peek;
+
 struct markdown_core_parser {
     struct markdown_core_mem *mem;
-    /* A hashtable of urls in the current document for cross-references */
+    /* Source-ordered reference declarations, indexed by normalized label. */
     struct markdown_core_map *refmap;
     /* The labels this document defines footnotes for (see references.h). The
      * block phase fills it as each definition opens; the inline phase reads it
@@ -97,6 +115,9 @@ struct markdown_core_parser {
      */
     bufsize_t first_nonspace_column;
     bufsize_t thematic_break_kill_pos;
+    /* A dash separator rejected at this byte also rejects every earlier
+     * suffix on the current physical line. Reset with the line cursor. */
+    bufsize_t table_separator_kill_pos;
     /* See the documentation for markdown_core_parser_get_indent() in markdown_core.h */
     int indent;
     /* See the documentation for markdown_core_parser_is_blank() in markdown_core.h */
@@ -116,6 +137,7 @@ struct markdown_core_parser {
      * one-shot transaction reports the whole parse as failed (NULL) instead of
      * returning a silently truncated document. */
     bool oom;
+#if MARKDOWN_CORE_DIAGNOSTICS
     /* Bytes inspected by the cross-link scanner, for deterministic complexity gates. */
     size_t cross_link_scan_work;
     size_t autolink_domain_work;
@@ -126,6 +148,8 @@ struct markdown_core_parser {
     size_t delimiter_work;
     /* Ordinary whitespace scalars and contextual-space lookahead bytes. */
     size_t whitespace_work;
+    /* Run comparisons in content-to-source projection, including cursor advances. */
+    size_t content_map_work;
     size_t bracket_work;
     /* Opener checks of the `%%` comment scanner; and the lines the block-start
      * lookahead visited plus the prefix bytes each visit matched itself, for
@@ -151,6 +175,7 @@ struct markdown_core_parser {
     /* Cumulative capacity bytes reserved for per-inline state brace event records. */
     size_t citation_brace_bytes;
     size_t definition_list_work;
+#endif
     /* THE SOURCE AFTER THE LINE BEING PROCESSED. `S_parse_source` sets the
      * cursor to the first byte of the next raw line before it hands each line
      * to `S_process_line`, so a block start whose grammar needs a later line --
@@ -175,6 +200,7 @@ struct markdown_core_parser {
     int lookahead_entries_alloc;
     int lookahead_entries_used;
     int lookahead_base_line;
+    markdown_core_block_peek block_peek;
     /* One active table query borrows this reusable line workspace. Per-line
      * geometry is released by the query; the allocation dies with the parser. */
     struct markdown_core_table_source_line *table_lines;
@@ -187,15 +213,13 @@ struct markdown_core_parser {
     /* Stable descriptor order projected by byte once before inline parsing.
      * Each token visits only its possible owners; offsets include an end sentinel. */
     size_t inline_dispatch_offsets[257];
-    const markdown_core_element **inline_dispatch;
+    markdown_core_inline_candidate *inline_dispatch;
     markdown_core_ispunct_func backslash_ispunct;
     /* Inline special-character tables for this parser: the core defaults plus
      * the special/emphasis-skip characters of the attached inline elements.
      * Parser-local so concurrent parsers with different element sets never
      * observe each other's characters. */
     const markdown_core_element *delimiter_owners[MARKDOWN_CORE_DELIM_RULE_COUNT];
-    markdown_core_delimiter_rule delimiter_chars[256];
-    bool (*inline_start_predicates[256])(markdown_core_inline_state *, bufsize_t);
     int8_t special_chars[256];
     int8_t skip_chars[256];
     /* The content-to-source map (see markdown_core_line_mark). It is read while the
@@ -223,9 +247,12 @@ typedef struct markdown_core_lookahead_entry {
     const struct markdown_core_node *container;
     /* Its distance from the document root: chain[depth] == container. */
     int depth;
-    /* The line state after that container's prefix: what S_advance_offset left. */
+    /* Prefix cursor plus the already scanned indentation suffix. Retain both
+     * so deeper candidates do not rescan the same leading whitespace. */
     bufsize_t offset;
     bufsize_t column;
+    bufsize_t first_nonspace;
+    bufsize_t first_nonspace_column;
     bool partially_consumed_tab;
     /* A list's second consecutive blank line at indentation zero: the innermost
      * open block owns the whole line and nothing below the list is asked. */
@@ -274,6 +301,11 @@ typedef struct {
     bool active;
 } markdown_core_block_lookahead;
 
+/* Project an endpoint and return its immutable run index, or -1 without a map.
+ * An optional per-owner cursor advances only; earlier endpoints use binary search. */
+int markdown_core_parser_project_content(markdown_core_parser *parser, const markdown_core_node *node, bufsize_t offset,
+                                         bool end, int *cursor, int *line, int *column);
+
 /* Stable source-coordinate ordering, shared by deferred nodes and cell geometry. */
 int markdown_core_order_source_entries(markdown_core_mem *mem, void *entries, size_t count, size_t stride,
                                        uint64_t (*key)(const void *));
@@ -296,6 +328,12 @@ bool markdown_core_parser_queue_block_input(markdown_core_parser *parser, markdo
 int markdown_core_parser_source_column(markdown_core_parser *parser, int line, int column);
 int markdown_core_parser_append_source_marks(markdown_core_parser *parser, markdown_core_node *node, int line,
                                              int column, bufsize_t length, bufsize_t offset);
+
+/* The borrowed result lasts until the next peek or block-start context.
+ * Uses exactly the same container matching and blank rules as lookahead. */
+const markdown_core_block_peek *markdown_core_parser_peek_block_line(markdown_core_parser *parser,
+                                                                     struct markdown_core_node *parent,
+                                                                     markdown_core_node_type child);
 
 bool markdown_core_parser_lookahead_begin(markdown_core_parser *parser, struct markdown_core_node *parent_container,
                                           markdown_core_node_type child, markdown_core_block_lookahead *lookahead);

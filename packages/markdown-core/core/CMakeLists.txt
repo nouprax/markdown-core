@@ -10,6 +10,7 @@ set(HEADERS
     markdown-core.h
     markdown-core-element-api.h
     parser.h
+    diagnostics.h
     buffer.h
     node.h
     iterator.h

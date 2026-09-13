@@ -18,63 +18,31 @@
 #include "../elements/markdown-core-elements.h"
 
 static const int8_t EMPTY_CHAR_SET[256] = {0};
-static markdown_core_delimiter_rule delimiter_rule_for_byte(markdown_core_inline_state *inline_state, unsigned char c) {
-    return inline_state->owner_parser ? inline_state->owner_parser->delimiter_chars[c] : MARKDOWN_CORE_DELIM_RULE_NONE;
-}
-
 static delimiter *S_insert_delimited_inline(markdown_core_inline_state *inline_state, delimiter *opener,
                                             delimiter *closer, bufsize_t use_delims, markdown_core_node_type kind);
 
 static bufsize_t inline_state_find_special_char(markdown_core_inline_state *inline_state);
 
-/* Give `node` the source extent of the content bytes [from, to].
- *
- * THIS IS THE WHOLE OF THE INLINE POSITION MODEL: a position is a PROJECTION
- * of the byte range a node covers, asked of requirement 10's content-to-source
- * map, and not a counter each handler keeps in step. The two arguments every
- * maker already took were byte offsets into the block's content buffer and
- * were being turned into columns by addition -- which is right only while the
- * whole block is one line that starts where the block does. Everything the old
- * arithmetic needed a correction term for -- a span that crosses a line
- * ending, a continuation line with a different stripped prefix, a construct
- * whose end is on a later line than its start -- is answered by asking twice.
- *
- * The fallback is the old arithmetic and it is reached by a block whose
- * content was SET rather than fed: a table cell, the paragraph a table was
- * split out of, a reference definition parsed straight out of a chunk. Those
- * have no marks to project through, and Step 8's second half is where they get
- * them. */
+/* Project each endpoint once. The same run indexes describe a borrowed Text
+ * slice; transformed literals instead map to their decoded token's extent. */
 void markdown_core_inline_state_place(markdown_core_inline_state *inline_state, markdown_core_node *node, int from,
                                       int to) {
-    int line, column;
-
-    /* Every content-bearing block has a map by the time its inlines are parsed
-     * -- `markdown_core_parse_inlines` gives one to any block whose content was
-     * SET rather than fed -- so there is no arithmetic left to fall back to.
-     * The inline state built straight out of a chunk by
-     * `markdown_core_parse_reference_inline` has no owner and creates no nodes,
-     * which is why the miss below leaves the position at calloc's zero rather
-     * than guessing. */
-    if (markdown_core_parser_content_place(inline_state->owner_parser, inline_state->owner, from, &line, &column)) {
-        node->start_line = line;
-        node->start_column = column;
-    }
-    if (markdown_core_parser_content_end_place(inline_state->owner_parser, inline_state->owner, to, &line, &column)) {
-        node->end_line = line;
-        node->end_column = column;
-    }
-    if (node->kind == MARKDOWN_CORE_NODE_TEXT && node->as.literal->len > 0 && inline_state->owner) {
-        /* Copied bytes take a view of the source map; a decoded source token
-         * maps each of its output bytes to that token's authored extent. */
-        if (node->as.literal->len == to - from + 1 &&
-            memcmp(node->as.literal->data, inline_state->input.data + from, (size_t)node->as.literal->len) == 0) {
-            markdown_core_parser_adopt_content_marks(inline_state->owner_parser, inline_state->owner, node, from,
-                                                     to - from + 1);
+    markdown_core_parser *parser = inline_state->owner_parser;
+    markdown_core_node *owner = inline_state->owner;
+    int first = markdown_core_parser_project_content(parser, owner, from, false, &inline_state->content_mark_cursor,
+                                                     &node->start_line, &node->start_column);
+    int last = markdown_core_parser_project_content(parser, owner, to, true, &inline_state->content_mark_cursor,
+                                                    &node->end_line, &node->end_column);
+    if (node->kind == MARKDOWN_CORE_NODE_TEXT && node->as.literal->len > 0 && first >= 0 && last >= 0) {
+        if (node->as.literal->len == to - from + 1 && node->as.literal->data == inline_state->input.data + from) {
+            node->content_mark = first;
+            node->content_mark_count = last - first + 1;
+            node->content_mark_offset = owner->content_mark_offset + from;
         } else {
             node->content_mark_count = 0;
             node->content_mark_offset = 0;
-            markdown_core_parser_append_content_mark(inline_state->owner_parser, node, 0, node->start_line,
-                                                     node->start_column, node->end_column - node->start_column + 1, 0);
+            markdown_core_parser_append_content_mark(parser, node, 0, node->start_line, node->start_column,
+                                                     node->end_column - node->start_column + 1, 0);
         }
     }
 }
@@ -220,12 +188,22 @@ static const delimiter_run *scan_delimiter(markdown_core_inline_state *inline_st
     while (run.end < inline_state->input.len && markdown_core_inline_peek_at(inline_state, run.end) == c &&
            (!spec->run_limit || run.end - run.start < spec->run_limit)) {
         run.end++;
-        if (inline_state->owner_parser) {
-            inline_state->owner_parser->delimiter_work++;
-        }
+        MARKDOWN_CORE_DIAGNOSTIC(if (inline_state->owner_parser) { inline_state->owner_parser->delimiter_work++; })
     }
     if (spec->body == DELIMITER_WORD_BODY) {
-        run.can_open = run.can_close = true;
+        /* A raw whitespace scalar immediately after an opener cannot become
+         * part of a word body. Closing remains conservative: a preceding
+         * escaped space or an inline token may belong to a valid body. */
+        int32_t next = 10;
+        if (run.end < inline_state->input.len) {
+            next = inline_state->input.data[run.end];
+            if (next >= 128) {
+                markdown_core_utf8proc_iterate(inline_state->input.data + run.end, inline_state->input.len - run.end,
+                                               &next);
+            }
+        }
+        run.can_open = !markdown_core_utf8proc_is_space(next);
+        run.can_close = run.start > 0;
         inline_state->cached_run = run;
         return &inline_state->cached_run;
     }
@@ -247,8 +225,10 @@ static const delimiter_run *scan_delimiter(markdown_core_inline_state *inline_st
                before_char_pos > 0) {
             before_char_pos--;
         }
-        len = markdown_core_utf8proc_iterate(inline_state->input.data + before_char_pos, run.start - before_char_pos,
-                                             &before_char);
+        before_char = inline_state->input.data[before_char_pos];
+        len = before_char < 128 ? 1
+                                : markdown_core_utf8proc_iterate(inline_state->input.data + before_char_pos,
+                                                                 run.start - before_char_pos, &before_char);
         if (len == -1 || (before_char < 256 && inline_state->skip_chars[(unsigned char)before_char])) {
             before_char = 10;
         }
@@ -260,25 +240,23 @@ static const delimiter_run *scan_delimiter(markdown_core_inline_state *inline_st
         while (after_char_pos < inline_state->input.len && flanking_skip_at(inline_state, after_char_pos)) {
             after_char_pos++;
         }
-        len = markdown_core_utf8proc_iterate(inline_state->input.data + after_char_pos,
-                                             inline_state->input.len - after_char_pos, &after_char);
+        after_char = after_char_pos < inline_state->input.len ? inline_state->input.data[after_char_pos] : 10;
+        len = after_char < 128 ? 1
+                               : markdown_core_utf8proc_iterate(inline_state->input.data + after_char_pos,
+                                                                inline_state->input.len - after_char_pos, &after_char);
         if (len == -1 || (after_char < 256 && inline_state->skip_chars[(unsigned char)after_char])) {
             after_char = 10;
         }
     }
+    markdown_core_char_class before = markdown_core_utf8proc_classify(before_char);
+    markdown_core_char_class after = markdown_core_utf8proc_classify(after_char);
     bool left_flanking =
-        !markdown_core_utf8proc_is_space(after_char) &&
-        (!markdown_core_utf8proc_is_punctuation_or_symbol(after_char) || markdown_core_utf8proc_is_space(before_char) ||
-         markdown_core_utf8proc_is_punctuation_or_symbol(before_char));
+        after != MARKDOWN_CORE_CHAR_SPACE && (after != MARKDOWN_CORE_CHAR_PUNCT || before != MARKDOWN_CORE_CHAR_OTHER);
     bool right_flanking =
-        !markdown_core_utf8proc_is_space(before_char) &&
-        (!markdown_core_utf8proc_is_punctuation_or_symbol(before_char) || markdown_core_utf8proc_is_space(after_char) ||
-         markdown_core_utf8proc_is_punctuation_or_symbol(after_char));
+        before != MARKDOWN_CORE_CHAR_SPACE && (before != MARKDOWN_CORE_CHAR_PUNCT || after != MARKDOWN_CORE_CHAR_OTHER);
     if (spec->punctuation_bound) {
-        run.can_open =
-            left_flanking && (!right_flanking || markdown_core_utf8proc_is_punctuation_or_symbol(before_char));
-        run.can_close =
-            right_flanking && (!left_flanking || markdown_core_utf8proc_is_punctuation_or_symbol(after_char));
+        run.can_open = left_flanking && (!right_flanking || before == MARKDOWN_CORE_CHAR_PUNCT);
+        run.can_close = right_flanking && (!left_flanking || after == MARKDOWN_CORE_CHAR_PUNCT);
     } else {
         run.can_open = left_flanking;
         run.can_close = right_flanking;
@@ -369,9 +347,7 @@ static void reduce_delimiter_range(markdown_core_inline_state *inline_state, del
     while (entry != before) {
         delimiter *previous = entry->previous;
         assert(entry->kind != DELIMITER_FIELD);
-        if (inline_state->owner_parser) {
-            inline_state->owner_parser->delimiter_work++;
-        }
+        MARKDOWN_CORE_DIAGNOSTIC(if (inline_state->owner_parser) { inline_state->owner_parser->delimiter_work++; })
         if (entry->kind == DELIMITER_BOUNDARY && !boundary) {
             boundary = true;
         } else {
@@ -520,9 +496,8 @@ void markdown_core_inline_process_delimiters(markdown_core_parser *parser, markd
             opener_found = false;
             while (opener != NULL && opener->position >= stack_bottom &&
                    opener->position >= openers_bottom[closer->length % 3][closer->rule]) {
-                if (inline_state->owner_parser) {
-                    inline_state->owner_parser->delimiter_work++;
-                }
+                MARKDOWN_CORE_DIAGNOSTIC(
+                    if (inline_state->owner_parser) { inline_state->owner_parser->delimiter_work++; })
                 if (opener->can_open && opener->rule == closer->rule) {
                     // interior closer of size 2 can't match opener of size 1
                     // or of size 1 can't match 2
@@ -617,9 +592,7 @@ static delimiter *S_insert_delimited_inline(markdown_core_inline_state *inline_s
 
         while (tmp && tmp != closer_inl) {
             tmpnext = tmp->next;
-            if (inline_state->owner_parser) {
-                inline_state->owner_parser->delimiter_work++;
-            }
+            MARKDOWN_CORE_DIAGNOSTIC(if (inline_state->owner_parser) { inline_state->owner_parser->delimiter_work++; })
             tmp->parent = inline_node;
             if (tmpnext == closer_inl) {
                 inline_node->last_child = tmp;
@@ -686,28 +659,57 @@ static delimiter *S_insert_delimited_inline(markdown_core_inline_state *inline_s
     return closer;
 }
 
+/* Return the end of a proven literal run, or `at` when an owner can begin
+ * syntax. Exact-width delimiter owners claim their entire run even on failure;
+ * later owners cannot reinterpret those bytes (notably strike versus subscript). */
+static bufsize_t inline_literal_end(markdown_core_inline_state *state, bufsize_t at) {
+    markdown_core_parser *parser = state->owner_parser;
+    if (!parser) {
+        return at;
+    }
+    unsigned char c = state->input.data[at];
+    bufsize_t end = at + 1;
+    for (size_t i = parser->inline_dispatch_offsets[c]; i < parser->inline_dispatch_offsets[c + 1]; i++) {
+        const markdown_core_inline_candidate *candidate = &parser->inline_dispatch[i];
+        const markdown_core_element *element = candidate->element;
+        if (!candidate->terminates || (element->can_start && !element->can_start(state, at))) {
+            continue;
+        }
+        if (element->delimiter_character == c) {
+            const delimiter_run *run = scan_delimiter(state, at, element->delimiter_rule);
+            if (run->end - at < element->delimiter.minimum_width) {
+                continue;
+            }
+            if (delimiter_needs_stack(state, run)) {
+                return at;
+            }
+            end = run->end;
+            if (element->delimiter.exact_run) {
+                return end;
+            }
+        } else {
+            return at;
+        }
+    }
+    return end;
+}
+
 static bufsize_t inline_state_find_special_char(markdown_core_inline_state *inline_state) {
     // The caller has already established that the first byte is literal.
     bufsize_t n = inline_state->pos;
     while (n < inline_state->input.len) {
-        unsigned char c = inline_state->input.data[n];
-        if (!inline_state->special_chars[c]) {
+        if (!inline_state->special_chars[inline_state->input.data[n]]) {
             n++;
-        } else if (inline_state->owner_parser && inline_state->owner_parser->inline_start_predicates[c] &&
-                   !inline_state->owner_parser->inline_start_predicates[c](inline_state, n)) {
-            n++;
-        } else if (delimiter_rule_for_byte(inline_state, c) != MARKDOWN_CORE_DELIM_RULE_NONE) {
-            const delimiter_run *run = scan_delimiter(inline_state, n, delimiter_rule_for_byte(inline_state, c));
-            if (delimiter_needs_stack(inline_state, run)) {
-                assert(n > inline_state->pos);
+            continue;
+        }
+        bufsize_t end = inline_literal_end(inline_state, n);
+        if (end == n) {
+            if (n > inline_state->pos) {
                 return n;
             }
-            // A run that cannot delimit belongs to the current text slice.
-            n = run->end;
-        } else if (n > inline_state->pos) {
-            return n;
-        } else {
             n++;
+        } else {
+            n = end;
         }
     }
     return inline_state->input.len;
@@ -736,7 +738,11 @@ static markdown_core_node *try_elements(markdown_core_parser *parser, markdown_c
     bufsize_t start = inline_state->pos;
 
     for (size_t i = parser->inline_dispatch_offsets[c]; i < parser->inline_dispatch_offsets[c + 1]; i++) {
-        const markdown_core_element *element = parser->inline_dispatch[i];
+        const markdown_core_inline_candidate *candidate = &parser->inline_dispatch[i];
+        const markdown_core_element *element = candidate->element;
+        if (!candidate->dispatches || (element->can_start && !element->can_start(inline_state, start))) {
+            continue;
+        }
         res = element->match_inline(element, parser, parent, c, inline_state);
 
         if (res || inline_state->pos != start || parser->oom || inline_state->oom) {
@@ -789,7 +795,7 @@ append:
     endpos = inline_state->pos;
     while (endpos > token_start) {
         unsigned char byte = inline_state->input.data[--endpos];
-        parser->footnote_body_work++;
+        MARKDOWN_CORE_DIAGNOSTIC(parser->footnote_body_work++;)
         if (byte != ' ' && byte != '\t') {
             inline_state->nonblank_end = endpos + 1;
             break;
@@ -895,7 +901,7 @@ int markdown_core_inline_state_find_opaque_close(markdown_core_inline_state *inl
     for (int at = from; at < inline_state->input.len;) {
         bool closes = false;
         int width = scan(inline_state->input.data, inline_state->input.len, at, rule, &closes);
-        inline_state->owner_parser->opaque_scan_work++;
+        MARKDOWN_CORE_DIAGNOSTIC(inline_state->owner_parser->opaque_scan_work++;)
         if (closes) {
             return at;
         }
@@ -954,55 +960,6 @@ void markdown_core_inline_state_push_delimiter(markdown_core_inline_state *inlin
     push_delimiter(inline_state, owner, rule, can_open != 0, can_close != 0, inl_text);
 }
 
-int markdown_core_inline_state_scan_delimiters(markdown_core_inline_state *inline_state, int max_delims,
-                                               unsigned char c, int *left_flanking, int *right_flanking,
-                                               int *punct_before, int *punct_after) {
-    int numdelims = 0;
-    bufsize_t before_char_pos;
-    int32_t after_char = 0;
-    int32_t before_char = 0;
-    int len;
-    bool space_before, space_after;
-
-    if (inline_state->pos == 0) {
-        before_char = 10;
-    } else {
-        before_char_pos = inline_state->pos - 1;
-        // walk back to the beginning of the UTF_8 sequence:
-        while (markdown_core_inline_peek_at(inline_state, before_char_pos) >> 6 == 2 && before_char_pos > 0) {
-            before_char_pos -= 1;
-        }
-        len = markdown_core_utf8proc_iterate(inline_state->input.data + before_char_pos,
-                                             inline_state->pos - before_char_pos, &before_char);
-        if (len == -1) {
-            before_char = 10;
-        }
-    }
-
-    while (markdown_core_inline_peek_char(inline_state) == c && numdelims < max_delims) {
-        numdelims++;
-        advance(inline_state);
-    }
-
-    len = markdown_core_utf8proc_iterate(inline_state->input.data + inline_state->pos,
-                                         inline_state->input.len - inline_state->pos, &after_char);
-    if (len == -1) {
-        after_char = 10;
-    }
-
-    *punct_before = markdown_core_utf8proc_is_punctuation_or_symbol(before_char);
-    *punct_after = markdown_core_utf8proc_is_punctuation_or_symbol(after_char);
-    space_before = markdown_core_utf8proc_is_space(before_char) != 0;
-    space_after = markdown_core_utf8proc_is_space(after_char) != 0;
-
-    *left_flanking = numdelims > 0 && !markdown_core_utf8proc_is_space(after_char) &&
-                     !(*punct_after && !space_before && !*punct_before);
-    *right_flanking = numdelims > 0 && !markdown_core_utf8proc_is_space(before_char) &&
-                      !(*punct_before && !space_after && !*punct_after);
-
-    return numdelims;
-}
-
 void markdown_core_inline_state_advance_offset(markdown_core_inline_state *inline_state) { advance(inline_state); }
 
 int markdown_core_inline_state_get_offset(markdown_core_inline_state *inline_state) { return inline_state->pos; }
@@ -1024,8 +981,8 @@ void markdown_core_inline_state_set_offset(markdown_core_inline_state *inline_st
     inline_state->pos = offset;
 }
 
-markdown_core_node *markdown_core_inline_state_make_delimiter_text(markdown_core_inline_state *inline_state, int from,
-                                                                   int to) {
+markdown_core_node *markdown_core_inline_state_make_source_text(markdown_core_inline_state *inline_state, int from,
+                                                                int to) {
     markdown_core_node *node;
 
     if (from < 0 || to < from || to >= inline_state->input.len) {

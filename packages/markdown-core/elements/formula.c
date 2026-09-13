@@ -277,7 +277,7 @@ static markdown_core_node *make_delimiter_text(markdown_core_parser *parser, mar
     /* The cursor is at the run's FIRST byte here, and at its last in
      * `strikethrough` -- which is why each of them used to compute the columns
      * from a different end. The shared constructor is told the range. */
-    node = markdown_core_inline_state_make_delimiter_text(inline_state, (int)offset, (int)(offset + len - 1));
+    node = markdown_core_inline_state_make_source_text(inline_state, (int)offset, (int)(offset + len - 1));
     if (!node) {
         return NULL;
     }
@@ -791,7 +791,21 @@ static markdown_core_node *postprocess(const markdown_core_element *element, mar
  * anyway, and it must stay in dispatch because `handle_backslash` asks whether any
  * element claims `\\` before taking a core fast path. */
 
+static bool can_start(markdown_core_inline_state *state, bufsize_t at) {
+    markdown_core_chunk *input = markdown_core_inline_state_get_chunk(state);
+    if (input->data[at] != '$') {
+        return true; /* Backslash forms have their own bounded scanners. */
+    }
+    if (at + 1 < input->len && input->data[at + 1] == '$') {
+        return true;
+    }
+    return dollar_inline_can_open(input, at) ||
+           (markdown_core_inline_state_has_unmatched_opener(state, FORMULA_DELIM_DOLLAR_INLINE) &&
+            dollar_inline_can_close(input, at));
+}
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_FORMULA = {
+    .can_start = can_start,
     .interrupts_paragraph = true,
 
     .name = "formula",

@@ -9,13 +9,13 @@ static bufsize_t markdown_core_block_parse_specimen_marker(markdown_core_parser 
                                                            bufsize_t pos, markdown_core_specimen_value *value) {
     bufsize_t begin = pos;
     *value = (markdown_core_specimen_value){0};
-    parser->specimen_work++;
+    MARKDOWN_CORE_DIAGNOSTIC(parser->specimen_work++;)
     if (BLOCK_PEEK(input, pos++) != '(') {
         return 0;
     }
     int digits = 0;
     while (digits < 9 && markdown_core_isdigit(BLOCK_PEEK(input, pos))) {
-        parser->specimen_work++;
+        MARKDOWN_CORE_DIAGNOSTIC(parser->specimen_work++;)
         value->start = value->start * 10 + input->data[pos++] - '0';
         digits++;
     }
@@ -28,7 +28,7 @@ static bufsize_t markdown_core_block_parse_specimen_marker(markdown_core_parser 
     while (pos < input->len) {
         int32_t scalar;
         int width = markdown_core_utf8proc_iterate(input->data + pos, input->len - pos, &scalar);
-        parser->specimen_work++;
+        MARKDOWN_CORE_DIAGNOSTIC(parser->specimen_work++;)
         if (markdown_core_utf8proc_is_letter(scalar) || markdown_core_utf8proc_is_number(scalar)) {
             alnum = true;
         } else if ((scalar == '_' || scalar == '-') && alnum) {
@@ -92,7 +92,7 @@ static bool markdown_core_specimen_open(markdown_core_parser *parser, markdown_c
     markdown_core_block_advance_offset(parser, input, parser->first_nonspace + matched - parser->offset, false);
     while (markdown_core_block_is_space_or_tab(input->data[parser->offset])) {
         markdown_core_block_advance_offset(parser, input, 1, true);
-        parser->specimen_work++;
+        MARKDOWN_CORE_DIAGNOSTIC(parser->specimen_work++;)
     }
     return true;
 }

@@ -26,6 +26,25 @@ int markdown_core_utf8proc_is_punctuation(int32_t uc);
 MARKDOWN_CORE_EXPORT
 int markdown_core_utf8proc_is_punctuation_or_symbol(int32_t uc);
 
+/* Flanking classes are disjoint. ASCII needs no Unicode table lookup; its
+ * whitespace set includes FF but excludes VT, unlike several C ctype sets. */
+typedef enum { MARKDOWN_CORE_CHAR_OTHER, MARKDOWN_CORE_CHAR_SPACE, MARKDOWN_CORE_CHAR_PUNCT } markdown_core_char_class;
+
+static inline markdown_core_char_class markdown_core_utf8proc_classify(int32_t c) {
+    if (c < 128) {
+        if (c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f') {
+            return MARKDOWN_CORE_CHAR_SPACE;
+        }
+        return ((c >= '!' && c <= '/') || (c >= ':' && c <= '@') || (c >= '[' && c <= '`') || (c >= '{' && c <= '~'))
+                   ? MARKDOWN_CORE_CHAR_PUNCT
+                   : MARKDOWN_CORE_CHAR_OTHER;
+    }
+    if (markdown_core_utf8proc_is_space(c)) {
+        return MARKDOWN_CORE_CHAR_SPACE;
+    }
+    return markdown_core_utf8proc_is_punctuation_or_symbol(c) ? MARKDOWN_CORE_CHAR_PUNCT : MARKDOWN_CORE_CHAR_OTHER;
+}
+
 int markdown_core_utf8proc_is_letter(int32_t uc);
 int markdown_core_utf8proc_is_number(int32_t uc);
 int markdown_core_utf8proc_is_mark(int32_t uc);

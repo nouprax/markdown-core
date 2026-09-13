@@ -93,9 +93,6 @@ static void S_register_element(markdown_core_parser *parser, const markdown_core
     }
     if (element->delimiter_rule != MARKDOWN_CORE_DELIM_RULE_NONE) {
         parser->delimiter_owners[element->delimiter_rule] = element;
-        if (element->delimiter_character) {
-            parser->delimiter_chars[element->delimiter_character] = element->delimiter_rule;
-        }
     }
 }
 
@@ -377,11 +374,35 @@ int markdown_core_parser_mark_content(markdown_core_parser *parser, markdown_cor
     return markdown_core_parser_append_content_mark(parser, node, 0, line, column, 1, 1);
 }
 
-/* Find the immutable run containing an offset, shared by slice and lookup. */
-int markdown_core_block_content_mark_at(markdown_core_parser *parser, const markdown_core_node *node,
-                                        bufsize_t offset) {
+/* A forward cursor visits each immutable run at most once. Revisited source
+ * ranges use binary search without moving that cursor backwards. Indexes, not
+ * pointers, survive growth of the parser-owned mark vector. */
+static int content_mark_at(markdown_core_parser *parser, const markdown_core_node *node, bufsize_t offset,
+                           int *cursor) {
     int lo = node->content_mark, hi = lo + node->content_mark_count - 1;
+    MARKDOWN_CORE_DIAGNOSTIC(size_t work = 0;)
+    if (cursor) {
+        if (*cursor < lo || *cursor > hi) {
+            *cursor = lo;
+        }
+        MARKDOWN_CORE_DIAGNOSTIC(work++;)
+        if (offset >= parser->line_marks[*cursor].content_offset) {
+            MARKDOWN_CORE_DIAGNOSTIC(int first = *cursor;)
+            while (*cursor < hi) {
+                if (parser->line_marks[*cursor + 1].content_offset > offset) {
+                    break;
+                }
+                ++*cursor;
+            }
+            /* Current mark, each advance, and the stopping comparison when
+             * the cursor has not reached the last mark. */
+            MARKDOWN_CORE_DIAGNOSTIC(parser->content_map_work += work + (size_t)(*cursor - first) + (*cursor < hi);)
+            return *cursor;
+        }
+        hi = *cursor > lo ? *cursor - 1 : lo;
+    }
     while (lo < hi) {
+        MARKDOWN_CORE_DIAGNOSTIC(work++;)
         int mid = lo + (hi - lo + 1) / 2;
         if (parser->line_marks[mid].content_offset <= offset) {
             lo = mid;
@@ -389,7 +410,13 @@ int markdown_core_block_content_mark_at(markdown_core_parser *parser, const mark
             hi = mid - 1;
         }
     }
+    MARKDOWN_CORE_DIAGNOSTIC(parser->content_map_work += work;)
     return lo;
+}
+
+int markdown_core_block_content_mark_at(markdown_core_parser *parser, const markdown_core_node *node,
+                                        bufsize_t offset) {
+    return content_mark_at(parser, node, offset, NULL);
 }
 
 /* A map slice is a view into parser-owned immutable runs. Neither the source
@@ -485,37 +512,30 @@ bool markdown_core_parser_queue_block_input(markdown_core_parser *parser, markdo
     return true;
 }
 
-/* Requirement 10: for any block with a content buffer and any byte offset
- * within it, name the source line and column of that byte.
- *
- * The answer is a projection of the block's mark run, not a counter anyone
- * maintains: find the slice the offset falls in and add the distance from its
- * start. Binary search, so a caller that asks once per inline node pays
- * log(lines in the block) rather than re-walking it. */
-static int S_content_place(markdown_core_parser *parser, markdown_core_node *node, bufsize_t content_offset, bool end,
-                           int *line, int *column) {
-    const markdown_core_line_mark *mark;
-
-    if (!parser || !node || node->content_mark_count <= 0 || content_offset < 0) {
-        return 0;
+/* Resolve an endpoint once: its run also identifies the immutable slice a
+ * source-backed Text node adopts. A missing map returns -1, never a run index. */
+int markdown_core_parser_project_content(markdown_core_parser *parser, const markdown_core_node *node, bufsize_t offset,
+                                         bool end, int *cursor, int *line, int *column) {
+    if (!parser || !node || node->content_mark_count <= 0 || offset < 0) {
+        return -1;
     }
-
-    content_offset += node->content_mark_offset;
-    mark = &parser->line_marks[markdown_core_block_content_mark_at(parser, node, content_offset)];
+    offset += node->content_mark_offset;
+    int index = content_mark_at(parser, node, offset, cursor);
+    const markdown_core_line_mark *mark = &parser->line_marks[index];
     *line = mark->line;
-    *column = mark->column + (int)(content_offset - mark->content_offset) * mark->source_step +
-              (end ? mark->source_width - 1 : 0);
-    return 1;
+    *column =
+        mark->column + (int)(offset - mark->content_offset) * mark->source_step + (end ? mark->source_width - 1 : 0);
+    return index;
 }
 
 int markdown_core_parser_content_place(markdown_core_parser *parser, markdown_core_node *node, bufsize_t offset,
                                        int *line, int *column) {
-    return S_content_place(parser, node, offset, false, line, column);
+    return markdown_core_parser_project_content(parser, node, offset, false, NULL, line, column) >= 0;
 }
 
 int markdown_core_parser_content_end_place(markdown_core_parser *parser, markdown_core_node *node, bufsize_t offset,
                                            int *line, int *column) {
-    return S_content_place(parser, node, offset, true, line, column);
+    return markdown_core_parser_project_content(parser, node, offset, true, NULL, line, column) >= 0;
 }
 
 /* Drop `dropped` bytes off the FRONT of `node`'s content, leaving `remaining`
@@ -657,57 +677,61 @@ markdown_core_node *markdown_core_parser_add_child(markdown_core_parser *parser,
     return child;
 }
 
-/* Project all three independent byte sets before inline parsing. Dispatch
- * retains every candidate in descriptor order, including overlapping owners.
- * The flattened index allocates once per parse, never once per token. */
+/* Project the union of dispatch and terminator ownership once. Flanking
+ * transparency stays independent of both. An owner appears at most once per
+ * byte, including repeated set members and overlapping roles. */
+enum { INLINE_TERMINATES = 1, INLINE_DISPATCHES = 2 };
+
+static size_t inline_candidate_roles(const markdown_core_element *element, unsigned char roles[256],
+                                     unsigned char bytes[256]) {
+    if (!element->match_inline && !element->insert_inline_from_delim) {
+        return 0;
+    }
+    memset(roles, 0, 256);
+    size_t count = 0;
+    for (const unsigned char *c = (const unsigned char *)element->terminates_text; c && *c; c++) {
+        if (!roles[*c]) {
+            bytes[count++] = *c;
+        }
+        roles[*c] |= INLINE_TERMINATES;
+    }
+    if (element->match_inline) {
+        for (const unsigned char *c = (const unsigned char *)element->dispatch; c && *c; c++) {
+            if (!roles[*c]) {
+                bytes[count++] = *c;
+            }
+            roles[*c] |= INLINE_DISPATCHES;
+        }
+    }
+    return count;
+}
+
 void markdown_core_manage_elements_special_characters(markdown_core_parser *parser, int add) {
     size_t next[256];
-
+    unsigned char roles[256], bytes[256];
     parser->mem->free(parser->inline_dispatch);
     parser->inline_dispatch = NULL;
     memset(parser->inline_dispatch_offsets, 0, sizeof(parser->inline_dispatch_offsets));
-
-    for (size_t element_index = 0; element_index < parser->element_count; element_index++) {
-        const markdown_core_element *element = parser->elements[element_index];
+    markdown_core_inlines_reset_special_chars(parser);
+    if (!add || parser->oom) {
+        return;
+    }
+    for (size_t i = 0; i < parser->element_count; i++) {
+        const markdown_core_element *element = parser->elements[i];
         if (!element->match_inline && !element->insert_inline_from_delim) {
             continue;
         }
-        const unsigned char *c;
-
-        if (add && element->match_inline) {
-            bool seen[256] = {false};
-            for (c = (const unsigned char *)element->dispatch; c && *c; c++) {
-                if (!seen[*c]) {
-                    parser->inline_dispatch_offsets[*c + 1]++;
-                    seen[*c] = true;
-                }
+        size_t used = inline_candidate_roles(element, roles, bytes);
+        for (size_t j = 0; j < used; j++) {
+            unsigned char c = bytes[j];
+            parser->inline_dispatch_offsets[c + 1]++;
+            if (roles[c] & INLINE_TERMINATES) {
+                markdown_core_inlines_add_text_terminator(parser, (unsigned char)c);
             }
         }
-
-        for (c = (const unsigned char *)element->terminates_text; c && *c; c++) {
-            if (add) {
-                if (!parser->special_chars[*c]) {
-                    parser->inline_start_predicates[*c] = element->is_inline_start;
-                } else if (parser->inline_start_predicates[*c] != element->is_inline_start) {
-                    parser->inline_start_predicates[*c] = NULL;
-                }
-                markdown_core_inlines_add_text_terminator(parser, *c);
-            } else {
-                parser->inline_start_predicates[*c] = NULL;
-                markdown_core_inlines_remove_text_terminator(parser, *c);
-            }
+        for (const unsigned char *c = (const unsigned char *)element->flanking_transparent; c && *c; c++) {
+            markdown_core_inlines_add_flanking_transparent(parser, *c);
         }
-        for (c = (const unsigned char *)element->flanking_transparent; c && *c; c++) {
-            if (add) {
-                markdown_core_inlines_add_flanking_transparent(parser, *c);
-            } else {
-                markdown_core_inlines_remove_flanking_transparent(parser, *c);
-            }
-        }
-    }
-
-    if (!add || parser->oom) {
-        return;
     }
     for (size_t c = 0; c < 256; c++) {
         parser->inline_dispatch_offsets[c + 1] += parser->inline_dispatch_offsets[c];
@@ -722,32 +746,26 @@ void markdown_core_manage_elements_special_characters(markdown_core_parser *pars
         parser->oom = true;
         return;
     }
-    for (size_t element_index = 0; element_index < parser->element_count; element_index++) {
-        const markdown_core_element *element = parser->elements[element_index];
-        if (!element->match_inline && !element->insert_inline_from_delim) {
-            continue;
-        }
-        bool seen[256] = {false};
-        if (!element->match_inline) {
-            continue;
-        }
-        for (const unsigned char *c = (const unsigned char *)element->dispatch; c && *c; c++) {
-            if (!seen[*c]) {
-                parser->inline_dispatch[next[*c]++] = element;
-                seen[*c] = true;
-            }
+    for (size_t i = 0; i < parser->element_count; i++) {
+        const markdown_core_element *element = parser->elements[i];
+        size_t used = inline_candidate_roles(element, roles, bytes);
+        for (size_t j = 0; j < used; j++) {
+            unsigned char c = bytes[j];
+            parser->inline_dispatch[next[c]++] = (markdown_core_inline_candidate){
+                element, (roles[c] & INLINE_DISPATCHES) != 0, (roles[c] & INLINE_TERMINATES) != 0};
         }
     }
     for (size_t c = 0; c < 256; c++) {
         size_t first = parser->inline_dispatch_offsets[c], end = parser->inline_dispatch_offsets[c + 1];
         for (size_t i = first + 1; i < end; i++) {
-            const markdown_core_element *element = parser->inline_dispatch[i];
+            markdown_core_inline_candidate candidate = parser->inline_dispatch[i];
             size_t at = i;
-            while (at > first && parser->inline_dispatch[at - 1]->inline_precedence > element->inline_precedence) {
+            while (at > first &&
+                   parser->inline_dispatch[at - 1].element->inline_precedence > candidate.element->inline_precedence) {
                 parser->inline_dispatch[at] = parser->inline_dispatch[at - 1];
                 at--;
             }
-            parser->inline_dispatch[at] = element;
+            parser->inline_dispatch[at] = candidate;
         }
     }
 }
@@ -1522,9 +1540,16 @@ static bool S_lookahead_extras_accept_blank(const markdown_core_parser *parser, 
     return true;
 }
 
+static markdown_core_node *S_lookahead_parent(markdown_core_node *parent, markdown_core_node_type child) {
+    while (parent->parent && !markdown_core_node_can_contain_type(parent, child)) {
+        parent = parent->parent;
+    }
+    return parent;
+}
+
 bool markdown_core_parser_lookahead_begin(markdown_core_parser *parser, markdown_core_node *parent_container,
                                           markdown_core_node_type child, markdown_core_block_lookahead *lookahead) {
-    markdown_core_node *parent = parent_container;
+    markdown_core_node *parent = S_lookahead_parent(parent_container, child);
     markdown_core_node *node;
     int depth = 0;
     int i;
@@ -1532,12 +1557,10 @@ bool markdown_core_parser_lookahead_begin(markdown_core_parser *parser, markdown
     memset(lookahead, 0, sizeof(*lookahead));
     /* The block joins the nearest open container that can hold it, which is
      * where `markdown_core_parser_add_child` backs up to when it is opened. */
-    while (parent->parent && !markdown_core_node_can_contain_type(parent, child)) {
-        parent = parent->parent;
-    }
     for (node = parent; node; node = node == parser->block_root ? NULL : node->parent) {
         depth++;
     }
+    MARKDOWN_CORE_DIAGNOSTIC(parser->block_lookahead_work += (size_t)depth;)
     if (!S_lookahead_reserve_chain(parser, depth)) {
         return false;
     }
@@ -1547,6 +1570,7 @@ bool markdown_core_parser_lookahead_begin(markdown_core_parser *parser, markdown
         parser->lookahead_chain[i] = node;
         parser->lookahead_chain_flags[i] = node->flags;
     }
+    MARKDOWN_CORE_DIAGNOSTIC(parser->block_lookahead_work += (size_t)depth;)
 
     lookahead->parser = parser;
     lookahead->parent = parent;
@@ -1581,7 +1605,7 @@ int markdown_core_parser_lookahead_next(markdown_core_block_lookahead *lookahead
         markdown_core_lookahead_entry *entry;
         int this_line = lookahead->line;
         int from = 1;
-        bufsize_t resumed_offset;
+        MARKDOWN_CORE_DIAGNOSTIC(bufsize_t resumed_offset;)
         bool carried = true;
         bool closing = false;
         bool taken = false;
@@ -1599,7 +1623,7 @@ int markdown_core_parser_lookahead_next(markdown_core_block_lookahead *lookahead
         if (next < end && *next == '\n') {
             next++;
         }
-        parser->block_lookahead_work++;
+        MARKDOWN_CORE_DIAGNOSTIC(parser->block_lookahead_work++;)
         if (next == end) {
             /* The input's last line, normalized once: the matchers read a line
              * through its terminator, and the source may not end in one. */
@@ -1644,11 +1668,11 @@ int markdown_core_parser_lookahead_next(markdown_core_block_lookahead *lookahead
                 parser->offset = entry->offset;
                 parser->column = entry->column;
                 parser->partially_consumed_tab = entry->partially_consumed_tab;
-                parser->first_nonspace = parser->offset;
-                parser->first_nonspace_column = parser->column;
+                parser->first_nonspace = entry->first_nonspace;
+                parser->first_nonspace_column = entry->first_nonspace_column;
             }
         }
-        resumed_offset = parser->offset;
+        MARKDOWN_CORE_DIAGNOSTIC(resumed_offset = parser->offset;)
         for (i = from; i < lookahead->depth && carried && !taken; i++) {
             markdown_core_node *container = parser->lookahead_chain[i];
             markdown_core_block_find_first_nonspace(parser, &input);
@@ -1667,7 +1691,7 @@ int markdown_core_parser_lookahead_next(markdown_core_block_lookahead *lookahead
         }
         /* The work of this visit is the prefix bytes it had to match itself:
          * what the resumed state did not already cover. */
-        parser->block_lookahead_work += (size_t)(parser->offset - resumed_offset);
+        MARKDOWN_CORE_DIAGNOSTIC(parser->block_lookahead_work += (size_t)(parser->offset - resumed_offset);)
         if (!carried || closing) {
             S_lookahead_close_run(lookahead, this_line, start);
             lookahead->active = false;
@@ -1686,6 +1710,8 @@ int markdown_core_parser_lookahead_next(markdown_core_block_lookahead *lookahead
             entry->depth = lookahead->depth - 1;
             entry->offset = parser->offset;
             entry->column = parser->column;
+            entry->first_nonspace = parser->first_nonspace;
+            entry->first_nonspace_column = parser->first_nonspace_column;
             entry->partially_consumed_tab = parser->partially_consumed_tab;
             entry->taken = taken;
             entry->blank = blank;
@@ -1729,6 +1755,7 @@ void markdown_core_parser_lookahead_end(markdown_core_block_lookahead *lookahead
         node->flags =
             (markdown_core_node_internal_flags)((node->flags & ~mask) | (parser->lookahead_chain_flags[i] & mask));
     }
+    MARKDOWN_CORE_DIAGNOSTIC(parser->block_lookahead_work += (size_t)lookahead->depth;)
     parser->offset = lookahead->saved_offset;
     parser->column = lookahead->saved_column;
     parser->first_nonspace = lookahead->saved_first_nonspace;
@@ -1738,6 +1765,24 @@ void markdown_core_parser_lookahead_end(markdown_core_block_lookahead *lookahead
     parser->partially_consumed_tab = lookahead->saved_partially_consumed_tab;
     lookahead->active = false;
     lookahead->parser = NULL;
+}
+
+const markdown_core_block_peek *markdown_core_parser_peek_block_line(markdown_core_parser *parser,
+                                                                     markdown_core_node *parent,
+                                                                     markdown_core_node_type child) {
+    parent = S_lookahead_parent(parent, child);
+    markdown_core_block_peek *peek = &parser->block_peek;
+    if (peek->parent == parent) {
+        return peek;
+    }
+    *peek = (markdown_core_block_peek){.parent = parent};
+    markdown_core_block_lookahead lookahead;
+    if (markdown_core_parser_lookahead_begin(parser, parent, child, &lookahead)) {
+        peek->available = markdown_core_parser_lookahead_next(&lookahead, &peek->input, &peek->first, &peek->indent,
+                                                              &peek->blanks) != 0;
+        markdown_core_parser_lookahead_end(&lookahead);
+    }
+    return peek;
 }
 
 static bool scan_element_start(markdown_core_parser *parser, block_start_context *context, block_start *start) {
@@ -1798,6 +1843,7 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
     size_t depth = 0;
 
     while (!element_accepts_lines(*container)) {
+        parser->block_peek.parent = NULL;
         depth++;
         markdown_core_block_find_first_nonspace(parser, input);
         /* Indentation ahead of whatever opens here is the CONTAINER's, not the
@@ -1976,6 +2022,7 @@ static void add_text_to_container(markdown_core_parser *parser, markdown_core_no
 
 /* See http://spec.commonmark.org/0.24/#phase-1-block-structure */
 static void S_process_line(markdown_core_parser *parser, const unsigned char *buffer, bufsize_t bytes) {
+    parser->block_peek.parent = NULL;
     markdown_core_node *last_matched_container;
     bool all_matched = true;
     markdown_core_node *container;
@@ -2006,6 +2053,7 @@ static void S_process_line(markdown_core_parser *parser, const unsigned char *bu
     parser->first_nonspace = 0;
     parser->first_nonspace_column = 0;
     parser->thematic_break_kill_pos = 0;
+    parser->table_separator_kill_pos = 0;
     parser->indent = 0;
     parser->blank = false;
     parser->partially_consumed_tab = false;
@@ -2111,7 +2159,7 @@ bool markdown_core_parser_register_definition(markdown_core_parser *parser,
         collection->capacity = capacity;
     }
     collection->values[collection->count++] = (markdown_core_definition_entry){definition, citation};
-    parser->definition_registration_work++;
+    MARKDOWN_CORE_DIAGNOSTIC(parser->definition_registration_work++;)
     if (inline_owner) {
         definition->prev = collection->last_inline;
         if (collection->last_inline) {

@@ -43,6 +43,7 @@ struct markdown_core_inline_state {
      * parser -- and the map is then simply not consulted. */
     markdown_core_parser *owner_parser;
     markdown_core_node *owner;
+    int content_mark_cursor;
     markdown_core_map *refmap;
     delimiter *last_delim;
     delimiter_run cached_run;

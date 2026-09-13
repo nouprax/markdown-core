@@ -33,7 +33,7 @@ static bool ordered_numeral(markdown_core_parser *parser, markdown_core_chunk *i
             return false;
         }
         for (bufsize_t at = begin; at < end; at++) {
-            parser->list_marker_work++;
+            MARKDOWN_CORE_DIAGNOSTIC(parser->list_marker_work++;)
             if (!markdown_core_isdigit(input->data[at])) {
                 return false;
             }
@@ -52,7 +52,7 @@ static bool ordered_numeral(markdown_core_parser *parser, markdown_core_chunk *i
             bufsize_t width = terms[term].text[1] ? 2 : 1;
             unsigned char offset = variant.lowercased ? 'a' - 'A' : 0;
             while (at + width <= end) {
-                parser->list_marker_work++;
+                MARKDOWN_CORE_DIAGNOSTIC(parser->list_marker_work++;)
                 if (input->data[at] != terms[term].text[0] + offset ||
                     (width == 2 && input->data[at + 1] != terms[term].text[1] + offset)) {
                     break;
@@ -88,7 +88,7 @@ static bufsize_t markdown_core_block_parse_list_marker(markdown_core_parser *par
     unsigned char c = BLOCK_PEEK(input, pos);
     const markdown_core_list *committed = container->kind == MARKDOWN_CORE_NODE_LIST ? container->as.list : NULL;
     *data = (markdown_core_list){0};
-    parser->list_marker_work++;
+    MARKDOWN_CORE_DIAGNOSTIC(parser->list_marker_work++;)
     if (c == '*' || c == '-' || c == '+') {
         data->list_type = MARKDOWN_CORE_BULLET_LIST;
         data->bullet_char = c;
@@ -102,7 +102,7 @@ static bufsize_t markdown_core_block_parse_list_marker(markdown_core_parser *par
             pos++;
         } else {
             while (markdown_core_isalnum(BLOCK_PEEK(input, pos))) {
-                parser->list_marker_work++;
+                MARKDOWN_CORE_DIAGNOSTIC(parser->list_marker_work++;)
                 pos++;
             }
         }
@@ -150,7 +150,7 @@ static bufsize_t markdown_core_block_parse_list_marker(markdown_core_parser *par
             int initial_column = column;
             bufsize_t at = pos;
             while (markdown_core_block_is_space_or_tab(BLOCK_PEEK(input, at))) {
-                parser->list_marker_work++;
+                MARKDOWN_CORE_DIAGNOSTIC(parser->list_marker_work++;)
                 column += input->data[at++] == '\t' ? 4 - column % 4 : 1;
                 if (column - initial_column >= 2) {
                     break;
@@ -167,7 +167,7 @@ static bufsize_t markdown_core_block_parse_list_marker(markdown_core_parser *par
     if (interrupts_paragraph) {
         bufsize_t at = pos;
         while (markdown_core_block_is_space_or_tab(BLOCK_PEEK(input, at))) {
-            parser->list_marker_work++;
+            MARKDOWN_CORE_DIAGNOSTIC(parser->list_marker_work++;)
             at++;
         }
         if (markdown_core_is_line_end(BLOCK_PEEK(input, at))) {

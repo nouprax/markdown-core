@@ -27,7 +27,6 @@ struct markdown_core_map_record {
 typedef struct markdown_core_map_record markdown_core_map_record;
 
 typedef struct markdown_core_key_index_slot {
-    uint64_t hash;
     const unsigned char *key;
     bufsize_t key_len;
     union {
@@ -36,9 +35,19 @@ typedef struct markdown_core_key_index_slot {
     } value;
 } markdown_core_key_index_slot;
 
+/* One leaf and its insertion branch. The first record has no branch. */
+typedef struct markdown_core_key_index_node {
+    markdown_core_key_index_slot slot;
+    size_t children[2];
+    bufsize_t byte;
+    uint16_t mask;
+} markdown_core_key_index_node;
+
 typedef struct markdown_core_key_index {
     markdown_core_mem *mem;
-    markdown_core_key_index_slot *slots;
+    markdown_core_key_index_node *nodes;
+    size_t root;
+    size_t *pending_link;
     size_t capacity;
     size_t size;
 } markdown_core_key_index;
@@ -63,7 +72,11 @@ int markdown_core_key_index_init(markdown_core_key_index *index, markdown_core_m
 void markdown_core_key_index_free(markdown_core_key_index *index);
 /* Find an occupied or vacant entry, growing only for a new key. NULL means
  * allocation failure. The entry is borrowed until the next insertion; a
- * vacant entry must be committed before another index operation. */
+ * vacant entry must be committed before another index operation. Reentry and
+ * invalid commits are programming errors and abort in all build modes.
+ * OOM ends the owning parse; destruction may abandon a pending entry when
+ * the caller cannot allocate its key. No recovery/retry contract is provided.
+ * commit borrows immutable bytes equal to the original query until free. */
 markdown_core_key_index_slot *markdown_core_key_index_entry(markdown_core_key_index *index, const unsigned char *key,
                                                             bufsize_t key_len);
 void markdown_core_key_index_commit(markdown_core_key_index *index, markdown_core_key_index_slot *entry,
