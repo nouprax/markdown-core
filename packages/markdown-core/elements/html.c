@@ -53,7 +53,7 @@ bufsize_t markdown_core_inline_scan_inline_html(markdown_core_inline_state *inli
                     matchlen = 0;
                 }
             }
-        } else if (markdown_core_isalpha(c) || c == '/') {
+        } else if (markdown_core_isalpha((char)c) || c == '/') {
             /* A tag begins with its name or `/`; a `<!` whose markup this
              * root stopped scanning is not offered to the tag scanner. */
             MARKDOWN_CORE_DIAGNOSTIC(inline_state->owner_parser->html_scan_work++;)
