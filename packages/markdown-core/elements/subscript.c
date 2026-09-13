@@ -10,6 +10,7 @@ static markdown_core_node *match(const markdown_core_element *self, markdown_cor
 }
 const markdown_core_element MARKDOWN_CORE_ELEMENT_SUBSCRIPT = {
     .name = "subscript",
+    .delimiter_character = '~',
     .delimiter_rule = MARKDOWN_CORE_DELIM_RULE_SUBSCRIPT,
     .delimiter = {.minimum_width = 1,
                   .maximum_width = 1,

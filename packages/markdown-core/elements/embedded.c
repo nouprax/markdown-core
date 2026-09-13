@@ -97,16 +97,21 @@ static markdown_core_node *match(const markdown_core_element *self, markdown_cor
         markdown_core_inline_peek_char_n(inline_state, 1) != '^') {
         inline_state->pos++;
         markdown_core_node *text =
-            make_str(inline_state, inline_state->pos - 2, inline_state->pos - 1, markdown_core_chunk_literal("!["));
+            markdown_core_inline_state_make_source_text(inline_state, inline_state->pos - 2, inline_state->pos - 1);
         if (text) {
             markdown_core_inline_push_bracket(inline_state, BRACKET_IMAGE, text);
         }
         return text;
     }
-    return make_str(inline_state, inline_state->pos - 1, inline_state->pos - 1, markdown_core_chunk_literal("!"));
+    return markdown_core_inline_state_make_source_text(inline_state, inline_state->pos - 1, inline_state->pos - 1);
+}
+
+static bool can_start(markdown_core_inline_state *state, bufsize_t at) {
+    return at + 1 < state->input.len && state->input.data[at + 1] == '[';
 }
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_EMBEDDED = {
+    .can_start = can_start,
     .inline_precedence = MARKDOWN_CORE_INLINE_FALLBACK,
 
     .name = "embedded",

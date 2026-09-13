@@ -1,16 +1,16 @@
 # 3.0 baseline performance remediation
 
-状态：进行中。首批完成 #243、#248、#272；其余 29 项仍开放（其中 #271 为汇总 issue）。先完成 baseline 性能修复，再推进增量解析实现。审查基线：`5eca3bc1`。
+状态：进行中。已完成 #243、#244、#247、#248、#272、#273；其余 26 项仍开放（其中 #271 为汇总 issue）。先完成 baseline 性能修复，再推进增量解析实现。审查基线：`5eca3bc1`。
 
 Issues 中的测量是待独立验证的证据；建议中的 API、所有权和复杂度变化必须符合当前规范。完成项需要代码、语义/失败边界测试及可复现的性能证据，不能以单个计时结果代替。
 
 ## Task list
 
 - [x] [#243](https://github.com/nouprax/markdown-core/issues/243) [P1] 表格元素在每行、每层新开容器上发起推测 lookahead，深层嵌套列表的缩进续行退化到 Θ(D²) 以上
-- [ ] [#244](https://github.com/nouprax/markdown-core/issues/244) [P1] Inline 位置模型对每个 inline 节点做 4 次二分查找和一次 memcmp，长段落上占 20% 指令
+- [x] [#244](https://github.com/nouprax/markdown-core/issues/244) [P1] Inline 位置模型对每个 inline 节点做 4 次二分查找和一次 memcmp，长段落上占 20% 指令
 - [ ] [#245](https://github.com/nouprax/markdown-core/issues/245) [P1] 一次 parse 事务的堆分配次数是节点数的数倍：节点、delimiter、iterator、block content 各自独立 calloc，逐节点释放
 - [ ] [#246](https://github.com/nouprax/markdown-core/issues/246) [P1] 节点记录 224 字节：attributes 向量、content strbuf、user_data 与 content-mark 字段出现在每一个 inline 节点上
-- [ ] [#247](https://github.com/nouprax/markdown-core/issues/247) [P1] 文本 run 在 `w`、`:`、`!`、`<`、`%`、`$`、`~` 等字节上被无谓切分：普通英文散文 4 倍分配，不可配对的 `~` 21 倍
+- [x] [#247](https://github.com/nouprax/markdown-core/issues/247) [P1] 文本 run 在 `w`、`:`、`!`、`<`、`%`、`$`、`~` 等字节上被无谓切分：普通英文散文 4 倍分配，不可配对的 `~` 21 倍
 - [x] [#248](https://github.com/nouprax/markdown-core/issues/248) [P1] `markdown_core_text_parse` 对每个文本字节做 UTF-8 解码与 Unicode 空白分类，只为记录最后一个空白边界；散文上约 19% 指令
 - [ ] [#249](https://github.com/nouprax/markdown-core/issues/249) [P2] Block 起始分派对每行、每个新开容器顺序遍历全部 32 个 descriptor 四轮，没有首字节索引
 - [ ] [#250](https://github.com/nouprax/markdown-core/issues/250) [P2] 定义列表在每个段落起始行都发起一次 lookahead 事务，并对 `[` 开头的行完整跑一次引用定义解析
@@ -36,7 +36,7 @@ Issues 中的测量是待独立验证的证据；建议中的 API、所有权和
 - [ ] [#270](https://github.com/nouprax/markdown-core/issues/270) [P3] 基准方法：样本是 73～3,789 字节的小文件重复 200 次，没有吞吐、参考实现对照、分配/指令计数与绑定侧测量，深层嵌套只测单行
 - [ ] [#271](https://github.com/nouprax/markdown-core/issues/271) [P1] 3.0 baseline 性能总览：相同 CommonMark 输入比 pinned cmark 0.31.2 慢 4～9 倍，每节点约 300～400 ns，累计分配为输入的 213 倍
 - [x] [#272](https://github.com/nouprax/markdown-core/issues/272) [P1] key index 在真实 hash 的 bucket flooding 下退化为 Θ(k²)：refmap、heading anchor、footnote、specimen 全部受影响，现有 gate 只测 cmark 旧 hash
-- [ ] [#273](https://github.com/nouprax/markdown-core/issues/273) [P2] Attribute recognition 的空间模型：每个 inline root 无论属性多少都为整段申请 8 B/字节、316.8 Ir/字节，反向 DP 无法续接，每行路径逐行重建
+- [x] [#273](https://github.com/nouprax/markdown-core/issues/273) [P2] Attribute recognition 的空间模型：每个 inline root 无论属性多少都为整段申请 8 B/字节、316.8 Ir/字节，反向 DP 无法续接，每行路径逐行重建
 - [ ] [#274](https://github.com/nouprax/markdown-core/issues/274) [P2] 分阶段基准：现有 runner 不计时 free、无任何阶段划分、workload_version 为字面量、原始样本被丢弃、样本无分隔拼接改变形状、work 计数器与 bindings 均未接入
 
 ## 当前实现顺序
@@ -60,6 +60,13 @@ Issues 中的测量是待独立验证的证据；建议中的 API、所有权和
   真实 baseline hash 的碰撞回放覆盖 references / anchors / footnotes / specimens。
 - #248：普通 text slice 的空白只需要最后一个 boundary；从尾部扫描，保留现有 Unicode 空白集合。
 
+## 本轮 #244、#247、#273
+
+- [x] 共用端点定位结果，前向 mark 游标与非单调回查都保留准确源位置。
+- [x] 按 owner 仲裁 `can_start`，让已知字面符号保持连续 Text，并保留共享 delimiter 语义。
+- [x] 属性改为按需前向 facts，覆盖重叠失败的工作和空间上界，Directive scan/apply 共用识别。
+- [x] 独立对照、旧属性语法差分与边界验证见 [修复记录](../reviews/2026-09-13-inline-performance-fixes.md)。
+
 ## 需要保留的审查结论
 
 - #244 的“节点总是按 offset 单调产生”只适用于前向 token；bracket、citation、attribute
@@ -71,3 +78,6 @@ Issues 中的测量是待独立验证的证据；建议中的 API、所有权和
 - #269 的完整树形 dump 本身需要 O(输出字节数)，深度链的输出有二次大小。可以消除
   临时数组及前缀重复构造，不能承诺整份 dump 相对于节点数线性；避免保存每层的完整前缀造成二次常驻空间。
 - #270 / #274 的完整基准工程仍待实现；本次独立对照工具只提供当前三项修复的可复现实验。
+- PR 首批 CI 的 +40.2% 来自独立 hosted-runner 的历史 base/head 对比；本机隔离 map
+  约慢 3.5%，首批整体基本持平。#274 需要优先补同一 runner 的交错对照与环境/原始样本，
+  才能区分 Linux 上的代码回退和运行环境差异。详见[隔离记录](../reviews/2026-09-13-inline-performance-fixes.md#首批-map-改动与-ci-回退)。

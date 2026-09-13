@@ -1,0 +1,10 @@
+{
+    "baseline_revision": "84efce3220e6e88fee1e6d5954b88eca82960924",
+    "seed": 273,
+    "inputs": 35010,
+    "queries": 1533102,
+    "orders": ["forward", "reverse", "shuffled", "repeated"],
+    "corpus_sha256": "baf07667f99c51cd58c65320e2c3c653431f4e9cf8b4ca23a7489a1e79c1ca29",
+    "all_equivalent": true,
+    "candidate_library_sha256": "49413ee22cc9b198ce9d42c4e1baf33b7ff53ae256cc2d8f33421422488de0fd"
+}

@@ -79,7 +79,7 @@ static markdown_core_node *handle_pointy_brace(markdown_core_inline_state *inlin
     }
 
     // if nothing matches, just return the opening <:
-    return make_str(inline_state, inline_state->pos - 1, inline_state->pos - 1, markdown_core_chunk_literal("<"));
+    return markdown_core_inline_state_make_source_text(inline_state, inline_state->pos - 1, inline_state->pos - 1);
 }
 
 static markdown_core_node *match(const markdown_core_element *self, markdown_core_parser *parser,
@@ -87,7 +87,17 @@ static markdown_core_node *match(const markdown_core_element *self, markdown_cor
                                  markdown_core_inline_state *inline_state) {
     return character == '<' ? handle_pointy_brace(inline_state) : NULL;
 }
+static bool can_start(markdown_core_inline_state *state, bufsize_t at) {
+    if (at + 1 >= state->input.len) {
+        return false;
+    }
+    unsigned char next = state->input.data[at + 1];
+    return markdown_core_isalpha(next) || next == '!' || next == '?' ||
+           (next == '/' && at + 2 < state->input.len && markdown_core_isalpha(state->input.data[at + 2]));
+}
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_HTML = {
+    .can_start = can_start,
     .name = "html",
     .match_inline = match,
     .terminates_text = "<",

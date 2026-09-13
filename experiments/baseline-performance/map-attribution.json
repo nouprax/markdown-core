@@ -1,0 +1,54 @@
+{
+    "workload": "representative_large v1",
+    "bytes": 158000,
+    "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+    "compiler": "Apple clang version 21.0.0 (clang-2100.1.1.101)",
+    "metric": "unchanged CI bench_runner: parse only; rotating process order; median of process medians",
+    "rounds": 16,
+    "warmup_per_process": 2,
+    "repeats_per_process": 9,
+    "source_sha256": "1195d372562020c4cd181d25068655823652becc4202b327024c9e644f447fd5",
+    "canonical_equivalent": true,
+    "variants": {
+        "base": {
+            "source_revision": "5eca3bc1598b0313a0ac6a9e69f078a309feb3e1",
+            "map_revision": "5eca3bc1598b0313a0ac6a9e69f078a309feb3e1",
+            "library_sha256": "c2d29b945d6629228343594a9c87e0ca271654fff4bce794edcef1143fdf0654",
+            "process_medians_ns": [
+                4654000, 3838000, 3766000, 3916000, 3808000, 3804000, 3776000, 3774000, 3812000, 3780000, 3750000,
+                3846000, 3846000, 3826000, 3769000, 3773000
+            ],
+            "median_ns": 3806000.0
+        },
+        "map-only": {
+            "source_revision": "5eca3bc1598b0313a0ac6a9e69f078a309feb3e1",
+            "map_revision": "84efce3220e6e88fee1e6d5954b88eca82960924",
+            "library_sha256": "c6c0e37bd9d778f130fad1aabc415419942ade7889739030a71ce13fbad62844",
+            "process_medians_ns": [
+                3994000, 3925000, 3925000, 3876000, 3926000, 3967000, 3965000, 3949000, 3988000, 3984000, 3972000,
+                3926000, 3986000, 3918000, 3926000, 3926000
+            ],
+            "median_ns": 3937500.0
+        },
+        "other-fixes": {
+            "source_revision": "84efce3220e6e88fee1e6d5954b88eca82960924",
+            "map_revision": "5eca3bc1598b0313a0ac6a9e69f078a309feb3e1",
+            "library_sha256": "7551bc5369b723a8e3a71897a69cae91c208adc0725f50e8e418da791b4083b4",
+            "process_medians_ns": [
+                4599000, 3820000, 3610000, 3615000, 3671000, 3647000, 3694000, 3833000, 3655000, 3563000, 3723000,
+                3618000, 3654000, 3647000, 3634000, 3596000
+            ],
+            "median_ns": 3650500.0
+        },
+        "first-batch": {
+            "source_revision": "84efce3220e6e88fee1e6d5954b88eca82960924",
+            "map_revision": "84efce3220e6e88fee1e6d5954b88eca82960924",
+            "library_sha256": "028de994063e4321d8a9c4b0ff324351377a64c3b8772d26682f9cbeccaa7c85",
+            "process_medians_ns": [
+                4905000, 3795000, 3878000, 3935000, 3782000, 3874000, 3753000, 3779000, 3795000, 3777000, 3795000,
+                3837000, 3787000, 3798000, 3855000, 3779000
+            ],
+            "median_ns": 3795000.0
+        }
+    }
+}

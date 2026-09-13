@@ -47,18 +47,19 @@ C parser 全部完成后才发现无法在 bindings 中复用。图中分支是�
   碰撞回放、radix 位序结构 gate、C / sanitizer 测试及同机对照已完成。
   详见 [修复记录](../reviews/2026-09-13-baseline-performance-fixes.md) 与
   [索引架构](../architecture/key-index.md)。
-- [ ] **B2 · Attribute recognition 的空间模型（P2 优化项）**。责任：
-  `elements/attributes.c` 及 directive/heading/link/span 的所有调用者。设计按语法事件/
-  runs 组织的共享识别状态，推导成功、失败和重叠候选的累计工作；与当前 reverse DP
-  同 corpus 对照。退出：sparse 和 dense attributes 的 peak requested bytes 与 scan
-  work 同时受控，无“短属性专用路径”或 input-size 门槛；stream continuation 可复用。
+- [x] **B2 · Attribute recognition 的 baseline 空间模型（#273）**。按需前向 facts
+  取代整段 reverse DP；同 corpus 的 sparse/dense work、累计申请和 peak gates，以及
+  成员后缀和裸值重叠的查询顺序验证已实现。所有者与 EOF 依赖见
+  [属性架构](../architecture/attribute-recognition.md)；原始对照见
+  [修复记录](../reviews/2026-09-13-inline-performance-fixes.md)。这里完成的是 baseline
+  识别和续接所需的事实模型；实际版本化失效、挂起和恢复仍由 I52 验证。
 - [ ] **B3 · 分阶段基准**。责任：C benchmark 与 bindings benchmark。分离 input copy、
   block、inline、semantic、projection、free；补充长 code/paragraph、后置 definition、
   顶部换行、深×宽、快照保留。退出：固定 generator/版本、raw 数据和一条复现命令；
   CI gate 使用 work invariants，时间结果用于诊断。
 
 按当前任务顺序，先推进 [baseline issues 修复](2026-09-13-baseline-performance.md)，
-再实现增量解析。B1 完成不代表整体“性能已最佳化”；B2/B3 及其余 baseline 工作仍需验证。
+再实现增量解析。B1/B2 完成不代表整体“性能已最佳化”；B3 及其余 baseline 工作仍需验证。
 
 ## M0：冻结可验证契约
 

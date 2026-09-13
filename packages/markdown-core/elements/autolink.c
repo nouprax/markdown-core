@@ -496,7 +496,7 @@ static markdown_core_node *address_match(markdown_core_parser *parser, markdown_
         return NULL;
     }
 
-    node = markdown_core_inline_state_make_delimiter_text(inline_state, (int)offset, (int)offset);
+    node = markdown_core_inline_state_make_source_text(inline_state, (int)offset, (int)offset);
     if (!node) {
         return NULL;
     }
@@ -788,7 +788,26 @@ static markdown_core_node *postprocess(const markdown_core_element *element, mar
     return root;
 }
 
+static bool can_start(markdown_core_inline_state *state, bufsize_t at) {
+    const unsigned char *s = state->input.data;
+    bufsize_t left = state->input.len - at;
+    if (s[at] == 'w') {
+        return left >= 4 && memcmp(s + at, "www.", 4) == 0;
+    }
+    if (left < 2) {
+        return false;
+    }
+    unsigned char next = s[at + 1];
+    if (s[at] == ':') {
+        /* address_match also fences off mailto/local-part text in labels. */
+        return (left >= 3 && next == '/' && s[at + 2] == '/') || markdown_core_isalnum(next) ||
+               strchr(".+-_", next) != NULL;
+    }
+    return markdown_core_isalnum(next) || strchr(".!#$%&'*+/=?^_`{|}~-", next) != NULL;
+}
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_AUTOLINK = {
+    .can_start = can_start,
     .name = "autolink",
     .match_inline = match,
     .postprocess_func = postprocess,

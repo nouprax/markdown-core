@@ -60,7 +60,7 @@ test("identity mismatches fail even when descriptor counts agree", () => {
     assert.throws(() => parseElementInventory(sources(["FIRST", "FIRST"], ["FIRST"])), /duplicate descriptor/);
 });
 
-test("delimiter projections cannot silently overwrite another element", () => {
+test("delimiter rules have unique owners while source bytes preserve shared arbitration", () => {
     const input = sources(["FIRST", "SECOND"]);
     const rule = (name, character) =>
         `.delimiter_rule = MARKDOWN_CORE_DELIM_RULE_${name},\n` +
@@ -75,7 +75,7 @@ test("delimiter projections cannot silently overwrite another element", () => {
     set(2, rule("MARK", "+"));
     assert.throws(() => parseElementInventory(input), /duplicate delimiter rule/);
     set(2, rule("INSERTION", "="));
-    assert.throws(() => parseElementInventory(input), /duplicate default delimiter character/);
+    assert.doesNotThrow(() => parseElementInventory(input));
     set(2, rule("EMPHASIS", "*"));
     assert.doesNotThrow(() => parseElementInventory(input));
     set(2, rule("NONE", "*"));

@@ -699,7 +699,7 @@ bool markdown_core_citation_defer_tail(markdown_core_inline_state *inline_state,
         markdown_core_inline_peek_char(inline_state) != '[' &&
         markdown_core_inline_citation_group_valid(&opener->citations, true)) {
         markdown_core_node *close =
-            make_str(inline_state, initial_pos - 1, initial_pos - 1, markdown_core_chunk_literal("]"));
+            markdown_core_inline_state_make_source_text(inline_state, initial_pos - 1, initial_pos - 1);
         delimiter *end =
             close ? markdown_core_inline_push_delimiter_entry(inline_state, DELIMITER_CITATION_TOKEN, initial_pos)
                   : NULL;
@@ -727,7 +727,7 @@ bool markdown_core_citation_defer_tail(markdown_core_inline_state *inline_state,
     return false;
 }
 
-static bool is_inline_start(markdown_core_inline_state *inline_state, bufsize_t at) {
+static bool can_start(markdown_core_inline_state *inline_state, bufsize_t at) {
     unsigned char c = inline_state->input.data[at];
     if (c == '-') {
         return markdown_core_inline_peek_at(inline_state, at + 1) == '@';
@@ -767,7 +767,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_CITATION = {
 
     .name = "citation",
     .match_inline = match,
-    .is_inline_start = is_inline_start,
+    .can_start = can_start,
     .terminates_text = "@-;",
     .dispatch = "@-;",
 };

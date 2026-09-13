@@ -43,12 +43,9 @@ export function parseElementInventory(sources) {
     for (const symbol of descriptors.keys()) {
         if (!attached.has(symbol)) throw new Error(`${symbol}: descriptor has no CORE_ELEMENTS[] entry`);
     }
-    // These projections are indexed by semantic rule and default source byte
-    // in the parser. A collision would otherwise silently change ownership
-    // with attach order. Shared dispatch bytes remain valid: a scanner can
-    // select a non-default rule, as the two tilde elements do.
+    // Semantic rules retain one owner. Source bytes may have several owners;
+    // the parser arbitrates them in descriptor precedence order.
     const rules = new Map();
-    const characters = new Map();
     for (const { symbol, body } of ordered) {
         const rule = /\.delimiter_rule\s*=\s*(MARKDOWN_CORE_DELIM_RULE_\w+)/.exec(body)?.[1];
         const character = /\.delimiter_character\s*=\s*'([^'\\])'/.exec(body)?.[1];
@@ -70,10 +67,6 @@ export function parseElementInventory(sources) {
             if (!(minimum > 0 && maximum >= minimum)) {
                 throw new Error(`${symbol}: invalid parsed delimiter widths`);
             }
-        }
-        if (character) {
-            if (characters.has(character)) throw new Error(`${symbol}: duplicate default delimiter character`);
-            characters.set(character, symbol);
         }
         if (/\.scan_block_start\s*=/.test(body) && !/\.maximum_block_indent\s*=\s*(?:\d+|INT_MAX)\b/.test(body)) {
             throw new Error(`${symbol}: block scanner requires an explicit indentation bound`);

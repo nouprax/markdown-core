@@ -109,7 +109,7 @@ markdown_core_node *markdown_core_inline_close_inline_footnote(markdown_core_par
         !markdown_core_node_can_contain_type(opener->inl_text->parent, MARKDOWN_CORE_NODE_CITE)) {
         inline_state->no_link_openers = opener->outer_no_link_openers;
         markdown_core_inline_pop_bracket(inline_state);
-        return make_str(inline_state, inline_state->pos - 1, inline_state->pos - 1, markdown_core_chunk_literal("]"));
+        return markdown_core_inline_state_make_source_text(inline_state, inline_state->pos - 1, inline_state->pos - 1);
     }
     cite = markdown_core_inline_make_footnote_cite(inline_state, opener, inline_state->pos);
     footnote = cite ? markdown_core_inline_make_simple(inline_state->mem, MARKDOWN_CORE_NODE_FOOTNOTE) : NULL;
@@ -145,7 +145,7 @@ static markdown_core_node *match(const markdown_core_element *self, markdown_cor
     }
     inline_state->pos += 2;
     markdown_core_node *node =
-        make_str(inline_state, inline_state->pos - 2, inline_state->pos - 1, markdown_core_chunk_literal("^["));
+        markdown_core_inline_state_make_source_text(inline_state, inline_state->pos - 2, inline_state->pos - 1);
     if (node) {
         markdown_core_inline_push_bracket(inline_state, BRACKET_FOOTNOTE, node);
     }
@@ -155,7 +155,12 @@ static bool continue_container(markdown_core_parser *parser, markdown_core_node 
                                const markdown_core_node *joining, bool *taken) {
     return markdown_core_footnote_continue(parser, node, input);
 }
+static bool can_start(markdown_core_inline_state *state, bufsize_t at) {
+    return at + 1 < state->input.len && state->input.data[at + 1] == '[';
+}
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_FOOTNOTE = {
+    .can_start = can_start,
     .name = "footnote",
     .continue_container = continue_container,
     .maximum_block_indent = 3,

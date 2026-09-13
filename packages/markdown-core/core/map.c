@@ -2,7 +2,7 @@
 #include "utf8.h"
 #include "parser.h"
 
-#define KEY_INDEX_MIN_CAPACITY 8
+#define KEY_INDEX_MIN_CAPACITY 1
 
 /* A compressed binary radix tree over length-delimited bytes. Each byte has
  * a presence bit before its eight value bits, so a prefix differs from its

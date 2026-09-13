@@ -2,6 +2,7 @@
 #define MARKDOWN_CORE_ATTRIBUTES_H
 
 #include "chunk.h"
+#include "map.h"
 
 typedef struct {
     markdown_core_chunk name;
@@ -18,17 +19,15 @@ typedef struct markdown_core_attribute_value {
     size_t record_count, record_capacity;
 } markdown_core_attributes;
 
-/* An index belongs to one immutable input extent. It recognizes every suffix
- * once, so overlapping failed candidates cannot repeatedly scan that extent.
- * Values are allocated and decoded only after recognition succeeds. */
+/* Demand-driven facts belong to one immutable input extent. Only queried
+ * member suffixes, value joins and braces encountered inside a value need
+ * records; ordinary source bytes never allocate index entries. */
 typedef struct {
     markdown_core_mem *mem;
     const unsigned char *data;
     bufsize_t length;
-    struct markdown_core_attribute_suffix {
-        bufsize_t end;
-        bufsize_t assignment_end;
-    } *ends;
+    markdown_core_key_index facts;
+    struct markdown_core_attribute_arena *arena;
     size_t work;
     int oom;
 } markdown_core_attribute_parser;

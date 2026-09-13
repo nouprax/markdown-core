@@ -33,7 +33,15 @@ typedef struct {
     bufsize_t attributes_start;
     bufsize_t attributes_len;
     bufsize_t end;
+    /* The recognized source and its facts survive through value commitment. */
+    markdown_core_attribute_parser attributes;
 } parsed_directive;
+
+static void free_parsed_directive(markdown_core_parser *parser, parsed_directive *parsed) {
+    parser->oom |= parsed->attributes.oom;
+    parser->attribute_work += parsed->attributes.work;
+    markdown_core_attribute_parser_free(&parsed->attributes);
+}
 
 static int is_directive_node(markdown_core_node *node) {
     return node && (node->kind == MARKDOWN_CORE_NODE_DIRECTIVE || node->kind == MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK);
@@ -218,11 +226,9 @@ static void directive_opaque_free(const markdown_core_element *element, markdown
  * strings or records. The parser owns and accounts for recognition work. */
 static int scan_directive_attributes(markdown_core_parser *parser, unsigned char *data, bufsize_t len, bufsize_t *pos,
                                      parsed_directive *parsed) {
-    markdown_core_attribute_parser attributes = {.mem = parser->mem, .data = data, .length = len};
-    bufsize_t end = markdown_core_attributes_end(&attributes, *pos);
-    parser->oom |= attributes.oom;
-    parser->attribute_work += attributes.work;
-    markdown_core_attribute_parser_free(&attributes);
+    parsed->attributes = (markdown_core_attribute_parser){.mem = parser->mem, .data = data, .length = len};
+    bufsize_t end = markdown_core_attributes_end(&parsed->attributes, *pos);
+    parser->oom |= parsed->attributes.oom;
     if (!end) {
         return 0;
     }
@@ -320,12 +326,9 @@ static int apply_parsed_directive(const markdown_core_element *element, markdown
     if (parsed->attributes_len) {
         const unsigned char *source = data + parsed->attributes_start;
         if (*source == '{') {
-            markdown_core_attribute_parser attributes = {.mem = mem, .data = source, .length = parsed->attributes_len};
             bufsize_t end;
-            int matched = markdown_core_attributes_parse(&attributes, 0, &node->attributes, &end);
-            parser->attribute_work += attributes.work;
-            parser->oom |= attributes.oom;
-            markdown_core_attribute_parser_free(&attributes);
+            int matched =
+                markdown_core_attributes_parse(&parsed->attributes, parsed->attributes_start, &node->attributes, &end);
             if (!matched) {
                 return 0;
             }
@@ -592,7 +595,7 @@ static int probe_directive_block(markdown_core_parser *parser, markdown_core_chu
     (void)reader;
     parsed_directive parsed;
     bool matched = scan_directive_block(parser, input->data, input->len, first, indent, &parsed) != 0;
-
+    free_parsed_directive(parser, &parsed);
     return matched;
 }
 
@@ -607,28 +610,31 @@ static markdown_core_node *open_directive_block(const markdown_core_element *ele
     markdown_core_node *node;
     node_directive *directive;
     if (!colon_count) {
-
+        free_parsed_directive(parser, &parsed);
         return NULL;
     }
 
     node = markdown_core_parser_add_child(parser, parent_container, MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK,
                                           (int)first_nonspace + 1);
     if (!node) {
-
+        free_parsed_directive(parser, &parsed);
         return NULL;
     }
 
     markdown_core_node_set_element(node, element);
     node->opaque = parser->mem->calloc(1, sizeof(node_directive));
     if (!node->opaque) {
+        free_parsed_directive(parser, &parsed);
         parser->oom = true;
         markdown_core_node_free(node);
 
         return NULL;
     }
 
-    if (!apply_parsed_directive(element, parser, node, input, &parsed, markdown_core_parser_get_line_number(parser),
-                                (int)first_nonspace)) {
+    int applied = apply_parsed_directive(element, parser, node, input, &parsed,
+                                         markdown_core_parser_get_line_number(parser), (int)first_nonspace);
+    free_parsed_directive(parser, &parsed);
+    if (!applied) {
         /* The suffix already validated; failure here is allocation loss. */
         parser->oom = true;
         markdown_core_node_free(node);
@@ -749,7 +755,18 @@ static int visit_owned_subtrees(const markdown_core_element *element, markdown_c
 /* The opener consumes the complete token; the shared inline parser parses its
  * owned label before continuing beyond it. No close-bracket dispatch exists. */
 
+static bool can_start(markdown_core_inline_state *state, bufsize_t at) {
+    markdown_core_chunk *input = markdown_core_inline_state_get_chunk(state);
+    if (at + 1 >= input->len) {
+        return false;
+    }
+    int32_t cp;
+    markdown_core_utf8proc_iterate(input->data + at + 1, input->len - at - 1, &cp);
+    return markdown_core_utf8proc_is_letter(cp);
+}
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_DIRECTIVE = {
+    .can_start = can_start,
     .interrupts_paragraph = true,
 
     .pending_close = true,

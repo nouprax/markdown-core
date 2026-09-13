@@ -244,7 +244,7 @@ static bool reference_tail(markdown_core_inline_state *inline_state, markdown_co
         inline_state->pos = end - base;
         markdown_core_inline_skip_spaces(inline_state);
         if (markdown_core_inline_skip_line_end(inline_state)) {
-            return markdown_core_attributes_parse(attributes, start, value, &end) != 0;
+            return !value || markdown_core_attributes_parse(attributes, start, value, &end) != 0;
         }
     }
     inline_state->pos = before;
@@ -305,10 +305,10 @@ bufsize_t markdown_core_parse_reference_inline(markdown_core_mem *mem, markdown_
     }
 
     // parse final spaces and newline:
-    if (!reference_tail(&inline_state, attributes, &value)) {
+    if (!reference_tail(&inline_state, attributes, refmap ? &value : NULL)) {
         if (matchlen) { // try rewinding before title
             inline_state.pos = beforetitle;
-            if (!reference_tail(&inline_state, attributes, &value)) {
+            if (!reference_tail(&inline_state, attributes, refmap ? &value : NULL)) {
                 return 0;
             }
             // The title candidate is un-read here: its bytes stay paragraph
@@ -629,7 +629,7 @@ markdown_core_node *markdown_core_inline_handle_close_bracket(markdown_core_pars
     bufsize_t initial_pos = inline_state->pos;
     bracket *opener = inline_state->last_bracket;
     if (!opener) {
-        return make_str(inline_state, initial_pos - 1, initial_pos - 1, markdown_core_chunk_literal("]"));
+        return markdown_core_inline_state_make_source_text(inline_state, initial_pos - 1, initial_pos - 1);
     }
     if (opener->kind == BRACKET_FOOTNOTE) {
         return markdown_core_inline_close_inline_footnote(parser, inline_state, opener);
@@ -674,7 +674,7 @@ no_match:
     markdown_core_inline_finish_citation_tokens(inline_state, &opener->citations);
     markdown_core_inline_pop_bracket(inline_state);
     inline_state->pos = initial_pos;
-    return make_str(inline_state, initial_pos - 1, initial_pos - 1, markdown_core_chunk_literal("]"));
+    return markdown_core_inline_state_make_source_text(inline_state, initial_pos - 1, initial_pos - 1);
 }
 
 static markdown_core_node *match_bracket(const markdown_core_element *self, markdown_core_parser *parser,
@@ -686,7 +686,7 @@ static markdown_core_node *match_bracket(const markdown_core_element *self, mark
     if (character == '[') {
         advance(inline_state);
         markdown_core_node *text =
-            make_str(inline_state, inline_state->pos - 1, inline_state->pos - 1, markdown_core_chunk_literal("["));
+            markdown_core_inline_state_make_source_text(inline_state, inline_state->pos - 1, inline_state->pos - 1);
         if (text) {
             markdown_core_inline_push_bracket(inline_state, BRACKET_LINK, text);
         }
@@ -708,7 +708,12 @@ static void dispose_inline(markdown_core_inline_state *inline_state) {
 
 static void init_inline(markdown_core_inline_state *inline_state) { inline_state->no_link_openers = true; }
 
+static bool can_start(markdown_core_inline_state *state, bufsize_t at) {
+    return state->input.data[at] != ']' || state->last_bracket != NULL;
+}
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_LINK = {
+    .can_start = can_start,
     .init_inline = init_inline,
 
     .inline_precedence = MARKDOWN_CORE_INLINE_FALLBACK,

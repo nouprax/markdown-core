@@ -1,7 +1,7 @@
 # Key index
 
 The private index shared by references, heading anchors, resource identities,
-footnotes, specimens and citation resolution is a compressed binary radix tree.
+footnotes, specimens, citation resolution and attribute facts is a compressed binary radix tree.
 There is one index algorithm for all key lengths, insertion orders and clients.
 
 ## Keys and lifetime
@@ -38,8 +38,8 @@ One dense record contains one slot and the branch created by its insertion
 (the first record has no branch). Child references encode record indices and a
 leaf bit, so geometric growth copies records without reinserting or rehashing.
 The record is 48 bytes on the measured arm64 ABI. Initial allocation is lazy
-when expected size is zero; the first allocation is eight records, 384 bytes,
-versus the former sixteen hash slots, 512 bytes. Capacity never includes a
+when expected size is zero; the first allocation is one record, 48 bytes. All consumers use the same
+geometric growth rule. Capacity never includes a
 separate hash load-factor reserve.
 
 ## Failure and verification
@@ -57,3 +57,24 @@ workload now targets the actual **baseline** FNV/finalizer hash instead of cmark
 unrelated sdbm hash. The comparison experiment replays these collisions through
 reference, heading, footnote and specimen consumers and compares complete dumps.
 OOM injection and sanitizers cover parse transaction failure and release.
+
+## Third-party hash-table candidates
+
+Vendoring a hash table is possible, but a replacement needs evidence from the
+actual parser consumers. Neither candidate below establishes the deterministic
+key-length work bound used here:
+
+- [khash](https://raw.githubusercontent.com/attractivechaos/klib/master/khash.h)
+  permits custom hash/equality and reports allocation failure. Its probing can
+  still visit many entries under collisions. Adapting allocator ownership and
+  byte-slice keys is required.
+- [stb_ds](https://raw.githubusercontent.com/nothings/stb/master/stb_ds.h) offers
+  a stronger SipHash option, but its global mutable seed, unchecked allocation
+  paths and allocator context require changes for this parser's concurrency and
+  sticky-OOM contracts.
+
+No third-party implementation has been benchmarked or adopted in this change.
+A future comparison should measure complete parse/free, live and requested bytes,
+misses, duplicate keys, long common prefixes and collisions for each actual hash,
+then run allocator-failure and concurrent-parse tests. Randomized hashing alone
+would not preserve the current deterministic worst-case guarantee.

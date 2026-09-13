@@ -32,6 +32,7 @@ static int can_contain(const markdown_core_element *element, markdown_core_node 
  * it behaves identically there, and upstream parity breaks without it. */
 const markdown_core_element MARKDOWN_CORE_ELEMENT_STRIKETHROUGH = {
     .name = "strikethrough",
+    .delimiter_character = '~',
     .delimiter_rule = MARKDOWN_CORE_DELIM_RULE_STRIKETHROUGH,
     .delimiter = {.minimum_width = 2,
                   .maximum_width = 2,

@@ -166,7 +166,12 @@ static const char *type_string(const markdown_core_element *element, markdown_co
 /* `%` ends a text run and is offered to the scanner, and that is the whole set. */
 static void finalize_comment(markdown_core_parser *, markdown_core_node *);
 
+static bool can_start(markdown_core_inline_state *state, bufsize_t at) {
+    return at + 1 < state->input.len && state->input.data[at + 1] == '%';
+}
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_COMMENT = {
+    .can_start = can_start,
     .interrupts_paragraph = true,
 
     .finalize_block = finalize_comment,
