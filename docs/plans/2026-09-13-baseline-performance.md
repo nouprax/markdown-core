@@ -67,6 +67,17 @@ Issues 中的测量是待独立验证的证据；建议中的 API、所有权和
 - [x] 属性改为按需前向 facts，覆盖重叠失败的工作和空间上界，Directive scan/apply 共用识别。
 - [x] 独立对照、旧属性语法差分与边界验证见 [修复记录](../reviews/2026-09-13-inline-performance-fixes.md)。
 
+## PR benchmark 与 CI
+
+- [x] 修复 MSVC C4244：radix 分支与局部 mask 统一为 `uint16_t`，保留 warnings-as-errors。
+- [x] base/head 在同一 runner 按精确 SHA 干净构建，移除历史 baseline 和 fallback 路径。
+- [x] 共用一个 driver、输入和 CPU affinity；新进程、预热、ABBA 轮换与完整原始样本。
+- [x] 分开 parse/free，配对估计和整组 bootstrap 区间；校验 canonical 输出和两侧身份。
+- [x] reporter 只执行其 workflow revision，校验当前 base/head、run attempt 和有界结果。
+- [x] 本机真实流程与同 revision A/A 校准通过；方法及复现见[测量契约](../architecture/pr-benchmark.md)。
+
+#270 / #274 的更广泛 workload、parser 内部分阶段和 binding 侧基准仍未完成。
+
 ## 需要保留的审查结论
 
 - #244 的“节点总是按 offset 单调产生”只适用于前向 token；bracket、citation、attribute
@@ -79,5 +90,5 @@ Issues 中的测量是待独立验证的证据；建议中的 API、所有权和
   临时数组及前缀重复构造，不能承诺整份 dump 相对于节点数线性；避免保存每层的完整前缀造成二次常驻空间。
 - #270 / #274 的完整基准工程仍待实现；本次独立对照工具只提供当前三项修复的可复现实验。
 - PR 首批 CI 的 +40.2% 来自独立 hosted-runner 的历史 base/head 对比；本机隔离 map
-  约慢 3.5%，首批整体基本持平。#274 需要优先补同一 runner 的交错对照与环境/原始样本，
-  才能区分 Linux 上的代码回退和运行环境差异。详见[隔离记录](../reviews/2026-09-13-inline-performance-fixes.md#首批-map-改动与-ci-回退)。
+  约慢 3.5%，首批整体基本持平。新 pipeline 使用同一 runner 的交错对照，旧百分比不能
+  与新结果直接拼接。详见[隔离记录](../reviews/2026-09-13-inline-performance-fixes.md#首批-map-改动与-ci-回退)。

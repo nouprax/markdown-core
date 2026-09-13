@@ -166,13 +166,18 @@ is absent from default, sanitizer, required-CI, and release test artifacts.
 Measurements cover representative documents and adversarial shapes, using
 tracked samples or deterministic generation without runtime downloads.
 
-The separate PR benchmark measures a versioned parser workload and library
-size against the exact base SHA. The untrusted PR producer builds only the
-head and uploads its result. A privileged default-branch workflow uses a
-trusted exact-SHA baseline or builds that base itself with persisted credentials
-disabled. It never checks out or executes PR-head code. Both JSON inputs are
-validated for origin, SHA, schema, workload, and numeric bounds before a
-comparison comment is written.
+The separate PR benchmark builds the exact PR base and head in the same
+unprivileged runner job. Each revision gets a clean source archive and CMake
+cache; only its staged shared library survives cleanup. One executable loads
+each library in a fresh process over identical input, with warmups and ABBA
+ordering. Raw parse/free samples, whole-block uncertainty, hashes and environment
+metadata accompany the report. No historical timing is reused as a baseline.
+
+A privileged default-branch workflow executes only its own immutable reporter
+revision. It reads the paired artifact as untrusted data, validates the bounded
+schema, workflow run and both current SHAs, then updates the comment. Neither
+lane is published as a trusted baseline. See [the measurement contract](pr-benchmark.md)
+for statistical interpretation, isolation and reproduction.
 
 Timing and RSS on hosted runners are informational and do not set pass/fail
 thresholds. Binary-size comparisons require matching toolchain inputs. A future

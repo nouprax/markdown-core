@@ -1,177 +1,212 @@
-#!/usr/bin/env node
+import assert from "node:assert/strict";
+import { Buffer } from "node:buffer";
 
-import { lstat, mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
-import path from "node:path";
+export const ARTIFACT = "pr-benchmark-comparison";
+export const MAX_RESULT_BYTES = 512 * 1024;
+export const ORDER = ["base", "head", "head", "base"];
+export const MARKER = "<!-- markdown-core-pr-benchmark -->";
 
-const command = process.argv[2];
-const args = new Map();
-for (let index = 3; index < process.argv.length; index += 2) {
-    const key = process.argv[index];
-    const value = process.argv[index + 1];
-    if (!key?.startsWith("--") || value === undefined) {
-        throw new Error(usage());
-    }
-    args.set(key.slice(2), value);
+export function workload() {
+    return Buffer.from(
+        "## Section\n\nParagraph with **strong**, [link](https://example.com), and 🚀.\n\n".repeat(2000)
+    );
 }
 
-if (command === "collect") {
-    await collect();
-} else if (command === "validate") {
-    await validate();
-} else {
-    throw new Error(usage());
+function keys(value, names) {
+    assert.ok(value && typeof value === "object" && !Array.isArray(value), "expected an object");
+    assert.deepEqual(Object.keys(value).sort(), [...names].sort(), "unexpected result fields");
 }
 
-async function collect() {
-    const log = required("log");
-    const buildDirectory = required("build-dir");
-    const output = required("output");
-    const sourceSha = required("source-sha");
-    const origin = required("origin");
-    if (!new Set(["head", "main-build", "fallback-build"]).has(origin)) {
-        throw new Error(`unsupported benchmark origin: ${origin}`);
-    }
-
-    const metricLines = (await readFile(log, "utf8"))
-        .split(/\r?\n/u)
-        .filter((line) => line.startsWith("metric ") || line.startsWith("baseline "));
-    if (metricLines.length !== 1) {
-        throw new Error(`expected exactly one benchmark metric line, found ${metricLines.length}`);
-    }
-
-    const fields = new Map();
-    for (const token of metricLines[0].split(/\s+/u).slice(1)) {
-        const separator = token.indexOf("=");
-        if (separator <= 0) throw new Error(`malformed benchmark field: ${token}`);
-        const name = token.slice(0, separator);
-        if (fields.has(name)) throw new Error(`duplicate benchmark field: ${name}`);
-        fields.set(name, token.slice(separator + 1));
-    }
-    // Baselines produced before this schema existed named the one fixed C
-    // operation as a boundary. Accept that exact legacy spelling when an old
-    // PR base must be built, then discard it: it is not a comparison dimension.
-    if (fields.has("boundary")) {
-        if (fields.get("boundary") !== "native_parse") {
-            throw new Error(`unsupported legacy benchmark boundary: ${fields.get("boundary")}`);
-        }
-        fields.delete("boundary");
-    }
-    if (!fields.has("workload_version")) fields.set("workload_version", "1");
-    const expectedFields = [
-        "runtime",
-        "workload",
-        "workload_version",
-        "bytes",
-        "warmup",
-        "repeats",
-        "median_ns",
-        "peak_rss_kib"
-    ];
-    if ([...fields.keys()].sort().join("\n") !== [...expectedFields].sort().join("\n")) {
-        throw new Error(`benchmark fields changed: ${[...fields.keys()].sort().join(", ")}`);
-    }
-
-    const document = {
-        schema: 1,
-        sourceSha,
-        origin,
-        runtime: fields.get("runtime"),
-        workload: fields.get("workload"),
-        workloadVersion: integer(fields, "workload_version"),
-        bytes: integer(fields, "bytes"),
-        warmup: integer(fields, "warmup"),
-        repeats: integer(fields, "repeats"),
-        medianNs: integer(fields, "median_ns"),
-        memoryKiB: integer(fields, "peak_rss_kib"),
-        binaryBytes: await sharedLibrarySize(buildDirectory)
-    };
-    validateDocument(document, sourceSha);
-    await mkdir(path.dirname(output), { recursive: true });
-    await writeFile(output, `${JSON.stringify(document, null, 2)}\n`);
+function integer(value, min, max) {
+    assert.ok(Number.isSafeInteger(value) && value >= min && value <= max, "integer outside result bounds");
 }
 
-async function validate() {
-    const input = required("input");
-    const sourceSha = required("source-sha");
-    const document = JSON.parse(await readFile(input, "utf8"));
-    validateDocument(document, sourceSha);
+function text(value, max = 2048) {
+    assert.ok(typeof value === "string" && value.length <= max, "invalid metadata string");
 }
 
-function validateDocument(document, sourceSha) {
-    if (!/^[0-9a-f]{40}$/u.test(sourceSha)) throw new Error(`invalid source SHA: ${sourceSha}`);
-    const exactKeys = [
-        "binaryBytes",
-        "bytes",
-        "medianNs",
-        "memoryKiB",
-        "origin",
-        "repeats",
-        "runtime",
+function hash(value, length = 64) {
+    assert.ok(typeof value === "string" && new RegExp(`^[0-9a-f]{${length}}$`).test(value), "invalid digest");
+}
+
+export function validateMeasurement(value, repeats) {
+    keys(value, ["rssKiB", "parseNs", "freeNs"]);
+    integer(value.rssKiB, 1, 1e12);
+    for (const name of ["parseNs", "freeNs"]) {
+        assert.ok(Array.isArray(value[name]) && value[name].length === repeats, "missing raw samples");
+        for (const sample of value[name]) integer(sample, 1, 60e9);
+    }
+    return value;
+}
+
+export function validateComparison(value, expected = {}) {
+    keys(value, [
         "schema",
-        "sourceSha",
-        "warmup",
+        "baseSha",
+        "headSha",
+        "run",
+        "environment",
         "workload",
-        "workloadVersion"
-    ];
-    if (!document || Object.keys(document).sort().join("\n") !== exactKeys.join("\n")) {
-        throw new Error("benchmark document fields changed");
+        "harnessSha256",
+        "settings",
+        "binaries",
+        "blocks"
+    ]);
+    assert.equal(value.schema, 2, "retired or unknown benchmark schema");
+    hash(value.baseSha, 40);
+    hash(value.headSha, 40);
+    hash(value.harnessSha256);
+    keys(value.run, ["id", "attempt", "job"]);
+    integer(value.run.id, 0, Number.MAX_SAFE_INTEGER);
+    integer(value.run.attempt, 1, 10000);
+    assert.ok(["compare", "local"].includes(value.run.job));
+    for (const name of ["baseSha", "headSha"]) {
+        if (expected[name] !== undefined) assert.equal(value[name], expected[name], `stale ${name}`);
     }
-    if (
-        document.schema !== 1 ||
-        document.sourceSha !== sourceSha ||
-        !new Set(["head", "main-build", "fallback-build"]).has(document.origin) ||
-        document.runtime !== "c" ||
-        document.workload !== "representative_large" ||
-        document.workloadVersion !== 1 ||
-        !positive(document.bytes) ||
-        !nonnegative(document.warmup) ||
-        !positive(document.repeats) ||
-        !positive(document.medianNs) ||
-        !nonnegative(document.memoryKiB) ||
-        !positive(document.binaryBytes)
-    ) {
-        throw new Error("invalid benchmark document");
+    for (const name of ["id", "attempt"]) {
+        if (expected.run?.[name] !== undefined) assert.equal(value.run[name], expected.run[name], `wrong run ${name}`);
     }
-}
-
-async function sharedLibrarySize(root) {
-    const candidates = [];
-    async function visit(directory) {
-        for (const entry of await readdir(directory, { withFileTypes: true })) {
-            const entryPath = path.join(directory, entry.name);
-            if (entry.isDirectory()) {
-                await visit(entryPath);
-            } else if (entry.isFile() && /^libmarkdown-core(?:\.so(?:\.\d+)*|(?:\.\d+)*\.dylib)$/u.test(entry.name)) {
-                if (!(await lstat(entryPath)).isSymbolicLink()) candidates.push(entryPath);
-            }
+    keys(value.workload, ["name", "bytes", "sha256", "canonicalSha256"]);
+    assert.equal(value.workload.name, "representative_large");
+    integer(value.workload.bytes, 1, 16 * 1024 * 1024);
+    hash(value.workload.sha256);
+    hash(value.workload.canonicalSha256);
+    keys(value.settings, ["blocks", "warmup", "repeats", "order"]);
+    integer(value.settings.blocks, 2, 32);
+    integer(value.settings.warmup, 1, 32);
+    integer(value.settings.repeats, 3, 32);
+    assert.deepEqual(value.settings.order, ORDER);
+    keys(value.environment, [
+        "os",
+        "arch",
+        "release",
+        "cpu",
+        "logicalCpus",
+        "compiler",
+        "cmake",
+        "runnerImage",
+        "runnerImageVersion",
+        "cpuAffinity",
+        "loadBefore",
+        "loadAfter"
+    ]);
+    assert.ok(["linux", "darwin"].includes(value.environment.os));
+    assert.ok(["x64", "arm64"].includes(value.environment.arch));
+    for (const name of ["release", "cpu", "compiler", "cmake", "runnerImage", "runnerImageVersion"])
+        text(value.environment[name]);
+    integer(value.environment.logicalCpus, 1, 65536);
+    if (value.environment.cpuAffinity !== null) integer(value.environment.cpuAffinity, 0, 65535);
+    for (const name of ["loadBefore", "loadAfter"]) {
+        const load = value.environment[name];
+        assert.ok(
+            Array.isArray(load) && load.length === 3 && load.every((n) => Number.isFinite(n) && n >= 0 && n <= 1e6)
+        );
+    }
+    keys(value.binaries, ["base", "head"]);
+    for (const name of ["base", "head"]) {
+        const binary = value.binaries[name];
+        keys(binary, ["libraryBytes", "librarySha256", "runnerSha256", "cmakeCacheSha256", "compileCommandsSha256"]);
+        integer(binary.libraryBytes, 1, 1024 * 1024 * 1024);
+        for (const field of ["librarySha256", "runnerSha256", "cmakeCacheSha256", "compileCommandsSha256"])
+            hash(binary[field]);
+    }
+    assert.equal(
+        value.binaries.base.runnerSha256,
+        value.binaries.head.runnerSha256,
+        "different measurement executables"
+    );
+    assert.ok(Array.isArray(value.blocks) && value.blocks.length === value.settings.blocks, "incomplete paired run");
+    for (const block of value.blocks) {
+        assert.ok(Array.isArray(block) && block.length === ORDER.length, "incomplete ABBA block");
+        for (let i = 0; i < ORDER.length; i++) {
+            const { lane, ...measurement } = block[i];
+            assert.equal(lane, ORDER[i], "unbalanced run order");
+            validateMeasurement(measurement, value.settings.repeats);
         }
     }
-    await visit(root);
-    if (candidates.length === 0) throw new Error("built markdown-core shared library was not found");
-    const sizes = await Promise.all(candidates.map(async (candidate) => (await stat(candidate)).size));
-    return Math.max(...sizes);
-}
-
-function integer(fields, name) {
-    const value = Number(fields.get(name));
-    if (!Number.isSafeInteger(value)) throw new Error(`${name} is not an integer`);
     return value;
 }
 
-function positive(value) {
-    return Number.isSafeInteger(value) && value > 0;
+export function median(values) {
+    const sorted = [...values].sort((a, b) => a - b);
+    const middle = Math.floor(sorted.length / 2);
+    return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
 }
 
-function nonnegative(value) {
-    return Number.isSafeInteger(value) && value >= 0;
+function mean(values) {
+    return values.reduce((a, b) => a + b, 0) / values.length;
 }
 
-function required(name) {
-    const value = args.get(name);
-    if (!value) throw new Error(`--${name} is required\n${usage()}`);
-    return value;
+// Resample whole ABBA blocks, not the correlated samples within a process.
+// The interval describes this job's paired observations, not other machines.
+export function pairedEstimate(blockLogRatios) {
+    let state = 0x2730244;
+    const estimates = [];
+    for (let repeat = 0; repeat < 10000; repeat++) {
+        let sum = 0;
+        for (let i = 0; i < blockLogRatios.length; i++) {
+            state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+            sum += blockLogRatios[Math.floor((state / 4294967296) * blockLogRatios.length)];
+        }
+        estimates.push(Math.exp(sum / blockLogRatios.length));
+    }
+    estimates.sort((a, b) => a - b);
+    return { ratio: Math.exp(mean(blockLogRatios)), low: estimates[249], high: estimates[9749] };
 }
 
-function usage() {
-    return "usage: pr-benchmark-result.mjs collect --log FILE --build-dir DIR --output FILE --source-sha SHA --origin ORIGIN | validate --input FILE --source-sha SHA";
+export function summarize(value) {
+    validateComparison(value);
+    const phases = {};
+    for (const phase of ["parse", "free", "total"]) {
+        const samples = (run) => (phase === "total" ? run.parseNs.map((p, i) => p + run.freeNs[i]) : run[`${phase}Ns`]);
+        const logs = value.blocks.map((block) => {
+            const times = block.map((run) => median(samples(run)));
+            return (Math.log(times[1] / times[0]) + Math.log(times[2] / times[3])) / 2;
+        });
+        phases[phase] = {
+            base: median(value.blocks.flatMap((block) => block.filter((run) => run.lane === "base").flatMap(samples))),
+            head: median(value.blocks.flatMap((block) => block.filter((run) => run.lane === "head").flatMap(samples))),
+            ...pairedEstimate(logs)
+        };
+    }
+    const rss = Object.fromEntries(
+        ["base", "head"].map((lane) => [
+            lane,
+            median(value.blocks.flatMap((block) => block.filter((run) => run.lane === lane).map((run) => run.rssKiB)))
+        ])
+    );
+    return { phases, rss };
+}
+
+const percent = (ratio) => `${ratio >= 1 ? "+" : ""}${((ratio - 1) * 100).toFixed(1)}%`;
+
+export function renderComparison(value) {
+    const { phases, rss } = summarize(value);
+    const lines = [
+        MARKER,
+        "## PR benchmark",
+        "",
+        `Same runner: base \`${value.baseSha.slice(0, 12)}\` → head \`${value.headSha.slice(0, 12)}\`.`,
+        "",
+        `Input: ${value.workload.bytes.toLocaleString("en-US")} B; SHA-256 \`${value.workload.sha256.slice(0, 12)}\`. Canonical output agrees.`,
+        `${value.settings.blocks} ABBA blocks; each fresh process has ${value.settings.warmup} warmups and ${value.settings.repeats} timed parses.`,
+        "",
+        "| Phase | Base median | Head median | Paired change | 95% interval |",
+        "| --- | ---: | ---: | ---: | ---: |"
+    ];
+    for (const [name, phase] of Object.entries(phases)) {
+        lines.push(
+            `| ${name === "total" ? "parse + free" : name} | ${(phase.base / 1e6).toFixed(3)} ms | ${(phase.head / 1e6).toFixed(3)} ms | ${percent(phase.ratio)} | ${percent(phase.low)} to ${percent(phase.high)} |`
+        );
+    }
+    lines.push(
+        "",
+        `Median process peak RSS: base ${rss.base.toLocaleString("en-US")} KiB; head ${rss.head.toLocaleString("en-US")} KiB.`,
+        `Library size: base ${value.binaries.base.libraryBytes.toLocaleString("en-US")} B; head ${value.binaries.head.libraryBytes.toLocaleString("en-US")} B.`,
+        "",
+        "Paired change is the geometric mean of within-block ratios. The bootstrap interval resamples complete ABBA blocks; it describes this job, not cross-machine variation.",
+        "A range crossing 0% does not resolve the direction in this run. Timings remain informational; no wall-clock pass/fail threshold is applied.",
+        "Raw samples, workload/driver/library hashes, and environment metadata are attached to this run. Both lanes are PR-controlled diagnostic data, never reusable trusted baselines."
+    );
+    return lines.join("\n") + "\n";
 }
