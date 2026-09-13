@@ -18,24 +18,39 @@ import Testing
                     scope: scope,
                     anchor: nil,
                     attributes: .empty,
-                    content: [1],
+                    content: .init(indices: [1]),
                     metadata: nil,
-                    footnotes: [4],
-                    specimens: [5, 6]
+                    footnotes: .init(indices: [4]),
+                    specimens: .init(indices: [5, 6])
                 )
             ),
-            .paragraph(.init(scope: scope, anchor: nil, attributes: .empty, content: [2])),
-            .cite(.init(scope: scope, anchor: nil, attributes: .empty, citations: [3])),
-            .citation(.init(scope: scope, referent: .specimen(id: "étude"), prefix: [], suffix: [])),
-            .footnote(.init(scope: scope, id: "n", content: [])),
-            .specimen(.init(scope: scope, id: "étude", start: 5, content: [])),
-            .specimen(.init(scope: scope, id: nil, start: nil, content: [])),
+            .paragraph(.init(scope: scope, anchor: nil, attributes: .empty, content: .init(indices: [2]))),
+            .cite(.init(scope: scope, anchor: nil, attributes: .empty, citations: .init(indices: [3]))),
+            .citation(
+                .init(
+                    scope: scope,
+                    anchor: nil,
+                    attributes: .empty,
+                    referent: .specimen(id: "étude"),
+                    prefix: .init(indices: []),
+                    suffix: .init(indices: [])
+                )
+            ),
+            .footnote(.init(scope: scope, anchor: nil, attributes: .empty, id: "n", content: .init(indices: []))),
+            .specimen(
+                .init(scope: scope, anchor: nil, attributes: .empty, id: "étude", start: 5, content: .init(indices: []))
+            ),
+            .specimen(
+                .init(scope: scope, anchor: nil, attributes: .empty, id: nil, start: nil, content: .init(indices: []))
+            ),
         ])
         let document = store.value(at: 0, as: Document.self)
         #expect(document.specimens[0].start == 5)
         #expect(document.specimens[1].id == nil)
         #expect(document.dump().contains("referent=specimen(id=\"étude\")"))
-        #expect(document.dump().contains("Specimen scope=1:1..1:4 id=null start=null children=0"))
+        #expect(
+            document.dump().contains("Specimen scope=1:1..1:4 anchor=null attributes={} id=null start=null children=0")
+        )
         var visitor = RecordingWalkingVisitor()
         document.walk(with: &visitor)
         #expect(visitor.events.filter { $0 == "entering:Specimen" }.count == 2)
@@ -224,7 +239,7 @@ import Testing
         let dump = document.dump()
         #expect(dump.hasPrefix("Document scope=1:1..5:11 anchor=null attributes={} children=1\n"))
         let tail = """
-            └── Footnote scope=5:1..5:11 id="a" children=1
+            └── Footnote scope=5:1..5:11 anchor=null attributes={} id="a" children=1
                 └── Paragraph scope=5:7..5:11 anchor=null attributes={} children=1
                     └── Text scope=5:7..5:11 anchor=null attributes={} literal="twice" children=0
 
@@ -313,54 +328,60 @@ import Testing
     }
 }
 
-private struct KindVisitor: MarkupVisitor {
-    mutating func visit(_ node: Document) -> String { kindName(node) }
-    mutating func visit(_ node: Callout) -> String { kindName(node) }
-    mutating func visit(_ node: Paragraph) -> String { kindName(node) }
-    mutating func visit(_ node: Heading) -> String { "heading:\(node.level)" }
-    mutating func visit(_ node: ThematicBreak) -> String { kindName(node) }
-    mutating func visit(_ node: MarkdownCore.List) -> String { kindName(node) }
-    mutating func visit(_ node: ListItem) -> String { kindName(node) }
-    mutating func visit(_ node: CodeBlock) -> String { kindName(node) }
-    mutating func visit(_ node: HTMLBlock) -> String { kindName(node) }
-    mutating func visit(_ node: FormulaBlock) -> String { kindName(node) }
-    mutating func visit(_ node: Table) -> String { kindName(node) }
-    mutating func visit(_ node: DirectiveBlock) -> String { kindName(node) }
+struct KindVisitor: MarkupVisitor {
+    mutating func visit(_ node: Citation, phase: MarkupWalkPhase) -> String { kindName(node) }
+    mutating func visit(_ node: Footnote, phase: MarkupWalkPhase) -> String { kindName(node) }
+    mutating func visit(_ node: Specimen, phase: MarkupWalkPhase) -> String { kindName(node) }
+    mutating func visit(_ node: Metadata, phase: MarkupWalkPhase) -> String { kindName(node) }
 
-    mutating func visit(_ node: DirectiveLabel) -> String { kindName(node) }
-    mutating func visit(_ node: Text) -> String { kindName(node) }
-    mutating func visit(_ node: SoftBreak) -> String { kindName(node) }
-    mutating func visit(_ node: LineBreak) -> String { kindName(node) }
-    mutating func visit(_ node: Code) -> String { kindName(node) }
-    mutating func visit(_ node: HTML) -> String { kindName(node) }
-    mutating func visit(_ node: MarkdownCore.Comment) -> String { kindName(node) }
-    mutating func visit(_ node: MarkdownCore.CrossLink) -> String { kindName(node) }
-    mutating func visit(_ node: MarkdownCore.CrossEmbedded) -> String { kindName(node) }
-    mutating func visit(_ node: Formula) -> String { kindName(node) }
-    mutating func visit(_ node: Emphasis) -> String { kindName(node) }
-    mutating func visit(_ node: Strong) -> String { kindName(node) }
-    mutating func visit(_ node: Strikethrough) -> String { kindName(node) }
-    mutating func visit(_ node: Mark) -> String { kindName(node) }
-    mutating func visit(_ node: Insertion) -> String { kindName(node) }
-    mutating func visit(_ node: Span) -> String { kindName(node) }
-    mutating func visit(_ node: Superscript) -> String { kindName(node) }
-    mutating func visit(_ node: Subscript) -> String { kindName(node) }
-    mutating func visit(_ node: DefinitionList) -> String { kindName(node) }
-    mutating func visit(_ node: Definition) -> String { kindName(node) }
-    mutating func visit(_ node: Link) -> String { kindName(node) }
-    mutating func visit(_ node: Embedded) -> String { kindName(node) }
-    mutating func visit(_ node: Directive) -> String { kindName(node) }
-    mutating func visit(_ node: Cite) -> String { kindName(node) }
-    mutating func visit(_ node: TableCaption) -> String { kindName(node) }
-    mutating func visit(_ node: TableRow) -> String { "row" }
-    mutating func visit(_ node: TableCell) -> String { "cell" }
+    mutating func visit(_ node: Document, phase: MarkupWalkPhase) -> String { kindName(node) }
+    mutating func visit(_ node: Callout, phase: MarkupWalkPhase) -> String { kindName(node) }
+    mutating func visit(_ node: Paragraph, phase: MarkupWalkPhase) -> String { kindName(node) }
+    mutating func visit(_ node: Heading, phase: MarkupWalkPhase) -> String { "heading:\(node.level)" }
+    mutating func visit(_ node: ThematicBreak, phase: MarkupWalkPhase) -> String { kindName(node) }
+    mutating func visit(_ node: MarkdownCore.List, phase: MarkupWalkPhase) -> String { kindName(node) }
+    mutating func visit(_ node: ListItem, phase: MarkupWalkPhase) -> String { kindName(node) }
+    mutating func visit(_ node: CodeBlock, phase: MarkupWalkPhase) -> String { kindName(node) }
+    mutating func visit(_ node: HTMLBlock, phase: MarkupWalkPhase) -> String { kindName(node) }
+    mutating func visit(_ node: FormulaBlock, phase: MarkupWalkPhase) -> String { kindName(node) }
+    mutating func visit(_ node: Table, phase: MarkupWalkPhase) -> String { kindName(node) }
+    mutating func visit(_ node: DirectiveBlock, phase: MarkupWalkPhase) -> String { kindName(node) }
+
+    mutating func visit(_ node: DirectiveLabel, phase: MarkupWalkPhase) -> String { kindName(node) }
+    mutating func visit(_ node: Text, phase: MarkupWalkPhase) -> String { kindName(node) }
+    mutating func visit(_ node: SoftBreak, phase: MarkupWalkPhase) -> String { kindName(node) }
+    mutating func visit(_ node: LineBreak, phase: MarkupWalkPhase) -> String { kindName(node) }
+    mutating func visit(_ node: Code, phase: MarkupWalkPhase) -> String { kindName(node) }
+    mutating func visit(_ node: HTML, phase: MarkupWalkPhase) -> String { kindName(node) }
+    mutating func visit(_ node: MarkdownCore.Comment, phase: MarkupWalkPhase) -> String { kindName(node) }
+    mutating func visit(_ node: MarkdownCore.CrossLink, phase: MarkupWalkPhase) -> String { kindName(node) }
+    mutating func visit(_ node: MarkdownCore.CrossEmbedded, phase: MarkupWalkPhase) -> String { kindName(node) }
+    mutating func visit(_ node: Formula, phase: MarkupWalkPhase) -> String { kindName(node) }
+    mutating func visit(_ node: Emphasis, phase: MarkupWalkPhase) -> String { kindName(node) }
+    mutating func visit(_ node: Strong, phase: MarkupWalkPhase) -> String { kindName(node) }
+    mutating func visit(_ node: Strikethrough, phase: MarkupWalkPhase) -> String { kindName(node) }
+    mutating func visit(_ node: Mark, phase: MarkupWalkPhase) -> String { kindName(node) }
+    mutating func visit(_ node: Insertion, phase: MarkupWalkPhase) -> String { kindName(node) }
+    mutating func visit(_ node: Span, phase: MarkupWalkPhase) -> String { kindName(node) }
+    mutating func visit(_ node: Superscript, phase: MarkupWalkPhase) -> String { kindName(node) }
+    mutating func visit(_ node: Subscript, phase: MarkupWalkPhase) -> String { kindName(node) }
+    mutating func visit(_ node: DefinitionList, phase: MarkupWalkPhase) -> String { kindName(node) }
+    mutating func visit(_ node: Definition, phase: MarkupWalkPhase) -> String { kindName(node) }
+    mutating func visit(_ node: Link, phase: MarkupWalkPhase) -> String { kindName(node) }
+    mutating func visit(_ node: Embedded, phase: MarkupWalkPhase) -> String { kindName(node) }
+    mutating func visit(_ node: Directive, phase: MarkupWalkPhase) -> String { kindName(node) }
+    mutating func visit(_ node: Cite, phase: MarkupWalkPhase) -> String { kindName(node) }
+    mutating func visit(_ node: TableCaption, phase: MarkupWalkPhase) -> String { kindName(node) }
+    mutating func visit(_ node: TableRow, phase: MarkupWalkPhase) -> String { "row" }
+    mutating func visit(_ node: TableCell, phase: MarkupWalkPhase) -> String { "cell" }
 }
 
-private func kindName(_ node: any Markup) -> String {
+func kindName(_ node: any Markup) -> String {
     String(describing: type(of: node))
 }
 
-struct RecordingWalkingVisitor: MarkupWalkingVisitor {
+struct RecordingWalkingVisitor: MarkupVisitor {
+    mutating func visit(_ node: Metadata, phase: MarkupWalkPhase) { record(node, phase) }
     private let recordEvents: Bool
     var events: [String] = []
     var tableRowKinds: [Int] = []
@@ -371,11 +392,11 @@ struct RecordingWalkingVisitor: MarkupWalkingVisitor {
         self.recordEvents = recordEvents
     }
 
-    private mutating func record(_ node: any Markup, _ phase: WalkPhase) {
+    private mutating func record(_ node: any Markup, _ phase: MarkupWalkPhase) {
         record(kindName(node), phase)
     }
 
-    private mutating func record(_ name: String, _ phase: WalkPhase) {
+    private mutating func record(_ name: String, _ phase: MarkupWalkPhase) {
         switch phase {
         case .entering: entered += 1
         case .exiting: exited += 1
@@ -383,49 +404,49 @@ struct RecordingWalkingVisitor: MarkupWalkingVisitor {
         if recordEvents { events.append("\(phase):\(name)") }
     }
 
-    mutating func visit(_ node: Document, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: Callout, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: Paragraph, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: Heading, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: ThematicBreak, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: MarkdownCore.List, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: ListItem, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: CodeBlock, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: HTMLBlock, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: FormulaBlock, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: Table, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: DirectiveBlock, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: DirectiveLabel, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: Text, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: SoftBreak, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: LineBreak, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: Code, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: HTML, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: MarkdownCore.Comment, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: MarkdownCore.CrossLink, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: MarkdownCore.CrossEmbedded, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: Formula, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: Emphasis, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: Strong, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: Strikethrough, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: Mark, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: Insertion, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: Span, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: Superscript, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: Subscript, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: DefinitionList, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: Definition, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: Link, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: Embedded, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: Directive, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: Cite, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: TableCaption, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: TableRow, phase: WalkPhase) {
+    mutating func visit(_ node: Document, phase: MarkupWalkPhase) { record(node, phase) }
+    mutating func visit(_ node: Callout, phase: MarkupWalkPhase) { record(node, phase) }
+    mutating func visit(_ node: Paragraph, phase: MarkupWalkPhase) { record(node, phase) }
+    mutating func visit(_ node: Heading, phase: MarkupWalkPhase) { record(node, phase) }
+    mutating func visit(_ node: ThematicBreak, phase: MarkupWalkPhase) { record(node, phase) }
+    mutating func visit(_ node: MarkdownCore.List, phase: MarkupWalkPhase) { record(node, phase) }
+    mutating func visit(_ node: ListItem, phase: MarkupWalkPhase) { record(node, phase) }
+    mutating func visit(_ node: CodeBlock, phase: MarkupWalkPhase) { record(node, phase) }
+    mutating func visit(_ node: HTMLBlock, phase: MarkupWalkPhase) { record(node, phase) }
+    mutating func visit(_ node: FormulaBlock, phase: MarkupWalkPhase) { record(node, phase) }
+    mutating func visit(_ node: Table, phase: MarkupWalkPhase) { record(node, phase) }
+    mutating func visit(_ node: DirectiveBlock, phase: MarkupWalkPhase) { record(node, phase) }
+    mutating func visit(_ node: DirectiveLabel, phase: MarkupWalkPhase) { record(node, phase) }
+    mutating func visit(_ node: Text, phase: MarkupWalkPhase) { record(node, phase) }
+    mutating func visit(_ node: SoftBreak, phase: MarkupWalkPhase) { record(node, phase) }
+    mutating func visit(_ node: LineBreak, phase: MarkupWalkPhase) { record(node, phase) }
+    mutating func visit(_ node: Code, phase: MarkupWalkPhase) { record(node, phase) }
+    mutating func visit(_ node: HTML, phase: MarkupWalkPhase) { record(node, phase) }
+    mutating func visit(_ node: MarkdownCore.Comment, phase: MarkupWalkPhase) { record(node, phase) }
+    mutating func visit(_ node: MarkdownCore.CrossLink, phase: MarkupWalkPhase) { record(node, phase) }
+    mutating func visit(_ node: MarkdownCore.CrossEmbedded, phase: MarkupWalkPhase) { record(node, phase) }
+    mutating func visit(_ node: Formula, phase: MarkupWalkPhase) { record(node, phase) }
+    mutating func visit(_ node: Emphasis, phase: MarkupWalkPhase) { record(node, phase) }
+    mutating func visit(_ node: Strong, phase: MarkupWalkPhase) { record(node, phase) }
+    mutating func visit(_ node: Strikethrough, phase: MarkupWalkPhase) { record(node, phase) }
+    mutating func visit(_ node: Mark, phase: MarkupWalkPhase) { record(node, phase) }
+    mutating func visit(_ node: Insertion, phase: MarkupWalkPhase) { record(node, phase) }
+    mutating func visit(_ node: Span, phase: MarkupWalkPhase) { record(node, phase) }
+    mutating func visit(_ node: Superscript, phase: MarkupWalkPhase) { record(node, phase) }
+    mutating func visit(_ node: Subscript, phase: MarkupWalkPhase) { record(node, phase) }
+    mutating func visit(_ node: DefinitionList, phase: MarkupWalkPhase) { record(node, phase) }
+    mutating func visit(_ node: Definition, phase: MarkupWalkPhase) { record(node, phase) }
+    mutating func visit(_ node: Link, phase: MarkupWalkPhase) { record(node, phase) }
+    mutating func visit(_ node: Embedded, phase: MarkupWalkPhase) { record(node, phase) }
+    mutating func visit(_ node: Directive, phase: MarkupWalkPhase) { record(node, phase) }
+    mutating func visit(_ node: Cite, phase: MarkupWalkPhase) { record(node, phase) }
+    mutating func visit(_ node: TableCaption, phase: MarkupWalkPhase) { record(node, phase) }
+    mutating func visit(_ node: TableRow, phase: MarkupWalkPhase) {
         record(node, phase)
         if phase == .entering { tableRowKinds.append(Int(node.scope.start.line)) }
     }
-    mutating func visit(_ node: TableCell, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ value: Citation, phase: WalkPhase) { record("Citation", phase) }
-    mutating func visit(_ value: Footnote, phase: WalkPhase) { record("Footnote", phase) }
-    mutating func visit(_ value: Specimen, phase: WalkPhase) { record("Specimen", phase) }
+    mutating func visit(_ node: TableCell, phase: MarkupWalkPhase) { record(node, phase) }
+    mutating func visit(_ node: Citation, phase: MarkupWalkPhase) { record(node, phase) }
+    mutating func visit(_ node: Footnote, phase: MarkupWalkPhase) { record(node, phase) }
+    mutating func visit(_ node: Specimen, phase: MarkupWalkPhase) { record(node, phase) }
 }

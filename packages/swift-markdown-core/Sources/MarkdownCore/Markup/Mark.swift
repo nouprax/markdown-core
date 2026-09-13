@@ -6,10 +6,10 @@ public struct Mark: Markup {
         let scope: Scope
         let anchor: String?
         let attributes: Attributes
-        let content: [Int]
+        let content: MarkupReferences<any Markup>
     }
 
-    @Stored var fields: Fields
+    let fields: Stored<Fields>
 
     /// Where it is. See ``Scope`` — boundaries, not a byte range.
     public var scope: Scope { fields.scope }
@@ -18,10 +18,12 @@ public struct Mark: Markup {
     /// Ordered classes and records, including duplicates.
     public var attributes: Attributes { fields.attributes }
     /// The highlighted inline content.
-    public var content: MarkupCollection<any Markup> { $fields.collection(fields.content) }
+    public var content: MarkupCollection<any Markup> { fields.content }
 
     /// Dispatches to the visitor's `Mark` case.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
+    public func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupWalkPhase) -> V.Result {
+        visitor.visit(self, phase: phase)
+    }
 }
 
 extension Mark.Fields {
@@ -30,7 +32,7 @@ extension Mark.Fields {
             scope: Scope(from: markdown_core_node_scope(node)),
             anchor: markdown_core_node_anchor(node).string,
             attributes: Attributes(from: node),
-            content: content
+            content: .init(indices: content)
         )
     }
 }

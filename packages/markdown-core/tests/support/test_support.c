@@ -354,6 +354,7 @@ int ts_ast_walk(const markdown_core_node *root, ts_ast_visit_fn visit, void *con
         size_t start = stack.count;
         /* Collect owned roots in source traversal order, then reverse this
          * stack segment. Every root uses the same sibling-chain algorithm. */
+        ts_walk_push(&stack, markdown_core_node_document_metadata(node));
         ts_walk_push(&stack, markdown_core_node_directive_label(node));
         ts_walk_push(&stack, markdown_core_node_callout_title(node));
         ts_walk_push(&stack, markdown_core_node_definition_term(node));
@@ -362,19 +363,11 @@ int ts_ast_walk(const markdown_core_node *root, ts_ast_visit_fn visit, void *con
              body = markdown_core_definition_body_next(body)) {
             ts_walk_push(&stack, markdown_core_definition_body_content(body));
         }
-        for (const markdown_core_citation *citation = markdown_core_node_cite_citations(node); citation;
-             citation = markdown_core_citation_next(citation)) {
-            ts_walk_push(&stack, markdown_core_citation_prefix(citation));
-            ts_walk_push(&stack, markdown_core_citation_suffix(citation));
-        }
-        for (const markdown_core_footnote *footnote = markdown_core_node_document_footnotes(node); footnote;
-             footnote = markdown_core_footnote_next(footnote)) {
-            ts_walk_push(&stack, markdown_core_footnote_content(footnote));
-        }
-        for (const markdown_core_specimen *specimen = markdown_core_node_document_specimens(node); specimen;
-             specimen = markdown_core_specimen_next(specimen)) {
-            ts_walk_push(&stack, markdown_core_specimen_content(specimen));
-        }
+        ts_walk_push(&stack, markdown_core_node_cite_citations(node));
+        ts_walk_push(&stack, markdown_core_citation_prefix(node));
+        ts_walk_push(&stack, markdown_core_citation_suffix(node));
+        ts_walk_push(&stack, markdown_core_node_document_footnotes(node));
+        ts_walk_push(&stack, markdown_core_node_document_specimens(node));
         for (size_t left = start, right = stack.count; left < right && left < --right; left++) {
             const markdown_core_node *swap = stack.nodes[left];
             stack.nodes[left] = stack.nodes[right];

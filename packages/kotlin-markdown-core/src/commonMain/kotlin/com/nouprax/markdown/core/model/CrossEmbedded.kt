@@ -15,5 +15,8 @@ public class CrossEmbedded internal constructor(
         require(dimensions == null || label != null) { "dimensions require an authored label" }
     }
 
-    override fun <Result> accept(visitor: Visitor<Result>): Result = visitor.visit(this)
+    override fun <Result> accept(
+        visitor: Visitor<Result>,
+        phase: MarkupWalkPhase,
+    ): Result = visitor.visit(this, phase)
 }

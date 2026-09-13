@@ -353,7 +353,7 @@ Document scope=1:1..8:6 anchor=null attributes={} children=2
     │           │   └── Text scope=5:4..5:4 anchor=null attributes={} literal="x" children=0
     │           ├── Text scope=5:6..5:6 anchor=null attributes={} literal=" " children=0
     │           └── Cite scope=5:7..5:10 anchor=null attributes={} children=1
-    │               └── Citation scope=5:7..5:10 referent=bib(key="key",mode=authorInText) children=0
+    │               └── Citation scope=5:7..5:10 anchor=null attributes={} referent=bib(key="key",mode=authorInText) children=0
     │                   ├── CitationPrefix children=0
     │                   └── CitationSuffix children=0
     └── Definition scope=7:1..8:6 anchor=null attributes={} compact=true children=1
@@ -537,7 +537,7 @@ Document scope=1:1..11:10 anchor=null attributes={} children=2
 │               └── DefinitionBody children=1
 │                   └── Paragraph scope=5:5..5:8 anchor=null attributes={} children=1
 │                       └── Text scope=5:5..5:8 anchor=null attributes={} literal="body" children=0
-├── Footnote scope=7:1..9:0 id="n" children=1
+├── Footnote scope=7:1..9:0 anchor=null attributes={} id="n" children=1
 │   └── DefinitionList scope=7:7..8:10 anchor=null attributes={} children=1
 │       └── Definition scope=7:7..8:10 anchor=null attributes={} compact=true children=1
 │           ├── DefinitionTerm children=1
@@ -545,7 +545,7 @@ Document scope=1:1..11:10 anchor=null attributes={} children=2
 │           └── DefinitionBody children=1
 │               └── Paragraph scope=8:7..8:10 anchor=null attributes={} children=1
 │                   └── Text scope=8:7..8:10 anchor=null attributes={} literal="body" children=0
-└── Specimen scope=10:1..11:10 id="s" start=null children=1
+└── Specimen scope=10:1..11:10 anchor=null attributes={} id="s" start=null children=1
     └── DefinitionList scope=10:6..11:10 anchor=null attributes={} children=1
         └── Definition scope=10:6..11:10 anchor=null attributes={} compact=true children=1
             ├── DefinitionTerm children=1

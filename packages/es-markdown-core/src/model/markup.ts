@@ -1,5 +1,8 @@
+import type { Metadata } from "../values.js";
+import type { Footnote } from "./footnote.js";
+import type { Specimen } from "./specimen.js";
 import type { Callout } from "./callout.js";
-import type { Cite } from "./cite.js";
+import type { Cite, Citation } from "./cite.js";
 import type { CodeBlock } from "./code-block.js";
 import type { Code } from "./code.js";
 import type { Comment } from "./comment.js";
@@ -72,4 +75,8 @@ export type Markup =
     | Link
     | Embedded
     | Directive
-    | Cite;
+    | Cite
+    | Citation
+    | Footnote
+    | Specimen
+    | Metadata;

@@ -6,12 +6,12 @@ public struct Definition: Markup {
         let scope: Scope
         let anchor: String?
         let attributes: Attributes
-        let term: [Int]
-        let content: [[Int]]
+        let term: MarkupReferences<any Markup>
+        let content: MarkupGroupReferences<any Markup>
         let compact: Bool
     }
 
-    @Stored var fields: Fields
+    let fields: Stored<Fields>
 
     /// The authored source range, including the term and all bodies.
     public var scope: Scope { fields.scope }
@@ -20,16 +20,16 @@ public struct Definition: Markup {
     /// Ordered classes and records, including duplicates.
     public var attributes: Attributes { fields.attributes }
     /// The inline term, visited before the body collections.
-    public var term: MarkupCollection<any Markup> { $fields.collection(fields.term) }
+    public var term: MarkupCollection<any Markup> { fields.term }
     /// The nonempty ordered collection of block bodies; an individual body may be empty.
-    public var content: MarkupGroups<any Markup> {
-        $fields.groups(fields.content)
-    }
+    public var content: MarkupGroups<any Markup> { fields.content }
     /// Whether the first body immediately follows its term without a blank line.
     public var compact: Bool { fields.compact }
 
     /// Dispatches to the visitor's `Definition` case.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
+    public func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupWalkPhase) -> V.Result {
+        visitor.visit(self, phase: phase)
+    }
 }
 
 extension Definition.Fields {
@@ -41,8 +41,8 @@ extension Definition.Fields {
             scope: Scope(from: markdown_core_node_scope(node)),
             anchor: markdown_core_node_anchor(node).string,
             attributes: Attributes(from: node),
-            term: term,
-            content: content,
+            term: .init(indices: term),
+            content: .init(indices: content),
             compact: compact
         )
     }

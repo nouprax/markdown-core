@@ -37,5 +37,9 @@ export const kindVisitor = {
     link: (node) => node.kind,
     embedded: (node) => node.kind,
     directive: (node) => node.kind,
-    cite: (node) => node.kind
+    cite: (node) => node.kind,
+    citation: (node) => node.kind,
+    footnote: (node) => node.kind,
+    specimen: (node) => node.kind,
+    metadata: (node) => node.kind
 };

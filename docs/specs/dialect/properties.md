@@ -17,7 +17,7 @@ state: draft
 The document body starts here.
 ```
 
-The document has a `Metadata` value with title text, author and keyword lists,
+The document has a `Metadata` node with title text, author and keyword lists,
 and state text. The envelope is excluded from ordinary document content; the
 body starts after its closing fence with its original source coordinates.
 Metadata text is atomic and is not parsed as Markdown.

@@ -135,32 +135,32 @@ introducing extra Markup wrappers.
 
 ## Traverse and Inspect
 
-`Markup.accept(visitor)` dispatches exactly one node to an exhaustive typed
-`Visitor`. `Markup.walk(walkingVisitor)` performs a stack-safe depth-first walk
-and dispatches `ENTERING` and `EXITING` to an exhaustive `WalkingVisitor` by
-node kind. Each node-kind branch chooses its typed fields and content; there is
-no public iterator or uniform child projection. A directive label is walked as
-the named `label` field, not as directive content.
+`Markup.accept(visitor)` dispatches one entering event and returns the result;
+`Markup.accept(visitor, MarkupWalkPhase.EXITING)` dispatches one explicit exit event.
+Neither call traverses owned fields. `Markup.walk(visitor)` takes a
+`Visitor<Unit>` and performs a stack-safe depth-first walk, reporting both
+phases through the same interface.
 
-Both interfaces use `visit` overloads with concrete parameter types and names:
-`Visitor<Result>` declares `fun visit(embedded: Embedded): Result`, while
-`WalkingVisitor` declares `fun visit(embedded: Embedded, phase: WalkPhase)`.
-Implementations use the same names, including `paragraph`, `tableRow`, and
-`citation`. A concrete node can be passed directly with `visitor.visit(embedded)`
-or `visitor.visit(embedded = embedded)`; use `node.accept(visitor)` when the
-static type is `Markup`. These overloads replace the former `visitEmbedded`,
-`visitParagraph`, and other `visitXxx` methods; visitor implementations must
-update their overrides and recompile.
+`Visitor<Result>` requires a `fun visit(embedded: Embedded, phase: MarkupWalkPhase): Result`
+overload for every concrete Markup kind. Implementations use the declared
+parameter names, including `paragraph`, `tableRow`, and `citation`. All
+callbacks are required; adding a kind makes incomplete implementations fail
+to compile. Call `visitor.visit(embedded, MarkupWalkPhase.ENTERING)` for a concrete
+node, or `node.accept(visitor)` when the static type is `Markup`.
+
+Traversal schedules each node's typed fields in canonical order. A directive
+label remains the named `label` field, outside directive content. Metadata,
+citations, footnotes and specimens are Markup and use the same callbacks.
 
 Every immutable `Markup` exposes `dump()`, which delegates to the public
-`TreeDumper` and returns the canonical file-tree dump for that subtree:
+`MarkupDumper` and returns the canonical file-tree dump for that subtree:
 
 ```kotlin
-import com.nouprax.markdown.core.TreeDumper
+import com.nouprax.markdown.core.MarkupDumper
 
 val document = Document.parse("# Hello")
 println(document.dump())
-println(TreeDumper.dump(document.content.first()))
+println(MarkupDumper.dump(document.content.first()))
 ```
 
 On JDK 26 and later, JVM applications should launch with

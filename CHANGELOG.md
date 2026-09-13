@@ -6,11 +6,19 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
+- Treat `Citation`, `Footnote`, `Specimen`, and `Metadata` as Markup nodes in
+  every binding, reached through their named owning relations. A single visitor
+  handles direct dispatch and entering/exiting walks across all 43 kinds,
+  with `MarkupWalkPhase` naming the visit phase.
+  Rename `TreeDumper` to `MarkupDumper` and remove the separate walking visitor
+  protocols. Swift field views resolve typed relations through the same member
+  syntax as scalar values while retaining flat, stack-safe storage.
+
 - Rename `TableAlignment` to the shared `Flow` value across Swift, Kotlin and
   ES, with `markdown_core_flow` and `MARKDOWN_CORE_FLOW_*` in C. Rename
   `TableColumn.alignment` to `flow` across all bindings. Enum values and wire
   numbers remain unchanged. Swift's `Dimensions` and `Flow` share
-  `Markup/Common.swift`.
+  `Common/Constraints.swift`.
 
 - Rename `PlacementMode` to `Placement` across Swift, Kotlin and ES, and the C
   typedef to `markdown_core_placement`. Formula's `mode` field and the enum

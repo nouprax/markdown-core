@@ -52,13 +52,13 @@ for size-only labels). Ordinary cross-link labels and invalid suffixes stay raw.
 ## Parse Markdown
 
 ```js
-import { Document, TreeDumper } from "@nouprax/es-markdown-core";
+import { Document, MarkupDumper } from "@nouprax/es-markdown-core";
 
 const document = Document.parse("# Hello");
 
 console.log(document.content[0].kind);
 console.log(document.dump());
-console.log(TreeDumper.dump(document.content[0]));
+console.log(MarkupDumper.dump(document.content[0]));
 ```
 
 `Document.parse` takes no options. It parses the one Markdown Core dialect,
@@ -133,33 +133,27 @@ introducing extra Markup wrappers.
 
 ## Traverse and Inspect
 
-`visit(markup, visitor)` dispatches exactly one node to an exhaustive typed
-`Visitor`. `walk(markup, walkingVisitor)` performs a stack-safe depth-first walk
-and dispatches `entering` and `exiting` to an exhaustive `WalkingVisitor` by
-node kind. Each node-kind branch chooses its typed fields and content; there is
-no public iterator or uniform child projection. A directive label is walked as
-the named `label` field, not as directive content.
+`visit(markup, visitor)` dispatches one entering event and returns the result;
+`visit(markup, visitor, "exiting")` dispatches one explicit exit event. Neither
+call traverses owned fields. `walk(markup, visitor)` takes a `Visitor<undefined>`
+and performs a stack-safe depth-first walk, reporting both phases through the
+same interface. `undefined` rejects callbacks that return values, whereas
+TypeScript's `void` would allow their results to be silently discarded.
 
-Callback keys match the existing `kind` tags: `embedded`, `paragraph`,
-`tableRow`, and so on. `Visitor<Result>` derives every required callback and its
-parameter type directly from the `Markup` union:
+Callback keys match `kind` tags, and each parameter has its concrete node type:
 
 ```typescript
 type Visitor<Result> = {
-    [Node in Markup as Node["kind"]]: (this: void, node: Node) => Result;
+    [Node in Markup as Node["kind"]]: (this: void, node: Node, phase: MarkupWalkPhase) => Result;
 };
 ```
 
-Within a complete `Visitor<Result>` object, `embedded(embedded)` automatically
-receives an `Embedded`; `heading(heading)` receives a `Heading`. All callbacks
-are required, and `visit(markup, visitor)` returns the chosen callback's result.
-`WalkingVisitor` uses the same keys with a second `phase` parameter, plus
-`citation`, `footnote`, and `specimen` callbacks for scoped values that have no
-`kind`. Consumers must rename the former `visitEmbedded`, `visitHeading`, and
-other `visitXxx` keys to their kind names. Missing callbacks are type errors and
-are never silently skipped during dispatch.
+Every callback is required; missing callbacks are compile errors. Metadata,
+citations, footnotes and specimens are Markup and use the same callbacks.
+Traversal schedules each node's typed fields in canonical order. A directive
+label remains the named `label` field, outside directive content.
 
-`TreeDumper.dump(markup)` and each Markup's non-enumerable `dump()` method emit
+`MarkupDumper.dump(markup)` and each Markup's non-enumerable `dump()` method emit
 the canonical debug tree for a complete document or focused subtree. The
 text is intended for logs, snapshots, and debugging rather than persistence or
 data interchange.

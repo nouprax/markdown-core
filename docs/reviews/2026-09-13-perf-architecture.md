@@ -393,12 +393,12 @@ need arrays use `Array(...)`. Collections reside directly in the owning node's
 `Fields`, and groups do not consume separate records. Retaining a container
 subtree keeps the entire immutable Swift store alive until the last owner
 releases it. There are no native handles, caches, synchronization, or cleanup
-queues. The Document-only metadata payload is stored indirectly once so its
+queues. The Metadata node's payload is stored indirectly once so its
 size does not determine every ordinary node's stride. See
 [Swift storage](../architecture/swift-storage.md).
 `MarkupStore` centralizes field queries and projection. All 29 node types refer
-to fields through `@Stored` rather than individually storing indices and
-checking the enum. Location information resides in the shared reference
+to fields through `Stored<Fields>`, which resolves typed relations and ordinary
+values through the same member syntax. Location information resides in the shared reference
 implementation; views remain 16 bytes.
 
 ### Fix evidence

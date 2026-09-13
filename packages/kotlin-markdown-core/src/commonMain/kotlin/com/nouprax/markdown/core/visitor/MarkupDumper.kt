@@ -1,7 +1,7 @@
 package com.nouprax.markdown.core
 
 /** Produces the canonical debug tree for immutable Markdown markup. */
-public object TreeDumper {
+public object MarkupDumper {
     /** Returns the canonical debug dump for [root] and its owned markup. */
     public fun dump(root: Markup): String =
         State().run {
@@ -45,7 +45,7 @@ private class State {
         )
     }
 
-    /** A value line has the node line's shape: a scoped value prints like a node. */
+    /** Formats a node line from its common and kind-specific fields. */
     fun line(
         kind: String,
         scope: Scope,
@@ -96,7 +96,10 @@ private class State {
 private class DumpVisitor(
     private val state: State,
 ) : Visitor<Unit> {
-    override fun visit(document: Document) {
+    override fun visit(
+        document: Document,
+        phase: MarkupWalkPhase,
+    ) {
         // The footnotes are value lines after the content, each nesting its
         // own content; `children` counts the content alone.
         state.line("Document", document, children = document.content.size)
@@ -104,49 +107,61 @@ private class DumpVisitor(
             document.content.size + document.footnotes.size + document.specimens.size +
                 (if (document.metadata == null) 0 else 1),
         ) {
-            document.metadata?.let { metadata(it) }
+            document.metadata?.let(state::dump)
             document.content.forEach(state::dump)
-            document.footnotes.forEach { footnote(it) }
-            document.specimens.forEach { specimen(it) }
+            document.footnotes.forEach(state::dump)
+            document.specimens.forEach(state::dump)
         }
     }
 
-    private fun metadata(value: Metadata) {
+    override fun visit(
+        metadata: Metadata,
+        phase: MarkupWalkPhase,
+    ) {
         state.line(
             "Metadata",
-            value.scope,
+            metadata,
             listOf(
-                "name=${value.name?.let(::metadataValue) ?: "null"}",
-                "title=${value.title?.let(::metadataValue) ?: "null"}",
-                "subtitle=${value.subtitle?.let(::metadataValue) ?: "null"}",
-                "time=${value.time?.let(::metadataValue) ?: "null"}",
-                "date=${value.date?.let(::metadataValue) ?: "null"}",
-                "authors=${value.authors?.let(::metadataValue) ?: "null"}",
-                "keywords=${value.keywords?.let(::metadataValue) ?: "null"}",
-                "abstract=${value.`abstract`?.let(::metadataValue) ?: "null"}",
-                "state=${value.state?.let(::metadataValue) ?: "null"}",
-                "comment=${value.comment?.let(::metadataValue) ?: "null"}",
+                "name=${metadata.name?.let(::metadataValue) ?: "null"}",
+                "title=${metadata.title?.let(::metadataValue) ?: "null"}",
+                "subtitle=${metadata.subtitle?.let(::metadataValue) ?: "null"}",
+                "time=${metadata.time?.let(::metadataValue) ?: "null"}",
+                "date=${metadata.date?.let(::metadataValue) ?: "null"}",
+                "authors=${metadata.authors?.let(::metadataValue) ?: "null"}",
+                "keywords=${metadata.keywords?.let(::metadataValue) ?: "null"}",
+                "abstract=${metadata.`abstract`?.let(::metadataValue) ?: "null"}",
+                "state=${metadata.state?.let(::metadataValue) ?: "null"}",
+                "comment=${metadata.comment?.let(::metadataValue) ?: "null"}",
             ),
             0,
         )
     }
 
-    private fun footnote(value: Footnote) {
-        state.line("Footnote", value.scope, listOf("id=${escaped(value.id)}"), value.content.size)
-        state.nested(value.content.size) { value.content.forEach(state::dump) }
+    override fun visit(
+        footnote: Footnote,
+        phase: MarkupWalkPhase,
+    ) {
+        state.line("Footnote", footnote, listOf("id=${escaped(footnote.id)}"), footnote.content.size)
+        state.nested(footnote.content.size) { footnote.content.forEach(state::dump) }
     }
 
-    private fun specimen(value: Specimen) {
+    override fun visit(
+        specimen: Specimen,
+        phase: MarkupWalkPhase,
+    ) {
         state.line(
             "Specimen",
-            value.scope,
-            listOf("id=${optional(value.id)}", "start=${value.start ?: "null"}"),
-            value.content.size,
+            specimen,
+            listOf("id=${optional(specimen.id)}", "start=${specimen.start ?: "null"}"),
+            specimen.content.size,
         )
-        state.nested(value.content.size) { value.content.forEach(state::dump) }
+        state.nested(specimen.content.size) { specimen.content.forEach(state::dump) }
     }
 
-    override fun visit(callout: Callout) {
+    override fun visit(
+        callout: Callout,
+        phase: MarkupWalkPhase,
+    ) {
         state.line(
             "Callout",
             callout,
@@ -164,19 +179,31 @@ private class DumpVisitor(
         }
     }
 
-    override fun visit(paragraph: Paragraph) {
+    override fun visit(
+        paragraph: Paragraph,
+        phase: MarkupWalkPhase,
+    ) {
         state.container("Paragraph", paragraph, children = paragraph.content)
     }
 
-    override fun visit(heading: Heading) {
+    override fun visit(
+        heading: Heading,
+        phase: MarkupWalkPhase,
+    ) {
         state.container("Heading", heading, listOf("level=${heading.level}"), heading.content)
     }
 
-    override fun visit(thematicBreak: ThematicBreak) {
+    override fun visit(
+        thematicBreak: ThematicBreak,
+        phase: MarkupWalkPhase,
+    ) {
         state.line("ThematicBreak", thematicBreak)
     }
 
-    override fun visit(list: List) {
+    override fun visit(
+        list: List,
+        phase: MarkupWalkPhase,
+    ) {
         state.container(
             "List",
             list,
@@ -191,7 +218,10 @@ private class DumpVisitor(
         )
     }
 
-    override fun visit(listItem: ListItem) {
+    override fun visit(
+        listItem: ListItem,
+        phase: MarkupWalkPhase,
+    ) {
         state.container(
             "ListItem",
             listItem,
@@ -200,7 +230,10 @@ private class DumpVisitor(
         )
     }
 
-    override fun visit(codeBlock: CodeBlock) {
+    override fun visit(
+        codeBlock: CodeBlock,
+        phase: MarkupWalkPhase,
+    ) {
         state.line(
             "CodeBlock",
             codeBlock,
@@ -214,15 +247,24 @@ private class DumpVisitor(
         )
     }
 
-    override fun visit(htmlBlock: HTMLBlock) {
+    override fun visit(
+        htmlBlock: HTMLBlock,
+        phase: MarkupWalkPhase,
+    ) {
         state.line("HTMLBlock", htmlBlock, listOf("literal=${escaped(htmlBlock.literal)}"))
     }
 
-    override fun visit(formulaBlock: FormulaBlock) {
+    override fun visit(
+        formulaBlock: FormulaBlock,
+        phase: MarkupWalkPhase,
+    ) {
         state.line("FormulaBlock", formulaBlock, listOf("literal=${escaped(formulaBlock.literal)}"))
     }
 
-    override fun visit(table: Table) {
+    override fun visit(
+        table: Table,
+        phase: MarkupWalkPhase,
+    ) {
         val columns =
             table.columns.joinToString(
                 ",",
@@ -241,12 +283,20 @@ private class DumpVisitor(
         }
     }
 
-    override fun visit(tableCaption: TableCaption): Unit =
-        state.container("TableCaption", tableCaption, emptyList(), tableCaption.content)
+    override fun visit(
+        tableCaption: TableCaption,
+        phase: MarkupWalkPhase,
+    ): Unit = state.container("TableCaption", tableCaption, emptyList(), tableCaption.content)
 
-    override fun visit(tableRow: TableRow): Unit = state.container("TableRow", tableRow, emptyList(), tableRow.cells)
+    override fun visit(
+        tableRow: TableRow,
+        phase: MarkupWalkPhase,
+    ): Unit = state.container("TableRow", tableRow, emptyList(), tableRow.cells)
 
-    override fun visit(tableCell: TableCell): Unit =
+    override fun visit(
+        tableCell: TableCell,
+        phase: MarkupWalkPhase,
+    ): Unit =
         state.container(
             "TableCell",
             tableCell,
@@ -254,7 +304,10 @@ private class DumpVisitor(
             tableCell.content,
         )
 
-    override fun visit(directiveBlock: DirectiveBlock) {
+    override fun visit(
+        directiveBlock: DirectiveBlock,
+        phase: MarkupWalkPhase,
+    ) {
         state.line(
             "DirectiveBlock",
             directiveBlock,
@@ -267,31 +320,52 @@ private class DumpVisitor(
         }
     }
 
-    override fun visit(directiveLabel: DirectiveLabel) {
+    override fun visit(
+        directiveLabel: DirectiveLabel,
+        phase: MarkupWalkPhase,
+    ) {
         state.container("DirectiveLabel", directiveLabel, children = directiveLabel.content)
     }
 
-    override fun visit(text: Text) {
+    override fun visit(
+        text: Text,
+        phase: MarkupWalkPhase,
+    ) {
         state.line("Text", text, listOf("literal=${escaped(text.literal)}"))
     }
 
-    override fun visit(softBreak: SoftBreak) {
+    override fun visit(
+        softBreak: SoftBreak,
+        phase: MarkupWalkPhase,
+    ) {
         state.line("SoftBreak", softBreak)
     }
 
-    override fun visit(lineBreak: LineBreak) {
+    override fun visit(
+        lineBreak: LineBreak,
+        phase: MarkupWalkPhase,
+    ) {
         state.line("LineBreak", lineBreak)
     }
 
-    override fun visit(code: Code) {
+    override fun visit(
+        code: Code,
+        phase: MarkupWalkPhase,
+    ) {
         state.line("Code", code, listOf("literal=${escaped(code.literal)}"))
     }
 
-    override fun visit(html: HTML) {
+    override fun visit(
+        html: HTML,
+        phase: MarkupWalkPhase,
+    ) {
         state.line("HTML", html, listOf("literal=${escaped(html.literal)}"))
     }
 
-    override fun visit(crossLink: CrossLink) {
+    override fun visit(
+        crossLink: CrossLink,
+        phase: MarkupWalkPhase,
+    ) {
         state.line(
             "CrossLink",
             crossLink,
@@ -299,7 +373,10 @@ private class DumpVisitor(
         )
     }
 
-    override fun visit(crossEmbedded: CrossEmbedded) {
+    override fun visit(
+        crossEmbedded: CrossEmbedded,
+        phase: MarkupWalkPhase,
+    ) {
         state.line(
             "CrossEmbedded",
             crossEmbedded,
@@ -311,47 +388,80 @@ private class DumpVisitor(
         )
     }
 
-    override fun visit(comment: Comment) {
+    override fun visit(
+        comment: Comment,
+        phase: MarkupWalkPhase,
+    ) {
         state.line("Comment", comment, listOf("literal=${escaped(comment.literal)}"))
     }
 
-    override fun visit(formula: Formula) {
+    override fun visit(
+        formula: Formula,
+        phase: MarkupWalkPhase,
+    ) {
         state.line("Formula", formula, listOf("mode=${formula.mode.token()}", "literal=${escaped(formula.literal)}"))
     }
 
-    override fun visit(emphasis: Emphasis) {
+    override fun visit(
+        emphasis: Emphasis,
+        phase: MarkupWalkPhase,
+    ) {
         state.container("Emphasis", emphasis, children = emphasis.content)
     }
 
-    override fun visit(strong: Strong) {
+    override fun visit(
+        strong: Strong,
+        phase: MarkupWalkPhase,
+    ) {
         state.container("Strong", strong, children = strong.content)
     }
 
-    override fun visit(strikethrough: Strikethrough) {
+    override fun visit(
+        strikethrough: Strikethrough,
+        phase: MarkupWalkPhase,
+    ) {
         state.container("Strikethrough", strikethrough, children = strikethrough.content)
     }
 
-    override fun visit(mark: Mark) {
+    override fun visit(
+        mark: Mark,
+        phase: MarkupWalkPhase,
+    ) {
         state.container("Mark", mark, children = mark.content)
     }
 
-    override fun visit(insertion: Insertion) {
+    override fun visit(
+        insertion: Insertion,
+        phase: MarkupWalkPhase,
+    ) {
         state.container("Insertion", insertion, children = insertion.content)
     }
 
-    override fun visit(span: Span) {
+    override fun visit(
+        span: Span,
+        phase: MarkupWalkPhase,
+    ) {
         state.container("Span", span, children = span.content)
     }
 
-    override fun visit(superscript: Superscript) {
+    override fun visit(
+        superscript: Superscript,
+        phase: MarkupWalkPhase,
+    ) {
         state.container("Superscript", superscript, children = superscript.content)
     }
 
-    override fun visit(definitionList: DefinitionList) {
+    override fun visit(
+        definitionList: DefinitionList,
+        phase: MarkupWalkPhase,
+    ) {
         state.container("DefinitionList", definitionList, children = definitionList.definitions)
     }
 
-    override fun visit(definition: Definition) {
+    override fun visit(
+        definition: Definition,
+        phase: MarkupWalkPhase,
+    ) {
         state.line("Definition", definition, listOf("compact=${definition.compact}"), definition.content.size)
         state.nested(definition.content.size + 1) {
             state.group("DefinitionTerm", definition.term.size)
@@ -363,11 +473,17 @@ private class DumpVisitor(
         }
     }
 
-    override fun visit(subscript: Subscript) {
+    override fun visit(
+        subscript: Subscript,
+        phase: MarkupWalkPhase,
+    ) {
         state.container("Subscript", subscript, children = subscript.content)
     }
 
-    override fun visit(link: Link) {
+    override fun visit(
+        link: Link,
+        phase: MarkupWalkPhase,
+    ) {
         state.container(
             "Link",
             link,
@@ -379,7 +495,10 @@ private class DumpVisitor(
         )
     }
 
-    override fun visit(embedded: Embedded) {
+    override fun visit(
+        embedded: Embedded,
+        phase: MarkupWalkPhase,
+    ) {
         state.container(
             "Embedded",
             embedded,
@@ -392,27 +511,36 @@ private class DumpVisitor(
         )
     }
 
-    override fun visit(directive: Directive) {
+    override fun visit(
+        directive: Directive,
+        phase: MarkupWalkPhase,
+    ) {
         state.line("Directive", directive, listOf("name=${escaped(directive.name)}"))
         state.nested(if (directive.label == null) 0 else 1) {
             directive.label?.let(state::dump)
         }
     }
 
-    override fun visit(cite: Cite) {
+    override fun visit(
+        cite: Cite,
+        phase: MarkupWalkPhase,
+    ) {
         // The items are value lines under the cite, and `children` counts
         // them; each item's affixes are groups whose nodes nest below them.
         state.line("Cite", cite, children = cite.citations.size)
-        state.nested(cite.citations.size) { cite.citations.forEach { citation(it) } }
+        state.nested(cite.citations.size) { cite.citations.forEach(state::dump) }
     }
 
-    private fun citation(value: Citation) {
-        state.line("Citation", value.scope, listOf("referent=${referent(value.referent)}"), 0)
+    override fun visit(
+        citation: Citation,
+        phase: MarkupWalkPhase,
+    ) {
+        state.line("Citation", citation, listOf("referent=${referent(citation.referent)}"), 0)
         state.nested(2) {
-            state.group("CitationPrefix", value.prefix.size)
-            state.nested(value.prefix.size) { value.prefix.forEach(state::dump) }
-            state.group("CitationSuffix", value.suffix.size)
-            state.nested(value.suffix.size) { value.suffix.forEach(state::dump) }
+            state.group("CitationPrefix", citation.prefix.size)
+            state.nested(citation.prefix.size) { citation.prefix.forEach(state::dump) }
+            state.group("CitationSuffix", citation.suffix.size)
+            state.nested(citation.suffix.size) { citation.suffix.forEach(state::dump) }
         }
     }
 }

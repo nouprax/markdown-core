@@ -31,12 +31,12 @@ Document scope=1:1..5:4 anchor=null attributes={} children=2
 ├── Paragraph scope=1:1..1:5 anchor=null attributes={} children=2
 │   ├── Text scope=1:1..1:1 anchor=null attributes={} literal="a" children=0
 │   └── Cite scope=1:2..1:5 anchor=null attributes={} children=1
-│       └── Citation scope=1:3..1:4 referent=footnote(id="f") children=0
+│       └── Citation scope=1:3..1:4 anchor=null attributes={} referent=footnote(id="f") children=0
 │           ├── CitationPrefix children=0
 │           └── CitationSuffix children=0
 ├── Paragraph scope=5:1..5:4 anchor=null attributes={} children=1
 │   └── Text scope=5:1..5:4 anchor=null attributes={} literal="tail" children=0
-└── Footnote scope=3:1..4:0 id="f" children=1
+└── Footnote scope=3:1..4:0 anchor=null attributes={} id="f" children=1
     └── Paragraph scope=3:7..3:10 anchor=null attributes={} children=1
         └── Text scope=3:7..3:10 anchor=null attributes={} literal="body" children=0
 ````````````````````````````````
@@ -57,20 +57,20 @@ Document scope=1:1..7:7 anchor=null attributes={} children=2
 ├── Paragraph scope=1:1..1:11 anchor=null attributes={} children=4
 │   ├── Text scope=1:1..1:1 anchor=null attributes={} literal="x" children=0
 │   ├── Cite scope=1:2..1:5 anchor=null attributes={} children=1
-│   │   └── Citation scope=1:3..1:4 referent=footnote(id="b") children=0
+│   │   └── Citation scope=1:3..1:4 anchor=null attributes={} referent=footnote(id="b") children=0
 │   │       ├── CitationPrefix children=0
 │   │       └── CitationSuffix children=0
 │   ├── Text scope=1:6..1:7 anchor=null attributes={} literal=" y" children=0
 │   └── Cite scope=1:8..1:11 anchor=null attributes={} children=1
-│       └── Citation scope=1:9..1:10 referent=footnote(id="a") children=0
+│       └── Citation scope=1:9..1:10 anchor=null attributes={} referent=footnote(id="a") children=0
 │           ├── CitationPrefix children=0
 │           └── CitationSuffix children=0
 ├── Paragraph scope=5:1..5:3 anchor=null attributes={} children=1
 │   └── Text scope=5:1..5:3 anchor=null attributes={} literal="mid" children=0
-├── Footnote scope=3:1..4:0 id="a" children=1
+├── Footnote scope=3:1..4:0 anchor=null attributes={} id="a" children=1
 │   └── Paragraph scope=3:7..3:7 anchor=null attributes={} children=1
 │       └── Text scope=3:7..3:7 anchor=null attributes={} literal="A" children=0
-└── Footnote scope=7:1..7:7 id="b" children=1
+└── Footnote scope=7:1..7:7 anchor=null attributes={} id="b" children=1
     └── Paragraph scope=7:7..7:7 anchor=null attributes={} children=1
         └── Text scope=7:7..7:7 anchor=null attributes={} literal="B" children=0
 ````````````````````````````````
@@ -85,7 +85,7 @@ no references here
 Document scope=1:1..3:29 anchor=null attributes={} children=1
 ├── Paragraph scope=1:1..1:18 anchor=null attributes={} children=1
 │   └── Text scope=1:1..1:18 anchor=null attributes={} literal="no references here" children=0
-└── Footnote scope=3:1..3:29 id="orphan" children=1
+└── Footnote scope=3:1..3:29 anchor=null attributes={} id="orphan" children=1
     └── Paragraph scope=3:12..3:29 anchor=null attributes={} children=1
         └── Text scope=3:12..3:29 anchor=null attributes={} literal="still a definition" children=0
 ````````````````````````````````

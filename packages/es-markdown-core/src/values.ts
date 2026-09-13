@@ -1,3 +1,4 @@
+import type { MarkupBase } from "./model/base.js";
 /** Native cmark UTF-8 editor coordinates, not JavaScript string indices.
  * Values are copied unchanged, including the empty document end (0, 0). */
 export interface Position {
@@ -59,7 +60,7 @@ export interface Attributes {
 export const Attributes: { readonly empty: Attributes } = Object.freeze({
     empty: Object.freeze({ classes: Object.freeze([]), records: Object.freeze([]) })
 });
-export interface Metadata {
+export interface Metadata extends MarkupBase<"metadata"> {
     readonly name: MetadataValue | null;
     readonly title: MetadataValue | null;
     readonly subtitle: MetadataValue | null;
@@ -70,7 +71,6 @@ export interface Metadata {
     readonly abstract: MetadataValue | null;
     readonly state: MetadataValue | null;
     readonly comment: MetadataValue | null;
-    readonly scope: Scope;
 }
 export type MetadataValue =
     | { readonly kind: "scalar"; readonly value: MetadataScalar }

@@ -19,7 +19,7 @@ import Testing
         weak var storage: MarkupStore?
         do {
             let document = try Document.parse(String(repeating: "- ", count: depth) + "leaf\n")
-            storage = document.$fields
+            storage = document.fields.store
             withExtendedLifetime(document) { #expect(document.content.count == 1) }
         }
         #expect(storage == nil)
@@ -27,7 +27,7 @@ import Testing
         var subtree: MarkdownCore.List?
         do {
             let document = try Document.parse(String(repeating: "- ", count: depth) + "leaf\n")
-            storage = document.$fields
+            storage = document.fields.store
             subtree = try #require(document.content.first as? MarkdownCore.List)
         }
         #expect(storage != nil)
@@ -49,7 +49,7 @@ import Testing
         var body: MarkupCollection<any Markup>?
         do {
             let document = try Document.parse("T\n: one\n:\n")
-            storage = document.$fields
+            storage = document.fields.store
             let list = try #require(document.content.first as? DefinitionList)
             groups = list.definitions[0].content
         }
@@ -86,14 +86,47 @@ import Testing
         #expect(first.scope.start.line == 1 && second.scope.start.line == 3 && other.scope.start.line == 1)
     }
 
+    @Test("field views infer relation values while preserving optional scalar values")
+    func inferredFields() throws {
+        let document = try Document.parse("---\ntitle: Example\n---\n3. item\n")
+        let metadata = document.fields.metadata
+        let content = document.fields.content
+        let attributes = document.fields.attributes
+        #expect(metadata?.title == .scalar(.text("Example")))
+        #expect(attributes == .empty)
+        let list = try #require(content.first as? MarkdownCore.List)
+        let start = list.fields.start
+        #expect(start == 3)
+
+        let plain = try Document.parse("> body\n")
+        let absent = plain.fields.metadata
+        #expect(absent == nil)
+        let quote = try #require(plain.content.first as? Callout)
+        let missingTitle = quote.fields.title
+        #expect(missingTitle == nil)
+
+        let titled = try Document.parse("> [!note] Title\n> body\n")
+        let callout = try #require(titled.content.first as? Callout)
+        let title = callout.fields.title
+        #expect((title?.first as? Text)?.literal == "Title")
+
+        let definitions = try Document.parse("Term\n: body\n:\n")
+        let definitionList = try #require(definitions.content.first as? DefinitionList)
+        let groups = definitionList.definitions[0].fields.content
+        #expect(groups.count == 2 && groups[1].isEmpty)
+        #expect(((groups[0].first as? Paragraph)?.content.first as? Text)?.literal == "body")
+    }
+
     @Test("container views fit the existential inline buffer without copying their fields")
     func inlineViews() {
         let inlineCapacity = 3 * MemoryLayout<Int>.size
         #expect(MemoryLayout<Document>.size <= inlineCapacity)
         #expect(MemoryLayout<Paragraph>.size <= inlineCapacity)
         #expect(MemoryLayout<TableCaption>.size <= inlineCapacity)
+        #expect(MemoryLayout<MarkupReference<Metadata>>.size == MemoryLayout<Int>.size)
+        #expect(MemoryLayout<MarkupReferences<any Markup>>.size == MemoryLayout<[Int]>.size)
+        #expect(MemoryLayout<MarkupGroupReferences<any Markup>>.size == MemoryLayout<[[Int]]>.size)
     }
-
 }
 
 private func requireSendable<T: Sendable>(_: T.Type) {}

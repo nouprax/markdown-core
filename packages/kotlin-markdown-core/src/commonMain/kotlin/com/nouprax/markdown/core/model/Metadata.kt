@@ -1,6 +1,6 @@
 package com.nouprax.markdown.core
 
-/** Ten optional fields and their complete source envelope; never Markup. */
+/** A leaf Markup node holding ten optional fields and their complete source envelope. */
 public data class Metadata(
     public val name: MetadataValue? = null,
     public val title: MetadataValue? = null,
@@ -12,8 +12,15 @@ public data class Metadata(
     public val `abstract`: MetadataValue? = null,
     public val state: MetadataValue? = null,
     public val comment: MetadataValue? = null,
-    public val scope: Scope,
-)
+    override val scope: Scope,
+    override val anchor: String? = null,
+    override val attributes: Attributes = Attributes.empty,
+) : Markup {
+    override fun <Result> accept(
+        visitor: Visitor<Result>,
+        phase: MarkupWalkPhase,
+    ): Result = visitor.visit(this, phase)
+}
 
 public sealed interface MetadataValue {
     public data class Scalar(

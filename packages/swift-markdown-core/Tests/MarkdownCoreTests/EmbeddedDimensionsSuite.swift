@@ -41,5 +41,4 @@ import Testing
         links[0].walk(with: &visitor)
         #expect(visitor.events == ["entering:CrossEmbedded", "exiting:CrossEmbedded"])
     }
-
 }

@@ -1,7 +1,7 @@
 import MarkdownCoreC
 
-/// Ten optional metadata values, never Markup or visitor events.
-public struct Metadata: Sendable, Hashable {
+/// A leaf Markup node containing ten optional metadata values.
+public struct Metadata: Markup, Hashable {
     /// The `name` field, absent when not authored successfully.
     public let name: MetadataValue?
     /// The `title` field, absent when not authored successfully.
@@ -24,6 +24,10 @@ public struct Metadata: Sendable, Hashable {
     public let comment: MetadataValue?
     /// The source extent of the complete metadata envelope.
     public let scope: Scope
+    /// The optional anchor attached to this node.
+    public let anchor: String?
+    /// The ordered attributes attached to this node.
+    public let attributes: Attributes
     /// Creates metadata with named optional values.
     public init(
         name: MetadataValue? = nil,
@@ -36,7 +40,9 @@ public struct Metadata: Sendable, Hashable {
         abstract: MetadataValue? = nil,
         state: MetadataValue? = nil,
         comment: MetadataValue? = nil,
-        scope: Scope
+        scope: Scope,
+        anchor: String? = nil,
+        attributes: Attributes = .empty
     ) {
         self.name = name
         self.title = title
@@ -49,6 +55,12 @@ public struct Metadata: Sendable, Hashable {
         self.state = state
         self.comment = comment
         self.scope = scope
+        self.anchor = anchor
+        self.attributes = attributes
+    }
+    /// Dispatches this node to its typed visitor method.
+    public func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupWalkPhase) -> V.Result {
+        visitor.visit(self, phase: phase)
     }
 }
 /// A scalar or an ordered list; an empty list is distinct from null.
@@ -90,7 +102,9 @@ extension Metadata {
             abstract: markdown_core_metadata_abstract(metadata).map { MetadataValue(from: $0) },
             state: markdown_core_metadata_state(metadata).map { MetadataValue(from: $0) },
             comment: markdown_core_metadata_comment(metadata).map { MetadataValue(from: $0) },
-            scope: Scope(from: markdown_core_metadata_scope(metadata))
+            scope: Scope(from: markdown_core_node_scope(metadata)),
+            anchor: markdown_core_node_anchor(metadata).string,
+            attributes: Attributes(from: metadata)
         )
     }
 }

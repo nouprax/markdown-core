@@ -4,8 +4,9 @@
     "prose": "docs/specs/canonical-ast.md",
     "dumpGrammar": "docs/specs/canonical-ast-dump.md",
     "walk": {
+        "visitor": "One exhaustive Visitor<Result> supplies typed visit(node, phase) callbacks. Single-node dispatch returns the callback result without traversing and defaults to entering; an explicit phase can be supplied. Automatic walk uses the same visitor and requires no result: Void in Swift, Unit in Kotlin, undefined in TypeScript.",
         "phases": ["entering", "exiting"],
-        "order": "Depth first. A node enters, then its owned Markup-valued fields are visited in canonical field order with arrays retaining stored order, then the node exits. Relations remain named fields; the walk does not project them into generic children. Citation, Footnote, and Specimen receive their own entering/exiting callbacks and traverse their owned Markup fields. Metadata is a data value and emits no visitor callbacks. Document visits content, footnotes, specimens in that order."
+        "order": "Depth first. Every Markup node enters, visits its owned Markup fields in canonical traversal order with arrays retaining stored order, then exits. Relations remain named fields, never projected into generic children. Document visits metadata when present, content, footnotes, then specimens. Cite visits citations; Citation visits prefix then suffix. Reference IDs are not traversed."
     },
     "enums": {
         "Placement": ["embedded", "standalone"],
@@ -38,7 +39,7 @@
                     "optional": false
                 }
             ],
-            "invariants": "block content; document-owned footnotes and specimens each retain all definitions in scope-start order; visit content, then footnotes, then specimens; neither definition sequence counts as children"
+            "invariants": "block content; document-owned footnotes and specimens each retain all definitions in scope-start order; visit metadata, then content, then footnotes, then specimens; neither definition sequence counts as children"
         },
         {
             "name": "Callout",
@@ -576,7 +577,7 @@
                     "optional": false
                 }
             ],
-            "invariants": "one or more items in source order; every item has exactly one referent and one cite never mixes referent families; an inherited `[^label]` call is one item with a `footnote` referent whose id is the normalized label without the caret and with empty affixes; its items are scoped values, never children, so it is a leaf"
+            "invariants": "one or more items in source order; every item has exactly one referent and one cite never mixes referent families; an inherited `[^label]` call is one item with a `footnote` referent whose id is the normalized label without the caret and with empty affixes; its Citation nodes remain in the citations field, outside ordinary content"
         },
         {
             "name": "DefinitionList",
@@ -609,6 +610,120 @@
                 }
             ],
             "invariants": "inline term; non-empty outer content collection, each inner collection is one body of block content; compact is true iff no blank line separates the term and its first marker; visit term then bodies in source order"
+        },
+        {
+            "name": "Citation",
+            "fields": [
+                {
+                    "name": "referent",
+                    "type": "CitationReferent",
+                    "optional": false
+                },
+                {
+                    "name": "prefix",
+                    "type": "[Markup]",
+                    "optional": false
+                },
+                {
+                    "name": "suffix",
+                    "type": "[Markup]",
+                    "optional": false
+                }
+            ],
+            "invariants": "One Markup node owned by Cite.citations. Its non-null prefix and suffix contain inline markup, empty when absent. It is not ordinary content."
+        },
+        {
+            "name": "Footnote",
+            "fields": [
+                {
+                    "name": "id",
+                    "type": "String",
+                    "optional": false
+                },
+                {
+                    "name": "content",
+                    "type": "[Markup]",
+                    "optional": false
+                }
+            ],
+            "invariants": "A document-owned Markup definition. Referenced definitions keep normalized IDs and block content; inline notes keep direct inline content and collision-free generated IDs. All definitions remain in scope-start order, including duplicates and unused definitions. Calls store IDs, never owned bodies."
+        },
+        {
+            "name": "Specimen",
+            "fields": [
+                {
+                    "name": "id",
+                    "type": "String",
+                    "optional": true
+                },
+                {
+                    "name": "start",
+                    "type": "Int",
+                    "optional": true
+                },
+                {
+                    "name": "content",
+                    "type": "[Markup]",
+                    "optional": false
+                }
+            ],
+            "invariants": "A document-owned Markup definition in scope-start order, including duplicates and anonymous definitions. id is the authored label or null; start is an explicit effective counter reset or null. Display numbers are derived."
+        },
+        {
+            "name": "Metadata",
+            "fields": [
+                {
+                    "name": "name",
+                    "type": "MetadataValue",
+                    "optional": true
+                },
+                {
+                    "name": "title",
+                    "type": "MetadataValue",
+                    "optional": true
+                },
+                {
+                    "name": "subtitle",
+                    "type": "MetadataValue",
+                    "optional": true
+                },
+                {
+                    "name": "time",
+                    "type": "MetadataValue",
+                    "optional": true
+                },
+                {
+                    "name": "date",
+                    "type": "MetadataValue",
+                    "optional": true
+                },
+                {
+                    "name": "authors",
+                    "type": "MetadataValue",
+                    "optional": true
+                },
+                {
+                    "name": "keywords",
+                    "type": "MetadataValue",
+                    "optional": true
+                },
+                {
+                    "name": "abstract",
+                    "type": "MetadataValue",
+                    "optional": true
+                },
+                {
+                    "name": "state",
+                    "type": "MetadataValue",
+                    "optional": true
+                },
+                {
+                    "name": "comment",
+                    "type": "MetadataValue",
+                    "optional": true
+                }
+            ],
+            "invariants": "A leaf Markup node owned by Document.metadata. Field absence differs from explicit null. Its scope covers the authored properties block; unsupported attribute syntax yields null anchor and empty attributes."
         }
     ],
     "values": {
@@ -668,45 +783,6 @@
                 ]
             },
             "dump": "bib(key=\"...\",mode=normal) or footnote(id=\"...\") or specimen(id=\"...\")"
-        },
-        "Citation": {
-            "purpose": "One item of a Cite: a scoped value, not a Markup kind, because it is written. It is reached only through Cite.citations, it receives a value callback from the walking visitor, and its affixes are non-null inline content, empty when absent.",
-            "scoped": true,
-            "fields": [
-                {
-                    "name": "referent",
-                    "type": "CitationReferent",
-                    "optional": false
-                },
-                {
-                    "name": "prefix",
-                    "type": "[Markup]",
-                    "optional": false
-                },
-                {
-                    "name": "suffix",
-                    "type": "[Markup]",
-                    "optional": false
-                }
-            ],
-            "dump": "Citation scope=L:C..L:C referent=... children=0, then a CitationPrefix and a CitationSuffix group"
-        },
-        "Footnote": {
-            "purpose": "One element of Document.footnotes: a scoped value, not a Markup kind, because it is written. A referenced definition keeps its normalized label as id and its parsed block content. An inline footnote keeps its parsed inline body directly and receives inline-N, de-collided with -K against all authored ids, in scope-start order at document finalization. Both forms share Document.footnotes in scope-start order.",
-            "scoped": true,
-            "fields": [
-                {
-                    "name": "id",
-                    "type": "String",
-                    "optional": false
-                },
-                {
-                    "name": "content",
-                    "type": "[Markup]",
-                    "optional": false
-                }
-            ],
-            "dump": "Footnote scope=L:C..L:C id=\"...\" children=N"
         },
         "OrderedListDelimiter": {
             "purpose": "The authored punctuation of an ordered marker: a period, parenthesis punctuation recording whether an opening parenthesis was authored, or the default marker form.",
@@ -768,28 +844,6 @@
             ],
             "dump": "decimal, alpha(lowercased=true|false), roman(lowercased=true|false), or default"
         },
-        "Specimen": {
-            "purpose": "One document-owned specimen definition: a scoped value, never Markup or a structural child. All definitions, including duplicates and anonymous definitions, remain in scope-start order. id is the authored label or null. start is an effective explicit counter reset or null for continuation; displayed numbers are derived, never stored. Specimen markers produce this value from source.",
-            "scoped": true,
-            "fields": [
-                {
-                    "name": "id",
-                    "type": "String",
-                    "optional": true
-                },
-                {
-                    "name": "start",
-                    "type": "Int",
-                    "optional": true
-                },
-                {
-                    "name": "content",
-                    "type": "[Markup]",
-                    "optional": false
-                }
-            ],
-            "dump": "Specimen scope=L:C..L:C id=null start=null children=N"
-        },
         "TableColumn": {
             "purpose": "One logical table column, located by its table; alignment and optional positive finite authored width share. Pipe tables produce relative=null.",
             "scoped": false,
@@ -838,63 +892,6 @@
                 }
             ],
             "dump": "{.class name=\"value\"}; both sequences preserve source order and duplicates"
-        },
-        "Metadata": {
-            "scoped": true,
-            "walk": false,
-            "fields": [
-                {
-                    "name": "name",
-                    "type": "MetadataValue",
-                    "optional": true
-                },
-                {
-                    "name": "title",
-                    "type": "MetadataValue",
-                    "optional": true
-                },
-                {
-                    "name": "subtitle",
-                    "type": "MetadataValue",
-                    "optional": true
-                },
-                {
-                    "name": "time",
-                    "type": "MetadataValue",
-                    "optional": true
-                },
-                {
-                    "name": "date",
-                    "type": "MetadataValue",
-                    "optional": true
-                },
-                {
-                    "name": "authors",
-                    "type": "MetadataValue",
-                    "optional": true
-                },
-                {
-                    "name": "keywords",
-                    "type": "MetadataValue",
-                    "optional": true
-                },
-                {
-                    "name": "abstract",
-                    "type": "MetadataValue",
-                    "optional": true
-                },
-                {
-                    "name": "state",
-                    "type": "MetadataValue",
-                    "optional": true
-                },
-                {
-                    "name": "comment",
-                    "type": "MetadataValue",
-                    "optional": true
-                }
-            ],
-            "dump": "Metadata scope=L:C..L:C name=... title=... subtitle=... time=... date=... authors=... keywords=... abstract=... state=... comment=... children=0; absent fields print null"
         },
         "MetadataValue": {
             "scoped": false,

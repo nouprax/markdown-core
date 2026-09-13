@@ -1,16 +1,23 @@
 package com.nouprax.markdown.core
 
 /**
- * A footnote the document owns: a scoped value outside the markup union,
+ * A footnote the document owns: a Markup node,
  * reached through [Document.footnotes] and never an element of any content
  * list. Repeated calls share one footnote, the first definition of an id
  * wins, and a valid definition nobody calls is still a footnote. The walk
- * reports it through [WalkingVisitor.visit] after the document's
+ * reports it through [Visitor.visit] after the document's
  * content.
  */
 public class Footnote internal constructor(
     /** The normalized label without the caret. */
     public val id: String,
     public val content: kotlin.collections.List<Markup>,
-    public val scope: Scope,
-)
+    override val scope: Scope,
+    override val anchor: String? = null,
+    override val attributes: Attributes = Attributes.empty,
+) : Markup {
+    override fun <Result> accept(
+        visitor: Visitor<Result>,
+        phase: MarkupWalkPhase,
+    ): Result = visitor.visit(this, phase)
+}

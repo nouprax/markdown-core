@@ -30,6 +30,7 @@
     "NoAccessLevelOnExtensionDeclaration" : true,
     "NoAssignmentInExpressions" : true,
     "NoBlockComments" : true,
+    "NoEmptyLinesOpeningClosingBraces" : true,
     "NoLeadingUnderscores" : true,
     "NoParensAroundConditions" : true,
     "NoVoidReturnOnFunctionSignature" : true,

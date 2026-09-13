@@ -10,6 +10,54 @@ import kotlin.test.assertTrue
 
 class ApiTest {
     @Test
+    fun singleDispatchAndTraversalShareOneVisitor() {
+        val document = Document.parse("text")
+        val visitor = RecordingWalkingVisitor()
+        document.accept(visitor)
+        document.accept(visitor, MarkupWalkPhase.EXITING)
+        assertEquals(listOf("entering:Document", "exiting:Document"), visitor.events)
+        document.walk(visitor)
+        assertEquals(
+            listOf(
+                "entering:Document",
+                "entering:Paragraph",
+                "entering:Text",
+                "exiting:Text",
+                "exiting:Paragraph",
+                "exiting:Document",
+            ),
+            visitor.events.drop(2),
+        )
+        val text = assertIs<Paragraph>(document.content.first()).content.first()
+        assertEquals("Text", text.accept(KindVisitor(), MarkupWalkPhase.EXITING))
+    }
+
+    @Test
+    fun ownedScopedElementsAreMarkupWithFiniteWalks() {
+        val document =
+            Document.parse(
+                "---\ntitle: Example\n---\n[^Label]\n\n[^label]: self [^LABEL]\n\n(@sample) Body\n",
+            )
+        val citation = assertIs<Cite>(assertIs<Paragraph>(document.content.first()).content.first()).citations.single()
+        val nodes: kotlin.collections.List<Markup> =
+            listOf(document.metadata!!, citation, document.footnotes.single(), document.specimens.single())
+        val visitor = KindVisitor()
+        assertEquals(listOf("Metadata", "Citation", "Footnote", "Specimen"), nodes.map { it.accept(visitor) })
+        for (node in nodes) {
+            assertEquals(null, node.anchor)
+            assertTrue(node.attributes.classes.isEmpty() && node.attributes.records.isEmpty())
+            val walker = RecordingWalkingVisitor()
+            node.walk(walker)
+            assertEquals(walker.entered, walker.exited)
+            assertTrue(walker.entered > 0)
+            assertEquals("entering:${node.accept(visitor)}", walker.events.first())
+            assertEquals("exiting:${node.accept(visitor)}", walker.events.last())
+        }
+        assertEquals("label", assertIs<CitationReferent.Footnote>(citation.referent).id)
+        assertEquals("label", document.footnotes.single().id)
+    }
+
+    @Test
     fun embeddedCrossLinksShareDimensionsAndKeepRawPrefixes() {
         val document = Document.parse("![[v.mp4|*raw*|2147483647x2]] ![[n|3]] [[n|100]] ![[n|bad|01]] ![[n]]\n")
         val links = assertIs<Paragraph>(document.content.single()).content.filterIsInstance<CrossEmbedded>()
@@ -79,7 +127,22 @@ class ApiTest {
                 .scope.start.line,
         )
         val empty = assertNotNull(Document.parse("---\nunknown: 1\nfree text\n---").metadata)
-        assertEquals(Metadata(scope = empty.scope), empty)
+        assertTrue(
+            listOf(
+                empty.name,
+                empty.title,
+                empty.subtitle,
+                empty.time,
+                empty.date,
+                empty.authors,
+                empty.keywords,
+                empty.`abstract`,
+                empty.state,
+                empty.comment,
+            ).all { it == null },
+        )
+        assertEquals(null, empty.anchor)
+        assertTrue(empty.attributes.classes.isEmpty() && empty.attributes.records.isEmpty())
         assertEquals(null, Document.parse("---\nname: 1\n").metadata)
     }
 
@@ -134,11 +197,11 @@ class ApiTest {
         assertEquals("Document", document.accept(visitor))
         assertEquals("Paragraph", paragraph.accept(visitor))
         assertEquals("Embedded", node.accept(visitor))
-        assertEquals("Document", visitor.visit(document = document))
-        assertEquals("Paragraph", visitor.visit(paragraph = paragraph))
-        assertEquals("Embedded", visitor.visit(embedded = embedded))
-        val visit: (Embedded) -> String = visitor::visit
-        assertEquals("Embedded", visit(embedded))
+        assertEquals("Document", visitor.visit(document = document, phase = MarkupWalkPhase.ENTERING))
+        assertEquals("Paragraph", visitor.visit(paragraph = paragraph, phase = MarkupWalkPhase.ENTERING))
+        assertEquals("Embedded", visitor.visit(embedded = embedded, phase = MarkupWalkPhase.ENTERING))
+        val visit: (Embedded, MarkupWalkPhase) -> String = visitor::visit
+        assertEquals("Embedded", visit(embedded, MarkupWalkPhase.EXITING))
     }
 
     @Test
@@ -289,9 +352,9 @@ class ApiTest {
         table.walk(tableVisitor)
         assertEquals(listOf(1, 3), tableVisitor.tableRowKinds)
         tableVisitor.events.clear()
-        val typed: WalkingVisitor = tableVisitor
-        typed.visit(tableRow = table.head.single(), phase = WalkPhase.ENTERING)
-        typed.visit(table = table, phase = WalkPhase.EXITING)
+        val typed: Visitor<Unit> = tableVisitor
+        typed.visit(tableRow = table.head.single(), phase = MarkupWalkPhase.ENTERING)
+        typed.visit(table = table, phase = MarkupWalkPhase.EXITING)
         assertEquals(listOf("entering:TableRow", "exiting:Table"), tableVisitor.events)
     }
 }
@@ -518,7 +581,7 @@ class BindingMappingTest {
         assertEquals("twice", assertIs<Text>(assertIs<Paragraph>(later.content.single()).content.single()).literal)
         assertTrue(
             document.dump().endsWith(
-                "└── Footnote scope=5:1..5:11 id=\"a\" children=1\n" +
+                "└── Footnote scope=5:1..5:11 anchor=null attributes={} id=\"a\" children=1\n" +
                     "    └── Paragraph scope=5:7..5:11 anchor=null attributes={} children=1\n" +
                     "        └── Text scope=5:7..5:11 anchor=null attributes={} literal=\"twice\" children=0\n",
             ),

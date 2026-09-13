@@ -32,11 +32,11 @@ Document scope=1:1..11:14 anchor=null attributes={} children=4
 ├── Paragraph scope=9:1..9:9 anchor=null attributes={} children=3
 │   ├── Text scope=9:1..9:4 anchor=null attributes={} literal="Call" children=0
 │   ├── Cite scope=9:5..9:8 anchor=null attributes={} children=1
-│   │   └── Citation scope=9:6..9:7 referent=footnote(id="n") children=0
+│   │   └── Citation scope=9:6..9:7 anchor=null attributes={} referent=footnote(id="n") children=0
 │   │       ├── CitationPrefix children=0
 │   │       └── CitationSuffix children=0
 │   └── Text scope=9:9..9:9 anchor=null attributes={} literal="." children=0
-└── Footnote scope=11:1..11:14 id="n" children=1
+└── Footnote scope=11:1..11:14 anchor=null attributes={} id="n" children=1
     └── Paragraph scope=11:7..11:14 anchor=null attributes={} children=1
         └── Mark scope=11:7..11:14 anchor=null attributes={} children=1
             └── Text scope=11:9..11:12 anchor=null attributes={} literal="note" children=0

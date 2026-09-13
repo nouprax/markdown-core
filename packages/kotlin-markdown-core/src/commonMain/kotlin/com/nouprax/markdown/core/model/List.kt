@@ -11,7 +11,10 @@ public class List internal constructor(
     override val anchor: String?,
     override val attributes: Attributes,
 ) : Markup {
-    override fun <Result> accept(visitor: Visitor<Result>): Result = visitor.visit(this)
+    override fun <Result> accept(
+        visitor: Visitor<Result>,
+        phase: MarkupWalkPhase,
+    ): Result = visitor.visit(this, phase)
 }
 
 public class ListItem internal constructor(
@@ -24,5 +27,8 @@ public class ListItem internal constructor(
     public val tasked: Boolean get() = marker != null
     public val completed: Boolean get() = marker != null && marker != " "
 
-    override fun <Result> accept(visitor: Visitor<Result>): Result = visitor.visit(this)
+    override fun <Result> accept(
+        visitor: Visitor<Result>,
+        phase: MarkupWalkPhase,
+    ): Result = visitor.visit(this, phase)
 }

@@ -11,10 +11,10 @@ public struct Directive: Markup {
         let anchor: String?
         let attributes: Attributes
         let name: String
-        let label: Int?
+        let label: MarkupReference<DirectiveLabel>?
     }
 
-    @Stored var fields: Fields
+    let fields: Stored<Fields>
 
     /// Where it is, its leading colon included. See ``Scope``.
     public var scope: Scope { fields.scope }
@@ -25,10 +25,12 @@ public struct Directive: Markup {
     /// The directive's name, without its colons.
     public var name: String { fields.name }
     /// The bracketed label, or `nil` when the source wrote none.
-    public var label: DirectiveLabel? { fields.label.map { $fields.value(at: $0, as: DirectiveLabel.self) } }
+    public var label: DirectiveLabel? { fields.label }
 
     /// Dispatches to the visitor's `Directive` case.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
+    public func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupWalkPhase) -> V.Result {
+        visitor.visit(self, phase: phase)
+    }
 }
 
 extension Directive.Fields {
@@ -40,7 +42,7 @@ extension Directive.Fields {
             anchor: markdown_core_node_anchor(node).string,
             attributes: Attributes(from: node),
             name: name,
-            label: label
+            label: label.map { .init(index: $0) }
         )
     }
 }

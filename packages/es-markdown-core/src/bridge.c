@@ -58,16 +58,8 @@ enum es_node_offset {
     ES_NODE_INHERITED_ATTRIBUTES = 132
 };
 
-/* The wire kinds of the scoped values (M4), above the node-kind space
- * so that the decoder tells a value record from a node record by its kind. */
-enum {
-    ES_KIND_CITATION = 0x100,
-    ES_KIND_FOOTNOTE = 0x101,
-    ES_KIND_SPECIMEN = 0x102,
-    ES_KIND_METADATA = 0x103,
-    ES_KIND_METADATA_VALUE = 0x104,
-    ES_KIND_DEFINITION_BODY = 0x105
-};
+/* Non-node payload records occupy a separate wire-kind space. */
+enum { ES_KIND_METADATA_VALUE = 0x100, ES_KIND_DEFINITION_BODY = 0x101 };
 
 typedef struct es_source_attributes {
     markdown_core_optional_string anchor;
@@ -78,11 +70,7 @@ typedef struct es_source_node {
     /* A node record names its node; a value record names its handle instead
      * and leaves `node` NULL (M4). */
     const markdown_core_node *node;
-    const markdown_core_citation *citation;
-    const markdown_core_footnote *footnote;
-    const markdown_core_specimen *specimen;
     const markdown_core_definition_body *definition_body;
-    const markdown_core_metadata *metadata;
     const markdown_core_metadata_value *metadata_value;
     es_source_attributes attributes, inherited_attributes;
     uint32_t metadata_index;
@@ -227,30 +215,6 @@ static uint32_t append_node(es_build *build, const markdown_core_node *node) {
     return append_record(build, value);
 }
 
-static uint32_t append_citation(es_build *build, const markdown_core_citation *citation) {
-    es_source_node value;
-    memset(&value, 0, sizeof(value));
-    value.citation = citation;
-    value.wire_kind = ES_KIND_CITATION;
-    return append_record(build, value);
-}
-
-static uint32_t append_footnote(es_build *build, const markdown_core_footnote *footnote) {
-    es_source_node value;
-    memset(&value, 0, sizeof(value));
-    value.footnote = footnote;
-    value.wire_kind = ES_KIND_FOOTNOTE;
-    return append_record(build, value);
-}
-
-static uint32_t append_specimen(es_build *build, const markdown_core_specimen *specimen) {
-    es_source_node value;
-    memset(&value, 0, sizeof(value));
-    value.specimen = specimen;
-    value.wire_kind = ES_KIND_SPECIMEN;
-    return append_record(build, value);
-}
-
 static void append_edge(es_build *build, uint32_t node_index) {
     if (build->failure != ES_BUILD_OK || build->edge_count >= UINT32_MAX ||
         !reserve_vector((void **)&build->edges, &build->edge_capacity, build->edge_count + 1, sizeof(*build->edges))) {
@@ -379,62 +343,30 @@ static size_t append_chain(es_build *build, const markdown_core_node *first) {
     return build->failure == ES_BUILD_OK ? count : SIZE_MAX;
 }
 
-/* A citation's prefix is its child range and its suffix its auxiliary range;
- * a footnote's content is its child range (M4). Both chains are records like
- * any other node's children. */
-static void collect_value_topology(es_build *build, size_t cursor) {
-    const markdown_core_metadata *metadata = build->nodes[cursor].metadata;
-    if (metadata) {
-        /* Wire edges carry present field values in fixed contract order. */
-        const markdown_core_metadata_value *values[] = {
-            markdown_core_metadata_name(metadata),     markdown_core_metadata_title(metadata),
-            markdown_core_metadata_subtitle(metadata), markdown_core_metadata_time(metadata),
-            markdown_core_metadata_date(metadata),     markdown_core_metadata_authors(metadata),
-            markdown_core_metadata_keywords(metadata), markdown_core_metadata_abstract(metadata),
-            markdown_core_metadata_state(metadata),    markdown_core_metadata_comment(metadata),
-        };
-        build->nodes[cursor].child_start = (uint32_t)build->edge_count;
-        for (size_t i = 0; i < sizeof(values) / sizeof(*values) && build->failure == ES_BUILD_OK; i++) {
-            if (!values[i]) {
-                continue;
-            }
-            es_source_node value = {0};
-            value.wire_kind = ES_KIND_METADATA_VALUE;
-            value.metadata_value = values[i];
-            uint32_t index = append_record(build, value);
-            if (index == ES_NO_INDEX) {
-                return;
-            }
-            append_edge(build, index);
-            build->nodes[cursor].flags |= 1u << i;
-            build->nodes[cursor].child_count++;
-        }
-        return;
-    }
-    if (build->nodes[cursor].metadata_value) {
-        return;
-    }
-    const markdown_core_citation *citation = build->nodes[cursor].citation;
-    const markdown_core_footnote *footnote = build->nodes[cursor].footnote;
-    const markdown_core_specimen *specimen = build->nodes[cursor].specimen;
-    const markdown_core_definition_body *body = build->nodes[cursor].definition_body;
-    size_t count;
+static void collect_metadata_topology(es_build *build, size_t cursor, const markdown_core_node *metadata) {
+    /* Wire edges carry present field values in fixed contract order. */
+    const markdown_core_metadata_value *values[] = {
+        markdown_core_metadata_name(metadata),     markdown_core_metadata_title(metadata),
+        markdown_core_metadata_subtitle(metadata), markdown_core_metadata_time(metadata),
+        markdown_core_metadata_date(metadata),     markdown_core_metadata_authors(metadata),
+        markdown_core_metadata_keywords(metadata), markdown_core_metadata_abstract(metadata),
+        markdown_core_metadata_state(metadata),    markdown_core_metadata_comment(metadata),
+    };
     build->nodes[cursor].child_start = (uint32_t)build->edge_count;
-    count = append_chain(build, citation   ? markdown_core_citation_prefix(citation)
-                                : footnote ? markdown_core_footnote_content(footnote)
-                                : body     ? markdown_core_definition_body_content(body)
-                                           : markdown_core_specimen_content(specimen));
-    if (count == SIZE_MAX) {
-        return;
-    }
-    build->nodes[cursor].child_count = (uint32_t)count;
-    if (citation) {
-        build->nodes[cursor].aux_start = (uint32_t)build->edge_count;
-        count = append_chain(build, markdown_core_citation_suffix(citation));
-        if (count == SIZE_MAX) {
+    for (size_t i = 0; i < sizeof(values) / sizeof(*values) && build->failure == ES_BUILD_OK; i++) {
+        if (!values[i]) {
+            continue;
+        }
+        es_source_node value = {0};
+        value.wire_kind = ES_KIND_METADATA_VALUE;
+        value.metadata_value = values[i];
+        uint32_t index = append_record(build, value);
+        if (index == ES_NO_INDEX) {
             return;
         }
-        build->nodes[cursor].aux_count = (uint32_t)count;
+        append_edge(build, index);
+        build->nodes[cursor].flags |= 1u << i;
+        build->nodes[cursor].child_count++;
     }
 }
 
@@ -451,7 +383,15 @@ static void collect_topology(es_build *build, const markdown_core_node *root) {
         size_t index;
 
         if (node == NULL) {
-            collect_value_topology(build, cursor);
+            const markdown_core_definition_body *body = build->nodes[cursor].definition_body;
+            if (body) {
+                build->nodes[cursor].child_start = (uint32_t)build->edge_count;
+                count = append_chain(build, markdown_core_definition_body_content(body));
+                if (count == SIZE_MAX) {
+                    break;
+                }
+                build->nodes[cursor].child_count = (uint32_t)count;
+            }
             continue;
         }
         kind = markdown_core_node_get_kind(node);
@@ -459,13 +399,29 @@ static void collect_topology(es_build *build, const markdown_core_node *root) {
             build->failure = ES_BUILD_INTERNAL;
             break;
         }
+        if (kind == MARKDOWN_CORE_KIND_METADATA) {
+            collect_metadata_topology(build, cursor, node);
+            continue;
+        }
+        if (kind == MARKDOWN_CORE_KIND_CITATION) {
+            build->nodes[cursor].child_start = (uint32_t)build->edge_count;
+            count = append_chain(build, markdown_core_citation_prefix(node));
+            if (count == SIZE_MAX) {
+                break;
+            }
+            build->nodes[cursor].child_count = (uint32_t)count;
+            build->nodes[cursor].aux_start = (uint32_t)build->edge_count;
+            count = append_chain(build, markdown_core_citation_suffix(node));
+            if (count == SIZE_MAX) {
+                break;
+            }
+            build->nodes[cursor].aux_count = (uint32_t)count;
+            continue;
+        }
         if (kind == MARKDOWN_CORE_KIND_DOCUMENT) {
-            const markdown_core_metadata *metadata = markdown_core_node_document_metadata(node);
+            const markdown_core_node *metadata = markdown_core_node_document_metadata(node);
             if (metadata) {
-                es_source_node value = {0};
-                value.wire_kind = ES_KIND_METADATA;
-                value.metadata = metadata;
-                uint32_t index = append_record(build, value);
+                uint32_t index = append_node(build, metadata);
                 if (index == ES_NO_INDEX) {
                     break;
                 }
@@ -493,13 +449,12 @@ static void collect_topology(es_build *build, const markdown_core_node *root) {
             continue;
         }
         if (kind == MARKDOWN_CORE_KIND_CITE) {
-            /* A cite's items are its child range: value records rather than
-             * nodes, one per item in source order (M4). */
-            const markdown_core_citation *item;
+            /* The wire child range holds owned Citation nodes in source order. */
+            const markdown_core_node *item;
             build->nodes[cursor].child_start = (uint32_t)build->edge_count;
             for (item = markdown_core_node_cite_citations(node); item != NULL && build->failure == ES_BUILD_OK;
-                 item = markdown_core_citation_next(item)) {
-                uint32_t item_index = append_citation(build, item);
+                 item = markdown_core_node_get_next_sibling(item)) {
+                uint32_t item_index = append_node(build, item);
                 if (item_index == ES_NO_INDEX) {
                     break;
                 }
@@ -572,21 +527,21 @@ static void collect_topology(es_build *build, const markdown_core_node *root) {
         if (kind == MARKDOWN_CORE_KIND_DOCUMENT && build->failure == ES_BUILD_OK) {
             /* The document's definitions are its auxiliary range: value
              * records after the content, in scope order (M4). */
-            const markdown_core_footnote *footnote;
             build->nodes[cursor].aux_start = (uint32_t)build->edge_count;
-            for (footnote = markdown_core_node_document_footnotes(node);
-                 footnote != NULL && build->failure == ES_BUILD_OK; footnote = markdown_core_footnote_next(footnote)) {
-                uint32_t footnote_index = append_footnote(build, footnote);
+            for (const markdown_core_node *footnote = markdown_core_node_document_footnotes(node);
+                 footnote != NULL && build->failure == ES_BUILD_OK;
+                 footnote = markdown_core_node_get_next_sibling(footnote)) {
+                uint32_t footnote_index = append_node(build, footnote);
                 if (footnote_index == ES_NO_INDEX) {
                     break;
                 }
                 append_edge(build, footnote_index);
                 build->nodes[cursor].aux_count++;
             }
-            const markdown_core_specimen *specimen;
-            for (specimen = markdown_core_node_document_specimens(node);
-                 specimen != NULL && build->failure == ES_BUILD_OK; specimen = markdown_core_specimen_next(specimen)) {
-                uint32_t specimen_index = append_specimen(build, specimen);
+            for (const markdown_core_node *specimen = markdown_core_node_document_specimens(node);
+                 specimen != NULL && build->failure == ES_BUILD_OK;
+                 specimen = markdown_core_node_get_next_sibling(specimen)) {
+                uint32_t specimen_index = append_node(build, specimen);
                 if (specimen_index == ES_NO_INDEX) {
                     break;
                 }
@@ -597,14 +552,9 @@ static void collect_topology(es_build *build, const markdown_core_node *root) {
     }
 }
 
-/* A value record's fields (M4): a citation's referent branch is the scalar,
- * its bib mode the integer, and its key or id the first string; a footnote's
- * id is the first string. */
+/* Unscoped metadata values carry a scalar or a range of list items. */
 static void collect_value_fields(es_build *build, es_source_node *record) {
     if (record->definition_body) {
-        return;
-    }
-    if (record->metadata) {
         return;
     }
     if (record->metadata_value) {
@@ -658,36 +608,6 @@ static void collect_value_fields(es_build *build, es_source_node *record) {
         count_string(build, record->strings[1]);
         return;
     }
-    if (record->citation) {
-        markdown_core_referent referent;
-        if (!markdown_core_citation_referent(record->citation, &referent)) {
-            build->failure = ES_BUILD_INTERNAL;
-            return;
-        }
-        record->scalar0 = (int32_t)referent.kind;
-        if (referent.kind == MARKDOWN_CORE_REFERENT_BIB) {
-            record->integer = (int64_t)referent.mode;
-            record->strings[0] = required_string(referent.key);
-        } else {
-            record->strings[0] = required_string(referent.id);
-        }
-    } else if (record->specimen) {
-        markdown_core_optional_i64 start;
-        if (!markdown_core_specimen_properties(record->specimen, &record->strings[0], &start)) {
-            build->failure = ES_BUILD_INTERNAL;
-            return;
-        }
-        record->integer = start.value;
-        record->flags = start.has_value ? 1 : 0;
-    } else {
-        markdown_core_string id;
-        if (!markdown_core_footnote_id(record->footnote, &id)) {
-            build->failure = ES_BUILD_INTERNAL;
-            return;
-        }
-        record->strings[0] = required_string(id);
-    }
-    count_string(build, record->strings[0]);
 }
 
 static void collect_attributes(es_build *build, es_source_attributes *record,
@@ -749,6 +669,43 @@ static void collect_node_fields(es_build *build, size_t node_index) {
     }
     kind = markdown_core_node_get_kind(node);
     switch (kind) {
+    case MARKDOWN_CORE_KIND_METADATA:
+        break;
+    case MARKDOWN_CORE_KIND_CITATION: {
+        markdown_core_referent referent;
+        if (!markdown_core_citation_referent(node, &referent)) {
+            build->failure = ES_BUILD_INTERNAL;
+            break;
+        }
+        record->scalar0 = (int32_t)referent.kind;
+        if (referent.kind == MARKDOWN_CORE_REFERENT_BIB) {
+            record->integer = (int64_t)referent.mode;
+            record->strings[0] = required_string(referent.key);
+        } else {
+            record->strings[0] = required_string(referent.id);
+        }
+        break;
+    }
+    case MARKDOWN_CORE_KIND_SPECIMEN: {
+        markdown_core_optional_i64 start;
+        if (!markdown_core_specimen_properties(node, &record->strings[0], &start)) {
+            build->failure = ES_BUILD_INTERNAL;
+            break;
+        }
+        record->integer = start.value;
+        record->flags = start.has_value ? 1 : 0;
+        break;
+    }
+    case MARKDOWN_CORE_KIND_FOOTNOTE: {
+        markdown_core_string id;
+        if (!markdown_core_footnote_id(node, &id)) {
+            build->failure = ES_BUILD_INTERNAL;
+            break;
+        }
+        record->strings[0] = required_string(id);
+        break;
+    }
+
     case MARKDOWN_CORE_KIND_CALLOUT: {
         /* The variant is the first slot and the fold marker the scalar, as
          * a list item's task marker; the title relation was recorded with
@@ -1078,12 +1035,7 @@ static uint8_t *success_result(const es_build *build, es_build_failure *failure)
     string_cursor = strings_offset;
     for (index = 0; index < build->node_count; ++index) {
         const es_source_node *source = &build->nodes[index];
-        markdown_core_scope scope = source->node       ? markdown_core_node_scope(source->node)
-                                    : source->citation ? markdown_core_citation_scope(source->citation)
-                                    : source->footnote ? markdown_core_footnote_scope(source->footnote)
-                                    : source->specimen ? markdown_core_specimen_scope(source->specimen)
-                                    : source->metadata ? markdown_core_metadata_scope(source->metadata)
-                                                       : (markdown_core_scope){0};
+        markdown_core_scope scope = markdown_core_node_scope(source->node);
         size_t node_offset = nodes_offset + index * ES_NODE_SIZE;
         size_t string_index;
         put_u32(output, node_offset + ES_NODE_KIND, source->wire_kind);

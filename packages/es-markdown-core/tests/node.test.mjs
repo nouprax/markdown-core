@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { Document, TreeDumper, visit, walk } from "../dist/index.js";
+import { Document, MarkupDumper, visit, walk } from "../dist/index.js";
 // Past index.js for the instance itself: the heap is what this asserts about,
 // and it is observable without the source carrying anything for the test.
 import { native } from "../dist/runtime/native.js";
@@ -37,6 +37,53 @@ test("ast: dimensions belong to each image occurrence while its destination stay
         "exiting:Emphasis",
         "exiting:Embedded"
     ]);
+});
+
+test("api: single dispatch and traversal share one visitor and preserve phase", () => {
+    const document = Document.parse("text");
+    const events = [];
+    const observer = walkingVisitor((node, phase) => {
+        events.push(`${phase}:${node.kind}`);
+    });
+    visit(document, observer);
+    visit(document, observer, "exiting");
+    assert.deepEqual(events, ["entering:document", "exiting:document"]);
+    walk(document, observer);
+    assert.deepEqual(events.slice(2), [
+        "entering:document",
+        "entering:paragraph",
+        "entering:text",
+        "exiting:text",
+        "exiting:paragraph",
+        "exiting:document"
+    ]);
+    const result = {};
+    assert.equal(
+        visit(
+            document,
+            {
+                ...kindVisitor,
+                document(node, phase) {
+                    assert.equal(node, document);
+                    assert.equal(phase, "exiting");
+                    return result;
+                }
+            },
+            "exiting"
+        ),
+        result
+    );
+    const failure = new Error("exit failure");
+    assert.throws(
+        () =>
+            walk(document, {
+                ...observer,
+                text(node, phase) {
+                    if (phase === "exiting") throw failure;
+                }
+            }),
+        (error) => error === failure
+    );
 });
 
 test("api: synchronous parse and typed visitor dispatch", () => {
@@ -264,7 +311,7 @@ test("ast: typed fields are copied from the native result", () => {
 
 test("ast: every Markup exposes the canonical debug dump", () => {
     const document = Document.parse("# Heading\n");
-    assert.equal(document.dump(), TreeDumper.dump(document));
+    assert.equal(document.dump(), MarkupDumper.dump(document));
     assert.match(document.content[0].dump(), /^Heading scope=/);
     assert.equal(Object.keys(document).includes("dump"), false);
 });
@@ -506,7 +553,7 @@ test("ast: a title is decoded from the auxiliary range before the content and du
     );
     assert.deepEqual(callout.content, []);
     assert.equal(
-        TreeDumper.dump(document),
+        MarkupDumper.dump(document),
         "Document scope=1:1..1:8 anchor=null attributes={} children=1\n" +
             '└── Callout scope=1:1..1:8 anchor=null attributes={} variant="note" collapsed=true children=0\n' +
             "    └── Title children=1\n" +
@@ -580,13 +627,7 @@ test("robustness: uncapped list nesting remains traversable", () => {
 });
 
 function walkingVisitor(callback) {
-    return {
-        ...Object.fromEntries(Object.keys(kindVisitor).map((method) => [method, callback])),
-        // The scoped values have no `kind`; their callbacks report their names.
-        citation: (value, phase) => callback({ kind: "citation", ...value }, phase),
-        specimen: (value, phase) => callback({ kind: "specimen", ...value }, phase),
-        footnote: (value, phase) => callback({ kind: "footnote", ...value }, phase)
-    };
+    return Object.fromEntries(Object.keys(kindVisitor).map((method) => [method, callback]));
 }
 
 function nodeKindName(node) {
@@ -662,15 +703,15 @@ test("ast: an inherited call is a one-item cite and the document owns its footno
         "Document scope=1:1..3:10 anchor=null attributes={} children=1\n" +
             "├── Paragraph scope=1:1..1:9 anchor=null attributes={} children=3\n" +
             "│   ├── Cite scope=1:1..1:4 anchor=null attributes={} children=1\n" +
-            '│   │   └── Citation scope=1:2..1:3 referent=footnote(id="a") children=0\n' +
+            '│   │   └── Citation scope=1:2..1:3 anchor=null attributes={} referent=footnote(id="a") children=0\n' +
             "│   │       ├── CitationPrefix children=0\n" +
             "│   │       └── CitationSuffix children=0\n" +
             '│   ├── Text scope=1:5..1:5 anchor=null attributes={} literal=" " children=0\n' +
             "│   └── Cite scope=1:6..1:9 anchor=null attributes={} children=1\n" +
-            '│       └── Citation scope=1:7..1:8 referent=footnote(id="a") children=0\n' +
+            '│       └── Citation scope=1:7..1:8 anchor=null attributes={} referent=footnote(id="a") children=0\n' +
             "│           ├── CitationPrefix children=0\n" +
             "│           └── CitationSuffix children=0\n" +
-            '└── Footnote scope=3:1..3:10 id="a" children=1\n' +
+            '└── Footnote scope=3:1..3:10 anchor=null attributes={} id="a" children=1\n' +
             "    └── Paragraph scope=3:7..3:10 anchor=null attributes={} children=1\n" +
             '        └── Text scope=3:7..3:10 anchor=null attributes={} literal="once" children=0\n'
     );
@@ -864,9 +905,9 @@ test("ast: every ordered delimiter and associated numbering value survives decod
                 const document = new Decoder(bytes).decode();
                 assert.deepEqual(document.content[0].variant, { kind, lowercased });
                 assert.deepEqual(document.content[0].delimiter, expected);
-                assert.match(TreeDumper.dump(document), new RegExp(`variant=${kind}\\(lowercased=${lowercased}\\)`));
+                assert.match(MarkupDumper.dump(document), new RegExp(`variant=${kind}\\(lowercased=${lowercased}\\)`));
                 const spelling = typeof expected === "string" ? expected : `parenthesis(closed=${closed})`;
-                assert.ok(TreeDumper.dump(document).includes(`delimiter=${spelling}`));
+                assert.ok(MarkupDumper.dump(document).includes(`delimiter=${spelling}`));
             }
         }
     }
@@ -887,7 +928,7 @@ test("ast: a UTF-8 task marker is an owned string, independent of the payload", 
     const document = new Decoder(bytes).decode();
     bytes.fill(0);
     assert.equal(document.content[0].items[0].marker, "🚀");
-    assert.ok(TreeDumper.dump(document).includes('marker="🚀"'));
+    assert.ok(MarkupDumper.dump(document).includes('marker="🚀"'));
 });
 
 function nativeResult(source) {
@@ -930,9 +971,9 @@ test("ast: specimen definitions and references retain ownership, nulls and reset
     for (let i = 0; i < view.getUint32(24, true); ++i) {
         const at = nodes + i * 160;
         const kind = view.getUint32(at, true);
-        if (kind === 0x100 && ++citations === 2) view.setInt32(at + 44, 3, true);
-        if (kind === 0x101 && ++definitions > 1) {
-            view.setUint32(at, 0x102, true);
+        if (kind === kinds.indexOf("citation") && ++citations === 2) view.setInt32(at + 44, 3, true);
+        if (kind === kinds.indexOf("footnote") && ++definitions > 1) {
+            view.setUint32(at, kinds.indexOf("specimen"), true);
             if (definitions === 2) {
                 firstSpecimen = at;
                 view.setUint32(at + 4, 1, true);
@@ -959,8 +1000,8 @@ test("ast: specimen definitions and references retain ownership, nulls and reset
     assert.equal(document.specimens[0].content[0].content[0].literal, "body");
     assert.deepEqual(document.content[0].content[2].citations[0].referent, { kind: "specimen", id: "étude" });
     const dumped = document.dump();
-    assert.match(dumped, /Specimen scope=5:1..6:0 id="étude" start=5 children=1/);
-    assert.match(dumped, /Specimen scope=7:1..7:18 id=null start=null children=1/);
+    assert.match(dumped, /Specimen scope=5:1..6:0 anchor=null attributes={} id="étude" start=5 children=1/);
+    assert.match(dumped, /Specimen scope=7:1..7:18 anchor=null attributes={} id=null start=null children=1/);
     assert.ok(dumped.indexOf("Footnote scope=") < dumped.indexOf("Specimen scope="));
     const events = [];
     walk(
@@ -1078,12 +1119,12 @@ test("ast: metadata preserves tags, decimal text, duplicate keys and owned lists
     };
     const root = node(0, 1);
     put(root + 120, 1);
-    const metadata = node(1, 0x103);
+    const metadata = node(1, kinds.indexOf("metadata"));
     put(metadata + 4, 0x3f);
     put(metadata + 28, 6);
     for (let index = 0; index < 6; index++) {
         put(edges + index * 4, index + 2);
-        const at = node(index + 2, 0x104);
+        const at = node(index + 2, 0x100);
         string(at + 64, index < 2 ? 0 : index - 1);
         put(at + 44, index < 4 ? 1 : 2);
         if (index < 4) put(at + 4, index);
@@ -1137,7 +1178,7 @@ test("ast: metadata preserves tags, decimal text, duplicate keys and owned lists
             if (phase === "entering") visited.push(value.kind);
         })
     );
-    assert.deepEqual(visited, ["document"]);
+    assert.deepEqual(visited, ["document", "metadata"]);
 });
 
 test("ast: dimensions belong to occurrences and universal attributes survive release", () => {
@@ -1228,10 +1269,14 @@ test("ast: Properties keep recognized fields and literal prose after native rele
             if (phase === "entering") events.push(node.kind);
         })
     );
-    assert.deepEqual(events, ["document", "paragraph", "text"]);
+    assert.deepEqual(events, ["document", "metadata", "paragraph", "text"]);
     const empty = Document.parse("---\nunknown: 1\nfree text\n---").metadata;
     assert.ok(empty);
-    assert.ok(Object.entries(empty).every(([key, value]) => key === "scope" || value === null));
+    assert.ok(
+        Object.entries(empty).every(
+            ([key, value]) => ["scope", "kind", "anchor", "attributes"].includes(key) || value === null
+        )
+    );
     assert.equal(Document.parse("---\nname: 1\n").metadata, null);
 });
 
@@ -1332,7 +1377,7 @@ test("ast: definition terms and ordered bodies are owned and walk without body w
 
 test("errors: definition body values cannot leak into markup or accept markup in their place", () => {
     const original = nativeResult("Term\n: body\n");
-    const body = findNode(original, 0x105);
+    const body = findNode(original, 0x101);
     const definition = findNode(original, kinds.indexOf("definition"));
     const malformed = (change, pattern) => {
         const bytes = original.slice();
@@ -1343,8 +1388,8 @@ test("errors: definition body values cannot leak into markup or accept markup in
     malformed((v) => v.setUint32(definition, kinds.indexOf("paragraph"), true), /not uniquely owned|non-markup/);
     malformed((v) => v.setUint32(definition + 4, 2, true), /flags/);
     malformed(
-        (v) => v.setUint32(findNode(original, kinds.indexOf("definitionList")), 0x105, true),
-        /child is a value, not a node/
+        (v) => v.setUint32(findNode(original, kinds.indexOf("definitionList")), 0x101, true),
+        /child is not ordinary content/
     );
     const emptyList = nativeResult("text\n");
     new DataView(emptyList.buffer).setUint32(
@@ -1360,4 +1405,39 @@ test("errors: definition body values cannot leak into markup or accept markup in
         true
     );
     assert.throws(() => new Decoder(noBodies).decode(), /definition has no bodies/);
+});
+
+test("api: owned scoped elements are Markup with finite walks and preserved identifiers", () => {
+    const document = Document.parse(
+        "---\ntitle: Example\n---\n[^Label]\n\n[^label]: self [^LABEL]\n\n(@sample) Body\n"
+    );
+    const citation = document.content[0].content[0].citations[0];
+    const nodes = [document.metadata, citation, document.footnotes[0], document.specimens[0]];
+    assert.deepEqual(
+        nodes.map((node) => visit(node, kindVisitor)),
+        ["metadata", "citation", "footnote", "specimen"]
+    );
+    for (const node of nodes) {
+        assert.equal(node.anchor, null);
+        assert.deepEqual(node.attributes, { classes: [], records: [] });
+        assert.equal(node.dump(), MarkupDumper.dump(node));
+        const events = [];
+        walk(
+            node,
+            walkingVisitor((value, phase) => events.push(`${phase}:${value.kind}`))
+        );
+        assert.equal(events[0], `entering:${node.kind}`);
+        assert.equal(events.at(-1), `exiting:${node.kind}`);
+        assert.equal(events.filter((event) => event.startsWith("entering:")).length, events.length / 2);
+    }
+    assert.deepEqual(citation.referent, { kind: "footnote", id: "label" });
+    assert.equal(document.footnotes[0].id, "label");
+    for (const node of nodes) {
+        const bytes = nativeResult("---\ntitle: Example\n---\n[^Label]\n\n[^label]: self\n\n(@sample) Body\n");
+        const leaf = findNode(bytes, kinds.indexOf("text"));
+        const view = new DataView(bytes.buffer);
+        view.setUint32(leaf, kinds.indexOf(node.kind), true);
+        if (node.kind === "citation") view.setInt32(leaf + 44, 2, true);
+        assert.throws(() => new Decoder(bytes).decode(), /child is not ordinary content/);
+    }
 });

@@ -14,7 +14,9 @@ public struct CrossLink: Markup {
     public let label: String?
 
     /// Dispatches to the visitor's CrossLink case.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
+    public func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupWalkPhase) -> V.Result {
+        visitor.visit(self, phase: phase)
+    }
 }
 
 extension CrossLink {

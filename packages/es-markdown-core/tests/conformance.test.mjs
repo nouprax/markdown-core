@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
-import { Document, TreeDumper, visit } from "../dist/index.js";
+import { Document, MarkupDumper, visit } from "../dist/index.js";
 import { kindVisitor } from "./visitor.mjs";
 
 const canonicalFixtures = new URL("../build/generated/conformance/canonical-ast-fixtures.json", import.meta.url);
@@ -133,13 +133,13 @@ test("conformance: directive labels preserve missing, empty, and populated state
         label.label.content.map((node) => node.kind),
         ["text"]
     );
-    assert.match(TreeDumper.dump(label), /DirectiveLabel/u);
+    assert.match(MarkupDumper.dump(label), /DirectiveLabel/u);
 });
 
 for (const testCase of canonicalManifest.cases) {
     test(`conformance: shared canonical AST case ${testCase.name}`, async () => {
         const document = Document.parse(testCase.source);
-        assert.equal(TreeDumper.dump(document), testCase.expected, testCase.name);
+        assert.equal(MarkupDumper.dump(document), testCase.expected, testCase.name);
         assert.equal(document.dump(), testCase.expected, testCase.name);
     });
 }

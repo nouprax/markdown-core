@@ -12,13 +12,13 @@ public struct Embedded: Markup {
         let scope: Scope
         let anchor: String?
         let attributes: Attributes
-        let content: [Int]
+        let content: MarkupReferences<any Markup>
         let dest: Destination
         let title: String?
         let dimensions: Dimensions?
     }
 
-    @Stored var fields: Fields
+    let fields: Stored<Fields>
 
     /// Where it is, `![` through the closing parenthesis. See ``Scope``.
     public var scope: Scope { fields.scope }
@@ -28,7 +28,7 @@ public struct Embedded: Markup {
     public var attributes: Attributes { fields.attributes }
     /// Parsed alt content excluding a valid dimension suffix; empty for a numeric-only label.
     /// A malformed suffix remains part of the alt content.
-    public var content: MarkupCollection<any Markup> { $fields.collection(fields.content) }
+    public var content: MarkupCollection<any Markup> { fields.content }
     /// Required, for the reason ``Link/dest`` is.
     public var dest: Destination { fields.dest }
     /// Optional.
@@ -37,7 +37,9 @@ public struct Embedded: Markup {
     public var dimensions: Dimensions? { fields.dimensions }
 
     /// Dispatches to the visitor's `Embedded` case.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
+    public func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupWalkPhase) -> V.Result {
+        visitor.visit(self, phase: phase)
+    }
 }
 
 extension Embedded.Fields {
@@ -49,7 +51,7 @@ extension Embedded.Fields {
             anchor: markdown_core_attribute_value_anchor(markdown_core_node_primary_attributes(node)).string
                 ?? resource.anchor,
             attributes: Attributes(from: node).inheriting(resource.attributes),
-            content: content,
+            content: .init(indices: content),
             dest: resource.dest,
             title: resource.title,
             dimensions: dimensions

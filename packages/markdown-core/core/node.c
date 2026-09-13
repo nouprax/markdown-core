@@ -12,7 +12,8 @@ static void S_node_unlink(markdown_core_node *node);
 #define NODE_MEM(node) markdown_core_node_mem(node)
 
 bool markdown_core_node_can_contain_type(markdown_core_node *node, markdown_core_node_type child_type) {
-    if (child_type == MARKDOWN_CORE_NODE_DOCUMENT || child_type == MARKDOWN_CORE_NODE_TABLE_CAPTION) {
+    if (child_type == MARKDOWN_CORE_NODE_DOCUMENT || child_type == MARKDOWN_CORE_NODE_TABLE_CAPTION ||
+        child_type == MARKDOWN_CORE_NODE_METADATA) {
         return false;
     }
 
@@ -104,6 +105,9 @@ static size_t S_node_payload_size(markdown_core_node_type type) {
         break;
     case MARKDOWN_CORE_NODE_DEFINITION_BODY:
         size = sizeof(markdown_core_definition_body_value);
+        break;
+    case MARKDOWN_CORE_NODE_METADATA:
+        size = sizeof(markdown_core_metadata_fields);
         break;
     case MARKDOWN_CORE_NODE_DOCUMENT:
         size = sizeof(markdown_core_document_value);
@@ -217,11 +221,9 @@ static void free_node_as(markdown_core_node *node) {
     case MARKDOWN_CORE_NODE_CALLOUT:
         markdown_core_optional_chunk_free(NODE_MEM(node), &node->as.callout->variant);
         break;
-    case MARKDOWN_CORE_NODE_DOCUMENT: {
-        markdown_core_metadata_free(NODE_MEM(node), node->as.document->metadata);
-        node->as.document->metadata = NULL;
+    case MARKDOWN_CORE_NODE_METADATA:
+        markdown_core_metadata_fields_free(NODE_MEM(node), node->as.metadata);
         break;
-    }
     case MARKDOWN_CORE_NODE_LIST_ITEM:
         markdown_core_optional_chunk_free(NODE_MEM(node), &node->as.list->task_marker);
         break;
@@ -316,6 +318,7 @@ static void S_splice_owned_fields(markdown_core_node *owner, markdown_core_node 
         S_splice_after(after, owner->as.citation->prefix);
         break;
     case MARKDOWN_CORE_NODE_DOCUMENT:
+        S_splice_after(after, owner->as.document->metadata);
         S_splice_after(after, owner->as.document->footnotes);
         S_splice_after(after, owner->as.document->specimens);
         break;
@@ -419,6 +422,8 @@ const char *markdown_core_node_get_type_string(markdown_core_node *node) {
         return "definition";
     case MARKDOWN_CORE_NODE_DEFINITION_BODY:
         return "definition_body";
+    case MARKDOWN_CORE_NODE_METADATA:
+        return "metadata";
     case MARKDOWN_CORE_NODE_TABLE_CAPTION:
         return "table_caption";
     case MARKDOWN_CORE_NODE_LIST:

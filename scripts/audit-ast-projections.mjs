@@ -203,17 +203,8 @@ const contract = JSON.parse(fs.readFileSync(path.join(root, CONTRACT_PATH), "utf
  * a scalar token. This includes typed ownership fields such as `label`; nested
  * dump layout does not make every such field part of a generic child list. */
 const kindNames = new Set(contract.kinds.map((kind) => kind.name));
-/** A scoped value -- `Citation`, `Footnote` -- is dumped as a nested value
- * line, like a kind, so a field holding one is structural too. */
-const scopedValueNames = new Set(
-    Object.entries(contract.values ?? {})
-        .filter(([, value]) => value.scoped)
-        .map(([name]) => name)
-);
 const structural = (field) =>
-    [...field.type.matchAll(/[A-Za-z]+/g)].some(
-        (word) => word[0] === "Markup" || kindNames.has(word[0]) || scopedValueNames.has(word[0])
-    );
+    [...field.type.matchAll(/[A-Za-z]+/g)].some((word) => word[0] === "Markup" || kindNames.has(word[0]));
 
 let failed = false;
 
@@ -310,8 +301,8 @@ const kindSurfaces = [
         label: "Kotlin dumper",
         expect: [...kinds.keys()],
         actual: namedKinds(
-            "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/visitor/TreeDumper.kt",
-            /override fun visit\(\s*[a-zA-Z]+: ([A-Za-z]+)\)/g
+            "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/visitor/MarkupDumper.kt",
+            /override fun visit\(\s*[a-zA-Z]+: ([A-Za-z]+),\s*phase: MarkupWalkPhase,?\s*\)/g
         )
     },
     {
@@ -344,15 +335,40 @@ const kindSurfaces = [
     {
         label: "ES dumper",
         expect: [...kinds.keys()].map(camel),
-        actual: namedKinds("packages/es-markdown-core/src/tree-dumper.ts", /^\s+([a-zA-Z]+): \(node\) =>/gm)
+        actual: namedKinds("packages/es-markdown-core/src/markup-dumper.ts", /^\s+([a-zA-Z]+): \(node\) =>/gm)
     },
     {
         label: "Swift dumper",
         expect: [...kinds.keys()],
         actual: namedKinds(
-            "packages/swift-markdown-core/Sources/MarkdownCore/Visitor/TreeDumper.swift",
-            /mutating func visit\(_:? ?n?o?d?e?:? (?:MarkdownCore\.)?([A-Za-z]+)\)/g
+            "packages/swift-markdown-core/Sources/MarkdownCore/Visitor/MarkupDumper.swift",
+            /mutating func visit\(_ node: (?:MarkdownCore\.)?([A-Za-z]+), phase: MarkupWalkPhase\)/g
         )
+    },
+    {
+        label: "Swift walk ownership schedule",
+        expect: [...kinds.keys()],
+        actual: namedKinds(
+            "packages/swift-markdown-core/Sources/MarkdownCore/Visitor/MarkupVisitor.swift",
+            /mutating func visit\(_ node: ([A-Za-z]+), phase: MarkupWalkPhase\)/g
+        )
+    },
+    {
+        label: "Kotlin walk ownership schedule",
+        expect: [...kinds.keys()],
+        actual: namedKinds(
+            "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/visitor/Visitor.kt",
+            /\bis ([A-Z][A-Za-z]+)/g
+        )
+    },
+    {
+        label: "ES walk ownership schedule",
+        expect: [...kinds.keys()].map(camel),
+        actual: [
+            ...read("packages/es-markdown-core/src/visitor.ts")
+                .split("\nfunction scheduleOwnedMarkup")[1]
+                .matchAll(/case "([a-zA-Z]+)":/g)
+        ].map((match) => match[1])
     },
     {
         label: "canonical-AST manifest",
@@ -515,5 +531,5 @@ if (failed) {
 console.log(
     `AST-projection audit passed: ${String(kinds.size)} kinds over ` +
         `${String(kindSurfaces.length)} surfaces, the C dump's fields, the prose table, the dump grammar, and ` +
-        `${String(modelProjections.length)} models including ${String(scopedValueNames.size)} scoped values.`
+        `${String(modelProjections.length)} models.`
 );

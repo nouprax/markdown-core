@@ -15,7 +15,10 @@ public class TableCell internal constructor(
     override val anchor: String?,
     override val attributes: Attributes,
 ) : Markup {
-    override fun <Result> accept(visitor: Visitor<Result>): Result = visitor.visit(this)
+    override fun <Result> accept(
+        visitor: Visitor<Result>,
+        phase: MarkupWalkPhase,
+    ): Result = visitor.visit(this, phase)
 }
 
 public class TableRow internal constructor(
@@ -24,7 +27,10 @@ public class TableRow internal constructor(
     override val anchor: String?,
     override val attributes: Attributes,
 ) : Markup {
-    override fun <Result> accept(visitor: Visitor<Result>): Result = visitor.visit(this)
+    override fun <Result> accept(
+        visitor: Visitor<Result>,
+        phase: MarkupWalkPhase,
+    ): Result = visitor.visit(this, phase)
 }
 
 public class Table internal constructor(
@@ -37,7 +43,10 @@ public class Table internal constructor(
     override val anchor: String?,
     override val attributes: Attributes,
 ) : Markup {
-    override fun <Result> accept(visitor: Visitor<Result>): Result = visitor.visit(this)
+    override fun <Result> accept(
+        visitor: Visitor<Result>,
+        phase: MarkupWalkPhase,
+    ): Result = visitor.visit(this, phase)
 }
 
 /** An independently owned table caption with ordinary inline content. */
@@ -47,5 +56,8 @@ public class TableCaption internal constructor(
     override val anchor: String?,
     override val attributes: Attributes,
 ) : Markup {
-    override fun <Result> accept(visitor: Visitor<Result>): Result = visitor.visit(this)
+    override fun <Result> accept(
+        visitor: Visitor<Result>,
+        phase: MarkupWalkPhase,
+    ): Result = visitor.visit(this, phase)
 }

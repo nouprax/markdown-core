@@ -71,10 +71,10 @@ pnpm add @nouprax/es-markdown-core
 ```
 
 ```js
-import { Document, TreeDumper } from "@nouprax/es-markdown-core";
+import { Document, MarkupDumper } from "@nouprax/es-markdown-core";
 
 const document = Document.parse("Hello, Markdown.");
-console.log(TreeDumper.dump(document));
+console.log(MarkupDumper.dump(document));
 ```
 
 The ESM package supports Node.js 20 or later and browsers that can load its

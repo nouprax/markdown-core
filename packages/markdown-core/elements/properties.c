@@ -18,7 +18,7 @@ typedef enum { PROPERTY_SCALAR, ARRAY_SCALAR } scalar_context;
 typedef struct {
     markdown_core_parser *parser;
     const unsigned char *source;
-    markdown_core_metadata *metadata;
+    markdown_core_metadata_fields *metadata;
 } properties;
 typedef struct {
     properties *owner;
@@ -97,7 +97,7 @@ static void free_value(markdown_core_mem *mem, markdown_core_metadata_value *v) 
     }
     memset(v, 0, sizeof(*v));
 }
-void markdown_core_metadata_free(markdown_core_mem *mem, markdown_core_metadata *metadata) {
+void markdown_core_metadata_fields_free(markdown_core_mem *mem, markdown_core_metadata_fields *metadata) {
     if (!metadata) {
         return;
     }
@@ -111,7 +111,6 @@ void markdown_core_metadata_free(markdown_core_mem *mem, markdown_core_metadata 
     free_value(mem, &metadata->abstract);
     free_value(mem, &metadata->state);
     free_value(mem, &metadata->comment);
-    mem->free(metadata);
 }
 static void skip(decoder *d) {
     const unsigned char *s = d->owner->source;
@@ -263,7 +262,7 @@ static bool equals(markdown_core_string s, const char *text) {
     return s.length == n && memcmp(s.data, text, n) == 0;
 }
 /* Resolve the source name directly to its optional destination field. */
-static markdown_core_metadata_value *field_slot(markdown_core_metadata *metadata, markdown_core_string name) {
+static markdown_core_metadata_value *field_slot(markdown_core_metadata_fields *metadata, markdown_core_string name) {
     if (equals(name, "name")) {
         return &metadata->name;
     }
@@ -744,19 +743,23 @@ size_t markdown_core_properties_parse(markdown_core_parser *parser, const unsign
         return 0;
     }
     properties p = {.parser = parser, .source = source};
-    p.metadata = parser->mem->calloc(1, sizeof(*p.metadata));
-    if (!p.metadata) {
+    markdown_core_node *node = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_METADATA, parser->mem);
+    if (!node) {
         parser->oom = true;
         return 0;
     }
     size_t consumed = next_line(source, close + 3, length);
-    p.metadata->scope = (markdown_core_scope){{1, (int32_t)(bom + 1)}, {(int32_t)closing_line, 3}};
+    p.metadata = node->as.metadata;
+    node->start_line = 1;
+    node->start_column = (int)(bom + 1);
+    node->end_line = (int)closing_line;
+    node->end_column = 3;
     payload(&p, start, close);
     if (parser->oom) {
-        markdown_core_metadata_free(parser->mem, p.metadata);
+        markdown_core_node_free(node);
         return 0;
     }
-    parser->root->as.document->metadata = p.metadata;
+    parser->root->as.document->metadata = node;
     parser->line_number = (int)closing_line;
     parser->last_line_length = 3;
     return consumed;

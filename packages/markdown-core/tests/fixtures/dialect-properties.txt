@@ -10,7 +10,7 @@ tags: [a, b]
 Body
 .
 Document scope=1:1..5:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..4:3 name=null title=scalar(text("Note")) subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+├── Metadata scope=1:1..4:3 anchor=null attributes={} name=null title=scalar(text("Note")) subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
 └── Paragraph scope=5:1..5:4 anchor=null attributes={} children=1
     └── Text scope=5:1..5:4 anchor=null attributes={} literal="Body" children=0
 ````````````````````````````````
@@ -27,7 +27,7 @@ link: "[[Episode IV]]"
 ---
 .
 Document scope=1:1..7:3 anchor=null attributes={} children=0
-└── Metadata scope=1:1..7:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+└── Metadata scope=1:1..7:3 anchor=null attributes={} name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
 ````````````````````````````````
 
 ## Input boundary
@@ -44,7 +44,7 @@ s: "**Draft**"
 ---
 .
 Document scope=1:1..9:3 anchor=null attributes={} children=0
-└── Metadata scope=1:1..9:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+└── Metadata scope=1:1..9:3 anchor=null attributes={} name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
 ````````````````````````````````
 
 ## Input boundary
@@ -58,7 +58,7 @@ m: []
 ---
 .
 Document scope=1:1..6:3 anchor=null attributes={} children=0
-└── Metadata scope=1:1..6:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+└── Metadata scope=1:1..6:3 anchor=null attributes={} name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
 ````````````````````````````````
 
 ## Input boundary
@@ -68,7 +68,7 @@ Document scope=1:1..6:3 anchor=null attributes={} children=0
 ---
 .
 Document scope=1:1..2:3 anchor=null attributes={} children=0
-└── Metadata scope=1:1..2:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+└── Metadata scope=1:1..2:3 anchor=null attributes={} name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
 ````````````````````````````````
 
 ## Input boundary
@@ -80,7 +80,7 @@ Document scope=1:1..2:3 anchor=null attributes={} children=0
 body
 .
 Document scope=1:1..4:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..3:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+├── Metadata scope=1:1..3:3 anchor=null attributes={} name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
 └── Paragraph scope=4:1..4:4 anchor=null attributes={} children=1
     └── Text scope=4:1..4:4 anchor=null attributes={} literal="body" children=0
 ````````````````````````````````
@@ -125,7 +125,7 @@ true: c
 ---
 .
 Document scope=1:1..6:3 anchor=null attributes={} children=0
-└── Metadata scope=1:1..6:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+└── Metadata scope=1:1..6:3 anchor=null attributes={} name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
 ````````````````````````````````
 
 ## Input boundary
@@ -138,7 +138,7 @@ z: !!str 1
 ---
 .
 Document scope=1:1..5:3 anchor=null attributes={} children=0
-└── Metadata scope=1:1..5:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+└── Metadata scope=1:1..5:3 anchor=null attributes={} name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
 ````````````````````````````````
 
 ## Input boundary
@@ -154,7 +154,7 @@ count: 2
 body
 .
 Document scope=1:1..8:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..7:3 name=null title=scalar(text("Note")) subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+├── Metadata scope=1:1..7:3 anchor=null attributes={} name=null title=scalar(text("Note")) subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
 └── Paragraph scope=8:1..8:4 anchor=null attributes={} children=1
     └── Text scope=8:1..8:4 anchor=null attributes={} literal="body" children=0
 ````````````````````````````````
@@ -179,7 +179,7 @@ syntax: "**bold** ==mark== $formula$ ^[note] <!--comment-->"
 body
 .
 Document scope=1:1..15:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..14:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+├── Metadata scope=1:1..14:3 anchor=null attributes={} name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
 └── Paragraph scope=15:1..15:4 anchor=null attributes={} children=1
     └── Text scope=15:1..15:4 anchor=null attributes={} literal="body" children=0
 ````````````````````````````````
@@ -202,7 +202,7 @@ after: last
 body
 .
 Document scope=1:1..13:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..12:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+├── Metadata scope=1:1..12:3 anchor=null attributes={} name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
 └── Paragraph scope=13:1..13:4 anchor=null attributes={} children=1
     └── Text scope=13:1..13:4 anchor=null attributes={} literal="body" children=0
 ````````````````````````````````
@@ -229,7 +229,7 @@ last: present
 body
 .
 Document scope=1:1..17:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..16:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+├── Metadata scope=1:1..16:3 anchor=null attributes={} name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
 └── Paragraph scope=17:1..17:4 anchor=null attributes={} children=1
     └── Text scope=17:1..17:4 anchor=null attributes={} literal="body" children=0
 ````````````````````````````````
@@ -266,7 +266,7 @@ last: present
 body
 .
 Document scope=1:1..27:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..26:3 name=null title=null subtitle=null time=null date=scalar(text("2026-09-08")) authors=null keywords=null abstract=null state=null comment=null children=0
+├── Metadata scope=1:1..26:3 anchor=null attributes={} name=null title=null subtitle=null time=null date=scalar(text("2026-09-08")) authors=null keywords=null abstract=null state=null comment=null children=0
 └── Paragraph scope=27:1..27:4 anchor=null attributes={} children=1
     └── Text scope=27:1..27:4 anchor=null attributes={} literal="body" children=0
 ````````````````````````````````
@@ -294,7 +294,7 @@ last: present
 body
 .
 Document scope=1:1..18:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..17:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+├── Metadata scope=1:1..17:3 anchor=null attributes={} name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
 └── Paragraph scope=18:1..18:4 anchor=null attributes={} children=1
     └── Text scope=18:1..18:4 anchor=null attributes={} literal="body" children=0
 ````````````````````````````````
@@ -320,7 +320,7 @@ last: present
 body
 .
 Document scope=1:1..16:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..15:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+├── Metadata scope=1:1..15:3 anchor=null attributes={} name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
 └── Paragraph scope=16:1..16:4 anchor=null attributes={} children=1
     └── Text scope=16:1..16:4 anchor=null attributes={} literal="body" children=0
 ````````````````````````````````
@@ -344,7 +344,7 @@ last: *a
 body
 .
 Document scope=1:1..14:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..13:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+├── Metadata scope=1:1..13:3 anchor=null attributes={} name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
 └── Paragraph scope=14:1..14:4 anchor=null attributes={} children=1
     └── Text scope=14:1..14:4 anchor=null attributes={} literal="body" children=0
 ````````````````````````````````
@@ -358,7 +358,7 @@ Document scope=1:1..14:4 anchor=null attributes={} children=1
 body
 .
 Document scope=1:1..4:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..3:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+├── Metadata scope=1:1..3:3 anchor=null attributes={} name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
 └── Paragraph scope=4:1..4:4 anchor=null attributes={} children=1
     └── Text scope=4:1..4:4 anchor=null attributes={} literal="body" children=0
 ````````````````````````````````
@@ -378,7 +378,7 @@ Document scope=1:1..4:4 anchor=null attributes={} children=1
 body
 .
 Document scope=1:1..10:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..9:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+├── Metadata scope=1:1..9:3 anchor=null attributes={} name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
 └── Paragraph scope=10:1..10:4 anchor=null attributes={} children=1
     └── Text scope=10:1..10:4 anchor=null attributes={} literal="body" children=0
 ````````````````````````````````
@@ -399,7 +399,7 @@ after: 2
 body
 .
 Document scope=1:1..11:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..10:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+├── Metadata scope=1:1..10:3 anchor=null attributes={} name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
 └── Paragraph scope=11:1..11:4 anchor=null attributes={} children=1
     └── Text scope=11:1..11:4 anchor=null attributes={} literal="body" children=0
 ````````````````````````````````
@@ -416,7 +416,7 @@ after: two
 body
 .
 Document scope=1:1..7:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..6:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+├── Metadata scope=1:1..6:3 anchor=null attributes={} name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
 └── Paragraph scope=7:1..7:4 anchor=null attributes={} children=1
     └── Text scope=7:1..7:4 anchor=null attributes={} literal="body" children=0
 ````````````````````````````````
@@ -433,7 +433,7 @@ c: 3
 body
 .
 Document scope=1:1..7:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..6:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+├── Metadata scope=1:1..6:3 anchor=null attributes={} name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
 └── Paragraph scope=7:1..7:4 anchor=null attributes={} children=1
     └── Text scope=7:1..7:4 anchor=null attributes={} literal="body" children=0
 ````````````````````````````````
@@ -448,7 +448,7 @@ b: !!null ''
 body
 .
 Document scope=1:1..5:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..4:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+├── Metadata scope=1:1..4:3 anchor=null attributes={} name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
 └── Paragraph scope=5:1..5:4 anchor=null attributes={} children=1
     └── Text scope=5:1..5:4 anchor=null attributes={} literal="body" children=0
 ````````````````````````````````
@@ -466,7 +466,7 @@ last: 3
 body
 .
 Document scope=1:1..8:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..7:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+├── Metadata scope=1:1..7:3 anchor=null attributes={} name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
 └── Paragraph scope=8:1..8:4 anchor=null attributes={} children=1
     └── Text scope=8:1..8:4 anchor=null attributes={} literal="body" children=0
 ````````````````````````````````
@@ -483,7 +483,7 @@ path/to.key: value
 body
 .
 Document scope=1:1..7:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..6:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+├── Metadata scope=1:1..6:3 anchor=null attributes={} name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
 └── Paragraph scope=7:1..7:4 anchor=null attributes={} children=1
     └── Text scope=7:1..7:4 anchor=null attributes={} literal="body" children=0
 ````````````````````````````````
@@ -499,7 +499,7 @@ second: two
 ---
 .
 Document scope=1:1..6:3 anchor=null attributes={} children=2
-├── Metadata scope=1:1..3:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+├── Metadata scope=1:1..3:3 anchor=null attributes={} name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
 ├── ThematicBreak scope=4:1..4:3 anchor=null attributes={} children=0
 └── Heading scope=5:1..6:3 anchor="second-two" attributes={} level=2 children=1
     └── Text scope=5:1..5:11 anchor=null attributes={} literal="second: two" children=0
@@ -516,7 +516,7 @@ b: *x
 body
 .
 Document scope=1:1..6:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..5:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+├── Metadata scope=1:1..5:3 anchor=null attributes={} name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
 └── Paragraph scope=6:1..6:4 anchor=null attributes={} children=1
     └── Text scope=6:1..6:4 anchor=null attributes={} literal="body" children=0
 ````````````````````````````````
@@ -534,7 +534,7 @@ last: present
 body
 .
 Document scope=1:1..8:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..7:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+├── Metadata scope=1:1..7:3 anchor=null attributes={} name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
 └── Paragraph scope=8:1..8:4 anchor=null attributes={} children=1
     └── Text scope=8:1..8:4 anchor=null attributes={} literal="body" children=0
 ````````````````````````````````
@@ -550,7 +550,7 @@ Document scope=1:1..8:4 anchor=null attributes={} children=1
 body
 .
 Document scope=1:1..6:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..5:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+├── Metadata scope=1:1..5:3 anchor=null attributes={} name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
 └── Paragraph scope=6:1..6:4 anchor=null attributes={} children=1
     └── Text scope=6:1..6:4 anchor=null attributes={} literal="body" children=0
 ````````````````````````````````
@@ -565,7 +565,7 @@ Document scope=1:1..6:4 anchor=null attributes={} children=1
 ---
 .
 Document scope=1:1..5:3 anchor=null attributes={} children=0
-└── Metadata scope=1:1..5:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+└── Metadata scope=1:1..5:3 anchor=null attributes={} name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
 ````````````````````````````````
 
 ## Input boundary
@@ -579,7 +579,7 @@ b: two
 body
 .
 Document scope=1:1..6:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..5:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+├── Metadata scope=1:1..5:3 anchor=null attributes={} name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
 └── Paragraph scope=6:1..6:4 anchor=null attributes={} children=1
     └── Text scope=6:1..6:4 anchor=null attributes={} literal="body" children=0
 ````````````````````````````````
@@ -593,7 +593,7 @@ Document scope=1:1..6:4 anchor=null attributes={} children=1
 body
 .
 Document scope=1:1..4:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..3:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+├── Metadata scope=1:1..3:3 anchor=null attributes={} name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
 └── Paragraph scope=4:1..4:4 anchor=null attributes={} children=1
     └── Text scope=4:1..4:4 anchor=null attributes={} literal="body" children=0
 ````````````````````````````````
@@ -607,7 +607,7 @@ a: 1
 body
 .
 Document scope=1:1..4:4 anchor=null attributes={} children=1
-├── Metadata scope=1:4..3:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+├── Metadata scope=1:4..3:3 anchor=null attributes={} name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
 └── Paragraph scope=4:1..4:4 anchor=null attributes={} children=1
     └── Text scope=4:1..4:4 anchor=null attributes={} literal="body" children=0
 ````````````````````````````````
@@ -780,7 +780,7 @@ last: kept
 ---
 .
 Document scope=1:1..7:3 anchor=null attributes={} children=0
-└── Metadata scope=1:1..7:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+└── Metadata scope=1:1..7:3 anchor=null attributes={} name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
 ````````````````````````````````
 
 ## Input boundary
@@ -801,7 +801,7 @@ last: kept
 ---
 .
 Document scope=1:1..13:3 anchor=null attributes={} children=0
-└── Metadata scope=1:1..13:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+└── Metadata scope=1:1..13:3 anchor=null attributes={} name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
 ````````````````````````````````
 
 ## Input boundary
@@ -830,7 +830,7 @@ after: 4
 body
 .
 Document scope=1:1..21:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..20:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+├── Metadata scope=1:1..20:3 anchor=null attributes={} name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
 └── Paragraph scope=21:1..21:4 anchor=null attributes={} children=1
     └── Text scope=21:1..21:4 anchor=null attributes={} literal="body" children=0
 ````````````````````````````````
@@ -854,7 +854,7 @@ last: 6
 ---
 .
 Document scope=1:1..14:3 anchor=null attributes={} children=0
-└── Metadata scope=1:1..14:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+└── Metadata scope=1:1..14:3 anchor=null attributes={} name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
 ````````````````````````````````
 
 ## Recognized field semantics
@@ -873,7 +873,7 @@ comment: Note
 body
 .
 Document scope=1:1..11:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..10:3 name=scalar(text("Note")) title=null subtitle=null time=scalar(text("12:34")) date=scalar(text("2026-09-08")) authors=list([text("Ada"),text("Lin")]) keywords=list([text("one"),number("2")]) abstract=scalar(text("Summary")) state=scalar(text("draft")) comment=scalar(text("Note")) children=0
+├── Metadata scope=1:1..10:3 anchor=null attributes={} name=scalar(text("Note")) title=null subtitle=null time=scalar(text("12:34")) date=scalar(text("2026-09-08")) authors=list([text("Ada"),text("Lin")]) keywords=list([text("one"),number("2")]) abstract=scalar(text("Summary")) state=scalar(text("draft")) comment=scalar(text("Note")) children=0
 └── Paragraph scope=11:1..11:4 anchor=null attributes={} children=1
     └── Text scope=11:1..11:4 anchor=null attributes={} literal="body" children=0
 ````````````````````````````````
@@ -892,7 +892,7 @@ authors: [9007199254740993, 1.50, -0, 1e2]
 body
 .
 Document scope=1:1..9:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..8:3 name=scalar(null) title=null subtitle=null time=scalar(null) date=scalar(text("")) authors=list([number("9007199254740993"),number("1.50"),number("-0"),number("1e2")]) keywords=list([]) abstract=null state=scalar(bool(false)) comment=null children=0
+├── Metadata scope=1:1..8:3 anchor=null attributes={} name=scalar(null) title=null subtitle=null time=scalar(null) date=scalar(text("")) authors=list([number("9007199254740993"),number("1.50"),number("-0"),number("1e2")]) keywords=list([]) abstract=null state=scalar(bool(false)) comment=null children=0
 └── Paragraph scope=9:1..9:4 anchor=null attributes={} children=1
     └── Text scope=9:1..9:4 anchor=null attributes={} literal="body" children=0
 ````````````````````````````````
@@ -912,7 +912,7 @@ name: duplicate
 body
 .
 Document scope=1:1..10:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..9:3 name=scalar(number("9007199254740993")) title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=scalar(bool(true)) comment=null children=0
+├── Metadata scope=1:1..9:3 anchor=null attributes={} name=scalar(number("9007199254740993")) title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=scalar(bool(true)) comment=null children=0
 └── Paragraph scope=10:1..10:4 anchor=null attributes={} children=1
     └── Text scope=10:1..10:4 anchor=null attributes={} literal="body" children=0
 ````````````````````````````````
@@ -936,7 +936,7 @@ state: ready
 body
 .
 Document scope=1:1..14:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..13:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=scalar(text("first paragraph\n\n  indented\nlast\n")) state=scalar(text("ready")) comment=scalar(text("# literal\n---\nname: still prose\n")) children=0
+├── Metadata scope=1:1..13:3 anchor=null attributes={} name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=scalar(text("first paragraph\n\n  indented\nlast\n")) state=scalar(text("ready")) comment=scalar(text("# literal\n---\nname: still prose\n")) children=0
 └── Paragraph scope=14:1..14:4 anchor=null attributes={} children=1
     └── Text scope=14:1..14:4 anchor=null attributes={} literal="body" children=0
 ````````````````````````````````
@@ -953,7 +953,7 @@ name: next
 body
 .
 Document scope=1:1..7:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..6:3 name=scalar(text("next")) title=null subtitle=null time=null date=null authors=null keywords=null abstract=scalar(text("")) state=null comment=scalar(text("")) children=0
+├── Metadata scope=1:1..6:3 anchor=null attributes={} name=scalar(text("next")) title=null subtitle=null time=null date=null authors=null keywords=null abstract=scalar(text("")) state=null comment=scalar(text("")) children=0
 └── Paragraph scope=7:1..7:4 anchor=null attributes={} children=1
     └── Text scope=7:1..7:4 anchor=null attributes={} literal="body" children=0
 ````````````````````````````````
@@ -974,7 +974,7 @@ state: done
 body
 .
 Document scope=1:1..11:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..10:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=scalar(text("\nfirst\n\nsecond\n")) state=scalar(text("done")) comment=null children=0
+├── Metadata scope=1:1..10:3 anchor=null attributes={} name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=scalar(text("\nfirst\n\nsecond\n")) state=scalar(text("done")) comment=null children=0
 └── Paragraph scope=11:1..11:4 anchor=null attributes={} children=1
     └── Text scope=11:1..11:4 anchor=null attributes={} literal="body" children=0
 ````````````````````````````````
@@ -991,7 +991,7 @@ Document scope=1:1..11:4 anchor=null attributes={} children=1
 body
 .
 Document scope=1:1..7:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..6:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=scalar(text("indented key\n  deeper\n")) state=scalar(text("ready")) comment=null children=0
+├── Metadata scope=1:1..6:3 anchor=null attributes={} name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=scalar(text("indented key\n  deeper\n")) state=scalar(text("ready")) comment=null children=0
 └── Paragraph scope=7:1..7:4 anchor=null attributes={} children=1
     └── Text scope=7:1..7:4 anchor=null attributes={} literal="body" children=0
 ````````````````````````````````
@@ -1011,7 +1011,7 @@ comment: valid
 body
 .
 Document scope=1:1..10:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..9:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=scalar(text("valid")) state=null comment=scalar(text("")) children=0
+├── Metadata scope=1:1..9:3 anchor=null attributes={} name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=scalar(text("valid")) state=null comment=scalar(text("")) children=0
 └── Paragraph scope=10:1..10:4 anchor=null attributes={} children=1
     └── Text scope=10:1..10:4 anchor=null attributes={} literal="body" children=0
 ````````````````````````````````
@@ -1033,7 +1033,7 @@ state: next
 body
 .
 Document scope=1:1..12:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..11:3 name=null title=null subtitle=null time=null date=null authors=list([text("Ada"),text("Lin")]) keywords=list([text("one"),number("2")]) abstract=null state=scalar(text("next")) comment=null children=0
+├── Metadata scope=1:1..11:3 anchor=null attributes={} name=null title=null subtitle=null time=null date=null authors=list([text("Ada"),text("Lin")]) keywords=list([text("one"),number("2")]) abstract=null state=scalar(text("next")) comment=null children=0
 └── Paragraph scope=12:1..12:4 anchor=null attributes={} children=1
     └── Text scope=12:1..12:4 anchor=null attributes={} literal="body" children=0
 ````````````````````````````````
@@ -1048,7 +1048,7 @@ keywords: ["[[Note]]", "#tag", "*a", "&a"]
 body
 .
 Document scope=1:1..5:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..4:3 name=null title=null subtitle=null time=null date=null authors=list([text("one"),number("2")]) keywords=list([text("[[Note]]"),text("#tag"),text("*a"),text("&a")]) abstract=null state=null comment=null children=0
+├── Metadata scope=1:1..4:3 anchor=null attributes={} name=null title=null subtitle=null time=null date=null authors=list([text("one"),number("2")]) keywords=list([text("[[Note]]"),text("#tag"),text("*a"),text("&a")]) abstract=null state=null comment=null children=0
 └── Paragraph scope=5:1..5:4 anchor=null attributes={} children=1
     └── Text scope=5:1..5:4 anchor=null attributes={} literal="body" children=0
 ````````````````````````````````
@@ -1065,7 +1065,7 @@ comment: plain ] }, # ignored
 body
 .
 Document scope=1:1..7:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..6:3 name=scalar(text("x[")) title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=scalar(text("word { [ literal")) comment=scalar(text("plain ] },")) children=0
+├── Metadata scope=1:1..6:3 anchor=null attributes={} name=scalar(text("x[")) title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=scalar(text("word { [ literal")) comment=scalar(text("plain ] },")) children=0
 └── Paragraph scope=7:1..7:4 anchor=null attributes={} children=1
     └── Text scope=7:1..7:4 anchor=null attributes={} literal="body" children=0
 ````````````````````````````````
@@ -1079,7 +1079,7 @@ Document scope=1:1..7:4 anchor=null attributes={} children=1
 body
 .
 Document scope=1:1..4:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..3:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+├── Metadata scope=1:1..3:3 anchor=null attributes={} name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
 └── Paragraph scope=4:1..4:4 anchor=null attributes={} children=1
     └── Text scope=4:1..4:4 anchor=null attributes={} literal="body" children=0
 ````````````````````````````````
@@ -1093,7 +1093,7 @@ Document scope=1:1..4:4 anchor=null attributes={} children=1
 body
 .
 Document scope=1:1..4:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..3:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+├── Metadata scope=1:1..3:3 anchor=null attributes={} name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
 └── Paragraph scope=4:1..4:4 anchor=null attributes={} children=1
     └── Text scope=4:1..4:4 anchor=null attributes={} literal="body" children=0
 ````````````````````````````````
@@ -1107,7 +1107,7 @@ Document scope=1:1..4:4 anchor=null attributes={} children=1
 body
 .
 Document scope=1:1..4:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..3:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+├── Metadata scope=1:1..3:3 anchor=null attributes={} name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
 └── Paragraph scope=4:1..4:4 anchor=null attributes={} children=1
     └── Text scope=4:1..4:4 anchor=null attributes={} literal="body" children=0
 ````````````````````````````````
@@ -1123,7 +1123,7 @@ name: duplicate
 body
 .
 Document scope=1:1..6:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..5:3 name=scalar(text("🚀")) title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=scalar(text("it's ready")) comment=null children=0
+├── Metadata scope=1:1..5:3 anchor=null attributes={} name=scalar(text("🚀")) title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=scalar(text("it's ready")) comment=null children=0
 └── Paragraph scope=6:1..6:4 anchor=null attributes={} children=1
     └── Text scope=6:1..6:4 anchor=null attributes={} literal="body" children=0
 ````````````````````````````````
@@ -1139,7 +1139,7 @@ state: "!!str 1"
 body
 .
 Document scope=1:1..6:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..5:3 name=scalar(text("*reference")) title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=scalar(text("!!str 1")) comment=scalar(text("&anchor")) children=0
+├── Metadata scope=1:1..5:3 anchor=null attributes={} name=scalar(text("*reference")) title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=scalar(text("!!str 1")) comment=scalar(text("&anchor")) children=0
 └── Paragraph scope=6:1..6:4 anchor=null attributes={} children=1
     └── Text scope=6:1..6:4 anchor=null attributes={} literal="body" children=0
 ````````````````````````````````
@@ -1160,7 +1160,7 @@ state: ready
 body
 .
 Document scope=1:1..11:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..10:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=scalar(text("ready")) comment=null children=0
+├── Metadata scope=1:1..10:3 anchor=null attributes={} name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=scalar(text("ready")) comment=null children=0
 └── Paragraph scope=11:1..11:4 anchor=null attributes={} children=1
     └── Text scope=11:1..11:4 anchor=null attributes={} literal="body" children=0
 ````````````````````````````````
@@ -1182,7 +1182,7 @@ comment: valid
 body
 .
 Document scope=1:1..12:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..11:3 name=scalar(text("recovered")) title=null subtitle=null time=null date=null authors=null keywords=null abstract=scalar(text("literal\n")) state=null comment=scalar(text("valid")) children=0
+├── Metadata scope=1:1..11:3 anchor=null attributes={} name=scalar(text("recovered")) title=null subtitle=null time=null date=null authors=null keywords=null abstract=scalar(text("literal\n")) state=null comment=scalar(text("valid")) children=0
 └── Paragraph scope=12:1..12:4 anchor=null attributes={} children=1
     └── Text scope=12:1..12:4 anchor=null attributes={} literal="body" children=0
 ````````````````````````````````
@@ -1201,7 +1201,7 @@ keywords: []
 body
 .
 Document scope=1:1..9:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..8:3 name=null title=null subtitle=null time=null date=null authors=list([text("kept")]) keywords=list([]) abstract=null state=null comment=null children=0
+├── Metadata scope=1:1..8:3 anchor=null attributes={} name=null title=null subtitle=null time=null date=null authors=list([text("kept")]) keywords=list([]) abstract=null state=null comment=null children=0
 └── Paragraph scope=9:1..9:4 anchor=null attributes={} children=1
     └── Text scope=9:1..9:4 anchor=null attributes={} literal="body" children=0
 ````````````````````````````````
@@ -1223,7 +1223,7 @@ state: ready
 body
 .
 Document scope=1:1..12:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..11:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=scalar(text("ready")) comment=null children=0
+├── Metadata scope=1:1..11:3 anchor=null attributes={} name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=scalar(text("ready")) comment=null children=0
 └── Paragraph scope=12:1..12:4 anchor=null attributes={} children=1
     └── Text scope=12:1..12:4 anchor=null attributes={} literal="body" children=0
 ````````````````````````````````
@@ -1242,7 +1242,7 @@ state: valid
 body
 .
 Document scope=1:1..9:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..8:3 name=scalar(text("valid")) title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=scalar(text("valid")) comment=scalar(text("valid")) children=0
+├── Metadata scope=1:1..8:3 anchor=null attributes={} name=scalar(text("valid")) title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=scalar(text("valid")) comment=scalar(text("valid")) children=0
 └── Paragraph scope=9:1..9:4 anchor=null attributes={} children=1
     └── Text scope=9:1..9:4 anchor=null attributes={} literal="body" children=0
 ````````````````````````````````
@@ -1264,7 +1264,7 @@ state: [false]
 body
 .
 Document scope=1:1..12:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..11:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+├── Metadata scope=1:1..11:3 anchor=null attributes={} name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
 └── Paragraph scope=12:1..12:4 anchor=null attributes={} children=1
     └── Text scope=12:1..12:4 anchor=null attributes={} literal="body" children=0
 ````````````````````````````````
@@ -1284,7 +1284,7 @@ name: right
 body
 .
 Document scope=1:1..10:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..9:3 name=scalar(text("right")) title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+├── Metadata scope=1:1..9:3 anchor=null attributes={} name=scalar(text("right")) title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
 └── Paragraph scope=10:1..10:4 anchor=null attributes={} children=1
     └── Text scope=10:1..10:4 anchor=null attributes={} literal="body" children=0
 ````````````````````````````````
@@ -1302,7 +1302,7 @@ Document scope=1:1..10:4 anchor=null attributes={} children=1
 body
 .
 Document scope=1:1..8:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..7:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+├── Metadata scope=1:1..7:3 anchor=null attributes={} name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
 └── Paragraph scope=8:1..8:4 anchor=null attributes={} children=1
     └── Text scope=8:1..8:4 anchor=null attributes={} literal="body" children=0
 ````````````````````````````````
@@ -1318,7 +1318,7 @@ abstract: |
 body
 .
 Document scope=1:1..6:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..5:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=scalar(text("body { [ ' \"\n")) state=null comment=null children=0
+├── Metadata scope=1:1..5:3 anchor=null attributes={} name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=scalar(text("body { [ ' \"\n")) state=null comment=null children=0
 └── Paragraph scope=6:1..6:4 anchor=null attributes={} children=1
     └── Text scope=6:1..6:4 anchor=null attributes={} literal="body" children=0
 ````````````````````````````````
@@ -1335,7 +1335,7 @@ comment: done
 body
 .
 Document scope=1:1..7:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..6:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+├── Metadata scope=1:1..6:3 anchor=null attributes={} name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
 └── Paragraph scope=7:1..7:4 anchor=null attributes={} children=1
     └── Text scope=7:1..7:4 anchor=null attributes={} literal="body" children=0
 ````````````````````````````````
@@ -1354,7 +1354,7 @@ state: ready
 body
 .
 Document scope=1:1..9:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..8:3 name=null title=null subtitle=null time=null date=null authors=list([text("a"),text("b")]) keywords=null abstract=null state=scalar(text("ready")) comment=null children=0
+├── Metadata scope=1:1..8:3 anchor=null attributes={} name=null title=null subtitle=null time=null date=null authors=list([text("a"),text("b")]) keywords=null abstract=null state=scalar(text("ready")) comment=null children=0
 └── Paragraph scope=9:1..9:4 anchor=null attributes={} children=1
     └── Text scope=9:1..9:4 anchor=null attributes={} literal="body" children=0
 ````````````````````````````````
@@ -1372,7 +1372,7 @@ state: draft
 Body
 .
 Document scope=1:1..8:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..7:3 name=scalar(text("Note")) title=null subtitle=null time=null date=null authors=list([text("Ada"),text("Lin")]) keywords=null abstract=null state=scalar(text("draft")) comment=null children=0
+├── Metadata scope=1:1..7:3 anchor=null attributes={} name=scalar(text("Note")) title=null subtitle=null time=null date=null authors=list([text("Ada"),text("Lin")]) keywords=null abstract=null state=scalar(text("draft")) comment=null children=0
 └── Paragraph scope=8:1..8:4 anchor=null attributes={} children=1
     └── Text scope=8:1..8:4 anchor=null attributes={} literal="Body" children=0
 ````````````````````````````````
@@ -1387,7 +1387,7 @@ Document scope=1:1..8:4 anchor=null attributes={} children=1
 body
 .
 Document scope=1:1..5:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..4:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+├── Metadata scope=1:1..4:3 anchor=null attributes={} name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
 └── Paragraph scope=5:1..5:4 anchor=null attributes={} children=1
     └── Text scope=5:1..5:4 anchor=null attributes={} literal="body" children=0
 ````````````````````````````````
@@ -1408,7 +1408,7 @@ state: ready
 Body
 .
 Document scope=1:1..11:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..10:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=scalar(text("First paragraph.\n\nSecond paragraph.\n")) state=scalar(text("ready")) comment=scalar(text("# literal text\nname: still prose\n")) children=0
+├── Metadata scope=1:1..10:3 anchor=null attributes={} name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=scalar(text("First paragraph.\n\nSecond paragraph.\n")) state=scalar(text("ready")) comment=scalar(text("# literal text\nname: still prose\n")) children=0
 └── Paragraph scope=11:1..11:4 anchor=null attributes={} children=1
     └── Text scope=11:1..11:4 anchor=null attributes={} literal="Body" children=0
 ````````````````````````````````
@@ -1424,7 +1424,7 @@ name: A name
 body
 .
 Document scope=1:1..6:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..5:3 name=scalar(text("A name")) title=scalar(text("A title")) subtitle=scalar(text("A subtitle")) time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
+├── Metadata scope=1:1..5:3 anchor=null attributes={} name=scalar(text("A name")) title=scalar(text("A title")) subtitle=scalar(text("A subtitle")) time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0
 └── Paragraph scope=6:1..6:4 anchor=null attributes={} children=1
     └── Text scope=6:1..6:4 anchor=null attributes={} literal="body" children=0
 ````````````````````````````````
@@ -1439,7 +1439,7 @@ keywords: language
 body
 .
 Document scope=1:1..5:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..4:3 name=null title=null subtitle=null time=null date=null authors=scalar(text("Ada")) keywords=scalar(text("language")) abstract=null state=null comment=null children=0
+├── Metadata scope=1:1..4:3 anchor=null attributes={} name=null title=null subtitle=null time=null date=null authors=scalar(text("Ada")) keywords=scalar(text("language")) abstract=null state=null comment=null children=0
 └── Paragraph scope=5:1..5:4 anchor=null attributes={} children=1
     └── Text scope=5:1..5:4 anchor=null attributes={} literal="body" children=0
 ````````````````````````````````
@@ -1454,7 +1454,7 @@ keywords: [language, design]
 body
 .
 Document scope=1:1..5:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..4:3 name=null title=null subtitle=null time=null date=null authors=list([text("Ada"),text("Lin")]) keywords=list([text("language"),text("design")]) abstract=null state=null comment=null children=0
+├── Metadata scope=1:1..4:3 anchor=null attributes={} name=null title=null subtitle=null time=null date=null authors=list([text("Ada"),text("Lin")]) keywords=list([text("language"),text("design")]) abstract=null state=null comment=null children=0
 └── Paragraph scope=5:1..5:4 anchor=null attributes={} children=1
     └── Text scope=5:1..5:4 anchor=null attributes={} literal="body" children=0
 ````````````````````````````````
@@ -1473,7 +1473,7 @@ keywords:
 body
 .
 Document scope=1:1..9:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..8:3 name=null title=null subtitle=null time=null date=null authors=list([text("Ada"),text("Lin")]) keywords=list([text("language"),text("design")]) abstract=null state=null comment=null children=0
+├── Metadata scope=1:1..8:3 anchor=null attributes={} name=null title=null subtitle=null time=null date=null authors=list([text("Ada"),text("Lin")]) keywords=list([text("language"),text("design")]) abstract=null state=null comment=null children=0
 └── Paragraph scope=9:1..9:4 anchor=null attributes={} children=1
     └── Text scope=9:1..9:4 anchor=null attributes={} literal="body" children=0
 ````````````````````````````````
@@ -1491,7 +1491,7 @@ state: ready
 body
 .
 Document scope=1:1..8:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..7:3 name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=scalar(text("before\n\nafter\n")) state=scalar(text("ready")) comment=null children=0
+├── Metadata scope=1:1..7:3 anchor=null attributes={} name=null title=null subtitle=null time=null date=null authors=null keywords=null abstract=scalar(text("before\n\nafter\n")) state=scalar(text("ready")) comment=null children=0
 └── Paragraph scope=8:1..8:4 anchor=null attributes={} children=1
     └── Text scope=8:1..8:4 anchor=null attributes={} literal="body" children=0
 ````````````````````````````````
@@ -1509,7 +1509,7 @@ name: valid
 body
 .
 Document scope=1:1..8:4 anchor=null attributes={} children=1
-├── Metadata scope=1:1..7:3 name=scalar(text("valid")) title=null subtitle=null time=null date=null authors=null keywords=null abstract=scalar(text("valid")) state=null comment=null children=0
+├── Metadata scope=1:1..7:3 anchor=null attributes={} name=scalar(text("valid")) title=null subtitle=null time=null date=null authors=null keywords=null abstract=scalar(text("valid")) state=null comment=null children=0
 └── Paragraph scope=8:1..8:4 anchor=null attributes={} children=1
     └── Text scope=8:1..8:4 anchor=null attributes={} literal="body" children=0
 ````````````````````````````````

@@ -1309,6 +1309,17 @@ static void iterator_contract_is_total(test_batch_runner *runner) {
 
     markdown_core_iter_free(iter);
     markdown_core_node_free(doc);
+    const markdown_core_node_type owned_types[] = {MARKDOWN_CORE_NODE_CITATION, MARKDOWN_CORE_NODE_FOOTNOTE,
+                                                   MARKDOWN_CORE_NODE_SPECIMEN, MARKDOWN_CORE_NODE_METADATA};
+    for (size_t i = 0; i < sizeof(owned_types) / sizeof(*owned_types); i++) {
+        markdown_core_node *node = markdown_core_node_new(owned_types[i]);
+        iter = markdown_core_iter_new(node);
+        INT_EQ(runner, markdown_core_iter_next(iter), MARKDOWN_CORE_EVENT_ENTER, "empty owned node enters");
+        INT_EQ(runner, markdown_core_iter_next(iter), MARKDOWN_CORE_EVENT_EXIT, "empty owned node exits");
+        INT_EQ(runner, markdown_core_iter_next(iter), MARKDOWN_CORE_EVENT_DONE, "empty owned node terminates");
+        markdown_core_iter_free(iter);
+        markdown_core_node_free(node);
+    }
 }
 
 /* 3b. The ancestor check is unconditional, so the shipped library answers the
@@ -1674,8 +1685,8 @@ static void citation_and_footnote_values(test_batch_runner *runner) {
     const markdown_core_node *root;
     const markdown_core_node *paragraph;
     const markdown_core_node *cite;
-    const markdown_core_citation *item;
-    const markdown_core_footnote *footnote;
+    const markdown_core_node *item;
+    const markdown_core_node *footnote;
     markdown_core_referent referent;
     markdown_core_scope scope;
     markdown_core_string id;
@@ -1696,7 +1707,8 @@ static void citation_and_footnote_values(test_batch_runner *runner) {
     INT_EQ(runner, (int)markdown_core_node_child_count(cite), 0, "a cite has no children");
     item = markdown_core_node_cite_citations(cite);
     OK(runner, item != NULL, "a cite holds an item");
-    OK(runner, item != NULL && markdown_core_citation_next(item) == NULL, "an inherited call holds exactly one item");
+    OK(runner, item != NULL && markdown_core_node_get_next_sibling(item) == NULL,
+       "an inherited call holds exactly one item");
     OK(runner, markdown_core_citation_referent(item, &referent), "an item answers its referent");
     INT_EQ(runner, referent.kind, MARKDOWN_CORE_REFERENT_FOOTNOTE, "an inherited call names a footnote");
     OK(runner, referent.id.length == 4 && memcmp(referent.id.data, "note", 4) == 0,
@@ -1708,14 +1720,14 @@ static void citation_and_footnote_values(test_batch_runner *runner) {
     scope = markdown_core_node_scope(cite);
     OK(runner, scope.start.line == 1 && scope.start.column == 1 && scope.end.line == 1 && scope.end.column == 7,
        "the cite covers the brackets");
-    scope = markdown_core_citation_scope(item);
+    scope = markdown_core_node_scope(item);
     OK(runner, scope.start.line == 1 && scope.start.column == 2 && scope.end.line == 1 && scope.end.column == 6,
        "the item covers the caret and the label");
 
     OK(runner, markdown_core_node_get_next_sibling(paragraph) == NULL, "the paragraph is the only content");
 
     for (footnote = markdown_core_node_document_footnotes(root); footnote;
-         footnote = markdown_core_footnote_next(footnote)) {
+         footnote = markdown_core_node_get_next_sibling(footnote)) {
         OK(runner, markdown_core_footnote_id(footnote, &id), "a footnote answers its id");
         OK(runner, count < 4 && id.length == strlen(ids[count]) && memcmp(id.data, ids[count], id.length) == 0,
            "footnote %zu carries the expected id", count);
@@ -1724,9 +1736,9 @@ static void citation_and_footnote_values(test_batch_runner *runner) {
     INT_EQ(runner, (int)count, 4,
            "the winner, its duplicate, the referenced, and the unreferenced definitions are footnotes");
     footnote = markdown_core_node_document_footnotes(root);
-    scope = markdown_core_footnote_scope(footnote);
+    scope = markdown_core_node_scope(footnote);
     OK(runner, scope.start.line == 3 && scope.start.column == 1, "the first footnote is the winning definition");
-    scope = markdown_core_footnote_scope(markdown_core_footnote_next(footnote));
+    scope = markdown_core_node_scope(markdown_core_node_get_next_sibling(footnote));
     OK(runner, scope.start.line == 5 && scope.start.column == 1,
        "a later definition of the same id is the footnote after the winner");
     OK(runner,
@@ -1738,12 +1750,12 @@ static void citation_and_footnote_values(test_batch_runner *runner) {
        markdown_core_node_cite_citations(paragraph) == NULL && markdown_core_node_document_footnotes(paragraph) == NULL,
        "the owner accessors refuse other kinds");
     OK(runner,
-       markdown_core_citation_next(NULL) == NULL && markdown_core_citation_prefix(NULL) == NULL &&
+       markdown_core_node_get_next_sibling(NULL) == NULL && markdown_core_citation_prefix(NULL) == NULL &&
            markdown_core_citation_suffix(NULL) == NULL && !markdown_core_citation_referent(NULL, &referent) &&
            !markdown_core_citation_referent(item, NULL),
        "the citation accessors refuse a missing value");
     OK(runner,
-       markdown_core_footnote_next(NULL) == NULL && markdown_core_footnote_content(NULL) == NULL &&
+       markdown_core_node_get_next_sibling(NULL) == NULL && markdown_core_footnote_content(NULL) == NULL &&
            !markdown_core_footnote_id(NULL, &id) && !markdown_core_footnote_id(footnote, NULL),
        "the footnote accessors refuse a missing value");
     markdown_core_document_free(document);
@@ -1874,23 +1886,12 @@ static void node_payload_lifecycle(test_batch_runner *runner) {
     INT_EQ(runner, sizeof(markdown_core_node_data), sizeof(void *),
            "all payload arms share one pointer-sized node slot");
     static const markdown_core_node_type extra_types[] = {
-        MARKDOWN_CORE_NODE_INSERTION,
-        MARKDOWN_CORE_NODE_CROSS_EMBEDDED,
-        MARKDOWN_CORE_NODE_MARK,
-        MARKDOWN_CORE_NODE_CROSS_LINK,
-        MARKDOWN_CORE_NODE_CITE,
-        MARKDOWN_CORE_NODE_CITATION,
-        MARKDOWN_CORE_NODE_FOOTNOTE,
-        MARKDOWN_CORE_NODE_SPECIMEN,
-        MARKDOWN_CORE_NODE_TABLE,
-        MARKDOWN_CORE_NODE_TABLE_ROW,
-        MARKDOWN_CORE_NODE_TABLE_CELL,
-        MARKDOWN_CORE_NODE_STRIKETHROUGH,
-        MARKDOWN_CORE_NODE_FORMULA,
-        MARKDOWN_CORE_NODE_FORMULA_BLOCK,
-        MARKDOWN_CORE_NODE_DIRECTIVE,
-        MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK,
-        MARKDOWN_CORE_NODE_DIRECTIVE_LABEL,
+        MARKDOWN_CORE_NODE_METADATA,      MARKDOWN_CORE_NODE_INSERTION,       MARKDOWN_CORE_NODE_CROSS_EMBEDDED,
+        MARKDOWN_CORE_NODE_MARK,          MARKDOWN_CORE_NODE_CROSS_LINK,      MARKDOWN_CORE_NODE_CITE,
+        MARKDOWN_CORE_NODE_CITATION,      MARKDOWN_CORE_NODE_FOOTNOTE,        MARKDOWN_CORE_NODE_SPECIMEN,
+        MARKDOWN_CORE_NODE_TABLE,         MARKDOWN_CORE_NODE_TABLE_ROW,       MARKDOWN_CORE_NODE_TABLE_CELL,
+        MARKDOWN_CORE_NODE_STRIKETHROUGH, MARKDOWN_CORE_NODE_FORMULA,         MARKDOWN_CORE_NODE_FORMULA_BLOCK,
+        MARKDOWN_CORE_NODE_DIRECTIVE,     MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK, MARKDOWN_CORE_NODE_DIRECTIVE_LABEL,
     };
     size_t extra_count = sizeof(extra_types) / sizeof(*extra_types);
     for (size_t i = 0; i < (size_t)num_node_types + extra_count; i++) {
@@ -2341,13 +2342,13 @@ static void specimen_values(test_batch_runner *runner) {
     root->as.document->specimens = first;
     root->as.document->footnotes = footnote;
     OK(runner, markdown_core_node_append_child(first, body), "specimen owns block content");
-    const markdown_core_specimen *value = markdown_core_node_document_specimens(root);
+    const markdown_core_node *value = markdown_core_node_document_specimens(root);
     OK(runner, markdown_core_specimen_properties(value, &id, &start), "specimen answers properties");
     OK(runner, id.has_value && id.value.length == 6 && memcmp(id.value.data, "étude", 6) == 0,
        "specimen label retains owned UTF-8 bytes");
     OK(runner, start.has_value && start.value == 5, "specimen retains effective reset");
     OK(runner, markdown_core_specimen_content(value) == body, "specimen retains its content relation");
-    value = markdown_core_specimen_next(value);
+    value = markdown_core_node_get_next_sibling(value);
     OK(runner, value && markdown_core_specimen_properties(value, &id, &start), "anonymous definition remains present");
     OK(runner, !id.has_value && !start.has_value, "anonymous label and absent reset remain absent");
     INT_EQ(runner, markdown_core_node_child_count(root), 0, "definitions are not document children");
@@ -2362,12 +2363,12 @@ static void specimen_values(test_batch_runner *runner) {
        "specimen reference owns its label");
     markdown_core_referent referent;
     OK(runner,
-       markdown_core_citation_referent((const markdown_core_citation *)citation, &referent) &&
+       markdown_core_citation_referent((const markdown_core_node *)citation, &referent) &&
            referent.kind == MARKDOWN_CORE_REFERENT_SPECIMEN && referent.id.length == 6 && referent.key.data == NULL &&
            referent.mode == 0,
        "specimen reference uses only its own branch fields");
     citation->as.citation->referent = 99;
-    OK(runner, !markdown_core_citation_referent((const markdown_core_citation *)citation, &referent),
+    OK(runner, !markdown_core_citation_referent((const markdown_core_node *)citation, &referent),
        "unknown referent cannot masquerade as a specimen");
     markdown_core_node_free(citation);
     markdown_core_document document = {0};
@@ -2646,7 +2647,7 @@ static void table_source_map_growth(test_batch_runner *runner) {
     }
 }
 
-static size_t metadata_populated_count(const markdown_core_metadata *metadata) {
+static size_t metadata_populated_count(const markdown_core_node *metadata) {
     return (markdown_core_metadata_name(metadata) != NULL) + (markdown_core_metadata_title(metadata) != NULL) +
            (markdown_core_metadata_subtitle(metadata) != NULL) + (markdown_core_metadata_time(metadata) != NULL) +
            (markdown_core_metadata_date(metadata) != NULL) + (markdown_core_metadata_authors(metadata) != NULL) +
@@ -2669,7 +2670,7 @@ static void properties_values(test_batch_runner *runner) {
         return;
     }
     const markdown_core_node *root = markdown_core_document_root(document);
-    const markdown_core_metadata *metadata = markdown_core_node_document_metadata(root);
+    const markdown_core_node *metadata = markdown_core_node_document_metadata(root);
     INT_EQ(runner, metadata_populated_count(metadata), 10, "all ten named fields are present");
     markdown_core_metadata_scalar scalar;
     const markdown_core_metadata_value *record = markdown_core_metadata_time(metadata);
@@ -2682,7 +2683,7 @@ static void properties_values(test_batch_runner *runner) {
        markdown_core_metadata_value_scalar(record, &scalar) && scalar.kind == MARKDOWN_CORE_METADATA_TEXT &&
            scalar.value.string.length == 9 && !memcmp(scalar.value.string.data, "one\n\ntwo\n", 9),
        "literal prose keeps internal newlines and a clipped final newline");
-    INT_EQ(runner, markdown_core_metadata_scope(metadata).end.line, 20, "metadata ends at the closing fence");
+    INT_EQ(runner, markdown_core_node_scope(metadata).end.line, 20, "metadata ends at the closing fence");
     INT_EQ(runner, markdown_core_node_scope(markdown_core_node_get_first_child(root)).start.line, 21,
            "body stays outside metadata");
     OK(runner, !markdown_core_metadata_name(NULL), "absent metadata has no field");
@@ -2710,7 +2711,7 @@ static void properties_source_boundaries(test_batch_runner *runner) {
                     }
                 }
                 markdown_core_document *doc = markdown_core_document_parse(input.ptr, input.size, NULL);
-                const markdown_core_metadata *metadata =
+                const markdown_core_node *metadata =
                     markdown_core_node_document_metadata(markdown_core_document_root(doc));
                 INT_EQ(runner, metadata_populated_count(metadata), 4,
                        "comments never split a flat list or become records");
@@ -2743,7 +2744,7 @@ static void properties_source_boundaries(test_batch_runner *runner) {
         char source[256];
         snprintf(source, sizeof(source), "---\n%s\nname: kept\n---\n", invalid[i]);
         markdown_core_document *doc = markdown_core_document_parse((const uint8_t *)source, strlen(source), NULL);
-        const markdown_core_metadata *metadata = markdown_core_node_document_metadata(markdown_core_document_root(doc));
+        const markdown_core_node *metadata = markdown_core_node_document_metadata(markdown_core_document_root(doc));
         const markdown_core_metadata_value *record = markdown_core_metadata_name(metadata);
         markdown_core_metadata_scalar value;
         OK(runner,
@@ -2757,7 +2758,7 @@ static void properties_source_boundaries(test_batch_runner *runner) {
                             "title: -\n---\nbody\n";
     markdown_core_document *dash_doc =
         markdown_core_document_parse((const uint8_t *)dash_text, strlen(dash_text), NULL);
-    const markdown_core_metadata *dash_metadata =
+    const markdown_core_node *dash_metadata =
         markdown_core_node_document_metadata(markdown_core_document_root(dash_doc));
     const markdown_core_metadata_value *dash_values[] = {markdown_core_metadata_authors(dash_metadata),
                                                          markdown_core_metadata_keywords(dash_metadata),
@@ -2793,7 +2794,7 @@ static void properties_source_boundaries(test_batch_runner *runner) {
         snprintf(source, sizeof(source), "---\nname: kept\n%sstate: ready\n---\nbody\n", bracketed[i].source);
         markdown_core_document *doc = markdown_core_document_parse((const uint8_t *)source, strlen(source), NULL);
         const markdown_core_node *root = markdown_core_document_root(doc);
-        const markdown_core_metadata *metadata = markdown_core_node_document_metadata(root);
+        const markdown_core_node *metadata = markdown_core_node_document_metadata(root);
         const markdown_core_metadata_value *state = markdown_core_metadata_state(metadata);
         markdown_core_metadata_scalar value;
         INT_EQ(runner, metadata_populated_count(metadata), bracketed[i].closed ? 2 : 1,
@@ -2805,13 +2806,13 @@ static void properties_source_boundaries(test_batch_runner *runner) {
                : state == NULL,
            "only a closed bracketed member allows the next independent field");
         INT_EQ(runner, markdown_core_node_scope(markdown_core_node_get_first_child(root)).start.line,
-               markdown_core_metadata_scope(metadata).end.line + 1, "the closing fence always separates the body");
+               markdown_core_node_scope(metadata).end.line + 1, "the closing fence always separates the body");
         markdown_core_document_free(doc);
     }
     const char *source =
         "---\n{\"name\":\"ignored\"}\nname: \"\\uD83D\\uDE80\"\nauthors: [Ada, 2]\nstate: false\n---\n";
     markdown_core_document *doc = markdown_core_document_parse((const uint8_t *)source, strlen(source), NULL);
-    const markdown_core_metadata *metadata = markdown_core_node_document_metadata(markdown_core_document_root(doc));
+    const markdown_core_node *metadata = markdown_core_node_document_metadata(markdown_core_document_root(doc));
     INT_EQ(runner, metadata_populated_count(metadata), 3, "only field lines produce metadata records");
     markdown_core_metadata_scalar value;
     OK(runner,
@@ -2868,7 +2869,7 @@ static void properties_member_work(test_batch_runner *runner) {
             OK(runner, root != NULL, "adversarial Properties shape %zu at %zu members parses", shape, count);
             OK(runner, properties_decoded_bytes <= (size_t)source.size, "disjoint members never retry a failed suffix");
             if (root) {
-                markdown_core_metadata *metadata = root->as.document->metadata;
+                markdown_core_node *metadata = root->as.document->metadata;
                 const markdown_core_metadata_value *state = markdown_core_metadata_state(metadata);
                 markdown_core_metadata_scalar value;
                 OK(runner,
@@ -2894,7 +2895,7 @@ static void properties_member_work(test_batch_runner *runner) {
         markdown_core_node *root = parse_with_probes((const char *)source.ptr, source.size, elements, 1);
         OK(runner, root != NULL, "long flat list parses");
         if (root) {
-            markdown_core_metadata *metadata = root->as.document->metadata;
+            markdown_core_node *metadata = root->as.document->metadata;
             const markdown_core_metadata_value *record = markdown_core_metadata_authors(metadata);
             OK(runner, record && record->kind == MARKDOWN_CORE_METADATA_LIST && record->as.list.count == count,
                "all items survive one general flat-list decoder");
@@ -2977,7 +2978,7 @@ static void properties_text_memory(test_batch_runner *runner) {
                     markdown_core_parse_document_with_mem((const char *)source.ptr, source.size, &mem, NULL, NULL);
                 OK(runner, root != NULL, "long scalar shape %zu with %c parses", shape, characters[character]);
                 if (root) {
-                    markdown_core_metadata *metadata = root->as.document->metadata;
+                    markdown_core_node *metadata = root->as.document->metadata;
                     OK(runner, metadata_populated_count(metadata) == 2, "text and following field survive");
                     const markdown_core_metadata_value *record = shape == 2 ? markdown_core_metadata_abstract(metadata)
                                                                  : shape == 3 ? markdown_core_metadata_authors(metadata)
@@ -3027,11 +3028,13 @@ static void universal_values(test_batch_runner *runner) {
     const char *source = "![x](/u) ![y](/u)";
     markdown_core_document *document = markdown_core_document_parse((const uint8_t *)source, strlen(source), NULL);
     markdown_core_node *root = document->root;
-    markdown_core_metadata *metadata = calloc(1, sizeof(*metadata));
-    metadata->scope = (markdown_core_scope){{1, 1}, {1, 4}};
+    markdown_core_node *metadata = markdown_core_node_new(MARKDOWN_CORE_NODE_METADATA);
+    metadata->start_line = metadata->start_column = metadata->end_line = 1;
+    metadata->end_column = 4;
     root->as.document->metadata = metadata;
-    markdown_core_metadata_value *values[] = {&metadata->name,  &metadata->time,    &metadata->date,
-                                              &metadata->title, &metadata->authors, &metadata->keywords};
+    markdown_core_metadata_value *values[] = {&metadata->as.metadata->name,    &metadata->as.metadata->time,
+                                              &metadata->as.metadata->date,    &metadata->as.metadata->title,
+                                              &metadata->as.metadata->authors, &metadata->as.metadata->keywords};
     for (size_t i = 0; i < 6; i++) {
         markdown_core_metadata_value *value = values[i];
         /* Only active union members are initialized. Access and cleanup must
@@ -3045,11 +3048,11 @@ static void universal_values(test_batch_runner *runner) {
             value->as.list.count = 0;
         }
     }
-    memset(&metadata->subtitle.as, 0xa5, sizeof(metadata->subtitle.as));
-    metadata->time.as.scalar.value.boolean = true;
-    metadata->date.as.scalar.value.string = owned_metadata_string("9007199254740993");
-    metadata->title.as.scalar.value.string = owned_metadata_string("中文\nquoted");
-    markdown_core_metadata_value *list = &metadata->keywords;
+    memset(&metadata->as.metadata->subtitle.as, 0xa5, sizeof(metadata->as.metadata->subtitle.as));
+    metadata->as.metadata->time.as.scalar.value.boolean = true;
+    metadata->as.metadata->date.as.scalar.value.string = owned_metadata_string("9007199254740993");
+    metadata->as.metadata->title.as.scalar.value.string = owned_metadata_string("中文\nquoted");
+    markdown_core_metadata_value *list = &metadata->as.metadata->keywords;
     list->as.list.count = 2;
     list->as.list.items = calloc(2, sizeof(*list->as.list.items));
     list->as.list.items[0] =

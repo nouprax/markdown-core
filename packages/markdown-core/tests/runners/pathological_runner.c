@@ -799,8 +799,8 @@ static int pc_reference_payload_visit(const markdown_core_node *node, void *cont
                         (title.has_value ? title.value.length : 0);
     } else if (markdown_core_node_get_kind(node) == MARKDOWN_CORE_KIND_CITE) {
         /* A call's payload is its referent (M4). */
-        const markdown_core_citation *item;
-        for (item = markdown_core_node_cite_citations(node); item; item = markdown_core_citation_next(item)) {
+        const markdown_core_node *item;
+        for (item = markdown_core_node_cite_citations(node); item; item = markdown_core_node_get_next_sibling(item)) {
             markdown_core_referent referent;
             if (!markdown_core_citation_referent(item, &referent)) {
                 return -1;

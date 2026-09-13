@@ -27,7 +27,7 @@ Document scope=1:1..16:14 anchor=null attributes={} children=6
 │       │   └── Text scope=3:47..3:50 anchor=null attributes={} literal="link" children=0
 │       ├── Text scope=3:56..3:56 anchor=null attributes={} literal=" " children=0
 │       └── Cite scope=3:57..3:60 anchor=null attributes={} children=1
-│           └── Citation scope=3:58..3:59 referent=footnote(id="n") children=0
+│           └── Citation scope=3:58..3:59 anchor=null attributes={} referent=footnote(id="n") children=0
 │               ├── CitationPrefix children=0
 │               └── CitationSuffix children=0
 ├── Paragraph scope=5:1..5:53 anchor=null attributes={} children=1
@@ -70,13 +70,13 @@ Document scope=1:1..16:14 anchor=null attributes={} children=6
 │   │           └── Text scope=14:10..14:14 anchor=null attributes={} literal="label" children=0
 │   ├── Text scope=14:18..14:18 anchor=null attributes={} literal=" " children=0
 │   └── Cite scope=14:19..14:31 anchor=null attributes={} children=1
-│       └── Citation scope=14:21..14:30 referent=footnote(id="inline-1") children=0
+│       └── Citation scope=14:21..14:30 anchor=null attributes={} referent=footnote(id="inline-1") children=0
 │           ├── CitationPrefix children=0
 │           └── CitationSuffix children=0
-├── Footnote scope=14:19..14:31 id="inline-1" children=1
+├── Footnote scope=14:19..14:31 anchor=null attributes={} id="inline-1" children=1
 │   └── Insertion scope=14:21..14:30 anchor=null attributes={} children=1
 │       └── Text scope=14:23..14:28 anchor=null attributes={} literal="inline" children=0
-└── Footnote scope=16:1..16:14 id="n" children=1
+└── Footnote scope=16:1..16:14 anchor=null attributes={} id="n" children=1
     └── Paragraph scope=16:7..16:14 anchor=null attributes={} children=1
         └── Insertion scope=16:7..16:14 anchor=null attributes={} children=1
             └── Text scope=16:9..16:12 anchor=null attributes={} literal="note" children=0

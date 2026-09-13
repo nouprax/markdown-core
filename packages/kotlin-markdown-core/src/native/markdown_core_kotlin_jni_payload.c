@@ -23,16 +23,7 @@ typedef enum jni_payload_action_kind {
     JNI_PAYLOAD_WRITE_NODE,
     JNI_PAYLOAD_WRITE_SIBLINGS,
     JNI_PAYLOAD_WRITE_CHILDREN,
-    /* The document's footnotes after its content: the count, then each. */
-    JNI_PAYLOAD_WRITE_FOOTNOTES,
-    /* One footnote -- scope, id, content -- then the rest of the chain. */
-    JNI_PAYLOAD_WRITE_FOOTNOTE,
-    JNI_PAYLOAD_WRITE_SPECIMENS,
-    JNI_PAYLOAD_WRITE_SPECIMEN,
-    /* One citation -- scope, referent, prefix, suffix -- then the rest. */
-    JNI_PAYLOAD_WRITE_CITATION,
-    /* A citation's suffix, after its prefix has been written. */
-    JNI_PAYLOAD_WRITE_SUFFIX,
+    JNI_PAYLOAD_WRITE_CHAIN,
     JNI_PAYLOAD_WRITE_DEFINITION_BODIES,
     JNI_PAYLOAD_WRITE_DEFINITION_BODY
 } jni_payload_action_kind;
@@ -40,10 +31,7 @@ typedef enum jni_payload_action_kind {
 typedef struct jni_payload_action {
     jni_payload_action_kind kind;
     const markdown_core_node *node;
-    const markdown_core_footnote *footnote;
-    const markdown_core_citation *citation;
     size_t remaining;
-    const markdown_core_specimen *specimen;
     const markdown_core_definition_body *body;
 } jni_payload_action;
 
@@ -292,150 +280,6 @@ static void schedule_chain(jni_payload_buffer *buffer, jni_payload_stack *stack,
     schedule_nodes(buffer, stack, first, chain_length(first));
 }
 
-/* The document's footnotes follow its content (M4): the count, then each
- * footnote's scope, id, and content. */
-static void write_footnotes(jni_payload_buffer *buffer, jni_payload_stack *stack, const markdown_core_node *root) {
-    const markdown_core_footnote *first = markdown_core_node_document_footnotes(root);
-    const markdown_core_footnote *cursor;
-    size_t count = 0;
-    for (cursor = first; cursor; cursor = markdown_core_footnote_next(cursor)) {
-        count++;
-    }
-    if (count > INT32_MAX) {
-        buffer->failure = JNI_PAYLOAD_ALLOCATION;
-        return;
-    }
-    put_i32(buffer, (int32_t)count);
-    if (count != 0) {
-        jni_payload_action action = {.kind = JNI_PAYLOAD_WRITE_FOOTNOTE, .footnote = first, .remaining = count};
-        push_action(buffer, stack, action);
-    }
-}
-
-static void write_footnote(jni_payload_buffer *buffer, jni_payload_stack *stack, jni_payload_action action) {
-    const markdown_core_footnote *next = markdown_core_footnote_next(action.footnote);
-    markdown_core_string id;
-    if ((action.remaining == 1) != (next == NULL)) {
-        buffer->failure = JNI_PAYLOAD_INTERNAL;
-        return;
-    }
-    if (action.remaining > 1) {
-        jni_payload_action rest = {
-            .kind = JNI_PAYLOAD_WRITE_FOOTNOTE, .footnote = next, .remaining = action.remaining - 1};
-        push_action(buffer, stack, rest);
-    }
-    if (!markdown_core_footnote_id(action.footnote, &id)) {
-        buffer->failure = JNI_PAYLOAD_INTERNAL;
-        return;
-    }
-    put_scope(buffer, markdown_core_footnote_scope(action.footnote));
-    put_string(buffer, id, true);
-    schedule_chain(buffer, stack, markdown_core_footnote_content(action.footnote));
-}
-
-static void write_specimens(jni_payload_buffer *buffer, jni_payload_stack *stack, const markdown_core_node *root) {
-    const markdown_core_specimen *first = markdown_core_node_document_specimens(root);
-    const markdown_core_specimen *cursor;
-    size_t count = 0;
-    for (cursor = first; cursor; cursor = markdown_core_specimen_next(cursor)) {
-        count++;
-    }
-    if (count > INT32_MAX) {
-        buffer->failure = JNI_PAYLOAD_ALLOCATION;
-        return;
-    }
-    put_i32(buffer, (int32_t)count);
-    if (count != 0) {
-        jni_payload_action action = {.kind = JNI_PAYLOAD_WRITE_SPECIMEN, .specimen = first, .remaining = count};
-        push_action(buffer, stack, action);
-    }
-}
-
-static void write_specimen(jni_payload_buffer *buffer, jni_payload_stack *stack, jni_payload_action action) {
-    const markdown_core_specimen *next = markdown_core_specimen_next(action.specimen);
-    markdown_core_optional_string id;
-    markdown_core_optional_i64 start;
-    if ((action.remaining == 1) != (next == NULL)) {
-        buffer->failure = JNI_PAYLOAD_INTERNAL;
-        return;
-    }
-    if (action.remaining > 1) {
-        jni_payload_action rest = {
-            .kind = JNI_PAYLOAD_WRITE_SPECIMEN, .specimen = next, .remaining = action.remaining - 1};
-        push_action(buffer, stack, rest);
-    }
-    if (!markdown_core_specimen_properties(action.specimen, &id, &start)) {
-        buffer->failure = JNI_PAYLOAD_INTERNAL;
-        return;
-    }
-    put_scope(buffer, markdown_core_specimen_scope(action.specimen));
-    put_optional_string(buffer, id);
-    put_i64(buffer, start.value);
-    put_u8(buffer, start.has_value ? 1 : 0);
-    schedule_chain(buffer, stack, markdown_core_specimen_content(action.specimen));
-}
-
-/* A cite's items (M4): the count, then each citation's scope, its referent
- * -- the branch ordinal, then only that branch's fields -- and its prefix and
- * suffix content in that order. */
-static void write_citations(jni_payload_buffer *buffer, jni_payload_stack *stack, const markdown_core_node *node) {
-    const markdown_core_citation *first = markdown_core_node_cite_citations(node);
-    const markdown_core_citation *cursor;
-    size_t count = 0;
-    for (cursor = first; cursor; cursor = markdown_core_citation_next(cursor)) {
-        count++;
-    }
-    if (count > INT32_MAX) {
-        buffer->failure = JNI_PAYLOAD_ALLOCATION;
-        return;
-    }
-    if (count == 0) {
-        buffer->failure = JNI_PAYLOAD_INTERNAL;
-        return;
-    }
-    put_i32(buffer, (int32_t)count);
-    {
-        jni_payload_action action = {.kind = JNI_PAYLOAD_WRITE_CITATION, .citation = first, .remaining = count};
-        push_action(buffer, stack, action);
-    }
-}
-
-static void write_citation(jni_payload_buffer *buffer, jni_payload_stack *stack, jni_payload_action action) {
-    const markdown_core_citation *next = markdown_core_citation_next(action.citation);
-    markdown_core_referent referent;
-    jni_payload_action suffix = {.kind = JNI_PAYLOAD_WRITE_SUFFIX, .citation = action.citation};
-    if ((action.remaining == 1) != (next == NULL)) {
-        buffer->failure = JNI_PAYLOAD_INTERNAL;
-        return;
-    }
-    if (action.remaining > 1) {
-        jni_payload_action rest = {
-            .kind = JNI_PAYLOAD_WRITE_CITATION, .citation = next, .remaining = action.remaining - 1};
-        push_action(buffer, stack, rest);
-    }
-    if (!markdown_core_citation_referent(action.citation, &referent)) {
-        buffer->failure = JNI_PAYLOAD_INTERNAL;
-        return;
-    }
-    put_scope(buffer, markdown_core_citation_scope(action.citation));
-    put_u8(buffer, (uint8_t)referent.kind);
-    switch (referent.kind) {
-    case MARKDOWN_CORE_REFERENT_BIB:
-        put_string(buffer, referent.key, true);
-        put_i32(buffer, (int32_t)referent.mode);
-        break;
-    case MARKDOWN_CORE_REFERENT_FOOTNOTE:
-    case MARKDOWN_CORE_REFERENT_SPECIMEN:
-        put_string(buffer, referent.id, true);
-        break;
-    default:
-        buffer->failure = JNI_PAYLOAD_INTERNAL;
-        return;
-    }
-    push_action(buffer, stack, suffix);
-    schedule_chain(buffer, stack, markdown_core_citation_prefix(action.citation));
-}
-
 static void write_attributes(jni_payload_buffer *buffer, const markdown_core_attribute_value *attributes) {
     put_optional_string(buffer, markdown_core_attribute_value_anchor(attributes));
     size_t classes = markdown_core_attribute_value_class_count(attributes),
@@ -514,12 +358,7 @@ static void write_metadata_value(jni_payload_buffer *buffer, const markdown_core
         return;
     }
 }
-static void write_metadata(jni_payload_buffer *buffer, const markdown_core_metadata *metadata) {
-    put_u8(buffer, metadata ? 1 : 0);
-    if (!metadata) {
-        return;
-    }
-    put_scope(buffer, markdown_core_metadata_scope(metadata));
+static void write_metadata(jni_payload_buffer *buffer, const markdown_core_node *metadata) {
     write_metadata_value(buffer, markdown_core_metadata_name(metadata));
     write_metadata_value(buffer, markdown_core_metadata_title(metadata));
     write_metadata_value(buffer, markdown_core_metadata_subtitle(metadata));
@@ -596,13 +435,66 @@ static void write_node(jni_payload_buffer *buffer, jni_payload_stack *stack, jni
         break;
     }
     case MARKDOWN_CORE_KIND_DOCUMENT: {
-        write_metadata(buffer, markdown_core_node_document_metadata(node));
-        /* The content leads, as the walk visits it; the footnotes follow. */
-        jni_payload_action footnotes = {.kind = JNI_PAYLOAD_WRITE_FOOTNOTES, .node = node};
-        jni_payload_action specimens = {.kind = JNI_PAYLOAD_WRITE_SPECIMENS, .node = node};
-        push_action(buffer, stack, specimens);
-        push_action(buffer, stack, footnotes);
+        const markdown_core_node *metadata = markdown_core_node_document_metadata(node);
+        put_u8(buffer, metadata ? 1 : 0);
+        push_action(
+            buffer, stack,
+            (jni_payload_action){.kind = JNI_PAYLOAD_WRITE_CHAIN, .node = markdown_core_node_document_specimens(node)});
+        push_action(
+            buffer, stack,
+            (jni_payload_action){.kind = JNI_PAYLOAD_WRITE_CHAIN, .node = markdown_core_node_document_footnotes(node)});
+        push_action(buffer, stack, (jni_payload_action){.kind = JNI_PAYLOAD_WRITE_CHILDREN, .node = node});
+        if (metadata) {
+            push_action(buffer, stack, (jni_payload_action){.kind = JNI_PAYLOAD_WRITE_NODE, .node = metadata});
+        }
+        break;
+    }
+    case MARKDOWN_CORE_KIND_METADATA:
+        write_metadata(buffer, node);
+        break;
+    case MARKDOWN_CORE_KIND_FOOTNOTE:
+        if (!markdown_core_footnote_id(node, &first)) {
+            buffer->failure = JNI_PAYLOAD_INTERNAL;
+            return;
+        }
+        put_string(buffer, first, true);
         schedule_children(buffer, stack, node);
+        break;
+    case MARKDOWN_CORE_KIND_SPECIMEN: {
+        markdown_core_optional_i64 start;
+        if (!markdown_core_specimen_properties(node, &optional_first, &start)) {
+            buffer->failure = JNI_PAYLOAD_INTERNAL;
+            return;
+        }
+        put_optional_string(buffer, optional_first);
+        put_i64(buffer, start.value);
+        put_u8(buffer, start.has_value ? 1 : 0);
+        schedule_children(buffer, stack, node);
+        break;
+    }
+    case MARKDOWN_CORE_KIND_CITATION: {
+        markdown_core_referent referent;
+        if (!markdown_core_citation_referent(node, &referent)) {
+            buffer->failure = JNI_PAYLOAD_INTERNAL;
+            return;
+        }
+        put_u8(buffer, (uint8_t)referent.kind);
+        switch (referent.kind) {
+        case MARKDOWN_CORE_REFERENT_BIB:
+            put_string(buffer, referent.key, true);
+            put_i32(buffer, referent.mode);
+            break;
+        case MARKDOWN_CORE_REFERENT_FOOTNOTE:
+        case MARKDOWN_CORE_REFERENT_SPECIMEN:
+            put_string(buffer, referent.id, true);
+            break;
+        default:
+            buffer->failure = JNI_PAYLOAD_INTERNAL;
+            return;
+        }
+        push_action(buffer, stack,
+                    (jni_payload_action){.kind = JNI_PAYLOAD_WRITE_CHAIN, .node = markdown_core_citation_suffix(node)});
+        schedule_chain(buffer, stack, markdown_core_citation_prefix(node));
         break;
     }
     case MARKDOWN_CORE_KIND_PARAGRAPH:
@@ -787,8 +679,8 @@ static void write_node(jni_payload_buffer *buffer, jni_payload_stack *stack, jni
         schedule_children(buffer, stack, node);
         break;
     case MARKDOWN_CORE_KIND_CITE:
-        /* The items are values the cite owns, not children. */
-        write_citations(buffer, stack, node);
+        /* Citation nodes belong to the citations field, outside ordinary content. */
+        schedule_chain(buffer, stack, markdown_core_node_cite_citations(node));
         break;
     case MARKDOWN_CORE_KIND_CROSS_LINK:
     case MARKDOWN_CORE_KIND_CROSS_EMBEDDED: {
@@ -912,20 +804,8 @@ static void write_tree(jni_payload_buffer *buffer, const markdown_core_node *roo
         case JNI_PAYLOAD_WRITE_CHILDREN:
             schedule_children(buffer, &stack, action.node);
             break;
-        case JNI_PAYLOAD_WRITE_SPECIMENS:
-            write_specimens(buffer, &stack, action.node);
-            break;
-        case JNI_PAYLOAD_WRITE_SPECIMEN:
-            write_specimen(buffer, &stack, action);
-            break;
-        case JNI_PAYLOAD_WRITE_FOOTNOTES:
-            write_footnotes(buffer, &stack, action.node);
-            break;
-        case JNI_PAYLOAD_WRITE_FOOTNOTE:
-            write_footnote(buffer, &stack, action);
-            break;
-        case JNI_PAYLOAD_WRITE_CITATION:
-            write_citation(buffer, &stack, action);
+        case JNI_PAYLOAD_WRITE_CHAIN:
+            schedule_chain(buffer, &stack, action.node);
             break;
         case JNI_PAYLOAD_WRITE_DEFINITION_BODIES: {
             size_t count = 0;
@@ -951,9 +831,6 @@ static void write_tree(jni_payload_buffer *buffer, const markdown_core_node *roo
             schedule_chain(buffer, &stack, markdown_core_definition_body_content(body));
             break;
         }
-        case JNI_PAYLOAD_WRITE_SUFFIX:
-            schedule_chain(buffer, &stack, markdown_core_citation_suffix(action.citation));
-            break;
         }
     }
     free(stack.actions);

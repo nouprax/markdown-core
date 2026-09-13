@@ -12,7 +12,7 @@ export interface Document extends MarkupBase<"document"> {
     readonly content: readonly Markup[];
     /**
      * Every winning or unreferenced footnote definition as a document-owned
-     * `Footnote` value, ordered by scope start; visited after `content` and
+     * `Footnote` node, ordered by scope start; visited after `content` and
      * never counted among its children.
      */
     readonly footnotes: readonly Footnote[];

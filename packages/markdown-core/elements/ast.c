@@ -135,6 +135,18 @@ markdown_core_node_kind markdown_core_node_get_kind(const markdown_core_node *no
     if (node->kind == MARKDOWN_CORE_NODE_DEFINITION) {
         return MARKDOWN_CORE_KIND_DEFINITION;
     }
+    if (node->kind == MARKDOWN_CORE_NODE_CITATION) {
+        return MARKDOWN_CORE_KIND_CITATION;
+    }
+    if (node->kind == MARKDOWN_CORE_NODE_FOOTNOTE) {
+        return MARKDOWN_CORE_KIND_FOOTNOTE;
+    }
+    if (node->kind == MARKDOWN_CORE_NODE_SPECIMEN) {
+        return MARKDOWN_CORE_KIND_SPECIMEN;
+    }
+    if (node->kind == MARKDOWN_CORE_NODE_METADATA) {
+        return MARKDOWN_CORE_KIND_METADATA;
+    }
     if (node->kind == MARKDOWN_CORE_NODE_DOCUMENT) {
         return MARKDOWN_CORE_KIND_DOCUMENT;
     }
@@ -294,9 +306,13 @@ const char *markdown_core_node_kind_name(markdown_core_node_kind kind) {
         "Subscript",
         "DefinitionList",
         "Definition",
-        "TableCaption"};
+        "TableCaption",
+        "Citation",
+        "Footnote",
+        "Specimen",
+        "Metadata"};
     /* clang-format on */
-    if (kind < MARKDOWN_CORE_KIND_NONE || kind > MARKDOWN_CORE_KIND_TABLE_CAPTION) {
+    if (kind < MARKDOWN_CORE_KIND_NONE || kind > MARKDOWN_CORE_KIND_METADATA) {
         return "None";
     }
     return names[kind];
@@ -608,41 +624,58 @@ const markdown_core_dimensions *markdown_core_node_dimensions(const markdown_cor
     }
     return dimensions->has_value ? &dimensions->value : NULL;
 }
-const markdown_core_metadata *markdown_core_node_document_metadata(const markdown_core_node *node) {
+const markdown_core_node *markdown_core_node_document_metadata(const markdown_core_node *node) {
     return node && node->kind == MARKDOWN_CORE_NODE_DOCUMENT ? node->as.document->metadata : NULL;
 }
-markdown_core_scope markdown_core_metadata_scope(const markdown_core_metadata *metadata) {
-    return metadata ? metadata->scope : (markdown_core_scope){0};
+const markdown_core_metadata_value *markdown_core_metadata_name(const markdown_core_node *metadata) {
+    return metadata && metadata->kind == MARKDOWN_CORE_NODE_METADATA && metadata->as.metadata->name.kind
+               ? &metadata->as.metadata->name
+               : NULL;
 }
-const markdown_core_metadata_value *markdown_core_metadata_name(const markdown_core_metadata *metadata) {
-    return metadata && metadata->name.kind ? &metadata->name : NULL;
+const markdown_core_metadata_value *markdown_core_metadata_title(const markdown_core_node *metadata) {
+    return metadata && metadata->kind == MARKDOWN_CORE_NODE_METADATA && metadata->as.metadata->title.kind
+               ? &metadata->as.metadata->title
+               : NULL;
 }
-const markdown_core_metadata_value *markdown_core_metadata_title(const markdown_core_metadata *metadata) {
-    return metadata && metadata->title.kind ? &metadata->title : NULL;
+const markdown_core_metadata_value *markdown_core_metadata_subtitle(const markdown_core_node *metadata) {
+    return metadata && metadata->kind == MARKDOWN_CORE_NODE_METADATA && metadata->as.metadata->subtitle.kind
+               ? &metadata->as.metadata->subtitle
+               : NULL;
 }
-const markdown_core_metadata_value *markdown_core_metadata_subtitle(const markdown_core_metadata *metadata) {
-    return metadata && metadata->subtitle.kind ? &metadata->subtitle : NULL;
+const markdown_core_metadata_value *markdown_core_metadata_time(const markdown_core_node *metadata) {
+    return metadata && metadata->kind == MARKDOWN_CORE_NODE_METADATA && metadata->as.metadata->time.kind
+               ? &metadata->as.metadata->time
+               : NULL;
 }
-const markdown_core_metadata_value *markdown_core_metadata_time(const markdown_core_metadata *metadata) {
-    return metadata && metadata->time.kind ? &metadata->time : NULL;
+const markdown_core_metadata_value *markdown_core_metadata_date(const markdown_core_node *metadata) {
+    return metadata && metadata->kind == MARKDOWN_CORE_NODE_METADATA && metadata->as.metadata->date.kind
+               ? &metadata->as.metadata->date
+               : NULL;
 }
-const markdown_core_metadata_value *markdown_core_metadata_date(const markdown_core_metadata *metadata) {
-    return metadata && metadata->date.kind ? &metadata->date : NULL;
+const markdown_core_metadata_value *markdown_core_metadata_authors(const markdown_core_node *metadata) {
+    return metadata && metadata->kind == MARKDOWN_CORE_NODE_METADATA && metadata->as.metadata->authors.kind
+               ? &metadata->as.metadata->authors
+               : NULL;
 }
-const markdown_core_metadata_value *markdown_core_metadata_authors(const markdown_core_metadata *metadata) {
-    return metadata && metadata->authors.kind ? &metadata->authors : NULL;
+const markdown_core_metadata_value *markdown_core_metadata_keywords(const markdown_core_node *metadata) {
+    return metadata && metadata->kind == MARKDOWN_CORE_NODE_METADATA && metadata->as.metadata->keywords.kind
+               ? &metadata->as.metadata->keywords
+               : NULL;
 }
-const markdown_core_metadata_value *markdown_core_metadata_keywords(const markdown_core_metadata *metadata) {
-    return metadata && metadata->keywords.kind ? &metadata->keywords : NULL;
+const markdown_core_metadata_value *markdown_core_metadata_abstract(const markdown_core_node *metadata) {
+    return metadata && metadata->kind == MARKDOWN_CORE_NODE_METADATA && metadata->as.metadata->abstract.kind
+               ? &metadata->as.metadata->abstract
+               : NULL;
 }
-const markdown_core_metadata_value *markdown_core_metadata_abstract(const markdown_core_metadata *metadata) {
-    return metadata && metadata->abstract.kind ? &metadata->abstract : NULL;
+const markdown_core_metadata_value *markdown_core_metadata_state(const markdown_core_node *metadata) {
+    return metadata && metadata->kind == MARKDOWN_CORE_NODE_METADATA && metadata->as.metadata->state.kind
+               ? &metadata->as.metadata->state
+               : NULL;
 }
-const markdown_core_metadata_value *markdown_core_metadata_state(const markdown_core_metadata *metadata) {
-    return metadata && metadata->state.kind ? &metadata->state : NULL;
-}
-const markdown_core_metadata_value *markdown_core_metadata_comment(const markdown_core_metadata *metadata) {
-    return metadata && metadata->comment.kind ? &metadata->comment : NULL;
+const markdown_core_metadata_value *markdown_core_metadata_comment(const markdown_core_node *metadata) {
+    return metadata && metadata->kind == MARKDOWN_CORE_NODE_METADATA && metadata->as.metadata->comment.kind
+               ? &metadata->as.metadata->comment
+               : NULL;
 }
 markdown_core_metadata_value_kind markdown_core_metadata_value_get_kind(const markdown_core_metadata_value *value) {
     return value ? value->kind : 0;
@@ -741,31 +774,21 @@ const markdown_core_resource *markdown_core_node_resource(const markdown_core_no
  * opaque handles outside it: the handle types are never defined, so the only
  * way through one is these accessors, and each of them checks the node's
  * type rather than trusting the cast. */
-static const markdown_core_node *citation_node(const markdown_core_citation *citation) {
+static const markdown_core_node *citation_node(const markdown_core_node *citation) {
     const markdown_core_node *node = (const markdown_core_node *)citation;
     return node && node->kind == MARKDOWN_CORE_NODE_CITATION ? node : NULL;
 }
 
-static const markdown_core_node *footnote_node(const markdown_core_footnote *footnote) {
+static const markdown_core_node *footnote_node(const markdown_core_node *footnote) {
     const markdown_core_node *node = (const markdown_core_node *)footnote;
     return node && node->kind == MARKDOWN_CORE_NODE_FOOTNOTE ? node : NULL;
 }
 
-const markdown_core_citation *markdown_core_node_cite_citations(const markdown_core_node *node) {
-    return node && node->kind == MARKDOWN_CORE_NODE_CITE ? (const markdown_core_citation *)node->as.cite->citations
-                                                         : NULL;
+const markdown_core_node *markdown_core_node_cite_citations(const markdown_core_node *node) {
+    return node && node->kind == MARKDOWN_CORE_NODE_CITE ? (const markdown_core_node *)node->as.cite->citations : NULL;
 }
 
-const markdown_core_citation *markdown_core_citation_next(const markdown_core_citation *citation) {
-    const markdown_core_node *node = citation_node(citation);
-    return node ? (const markdown_core_citation *)node->next : NULL;
-}
-
-markdown_core_scope markdown_core_citation_scope(const markdown_core_citation *citation) {
-    return markdown_core_node_scope(citation_node(citation));
-}
-
-bool markdown_core_citation_referent(const markdown_core_citation *citation, markdown_core_referent *referent) {
+bool markdown_core_citation_referent(const markdown_core_node *citation, markdown_core_referent *referent) {
     const markdown_core_node *node = citation_node(citation);
     if (!node || !referent) {
         return false;
@@ -787,32 +810,22 @@ bool markdown_core_citation_referent(const markdown_core_citation *citation, mar
     return true;
 }
 
-const markdown_core_node *markdown_core_citation_prefix(const markdown_core_citation *citation) {
+const markdown_core_node *markdown_core_citation_prefix(const markdown_core_node *citation) {
     const markdown_core_node *node = citation_node(citation);
     return node && node->as.citation->prefix ? node->as.citation->prefix->first_child : NULL;
 }
 
-const markdown_core_node *markdown_core_citation_suffix(const markdown_core_citation *citation) {
+const markdown_core_node *markdown_core_citation_suffix(const markdown_core_node *citation) {
     const markdown_core_node *node = citation_node(citation);
     return node && node->as.citation->suffix ? node->as.citation->suffix->first_child : NULL;
 }
 
-const markdown_core_footnote *markdown_core_node_document_footnotes(const markdown_core_node *node) {
-    return node && node->kind == MARKDOWN_CORE_NODE_DOCUMENT
-               ? (const markdown_core_footnote *)node->as.document->footnotes
-               : NULL;
+const markdown_core_node *markdown_core_node_document_footnotes(const markdown_core_node *node) {
+    return node && node->kind == MARKDOWN_CORE_NODE_DOCUMENT ? (const markdown_core_node *)node->as.document->footnotes
+                                                             : NULL;
 }
 
-const markdown_core_footnote *markdown_core_footnote_next(const markdown_core_footnote *footnote) {
-    const markdown_core_node *node = footnote_node(footnote);
-    return node ? (const markdown_core_footnote *)node->next : NULL;
-}
-
-markdown_core_scope markdown_core_footnote_scope(const markdown_core_footnote *footnote) {
-    return markdown_core_node_scope(footnote_node(footnote));
-}
-
-bool markdown_core_footnote_id(const markdown_core_footnote *footnote, markdown_core_string *id) {
+bool markdown_core_footnote_id(const markdown_core_node *footnote, markdown_core_string *id) {
     const markdown_core_node *node = footnote_node(footnote);
     if (!node || !id) {
         return false;
@@ -821,32 +834,22 @@ bool markdown_core_footnote_id(const markdown_core_footnote *footnote, markdown_
     return true;
 }
 
-const markdown_core_node *markdown_core_footnote_content(const markdown_core_footnote *footnote) {
+const markdown_core_node *markdown_core_footnote_content(const markdown_core_node *footnote) {
     const markdown_core_node *node = footnote_node(footnote);
     return node ? node->first_child : NULL;
 }
 
-static const markdown_core_node *specimen_node(const markdown_core_specimen *specimen) {
+static const markdown_core_node *specimen_node(const markdown_core_node *specimen) {
     const markdown_core_node *node = (const markdown_core_node *)specimen;
     return node && node->kind == MARKDOWN_CORE_NODE_SPECIMEN ? node : NULL;
 }
 
-const markdown_core_specimen *markdown_core_node_document_specimens(const markdown_core_node *node) {
-    return node && node->kind == MARKDOWN_CORE_NODE_DOCUMENT
-               ? (const markdown_core_specimen *)node->as.document->specimens
-               : NULL;
+const markdown_core_node *markdown_core_node_document_specimens(const markdown_core_node *node) {
+    return node && node->kind == MARKDOWN_CORE_NODE_DOCUMENT ? (const markdown_core_node *)node->as.document->specimens
+                                                             : NULL;
 }
 
-const markdown_core_specimen *markdown_core_specimen_next(const markdown_core_specimen *specimen) {
-    const markdown_core_node *node = specimen_node(specimen);
-    return node ? (const markdown_core_specimen *)node->next : NULL;
-}
-
-markdown_core_scope markdown_core_specimen_scope(const markdown_core_specimen *specimen) {
-    return markdown_core_node_scope(specimen_node(specimen));
-}
-
-bool markdown_core_specimen_properties(const markdown_core_specimen *specimen, markdown_core_optional_string *id,
+bool markdown_core_specimen_properties(const markdown_core_node *specimen, markdown_core_optional_string *id,
                                        markdown_core_optional_i64 *start) {
     const markdown_core_node *node = specimen_node(specimen);
     if (!node || !id || !start) {
@@ -858,7 +861,7 @@ bool markdown_core_specimen_properties(const markdown_core_specimen *specimen, m
     return true;
 }
 
-const markdown_core_node *markdown_core_specimen_content(const markdown_core_specimen *specimen) {
+const markdown_core_node *markdown_core_specimen_content(const markdown_core_node *specimen) {
     const markdown_core_node *node = specimen_node(specimen);
     return node ? node->first_child : NULL;
 }
@@ -1096,6 +1099,9 @@ static void buffer_double(dump_buffer *buffer, double value) {
     }
 }
 
+static void buffer_referent(dump_buffer *buffer, markdown_core_referent referent);
+static void dump_metadata_value(dump_buffer *buffer, const markdown_core_metadata_value *record);
+
 static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, markdown_core_node_kind kind) {
     markdown_core_string a = {NULL, 0}, c = {NULL, 0};
     markdown_core_optional_string oa = {false, {NULL, 0}}, ob = {false, {NULL, 0}};
@@ -1110,6 +1116,51 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
     size_t count, i;
     int32_t level;
     switch (kind) {
+    case MARKDOWN_CORE_KIND_CITATION: {
+        markdown_core_referent referent;
+        markdown_core_citation_referent(node, &referent);
+        buffer_cstr(buffer, " referent=");
+        buffer_referent(buffer, referent);
+        break;
+    }
+    case MARKDOWN_CORE_KIND_FOOTNOTE:
+        markdown_core_footnote_id(node, &a);
+        buffer_cstr(buffer, " id=");
+        buffer_json_string(buffer, a);
+        break;
+    case MARKDOWN_CORE_KIND_SPECIMEN:
+        markdown_core_specimen_properties(node, &oa, &start);
+        buffer_cstr(buffer, " id=");
+        buffer_optional_string(buffer, oa);
+        buffer_cstr(buffer, " start=");
+        if (start.has_value) {
+            buffer_i64(buffer, start.value);
+        } else {
+            buffer_cstr(buffer, "null");
+        }
+        break;
+    case MARKDOWN_CORE_KIND_METADATA:
+        buffer_cstr(buffer, " name=");
+        dump_metadata_value(buffer, markdown_core_metadata_name(node));
+        buffer_cstr(buffer, " title=");
+        dump_metadata_value(buffer, markdown_core_metadata_title(node));
+        buffer_cstr(buffer, " subtitle=");
+        dump_metadata_value(buffer, markdown_core_metadata_subtitle(node));
+        buffer_cstr(buffer, " time=");
+        dump_metadata_value(buffer, markdown_core_metadata_time(node));
+        buffer_cstr(buffer, " date=");
+        dump_metadata_value(buffer, markdown_core_metadata_date(node));
+        buffer_cstr(buffer, " authors=");
+        dump_metadata_value(buffer, markdown_core_metadata_authors(node));
+        buffer_cstr(buffer, " keywords=");
+        dump_metadata_value(buffer, markdown_core_metadata_keywords(node));
+        buffer_cstr(buffer, " abstract=");
+        dump_metadata_value(buffer, markdown_core_metadata_abstract(node));
+        buffer_cstr(buffer, " state=");
+        dump_metadata_value(buffer, markdown_core_metadata_state(node));
+        buffer_cstr(buffer, " comment=");
+        dump_metadata_value(buffer, markdown_core_metadata_comment(node));
+        break;
     case MARKDOWN_CORE_KIND_CALLOUT:
         markdown_core_node_callout_properties(node, &oa, &collapsed);
         buffer_cstr(buffer, " variant=");
@@ -1453,34 +1504,6 @@ static void dump_affix_group(dump_buffer *buffer, const char *name, const markdo
     }
 }
 
-/* A cite's items are scoped values nested under it (M4): each prints a
- * `Citation` value line -- scope, referent, and a `children` of zero, since
- * its affixes are groups, not children -- and then a `CitationPrefix` and a
- * `CitationSuffix` group. The cite's own `children` counts the items. */
-static void dump_cite_nodes(dump_buffer *buffer, const markdown_core_node *node, size_t depth, size_t item_count) {
-    const markdown_core_node *item = node->as.cite->citations;
-    size_t remaining = item_count;
-    for (; item; item = item->next) {
-        markdown_core_referent referent;
-        remaining--;
-        if (!ensure_more(buffer, depth)) {
-            return;
-        }
-        buffer->more[depth] = remaining != 0;
-        dump_prefix(buffer, depth + 1);
-        buffer_cstr(buffer, "Citation scope=");
-        buffer_scope(buffer, markdown_core_node_scope(item));
-        markdown_core_citation_referent((const markdown_core_citation *)item, &referent);
-        buffer_cstr(buffer, " referent=");
-        buffer_referent(buffer, referent);
-        buffer_cstr(buffer, " children=0\n");
-        dump_affix_group(buffer, "CitationPrefix", markdown_core_citation_prefix((const markdown_core_citation *)item),
-                         depth + 1, true);
-        dump_affix_group(buffer, "CitationSuffix", markdown_core_citation_suffix((const markdown_core_citation *)item),
-                         depth + 1, false);
-    }
-}
-
 static void dump_metadata_value(dump_buffer *buffer, const markdown_core_metadata_value *record) {
     if (!record) {
         buffer_cstr(buffer, "null");
@@ -1539,86 +1562,19 @@ static void dump_metadata_value(dump_buffer *buffer, const markdown_core_metadat
     }
 }
 
-static void dump_metadata(dump_buffer *buffer, const markdown_core_metadata *metadata, size_t depth, bool has_next) {
-    if (!ensure_more(buffer, depth + 1)) {
-        return;
-    }
-    buffer->more[depth] = has_next;
-    dump_prefix(buffer, depth + 1);
-    buffer_cstr(buffer, "Metadata scope=");
-    buffer_scope(buffer, markdown_core_metadata_scope(metadata));
-    buffer_cstr(buffer, " name=");
-    dump_metadata_value(buffer, markdown_core_metadata_name(metadata));
-    buffer_cstr(buffer, " title=");
-    dump_metadata_value(buffer, markdown_core_metadata_title(metadata));
-    buffer_cstr(buffer, " subtitle=");
-    dump_metadata_value(buffer, markdown_core_metadata_subtitle(metadata));
-    buffer_cstr(buffer, " time=");
-    dump_metadata_value(buffer, markdown_core_metadata_time(metadata));
-    buffer_cstr(buffer, " date=");
-    dump_metadata_value(buffer, markdown_core_metadata_date(metadata));
-    buffer_cstr(buffer, " authors=");
-    dump_metadata_value(buffer, markdown_core_metadata_authors(metadata));
-    buffer_cstr(buffer, " keywords=");
-    dump_metadata_value(buffer, markdown_core_metadata_keywords(metadata));
-    buffer_cstr(buffer, " abstract=");
-    dump_metadata_value(buffer, markdown_core_metadata_abstract(metadata));
-    buffer_cstr(buffer, " state=");
-    dump_metadata_value(buffer, markdown_core_metadata_state(metadata));
-    buffer_cstr(buffer, " comment=");
-    dump_metadata_value(buffer, markdown_core_metadata_comment(metadata));
-    buffer_cstr(buffer, " children=0\n");
-}
-
-/* The document's footnotes are scoped values nested after its content (M4):
- * each prints a `Footnote` value line with its id and its content count, then
- * its block content one level below. The document's own `children` counts
- * the content alone. */
+/* Owned fields use the same node dispatcher as ordinary content. */
 static void dump_document_nodes(dump_buffer *buffer, const markdown_core_node *node, size_t depth, size_t child_count) {
     const markdown_core_node *definitions[] = {node->as.document->footnotes, node->as.document->specimens};
-    size_t remaining = child_count;
-    for (size_t family = 0; family < 2; family++) {
-        remaining += chain_length(definitions[family]);
-    }
-    const markdown_core_metadata *metadata = markdown_core_node_document_metadata(node);
+    size_t remaining = child_count + chain_length(definitions[0]) + chain_length(definitions[1]);
+    const markdown_core_node *metadata = markdown_core_node_document_metadata(node);
     if (metadata) {
-        dump_metadata(buffer, metadata, depth, remaining != 0);
+        dump_nested_node(buffer, metadata, depth, remaining != 0);
     }
     dump_children(buffer, node, depth, remaining);
     remaining -= child_count;
     for (size_t family = 0; family < 2; family++) {
         for (const markdown_core_node *definition = definitions[family]; definition; definition = definition->next) {
-            size_t content = markdown_core_node_child_count(definition);
-            remaining--;
-            if (!ensure_more(buffer, depth)) {
-                return;
-            }
-            buffer->more[depth] = remaining != 0;
-            dump_prefix(buffer, depth + 1);
-            buffer_cstr(buffer,
-                        definition->kind == MARKDOWN_CORE_NODE_SPECIMEN ? "Specimen scope=" : "Footnote scope=");
-            buffer_scope(buffer, markdown_core_node_scope(definition));
-            buffer_cstr(buffer, " id=");
-            if (definition->kind == MARKDOWN_CORE_NODE_SPECIMEN) {
-                markdown_core_optional_string id;
-                markdown_core_optional_i64 start;
-                markdown_core_specimen_properties((const markdown_core_specimen *)definition, &id, &start);
-                buffer_optional_string(buffer, id);
-                buffer_cstr(buffer, " start=");
-                if (start.has_value) {
-                    buffer_i64(buffer, start.value);
-                } else {
-                    buffer_cstr(buffer, "null");
-                }
-            } else {
-                markdown_core_string id;
-                markdown_core_footnote_id((const markdown_core_footnote *)definition, &id);
-                buffer_json_string(buffer, id);
-            }
-            buffer_cstr(buffer, " children=");
-            buffer_i64(buffer, (int64_t)content);
-            buffer_cstr(buffer, "\n");
-            dump_children(buffer, definition, depth + 1, content);
+            dump_nested_node(buffer, definition, depth, --remaining != 0);
         }
     }
 }
@@ -1715,8 +1671,18 @@ static void dump_node(dump_buffer *buffer, const markdown_core_node *node, size_
         dump_document_nodes(buffer, node, depth, child_count);
         break;
     case MARKDOWN_CORE_KIND_CITE:
-        dump_cite_nodes(buffer, node, depth, child_count);
+        for (const markdown_core_node *item = markdown_core_node_cite_citations(node); item; item = item->next) {
+            dump_nested_node(buffer, item, depth, item->next != NULL);
+        }
         break;
+    case MARKDOWN_CORE_KIND_CITATION:
+        dump_affix_group(buffer, "CitationPrefix", markdown_core_citation_prefix(node), depth, true);
+        dump_affix_group(buffer, "CitationSuffix", markdown_core_citation_suffix(node), depth, false);
+        break;
+    case MARKDOWN_CORE_KIND_METADATA:
+        break;
+    case MARKDOWN_CORE_KIND_FOOTNOTE:
+    case MARKDOWN_CORE_KIND_SPECIMEN:
     case MARKDOWN_CORE_KIND_PARAGRAPH:
     case MARKDOWN_CORE_KIND_HEADING:
     case MARKDOWN_CORE_KIND_DEFINITION_LIST:

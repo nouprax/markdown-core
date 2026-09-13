@@ -3,13 +3,10 @@
 package com.nouprax.markdown.core
 
 import cnames.structs.markdown_core_attribute_value
-import cnames.structs.markdown_core_citation
 import cnames.structs.markdown_core_error
-import cnames.structs.markdown_core_footnote
 import cnames.structs.markdown_core_metadata_value
 import cnames.structs.markdown_core_node
 import cnames.structs.markdown_core_resource
-import cnames.structs.markdown_core_specimen
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_BIB_MODE_AUTHOR_IN_TEXT
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_BIB_MODE_NORMAL
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_BIB_MODE_SUPPRESS_AUTHOR
@@ -23,6 +20,7 @@ import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_FLOW_LEFT
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_FLOW_NONE
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_FLOW_RIGHT
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_CALLOUT
+import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_CITATION
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_CITE
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_CODE
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_CODE_BLOCK
@@ -37,6 +35,7 @@ import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_DIRECTIVE_LABE
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_DOCUMENT
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_EMBEDDED
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_EMPHASIS
+import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_FOOTNOTE
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_FORMULA
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_FORMULA_BLOCK
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_HEADING
@@ -48,9 +47,11 @@ import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_LINK
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_LIST
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_LIST_ITEM
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_MARK
+import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_METADATA
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_PARAGRAPH
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_SOFT_BREAK
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_SPAN
+import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_SPECIMEN
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_STRIKETHROUGH
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_STRONG
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_SUBSCRIPT
@@ -88,10 +89,8 @@ import com.nouprax.markdown.core.internal.capi.markdown_core_attribute_value_cla
 import com.nouprax.markdown.core.internal.capi.markdown_core_attribute_value_class_count
 import com.nouprax.markdown.core.internal.capi.markdown_core_attribute_value_record_at
 import com.nouprax.markdown.core.internal.capi.markdown_core_attribute_value_record_count
-import com.nouprax.markdown.core.internal.capi.markdown_core_citation_next
 import com.nouprax.markdown.core.internal.capi.markdown_core_citation_prefix
 import com.nouprax.markdown.core.internal.capi.markdown_core_citation_referent
-import com.nouprax.markdown.core.internal.capi.markdown_core_citation_scope
 import com.nouprax.markdown.core.internal.capi.markdown_core_citation_suffix
 import com.nouprax.markdown.core.internal.capi.markdown_core_definition_body_content
 import com.nouprax.markdown.core.internal.capi.markdown_core_definition_body_next
@@ -102,10 +101,7 @@ import com.nouprax.markdown.core.internal.capi.markdown_core_document_root
 import com.nouprax.markdown.core.internal.capi.markdown_core_error_free
 import com.nouprax.markdown.core.internal.capi.markdown_core_error_get_code
 import com.nouprax.markdown.core.internal.capi.markdown_core_error_get_message
-import com.nouprax.markdown.core.internal.capi.markdown_core_footnote_content
 import com.nouprax.markdown.core.internal.capi.markdown_core_footnote_id
-import com.nouprax.markdown.core.internal.capi.markdown_core_footnote_next
-import com.nouprax.markdown.core.internal.capi.markdown_core_footnote_scope
 import com.nouprax.markdown.core.internal.capi.markdown_core_list_flavorVar
 import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_abstract
 import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_authors
@@ -115,7 +111,6 @@ import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_keywords
 import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_list_item
 import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_name
 import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_scalar
-import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_scope
 import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_state
 import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_subtitle
 import com.nouprax.markdown.core.internal.capi.markdown_core_metadata_time
@@ -165,10 +160,7 @@ import com.nouprax.markdown.core.internal.capi.markdown_core_ordered_list_varian
 import com.nouprax.markdown.core.internal.capi.markdown_core_placementVar
 import com.nouprax.markdown.core.internal.capi.markdown_core_referent
 import com.nouprax.markdown.core.internal.capi.markdown_core_scope
-import com.nouprax.markdown.core.internal.capi.markdown_core_specimen_content
-import com.nouprax.markdown.core.internal.capi.markdown_core_specimen_next
 import com.nouprax.markdown.core.internal.capi.markdown_core_specimen_properties
-import com.nouprax.markdown.core.internal.capi.markdown_core_specimen_scope
 import com.nouprax.markdown.core.internal.capi.markdown_core_string
 import com.nouprax.markdown.core.internal.capi.markdown_core_table_column
 import kotlinx.cinterop.BooleanVar
@@ -241,6 +233,11 @@ private class Builder(
         val pointer: CPointer<markdown_core_node>,
         var childStart: Int = 0,
         var childCount: Int = 0,
+        var metadataIndex: Int = -1,
+        var prefixStart: Int = 0,
+        var prefixCount: Int = 0,
+        var suffixStart: Int = 0,
+        var suffixCount: Int = 0,
         var captionIndex: Int = -1,
         var labelIndex: Int = -1,
         var titleStart: Int = 0,
@@ -255,37 +252,12 @@ private class Builder(
         var bodies: kotlin.collections.List<Body> = emptyList(),
     )
 
-    /** One item a cite owns; its prefix and suffix nodes are recorded like children. */
-    private class CitationRecord(
-        val pointer: CPointer<markdown_core_citation>,
-        val prefixStart: Int,
-        val prefixCount: Int,
-        val suffixStart: Int,
-        val suffixCount: Int,
-    )
-
-    /** One footnote the document owns; its content nodes are recorded like children. */
-    private class FootnoteRecord(
-        val pointer: CPointer<markdown_core_footnote>,
-        val contentStart: Int,
-        val contentCount: Int,
-    )
-
     private class Body(
         val start: Int,
         val count: Int,
     )
 
-    private class SpecimenRecord(
-        val pointer: CPointer<markdown_core_specimen>,
-        val contentStart: Int,
-        val contentCount: Int,
-    )
-
     private val records = mutableListOf(Record(root))
-    private val citationRecords = mutableListOf<CitationRecord>()
-    private val footnoteRecords = mutableListOf<FootnoteRecord>()
-    private val specimenRecords = mutableListOf<SpecimenRecord>()
     private lateinit var built: Array<Markup?>
 
     /**
@@ -360,44 +332,27 @@ private class Builder(
                 }
 
                 MARKDOWN_CORE_KIND_DOCUMENT -> {
-                    // The footnotes are values the document owns beside its
-                    // content (M4); each one's content is recorded like children.
-                    record.valueStart = footnoteRecords.size
-                    var footnote = markdown_core_node_document_footnotes(record.pointer)
-                    while (footnote != null) {
-                        val contentStart = records.size
-                        val contentCount = record(markdown_core_footnote_content(footnote))
-                        footnoteRecords += FootnoteRecord(footnote, contentStart, contentCount)
-                        record.valueCount++
-                        footnote = markdown_core_footnote_next(footnote)
+                    markdown_core_node_document_metadata(record.pointer)?.let { metadata ->
+                        record.metadataIndex = records.size
+                        records += Record(metadata)
                     }
-                    record.specimenStart = specimenRecords.size
-                    var specimen = markdown_core_node_document_specimens(record.pointer)
-                    while (specimen != null) {
-                        val contentStart = records.size
-                        val contentCount = record(markdown_core_specimen_content(specimen))
-                        specimenRecords += SpecimenRecord(specimen, contentStart, contentCount)
-                        record.specimenCount++
-                        specimen = markdown_core_specimen_next(specimen)
-                    }
+                    record.valueStart = records.size
+                    record.valueCount = record(markdown_core_node_document_footnotes(record.pointer))
+                    record.specimenStart = records.size
+                    record.specimenCount = record(markdown_core_node_document_specimens(record.pointer))
                 }
 
                 MARKDOWN_CORE_KIND_CITE -> {
-                    // The items are values the cite owns (M4); each one's
-                    // prefix and suffix are recorded like children.
-                    record.valueStart = citationRecords.size
-                    var citation = markdown_core_node_cite_citations(record.pointer)
-                    while (citation != null) {
-                        val prefixStart = records.size
-                        val prefixCount = record(markdown_core_citation_prefix(citation))
-                        val suffixStart = records.size
-                        val suffixCount = record(markdown_core_citation_suffix(citation))
-                        citationRecords +=
-                            CitationRecord(citation, prefixStart, prefixCount, suffixStart, suffixCount)
-                        record.valueCount++
-                        citation = markdown_core_citation_next(citation)
-                    }
+                    record.valueStart = records.size
+                    record.valueCount = record(markdown_core_node_cite_citations(record.pointer))
                     require(record.valueCount >= 1) { "native cite holds no citation" }
+                }
+
+                MARKDOWN_CORE_KIND_CITATION -> {
+                    record.prefixStart = records.size
+                    record.prefixCount = record(markdown_core_citation_prefix(record.pointer))
+                    record.suffixStart = records.size
+                    record.suffixCount = record(markdown_core_citation_suffix(record.pointer))
                 }
             }
             record.childStart = records.size
@@ -448,9 +403,9 @@ private class Builder(
             MARKDOWN_CORE_KIND_DOCUMENT -> {
                 Document(
                     children,
-                    scratch.metadata(node),
-                    footnotes(record),
-                    specimens(record),
+                    if (record.metadataIndex < 0) null else requireNotNull(built[record.metadataIndex] as? Metadata),
+                    typedNodes<Footnote>(record.valueStart, record.valueCount),
+                    typedNodes<Specimen>(record.specimenStart, record.specimenCount),
                     scope,
                     anchor,
                     attributes,
@@ -624,9 +579,32 @@ private class Builder(
                 scratch.directive(node, label(record), children, scope, anchor, attributes)
             }
 
+            MARKDOWN_CORE_KIND_METADATA -> {
+                scratch.metadata(node, scope, anchor, attributes).also { requireLeaf(children, kind) }
+            }
+
+            MARKDOWN_CORE_KIND_FOOTNOTE -> {
+                Footnote(scratch.id(node), children, scope, anchor, attributes)
+            }
+
+            MARKDOWN_CORE_KIND_SPECIMEN -> {
+                scratch.specimen(node, children, scope, anchor, attributes)
+            }
+
+            MARKDOWN_CORE_KIND_CITATION -> {
+                Citation(
+                    scratch.referent(node),
+                    nodes(record.prefixStart, record.prefixCount, "citation prefix"),
+                    nodes(record.suffixStart, record.suffixCount, "citation suffix"),
+                    scope,
+                    anchor,
+                    attributes,
+                ).also { requireLeaf(children, kind) }
+            }
+
             MARKDOWN_CORE_KIND_CITE -> {
                 requireLeaf(children, kind)
-                Cite(citations(record), scope, anchor, attributes)
+                Cite(typedNodes<Citation>(record.valueStart, record.valueCount), scope, anchor, attributes)
             }
 
             MARKDOWN_CORE_KIND_TABLE_CAPTION -> {
@@ -659,35 +637,12 @@ private class Builder(
         return nodes(record.titleStart, record.titleCount, "callout title")
     }
 
-    private fun footnotes(record: Record): kotlin.collections.List<Footnote> =
-        immutableList(record.valueCount) { offset ->
-            val footnote = footnoteRecords[record.valueStart + offset]
-            Footnote(
-                scratch.id(footnote.pointer),
-                nodes(footnote.contentStart, footnote.contentCount, "footnote content"),
-                markdown_core_footnote_scope(footnote.pointer).toScope(),
-            )
-        }
-
-    private fun specimens(record: Record): kotlin.collections.List<Specimen> =
-        immutableList(record.specimenCount) { offset ->
-            val specimen = specimenRecords[record.specimenStart + offset]
-            scratch.specimen(
-                specimen.pointer,
-                nodes(specimen.contentStart, specimen.contentCount, "specimen content"),
-                markdown_core_specimen_scope(specimen.pointer).toScope(),
-            )
-        }
-
-    private fun citations(record: Record): kotlin.collections.List<Citation> =
-        immutableList(record.valueCount) { offset ->
-            val citation = citationRecords[record.valueStart + offset]
-            Citation(
-                scratch.referent(citation.pointer),
-                nodes(citation.prefixStart, citation.prefixCount, "citation prefix"),
-                nodes(citation.suffixStart, citation.suffixCount, "citation suffix"),
-                markdown_core_citation_scope(citation.pointer).toScope(),
-            )
+    private inline fun <reified Node : Markup> typedNodes(
+        start: Int,
+        count: Int,
+    ): kotlin.collections.List<Node> =
+        immutableList(count) { offset ->
+            requireNotNull(built[start + offset] as? Node) { "invalid native owned node kind" }
         }
 
     private fun nodes(
@@ -1010,9 +965,13 @@ private class Scratch(
         return Dimensions(value.width, if (height.has_value) height.value.toInt() else null)
     }
 
-    fun metadata(node: CPointer<markdown_core_node>): Metadata? {
-        val metadata = markdown_core_node_document_metadata(node) ?: return null
-        return Metadata(
+    fun metadata(
+        metadata: CPointer<markdown_core_node>,
+        scope: Scope,
+        anchor: String?,
+        attributes: Attributes,
+    ): Metadata =
+        Metadata(
             name = metadataValue(markdown_core_metadata_name(metadata)),
             title = metadataValue(markdown_core_metadata_title(metadata)),
             subtitle = metadataValue(markdown_core_metadata_subtitle(metadata)),
@@ -1023,9 +982,10 @@ private class Scratch(
             `abstract` = metadataValue(markdown_core_metadata_abstract(metadata)),
             state = metadataValue(markdown_core_metadata_state(metadata)),
             comment = metadataValue(markdown_core_metadata_comment(metadata)),
-            scope = markdown_core_metadata_scope(metadata).toScope(),
+            scope = scope,
+            anchor = anchor,
+            attributes = attributes,
         )
-    }
 
     private fun metadataValue(record: CPointer<markdown_core_metadata_value>?): MetadataValue? {
         if (record == null) return null
@@ -1131,9 +1091,11 @@ private class Scratch(
 
     /** A branch's fields exist only in that branch, so only they are copied. */
     fun specimen(
-        pointer: CPointer<markdown_core_specimen>,
+        pointer: CPointer<markdown_core_node>,
         content: kotlin.collections.List<Markup>,
         scope: Scope,
+        anchor: String?,
+        attributes: Attributes,
     ): Specimen {
         require(
             markdown_core_specimen_properties(pointer, firstOptionalString.ptr, optionalLong.ptr),
@@ -1145,10 +1107,12 @@ private class Scratch(
             },
             content,
             scope,
+            anchor,
+            attributes,
         )
     }
 
-    fun referent(citation: CPointer<markdown_core_citation>): CitationReferent {
+    fun referent(citation: CPointer<markdown_core_node>): CitationReferent {
         require(markdown_core_citation_referent(citation, referent.ptr)) { "invalid citation" }
         return when (referent.kind) {
             MARKDOWN_CORE_REFERENT_BIB -> {
@@ -1177,7 +1141,7 @@ private class Scratch(
             else -> error("unsupported native bib mode ${referent.mode}")
         }
 
-    fun id(footnote: CPointer<markdown_core_footnote>): String {
+    fun id(footnote: CPointer<markdown_core_node>): String {
         require(markdown_core_footnote_id(footnote, firstString.ptr)) { "invalid footnote" }
         return firstString.string()
     }

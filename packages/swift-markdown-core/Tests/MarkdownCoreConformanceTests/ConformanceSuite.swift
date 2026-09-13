@@ -21,6 +21,8 @@ private typealias Comment = Testing.Comment
             "a <!-- b --> c\n\n<!-- block -->\n",
             "[[Note]] ![[#^block|]]\n",
             "Term\n: body\n",
+            "---\ntitle: Example\n---\n(@sample) Body\n",
+            ":plain :empty[]{} :attrs{#kept .a class=\"b a\" k=1 k=2}\n\n| none |\n| ---- |\n| cell |\n",
         ]
         let documents = try sources.map { try Document.parse($0) }
         let kinds = Set(documents.flatMap { dumpKinds($0.dump()) })
@@ -32,8 +34,8 @@ private typealias Comment = Testing.Comment
             "Code", "HTML", "Comment", "CrossLink", "CrossEmbedded", "Formula", "Emphasis", "Strong",
             "Strikethrough", "Mark", "Insertion", "Span", "Superscript", "Subscript", "DefinitionList", "Definition",
             "Link", "Embedded", "Directive",
-            "Cite",
-            "TableRow", "TableCell",
+            "Cite", "Citation", "Footnote", "Specimen", "Metadata",
+            "TableRow", "TableCell", "TableCaption",
         ]
         #expect(kinds == expected)
         #expect(documents.allSatisfy { $0.scope.start == Position(line: 1, column: 1) })
@@ -95,7 +97,7 @@ private typealias Comment = Testing.Comment
         for testCase in manifest.cases {
             let document = try Document.parse(testCase.source)
             // `Testing.Comment`, qualified: the package exports a `Comment` markup kind.
-            #expect(TreeDumper.dump(document) == testCase.expected, Testing.Comment(rawValue: testCase.name))
+            #expect(MarkupDumper.dump(document) == testCase.expected, Testing.Comment(rawValue: testCase.name))
             #expect(document.dump() == testCase.expected, Testing.Comment(rawValue: testCase.name))
         }
     }
@@ -112,15 +114,13 @@ private struct CanonicalCase: Decodable {
     let expected: String
 }
 
-/// The node lines of a dump: value lines (`Citation`, `Footnote`) and group
-/// lines are not kinds.
+/// Scoped lines identify Markup nodes; unscoped values and groups are excluded.
 private func dumpKinds(_ dump: String) -> [String] {
-    let names = dump.split(separator: "\n").compactMap { line -> String? in
+    dump.split(separator: "\n").compactMap { line -> String? in
         guard line.contains(" scope=") else { return nil }
         return line.trimmingCharacters(in: CharacterSet(charactersIn: "│ ├└─"))
             .split(separator: " ")
             .first
             .map(String.init)
     }
-    return names.filter { $0 != "Citation" && $0 != "Footnote" }
 }

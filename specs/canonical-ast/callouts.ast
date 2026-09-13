@@ -16,7 +16,7 @@ Document scope=1:1..10:26 anchor=null attributes={} children=2
 │   │   │   └── Text scope=1:48..1:50 anchor=null attributes={} literal="ref" children=0
 │   │   ├── Text scope=1:52..1:52 anchor=null attributes={} literal=" " children=0
 │   │   └── Cite scope=1:53..1:65 anchor=null attributes={} children=1
-│   │       └── Citation scope=1:55..1:64 referent=footnote(id="inline-1") children=0
+│   │       └── Citation scope=1:55..1:64 anchor=null attributes={} referent=footnote(id="inline-1") children=0
 │   │           ├── CitationPrefix children=0
 │   │           └── CitationSuffix children=0
 │   ├── Paragraph scope=2:3..2:13 anchor="body" attributes={} children=1
@@ -27,5 +27,5 @@ Document scope=1:1..10:26 anchor=null attributes={} children=2
 │       └── Paragraph scope=4:5..4:10 anchor=null attributes={} children=1
 │           └── Text scope=4:5..4:10 anchor=null attributes={} literal="nested" children=0
 ├── Callout scope=8:1..8:9 anchor=null attributes={} variant="note" collapsed=null children=0
-└── Footnote scope=1:53..1:65 id="inline-1" children=1
+└── Footnote scope=1:53..1:65 anchor=null attributes={} id="inline-1" children=1
     └── Text scope=1:55..1:64 anchor=null attributes={} literal="title note" children=0

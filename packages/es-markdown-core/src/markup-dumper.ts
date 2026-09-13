@@ -1,13 +1,10 @@
-import type { Attributes, Dimensions, Metadata, MetadataValue } from "./values.js";
-import type { Citation } from "./model/cite.js";
-import type { Footnote } from "./model/footnote.js";
+import type { Attributes, Dimensions, MetadataValue } from "./values.js";
 import type { Markup } from "./model/markup.js";
-import type { Specimen } from "./model/specimen.js";
 import type { CitationReferent, Destination, OrderedListDelimiter, OrderedListVariant, Scope } from "./values.js";
 import { visit, type Visitor } from "./visitor.js";
 
 /** Produces the canonical debug tree for immutable Markdown markup. */
-export class TreeDumper {
+export class MarkupDumper {
     private constructor() {}
 
     /** Returns the canonical debug dump for `root` and its owned markup. */
@@ -31,10 +28,10 @@ class State {
             this.nested(
                 node.content.length + node.footnotes.length + node.specimens.length + (node.metadata === null ? 0 : 1),
                 () => {
-                    if (node.metadata !== null) this.metadata(node.metadata);
+                    if (node.metadata !== null) this.dump(node.metadata);
                     for (const child of node.content) this.dump(child);
-                    for (const footnote of node.footnotes) this.footnote(footnote);
-                    for (const specimen of node.specimens) this.specimen(specimen);
+                    for (const footnote of node.footnotes) this.dump(footnote);
+                    for (const specimen of node.specimens) this.dump(specimen);
                 }
             );
         },
@@ -182,7 +179,59 @@ class State {
             // own `children` counts the items.
             this.line("Cite", node, [], node.citations.length);
             this.nested(node.citations.length, () => {
-                for (const item of node.citations) this.citation(item);
+                for (const item of node.citations) this.dump(item);
+            });
+        },
+        citation: (node) => {
+            this.line("Citation", node, [`referent=${referent(node.referent)}`], 0);
+            this.nested(2, () => {
+                this.group("CitationPrefix", node.prefix.length);
+                this.nested(node.prefix.length, () => {
+                    for (const child of node.prefix) this.dump(child);
+                });
+                this.group("CitationSuffix", node.suffix.length);
+                this.nested(node.suffix.length, () => {
+                    for (const child of node.suffix) this.dump(child);
+                });
+            });
+        },
+
+        metadata: (node) => {
+            this.line(
+                "Metadata",
+                node,
+                [
+                    `name=${node.name === null ? "null" : metadataValue(node.name)}`,
+                    `title=${node.title === null ? "null" : metadataValue(node.title)}`,
+                    `subtitle=${node.subtitle === null ? "null" : metadataValue(node.subtitle)}`,
+                    `time=${node.time === null ? "null" : metadataValue(node.time)}`,
+                    `date=${node.date === null ? "null" : metadataValue(node.date)}`,
+                    `authors=${node.authors === null ? "null" : metadataValue(node.authors)}`,
+                    `keywords=${node.keywords === null ? "null" : metadataValue(node.keywords)}`,
+                    `abstract=${node.abstract === null ? "null" : metadataValue(node.abstract)}`,
+                    `state=${node.state === null ? "null" : metadataValue(node.state)}`,
+                    `comment=${node.comment === null ? "null" : metadataValue(node.comment)}`
+                ],
+                0
+            );
+        },
+
+        footnote: (node) => {
+            this.line("Footnote", node, [`id=${escaped(node.id)}`], node.content.length);
+            this.nested(node.content.length, () => {
+                for (const child of node.content) this.dump(child);
+            });
+        },
+
+        specimen: (node) => {
+            this.line(
+                "Specimen",
+                node,
+                [`id=${node.id === null ? "null" : escaped(node.id)}`, `start=${node.start ?? "null"}`],
+                node.content.length
+            );
+            this.nested(node.content.length, () => {
+                for (const child of node.content) this.dump(child);
             });
         }
     };
@@ -193,59 +242,6 @@ class State {
 
     result(): string {
         return `${this.lines.join("\n")}\n`;
-    }
-
-    private citation(item: Citation): void {
-        this.value("Citation", item.scope, [`referent=${referent(item.referent)}`], 0);
-        this.nested(2, () => {
-            this.group("CitationPrefix", item.prefix.length);
-            this.nested(item.prefix.length, () => {
-                for (const child of item.prefix) this.dump(child);
-            });
-            this.group("CitationSuffix", item.suffix.length);
-            this.nested(item.suffix.length, () => {
-                for (const child of item.suffix) this.dump(child);
-            });
-        });
-    }
-
-    private metadata(value: Metadata): void {
-        this.value(
-            "Metadata",
-            value.scope,
-            [
-                `name=${value.name === null ? "null" : metadataValue(value.name)}`,
-                `title=${value.title === null ? "null" : metadataValue(value.title)}`,
-                `subtitle=${value.subtitle === null ? "null" : metadataValue(value.subtitle)}`,
-                `time=${value.time === null ? "null" : metadataValue(value.time)}`,
-                `date=${value.date === null ? "null" : metadataValue(value.date)}`,
-                `authors=${value.authors === null ? "null" : metadataValue(value.authors)}`,
-                `keywords=${value.keywords === null ? "null" : metadataValue(value.keywords)}`,
-                `abstract=${value.abstract === null ? "null" : metadataValue(value.abstract)}`,
-                `state=${value.state === null ? "null" : metadataValue(value.state)}`,
-                `comment=${value.comment === null ? "null" : metadataValue(value.comment)}`
-            ],
-            0
-        );
-    }
-
-    private footnote(value: Footnote): void {
-        this.value("Footnote", value.scope, [`id=${escaped(value.id)}`], value.content.length);
-        this.nested(value.content.length, () => {
-            for (const child of value.content) this.dump(child);
-        });
-    }
-
-    private specimen(value: Specimen): void {
-        this.value(
-            "Specimen",
-            value.scope,
-            [`id=${value.id === null ? "null" : escaped(value.id)}`, `start=${value.start ?? "null"}`],
-            value.content.length
-        );
-        this.nested(value.content.length, () => {
-            for (const child of value.content) this.dump(child);
-        });
     }
 
     private container(kind: string, node: Markup, fields: readonly string[], children: readonly Markup[]): void {

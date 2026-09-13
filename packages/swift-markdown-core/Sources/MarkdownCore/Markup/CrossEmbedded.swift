@@ -16,7 +16,9 @@ public struct CrossEmbedded: Markup {
     public let dimensions: Dimensions?
 
     /// Dispatches to the visitor's CrossEmbedded case.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
+    public func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupWalkPhase) -> V.Result {
+        visitor.visit(self, phase: phase)
+    }
 }
 
 extension CrossEmbedded {

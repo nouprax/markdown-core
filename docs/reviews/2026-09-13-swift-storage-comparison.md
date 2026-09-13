@@ -35,8 +35,8 @@ reentering records and creating recursive ownership. Names and per-type access
 code can be improved; those readability concerns alone do not invalidate the
 ownership model.
 
-Collections are stored directly in their owning node's `Fields`: ordinary
-relations use `[Int]`, and `Definition.content` uses `[[Int]]`. `MarkupGroups`
+Collections are stored directly in their owning node's `Fields`: typed ordinary
+relations wrap `[Int]`, and `Definition.content` wraps `[[Int]]`. `MarkupGroups`
 returns inner `MarkupCollection` views on demand. Obtaining views and accessing
 subscripts are both O(1), with no per-group materialization. The former design
 that stored body collections as separate records has been removed; groups no
@@ -44,13 +44,13 @@ longer enter the storage enum or construction queue.
 
 ## Field queries and node identity
 
-`MarkupStore` owns the records and centralizes typed field queries, node
-projection, and collection construction. All 29 container or scoped value types
-declare their fields through `@Stored var fields: Fields`; node types no longer
-access records directly, match the storage enum, or repeat error checks.
-`Stored` is an ordinary generic property wrapper containing the store and a
-private index. It introduces no payload copy, cache, additional heap object, or
-macro dependency. `$fields` provides the store needed to query relations.
+`MarkupStore` owns the records and centralizes typed field queries and node
+projection. All 29 node types with Markup relations declare
+`let fields: Stored<Fields>`; node types do not access records directly, match
+the storage enum, or repeat error checks. `Stored` is a generic field view
+containing the store and a private index. Ordinary values and typed relations
+both use `fields.member`; the view resolves relations through `StoredRelation`.
+It introduces no payload cache, additional heap object, or macro dependency.
 
 The index identifies a particular occurrence within a store. One store can
 contain multiple Paragraph nodes, and different stores can hold different nodes
@@ -58,7 +58,8 @@ at the same position, so a type alone cannot identify the correct fields.
 Location details are centralized in the reference implementation; semantic node
 types do not depend on array indices.
 
-The comparison used the distributed accessors at `72f14045` as its baseline,
+The comparison below measured the earlier property-wrapper version of centralized
+queries, using the distributed accessors at `72f14045` as its baseline,
 with the same optimized C objects and Swift `-O -whole-module-optimization`
 builds on arm64 with Apple Swift 6.3.3:
 

@@ -41,6 +41,6 @@ Document scope=1:1..19:6 anchor=null attributes={} children=9
 ├── Paragraph scope=19:1..19:6 anchor=null attributes={} children=1
 │   └── Link scope=19:1..19:6 anchor=null attributes={} dest=url("#ab") title=null children=1
 │       └── Text scope=19:2..19:5 anchor=null attributes={} literal="A]B" children=0
-└── Footnote scope=13:1..14:0 id="note" children=1
+└── Footnote scope=13:1..14:0 anchor=null attributes={} id="note" children=1
     └── Heading scope=13:10..13:18 anchor="chapter-3" attributes={} level=1 children=1
         └── Text scope=13:12..13:18 anchor=null attributes={} literal="Chapter" children=0

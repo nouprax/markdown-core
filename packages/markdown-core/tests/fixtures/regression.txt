@@ -287,7 +287,7 @@ Document scope=1:1..7:16 anchor=null attributes={} children=2
 ├── Paragraph scope=1:1..1:29 anchor=null attributes={} children=2
 │   ├── Text scope=1:1..1:25 anchor=null attributes={} literal="A footnote in a paragraph" children=0
 │   └── Cite scope=1:26..1:29 anchor=null attributes={} children=1
-│       └── Citation scope=1:27..1:28 referent=footnote(id="1") children=0
+│       └── Citation scope=1:27..1:28 anchor=null attributes={} referent=footnote(id="1") children=0
 │           ├── CitationPrefix children=0
 │           └── CitationSuffix children=0
 ├── Table scope=3:1..5:23 anchor=null attributes={} columns=[none:null,none:null] children=2
@@ -302,13 +302,13 @@ Document scope=1:1..7:16 anchor=null attributes={} children=2
 │   │       ├── TableCell scope=5:2..5:12 anchor=null attributes={} rowspan=1 colspan=1 children=2
 │   │       │   ├── Text scope=5:3..5:7 anchor=null attributes={} literal="foot " children=0
 │   │       │   └── Cite scope=5:8..5:11 anchor=null attributes={} children=1
-│   │       │       └── Citation scope=5:9..5:10 referent=footnote(id="1") children=0
+│   │       │       └── Citation scope=5:9..5:10 anchor=null attributes={} referent=footnote(id="1") children=0
 │   │       │           ├── CitationPrefix children=0
 │   │       │           └── CitationSuffix children=0
 │   │       └── TableCell scope=5:14..5:22 anchor=null attributes={} rowspan=1 colspan=1 children=1
 │   │           └── Text scope=5:15..5:18 anchor=null attributes={} literal="note" children=0
 │   └── TableFoot children=0
-└── Footnote scope=7:1..7:16 id="1" children=1
+└── Footnote scope=7:1..7:16 anchor=null attributes={} id="1" children=1
     └── Paragraph scope=7:7..7:16 anchor=null attributes={} children=1
         └── Text scope=7:7..7:16 anchor=null attributes={} literal="a footnote" children=0
 ````````````````````````````````
@@ -415,17 +415,17 @@ Document scope=1:1..5:96 anchor=null attributes={} children=1
 ├── Paragraph scope=1:1..1:48 anchor=null attributes={} children=2
 │   ├── Text scope=1:1..1:37 anchor=null attributes={} literal="This is some text. It has a citation." children=0
 │   └── Cite scope=1:38..1:48 anchor=null attributes={} children=1
-│       └── Citation scope=1:39..1:47 referent=footnote(id="citation") children=0
+│       └── Citation scope=1:39..1:47 anchor=null attributes={} referent=footnote(id="citation") children=0
 │           ├── CitationPrefix children=0
 │           └── CitationSuffix children=0
-├── Footnote scope=3:1..4:0 id="another-citation" children=1
+├── Footnote scope=3:1..4:0 anchor=null attributes={} id="another-citation" children=1
 │   └── Paragraph scope=3:22..3:40 anchor=null attributes={} children=1
 │       └── Text scope=3:22..3:40 anchor=null attributes={} literal="My second citation." children=0
-└── Footnote scope=5:1..5:96 id="citation" children=1
+└── Footnote scope=5:1..5:96 anchor=null attributes={} id="citation" children=1
     └── Paragraph scope=5:14..5:96 anchor=null attributes={} children=2
         ├── Text scope=5:14..5:77 anchor=null attributes={} literal="This is a long winded parapgraph that also has another citation." children=0
         └── Cite scope=5:78..5:96 anchor=null attributes={} children=1
-            └── Citation scope=5:79..5:95 referent=footnote(id="another-citation") children=0
+            └── Citation scope=5:79..5:95 anchor=null attributes={} referent=footnote(id="another-citation") children=0
                 ├── CitationPrefix children=0
                 └── CitationSuffix children=0
 ````````````````````````````````
@@ -443,18 +443,18 @@ Document scope=1:1..5:22 anchor=null attributes={} children=1
 ├── Paragraph scope=1:1..1:150 anchor=null attributes={} children=4
 │   ├── Text scope=1:1..1:84 anchor=null attributes={} literal="This is some text. It has two footnotes references, side-by-side without any spaces," children=0
 │   ├── Cite scope=1:85..1:96 anchor=null attributes={} children=1
-│   │   └── Citation scope=1:86..1:95 referent=footnote(id="footnote1") children=0
+│   │   └── Citation scope=1:86..1:95 anchor=null attributes={} referent=footnote(id="footnote1") children=0
 │   │       ├── CitationPrefix children=0
 │   │       └── CitationSuffix children=0
 │   ├── Cite scope=1:97..1:108 anchor=null attributes={} children=1
-│   │   └── Citation scope=1:98..1:107 referent=footnote(id="footnote2") children=0
+│   │   └── Citation scope=1:98..1:107 anchor=null attributes={} referent=footnote(id="footnote2") children=0
 │   │       ├── CitationPrefix children=0
 │   │       └── CitationSuffix children=0
 │   └── Text scope=1:109..1:150 anchor=null attributes={} literal=" which are definitely not link references." children=0
-├── Footnote scope=3:1..4:0 id="footnote1" children=1
+├── Footnote scope=3:1..4:0 anchor=null attributes={} id="footnote1" children=1
 │   └── Paragraph scope=3:15..3:20 anchor=null attributes={} children=1
 │       └── Text scope=3:15..3:20 anchor=null attributes={} literal="Hello." children=0
-└── Footnote scope=5:1..5:22 id="footnote2" children=1
+└── Footnote scope=5:1..5:22 anchor=null attributes={} id="footnote2" children=1
     └── Paragraph scope=5:15..5:22 anchor=null attributes={} children=1
         └── Text scope=5:15..5:22 anchor=null attributes={} literal="Goodbye." children=0
 ````````````````````````````````
@@ -476,7 +476,7 @@ Document scope=1:1..7:39 anchor=null attributes={} children=2
 │   ├── Code scope=1:178..1:180 anchor=null attributes={} literal="w" children=0
 │   ├── Text scope=1:181..1:181 anchor=null attributes={} literal="." children=0
 │   └── Cite scope=1:182..1:196 anchor=null attributes={} children=1
-│       └── Citation scope=1:183..1:195 referent=footnote(id="widely-cited") children=0
+│       └── Citation scope=1:183..1:195 anchor=null attributes={} referent=footnote(id="widely-cited") children=0
 │           ├── CitationPrefix children=0
 │           └── CitationSuffix children=0
 ├── Paragraph scope=3:1..3:155 anchor=null attributes={} children=4
@@ -484,13 +484,13 @@ Document scope=1:1..7:39 anchor=null attributes={} children=2
 │   ├── Code scope=3:102..3:104 anchor=null attributes={} literal="_" children=0
 │   ├── Text scope=3:105..3:106 anchor=null attributes={} literal=")." children=0
 │   └── Cite scope=3:107..3:155 anchor=null attributes={} children=1
-│       └── Citation scope=3:108..3:154 referent=footnote(id="sphinx-of-black-quartz_judge-my-vow-0123456789") children=0
+│       └── Citation scope=3:108..3:154 anchor=null attributes={} referent=footnote(id="sphinx-of-black-quartz_judge-my-vow-0123456789") children=0
 │           ├── CitationPrefix children=0
 │           └── CitationSuffix children=0
-├── Footnote scope=5:1..6:0 id="sphinx-of-black-quartz_judge-my-vow-0123456789" children=1
+├── Footnote scope=5:1..6:0 anchor=null attributes={} id="sphinx-of-black-quartz_judge-my-vow-0123456789" children=1
 │   └── Paragraph scope=5:52..5:64 anchor=null attributes={} children=1
 │       └── Text scope=5:52..5:64 anchor=null attributes={} literal="so does this." children=0
-└── Footnote scope=7:1..7:39 id="widely-cited" children=1
+└── Footnote scope=7:1..7:39 anchor=null attributes={} id="widely-cited" children=1
     └── Paragraph scope=7:18..7:39 anchor=null attributes={} children=1
         └── Text scope=7:18..7:39 anchor=null attributes={} literal="this renders properly." children=0
 ````````````````````````````````
@@ -540,8 +540,8 @@ Hello world
 Document scope=1:1..4:10 anchor=null attributes={} children=1
 ├── Paragraph scope=1:1..1:11 anchor=null attributes={} children=1
 │   └── Text scope=1:1..1:11 anchor=null attributes={} literal="Hello world" children=0
-├── Footnote scope=4:1..4:10 id="a" children=0
-└── Footnote scope=4:6..4:10 id="b" children=0
+├── Footnote scope=4:1..4:10 anchor=null attributes={} id="a" children=0
+└── Footnote scope=4:6..4:10 anchor=null attributes={} id="b" children=0
 ````````````````````````````````
 
 Issue #424 - emphasis before links
@@ -585,7 +585,7 @@ x [&Hat;abcdefghij] y
 Document scope=1:1..3:10 anchor=null attributes={} children=1
 ├── Paragraph scope=1:1..1:21 anchor=null attributes={} children=1
 │   └── Text scope=1:1..1:21 anchor=null attributes={} literal="x [^abcdefghij] y" children=0
-└── Footnote scope=3:1..3:10 id="z" children=1
+└── Footnote scope=3:1..3:10 anchor=null attributes={} id="z" children=1
     └── Paragraph scope=3:7..3:10 anchor=null attributes={} children=1
         └── Text scope=3:7..3:10 anchor=null attributes={} literal="note" children=0
 ````````````````````````````````
@@ -636,7 +636,7 @@ Document scope=1:1..13:10 anchor=null attributes={} children=6
 ├── Paragraph scope=1:1..1:7 anchor=null attributes={} children=3
 │   ├── Text scope=1:1..1:1 anchor=null attributes={} literal="a" children=0
 │   ├── Cite scope=1:2..1:5 anchor=null attributes={} children=1
-│   │   └── Citation scope=1:3..1:4 referent=footnote(id="n") children=0
+│   │   └── Citation scope=1:3..1:4 anchor=null attributes={} referent=footnote(id="n") children=0
 │   │       ├── CitationPrefix children=0
 │   │       └── CitationSuffix children=0
 │   └── Text scope=1:6..1:7 anchor=null attributes={} literal=" b" children=0
@@ -650,7 +650,7 @@ Document scope=1:1..13:10 anchor=null attributes={} children=6
 │   └── Text scope=9:1..9:12 anchor=null attributes={} literal="a[^n] b" children=0
 ├── Paragraph scope=11:1..11:11 anchor=null attributes={} children=1
 │   └── Text scope=11:1..11:11 anchor=null attributes={} literal="a[^n] b" children=0
-└── Footnote scope=13:1..13:10 id="n" children=1
+└── Footnote scope=13:1..13:10 anchor=null attributes={} id="n" children=1
     └── Paragraph scope=13:7..13:10 anchor=null attributes={} children=1
         └── Text scope=13:7..13:10 anchor=null attributes={} literal="note" children=0
 ````````````````````````````````
@@ -668,14 +668,14 @@ Document scope=1:1..5:30 anchor=null attributes={} children=1
 ├── Paragraph scope=1:1..1:11 anchor=null attributes={} children=3
 │   ├── Text scope=1:1..1:4 anchor=null attributes={} literal="Ref " children=0
 │   ├── Cite scope=1:5..1:10 anchor=null attributes={} children=1
-│   │   └── Citation scope=1:6..1:9 referent=footnote(id="dup") children=0
+│   │   └── Citation scope=1:6..1:9 anchor=null attributes={} referent=footnote(id="dup") children=0
 │   │       ├── CitationPrefix children=0
 │   │       └── CitationSuffix children=0
 │   └── Text scope=1:11..1:11 anchor=null attributes={} literal="." children=0
-├── Footnote scope=3:1..5:30 id="dup" children=1
+├── Footnote scope=3:1..5:30 anchor=null attributes={} id="dup" children=1
 │   └── Paragraph scope=3:9..3:25 anchor=null attributes={} children=1
 │       └── Text scope=3:9..3:25 anchor=null attributes={} literal="OUTER opens first" children=0
-└── Footnote scope=5:5..5:30 id="dup" children=1
+└── Footnote scope=5:5..5:30 anchor=null attributes={} id="dup" children=1
     └── Paragraph scope=5:13..5:30 anchor=null attributes={} children=1
         └── Text scope=5:13..5:30 anchor=null attributes={} literal="INNER closes first" children=0
 ````````````````````````````````

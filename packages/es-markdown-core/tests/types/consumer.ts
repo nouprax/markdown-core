@@ -10,7 +10,7 @@ import {
     type CrossLink,
     type CrossEmbedded,
     type Dimensions,
-    TreeDumper,
+    MarkupDumper,
     visit,
     walk,
     type Citation,
@@ -23,18 +23,22 @@ import {
     type TableCell,
     type TableRow,
     type Visitor,
-    type WalkingVisitor,
-    type WalkPhase
+    type MarkupWalkPhase
 } from "@nouprax/es-markdown-core";
 
 const document: Document = Document.parse("# typed");
 // @ts-expect-error the dialect has no switches: parse takes the source and nothing else
 Document.parse("# typed", { tables: true });
 const dump: string = document.dump();
-const explicitDump: string = TreeDumper.dump(document);
+const explicitDump: string = MarkupDumper.dump(document);
 void dump;
 void explicitDump;
 const visitor: Visitor<string> = {
+    citation: (node) => node.kind,
+    footnote: (node) => node.kind,
+    specimen: (node) => node.kind,
+    metadata: (node) => node.kind,
+
     document: (node) => node.kind,
     callout: (node) => node.kind,
     paragraph: (node) => node.kind,
@@ -93,7 +97,7 @@ const result: string = visit(document, visitor);
 const explicit: string = visit<string>(document, visitor);
 void [result, explicit];
 // @ts-expect-error a document cannot be passed to the Embedded callback
-visitor.embedded(document);
+visitor.embedded(document, "entering");
 const mismatchedVisitor: Visitor<string> = {
     ...visitor,
     // @ts-expect-error the Embedded handler cannot accept only Headings
@@ -104,38 +108,84 @@ const { embedded: omitted, ...remaining } = visitor;
 // @ts-expect-error even one missing kind makes a visitor incomplete
 const missingEmbedded: Visitor<string> = remaining;
 void [omitted, missingEmbedded];
-const walkingVisitor: WalkingVisitor = {
-    ...visitor,
+const walkingVisitor: Visitor<undefined> = {
+    document: () => undefined,
+    callout: () => undefined,
+    paragraph: () => undefined,
+    thematicBreak: () => undefined,
+    list: () => undefined,
+    listItem: () => undefined,
+    codeBlock: () => undefined,
+    htmlBlock: () => undefined,
+    formulaBlock: () => undefined,
+    table: () => undefined,
+    tableCaption: () => undefined,
+    tableRow: () => undefined,
+    tableCell: () => undefined,
+    directiveBlock: () => undefined,
+    directiveLabel: () => undefined,
+    text: () => undefined,
+    softBreak: () => undefined,
+    lineBreak: () => undefined,
+    code: () => undefined,
+    html: () => undefined,
+    crossLink: () => undefined,
+    crossEmbedded: () => undefined,
+    comment: () => undefined,
+    formula: () => undefined,
+    emphasis: () => undefined,
+    strong: () => undefined,
+    strikethrough: () => undefined,
+    mark: () => undefined,
+    insertion: () => undefined,
+    span: () => undefined,
+    superscript: () => undefined,
+    subscript: () => undefined,
+    link: () => undefined,
+    embedded: () => undefined,
+    directive: () => undefined,
+    cite: () => undefined,
+    definitionList: () => undefined,
+    definition: () => undefined,
+    metadata: () => undefined,
     heading(heading, phase) {
         const inferred: Heading = heading;
-        const inferredPhase: WalkPhase = phase;
+        const inferredPhase: MarkupWalkPhase = phase;
         void [inferred.level, inferredPhase];
     },
-    // The scoped values are not `Markup`: they arrive through their own
-    // callbacks and never through a kind case.
+    // Owned elements use the same discriminated Markup union.
     citation(citation, phase) {
         const inferred: Citation = citation;
         const referent: CitationReferent = inferred.referent;
-        const inferredPhase: WalkPhase = phase;
-        // @ts-expect-error a Citation remains a scoped value without a kind
-        void citation.kind;
+        const inferredPhase: MarkupWalkPhase = phase;
+        const node: Markup = citation;
+        const kind: "citation" = node.kind;
+        void kind;
         void [referent, inferredPhase];
     },
     specimen(specimen, phase) {
         const inferred: Specimen = specimen;
-        const inferredPhase: WalkPhase = phase;
+        const inferredPhase: MarkupWalkPhase = phase;
         void [inferred, inferredPhase];
     },
     footnote(footnote, phase) {
         const inferred: Footnote = footnote;
-        const inferredPhase: WalkPhase = phase;
+        const inferredPhase: MarkupWalkPhase = phase;
         void [inferred.id, inferredPhase];
     }
 };
+const oneEvent: undefined = visit(document, walkingVisitor, "exiting");
+void oneEvent;
 walk(document, walkingVisitor);
+// @ts-expect-error automatic traversal cannot discard a value-producing visitor's results
+walk(document, visitor);
+// @ts-expect-error every callback is a no-result callback, even in a mixed object
+walk(document, { ...walkingVisitor, text: () => 1 });
+// @ts-expect-error the phase domain is closed
+visit(document, visitor, "unknown");
 const { citation: omittedCitation, ...remainingWalking } = walkingVisitor;
-// @ts-expect-error value callbacks are required as well as Markup callbacks
-const missingCitation: WalkingVisitor = remainingWalking;
+// @ts-expect-error every Markup callback is required
+const missingCitation: Visitor<undefined> = remainingWalking;
 void [omittedCitation, missingCitation];
 // @ts-expect-error recursively readonly content cannot be replaced
 document.content[0] = document;
@@ -159,8 +209,8 @@ const incompleteVisitor: Visitor<string> = {
 };
 void incompleteVisitor;
 
-// @ts-expect-error WalkingVisitor is exhaustive and requires one method per Markup kind
-const incompleteWalkingVisitor: WalkingVisitor = {
+// @ts-expect-error Visitor<undefined> is exhaustive and requires one method per Markup kind
+const incompleteWalkingVisitor: Visitor<undefined> = {
     document: (node, phase) => {
         void node;
         void phase;
@@ -176,6 +226,12 @@ const scalar: MetadataScalar = { kind: "number", value: "9007199254740993" };
 const listItem: MetadataListItem = { kind: "text", value: "" };
 const metadataValue: MetadataValue = { kind: "scalar", value: scalar };
 const metadata: Metadata = {
+    kind: "metadata",
+    anchor: null,
+    attributes: empty,
+    dump() {
+        return MarkupDumper.dump(this);
+    },
     name: metadataValue,
     title: null,
     subtitle: null,

@@ -9,11 +9,11 @@ public struct Heading: Markup {
         let scope: Scope
         let anchor: String?
         let attributes: Attributes
-        let content: [Int]
+        let content: MarkupReferences<any Markup>
         let level: Int32
     }
 
-    @Stored var fields: Fields
+    let fields: Stored<Fields>
 
     /// Where it is. See ``Scope`` — boundaries, not a byte range.
     public var scope: Scope { fields.scope }
@@ -22,12 +22,14 @@ public struct Heading: Markup {
     /// Ordered classes and records, including duplicates.
     public var attributes: Attributes { fields.attributes }
     /// The heading's inline content, its `#` markers excluded.
-    public var content: MarkupCollection<any Markup> { $fields.collection(fields.content) }
+    public var content: MarkupCollection<any Markup> { fields.content }
     /// 1 through 6. A `#######` line is not a heading at all.
     public var level: Int32 { fields.level }
 
     /// Dispatches to the visitor's `Heading` case.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
+    public func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupWalkPhase) -> V.Result {
+        visitor.visit(self, phase: phase)
+    }
 }
 
 extension Heading.Fields {
@@ -38,7 +40,7 @@ extension Heading.Fields {
             scope: Scope(from: markdown_core_node_scope(node)),
             anchor: markdown_core_node_anchor(node).string,
             attributes: Attributes(from: node),
-            content: content,
+            content: .init(indices: content),
             level: level
         )
     }

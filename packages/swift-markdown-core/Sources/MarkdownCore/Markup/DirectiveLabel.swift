@@ -7,10 +7,10 @@ public struct DirectiveLabel: Markup {
         let scope: Scope
         let anchor: String?
         let attributes: Attributes
-        let content: [Int]
+        let content: MarkupReferences<any Markup>
     }
 
-    @Stored var fields: Fields
+    let fields: Stored<Fields>
 
     /// Where it is, INCLUDING its brackets — which is what makes a label the
     /// source wrote empty still a place. See ``Scope``.
@@ -20,10 +20,12 @@ public struct DirectiveLabel: Markup {
     /// Ordered classes and records, including duplicates.
     public var attributes: Attributes { fields.attributes }
     /// The label's inline content.
-    public var content: MarkupCollection<any Markup> { $fields.collection(fields.content) }
+    public var content: MarkupCollection<any Markup> { fields.content }
 
     /// Dispatches to the visitor's `DirectiveLabel` case.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
+    public func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupWalkPhase) -> V.Result {
+        visitor.visit(self, phase: phase)
+    }
 }
 
 extension DirectiveLabel.Fields {
@@ -32,7 +34,7 @@ extension DirectiveLabel.Fields {
             scope: Scope(from: markdown_core_node_scope(node)),
             anchor: markdown_core_node_anchor(node).string,
             attributes: Attributes(from: node),
-            content: content
+            content: .init(indices: content)
         )
     }
 }

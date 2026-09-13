@@ -29,5 +29,4 @@ import Testing
         #expect(empty.title == nil)
         #expect(empty.collapsed == nil)
     }
-
 }

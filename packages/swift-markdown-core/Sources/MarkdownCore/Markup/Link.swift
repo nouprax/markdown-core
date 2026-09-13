@@ -10,12 +10,12 @@ public struct Link: Markup {
         let scope: Scope
         let anchor: String?
         let attributes: Attributes
-        let content: [Int]
+        let content: MarkupReferences<any Markup>
         let dest: Destination
         let title: String?
     }
 
-    @Stored var fields: Fields
+    let fields: Stored<Fields>
 
     /// Where it is, brackets and parentheses included. See ``Scope``.
     public var scope: Scope { fields.scope }
@@ -24,7 +24,7 @@ public struct Link: Markup {
     /// Ordered classes and records, including duplicates.
     public var attributes: Attributes { fields.attributes }
     /// The link text, as inline content.
-    public var content: MarkupCollection<any Markup> { $fields.collection(fields.content) }
+    public var content: MarkupCollection<any Markup> { fields.content }
     /// Required: `[a]()` and `[a](<>)` wrote a destination and wrote nothing
     /// in it, so they answer `.url("")`; a reference occurrence answers the
     /// destination its definition stated.
@@ -33,7 +33,9 @@ public struct Link: Markup {
     public var title: String? { fields.title }
 
     /// Dispatches to the visitor's `Link` case.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
+    public func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupWalkPhase) -> V.Result {
+        visitor.visit(self, phase: phase)
+    }
 }
 
 extension Link.Fields {
@@ -44,7 +46,7 @@ extension Link.Fields {
             anchor: markdown_core_attribute_value_anchor(markdown_core_node_primary_attributes(node)).string
                 ?? resource.anchor,
             attributes: Attributes(from: node).inheriting(resource.attributes),
-            content: content,
+            content: .init(indices: content),
             dest: resource.dest,
             title: resource.title
         )

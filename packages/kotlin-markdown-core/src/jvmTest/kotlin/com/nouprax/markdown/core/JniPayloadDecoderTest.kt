@@ -199,7 +199,11 @@ class JniPayloadDecoderTest {
                 0,
                 0,
                 1.toByte(),
+                43.toByte(),
                 *scope(),
+                -1,
+                0,
+                0,
                 1.toByte(), // name: explicit null
                 1.toByte(),
                 0.toByte(),
@@ -290,7 +294,7 @@ class JniPayloadDecoderTest {
         assertTrue(document.dump().contains("subtitle=scalar(number(\"9007199254740993\"))"))
         val visitor = RecordingWalkingVisitor()
         document.walk(visitor)
-        assertTrue(visitor.events.none { it.contains("Metadata") })
+        assertEquals(listOf("entering:Document", "entering:Metadata", "exiting:Metadata"), visitor.events.take(3))
         assertFailsWith<IllegalStateException> { JniPayloadDecoder.decode(payload(scalarKind = 9)) }
         assertFailsWith<IllegalArgumentException> { JniPayloadDecoder.decode(payload(width = 0)) }
         assertFailsWith<IllegalArgumentException> { JniPayloadDecoder.decode(payload(height = 0)) }
@@ -416,28 +420,40 @@ class JniPayloadDecoderTest {
                 0,
                 0, // anchor and attributes
                 1, // cite
+                40.toByte(),
                 1,
                 2,
                 1,
                 7,
+                -1,
+                0,
+                0,
                 3.toByte(),
                 6,
                 "étude",
                 0,
                 0, // specimen referent, empty affixes
                 1,
+                41.toByte(),
                 3,
                 1,
                 3,
                 8,
+                -1,
+                0,
+                0,
                 1,
                 "n",
                 0, // one footnote, empty body
                 2, // specimen definitions
+                42.toByte(),
                 5,
                 1,
                 5,
                 8,
+                -1,
+                0,
+                0,
                 6,
                 "étude",
                 5,
@@ -463,10 +479,14 @@ class JniPayloadDecoderTest {
                 0, // anchor and attributes
                 4,
                 "body",
+                42.toByte(),
                 7,
                 1,
                 7,
                 8,
+                -1,
+                0,
+                0,
                 -1,
                 0,
                 0,
@@ -491,8 +511,14 @@ class JniPayloadDecoderTest {
                 ).content.single() as Text
             ).literal,
         )
-        assertTrue(document.dump().contains("Specimen scope=5:1..5:8 id=\"étude\" start=5 children=1"))
-        assertTrue(document.dump().contains("Specimen scope=7:1..7:8 id=null start=null children=0"))
+        assertTrue(
+            document.dump().contains(
+                "Specimen scope=5:1..5:8 anchor=null attributes={} id=\"étude\" start=5 children=1",
+            ),
+        )
+        assertTrue(
+            document.dump().contains("Specimen scope=7:1..7:8 anchor=null attributes={} id=null start=null children=0"),
+        )
         val visitor = RecordingWalkingVisitor()
         document.walk(visitor)
         assertEquals(2, visitor.events.count { it == "entering:Specimen" })
@@ -669,17 +695,17 @@ class JniPayloadDecoderTest {
         )
         val events = mutableListOf<String>()
         callout.walk(
-            object : WalkingVisitor by RecordingWalkingVisitor() {
+            object : Visitor<Unit> by RecordingWalkingVisitor() {
                 override fun visit(
                     callout: Callout,
-                    phase: WalkPhase,
+                    phase: MarkupWalkPhase,
                 ) {
                     events += "$phase:Callout"
                 }
 
                 override fun visit(
                     text: Text,
-                    phase: WalkPhase,
+                    phase: MarkupWalkPhase,
                 ) {
                     events += "$phase:Text"
                 }
@@ -732,10 +758,14 @@ class JniPayloadDecoderTest {
                 0,
                 0, // anchor and attributes
                 1,
+                40.toByte(),
                 1,
                 2,
                 1,
                 19,
+                -1,
+                0,
+                0,
                 1.toByte(),
                 1,
                 "k",
@@ -745,10 +775,14 @@ class JniPayloadDecoderTest {
                 1,
                 *text(1, 10, 1, 13, "p. 3"),
                 1,
+                41.toByte(),
                 3,
                 1,
                 3,
                 9,
+                -1,
+                0,
+                0,
                 1,
                 "n",
                 1,
@@ -777,12 +811,13 @@ class JniPayloadDecoderTest {
             "Document scope=1:1..3:9 anchor=null attributes={} children=1\n" +
                 "├── Paragraph scope=1:1..1:20 anchor=null attributes={} children=1\n" +
                 "│   └── Cite scope=1:1..1:20 anchor=null attributes={} children=1\n" +
-                "│       └── Citation scope=1:2..1:19 referent=bib(key=\"k\",mode=authorInText) children=0\n" +
+                "│       └── Citation scope=1:2..1:19 " +
+                "anchor=null attributes={} referent=bib(key=\"k\",mode=authorInText) children=0\n" +
                 "│           ├── CitationPrefix children=1\n" +
                 "│           │   └── Text scope=1:2..1:5 anchor=null attributes={} literal=\"see \" children=0\n" +
                 "│           └── CitationSuffix children=1\n" +
                 "│               └── Text scope=1:10..1:13 anchor=null attributes={} literal=\"p. 3\" children=0\n" +
-                "└── Footnote scope=3:1..3:9 id=\"n\" children=1\n" +
+                "└── Footnote scope=3:1..3:9 anchor=null attributes={} id=\"n\" children=1\n" +
                 "    └── Paragraph scope=3:6..3:9 anchor=null attributes={} children=1\n" +
                 "        └── Text scope=3:6..3:9 anchor=null attributes={} literal=\"note\" children=0\n",
             document.dump(),
@@ -813,8 +848,8 @@ class JniPayloadDecoderTest {
 
     @Test
     fun malformedJniPayloadValuesAreRejectedBeforeTheyEnterTheAst() {
-        assertFailsWith<IllegalStateException> { JniNodeKind.from(0) }
-        assertFailsWith<IllegalStateException> { JniNodeKind.from(JniNodeKind.entries.maxOf { it.rawValue } + 1) }
+        assertFailsWith<IllegalArgumentException> { JniNodeKind.from(0) }
+        assertFailsWith<IllegalArgumentException> { JniNodeKind.from(JniNodeKind.entries.maxOf { it.rawValue } + 1) }
         assertEquals(JniNodeKind.COMMENT, JniNodeKind.from(29))
         assertEquals(JniNodeKind.CROSS_LINK, JniNodeKind.from(30))
         assertEquals(JniNodeKind.CROSS_EMBEDDED, JniNodeKind.from(32))

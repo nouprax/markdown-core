@@ -1,11 +1,6 @@
 package com.nouprax.markdown.core
 
-/**
- * An inline citation: one or more [citations] in authored order. An inherited
- * `[^label]` call is a one-item cite naming its footnote; the citation
- * syntaxes module, which fills in [CitationReferent.Bib] items, lands with
- * `P7`. Its items are scoped values, not content, so a cite is a leaf.
- */
+/** An inline citation cluster owning one or more [Citation] nodes in source order. */
 public class Cite internal constructor(
     /** Never empty: every cite is authored with at least one item. */
     public val citations: kotlin.collections.List<Citation>,
@@ -13,29 +8,35 @@ public class Cite internal constructor(
     override val anchor: String?,
     override val attributes: Attributes,
 ) : Markup {
-    override fun <Result> accept(visitor: Visitor<Result>): Result = visitor.visit(this)
+    override fun <Result> accept(
+        visitor: Visitor<Result>,
+        phase: MarkupWalkPhase,
+    ): Result = visitor.visit(this, phase)
 }
 
-/**
- * One item of a [Cite]: a scoped value the cite owns, outside the markup
- * union. It has no visitor entry; the walk reports it through
- * [WalkingVisitor.visit] between the cite's entering and exiting.
- */
+/** A Markup node owned by [Cite.citations], with inline prefix and suffix content. */
 public class Citation internal constructor(
     public val referent: CitationReferent,
     /** The inline content before the referent, owned by the citation; empty for an inherited call. */
     public val prefix: kotlin.collections.List<Markup>,
     /** The inline content after the referent, owned by the citation; empty for an inherited call. */
     public val suffix: kotlin.collections.List<Markup>,
-    public val scope: Scope,
-)
+    override val scope: Scope,
+    override val anchor: String? = null,
+    override val attributes: Attributes = Attributes.empty,
+) : Markup {
+    override fun <Result> accept(
+        visitor: Visitor<Result>,
+        phase: MarkupWalkPhase,
+    ): Result = visitor.visit(this, phase)
+}
 
 /**
  * What a [Citation] names: a tagged value, so a branch's fields exist only in
  * that branch.
  */
 public sealed interface CitationReferent {
-    /** A bibliography key with its [mode]. No parse produces this branch until `P7`. */
+    /** A bibliography key with its [mode]. */
     public class Bib internal constructor(
         public val key: String,
         public val mode: BibMode,

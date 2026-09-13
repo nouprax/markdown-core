@@ -45,9 +45,8 @@ public struct Scope: Sendable, Hashable {
 /// borrows memory the C library owns and a tree can cross an isolation
 /// boundary unchanged.
 ///
-/// The set of conforming kinds is closed. ``MarkupVisitor`` and
-/// ``MarkupWalkingVisitor`` name all of them, which makes both dispatch
-/// protocols exhaustive at compile time.
+/// The set of conforming kinds is closed. ``MarkupVisitor`` names all of them,
+/// making single-node dispatch and automatic traversal exhaustive at compile time.
 public protocol Markup: Sendable {
     /// Where this element is, as a pair of boundaries. See ``Scope`` for what
     /// those boundaries are and are not.
@@ -55,7 +54,7 @@ public protocol Markup: Sendable {
     var anchor: String? { get }
     var attributes: Attributes { get }
     /// Dispatches to the visitor case for this element's kind.
-    func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result
+    func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupWalkPhase) -> V.Result
     /// The canonical debug dump of this element and everything under it.
     ///
     /// One grammar across C, Swift, Kotlin and ECMAScript, checked against the
@@ -81,5 +80,4 @@ extension Markup {
     static func scope(from node: OpaquePointer) -> Scope {
         Scope(from: markdown_core_node_scope(node))
     }
-
 }

@@ -38,7 +38,7 @@ export type { Text } from "./model/text.js";
 export type { ThematicBreak } from "./model/thematic-break.js";
 export { ParseError } from "./parse-error.js";
 export type { ParseErrorCode } from "./parse-error.js";
-export { TreeDumper } from "./tree-dumper.js";
+export { MarkupDumper } from "./markup-dumper.js";
 export type {
     BibMode,
     CitationReferent,
@@ -52,10 +52,8 @@ export type {
     Scope,
     Flow
 } from "./values.js";
-export { visit } from "./visitor.js";
-export type { Visitor } from "./visitor.js";
-export { walk } from "./walking-visitor.js";
-export type { WalkingVisitor, WalkPhase } from "./walking-visitor.js";
+export { visit, walk } from "./visitor.js";
+export type { Visitor, MarkupWalkPhase } from "./visitor.js";
 
 export { Attributes } from "./values.js";
 export type { Record, Metadata, MetadataValue, MetadataScalar, MetadataListItem } from "./values.js";

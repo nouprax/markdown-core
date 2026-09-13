@@ -14,7 +14,9 @@ public struct Comment: Markup {
     public let literal: String
 
     /// Dispatches to the visitor's `Comment` case.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
+    public func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupWalkPhase) -> V.Result {
+        visitor.visit(self, phase: phase)
+    }
 }
 
 extension Comment {

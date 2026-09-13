@@ -17,9 +17,9 @@ extension APISuite {
                     .init(
                         caption: nil,
                         columns: [TableColumn(flow: .none, relative: width)],
-                        head: [],
-                        content: [],
-                        foot: [],
+                        head: .init(indices: []),
+                        content: .init(indices: []),
+                        foot: .init(indices: []),
                         scope: scope,
                         anchor: nil,
                         attributes: .empty
@@ -49,9 +49,9 @@ extension APISuite {
                 .init(
                     caption: nil,
                     columns: table.columns,
-                    head: [],
-                    content: [],
-                    foot: [],
+                    head: .init(indices: []),
+                    content: .init(indices: []),
+                    foot: .init(indices: []),
                     scope: table.scope,
                     anchor: nil,
                     attributes: .empty
@@ -61,12 +61,11 @@ extension APISuite {
         #expect(empty.dump().contains("TableHead children=0\n"))
         #expect(empty.dump().contains("TableFoot children=0\n"))
     }
-
 }
 
 private func groupedTable() throws -> Table {
     let parsed = try Document.parse("# head\n\nbody\n\n---\n")
-    var records = parsed.$fields.records
+    var records = parsed.fields.store.records
     var rows: [Int] = []
     for index in parsed.content.recordIndices {
         let cell = records.count
@@ -75,7 +74,7 @@ private func groupedTable() throws -> Table {
                 .init(
                     rowspan: 1,
                     colspan: 2,
-                    content: [index],
+                    content: .init(indices: [index]),
                     scope: parsed.scope,
                     anchor: nil,
                     attributes: .empty
@@ -83,7 +82,9 @@ private func groupedTable() throws -> Table {
             )
         )
         rows.append(records.count)
-        records.append(.tableRow(.init(cells: [cell], scope: parsed.scope, anchor: nil, attributes: .empty)))
+        records.append(
+            .tableRow(.init(cells: .init(indices: [cell]), scope: parsed.scope, anchor: nil, attributes: .empty))
+        )
     }
     let index = records.count
     records.append(
@@ -93,9 +94,9 @@ private func groupedTable() throws -> Table {
                 columns: [
                     TableColumn(flow: .left, relative: 0.1), TableColumn(flow: .none, relative: nil),
                 ],
-                head: [rows[0]],
-                content: [rows[1]],
-                foot: [rows[2]],
+                head: .init(indices: [rows[0]]),
+                content: .init(indices: [rows[1]]),
+                foot: .init(indices: [rows[2]]),
                 scope: parsed.scope,
                 anchor: nil,
                 attributes: .empty

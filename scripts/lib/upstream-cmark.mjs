@@ -112,7 +112,7 @@ export function parseUpstreamXml(xml, fired) {
         let kind = XML_KIND[name];
         // The footnote extension's two nodes (M4): a call is a one-item `Cite`
         // whose `Citation` carries empty affix groups, and a definition is a
-        // `Footnote` value; upstream states no label for either, so neither
+        // `Footnote` node; upstream states no label for either, so neither
         // carries a compared field.
         if (name === "<unknown>") kind = selfClose ? "Cite" : "Footnote";
         if (kind === undefined) kind = `?${name}`;
@@ -307,7 +307,7 @@ export function parseDestination(raw) {
     return crossDestination(path, anchor);
 }
 
-/** One `Citation` item as the dump nests it: a value line with the given
+/** One `Citation` item as the dump nests it: a node line with the given
  * fields, then its `CitationPrefix` and `CitationSuffix` groups. */
 export function citationItem(fields, prefix = [], suffix = []) {
     return {
@@ -469,7 +469,7 @@ export function blockCommentBody(literal) {
 /**
  * Registered delta `footnote-definition-placement`: upstream moves every
  * footnote definition to the document tail in first-reference order, while
- * this repository's AST owns every footnote as a `Footnote` value of the
+ * this repository's AST owns every footnote as a `Footnote` node owned by the
  * document in source order (canonical-ast.md, M4). Both sides therefore have
  * their footnotes lifted out and re-attached in one deterministic order, which
  * compares their *content* while deliberately not comparing their position.

@@ -76,7 +76,7 @@ opaque identities, not display numbers.
 
 ## Walking and resolution
 
-Document traversal visits content, then footnotes, then specimens. Calls store
+Document traversal visits metadata when present, content, footnotes, then specimens. Calls store
 ID edges, never copied bodies. A footnote can refer to itself or another note
 without creating an AST ownership cycle; a consumer that follows references
 must handle semantic cycles itself. Code, formulas, comments, HTML tokens, and

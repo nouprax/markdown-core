@@ -396,9 +396,9 @@ static void check_citation_model(void) {
                   count_occurrences(text, "CitationSuffix children=0\n") == 2,
               "an inherited call has empty affix groups");
         check(count_occurrences(text, "Footnote scope=") == 2, "both definitions are footnotes");
-        check(strstr(text, "\n├── Footnote scope=3:1..4:0 id=\"a\" children=1\n") != NULL,
+        check(strstr(text, "\n├── Footnote scope=3:1..4:0 anchor=null attributes={} id=\"a\" children=1\n") != NULL,
               "the winning definition is the first footnote");
-        check(strstr(text, "\n└── Footnote scope=5:1..5:11 id=\"a\" children=1\n") != NULL,
+        check(strstr(text, "\n└── Footnote scope=5:1..5:11 anchor=null attributes={} id=\"a\" children=1\n") != NULL,
               "the later definition is the footnote after it, nested last under the document");
         markdown_core_dump_free(dump);
     }
