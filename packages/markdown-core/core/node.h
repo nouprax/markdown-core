@@ -281,6 +281,10 @@ enum {
     MARKDOWN_CORE_NODE_OWNS_PAYLOAD = 1,
     MARKDOWN_CORE_NODE_OWNS_CONTENT = 2,
     MARKDOWN_CORE_NODE_OWNS_ATTRIBUTES = 4,
+    /* The element payload was allocated by markdown_core_node_opaque_take
+     * and the core frees it; otherwise it lives inside the record. */
+    MARKDOWN_CORE_NODE_OWNS_OPAQUE = 8,
+    MARKDOWN_CORE_NODE_OPAQUE_IN_RECORD = 16,
 };
 
 struct markdown_core_node {
@@ -338,6 +342,10 @@ markdown_core_node *markdown_core_node_create(markdown_core_arena *arena, markdo
 /* Unlink and release a node and its subtree; arena-owned records return to
  * `arena`'s pools. With a NULL arena this is `markdown_core_node_free`. */
 void markdown_core_node_recycle(markdown_core_arena *arena, markdown_core_node *node);
+/* The element payload of `size` bytes: the record's own when the node was
+ * created with an element declaring `opaque_size`, otherwise one allocated
+ * now and freed with the node. NULL on allocation failure. */
+void *markdown_core_node_opaque_take(markdown_core_node *node, size_t size);
 /* The node's attribute value, created on first use from `arena` (or from the
  * node's allocator without one). NULL only when that allocation failed. */
 markdown_core_attributes *markdown_core_node_attributes_mut(markdown_core_node *node, markdown_core_arena *arena);

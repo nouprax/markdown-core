@@ -157,6 +157,11 @@ static int set_chunk_bytes(markdown_core_mem *mem, markdown_core_chunk *chunk, c
     return 1;
 }
 
+const markdown_core_chunk *markdown_core_elements_directive_name(markdown_core_node *node) {
+    node_directive *directive = get_directive(node);
+    return directive ? &directive->name : NULL;
+}
+
 const char *markdown_core_elements_get_directive_name(markdown_core_node *node) {
     node_directive *directive = get_directive(node);
     if (!directive || !directive->name.len) {
@@ -202,10 +207,14 @@ int markdown_core_elements_set_directive_name(markdown_core_node *node, const ch
     return 1;
 }
 
+/* The payload lives in the node's record (opaque_size), claimed here for
+ * the directive kinds and never for a label; a block directive converted
+ * from a paragraph takes one through markdown_core_node_opaque_take. Owned
+ * roots are released by the shared iterative node destructor. */
 static void directive_opaque_alloc(const markdown_core_element *element, markdown_core_mem *mem,
                                    markdown_core_node *node) {
     if (is_directive_node(node)) {
-        node->opaque = mem->calloc(1, sizeof(node_directive));
+        markdown_core_node_opaque_take(node, sizeof(node_directive));
     }
 }
 
@@ -215,11 +224,7 @@ static void directive_opaque_free(const markdown_core_element *element, markdown
     if (!directive) {
         return;
     }
-
-    /* Owned roots are released by the shared iterative node destructor. */
     markdown_core_chunk_free(mem, &directive->name);
-    mem->free(directive);
-    node->opaque = NULL;
 }
 
 /* Recognize the shared attribute grammar without constructing semantic
@@ -384,11 +389,9 @@ static markdown_core_node *make_directive_node(const markdown_core_element *elem
         markdown_core_node_recycle(parser->arena, node);
         return NULL;
     }
-    if (!set_chunk_bytes(parser->mem, &directive->name, name, name_len)) {
-        parser->oom = true;
-        markdown_core_node_recycle(parser->arena, node);
-        return NULL;
-    }
+    /* The name is a slice of the inline input the node's tree keeps alive,
+     * borrowed like a Text; the facade terminates it when it is asked for. */
+    directive->name = (markdown_core_chunk){(unsigned char *)name, name_len, 0};
     node->start_line = start_line;
     node->end_line = end_line;
     node->start_column = start_column;
@@ -635,8 +638,7 @@ static markdown_core_node *open_directive_block(const markdown_core_element *ele
     }
 
     markdown_core_node_set_element(node, element);
-    node->opaque = parser->mem->calloc(1, sizeof(node_directive));
-    if (!node->opaque) {
+    if (!markdown_core_node_opaque_take(node, sizeof(node_directive))) {
         free_parsed_directive(parser, &parsed);
         parser->oom = true;
         markdown_core_node_recycle(parser->arena, node);
@@ -796,6 +798,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_DIRECTIVE = {
     .can_contain_func = can_contain,
     .contains_inlines_func = contains_inlines,
     .accepts_lines_func = accepts_lines,
+    .opaque_size = sizeof(node_directive),
     .opaque_alloc_func = directive_opaque_alloc,
     .opaque_free_func = directive_opaque_free,
     .visit_owned_subtrees_func = visit_owned_subtrees,

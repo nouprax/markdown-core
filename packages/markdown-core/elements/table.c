@@ -38,12 +38,14 @@ typedef struct {
     uint16_t n_columns;
 } pipe_row;
 
+/* The payload storage is the node's (markdown_core_node_opaque_take); only
+ * what it owns is released here. */
 static void free_node_table(markdown_core_mem *mem, markdown_core_table *table) {
     if (!table) {
         return;
     }
     mem->free(table->columns);
-    mem->free(table);
+    table->columns = NULL;
 }
 
 static void init_cell(markdown_core_node *node) {
@@ -438,8 +440,7 @@ static markdown_core_node *try_opening_table_header(const markdown_core_element 
     /* Table data belongs to the element. Its cleanup accepts partial
      * initialization when an allocation fails after the kind change. */
     markdown_core_node_set_element(parent_container, self);
-    parent_container->opaque = parser->mem->calloc(1, sizeof(markdown_core_table));
-    if (!parent_container->opaque) {
+    if (!markdown_core_node_opaque_take(parent_container, sizeof(markdown_core_table))) {
         parser->oom = true;
 
         return parent_container;
@@ -673,7 +674,7 @@ static void opaque_alloc(const markdown_core_element *self, markdown_core_mem *m
     /* A NULL payload makes the table facade accessors fail; no incomplete
      * table is returned by a successful parse. */
     if (node->kind == MARKDOWN_CORE_NODE_TABLE) {
-        node->opaque = mem->calloc(1, sizeof(markdown_core_table));
+        markdown_core_node_opaque_take(node, sizeof(markdown_core_table));
     } else if (node->kind == MARKDOWN_CORE_NODE_TABLE_CELL) {
         init_cell(node);
     }
@@ -2030,7 +2031,7 @@ static markdown_core_node *table_build(table_source *source, markdown_core_node 
         return NULL;
     }
     markdown_core_node_set_element(node, &MARKDOWN_CORE_ELEMENT_TABLE);
-    node->opaque = parser->mem->calloc(1, sizeof(markdown_core_table));
+    markdown_core_node_opaque_take(node, sizeof(markdown_core_table));
     if (!node->opaque) {
         parser->oom = true;
         return node;

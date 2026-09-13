@@ -58,6 +58,11 @@ static int is_standalone_formula_node(markdown_core_node *node) {
     return formula->mode == MARKDOWN_CORE_FORMULA_MODE_STANDALONE;
 }
 
+const markdown_core_chunk *markdown_core_elements_formula_literal(markdown_core_node *node) {
+    node_formula *formula = get_formula(node);
+    return formula ? &formula->literal : NULL;
+}
+
 const char *markdown_core_elements_get_formula_literal(markdown_core_node *node) {
     node_formula *formula = get_formula(node);
     if (!formula) {
@@ -104,12 +109,14 @@ int markdown_core_elements_set_formula_mode(markdown_core_node *node, markdown_c
     return 1;
 }
 
+/* The payload lives in the node's record (opaque_size), claimed here for
+ * the formula kinds; a node that came from a kind conversion takes one
+ * through markdown_core_node_opaque_take. Only the literal it owns is
+ * released. */
 static void formula_opaque_alloc(const markdown_core_element *element, markdown_core_mem *mem,
                                  markdown_core_node *node) {
-    /* A NULL payload is tolerated: every accessor goes through get_formula
-     * and treats the node as formula-less. */
     if (is_formula_node(node)) {
-        node->opaque = mem->calloc(1, sizeof(node_formula));
+        markdown_core_node_opaque_take(node, sizeof(node_formula));
     }
 }
 
@@ -121,9 +128,23 @@ static void formula_opaque_free(const markdown_core_element *element, markdown_c
     }
 
     markdown_core_chunk_free(mem, &formula->literal);
-    mem->free(formula);
 }
 
+/* A literal that borrows bytes living as long as the node: a slice of the
+ * block content the inline scanner read, or of the block's own buffer. */
+static int set_formula_literal_borrowed(markdown_core_node *node, const unsigned char *data, bufsize_t len) {
+    node_formula *formula = get_formula(node);
+    if (!formula) {
+        return 0;
+    }
+    markdown_core_chunk_free(markdown_core_node_mem(node), &formula->literal);
+    formula->literal.data = (unsigned char *)data;
+    formula->literal.len = len;
+    formula->literal.alloc = 0;
+    return 1;
+}
+
+/* A literal whose bytes belong to the caller and die at once: copied. */
 static int set_formula_literal_bytes(markdown_core_node *node, const unsigned char *data, bufsize_t len) {
     node_formula *formula = get_formula(node);
     if (!formula) {
@@ -235,7 +256,7 @@ static markdown_core_node *try_opening_formula_block(const markdown_core_element
     }
 
     markdown_core_node_set_element(node, element);
-    node->opaque = parser->mem->calloc(1, sizeof(node_formula));
+    markdown_core_node_opaque_take(node, sizeof(node_formula));
 
     formula = get_formula(node);
     if (!formula) {
@@ -523,27 +544,27 @@ static void strip_formula_padding(const unsigned char **literal, bufsize_t *len)
     *len = size;
 }
 
+/* `literal` is either a slice of the inline input, which the node borrows
+ * like every Text does, or an owned chunk the caller hands over. */
 static markdown_core_node *make_formula_node(const markdown_core_element *element, markdown_core_parser *parser,
-                                             markdown_core_formula_mode mode, const unsigned char *literal,
-                                             bufsize_t literal_len) {
+                                             markdown_core_formula_mode mode, markdown_core_chunk literal) {
     markdown_core_node *node =
         markdown_core_node_create(parser->arena, parser->mem, MARKDOWN_CORE_NODE_FORMULA, element);
     if (!node) {
         parser->oom = true;
+        markdown_core_chunk_free(parser->mem, &literal);
         return NULL;
     }
-    if (!get_formula(node)) {
+    node_formula *formula = get_formula(node);
+    if (!formula) {
         parser->oom = true;
+        markdown_core_chunk_free(parser->mem, &literal);
         markdown_core_node_recycle(parser->arena, node);
         return NULL;
     }
 
-    get_formula(node)->mode = mode;
-    if (!set_formula_literal_bytes(node, literal, literal_len)) {
-        parser->oom = true;
-        markdown_core_node_recycle(parser->arena, node);
-        return NULL;
-    }
+    formula->mode = mode;
+    formula->literal = literal;
     return node;
 }
 
@@ -604,8 +625,19 @@ static void insert_formula(const markdown_core_element *element, markdown_core_p
      * `\(...\)` and `\[...\]` too, and no oracle row covered that until the
      * step that added two. */
     strip_formula_padding(&body, &body_len);
-    formula = unescaped.oom ? NULL : make_formula_node(element, parser, mode, body, body_len);
-    markdown_core_strbuf_free(&unescaped);
+    if (unescaped.oom) {
+        formula = NULL;
+        markdown_core_strbuf_free(&unescaped);
+    } else if (is_backslash_delim(rule)) {
+        /* The unescaped bytes are the literal: trimmed in place and handed
+         * over, not copied a second time. */
+        markdown_core_strbuf_drop(&unescaped, (bufsize_t)(body - unescaped.ptr));
+        markdown_core_strbuf_truncate(&unescaped, body_len);
+        markdown_core_chunk owned = markdown_core_chunk_buf_detach(&unescaped);
+        formula = owned.data ? make_formula_node(element, parser, mode, owned) : NULL;
+    } else {
+        formula = make_formula_node(element, parser, mode, (markdown_core_chunk){(unsigned char *)body, body_len, 0});
+    }
     if (!formula) {
         parser->oom = true;
         goto done;
@@ -712,13 +744,18 @@ static markdown_core_node *finish_node(const markdown_core_element *element, mar
     if (node->kind == MARKDOWN_CORE_NODE_FORMULA_BLOCK) {
         node_formula *formula = get_formula(node);
         if (formula && !formula->literal.data) {
-            /* The literal is copied OUT of `node->content` and the content is
-             * then cleared, so a failed copy would leave the chunk borrowing a
-             * buffer this very statement empties. */
-            if (!set_formula_literal_trimmed(node, node->content->ptr, node->content->size)) {
-                parser->oom = true;
+            /* The literal is the trimmed body in the block's own content
+             * buffer, which lives as long as the node: borrowed, not copied. */
+            const unsigned char *data = node->content->ptr;
+            bufsize_t len = node->content->size;
+            while (len > 0 && markdown_core_isspace(data[0])) {
+                data++;
+                len--;
             }
-            markdown_core_strbuf_clear(node->content);
+            while (len > 0 && markdown_core_isspace(data[len - 1])) {
+                len--;
+            }
+            set_formula_literal_borrowed(node, data, len);
         }
         return node;
     }
@@ -787,6 +824,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_FORMULA = {
     .get_type_string_func = get_type_string,
     .can_contain_func = can_contain,
     .accepts_lines_func = accepts_lines,
+    .opaque_size = sizeof(node_formula),
     .opaque_alloc_func = formula_opaque_alloc,
     .opaque_free_func = formula_opaque_free,
     .insert_inline_from_delim = insert_formula,

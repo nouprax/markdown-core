@@ -146,12 +146,8 @@ static markdown_core_node *match(const markdown_core_element *element, markdown_
         parser->oom = true;
         return NULL;
     }
+    /* Borrowed from the content the node's tree keeps alive, like a Text. */
     *node->as.literal = markdown_core_chunk_dup(input, start + 2, close - start - 2);
-    if (!markdown_core_chunk_to_cstr(parser->mem, node->as.literal)) {
-        parser->oom = true;
-        markdown_core_node_recycle(inline_state->arena, node);
-        return NULL;
-    }
     /* The scope covers both delimiters and the body. */
     markdown_core_parser_content_place(parser, parent, start, &node->start_line, &node->start_column);
     markdown_core_parser_content_end_place(parser, parent, close + 1, &node->end_line, &node->end_column);

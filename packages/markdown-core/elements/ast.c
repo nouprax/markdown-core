@@ -454,7 +454,6 @@ bool markdown_core_node_literal(const markdown_core_node *node, markdown_core_st
 
 bool markdown_core_node_formula_properties(const markdown_core_node *node, markdown_core_placement *mode,
                                            markdown_core_string *literal) {
-    const char *value;
     markdown_core_formula_mode native_mode;
     if (!node || !mode || !literal ||
         (node->kind != MARKDOWN_CORE_NODE_FORMULA && node->kind != MARKDOWN_CORE_NODE_FORMULA_BLOCK)) {
@@ -463,9 +462,11 @@ bool markdown_core_node_formula_properties(const markdown_core_node *node, markd
     native_mode = markdown_core_elements_get_formula_mode((markdown_core_node *)node);
     *mode = native_mode == MARKDOWN_CORE_FORMULA_MODE_EMBEDDED ? MARKDOWN_CORE_PLACEMENT_EMBEDDED
                                                                : MARKDOWN_CORE_PLACEMENT_STANDALONE;
-    value = markdown_core_elements_get_formula_literal((markdown_core_node *)node);
-    literal->data = (const uint8_t *)value;
-    literal->length = value ? strlen(value) : 0;
+    /* The literal as bytes: a borrowed slice is read in place, so the read
+     * neither copies nor can fail. */
+    const markdown_core_chunk *bytes = markdown_core_elements_formula_literal((markdown_core_node *)node);
+    literal->data = bytes && bytes->len ? bytes->data : (const uint8_t *)"";
+    literal->length = bytes ? (size_t)bytes->len : 0;
     return true;
 }
 
@@ -514,8 +515,9 @@ bool markdown_core_node_directive_properties(const markdown_core_node *node, mar
     if (!node || !name || !is_directive(node)) {
         return false;
     }
-    const char *value = markdown_core_elements_get_directive_name((markdown_core_node *)node);
-    *name = (markdown_core_optional_string){value != NULL, {(const uint8_t *)value, value ? strlen(value) : 0}};
+    const markdown_core_chunk *bytes = markdown_core_elements_directive_name((markdown_core_node *)node);
+    bool present = bytes && bytes->len;
+    *name = (markdown_core_optional_string){present, {present ? bytes->data : NULL, present ? (size_t)bytes->len : 0}};
     return true;
 }
 

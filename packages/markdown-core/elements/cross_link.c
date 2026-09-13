@@ -110,13 +110,8 @@ static markdown_core_node *match(const markdown_core_element *element, markdown_
             cross->label.value.len = suffix;
         }
     }
-    if (!markdown_core_chunk_to_cstr(parser->mem, &cross->path) ||
-        (cross->anchor.has_value && !markdown_core_chunk_to_cstr(parser->mem, &cross->anchor.value)) ||
-        (cross->label.has_value && !markdown_core_chunk_to_cstr(parser->mem, &cross->label.value))) {
-        parser->oom = true;
-        markdown_core_node_recycle(parser->arena, node);
-        return NULL;
-    }
+    /* Path, anchor and label borrow the content the node's tree keeps alive,
+     * like a Text; nothing is copied to terminate them. */
     markdown_core_parser_content_place(parser, parent, start, &node->start_line, &node->start_column);
     markdown_core_parser_content_end_place(parser, parent, i + 1, &node->end_line, &node->end_column);
     markdown_core_inline_state_set_offset(inline_state, i + 2);

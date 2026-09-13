@@ -155,6 +155,13 @@ struct markdown_core_element {
     markdown_core_accepts_lines_func accepts_lines_func;
     markdown_core_postprocess_func postprocess_func;
     markdown_core_finish_node_func finish_node;
+    /* Bytes of element payload every node created with this element carries
+     * inside its own record, zeroed, with `opaque` pointing at them: a
+     * formula's or a directive's fixed-size record costs no allocation of
+     * its own. `opaque_free_func` releases what the payload owns, never the
+     * payload storage, which is the node's -- in its record, or freed by
+     * the core when markdown_core_node_opaque_take had to allocate it. */
+    size_t opaque_size;
     markdown_core_opaque_alloc_func opaque_alloc_func;
     markdown_core_opaque_free_func opaque_free_func;
     markdown_core_visit_owned_subtrees_func visit_owned_subtrees_func;

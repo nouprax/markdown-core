@@ -16,10 +16,25 @@ typedef struct {
     bool ordinary, partitioned, first;
 } citation_resolution;
 static void resolve_citation_tail(markdown_core_inline_state *inline_state, citation_token *token, bool ordinary);
+/* Tokens are transaction records: taken from the parse arena and handed
+ * back to its pool, so a key costs the allocator nothing. */
+static citation_token *take_citation_token(markdown_core_inline_state *inline_state) {
+    return inline_state->arena ? markdown_core_arena_take(inline_state->arena, sizeof(citation_token))
+                               : inline_state->mem->calloc(1, sizeof(citation_token));
+}
+
+static void release_citation_token(markdown_core_inline_state *inline_state, citation_token *token) {
+    if (inline_state->arena) {
+        markdown_core_arena_recycle(inline_state->arena, token, sizeof(*token));
+    } else {
+        inline_state->mem->free(token);
+    }
+}
+
 void markdown_core_inline_free_citation_tokens(markdown_core_inline_state *inline_state, citation_tokens *tokens) {
     while (tokens->first) {
         citation_token *next = tokens->first->next;
-        inline_state->mem->free(tokens->first);
+        release_citation_token(inline_state, tokens->first);
         tokens->first = next;
     }
     tokens->last = NULL;
@@ -233,11 +248,13 @@ static markdown_core_node *markdown_core_inline_read_citation_token(markdown_cor
     if (!text) {
         return NULL;
     }
-    citation_token *token = inline_state->mem->calloc(1, sizeof(*token));
+    citation_token *token = take_citation_token(inline_state);
     delimiter *boundary =
         token ? markdown_core_inline_push_delimiter_entry(inline_state, DELIMITER_CITATION_TOKEN, value.end) : NULL;
     if (!boundary) {
-        inline_state->mem->free(token);
+        if (token) {
+            release_citation_token(inline_state, token);
+        }
         markdown_core_node_recycle(inline_state->arena, text);
         inline_state->oom = 1;
         return NULL;
@@ -303,12 +320,9 @@ static markdown_core_node *new_bib_item(markdown_core_inline_state *inline_state
     item->as.citation->mode = key->suppress ? MARKDOWN_CORE_BIB_MODE_SUPPRESS_AUTHOR
                               : normal      ? MARKDOWN_CORE_BIB_MODE_NORMAL
                                             : MARKDOWN_CORE_BIB_MODE_AUTHOR_IN_TEXT;
+    /* The key borrows the content the node's tree keeps alive. */
     item->as.citation->value =
         markdown_core_chunk_dup(&inline_state->input, key->key_start, key->key_end - key->key_start);
-    if (!markdown_core_chunk_to_cstr(inline_state->mem, &item->as.citation->value)) {
-        inline_state->oom = 1;
-        return NULL;
-    }
     markdown_core_inline_state_place(inline_state, item, key->start, key->end - 1);
     return item;
 }

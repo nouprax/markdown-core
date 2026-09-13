@@ -156,6 +156,19 @@ existing ownership graph, and semantic reference cycles never become object
 cycles. The whole-tree `postprocess_func` remains a tooling hook that no
 built-in element declares.
 
+An inline construct is built from transaction records and borrowed bytes.
+The arena holds its nodes, delimiters, brackets, citation tokens, the backtick
+cache of an inline root and a heading's suspended inline state; a formula's
+and a directive's fixed payload lives in the node's own record (the element
+declares `opaque_size` and claims the reservation for the kinds it carries a
+payload on, through `markdown_core_node_opaque_take`, which allocates only
+for a node converted from another kind and then frees with the node); and a
+literal that repeats the source -- a formula body, a code span that
+normalization leaves unchanged, a directive name, a comment, a cross link's
+path, anchor and label, a citation key -- is a slice of the block's content,
+terminated by the facade only when a C string is asked for. Only bytes that
+a transformation changes are copied.
+
 Few runs reach that merge. A literal run is a borrowed slice of its block's
 content, and a candidate byte that produces no token is a byte of the run
 around it: when the last child is the literal run that ends where the next

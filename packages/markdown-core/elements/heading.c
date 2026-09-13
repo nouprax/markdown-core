@@ -96,7 +96,23 @@ void markdown_core_block_dispose_headings(markdown_core_parser *parser, markdown
         markdown_core_dispose_heading(&headings->values[i]);
     }
     parser->mem->free(headings->values);
+    parser->mem->free(headings->projection_stack);
     *headings = (markdown_core_heading_collection){0};
+}
+
+/* A suspended inline state is a transaction record: taken from the parse
+ * arena's pool and handed back when the heading resumes or is disposed. */
+static markdown_core_inline_state *take_pending_state(markdown_core_parser *parser) {
+    return parser->arena ? markdown_core_arena_take(parser->arena, sizeof(markdown_core_inline_state))
+                         : parser->mem->calloc(1, sizeof(markdown_core_inline_state));
+}
+
+static void release_pending_state(markdown_core_inline_state *pending) {
+    if (pending->arena) {
+        markdown_core_arena_recycle(pending->arena, pending, sizeof(*pending));
+    } else {
+        pending->mem->free(pending);
+    }
 }
 
 static void project_anchor_literal(markdown_core_parser *parser, markdown_core_strbuf *base, const unsigned char *text,
@@ -129,7 +145,10 @@ static bool push_anchor_projection(markdown_core_parser *parser, anchor_projecti
 }
 
 static void heading_anchor_base(markdown_core_parser *parser, markdown_core_node *heading, markdown_core_strbuf *base) {
-    anchor_projection_stack stack = {0};
+    /* One stack serves every heading of the parse; it is kept at its peak on
+     * the collection and released with it. */
+    anchor_projection_stack stack = {.values = parser->headings.projection_stack,
+                                     .capacity = parser->headings.projection_capacity};
     push_anchor_projection(parser, &stack, heading->first_child, ANCHOR_CONTENT);
     while (stack.count && !parser->oom && !base->oom) {
         anchor_projection projection = stack.values[--stack.count];
@@ -158,8 +177,12 @@ static void heading_anchor_base(markdown_core_parser *parser, markdown_core_node
             project_anchor_literal(parser, base, node->as.literal->data, node->as.literal->len);
             break;
         case MARKDOWN_CORE_NODE_FORMULA: {
-            const char *literal = markdown_core_elements_get_formula_literal(node);
-            project_anchor_literal(parser, base, (const unsigned char *)literal, (bufsize_t)strlen(literal));
+            /* The literal as bytes: a borrowed slice needs no terminator and
+             * no copy that could fail here. */
+            const markdown_core_chunk *literal = markdown_core_elements_formula_literal(node);
+            if (literal) {
+                project_anchor_literal(parser, base, literal->data, literal->len);
+            }
             break;
         }
         case MARKDOWN_CORE_NODE_SOFT_BREAK:
@@ -205,7 +228,8 @@ static void heading_anchor_base(markdown_core_parser *parser, markdown_core_node
             break;
         }
     }
-    parser->mem->free(stack.values);
+    parser->headings.projection_stack = stack.values;
+    parser->headings.projection_capacity = stack.capacity;
     if (!base->size) {
         markdown_core_strbuf_puts(base, "section");
     }
@@ -305,7 +329,7 @@ void markdown_core_prepare_heading(markdown_core_parser *parser, markdown_core_h
             (inline_state.pos != inline_state.text_end && inline_state.pos >= inline_state.opaque_end &&
              (c == '[' || c == ']' ||
               ((c == '!' || c == '^') && markdown_core_inline_peek_char_n(&inline_state, 1) == '[')))) {
-            heading->pending = parser->mem->calloc(1, sizeof(inline_state));
+            heading->pending = take_pending_state(parser);
             if (heading->pending) {
                 *heading->pending = inline_state;
                 return;
@@ -346,16 +370,15 @@ void markdown_core_prepare_heading(markdown_core_parser *parser, markdown_core_h
 void markdown_core_finish_heading(markdown_core_parser *parser, markdown_core_heading_parse *heading) {
     if (heading->pending) {
         markdown_core_inline_finish_inlines(parser, heading->pending);
-        parser->mem->free(heading->pending);
+        release_pending_state(heading->pending);
         heading->pending = NULL;
     }
 }
 
 void markdown_core_dispose_heading(markdown_core_heading_parse *heading) {
     if (heading->pending) {
-        markdown_core_mem *mem = heading->pending->mem;
         markdown_core_inline_clear_inlines(heading->pending);
-        mem->free(heading->pending);
+        release_pending_state(heading->pending);
         heading->pending = NULL;
     }
 }

@@ -203,7 +203,11 @@ markdown_core_node *markdown_core_node_create(markdown_core_arena *arena, markdo
      * delimiter algorithm exchanges (text runs for emphasis nodes) share one
      * arena pool whatever their payload. */
     size_t content_size = S_node_content_size(type), payload_size = S_node_payload_size(type);
-    size_t record_size = (sizeof(markdown_core_node_allocation) + content_size + payload_size + 31) & ~(size_t)31;
+    /* An element's fixed payload follows the kind's record at the next
+     * 8-byte boundary; seven bytes of slack cover that alignment. */
+    size_t opaque_size = element && element->opaque_size ? element->opaque_size + 7 : 0;
+    size_t record_size =
+        (sizeof(markdown_core_node_allocation) + content_size + payload_size + opaque_size + 31) & ~(size_t)31;
     markdown_core_node *node;
     if (record_size < MARKDOWN_CORE_NODE_COMMON_RECORD) {
         record_size = MARKDOWN_CORE_NODE_COMMON_RECORD;
@@ -229,12 +233,39 @@ markdown_core_node *markdown_core_node_create(markdown_core_arena *arena, markdo
     node->element = element;
     node->as.data = payload_size ? S_record_start(node) + content_size : NULL;
     S_init_node_as(type, &node->as);
+    /* The reservation is claimed by the element's opaque_alloc_func through
+     * markdown_core_node_opaque_take, for the kinds it carries a payload on;
+     * `opaque` stays NULL on every other node it creates. */
+    if (opaque_size) {
+        node->owned |= MARKDOWN_CORE_NODE_OPAQUE_IN_RECORD;
+    }
 
     if (node->element && node->element->opaque_alloc_func) {
         node->element->opaque_alloc_func(node->element, mem, node);
     }
 
     return node;
+}
+
+void *markdown_core_node_opaque_take(markdown_core_node *node, size_t size) {
+    if (node->opaque && (node->owned & (MARKDOWN_CORE_NODE_OPAQUE_IN_RECORD | MARKDOWN_CORE_NODE_OWNS_OPAQUE))) {
+        return node->opaque;
+    }
+    /* A reservation is claimed at creation, before any kind conversion, so
+     * the creation kind's record sizes locate it. */
+    if ((node->owned & MARKDOWN_CORE_NODE_OPAQUE_IN_RECORD) && node->element && node->element->opaque_size >= size) {
+        size_t offset = (S_node_content_size((markdown_core_node_type)node->kind) +
+                         S_node_payload_size((markdown_core_node_type)node->kind) + 7) &
+                        ~(size_t)7;
+        node->opaque = S_record_start(node) + offset;
+        return node->opaque;
+    }
+    void *payload = NODE_MEM(node)->calloc(1, size);
+    if (payload) {
+        node->opaque = payload;
+        node->owned |= MARKDOWN_CORE_NODE_OWNS_OPAQUE;
+    }
+    return payload;
 }
 
 markdown_core_node *markdown_core_node_new_with_mem_and_ext(markdown_core_node_type type, markdown_core_mem *mem,
@@ -399,8 +430,13 @@ static void S_free_nodes(markdown_core_node *e, markdown_core_arena *pool) {
         if (e->element && e->element->visit_owned_subtrees_func) {
             e->element->visit_owned_subtrees_func(e->element, e, S_release_owned_subtree, e);
         }
-        if (e->opaque && e->element && e->element->opaque_free_func) {
-            e->element->opaque_free_func(e->element, NODE_MEM(e), e);
+        if (e->opaque) {
+            if (e->element && e->element->opaque_free_func) {
+                e->element->opaque_free_func(e->element, NODE_MEM(e), e);
+            }
+            if (e->owned & MARKDOWN_CORE_NODE_OWNS_OPAQUE) {
+                NODE_MEM(e)->free(e->opaque);
+            }
         }
 
         S_splice_owned_fields(e, e);

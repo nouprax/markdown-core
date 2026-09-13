@@ -14,6 +14,9 @@ typedef struct {
 typedef struct {
     markdown_core_heading_parse *values;
     size_t count, capacity;
+    /* The anchor projection stack every heading reuses (heading.c). */
+    void *projection_stack;
+    size_t projection_capacity;
 } markdown_core_heading_collection;
 
 typedef struct {

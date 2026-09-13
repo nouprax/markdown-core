@@ -4115,6 +4115,54 @@ static void unicode_predicate_paths(test_batch_runner *runner) {
     }
 }
 
+/* An inline construct is built from transaction records and borrowed bytes:
+ * the arena holds its nodes, tokens, brackets and backtick cache, a formula's
+ * and a directive's payload lives in the node's record, and a literal that
+ * repeats the source -- a formula body, a code span, a directive name, a
+ * comment, a cross link's parts, a citation key -- is a slice of the block's
+ * content. The allocator therefore sees block growth and the copies stated
+ * per shape, not the constructs. */
+static void inline_construction_allocations(test_batch_runner *runner) {
+    markdown_core_mem mem = {properties_calloc, properties_realloc, properties_free};
+    static const struct {
+        const char *unit;
+        size_t per_unit;
+        markdown_core_node_type produced;
+    } shapes[] = {
+        {"[@key] ", 0, MARKDOWN_CORE_NODE_CITE},
+        {"$x+y$ ", 0, MARKDOWN_CORE_NODE_FORMULA},
+        {"$$a$$ ", 0, MARKDOWN_CORE_NODE_FORMULA},
+        {"`code` ", 0, MARKDOWN_CORE_NODE_CODE},
+        {":name[label] ", 1, MARKDOWN_CORE_NODE_DIRECTIVE},
+        {"%% note %% ", 0, MARKDOWN_CORE_NODE_COMMENT},
+        {"[[path#anchor|label]] ", 0, MARKDOWN_CORE_NODE_CROSS_LINK},
+        {"# head [x]\n\n", 4, MARKDOWN_CORE_NODE_HEADING},
+    };
+    for (size_t shape = 0; shape < sizeof(shapes) / sizeof(*shapes); shape++) {
+        for (size_t units = 256; units <= 4096; units *= 4) {
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(markdown_core_get_default_mem_allocator());
+            for (size_t i = 0; i < units; i++) {
+                markdown_core_strbuf_puts(&source, shapes[shape].unit);
+            }
+            markdown_core_strbuf_puts(&source, "\n");
+            properties_live_bytes = properties_peak_bytes = properties_requested_bytes = properties_allocations = 0;
+            markdown_core_node *root =
+                markdown_core_parse_document_with_mem((const char *)source.ptr, source.size, &mem, NULL, NULL);
+            OK(runner, root != NULL, "construct shape parses: shape=%zu units=%zu", shape, units);
+            if (root) {
+                INT_EQ(runner, count_kind(root, shapes[shape].produced), units,
+                       "every unit built its construct: shape=%zu units=%zu", shape, units);
+                OK(runner, properties_allocations <= 160 + (size_t)source.size / 4096 + shapes[shape].per_unit * units,
+                   "constructs are records and borrowed bytes: shape=%zu units=%zu calls=%zu", shape, units,
+                   properties_allocations);
+                markdown_core_node_free(root);
+                INT_EQ(runner, properties_live_bytes, 0, "the root releases every byte: shape=%zu", shape);
+            }
+            markdown_core_strbuf_free(&source);
+        }
+    }
+}
+
 static void key_index_consumer_work(test_batch_runner *runner) {
     enum { PREFIX = 160, LABEL = PREFIX + 16 };
     markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
@@ -6905,6 +6953,7 @@ int main(int argc, char **argv) {
     bracket_owner_triage(runner);
     table_row_geometry_reuse(runner);
     unicode_predicate_paths(runner);
+    inline_construction_allocations(runner);
     table_dash_suffixes(runner);
     nested_block_lookahead(runner);
     deep_inline_construction(runner);
