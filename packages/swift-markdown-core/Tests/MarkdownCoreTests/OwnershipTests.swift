@@ -41,6 +41,17 @@ import Testing
         #expect(storage == nil)
     }
 
+    @Test("deep dumps consume walker callbacks without recursive node visits")
+    func deepDump() throws {
+        let depth = 512
+        let document = try Document.parse(String(repeating: "- ", count: depth) + "leaf\n")
+        let lines = document.dump().split(separator: "\n")
+        #expect(lines.count == depth * 2 + 3)
+        #expect(lines.first?.hasPrefix("Document ") == true)
+        #expect(lines.last?.contains("literal=\"leaf\"") == true)
+        #expect(lines.last?.hasPrefix(String(repeating: "    ", count: depth * 2 + 1) + "└── ") == true)
+    }
+
     @Test("retained body groups and individual bodies own the store through their last release")
     func retainedGroups() async throws {
         requireSendable(MarkupGroups<any Markup>.self)

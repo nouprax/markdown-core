@@ -25,11 +25,6 @@ public struct Heading: Markup {
     public var content: MarkupCollection<any Markup> { fields.content }
     /// 1 through 6. A `#######` line is not a heading at all.
     public var level: Int32 { fields.level }
-
-    /// Dispatches to the visitor's `Heading` case.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupVisitPhase) -> V.Result {
-        visitor.visit(self, phase: phase)
-    }
 }
 
 extension Heading.Fields {

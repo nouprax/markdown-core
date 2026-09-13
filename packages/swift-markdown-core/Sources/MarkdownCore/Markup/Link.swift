@@ -31,11 +31,6 @@ public struct Link: Markup {
     public var dest: Destination { fields.dest }
     /// Optional: `[a](/u)` wrote no title and `[a](/u "")` wrote an empty one.
     public var title: String? { fields.title }
-
-    /// Dispatches to the visitor's `Link` case.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupVisitPhase) -> V.Result {
-        visitor.visit(self, phase: phase)
-    }
 }
 
 extension Link.Fields {

@@ -41,9 +41,6 @@ public struct Table: Markup {
     public var attributes: Attributes { fields.attributes }
 
     /// Dispatches to this node kind's visitor callback.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupVisitPhase) -> V.Result {
-        visitor.visit(self, phase: phase)
-    }
 }
 
 extension Table.Fields {
@@ -97,9 +94,6 @@ public struct TableRow: Markup {
     public var attributes: Attributes { fields.attributes }
 
     /// Dispatches to this node kind's visitor callback.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupVisitPhase) -> V.Result {
-        visitor.visit(self, phase: phase)
-    }
 }
 
 extension TableRow.Fields {
@@ -140,9 +134,6 @@ public struct TableCell: Markup {
     public var attributes: Attributes { fields.attributes }
 
     /// Dispatches to this node kind's visitor callback.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupVisitPhase) -> V.Result {
-        visitor.visit(self, phase: phase)
-    }
 }
 
 extension TableCell.Fields {
@@ -182,9 +173,6 @@ public struct TableCaption: Markup {
     public var attributes: Attributes { fields.attributes }
 
     /// Dispatches to this node kind's visitor callback.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupVisitPhase) -> V.Result {
-        visitor.visit(self, phase: phase)
-    }
 }
 
 extension TableCaption.Fields {

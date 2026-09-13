@@ -19,11 +19,6 @@ public struct Mark: Markup {
     public var attributes: Attributes { fields.attributes }
     /// The highlighted inline content.
     public var content: MarkupCollection<any Markup> { fields.content }
-
-    /// Dispatches to the visitor's `Mark` case.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupVisitPhase) -> V.Result {
-        visitor.visit(self, phase: phase)
-    }
 }
 
 extension Mark.Fields {

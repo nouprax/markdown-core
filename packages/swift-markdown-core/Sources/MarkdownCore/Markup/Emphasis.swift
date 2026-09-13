@@ -19,11 +19,6 @@ public struct Emphasis: Markup {
     public var attributes: Attributes { fields.attributes }
     /// The emphasised inline content.
     public var content: MarkupCollection<any Markup> { fields.content }
-
-    /// Dispatches to the visitor's `Emphasis` case.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupVisitPhase) -> V.Result {
-        visitor.visit(self, phase: phase)
-    }
 }
 
 extension Emphasis.Fields {

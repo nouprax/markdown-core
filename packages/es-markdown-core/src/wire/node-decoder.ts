@@ -1,16 +1,19 @@
-import type { Attributes, Dimensions, Metadata, MetadataValue } from "../values.js";
-import type { MarkupBase } from "../model/base.js";
-import type { DirectiveLabel } from "../model/directive-label.js";
-import type { Citation } from "../model/cite.js";
-import type { Document } from "../model/document.js";
-import type { Specimen } from "../model/specimen.js";
-import type { Footnote } from "../model/footnote.js";
-import type { ListItem } from "../model/list.js";
-import type { Markup } from "../model/markup.js";
-import type { TableCell, TableRow } from "../model/table.js";
-import { ParseError, type ParseErrorCode } from "../parse-error.js";
-import { MarkupDumper } from "../markup-dumper.js";
-import type { BibMode, CitationReferent, Destination, ListFlavor, Placement, Scope, Flow } from "../values.js";
+import type { Attributes } from "../markup/attributes.js";
+import type { Dimensions } from "../common/constraints.js";
+import type { Metadata, MetadataValue } from "../markup/metadata.js";
+import type { MarkupBase } from "../markup/base.js";
+import type { DirectiveLabel } from "../markup/directive-label.js";
+import type { Citation } from "../markup/cite.js";
+import type { Document } from "../markup/document.js";
+import type { Specimen } from "../markup/specimen.js";
+import type { Footnote } from "../markup/footnote.js";
+import type { ListItem } from "../markup/list.js";
+import type { Markup } from "../markup/markup.js";
+import type { TableCell, TableRow } from "../markup/table.js";
+import { ParseError, type ParseErrorCode } from "../common/parse-error.js";
+import { MarkupDumper } from "../visitor/markup-dumper.js";
+import type { BibMode, CitationReferent, Destination, ListFlavor, Placement, Scope } from "../markup/values.js";
+import type { Flow } from "../common/constraints.js";
 import { kinds, type NativeKind } from "./kinds.js";
 
 /*

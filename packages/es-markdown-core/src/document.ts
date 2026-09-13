@@ -1,4 +1,4 @@
-import type { Document as DocumentValue } from "./model/document.js";
+import type { Document as DocumentValue } from "./markup/document.js";
 import { parseDocument } from "./runtime/parser.js";
 
 export type Document = DocumentValue;

@@ -76,7 +76,7 @@ extension APISuite {
         #expect(document.dump().contains("date=list([])"))
         var visitor = RecordingWalkingVisitor()
         document.walk(with: &visitor)
-        #expect(Array(visitor.events.prefix(3)) == ["entering:Document", "entering:Metadata", "exiting:Metadata"])
+        #expect(Array(visitor.events.prefix(3)) == ["enter:Document", "enter:Metadata", "exit:Metadata"])
     }
 }
 

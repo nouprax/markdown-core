@@ -12,11 +12,6 @@ public struct CrossLink: Markup {
     public let dest: Destination
     /// The raw authored label; nil when no separator was written.
     public let label: String?
-
-    /// Dispatches to the visitor's CrossLink case.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupVisitPhase) -> V.Result {
-        visitor.visit(self, phase: phase)
-    }
 }
 
 extension CrossLink {

@@ -10,11 +10,6 @@ public struct ThematicBreak: Markup {
     public let anchor: String?
     /// Ordered classes and records, including duplicates.
     public let attributes: Attributes
-
-    /// Dispatches to the visitor's `ThematicBreak` case.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupVisitPhase) -> V.Result {
-        visitor.visit(self, phase: phase)
-    }
 }
 
 extension ThematicBreak {

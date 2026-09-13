@@ -21,8 +21,8 @@ import Testing
         images[0].walk(with: &visitor)
         #expect(
             visitor.events == [
-                "entering:Embedded", "entering:Emphasis", "entering:Text", "exiting:Text", "exiting:Emphasis",
-                "exiting:Embedded",
+                "enter:Embedded", "enter:Emphasis", "enter:Text", "exit:Text", "exit:Emphasis",
+                "exit:Embedded",
             ]
         )
     }
@@ -39,6 +39,6 @@ import Testing
         #expect(plain.label == "100")
         var visitor = RecordingWalkingVisitor()
         links[0].walk(with: &visitor)
-        #expect(visitor.events == ["entering:CrossEmbedded", "exiting:CrossEmbedded"])
+        #expect(visitor.events == ["enter:CrossEmbedded", "exit:CrossEmbedded"])
     }
 }

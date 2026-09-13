@@ -19,11 +19,6 @@ public struct Strikethrough: Markup {
     public var attributes: Attributes { fields.attributes }
     /// The struck-through inline content.
     public var content: MarkupCollection<any Markup> { fields.content }
-
-    /// Dispatches to the visitor's `Strikethrough` case.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupVisitPhase) -> V.Result {
-        visitor.visit(self, phase: phase)
-    }
 }
 
 extension Strikethrough.Fields {

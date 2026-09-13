@@ -105,13 +105,13 @@ order to survive OOM.
 ## 4. Immutable AST only
 
 The public result is a typed, immutable AST. Nodes describe semantic Markdown
-constructs and their source scopes. The public Visitor surface is exhaustive
-over the canonical node-kind contract. A stack-safe, read-only depth-first
-`walk` dispatches entering and exiting phases through a second exhaustive
-node-kind visitor protocol. It does not expose an iterator or generic children:
-each node-kind branch schedules its own typed fields and content according to
-their semantics. Operations with a different projection continue to recurse
-through their own per-node Visitor callbacks.
+constructs and their source scopes. The public MarkupVisitor surface is exhaustive
+over the canonical node-kind contract and serves only as the callback interface
+for a stack-safe, read-only depth-first `walk`. The walker dispatches `enter`
+and `exit` phases and schedules each kind's typed fields in canonical order.
+Visitors accumulate results in their own state and return no value. All
+visitors, including the debug dumper, use this traversal. There is no separate
+walking visitor, public single-node dispatch, iterator, or generic children.
 
 The returned document contains only the semantic AST. The parser does not
 retain or expose source text, a normalized source copy, a line index, tokens,

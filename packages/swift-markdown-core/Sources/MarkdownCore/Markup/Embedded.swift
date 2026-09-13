@@ -35,11 +35,6 @@ public struct Embedded: Markup {
     public var title: String? { fields.title }
     /// Authored size from a complete label suffix, or nil. Independent of attribute records.
     public var dimensions: Dimensions? { fields.dimensions }
-
-    /// Dispatches to the visitor's `Embedded` case.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupVisitPhase) -> V.Result {
-        visitor.visit(self, phase: phase)
-    }
 }
 
 extension Embedded.Fields {

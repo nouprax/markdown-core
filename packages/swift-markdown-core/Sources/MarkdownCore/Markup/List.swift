@@ -70,11 +70,6 @@ public struct List: Markup {
     /// wraps each item's text in a ``Paragraph``; a tight one does not, so
     /// this is already visible in the tree and is stated here as well.
     public var tight: Bool { fields.tight }
-
-    /// Dispatches to the visitor's `List` case.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupVisitPhase) -> V.Result {
-        visitor.visit(self, phase: phase)
-    }
 }
 
 extension List.Fields {
@@ -144,11 +139,6 @@ public struct ListItem: Markup {
     /// Whether this item authored a completed or custom-state task marker.
     /// Non-task items and the incomplete marker (`" "`) are not complete.
     public var completed: Bool { marker != nil && marker != " " }
-
-    /// Dispatches to the visitor's `ListItem` case.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupVisitPhase) -> V.Result {
-        visitor.visit(self, phase: phase)
-    }
 }
 
 extension ListItem.Fields {

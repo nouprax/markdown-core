@@ -16,11 +16,11 @@ extension APISuite {
         document.walk(with: &visitor)
         #expect(
             visitor.events == [
-                "entering:Document", "entering:Paragraph", "entering:Cite", "entering:Citation", "exiting:Citation",
-                "exiting:Cite", "exiting:Paragraph", "entering:Footnote", "entering:Cite", "entering:Citation",
-                "exiting:Citation", "exiting:Cite", "exiting:Footnote", "entering:Footnote", "entering:Text",
-                "exiting:Text", "exiting:Footnote", "entering:Footnote", "entering:Paragraph", "entering:Text",
-                "exiting:Text", "exiting:Paragraph", "exiting:Footnote", "exiting:Document",
+                "enter:Document", "enter:Paragraph", "enter:Cite", "enter:Citation", "exit:Citation",
+                "exit:Cite", "exit:Paragraph", "enter:Footnote", "enter:Cite", "enter:Citation",
+                "exit:Citation", "exit:Cite", "exit:Footnote", "enter:Footnote", "enter:Text",
+                "exit:Text", "exit:Footnote", "enter:Footnote", "enter:Paragraph", "enter:Text",
+                "exit:Text", "exit:Paragraph", "exit:Footnote", "exit:Document",
             ]
         )
     }
@@ -36,15 +36,13 @@ extension APISuite {
             let citation = try #require((document.content.first as? Paragraph)?.content.first as? Cite).citations[0]
             return [try #require(document.metadata), citation, document.footnotes[0], document.specimens[0]]
         }()
-        var visitor = KindVisitor()
-        #expect(nodes.map { $0.accept(&visitor) } == ["Metadata", "Citation", "Footnote", "Specimen"])
         for node in nodes {
             #expect(node.anchor == nil && node.attributes.classes.isEmpty && node.attributes.records.isEmpty)
             var walker = RecordingWalkingVisitor()
             node.walk(with: &walker)
             #expect(walker.entered == walker.exited && walker.entered > 0)
-            #expect(walker.events.first == "entering:\(kindName(node))")
-            #expect(walker.events.last == "exiting:\(kindName(node))")
+            #expect(walker.events.first == "enter:\(kindName(node))")
+            #expect(walker.events.last == "exit:\(kindName(node))")
         }
         #expect((nodes[1] as? Citation)?.referent == .footnote(id: "label"))
         #expect((nodes[2] as? Footnote)?.id == "label")
@@ -52,23 +50,20 @@ extension APISuite {
 }
 
 extension APISuite {
-    @Test("single dispatch and traversal share the same exhaustive visitor")
+    @Test("walker controls callback phases for document and leaf roots")
     func unifiedVisitor() throws {
         let document = try Document.parse("text")
         var visitor = RecordingWalkingVisitor()
-        document.accept(&visitor)
-        document.accept(&visitor, phase: .exiting)
-        #expect(visitor.events == ["entering:Document", "exiting:Document"])
-
         document.walk(with: &visitor)
         #expect(
-            Array(visitor.events.dropFirst(2)) == [
-                "entering:Document", "entering:Paragraph", "entering:Text",
-                "exiting:Text", "exiting:Paragraph", "exiting:Document",
+            visitor.events == [
+                "enter:Document", "enter:Paragraph", "enter:Text",
+                "exit:Text", "exit:Paragraph", "exit:Document",
             ]
         )
         let text = try #require((document.content.first as? Paragraph)?.content.first)
-        var resultVisitor = KindVisitor()
-        #expect(text.accept(&resultVisitor, phase: .exiting) == "Text")
+        visitor = RecordingWalkingVisitor()
+        text.walk(with: &visitor)
+        #expect(visitor.events == ["enter:Text", "exit:Text"])
     }
 }

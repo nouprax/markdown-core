@@ -7,12 +7,16 @@ promised to remain compatible between releases.
 ## 3.0.0 - unreleased
 
 - Treat `Citation`, `Footnote`, `Specimen`, and `Metadata` as Markup nodes in
-  every binding, reached through their named owning relations. A single visitor
-  handles direct dispatch and entering/exiting walks across all 43 kinds,
-  with `MarkupVisitPhase` naming the visit phase.
+  every binding, reached through their named owning relations. One `MarkupVisitor`
+  provides enter/exit callbacks across all 43 kinds,
+  with `MarkupVisitPhase` naming the visit phase. The walker is the sole
+  traversal engine; remove public single-node dispatch and visitor return
+  values, and drive every binding's dumper through the same explicit stack.
   Rename `TreeDumper` to `MarkupDumper` and remove the separate walking visitor
   protocols. Swift field views resolve typed relations through the same member
-  syntax as scalar values while retaining flat, stack-safe storage.
+  syntax as scalar values while retaining flat, stack-safe storage. Align the
+  bindings' callback names and organize shared support, nodes, and traversal
+  under `common`, `markup`, and `visitor` (`Common`, `Markup`, and `Visitor` in Swift).
 
 - Rename `TableAlignment` to the shared `Flow` value across Swift, Kotlin and
   ES, with `markdown_core_flow` and `MARKDOWN_CORE_FLOW_*` in C. Rename

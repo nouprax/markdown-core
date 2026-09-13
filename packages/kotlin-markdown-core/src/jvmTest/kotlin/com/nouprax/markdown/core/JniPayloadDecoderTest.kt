@@ -294,7 +294,7 @@ class JniPayloadDecoderTest {
         assertTrue(document.dump().contains("subtitle=scalar(number(\"9007199254740993\"))"))
         val visitor = RecordingWalkingVisitor()
         document.walk(visitor)
-        assertEquals(listOf("entering:Document", "entering:Metadata", "exiting:Metadata"), visitor.events.take(3))
+        assertEquals(listOf("enter:Document", "enter:Metadata", "exit:Metadata"), visitor.events.take(3))
         assertFailsWith<IllegalStateException> { JniPayloadDecoder.decode(payload(scalarKind = 9)) }
         assertFailsWith<IllegalArgumentException> { JniPayloadDecoder.decode(payload(width = 0)) }
         assertFailsWith<IllegalArgumentException> { JniPayloadDecoder.decode(payload(height = 0)) }
@@ -521,8 +521,8 @@ class JniPayloadDecoderTest {
         )
         val visitor = RecordingWalkingVisitor()
         document.walk(visitor)
-        assertEquals(2, visitor.events.count { it == "entering:Specimen" })
-        assertTrue(visitor.events.indexOf("exiting:Footnote") < visitor.events.indexOf("entering:Specimen"))
+        assertEquals(2, visitor.events.count { it == "enter:Specimen" })
+        assertTrue(visitor.events.indexOf("exit:Footnote") < visitor.events.indexOf("enter:Specimen"))
         assertEquals(visitor.entered, visitor.exited)
     }
 
@@ -695,7 +695,7 @@ class JniPayloadDecoderTest {
         )
         val events = mutableListOf<String>()
         callout.walk(
-            object : Visitor<Unit> by RecordingWalkingVisitor() {
+            object : MarkupVisitor by RecordingWalkingVisitor() {
                 override fun visit(
                     callout: Callout,
                     phase: MarkupVisitPhase,
@@ -711,7 +711,7 @@ class JniPayloadDecoderTest {
                 }
             },
         )
-        assertEquals(listOf("ENTERING:Callout", "ENTERING:Text", "EXITING:Text", "EXITING:Callout"), events)
+        assertEquals(listOf("ENTER:Callout", "ENTER:Text", "EXIT:Text", "EXIT:Callout"), events)
     }
 
     @Test
@@ -826,14 +826,14 @@ class JniPayloadDecoderTest {
         cite.walk(visitor)
         assertEquals(
             listOf(
-                "entering:Cite",
-                "entering:Citation",
-                "entering:Text",
-                "exiting:Text",
-                "entering:Text",
-                "exiting:Text",
-                "exiting:Citation",
-                "exiting:Cite",
+                "enter:Cite",
+                "enter:Citation",
+                "enter:Text",
+                "exit:Text",
+                "enter:Text",
+                "exit:Text",
+                "exit:Citation",
+                "exit:Cite",
             ),
             visitor.events,
         )

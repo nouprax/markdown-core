@@ -35,11 +35,6 @@ public struct Callout: Markup {
     public var title: MarkupCollection<any Markup>? { fields.title }
     /// The quoted blocks. Block content, not inline.
     public var content: MarkupCollection<any Markup> { fields.content }
-
-    /// Dispatches to the visitor's `Callout` case.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupVisitPhase) -> V.Result {
-        visitor.visit(self, phase: phase)
-    }
 }
 
 extension Callout.Fields {

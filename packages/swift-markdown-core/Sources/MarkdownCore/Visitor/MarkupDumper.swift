@@ -6,7 +6,8 @@ public enum MarkupDumper {
     /// Returns the canonical debug dump for `root` and its owned markup.
     public static func dump(_ root: some Markup) -> String {
         let state = DumpState()
-        state.visit(root)
+        var visitor = DumpVisitor(state: state)
+        root.walk(with: &visitor)
         return state.result
     }
 }
@@ -17,25 +18,56 @@ extension Markup {
 }
 
 private final class DumpState {
+    // These frames describe output grouping only; they never retain or visit markup.
     private struct Frame {
-        var remainingNodes: Int
+        let groups: [(name: String?, count: Int)]
+        var index = -1
+        var remaining = 0
     }
 
     private var frames: [Frame] = []
+    private var remainingNodes: [Int] = []
     private var lines: [String] = []
 
     var result: String { lines.joined(separator: "\n") + "\n" }
 
-    func visit(_ node: any Markup) {
-        var visitor = DumpVisitor(state: self)
-        node.accept(&visitor)
+    func start() {
+        guard !frames.isEmpty else { return }
+        advance()
+        precondition(frames[frames.count - 1].remaining > 0)
+        frames[frames.count - 1].remaining -= 1
+    }
+
+    func end() {
+        advance()
+        precondition(frames.removeLast().remaining == 0)
+        precondition(remainingNodes.removeLast() == 0)
+    }
+
+    private func advance() {
+        let depth = frames.count - 1
+        while frames[depth].remaining == 0 && frames[depth].index < frames[depth].groups.count {
+            let previous = frames[depth].index
+            if previous >= 0 && frames[depth].groups[previous].name != nil {
+                precondition(remainingNodes.removeLast() == 0)
+            }
+            frames[depth].index += 1
+            guard frames[depth].index < frames[depth].groups.count else { return }
+            let group = frames[depth].groups[frames[depth].index]
+            if let name = group.name {
+                emit("\(name) children=\(group.count)")
+                remainingNodes.append(group.count)
+            }
+            frames[depth].remaining = group.count
+        }
     }
 
     func line(
         _ kind: String,
         _ node: any Markup,
         fields: [String] = [],
-        children: Int = 0
+        children: Int = 0,
+        groups: [(name: String?, count: Int)]? = nil
     ) {
         line(
             kind,
@@ -44,6 +76,9 @@ private final class DumpState {
                 + fields,
             children: children
         )
+        let groups = groups ?? [(nil, children)]
+        frames.append(Frame(groups: groups))
+        remainingNodes.append(groups.reduce(0) { $0 + ($1.name == nil ? $1.count : 1) })
     }
 
     /// Writes the common source extent and fields of a node line.
@@ -57,84 +92,89 @@ private final class DumpState {
         emit("\(kind) \(dump(scope: scope))\(fieldText) children=\(children)")
     }
 
-    /// A group line nests a node-valued list under its owner: `Kind children=N`
-    /// with no scope and no fields. The caller opens the list's own nesting.
-    func group(_ kind: String, children: Int, fields: [String] = []) {
-        let fieldText = fields.isEmpty ? "" : " " + fields.joined(separator: " ")
-        emit("\(kind)\(fieldText) children=\(children)")
-    }
-
     private func emit(_ text: String) {
-        guard !frames.isEmpty else {
+        guard !remainingNodes.isEmpty else {
             lines.append(text)
             return
         }
-
-        let parent = frames.count - 1
-        let prefix = frames.dropLast().map { $0.remainingNodes > 0 ? "│   " : "    " }.joined()
-        let connector = frames[parent].remainingNodes == 1 ? "└── " : "├── "
+        let parent = remainingNodes.count - 1
+        let prefix = remainingNodes.dropLast().map { $0 > 0 ? "│   " : "    " }.joined()
+        let connector = remainingNodes[parent] == 1 ? "└── " : "├── "
         lines.append(prefix + connector + text)
-        frames[parent].remainingNodes -= 1
-    }
-
-    func nested(_ count: Int, body: () -> Void) {
-        frames.append(Frame(remainingNodes: count))
-        body()
-        precondition(frames.removeLast().remainingNodes == 0)
+        remainingNodes[parent] -= 1
     }
 }
 
-/// Each visit emits exactly that node. It also chooses which structural
-/// content and node-valued fields to dump; there is no generic tree walker.
+/// Formats walker callbacks without choosing or visiting descendant nodes.
 private struct DumpVisitor: MarkupVisitor {
     let state: DumpState
 
     mutating func visit(_ node: Document, phase: MarkupVisitPhase) {
-        // The footnotes are node lines after the content, each nesting its
-        // own content; `children` counts the content alone.
-        state.line("Document", node, children: node.content.count)
-        state.nested(node.content.count + node.footnotes.count + node.specimens.count + (node.metadata == nil ? 0 : 1))
-        {
-            if let metadata = node.metadata { state.visit(metadata) }
-            node.content.forEach(state.visit)
-            for footnote in node.footnotes { state.visit(footnote) }
-            for specimen in node.specimens { state.visit(specimen) }
+        guard phase == .enter else {
+            state.end()
+            return
         }
+        state.start()
+        state.line(
+            "Document",
+            node,
+            children: node.content.count,
+            groups: [
+                (nil, node.content.count + node.footnotes.count + node.specimens.count + (node.metadata == nil ? 0 : 1))
+            ]
+        )
     }
 
     mutating func visit(_ node: Callout, phase: MarkupVisitPhase) {
+        guard phase == .enter else {
+            state.end()
+            return
+        }
+        state.start()
         state.line(
             "Callout",
             node,
             fields: [
                 "variant=\(dump(optional: node.variant))", "collapsed=\(node.collapsed.map(dump(boolean:)) ?? "null")",
             ],
-            children: node.content.count
+            children: node.content.count,
+            groups: (node.title.map { [(name: "Title", count: $0.count)] } ?? []) + [(nil, node.content.count)]
         )
-        // A non-null title is a `Title` group before the content; a
-        // null one prints nothing. Neither is counted by `children`.
-        state.nested(node.content.count + (node.title == nil ? 0 : 1)) {
-            if let title = node.title {
-                state.group("Title", children: title.count)
-                state.nested(title.count) { title.forEach(state.visit) }
-            }
-            node.content.forEach(state.visit)
-        }
     }
 
     mutating func visit(_ node: Paragraph, phase: MarkupVisitPhase) {
+        guard phase == .enter else {
+            state.end()
+            return
+        }
+        state.start()
         state.line("Paragraph", node, children: node.content.count)
-        state.nested(node.content.count) { node.content.forEach(state.visit) }
     }
 
     mutating func visit(_ node: Heading, phase: MarkupVisitPhase) {
+        guard phase == .enter else {
+            state.end()
+            return
+        }
+        state.start()
         state.line("Heading", node, fields: ["level=\(node.level)"], children: node.content.count)
-        state.nested(node.content.count) { node.content.forEach(state.visit) }
     }
 
-    mutating func visit(_ node: ThematicBreak, phase: MarkupVisitPhase) { state.line("ThematicBreak", node) }
+    mutating func visit(_ node: ThematicBreak, phase: MarkupVisitPhase) {
+        guard phase == .enter else {
+            state.end()
+            return
+        }
+        state.start()
+        state.line("ThematicBreak", node)
+    }
 
     mutating func visit(_ node: MarkdownCore.List, phase: MarkupVisitPhase) {
+        guard phase == .enter else {
+            state.end()
+            return
+        }
+        state.start()
         state.line(
             "List",
             node,
@@ -147,20 +187,28 @@ private struct DumpVisitor: MarkupVisitor {
             ],
             children: node.items.count
         )
-        state.nested(node.items.count) { node.items.forEach(state.visit) }
     }
 
     mutating func visit(_ node: ListItem, phase: MarkupVisitPhase) {
+        guard phase == .enter else {
+            state.end()
+            return
+        }
+        state.start()
         state.line(
             "ListItem",
             node,
             fields: ["marker=\(dump(optional: node.marker))"],
             children: node.content.count
         )
-        state.nested(node.content.count) { node.content.forEach(state.visit) }
     }
 
     mutating func visit(_ node: CodeBlock, phase: MarkupVisitPhase) {
+        guard phase == .enter else {
+            state.end()
+            return
+        }
+        state.start()
         state.line(
             "CodeBlock",
             node,
@@ -175,82 +223,145 @@ private struct DumpVisitor: MarkupVisitor {
     }
 
     mutating func visit(_ node: HTMLBlock, phase: MarkupVisitPhase) {
+        guard phase == .enter else {
+            state.end()
+            return
+        }
+        state.start()
         state.line("HTMLBlock", node, fields: ["literal=\(dump(escaped: node.literal))"])
     }
 
     mutating func visit(_ node: FormulaBlock, phase: MarkupVisitPhase) {
+        guard phase == .enter else {
+            state.end()
+            return
+        }
+        state.start()
         state.line("FormulaBlock", node, fields: ["literal=\(dump(escaped: node.literal))"])
     }
 
     mutating func visit(_ node: Table, phase: MarkupVisitPhase) {
+        guard phase == .enter else {
+            state.end()
+            return
+        }
+        state.start()
         let columns = node.columns.map { "\($0.flow.rawValue):\($0.relative.map(dump(decimal:)) ?? "null")" }.joined(
             separator: ","
         )
         let count = node.head.count + node.content.count + node.foot.count
-        state.line("Table", node, fields: ["columns=[\(columns)]"], children: count)
-        state.nested(3 + (node.caption == nil ? 0 : 1)) {
-            if let caption = node.caption { state.visit(caption) }
-            for (name, rows) in [("TableHead", node.head), ("TableBody", node.content), ("TableFoot", node.foot)] {
-                state.group(name, children: rows.count)
-                state.nested(rows.count) { rows.forEach(state.visit) }
-            }
-        }
+        state.line(
+            "Table",
+            node,
+            fields: ["columns=[\(columns)]"],
+            children: count,
+            groups: (node.caption == nil ? [] : [(nil, 1)]) + [
+                ("TableHead", node.head.count), ("TableBody", node.content.count), ("TableFoot", node.foot.count),
+            ]
+        )
     }
 
     mutating func visit(_ node: DefinitionList, phase: MarkupVisitPhase) {
+        guard phase == .enter else {
+            state.end()
+            return
+        }
+        state.start()
         state.line("DefinitionList", node, fields: [], children: node.definitions.count)
-        state.nested(node.definitions.count) { for definition in node.definitions { state.visit(definition) } }
     }
 
     mutating func visit(_ node: Definition, phase: MarkupVisitPhase) {
-        state.line("Definition", node, fields: ["compact=\(node.compact)"], children: node.content.count)
-        state.nested(node.content.count + 1) {
-            state.group("DefinitionTerm", children: node.term.count)
-            state.nested(node.term.count) { node.term.forEach(state.visit) }
-            for body in node.content {
-                state.group("DefinitionBody", children: body.count)
-                state.nested(body.count) { body.forEach(state.visit) }
-            }
+        guard phase == .enter else {
+            state.end()
+            return
         }
+        state.start()
+        state.line(
+            "Definition",
+            node,
+            fields: ["compact=\(node.compact)"],
+            children: node.content.count,
+            groups: [("DefinitionTerm", node.term.count)] + node.content.map { ("DefinitionBody", $0.count) }
+        )
     }
 
     mutating func visit(_ node: DirectiveBlock, phase: MarkupVisitPhase) {
+        guard phase == .enter else {
+            state.end()
+            return
+        }
+        state.start()
         state.line(
             "DirectiveBlock",
             node,
             fields: ["name=\(dump(optional: node.name))"],
-            children: node.content.count
+            children: node.content.count,
+            groups: [(nil, node.content.count + (node.label == nil ? 0 : 1))]
         )
-        state.nested(node.content.count + (node.label == nil ? 0 : 1)) {
-            if let label = node.label { state.visit(label) }
-            node.content.forEach(state.visit)
-        }
     }
 
     mutating func visit(_ node: DirectiveLabel, phase: MarkupVisitPhase) {
+        guard phase == .enter else {
+            state.end()
+            return
+        }
+        state.start()
         state.line("DirectiveLabel", node, children: node.content.count)
-        state.nested(node.content.count) { node.content.forEach(state.visit) }
     }
 }
 
 extension DumpVisitor {
     mutating func visit(_ node: Text, phase: MarkupVisitPhase) {
+        guard phase == .enter else {
+            state.end()
+            return
+        }
+        state.start()
         state.line("Text", node, fields: ["literal=\(dump(escaped: node.literal))"])
     }
 
-    mutating func visit(_ node: SoftBreak, phase: MarkupVisitPhase) { state.line("SoftBreak", node) }
+    mutating func visit(_ node: SoftBreak, phase: MarkupVisitPhase) {
+        guard phase == .enter else {
+            state.end()
+            return
+        }
+        state.start()
+        state.line("SoftBreak", node)
+    }
 
-    mutating func visit(_ node: LineBreak, phase: MarkupVisitPhase) { state.line("LineBreak", node) }
+    mutating func visit(_ node: LineBreak, phase: MarkupVisitPhase) {
+        guard phase == .enter else {
+            state.end()
+            return
+        }
+        state.start()
+        state.line("LineBreak", node)
+    }
 
     mutating func visit(_ node: Code, phase: MarkupVisitPhase) {
+        guard phase == .enter else {
+            state.end()
+            return
+        }
+        state.start()
         state.line("Code", node, fields: ["literal=\(dump(escaped: node.literal))"])
     }
 
     mutating func visit(_ node: HTML, phase: MarkupVisitPhase) {
+        guard phase == .enter else {
+            state.end()
+            return
+        }
+        state.start()
         state.line("HTML", node, fields: ["literal=\(dump(escaped: node.literal))"])
     }
 
     mutating func visit(_ node: CrossLink, phase: MarkupVisitPhase) {
+        guard phase == .enter else {
+            state.end()
+            return
+        }
+        state.start()
         state.line(
             "CrossLink",
             node,
@@ -259,6 +370,11 @@ extension DumpVisitor {
     }
 
     mutating func visit(_ node: CrossEmbedded, phase: MarkupVisitPhase) {
+        guard phase == .enter else {
+            state.end()
+            return
+        }
+        state.start()
         state.line(
             "CrossEmbedded",
             node,
@@ -270,10 +386,20 @@ extension DumpVisitor {
     }
 
     mutating func visit(_ node: Comment, phase: MarkupVisitPhase) {
+        guard phase == .enter else {
+            state.end()
+            return
+        }
+        state.start()
         state.line("Comment", node, fields: ["literal=\(dump(escaped: node.literal))"])
     }
 
     mutating func visit(_ node: Formula, phase: MarkupVisitPhase) {
+        guard phase == .enter else {
+            state.end()
+            return
+        }
+        state.start()
         state.line(
             "Formula",
             node,
@@ -282,56 +408,97 @@ extension DumpVisitor {
     }
 
     mutating func visit(_ node: Emphasis, phase: MarkupVisitPhase) {
+        guard phase == .enter else {
+            state.end()
+            return
+        }
+        state.start()
         state.line("Emphasis", node, children: node.content.count)
-        state.nested(node.content.count) { node.content.forEach(state.visit) }
     }
 
     mutating func visit(_ node: Strong, phase: MarkupVisitPhase) {
+        guard phase == .enter else {
+            state.end()
+            return
+        }
+        state.start()
         state.line("Strong", node, children: node.content.count)
-        state.nested(node.content.count) { node.content.forEach(state.visit) }
     }
 
     mutating func visit(_ node: Strikethrough, phase: MarkupVisitPhase) {
+        guard phase == .enter else {
+            state.end()
+            return
+        }
+        state.start()
         state.line("Strikethrough", node, children: node.content.count)
-        state.nested(node.content.count) { node.content.forEach(state.visit) }
     }
 
     mutating func visit(_ node: Mark, phase: MarkupVisitPhase) {
+        guard phase == .enter else {
+            state.end()
+            return
+        }
+        state.start()
         state.line("Mark", node, children: node.content.count)
-        state.nested(node.content.count) { node.content.forEach(state.visit) }
     }
 
     mutating func visit(_ node: Insertion, phase: MarkupVisitPhase) {
+        guard phase == .enter else {
+            state.end()
+            return
+        }
+        state.start()
         state.line("Insertion", node, children: node.content.count)
-        state.nested(node.content.count) { node.content.forEach(state.visit) }
     }
 
     mutating func visit(_ node: Span, phase: MarkupVisitPhase) {
+        guard phase == .enter else {
+            state.end()
+            return
+        }
+        state.start()
         state.line("Span", node, children: node.content.count)
-        state.nested(node.content.count) { node.content.forEach(state.visit) }
     }
 
     mutating func visit(_ node: Superscript, phase: MarkupVisitPhase) {
+        guard phase == .enter else {
+            state.end()
+            return
+        }
+        state.start()
         state.line("Superscript", node, children: node.content.count)
-        state.nested(node.content.count) { node.content.forEach(state.visit) }
     }
 
     mutating func visit(_ node: Subscript, phase: MarkupVisitPhase) {
+        guard phase == .enter else {
+            state.end()
+            return
+        }
+        state.start()
         state.line("Subscript", node, children: node.content.count)
-        state.nested(node.content.count) { node.content.forEach(state.visit) }
     }
 
     mutating func visit(_ node: Link, phase: MarkupVisitPhase) {
+        guard phase == .enter else {
+            state.end()
+            return
+        }
+        state.start()
         state.line(
             "Link",
             node,
             fields: ["dest=\(dump(destination: node.dest))", "title=\(dump(optional: node.title))"],
             children: node.content.count
         )
-        state.nested(node.content.count) { node.content.forEach(state.visit) }
     }
 
     mutating func visit(_ node: Embedded, phase: MarkupVisitPhase) {
+        guard phase == .enter else {
+            state.end()
+            return
+        }
+        state.start()
         state.line(
             "Embedded",
             node,
@@ -341,50 +508,73 @@ extension DumpVisitor {
             ],
             children: node.content.count
         )
-        state.nested(node.content.count) { node.content.forEach(state.visit) }
     }
 
     mutating func visit(_ node: Directive, phase: MarkupVisitPhase) {
-        state.line("Directive", node, fields: ["name=\(dump(escaped: node.name))"])
-        state.nested(node.label == nil ? 0 : 1) {
-            if let label = node.label { state.visit(label) }
+        guard phase == .enter else {
+            state.end()
+            return
         }
+        state.start()
+        state.line(
+            "Directive",
+            node,
+            fields: ["name=\(dump(escaped: node.name))"],
+            groups: [(nil, node.label == nil ? 0 : 1)]
+        )
     }
 
     mutating func visit(_ node: Cite, phase: MarkupVisitPhase) {
-        // The items are value lines under the cite, and `children` counts
-        // them; each item's affixes are groups whose nodes nest below them.
-        state.line("Cite", node, children: node.citations.count)
-        state.nested(node.citations.count) {
-            for citation in node.citations { state.visit(citation) }
+        guard phase == .enter else {
+            state.end()
+            return
         }
+        state.start()
+        state.line("Cite", node, children: node.citations.count)
     }
 
     mutating func visit(_ node: TableCaption, phase: MarkupVisitPhase) {
+        guard phase == .enter else {
+            state.end()
+            return
+        }
+        state.start()
         state.line("TableCaption", node, children: node.content.count)
-        state.nested(node.content.count) { node.content.forEach(state.visit) }
     }
 
     mutating func visit(_ node: TableRow, phase: MarkupVisitPhase) {
+        guard phase == .enter else {
+            state.end()
+            return
+        }
+        state.start()
         state.line(
             "TableRow",
             node,
             children: node.cells.count
         )
-        state.nested(node.cells.count) { node.cells.forEach(state.visit) }
     }
 
     mutating func visit(_ node: TableCell, phase: MarkupVisitPhase) {
+        guard phase == .enter else {
+            state.end()
+            return
+        }
+        state.start()
         state.line(
             "TableCell",
             node,
             fields: ["rowspan=\(node.rowspan)", "colspan=\(node.colspan)"],
             children: node.content.count
         )
-        state.nested(node.content.count) { node.content.forEach(state.visit) }
     }
 
     mutating func visit(_ node: Metadata, phase: MarkupVisitPhase) {
+        guard phase == .enter else {
+            state.end()
+            return
+        }
+        state.start()
         state.line(
             "Metadata",
             node,
@@ -405,38 +595,46 @@ extension DumpVisitor {
     }
 
     mutating func visit(_ node: Footnote, phase: MarkupVisitPhase) {
+        guard phase == .enter else {
+            state.end()
+            return
+        }
+        state.start()
         state.line(
             "Footnote",
             node,
             fields: ["id=\(dump(escaped: node.id))"],
             children: node.content.count
         )
-        state.nested(node.content.count) { node.content.forEach(state.visit) }
     }
 
     mutating func visit(_ node: Specimen, phase: MarkupVisitPhase) {
+        guard phase == .enter else {
+            state.end()
+            return
+        }
+        state.start()
         state.line(
             "Specimen",
             node,
             fields: ["id=\(dump(optional: node.id))", "start=\(node.start.map(String.init) ?? "null")"],
             children: node.content.count
         )
-        state.nested(node.content.count) { node.content.forEach(state.visit) }
     }
 
     mutating func visit(_ node: Citation, phase: MarkupVisitPhase) {
+        guard phase == .enter else {
+            state.end()
+            return
+        }
+        state.start()
         state.line(
             "Citation",
             node,
             fields: ["referent=\(dump(referent: node.referent))"],
-            children: 0
+            children: 0,
+            groups: [("CitationPrefix", node.prefix.count), ("CitationSuffix", node.suffix.count)]
         )
-        state.nested(2) {
-            state.group("CitationPrefix", children: node.prefix.count)
-            state.nested(node.prefix.count) { node.prefix.forEach(state.visit) }
-            state.group("CitationSuffix", children: node.suffix.count)
-            state.nested(node.suffix.count) { node.suffix.forEach(state.visit) }
-        }
     }
 }
 

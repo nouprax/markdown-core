@@ -39,9 +39,9 @@ extension APISuite {
         var visitor = RecordingWalkingVisitor()
         table.walk(with: &visitor)
         let kinds = visitor.events.filter {
-            ["entering:Heading", "entering:Paragraph", "entering:ThematicBreak"].contains($0)
+            ["enter:Heading", "enter:Paragraph", "enter:ThematicBreak"].contains($0)
         }
-        #expect(kinds == ["entering:Heading", "entering:Paragraph", "entering:ThematicBreak"])
+        #expect(kinds == ["enter:Heading", "enter:Paragraph", "enter:ThematicBreak"])
         #expect(table.dump().contains("columns=[left:0.1,none:null] children=3"))
         #expect(table.dump().contains("TableFoot children=1"))
         let empty = MarkupStore(records: [

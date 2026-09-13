@@ -393,25 +393,29 @@ that detects a category violation in the C facade fails with its platform
 contract-violation error. Valid UTF-8 is a precondition of the C API; the
 bindings provide valid UTF-8 input.
 
-## Visitor and walking
+## MarkupVisitor and walking
 
-The typed `Visitor<Result>` has one dispatch method for every `Markup` kind in
-the node inventory, including `TableRow`, `TableCell`, and `DirectiveLabel`.
-The interface is exhaustive: every typed method is required, there is
-no `defaultVisit`, optional handler, catch-all adapter, or protocol-extension
-fallback. Adding a `Markup` kind must therefore produce compile errors in every
-visitor until the new case is handled. Each method receives the concrete node
-and a required `MarkupVisitPhase`, and returns `Result`. Single-node dispatch returns
-that result without traversing; `accept` (Swift/Kotlin) and `visit` (TypeScript)
-default to `entering` and also accept an explicit phase.
+The typed `MarkupVisitor` is a callback interface for `walk`, with one required method
+for every `Markup` kind in the node inventory. Each callback receives a concrete
+node and `MarkupVisitPhase` and returns no
+value (`Void` in Swift, `Unit` in Kotlin, `undefined` in TypeScript). Consumers
+accumulate results in their own state. There is no public single-node
+`accept` or `visit` operation and no caller-supplied phase on `walk`.
 
-The read-only, depth-first `walk` operation uses the same visitor interface.
-It requires a no-result visitor: `Void` in Swift, `Unit` in Kotlin, and
-`undefined` in TypeScript. TypeScript uses `undefined` because `void` also
-accepts callbacks that return values; those results must not be silently lost. Every typed callback receives
-an `entering` phase before the node's owned markup relations and an `exiting`
-phase after them. The walk is implemented with an explicit action stack, so
-language call-stack depth does not grow with AST depth.
+The interface is exhaustive: no `defaultVisit`, optional handler, catch-all
+adapter, or protocol-extension fallback. Adding a kind requires updating every
+visitor. TypeScript uses `undefined` because `void` also permits callbacks to
+return values that the traversal would silently discard.
+
+`Markup.walk(with:)` in Swift, `Markup.walk(visitor)` in Kotlin, and
+`walk(markup, visitor)` in TypeScript are the traversal entry points. The walker
+alone schedules descendants and supplies `enter` before their traversal and
+`exit` after it. An explicit stack keeps language call-stack depth independent
+of AST depth. The walker is an implementation detail, not another public
+visitor implementation. Its internal dispatch selects typed callbacks. Swift
+and Kotlin use private per-kind dispatch overloads. TypeScript indexes a mapped
+callback object by `node.kind`, with the node type inferred from that key; its
+walker uses the same type relationship for the per-kind scheduling table.
 
 Walking does not expose an iterator or a generic child projection. Each
 node-kind traversal branch selects its own typed, owned relations. Relations
@@ -421,7 +425,7 @@ are visited in canonical field order and arrays retain their stored order:
 complete AST walk as the named `label` field without becoming directive
 content or contributing to a `children` collection.
 
-Single-node dispatch and walking cover the same Markup kinds. A `Cite` visits each
+Walking covers all Markup kinds. A `Cite` visits each
 `Citation`, whose `prefix` precedes its `suffix`. `Document` visits present
 `metadata`, `content`, `footnotes`, then `specimens`; definitions descend into
 their own content. Metadata is a leaf and receives both phases. Unscoped
@@ -429,23 +433,28 @@ values, including reference IDs, do not create traversal edges. A semantic
 reference cycle therefore cannot create an ownership or traversal cycle.
 
 There is no separate walking visitor protocol or forwarding adapter. The walk
-dispatches directly through the unified visitor and schedules each node's
-owned fields only on entry. The walk is observation only; it has no
-prune, replace, remove, setter, parent mutation, or native-handle callback.
-
-Operations that need relation-specific policy rather than the canonical full
-walk continue to implement recursion in their own exhaustive per-node Visitor.
+is observation only; it has no prune, replace, remove, setter, parent mutation,
+or native-handle callback. Business visitors do not schedule or recursively
+visit descendants. Nested walks explicitly requested by consumer code use an
+independent walker and do not share pending events. In Kotlin and TypeScript,
+a thrown callback error stops the walk immediately and propagates unchanged;
+pending callbacks, including ancestor exits, are not delivered. A subsequent
+walk starts with its own event stack.
 
 ## Debug dump
 
 Swift, Kotlin, and TypeScript publish `MarkupDumper.dump(markup)` and a
-convenience `Markup.dump()` method. Each MarkupDumper uses exhaustive per-node
-Visitor dispatch, like cmark's per-node render callback: that node's dump
-function emits its fields and decides which content or field nodes to visit.
-No binding calls the C debug dump. Dumping a non-Document Markup treats that
-value as the root and emits only its operation-defined dump projection. The
-canonical text grammar is defined in `canonical-ast-dump.md` and is for
-debugging rather than serialization.
+convenience `Markup.dump()` method. Every dumper is a callback consumer of the
+same walker used by other clients. Its enter callback formats the current
+node, and its exit callback completes that node's output layout.
+
+Output frames describe group names, counts, and indentation only. They contain
+no Markup nodes and do not traverse the tree. This preserves empty groups and
+named sections such as `TableHead` and `DefinitionBody` without adding fake
+Markup kinds or giving the walker dump-specific events. Dumping a subtree uses
+that node as the root. No binding calls the C debug dump. The shared text
+grammar in `canonical-ast-dump.md` remains unchanged and is intended for debugging
+rather than serialization.
 
 ## Kotlin `List` naming contract
 

@@ -11,12 +11,20 @@ public object MarkupDumper {
 }
 
 private class State {
+    // Output groups contain only names and counts, never markup nodes.
+    private data class Frame(
+        val groups: kotlin.collections.List<Pair<String?, Int>>,
+        var index: Int = -1,
+        var remaining: Int = 0,
+    )
+
+    private val frames = mutableListOf<Frame>()
     private val remainingNodes = mutableListOf<Int>()
     private val lines = mutableListOf<String>()
     private val visitor = DumpVisitor(this)
 
     fun dump(node: Markup) {
-        node.accept(visitor)
+        node.walk(visitor)
     }
 
     fun result(): String = lines.joinToString(separator = "\n", postfix = "\n")
@@ -28,7 +36,6 @@ private class State {
         children: kotlin.collections.List<Markup>,
     ) {
         line(kind, node, fields, children.size)
-        nested(children.size) { children.forEach(::dump) }
     }
 
     fun line(
@@ -36,6 +43,7 @@ private class State {
         node: Markup,
         fields: kotlin.collections.List<String> = emptyList(),
         children: Int = 0,
+        groups: kotlin.collections.List<Pair<String?, Int>> = listOf(null to children),
     ) {
         line(
             kind,
@@ -43,6 +51,8 @@ private class State {
             listOf("anchor=${optional(node.anchor)}", "attributes=${attributes(node.attributes)}") + fields,
             children,
         )
+        frames += Frame(groups)
+        remainingNodes += groups.sumOf { (name, count) -> if (name == null) count else 1 }
     }
 
     /** Formats a node line from its common and kind-specific fields. */
@@ -54,17 +64,6 @@ private class State {
     ) {
         val fieldText = if (fields.isEmpty()) "" else " ${fields.joinToString(" ")}"
         emit("$kind ${scope(scope)}$fieldText children=$children")
-    }
-
-    /**
-     * A group line nests a node-valued list under its owner: `Kind children=N`
-     * with no scope and no fields. The caller opens the list's own nesting.
-     */
-    fun group(
-        kind: String,
-        children: Int,
-    ) {
-        emit("$kind children=$children")
     }
 
     private fun emit(text: String) {
@@ -80,44 +79,74 @@ private class State {
         remainingNodes[parent] -= 1
     }
 
-    fun nested(
-        count: Int,
-        body: () -> Unit,
-    ) {
-        remainingNodes += count
-        body()
-        check(remainingNodes.removeAt(remainingNodes.lastIndex) == 0) {
-            "node dumper did not emit every owned node"
+    fun start() {
+        if (frames.isEmpty()) return
+        advance()
+        check(frames.last().remaining > 0)
+        frames.last().remaining -= 1
+    }
+
+    fun end() {
+        advance()
+        check(frames.removeAt(frames.lastIndex).remaining == 0)
+        check(remainingNodes.removeAt(remainingNodes.lastIndex) == 0)
+    }
+
+    private fun advance() {
+        val frame = frames.last()
+        while (frame.remaining == 0 && frame.index < frame.groups.size) {
+            if (frame.index >= 0 && frame.groups[frame.index].first != null) {
+                check(remainingNodes.removeAt(remainingNodes.lastIndex) == 0)
+            }
+            frame.index += 1
+            if (frame.index == frame.groups.size) return
+            val (name, count) = frame.groups[frame.index]
+            if (name != null) {
+                emit("$name children=$count")
+                remainingNodes += count
+            }
+            frame.remaining = count
         }
     }
 }
 
-/** Each visit emits exactly that node and chooses its children and fields. */
+/** Formats walker callbacks without choosing or visiting descendants. */
 private class DumpVisitor(
     private val state: State,
-) : Visitor<Unit> {
+) : MarkupVisitor {
     override fun visit(
         document: Document,
         phase: MarkupVisitPhase,
     ) {
-        // The footnotes are value lines after the content, each nesting its
-        // own content; `children` counts the content alone.
-        state.line("Document", document, children = document.content.size)
-        state.nested(
-            document.content.size + document.footnotes.size + document.specimens.size +
-                (if (document.metadata == null) 0 else 1),
-        ) {
-            document.metadata?.let(state::dump)
-            document.content.forEach(state::dump)
-            document.footnotes.forEach(state::dump)
-            document.specimens.forEach(state::dump)
+        if (phase == MarkupVisitPhase.EXIT) {
+            state.end()
+            return
         }
+        state.start()
+        state.line(
+            "Document",
+            document,
+            children = document.content.size,
+            groups =
+                listOf(
+                    null to
+                        (
+                            document.content.size + document.footnotes.size + document.specimens.size +
+                                if (document.metadata == null) 0 else 1
+                        ),
+                ),
+        )
     }
 
     override fun visit(
         metadata: Metadata,
         phase: MarkupVisitPhase,
     ) {
+        if (phase == MarkupVisitPhase.EXIT) {
+            state.end()
+            return
+        }
+        state.start()
         state.line(
             "Metadata",
             metadata,
@@ -141,48 +170,60 @@ private class DumpVisitor(
         footnote: Footnote,
         phase: MarkupVisitPhase,
     ) {
+        if (phase == MarkupVisitPhase.EXIT) {
+            state.end()
+            return
+        }
+        state.start()
         state.line("Footnote", footnote, listOf("id=${escaped(footnote.id)}"), footnote.content.size)
-        state.nested(footnote.content.size) { footnote.content.forEach(state::dump) }
     }
 
     override fun visit(
         specimen: Specimen,
         phase: MarkupVisitPhase,
     ) {
+        if (phase == MarkupVisitPhase.EXIT) {
+            state.end()
+            return
+        }
+        state.start()
         state.line(
             "Specimen",
             specimen,
             listOf("id=${optional(specimen.id)}", "start=${specimen.start ?: "null"}"),
             specimen.content.size,
         )
-        state.nested(specimen.content.size) { specimen.content.forEach(state::dump) }
     }
 
     override fun visit(
         callout: Callout,
         phase: MarkupVisitPhase,
     ) {
+        if (phase == MarkupVisitPhase.EXIT) {
+            state.end()
+            return
+        }
+        state.start()
         state.line(
             "Callout",
             callout,
             listOf("variant=${optional(callout.variant)}", "collapsed=${callout.collapsed ?: "null"}"),
             callout.content.size,
+            groups =
+                (callout.title?.let { listOf("Title" to it.size) } ?: emptyList()) +
+                    listOf(null to callout.content.size),
         )
-        // A non-null title is a `Title` group before the content; a
-        // null one prints nothing. Neither is counted by `children`.
-        state.nested(callout.content.size + (if (callout.title == null) 0 else 1)) {
-            callout.title?.let { title ->
-                state.group("Title", title.size)
-                state.nested(title.size) { title.forEach(state::dump) }
-            }
-            callout.content.forEach(state::dump)
-        }
     }
 
     override fun visit(
         paragraph: Paragraph,
         phase: MarkupVisitPhase,
     ) {
+        if (phase == MarkupVisitPhase.EXIT) {
+            state.end()
+            return
+        }
+        state.start()
         state.container("Paragraph", paragraph, children = paragraph.content)
     }
 
@@ -190,6 +231,11 @@ private class DumpVisitor(
         heading: Heading,
         phase: MarkupVisitPhase,
     ) {
+        if (phase == MarkupVisitPhase.EXIT) {
+            state.end()
+            return
+        }
+        state.start()
         state.container("Heading", heading, listOf("level=${heading.level}"), heading.content)
     }
 
@@ -197,6 +243,11 @@ private class DumpVisitor(
         thematicBreak: ThematicBreak,
         phase: MarkupVisitPhase,
     ) {
+        if (phase == MarkupVisitPhase.EXIT) {
+            state.end()
+            return
+        }
+        state.start()
         state.line("ThematicBreak", thematicBreak)
     }
 
@@ -204,6 +255,11 @@ private class DumpVisitor(
         list: List,
         phase: MarkupVisitPhase,
     ) {
+        if (phase == MarkupVisitPhase.EXIT) {
+            state.end()
+            return
+        }
+        state.start()
         state.container(
             "List",
             list,
@@ -222,6 +278,11 @@ private class DumpVisitor(
         listItem: ListItem,
         phase: MarkupVisitPhase,
     ) {
+        if (phase == MarkupVisitPhase.EXIT) {
+            state.end()
+            return
+        }
+        state.start()
         state.container(
             "ListItem",
             listItem,
@@ -234,6 +295,11 @@ private class DumpVisitor(
         codeBlock: CodeBlock,
         phase: MarkupVisitPhase,
     ) {
+        if (phase == MarkupVisitPhase.EXIT) {
+            state.end()
+            return
+        }
+        state.start()
         state.line(
             "CodeBlock",
             codeBlock,
@@ -251,6 +317,11 @@ private class DumpVisitor(
         htmlBlock: HTMLBlock,
         phase: MarkupVisitPhase,
     ) {
+        if (phase == MarkupVisitPhase.EXIT) {
+            state.end()
+            return
+        }
+        state.start()
         state.line("HTMLBlock", htmlBlock, listOf("literal=${escaped(htmlBlock.literal)}"))
     }
 
@@ -258,6 +329,11 @@ private class DumpVisitor(
         formulaBlock: FormulaBlock,
         phase: MarkupVisitPhase,
     ) {
+        if (phase == MarkupVisitPhase.EXIT) {
+            state.end()
+            return
+        }
+        state.start()
         state.line("FormulaBlock", formulaBlock, listOf("literal=${escaped(formulaBlock.literal)}"))
     }
 
@@ -265,65 +341,98 @@ private class DumpVisitor(
         table: Table,
         phase: MarkupVisitPhase,
     ) {
+        if (phase == MarkupVisitPhase.EXIT) {
+            state.end()
+            return
+        }
+        state.start()
         val columns =
             table.columns.joinToString(
                 ",",
             ) { "${it.flow.token()}:${it.relative?.let(::decimal) ?: "null"}" }
-        state.line("Table", table, listOf("columns=[$columns]"), table.head.size + table.content.size + table.foot.size)
-        state.nested(3 + if (table.caption == null) 0 else 1) {
-            table.caption?.let(state::dump)
-            for ((name, rows) in listOf(
-                "TableHead" to table.head,
-                "TableBody" to table.content,
-                "TableFoot" to table.foot,
-            )) {
-                state.group(name, rows.size)
-                state.nested(rows.size) { rows.forEach(state::dump) }
-            }
-        }
+        state.line(
+            "Table",
+            table,
+            listOf("columns=[$columns]"),
+            table.head.size + table.content.size + table.foot.size,
+            groups =
+                (if (table.caption == null) emptyList() else listOf(null to 1)) +
+                    listOf(
+                        "TableHead" to table.head.size,
+                        "TableBody" to table.content.size,
+                        "TableFoot" to table.foot.size,
+                    ),
+        )
     }
 
     override fun visit(
         tableCaption: TableCaption,
         phase: MarkupVisitPhase,
-    ): Unit = state.container("TableCaption", tableCaption, emptyList(), tableCaption.content)
+    ) {
+        if (phase == MarkupVisitPhase.EXIT) {
+            state.end()
+            return
+        }
+        state.start()
+        state.container("TableCaption", tableCaption, emptyList(), tableCaption.content)
+    }
 
     override fun visit(
         tableRow: TableRow,
         phase: MarkupVisitPhase,
-    ): Unit = state.container("TableRow", tableRow, emptyList(), tableRow.cells)
+    ) {
+        if (phase == MarkupVisitPhase.EXIT) {
+            state.end()
+            return
+        }
+        state.start()
+        state.container("TableRow", tableRow, emptyList(), tableRow.cells)
+    }
 
     override fun visit(
         tableCell: TableCell,
         phase: MarkupVisitPhase,
-    ): Unit =
+    ) {
+        if (phase == MarkupVisitPhase.EXIT) {
+            state.end()
+            return
+        }
+        state.start()
         state.container(
             "TableCell",
             tableCell,
             listOf("rowspan=${tableCell.rowspan}", "colspan=${tableCell.colspan}"),
             tableCell.content,
         )
+    }
 
     override fun visit(
         directiveBlock: DirectiveBlock,
         phase: MarkupVisitPhase,
     ) {
+        if (phase == MarkupVisitPhase.EXIT) {
+            state.end()
+            return
+        }
+        state.start()
         state.line(
             "DirectiveBlock",
             directiveBlock,
             listOf("name=${optional(directiveBlock.name)}"),
             children = directiveBlock.content.size,
+            groups = listOf(null to (directiveBlock.content.size + if (directiveBlock.label == null) 0 else 1)),
         )
-        state.nested(directiveBlock.content.size + if (directiveBlock.label == null) 0 else 1) {
-            directiveBlock.label?.let(state::dump)
-            directiveBlock.content.forEach(state::dump)
-        }
     }
 
     override fun visit(
         directiveLabel: DirectiveLabel,
         phase: MarkupVisitPhase,
     ) {
+        if (phase == MarkupVisitPhase.EXIT) {
+            state.end()
+            return
+        }
+        state.start()
         state.container("DirectiveLabel", directiveLabel, children = directiveLabel.content)
     }
 
@@ -331,6 +440,11 @@ private class DumpVisitor(
         text: Text,
         phase: MarkupVisitPhase,
     ) {
+        if (phase == MarkupVisitPhase.EXIT) {
+            state.end()
+            return
+        }
+        state.start()
         state.line("Text", text, listOf("literal=${escaped(text.literal)}"))
     }
 
@@ -338,6 +452,11 @@ private class DumpVisitor(
         softBreak: SoftBreak,
         phase: MarkupVisitPhase,
     ) {
+        if (phase == MarkupVisitPhase.EXIT) {
+            state.end()
+            return
+        }
+        state.start()
         state.line("SoftBreak", softBreak)
     }
 
@@ -345,6 +464,11 @@ private class DumpVisitor(
         lineBreak: LineBreak,
         phase: MarkupVisitPhase,
     ) {
+        if (phase == MarkupVisitPhase.EXIT) {
+            state.end()
+            return
+        }
+        state.start()
         state.line("LineBreak", lineBreak)
     }
 
@@ -352,6 +476,11 @@ private class DumpVisitor(
         code: Code,
         phase: MarkupVisitPhase,
     ) {
+        if (phase == MarkupVisitPhase.EXIT) {
+            state.end()
+            return
+        }
+        state.start()
         state.line("Code", code, listOf("literal=${escaped(code.literal)}"))
     }
 
@@ -359,6 +488,11 @@ private class DumpVisitor(
         html: HTML,
         phase: MarkupVisitPhase,
     ) {
+        if (phase == MarkupVisitPhase.EXIT) {
+            state.end()
+            return
+        }
+        state.start()
         state.line("HTML", html, listOf("literal=${escaped(html.literal)}"))
     }
 
@@ -366,6 +500,11 @@ private class DumpVisitor(
         crossLink: CrossLink,
         phase: MarkupVisitPhase,
     ) {
+        if (phase == MarkupVisitPhase.EXIT) {
+            state.end()
+            return
+        }
+        state.start()
         state.line(
             "CrossLink",
             crossLink,
@@ -377,6 +516,11 @@ private class DumpVisitor(
         crossEmbedded: CrossEmbedded,
         phase: MarkupVisitPhase,
     ) {
+        if (phase == MarkupVisitPhase.EXIT) {
+            state.end()
+            return
+        }
+        state.start()
         state.line(
             "CrossEmbedded",
             crossEmbedded,
@@ -392,6 +536,11 @@ private class DumpVisitor(
         comment: Comment,
         phase: MarkupVisitPhase,
     ) {
+        if (phase == MarkupVisitPhase.EXIT) {
+            state.end()
+            return
+        }
+        state.start()
         state.line("Comment", comment, listOf("literal=${escaped(comment.literal)}"))
     }
 
@@ -399,6 +548,11 @@ private class DumpVisitor(
         formula: Formula,
         phase: MarkupVisitPhase,
     ) {
+        if (phase == MarkupVisitPhase.EXIT) {
+            state.end()
+            return
+        }
+        state.start()
         state.line("Formula", formula, listOf("mode=${formula.mode.token()}", "literal=${escaped(formula.literal)}"))
     }
 
@@ -406,6 +560,11 @@ private class DumpVisitor(
         emphasis: Emphasis,
         phase: MarkupVisitPhase,
     ) {
+        if (phase == MarkupVisitPhase.EXIT) {
+            state.end()
+            return
+        }
+        state.start()
         state.container("Emphasis", emphasis, children = emphasis.content)
     }
 
@@ -413,6 +572,11 @@ private class DumpVisitor(
         strong: Strong,
         phase: MarkupVisitPhase,
     ) {
+        if (phase == MarkupVisitPhase.EXIT) {
+            state.end()
+            return
+        }
+        state.start()
         state.container("Strong", strong, children = strong.content)
     }
 
@@ -420,6 +584,11 @@ private class DumpVisitor(
         strikethrough: Strikethrough,
         phase: MarkupVisitPhase,
     ) {
+        if (phase == MarkupVisitPhase.EXIT) {
+            state.end()
+            return
+        }
+        state.start()
         state.container("Strikethrough", strikethrough, children = strikethrough.content)
     }
 
@@ -427,6 +596,11 @@ private class DumpVisitor(
         mark: Mark,
         phase: MarkupVisitPhase,
     ) {
+        if (phase == MarkupVisitPhase.EXIT) {
+            state.end()
+            return
+        }
+        state.start()
         state.container("Mark", mark, children = mark.content)
     }
 
@@ -434,6 +608,11 @@ private class DumpVisitor(
         insertion: Insertion,
         phase: MarkupVisitPhase,
     ) {
+        if (phase == MarkupVisitPhase.EXIT) {
+            state.end()
+            return
+        }
+        state.start()
         state.container("Insertion", insertion, children = insertion.content)
     }
 
@@ -441,6 +620,11 @@ private class DumpVisitor(
         span: Span,
         phase: MarkupVisitPhase,
     ) {
+        if (phase == MarkupVisitPhase.EXIT) {
+            state.end()
+            return
+        }
+        state.start()
         state.container("Span", span, children = span.content)
     }
 
@@ -448,6 +632,11 @@ private class DumpVisitor(
         superscript: Superscript,
         phase: MarkupVisitPhase,
     ) {
+        if (phase == MarkupVisitPhase.EXIT) {
+            state.end()
+            return
+        }
+        state.start()
         state.container("Superscript", superscript, children = superscript.content)
     }
 
@@ -455,6 +644,11 @@ private class DumpVisitor(
         definitionList: DefinitionList,
         phase: MarkupVisitPhase,
     ) {
+        if (phase == MarkupVisitPhase.EXIT) {
+            state.end()
+            return
+        }
+        state.start()
         state.container("DefinitionList", definitionList, children = definitionList.definitions)
     }
 
@@ -462,21 +656,31 @@ private class DumpVisitor(
         definition: Definition,
         phase: MarkupVisitPhase,
     ) {
-        state.line("Definition", definition, listOf("compact=${definition.compact}"), definition.content.size)
-        state.nested(definition.content.size + 1) {
-            state.group("DefinitionTerm", definition.term.size)
-            state.nested(definition.term.size) { definition.term.forEach(state::dump) }
-            for (body in definition.content) {
-                state.group("DefinitionBody", body.size)
-                state.nested(body.size) { body.forEach(state::dump) }
-            }
+        if (phase == MarkupVisitPhase.EXIT) {
+            state.end()
+            return
         }
+        state.start()
+        state.line(
+            "Definition",
+            definition,
+            listOf("compact=${definition.compact}"),
+            definition.content.size,
+            groups =
+                listOf("DefinitionTerm" to definition.term.size) +
+                    definition.content.map { "DefinitionBody" to it.size },
+        )
     }
 
     override fun visit(
         subscript: Subscript,
         phase: MarkupVisitPhase,
     ) {
+        if (phase == MarkupVisitPhase.EXIT) {
+            state.end()
+            return
+        }
+        state.start()
         state.container("Subscript", subscript, children = subscript.content)
     }
 
@@ -484,6 +688,11 @@ private class DumpVisitor(
         link: Link,
         phase: MarkupVisitPhase,
     ) {
+        if (phase == MarkupVisitPhase.EXIT) {
+            state.end()
+            return
+        }
+        state.start()
         state.container(
             "Link",
             link,
@@ -499,6 +708,11 @@ private class DumpVisitor(
         embedded: Embedded,
         phase: MarkupVisitPhase,
     ) {
+        if (phase == MarkupVisitPhase.EXIT) {
+            state.end()
+            return
+        }
+        state.start()
         state.container(
             "Embedded",
             embedded,
@@ -515,33 +729,47 @@ private class DumpVisitor(
         directive: Directive,
         phase: MarkupVisitPhase,
     ) {
-        state.line("Directive", directive, listOf("name=${escaped(directive.name)}"))
-        state.nested(if (directive.label == null) 0 else 1) {
-            directive.label?.let(state::dump)
+        if (phase == MarkupVisitPhase.EXIT) {
+            state.end()
+            return
         }
+        state.start()
+        state.line(
+            "Directive",
+            directive,
+            listOf("name=${escaped(directive.name)}"),
+            groups = listOf(null to (if (directive.label == null) 0 else 1)),
+        )
     }
 
     override fun visit(
         cite: Cite,
         phase: MarkupVisitPhase,
     ) {
-        // The items are value lines under the cite, and `children` counts
-        // them; each item's affixes are groups whose nodes nest below them.
+        if (phase == MarkupVisitPhase.EXIT) {
+            state.end()
+            return
+        }
+        state.start()
         state.line("Cite", cite, children = cite.citations.size)
-        state.nested(cite.citations.size) { cite.citations.forEach(state::dump) }
     }
 
     override fun visit(
         citation: Citation,
         phase: MarkupVisitPhase,
     ) {
-        state.line("Citation", citation, listOf("referent=${referent(citation.referent)}"), 0)
-        state.nested(2) {
-            state.group("CitationPrefix", citation.prefix.size)
-            state.nested(citation.prefix.size) { citation.prefix.forEach(state::dump) }
-            state.group("CitationSuffix", citation.suffix.size)
-            state.nested(citation.suffix.size) { citation.suffix.forEach(state::dump) }
+        if (phase == MarkupVisitPhase.EXIT) {
+            state.end()
+            return
         }
+        state.start()
+        state.line(
+            "Citation",
+            citation,
+            listOf("referent=${referent(citation.referent)}"),
+            0,
+            groups = listOf("CitationPrefix" to citation.prefix.size, "CitationSuffix" to citation.suffix.size),
+        )
     }
 }
 

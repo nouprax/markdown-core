@@ -26,11 +26,6 @@ public struct Directive: Markup {
     public var name: String { fields.name }
     /// The bracketed label, or `nil` when the source wrote none.
     public var label: DirectiveLabel? { fields.label }
-
-    /// Dispatches to the visitor's `Directive` case.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupVisitPhase) -> V.Result {
-        visitor.visit(self, phase: phase)
-    }
 }
 
 extension Directive.Fields {

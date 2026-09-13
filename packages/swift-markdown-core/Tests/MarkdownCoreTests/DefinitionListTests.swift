@@ -22,10 +22,10 @@ import Testing
         list.walk(with: &visitor)
         #expect(
             visitor.events == [
-                "entering:DefinitionList", "entering:Definition", "entering:Emphasis", "entering:Text", "exiting:Text",
-                "exiting:Emphasis", "entering:Paragraph", "entering:Text", "exiting:Text", "exiting:Paragraph",
-                "exiting:Definition", "entering:Definition", "entering:Text", "exiting:Text", "entering:Paragraph",
-                "entering:Text", "exiting:Text", "exiting:Paragraph", "exiting:Definition", "exiting:DefinitionList",
+                "enter:DefinitionList", "enter:Definition", "enter:Emphasis", "enter:Text", "exit:Text",
+                "exit:Emphasis", "enter:Paragraph", "enter:Text", "exit:Text", "exit:Paragraph",
+                "exit:Definition", "enter:Definition", "enter:Text", "exit:Text", "enter:Paragraph",
+                "enter:Text", "exit:Text", "exit:Paragraph", "exit:Definition", "exit:DefinitionList",
             ]
         )
     }

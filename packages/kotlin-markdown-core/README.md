@@ -99,12 +99,12 @@ between paired inline HTML tags remains eligible for Markdown parsing.
 
 `==highlight==` produces `Mark` with parsed inline `content`, including nested
 emphasis, links, and other inline nodes. Matching consumes two equals signs
-at a time; unmatched signs remain text. Typed visitors and walking visitors
+at a time; unmatched signs remain text. Typed visitor callbacks
 include the `Mark` case, and its scope covers both delimiters and the body.
 
 `++inserted++` produces `Insertion` with parsed inline `content`. Repeated pairs
 nest (`++++text++++`), and an odd leftover plus stays outside the matching
-pairs (`+++text+++`). Insertion participates in exhaustive and walking visitors;
+pairs (`+++text+++`). Insertion participates in exhaustive visitor callbacks;
 its scope includes the delimiters. Escapes and opaque bodies retain literal plus signs.
 
 `^[inline note]` produces a one-item `Cite` and a document-owned `Footnote`
@@ -122,8 +122,7 @@ Bracketed spans (`[text]{.class}`) produce `Span(content)` with the shared
 anchor and attributes. Superscript (`^text^`) and subscript (`~text~`) retain
 parsed inline content; their bodies must be non-empty and contain no raw
 whitespace. An escaped ASCII space within a completed body becomes NBSP.
-Strikethrough uses `~~text~~`. All three kinds support typed visitors and
-walking visitors, and their scopes include their authored delimiters.
+Strikethrough uses `~~text~~`. All three kinds support typed visitor callbacks, and their scopes include their authored delimiters.
 
 Nameless fenced containers (`::: {.class}` or `::: class`) expose
 `DirectiveBlock.name` as null; named and nameless forms share closing and nesting
@@ -135,18 +134,21 @@ introducing extra Markup wrappers.
 
 ## Traverse and Inspect
 
-`Markup.accept(visitor)` dispatches one entering event and returns the result;
-`Markup.accept(visitor, MarkupVisitPhase.EXITING)` dispatches one explicit exit event.
-Neither call traverses owned fields. `Markup.walk(visitor)` takes a
-`Visitor<Unit>` and performs a stack-safe depth-first walk, reporting both
-phases through the same interface.
+Source files are grouped into `common` (shared constraints and support),
+`markup` (nodes and their values), and `visitor` (callbacks, traversal, and dump).
+The public callback interface is named `MarkupVisitor` in all three bindings.
 
-`Visitor<Result>` requires a `fun visit(embedded: Embedded, phase: MarkupVisitPhase): Result`
-overload for every concrete Markup kind. Implementations use the declared
-parameter names, including `paragraph`, `tableRow`, and `citation`. All
-callbacks are required; adding a kind makes incomplete implementations fail
-to compile. Call `visitor.visit(embedded, MarkupVisitPhase.ENTERING)` for a concrete
-node, or `node.accept(visitor)` when the static type is `Markup`.
+`Markup.walk(visitor)` performs a stack-safe depth-first traversal and drives
+all `MarkupVisitor` callbacks. Each required overload receives a concrete node and
+`MarkupVisitPhase` and returns `Unit`. The walker supplies `ENTER` before a
+node's descendants and `EXIT` after them. Consumers accumulate results in
+visitor state; there is no separate single-node dispatch API.
+
+`MarkupVisitor` requires a `fun visit(embedded: Embedded, phase: MarkupVisitPhase): Unit`
+overload for every concrete kind. Implementations use the declared parameter
+names, including `paragraph`, `tableRow`, and `citation`. Adding a kind makes
+incomplete implementations fail to compile. Visitors process callbacks without
+recursively visiting descendants; the dumper uses this same traversal.
 
 Traversal schedules each node's typed fields in canonical order. A directive
 label remains the named `label` field, outside directive content. Metadata,

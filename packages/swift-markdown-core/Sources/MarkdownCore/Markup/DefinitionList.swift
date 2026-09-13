@@ -19,11 +19,6 @@ public struct DefinitionList: Markup {
     public var attributes: Attributes { fields.attributes }
     /// The nonempty ordered collection of term/body associations.
     public var definitions: MarkupCollection<Definition> { fields.definitions }
-
-    /// Dispatches to the visitor's `DefinitionList` case.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupVisitPhase) -> V.Result {
-        visitor.visit(self, phase: phase)
-    }
 }
 
 extension DefinitionList.Fields {

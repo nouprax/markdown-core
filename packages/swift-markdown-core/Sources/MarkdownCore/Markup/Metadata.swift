@@ -59,9 +59,6 @@ public struct Metadata: Markup, Hashable {
         self.attributes = attributes
     }
     /// Dispatches this node to its typed visitor method.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupVisitPhase) -> V.Result {
-        visitor.visit(self, phase: phase)
-    }
 }
 /// A scalar or an ordered list; an empty list is distinct from null.
 public enum MetadataValue: Sendable, Hashable {

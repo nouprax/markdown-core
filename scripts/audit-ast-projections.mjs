@@ -186,7 +186,7 @@ const modelProjections = [
     }),
     projection({
         label: "ES model",
-        directories: ["packages/es-markdown-core/src/model", "packages/es-markdown-core/src/values.ts"],
+        directories: ["packages/es-markdown-core/src/markup", "packages/es-markdown-core/src/common"],
         // A kind with no fields is a type alias, not an interface — which is
         // the correct TypeScript for it, and reads as "declared with zero
         // fields", not as "missing".
@@ -335,7 +335,10 @@ const kindSurfaces = [
     {
         label: "ES dumper",
         expect: [...kinds.keys()].map(camel),
-        actual: namedKinds("packages/es-markdown-core/src/markup-dumper.ts", /^\s+([a-zA-Z]+): \(node\) =>/gm)
+        actual: namedKinds(
+            "packages/es-markdown-core/src/visitor/markup-dumper.ts",
+            /^\s+([a-zA-Z]+): \(node, phase\) =>/gm
+        )
     },
     {
         label: "Swift dumper",
@@ -349,26 +352,25 @@ const kindSurfaces = [
         label: "Swift markup walker",
         expect: [...kinds.keys()],
         actual: namedKinds(
-            "packages/swift-markdown-core/Sources/MarkdownCore/Visitor/MarkupVisitor.swift",
-            /mutating func visit\(_ node: ([A-Za-z]+), phase: MarkupVisitPhase\)/g
+            "packages/swift-markdown-core/Sources/MarkdownCore/Visitor/MarkupWalker.swift",
+            /case let node as ([A-Za-z]+):/g
         )
     },
     {
-        label: "Kotlin walk ownership schedule",
+        label: "Kotlin markup walker",
         expect: [...kinds.keys()],
         actual: namedKinds(
-            "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/visitor/Visitor.kt",
+            "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/visitor/MarkupWalker.kt",
             /\bis ([A-Z][A-Za-z]+)/g
         )
     },
     {
-        label: "ES walk ownership schedule",
+        label: "ES markup walker schedule",
         expect: [...kinds.keys()].map(camel),
-        actual: [
-            ...read("packages/es-markdown-core/src/visitor.ts")
-                .split("\nfunction scheduleOwnedMarkup")[1]
-                .matchAll(/case "([a-zA-Z]+)":/g)
-        ].map((match) => match[1])
+        actual: namedKinds(
+            "packages/es-markdown-core/src/visitor/markup-walker.ts",
+            /^ {4}([a-zA-Z]+)(?:\(node, actions\) \{|: \(\) => undefined)/gm
+        )
     },
     {
         label: "canonical-AST manifest",
@@ -430,7 +432,7 @@ for (const { label, expect, actual } of kindSurfaces) {
             failed = true;
         }
         // BOTH WAYS. The models may carry members the contract does not name --
-        // `accept`, `dump`, an initializer -- so their check is one-directional.
+        // `dump`, an initializer -- so their check is one-directional.
         // The dump's line has no such slack: every `name=` on it is a contract
         // field or it is a field the contract deleted and nobody removed.
         const extra = printed.filter((field) => !expected.includes(field));

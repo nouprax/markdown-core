@@ -24,26 +24,26 @@ class AstTest {
         list.walk(visitor)
         assertEquals(
             listOf(
-                "entering:DefinitionList",
-                "entering:Definition",
-                "entering:Emphasis",
-                "entering:Text",
-                "exiting:Text",
-                "exiting:Emphasis",
-                "entering:Paragraph",
-                "entering:Text",
-                "exiting:Text",
-                "exiting:Paragraph",
-                "exiting:Definition",
-                "entering:Definition",
-                "entering:Text",
-                "exiting:Text",
-                "entering:Paragraph",
-                "entering:Text",
-                "exiting:Text",
-                "exiting:Paragraph",
-                "exiting:Definition",
-                "exiting:DefinitionList",
+                "enter:DefinitionList",
+                "enter:Definition",
+                "enter:Emphasis",
+                "enter:Text",
+                "exit:Text",
+                "exit:Emphasis",
+                "enter:Paragraph",
+                "enter:Text",
+                "exit:Text",
+                "exit:Paragraph",
+                "exit:Definition",
+                "enter:Definition",
+                "enter:Text",
+                "exit:Text",
+                "enter:Paragraph",
+                "enter:Text",
+                "exit:Text",
+                "exit:Paragraph",
+                "exit:Definition",
+                "exit:DefinitionList",
             ),
             visitor.events,
         )
@@ -120,8 +120,8 @@ class AstTest {
         val visitor = RecordingWalkingVisitor()
         table.walk(visitor)
         assertEquals(
-            listOf("entering:Heading", "entering:Paragraph", "entering:ThematicBreak"),
-            visitor.events.filter { it in listOf("entering:Heading", "entering:Paragraph", "entering:ThematicBreak") },
+            listOf("enter:Heading", "enter:Paragraph", "enter:ThematicBreak"),
+            visitor.events.filter { it in listOf("enter:Heading", "enter:Paragraph", "enter:ThematicBreak") },
         )
         assertTrue(table.dump().contains("columns=[left:0.1,none:null] children=3"))
         assertTrue(table.dump().contains("TableFoot children=1"))
@@ -222,24 +222,10 @@ class AstTest {
     @Test
     fun visitorDispatchesTableRowsAndCellsAsMarkup() {
         val document = Document.parse("| a |\n| --- |\n| b |\n")
-        val table = document.content.single() as Table
         val visitor = RecordingVisitor()
-        document.accept(visitor)
-        table.accept(visitor)
-        table.head.single().accept(visitor)
-        table.head
-            .single()
-            .cells
-            .single()
-            .accept(visitor)
-        table.content.single().accept(visitor)
-        table.content
-            .single()
-            .cells
-            .single()
-            .accept(visitor)
+        document.walk(visitor)
         assertEquals(
-            listOf("Document", "Table", "TableRow", "TableCell", "TableRow", "TableCell"),
+            listOf("Document", "Table", "TableRow", "TableCell", "Text", "TableRow", "TableCell", "Text"),
             visitor.visited,
         )
     }

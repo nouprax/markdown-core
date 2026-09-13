@@ -10,11 +10,6 @@ public struct HTMLBlock: Markup {
     public let attributes: Attributes
     /// The HTML exactly as written. Nothing in it is parsed or escaped.
     public let literal: String
-
-    /// Dispatches to the visitor's `HTMLBlock` case.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupVisitPhase) -> V.Result {
-        visitor.visit(self, phase: phase)
-    }
 }
 
 extension HTMLBlock {

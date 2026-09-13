@@ -22,11 +22,6 @@ public struct CodeBlock: Markup {
     /// Whether a fenced block was closed before the document or its container
     /// ended. An indented block is always `true`, having nothing to close.
     public let closed: Bool
-
-    /// Dispatches to the visitor's `CodeBlock` case.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupVisitPhase) -> V.Result {
-        visitor.visit(self, phase: phase)
-    }
 }
 
 extension CodeBlock {

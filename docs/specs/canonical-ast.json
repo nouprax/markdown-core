@@ -4,8 +4,8 @@
     "prose": "docs/specs/canonical-ast.md",
     "dumpGrammar": "docs/specs/canonical-ast-dump.md",
     "walk": {
-        "visitor": "One exhaustive Visitor<Result> supplies typed visit(node, phase) callbacks. Single-node dispatch returns the callback result without traversing and defaults to entering; an explicit phase can be supplied. Automatic walk uses the same visitor and requires no result: Void in Swift, Unit in Kotlin, undefined in TypeScript.",
-        "phases": ["entering", "exiting"],
+        "visitor": "One exhaustive MarkupVisitor supplies typed visit(node, phase) callbacks for the explicit-stack walker. Only the walker dispatches nodes and schedules descendants. Callbacks accumulate results in visitor state and return no value: Void in Swift, Unit in Kotlin, undefined in TypeScript. No public single-node dispatch or result-returning visitor exists.",
+        "phases": ["enter", "exit"],
         "order": "Depth first. Every Markup node enters, visits its owned Markup fields in canonical traversal order with arrays retaining stored order, then exits. Relations remain named fields, never projected into generic children. Document visits metadata when present, content, footnotes, then specimens. Cite visits citations; Citation visits prefix then suffix. Reference IDs are not traversed."
     },
     "enums": {

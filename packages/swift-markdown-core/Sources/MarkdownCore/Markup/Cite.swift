@@ -53,9 +53,6 @@ public struct Citation: Markup {
     public var suffix: MarkupCollection<any Markup> { fields.suffix }
 
     /// Dispatches this node to its typed visitor method.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupVisitPhase) -> V.Result {
-        visitor.visit(self, phase: phase)
-    }
 }
 
 /// An inline citation cluster owning one or more Citation nodes in source order.
@@ -78,11 +75,6 @@ public struct Cite: Markup {
     public var attributes: Attributes { fields.attributes }
     /// Never empty: every cite is authored with at least one item.
     public var citations: MarkupCollection<Citation> { fields.citations }
-
-    /// Dispatches to the visitor's `Cite` case.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupVisitPhase) -> V.Result {
-        visitor.visit(self, phase: phase)
-    }
 }
 
 extension BibMode {

@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
-import { Document, MarkupDumper, visit } from "../dist/index.js";
-import { kindVisitor } from "./visitor.mjs";
+import { Document, MarkupDumper, walk } from "../dist/index.js";
+import { emptyVisitor } from "./visitor.mjs";
 
 const canonicalFixtures = new URL("../build/generated/conformance/canonical-ast-fixtures.json", import.meta.url);
 const canonicalManifest = JSON.parse(await readFile(canonicalFixtures, "utf8"));
@@ -88,20 +88,22 @@ test("conformance: fields, nullability, and typed table nodes map to JavaScript"
     assert.equal(document.content[2].head[0].cells.length, 1);
     assert.equal(document.content[2].head[0].cells[0].content[0].literal, "a");
     assert.equal(document.content[2].content[0].cells[0].content[0].literal, "b");
-    assert.equal(
-        visit(document.content[2].head[0], {
-            ...kindVisitor,
-            tableRow: () => "row"
-        }),
-        "row"
-    );
-    assert.equal(
-        visit(document.content[2].head[0].cells[0], {
-            ...kindVisitor,
-            tableCell: () => "cell"
-        }),
-        "cell"
-    );
+    const typed = [];
+    walk(document.content[2], {
+        ...emptyVisitor,
+        tableRow: (node, phase) => {
+            if (phase === "enter") typed.push(["row", node.cells.length]);
+        },
+        tableCell: (node, phase) => {
+            if (phase === "enter") typed.push(["cell", node.content.length]);
+        }
+    });
+    assert.deepEqual(typed, [
+        ["row", 1],
+        ["cell", 1],
+        ["row", 1],
+        ["cell", 1]
+    ]);
     const link = document.content[3].content[0];
     const image = document.content[3].content[2];
     assert.deepEqual(link.dest, { kind: "url", value: "/go" });

@@ -25,11 +25,6 @@ public struct Definition: Markup {
     public var content: MarkupGroups<any Markup> { fields.content }
     /// Whether the first body immediately follows its term without a blank line.
     public var compact: Bool { fields.compact }
-
-    /// Dispatches to the visitor's `Definition` case.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupVisitPhase) -> V.Result {
-        visitor.visit(self, phase: phase)
-    }
 }
 
 extension Definition.Fields {

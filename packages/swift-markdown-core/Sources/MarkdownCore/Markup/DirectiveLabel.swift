@@ -21,11 +21,6 @@ public struct DirectiveLabel: Markup {
     public var attributes: Attributes { fields.attributes }
     /// The label's inline content.
     public var content: MarkupCollection<any Markup> { fields.content }
-
-    /// Dispatches to the visitor's `DirectiveLabel` case.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupVisitPhase) -> V.Result {
-        visitor.visit(self, phase: phase)
-    }
 }
 
 extension DirectiveLabel.Fields {

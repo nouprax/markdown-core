@@ -31,9 +31,6 @@ public struct Footnote: Markup {
     public var content: MarkupCollection<any Markup> { fields.content }
 
     /// Dispatches this node to its typed visitor method.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupVisitPhase) -> V.Result {
-        visitor.visit(self, phase: phase)
-    }
 }
 
 extension Footnote.Fields {

@@ -1,13 +1,14 @@
+import { spawnSync } from "node:child_process";
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { Document, MarkupDumper, visit, walk } from "../dist/index.js";
+import { Document, MarkupDumper, walk } from "../dist/index.js";
 // Past index.js for the instance itself: the heap is what this asserts about,
 // and it is observable without the source carrying anything for the test.
 import { native } from "../dist/runtime/native.js";
 import { parseDocumentWithNative } from "../dist/runtime/parser.js";
 import { kinds } from "../dist/wire/kinds.js";
 import { Decoder } from "../dist/wire/node-decoder.js";
-import { kindVisitor } from "./visitor.mjs";
+import { emptyVisitor } from "./visitor.mjs";
 
 test("ast: dimensions belong to each image occurrence while its destination stays shared", () => {
     const document = Document.parse('![*alt*|2147483647x2][r] ![3][r] ![bad|01][r]\n\n[r]: /shared "title"\n');
@@ -30,95 +31,67 @@ test("ast: dimensions belong to each image occurrence while its destination stay
         walkingVisitor((node, phase) => events.push(`${phase}:${nodeKindName(node)}`))
     );
     assert.deepEqual(events, [
-        "entering:Embedded",
-        "entering:Emphasis",
-        "entering:Text",
-        "exiting:Text",
-        "exiting:Emphasis",
-        "exiting:Embedded"
+        "enter:Embedded",
+        "enter:Emphasis",
+        "enter:Text",
+        "exit:Text",
+        "exit:Emphasis",
+        "exit:Embedded"
     ]);
 });
 
-test("api: single dispatch and traversal share one visitor and preserve phase", () => {
+test("api: walker controls callback phases and propagates failures", () => {
     const document = Document.parse("text");
     const events = [];
     const observer = walkingVisitor((node, phase) => {
         events.push(`${phase}:${node.kind}`);
     });
-    visit(document, observer);
-    visit(document, observer, "exiting");
-    assert.deepEqual(events, ["entering:document", "exiting:document"]);
     walk(document, observer);
-    assert.deepEqual(events.slice(2), [
-        "entering:document",
-        "entering:paragraph",
-        "entering:text",
-        "exiting:text",
-        "exiting:paragraph",
-        "exiting:document"
+    assert.deepEqual(events, [
+        "enter:document",
+        "enter:paragraph",
+        "enter:text",
+        "exit:text",
+        "exit:paragraph",
+        "exit:document"
     ]);
-    const result = {};
-    assert.equal(
-        visit(
-            document,
-            {
-                ...kindVisitor,
-                document(node, phase) {
-                    assert.equal(node, document);
-                    assert.equal(phase, "exiting");
-                    return result;
-                }
-            },
-            "exiting"
-        ),
-        result
-    );
     const failure = new Error("exit failure");
+    const failedEvents = [];
+    const failing = walkingVisitor((node, phase) => {
+        failedEvents.push(`${phase}:${node.kind}`);
+        if (node.kind === "text" && phase === "exit") throw failure;
+    });
     assert.throws(
-        () =>
-            walk(document, {
-                ...observer,
-                text(node, phase) {
-                    if (phase === "exiting") throw failure;
-                }
-            }),
+        () => walk(document, failing),
         (error) => error === failure
     );
+    assert.deepEqual(failedEvents, ["enter:document", "enter:paragraph", "enter:text", "exit:text"]);
+    walk(Document.parse(""), failing);
+    assert.deepEqual(failedEvents.slice(4), ["enter:document", "exit:document"]);
 });
 
-test("api: synchronous parse and typed visitor dispatch", () => {
+test("api: typed callbacks collect state and propagate failures", () => {
     const document = Document.parse("# Heading\n\nBody\n");
-    assert.equal(
-        visit(document.content[0], {
-            ...kindVisitor,
-            heading: (node) => `heading:${node.level}`
-        }),
-        "heading:1"
-    );
-    assert.equal(visit(document, kindVisitor), "document");
-    const token = {};
-    assert.equal(
-        visit(document, {
-            ...kindVisitor,
-            document(node) {
-                assert.equal(node, document);
-                return token;
-            }
-        }),
-        token
-    );
+    const headings = [];
+    walk(document, {
+        ...emptyVisitor,
+        heading(node, phase) {
+            if (phase === "enter") headings.push(node.level);
+        }
+    });
+    assert.deepEqual(headings, [1]);
     const failure = new Error("visitor failure");
     assert.throws(
         () =>
-            visit(document, {
-                ...kindVisitor,
+            walk(document, {
+                ...emptyVisitor,
                 document() {
                     throw failure;
                 }
             }),
         (error) => error === failure
     );
-    assert.throws(() => visit(document, { ...kindVisitor, document: undefined }), TypeError);
+    assert.throws(() => walk(document, { ...emptyVisitor, document: undefined }), TypeError);
 });
 
 test("api: walking dispatch is typed and preserves owned-field semantics", () => {
@@ -130,16 +103,16 @@ test("api: walking dispatch is typed and preserves owned-field semantics", () =>
     );
 
     assert.deepEqual(events, [
-        "entering:DirectiveBlock",
-        "entering:DirectiveLabel",
-        "entering:Text",
-        "exiting:Text",
-        "exiting:DirectiveLabel",
-        "entering:Paragraph",
-        "entering:Text",
-        "exiting:Text",
-        "exiting:Paragraph",
-        "exiting:DirectiveBlock"
+        "enter:DirectiveBlock",
+        "enter:DirectiveLabel",
+        "enter:Text",
+        "exit:Text",
+        "exit:DirectiveLabel",
+        "enter:Paragraph",
+        "enter:Text",
+        "exit:Text",
+        "exit:Paragraph",
+        "exit:DirectiveBlock"
     ]);
     assert.deepEqual(block.content.map(nodeKindName), ["Paragraph"]);
 
@@ -148,7 +121,7 @@ test("api: walking dispatch is typed and preserves owned-field semantics", () =>
     walk(
         table,
         walkingVisitor((node, phase) => {
-            if (phase === "entering" && node.kind === "tableRow") tableRowKinds.push(node.scope.start.line);
+            if (phase === "enter" && node.kind === "tableRow") tableRowKinds.push(node.scope.start.line);
         })
     );
     assert.deepEqual(tableRowKinds, [1, 3]);
@@ -156,21 +129,28 @@ test("api: walking dispatch is typed and preserves owned-field semantics", () =>
 
 test("ast: marks retain typed content and walk both phases after native release", () => {
     const mark = Document.parse("==a *b*==").content[0].content[0];
-    assert.equal(visit(mark, { ...kindVisitor, mark: (node) => node.content.length }), 2);
+    const counts = [];
+    walk(mark, {
+        ...emptyVisitor,
+        mark: (node, phase) => {
+            if (phase === "enter") counts.push(node.content.length);
+        }
+    });
+    assert.deepEqual(counts, [2]);
     const events = [];
     walk(
         mark,
         walkingVisitor((node, phase) => events.push(`${phase}:${node.kind}`))
     );
     assert.deepEqual(events, [
-        "entering:mark",
-        "entering:text",
-        "exiting:text",
-        "entering:emphasis",
-        "entering:text",
-        "exiting:text",
-        "exiting:emphasis",
-        "exiting:mark"
+        "enter:mark",
+        "enter:text",
+        "exit:text",
+        "enter:emphasis",
+        "enter:text",
+        "exit:text",
+        "exit:emphasis",
+        "exit:mark"
     ]);
     assert.equal(mark.content[1].content[0].literal, "b");
     assert.deepEqual(mark.scope, { start: { line: 1, column: 1 }, end: { line: 1, column: 9 } });
@@ -178,21 +158,28 @@ test("ast: marks retain typed content and walk both phases after native release"
 
 test("ast: insertions retain typed content and walk both phases after native release", () => {
     const insertion = Document.parse("++a *b*++").content[0].content[0];
-    assert.equal(visit(insertion, { ...kindVisitor, insertion: (node) => node.content.length }), 2);
+    const counts = [];
+    walk(insertion, {
+        ...emptyVisitor,
+        insertion: (node, phase) => {
+            if (phase === "enter") counts.push(node.content.length);
+        }
+    });
+    assert.deepEqual(counts, [2]);
     const events = [];
     walk(
         insertion,
         walkingVisitor((node, phase) => events.push(`${phase}:${node.kind}`))
     );
     assert.deepEqual(events, [
-        "entering:insertion",
-        "entering:text",
-        "exiting:text",
-        "entering:emphasis",
-        "entering:text",
-        "exiting:text",
-        "exiting:emphasis",
-        "exiting:insertion"
+        "enter:insertion",
+        "enter:text",
+        "exit:text",
+        "enter:emphasis",
+        "enter:text",
+        "exit:text",
+        "exit:emphasis",
+        "exit:insertion"
     ]);
     assert.equal(insertion.content[1].content[0].literal, "b");
     assert.deepEqual(insertion.scope, { start: { line: 1, column: 1 }, end: { line: 1, column: 9 } });
@@ -200,21 +187,28 @@ test("ast: insertions retain typed content and walk both phases after native rel
 
 test("ast: spans retain typed content and walk both phases after native release", () => {
     const span = Document.parse("[a *b*]{}").content[0].content[0];
-    assert.equal(visit(span, { ...kindVisitor, span: (node) => node.content.length }), 2);
+    const counts = [];
+    walk(span, {
+        ...emptyVisitor,
+        span: (node, phase) => {
+            if (phase === "enter") counts.push(node.content.length);
+        }
+    });
+    assert.deepEqual(counts, [2]);
     const events = [];
     walk(
         span,
         walkingVisitor((node, phase) => events.push(`${phase}:${node.kind}`))
     );
     assert.deepEqual(events, [
-        "entering:span",
-        "entering:text",
-        "exiting:text",
-        "entering:emphasis",
-        "entering:text",
-        "exiting:text",
-        "exiting:emphasis",
-        "exiting:span"
+        "enter:span",
+        "enter:text",
+        "exit:text",
+        "enter:emphasis",
+        "enter:text",
+        "exit:text",
+        "exit:emphasis",
+        "exit:span"
     ]);
     assert.equal(span.content[1].content[0].literal, "b");
     assert.deepEqual(span.scope, { start: { line: 1, column: 1 }, end: { line: 1, column: 9 } });
@@ -222,21 +216,28 @@ test("ast: spans retain typed content and walk both phases after native release"
 
 test("ast: superscripts retain typed content and walk both phases after native release", () => {
     const superscript = Document.parse("^a*b*^").content[0].content[0];
-    assert.equal(visit(superscript, { ...kindVisitor, superscript: (node) => node.content.length }), 2);
+    const counts = [];
+    walk(superscript, {
+        ...emptyVisitor,
+        superscript: (node, phase) => {
+            if (phase === "enter") counts.push(node.content.length);
+        }
+    });
+    assert.deepEqual(counts, [2]);
     const events = [];
     walk(
         superscript,
         walkingVisitor((node, phase) => events.push(`${phase}:${node.kind}`))
     );
     assert.deepEqual(events, [
-        "entering:superscript",
-        "entering:text",
-        "exiting:text",
-        "entering:emphasis",
-        "entering:text",
-        "exiting:text",
-        "exiting:emphasis",
-        "exiting:superscript"
+        "enter:superscript",
+        "enter:text",
+        "exit:text",
+        "enter:emphasis",
+        "enter:text",
+        "exit:text",
+        "exit:emphasis",
+        "exit:superscript"
     ]);
     assert.equal(superscript.content[1].content[0].literal, "b");
     assert.deepEqual(superscript.scope, { start: { line: 1, column: 1 }, end: { line: 1, column: 6 } });
@@ -244,21 +245,28 @@ test("ast: superscripts retain typed content and walk both phases after native r
 
 test("ast: subscripts retain typed content and walk both phases after native release", () => {
     const subscript = Document.parse("~a*b*~").content[0].content[0];
-    assert.equal(visit(subscript, { ...kindVisitor, subscript: (node) => node.content.length }), 2);
+    const counts = [];
+    walk(subscript, {
+        ...emptyVisitor,
+        subscript: (node, phase) => {
+            if (phase === "enter") counts.push(node.content.length);
+        }
+    });
+    assert.deepEqual(counts, [2]);
     const events = [];
     walk(
         subscript,
         walkingVisitor((node, phase) => events.push(`${phase}:${node.kind}`))
     );
     assert.deepEqual(events, [
-        "entering:subscript",
-        "entering:text",
-        "exiting:text",
-        "entering:emphasis",
-        "entering:text",
-        "exiting:text",
-        "exiting:emphasis",
-        "exiting:subscript"
+        "enter:subscript",
+        "enter:text",
+        "exit:text",
+        "enter:emphasis",
+        "enter:text",
+        "exit:text",
+        "exit:emphasis",
+        "exit:subscript"
     ]);
     assert.equal(subscript.content[1].content[0].literal, "b");
     assert.deepEqual(subscript.scope, { start: { line: 1, column: 1 }, end: { line: 1, column: 6 } });
@@ -292,7 +300,7 @@ test("ast: captions and sparse rows survive native release and walk in ownership
     walk(
         table,
         walkingVisitor((node, phase) => {
-            if (phase === "entering") events.push(node.kind);
+            if (phase === "enter") events.push(node.kind);
         })
     );
     assert.deepEqual(events.slice(0, 4), ["table", "tableCaption", "text", "tableRow"]);
@@ -477,16 +485,16 @@ test("ast: authored callout title walks before body after native release", () =>
         walkingVisitor((node, phase) => events.push(`${phase}:${nodeKindName(node)}`))
     );
     assert.deepEqual(events, [
-        "entering:Callout",
-        "entering:Strong",
-        "entering:Text",
-        "exiting:Text",
-        "exiting:Strong",
-        "entering:Paragraph",
-        "entering:Text",
-        "exiting:Text",
-        "exiting:Paragraph",
-        "exiting:Callout"
+        "enter:Callout",
+        "enter:Strong",
+        "enter:Text",
+        "exit:Text",
+        "exit:Strong",
+        "enter:Paragraph",
+        "enter:Text",
+        "exit:Text",
+        "exit:Paragraph",
+        "exit:Callout"
     ]);
     const [comment, empty] = Document.parse("> [!note]+ %%t%%\n\n> [!note]\n").content;
     assert.equal(comment.collapsed, false);
@@ -564,7 +572,7 @@ test("ast: a title is decoded from the auxiliary range before the content and du
         callout,
         walkingVisitor((visited, phase) => events.push(`${phase}:${nodeKindName(visited)}`))
     );
-    assert.deepEqual(events, ["entering:Callout", "entering:Text", "exiting:Text", "exiting:Callout"]);
+    assert.deepEqual(events, ["enter:Callout", "enter:Text", "exit:Text", "exit:Callout"]);
 });
 
 test("ownership: declarations are readonly without runtime freeze", () => {
@@ -610,7 +618,7 @@ test("robustness: uncapped list nesting remains traversable", () => {
     walk(
         document,
         walkingVisitor((_node, phase) => {
-            if (phase === "entering") entered += 1;
+            if (phase === "enter") entered += 1;
             else exited += 1;
         })
     );
@@ -627,7 +635,7 @@ test("robustness: uncapped list nesting remains traversable", () => {
 });
 
 function walkingVisitor(callback) {
-    return Object.fromEntries(Object.keys(kindVisitor).map((method) => [method, callback]));
+    return Object.fromEntries(Object.keys(emptyVisitor).map((method) => [method, callback]));
 }
 
 function nodeKindName(node) {
@@ -653,30 +661,30 @@ test("ast: inline footnotes keep direct content, source ids and finite visitatio
         walkingVisitor((node, phase) => events.push(`${phase}:${nodeKindName(node)}`))
     );
     assert.deepEqual(events, [
-        "entering:Document",
-        "entering:Paragraph",
-        "entering:Cite",
-        "entering:Citation",
-        "exiting:Citation",
-        "exiting:Cite",
-        "exiting:Paragraph",
-        "entering:Footnote",
-        "entering:Cite",
-        "entering:Citation",
-        "exiting:Citation",
-        "exiting:Cite",
-        "exiting:Footnote",
-        "entering:Footnote",
-        "entering:Text",
-        "exiting:Text",
-        "exiting:Footnote",
-        "entering:Footnote",
-        "entering:Paragraph",
-        "entering:Text",
-        "exiting:Text",
-        "exiting:Paragraph",
-        "exiting:Footnote",
-        "exiting:Document"
+        "enter:Document",
+        "enter:Paragraph",
+        "enter:Cite",
+        "enter:Citation",
+        "exit:Citation",
+        "exit:Cite",
+        "exit:Paragraph",
+        "enter:Footnote",
+        "enter:Cite",
+        "enter:Citation",
+        "exit:Citation",
+        "exit:Cite",
+        "exit:Footnote",
+        "enter:Footnote",
+        "enter:Text",
+        "exit:Text",
+        "exit:Footnote",
+        "enter:Footnote",
+        "enter:Paragraph",
+        "enter:Text",
+        "exit:Text",
+        "exit:Paragraph",
+        "exit:Footnote",
+        "exit:Document"
     ]);
 });
 
@@ -721,26 +729,26 @@ test("ast: an inherited call is a one-item cite and the document owns its footno
         walkingVisitor((node, phase) => events.push(`${phase}:${nodeKindName(node)}`))
     );
     assert.deepEqual(events, [
-        "entering:Document",
-        "entering:Paragraph",
-        "entering:Cite",
-        "entering:Citation",
-        "exiting:Citation",
-        "exiting:Cite",
-        "entering:Text",
-        "exiting:Text",
-        "entering:Cite",
-        "entering:Citation",
-        "exiting:Citation",
-        "exiting:Cite",
-        "exiting:Paragraph",
-        "entering:Footnote",
-        "entering:Paragraph",
-        "entering:Text",
-        "exiting:Text",
-        "exiting:Paragraph",
-        "exiting:Footnote",
-        "exiting:Document"
+        "enter:Document",
+        "enter:Paragraph",
+        "enter:Cite",
+        "enter:Citation",
+        "exit:Citation",
+        "exit:Cite",
+        "enter:Text",
+        "exit:Text",
+        "enter:Cite",
+        "enter:Citation",
+        "exit:Citation",
+        "exit:Cite",
+        "exit:Paragraph",
+        "enter:Footnote",
+        "enter:Paragraph",
+        "enter:Text",
+        "exit:Text",
+        "exit:Paragraph",
+        "exit:Footnote",
+        "exit:Document"
     ]);
 });
 
@@ -1007,7 +1015,7 @@ test("ast: specimen definitions and references retain ownership, nulls and reset
     walk(
         document,
         walkingVisitor((value, phase) => {
-            if (phase === "entering") events.push(value.kind);
+            if (phase === "enter") events.push(value.kind);
         })
     );
     assert.equal(events.filter((kind) => kind === "specimen").length, 2);
@@ -1039,7 +1047,7 @@ test("ast: table groups, column widths and spans survive the wire as owned facts
     walk(
         value,
         walkingVisitor((node, phase) => {
-            if (phase === "entering" && node.kind === "text") visited.push(node.literal);
+            if (phase === "enter" && node.kind === "text") visited.push(node.literal);
         })
     );
     assert.deepEqual(visited, ["h", "i", "b", "c", "f", "g"]);
@@ -1175,7 +1183,7 @@ test("ast: metadata preserves tags, decimal text, duplicate keys and owned lists
     walk(
         document,
         walkingVisitor((value, phase) => {
-            if (phase === "entering") visited.push(value.kind);
+            if (phase === "enter") visited.push(value.kind);
         })
     );
     assert.deepEqual(visited, ["document", "metadata"]);
@@ -1236,7 +1244,7 @@ test("ast: cross links retain raw values after native release and reject wrong w
         links[2],
         walkingVisitor((node, phase) => events.push(`${phase}:${node.kind}`))
     );
-    assert.deepEqual(events, ["entering:crossEmbedded", "exiting:crossEmbedded"]);
+    assert.deepEqual(events, ["enter:crossEmbedded", "exit:crossEmbedded"]);
     const malformed = bytes.slice();
     new DataView(malformed.buffer).setInt32(findNode(malformed, kinds.indexOf("crossLink")) + 44, 1, true);
     assert.throws(() => new Decoder(malformed).decode(), /cross reference requires a cross destination/u);
@@ -1266,7 +1274,7 @@ test("ast: Properties keep recognized fields and literal prose after native rele
     walk(
         document,
         walkingVisitor((node, phase) => {
-            if (phase === "entering") events.push(node.kind);
+            if (phase === "enter") events.push(node.kind);
         })
     );
     assert.deepEqual(events, ["document", "metadata", "paragraph", "text"]);
@@ -1338,9 +1346,9 @@ test("ast: definition terms and ordered bodies are owned and walk without body w
     assert.deepEqual(block.attributes.classes, ["box"]);
     const list = block.content[0];
     assert.equal(list.kind, "definitionList");
-    assert.equal(visit(list, kindVisitor), "definitionList");
+    assert.equal(list.kind, "definitionList");
     const first = list.definitions[0];
-    assert.equal(visit(first, kindVisitor), "definition");
+    assert.equal(first.kind, "definition");
     assert.equal(first.compact, true);
     assert.equal(first.term[0].content[0].literal, "T");
     assert.equal(first.content[0][0].content[0].literal, "one");
@@ -1352,26 +1360,26 @@ test("ast: definition terms and ordered bodies are owned and walk without body w
         walkingVisitor((node, phase) => events.push(`${phase}:${nodeKindName(node)}`))
     );
     assert.deepEqual(events, [
-        "entering:DefinitionList",
-        "entering:Definition",
-        "entering:Emphasis",
-        "entering:Text",
-        "exiting:Text",
-        "exiting:Emphasis",
-        "entering:Paragraph",
-        "entering:Text",
-        "exiting:Text",
-        "exiting:Paragraph",
-        "exiting:Definition",
-        "entering:Definition",
-        "entering:Text",
-        "exiting:Text",
-        "entering:Paragraph",
-        "entering:Text",
-        "exiting:Text",
-        "exiting:Paragraph",
-        "exiting:Definition",
-        "exiting:DefinitionList"
+        "enter:DefinitionList",
+        "enter:Definition",
+        "enter:Emphasis",
+        "enter:Text",
+        "exit:Text",
+        "exit:Emphasis",
+        "enter:Paragraph",
+        "enter:Text",
+        "exit:Text",
+        "exit:Paragraph",
+        "exit:Definition",
+        "enter:Definition",
+        "enter:Text",
+        "exit:Text",
+        "enter:Paragraph",
+        "enter:Text",
+        "exit:Text",
+        "exit:Paragraph",
+        "exit:Definition",
+        "exit:DefinitionList"
     ]);
 });
 
@@ -1414,7 +1422,7 @@ test("api: owned scoped elements are Markup with finite walks and preserved iden
     const citation = document.content[0].content[0].citations[0];
     const nodes = [document.metadata, citation, document.footnotes[0], document.specimens[0]];
     assert.deepEqual(
-        nodes.map((node) => visit(node, kindVisitor)),
+        nodes.map((node) => node.kind),
         ["metadata", "citation", "footnote", "specimen"]
     );
     for (const node of nodes) {
@@ -1426,9 +1434,9 @@ test("api: owned scoped elements are Markup with finite walks and preserved iden
             node,
             walkingVisitor((value, phase) => events.push(`${phase}:${value.kind}`))
         );
-        assert.equal(events[0], `entering:${node.kind}`);
-        assert.equal(events.at(-1), `exiting:${node.kind}`);
-        assert.equal(events.filter((event) => event.startsWith("entering:")).length, events.length / 2);
+        assert.equal(events[0], `enter:${node.kind}`);
+        assert.equal(events.at(-1), `exit:${node.kind}`);
+        assert.equal(events.filter((event) => event.startsWith("enter:")).length, events.length / 2);
     }
     assert.deepEqual(citation.referent, { kind: "footnote", id: "label" });
     assert.equal(document.footnotes[0].id, "label");
@@ -1440,4 +1448,22 @@ test("api: owned scoped elements are Markup with finite walks and preserved iden
         if (node.kind === "citation") view.setInt32(leaf + 44, 2, true);
         assert.throws(() => new Decoder(bytes).decode(), /child is not ordinary content/);
     }
+});
+
+test("robustness: deep dumps run with a bounded JavaScript call stack", () => {
+    const module = new URL("../dist/index.js", import.meta.url).href;
+    const script = `
+        import assert from "node:assert/strict";
+        import { Document } from ${JSON.stringify(module)};
+        const depth = 512;
+        const lines = Document.parse("- ".repeat(depth) + "leaf\\n").dump().trimEnd().split("\\n");
+        assert.equal(lines.length, depth * 2 + 3);
+        assert.ok(lines[0].startsWith("Document "));
+        assert.ok(lines.at(-1).includes('literal="leaf"'));
+        assert.ok(lines.at(-1).startsWith("    ".repeat(depth * 2 + 1) + "└── "));
+    `;
+    const result = spawnSync(process.execPath, ["--stack_size=128", "--input-type=module", "-e", script], {
+        encoding: "utf8"
+    });
+    assert.equal(result.status, 0, result.stderr);
 });
