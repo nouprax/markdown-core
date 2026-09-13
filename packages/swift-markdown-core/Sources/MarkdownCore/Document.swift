@@ -89,7 +89,7 @@ public struct Document: Markup {
     let tree: ValueTree
     let index: Int
     private var fields: Fields {
-        guard case let .markupDocument(fields) = tree.records[index] else {
+        guard case let .document(fields) = tree.records[index] else {
             preconditionFailure("Invalid Document record")
         }
         return fields
@@ -122,7 +122,7 @@ private enum NativeValue {
 /// another record, and no native pointer survives the copy.
 private struct NativeTreeBuilder {
     private var pending: [NativeValue] = []
-    private var records: [StoredValue] = []
+    private var records: [StoredMarkup] = []
     private var resources: [UnsafeRawPointer: SharedResource] = [:]
 
     init(root: OpaquePointer) {
@@ -135,23 +135,23 @@ private struct NativeTreeBuilder {
         }
     }
 
-    private mutating func copy(_ value: NativeValue) -> StoredValue {
+    private mutating func copy(_ value: NativeValue) -> StoredMarkup {
         switch value {
         case let .markup(node):
             let relations = markupRelations(node)
             return copyMarkup(from: node, relations: relations, resources: &resources)
         case let .footnote(node):
-            return .valueFootnote(
+            return .footnote(
                 Footnote.Fields(from: node, content: chain(markdown_core_footnote_content(node)))
             )
         case let .specimen(node):
-            return .valueSpecimen(
+            return .specimen(
                 Specimen.Fields(from: node, content: chain(markdown_core_specimen_content(node)))
             )
         case let .citation(node):
             let prefix = chain(markdown_core_citation_prefix(node))
             let suffix = chain(markdown_core_citation_suffix(node))
-            return .valueCitation(Citation.Fields(from: node, prefix: prefix, suffix: suffix))
+            return .citation(Citation.Fields(from: node, prefix: prefix, suffix: suffix))
         case let .definitionBody(node):
             return .definitionBody(chain(markdown_core_definition_body_content(node)))
         }
@@ -235,10 +235,10 @@ private func copyMarkup(
     from node: OpaquePointer,
     relations: NativeRelations,
     resources: inout [UnsafeRawPointer: SharedResource]
-) -> StoredValue {
+) -> StoredMarkup {
     switch markdown_core_node_get_kind(node) {
     case MARKDOWN_CORE_KIND_DOCUMENT:
-        .markupDocument(
+        .document(
             Document.Fields(
                 from: node,
                 content: relations.children,
@@ -247,53 +247,53 @@ private func copyMarkup(
             )
         )
     case MARKDOWN_CORE_KIND_CALLOUT:
-        .markupCallout(Callout.Fields(from: node, title: relations.title, content: relations.children))
+        .callout(Callout.Fields(from: node, title: relations.title, content: relations.children))
     case MARKDOWN_CORE_KIND_DEFINITION_LIST:
-        .markupDefinitionList(DefinitionList.Fields(from: node, children: relations.children))
+        .definitionList(DefinitionList.Fields(from: node, children: relations.children))
     case MARKDOWN_CORE_KIND_DEFINITION:
-        .markupDefinition(Definition.Fields(from: node, term: relations.term, content: relations.bodies))
-    case MARKDOWN_CORE_KIND_PARAGRAPH: .markupParagraph(Paragraph.Fields(from: node, content: relations.children))
-    case MARKDOWN_CORE_KIND_HEADING: .markupHeading(Heading.Fields(from: node, content: relations.children))
-    case MARKDOWN_CORE_KIND_THEMATIC_BREAK: .markupThematicBreak(ThematicBreak(from: node))
-    case MARKDOWN_CORE_KIND_LIST: .markupList(List.Fields(from: node, children: relations.children))
-    case MARKDOWN_CORE_KIND_LIST_ITEM: .markupListItem(ListItem.Fields(from: node, content: relations.children))
-    case MARKDOWN_CORE_KIND_CODE_BLOCK: .markupCodeBlock(CodeBlock(from: node))
-    case MARKDOWN_CORE_KIND_HTML_BLOCK: .markupHTMLBlock(HTMLBlock(from: node))
-    case MARKDOWN_CORE_KIND_FORMULA_BLOCK: .markupFormulaBlock(FormulaBlock(from: node))
+        .definition(Definition.Fields(from: node, term: relations.term, content: relations.bodies))
+    case MARKDOWN_CORE_KIND_PARAGRAPH: .paragraph(Paragraph.Fields(from: node, content: relations.children))
+    case MARKDOWN_CORE_KIND_HEADING: .heading(Heading.Fields(from: node, content: relations.children))
+    case MARKDOWN_CORE_KIND_THEMATIC_BREAK: .thematicBreak(ThematicBreak(from: node))
+    case MARKDOWN_CORE_KIND_LIST: .list(List.Fields(from: node, children: relations.children))
+    case MARKDOWN_CORE_KIND_LIST_ITEM: .listItem(ListItem.Fields(from: node, content: relations.children))
+    case MARKDOWN_CORE_KIND_CODE_BLOCK: .codeBlock(CodeBlock(from: node))
+    case MARKDOWN_CORE_KIND_HTML_BLOCK: .htmlBlock(HTMLBlock(from: node))
+    case MARKDOWN_CORE_KIND_FORMULA_BLOCK: .formulaBlock(FormulaBlock(from: node))
     case MARKDOWN_CORE_KIND_TABLE:
-        .markupTable(Table.Fields(from: node, caption: relations.caption, children: relations.children))
+        .table(Table.Fields(from: node, caption: relations.caption, children: relations.children))
     case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
-        .markupDirectiveBlock(DirectiveBlock.Fields(from: node, label: relations.label, content: relations.children))
-    case MARKDOWN_CORE_KIND_TEXT: .markupText(Text(from: node))
-    case MARKDOWN_CORE_KIND_SOFT_BREAK: .markupSoftBreak(SoftBreak(from: node))
-    case MARKDOWN_CORE_KIND_LINE_BREAK: .markupLineBreak(LineBreak(from: node))
-    case MARKDOWN_CORE_KIND_CODE: .markupCode(Code(from: node))
-    case MARKDOWN_CORE_KIND_HTML: .markupHTML(HTML(from: node))
-    case MARKDOWN_CORE_KIND_COMMENT: .markupComment(Comment(from: node))
-    case MARKDOWN_CORE_KIND_CROSS_LINK: .markupCrossLink(CrossLink(from: node))
-    case MARKDOWN_CORE_KIND_CROSS_EMBEDDED: .markupCrossEmbedded(CrossEmbedded(from: node))
-    case MARKDOWN_CORE_KIND_FORMULA: .markupFormula(Formula(from: node))
-    case MARKDOWN_CORE_KIND_EMPHASIS: .markupEmphasis(Emphasis.Fields(from: node, content: relations.children))
-    case MARKDOWN_CORE_KIND_STRONG: .markupStrong(Strong.Fields(from: node, content: relations.children))
+        .directiveBlock(DirectiveBlock.Fields(from: node, label: relations.label, content: relations.children))
+    case MARKDOWN_CORE_KIND_TEXT: .text(Text(from: node))
+    case MARKDOWN_CORE_KIND_SOFT_BREAK: .softBreak(SoftBreak(from: node))
+    case MARKDOWN_CORE_KIND_LINE_BREAK: .lineBreak(LineBreak(from: node))
+    case MARKDOWN_CORE_KIND_CODE: .code(Code(from: node))
+    case MARKDOWN_CORE_KIND_HTML: .html(HTML(from: node))
+    case MARKDOWN_CORE_KIND_COMMENT: .comment(Comment(from: node))
+    case MARKDOWN_CORE_KIND_CROSS_LINK: .crossLink(CrossLink(from: node))
+    case MARKDOWN_CORE_KIND_CROSS_EMBEDDED: .crossEmbedded(CrossEmbedded(from: node))
+    case MARKDOWN_CORE_KIND_FORMULA: .formula(Formula(from: node))
+    case MARKDOWN_CORE_KIND_EMPHASIS: .emphasis(Emphasis.Fields(from: node, content: relations.children))
+    case MARKDOWN_CORE_KIND_STRONG: .strong(Strong.Fields(from: node, content: relations.children))
     case MARKDOWN_CORE_KIND_STRIKETHROUGH:
-        .markupStrikethrough(Strikethrough.Fields(from: node, content: relations.children))
-    case MARKDOWN_CORE_KIND_MARK: .markupMark(Mark.Fields(from: node, content: relations.children))
-    case MARKDOWN_CORE_KIND_INSERTION: .markupInsertion(Insertion.Fields(from: node, content: relations.children))
-    case MARKDOWN_CORE_KIND_SPAN: .markupSpan(Span.Fields(from: node, content: relations.children))
-    case MARKDOWN_CORE_KIND_SUPERSCRIPT: .markupSuperscript(Superscript.Fields(from: node, content: relations.children))
-    case MARKDOWN_CORE_KIND_SUBSCRIPT: .markupSubscript(Subscript.Fields(from: node, content: relations.children))
+        .strikethrough(Strikethrough.Fields(from: node, content: relations.children))
+    case MARKDOWN_CORE_KIND_MARK: .mark(Mark.Fields(from: node, content: relations.children))
+    case MARKDOWN_CORE_KIND_INSERTION: .insertion(Insertion.Fields(from: node, content: relations.children))
+    case MARKDOWN_CORE_KIND_SPAN: .span(Span.Fields(from: node, content: relations.children))
+    case MARKDOWN_CORE_KIND_SUPERSCRIPT: .superscript(Superscript.Fields(from: node, content: relations.children))
+    case MARKDOWN_CORE_KIND_SUBSCRIPT: .subscript(Subscript.Fields(from: node, content: relations.children))
     case MARKDOWN_CORE_KIND_LINK:
-        .markupLink(Link.Fields(from: node, content: relations.children, resources: &resources))
+        .link(Link.Fields(from: node, content: relations.children, resources: &resources))
     case MARKDOWN_CORE_KIND_MEDIA:
-        .markupMedia(Media.Fields(from: node, content: relations.children, resources: &resources))
-    case MARKDOWN_CORE_KIND_DIRECTIVE: .markupDirective(Directive.Fields(from: node, label: relations.label))
-    case MARKDOWN_CORE_KIND_CITE: .markupCite(Cite.Fields(from: node, citations: relations.citations))
+        .media(Media.Fields(from: node, content: relations.children, resources: &resources))
+    case MARKDOWN_CORE_KIND_DIRECTIVE: .directive(Directive.Fields(from: node, label: relations.label))
+    case MARKDOWN_CORE_KIND_CITE: .cite(Cite.Fields(from: node, citations: relations.citations))
     case MARKDOWN_CORE_KIND_TABLE_CAPTION:
-        .markupTableCaption(TableCaption.Fields(from: node, content: relations.children))
-    case MARKDOWN_CORE_KIND_TABLE_ROW: .markupTableRow(TableRow.Fields(from: node, children: relations.children))
-    case MARKDOWN_CORE_KIND_TABLE_CELL: .markupTableCell(TableCell.Fields(from: node, content: relations.children))
+        .tableCaption(TableCaption.Fields(from: node, content: relations.children))
+    case MARKDOWN_CORE_KIND_TABLE_ROW: .tableRow(TableRow.Fields(from: node, children: relations.children))
+    case MARKDOWN_CORE_KIND_TABLE_CELL: .tableCell(TableCell.Fields(from: node, content: relations.children))
     case MARKDOWN_CORE_KIND_DIRECTIVE_LABEL:
-        .markupDirectiveLabel(DirectiveLabel.Fields(from: node, content: relations.children))
+        .directiveLabel(DirectiveLabel.Fields(from: node, content: relations.children))
     default: preconditionFailure("native parser returned an unknown node kind")
     }
 }

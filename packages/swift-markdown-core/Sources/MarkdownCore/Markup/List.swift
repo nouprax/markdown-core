@@ -75,7 +75,7 @@ public struct List: Markup {
     let tree: ValueTree
     let index: Int
     private var fields: Fields {
-        guard case let .markupList(fields) = tree.records[index] else {
+        guard case let .list(fields) = tree.records[index] else {
             preconditionFailure("Invalid List record")
         }
         return fields
@@ -154,7 +154,7 @@ public struct ListItem: Markup {
     let tree: ValueTree
     let index: Int
     private var fields: Fields {
-        guard case let .markupListItem(fields) = tree.records[index] else {
+        guard case let .listItem(fields) = tree.records[index] else {
             preconditionFailure("Invalid ListItem record")
         }
         return fields

@@ -24,7 +24,7 @@ swift-markdown 同样将公开节点包装与内部存储分开：
 变弱，说得过于绝对。
 
 `MarkupCollection` 使取得子关系、count 和下标访问保持 O(1)，不为每次读取
-分配子数组。`StoredValue` 让平坦数组能够存储异构 payload，同时禁止容器 view
+分配子数组。`StoredMarkup` 让平坦数组能够存储异构 payload，同时禁止容器 view
 重新进入 record 并形成递归拥有关系。其名称与逐类型访问代码可以继续改善；
 这些可读性问题本身不足以推翻所有权模型。
 

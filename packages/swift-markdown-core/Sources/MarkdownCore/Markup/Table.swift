@@ -56,7 +56,7 @@ public struct Table: Markup {
     let tree: ValueTree
     let index: Int
     private var fields: Fields {
-        guard case let .markupTable(fields) = tree.records[index] else {
+        guard case let .table(fields) = tree.records[index] else {
             preconditionFailure("Invalid Table record")
         }
         return fields
@@ -117,7 +117,7 @@ public struct TableRow: Markup {
     let tree: ValueTree
     let index: Int
     private var fields: Fields {
-        guard case let .markupTableRow(fields) = tree.records[index] else {
+        guard case let .tableRow(fields) = tree.records[index] else {
             preconditionFailure("Invalid TableRow record")
         }
         return fields
@@ -165,7 +165,7 @@ public struct TableCell: Markup {
     let tree: ValueTree
     let index: Int
     private var fields: Fields {
-        guard case let .markupTableCell(fields) = tree.records[index] else {
+        guard case let .tableCell(fields) = tree.records[index] else {
             preconditionFailure("Invalid TableCell record")
         }
         return fields
@@ -212,7 +212,7 @@ public struct TableCaption: Markup {
     let tree: ValueTree
     let index: Int
     private var fields: Fields {
-        guard case let .markupTableCaption(fields) = tree.records[index] else {
+        guard case let .tableCaption(fields) = tree.records[index] else {
             preconditionFailure("Invalid TableCaption record")
         }
         return fields

@@ -36,7 +36,7 @@ public struct Link: Markup {
     let tree: ValueTree
     let index: Int
     private var fields: Fields {
-        guard case let .markupLink(fields) = tree.records[index] else {
+        guard case let .link(fields) = tree.records[index] else {
             preconditionFailure("Invalid Link record")
         }
         return fields

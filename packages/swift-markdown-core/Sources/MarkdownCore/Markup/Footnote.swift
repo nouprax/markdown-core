@@ -25,7 +25,7 @@ public struct Footnote: Sendable {
     let tree: ValueTree
     let index: Int
     private var fields: Fields {
-        guard case let .valueFootnote(fields) = tree.records[index] else {
+        guard case let .footnote(fields) = tree.records[index] else {
             preconditionFailure("Invalid Footnote record")
         }
         return fields

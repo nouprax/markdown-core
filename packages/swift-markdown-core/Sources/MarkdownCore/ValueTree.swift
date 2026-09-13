@@ -21,58 +21,58 @@ public struct MarkupCollection<Element: Sendable>: RandomAccessCollection, Senda
 
 /// Records contain scalar values and integer edges only. Consequently ARC
 /// destruction has bounded stack depth, including after extracting a subtree.
-enum StoredValue: Sendable {
+enum StoredMarkup: Sendable {
     // Only the root owns Metadata. Box that payload once so its inline
     // capacity is not paid by every record, including every Text leaf.
-    indirect case markupDocument(Document.Fields)
-    case markupCallout(Callout.Fields)
-    case markupDefinitionList(DefinitionList.Fields)
-    case markupDefinition(Definition.Fields)
-    case markupParagraph(Paragraph.Fields)
-    case markupHeading(Heading.Fields)
-    case markupThematicBreak(ThematicBreak)
-    case markupList(List.Fields)
-    case markupListItem(ListItem.Fields)
-    case markupCodeBlock(CodeBlock)
-    case markupHTMLBlock(HTMLBlock)
-    case markupFormulaBlock(FormulaBlock)
-    case markupTable(Table.Fields)
-    case markupDirectiveBlock(DirectiveBlock.Fields)
-    case markupText(Text)
-    case markupSoftBreak(SoftBreak)
-    case markupLineBreak(LineBreak)
-    case markupCode(Code)
-    case markupHTML(HTML)
-    case markupComment(Comment)
-    case markupCrossLink(CrossLink)
-    case markupCrossEmbedded(CrossEmbedded)
-    case markupFormula(Formula)
-    case markupEmphasis(Emphasis.Fields)
-    case markupStrong(Strong.Fields)
-    case markupStrikethrough(Strikethrough.Fields)
-    case markupMark(Mark.Fields)
-    case markupInsertion(Insertion.Fields)
-    case markupSpan(Span.Fields)
-    case markupSuperscript(Superscript.Fields)
-    case markupSubscript(Subscript.Fields)
-    case markupLink(Link.Fields)
-    case markupMedia(Media.Fields)
-    case markupDirective(Directive.Fields)
-    case markupCite(Cite.Fields)
-    case markupTableCaption(TableCaption.Fields)
-    case markupTableRow(TableRow.Fields)
-    case markupTableCell(TableCell.Fields)
-    case markupDirectiveLabel(DirectiveLabel.Fields)
-    case valueFootnote(Footnote.Fields)
-    case valueSpecimen(Specimen.Fields)
-    case valueCitation(Citation.Fields)
+    indirect case document(Document.Fields)
+    case callout(Callout.Fields)
+    case definitionList(DefinitionList.Fields)
+    case definition(Definition.Fields)
+    case paragraph(Paragraph.Fields)
+    case heading(Heading.Fields)
+    case thematicBreak(ThematicBreak)
+    case list(List.Fields)
+    case listItem(ListItem.Fields)
+    case codeBlock(CodeBlock)
+    case htmlBlock(HTMLBlock)
+    case formulaBlock(FormulaBlock)
+    case table(Table.Fields)
+    case directiveBlock(DirectiveBlock.Fields)
+    case text(Text)
+    case softBreak(SoftBreak)
+    case lineBreak(LineBreak)
+    case code(Code)
+    case html(HTML)
+    case comment(Comment)
+    case crossLink(CrossLink)
+    case crossEmbedded(CrossEmbedded)
+    case formula(Formula)
+    case emphasis(Emphasis.Fields)
+    case strong(Strong.Fields)
+    case strikethrough(Strikethrough.Fields)
+    case mark(Mark.Fields)
+    case insertion(Insertion.Fields)
+    case span(Span.Fields)
+    case superscript(Superscript.Fields)
+    case `subscript`(Subscript.Fields)
+    case link(Link.Fields)
+    case media(Media.Fields)
+    case directive(Directive.Fields)
+    case cite(Cite.Fields)
+    case tableCaption(TableCaption.Fields)
+    case tableRow(TableRow.Fields)
+    case tableCell(TableCell.Fields)
+    case directiveLabel(DirectiveLabel.Fields)
+    case footnote(Footnote.Fields)
+    case specimen(Specimen.Fields)
+    case citation(Citation.Fields)
     case definitionBody([Int])
 }
 
 final class ValueTree: Sendable {
-    let records: [StoredValue]
+    let records: [StoredMarkup]
 
-    init(records: [StoredValue]) {
+    init(records: [StoredMarkup]) {
         self.records = records
     }
 
@@ -81,48 +81,48 @@ final class ValueTree: Sendable {
     func value<Value: Sendable>(at index: Int, as type: Value.Type) -> Value {
         let value: any Sendable
         switch records[index] {
-        case .markupDocument: value = Document(tree: self, index: index)
-        case .markupCallout: value = Callout(tree: self, index: index)
-        case .markupDefinitionList: value = DefinitionList(tree: self, index: index)
-        case .markupDefinition: value = Definition(tree: self, index: index)
-        case .markupParagraph: value = Paragraph(tree: self, index: index)
-        case .markupHeading: value = Heading(tree: self, index: index)
-        case let .markupThematicBreak(node): value = node
-        case .markupList: value = List(tree: self, index: index)
-        case .markupListItem: value = ListItem(tree: self, index: index)
-        case let .markupCodeBlock(node): value = node
-        case let .markupHTMLBlock(node): value = node
-        case let .markupFormulaBlock(node): value = node
-        case .markupTable: value = Table(tree: self, index: index)
-        case .markupDirectiveBlock: value = DirectiveBlock(tree: self, index: index)
-        case let .markupText(node): value = node
-        case let .markupSoftBreak(node): value = node
-        case let .markupLineBreak(node): value = node
-        case let .markupCode(node): value = node
-        case let .markupHTML(node): value = node
-        case let .markupComment(node): value = node
-        case let .markupCrossLink(node): value = node
-        case let .markupCrossEmbedded(node): value = node
-        case let .markupFormula(node): value = node
-        case .markupEmphasis: value = Emphasis(tree: self, index: index)
-        case .markupStrong: value = Strong(tree: self, index: index)
-        case .markupStrikethrough: value = Strikethrough(tree: self, index: index)
-        case .markupMark: value = Mark(tree: self, index: index)
-        case .markupInsertion: value = Insertion(tree: self, index: index)
-        case .markupSpan: value = Span(tree: self, index: index)
-        case .markupSuperscript: value = Superscript(tree: self, index: index)
-        case .markupSubscript: value = Subscript(tree: self, index: index)
-        case .markupLink: value = Link(tree: self, index: index)
-        case .markupMedia: value = Media(tree: self, index: index)
-        case .markupDirective: value = Directive(tree: self, index: index)
-        case .markupCite: value = Cite(tree: self, index: index)
-        case .markupTableCaption: value = TableCaption(tree: self, index: index)
-        case .markupTableRow: value = TableRow(tree: self, index: index)
-        case .markupTableCell: value = TableCell(tree: self, index: index)
-        case .markupDirectiveLabel: value = DirectiveLabel(tree: self, index: index)
-        case .valueFootnote: value = Footnote(tree: self, index: index)
-        case .valueSpecimen: value = Specimen(tree: self, index: index)
-        case .valueCitation: value = Citation(tree: self, index: index)
+        case .document: value = Document(tree: self, index: index)
+        case .callout: value = Callout(tree: self, index: index)
+        case .definitionList: value = DefinitionList(tree: self, index: index)
+        case .definition: value = Definition(tree: self, index: index)
+        case .paragraph: value = Paragraph(tree: self, index: index)
+        case .heading: value = Heading(tree: self, index: index)
+        case let .thematicBreak(node): value = node
+        case .list: value = List(tree: self, index: index)
+        case .listItem: value = ListItem(tree: self, index: index)
+        case let .codeBlock(node): value = node
+        case let .htmlBlock(node): value = node
+        case let .formulaBlock(node): value = node
+        case .table: value = Table(tree: self, index: index)
+        case .directiveBlock: value = DirectiveBlock(tree: self, index: index)
+        case let .text(node): value = node
+        case let .softBreak(node): value = node
+        case let .lineBreak(node): value = node
+        case let .code(node): value = node
+        case let .html(node): value = node
+        case let .comment(node): value = node
+        case let .crossLink(node): value = node
+        case let .crossEmbedded(node): value = node
+        case let .formula(node): value = node
+        case .emphasis: value = Emphasis(tree: self, index: index)
+        case .strong: value = Strong(tree: self, index: index)
+        case .strikethrough: value = Strikethrough(tree: self, index: index)
+        case .mark: value = Mark(tree: self, index: index)
+        case .insertion: value = Insertion(tree: self, index: index)
+        case .span: value = Span(tree: self, index: index)
+        case .superscript: value = Superscript(tree: self, index: index)
+        case .subscript: value = Subscript(tree: self, index: index)
+        case .link: value = Link(tree: self, index: index)
+        case .media: value = Media(tree: self, index: index)
+        case .directive: value = Directive(tree: self, index: index)
+        case .cite: value = Cite(tree: self, index: index)
+        case .tableCaption: value = TableCaption(tree: self, index: index)
+        case .tableRow: value = TableRow(tree: self, index: index)
+        case .tableCell: value = TableCell(tree: self, index: index)
+        case .directiveLabel: value = DirectiveLabel(tree: self, index: index)
+        case .footnote: value = Footnote(tree: self, index: index)
+        case .specimen: value = Specimen(tree: self, index: index)
+        case .citation: value = Citation(tree: self, index: index)
         case let .definitionBody(indices): value = MarkupCollection<any Markup>(tree: self, recordIndices: indices)
         }
         guard let result = value as? Value else {

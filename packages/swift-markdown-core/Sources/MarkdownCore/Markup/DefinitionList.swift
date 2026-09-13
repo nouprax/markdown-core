@@ -26,7 +26,7 @@ public struct DefinitionList: Markup {
     let tree: ValueTree
     let index: Int
     private var fields: Fields {
-        guard case let .markupDefinitionList(fields) = tree.records[index] else {
+        guard case let .definitionList(fields) = tree.records[index] else {
             preconditionFailure("Invalid DefinitionList record")
         }
         return fields

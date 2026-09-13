@@ -52,7 +52,7 @@ extension APISuite {
             scope: parsed.scope
         )
         var records = parsed.tree.records
-        records[0] = .markupDocument(
+        records[0] = .document(
             .init(
                 scope: parsed.scope,
                 anchor: nil,

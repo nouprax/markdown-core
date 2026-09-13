@@ -24,7 +24,7 @@ public struct Subscript: Markup {
     let tree: ValueTree
     let index: Int
     private var fields: Fields {
-        guard case let .markupSubscript(fields) = tree.records[index] else {
+        guard case let .subscript(fields) = tree.records[index] else {
             preconditionFailure("Invalid Subscript record")
         }
         return fields

@@ -24,7 +24,7 @@ public struct Paragraph: Markup {
     let tree: ValueTree
     let index: Int
     private var fields: Fields {
-        guard case let .markupParagraph(fields) = tree.records[index] else {
+        guard case let .paragraph(fields) = tree.records[index] else {
             preconditionFailure("Invalid Paragraph record")
         }
         return fields

@@ -26,7 +26,7 @@ public struct DirectiveLabel: Markup {
     let tree: ValueTree
     let index: Int
     private var fields: Fields {
-        guard case let .markupDirectiveLabel(fields) = tree.records[index] else {
+        guard case let .directiveLabel(fields) = tree.records[index] else {
             preconditionFailure("Invalid DirectiveLabel record")
         }
         return fields

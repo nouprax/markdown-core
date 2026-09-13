@@ -24,7 +24,7 @@ public struct Strong: Markup {
     let tree: ValueTree
     let index: Int
     private var fields: Fields {
-        guard case let .markupStrong(fields) = tree.records[index] else {
+        guard case let .strong(fields) = tree.records[index] else {
             preconditionFailure("Invalid Strong record")
         }
         return fields

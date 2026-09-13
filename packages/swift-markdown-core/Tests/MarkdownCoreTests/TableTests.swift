@@ -13,7 +13,7 @@ extension APISuite {
         ]
         for (width, expected) in widths {
             let table = ValueTree(records: [
-                .markupTable(
+                .table(
                     .init(
                         caption: nil,
                         columns: [TableColumn(alignment: .none, relative: width)],
@@ -45,7 +45,7 @@ extension APISuite {
         #expect(table.dump().contains("columns=[left:0.1,none:null] children=3"))
         #expect(table.dump().contains("TableFoot children=1"))
         let empty = ValueTree(records: [
-            .markupTable(
+            .table(
                 .init(
                     caption: nil,
                     columns: table.columns,
@@ -71,7 +71,7 @@ private func groupedTable() throws -> Table {
     for index in parsed.content.recordIndices {
         let cell = records.count
         records.append(
-            .markupTableCell(
+            .tableCell(
                 .init(
                     rowspan: 1,
                     colspan: 2,
@@ -83,11 +83,11 @@ private func groupedTable() throws -> Table {
             )
         )
         rows.append(records.count)
-        records.append(.markupTableRow(.init(cells: [cell], scope: parsed.scope, anchor: nil, attributes: .empty)))
+        records.append(.tableRow(.init(cells: [cell], scope: parsed.scope, anchor: nil, attributes: .empty)))
     }
     let index = records.count
     records.append(
-        .markupTable(
+        .table(
             .init(
                 caption: nil,
                 columns: [

@@ -31,7 +31,7 @@ public struct Directive: Markup {
     let tree: ValueTree
     let index: Int
     private var fields: Fields {
-        guard case let .markupDirective(fields) = tree.records[index] else {
+        guard case let .directive(fields) = tree.records[index] else {
             preconditionFailure("Invalid Directive record")
         }
         return fields

@@ -51,7 +51,7 @@ public struct Citation: Sendable {
     let tree: ValueTree
     let index: Int
     private var fields: Fields {
-        guard case let .valueCitation(fields) = tree.records[index] else {
+        guard case let .citation(fields) = tree.records[index] else {
             preconditionFailure("Invalid Citation record")
         }
         return fields
@@ -87,7 +87,7 @@ public struct Cite: Markup {
     let tree: ValueTree
     let index: Int
     private var fields: Fields {
-        guard case let .markupCite(fields) = tree.records[index] else {
+        guard case let .cite(fields) = tree.records[index] else {
             preconditionFailure("Invalid Cite record")
         }
         return fields

@@ -33,7 +33,7 @@ public struct DirectiveBlock: Markup {
     let tree: ValueTree
     let index: Int
     private var fields: Fields {
-        guard case let .markupDirectiveBlock(fields) = tree.records[index] else {
+        guard case let .directiveBlock(fields) = tree.records[index] else {
             preconditionFailure("Invalid DirectiveBlock record")
         }
         return fields

@@ -32,7 +32,7 @@ public struct Definition: Markup {
     let tree: ValueTree
     let index: Int
     private var fields: Fields {
-        guard case let .markupDefinition(fields) = tree.records[index] else {
+        guard case let .definition(fields) = tree.records[index] else {
             preconditionFailure("Invalid Definition record")
         }
         return fields

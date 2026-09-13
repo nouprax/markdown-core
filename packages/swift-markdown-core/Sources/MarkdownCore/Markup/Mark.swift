@@ -24,7 +24,7 @@ public struct Mark: Markup {
     let tree: ValueTree
     let index: Int
     private var fields: Fields {
-        guard case let .markupMark(fields) = tree.records[index] else {
+        guard case let .mark(fields) = tree.records[index] else {
             preconditionFailure("Invalid Mark record")
         }
         return fields

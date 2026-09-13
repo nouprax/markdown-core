@@ -24,7 +24,7 @@ public struct Superscript: Markup {
     let tree: ValueTree
     let index: Int
     private var fields: Fields {
-        guard case let .markupSuperscript(fields) = tree.records[index] else {
+        guard case let .superscript(fields) = tree.records[index] else {
             preconditionFailure("Invalid Superscript record")
         }
         return fields

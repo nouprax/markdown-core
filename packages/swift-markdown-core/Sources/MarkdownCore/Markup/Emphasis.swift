@@ -24,7 +24,7 @@ public struct Emphasis: Markup {
     let tree: ValueTree
     let index: Int
     private var fields: Fields {
-        guard case let .markupEmphasis(fields) = tree.records[index] else {
+        guard case let .emphasis(fields) = tree.records[index] else {
             preconditionFailure("Invalid Emphasis record")
         }
         return fields

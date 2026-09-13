@@ -23,7 +23,7 @@ public struct Specimen: Sendable {
     let tree: ValueTree
     let index: Int
     private var fields: Fields {
-        guard case let .valueSpecimen(fields) = tree.records[index] else {
+        guard case let .specimen(fields) = tree.records[index] else {
             preconditionFailure("Invalid Specimen record")
         }
         return fields

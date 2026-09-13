@@ -24,7 +24,7 @@ public struct Insertion: Markup {
     let tree: ValueTree
     let index: Int
     private var fields: Fields {
-        guard case let .markupInsertion(fields) = tree.records[index] else {
+        guard case let .insertion(fields) = tree.records[index] else {
             preconditionFailure("Invalid Insertion record")
         }
         return fields

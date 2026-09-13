@@ -42,7 +42,7 @@ public struct Callout: Markup {
     let tree: ValueTree
     let index: Int
     private var fields: Fields {
-        guard case let .markupCallout(fields) = tree.records[index] else {
+        guard case let .callout(fields) = tree.records[index] else {
             preconditionFailure("Invalid Callout record")
         }
         return fields

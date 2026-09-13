@@ -13,7 +13,7 @@ import Testing
         // These reserved scalar combinations are deliberately constructed as
         // flat records; they need not depend on currently authored syntax.
         let tree = ValueTree(records: [
-            .markupDocument(
+            .document(
                 .init(
                     scope: scope,
                     anchor: nil,
@@ -24,12 +24,12 @@ import Testing
                     specimens: [5, 6]
                 )
             ),
-            .markupParagraph(.init(scope: scope, anchor: nil, attributes: .empty, content: [2])),
-            .markupCite(.init(scope: scope, anchor: nil, attributes: .empty, citations: [3])),
-            .valueCitation(.init(scope: scope, referent: .specimen(id: "étude"), prefix: [], suffix: [])),
-            .valueFootnote(.init(scope: scope, id: "n", content: [])),
-            .valueSpecimen(.init(scope: scope, id: "étude", start: 5, content: [])),
-            .valueSpecimen(.init(scope: scope, id: nil, start: nil, content: [])),
+            .paragraph(.init(scope: scope, anchor: nil, attributes: .empty, content: [2])),
+            .cite(.init(scope: scope, anchor: nil, attributes: .empty, citations: [3])),
+            .citation(.init(scope: scope, referent: .specimen(id: "étude"), prefix: [], suffix: [])),
+            .footnote(.init(scope: scope, id: "n", content: [])),
+            .specimen(.init(scope: scope, id: "étude", start: 5, content: [])),
+            .specimen(.init(scope: scope, id: nil, start: nil, content: [])),
         ])
         let document = tree.value(at: 0, as: Document.self)
         #expect(document.specimens[0].start == 5)

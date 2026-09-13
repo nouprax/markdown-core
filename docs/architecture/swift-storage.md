@@ -1,7 +1,7 @@
 # Swift value storage
 
 The public AST is immutable and `Sendable`. A parse copies each native value
-exactly once into a flat `StoredValue` array, then frees the C document before
+exactly once into a flat `StoredMarkup` array, then frees the C document before
 returning. Records contain owned scalar values and integer relation indices.
 They never contain a container view or a reference back to `ValueTree`.
 The unique Document payload is stored indirectly: its inline Metadata value

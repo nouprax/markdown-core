@@ -30,7 +30,7 @@ public struct Heading: Markup {
     let tree: ValueTree
     let index: Int
     private var fields: Fields {
-        guard case let .markupHeading(fields) = tree.records[index] else {
+        guard case let .heading(fields) = tree.records[index] else {
             preconditionFailure("Invalid Heading record")
         }
         return fields

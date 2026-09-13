@@ -40,7 +40,7 @@ public struct Media: Markup {
     let tree: ValueTree
     let index: Int
     private var fields: Fields {
-        guard case let .markupMedia(fields) = tree.records[index] else {
+        guard case let .media(fields) = tree.records[index] else {
             preconditionFailure("Invalid Media record")
         }
         return fields
