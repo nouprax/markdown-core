@@ -380,25 +380,29 @@ int markdown_core_parser_mark_content(markdown_core_parser *parser, markdown_cor
 static int content_mark_at(markdown_core_parser *parser, const markdown_core_node *node, bufsize_t offset,
                            int *cursor) {
     int lo = node->content_mark, hi = lo + node->content_mark_count - 1;
+    size_t work = 0;
     if (cursor) {
         if (*cursor < lo || *cursor > hi) {
             *cursor = lo;
         }
-        parser->content_map_work++;
+        work++;
         if (offset >= parser->line_marks[*cursor].content_offset) {
+            int first = *cursor;
             while (*cursor < hi) {
-                parser->content_map_work++;
                 if (parser->line_marks[*cursor + 1].content_offset > offset) {
                     break;
                 }
                 ++*cursor;
             }
+            /* Current mark, each advance, and the stopping comparison when
+             * the cursor has not reached the last mark. */
+            parser->content_map_work += work + (size_t)(*cursor - first) + (*cursor < hi);
             return *cursor;
         }
         hi = *cursor > lo ? *cursor - 1 : lo;
     }
     while (lo < hi) {
-        parser->content_map_work++;
+        work++;
         int mid = lo + (hi - lo + 1) / 2;
         if (parser->line_marks[mid].content_offset <= offset) {
             lo = mid;
@@ -406,6 +410,7 @@ static int content_mark_at(markdown_core_parser *parser, const markdown_core_nod
             hi = mid - 1;
         }
     }
+    parser->content_map_work += work;
     return lo;
 }
 

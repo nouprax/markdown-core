@@ -101,4 +101,5 @@ ES/Kotlin runtime 与 TSan 本次未重跑。后续节点存储、分发、位�
 - dash scanner 穷举短行所有后缀，比较每次 memo 命中和重新扫描；grammar 源文件记录 memo 所依赖的拒绝性质。
 - whitespace 测试使用正常 parser/owner/source map 初始化；边界取解码宽度，工作计数按扫描量统一累加。
 - ancestor chain 的三遍访问在循环外按 depth 累加，保持工作口径，减少内层写入。
+- 后续计数器复查将本 PR 的 content-map、attribute 和 separator 扫描改为按区间计数或局部累计后写回；Text suffix 直接用扫描区间计数。2,071 个固定及随机输入的所有已观测工作与分配计数均与修改前一致。此处只消除这些扫描中的逐字节共享写入，#258 的其余既有计数器仍待处理。
 - 规范 README 的本 PR 新增导航已移除。增量设计和 PoC 保留在研究目录，属于原任务要求，未交付增量 API。

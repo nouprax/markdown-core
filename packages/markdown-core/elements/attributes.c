@@ -26,6 +26,11 @@ static int name_rest(int32_t cp) {
            cp == ':' || cp == '.';
 }
 
+/* Scan work accumulates locally and is published on exit. Do not write
+ * p->work in byte loops: input bytes may alias the parser, preventing the
+ * compiler from hoisting shared counter updates. Nested helpers add their
+ * own completed work; the final += preserves those contributions. */
+
 /* A suffix result is -1 until evaluated, zero on grammar failure, or the
  * complete container's exclusive end. A lexical fact records the first
  * unescaped unquoted-value boundary independently of that grammar result.
@@ -85,6 +90,7 @@ static attribute_fact *fact_at(markdown_core_attribute_parser *p, bufsize_t at) 
  * query starts after the escape pair, with the same lexical state. No table
  * is materialized for ordinary bytes or equals signs inside the value. */
 static bufsize_t unquoted_end(markdown_core_attribute_parser *p, attribute_fact *first) {
+    size_t work = 0;
     if (first->unquoted_end >= 0) {
         return first->unquoted_end;
     }
@@ -93,7 +99,7 @@ static bufsize_t unquoted_end(markdown_core_attribute_parser *p, attribute_fact 
     bufsize_t at = first->at;
     while (at < p->length) {
         unsigned char c = p->data[at];
-        p->work++;
+        work++;
         if (horizontal(c) || newline(c) || c == '}') {
             break;
         }
@@ -119,6 +125,7 @@ static bufsize_t unquoted_end(markdown_core_attribute_parser *p, attribute_fact 
         pending->value_previous = NULL;
         pending = previous;
     }
+    p->work += work;
     return at;
 }
 
@@ -127,13 +134,16 @@ static bufsize_t unquoted_end(markdown_core_attribute_parser *p, attribute_fact 
  * cannot overlap: the next such opening quote closes the earlier scan.
  * Unmatched quotes retain the grammar's unquoted-value fallback. */
 static bufsize_t quoted_end(markdown_core_attribute_parser *p, bufsize_t from) {
+    size_t work = 0;
     unsigned char quote = p->data[from];
     bool line_end = false;
+    bufsize_t result = 0;
     for (bufsize_t at = from + 1; at < p->length;) {
         unsigned char c = p->data[at];
-        p->work++;
+        work++;
         if (c == quote) {
-            return at + 1;
+            result = at + 1;
+            break;
         }
         if (newline(c)) {
             if (line_end) {
@@ -148,7 +158,8 @@ static bufsize_t quoted_end(markdown_core_attribute_parser *p, bufsize_t from) {
             at += escaped(p->data, p->length, at) ? 2 : 1;
         }
     }
-    return 0;
+    p->work += work;
+    return result;
 }
 
 static bufsize_t scan_name(markdown_core_attribute_parser *p, bufsize_t n, bufsize_t at);
@@ -158,13 +169,14 @@ static bufsize_t scan_name(markdown_core_attribute_parser *p, bufsize_t n, bufsi
  * Each unresolved chain advances strictly, then publishes one result to all
  * its members. There is no recursive C stack or per-byte DP allocation. */
 static bufsize_t recognize(markdown_core_attribute_parser *p, attribute_fact *first) {
+    size_t work = 0;
     const unsigned char *s = p->data;
     bufsize_t n = p->length, at = first->at, result = 0;
     attribute_fact *pending = first, *origin = first;
     first->member_previous = NULL;
     while (at < n && !p->oom) {
         unsigned char c = s[at];
-        p->work++;
+        work++;
         if (c == '}') {
             result = at + 1;
             break;
@@ -176,7 +188,7 @@ static bufsize_t recognize(markdown_core_attribute_parser *p, attribute_fact *fi
         if (newline(c)) {
             at += c == '\r' && at + 1 < n && s[at + 1] == '\n' ? 2 : 1;
             while (at < n && horizontal(s[at])) {
-                p->work++;
+                work++;
                 at++;
             }
             if (at < n && newline(s[at])) {
@@ -238,6 +250,7 @@ static bufsize_t recognize(markdown_core_attribute_parser *p, attribute_fact *fi
         pending->member_previous = NULL;
         pending = previous;
     }
+    p->work += work;
     return p->oom ? 0 : result;
 }
 
@@ -341,15 +354,17 @@ static int normalize(markdown_core_mem *mem, markdown_core_attributes *v, const 
 }
 
 static bufsize_t scan_name(markdown_core_attribute_parser *p, bufsize_t n, bufsize_t at) {
+    size_t work = 0;
     const unsigned char *s = p->data;
     while (at < n) {
         bufsize_t width;
-        p->work++;
+        work++;
         if (!name_rest(scalar(s, n, at, &width))) {
             break;
         }
         at += width;
     }
+    p->work += work;
     return at;
 }
 
@@ -366,22 +381,27 @@ bufsize_t markdown_core_attributes_end(markdown_core_attribute_parser *p, bufsiz
 }
 
 bufsize_t markdown_core_attributes_tail(markdown_core_attribute_parser *p, bufsize_t start, bufsize_t end) {
+    size_t work = 0;
     if (end <= start || p->data[end - 1] != '}') {
         return -1;
     }
+    bufsize_t result = -1;
     for (bufsize_t at = start; at < end; at++) {
-        p->work++;
+        work++;
         if (escaped(p->data, end, at)) {
             at++;
         } else if (p->data[at] == '{' && markdown_core_attributes_end(p, at) == end) {
-            return at;
+            result = at;
+            break;
         }
     }
-    return -1;
+    p->work += work;
+    return result;
 }
 
 int markdown_core_attributes_parse(markdown_core_attribute_parser *p, bufsize_t start, markdown_core_attributes *result,
                                    bufsize_t *end) {
+    size_t work = 0;
     const unsigned char *s = p->data;
     bufsize_t finish = markdown_core_attributes_end(p, start);
     if (!finish) {
@@ -391,7 +411,7 @@ int markdown_core_attributes_parse(markdown_core_attribute_parser *p, bufsize_t 
     markdown_core_strbuf decoded = MARKDOWN_CORE_BUF_INIT(p->mem);
     bufsize_t at = start + 1;
     while (at < finish - 1) {
-        p->work++;
+        work++;
         if (horizontal(s[at]) || newline(s[at])) {
             at++;
             continue;
@@ -422,7 +442,7 @@ int markdown_core_attributes_parse(markdown_core_attribute_parser *p, bufsize_t 
         if (s[at] == '"' || s[at] == '\'') {
             unsigned char quote = s[at];
             for (bufsize_t i = at + 1; i < finish - 1; i++) {
-                p->work++;
+                work++;
                 if (escaped(s, finish, i)) {
                     i++;
                     continue;
@@ -438,13 +458,13 @@ int markdown_core_attributes_parse(markdown_core_attribute_parser *p, bufsize_t 
             at++;
         } else {
             while (last < finish - 1 && !horizontal(s[last]) && !newline(s[last]) && s[last] != '}') {
-                p->work++;
+                work++;
                 last += escaped(s, finish, last) ? 2 : 1;
             }
         }
         markdown_core_strbuf_clear(&decoded);
         while (at < last) {
-            p->work++;
+            work++;
             if (escaped(s, last, at)) {
                 markdown_core_strbuf_putc(&decoded, s[at + 1]);
                 at += 2;
@@ -472,12 +492,13 @@ int markdown_core_attributes_parse(markdown_core_attribute_parser *p, bufsize_t 
             goto oom;
         }
     }
-    p->work += (size_t)(finish - start);
+    p->work += work + (size_t)(finish - start);
     markdown_core_strbuf_free(&decoded);
     *result = value;
     *end = finish;
     return 1;
 oom:
+    p->work += work;
     p->oom = 1;
     markdown_core_strbuf_free(&decoded);
     markdown_core_attributes_free(p->mem, &value);

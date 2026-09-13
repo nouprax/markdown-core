@@ -788,17 +788,16 @@ static size_t table_dash_count(table_source *source, size_t index) {
         if (line->indent > 3) {
             return 0;
         }
-        const unsigned char *p = line->data + line->offset, *from, *before;
+        const unsigned char *p = line->data + line->offset, *from, *start = p;
         int result;
         do {
-            before = p;
             result = scan_table_dash(&p, line->data + line->length, &from);
-            source->parser->table_scan_work += (size_t)(p - before) + 1;
             if (result > 0) {
                 line->dash_count++;
                 line->full_boundary = line->dash_count == 1 && p - from >= 3;
             }
         } while (result > 0);
+        source->parser->table_scan_work += (size_t)(p - start) + line->dash_count + 1;
         if (result < 0) {
             line->dash_count = 0;
             line->full_boundary = false;
@@ -823,7 +822,6 @@ static const table_interval *table_dashes(table_source *source, size_t index) {
         int column = 0;
         for (size_t i = 0; i < count; i++) {
             scan_table_dash(&p, line->data + line->length, &from);
-            source->parser->table_scan_work += (size_t)(p - before);
             while (before < from) {
                 column += *before++ == '\t' ? 4 - column % 4 : 1;
             }
@@ -832,6 +830,7 @@ static const table_interval *table_dashes(table_source *source, size_t index) {
             line->dashes[i] = (table_interval){start, column};
             before = p;
         }
+        source->parser->table_scan_work += (size_t)(p - line->data - line->offset);
     }
     return line->dashes;
 }
@@ -2128,11 +2127,12 @@ static markdown_core_node *try_interrupting_block(markdown_core_parser *parser, 
         end--;
     }
     int result;
+    size_t scans = 0;
     do {
-        const unsigned char *before = cursor;
         result = scan_table_dash(&cursor, end, &from);
-        parser->table_scan_work += (size_t)(cursor - before) + 1;
+        scans++;
     } while (result > 0);
+    parser->table_scan_work += (size_t)(cursor - input->data - parser->first_nonspace) + scans;
     if (result < 0) {
         parser->table_separator_kill_pos = (bufsize_t)(cursor - input->data);
         return NULL;
