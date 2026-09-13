@@ -31,7 +31,7 @@ extension Footnote.Fields {
         markdown_core_footnote_id(footnote, &id)
         self.init(
             scope: Scope(from: markdown_core_footnote_scope(footnote)),
-            id: id.requiredString,
+            id: id.required,
             content: content
         )
     }

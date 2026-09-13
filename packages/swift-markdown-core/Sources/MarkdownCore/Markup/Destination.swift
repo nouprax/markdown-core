@@ -56,9 +56,9 @@ extension Destination {
         markdown_core_node_destination(node, &destination)
         switch destination.kind {
         case MARKDOWN_CORE_DESTINATION_CROSS:
-            self = .cross(path: destination.path.requiredString, anchor: destination.anchor.string)
+            self = .cross(path: destination.path.required, anchor: destination.anchor.string)
         default:
-            self = .url(destination.url.requiredString)
+            self = .url(destination.url.required)
         }
     }
 }

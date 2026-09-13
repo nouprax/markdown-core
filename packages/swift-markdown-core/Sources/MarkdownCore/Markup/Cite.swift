@@ -97,11 +97,11 @@ extension CitationReferent {
         markdown_core_citation_referent(citation, &referent)
         switch referent.kind {
         case MARKDOWN_CORE_REFERENT_BIB:
-            self = .bib(key: referent.key.requiredString, mode: BibMode(from: referent.mode))
+            self = .bib(key: referent.key.required, mode: BibMode(from: referent.mode))
         case MARKDOWN_CORE_REFERENT_FOOTNOTE:
-            self = .footnote(id: referent.id.requiredString)
+            self = .footnote(id: referent.id.required)
         case MARKDOWN_CORE_REFERENT_SPECIMEN:
-            self = .specimen(id: referent.id.requiredString)
+            self = .specimen(id: referent.id.required)
         default:
             preconditionFailure("Unsupported native citation referent")
         }

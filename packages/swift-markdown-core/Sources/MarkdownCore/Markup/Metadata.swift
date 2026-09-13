@@ -120,8 +120,8 @@ extension MetadataScalar {
         switch scalar.kind {
         case MARKDOWN_CORE_METADATA_NULL: self = .null
         case MARKDOWN_CORE_METADATA_BOOL: self = .bool(scalar.value.boolean)
-        case MARKDOWN_CORE_METADATA_NUMBER: self = .number(scalar.value.string.requiredString)
-        case MARKDOWN_CORE_METADATA_TEXT: self = .text(scalar.value.string.requiredString)
+        case MARKDOWN_CORE_METADATA_NUMBER: self = .number(scalar.value.string.required)
+        case MARKDOWN_CORE_METADATA_TEXT: self = .text(scalar.value.string.required)
         default: preconditionFailure("Unsupported metadata scalar")
         }
     }
@@ -130,8 +130,8 @@ extension MetadataScalar {
 extension MetadataListItem {
     init(from item: markdown_core_metadata_list_item) {
         switch item.kind {
-        case MARKDOWN_CORE_METADATA_ITEM_NUMBER: self = .number(item.value.requiredString)
-        case MARKDOWN_CORE_METADATA_ITEM_TEXT: self = .text(item.value.requiredString)
+        case MARKDOWN_CORE_METADATA_ITEM_NUMBER: self = .number(item.value.required)
+        case MARKDOWN_CORE_METADATA_ITEM_TEXT: self = .text(item.value.required)
         default: preconditionFailure("Unsupported metadata list item")
         }
     }

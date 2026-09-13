@@ -48,7 +48,7 @@ extension CodeBlock {
             attributes: Attributes(from: node),
             info: info.string,
             language: language.string,
-            literal: literal.requiredString,
+            literal: literal.required,
             fenced: fenced,
             closed: closed
         )

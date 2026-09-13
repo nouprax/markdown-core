@@ -32,7 +32,7 @@ extension Formula {
             anchor: markdown_core_node_anchor(node).string,
             attributes: Attributes(from: node),
             mode: PlacementMode(from: mode),
-            literal: literal.requiredString
+            literal: literal.required
         )
     }
 }

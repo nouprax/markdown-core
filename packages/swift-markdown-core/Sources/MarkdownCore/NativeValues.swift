@@ -10,7 +10,7 @@ extension ParseError {
         let code = ParseErrorCode(rawValue: Int32(rawCode)) ?? .internal
         self.init(
             code: code,
-            message: markdown_core_error_get_message(error).requiredString
+            message: markdown_core_error_get_message(error).required
         )
     }
 }
@@ -25,7 +25,7 @@ extension Scope {
 }
 
 extension markdown_core_string {
-    var requiredString: String {
+    var required: String {
         guard let data else { return "" }
         // Swift input reaches the native parser as valid UTF-8. This defensive
         // decoding also remains total if an internal payload violates that invariant.
@@ -59,6 +59,6 @@ extension markdown_core_optional_string {
     /// `nil` when the source did not write this, and `""` when it wrote it and
     /// it was empty. The presence flag decides; the pointer never does.
     var string: String? {
-        has_value ? value.requiredString : nil
+        has_value ? value.required : nil
     }
 }

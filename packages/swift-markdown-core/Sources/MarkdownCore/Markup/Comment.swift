@@ -25,7 +25,7 @@ extension Comment {
             scope: Self.scope(from: node),
             anchor: markdown_core_node_anchor(node).string,
             attributes: Attributes(from: node),
-            literal: literal.requiredString
+            literal: literal.required
         )
     }
 }
