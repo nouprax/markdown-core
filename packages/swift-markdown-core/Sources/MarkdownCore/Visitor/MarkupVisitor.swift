@@ -66,23 +66,28 @@ extension Markup {
     }
 
     /// Walks the node and its descendants depth first, reporting both phases through the same visitor.
-    /// An explicit stack keeps call-stack depth independent of document depth.
+    /// Traversal keeps call-stack depth independent of document depth.
     /// Only a visitor without a result can be used for automatic traversal.
     public func walk<V: MarkupVisitor>(with visitor: inout V) where V.Result == Void {
-        var walker = MarkupWalker(actions: [(node: self, phase: .entering)])
-        while let action = walker.actions.popLast() {
-            action.node.accept(&visitor, phase: action.phase)
-            guard action.phase == .entering else { continue }
-            walker.actions.append((node: action.node, phase: .exiting))
-            action.node.accept(&walker)
-        }
+        var walker = MarkupWalker()
+        walker.walk(self, with: &visitor)
     }
 }
 
-// The walker visits each kind to schedule its child fields in traversal order.
+// The walker uses an explicit stack and schedules each kind's child fields in traversal order.
 // Adding a kind requires specifying its traversal here.
 private struct MarkupWalker: MarkupVisitor {
-    var actions: [(node: any Markup, phase: MarkupVisitPhase)]
+    private var actions: [(node: any Markup, phase: MarkupVisitPhase)] = []
+
+    mutating func walk<V: MarkupVisitor>(_ node: any Markup, with visitor: inout V) where V.Result == Void {
+        actions.append((node: node, phase: .entering))
+        while let action = actions.popLast() {
+            action.node.accept(&visitor, phase: action.phase)
+            guard action.phase == .entering else { continue }
+            actions.append((node: action.node, phase: .exiting))
+            action.node.accept(&self)
+        }
+    }
 
     mutating func visit(_ node: Document, phase: MarkupVisitPhase) {
         for child in node.specimens.reversed() { actions.append((node: child, phase: .entering)) }
