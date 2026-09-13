@@ -387,13 +387,18 @@ void markdown_core_heading_begin_inlines(markdown_core_parser *parser, markdown_
                                          markdown_core_node *parent) {
     if (parent->kind == MARKDOWN_CORE_NODE_HEADING) {
         bufsize_t line = inline_state->input.len;
-        while (line > 0 && !markdown_core_is_line_end(inline_state->input.data[line - 1])) {
-            line--;
-        }
         inline_state->attributes = (markdown_core_attribute_parser){
             .mem = parser->mem, .data = inline_state->input.data, .length = inline_state->input.len};
-        inline_state->heading_attributes_start =
-            markdown_core_attributes_tail(&inline_state->attributes, line, inline_state->input.len);
+        inline_state->heading_attributes_start = -1;
+        /* Only a heading whose content ends in `}` can carry a tail; no other
+         * heading is walked back to its last line or offered to the scanner. */
+        if (line && inline_state->input.data[line - 1] == '}') {
+            while (line > 0 && !markdown_core_is_line_end(inline_state->input.data[line - 1])) {
+                line--;
+            }
+            inline_state->heading_attributes_start =
+                markdown_core_attributes_tail(&inline_state->attributes, line, inline_state->input.len);
+        }
         if (inline_state->heading_attributes_start >= 0) {
             bufsize_t end = inline_state->heading_attributes_start;
             while (end > line &&
@@ -463,8 +468,6 @@ bool markdown_core_heading_claim_tail(markdown_core_inline_state *inline_state, 
 static bool open_atx(markdown_core_parser *parser, markdown_core_node **container, markdown_core_chunk *input,
                      block_start *start) {
     bufsize_t matched = start->matched;
-
-    bufsize_t hashpos;
     int level = 0;
     bufsize_t heading_startpos = parser->first_nonspace;
 
@@ -474,11 +477,10 @@ static bool open_atx(markdown_core_parser *parser, markdown_core_node **containe
         return false;
     }
 
-    hashpos = markdown_core_chunk_strchr(input, '#', parser->first_nonspace);
-
-    while (peek_at(input, hashpos) == '#') {
+    /* The scanner matched the `#` run and the byte that ends it; the level
+     * is the run, read from the match rather than searched for again. */
+    while (level < (int)matched && peek_at(input, heading_startpos + level) == '#') {
         level++;
-        hashpos++;
     }
 
     (*container)->as.heading->level = level;

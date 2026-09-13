@@ -3669,14 +3669,16 @@ static void block_start_dispatch_work(test_batch_runner *runner) {
 
 /* A block front or a definition term is parsed as a reference definition
  * only when a `]:` closes a label inside the label window; links, citations
- * and spans that open a paragraph never build the reference parser. */
+ * and spans that open a paragraph never build the reference parser, at the
+ * paragraph's end or at a setext underline alike. */
 static void reference_probe_precheck(test_batch_runner *runner) {
     markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
     static const struct {
         const char *unit;
         size_t probes_per_unit;
-    } shapes[] = {{"[a](/u) text\n\n", 0}, {"[@key] text\n\n", 0},       {"[x]{.c} text\n\n", 0},
-                  {"[r]: /u\n", 1},        {"[t]\n: definition\n\n", 0}, {"[a]: /u\n\n[a]\n\n", 1}};
+    } shapes[] = {
+        {"[a](/u) text\n\n", 0},      {"[@key] text\n\n", 0},    {"[x]{.c} text\n\n", 0},      {"[r]: /u\n", 1},
+        {"[t]\n: definition\n\n", 0}, {"[a]: /u\n\n[a]\n\n", 1}, {"[a](/u) text\n===\n\n", 0}, {"[r]: /u\n===\n\n", 1}};
     for (size_t shape = 0; shape < sizeof(shapes) / sizeof(*shapes); shape++) {
         markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
         for (size_t i = 0; i < 512; i++) {
@@ -4802,6 +4804,38 @@ static void *count_text_calloc(size_t count, size_t size) {
 static void *count_text_realloc(void *pointer, size_t size) {
     text_allocation_calls++;
     return realloc(pointer, size);
+}
+
+/* A front-matter key is matched against the field names where it lies on
+ * the source: an unknown member costs no allocation, so the members a
+ * document carries beyond the fields cost nothing beyond their bytes. */
+static void properties_key_matching_allocations(test_batch_runner *runner) {
+    markdown_core_mem mem = {count_text_calloc, count_text_realloc, free};
+    markdown_core_mem *plain_mem = markdown_core_get_default_mem_allocator();
+    size_t baseline = 0;
+    for (size_t members = 64; members <= 1024; members *= 4) {
+        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(plain_mem);
+        markdown_core_strbuf_puts(&source, "---\ntitle: Known\n");
+        for (size_t i = 0; i < members; i++) {
+            char member[64];
+            snprintf(member, sizeof(member), "member%zu: value %zu\n", i, i);
+            markdown_core_strbuf_puts(&source, member);
+        }
+        markdown_core_strbuf_puts(&source, "---\n\nbody\n");
+        text_allocation_calls = 0;
+        markdown_core_node *root =
+            markdown_core_parse_document_with_mem((const char *)source.ptr, source.size, &mem, NULL, NULL);
+        size_t calls = text_allocation_calls;
+        OK(runner, root && root->as.document->metadata && root->as.document->metadata->as.metadata->title.kind,
+           "the known field is decoded among unknown members: members=%zu", members);
+        if (members == 64) {
+            baseline = calls;
+        }
+        OK(runner, calls <= baseline + 2, "unknown members allocate nothing: members=%zu calls=%zu baseline=%zu",
+           members, calls, baseline);
+        markdown_core_node_free(root);
+        markdown_core_strbuf_free(&source);
+    }
 }
 
 /* Recognition may allocate its shared suffix index, but never semantic
@@ -7046,6 +7080,7 @@ int main(int argc, char **argv) {
     properties_values(runner);
     properties_source_boundaries(runner);
     properties_member_work(runner);
+    properties_key_matching_allocations(runner);
     properties_text_memory(runner);
     block_identifier_linear_work(runner);
     callout_linear_work(runner);

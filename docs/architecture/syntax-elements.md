@@ -180,6 +180,13 @@ rather than automaton states, and the kind-7 HTML block start is the inline
 tag scanner followed by a check of the line's tail, so each automaton exists
 once.
 
+An ATX heading's level is read from the `#` run the block scanner matched,
+and only a heading whose content ends in `}` is walked back to its last line
+and offered to the attribute tail scanner. A front-matter member's plain key
+is matched against the field names where it lies on the source, so an unknown
+member is decoded no further and copies nothing; the printable check answers
+ASCII by the byte and decodes only scalars above it.
+
 The citation brace prescan, which runs once per inline root at its first
 `@{`, shares the inline scan's HTML skip state: an unclosed comment, CDATA
 section, declaration or instruction is scanned to the end of the root by
