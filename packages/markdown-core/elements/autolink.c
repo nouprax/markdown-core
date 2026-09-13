@@ -3,7 +3,6 @@
 #include "attributes.h"
 #include "autolink.h"
 #include "element.h"
-#include <iterator.h>
 #include <parser.h>
 #include <string.h>
 #include <utf8.h>
@@ -578,7 +577,7 @@ static markdown_core_node *email_text_fragment(markdown_core_parser *parser, mar
     return text;
 }
 
-static void postprocess_text(markdown_core_parser *parser, markdown_core_node *text) {
+static markdown_core_node *postprocess_text(markdown_core_parser *parser, markdown_core_node *text) {
     size_t start = 0;
     size_t offset = 0;
     markdown_core_node source_map = {0};
@@ -733,55 +732,33 @@ static void postprocess_text(markdown_core_parser *parser, markdown_core_node *t
     }
 
     if (!start || parser->oom) {
-        return;
+        return text;
     }
     if (!remaining) {
         markdown_core_node_recycle(parser->arena, text);
-        return;
+        return NULL;
     }
     markdown_core_chunk tail = markdown_core_chunk_dup(&source, (bufsize_t)start, (bufsize_t)remaining);
     if (!markdown_core_chunk_to_cstr(parser->mem, &tail)) {
         parser->oom = true;
-        return;
+        return text;
     }
     set_sourcepos_from_range(parser, text, &source_map, start, remaining);
     *text->as.literal = tail;
     markdown_core_chunk_free(parser->mem, &source);
+    return text;
 }
 
-static markdown_core_node *postprocess(const markdown_core_element *element, markdown_core_parser *parser,
-                                       markdown_core_node *root) {
-    markdown_core_iter walker;
-    markdown_core_iter *iter = &walker;
-    markdown_core_event_type ev;
-    markdown_core_node *node;
-    bool in_link = false;
-
-    /* The parser consolidates main and owned inline roots before postprocessing. */
-    markdown_core_iter_init(iter, root);
-
-    while ((ev = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
-        node = markdown_core_iter_get_node(iter);
-        if (in_link) {
-            if (ev == MARKDOWN_CORE_EVENT_EXIT && node->kind == MARKDOWN_CORE_NODE_LINK) {
-                in_link = false;
-            }
-            continue;
-        }
-
-        if (ev == MARKDOWN_CORE_EVENT_ENTER && node->kind == MARKDOWN_CORE_NODE_LINK) {
-            in_link = true;
-            continue;
-        }
-
-        /* EXIT lookahead already holds the original following sibling.
-         * Splits are inserted before Text, which may itself be freed. */
-        if (ev == MARKDOWN_CORE_EVENT_EXIT && node->kind == MARKDOWN_CORE_NODE_TEXT) {
-            postprocess_text(parser, node);
-        }
+/* One Text at its EXIT of the parser's finishing walk. Link content is never
+ * linked again, and a run without `@` is left untouched without allocating;
+ * splits land before the Text, which the walk never revisits. */
+static markdown_core_node *finish_node(const markdown_core_element *element, markdown_core_parser *parser,
+                                       markdown_core_node *node, int link_depth) {
+    (void)element;
+    if (node->kind != MARKDOWN_CORE_NODE_TEXT || link_depth > 0) {
+        return node;
     }
-
-    return root;
+    return postprocess_text(parser, node);
 }
 
 static bool can_start(markdown_core_inline_state *state, bufsize_t at) {
@@ -806,7 +783,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_AUTOLINK = {
     .can_start = can_start,
     .name = "autolink",
     .match_inline = match,
-    .postprocess_func = postprocess,
+    .finish_node = finish_node,
     .terminates_text = "<:w",
     .dispatch = "<:w",
 };

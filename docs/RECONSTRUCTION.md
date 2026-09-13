@@ -203,9 +203,10 @@ own natural foreign-function boundary:
   fixed-width node records, relation indexes, and UTF-8 bytes from linear
   memory before freeing it; bottom-up reconstruction is iterative.
 
-The parser's element postprocessing is depth-independent as well. In
-particular, enabling formulas must not recursively visit every node in a deep
-document that contains no formula. Correctness tests parse and inspect 10,000
+The parser's node finishing is depth-independent as well: elements finish
+nodes through a per-node hook of the core's one explicit-stack walk, so
+enabling formulas never visits a deep document that contains no formula a
+second time, let alone recursively. Correctness tests parse and inspect 10,000
 nested lists through every binding boundary.
 
 The JNI payload is not the Kotlin/Native adapter, and neither is the ES Wasm

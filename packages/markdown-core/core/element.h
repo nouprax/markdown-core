@@ -154,9 +154,18 @@ struct markdown_core_element {
     markdown_core_contains_inlines_func contains_inlines_func;
     markdown_core_accepts_lines_func accepts_lines_func;
     markdown_core_postprocess_func postprocess_func;
+    markdown_core_finish_node_func finish_node;
     markdown_core_opaque_alloc_func opaque_alloc_func;
     markdown_core_opaque_free_func opaque_free_func;
     markdown_core_visit_owned_subtrees_func visit_owned_subtrees_func;
 };
+
+/* Whether `node` can hold node-valued fields at all: the core kinds that do,
+ * or an element that declares a field visitor. Every other node is passed
+ * over without a visitor call. */
+static MARKDOWN_CORE_INLINE bool markdown_core_node_may_own_inline_subtrees(const markdown_core_node *node) {
+    return node->kind == MARKDOWN_CORE_NODE_DEFINITION || node->kind == MARKDOWN_CORE_NODE_CALLOUT ||
+           node->kind == MARKDOWN_CORE_NODE_CITE || (node->element && node->element->visit_owned_subtrees_func);
+}
 
 #endif

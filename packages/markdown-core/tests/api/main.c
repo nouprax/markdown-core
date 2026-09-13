@@ -3216,6 +3216,7 @@ typedef struct {
         specimens;
     size_t key_index_branches, key_index_operations;
     size_t block_dispatch, reference_probes;
+    size_t completion, finishing;
 } inline_work;
 static markdown_core_node *record_inline_work(const markdown_core_element *element, markdown_core_parser *parser,
                                               markdown_core_node *root) {
@@ -3238,6 +3239,8 @@ static markdown_core_node *record_inline_work(const markdown_core_element *eleme
     work->lookahead = parser->block_lookahead_work;
     work->block_dispatch = parser->block_dispatch_work;
     work->reference_probes = parser->reference_probe_work;
+    work->completion = parser->completion_work;
+    work->finishing = parser->finishing_work;
     work->tables = parser->table_scan_work;
     work->table_frontier = parser->table_frontier_peak;
     work->table_workspace_growth = parser->table_workspace_growth;
@@ -3686,6 +3689,73 @@ static void reference_probe_precheck(test_batch_runner *runner) {
  * tests per search. Long shared prefixes are the worst key set; the total
  * must stay inside that bound at every key count, which is what makes the
  * whole parse linear in the number of keys. */
+static markdown_core_node *finish_nothing(const markdown_core_element *element, markdown_core_parser *parser,
+                                          markdown_core_node *node, int link_depth) {
+    (void)element;
+    (void)parser;
+    (void)link_depth;
+    return node;
+}
+static const markdown_core_element FINISH_PROBE = {.name = "finish-probe", .finish_node = finish_nothing};
+static bool measure_inline_work_with_finisher(markdown_core_parser *parser, void *context) {
+    return measure_inline_work(parser, context) && markdown_core_parser_attach_element(parser, &FINISH_PROBE);
+}
+
+/* After inline parsing the tree is walked twice, whatever elements are
+ * attached: completion delivers one hook per node, and the finishing walk
+ * delivers one EXIT per node in which Text consolidation, autolink splitting
+ * and formula unwrapping all happen. `completed` counts the nodes each unit
+ * owns when completion runs, including the runs and wrappers that finishing
+ * later absorbs. */
+static void finishing_walk_work(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    static const struct {
+        const char *unit;
+        size_t completed, texts;
+        markdown_core_node_type produced;
+    } shapes[] = {
+        {"a *b* c **d** e\n\n", 8, 5, MARKDOWN_CORE_NODE_STRONG},
+        {"mail x@y.zz now\n\n", 2, 3, MARKDOWN_CORE_NODE_LINK},
+        {"see www.example.com now\n\n", 6, 3, MARKDOWN_CORE_NODE_LINK},
+        {"$$x$$\n\n", 2, 0, MARKDOWN_CORE_NODE_FORMULA_BLOCK},
+        {"- item\n", 3, 1, MARKDOWN_CORE_NODE_LIST_ITEM},
+    };
+    for (size_t shape = 0; shape < sizeof(shapes) / sizeof(*shapes); shape++) {
+        for (size_t units = 256; units <= 4096; units *= 4) {
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+            for (size_t i = 0; i < units; i++) {
+                markdown_core_strbuf_puts(&source, shapes[shape].unit);
+            }
+            markdown_core_strbuf_puts(&source, "tail\n");
+            inline_work work = {0}, probed = {0};
+            markdown_core_node *root = markdown_core_parse_document_with_mem((const char *)source.ptr, source.size, mem,
+                                                                             measure_inline_work, &work);
+            markdown_core_node *again = markdown_core_parse_document_with_mem(
+                (const char *)source.ptr, source.size, mem, measure_inline_work_with_finisher, &probed);
+            OK(runner, root != NULL && again != NULL, "finishing shape parses: shape=%zu units=%zu", shape, units);
+            size_t bound = shapes[shape].completed * units + 16;
+            OK(runner, work.completion <= bound, "completion delivers one hook per node: shape=%zu units=%zu hooks=%zu",
+               shape, units, work.completion);
+            OK(runner, work.finishing <= work.completion,
+               "finishing delivers at most one EXIT per completed node: shape=%zu units=%zu hooks=%zu", shape, units,
+               work.finishing);
+            OK(runner, probed.completion == work.completion && probed.finishing == work.finishing,
+               "an extra finishing element adds no walk: shape=%zu units=%zu", shape, units);
+            if (root) {
+                OK(runner, count_kind(root, shapes[shape].produced) == units,
+                   "the finishing walk produced every unit's node: shape=%zu units=%zu", shape, units);
+                INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_TEXT), shapes[shape].texts * units + 1,
+                       "every Text run is consolidated: shape=%zu units=%zu", shape, units);
+                markdown_core_node_free(root);
+            }
+            if (again) {
+                markdown_core_node_free(again);
+            }
+            markdown_core_strbuf_free(&source);
+        }
+    }
+}
+
 static void key_index_consumer_work(test_batch_runner *runner) {
     enum { PREFIX = 160, LABEL = PREFIX + 16 };
     markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
@@ -4385,10 +4455,12 @@ static void speculative_probe_allocations(test_batch_runner *runner) {
         markdown_core_node_attach_owned(paragraph, text, NULL);
         const unsigned char *original = text->as.literal->data;
         text_allocation_calls = 0;
-        MARKDOWN_CORE_ELEMENT_AUTOLINK.postprocess_func(&MARKDOWN_CORE_ELEMENT_AUTOLINK, &parser, root);
-        OK(runner, text->as.literal->data == original, "a failed email scan retains the original owned buffer");
+        markdown_core_node *kept =
+            MARKDOWN_CORE_ELEMENT_AUTOLINK.finish_node(&MARKDOWN_CORE_ELEMENT_AUTOLINK, &parser, text, 0);
+        OK(runner, kept == text && text->as.literal->data == original,
+           "a failed email scan retains the original owned buffer");
         OK(runner, paragraph->first_child == text && text->next == NULL, "failed email scan preserves the tree");
-        OK(runner, text_allocation_calls <= 1, "no-hit postprocessing only needs its iterator");
+        INT_EQ(runner, text_allocation_calls, 0, "a failed candidate finishes without allocating");
         markdown_core_node_free(root);
         free(source);
     }
@@ -6457,6 +6529,7 @@ int main(int argc, char **argv) {
     key_index_consumer_work(runner);
     block_start_dispatch_work(runner);
     reference_probe_precheck(runner);
+    finishing_walk_work(runner);
     table_dash_suffixes(runner);
     nested_block_lookahead(runner);
     deep_inline_construction(runner);

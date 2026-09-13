@@ -888,12 +888,16 @@ bool markdown_core_parse_inline_subtrees(markdown_core_parser *parser, markdown_
 
 typedef int (*tree_phase_func)(markdown_core_parser *parser, markdown_core_node **root_slot, void *context);
 typedef void (*tree_node_func)(markdown_core_parser *parser, markdown_core_node *node, int script_depth, void *context);
+/* Runs at a node's EXIT with the frame's iterator, whose lookahead already
+ * names a node outside the subtree; returns the node now in the position. */
+typedef markdown_core_node *(*tree_exit_func)(markdown_core_parser *parser, markdown_core_iter *iter,
+                                              markdown_core_node *node, int link_depth, void *context);
 
 typedef struct {
     markdown_core_node **slot;
     markdown_core_iter iter;
     bool started;
-    int script_depth;
+    int script_depth, link_depth;
 } owned_tree_frame;
 
 typedef struct {
@@ -928,9 +932,10 @@ static int push_owned_tree(markdown_core_node **slot, void *context) {
 
 /* Every independent inline tree uses the same explicit continuation stack.
  * Field roots remain owned by their live slots until their children finish;
- * a completion phase may then replace that root. Depth never uses C frames. */
+ * an exit or completion phase may then replace that root. Depth never uses C
+ * frames, and a node that cannot own fields costs no visitor call. */
 static int walk_owned_trees(markdown_core_parser *parser, markdown_core_node **slot, tree_node_func enter,
-                            tree_phase_func finish, void *context, int script_depth) {
+                            tree_exit_func exit, tree_phase_func finish, void *context, int script_depth) {
     owned_tree_walk walk = {.parser = parser, .script_depth = script_depth};
     push_owned_tree(slot, &walk);
     while (walk.count && !parser->oom) {
@@ -949,15 +954,32 @@ static int walk_owned_trees(markdown_core_parser *parser, markdown_core_node **s
             continue;
         }
         markdown_core_node *node = markdown_core_iter_get_node(&frame->iter);
+        int step = event == MARKDOWN_CORE_EVENT_ENTER ? 1 : -1;
         if (node->element && node->element->delimiter.body == DELIMITER_WORD_BODY) {
-            frame->script_depth += event == MARKDOWN_CORE_EVENT_ENTER ? 1 : -1;
+            frame->script_depth += step;
+        }
+        if (node->kind == MARKDOWN_CORE_NODE_LINK) {
+            frame->link_depth += step;
         }
         if (event != MARKDOWN_CORE_EVENT_ENTER) {
+            if (exit) {
+                /* The frame root's EXIT is its last event, so the slot may
+                 * take a replacement here; a failed walk keeps the tree for
+                 * the transaction's cleanup. */
+                bool root = node == frame->iter.root;
+                markdown_core_node *now = exit(parser, &frame->iter, node, frame->link_depth, context);
+                if (root && !parser->oom) {
+                    *frame->slot = now;
+                }
+            }
             continue;
         }
         walk.script_depth = frame->script_depth;
         if (enter) {
             enter(parser, node, frame->script_depth, context);
+        }
+        if (!markdown_core_node_may_own_inline_subtrees(node)) {
+            continue;
         }
         size_t first = walk.count;
         if (!markdown_core_visit_inline_subtrees(node, push_owned_tree, &walk)) {
@@ -977,6 +999,7 @@ static int walk_owned_trees(markdown_core_parser *parser, markdown_core_node **s
 
 static void complete_inline_node(markdown_core_parser *parser, markdown_core_node *node, int script_depth,
                                  void *context) {
+    MARKDOWN_CORE_DIAGNOSTIC(parser->completion_work++;)
     const markdown_core_element *structure = markdown_core_node_structure(node);
     if (structure && structure->complete_inline) {
         structure->complete_inline(parser, node, script_depth);
@@ -988,7 +1011,7 @@ static void complete_inline_node(markdown_core_parser *parser, markdown_core_nod
 
 static int process_inline_fields(markdown_core_parser *parser, markdown_core_node *root, void *context,
                                  int script_depth) {
-    return walk_owned_trees(parser, &root, complete_inline_node, NULL, context, script_depth);
+    return walk_owned_trees(parser, &root, complete_inline_node, NULL, NULL, context, script_depth);
 }
 
 static int complete_independent_inlines(markdown_core_node **slot, void *context) {
@@ -2180,7 +2203,7 @@ typedef struct {
 } tree_phase_context;
 static int apply_independent_phase(markdown_core_node **slot, void *context) {
     tree_phase_context *phase = context;
-    return walk_owned_trees(phase->parser, slot, NULL, phase->phase, phase->context, 0);
+    return walk_owned_trees(phase->parser, slot, NULL, NULL, phase->phase, phase->context, 0);
 }
 
 /* Document definitions are independent roots, followed by the content tree.
@@ -2195,7 +2218,7 @@ static int S_apply_tree_phase(markdown_core_parser *parser, markdown_core_node *
     if (!markdown_core_visit_block_subtrees(root, apply_independent_phase, &phase_context)) {
         return 0;
     }
-    return walk_owned_trees(parser, root_slot, NULL, phase, context, 0);
+    return walk_owned_trees(parser, root_slot, NULL, NULL, phase, context, 0);
 }
 
 /* Register at syntax commitment; no completed-tree discovery pass is needed.
@@ -2305,9 +2328,72 @@ void markdown_core_block_own_definitions(markdown_core_definition_collection *co
     }
 }
 
-static int S_consolidate_tree(markdown_core_parser *parser, markdown_core_node **root_slot, void *context) {
-    (void)context;
-    return markdown_core_consolidate_text_nodes_with_parser(parser, *root_slot);
+/* THE ONE FINISHING WALK. Text consolidation and every element's per-node
+ * hook run at each node's EXIT of a single post-order pass over the document
+ * definitions and the content tree, so the number of passes after inline
+ * parsing does not depend on the attached elements. A Text first absorbs the
+ * run that follows it and is released when it owns no bytes; the hooks then
+ * see the run's survivor, exactly as the former whole-tree passes did. */
+typedef struct {
+    markdown_core_parser *parser;
+    const markdown_core_element **finishers;
+    size_t count;
+} finishing_walk;
+
+static markdown_core_node *S_finish_node(markdown_core_parser *parser, markdown_core_iter *iter,
+                                         markdown_core_node *node, int link_depth, void *context) {
+    const finishing_walk *walk = context;
+    MARKDOWN_CORE_DIAGNOSTIC(parser->finishing_work++;)
+    if (node->kind == MARKDOWN_CORE_NODE_TEXT) {
+        if (node->next && node->next->kind == MARKDOWN_CORE_NODE_TEXT &&
+            !markdown_core_consolidate_text_run(parser, iter, node)) {
+            parser->oom = true;
+            return NULL;
+        }
+        if (node->as.literal->len == 0) {
+            markdown_core_chunk_free(parser->mem, node->as.literal);
+            markdown_core_node_recycle(parser->arena, node);
+            return NULL;
+        }
+    }
+    for (size_t i = 0; i < walk->count && node; i++) {
+        const markdown_core_element *element = walk->finishers[i];
+        node = element->finish_node(element, parser, node, link_depth);
+        if (parser->oom) {
+            return NULL;
+        }
+    }
+    return node;
+}
+
+static int finish_independent_tree(markdown_core_node **slot, void *context) {
+    finishing_walk *walk = context;
+    return walk_owned_trees(walk->parser, slot, NULL, S_finish_node, NULL, walk, 0);
+}
+
+static int S_finish_tree(markdown_core_parser *parser) {
+    finishing_walk walk = {.parser = parser};
+    for (size_t i = 0; i < parser->element_count; i++) {
+        walk.count += parser->elements[i]->finish_node != NULL;
+    }
+    if (walk.count) {
+        walk.finishers = parser->mem->calloc(walk.count, sizeof(*walk.finishers));
+        if (!walk.finishers) {
+            parser->oom = true;
+            return 0;
+        }
+        for (size_t i = 0, at = 0; i < parser->element_count; i++) {
+            if (parser->elements[i]->finish_node) {
+                walk.finishers[at++] = parser->elements[i];
+            }
+        }
+    }
+    int ok = markdown_core_visit_block_subtrees(parser->root, finish_independent_tree, &walk) &&
+             walk_owned_trees(parser, &parser->root, NULL, S_finish_node, NULL, &walk, 0);
+    if (walk.finishers) {
+        parser->mem->free(walk.finishers);
+    }
+    return ok && !parser->oom;
 }
 
 #if MARKDOWN_CORE_DEBUG_NODES
@@ -2353,10 +2439,8 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
         goto failed;
     }
 
-    if (!S_apply_tree_phase(parser, &parser->root, S_consolidate_tree, NULL)) {
+    if (!S_finish_tree(parser)) {
         parser->oom = true;
-    }
-    if (parser->oom) {
         goto failed;
     }
 
@@ -2366,6 +2450,8 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
     }
 #endif
 
+    /* Whole-tree postprocessors are a tooling hook; no built-in element
+     * declares one, so an ordinary parse walks nothing here. */
     for (size_t i = 0; i < parser->element_count && !parser->oom; i++) {
         const markdown_core_element *element = parser->elements[i];
         if (element->postprocess_func) {

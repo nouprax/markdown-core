@@ -142,12 +142,19 @@ namespaces, so their total is bounded by F plus the authored-id count.
 After every allocation succeeds, finalization moves the values into one
 source-ordered document chain and discards the parser collection.
 
-Consolidation and element postprocessing begin only after finalization.
-Their common tree-phase walker visits Document.footnotes and element-owned
-fields from their live owner slots. Callbacks receive resolved ids and the
-completed ownership model; removing a document value cannot leave a pointer
-in a parser index. OOM cleanup uses the document's existing ownership graph,
-and semantic reference cycles never become object cycles.
+Consolidation and element finishing begin only after finalization, in one
+post-order walk over Document.footnotes, Document.specimens and every
+element-owned field, each entered from its live owner slot. At a node's EXIT
+the walk first absorbs the Text run that follows a Text into it, releases a
+Text that owns no bytes, and then hands the surviving node to each element's
+`finish_node` hook in registry order: autolink splits addresses and formula
+unwraps wrappers there, so the number of walks after inline parsing is two
+(completion and finishing) however many elements are attached. Hooks receive
+resolved ids and the completed ownership model; removing a document value
+cannot leave a pointer in a parser index. OOM cleanup uses the document's
+existing ownership graph, and semantic reference cycles never become object
+cycles. The whole-tree `postprocess_func` remains a tooling hook that no
+built-in element declares.
 
 The bracket scanner tracks the most recent non-SP/TAB byte over disjoint
 consumed token ranges, so rejecting empty bodies never rescans nested bodies.

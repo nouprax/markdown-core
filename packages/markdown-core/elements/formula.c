@@ -7,7 +7,6 @@
 
 #include <buffer.h>
 #include <chunk.h>
-#include <iterator.h>
 #include <markdown_core_ctype.h>
 #include <node.h>
 #include <parser.h>
@@ -139,7 +138,7 @@ static int set_formula_literal_bytes(markdown_core_node *node, const unsigned ch
         /* THE BORROW MUST NOT SURVIVE THE COPY FAILING. `data` belongs to the
          * caller and dies immediately: `make_backslash_delimited_formula` frees
          * its strbuf on the next statement, `replace_with_formula_block` frees
-         * the whole old code block, and `postprocess_node` clears the node's own
+         * the whole old code block, and `finish_node` clears the node's own
          * content. Keeping a borrowed pointer past that is a use-after-free that
          * every later read of the literal walks into -- ASan: heap-use-after-free
          * in markdown_core_elements_get_formula_literal -- and `parser->oom`
@@ -704,11 +703,12 @@ static markdown_core_node *replace_with_formula_block(const markdown_core_elemen
     return NULL;
 }
 
-/* Process one node and return the node that now occupies its position. The
- * caller owns traversal: keeping it iterative makes enabled formula syntax
- * safe for an arbitrarily deep tree even when the tree contains no formula. */
-static markdown_core_node *postprocess_node(const markdown_core_element *element, markdown_core_parser *parser,
-                                            markdown_core_node *node) {
+/* Finish one node at its EXIT and return the node that now occupies its
+ * position. The parser's finishing walk owns traversal, so enabled formula
+ * syntax is safe for an arbitrarily deep tree even when it holds no formula. */
+static markdown_core_node *finish_node(const markdown_core_element *element, markdown_core_parser *parser,
+                                       markdown_core_node *node, int link_depth) {
+    (void)link_depth;
     if (node->kind == MARKDOWN_CORE_NODE_FORMULA_BLOCK) {
         node_formula *formula = get_formula(node);
         if (formula && !formula->literal.data) {
@@ -754,37 +754,6 @@ static markdown_core_node *postprocess_node(const markdown_core_element *element
     return node;
 }
 
-static markdown_core_node *postprocess(const markdown_core_element *element, markdown_core_parser *parser,
-                                       markdown_core_node *root) {
-    markdown_core_iter walker;
-    markdown_core_iter *iter = &walker;
-    markdown_core_event_type event;
-
-    markdown_core_iter_init(iter, root);
-    while (!parser->oom && (event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
-        markdown_core_node *node;
-        markdown_core_node *processed;
-        bool is_root;
-
-        /* At EXIT the iterator has already selected the parent or following
-         * sibling as its next node, so replacing and freeing this node cannot
-         * invalidate traversal state. */
-        if (event != MARKDOWN_CORE_EVENT_EXIT) {
-            continue;
-        }
-        node = markdown_core_iter_get_node(iter);
-        is_root = node == root;
-        processed = postprocess_node(element, parser, node);
-        if (!processed) {
-            break;
-        }
-        if (is_root) {
-            root = processed;
-        }
-    }
-    return root;
-}
-
 /* `$` and `\\` open a formula, and that is the whole set. `\\` is in the dispatch
  * set and NOT the terminator set: `is_core_special_character` refuses it there
  * anyway, and it must stay in dispatch because `handle_backslash` asks whether any
@@ -814,7 +783,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_FORMULA = {
     .try_opening_block = try_opening_formula_block,
     .block_start_bytes = "$\\",
     .probe_block = probe_formula_block,
-    .postprocess_func = postprocess,
+    .finish_node = finish_node,
     .get_type_string_func = get_type_string,
     .can_contain_func = can_contain,
     .accepts_lines_func = accepts_lines,

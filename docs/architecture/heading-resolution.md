@@ -133,7 +133,7 @@ The reference map and occurrences own resources through existing reference
 counts; freeing the heading or document does not invalidate a detached Link.
 Every failure joins the parser's terminal allocation-failure transaction and
 disposes pending inline states before their nodes. Parse-time indices are discarded
-before consolidation or element postprocessing can replace nodes.
+before the finishing walk can replace nodes.
 
 Expected work is proportional to parsed input, visited nodes, and produced
 anchor/target bytes, using the shared hash index's normal bounds. Memory is

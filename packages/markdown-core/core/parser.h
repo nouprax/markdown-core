@@ -175,6 +175,9 @@ struct markdown_core_parser {
     size_t block_dispatch_work;
     /* Reference definition parses attempted on a block front or a term. */
     size_t reference_probe_work;
+    /* Hook deliveries of the inline completion walk and of the node finishing
+     * walk: one per node each, however many elements are attached. */
+    size_t completion_work, finishing_work;
     size_t table_scan_work, table_frontier_peak;
     size_t table_workspace_growth, table_geometry_lines, table_separator_scans;
     /* Properties work: source ranges decoded once at their owning boundary. */
