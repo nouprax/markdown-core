@@ -80,17 +80,17 @@ static bool source_escaped(markdown_core_inline_state *inline_state, bufsize_t a
 
 static void prepare_citation_braces(markdown_core_inline_state *inline_state) {
     citation_brace_index *index = &inline_state->citation_braces;
+    const unsigned char *data = inline_state->input.data;
     index->ready = true;
     size_t capacity = 0;
     bufsize_t top = -1;
-    unsigned html_flags = 0;
     for (bufsize_t at = 0; at < inline_state->input.len;) {
         bufsize_t opaque_end = at;
-        unsigned char c = inline_state->input.data[at];
+        unsigned char c = data[at];
         bool escaped = (c == '`' || c == '<') && source_escaped(inline_state, at, 0);
         if (c == '`' && !escaped) {
             bufsize_t run = at;
-            while (run < inline_state->input.len && inline_state->input.data[run] == '`') {
+            while (run < inline_state->input.len && data[run] == '`') {
                 run++;
             }
             bufsize_t saved = inline_state->pos;
@@ -100,31 +100,42 @@ static void prepare_citation_braces(markdown_core_inline_state *inline_state) {
             if (!opaque_end) {
                 opaque_end = run;
             }
-        } else if (c == '<' && !escaped) {
-            bufsize_t width = markdown_core_inline_scan_inline_html(inline_state, at + 1, &html_flags, NULL);
+        } else if (c == '<' && !escaped && markdown_core_inline_pointy_may_open(inline_state, at)) {
+            /* The inline scan's own skip state: an unclosed comment, CDATA
+             * section, declaration or instruction closes nowhere later in
+             * this root, whichever pass found it, so each is scanned once. */
+            bufsize_t width = markdown_core_inline_scan_inline_html(inline_state, at + 1, &inline_state->flags, NULL);
             if (!width) {
-                width = scan_autolink_uri(inline_state->input.data, inline_state->input.len, at + 1);
+                width = scan_autolink_uri(data, inline_state->input.len, at + 1);
             }
             if (!width) {
-                width = scan_autolink_email(inline_state->input.data, inline_state->input.len, at + 1);
+                width = scan_autolink_email(data, inline_state->input.len, at + 1);
             }
             if (width) {
                 opaque_end = at + 1 + width;
             }
         }
         if (opaque_end > at) {
-            while (at < opaque_end) {
-                int32_t scalar;
-                int width = markdown_core_utf8proc_iterate(inline_state->input.data + at, opaque_end - at, &scalar);
-                MARKDOWN_CORE_DIAGNOSTIC(inline_state->owner_parser->citation_work++;)
-                if (top >= 0) {
-                    index->entries[top].content = true;
-                    if (markdown_core_utf8proc_is_space(scalar)) {
-                        index->entries[top].valid = false;
+            MARKDOWN_CORE_DIAGNOSTIC(inline_state->owner_parser->citation_work += (size_t)(opaque_end - at);)
+            if (top >= 0) {
+                /* The span is key content; only a key still valid needs to
+                 * know whether the span holds a space, and ASCII answers
+                 * without decoding. */
+                citation_brace *open = &index->entries[top];
+                open->content = true;
+                while (open->valid && at < opaque_end) {
+                    int32_t scalar = data[at];
+                    int width = 1;
+                    if (scalar >= 0x80) {
+                        width = markdown_core_utf8proc_iterate(data + at, opaque_end - at, &scalar);
                     }
+                    if (markdown_core_utf8proc_is_space(scalar)) {
+                        open->valid = false;
+                    }
+                    at += width > 0 ? width : 1;
                 }
-                at += width > 0 ? width : 1;
             }
+            at = opaque_end;
             continue;
         }
         MARKDOWN_CORE_DIAGNOSTIC(inline_state->owner_parser->citation_work++;)

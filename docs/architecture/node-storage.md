@@ -219,6 +219,10 @@ facts so later candidates do not repeatedly scan the same suffix.
 Generated scanners accept exact read-only slices. Their cursor and marker
 are offsets; a virtual NUL at the slice limit handles termination without
 writing a sentinel, requiring padding or forming an out-of-bounds pointer.
+The bound is load-bearing for block scanners too: the block-start lookahead
+and the table's line source hand the same scanners lines borrowed from the
+immutable document, where the byte after a line is the next line's first or
+lies past the caller's buffer, so no scanner family assumes a terminator.
 Both scanner families are reproducible raw output of the pinned re2c version.
 
 A table query borrows its current line, immutable input lines and the parser's

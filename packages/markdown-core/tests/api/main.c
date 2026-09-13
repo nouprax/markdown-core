@@ -3219,6 +3219,7 @@ typedef struct {
     size_t completion, finishing, lifecycle, text_run_extensions, code_block_moves;
     size_t reference_folds, footnote_folds;
     size_t table_row_scans, table_row_work, table_geometry_allocations, table_scratch_growth;
+    size_t html_scans;
 } inline_work;
 static markdown_core_node *record_inline_work(const markdown_core_element *element, markdown_core_parser *parser,
                                               markdown_core_node *root) {
@@ -3238,6 +3239,7 @@ static markdown_core_node *record_inline_work(const markdown_core_element *eleme
     work->specimens = parser->specimen_work;
     work->list_markers = parser->list_marker_work;
     work->comment = parser->comment_scan_work;
+    work->html_scans = parser->html_scan_work;
     work->lookahead = parser->block_lookahead_work;
     work->block_dispatch = parser->block_dispatch_work;
     work->reference_probes = parser->reference_probe_work;
@@ -6594,8 +6596,7 @@ static void bounded_scanners(test_batch_runner *runner) {
         scanner scan;
         const char *text;
         int expected;
-    } cases[] = {{scan_scheme, "https:", -1},
-                 {scan_autolink_uri, "https://example.com>", -1},
+    } cases[] = {{scan_autolink_uri, "https://example.com>", -1},
                  {scan_autolink_email, "a@example.com>", -1},
                  {scan_html_tag, "x a='b'>", -1},
                  {scan_html_comment, "--hi-->", -1},
@@ -6615,8 +6616,6 @@ static void bounded_scanners(test_batch_runner *runner) {
                  {scan_setext_heading_line, "---\n", 2},
                  {scan_open_code_fence, "```lang\n", 3},
                  {scan_close_code_fence, "``` \n", 3},
-                 {scan_entity, "&amp;", -1},
-                 {scan_dangerous_url, "javascript:", -1},
                  {scan_footnote_definition, "[^note]: ", -1},
                  {scan_table_start, "| - | :--: |\n", -1},
                  {scan_table_cell, "x\\|y", -1},
@@ -6658,6 +6657,132 @@ static void bounded_scanners(test_batch_runner *runner) {
     const unsigned char embedded[] = {'+', '-', '+', 0, '+', '-', '+'};
     INT_EQ(runner, scan_table_horizontal(embedded, (bufsize_t)sizeof(embedded), 0), 0,
            "embedded NUL cannot terminate a grid boundary");
+}
+
+/* The autolink grammar's bounded repeats -- a scheme of 2..32 bytes, domain
+ * labels of 1..63 that neither begin nor end with a hyphen -- are length
+ * checks on the recognized span now, not automaton states, and hold at the
+ * scanner and in the document alike. */
+static void autolink_scanner_bounds(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    unsigned char text[128];
+    for (size_t scheme = 1; scheme <= 40; scheme++) {
+        memset(text, 'a', scheme);
+        memcpy(text + scheme, ":x>", 3);
+        bufsize_t length = (bufsize_t)(scheme + 3);
+        bool accepted = scheme >= 2 && scheme <= 32;
+        INT_EQ(runner, scan_autolink_uri(text, length, 0), accepted ? length : 0, "scheme of %zu bytes", scheme);
+        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+        markdown_core_strbuf_putc(&source, '<');
+        markdown_core_strbuf_put(&source, text, length);
+        markdown_core_strbuf_putc(&source, '\n');
+        markdown_core_node *root =
+            markdown_core_parse_document_with_mem((const char *)source.ptr, source.size, mem, NULL, NULL);
+        INT_EQ(runner, (int)count_kind(root, MARKDOWN_CORE_NODE_LINK), accepted ? 1 : 0,
+               "a scheme of %zu bytes is an autolink iff 2..32", scheme);
+        markdown_core_node_free(root);
+        markdown_core_strbuf_free(&source);
+    }
+    for (size_t label = 1; label <= 70; label++) {
+        size_t length = 0;
+        memcpy(text, "a@x.", 4);
+        length = 4;
+        memset(text + length, 'b', label);
+        length += label;
+        memcpy(text + length, ".c>", 3);
+        length += 3;
+        bool accepted = label <= 63;
+        INT_EQ(runner, scan_autolink_email(text, (bufsize_t)length, 0), accepted ? (int)length : 0,
+               "label of %zu bytes", label);
+        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+        markdown_core_strbuf_putc(&source, '<');
+        markdown_core_strbuf_put(&source, text, (bufsize_t)length);
+        markdown_core_strbuf_putc(&source, '\n');
+        markdown_core_node *root =
+            markdown_core_parse_document_with_mem((const char *)source.ptr, source.size, mem, NULL, NULL);
+        /* The pointy form is the link from column 1; a rejected address is
+         * still the bare-text extension's link, from after the `<`. */
+        markdown_core_node *link = root->first_child->first_child;
+        OK(runner, link && (link->kind == MARKDOWN_CORE_NODE_LINK) == accepted,
+           "a label of %zu bytes is a pointy email autolink iff 1..63", label);
+        markdown_core_node_free(root);
+        markdown_core_strbuf_free(&source);
+    }
+    const char *shapes[] = {"a@b-c.d>", "a@b.c-d>", "a@1.2>", "a@b>",  "a@b-c>", "a@-b.c>",
+                            "a@b-.c>",  "a@b..c>",  "a@b.>",  "a@.b>", "@b.c>",  "a@>"};
+    for (size_t i = 0; i < sizeof(shapes) / sizeof(*shapes); i++) {
+        bufsize_t length = (bufsize_t)strlen(shapes[i]);
+        INT_EQ(runner, scan_autolink_email((const unsigned char *)shapes[i], length, 0), i < 5 ? length : 0,
+               "label shape: %s", shapes[i]);
+    }
+}
+
+/* Kind 7 of an HTML block start is the inline tag scanner followed by a
+ * check of the line's tail: exactly the lines the combined rule accepted. */
+static void html_block_start_tag_tail(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    const struct {
+        const char *line;
+        int kind;
+    } cases[] = {{"<x>\n", 7},       {"<x>  \t\f\n", 7}, {"<x>\r\n", 7},        {"</x >\n", 7}, {"<x/>\n", 7},
+                 {"<x b='>'>\n", 7}, {"<x>\n\n", 7},     {"<x a=\">\" >\n", 7}, {"<x> y\n", 0}, {"<x", 0},
+                 {"<x>", 0},         {"< x>\n", 0},      {"<1>\n", 0},          {"<x>\v\n", 0}, {"<x>>\n", 0},
+                 {"x<y>\n", 0},      {"</ x>\n", 0},     {"<x a=>\n", 0}};
+    for (size_t i = 0; i < sizeof(cases) / sizeof(*cases); i++) {
+        bufsize_t length = (bufsize_t)strlen(cases[i].line);
+        INT_EQ(runner, scan_html_block_start_7((const unsigned char *)cases[i].line, length, 0), cases[i].kind,
+               "tag tail: case=%zu", i);
+        if (cases[i].line[length - 1] != '\n') {
+            continue; /* the block parser supplies a line ending */
+        }
+        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+        markdown_core_strbuf_puts(&source, cases[i].line);
+        markdown_core_strbuf_puts(&source, "\ntext\n");
+        markdown_core_node *root =
+            markdown_core_parse_document_with_mem((const char *)source.ptr, source.size, mem, NULL, NULL);
+        INT_EQ(runner, (int)count_kind(root, MARKDOWN_CORE_NODE_HTML_BLOCK), cases[i].kind ? 1 : 0,
+               "a kind-7 line opens an HTML block: case=%zu", i);
+        markdown_core_node_free(root);
+        markdown_core_strbuf_free(&source);
+    }
+}
+
+/* A `<` is offered to the HTML scanners only when the byte after it can
+ * begin a pointy construct, and an unclosed comment, CDATA section,
+ * declaration or instruction is scanned to the end of its inline root once,
+ * whichever pass -- the inline scan or the citation brace prescan -- meets
+ * it first. Every shape ends with a braced key and half begin with one, so
+ * both orders occur. */
+static void pointy_scans_share_skip_state(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    /* A paragraph, not an HTML block: the plain lead keeps the units off the
+     * line's start, the keyed lead has the prescan meet them first. */
+    const struct {
+        const char *lead, *unit;
+        size_t scans;
+    } shapes[] = {
+        {"[@{k}] ", "< a ", 0},         {"x ", "< a ", 0},         {"[@{k}] ", "<!-- x ", 1}, {"x ", "<!-- x ", 1},
+        {"[@{k}] ", "<![CDATA[ x ", 1}, {"x ", "<![CDATA[ x ", 1}, {"[@{k}] ", "<?x ", 1},    {"x ", "<?x ", 1},
+        {"[@{k}] ", "<!X ", 1},         {"x ", "<!X ", 1}};
+    for (size_t shape = 0; shape < sizeof(shapes) / sizeof(*shapes); shape++) {
+        for (size_t units = 1; units <= 64; units *= 4) {
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+            markdown_core_strbuf_puts(&source, shapes[shape].lead);
+            for (size_t i = 0; i < units; i++) {
+                markdown_core_strbuf_puts(&source, shapes[shape].unit);
+            }
+            markdown_core_strbuf_puts(&source, "[@{k}]\n");
+            inline_work work = {0};
+            markdown_core_node *root = markdown_core_parse_document_with_mem((const char *)source.ptr, source.size, mem,
+                                                                             measure_inline_work, &work);
+            OK(runner, count_kind(root, MARKDOWN_CORE_NODE_CITE) == (shapes[shape].lead[0] == '[' ? 2 : 1),
+               "the braced keys are citations: shape=%zu units=%zu", shape, units);
+            INT_EQ(runner, (int)work.html_scans, (int)shapes[shape].scans,
+                   "pointy scans are gated and unclosed forms scan once: shape=%zu units=%zu", shape, units);
+            markdown_core_node_free(root);
+            markdown_core_strbuf_free(&source);
+        }
+    }
 }
 
 /* Oracle-confirmed simple-body ownership is invariant under line ending,
@@ -7018,6 +7143,9 @@ int main(int argc, char **argv) {
     table_candidate_work(runner);
     ordinary_block_peek_work(runner);
     bounded_scanners(runner);
+    autolink_scanner_bounds(runner);
+    html_block_start_tag_tail(runner);
+    pointy_scans_share_skip_state(runner);
     simple_table_body_boundaries(runner);
     simple_table_footer_work(runner);
     grid_caption_search_work(runner);

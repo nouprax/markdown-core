@@ -173,7 +173,19 @@ The entry rejects invalid or empty ranges before forming any pointers, then
 recognizes only that borrowed slice without allocation, sentinel writes or
 padding. The generated functions own this boundary; there is no shared scanner
 wrapper, callback dispatch or forwarding macro. Table's cursor-based dash
-scanner additionally reports matched spans for its geometry pass.
+scanner additionally reports matched spans for its geometry pass. Every scanner
+has a caller; a grammar's bounded repeats -- the autolink scheme of 2..32
+bytes, domain labels of 1..63 -- are length checks on the recognized span
+rather than automaton states, and the kind-7 HTML block start is the inline
+tag scanner followed by a check of the line's tail, so each automaton exists
+once.
+
+The citation brace prescan, which runs once per inline root at its first
+`@{`, shares the inline scan's HTML skip state: an unclosed comment, CDATA
+section, declaration or instruction is scanned to the end of the root by
+whichever pass meets it first and by neither again. A `<` is offered to the
+tag and autolink scanners only when the byte after it can begin one of them,
+and an opaque span inside a key is decoded only while the key is still valid.
 
 The Unicode category predicates (letter, number, mark, punctuation,
 punctuation-or-symbol, space) answer ASCII inline from the dialect's ctype

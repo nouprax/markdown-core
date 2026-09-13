@@ -278,6 +278,7 @@ bool markdown_core_comment_scan_html(markdown_core_inline_state *inline_state, b
     } else if (inline_state->input.data[pos + 3] == '-' && inline_state->input.data[pos + 4] == '>') {
         *length = 5;
     } else {
+        MARKDOWN_CORE_DIAGNOSTIC(inline_state->owner_parser->html_scan_work++;)
         *length = scan_html_comment(inline_state->input.data, inline_state->input.len, pos + 1);
         if (*length > 0) {
             *length += 1; // prefix "<"

@@ -1,6 +1,7 @@
 #include "html_scanners.h"
 #include "html.h"
 #include "inline_internal.h"
+#include <string.h>
 #define advance(inline_state) ((inline_state)->pos += 1)
 
 #include "comment.h"
@@ -17,6 +18,7 @@ bufsize_t markdown_core_inline_scan_inline_html(markdown_core_inline_state *inli
                 comment = matchlen > 0;
             } else if (c == '[') {
                 if ((*flags & FLAG_SKIP_HTML_CDATA) == 0) {
+                    MARKDOWN_CORE_DIAGNOSTIC(inline_state->owner_parser->html_scan_work++;)
                     matchlen = scan_html_cdata(inline_state->input.data, inline_state->input.len, pos + 2);
                     if (matchlen > 0) {
                         // The regex doesn't require the final "]]>". But if we're not at
@@ -30,6 +32,7 @@ bufsize_t markdown_core_inline_scan_inline_html(markdown_core_inline_state *inli
                     }
                 }
             } else if ((*flags & FLAG_SKIP_HTML_DECLARATION) == 0) {
+                MARKDOWN_CORE_DIAGNOSTIC(inline_state->owner_parser->html_scan_work++;)
                 matchlen = scan_html_declaration(inline_state->input.data, inline_state->input.len, pos + 1);
                 if (matchlen > 0) {
                     matchlen += 2; // prefix "!", suffix ">"
@@ -42,6 +45,7 @@ bufsize_t markdown_core_inline_scan_inline_html(markdown_core_inline_state *inli
         } else if (c == '?') {
             if ((*flags & FLAG_SKIP_HTML_PI) == 0) {
                 // Note that we allow an empty match.
+                MARKDOWN_CORE_DIAGNOSTIC(inline_state->owner_parser->html_scan_work++;)
                 matchlen = scan_html_pi(inline_state->input.data, inline_state->input.len, pos + 1);
                 matchlen += 3; // prefix "?", suffix "?>"
                 if (pos + matchlen > inline_state->input.len) {
@@ -49,7 +53,10 @@ bufsize_t markdown_core_inline_scan_inline_html(markdown_core_inline_state *inli
                     matchlen = 0;
                 }
             }
-        } else {
+        } else if (markdown_core_isalpha(c) || c == '/') {
+            /* A tag begins with its name or `/`; a `<!` whose markup this
+             * root stopped scanning is not offered to the tag scanner. */
+            MARKDOWN_CORE_DIAGNOSTIC(inline_state->owner_parser->html_scan_work++;)
             matchlen = scan_html_tag(inline_state->input.data, inline_state->input.len, pos);
         }
     }
@@ -87,6 +94,17 @@ static markdown_core_node *match(const markdown_core_element *self, markdown_cor
                                  markdown_core_inline_state *inline_state) {
     return character == '<' ? handle_pointy_brace(inline_state) : NULL;
 }
+bool markdown_core_inline_pointy_may_open(const markdown_core_inline_state *inline_state, bufsize_t at) {
+    if (at + 1 >= inline_state->input.len) {
+        return false;
+    }
+    unsigned char next = inline_state->input.data[at + 1];
+    /* A tag name, scheme or domain begins with a letter, a closing tag with
+     * `/`, the other markup with `!` or `?`, and an email's local part with
+     * any byte of its class. */
+    return markdown_core_isalnum(next) || strchr(".!#$%&'*+/=?^_`{|}~-", next) != NULL;
+}
+
 static bool can_start(markdown_core_inline_state *state, bufsize_t at) {
     if (at + 1 >= state->input.len) {
         return false;

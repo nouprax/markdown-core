@@ -100,18 +100,25 @@ bufsize_t scan_html_block_start(const unsigned char *data, bufsize_t length, buf
 */
 }
 
+/* Kind 7 is a complete open or close tag followed by only tabs, spaces and
+ * form feeds up to the line ending. A tag has one end -- `>` closes it and
+ * appears inside it only within a quoted value -- so the inline tag scanner
+ * recognizes it and the tail is checked here, instead of a second copy of
+ * the tag automaton. */
 bufsize_t scan_html_block_start_7(const unsigned char *data, bufsize_t length, bufsize_t offset)
 {
-  if (!data || offset < 0 || offset >= length) {
+  if (!data || offset < 0 || offset >= length || data[offset] != '<') {
     return 0;
   }
-  const unsigned char *input = data + offset;
-  size_t p = 0, remaining = (size_t)(length - offset);
-  size_t marker = 0;
-/*!re2c
-  [<] (opentag | closetag) [\t\n\f ]* [\r\n] { return 7; }
-  * { return 0; }
-*/
+  bufsize_t tag = scan_html_tag(data, length, offset + 1);
+  if (!tag) {
+    return 0;
+  }
+  bufsize_t at = offset + 1 + tag;
+  while (at < length && (data[at] == ' ' || data[at] == '\t' || data[at] == '\f')) {
+    at++;
+  }
+  return at < length && (data[at] == '\n' || data[at] == '\r') ? 7 : 0;
 }
 
 bufsize_t scan_html_block_end_1(const unsigned char *data, bufsize_t length, bufsize_t offset)

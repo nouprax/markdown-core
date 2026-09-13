@@ -178,6 +178,10 @@ struct markdown_core_parser {
      * lookahead visited plus the prefix bytes each visit matched itself, for
      * the linearity gates of both. */
     size_t comment_scan_work;
+    /* HTML scanner runs at a `<` -- tag, comment, CDATA, declaration or
+     * instruction -- in the inline scan and the citation brace prescan
+     * alike. An unclosed form runs once per inline root. */
+    size_t html_scan_work;
     size_t block_lookahead_work;
     /* Block hook invocations: one per owner consulted for a line. */
     size_t block_dispatch_work;
