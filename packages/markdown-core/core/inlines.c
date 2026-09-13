@@ -940,10 +940,13 @@ void markdown_core_inline_start_inlines(markdown_core_parser *parser, markdown_c
 void markdown_core_inline_clear_inlines(markdown_core_inline_state *inline_state) {
     markdown_core_parser *parser = inline_state->owner_parser;
     const markdown_core_inline_hooks *hooks = &parser->inline_hooks;
-    const markdown_core_element **dispose = hooks->elements + hooks->init_count + hooks->finish_count;
+    /* A parser with nothing attached has no hook table at all: the counts are
+     * zero and the loops index nothing, which is why the offsets are applied
+     * per entry rather than to the (possibly null) table pointer up front. */
+    size_t dispose = hooks->init_count + hooks->finish_count;
     for (size_t i = 0; i < hooks->dispose_count; i++) {
         MARKDOWN_CORE_DIAGNOSTIC(parser->inline_lifecycle_work++;)
-        dispose[i]->dispose_inline(inline_state);
+        hooks->elements[dispose + i]->dispose_inline(inline_state);
     }
     while (inline_state->last_delim) {
         markdown_core_inline_remove_delimiter(inline_state, inline_state->last_delim);
@@ -963,10 +966,9 @@ bool markdown_core_inline_finish_inlines(markdown_core_parser *parser, markdown_
     }
     if (!parser->oom && !inline_state->oom) {
         const markdown_core_inline_hooks *hooks = &parser->inline_hooks;
-        const markdown_core_element **finish = hooks->elements + hooks->init_count;
         for (size_t i = 0; i < hooks->finish_count; i++) {
             MARKDOWN_CORE_DIAGNOSTIC(parser->inline_lifecycle_work++;)
-            finish[i]->finish_inline(inline_state);
+            hooks->elements[hooks->init_count + i]->finish_inline(inline_state);
         }
         markdown_core_inline_process_delimiters(parser, inline_state, 0, NULL);
     }
