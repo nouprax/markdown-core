@@ -150,6 +150,9 @@ struct markdown_core_parser {
     size_t whitespace_work;
     /* Run comparisons in content-to-source projection, including cursor advances. */
     size_t content_map_work;
+    /* Branch tests and searches of key indexes the parser already released;
+     * live indexes report their own counters. */
+    size_t key_index_work, key_index_operations;
     size_t bracket_work;
     /* Opener checks of the `%%` comment scanner; and the lines the block-start
      * lookahead visited plus the prefix bytes each visit matched itself, for
@@ -230,6 +233,16 @@ struct markdown_core_parser {
     bufsize_t line_marks_size;
     bufsize_t line_marks_alloc;
 };
+
+/* Release a parser-owned key index and keep its deterministic search
+ * accounting with the parser; product builds only free it. */
+static MARKDOWN_CORE_INLINE void markdown_core_parser_release_key_index(struct markdown_core_parser *parser,
+                                                                        markdown_core_key_index *index) {
+    MARKDOWN_CORE_DIAGNOSTIC(parser->key_index_work += index->branch_visits;
+                             parser->key_index_operations += index->operations;)
+    (void)parser;
+    markdown_core_key_index_free(index);
+}
 
 /* ONE LINE OF THE BLOCK-START LOOKAHEAD'S RESUME CACHE.
  *

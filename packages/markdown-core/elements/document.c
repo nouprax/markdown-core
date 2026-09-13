@@ -16,13 +16,13 @@ static void init_document(markdown_core_parser *parser) {
 }
 static void dispose_document(markdown_core_parser *parser) {
     markdown_core_block_dispose_headings(parser, &parser->headings);
-    markdown_core_key_index_free(&parser->anchors.index);
-    markdown_core_key_index_free(&parser->anchors.resources);
+    markdown_core_parser_release_key_index(parser, &parser->anchors.index);
+    markdown_core_parser_release_key_index(parser, &parser->anchors.resources);
     parser->mem->free(parser->footnotes.values);
     parser->footnotes.values = NULL;
     parser->mem->free(parser->specimens.values);
     parser->specimens.values = NULL;
-    markdown_core_key_index_free(&parser->specimen_ids);
+    markdown_core_parser_release_key_index(parser, &parser->specimen_ids);
     if (parser->refmap) {
         markdown_core_map_free(parser->refmap);
         parser->refmap = NULL;
@@ -64,8 +64,8 @@ static void finish_document(markdown_core_parser *parser) {
     if (!parser->oom) {
         markdown_core_block_finalize_heading_anchors(parser, &parser->headings, &parser->anchors);
     }
-    markdown_core_key_index_free(&parser->anchors.index);
-    markdown_core_key_index_free(&parser->anchors.resources);
+    markdown_core_parser_release_key_index(parser, &parser->anchors.index);
+    markdown_core_parser_release_key_index(parser, &parser->anchors.resources);
     markdown_core_block_dispose_headings(parser, &parser->headings);
 }
 const markdown_core_element MARKDOWN_CORE_ELEMENT_DOCUMENT = {

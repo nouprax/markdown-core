@@ -22,10 +22,12 @@ static unsigned key_direction(const unsigned char *key, bufsize_t length, bufsiz
     return byte < length && (mask == 256 || (key[byte] & mask) != 0);
 }
 
-static size_t find_leaf(const markdown_core_key_index *index, const unsigned char *key, bufsize_t length) {
+static size_t find_leaf(markdown_core_key_index *index, const unsigned char *key, bufsize_t length) {
     size_t ref = index->root;
+    MARKDOWN_CORE_DIAGNOSTIC(index->operations++;)
     while (ref && !(ref & 1)) {
         const markdown_core_key_index_node *node = &index->nodes[ref_position(ref)];
+        MARKDOWN_CORE_DIAGNOSTIC(index->branch_visits++;)
         /* All keys below this branch share the preceding bytes. A shorter
          * query cannot occur here; use its resident leaf for the final check
          * (and for the insertion split) without walking an unrelated suffix. */
@@ -157,8 +159,7 @@ int markdown_core_key_index_insert(markdown_core_key_index *index, const unsigne
     return 1;
 }
 
-void *markdown_core_key_index_lookup(const markdown_core_key_index *index, const unsigned char *key,
-                                     bufsize_t key_len) {
+void *markdown_core_key_index_lookup(markdown_core_key_index *index, const unsigned char *key, bufsize_t key_len) {
     if (!index || !index->root) {
         return NULL;
     }

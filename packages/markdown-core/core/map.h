@@ -2,6 +2,7 @@
 #define MARKDOWN_CORE_MAP_H
 
 #include "chunk.h"
+#include "diagnostics.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -50,6 +51,9 @@ typedef struct markdown_core_key_index {
     size_t *pending_link;
     size_t capacity;
     size_t size;
+    /* Branch tests performed by every search, and the searches themselves.
+     * The documented bound is branch_visits <= operations * (9 * key_len + 1). */
+    MARKDOWN_CORE_DIAGNOSTIC(size_t branch_visits, operations;)
 } markdown_core_key_index;
 
 struct markdown_core_map {
@@ -83,7 +87,7 @@ void markdown_core_key_index_commit(markdown_core_key_index *index, markdown_cor
                                     const unsigned char *key);
 int markdown_core_key_index_insert(markdown_core_key_index *index, const unsigned char *key, bufsize_t key_len,
                                    void *value, int replace, void **existing);
-void *markdown_core_key_index_lookup(const markdown_core_key_index *index, const unsigned char *key, bufsize_t key_len);
+void *markdown_core_key_index_lookup(markdown_core_key_index *index, const unsigned char *key, bufsize_t key_len);
 markdown_core_map *markdown_core_map_new(markdown_core_mem *mem);
 void markdown_core_map_free(markdown_core_map *map);
 markdown_core_map_record *markdown_core_map_lookup(markdown_core_map *map, markdown_core_chunk *label);

@@ -58,7 +58,7 @@ void markdown_core_block_finalize_footnotes(markdown_core_parser *parser) {
 failed:
     parser->oom = true;
 done:
-    markdown_core_key_index_free(&ids);
+    markdown_core_parser_release_key_index(parser, &ids);
     parser->mem->free(collection->values);
     memset(collection, 0, sizeof(*collection));
 }

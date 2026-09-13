@@ -3190,6 +3190,7 @@ typedef struct {
     bool footnote_collection_allocated, footnotes_owned, heading_collection_disposed;
     size_t attributes, anchors, definitions, definition_resources, whitespace, brackets, citations, list_markers,
         specimens;
+    size_t key_index_branches, key_index_operations;
 } inline_work;
 static markdown_core_node *record_inline_work(const markdown_core_element *element, markdown_core_parser *parser,
                                               markdown_core_node *root) {
@@ -3235,6 +3236,15 @@ static markdown_core_node *record_inline_work(const markdown_core_element *eleme
         work->footnotes_owned &=
             note->kind == MARKDOWN_CORE_NODE_FOOTNOTE && note->parent == NULL && note->as.footnote->id.data != NULL;
     }
+    /* Released indexes were folded into the parser; live ones report themselves. */
+    work->key_index_branches = parser->key_index_work + parser->refmap->index.branch_visits +
+                               (parser->footnote_defs ? parser->footnote_defs->index.branch_visits : 0) +
+                               parser->anchors.index.branch_visits + parser->anchors.resources.branch_visits +
+                               parser->specimen_ids.branch_visits;
+    work->key_index_operations = parser->key_index_operations + parser->refmap->index.operations +
+                                 (parser->footnote_defs ? parser->footnote_defs->index.operations : 0) +
+                                 parser->anchors.index.operations + parser->anchors.resources.operations +
+                                 parser->specimen_ids.operations;
     root->user_data = NULL;
     return root;
 }
@@ -3569,6 +3579,84 @@ static void key_index_failure(test_batch_runner *runner) {
     }
 }
 
+static size_t count_kind(markdown_core_node *root, markdown_core_node_type kind);
+
+/* Every consumer of the key index (reference map, heading anchors, footnote
+ * ids, specimen ids) inherits the radix bound of 9 * key bytes + 1 branch
+ * tests per search. Long shared prefixes are the worst key set; the total
+ * must stay inside that bound at every key count, which is what makes the
+ * whole parse linear in the number of keys. */
+static void key_index_consumer_work(test_batch_runner *runner) {
+    enum { PREFIX = 160, LABEL = PREFIX + 16 };
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    char prefix[PREFIX + 1];
+    memset(prefix, 'p', PREFIX);
+    prefix[PREFIX] = 0;
+    for (size_t shape = 0; shape < 4; shape++) {
+        for (size_t count = 256; count <= 2048; count *= 2) {
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+            char line[PREFIX + 64];
+            for (size_t i = 0; i < count; i++) {
+                switch (shape) {
+                case 0:
+                    snprintf(line, sizeof(line), "[%s%zu]: /u\n", prefix, i);
+                    break;
+                case 1:
+                    snprintf(line, sizeof(line), "# %s%zu\n\n", prefix, i);
+                    break;
+                case 2:
+                    snprintf(line, sizeof(line), "[^%s%zu]: note\n\n", prefix, i);
+                    break;
+                default:
+                    snprintf(line, sizeof(line), "(1@%s%zu) body\n\n", prefix, i);
+                    break;
+                }
+                markdown_core_strbuf_puts(&source, line);
+            }
+            for (size_t i = 0; i < count; i++) {
+                switch (shape) {
+                case 0:
+                    snprintf(line, sizeof(line), "[%s%zu]\n\n", prefix, i);
+                    break;
+                case 1:
+                    continue;
+                case 2:
+                    snprintf(line, sizeof(line), "x[^%s%zu]\n\n", prefix, i);
+                    break;
+                default:
+                    snprintf(line, sizeof(line), "[@%s%zu]\n\n", prefix, i);
+                    break;
+                }
+                markdown_core_strbuf_puts(&source, line);
+            }
+            inline_work work = {0};
+            markdown_core_node *root = markdown_core_parse_document_with_mem((const char *)source.ptr, source.size, mem,
+                                                                             measure_inline_work, &work);
+            OK(runner, root != NULL, "consumer shape parses: shape=%zu count=%zu", shape, count);
+            if (root) {
+                size_t resolved = shape == 0   ? count_kind(root, MARKDOWN_CORE_NODE_LINK)
+                                  : shape == 1 ? count_kind(root, MARKDOWN_CORE_NODE_HEADING)
+                                               : count_kind(root, MARKDOWN_CORE_NODE_CITE);
+                INT_EQ(runner, resolved, count, "every shared-prefix key resolves: shape=%zu", shape);
+                if (shape == 2) {
+                    size_t owned = 0;
+                    for (markdown_core_node *note = root->as.document->footnotes; note; note = note->next) {
+                        owned++;
+                    }
+                    INT_EQ(runner, owned, count, "every footnote definition keeps its own id");
+                }
+                markdown_core_node_free(root);
+            }
+            OK(runner, work.key_index_operations >= count,
+               "each consumer path searches its index at least once per key: shape=%zu", shape);
+            OK(runner, work.key_index_branches <= work.key_index_operations * (9 * LABEL + 1),
+               "consumer searches stay inside the radix branch bound: shape=%zu branches=%zu operations=%zu", shape,
+               work.key_index_branches, work.key_index_operations);
+            markdown_core_strbuf_free(&source);
+        }
+    }
+}
+
 /* Exhaust all short lexical shapes, including embedded NUL and potential
  * future table punctuation. Fresh scans are the oracle for every memo hit. */
 static void table_dash_suffixes(test_batch_runner *runner) {
@@ -3602,8 +3690,6 @@ static void table_dash_suffixes(test_batch_runner *runner) {
     }
     OK(runner, valid, "every memoized rejection agrees with a fresh suffix scan (%zu queries)", cases);
 }
-
-static size_t count_kind(markdown_core_node *root, markdown_core_node_type kind);
 
 static void nested_block_lookahead(test_batch_runner *runner) {
     markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
@@ -4837,7 +4923,8 @@ static void attribute_sparse_memory(test_batch_runner *runner) {
                 for (int repeat = 0; repeat < 1024; repeat++) {
                     markdown_core_attributes_end(&parser, (bufsize_t)at);
                 }
-                INT_EQ(runner, parser.work - work, 2048, "repeated success and failure query facts without rescanning");
+                INT_EQ(runner, parser.work - work, valid ? 2048 : 1024,
+                       "repeated success and failure query facts without rescanning");
                 INT_EQ(runner, properties_requested_bytes, requested, "memoized queries allocate nothing");
                 markdown_core_attribute_parser_free(&parser);
                 INT_EQ(runner, properties_live_bytes, 0, "all sparse recognition storage is released");
@@ -4874,6 +4961,41 @@ static void attribute_sparse_memory(test_batch_runner *runner) {
             INT_EQ(runner, properties_live_bytes, 0, "overlapping recognition releases all native allocations");
         }
         markdown_core_strbuf_free(&source);
+    }
+}
+
+/* A tail scan asks every unescaped `{` of a line. A brace that no member can
+ * follow is refused by its next byte alone, so `{{{...` allocates nothing;
+ * a candidate a letter follows records one fact and a bounded record. */
+static void attribute_dense_tail_memory(test_batch_runner *runner) {
+    markdown_core_mem mem = {properties_calloc, properties_realloc, properties_free};
+    for (size_t count = 1024; count <= 65536; count *= 4) {
+        for (int letters = 0; letters < 2; letters++) {
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(markdown_core_get_default_mem_allocator());
+            markdown_core_strbuf_puts(&source, "# T ");
+            for (size_t i = 0; i < count; i++) {
+                markdown_core_strbuf_puts(&source, letters ? "{a" : "{");
+            }
+            markdown_core_strbuf_putc(&source, '}');
+            markdown_core_attribute_parser parser = {.mem = &mem, .data = source.ptr, .length = source.size};
+            properties_live_bytes = properties_peak_bytes = properties_requested_bytes = 0;
+            bufsize_t start = markdown_core_attributes_tail(&parser, 0, source.size);
+            INT_EQ(runner, start, letters ? -1 : source.size - 2, "dense tail keeps its exact grammar result");
+            OK(runner, parser.work <= 8 * (size_t)source.size,
+               "a dense tail scan is linear: letters=%d count=%zu work=%zu", letters, count, parser.work);
+            if (letters) {
+                OK(runner,
+                   parser.facts.size <= count + 1 && properties_peak_bytes <= 192 * (count + 1) &&
+                       properties_requested_bytes <= 288 * (count + 1),
+                   "each refused member records at most one fact and one bounded record");
+            } else {
+                OK(runner, parser.facts.size <= 1 && properties_peak_bytes <= 256 && properties_requested_bytes <= 256,
+                   "braces no member can follow allocate nothing: count=%zu peak=%zu", count, properties_peak_bytes);
+            }
+            markdown_core_attribute_parser_free(&parser);
+            INT_EQ(runner, properties_live_bytes, 0, "dense tail recognition releases all native allocations");
+            markdown_core_strbuf_free(&source);
+        }
     }
 }
 
@@ -6101,6 +6223,7 @@ int main(int argc, char **argv) {
     block_identifier_ownership(runner);
     reference_definition_lifetime(runner);
     attribute_sparse_memory(runner);
+    attribute_dense_tail_memory(runner);
     attribute_linear_work(runner);
     attribute_attachment_linear_work(runner);
     heading_completion_invariants(runner);
@@ -6114,6 +6237,7 @@ int main(int argc, char **argv) {
     key_index_radix(runner);
     key_index_adversarial(runner);
     key_index_failure(runner);
+    key_index_consumer_work(runner);
     table_dash_suffixes(runner);
     nested_block_lookahead(runner);
     deep_inline_construction(runner);

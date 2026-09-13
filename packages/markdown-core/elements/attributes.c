@@ -368,12 +368,21 @@ static bufsize_t scan_name(markdown_core_attribute_parser *p, bufsize_t n, bufsi
     return at;
 }
 
+/* The byte after `{` that can begin a member list: blank space, a line end,
+ * the `-` shorthand, an anchor or class marker, the closing brace, or the
+ * first byte of a letter (every non-ASCII lead byte may start one). Any
+ * other byte is a grammar failure that needs no memoized fact. */
+static int member_list_can_begin(unsigned char c) {
+    return horizontal(c) || newline(c) || c == '-' || c == '#' || c == '.' || c == '}' || markdown_core_isalpha(c) ||
+           c >= 0x80;
+}
+
 bufsize_t markdown_core_attributes_end(markdown_core_attribute_parser *p, bufsize_t start) {
     MARKDOWN_CORE_DIAGNOSTIC(p->work++;)
     if (p->oom) {
         return 0;
     }
-    if (start < 0 || start >= p->length || p->data[start] != '{') {
+    if (start < 0 || start + 1 >= p->length || p->data[start] != '{' || !member_list_can_begin(p->data[start + 1])) {
         return 0;
     }
     attribute_fact *fact = fact_at(p, start + 1);
