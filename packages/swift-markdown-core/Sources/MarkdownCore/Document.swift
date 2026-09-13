@@ -130,43 +130,43 @@ private struct NativeTreeBuilder {
     private mutating func copy(_ value: NativeValue) -> StoredMarkup {
         switch value {
         case let .markup(node):
-            let relations = markupRelations(node)
+            let relations = record(relations: node)
             return stored(from: node, relations: relations, resources: &resources)
         case let .footnote(node):
             return .footnote(
-                Footnote.Fields(from: node, content: chain(markdown_core_footnote_content(node)))
+                Footnote.Fields(from: node, content: record(chain: markdown_core_footnote_content(node)))
             )
         case let .specimen(node):
             return .specimen(
-                Specimen.Fields(from: node, content: chain(markdown_core_specimen_content(node)))
+                Specimen.Fields(from: node, content: record(chain: markdown_core_specimen_content(node)))
             )
         case let .citation(node):
-            let prefix = chain(markdown_core_citation_prefix(node))
-            let suffix = chain(markdown_core_citation_suffix(node))
+            let prefix = record(chain: markdown_core_citation_prefix(node))
+            let suffix = record(chain: markdown_core_citation_suffix(node))
             return .citation(Citation.Fields(from: node, prefix: prefix, suffix: suffix))
         }
     }
 
     // Enumerate each facade-owned relation alongside its native kind.
     // swiftlint:disable:next cyclomatic_complexity
-    private mutating func markupRelations(_ node: OpaquePointer) -> NativeRelations {
+    private mutating func record(relations node: OpaquePointer) -> NativeRelations {
         var relations = NativeRelations()
-        relations.children = chain(markdown_core_node_get_first_child(node))
+        relations.children = record(chain: markdown_core_node_get_first_child(node))
         precondition(relations.children.count == markdown_core_node_child_count(node))
         switch markdown_core_node_get_kind(node) {
         case MARKDOWN_CORE_KIND_TABLE:
-            relations.caption = field(markdown_core_node_table_caption(node))
+            relations.caption = record(field: markdown_core_node_table_caption(node))
         case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK, MARKDOWN_CORE_KIND_DIRECTIVE:
-            relations.label = field(markdown_core_node_directive_label(node))
+            relations.label = record(field: markdown_core_node_directive_label(node))
         case MARKDOWN_CORE_KIND_CALLOUT:
             if let title = markdown_core_node_callout_title(node) {
-                relations.title = chain(title)
+                relations.title = record(chain: title)
             }
         case MARKDOWN_CORE_KIND_DEFINITION:
-            relations.term = chain(markdown_core_node_definition_term(node))
+            relations.term = record(chain: markdown_core_node_definition_term(node))
             var body = markdown_core_node_definition_bodies(node)
             while let current = body {
-                relations.bodies.append(chain(markdown_core_definition_body_content(current)))
+                relations.bodies.append(record(chain: markdown_core_definition_body_content(current)))
                 body = markdown_core_definition_body_next(current)
             }
         case MARKDOWN_CORE_KIND_DOCUMENT:
@@ -199,11 +199,11 @@ private struct NativeTreeBuilder {
         return index
     }
 
-    private mutating func field(_ node: OpaquePointer?) -> Int? {
+    private mutating func record(field node: OpaquePointer?) -> Int? {
         node.map { enqueue(.markup($0)) }
     }
 
-    private mutating func chain(_ first: OpaquePointer?) -> [Int] {
+    private mutating func record(chain first: OpaquePointer?) -> [Int] {
         var indices: [Int] = []
         var node = first
         while let current = node {
