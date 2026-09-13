@@ -9,5 +9,5 @@ public class DirectiveBlock internal constructor(
     override val anchor: String?,
     override val attributes: Attributes,
 ) : Markup {
-    override fun <Result> accept(visitor: Visitor<Result>): Result = visitor.visitDirectiveBlock(this)
+    override fun <Result> accept(visitor: Visitor<Result>): Result = visitor.visit(this)
 }

@@ -670,15 +670,15 @@ class JniPayloadDecoderTest {
         val events = mutableListOf<String>()
         callout.walk(
             object : WalkingVisitor by RecordingWalkingVisitor() {
-                override fun visitCallout(
-                    node: Callout,
+                override fun visit(
+                    callout: Callout,
                     phase: WalkPhase,
                 ) {
                     events += "$phase:Callout"
                 }
 
-                override fun visitText(
-                    node: Text,
+                override fun visit(
+                    text: Text,
                     phase: WalkPhase,
                 ) {
                     events += "$phase:Text"

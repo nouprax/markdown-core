@@ -1,81 +1,82 @@
 package com.nouprax.markdown.core
 
+/** Exhaustive callbacks overloaded by concrete markup type; [Markup.accept] selects the overload. */
 public interface Visitor<Result> {
-    public fun visitDocument(node: Document): Result
+    public fun visit(document: Document): Result
 
-    public fun visitCallout(node: Callout): Result
+    public fun visit(callout: Callout): Result
 
-    public fun visitParagraph(node: Paragraph): Result
+    public fun visit(paragraph: Paragraph): Result
 
-    public fun visitHeading(node: Heading): Result
+    public fun visit(heading: Heading): Result
 
-    public fun visitThematicBreak(node: ThematicBreak): Result
+    public fun visit(thematicBreak: ThematicBreak): Result
 
-    public fun visitList(node: List): Result
+    public fun visit(list: List): Result
 
-    public fun visitListItem(node: ListItem): Result
+    public fun visit(listItem: ListItem): Result
 
-    public fun visitCodeBlock(node: CodeBlock): Result
+    public fun visit(codeBlock: CodeBlock): Result
 
-    public fun visitHTMLBlock(node: HTMLBlock): Result
+    public fun visit(htmlBlock: HTMLBlock): Result
 
-    public fun visitFormulaBlock(node: FormulaBlock): Result
+    public fun visit(formulaBlock: FormulaBlock): Result
 
-    public fun visitTable(node: Table): Result
+    public fun visit(table: Table): Result
 
-    public fun visitTableCaption(node: TableCaption): Result
+    public fun visit(tableCaption: TableCaption): Result
 
-    public fun visitTableRow(node: TableRow): Result
+    public fun visit(tableRow: TableRow): Result
 
-    public fun visitTableCell(node: TableCell): Result
+    public fun visit(tableCell: TableCell): Result
 
-    public fun visitDirectiveBlock(node: DirectiveBlock): Result
+    public fun visit(directiveBlock: DirectiveBlock): Result
 
-    public fun visitDirectiveLabel(node: DirectiveLabel): Result
+    public fun visit(directiveLabel: DirectiveLabel): Result
 
-    public fun visitText(node: Text): Result
+    public fun visit(text: Text): Result
 
-    public fun visitSoftBreak(node: SoftBreak): Result
+    public fun visit(softBreak: SoftBreak): Result
 
-    public fun visitLineBreak(node: LineBreak): Result
+    public fun visit(lineBreak: LineBreak): Result
 
-    public fun visitCode(node: Code): Result
+    public fun visit(code: Code): Result
 
-    public fun visitHTML(node: HTML): Result
+    public fun visit(html: HTML): Result
 
-    public fun visitComment(node: Comment): Result
+    public fun visit(comment: Comment): Result
 
-    public fun visitCrossLink(node: CrossLink): Result
+    public fun visit(crossLink: CrossLink): Result
 
-    public fun visitCrossEmbedded(node: CrossEmbedded): Result
+    public fun visit(crossEmbedded: CrossEmbedded): Result
 
-    public fun visitFormula(node: Formula): Result
+    public fun visit(formula: Formula): Result
 
-    public fun visitEmphasis(node: Emphasis): Result
+    public fun visit(emphasis: Emphasis): Result
 
-    public fun visitStrong(node: Strong): Result
+    public fun visit(strong: Strong): Result
 
-    public fun visitStrikethrough(node: Strikethrough): Result
+    public fun visit(strikethrough: Strikethrough): Result
 
-    public fun visitMark(node: Mark): Result
+    public fun visit(mark: Mark): Result
 
-    public fun visitInsertion(node: Insertion): Result
+    public fun visit(insertion: Insertion): Result
 
-    public fun visitSpan(node: Span): Result
+    public fun visit(span: Span): Result
 
-    public fun visitSuperscript(node: Superscript): Result
+    public fun visit(superscript: Superscript): Result
 
-    public fun visitSubscript(node: Subscript): Result
+    public fun visit(subscript: Subscript): Result
 
-    public fun visitDefinitionList(node: DefinitionList): Result
+    public fun visit(definitionList: DefinitionList): Result
 
-    public fun visitDefinition(node: Definition): Result
+    public fun visit(definition: Definition): Result
 
-    public fun visitLink(node: Link): Result
+    public fun visit(link: Link): Result
 
-    public fun visitEmbedded(node: Embedded): Result
+    public fun visit(embedded: Embedded): Result
 
-    public fun visitDirective(node: Directive): Result
+    public fun visit(directive: Directive): Result
 
-    public fun visitCite(node: Cite): Result
+    public fun visit(cite: Cite): Result
 }

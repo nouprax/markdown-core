@@ -142,6 +142,16 @@ node kind. Each node-kind branch chooses its typed fields and content; there is
 no public iterator or uniform child projection. A directive label is walked as
 the named `label` field, not as directive content.
 
+Both interfaces use `visit` overloads with concrete parameter types and names:
+`Visitor<Result>` declares `fun visit(embedded: Embedded): Result`, while
+`WalkingVisitor` declares `fun visit(embedded: Embedded, phase: WalkPhase)`.
+Implementations use the same names, including `paragraph`, `tableRow`, and
+`citation`. A concrete node can be passed directly with `visitor.visit(embedded)`
+or `visitor.visit(embedded = embedded)`; use `node.accept(visitor)` when the
+static type is `Markup`. These overloads replace the former `visitEmbedded`,
+`visitParagraph`, and other `visitXxx` methods; visitor implementations must
+update their overrides and recompile.
+
 Every immutable `Markup` exposes `dump()`, which delegates to the public
 `TreeDumper` and returns the canonical file-tree dump for that subtree:
 

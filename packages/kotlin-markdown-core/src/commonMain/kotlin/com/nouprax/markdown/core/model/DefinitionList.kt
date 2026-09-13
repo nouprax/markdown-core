@@ -6,5 +6,5 @@ public class DefinitionList internal constructor(
     override val anchor: String?,
     override val attributes: Attributes,
 ) : Markup {
-    override fun <Result> accept(visitor: Visitor<Result>): Result = visitor.visitDefinitionList(this)
+    override fun <Result> accept(visitor: Visitor<Result>): Result = visitor.visit(this)
 }

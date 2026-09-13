@@ -125,11 +125,20 @@ class ApiTest {
 
     @Test
     fun visitorIsTypedAndDispatchesByNodeKind() {
-        val document = Document.parse("# Heading\n\nBody\n")
-        val visitor = KindVisitor()
+        val document = Document.parse("# Heading\n\nBody ![alt](image.png)\n")
+        val visitor: Visitor<String> = KindVisitor()
+        val paragraph = assertIs<Paragraph>(document.content.last())
+        val embedded = paragraph.content.filterIsInstance<Embedded>().single()
+        val node: Markup = embedded
         assertEquals("heading:1", document.content.first().accept(visitor))
         assertEquals("Document", document.accept(visitor))
-        assertEquals("Paragraph", document.content.last().accept(visitor))
+        assertEquals("Paragraph", paragraph.accept(visitor))
+        assertEquals("Embedded", node.accept(visitor))
+        assertEquals("Document", visitor.visit(document = document))
+        assertEquals("Paragraph", visitor.visit(paragraph = paragraph))
+        assertEquals("Embedded", visitor.visit(embedded = embedded))
+        val visit: (Embedded) -> String = visitor::visit
+        assertEquals("Embedded", visit(embedded))
     }
 
     @Test
@@ -279,6 +288,11 @@ class ApiTest {
         val tableVisitor = RecordingWalkingVisitor()
         table.walk(tableVisitor)
         assertEquals(listOf(1, 3), tableVisitor.tableRowKinds)
+        tableVisitor.events.clear()
+        val typed: WalkingVisitor = tableVisitor
+        typed.visit(tableRow = table.head.single(), phase = WalkPhase.ENTERING)
+        typed.visit(table = table, phase = WalkPhase.EXITING)
+        assertEquals(listOf("entering:TableRow", "exiting:Table"), tableVisitor.events)
     }
 }
 

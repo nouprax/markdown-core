@@ -311,7 +311,7 @@ const kindSurfaces = [
         expect: [...kinds.keys()],
         actual: namedKinds(
             "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/visitor/TreeDumper.kt",
-            /override fun visit([A-Za-z]+)\(/g
+            /override fun visit\(\s*[a-zA-Z]+: ([A-Za-z]+)\)/g
         )
     },
     {
