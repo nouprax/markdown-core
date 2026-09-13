@@ -41,15 +41,15 @@ final enum class com.nouprax.markdown.core/ParseErrorCode : kotlin/Enum<com.noup
     final fun values(): kotlin/Array<com.nouprax.markdown.core/ParseErrorCode> // com.nouprax.markdown.core/ParseErrorCode.values|values#static(){}[0]
 }
 
-final enum class com.nouprax.markdown.core/PlacementMode : kotlin/Enum<com.nouprax.markdown.core/PlacementMode> { // com.nouprax.markdown.core/PlacementMode|null[0]
-    enum entry EMBEDDED // com.nouprax.markdown.core/PlacementMode.EMBEDDED|null[0]
-    enum entry STANDALONE // com.nouprax.markdown.core/PlacementMode.STANDALONE|null[0]
+final enum class com.nouprax.markdown.core/Placement : kotlin/Enum<com.nouprax.markdown.core/Placement> { // com.nouprax.markdown.core/Placement|null[0]
+    enum entry EMBEDDED // com.nouprax.markdown.core/Placement.EMBEDDED|null[0]
+    enum entry STANDALONE // com.nouprax.markdown.core/Placement.STANDALONE|null[0]
 
-    final val entries // com.nouprax.markdown.core/PlacementMode.entries|#static{}entries[0]
-        final fun <get-entries>(): kotlin.enums/EnumEntries<com.nouprax.markdown.core/PlacementMode> // com.nouprax.markdown.core/PlacementMode.entries.<get-entries>|<get-entries>#static(){}[0]
+    final val entries // com.nouprax.markdown.core/Placement.entries|#static{}entries[0]
+        final fun <get-entries>(): kotlin.enums/EnumEntries<com.nouprax.markdown.core/Placement> // com.nouprax.markdown.core/Placement.entries.<get-entries>|<get-entries>#static(){}[0]
 
-    final fun valueOf(kotlin/String): com.nouprax.markdown.core/PlacementMode // com.nouprax.markdown.core/PlacementMode.valueOf|valueOf#static(kotlin.String){}[0]
-    final fun values(): kotlin/Array<com.nouprax.markdown.core/PlacementMode> // com.nouprax.markdown.core/PlacementMode.values|values#static(){}[0]
+    final fun valueOf(kotlin/String): com.nouprax.markdown.core/Placement // com.nouprax.markdown.core/Placement.valueOf|valueOf#static(kotlin.String){}[0]
+    final fun values(): kotlin/Array<com.nouprax.markdown.core/Placement> // com.nouprax.markdown.core/Placement.values|values#static(){}[0]
 }
 
 final enum class com.nouprax.markdown.core/TableAlignment : kotlin/Enum<com.nouprax.markdown.core/TableAlignment> { // com.nouprax.markdown.core/TableAlignment|null[0]
@@ -647,7 +647,7 @@ final class com.nouprax.markdown.core/Formula : com.nouprax.markdown.core/Markup
     final val literal // com.nouprax.markdown.core/Formula.literal|{}literal[0]
         final fun <get-literal>(): kotlin/String // com.nouprax.markdown.core/Formula.literal.<get-literal>|<get-literal>(){}[0]
     final val mode // com.nouprax.markdown.core/Formula.mode|{}mode[0]
-        final fun <get-mode>(): com.nouprax.markdown.core/PlacementMode // com.nouprax.markdown.core/Formula.mode.<get-mode>|<get-mode>(){}[0]
+        final fun <get-mode>(): com.nouprax.markdown.core/Placement // com.nouprax.markdown.core/Formula.mode.<get-mode>|<get-mode>(){}[0]
     final val scope // com.nouprax.markdown.core/Formula.scope|{}scope[0]
         final fun <get-scope>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/Formula.scope.<get-scope>|<get-scope>(){}[0]
 

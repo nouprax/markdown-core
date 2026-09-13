@@ -6,6 +6,10 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
+- Rename `PlacementMode` to `Placement` across Swift, Kotlin and ES, and the C
+  typedef to `markdown_core_placement`. Formula's `mode` field and the enum
+  values remain unchanged.
+
 - Rename the Markdown image node from `Media` to `Embedded` across C, Swift,
   Kotlin and ES, including visitors, kind names and canonical dumps. Fields,
   parsing behavior and numeric kind identifiers are unchanged.

@@ -15,7 +15,7 @@ import type {
     CitationReferent,
     Destination,
     ListFlavor,
-    PlacementMode,
+    Placement,
     Scope,
     TableAlignment
 } from "../values.js";
@@ -1013,7 +1013,7 @@ export class NodeDecoder {
         throw new Error(`native result contains invalid ${field} ${value}`);
     }
 
-    private placement(value: number): PlacementMode {
+    private placement(value: number): Placement {
         if (value === 1) return "embedded";
         if (value === 2) return "standalone";
         throw new Error(`native result contains invalid placement mode ${value}`);

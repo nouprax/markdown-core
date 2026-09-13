@@ -240,7 +240,7 @@ public final class com/nouprax/markdown/core/Formula : com/nouprax/markdown/core
 	public fun getAnchor ()Ljava/lang/String;
 	public fun getAttributes ()Lcom/nouprax/markdown/core/Attributes;
 	public final fun getLiteral ()Ljava/lang/String;
-	public final fun getMode ()Lcom/nouprax/markdown/core/PlacementMode;
+	public final fun getMode ()Lcom/nouprax/markdown/core/Placement;
 	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 }
 
@@ -553,12 +553,12 @@ public final class com/nouprax/markdown/core/ParseException : java/lang/RuntimeE
 	public fun getMessage ()Ljava/lang/String;
 }
 
-public final class com/nouprax/markdown/core/PlacementMode : java/lang/Enum {
-	public static final field EMBEDDED Lcom/nouprax/markdown/core/PlacementMode;
-	public static final field STANDALONE Lcom/nouprax/markdown/core/PlacementMode;
+public final class com/nouprax/markdown/core/Placement : java/lang/Enum {
+	public static final field EMBEDDED Lcom/nouprax/markdown/core/Placement;
+	public static final field STANDALONE Lcom/nouprax/markdown/core/Placement;
 	public static fun getEntries ()Lkotlin/enums/EnumEntries;
-	public static fun valueOf (Ljava/lang/String;)Lcom/nouprax/markdown/core/PlacementMode;
-	public static fun values ()[Lcom/nouprax/markdown/core/PlacementMode;
+	public static fun valueOf (Ljava/lang/String;)Lcom/nouprax/markdown/core/Placement;
+	public static fun values ()[Lcom/nouprax/markdown/core/Placement;
 }
 
 public final class com/nouprax/markdown/core/Position {

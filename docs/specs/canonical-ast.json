@@ -8,7 +8,7 @@
         "order": "Depth first. A node enters, then its owned Markup-valued fields are visited in canonical field order with arrays retaining stored order, then the node exits. Relations remain named fields; the walk does not project them into generic children. Citation, Footnote, and Specimen receive their own entering/exiting callbacks and traverse their owned Markup fields. Metadata is a data value and emits no visitor callbacks. Document visits content, footnotes, specimens in that order."
     },
     "enums": {
-        "PlacementMode": ["embedded", "standalone"],
+        "Placement": ["embedded", "standalone"],
         "BibMode": ["normal", "authorInText", "suppressAuthor"],
         "ListFlavor": ["bullet", "ordered"],
         "TableAlignment": ["none", "left", "center", "right"]
@@ -405,7 +405,7 @@
             "fields": [
                 {
                     "name": "mode",
-                    "type": "PlacementMode",
+                    "type": "Placement",
                     "optional": false
                 },
                 {

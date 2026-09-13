@@ -45,7 +45,7 @@ import Testing
     }
 
     @Test("all native delimiter branches retain their authored value")
-    func nativeListDelimiters() {
+    func listDelimiters() {
         let cases: [(markdown_core_ordered_list_delimiter, OrderedListDelimiter)] = [
             (.init(kind: MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PERIOD, closed: false), .period),
             (.init(kind: MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PARENTHESIS, closed: false), .parenthesis(closed: false)),

@@ -105,9 +105,9 @@ so typed table boundaries do not discard source information.
 
 ## Shared value types
 
-### PlacementMode
+### Placement
 
-`PlacementMode` has exactly two values:
+`Placement` has exactly two values:
 
 - `embedded`: content participates in surrounding inline flow.
 - `standalone`: content is presented independently from surrounding inline
@@ -292,7 +292,7 @@ and returns no document.
 | `CrossLink` | `dest: Destination`, `label: String?` | inline leaf; cross destination; complete raw label; no separator means null |
 | `CrossEmbedded` | `dest: Destination`, `label: String?`, `dimensions: Dimensions?` | inline leaf; workspace transclusion; cross destination; label is the raw prefix after a valid size suffix; no separator means null |
 | `Comment` | `literal: String` | an HTML comment or a `%%` comment, the one kind valid in both block and inline content, which the parent edge records; `literal` excludes the delimiters and keeps every byte between them; leaf |
-| `Formula` | `mode: PlacementMode`, `literal: String` | either mode; leaf |
+| `Formula` | `mode: Placement`, `literal: String` | either mode; leaf |
 | `Emphasis` | `content: [Markup]` | inline content |
 | `Strong` | `content: [Markup]` | inline content |
 | `Strikethrough` | `content: [Markup]` | inline content |

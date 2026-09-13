@@ -29,7 +29,7 @@ export type OrderedListDelimiter = "period" | { readonly kind: "parenthesis"; re
 export type Destination =
     | { readonly kind: "url"; readonly value: string }
     | { readonly kind: "cross"; readonly path: string; readonly anchor: string | null };
-export type PlacementMode = "embedded" | "standalone";
+export type Placement = "embedded" | "standalone";
 /**
  * How a bibliographic citation is rendered: `[@key]` is `normal`, `@key` in
  * running text names the author in text, and `-@key` suppresses the author.

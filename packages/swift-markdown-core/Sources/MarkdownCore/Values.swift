@@ -38,8 +38,8 @@ extension markdown_core_string {
     // `markdown_core_optional_string.string`.
 }
 
-extension PlacementMode {
-    init(from mode: markdown_core_placement_mode) {
+extension Placement {
+    init(from mode: markdown_core_placement) {
         self = mode == MARKDOWN_CORE_PLACEMENT_EMBEDDED ? .embedded : .standalone
     }
 }

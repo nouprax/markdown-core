@@ -407,7 +407,7 @@ class BindingMappingTest {
         val image = inlines.filterIsInstance<Embedded>().single()
         assertEquals("/url", assertIs<Destination.Url>(image.dest).value)
         assertSame(links[0].dest, image.dest, "an image reference shares the definition's resource too")
-        assertEquals(PlacementMode.STANDALONE, inlines.filterIsInstance<Formula>().single().mode)
+        assertEquals(Placement.STANDALONE, inlines.filterIsInstance<Formula>().single().mode)
 
         // Fully qualified: the model's `List` shadows `kotlin.collections.List`.
         val list = assertIs<com.nouprax.markdown.core.List>(document.content[2])

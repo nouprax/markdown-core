@@ -251,10 +251,10 @@ typedef struct markdown_core_optional_double {
     double value;
 } markdown_core_optional_double;
 
-typedef enum markdown_core_placement_mode {
+typedef enum markdown_core_placement {
     MARKDOWN_CORE_PLACEMENT_EMBEDDED = 1,
     MARKDOWN_CORE_PLACEMENT_STANDALONE = 2
-} markdown_core_placement_mode;
+} markdown_core_placement;
 
 typedef enum markdown_core_table_alignment {
     MARKDOWN_CORE_TABLE_ALIGNMENT_NONE = 0,
@@ -364,7 +364,7 @@ MARKDOWN_CORE_API bool markdown_core_node_code_block_properties(const markdown_c
  * them, line endings and indentation included. */
 MARKDOWN_CORE_API bool markdown_core_node_literal(const markdown_core_node *node, markdown_core_string *literal);
 MARKDOWN_CORE_API bool markdown_core_node_formula_properties(const markdown_core_node *node,
-                                                             markdown_core_placement_mode *mode,
+                                                             markdown_core_placement *mode,
                                                              markdown_core_string *literal);
 /** The node's children are its rows, in head/content/foot order. These counts
  * partition that single owned chain; row membership is a table fact. */

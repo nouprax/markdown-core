@@ -839,7 +839,7 @@ static void collect_node_fields(es_build *build, size_t node_index) {
         record->strings[0] = required_string(first);
         break;
     case MARKDOWN_CORE_KIND_FORMULA: {
-        markdown_core_placement_mode mode;
+        markdown_core_placement mode;
         if (!markdown_core_node_formula_properties(node, &mode, &first)) {
             build->failure = ES_BUILD_INTERNAL;
             break;
@@ -849,7 +849,7 @@ static void collect_node_fields(es_build *build, size_t node_index) {
         break;
     }
     case MARKDOWN_CORE_KIND_FORMULA_BLOCK: {
-        markdown_core_placement_mode mode;
+        markdown_core_placement mode;
         if (!markdown_core_node_formula_properties(node, &mode, &first)) {
             build->failure = ES_BUILD_INTERNAL;
             break;

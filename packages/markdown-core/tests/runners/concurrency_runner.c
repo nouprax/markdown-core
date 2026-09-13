@@ -168,7 +168,7 @@ static size_t traverse(const markdown_core_node *node) {
     markdown_core_node_literal(node, &value);
     int32_t level;
     markdown_core_node_heading_level(node, &level);
-    markdown_core_placement_mode mode;
+    markdown_core_placement mode;
     markdown_core_node_formula_properties(node, &mode, &value);
 
     size_t children = 0;

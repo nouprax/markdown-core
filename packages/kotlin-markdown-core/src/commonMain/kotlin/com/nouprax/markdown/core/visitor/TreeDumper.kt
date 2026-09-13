@@ -433,7 +433,7 @@ private fun BibMode.token(): String =
         BibMode.SUPPRESS_AUTHOR -> "suppressAuthor"
     }
 
-private fun PlacementMode.token(): String = name.lowercase()
+private fun Placement.token(): String = name.lowercase()
 
 private fun ListFlavor.token(): String = name.lowercase()
 

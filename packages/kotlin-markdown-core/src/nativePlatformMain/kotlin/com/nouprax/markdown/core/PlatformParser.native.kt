@@ -162,7 +162,7 @@ import com.nouprax.markdown.core.internal.capi.markdown_core_optional_i64
 import com.nouprax.markdown.core.internal.capi.markdown_core_optional_string
 import com.nouprax.markdown.core.internal.capi.markdown_core_ordered_list_delimiter
 import com.nouprax.markdown.core.internal.capi.markdown_core_ordered_list_variant
-import com.nouprax.markdown.core.internal.capi.markdown_core_placement_modeVar
+import com.nouprax.markdown.core.internal.capi.markdown_core_placementVar
 import com.nouprax.markdown.core.internal.capi.markdown_core_referent
 import com.nouprax.markdown.core.internal.capi.markdown_core_scope
 import com.nouprax.markdown.core.internal.capi.markdown_core_specimen_content
@@ -521,7 +521,7 @@ private class NativeTreeBuilder(
 
             MARKDOWN_CORE_KIND_FORMULA_BLOCK -> {
                 val formula = scratch.formula(node)
-                require(formula.first == PlacementMode.STANDALONE) { "formula block is not standalone" }
+                require(formula.first == Placement.STANDALONE) { "formula block is not standalone" }
                 FormulaBlock(formula.second, scope, anchor, attributes).also { requireLeaf(children, kind) }
             }
 
@@ -748,7 +748,7 @@ private class NativeScratch(
     private val listFlavor = scope.alloc<markdown_core_list_flavorVar>()
     private val listVariant = scope.alloc<markdown_core_ordered_list_variant>()
     private val listDelimiter = scope.alloc<markdown_core_ordered_list_delimiter>()
-    private val placementMode = scope.alloc<markdown_core_placement_modeVar>()
+    private val placement = scope.alloc<markdown_core_placementVar>()
     private val tableColumn = scope.alloc<markdown_core_table_column>()
     private val tableHead = scope.alloc<size_tVar>()
     private val tableContent = scope.alloc<size_tVar>()
@@ -867,15 +867,15 @@ private class NativeScratch(
         return firstOptionalString.copyOptionalString() to optionalBoolean.value.takeIf { optionalBoolean.has_value }
     }
 
-    fun formula(node: CPointer<markdown_core_node>): Pair<PlacementMode, String> {
-        require(markdown_core_node_formula_properties(node, placementMode.ptr, firstString.ptr)) {
+    fun formula(node: CPointer<markdown_core_node>): Pair<Placement, String> {
+        require(markdown_core_node_formula_properties(node, placement.ptr, firstString.ptr)) {
             "invalid formula node"
         }
         val mode =
-            when (placementMode.value) {
-                MARKDOWN_CORE_PLACEMENT_EMBEDDED -> PlacementMode.EMBEDDED
-                MARKDOWN_CORE_PLACEMENT_STANDALONE -> PlacementMode.STANDALONE
-                else -> error("unsupported native placement mode ${placementMode.value}")
+            when (placement.value) {
+                MARKDOWN_CORE_PLACEMENT_EMBEDDED -> Placement.EMBEDDED
+                MARKDOWN_CORE_PLACEMENT_STANDALONE -> Placement.STANDALONE
+                else -> error("unsupported native placement mode ${placement.value}")
             }
         return mode to firstString.copyString()
     }

@@ -70,7 +70,7 @@ public protocol Markup: Sendable {
 /// about the source rather than about the kind: an inline ``Directive`` is
 /// always embedded and a ``DirectiveBlock`` always standalone, so carrying it
 /// there made four surfaces keep a constant in step.
-public enum PlacementMode: String, Sendable {
+public enum Placement: String, Sendable {
     /// Written inside a line, among other inline content.
     case embedded
     /// Written on its own, as a block.

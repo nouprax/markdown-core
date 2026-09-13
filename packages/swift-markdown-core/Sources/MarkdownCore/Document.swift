@@ -85,12 +85,12 @@ public struct Document: Markup {
         else {
             throw ParseError(code: .internal, message: "parser returned an invalid document tree")
         }
-        return NativeTreeBuilder(root: root).document()
+        return TreeBuilder(root: root).document()
     }
 }
 
 /// Source-order indices recorded while copying one native value.
-private struct NativeRelations {
+private struct Relations {
     var children: [Int] = []
     var caption: Int?
     var label: Int?
@@ -103,7 +103,7 @@ private struct NativeRelations {
 }
 
 /// Each queued handle has the facade type needed to read its owned relations.
-private enum NativeValue {
+private enum Value {
     case markup(OpaquePointer)
     case footnote(OpaquePointer)
     case specimen(OpaquePointer)
@@ -112,8 +112,8 @@ private enum NativeValue {
 
 /// Copies scalars and indexed relations once. No stored Swift record owns
 /// another record, and no native pointer survives the copy.
-private struct NativeTreeBuilder {
-    private var pending: [NativeValue] = []
+private struct TreeBuilder {
+    private var pending: [Value] = []
     private var records: [StoredMarkup] = []
     private var resources: [UnsafeRawPointer: SharedResource] = [:]
 
@@ -127,7 +127,7 @@ private struct NativeTreeBuilder {
         }
     }
 
-    private mutating func copy(_ value: NativeValue) -> StoredMarkup {
+    private mutating func copy(_ value: Value) -> StoredMarkup {
         switch value {
         case let .markup(node):
             let relations = record(relations: node)
@@ -149,8 +149,8 @@ private struct NativeTreeBuilder {
 
     // Enumerate each facade-owned relation alongside its native kind.
     // swiftlint:disable:next cyclomatic_complexity
-    private mutating func record(relations node: OpaquePointer) -> NativeRelations {
-        var relations = NativeRelations()
+    private mutating func record(relations node: OpaquePointer) -> Relations {
+        var relations = Relations()
         relations.children = record(chain: markdown_core_node_get_first_child(node))
         precondition(relations.children.count == markdown_core_node_child_count(node))
         switch markdown_core_node_get_kind(node) {
@@ -193,7 +193,7 @@ private struct NativeTreeBuilder {
         return relations
     }
 
-    private mutating func enqueue(_ value: NativeValue) -> Int {
+    private mutating func enqueue(_ value: Value) -> Int {
         let index = pending.count
         pending.append(value)
         return index
@@ -223,7 +223,7 @@ private struct NativeTreeBuilder {
 // swiftlint:disable:next cyclomatic_complexity function_body_length
 private func stored(
     from node: OpaquePointer,
-    relations: NativeRelations,
+    relations: Relations,
     resources: inout [UnsafeRawPointer: SharedResource]
 ) -> StoredMarkup {
     switch markdown_core_node_get_kind(node) {

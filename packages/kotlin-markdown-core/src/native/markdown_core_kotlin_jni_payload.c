@@ -691,7 +691,7 @@ static void write_node(jni_payload_buffer *buffer, jni_payload_stack *stack, jni
         put_string(buffer, first, true);
         break;
     case MARKDOWN_CORE_KIND_FORMULA: {
-        markdown_core_placement_mode mode;
+        markdown_core_placement mode;
         if (!markdown_core_node_formula_properties(node, &mode, &first)) {
             buffer->failure = JNI_PAYLOAD_INTERNAL;
             return;
@@ -701,7 +701,7 @@ static void write_node(jni_payload_buffer *buffer, jni_payload_stack *stack, jni
         break;
     }
     case MARKDOWN_CORE_KIND_FORMULA_BLOCK: {
-        markdown_core_placement_mode mode;
+        markdown_core_placement mode;
         if (!markdown_core_node_formula_properties(node, &mode, &first) || mode != MARKDOWN_CORE_PLACEMENT_STANDALONE) {
             buffer->failure = JNI_PAYLOAD_INTERNAL;
             return;

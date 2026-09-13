@@ -134,7 +134,7 @@ the two implementation plans are unchanged.
   `markdown_core.exports`, the `elements/ast.c` dump, the CLI, and the
   extension table position; `ctest --preset correctness` and `conformance`,
   ASan, UBSan, TSan, and the strict OOM runner pass.
-- Bindings: Swift `Markup/`, `Visitor/`, and `NativeValues.swift`; Kotlin
+- Bindings: Swift `Markup/`, `Visitor/`, and `Values.swift`; Kotlin
   `model/`, `visitor/`, the JNI kind enum, decoder, and payload encoder, the
   Kotlin/Native adapter, the API dumps under `api/`, and
   `specs/kotlin/jvm-visible-surface.txt`; ES `model/`, `index.ts` exports,

@@ -40,7 +40,7 @@ public sealed interface OrderedListDelimiter {
     public data object Default : OrderedListDelimiter
 }
 
-public enum class PlacementMode { EMBEDDED, STANDALONE }
+public enum class Placement { EMBEDDED, STANDALONE }
 
 public enum class TableAlignment { NONE, LEFT, CENTER, RIGHT }
 

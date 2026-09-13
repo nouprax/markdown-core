@@ -30,7 +30,7 @@
 
 位置：[List.swift:45](https://github.com/nouprax/markdown-core/blob/3e6ad875/packages/swift-markdown-core/Sources/MarkdownCore/Markup/List.swift#L45)、[Document.swift:38](https://github.com/nouprax/markdown-core/blob/3e6ad875/packages/swift-markdown-core/Sources/MarkdownCore/Document.swift#L38)、[MarkdownCoreSuites.swift:312](https://github.com/nouprax/markdown-core/blob/3e6ad875/packages/swift-markdown-core/Tests/MarkdownCoreTests/MarkdownCoreSuites.swift#L312)。
 
-`NativeTreeBuilder` 和 visitor 使用迭代遍历，但最终值树通过数组和 existential 持有下一层值；最后一个持有者释放根时，ARC 仍递归释放所有后代。现有深层树测试明确逐层保留下一个节点、释放上一个节点，以绕过这种销毁方式，因此测试没有覆盖普通调用者的生命周期。
+`TreeBuilder` 和 visitor 使用迭代遍历，但最终值树通过数组和 existential 持有下一层值；最后一个持有者释放根时，ARC 仍递归释放所有后代。现有深层树测试明确逐层保留下一个节点、释放上一个节点，以绕过这种销毁方式，因此测试没有覆盖普通调用者的生命周期。
 
 独立消费程序链接当前源码的优化版 Swift/C 库，解析 `"- " * depth + "leaf\n"`，用 `withExtendedLifetime` 保证打印和 flush 发生在释放前：
 

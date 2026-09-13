@@ -436,7 +436,7 @@ bool markdown_core_node_literal(const markdown_core_node *node, markdown_core_st
     }
 }
 
-bool markdown_core_node_formula_properties(const markdown_core_node *node, markdown_core_placement_mode *mode,
+bool markdown_core_node_formula_properties(const markdown_core_node *node, markdown_core_placement *mode,
                                            markdown_core_string *literal) {
     const char *value;
     markdown_core_formula_mode native_mode;
@@ -999,7 +999,7 @@ static const char *alignment_name(markdown_core_table_alignment alignment) {
     }
 }
 
-static const char *mode_name(markdown_core_placement_mode mode) {
+static const char *mode_name(markdown_core_placement mode) {
     return mode == MARKDOWN_CORE_PLACEMENT_EMBEDDED ? "embedded" : "standalone";
 }
 
@@ -1104,7 +1104,7 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
     markdown_core_ordered_list_variant variant;
     markdown_core_ordered_list_delimiter delimiter;
     markdown_core_list_flavor flavor;
-    markdown_core_placement_mode mode;
+    markdown_core_placement mode;
     markdown_core_destination destination;
     bool x, y;
     size_t count, i;

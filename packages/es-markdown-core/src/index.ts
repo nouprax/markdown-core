@@ -47,7 +47,7 @@ export type {
     ListFlavor,
     OrderedListDelimiter,
     OrderedListVariant,
-    PlacementMode,
+    Placement,
     Position,
     Scope,
     TableAlignment

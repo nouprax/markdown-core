@@ -646,10 +646,10 @@ private class JniTreeDecoder(
             else -> error("invalid native destination kind $rawValue")
         }
 
-    private fun placement(): PlacementMode =
+    private fun placement(): Placement =
         when (val rawValue = reader.int()) {
-            1 -> PlacementMode.EMBEDDED
-            2 -> PlacementMode.STANDALONE
+            1 -> Placement.EMBEDDED
+            2 -> Placement.STANDALONE
             else -> error("invalid native placement mode $rawValue")
         }
 
