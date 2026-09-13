@@ -77,7 +77,7 @@ markdown_core_key_index_slot *markdown_core_key_index_entry(markdown_core_key_in
                                                             bufsize_t key_len) {
     size_t ref = find_leaf(index, key, key_len);
     bufsize_t byte = 0;
-    unsigned mask = 256;
+    uint16_t mask = 256;
     if (ref) {
         markdown_core_key_index_slot *found = &index->nodes[ref_position(ref)].slot;
         bufsize_t limit = (key_len < found->key_len ? key_len : found->key_len);

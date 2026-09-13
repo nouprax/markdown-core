@@ -40,7 +40,7 @@ typedef struct markdown_core_key_index_node {
     markdown_core_key_index_slot slot;
     size_t children[2];
     bufsize_t byte;
-    unsigned short mask;
+    uint16_t mask;
 } markdown_core_key_index_node;
 
 typedef struct markdown_core_key_index {
