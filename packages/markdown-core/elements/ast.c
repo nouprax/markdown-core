@@ -547,7 +547,7 @@ static markdown_core_string chunk_string(markdown_core_chunk value) {
     return (markdown_core_string){value.data, (size_t)value.len};
 }
 const markdown_core_attribute_value *markdown_core_node_primary_attributes(const markdown_core_node *node) {
-    return node ? &node->attributes : NULL;
+    return node ? node->attributes : NULL;
 }
 const markdown_core_attribute_value *markdown_core_node_inherited_attributes(const markdown_core_node *node) {
     const markdown_core_resource *resource = markdown_core_node_resource(node);

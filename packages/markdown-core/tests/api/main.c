@@ -701,7 +701,7 @@ typedef struct {
 static int attachment_can_contain(const markdown_core_element *element, markdown_core_node *node,
                                   markdown_core_node_type child_kind) {
     (void)element;
-    attachment_policy *policy = node->user_data;
+    attachment_policy *policy = node->opaque;
     policy->calls++;
     return child_kind == MARKDOWN_CORE_NODE_TEXT && policy->child->parent == policy->owner;
 }
@@ -755,7 +755,7 @@ static void attachment_containment(test_batch_runner *runner) {
                 markdown_core_node_append_child(destination, anchor);
                 attachment_policy policy = {child, accepted ? source : NULL, 0};
                 destination->element = &ATTACHMENT_POLICY;
-                destination->user_data = &policy;
+                destination->opaque = &policy;
 
                 INT_EQ(runner, operations[op].mutate(operations[op].parent_target ? destination : anchor, child),
                        accepted, "operation %zu honors containment before changing ownership", op);
@@ -1227,7 +1227,7 @@ static void element_decline_yields_turn(test_batch_runner *runner) {
     markdown_core_parser parser = {0};
     parser.mem = markdown_core_get_default_mem_allocator();
     markdown_core_node *candidate = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
-    markdown_core_strbuf_puts(&candidate->content, "text\n");
+    markdown_core_strbuf_puts(candidate->content, "text\n");
     unsigned char line[] = ":::note\n";
     OK(runner,
        MARKDOWN_CORE_ELEMENT_TABLE.try_opening_block(&MARKDOWN_CORE_ELEMENT_TABLE, 0, &parser, candidate, line,
@@ -1440,7 +1440,7 @@ static markdown_core_node *observe_dispatch(const markdown_core_element *self, m
                                             markdown_core_inline_state *inline_state) {
     (void)parent;
     (void)character;
-    dispatch_observation *observation = parser->root->user_data;
+    dispatch_observation *observation = parser->root->opaque;
     if (observation->count + 1 < sizeof(observation->calls)) {
         observation->calls[observation->count++] = self->name[0];
     }
@@ -1464,7 +1464,7 @@ static bool attach_dispatch_observers(markdown_core_parser *parser, void *contex
         .name = "consume-observer", .match_inline = observe_dispatch, .terminates_text = "!", .dispatch = "!"};
     static const markdown_core_element disjoint = {
         .name = "unrelated-observer", .match_inline = observe_dispatch, .terminates_text = "?", .dispatch = "?"};
-    parser->root->user_data = context;
+    parser->root->opaque = context;
     return markdown_core_parser_attach_element(parser, &fallback) &&
            markdown_core_parser_attach_element(parser, &decline) &&
            markdown_core_parser_attach_element(parser, &consume) &&
@@ -1482,7 +1482,7 @@ static markdown_core_node *observe_predicate(const markdown_core_element *self, 
                                              markdown_core_inline_state *state) {
     (void)parent;
     (void)character;
-    dispatch_observation *observation = parser->root->user_data;
+    dispatch_observation *observation = parser->root->opaque;
     if (observation->count < sizeof(observation->calls)) {
         observation->calls[observation->count++] = self->name[0];
     }
@@ -1500,7 +1500,7 @@ static bool attach_predicate_observers(markdown_core_parser *parser, void *conte
                                             .can_start = start_b,
                                             .terminates_text = "?",
                                             .dispatch = "?"};
-    parser->root->user_data = context;
+    parser->root->opaque = context;
     return markdown_core_parser_attach_element(parser, &a) && markdown_core_parser_attach_element(parser, &b);
 }
 static void inline_predicate_arbitration(test_batch_runner *runner) {
@@ -1931,6 +1931,28 @@ typedef struct {
 static void node_payload_lifecycle(test_batch_runner *runner) {
     INT_EQ(runner, sizeof(markdown_core_node_data), sizeof(void *),
            "all payload arms share one pointer-sized node slot");
+    /* The common node holds pointers, links, positions and marks only: the
+     * attribute value and the content buffer are reached through pointers
+     * and exist only for nodes that need them. */
+    OK(runner, sizeof(markdown_core_node) <= 16 * sizeof(void *), "the node record is at most sixteen words: %zu",
+       sizeof(markdown_core_node));
+    {
+        markdown_core_node *text = markdown_core_node_new(MARKDOWN_CORE_NODE_TEXT);
+        markdown_core_node *paragraph = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
+        OK(runner, text && paragraph && text->content == NULL && paragraph->content != NULL,
+           "block kinds carry a content buffer in their record; ordinary inline kinds carry none");
+        OK(runner, text && text->attributes == NULL && paragraph->attributes == NULL,
+           "attribute values are absent until declared");
+        markdown_core_attributes *declared = text ? markdown_core_node_attributes_mut(text, NULL) : NULL;
+        OK(runner,
+           declared && declared == text->attributes && markdown_core_node_attributes_mut(text, NULL) == declared,
+           "a declared attribute value is created once and reused");
+        OK(runner,
+           paragraph && markdown_core_node_append_child(paragraph, text) &&
+               markdown_core_node_set_kind(text, MARKDOWN_CORE_NODE_TEXT) == MARKDOWN_CORE_NODE_SET_KIND_OK,
+           "layout probe tree assembles");
+        markdown_core_node_free(paragraph);
+    }
     static const markdown_core_node_type extra_types[] = {
         MARKDOWN_CORE_NODE_METADATA,      MARKDOWN_CORE_NODE_INSERTION,       MARKDOWN_CORE_NODE_CROSS_EMBEDDED,
         MARKDOWN_CORE_NODE_MARK,          MARKDOWN_CORE_NODE_CROSS_LINK,      MARKDOWN_CORE_NODE_CITE,
@@ -2138,7 +2160,7 @@ typedef struct {
 
 static int conversion_can_contain(const markdown_core_element *element, markdown_core_node *node,
                                   markdown_core_node_type child_kind) {
-    conversion_policy *policy = node->user_data;
+    conversion_policy *policy = node->opaque;
     (void)element;
     if (child_kind == policy->rejected_kind) {
         policy->rejections++;
@@ -2157,7 +2179,7 @@ static markdown_core_node *conversion_match_inline(const markdown_core_element *
     (void)character;
     (void)inline_state;
     parent->element = element;
-    parent->user_data = parser->root->user_data;
+    parent->opaque = parser->root->opaque;
     return NULL;
 }
 
@@ -2170,7 +2192,7 @@ static const markdown_core_element CONVERSION_POLICY = {
 
 static bool configure_conversion_policy(markdown_core_parser *parser, void *context) {
     parser->root->element = &CONVERSION_POLICY;
-    parser->root->user_data = context;
+    parser->root->opaque = context;
     return markdown_core_parser_attach_element(parser, &CONVERSION_POLICY);
 }
 
@@ -3197,7 +3219,7 @@ typedef struct {
 static markdown_core_node *record_inline_work(const markdown_core_element *element, markdown_core_parser *parser,
                                               markdown_core_node *root) {
     (void)element;
-    inline_work *work = root->user_data;
+    inline_work *work = root->opaque;
     if (!work) {
         return root;
     }
@@ -3247,12 +3269,12 @@ static markdown_core_node *record_inline_work(const markdown_core_element *eleme
                                  (parser->footnote_defs ? parser->footnote_defs->index.operations : 0) +
                                  parser->anchors.index.operations + parser->anchors.resources.operations +
                                  parser->specimen_ids.operations;
-    root->user_data = NULL;
+    root->opaque = NULL;
     return root;
 }
 static const markdown_core_element WORK_RECORDER = {.name = "work-recorder", .postprocess_func = record_inline_work};
 static bool measure_inline_work(markdown_core_parser *parser, void *context) {
-    parser->root->user_data = context;
+    parser->root->opaque = context;
     return markdown_core_parser_attach_element(parser, &WORK_RECORDER);
 }
 
@@ -3317,7 +3339,7 @@ static bool inspect_text_boundary(markdown_core_parser *parser, void *context) {
     test_batch_runner *runner = probe->runner;
     markdown_core_node *owner = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_PARAGRAPH, parser->mem);
     owner->start_line = owner->start_column = 1;
-    markdown_core_strbuf_put(&owner->content, probe->source->ptr, probe->source->size);
+    markdown_core_strbuf_put(owner->content, probe->source->ptr, probe->source->size);
     markdown_core_inline_state state;
     markdown_core_inline_start_inlines(parser, owner, parser->refmap, &state);
     markdown_core_node *text = MARKDOWN_CORE_ELEMENT_TEXT.parse_text(parser, &state, state.input.len);
@@ -3371,14 +3393,14 @@ static bool inspect_delimiter_classes(markdown_core_parser *parser, void *contex
                     (after < 256 && parser->skip_chars[after])) {
                     continue;
                 }
-                markdown_core_strbuf_clear(&owner->content);
-                markdown_core_utf8proc_encode_char(before, &owner->content);
-                bufsize_t start = owner->content.size;
+                markdown_core_strbuf_clear(owner->content);
+                markdown_core_utf8proc_encode_char(before, owner->content);
+                bufsize_t start = owner->content->size;
                 for (bufsize_t n = 0; n < element->delimiter.minimum_width; n++) {
-                    markdown_core_strbuf_putc(&owner->content, element->delimiter_character);
+                    markdown_core_strbuf_putc(owner->content, element->delimiter_character);
                 }
-                markdown_core_utf8proc_encode_char(after, &owner->content);
-                markdown_core_strbuf_putc(&owner->content, 'x');
+                markdown_core_utf8proc_encode_char(after, owner->content);
+                markdown_core_strbuf_putc(owner->content, 'x');
                 markdown_core_inline_state state;
                 markdown_core_inline_start_inlines(parser, owner, parser->refmap, &state);
                 state.pos = start;
@@ -4175,7 +4197,7 @@ static markdown_core_node *remove_footnotes(const markdown_core_element *element
     if (root->kind != MARKDOWN_CORE_NODE_DOCUMENT) {
         return root;
     }
-    footnote_postprocess_probe *probe = root->user_data;
+    footnote_postprocess_probe *probe = root->opaque;
     probe->index_released =
         parser->footnotes.values == NULL && parser->footnotes.count == 0 && parser->footnotes.last_inline == NULL;
     probe->resolved = true;
@@ -4186,13 +4208,13 @@ static markdown_core_node *remove_footnotes(const markdown_core_element *element
         markdown_core_node_free(note);
         probe->removed++;
     }
-    root->user_data = NULL;
+    root->opaque = NULL;
     return root;
 }
 
 static bool observe_footnote_removal(markdown_core_parser *parser, void *context) {
     static const markdown_core_element probe = {.name = "remove-footnotes", .postprocess_func = remove_footnotes};
-    parser->root->user_data = context;
+    parser->root->opaque = context;
     return markdown_core_parser_attach_element(parser, &probe);
 }
 
@@ -4585,7 +4607,7 @@ static void span_and_script_linear_work(test_batch_runner *runner) {
             markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
         OK(runner, root != NULL, "deep Span/script headings parse successfully");
         if (root) {
-            STR_EQ(runner, (const char *)root->first_child->attributes.anchor.data, "a-b-x-1",
+            STR_EQ(runner, (const char *)root->first_child->attributes->anchor.data, "a-b-x-1",
                    "heading projection includes script bodies and reserves the later Span anchor");
             OK(runner,
                work.anchors < 25 * (size_t)source.size && work.brackets <= 8 * (size_t)source.size &&
@@ -5217,7 +5239,7 @@ static void heading_completion_invariants(test_batch_runner *runner) {
         markdown_core_node *root = parse(cases[i].source);
         OK(runner, root != NULL, "completed inline ownership preserves anchor reservations");
         if (root) {
-            STR_EQ(runner, (char *)root->first_child->attributes.anchor.data, cases[i].anchor,
+            STR_EQ(runner, (char *)root->first_child->attributes->anchor.data, cases[i].anchor,
                    "only final effective anchors on emitted nodes reserve names");
         }
         markdown_core_node_free(root);
@@ -5293,7 +5315,7 @@ static void heading_registry_invariants(test_batch_runner *runner) {
                     } else {
                         strcpy(expected, "same");
                     }
-                    STR_EQ(runner, (const char *)node->attributes.anchor.data, expected,
+                    STR_EQ(runner, (const char *)node->attributes->anchor.data, expected,
                            "every generated suffix is the smallest available");
                 }
                 OK(runner, work.anchors > count && work.anchors < 25 * (size_t)source.size,
@@ -5406,7 +5428,7 @@ static void heading_label_length_boundary(test_batch_runner *runner) {
         if (root) {
             INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_LINK), length == MAX_LINK_LABEL_LENGTH,
                    "declaration and occurrence use the same raw-label limit");
-            INT_EQ(runner, root->first_child->attributes.anchor.len, length,
+            INT_EQ(runner, root->first_child->attributes->anchor.len, length,
                    "label eligibility never limits generated heading anchors");
         }
         markdown_core_node_free(root);
@@ -5419,7 +5441,8 @@ static size_t count_anchors(markdown_core_node *root) {
     markdown_core_iter *iter = markdown_core_iter_new(root);
     markdown_core_event_type event;
     while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
-        if (event == MARKDOWN_CORE_EVENT_ENTER && markdown_core_iter_get_node(iter)->attributes.anchor.len) {
+        if (event == MARKDOWN_CORE_EVENT_ENTER && markdown_core_iter_get_node(iter)->attributes &&
+            markdown_core_iter_get_node(iter)->attributes->anchor.len) {
             count++;
         }
     }
@@ -5593,7 +5616,8 @@ static markdown_core_node *seed_anchor(const markdown_core_element *element, int
         if (owner->parent->kind == MARKDOWN_CORE_NODE_LIST_ITEM) {
             owner = owner->parent;
         }
-        if (!markdown_core_chunk_set_cstr(parser->mem, &owner->attributes.anchor, "existing")) {
+        markdown_core_attributes *attributes = markdown_core_node_attributes_mut(owner, parser->arena);
+        if (!attributes || !markdown_core_chunk_set_cstr(parser->mem, &attributes->anchor, "existing")) {
             parser->oom = true;
         }
     }
@@ -5607,8 +5631,8 @@ static markdown_core_node *observe_definition_before_anchor(const markdown_core_
     (void)indented;
     if (length - parser->first_nonspace >= 6 && memcmp(input + parser->first_nonspace, "#list#", 6) == 0) {
         markdown_core_node *previous = parent->last_child;
-        *(bool *)parser->root->user_data = previous && previous->kind == MARKDOWN_CORE_NODE_PARAGRAPH &&
-                                           !(previous->flags & MARKDOWN_CORE_NODE__OPEN) && previous->content.size == 0;
+        *(bool *)parser->root->opaque = previous && previous->kind == MARKDOWN_CORE_NODE_PARAGRAPH &&
+                                        !(previous->flags & MARKDOWN_CORE_NODE__OPEN) && previous->content->size == 0;
     }
     return NULL;
 }
@@ -5616,7 +5640,7 @@ static markdown_core_node *observe_definition_before_anchor(const markdown_core_
 static bool observe_reference_definition_lifetime(markdown_core_parser *parser, void *context) {
     static const markdown_core_element observer = {.name = "reference-definition-lifetime",
                                                    .try_opening_block = observe_definition_before_anchor};
-    parser->root->user_data = context;
+    parser->root->opaque = context;
     return markdown_core_parser_attach_element(parser, &observer);
 }
 
@@ -5639,7 +5663,7 @@ static void reference_definition_lifetime(test_batch_runner *runner) {
            marker && marker->next && marker->next->first_child &&
                marker->next->first_child->kind == MARKDOWN_CORE_NODE_LINK && !marker->next->next,
            "the definition resolves links without leaking a paragraph into the completed tree");
-        root->user_data = NULL;
+        root->opaque = NULL;
         markdown_core_node_free(root);
     }
 }
@@ -5654,7 +5678,8 @@ static void block_identifier_ownership(test_batch_runner *runner) {
         if (owner->kind == MARKDOWN_CORE_NODE_LIST) {
             owner = owner->first_child;
         }
-        STR_EQ(runner, (const char *)owner->attributes.anchor.data, "existing", "an existing anchor is never replaced");
+        STR_EQ(runner, (const char *)owner->attributes->anchor.data, "existing",
+               "an existing anchor is never replaced");
         markdown_core_node *paragraph = owner->kind == MARKDOWN_CORE_NODE_PARAGRAPH ? owner : owner->first_child;
         STR_EQ(runner, markdown_core_node_get_literal(paragraph->first_child), "text #candidate#",
                "a refused attachment keeps the complete marker visible");
@@ -5671,10 +5696,10 @@ static void block_identifier_ownership(test_batch_runner *runner) {
             markdown_core_node *list = root->first_child;
             markdown_core_node *item = list->first_child;
             memset(source, 'x', strlen(source));
-            STR_EQ(runner, (const char *)list->attributes.anchor.data, "list",
+            STR_EQ(runner, (const char *)list->attributes->anchor.data, "list",
                    "detached EOF identifier owns its bytes");
-            STR_EQ(runner, (const char *)item->attributes.anchor.data, "item", "item identifier owns its bytes");
-            OK(runner, list->attributes.anchor.alloc && item->attributes.anchor.alloc, "anchors are owned chunks");
+            STR_EQ(runner, (const char *)item->attributes->anchor.data, "item", "item identifier owns its bytes");
+            OK(runner, list->attributes->anchor.alloc && item->attributes->anchor.alloc, "anchors are owned chunks");
             INT_EQ(runner, list->end_line, 3, "detached line belongs to the list scope for every line ending");
             INT_EQ(runner, list->end_column, 6, "list scope includes the closing hash at EOF");
             INT_EQ(runner, item->first_child->first_child->end_column, 6, "text scope ends before the separator");
@@ -6219,9 +6244,9 @@ static void table_mapped_ownership(test_batch_runner *runner) {
     }
     markdown_core_node *table = root->first_child, *row = table->first_child;
     markdown_core_node *first = row->first_child, *second = first->next;
-    STR_EQ(runner, (const char *)first->first_child->attributes.anchor.data, "same",
+    STR_EQ(runner, (const char *)first->first_child->attributes->anchor.data, "same",
            "first cell heading owns unsuffixed anchor");
-    STR_EQ(runner, (const char *)second->first_child->attributes.anchor.data, "same-1",
+    STR_EQ(runner, (const char *)second->first_child->attributes->anchor.data, "same-1",
            "same-line later heading is ordered by original column");
     INT_EQ(runner, second->first_child->start_column, 28, "mapped block starts in original source column");
     for (markdown_core_node *cell = first; cell; cell = cell->next) {

@@ -715,10 +715,10 @@ static markdown_core_node *postprocess_node(const markdown_core_element *element
             /* The literal is copied OUT of `node->content` and the content is
              * then cleared, so a failed copy would leave the chunk borrowing a
              * buffer this very statement empties. */
-            if (!set_formula_literal_trimmed(node, node->content.ptr, node->content.size)) {
+            if (!set_formula_literal_trimmed(node, node->content->ptr, node->content->size)) {
                 parser->oom = true;
             }
-            markdown_core_strbuf_clear(&node->content);
+            markdown_core_strbuf_clear(node->content);
         }
         return node;
     }
@@ -735,8 +735,10 @@ static markdown_core_node *postprocess_node(const markdown_core_element *element
     /* Only an anonymous paragraph is a removable wrapper. A declared anchor
      * or attributes belong to that paragraph, even when its only remaining
      * content is a standalone formula. */
-    if (node->kind == MARKDOWN_CORE_NODE_PARAGRAPH && !node->attributes.anchor.len && !node->attributes.class_count &&
-        !node->attributes.record_count && node->first_child && node->first_child == node->last_child &&
+    if (node->kind == MARKDOWN_CORE_NODE_PARAGRAPH &&
+        (!node->attributes ||
+         (!node->attributes->anchor.len && !node->attributes->class_count && !node->attributes->record_count)) &&
+        node->first_child && node->first_child == node->last_child &&
         node->first_child->kind == MARKDOWN_CORE_NODE_FORMULA && is_standalone_formula_node(node->first_child)) {
         node_formula *formula = get_formula(node->first_child);
         if (formula) {

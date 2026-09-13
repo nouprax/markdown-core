@@ -77,7 +77,7 @@ static int continue_code(const markdown_core_element *self, markdown_core_parser
 
 static void finalize_code(markdown_core_parser *parser, markdown_core_node *b) {
     bufsize_t pos;
-    markdown_core_strbuf *node_content = &b->content;
+    markdown_core_strbuf *node_content = b->content;
 
     if (!b->as.code->fenced) { // indented code
         remove_trailing_blank_lines(node_content);

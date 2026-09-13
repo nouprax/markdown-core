@@ -192,7 +192,7 @@ static markdown_core_parser *S_parser_new(markdown_core_mem *mem) {
     /* A transaction that could not build its initial structures is poisoned:
      * source processing becomes a no-op and the parse reports failure. */
     if (!parser->root || parser->curline.oom || parser->line_scratch.oom || parser->lookahead_last_line.oom ||
-        parser->root->content.oom) {
+        parser->root->content->oom) {
         parser->oom = true;
     }
 
@@ -342,7 +342,7 @@ int markdown_core_parser_append_content_mark(markdown_core_parser *parser, markd
 
 static void S_record_content_mark(markdown_core_parser *parser, markdown_core_node *node, bufsize_t column,
                                   bufsize_t length) {
-    markdown_core_parser_append_source_marks(parser, node, parser->line_number, column, length, node->content.size);
+    markdown_core_parser_append_source_marks(parser, node, parser->line_number, column, length, node->content->size);
 }
 
 void markdown_core_block_add_line(markdown_core_node *node, markdown_core_chunk *ch, markdown_core_parser *parser) {
@@ -365,12 +365,12 @@ void markdown_core_block_add_line(markdown_core_node *node, markdown_core_chunk 
         // add space characters:
         chars_to_tab = TAB_STOP - (parser->column % TAB_STOP);
         for (i = 0; i < chars_to_tab; i++) {
-            markdown_core_strbuf_putc(&node->content, ' ');
+            markdown_core_strbuf_putc(node->content, ' ');
         }
     }
     S_record_content_mark(parser, node, parser->offset + 1, ch->len - parser->offset);
-    markdown_core_strbuf_put(&node->content, ch->data + parser->offset, ch->len - parser->offset);
-    if (node->content.oom) {
+    markdown_core_strbuf_put(node->content, ch->data + parser->offset, ch->len - parser->offset);
+    if (node->content->oom) {
         parser->oom = true;
     }
 }
@@ -504,7 +504,7 @@ int markdown_core_parser_append_source_marks(markdown_core_parser *parser, markd
 }
 
 bool markdown_core_parser_queue_block_input(markdown_core_parser *parser, markdown_core_node *owner) {
-    if (!owner->content.size) {
+    if (!owner->content->size) {
         return true;
     }
     assert(owner->content_mark_count && owner->parent);
@@ -673,7 +673,7 @@ markdown_core_node *markdown_core_parser_add_child(markdown_core_parser *parser,
     markdown_core_node *child =
         make_block(parser, block_type, parser->line_number,
                    markdown_core_parser_source_column(parser, parser->line_number, start_column));
-    if (!child || child->content.oom) {
+    if (!child || child->content->oom) {
         parser->oom = true;
         if (child) {
             markdown_core_node_recycle(parser->arena, child);
@@ -1010,7 +1010,7 @@ static void S_parse_block_inputs(markdown_core_parser *parser) {
                    (size_t)parser->lookahead_entries_used * sizeof(*parser->lookahead_entries));
             parser->lookahead_entries_used = 0;
         }
-        for (bufsize_t offset = 0; offset < owner->content.size && !parser->oom;) {
+        for (bufsize_t offset = 0; offset < owner->content->size && !parser->oom;) {
             if (parser->input_line_count == parser->input_line_capacity) {
                 size_t capacity = parser->input_line_capacity ? parser->input_line_capacity * 2 : 16;
                 if (capacity > SIZE_MAX / sizeof(*parser->input_line_offsets)) {
@@ -1027,23 +1027,23 @@ static void S_parse_block_inputs(markdown_core_parser *parser) {
                 parser->input_line_capacity = capacity;
             }
             parser->input_line_offsets[parser->input_line_count++] = offset;
-            while (offset < owner->content.size && !markdown_core_is_line_end(owner->content.ptr[offset])) {
+            while (offset < owner->content->size && !markdown_core_is_line_end(owner->content->ptr[offset])) {
                 offset++;
             }
-            if (offset < owner->content.size && owner->content.ptr[offset] == '\r') {
+            if (offset < owner->content->size && owner->content->ptr[offset] == '\r') {
                 offset++;
             }
-            if (offset < owner->content.size && owner->content.ptr[offset] == '\n') {
+            if (offset < owner->content->size && owner->content->ptr[offset] == '\n') {
                 offset++;
             }
         }
         owner->flags |= MARKDOWN_CORE_NODE__OPEN;
-        S_parse_source(parser, owner->content.ptr, (size_t)owner->content.size);
+        S_parse_source(parser, owner->content->ptr, (size_t)owner->content->size);
         while (parser->current != owner && !parser->oom) {
             parser->current = markdown_core_block_finalize(parser, parser->current);
         }
         owner->flags &= ~MARKDOWN_CORE_NODE__OPEN;
-        markdown_core_strbuf_clear(&owner->content);
+        markdown_core_strbuf_clear(owner->content);
         owner->content_mark_count = 0;
         owner->content_mark_offset = 0;
     }

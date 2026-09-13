@@ -51,7 +51,9 @@ void markdown_core_block_reserve_node_anchor(markdown_core_parser *parser, ancho
         return;
     }
     MARKDOWN_CORE_DIAGNOSTIC(parser->anchor_work++;)
-    if (anchor != &node->attributes.anchor) {
+    bool shared = (node->kind == MARKDOWN_CORE_NODE_LINK || node->kind == MARKDOWN_CORE_NODE_EMBEDDED) &&
+                  node->as.link->resource && anchor == &node->as.link->resource->attributes.anchor;
+    if (shared) {
         const unsigned char *identity = (const unsigned char *)&node->as.link->resource;
         void *existing = NULL;
         if (!markdown_core_key_index_insert(&registry->resources, identity, sizeof(node->as.link->resource),
@@ -229,7 +231,12 @@ void markdown_core_block_finalize_heading_anchors(markdown_core_parser *parser,
     markdown_core_strbuf base = MARKDOWN_CORE_BUF_INIT(parser->mem);
     for (size_t i = 0; i < headings->count && !parser->oom; i++) {
         markdown_core_heading_parse *heading = &headings->values[i];
-        markdown_core_chunk *anchor = &heading->node->attributes.anchor;
+        markdown_core_attributes *attributes = markdown_core_node_attributes_mut(heading->node, parser->arena);
+        if (!attributes) {
+            parser->oom = true;
+            break;
+        }
+        markdown_core_chunk *anchor = &attributes->anchor;
         if (!anchor->len) {
             markdown_core_strbuf_clear(&base);
             heading_anchor_base(parser, heading->node, &base);
@@ -407,8 +414,17 @@ void markdown_core_heading_begin_inlines(markdown_core_parser *parser, markdown_
 bool markdown_core_heading_claim_tail(markdown_core_inline_state *inline_state, markdown_core_node *parent) {
     if (inline_state->pos == inline_state->text_end) {
         bufsize_t end;
-        if (markdown_core_attributes_parse(&inline_state->attributes, inline_state->heading_attributes_start,
-                                           &parent->attributes, &end)) {
+        markdown_core_attributes value = {0};
+        if (markdown_core_attributes_parse(&inline_state->attributes, inline_state->heading_attributes_start, &value,
+                                           &end)) {
+            markdown_core_attributes *owned = markdown_core_node_attributes_mut(parent, inline_state->arena);
+            if (!owned) {
+                markdown_core_attributes_free(inline_state->mem, &value);
+                inline_state->oom = 1;
+                return false;
+            }
+            markdown_core_attributes_free(inline_state->mem, owned);
+            *owned = value;
             inline_state->heading_label_end = inline_state->text_end;
             inline_state->pos = inline_state->input.len;
         }

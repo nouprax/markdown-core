@@ -15,7 +15,7 @@ static bufsize_t markdown_core_inline_manual_scan_link_url(markdown_core_chunk *
                                                            markdown_core_chunk *output);
 bool markdown_core_block_resolve_reference_link_definitions(markdown_core_parser *parser, markdown_core_node *b) {
     bufsize_t pos;
-    markdown_core_strbuf *node_content = &b->content;
+    markdown_core_strbuf *node_content = b->content;
     markdown_core_chunk chunk = {node_content->ptr, node_content->size, 0};
     markdown_core_attribute_parser attributes = {.mem = parser->mem, .data = chunk.data, .length = chunk.len};
     while (chunk.len && chunk.data[0] == '[') {
@@ -64,7 +64,7 @@ bool markdown_core_block_resolve_reference_link_definitions(markdown_core_parser
         b->start_line = line;
         b->start_column = column;
     }
-    return !markdown_core_block_is_blank(&b->content, 0);
+    return !markdown_core_block_is_blank(b->content, 0);
 }
 
 markdown_core_chunk markdown_core_clean_url(markdown_core_mem *mem, markdown_core_chunk *url, int *lost) {

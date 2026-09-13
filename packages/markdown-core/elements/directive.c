@@ -272,8 +272,8 @@ static markdown_core_node *make_label_node(const markdown_core_element *element,
         return NULL;
     }
 
-    markdown_core_strbuf_put(&label_node->content, label, label_len);
-    if (label_node->content.oom) {
+    markdown_core_strbuf_put(label_node->content, label, label_len);
+    if (label_node->content->oom) {
         markdown_core_node_recycle(parser->arena, label_node);
         return NULL;
     }
@@ -324,20 +324,25 @@ static int apply_parsed_directive(const markdown_core_element *element, markdown
     }
     if (parsed->attributes_len) {
         const unsigned char *source = data + parsed->attributes_start;
+        markdown_core_attributes *attributes = markdown_core_node_attributes_mut(node, parser->arena);
+        if (!attributes) {
+            return 0;
+        }
         if (*source == '{') {
             bufsize_t end;
-            int matched =
-                markdown_core_attributes_parse(&parsed->attributes, parsed->attributes_start, &node->attributes, &end);
-            if (!matched) {
+            markdown_core_attributes value = {0};
+            if (!markdown_core_attributes_parse(&parsed->attributes, parsed->attributes_start, &value, &end)) {
                 return 0;
             }
+            markdown_core_attributes_free(mem, attributes);
+            *attributes = value;
         } else {
-            node->attributes.classes = mem->calloc(1, sizeof(markdown_core_chunk));
-            if (!node->attributes.classes) {
+            attributes->classes = mem->calloc(1, sizeof(markdown_core_chunk));
+            if (!attributes->classes) {
                 return 0;
             }
-            node->attributes.class_count = node->attributes.class_capacity = 1;
-            if (!set_chunk_bytes(mem, node->attributes.classes, source, parsed->attributes_len)) {
+            attributes->class_count = attributes->class_capacity = 1;
+            if (!set_chunk_bytes(mem, attributes->classes, source, parsed->attributes_len)) {
                 return 0;
             }
         }
@@ -473,7 +478,16 @@ static markdown_core_node *match_colon_directive(const markdown_core_element *el
         return NULL;
     }
     directive = get_directive(node);
-    node->attributes = attributes;
+    if (attributes.anchor.data || attributes.classes || attributes.records) {
+        markdown_core_attributes *owned = markdown_core_node_attributes_mut(node, parser->arena);
+        if (!owned) {
+            markdown_core_attributes_free(parser->mem, &attributes);
+            markdown_core_node_recycle(parser->arena, node);
+            parser->oom = true;
+            return NULL;
+        }
+        *owned = attributes;
+    }
 
     if (has_label) {
         /* Consume to the `]` first and read the label's end back from the

@@ -1,13 +1,19 @@
 # Node storage and lifetime
 
-The engine node contains its tree links, source mapping, attributes, element
-state, and a union of typed node data pointers. Every union arm is a pointer;
-adding fields to one kind cannot enlarge the common node. A kind with no
-kind-specific fields has no data record. Field-bearing kinds own a
-record containing their ordinary typed fields. Construction allocates the node
-and its record together, with the typed pointer referring directly to that
-record. A C99 allocation header provides scalar alignment for both objects;
-allocation-header padding is included in measured memory costs.
+The engine node contains its allocator, tree links, source mapping, element
+state, and a union of typed node data pointers: sixteen words on a 64-bit
+target, which a layout test pins. Every union arm is a pointer; adding fields
+to one kind cannot enlarge the common node. A kind with no kind-specific
+fields has no data record. Field-bearing kinds own a record containing their
+ordinary typed fields. The attribute value is a pointer that stays NULL until
+an author declared attributes or synthesis reserved an anchor, and the block
+content buffer is a pointer into the record region that only block kinds and
+inline roots (the directive label) carry; ordinary inline kinds have neither.
+Construction allocates the node, its content buffer and its record together,
+with the typed pointer referring directly to that record. A C99 allocation
+header provides scalar alignment for all three; allocation-header padding is
+included in measured memory costs. The node has no user data slot: element
+state travels in `opaque`, owned by the element that allocated it.
 
 All block, inline, and manual construction uses the same node constructor.
 It makes one allocation for the node and its kind's record, establishes
@@ -68,8 +74,11 @@ validation, it allocates a replacement record before releasing the old fields.
 The original record shares the node's allocation and is reclaimed with the
 node; replacement records are freed when replaced or when the node dies.
 The typed view and allocation ownership are explicit: `as` points to the
-current record, while `node_data_allocation` owns a replacement allocation, if
-any. Ownership is never inferred by comparing potentially adjacent addresses.
+current record, and the node's `owned` bits say which of the record, the
+content buffer and the attribute value it allocated separately (a replacement
+record, a content buffer a conversion into a block kind had to add, an
+attribute value declared on a node built without an arena). Ownership is never
+inferred by comparing potentially adjacent addresses.
 `markdown_core_node_set_kind` distinguishes containment rejection from allocation
 failure. Parser callers decline rejected conversions and set the OOM flag only
 for allocation failure. Either failure leaves the original kind and all owned

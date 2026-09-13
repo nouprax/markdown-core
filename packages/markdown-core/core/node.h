@@ -268,9 +268,23 @@ typedef union {
     markdown_core_table_cell *table_cell;
 } markdown_core_node_data;
 
+/* Storage a node holds outside its arena record: a replacement payload, a
+ * content buffer or an attribute value that a kind conversion or a manual
+ * construction had to allocate separately. */
+enum {
+    MARKDOWN_CORE_NODE_OWNS_PAYLOAD = 1,
+    MARKDOWN_CORE_NODE_OWNS_CONTENT = 2,
+    MARKDOWN_CORE_NODE_OWNS_ATTRIBUTES = 4,
+};
+
 struct markdown_core_node {
-    markdown_core_attributes attributes;
-    markdown_core_strbuf content;
+    markdown_core_mem *mem;
+    /* Present only on a node that declared attributes or received a
+     * synthesized anchor; most nodes carry none. */
+    markdown_core_attributes *attributes;
+    /* The block content buffer: block kinds and inline roots carry one in
+     * their record, other inline kinds have none. */
+    markdown_core_strbuf *content;
 
     struct markdown_core_node *next;
     struct markdown_core_node *prev;
@@ -278,9 +292,6 @@ struct markdown_core_node {
     /* Intrusive list of content children. */
     struct markdown_core_node *first_child;
     struct markdown_core_node *last_child;
-
-    void *user_data;
-    markdown_core_free_func user_data_free_func;
 
     int start_line;
     int start_column;
@@ -299,15 +310,15 @@ struct markdown_core_node {
      * belong to a parse arena instead of the allocator. */
     uint16_t record_size;
     uint8_t arena_owned;
+    uint8_t owned;
 
     const markdown_core_element *element;
     /* Element-owned data, allocated by opaque_alloc_func and released by
      * opaque_free_func. It survives kind changes independently of `as`. */
     void *opaque;
 
-    /* Owns a replacement record, when present. The initial record belongs to
-     * the node allocation instead. `as` is the typed view in either case. */
-    void *node_data_allocation;
+    /* The typed view of the current record: the initial one inside the node's
+     * allocation, or a replacement the node owns (MARKDOWN_CORE_NODE_OWNS_PAYLOAD). */
     markdown_core_node_data as;
 };
 
@@ -321,6 +332,9 @@ markdown_core_node *markdown_core_node_create(markdown_core_arena *arena, markdo
 /* Unlink and release a node and its subtree; arena-owned records return to
  * `arena`'s pools. With a NULL arena this is `markdown_core_node_free`. */
 void markdown_core_node_recycle(markdown_core_arena *arena, markdown_core_node *node);
+/* The node's attribute value, created on first use from `arena` (or from the
+ * node's allocator without one). NULL only when that allocation failed. */
+markdown_core_attributes *markdown_core_node_attributes_mut(markdown_core_node *node, markdown_core_arena *arena);
 
 /* The effective declaration is occurrence-local, then inherited from its
  * shared definition. All consumers, including synthesis reservation, use it. */
@@ -341,9 +355,7 @@ static inline markdown_core_cross_reference *markdown_core_node_cross_reference(
     return NULL;
 }
 
-static MARKDOWN_CORE_INLINE markdown_core_mem *markdown_core_node_mem(markdown_core_node *node) {
-    return node->content.mem;
-}
+static MARKDOWN_CORE_INLINE markdown_core_mem *markdown_core_node_mem(markdown_core_node *node) { return node->mem; }
 
 /* Takes ownership of `url` and `title` and answers a resource with one holder,
  * or NULL having taken nothing -- the caller still owns both chunks and frees

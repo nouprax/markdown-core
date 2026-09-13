@@ -29,7 +29,7 @@ static int continue_html(const markdown_core_element *self, markdown_core_parser
 }
 
 static void finalize_html(markdown_core_parser *parser, markdown_core_node *b) {
-    markdown_core_strbuf *node_content = &b->content;
+    markdown_core_strbuf *node_content = b->content;
 
     int html_block_type = b->as.html_block->block_type;
     b->as.html_block->literal = markdown_core_chunk_buf_detach(node_content);

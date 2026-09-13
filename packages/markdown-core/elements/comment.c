@@ -254,7 +254,7 @@ markdown_core_node *markdown_core_comment_make_inline(markdown_core_inline_state
 }
 
 static void finalize_comment(markdown_core_parser *parser, markdown_core_node *b) {
-    markdown_core_strbuf *node_content = &b->content;
+    markdown_core_strbuf *node_content = b->content;
 
     /* O3: a `%%` block comment arrives here with its lines in `content`:
      * the opener line contributed nothing, because the element that

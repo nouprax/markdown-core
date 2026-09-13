@@ -536,7 +536,16 @@ int markdown_core_inline_state_attributes(markdown_core_inline_state *inline_sta
 void markdown_core_inline_attach_inline_attributes(markdown_core_inline_state *inline_state, markdown_core_node *node,
                                                    bufsize_t from) {
     bufsize_t end;
-    if (markdown_core_inline_state_attributes(inline_state, inline_state->pos, &node->attributes, &end)) {
+    markdown_core_attributes value = {0};
+    if (markdown_core_inline_state_attributes(inline_state, inline_state->pos, &value, &end)) {
+        markdown_core_attributes *owned = markdown_core_node_attributes_mut(node, inline_state->arena);
+        if (!owned) {
+            markdown_core_attributes_free(inline_state->mem, &value);
+            inline_state->oom = 1;
+            return;
+        }
+        markdown_core_attributes_free(inline_state->mem, owned);
+        *owned = value;
         inline_state->pos = end;
         markdown_core_inline_state_place(inline_state, node, from, end - 1);
     }
@@ -550,9 +559,17 @@ bufsize_t markdown_core_attributes_attach_tail(markdown_core_parser *parser, mar
     }
     markdown_core_attribute_parser attributes = {.mem = parser->mem, .data = source, .length = length};
     bufsize_t attribute_start = markdown_core_attributes_tail(&attributes, 0, info_end);
-    if (attribute_start >= 0 &&
-        markdown_core_attributes_parse(&attributes, attribute_start, &node->attributes, &attribute_end)) {
-        info_end = attribute_start;
+    markdown_core_attributes value = {0};
+    if (attribute_start >= 0 && markdown_core_attributes_parse(&attributes, attribute_start, &value, &attribute_end)) {
+        markdown_core_attributes *owned = markdown_core_node_attributes_mut(node, parser->arena);
+        if (owned) {
+            markdown_core_attributes_free(parser->mem, owned);
+            *owned = value;
+            info_end = attribute_start;
+        } else {
+            markdown_core_attributes_free(parser->mem, &value);
+            attributes.oom = 1;
+        }
     }
     if (attributes.oom) {
         parser->oom = true;

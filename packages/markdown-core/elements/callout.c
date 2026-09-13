@@ -85,9 +85,9 @@ static bool markdown_core_block_parse_callout_metadata(markdown_core_parser *par
         title->start_line = title->end_line = parser->line_number;
         title->start_column = markdown_core_parser_source_column(parser, parser->line_number, pos + 1);
         title->end_column = markdown_core_parser_source_column(parser, parser->line_number, end);
-        markdown_core_strbuf_put(&title->content, input->data + pos, end - pos);
-        if (title->content.oom || !markdown_core_parser_append_source_marks(parser, title, parser->line_number, pos + 1,
-                                                                            title->content.size, 0)) {
+        markdown_core_strbuf_put(title->content, input->data + pos, end - pos);
+        if (title->content->oom || !markdown_core_parser_append_source_marks(parser, title, parser->line_number,
+                                                                             pos + 1, title->content->size, 0)) {
             parser->oom = true;
         }
     }

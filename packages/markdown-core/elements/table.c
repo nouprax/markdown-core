@@ -76,9 +76,9 @@ static void set_cell_content(markdown_core_parser *parser, markdown_core_node *n
                 first = markdown_core_parser_source_column(parser, line, offset + from + 1);
                 last = markdown_core_parser_source_column(parser, line, offset + from + 2);
             }
-            markdown_core_parser_append_content_mark(parser, node, node->content.size, line, first, last - first + 1,
+            markdown_core_parser_append_content_mark(parser, node, node->content->size, line, first, last - first + 1,
                                                      last - first + 1);
-            markdown_core_strbuf_putc(&node->content, '|');
+            markdown_core_strbuf_putc(node->content, '|');
             to = from + 2;
         } else {
             do {
@@ -87,14 +87,14 @@ static void set_cell_content(markdown_core_parser *parser, markdown_core_node *n
                                                  cell->content.data[to + 1] == '|'));
             if (source) {
                 markdown_core_parser_append_content_marks(parser, source, node, offset + from, to - from,
-                                                          node->content.size);
+                                                          node->content->size);
             } else {
                 markdown_core_parser_append_source_marks(parser, node, parser->line_number, offset + from + 1,
-                                                         to - from, node->content.size);
+                                                         to - from, node->content->size);
             }
-            markdown_core_strbuf_put(&node->content, cell->content.data + from, to - from);
+            markdown_core_strbuf_put(node->content, cell->content.data + from, to - from);
         }
-        if (node->content.oom) {
+        if (node->content->oom) {
             parser->oom = true;
         }
         from = to;
@@ -233,8 +233,8 @@ static void try_inserting_table_header_paragraph(markdown_core_parser *parser, m
     while (scope_end > first && (parent_string[scope_end - 1] == '\n' || parent_string[scope_end - 1] == '\r')) {
         scope_end--;
     }
-    markdown_core_strbuf_put(&paragraph->content, parent_string + first, content_end - first);
-    if (paragraph->content.oom) {
+    markdown_core_strbuf_put(paragraph->content, parent_string + first, content_end - first);
+    if (paragraph->content->oom) {
         parser->oom = true;
         markdown_core_node_recycle(parser->arena, paragraph);
         return;
@@ -557,7 +557,7 @@ static int contains_inlines(const markdown_core_element *element, markdown_core_
         return true;
     }
     return node->kind == MARKDOWN_CORE_NODE_TABLE_CAPTION ||
-           (node->kind == MARKDOWN_CORE_NODE_TABLE_CELL && node->content.size > 0);
+           (node->kind == MARKDOWN_CORE_NODE_TABLE_CELL && node->content->size > 0);
 }
 
 static void opaque_alloc(const markdown_core_element *self, markdown_core_mem *mem, markdown_core_node *node) {
@@ -1816,16 +1816,16 @@ static void table_append_range(table_source *source, markdown_core_node *node, s
         int byte = table_byte(line, column);
         if (line->data[byte] == '\t') {
             int original = markdown_core_parser_source_column(parser, line->line, byte + 1);
-            markdown_core_parser_append_content_mark(parser, node, node->content.size, line->line, original, 1, 0);
-            markdown_core_strbuf_putc(&node->content, ' ');
+            markdown_core_parser_append_content_mark(parser, node, node->content->size, line->line, original, 1, 0);
+            markdown_core_strbuf_putc(node->content, ' ');
             column++;
         } else if (escapes && column + 1 < right && table_character(line, column) == '\\' &&
                    table_character(line, column + 1) == '|') {
             int first = markdown_core_parser_source_column(parser, line->line, byte + 1);
             int end = markdown_core_parser_source_column(parser, line->line, byte + 2);
-            markdown_core_parser_append_content_mark(parser, node, node->content.size, line->line, first,
+            markdown_core_parser_append_content_mark(parser, node, node->content->size, line->line, first,
                                                      end - first + 1, end - first + 1);
-            markdown_core_strbuf_putc(&node->content, '|');
+            markdown_core_strbuf_putc(node->content, '|');
             column += 2;
         } else {
             int end = column + 1;
@@ -1834,21 +1834,22 @@ static void table_append_range(table_source *source, markdown_core_node *node, s
                 end++;
             }
             int length = table_byte(line, end) - byte;
-            markdown_core_parser_append_source_marks(parser, node, line->line, byte + 1, length, node->content.size);
-            markdown_core_strbuf_put(&node->content, line->data + byte, length);
+            markdown_core_parser_append_source_marks(parser, node, line->line, byte + 1, length, node->content->size);
+            markdown_core_strbuf_put(node->content, line->data + byte, length);
             column = end;
         }
     }
-    if (node->content.oom) {
+    if (node->content->oom) {
         parser->oom = true;
     }
 }
 
 static void table_append_newline(table_source *source, markdown_core_node *node, size_t index) {
     table_source_line *line = &source->lines[index];
-    markdown_core_parser_append_source_marks(source->parser, node, line->line, line->length + 1, 1, node->content.size);
-    markdown_core_strbuf_putc(&node->content, '\n');
-    if (node->content.oom) {
+    markdown_core_parser_append_source_marks(source->parser, node, line->line, line->length + 1, 1,
+                                             node->content->size);
+    markdown_core_strbuf_putc(node->content, '\n');
+    if (node->content->oom) {
         source->parser->oom = true;
     }
 }

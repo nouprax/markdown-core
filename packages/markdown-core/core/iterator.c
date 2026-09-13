@@ -8,7 +8,7 @@
 #include "iterator.h"
 
 void markdown_core_iter_init(markdown_core_iter *iter, markdown_core_node *root) {
-    iter->mem = root->content.mem;
+    iter->mem = root->mem;
     iter->root = root;
     iter->cur.ev_type = MARKDOWN_CORE_EVENT_NONE;
     iter->cur.node = NULL;
@@ -20,7 +20,7 @@ markdown_core_iter *markdown_core_iter_new(markdown_core_node *root) {
     if (root == NULL) {
         return NULL;
     }
-    markdown_core_mem *mem = root->content.mem;
+    markdown_core_mem *mem = root->mem;
     markdown_core_iter *iter = (markdown_core_iter *)mem->calloc(1, sizeof(markdown_core_iter));
     if (!iter) {
         return NULL;
@@ -96,7 +96,7 @@ int markdown_core_consolidate_text_nodes_with_parser(markdown_core_parser *parse
     }
     markdown_core_iter walker;
     markdown_core_iter *iter = &walker;
-    markdown_core_strbuf buf = MARKDOWN_CORE_BUF_INIT(root->content.mem);
+    markdown_core_strbuf buf = MARKDOWN_CORE_BUF_INIT(root->mem);
     markdown_core_event_type ev_type;
     markdown_core_node *cur, *tmp, *next;
     int ok = 1;

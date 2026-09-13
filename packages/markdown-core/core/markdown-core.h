@@ -338,19 +338,6 @@ void markdown_core_iter_reset(markdown_core_iter *iter, markdown_core_node *curr
  * ## Accessors
  */
 
-/** Returns the user data of 'node'.
- */
-MARKDOWN_CORE_EXPORT void *markdown_core_node_get_user_data(markdown_core_node *node);
-
-/** Sets arbitrary user data for 'node'.  Returns 1 on success,
- * 0 on failure.
- */
-MARKDOWN_CORE_EXPORT int markdown_core_node_set_user_data(markdown_core_node *node, void *user_data);
-
-/** Set free function for user data */
-MARKDOWN_CORE_EXPORT
-int markdown_core_node_set_user_data_free_func(markdown_core_node *node, markdown_core_free_func free_func);
-
 /** Returns the type of 'node', or `MARKDOWN_CORE_NODE_NONE` on error.
  */
 MARKDOWN_CORE_EXPORT markdown_core_node_type markdown_core_node_get_type(markdown_core_node *node);

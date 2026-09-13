@@ -118,9 +118,9 @@ static markdown_core_node *markdown_core_block_open_definition(markdown_core_par
     term->start_line = term->end_line = parser->line_number;
     term->start_column = markdown_core_parser_source_column(parser, parser->line_number, begin + 1);
     term->end_column = markdown_core_parser_source_column(parser, parser->line_number, end);
-    markdown_core_strbuf_put(&term->content, input->data + begin, end - begin);
-    if (term->content.oom || !markdown_core_parser_append_source_marks(parser, term, parser->line_number, begin + 1,
-                                                                       term->content.size, 0)) {
+    markdown_core_strbuf_put(term->content, input->data + begin, end - begin);
+    if (term->content->oom || !markdown_core_parser_append_source_marks(parser, term, parser->line_number, begin + 1,
+                                                                        term->content->size, 0)) {
         parser->oom = true;
     }
     markdown_core_block_advance_offset(parser, input, input->len - 1 - parser->offset, false);
