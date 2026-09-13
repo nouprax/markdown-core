@@ -4,20 +4,19 @@ This directory contains the repository's independent parser oracles, the
 evidence behind the dialect modules that state the rules, and the reviewed
 policy that defines each comparison:
 
-- `cmark/` pins the newest stable cmark release as the sole primary oracle
+- `cmark/` pins cmark as the sole primary oracle
   for CommonMark syntax and parser complexity fixes.
 - `cmark-gfm/` pins the dormant upstream fork only for its GFM extension layer.
 - `remark/` pins the remark/micromark ecosystem as corrective and
   supplementary evidence for directives, formula, footnote, table, and
   reference semantics.
-- `obsidian/` pins the most-used current npm Obsidian parser for the documented
+- `obsidian/` pins an Obsidian-compatible npm parser for the documented
   wikilink/embed, highlight, comment, and custom-task intersection it actually
   implements. The official Obsidian Help is the source of its feature
   definitions; the dialect modules under `docs/specs/dialect/` are the rule.
 - `pandoc/` pins the official Pandoc 3.11 manual, reader sources, release CLI,
   and per-platform artifact digests for the explicitly selected Pandoc
   extension layer, including the shared attribute grammar and consumer model.
-  Its parity gate is the first implementation-plan phase.
 
 Each active gate's `deltas.json` records the oracle version, compared
 corpus, deliberate differences, and fail-closed exceptions. The Pandoc policy
@@ -26,7 +25,7 @@ A registered difference must reproduce; a new difference and a
 registered difference that disappears both fail an active gate.
 
 Seeded differential fuzzing compares only the shared language of its selected
-oracle. Since P4, a document combining a heading with unresolved bracket text
+oracle. A document combining a heading with unresolved bracket text
 can activate implicit heading references, which cmark, cmark-gfm and remark do
 not implement. `scripts/lib/fuzz-scope.mjs` conservatively classifies that
 composition with an independent CommonMark parse. It neither consults product

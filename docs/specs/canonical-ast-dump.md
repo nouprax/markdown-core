@@ -1,5 +1,7 @@
 # Canonical AST file-tree dump
 
+[Documentation](README.md) · [AST contract](canonical-ast.md) · [Syntax guide](dialect.md)
+
 The dump is a deterministic public debug representation of the canonical
 AST and the reviewed expected representation used by parser tests. It is not
 JSON, XML, a renderer, or a serialization/transport API.
@@ -84,14 +86,12 @@ only dump syntax; it never changes the stored class or the attribute grammar.
 - The inherited fields `scope`, `anchor`, `attributes` lead in that order.
   Kind-specific scalar fields follow; `children` is last.
 
-The dump prints the native C parser's public scope coordinates exactly, without
-normalizing or interpreting particular line/column combinations. The
-coordinate contract is [`canonical-ast.md`](canonical-ast.md#coordinates):
-one-based lines and one-based, end-inclusive byte columns, with that
-contract's one sentinel: an end column of `0` names the boundary before the
-first byte of its line, so a block closed by a line ending it consumed ends
-at `L:0` and the empty document dumps as `1:1..1:0`. A dumper prints the
-sentinel as the parser reports it, and a validator accepts it.
+The dump prints the native C parser's public editor coordinates exactly,
+without validation, conversion, or normalization. The coordinate contract is
+[`canonical-ast.md`](canonical-ast.md#coordinates); these coordinates are not
+string ranges and are not converted to half-open intervals. A zero-byte
+document dumps as `1:1..0:0`, while a document containing one newline dumps as
+`1:1..1:0`. Native sentinel coordinates are printed as reported.
 
 A directive's label is a node-valued FIELD, not a member of directive content.
 The directive-specific dump function nests that field before content to
@@ -100,8 +100,7 @@ emits `DirectiveLabel children=0`, and a populated one emits the label followed
 by its inline children. This visual nesting does not redefine the typed AST,
 the `children` count, or the C child traversal contract.
 
-A callout's `title` is likewise a node-valued field, never callout content,
-and it is a list rather than a node: the callout-specific dump function nests
+A callout's `title` is an optional inline-node list, never callout content: the callout-specific dump function nests
 it before the content as a GROUP line, `Title children=N`, with no
 scope and no fields, at the callout's nesting depth, and the title's inline
 nodes one level below it. A null title prints no line. `N` is the number of
@@ -183,11 +182,11 @@ that the dump represents as nested descendants.
 Example:
 
 ```text
-Document scope=1:1..1:10 children=1
-└── Paragraph scope=1:1..1:10 children=1
-    └── Directive scope=1:1..1:10 name="badge" attributes=null children=0
-        └── DirectiveLabel scope=1:7..1:10 children=1
-            └── Text scope=1:8..1:9 literal="ok" children=0
+Document scope=1:1..1:10 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:10 anchor=null attributes={} children=1
+    └── Directive scope=1:1..1:10 anchor=null attributes={} name="badge" children=0
+        └── DirectiveLabel scope=1:7..1:10 anchor=null attributes={} children=1
+            └── Text scope=1:8..1:9 anchor=null attributes={} literal="ok" children=0
 ```
 
 Any public behavior-bearing field added later must be added to this table, the
@@ -201,7 +200,7 @@ implementations in the same reviewed change.
 A scoped value is written, so it has a scope, but it is not a `Markup` kind
 and never a child: the dump nests it under its owner with the same connectors
 as a child line, and it prints as a VALUE line,
-`Kind scope=L:C..L:C anchor=null attributes={} <fields> children=N`, without the universal fields. A
+`Kind scope=L:C..L:C <fields> children=N`, without universal anchor/attribute fields. A
 GROUP line, `Kind children=N`, nests a node-valued list under its owner with
 no scope and no fields; its own `children` is the number of lines nested
 under it. Nested value and group lines are never counted by their owner.
@@ -224,61 +223,39 @@ under it. Nested value and group lines are never counted by their owner.
 Example, for the source `[^a]` followed by a blank line and `[^a]: note`:
 
 ```text
-Document scope=1:1..3:10 children=1
-├── Paragraph scope=1:1..1:4 children=1
-│   └── Cite scope=1:1..1:4 children=1
+Document scope=1:1..3:10 anchor=null attributes={} children=1
+├── Paragraph scope=1:1..1:4 anchor=null attributes={} children=1
+│   └── Cite scope=1:1..1:4 anchor=null attributes={} children=1
 │       └── Citation scope=1:2..1:3 referent=footnote(id="a") children=0
 │           ├── CitationPrefix children=0
 │           └── CitationSuffix children=0
 └── Footnote scope=3:1..3:10 id="a" children=1
-    └── Paragraph scope=3:7..3:10 children=1
-        └── Text scope=3:7..3:10 literal="note" children=0
+    └── Paragraph scope=3:7..3:10 anchor=null attributes={} children=1
+        └── Text scope=3:7..3:10 anchor=null attributes={} literal="note" children=0
 ```
 
-## Encodings reserved for the target model
+## Metadata and specimen values
 
-The dialect modules add fields and values that the table above does not print
-yet, and their examples already use the encodings below. Each lands with its
-item, so that the grammar has one answer before the first of them arrives:
+A present `Document.metadata` prints one `Metadata` line before document
+content. It prints `scope`, then `name`, `title`, `subtitle`, `time`, `date`,
+`authors`, `keywords`, `abstract`, `state`, and `comment`, then `children=0`.
+A missing field prints `null`. A present field prints `scalar(null)`,
+`scalar(bool(true|false))`, `scalar(number("lexeme"))`, `scalar(text("..."))`,
+or `list([number("lexeme"),text("...")])`; lists may be empty. Metadata has no
+nested record lines, field scopes, anchors, attributes, or visitor events.
+Absent metadata emits no line.
 
-- The universal fields print immediately after `scope` on every `Markup`
-  line, before the kind-specific fields: `anchor=<string or null>` and
-  `attributes={...}`, where the braces hold the classes as `.name` and the
-  records as `name="value"` in source order, separated by single spaces, and
-  `Attributes.empty` prints as `attributes={}`.
-- Further tagged values print as `referent` does: `value=scalar(text("..."))`,
-  `value=scalar(null)`, `value=scalar(bool(true))`,
-  `value=scalar(number("1.50"))`, and `value=list([text("a"),number("1")])`.
-- Besides its structural children, a node prints these nested lines with the
-  same connectors, in this order: `Document` prints its `Metadata` value when
-  non-null, then the content, then its footnotes and specimens as today; `Table` prints its
-  `TableCaption` when non-null, then its existing row groups; `Definition` prints a `DefinitionTerm`
-  group, then one `DefinitionBody` group per body.
-- Further value lines print as `Citation` and `Footnote` do:
-  `Metadata scope=... name=... title=... subtitle=... time=... date=...
-  authors=... keywords=... abstract=... state=... comment=... children=0`.
-- `children` keeps counting structural children: `head.count + content.count
-  + foot.count` for `Table`, `definitions.count` for `DefinitionList`, the
-  number of bodies for `Definition`, and zero for `Metadata`;
-  nested caption, metadata, term, and row-group lines are never counted by
-  their owner.
-- Every scalar and enum keeps the encodings above; nothing is omitted because
-  it is null, empty, or default, and an absent optional nested value prints
-  no line.
-
-A document prints its specimen definitions after its footnotes, each as
+After content and footnotes, a document prints each specimen definition as
 `Specimen scope=L:C..L:C id=<string or null> start=<integer or null> children=N`,
-followed by its block content. Definitions are scoped values; they never
-increase the document's `children` count. A specimen reference uses a `Cite`
-with a `Citation` whose referent prints `specimen(id="...")` and whose affix
-groups are empty. No resolved display number is printed.
+followed by its block content. Definitions do not increase the document's
+`children` count. A specimen reference prints a `Cite` containing a `Citation`
+with `referent=specimen(id="...")` and empty affix groups. No derived display
+number is printed.
 
-A present `Document.metadata` prints one `Metadata` line before content. It
-prints `scope`, then the ten named fields in the order `name`, `title`,
-`subtitle`, `time`, `date`, `authors`, `keywords`, `abstract`, `state`, `comment`,
-then `children=0`. Missing fields print `null`. A present value prints
-`scalar(null)`, `scalar(bool(true|false))`, `scalar(number("lexeme"))`,
-`scalar(text("..."))`, or `list([number("lexeme"),text("...")])`; lists may
-be empty. There are no nested record lines, field scopes, anchors or attributes.
-Absent metadata emits no line and metadata contributes no document child or
-visitor event.
+## Maintaining dump examples
+
+Exact machine expectations belong in the shared conformance fixtures and the
+C package's correctness fixtures. The [syntax wiki](dialect.md) uses Markdown
+examples with prose explanations rather than duplicating these full dumps.
+A dump change must update its grammar, reviewed expectations, and every binding
+in the same change; see [syntax conformance](../architecture/syntax-conformance.md).

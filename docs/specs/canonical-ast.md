@@ -1,28 +1,22 @@
 # Canonical AST contract
 
-**`docs/specs/canonical-ast.json` is the contract.** This document is its prose
-companion: it carries everything a table cannot say — the core rules, the
-coordinate model, ownership, the attribute grammar — and its own kind/field
-table below is a second copy of the JSON, **checked against it by
-`scripts/audit-ast-projections.mjs` kind for kind, field for field, in order**,
-so the two cannot drift. Edit the JSON; the audit will tell you if this table
-disagrees.
+[Documentation](README.md) · [Syntax guide](dialect.md) · [Debug dump](canonical-ast-dump.md)
 
-The executable repository-level conformance data lives at
-`specs/canonical-ast/manifest.json`. That manifest and its reviewed
-Markdown/`.ast` pairs are the sole cross-platform oracle for this contract;
-they do not change the production AST or define a serialization format.
+The [machine-readable contract](canonical-ast.json) defines the ordered kind
+and field inventory. This companion specifies ownership, coordinates, values,
+and traversal. The node table below is checked against that inventory by
+`scripts/audit-ast-projections.mjs`.
 
-The language the parser accepts is defined by [`dialect.md`](dialect.md) and
-its modules; this document is the contract of the AST the implementation
-produces today. Where a dialect module describes a kind, field, or value that
-this document lacks, the module names the landing item that adds it, and this
-document stands until that item merges.
+The contract is implemented by the C facade and the Swift, Kotlin, and
+ECMAScript bindings. Platform APIs use idiomatic syntax while preserving names,
+nullability, ownership, traversal order, defaults, and semantics. Native C views
+borrow from their document; language bindings own their materialized values.
 
-This document is the language-neutral public AST contract implemented by the
-Swift, Kotlin, and ES bindings. Platform APIs may use idiomatic syntax, but
-they must not change names, nullability, ownership, traversal order, defaults,
-or semantics.
+The [syntax guide](dialect.md) defines the accepted Markdown language. Shared
+reviewed input/output pairs in [the conformance manifest](../../specs/canonical-ast/manifest.json)
+check this AST across platforms. They are test evidence, not a serialization
+format. See [syntax conformance](../architecture/syntax-conformance.md) for
+maintaining the contract and comparison policies.
 
 ## Core rules
 
@@ -45,13 +39,7 @@ or semantics.
   from the first's start to the last's end, and a `Text` node is never empty.
 - Besides `Markup`, exactly the scoped values `Citation`, `Footnote`, `Specimen`,
   and `Metadata` carry a `scope`, because they are written;
-  every other value is located by its owner's scope. Those values arrive with
-  the landing items that add them.
-
-The remark oracle records `table-row-width-shape` for table representation:
-mdast retains ragged rows until HTML conversion, whereas this AST completes
-short rows and truncates long rows to the delimiter's column count. The
-comparison normalizes only mdast using each table's own width.
+  every other value is located by its owner's scope.
 
 ## Coordinates
 
@@ -103,6 +91,61 @@ range, and a generated value has no fictional source position.
 `TableRow` and `TableCell` have non-optional scopes like every other `Markup`,
 so typed table boundaries do not discard source information.
 
+### Syntax-specific ranges
+
+The following rules describe authored editor positions, not independently
+sliceable string ranges. They refine the general coordinate contract. A syntax's
+punctuation can be inside its owner's scope without appearing in visible
+content. Unscoped semantic fields, including generated anchors and inherited
+resources, never gain a range of their own.
+
+| Syntax | Range |
+| --- | --- |
+| Heading | Includes ATX markers, an optional closing sequence, a Setext underline, and attached attributes. |
+| Inline formatting and spans | Includes opening/closing delimiters and any attached container; content children exclude removed suffixes. |
+| Link or image | Includes opener, label/alt, tail, dimensions, and occurrence attributes; resolved references keep only their occurrence's range. |
+| Autolink | Includes the angle brackets or the complete accepted bare token. |
+| Cross link/embed | Includes the optional exclamation mark, both bracket pairs, target, label, and dimensions. |
+| Directive | Runs from the colon through the last accepted name, label, or attribute byte. |
+| Directive label | Includes its brackets, even when the label is empty. |
+| Directive block | Includes its opening and closing lines, or ends at the last consumed content line when unclosed. |
+| Block identifier | Remains inside the receiving block's scope after removal from visible content. |
+| Metadata | Runs from the first hyphen of the opening fence through the third hyphen of the closing fence. Fields have no individual scopes. |
+| Definition list and definition | Ends at the last nonblank line of the final body. A definition includes its term, markers, padding, and every body. |
+| Specimen definition | Covers its marker and complete block body. |
+
+For a referenced footnote call, `Cite` covers `[^label]` and its `Citation`
+covers `^label`. The `Footnote` covers its definition through the final
+continuation line. For an inline footnote, both `Cite` and `Footnote` cover
+`^[content]`, while the `Citation` covers the content inside its brackets.
+Their descendants retain their own authored ranges.
+
+A bracketed bibliography `Cite` covers the brackets and contents. Each item
+runs from its first non-whitespace byte after `[` or `;` through its last
+non-whitespace byte before `;` or `]`. An author-in-text cite begins at its
+mode marker or `@` and ends at the key or its claimed tail's closer. Its first
+item ends at the key when there is no tail or the tail's first section is
+keyed; otherwise it ends at the last non-whitespace byte of its suffix. Later
+keyed sections follow the bracketed item rule. An item includes neither a
+separator semicolon nor a closing bracket. A parenthesized specimen `Cite`
+includes parentheses, while its item covers `@label`.
+
+A table includes its claimed caption, whose scope includes the caption marker.
+A pipe row covers its physical line; cells cover the segments between pipes,
+and synthesized empty cells use the row's end. A simple row covers its line,
+and a simple cell covers its trimmed segment. An empty segment uses its start
+byte, or the line's last byte if the segment starts beyond the line.
+
+Multiline rows cover their physical lines. Grid rows cover the lines following
+their opening boundary through the line before the next row begins, excluding
+the final table border. A row without physical content lines uses its closing
+boundary. Multiline/grid cells span their first through last line segments,
+clipped to each line's end; a cell without physical content lines uses the
+corresponding closing-boundary segment. Joined-segment soft breaks cover the
+original line ending and may therefore include other columns' bytes in the
+contiguous range. A row-spanning grid cell can end below its owning row, as
+the containment exception above permits.
+
 ## Shared value types
 
 ### Placement
@@ -116,17 +159,10 @@ so typed table boundaries do not discard source information.
 Placement and AST containment are related but not interchangeable. In
 particular, `Formula` may be `standalone` while remaining inside a paragraph.
 
-**`Formula` is the only kind that carries a `mode`**, because it is the only
-one whose value is a fact about the source rather than about the kind. For the
-other five kinds the placement is constant and therefore implied by the kind:
-
-| Type | Its one value, now implied by the kind |
-| --- | --- |
-| `Directive` | `name: String`, `label: DirectiveLabel?` | letter-first name; attributes use the inherited fields; label is a typed Markup field spanning its brackets, never content; absent and empty labels remain distinct; leaf |
-| `DirectiveBlock` | `name: String?`, `label: DirectiveLabel?`, `content: [Markup]` | letter-first name; attributes use the inherited fields; label is a typed Markup field spanning its brackets, never content; absent and empty labels remain distinct; block content |
-| `Code` | `literal: String` | mode is `embedded`; leaf |
-| `CodeBlock` | `info: String?`, `language: String?`, `literal: String`, `fenced: Bool`, `closed: Bool` | mode is `standalone`; `info` is the complete raw info string; `language` is its first non-whitespace token; indented blocks have `fenced=false, closed=true` |
-| `FormulaBlock` | `literal: String` | mode is `standalone` |
+`Formula` is the only kind with an explicit `mode` field. `Code` and
+`Directive` are inline kinds; `CodeBlock`, `DirectiveBlock`, and `FormulaBlock`
+are block kinds. `Comment` is valid in either inline or block content, with
+its placement determined by the owning relation rather than a stored mode.
 
 ### Universal attributes and metadata
 
@@ -141,9 +177,7 @@ The last identifier wins and an empty final `id=` clears the anchor.
 Inline code, ATX/Setext headings, fenced code, and completed link/image
 occurrences attach the same normalized attribute grammar. Reference definitions
 supply inherited attributes; local anchors take precedence and local classes and
-records follow inherited declarations without deduplication. These attachment
-sites intentionally differ from Remark; exact inputs are registered in its
-oracle policy. Each binding keeps its native collection types and owns all
+records follow inherited declarations without deduplication. Each binding keeps its native collection types and owns all
 returned values after the native document is released.
 
 Parsed headings always have a nonempty anchor: an explicit identifier wins,
@@ -153,18 +187,9 @@ no source range. Writable authored heading labels also define ordinary
 reference targets, including forward references. These use `Destination.url`
 with the final `#anchor`, no title, and no inherited heading attributes; all
 occurrences share the existing reference resource. Explicit definitions win.
-Differential fuzzing against cmark, cmark-gfm and remark keeps this extension
-outside their shared-language domain; the independent scope classifier and
-separate comparison counts are documented in the
-[oracle policy](../../specs/oracles/README.md). The pinned Pandoc oracle checks
-the implicit-reference behavior itself.
-Remark's `heading-anchor-unavailable` comparison boundary omits only
-`Heading.anchor`: mdast has no corresponding identifier fact. Heading levels,
-content and attributes, and anchors on every other kind remain observable.
-
 `Document.metadata: Metadata?` holds ten named optional values defined by the
-[Properties value model](dialect/properties.md#model). Metadata is never
-Markup and has no visitor callbacks. O6 produces it from the leading envelope.
+[properties grammar](dialect/properties.md). Metadata is never
+Markup and has no visitor callbacks. It is produced by the leading properties envelope.
 It retains only the envelope scope; absent fields differ from explicit null values.
 
 ### Dimensions
@@ -173,7 +198,7 @@ It retains only the envelope scope; absent fields differ from explicit null valu
 required and height is optional; every present component is in 1..2147483647.
 It has no kind, scope, anchor, attributes, children or visitor callbacks.
 `Embedded.dimensions` and `CrossEmbedded.dimensions` have type `Dimensions?`, absent when no complete valid suffix was
-recognized, including malformed labels. O9 produces this value from image
+recognized, including malformed labels. The dimension suffix produces this value from image
 labels and embedded cross-link labels. `CrossLink` has no dimensions field.
 The value is independent of a destination's shared identity and attribute records.
 
@@ -190,8 +215,8 @@ complete semantic destination the inherited grammar produced, the bytes
 between angle brackets or the bare destination with backslash escapes and
 character references decoded and no percent-encoding, normalization, or
 resolution, and possibly empty. The `cross` branch is the workspace address of
-the [cross links](dialect/cross-links.md) module and is first produced by
-`CrossLink` and `CrossEmbedded` (`O1`, `O9`). The parser fetches no URL, opens no file, tests no
+the [cross links](dialect/cross-links.md) module and is stored by
+`CrossLink` and `CrossEmbedded`. The parser fetches no URL, opens no file, tests no
 existence, and infers no media type; no such result is a field or a branch.
 The C facade answers it through `markdown_core_node_destination`, whose
 `kind` names the branch and whose other branch's fields are zeroed; Swift
@@ -224,8 +249,8 @@ Specimen(id: String?, start: Int?, content: [Markup], scope)
 ```
 
 `CitationReferent` is a tagged value like `Destination`: no scope, and a
-branch's fields exist only in that branch. The `bib` branch is first produced
-by the [citations](dialect/citations.md) module with `P7`; every referenced
+branch's fields exist only in that branch. The `bib` branch is produced
+by [bibliography citations](dialect/citations.md); every referenced
 `[^label]` call and inline `^[content]` note produce the `footnote` branch,
 whose `id` names the `Footnote` in `Document.footnotes` with the equal id.
 
@@ -258,9 +283,7 @@ ones. Its nullable `id` retains the authored label; a `specimen(id)` referent
 names the first equal non-null id. Its nullable `start` retains an effective
 explicit counter reset. A consumer derives displayed numbers in definition
 order; neither definitions nor references store that derived state. The C
-facade exposes `markdown_core_specimen` and its typed accessors. The model and
-transports support these values now; [specimen syntax](dialect/specimens.md)
-lands with `P9b`. Ordinary lists have no specimen variant or label field.
+facade exposes `markdown_core_specimen` and its typed accessors. See [specimens](dialect/specimens.md) for definition and reference syntax. Ordinary lists have no specimen variant or label field.
 
 ## Node inventory
 
@@ -279,14 +302,14 @@ and returns no document.
 | `ThematicBreak` | none | leaf |
 | `List` | `flavor: ListFlavor`, `start: Int?`, `variant: OrderedListVariant?`, `delimiter: OrderedListDelimiter?`, `tight: Bool`, `items: [ListItem]` | `start` is non-null only for ordered lists |
 | `ListItem` | `marker: String?`, `content: [Markup]` | `marker == null` means not a task item; block content |
-| `CodeBlock` | `info: String?`, `language: String?`, `literal: String`, `fenced: Bool`, `closed: Bool` | mode is `standalone`; `info` is the complete raw info string; `language` is its first non-whitespace token; indented blocks have `fenced=false, closed=true` |
+| `CodeBlock` | `info: String?`, `language: String?`, `literal: String`, `fenced: Bool`, `closed: Bool` | mode is `standalone`; `info` is trimmed, escape/entity-decoded, and excludes attached attributes; `language` is its first space/tab-delimited token; indented blocks have `fenced=false, closed=true` |
 | `HTMLBlock` | `literal: String` | raw HTML is preserved; a block that opens with `<!--` and whose end line holds only whitespace after the first `-->` is a `Comment` |
 | `FormulaBlock` | `literal: String` | mode is `standalone` |
 | `Table` | `caption: TableCaption?`, `columns: [TableColumn]`, `head: [TableRow]`, `content: [TableRow]`, `foot: [TableRow]` | non-empty columns define the logical grid; rows are owned exactly once in head/content/foot order; pipe tables have one head row, no foot rows, null relative widths, and unit spans; no span crosses a group boundary |
 | `TableCaption` | `content: [Markup]` | independently owned inline caption, visited before the table row groups |
 | `TableRow` | `cells: [TableCell]` | cells whose upper-left coordinate starts in this row, in logical order; no row-local header state |
 | `TableCell` | `rowspan: Int`, `colspan: Int`, `content: [Markup]` | positive spans; inline or block content is stored as parsed without paragraph normalization |
-| `DirectiveBlock` | `name: String`, `label: DirectiveLabel?`, `content: [Markup]` | letter-first name; attributes use the inherited fields; label is a typed Markup field spanning its brackets, never content; absent and empty labels remain distinct; block content |
+| `DirectiveBlock` | `name: String?`, `label: DirectiveLabel?`, `content: [Markup]` | null name for a nameless container, otherwise a letter-first name; attributes use the inherited fields; label is a typed Markup field spanning its brackets, never content; absent and empty labels remain distinct; block content |
 | `DirectiveLabel` | `content: [Markup]` | inline content; the scope spans the brackets, so an empty label is still a place |
 | `Text` | `literal: String` | leaf |
 | `SoftBreak` | none | leaf |
@@ -340,50 +363,33 @@ owned caption first, then the three row groups in that order. Pipe tables produc
 row's end. Pipe and simple cells keep their inline nodes directly; multiline and grid
 cells store the ordinary parsed block sequence in the same `content` field.
 
-The [tables module](dialect/tables.md#logical-grid) defines placement, span
-occupancy, and group boundaries. `columns` is non-empty; a present `relative`
+The [tables guide](dialect/tables.md) defines the source geometry.
+To recover logical coordinates, process head, content, and foot rows in order.
+Track columns occupied by active rowspans; place each starting cell in the first
+free column, occupying its colspan for its rowspan. Every row must be completely
+covered, with no overlap or overrun, and no span may cross a row-group boundary.
+A row with no starting cells is valid only when earlier spans cover it completely. `columns` is non-empty; a present `relative`
 is a positive finite authored width share. `TableCaption.content` contains
 inlines, and its scope includes its authored marker. Table scope includes the
-caption, whether it precedes or follows the grid. The colon marker accepts a
-following non-punctuation scalar: `:badge[short]` after an uncaptained table
-begins a caption, whose continuation remains caption content. Remark/GFM
-instead retains such lines as body cells; the oracle records this syntax
-difference without discarding either tree.
-Rows retain source-defined boundaries, including a row with `cells=[]` when
+caption, whether it precedes or follows the grid. Rows retain source-defined boundaries, including a row with `cells=[]` when
 all its coordinates are covered by earlier spans. An authored empty cell is
 instead a `TableCell` with empty `content`. A spanning cell is stored once in
 its starting row; the parser does not emit covered-coordinate placeholders or
 layout-derived rows. Consumers recover coordinate occupancy and layout from
 the ordered rows and spans.
 
-The dialect recognizes complete double-bracket cross links before inherited link
-and image bracket handling, including the inner reference of triple brackets.
-The exact affected CommonMark inputs are registered in `specs/oracles/cmark/`;
-remark directive labels may likewise contain cross links.
-
 ## Parsing
 
-`Document.parse(source)` is the only parsing entry point on every surface,
-and it takes no options. The parser recognizes the one dialect of
-[`dialect.md`](dialect.md), in which every feature is always on: there is no
-`ParseOptions`, no profile, no preset, and no switch of any kind, on the C
-facade, the installed CLI, or any binding. Quotation marks, hyphen runs, and
-periods are stored as written; the parser has no smart punctuation. Nothing
-strips anything: an HTML comment and a `%%` comment are `Comment` nodes, and a
-consumer that does not want comments drops the nodes.
+`Document.parse(source)` is the binding entry point; C exposes
+`markdown_core_document_parse`. Both take the source without parse options and
+return the same fixed dialect. The document does not retain source text,
+a normalized source copy, a line index, tokens, trivia, or recovery records.
+Scope tracking is mandatory.
 
-A parse returns exactly the `Document` this document describes. The document
-does not retain source text, a normalized source copy, a line index, tokens,
-trivia, or recovery records. Scope tracking is mandatory and is not an option.
-Renderer-only `unsafe`, `github-pre-lang`, and `full-info-string` options do
-not exist. Raw HTML, URLs, and code info strings are always retained.
-
-The test tree keeps no layer selection either: every package fixture, oracle
-gate, and position audit parses the one language through the same entry a
-consumer uses, and the package fixtures' fence tags only classify examples for
-the oracle corpora, as [`test-architecture.md`](test-architecture.md) states.
-No binding, C facade, or installed executable exposes a switch, and the shared
-canonical manifest names no option.
+Allocation failure aborts parsing and publishes no partial document. A binding
+that detects a category violation in the C facade fails with its platform
+contract-violation error. Valid UTF-8 is a precondition of the C API; the
+bindings provide valid UTF-8 input.
 
 ## Visitor and walking
 
@@ -445,109 +451,3 @@ import alias such as:
 ```kotlin
 import com.nouprax.markdown.core.List as MarkdownList
 ```
-
-The remark oracle's `list-tightness-shape` projection combines a list's
-`spread` with every direct item's `spread`, as mdast-util-to-hast does. Both
-sources of looseness must be false for `List.tight` to be true; nested lists
-are evaluated independently. The native `tight` value is compared unchanged.
-
-`task-marker-completion` compares absent, incomplete, and complete task states
-against boolean-only mdast and cmark-gfm XML. Those oracles cannot attest to
-`x` versus `X`; exact authored markers remain covered by canonical fixtures
-and binding tests. An unchecked marker followed by literal `[x]` still
-exposes the registered upstream task-state defect.
-
-M7's directive migration is checked by the exact-input differences in
-[`specs/oracles/remark/deltas.json`](../../specs/oracles/remark/deltas.json):
-Unicode letter-first names, dotted shorthands, bare-member rejection, empty
-assignments, adjacent members, quoted line-ending normalization, unquoted
-punctuation and entity preservation, unmatched-quote fallback, class splitting,
-and ordered duplicate retention. The comparison reads universal anchors and
-attributes on every Markup kind; it does not deduplicate the native values.
-
-The exact-input `task-prefix-before-block-content` remark delta records an
-empty task item's lack of a paragraph for lazy continuation, following the
-[task-list prefix rule](dialect/task-lists.md). The expanded M7 fuzz corpus
-exposed this pre-existing difference; task parsing is unchanged.
-
-O5's [task-prefix grammar](dialect/task-lists.md) preserves one authored
-Unicode scalar and consumes the whole SP/TAB/VT/FF separator run when an item
-opens, before deciding its first block. Line endings never serve as separators,
-even before lazy paragraph content. Custom markers, opening-line ownership,
-block decisions and opaque bodies have exact witnesses in the cmark-gfm and
-remark registries. The Obsidian registry locks both semantic digests for its
-UTF-16 marker limit, excluded `]`, whitespace handling, paragraph-first scan,
-escape decoding and later-line recognition; those are deliberate differences,
-while `custom-task-character` is closed by agreement.
-
-O6 adds the `properties-envelope` CommonMark delta: a complete first `---`
-envelope becomes metadata even when its payload is not YAML. The pinned
-CommonMark examples `---\n---\n` and `---\nFoo\n---\nBar\n---\nBaz\n`
-therefore produce metadata in place of the initial body blocks. Unsupported
-members are ignored and never enter Markup.
-
-O9 adds the exact-input `image-dimensions` CommonMark delta. Complete positive
-32-bit `W`, `WxH`, `alt|W` and `alt|WxH` suffixes populate each Embedded's `dimensions`
-value and leave only the parsed prefix as alt content. CommonMark retains the
-suffix as alt text. The [links and images module](dialect/links-and-images.md),
-package fixtures, and shared canonical `embedded-dimensions` case own this syntax,
-its malformed fallbacks, source scopes and cross-context compositions.
-
-### Bracketed spans and script delimiters
-
-The [bracketed-span module](dialect/bracketed-spans.md) defines `Span` and its
-attribute suffix. The [script module](dialect/superscript-and-subscript.md)
-defines `Superscript` and `Subscript`: single tildes always belong to Subscript,
-which deliberately differs from cmark-gfm's single-tilde strikethrough.
-The exact historical inputs remain in `specs/oracles/cmark-gfm/deltas.json`.
-Pandoc differences in empty bodies, escaped spaces, Unicode whitespace and
-opaque tokens are pinned in `specs/oracles/pandoc/deltas.json`; product fixtures
-retain every node's authored scope and the exact decoded content.
-The directive-envelope fallback witness in `specs/oracles/remark/deltas.json`
-records a balanced label becoming a Span when its enclosing directive fails;
-remark leaves that pair literal because it has no bracketed-span rule.
-
-### Bibliography citations, specimens and ordered markers
-
-The [citations](dialect/citations.md), [specimens](dialect/specimens.md) and
-[lists](dialect/lists.md) modules produce the existing typed citation,
-definition and ordered-list values on every binding. A complete bibliography
-group beats a shortcut, including a virtual heading reference; direct links,
-resolving reference tails and Spans have their specified earlier precedence.
-Bare keys resolve to document-wide specimen labels only when the occurrence
-has no bibliography tail. Generated anchors project the stored affixes and
-keys in source order.
-
-The exact `bibliography-citations` CommonMark/GFM differences retain inputs
-whose @key now becomes a Cite. The `nested-ordered-start` CommonMark difference
-requires a new nested ordered list to start at one. Pandoc agreements cover
-keys, modes, ordinary tails, link/Span precedence, heading shortcuts and list
-variants. Its retained affix whitespace, malformed-group fallback, underscore
-boundary, unresolved reference tails, conditional startnum behavior and example
-number rendering remain exact differences in the Pandoc registry. No projection
-turns specimen IDs into numbers or discards duplicate definitions.
-
-### Nameless containers and definition lists
-
-P8/P10 add the nullable `DirectiveBlock.name` and the `DefinitionList` /
-`Definition` model from the [directives](dialect/directives.md) and
-[definition lists](dialect/definition-lists.md) modules. The body collections
-are ordered values, not additional Markup wrappers; walking visits the term
-before every body's content. `compact` records the authored term gap.
-
-Pandoc agrees on ordinary compact/loose definitions and nested fenced divs.
-Exact differences in `specs/oracles/pandoc/deltas.json` retain our shared
-minimum-fence-width rule and global explicit-ID reservation. Pandoc represents
-definition tightness with Plain/Para; when the first body starts with code,
-a nested definition list or no block it exposes no compact flag. The oracle
-projects that absence to null while preserving our boolean and both sides'
-complete term/body structure. No comparison erases compactness or body boundaries.
-Remark has no nameless opener grammar; the eleven exact `p8-nameless-container-*`
-witnesses preserve its literal interpretation, including nested and opaque cases.
-
-The reduced `directive-inherited-lazy-parent` Remark witness records the
-existing inherited paragraph continuation through a quote containing a
-DirectiveBlock. A pre-P8 build produces the same tree. Remark closes that
-container when the quote prefix disappears. The fixed-seed fuzz run also
-reproduced O5's registered line-ending task separator boundary; its existing
-fragment exclusion now includes zero trailing whitespace as well as spaces.

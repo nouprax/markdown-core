@@ -1,606 +1,93 @@
 # Citations
 
-Status: normative module of the [Markdown Core dialect](../dialect.md).
-Source: Pandoc's citation syntax. Executable oracle: the Pandoc 3.11 CLI
-under `specs/oracles/pandoc/`. Landing: `P7`, the first producer of
-`CitationReferent.bib`. The `Cite`, `Citation`, and `CitationReferent` values
-are defined by the [footnotes](footnotes.md) module; this module produces the
-`bib` branch and never touches footnote recognition. The
-[example format](../dialect.md#examples) is defined by the index.
+[Syntax guide](../dialect.md) · [Documentation](../README.md)
 
-```````````````````````````````` example
-[see @doe99, pp. 3]
-.
-Document scope=1:1..1:19 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:19 anchor=null attributes={} children=1
-    └── Cite scope=1:1..1:19 anchor=null attributes={} children=1
-        └── Citation scope=1:2..1:18 referent=bib(key="doe99",mode=normal) children=0
-            ├── CitationPrefix children=1
-            │   └── Text scope=1:2..1:4 anchor=null attributes={} literal="see" children=0
-            └── CitationSuffix children=1
-                └── Text scope=1:12..1:18 anchor=null attributes={} literal=", pp. 3" children=0
-````````````````````````````````
+Use an `@key` inside brackets to cite bibliography entries.
 
-## Keys
+```markdown
+See [@doe2024].
 
-```text
-key-char        = unicode-letter / unicode-number / "_"
-key-punctuation = ":" / "." / "#" / "$" / "%" / "&" / "-" / "+" / "?" /
-                  "<" / ">" / "~" / "/"
-bare-key        = key-char *( [ key-punctuation ] key-char )
-braced-key      = "{" 1*( braced-key-character / braced-key ) "}"
-braced-key-character
-                = any non-whitespace scalar except "{" and "}"
-citation-key    = "@" ( bare-key / braced-key )
+Compare [see @doe2024, pp. 3–5; @lee2023, chapter 2].
 ```
 
-In a bare key a punctuation scalar must be followed by a key character, so
-a terminal `.` or a `,` ends the key. A braced key is non-empty,
-whitespace-free, and balanced before the end of the same inline container;
-braces owned by code spans or HTML tokens do not count. The outer braces are
-excluded from the stored key. Keys are stored exactly after delimiter removal
-and are neither case-folded nor resolved:
+Each bracketed group becomes one `Cite`, containing one `Citation` per item in
+source order. Each item has a bibliography key and a mode, with parsed prefix
+and suffix content. The second group has two items; the first prefix is `see`
+and its suffix is `, pp. 3–5`. Semicolons and surrounding affix whitespace are
+not stored as affix content.
 
-```````````````````````````````` example
-@Foo_bar.baz. @Foo_bar,baz @{https://example.com/x}.
-.
-Document scope=1:1..1:52 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:52 anchor=null attributes={} children=6
-    ├── Cite scope=1:1..1:12 anchor=null attributes={} children=1
-    │   └── Citation scope=1:1..1:12 referent=bib(key="Foo_bar.baz",mode=authorInText) children=0
-    │       ├── CitationPrefix children=0
-    │       └── CitationSuffix children=0
-    ├── Text scope=1:13..1:14 anchor=null attributes={} literal=". " children=0
-    ├── Cite scope=1:15..1:22 anchor=null attributes={} children=1
-    │   └── Citation scope=1:15..1:22 referent=bib(key="Foo_bar",mode=authorInText) children=0
-    │       ├── CitationPrefix children=0
-    │       └── CitationSuffix children=0
-    ├── Text scope=1:23..1:27 anchor=null attributes={} literal=",baz " children=0
-    ├── Cite scope=1:28..1:51 anchor=null attributes={} children=1
-    │   └── Citation scope=1:28..1:51 referent=bib(key="https://example.com/x",mode=authorInText) children=0
-    │       ├── CitationPrefix children=0
-    │       └── CitationSuffix children=0
-    └── Text scope=1:52..1:52 anchor=null attributes={} literal="." children=0
-````````````````````````````````
+The parser does not look up entries, select a citation style, interpret page
+locators, or build a bibliography. Keys need no declaration to be recognized.
 
-A `@`, or the `-` of `-@`, opens a candidate only at the start of the inline
-container or when the preceding scalar is not a letter, number, or `_`, so
-`foo@bar`, `1@bar`, and `x_@bar` open nothing, while `(@bar)` does; this
-holds independently of the email autolink post-pass:
+## Author and suppression modes
 
-```````````````````````````````` example
-foo@bar 1@bar x_@bar (@bar)
-.
-Document scope=1:1..1:27 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:27 anchor=null attributes={} children=3
-    ├── Text scope=1:1..1:22 anchor=null attributes={} literal="foo@bar 1@bar x_@bar (" children=0
-    ├── Cite scope=1:23..1:26 anchor=null attributes={} children=1
-    │   └── Citation scope=1:23..1:26 referent=bib(key="bar",mode=authorInText) children=0
-    │       ├── CitationPrefix children=0
-    │       └── CitationSuffix children=0
-    └── Text scope=1:27..1:27 anchor=null attributes={} literal=")" children=0
-````````````````````````````````
+```markdown
+@doe2024 explains the result.
 
-An escaped `\@` is text, and a `@` inside an autolink token is that token's
-byte; the email post-pass of the [links and images](links-and-images.md)
-module still runs over the text a failed candidate leaves behind:
+-@doe2024
 
-```````````````````````````````` example
-\@bar <x@y.z> x@y.z
-.
-Document scope=1:1..1:19 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:19 anchor=null attributes={} children=4
-    ├── Text scope=1:1..1:6 anchor=null attributes={} literal="@bar " children=0
-    ├── Link scope=1:7..1:13 anchor=null attributes={} dest=url("mailto:x@y.z") title=null children=1
-    │   └── Text scope=1:8..1:12 anchor=null attributes={} literal="x@y.z" children=0
-    ├── Text scope=1:14..1:14 anchor=null attributes={} literal=" " children=0
-    └── Link scope=1:15..1:19 anchor=null attributes={} dest=url("mailto:x@y.z") title=null children=1
-        └── Text scope=1:15..1:19 anchor=null attributes={} literal="x@y.z" children=0
-````````````````````````````````
-
-## Bracketed groups
-
-Recognition of a group is alternative 4 of the bracket procedure of the
-[links and images](links-and-images.md) module: it is tested after a direct
-tail, a resolving reference tail, and a valid span
-container have failed, and before the shortcut-reference alternative.
-
-```text
-bracketed-group = "[" spacing citation-item *( ";" spacing citation-item )
-                  spacing "]"
-citation-item   = prefix [ "-" ] citation-key suffix
-spacing         = optional whitespace with at most one line ending
+[see -@doe2024, p. 8]
 ```
 
-A group produces one `Cite` with one `Citation` per item in source order.
-Semicolons separate items and belong to neither affix. `prefix` is the inline
-content before the item's key and optional mode marker; `suffix` is the inline
-content after the key up to the next item boundary. Both exclude leading and
-trailing whitespace, may be empty, and may contain nested inline markup; a
-suffix of only whitespace is empty:
+A bare key uses `authorInText`. An eligible `-@` uses `suppressAuthor` and omits
+the mode marker from the key and affixes. Ordinary bracketed items use `normal`.
+An opener must be at the start of the inline container or after a scalar other
+than a letter, number, or underscore. Thus `foo@bar` is not a citation opener.
 
-```````````````````````````````` example
-[@a; @b, p. 1; see @c]
-.
-Document scope=1:1..1:22 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:22 anchor=null attributes={} children=1
-    └── Cite scope=1:1..1:22 anchor=null attributes={} children=3
-        ├── Citation scope=1:2..1:3 referent=bib(key="a",mode=normal) children=0
-        │   ├── CitationPrefix children=0
-        │   └── CitationSuffix children=0
-        ├── Citation scope=1:6..1:13 referent=bib(key="b",mode=normal) children=0
-        │   ├── CitationPrefix children=0
-        │   └── CitationSuffix children=1
-        │       └── Text scope=1:8..1:13 anchor=null attributes={} literal=", p. 1" children=0
-        └── Citation scope=1:16..1:21 referent=bib(key="c",mode=normal) children=0
-            ├── CitationPrefix children=1
-            │   └── Text scope=1:16..1:18 anchor=null attributes={} literal="see" children=0
-            └── CitationSuffix children=0
-````````````````````````````````
+For `-@`, that condition is first tested at `-`. In `[Smith-@1990]`, the hyphen
+is prefix text and the citation has normal mode; `[Smith -@1990]` suppresses
+the author. Escaped `\@` stays text.
 
-```````````````````````````````` example
-[@a, *emphasis*]
-.
-Document scope=1:1..1:16 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:16 anchor=null attributes={} children=1
-    └── Cite scope=1:1..1:16 anchor=null attributes={} children=1
-        └── Citation scope=1:2..1:15 referent=bib(key="a",mode=normal) children=0
-            ├── CitationPrefix children=0
-            └── CitationSuffix children=2
-                ├── Text scope=1:4..1:5 anchor=null attributes={} literal=", " children=0
-                └── Emphasis scope=1:6..1:15 anchor=null attributes={} children=1
-                    └── Text scope=1:7..1:14 anchor=null attributes={} literal="emphasis" children=0
-````````````````````````````````
+## Citation keys
 
-The grammar is applied left to right: an item's key is the first candidate
-key in the item at which the opener precondition of the key grammar holds,
-the prefix is the inline content before that key and therefore contains no
-candidate, and the suffix is everything after the key up to the item
-boundary. A later candidate in the suffix is ordinary suffix content, where
-step A8 makes it an author-in-text `Cite` exactly as outside brackets:
+Bare keys begin with a Unicode letter, number, or underscore. Their remaining
+runs can contain those characters separated by one of `: . # $ % & - + ? < >
+~ /`; punctuation must be followed by a key character. A final period therefore
+stays outside the key.
 
-```````````````````````````````` example
-[@a @b] [foo@bar @baz]
-.
-Document scope=1:1..1:22 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:22 anchor=null attributes={} children=3
-    ├── Cite scope=1:1..1:7 anchor=null attributes={} children=1
-    │   └── Citation scope=1:2..1:6 referent=bib(key="a",mode=normal) children=0
-    │       ├── CitationPrefix children=0
-    │       └── CitationSuffix children=1
-    │           └── Cite scope=1:5..1:6 anchor=null attributes={} children=1
-    │               └── Citation scope=1:5..1:6 referent=bib(key="b",mode=authorInText) children=0
-    │                   ├── CitationPrefix children=0
-    │                   └── CitationSuffix children=0
-    ├── Text scope=1:8..1:8 anchor=null attributes={} literal=" " children=0
-    └── Cite scope=1:9..1:22 anchor=null attributes={} children=1
-        └── Citation scope=1:10..1:21 referent=bib(key="baz",mode=normal) children=0
-            ├── CitationPrefix children=1
-            │   └── Text scope=1:10..1:16 anchor=null attributes={} literal="foo@bar" children=0
-            └── CitationSuffix children=0
-````````````````````````````````
+```markdown
+@Foo_bar.baz. and @{https://example.com/paper}
+```
 
-An unescaped `-` immediately before `@` is the mode marker when the opener
-precondition of the key grammar holds at the `-`: it then selects
-`suppressAuthor` and is excluded from the affixes and the key. When the
-precondition fails at the `-`, because a letter, number, or `_` precedes it,
-the `-` is prefix text and the precondition is evaluated at the `@` instead,
-so `[Smith-@1990]` has the prefix `Smith-` and mode `normal`. Every other
-item has mode `normal`:
+The keys are `Foo_bar.baz` and `https://example.com/paper`. Braced keys must be
+nonempty, whitespace-free, and balanced; the outer braces are removed. Nested
+braces are allowed, while braces owned by code or HTML tokens do not count.
+Keys retain case and spelling, without normalization or resolution.
 
-```````````````````````````````` example
-[-@doe99] [Smith -@1990] [Smith-@1990]
-.
-Document scope=1:1..1:38 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:38 anchor=null attributes={} children=5
-    ├── Cite scope=1:1..1:9 anchor=null attributes={} children=1
-    │   └── Citation scope=1:2..1:8 referent=bib(key="doe99",mode=suppressAuthor) children=0
-    │       ├── CitationPrefix children=0
-    │       └── CitationSuffix children=0
-    ├── Text scope=1:10..1:10 anchor=null attributes={} literal=" " children=0
-    ├── Cite scope=1:11..1:24 anchor=null attributes={} children=1
-    │   └── Citation scope=1:12..1:23 referent=bib(key="1990",mode=suppressAuthor) children=0
-    │       ├── CitationPrefix children=1
-    │       │   └── Text scope=1:12..1:16 anchor=null attributes={} literal="Smith" children=0
-    │       └── CitationSuffix children=0
-    ├── Text scope=1:25..1:25 anchor=null attributes={} literal=" " children=0
-    └── Cite scope=1:26..1:38 anchor=null attributes={} children=1
-        └── Citation scope=1:27..1:37 referent=bib(key="1990",mode=normal) children=0
-            ├── CitationPrefix children=1
-            │   └── Text scope=1:27..1:32 anchor=null attributes={} literal="Smith-" children=0
-            └── CitationSuffix children=0
-````````````````````````````````
+## Affixes and tails
 
-`spacing` admits at most one line ending, so a group may span two lines; the
-line ending belongs to neither affix:
+Prefix and suffix content can include inline formatting:
 
-```````````````````````````````` example
-[@a;
-@b]
-.
-Document scope=1:1..2:3 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..2:3 anchor=null attributes={} children=1
-    └── Cite scope=1:1..2:3 anchor=null attributes={} children=2
-        ├── Citation scope=1:2..1:3 referent=bib(key="a",mode=normal) children=0
-        │   ├── CitationPrefix children=0
-        │   └── CitationSuffix children=0
-        └── Citation scope=2:1..2:2 referent=bib(key="b",mode=normal) children=0
-            ├── CitationPrefix children=0
-            └── CitationSuffix children=0
-````````````````````````````````
+```markdown
+[see @doe2024, *especially* chapter 2]
 
-Curly braces inside a suffix are suffix text; their locator meaning belongs
-to a CSL-aware consumer and is not represented:
+@doe2024 [p. 33; @lee2023, p. 8]
+```
 
-```````````````````````````````` example
-[@smith{ii, A, D-Z}, with a suffix]
-.
-Document scope=1:1..1:35 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:35 anchor=null attributes={} children=1
-    └── Cite scope=1:1..1:35 anchor=null attributes={} children=1
-        └── Citation scope=1:2..1:34 referent=bib(key="smith",mode=normal) children=0
-            ├── CitationPrefix children=0
-            └── CitationSuffix children=1
-                └── Text scope=1:8..1:34 anchor=null attributes={} literal="{ii, A, D-Z}, with a suffix" children=0
-````````````````````````````````
+The second example is one `Cite` combining an author-in-text item with a normal
+item. A bare key's bracketed tail can follow spaces/tabs and at most one line
+ending. If the first tail section contains no eligible key, it becomes the
+external author's suffix. If it contains a key, it becomes another item and
+the external author's suffix is empty. Every later semicolon-separated section
+must contain a key.
 
-A group in which any item lacks a key is not a citation, and the bracket pair
-continues at the shortcut-reference alternative. If that alternative also
-fails, its contents resume ordinary inline recognition: valid inner keys
-become author-in-text citations, including their own valid tails:
+In a group item, the first eligible key is its referent; later keys in its
+suffix can parse as nested author-in-text citations. Braces in suffixes are
+ordinary suffix text, not a separate locator field. Group spacing permits at
+most one line ending at each spacing boundary.
 
-```````````````````````````````` example
-[see p. 3] [@foo; no key]
-.
-Document scope=1:1..1:25 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:25 anchor=null attributes={} children=3
-    ├── Text scope=1:1..1:12 anchor=null attributes={} literal="[see p. 3] [" children=0
-    ├── Cite scope=1:13..1:16 anchor=null attributes={} children=1
-    │   └── Citation scope=1:13..1:16 referent=bib(key="foo",mode=authorInText) children=0
-    │       ├── CitationPrefix children=0
-    │       └── CitationSuffix children=0
-    └── Text scope=1:17..1:25 anchor=null attributes={} literal="; no key]" children=0
-````````````````````````````````
+## Boundaries and fallback
 
-A non-resolving reference tail does not block a group, and a direct tail
-wins over it, with the group's bytes then parsed as ordinary link content:
+A group whose item lacks a key is not a citation group. Other bracket rules
+are then tried, and valid inner keys can still parse as ordinary citations.
+Semicolons inside opaque children are not item separators.
 
-```````````````````````````````` example
-[@foo][nope] [@foo](u)
-.
-Document scope=1:1..1:22 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:22 anchor=null attributes={} children=3
-    ├── Cite scope=1:1..1:6 anchor=null attributes={} children=1
-    │   └── Citation scope=1:2..1:5 referent=bib(key="foo",mode=normal) children=0
-    │       ├── CitationPrefix children=0
-    │       └── CitationSuffix children=0
-    ├── Text scope=1:7..1:13 anchor=null attributes={} literal="[nope] " children=0
-    └── Link scope=1:14..1:22 anchor=null attributes={} dest=url("u") title=null children=1
-        └── Cite scope=1:15..1:18 anchor=null attributes={} children=1
-            └── Citation scope=1:15..1:18 referent=bib(key="foo",mode=authorInText) children=0
-                ├── CitationPrefix children=0
-                └── CitationSuffix children=0
-````````````````````````````````
+Direct links, resolving reference tails, and spans take precedence over groups.
+A tail beginning with `^`, or followed immediately by `(`, `[`, or a valid
+attribute container, is left to its own bracket syntax. Ordinary link
+reference definitions are decided before citation parsing.
 
-A span container after the group is tested first, so `[@foo]{.key}` is a
-`Span` containing an author-in-text `Cite`:
-
-```````````````````````````````` example
-[@foo]{.key}
-.
-Document scope=1:1..1:12 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:12 anchor=null attributes={} children=1
-    └── Span scope=1:1..1:12 anchor=null attributes={.key} children=1
-        └── Cite scope=1:2..1:5 anchor=null attributes={} children=1
-            └── Citation scope=1:2..1:5 referent=bib(key="foo",mode=authorInText) children=0
-                ├── CitationPrefix children=0
-                └── CitationSuffix children=0
-````````````````````````````````
-
-## Author-in-text keys
-
-An unbracketed citation key is inline step A8 and produces a one-item `Cite`
-whose referent mode is `authorInText`; `-@key` outside brackets produces
-`suppressAuthor`:
-
-```````````````````````````````` example
-@smith04 says blah.
-
--@jones says blah.
-.
-Document scope=1:1..3:18 anchor=null attributes={} children=2
-├── Paragraph scope=1:1..1:19 anchor=null attributes={} children=2
-│   ├── Cite scope=1:1..1:8 anchor=null attributes={} children=1
-│   │   └── Citation scope=1:1..1:8 referent=bib(key="smith04",mode=authorInText) children=0
-│   │       ├── CitationPrefix children=0
-│   │       └── CitationSuffix children=0
-│   └── Text scope=1:9..1:19 anchor=null attributes={} literal=" says blah." children=0
-└── Paragraph scope=3:1..3:18 anchor=null attributes={} children=2
-    ├── Cite scope=3:1..3:7 anchor=null attributes={} children=1
-    │   └── Citation scope=3:1..3:7 referent=bib(key="jones",mode=suppressAuthor) children=0
-    │       ├── CitationPrefix children=0
-    │       └── CitationSuffix children=0
-    └── Text scope=3:8..3:18 anchor=null attributes={} literal=" says blah." children=0
-````````````````````````````````
-
-An immediately following bracketed tail is split into semicolon-separated
-sections without its brackets. Optional spaces or tabs and at most one line
-ending may separate the key from the `[`. When the first section contains no
-candidate key, it becomes the external author's suffix. When it contains a key,
-it is a normal citation item, including any prefix before that key, and the
-external author's suffix is empty. Each further section requires a key and is
-another item. The first key of each keyed section owns the item; later keys in
-that section remain nested suffix content under the ordinary bracket-group rule.
-The external author and the tail items belong to one `Cite`:
-
-```````````````````````````````` example
-@smith04 [p. 33] says blah.
-
-@k [s1; @k2, s2]
-.
-Document scope=1:1..3:16 anchor=null attributes={} children=2
-├── Paragraph scope=1:1..1:27 anchor=null attributes={} children=2
-│   ├── Cite scope=1:1..1:16 anchor=null attributes={} children=1
-│   │   └── Citation scope=1:1..1:15 referent=bib(key="smith04",mode=authorInText) children=0
-│   │       ├── CitationPrefix children=0
-│   │       └── CitationSuffix children=1
-│   │           └── Text scope=1:11..1:15 anchor=null attributes={} literal="p. 33" children=0
-│   └── Text scope=1:17..1:27 anchor=null attributes={} literal=" says blah." children=0
-└── Paragraph scope=3:1..3:16 anchor=null attributes={} children=1
-    └── Cite scope=3:1..3:16 anchor=null attributes={} children=2
-        ├── Citation scope=3:1..3:6 referent=bib(key="k",mode=authorInText) children=0
-        │   ├── CitationPrefix children=0
-        │   └── CitationSuffix children=1
-        │       └── Text scope=3:5..3:6 anchor=null attributes={} literal="s1" children=0
-        └── Citation scope=3:9..3:15 referent=bib(key="k2",mode=normal) children=0
-            ├── CitationPrefix children=0
-            └── CitationSuffix children=1
-                └── Text scope=3:12..3:15 anchor=null attributes={} literal=", s2" children=0
-````````````````````````````````
-
-The tail is not claimed when it begins with `^`, or when its `]` is
-immediately followed by `(`, `[`, or a valid attribute container, in which
-case the bracket pair is decided by the bracket procedure on its own.
-
-A bare `@label` with no bracketed tail whose label is registered as a specimen
-label anywhere in the document is a `Cite` with a `specimen` referent; the [specimens](specimens.md) module states that rule, and the
-choice is finalized document-wide so parser order cannot change it.
-
-## Non-normative notes
-
-Locator recognition, the default page locator, and the meaning of braces in
-suffixes are behaviors of a citation processor. The exact heading class
-`reset-citation-positions` on a heading whose parent is `Document` asks such a
-processor to reset position-sensitive state; the parser stores the class as
-written through the [attributes](attributes.md) module and does nothing else.
-
-## Fallback
-
-A failed candidate releases its opener and consumes nothing. This rejects only
-the failed outer group; valid citations and other inline constructs inside it
-keep their ordinary meaning. Inline code,
-comment bodies, HTML tokens, formulas, and cross links are opaque; a
-semicolon inside an opaque child is not an item separator. A line the
-inherited grammar accepts as a link reference definition is one regardless of
-a leading `@`.
-
-## Scopes
-
-A bracketed `Cite.scope` covers its outer brackets and contents. Each
-`Citation.scope` runs from the first non-whitespace byte after `[` or `;` to
-the last non-whitespace byte before `;` or `]`. An author-in-text `Cite`
-runs from the mode marker or `@` through the tail's closing `]`, or through
-the key when no tail is claimed. Its first item starts at the same byte and
-ends at the key when no tail is claimed or the first tail section contains a
-key. Otherwise it ends at the last non-whitespace byte of its suffix before
-`;` or `]`. An item never includes a closing bracket or a semicolon; every
-keyed section of a tail follows the bracketed scope rule. Affix child scopes cover visible authored content only.
-
-## Oracle drift regressions
-
-```````````````````````````````` example
-@a [p. @b]
-.
-Document scope=1:1..1:10 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:10 anchor=null attributes={} children=1
-    └── Cite scope=1:1..1:10 anchor=null attributes={} children=2
-        ├── Citation scope=1:1..1:2 referent=bib(key="a",mode=authorInText) children=0
-        │   ├── CitationPrefix children=0
-        │   └── CitationSuffix children=0
-        └── Citation scope=1:5..1:9 referent=bib(key="b",mode=normal) children=0
-            ├── CitationPrefix children=1
-            │   └── Text scope=1:5..1:6 anchor=null attributes={} literal="p." children=0
-            └── CitationSuffix children=0
-````````````````````````````````
-
-```````````````````````````````` example
-@a [p. -@b, s; @c]
-.
-Document scope=1:1..1:18 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:18 anchor=null attributes={} children=1
-    └── Cite scope=1:1..1:18 anchor=null attributes={} children=3
-        ├── Citation scope=1:1..1:2 referent=bib(key="a",mode=authorInText) children=0
-        │   ├── CitationPrefix children=0
-        │   └── CitationSuffix children=0
-        ├── Citation scope=1:5..1:13 referent=bib(key="b",mode=suppressAuthor) children=0
-        │   ├── CitationPrefix children=1
-        │   │   └── Text scope=1:5..1:6 anchor=null attributes={} literal="p." children=0
-        │   └── CitationSuffix children=1
-        │       └── Text scope=1:11..1:13 anchor=null attributes={} literal=", s" children=0
-        └── Citation scope=1:16..1:17 referent=bib(key="c",mode=normal) children=0
-            ├── CitationPrefix children=0
-            └── CitationSuffix children=0
-````````````````````````````````
-
-```````````````````````````````` example
-[@a;]
-.
-Document scope=1:1..1:5 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:5 anchor=null attributes={} children=3
-    ├── Text scope=1:1..1:1 anchor=null attributes={} literal="[" children=0
-    ├── Cite scope=1:2..1:3 anchor=null attributes={} children=1
-    │   └── Citation scope=1:2..1:3 referent=bib(key="a",mode=authorInText) children=0
-    │       ├── CitationPrefix children=0
-    │       └── CitationSuffix children=0
-    └── Text scope=1:4..1:5 anchor=null attributes={} literal=";]" children=0
-````````````````````````````````
-
-```````````````````````````````` example
-[@a [p. @b];]
-.
-Document scope=1:1..1:13 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:13 anchor=null attributes={} children=3
-    ├── Text scope=1:1..1:1 anchor=null attributes={} literal="[" children=0
-    ├── Cite scope=1:2..1:11 anchor=null attributes={} children=2
-    │   ├── Citation scope=1:2..1:3 referent=bib(key="a",mode=authorInText) children=0
-    │   │   ├── CitationPrefix children=0
-    │   │   └── CitationSuffix children=0
-    │   └── Citation scope=1:6..1:10 referent=bib(key="b",mode=normal) children=0
-    │       ├── CitationPrefix children=1
-    │       │   └── Text scope=1:6..1:7 anchor=null attributes={} literal="p." children=0
-    │       └── CitationSuffix children=0
-    └── Text scope=1:12..1:13 anchor=null attributes={} literal=";]" children=0
-````````````````````````````````
-
-```````````````````````````````` example
-@a [s1;] [@a;; @b] [; @a] [@a; no key]
-.
-Document scope=1:1..1:38 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:38 anchor=null attributes={} children=10
-    ├── Cite scope=1:1..1:2 anchor=null attributes={} children=1
-    │   └── Citation scope=1:1..1:2 referent=bib(key="a",mode=authorInText) children=0
-    │       ├── CitationPrefix children=0
-    │       └── CitationSuffix children=0
-    ├── Text scope=1:3..1:10 anchor=null attributes={} literal=" [s1;] [" children=0
-    ├── Cite scope=1:11..1:12 anchor=null attributes={} children=1
-    │   └── Citation scope=1:11..1:12 referent=bib(key="a",mode=authorInText) children=0
-    │       ├── CitationPrefix children=0
-    │       └── CitationSuffix children=0
-    ├── Text scope=1:13..1:15 anchor=null attributes={} literal=";; " children=0
-    ├── Cite scope=1:16..1:17 anchor=null attributes={} children=1
-    │   └── Citation scope=1:16..1:17 referent=bib(key="b",mode=authorInText) children=0
-    │       ├── CitationPrefix children=0
-    │       └── CitationSuffix children=0
-    ├── Text scope=1:18..1:22 anchor=null attributes={} literal="] [; " children=0
-    ├── Cite scope=1:23..1:24 anchor=null attributes={} children=1
-    │   └── Citation scope=1:23..1:24 referent=bib(key="a",mode=authorInText) children=0
-    │       ├── CitationPrefix children=0
-    │       └── CitationSuffix children=0
-    ├── Text scope=1:25..1:27 anchor=null attributes={} literal="] [" children=0
-    ├── Cite scope=1:28..1:29 anchor=null attributes={} children=1
-    │   └── Citation scope=1:28..1:29 referent=bib(key="a",mode=authorInText) children=0
-    │       ├── CitationPrefix children=0
-    │       └── CitationSuffix children=0
-    └── Text scope=1:30..1:38 anchor=null attributes={} literal="; no key]" children=0
-````````````````````````````````
-
-```````````````````````````````` example
-@a [*pre* @b *suf*; @c] [@a [p. @b]]
-.
-Document scope=1:1..1:36 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:36 anchor=null attributes={} children=3
-    ├── Cite scope=1:1..1:23 anchor=null attributes={} children=3
-    │   ├── Citation scope=1:1..1:2 referent=bib(key="a",mode=authorInText) children=0
-    │   │   ├── CitationPrefix children=0
-    │   │   └── CitationSuffix children=0
-    │   ├── Citation scope=1:5..1:18 referent=bib(key="b",mode=normal) children=0
-    │   │   ├── CitationPrefix children=1
-    │   │   │   └── Emphasis scope=1:5..1:9 anchor=null attributes={} children=1
-    │   │   │       └── Text scope=1:6..1:8 anchor=null attributes={} literal="pre" children=0
-    │   │   └── CitationSuffix children=1
-    │   │       └── Emphasis scope=1:14..1:18 anchor=null attributes={} children=1
-    │   │           └── Text scope=1:15..1:17 anchor=null attributes={} literal="suf" children=0
-    │   └── Citation scope=1:21..1:22 referent=bib(key="c",mode=normal) children=0
-    │       ├── CitationPrefix children=0
-    │       └── CitationSuffix children=0
-    ├── Text scope=1:24..1:24 anchor=null attributes={} literal=" " children=0
-    └── Cite scope=1:25..1:36 anchor=null attributes={} children=1
-        └── Citation scope=1:26..1:35 referent=bib(key="a",mode=normal) children=0
-            ├── CitationPrefix children=0
-            └── CitationSuffix children=1
-                └── Cite scope=1:29..1:35 anchor=null attributes={} children=1
-                    └── Citation scope=1:30..1:34 referent=bib(key="b",mode=normal) children=0
-                        ├── CitationPrefix children=1
-                        │   └── Text scope=1:30..1:31 anchor=null attributes={} literal="p." children=0
-                        └── CitationSuffix children=0
-````````````````````````````````
-
-```````````````````````````````` example
-[@a [@b [@c [tail]]];] [@a;](/u) [@a;]{.c}
-.
-Document scope=1:1..1:42 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:42 anchor=null attributes={} children=6
-    ├── Text scope=1:1..1:1 anchor=null attributes={} literal="[" children=0
-    ├── Cite scope=1:2..1:20 anchor=null attributes={} children=2
-    │   ├── Citation scope=1:2..1:3 referent=bib(key="a",mode=authorInText) children=0
-    │   │   ├── CitationPrefix children=0
-    │   │   └── CitationSuffix children=0
-    │   └── Citation scope=1:6..1:19 referent=bib(key="b",mode=normal) children=0
-    │       ├── CitationPrefix children=0
-    │       └── CitationSuffix children=1
-    │           └── Cite scope=1:9..1:19 anchor=null attributes={} children=1
-    │               └── Citation scope=1:10..1:18 referent=bib(key="c",mode=normal) children=0
-    │                   ├── CitationPrefix children=0
-    │                   └── CitationSuffix children=1
-    │                       └── Text scope=1:13..1:18 anchor=null attributes={} literal="[tail]" children=0
-    ├── Text scope=1:21..1:23 anchor=null attributes={} literal=";] " children=0
-    ├── Link scope=1:24..1:32 anchor=null attributes={} dest=url("/u") title=null children=2
-    │   ├── Cite scope=1:25..1:26 anchor=null attributes={} children=1
-    │   │   └── Citation scope=1:25..1:26 referent=bib(key="a",mode=authorInText) children=0
-    │   │       ├── CitationPrefix children=0
-    │   │       └── CitationSuffix children=0
-    │   └── Text scope=1:27..1:27 anchor=null attributes={} literal=";" children=0
-    ├── Text scope=1:33..1:33 anchor=null attributes={} literal=" " children=0
-    └── Span scope=1:34..1:42 anchor=null attributes={.c} children=2
-        ├── Cite scope=1:35..1:36 anchor=null attributes={} children=1
-        │   └── Citation scope=1:35..1:36 referent=bib(key="a",mode=authorInText) children=0
-        │       ├── CitationPrefix children=0
-        │       └── CitationSuffix children=0
-        └── Text scope=1:37..1:37 anchor=null attributes={} literal=";" children=0
-````````````````````````````````
-
-```````````````````````````````` example
-![alt [@a;]](/u) :d[[@a;]] ^[[@a;]]
-.
-Document scope=1:1..1:35 anchor=null attributes={} children=1
-├── Paragraph scope=1:1..1:35 anchor=null attributes={} children=5
-│   ├── Embedded scope=1:1..1:16 anchor=null attributes={} dest=url("/u") title=null dimensions=null children=3
-│   │   ├── Text scope=1:3..1:7 anchor=null attributes={} literal="alt [" children=0
-│   │   ├── Cite scope=1:8..1:9 anchor=null attributes={} children=1
-│   │   │   └── Citation scope=1:8..1:9 referent=bib(key="a",mode=authorInText) children=0
-│   │   │       ├── CitationPrefix children=0
-│   │   │       └── CitationSuffix children=0
-│   │   └── Text scope=1:10..1:11 anchor=null attributes={} literal=";]" children=0
-│   ├── Text scope=1:17..1:17 anchor=null attributes={} literal=" " children=0
-│   ├── Directive scope=1:18..1:26 anchor=null attributes={} name="d" children=0
-│   │   └── DirectiveLabel scope=1:20..1:26 anchor=null attributes={} children=3
-│   │       ├── Text scope=1:21..1:21 anchor=null attributes={} literal="[" children=0
-│   │       ├── Cite scope=1:22..1:23 anchor=null attributes={} children=1
-│   │       │   └── Citation scope=1:22..1:23 referent=bib(key="a",mode=authorInText) children=0
-│   │       │       ├── CitationPrefix children=0
-│   │       │       └── CitationSuffix children=0
-│   │       └── Text scope=1:24..1:25 anchor=null attributes={} literal=";]" children=0
-│   ├── Text scope=1:27..1:27 anchor=null attributes={} literal=" " children=0
-│   └── Cite scope=1:28..1:35 anchor=null attributes={} children=1
-│       └── Citation scope=1:30..1:34 referent=footnote(id="inline-1") children=0
-│           ├── CitationPrefix children=0
-│           └── CitationSuffix children=0
-└── Footnote scope=1:28..1:35 id="inline-1" children=3
-    ├── Text scope=1:30..1:30 anchor=null attributes={} literal="[" children=0
-    ├── Cite scope=1:31..1:32 anchor=null attributes={} children=1
-    │   └── Citation scope=1:31..1:32 referent=bib(key="a",mode=authorInText) children=0
-    │       ├── CitationPrefix children=0
-    │       └── CitationSuffix children=0
-    └── Text scope=1:33..1:34 anchor=null attributes={} literal=";]" children=0
-````````````````````````````````
-
-## Required conformance cases
-
-Every example of this module is a package fixture. Tests also cover every
-key punctuation scalar, repeated punctuation, braced keys with nesting,
-spacing after `[` and `;`, author-in-text tails with a `^` start and with a
-following `(`, `[`, or container, specimen labels before and after their
-definitions, code, comments, HTML, and formulas, definitions with a leading
-`@`, a second key inside an item with and without a mode marker, exact
-group, item, and affix scopes, allocation failure, and adversarial runs of
-`@`, punctuation, braces, brackets, and semicolons.
+A bare `@label` with no bibliography tail becomes a
+[specimen reference](specimens.md) if that label is declared anywhere in the
+document. `[@label]` remains a bibliography citation. Opaque code, comment,
+HTML, formula, cross-link, and automatic-link contents keep their own bytes.
