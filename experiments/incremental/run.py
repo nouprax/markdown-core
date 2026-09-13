@@ -52,8 +52,53 @@ class Document:
             self.core.lib.markdown_core_dump_free(output)
 
 
+def prepare_probe(build):
+    """Resolve both the adapter and private headers from the selected build."""
+    cache = dict(re.findall(r"^([^#/:=\n]+):[^=\n]+=(.*)$", (build / "CMakeCache.txt").read_text(), re.MULTILINE))
+    source = Path(cache["CMAKE_HOME_DIRECTORY"]).resolve()
+    compiler = cache["CMAKE_C_COMPILER"]
+    suffix = "dylib" if platform.system() == "Darwin" else "so"
+    probe = build / f"incremental-probe.{suffix}"
+    # Ask the configured graph, not the runner checkout: an archived build
+    # can lack this target, and a current build can disable benchmark tools.
+    targets = subprocess.check_output(["cmake", "--build", str(build), "--target", "help"], text=True)
+    if re.search(r"^\s*(?:\.\.\.\s+)?incremental_probe(?:\s|:|$)", targets, re.MULTILINE):
+        subprocess.run(["cmake", "--build", str(build), "--target", "incremental_probe"], check=True, capture_output=True)
+    else:
+        adapter = source / "experiments/incremental/probe.c"
+        if not adapter.is_file():
+            raise RuntimeError(f"Selected build source has no compatible experiment adapter: {adapter}")
+        subprocess.run([
+            compiler, "-std=c11", "-O3", "-shared", "-fPIC",
+            "-I" + str(source / "packages/markdown-core/include"),
+            "-I" + str(source / "packages/markdown-core/core"),
+            "-I" + str(source / "packages/markdown-core/elements"),
+            "-I" + str(build / "packages/markdown-core/core"),
+            str(adapter), str(build / "packages/markdown-core/elements/libmarkdown-core.a"),
+            "-o", str(probe),
+        ], check=True, capture_output=True)
+    return probe, source, compiler
+
+
+def source_revision(source):
+    """An extracted archive has no Git provenance; do not borrow the runner's."""
+    try:
+        repository = subprocess.check_output(
+            ["git", "rev-parse", "--show-toplevel"], cwd=source, text=True, stderr=subprocess.DEVNULL).strip()
+        if Path(repository).resolve() != source:
+            return None, None
+        revision = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=source, text=True).strip()
+        modified = bool(subprocess.check_output(
+            ["git", "-c", "core.fsmonitor=false", "status", "--porcelain", "--", "packages/markdown-core"],
+            cwd=source, text=True).strip())
+        return revision, modified
+    except subprocess.CalledProcessError:
+        return None, None
+
+
 class Core:
     def __init__(self, build):
+        self.build = build = build.resolve()
         suffix = "dylib" if platform.system() == "Darwin" else "so"
         candidates = sorted((build / "packages/markdown-core/elements").glob(f"libmarkdown-core*.{suffix}"))
         if not candidates:
@@ -67,22 +112,7 @@ class Core:
         ):
             function = getattr(self.lib, name)
             function.argtypes, function.restype = args, result
-        probe = build / f"incremental-probe.{suffix}"
-        if "incremental_probe" in (ROOT / "packages/markdown-core/tests/CMakeLists.txt").read_text():
-            subprocess.run(["cmake", "--build", str(build), "--target", "incremental_probe"], check=True, capture_output=True)
-        else:
-            # Archived baselines predate the diagnostic target. Only their
-            # adapter uses this compatibility build; current revisions use CMake.
-            subprocess.run([
-                "cc", "-std=c11", "-O3", "-shared", "-fPIC",
-                "-I" + str(ROOT / "packages/markdown-core/include"),
-                "-I" + str(ROOT / "packages/markdown-core/core"),
-                "-I" + str(ROOT / "packages/markdown-core/elements"),
-                "-I" + str(build / "packages/markdown-core/core"),
-                str(Path(__file__).with_name("probe.c")),
-                str(build / "packages/markdown-core/elements/libmarkdown-core.a"),
-                "-o", str(probe),
-            ], check=True, capture_output=True)
+        probe, self.source, self.compiler = prepare_probe(build)
         self.probe = C.CDLL(str(probe))
         self.probe.mc_probe.argtypes = [C.c_char_p, SIZE, C.POINTER(Stats)]
         self.probe.mc_probe.restype = C.c_int
@@ -398,14 +428,13 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     core = Core(args.build.resolve())
+    revision, modified = source_revision(core.source)
     result = {
-        "baseline": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
-        "source_modified": bool(subprocess.check_output(
-            ["git", "-c", "core.fsmonitor=false", "status", "--porcelain", "--", "packages/markdown-core"],
-            cwd=ROOT, text=True).strip()),
+        "baseline": revision, "source_modified": modified,
+        "build_directory": str(core.build), "source_directory": str(core.source),
         "library_sha256": hashlib.sha256(Path(core.lib._name).read_bytes()).hexdigest(),
         "platform": platform.platform(), "machine": platform.machine(), "python": platform.python_version(),
-        "compiler": subprocess.check_output(["cc", "--version"], text=True).splitlines()[0],
+        "compiler": subprocess.check_output([core.compiler, "--version"], text=True).splitlines()[0],
         "timing": "Uninstrumented public C parse + free and Python orchestration; no dumps or rendering. One warmup and seven samples for review; incremental sequence timings are one diagnostic run.",
         "allocation": "Separate instrumented internal parse; includes one recorder registry attachment; requested capacity only; realloc transient old+new and allocator headers excluded.",
     }

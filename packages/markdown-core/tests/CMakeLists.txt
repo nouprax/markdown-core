@@ -317,6 +317,7 @@ set(MARKDOWN_CORE_PATHOLOGICAL_CASES
     comment_nested_item_blank_runs
     tables
     reference_collisions
+    reference_unresolved_scale
     reference_expansion_bound
     directive_unclosed_labels
     directive_unclosed_attributes

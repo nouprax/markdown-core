@@ -76,9 +76,7 @@ def main():
     args = arg.parse_args()
     if args.samples < 1:
         arg.error("samples must be positive")
-    probe.ROOT = args.baseline_source.resolve()
-    baseline = probe.Core(probe.ROOT / "build/benchmark")
-    probe.ROOT = ROOT
+    baseline = probe.Core(args.baseline_source.resolve() / "build/benchmark")
     candidate = probe.Core(args.candidate_build.resolve())
     assert baseline.lib._name != candidate.lib._name
     rows = {}

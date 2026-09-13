@@ -63,7 +63,10 @@ workload now targets the actual **baseline** FNV/finalizer hash instead of cmark
 unrelated sdbm hash. The comparison experiment replays these collisions through
 reference, heading, footnote and specimen consumers and compares complete dumps.
 The collision replay is historical semantic coverage, not a timeout-based
-complexity gate. `key_index_adversarial` builds prefix-first, extension-first and
+complexity gate. A separate `reference_unresolved_scale` case retains 49,999
+definitions and missing-reference paragraphs, checking literal text, node counts
+and complete document release without reducing the former document scale.
+`key_index_adversarial` builds prefix-first, extension-first and
 permuted sets at `MAX_LINK_LABEL_LENGTH` (1,000 bytes), with a neighbour for every
 presence/value bit. It counts structural branch visits, verifies strict progress
 and reaches a 9,000-branch path. Thus long shared prefixes and the full key-length

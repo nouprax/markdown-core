@@ -97,9 +97,11 @@ ES/Kotlin runtime 与 TSan 本次未重跑。后续节点存储、分发、位�
 ## Claude review follow-up
 
 - `entry/commit` 的生命周期在 Release 下也检查；阻止未提交 entry 的重入，OOM 后直接销毁整个失败事务，不支持恢复或重试。
-- radix 的 1,000 字节 key、完整位链、三种前缀插入顺序及OOM 完整释放都有确定性测试；历史 hash 碰撞只作为回放。
+- radix 的 1,000 字节 key、完整位链、三种前缀插入顺序及OOM 完整释放都有确定性测试；历史 hash 碰撞只作为回放。独立 case 恢复 49,999 个定义和未解析引用段落的规模覆盖。
 - dash scanner 穷举短行所有后缀，比较每次 memo 命中和重新扫描；grammar 源文件记录 memo 所依赖的拒绝性质。
 - whitespace 测试使用正常 parser/owner/source map 初始化；边界取解码宽度，工作计数按扫描量统一累加。
 - ancestor chain 的三遍访问在循环外按 depth 累加，保持工作口径，减少内层写入。
 - 后续计数器复查将本 PR 的 content-map、attribute 和 separator 扫描改为按区间计数或局部累计后写回；Text suffix 直接用扫描区间计数。2,071 个固定及随机输入的所有已观测工作与分配计数均与修改前一致。此处只消除这些扫描中的逐字节共享写入，#258 的其余既有计数器仍待处理。
 - 规范 README 的本 PR 新增导航已移除。增量设计和 PoC 保留在研究目录，属于原任务要求，未交付增量 API。
+
+- Codex 的 alternate-build 评论：probe target 从选中构建的 CMake graph 判断；私有 adapter、头文件、编译器和源码元数据均来自该构建，取消调用方修改全局 ROOT 的做法。旧版、当前版及未启用 benchmark target 的三种实际构建均通过 16 个 witness 和 1,392 个流式前缀对照，7 项构建选择/失败边界测试纳入 CI。

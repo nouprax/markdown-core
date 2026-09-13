@@ -88,8 +88,9 @@ jobs:
                   pnpm format:cmake:check
             - name: Lint C
               run: pnpm lint:c
-            - name: Compile private experiment adapter
+            - name: Check private experiment adapter
               run: |
+                  python3 -m unittest discover -s experiments/incremental -p 'test_*.py'
                   cmake --preset benchmark
                   cmake --build --preset benchmark --target incremental_probe --parallel
 

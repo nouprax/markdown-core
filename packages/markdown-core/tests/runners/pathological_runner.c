@@ -672,8 +672,7 @@ static int pc_uniform_text_visit(const markdown_core_node *node, void *context) 
     return 0;
 }
 
-static int case_reference_collisions(pc_context *context) {
-    enum { COLLISIONS = 2048 };
+static int reference_misses(pc_context *context, size_t count, int (*accept_key)(const char *)) {
     char bad_key[32] = "";
     char key[32];
     size_t found = 0;
@@ -688,9 +687,9 @@ static int case_reference_collisions(pc_context *context) {
         if (!buffer) {
             return -1;
         }
-        while (found < COLLISIONS) {
+        while (found < count) {
             snprintf(key, sizeof(key), "x%lu", candidate++);
-            if (!pc_baseline_bucket_zero(key)) {
+            if (!accept_key(key)) {
                 continue;
             }
             found++;
@@ -722,7 +721,7 @@ static int case_reference_collisions(pc_context *context) {
     if (pc_parse(context) != 0) {
         return -1;
     }
-    if (pc_expect_count(context, MARKDOWN_CORE_KIND_PARAGRAPH, COLLISIONS - 1, "Paragraph") != 0 ||
+    if (pc_expect_count(context, MARKDOWN_CORE_KIND_PARAGRAPH, count - 1, "Paragraph") != 0 ||
         pc_expect_count(context, MARKDOWN_CORE_KIND_LINK, 0, "Link") != 0) {
         return -1;
     }
@@ -732,11 +731,26 @@ static int case_reference_collisions(pc_context *context) {
     check.seen = 0;
     check.mismatch = 0;
     if (ts_ast_walk(markdown_core_document_root(context->document), pc_uniform_text_visit, &check) < 0 ||
-        check.mismatch || check.seen != COLLISIONS - 1) {
+        check.mismatch || check.seen != count - 1) {
         fprintf(stderr, "unresolved references are not uniform literal text\n");
         return -1;
     }
     return 0;
+}
+
+static int case_reference_collisions(pc_context *context) {
+    return reference_misses(context, 2048, pc_baseline_bucket_zero);
+}
+
+static int pc_every_reference_key(const char *key) {
+    (void)key;
+    return 1;
+}
+
+/* Keep the former 49,999-definition/missing-reference document size covered
+ * independently of the historical hash generator's sampling cost. */
+static int case_reference_unresolved_scale(pc_context *context) {
+    return reference_misses(context, 50000, pc_every_reference_key);
 }
 
 /* A resolved reference SHARES its definition's resource instead of copying the
@@ -1218,6 +1232,7 @@ static const pc_case_entry PC_CASES[] = {
     {"comment_nested_item_blank_runs", case_comment_nested_item_blank_runs},
     {"tables", case_tables},
     {"reference_collisions", case_reference_collisions},
+    {"reference_unresolved_scale", case_reference_unresolved_scale},
     {"reference_expansion_bound", case_reference_expansion_bound},
     {"directive_unclosed_labels", case_directive_unclosed_labels},
     {"directive_unclosed_attributes", case_directive_unclosed_attributes},
