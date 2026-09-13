@@ -521,7 +521,7 @@ static bool field(decoder *d) {
     properties *p = d->owner;
     const unsigned char *s = p->source;
     size_t start = d->pos;
-    p->parser->metadata_decoded_bytes += d->end - start;
+    MARKDOWN_CORE_DIAGNOSTIC(p->parser->metadata_decoded_bytes += d->end - start;)
     markdown_core_string name = {0};
     markdown_core_metadata_value value = {0};
     bool quoted_key = d->pos < d->end && (s[d->pos] == '\'' || s[d->pos] == '"');

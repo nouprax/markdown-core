@@ -39,7 +39,7 @@ typedef struct {
 
 static void free_parsed_directive(markdown_core_parser *parser, parsed_directive *parsed) {
     parser->oom |= parsed->attributes.oom;
-    parser->attribute_work += parsed->attributes.work;
+    MARKDOWN_CORE_DIAGNOSTIC(parser->attribute_work += parsed->attributes.work;)
     markdown_core_attribute_parser_free(&parsed->attributes);
 }
 

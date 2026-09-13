@@ -217,7 +217,7 @@ static size_t check_domain(markdown_core_parser *parser, markdown_core_inline_st
                            size_t size, int allow_short) {
     size_t i, np = 0, uscore1 = 0, uscore2 = 0, last_underscore = 0;
     bufsize_t start = (bufsize_t)(data - inline_state->input.data);
-    parser->autolink_domain_work++;
+    MARKDOWN_CORE_DIAGNOSTIC(parser->autolink_domain_work++;)
     if (start < inline_state->autolink_rejected_until) {
         return 0;
     }
@@ -234,7 +234,7 @@ static size_t check_domain(markdown_core_parser *parser, markdown_core_inline_st
      * but host names are not. See: https://stackoverflow.com/a/2183140
      */
     for (i = 1; i < size - 1; i++) {
-        parser->autolink_domain_work++;
+        MARKDOWN_CORE_DIAGNOSTIC(parser->autolink_domain_work++;)
         if (data[i] == '\\' && i < size - 2) {
             i++;
         }

@@ -1,17 +1,17 @@
 # 3.0 baseline performance remediation
 
-状态：进行中。已完成 #244、#247、#272、#273；#243、#248 部分完成，另有 26 项待处理（其中 #271 为汇总 issue）。先完成 baseline 性能修复，再推进增量解析实现。审查基线：`5eca3bc1`。
+状态：进行中。已完成 #243、#244、#247、#248、#258、#272、#273；另有 25 项待处理（其中 #271 为汇总 issue）。先完成 baseline 性能修复，再推进增量解析实现。审查基线：`5eca3bc1`。
 
 Issues 中的测量是待独立验证的证据；建议中的 API、所有权和复杂度变化必须符合当前规范。完成项需要代码、语义/失败边界测试及可复现的性能证据，不能以单个计时结果代替。
 
 ## Task list
 
-- [ ] [#243](https://github.com/nouprax/markdown-core/issues/243) [P1] 表格元素在每行、每层新开容器上发起推测 lookahead，深层嵌套列表的缩进续行退化到 Θ(D²) 以上
+- [x] [#243](https://github.com/nouprax/markdown-core/issues/243) [P1] 表格元素在每行、每层新开容器上发起推测 lookahead，深层嵌套列表的缩进续行退化到 Θ(D²) 以上
 - [x] [#244](https://github.com/nouprax/markdown-core/issues/244) [P1] Inline 位置模型对每个 inline 节点做 4 次二分查找和一次 memcmp，长段落上占 20% 指令
 - [ ] [#245](https://github.com/nouprax/markdown-core/issues/245) [P1] 一次 parse 事务的堆分配次数是节点数的数倍：节点、delimiter、iterator、block content 各自独立 calloc，逐节点释放
 - [ ] [#246](https://github.com/nouprax/markdown-core/issues/246) [P1] 节点记录 224 字节：attributes 向量、content strbuf、user_data 与 content-mark 字段出现在每一个 inline 节点上
 - [x] [#247](https://github.com/nouprax/markdown-core/issues/247) [P1] 文本 run 在 `w`、`:`、`!`、`<`、`%`、`$`、`~` 等字节上被无谓切分：普通英文散文 4 倍分配，不可配对的 `~` 21 倍
-- [ ] [#248](https://github.com/nouprax/markdown-core/issues/248) [P1] `markdown_core_text_parse` 对每个文本字节做 UTF-8 解码与 Unicode 空白分类，只为记录最后一个空白边界；散文上约 19% 指令
+- [x] [#248](https://github.com/nouprax/markdown-core/issues/248) [P1] `markdown_core_text_parse` 对每个文本字节做 UTF-8 解码与 Unicode 空白分类，只为记录最后一个空白边界；散文上约 19% 指令
 - [ ] [#249](https://github.com/nouprax/markdown-core/issues/249) [P2] Block 起始分派对每行、每个新开容器顺序遍历全部 32 个 descriptor 四轮，没有首字节索引
 - [ ] [#250](https://github.com/nouprax/markdown-core/issues/250) [P2] 定义列表在每个段落起始行都发起一次 lookahead 事务，并对 `[` 开头的行完整跑一次引用定义解析
 - [ ] [#251](https://github.com/nouprax/markdown-core/issues/251) [P2] Block 阶段之后至少 6 次全树遍历，且每个 inline 节点在创建时都调用 `visit_inline_subtrees`
@@ -21,7 +21,7 @@ Issues 中的测量是待独立验证的证据；建议中的 API、所有权和
 - [ ] [#255](https://github.com/nouprax/markdown-core/issues/255) [P2] 文档含标题后每个 `]` 都对括号内容做 case-fold 查表；脚注引用归一化三次、定义两次并复制
 - [ ] [#256](https://github.com/nouprax/markdown-core/issues/256) [P2] 管道表格每个正文行被扫描三次，header 识别重扫整个段落并三次 strlen；网格几何工作区逐候选分配
 - [ ] [#257](https://github.com/nouprax/markdown-core/issues/257) [P2] 首个 `{` 触发整段 8 字节/字节的属性后缀索引并双重解码；Unicode 类别谓词没有 ASCII 快路径
-- [ ] [#258](https://github.com/nouprax/markdown-core/issues/258) [P2] 约 25 个复杂度工作计数器在发布构建的逐字节内循环中无条件自增
+- [x] [#258](https://github.com/nouprax/markdown-core/issues/258) [P2] 约 25 个复杂度工作计数器在发布构建的逐字节内循环中无条件自增
 - [ ] [#259](https://github.com/nouprax/markdown-core/issues/259) [P2] 每个 inline 构造 2～6 次独立堆分配与源字节复制：bracket、citation、formula、directive、code span、heading、comment、cross link
 - [ ] [#260](https://github.com/nouprax/markdown-core/issues/260) [P3] 生成扫描器逐字节边界检查；citation 花括号预扫描用私有 HTML flags 重复扫描；两个从未调用的扫描器仍被生成
 - [ ] [#261](https://github.com/nouprax/markdown-core/issues/261) [P3] Element 侧其余重复扫描：directive 属性索引三次、段落引用定义解析两次、properties 三遍访问、ATX 标题重数 `#`、每行标题都跑属性尾扫描
@@ -55,12 +55,15 @@ Issues 中的测量是待独立验证的证据；建议中的 API、所有权和
 不表示 GitHub issue 已关闭或变更已合并。
 
 - #243：只有完整 dash separator 可以优先于列表/分隔线打开表格；失败位置在同一行的嵌套候选间共享。
-  普通文本表头继续走原有表格入口，逐行 lookahead 固定成本尚未消除，与 #250 的共享行探测一起推进。
+  普通文本表头先检查紧邻的下一条有效行是否以 dash 开始；表格、定义列表、块标识符共用一次容器匹配的 peek。
+  普通段落起始不再建立表格工作区，新增测试覆盖 128–8192 个列表/段落/quote/链接行。
   lookahead 保留已扫描的缩进，并将祖先链建立、保存、恢复纳入工作计数。
 - #272：统一压缩 radix tree 替换线性探测，支持二进制 key、前缀 key、借用生命周期与无分配 commit。
   真实 baseline hash 的碰撞回放覆盖 references / anchors / footnotes / specimens。
 - #248：普通 text slice 的空白只需要最后一个 boundary；从尾部扫描，保留现有 Unicode 空白集合。
-  delimiter 两侧的 ASCII 分类路径仍待完成，因此本 PR 不关闭该 issue。
+  delimiter 的 ASCII 邻居不做 UTF-8 解码，每侧只分类一次；穷举 ASCII 和 Unicode 边界的配对保持全部 flanking 规则。
+- #258：诊断字段和计数语句默认不编译；内部测试链接同源码的诊断 archive，正式库、CLI 和绑定不链接该目标。
+  全部 59 个正式编译单元预处理检查无计数操作，正式/诊断 facade 共用 canonical 测试。
 
 ## 本轮 #244、#247、#273
 
@@ -94,3 +97,5 @@ Issues 中的测量是待独立验证的证据；建议中的 API、所有权和
 - PR 首批 CI 的 +40.2% 来自独立 hosted-runner 的历史 base/head 对比；本机隔离 map
   约慢 3.5%，首批整体基本持平。新 pipeline 使用同一 runner 的交错对照，旧百分比不能
   与新结果直接拼接。详见[隔离记录](../reviews/2026-09-13-inline-performance-fixes.md#首批-map-改动与-ci-回退)。
+
+本轮补全、验证范围和复现方法见[审查补全记录](../reviews/2026-09-13-performance-review-completion.md)。

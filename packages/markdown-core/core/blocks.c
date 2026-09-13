@@ -380,14 +380,14 @@ int markdown_core_parser_mark_content(markdown_core_parser *parser, markdown_cor
 static int content_mark_at(markdown_core_parser *parser, const markdown_core_node *node, bufsize_t offset,
                            int *cursor) {
     int lo = node->content_mark, hi = lo + node->content_mark_count - 1;
-    size_t work = 0;
+    MARKDOWN_CORE_DIAGNOSTIC(size_t work = 0;)
     if (cursor) {
         if (*cursor < lo || *cursor > hi) {
             *cursor = lo;
         }
-        work++;
+        MARKDOWN_CORE_DIAGNOSTIC(work++;)
         if (offset >= parser->line_marks[*cursor].content_offset) {
-            int first = *cursor;
+            MARKDOWN_CORE_DIAGNOSTIC(int first = *cursor;)
             while (*cursor < hi) {
                 if (parser->line_marks[*cursor + 1].content_offset > offset) {
                     break;
@@ -396,13 +396,13 @@ static int content_mark_at(markdown_core_parser *parser, const markdown_core_nod
             }
             /* Current mark, each advance, and the stopping comparison when
              * the cursor has not reached the last mark. */
-            parser->content_map_work += work + (size_t)(*cursor - first) + (*cursor < hi);
+            MARKDOWN_CORE_DIAGNOSTIC(parser->content_map_work += work + (size_t)(*cursor - first) + (*cursor < hi);)
             return *cursor;
         }
         hi = *cursor > lo ? *cursor - 1 : lo;
     }
     while (lo < hi) {
-        work++;
+        MARKDOWN_CORE_DIAGNOSTIC(work++;)
         int mid = lo + (hi - lo + 1) / 2;
         if (parser->line_marks[mid].content_offset <= offset) {
             lo = mid;
@@ -410,7 +410,7 @@ static int content_mark_at(markdown_core_parser *parser, const markdown_core_nod
             hi = mid - 1;
         }
     }
-    parser->content_map_work += work;
+    MARKDOWN_CORE_DIAGNOSTIC(parser->content_map_work += work;)
     return lo;
 }
 
@@ -1540,9 +1540,16 @@ static bool S_lookahead_extras_accept_blank(const markdown_core_parser *parser, 
     return true;
 }
 
+static markdown_core_node *S_lookahead_parent(markdown_core_node *parent, markdown_core_node_type child) {
+    while (parent->parent && !markdown_core_node_can_contain_type(parent, child)) {
+        parent = parent->parent;
+    }
+    return parent;
+}
+
 bool markdown_core_parser_lookahead_begin(markdown_core_parser *parser, markdown_core_node *parent_container,
                                           markdown_core_node_type child, markdown_core_block_lookahead *lookahead) {
-    markdown_core_node *parent = parent_container;
+    markdown_core_node *parent = S_lookahead_parent(parent_container, child);
     markdown_core_node *node;
     int depth = 0;
     int i;
@@ -1550,13 +1557,10 @@ bool markdown_core_parser_lookahead_begin(markdown_core_parser *parser, markdown
     memset(lookahead, 0, sizeof(*lookahead));
     /* The block joins the nearest open container that can hold it, which is
      * where `markdown_core_parser_add_child` backs up to when it is opened. */
-    while (parent->parent && !markdown_core_node_can_contain_type(parent, child)) {
-        parent = parent->parent;
-    }
     for (node = parent; node; node = node == parser->block_root ? NULL : node->parent) {
         depth++;
     }
-    parser->block_lookahead_work += (size_t)depth;
+    MARKDOWN_CORE_DIAGNOSTIC(parser->block_lookahead_work += (size_t)depth;)
     if (!S_lookahead_reserve_chain(parser, depth)) {
         return false;
     }
@@ -1566,7 +1570,7 @@ bool markdown_core_parser_lookahead_begin(markdown_core_parser *parser, markdown
         parser->lookahead_chain[i] = node;
         parser->lookahead_chain_flags[i] = node->flags;
     }
-    parser->block_lookahead_work += (size_t)depth;
+    MARKDOWN_CORE_DIAGNOSTIC(parser->block_lookahead_work += (size_t)depth;)
 
     lookahead->parser = parser;
     lookahead->parent = parent;
@@ -1601,7 +1605,7 @@ int markdown_core_parser_lookahead_next(markdown_core_block_lookahead *lookahead
         markdown_core_lookahead_entry *entry;
         int this_line = lookahead->line;
         int from = 1;
-        bufsize_t resumed_offset;
+        MARKDOWN_CORE_DIAGNOSTIC(bufsize_t resumed_offset;)
         bool carried = true;
         bool closing = false;
         bool taken = false;
@@ -1619,7 +1623,7 @@ int markdown_core_parser_lookahead_next(markdown_core_block_lookahead *lookahead
         if (next < end && *next == '\n') {
             next++;
         }
-        parser->block_lookahead_work++;
+        MARKDOWN_CORE_DIAGNOSTIC(parser->block_lookahead_work++;)
         if (next == end) {
             /* The input's last line, normalized once: the matchers read a line
              * through its terminator, and the source may not end in one. */
@@ -1668,7 +1672,7 @@ int markdown_core_parser_lookahead_next(markdown_core_block_lookahead *lookahead
                 parser->first_nonspace_column = entry->first_nonspace_column;
             }
         }
-        resumed_offset = parser->offset;
+        MARKDOWN_CORE_DIAGNOSTIC(resumed_offset = parser->offset;)
         for (i = from; i < lookahead->depth && carried && !taken; i++) {
             markdown_core_node *container = parser->lookahead_chain[i];
             markdown_core_block_find_first_nonspace(parser, &input);
@@ -1687,7 +1691,7 @@ int markdown_core_parser_lookahead_next(markdown_core_block_lookahead *lookahead
         }
         /* The work of this visit is the prefix bytes it had to match itself:
          * what the resumed state did not already cover. */
-        parser->block_lookahead_work += (size_t)(parser->offset - resumed_offset);
+        MARKDOWN_CORE_DIAGNOSTIC(parser->block_lookahead_work += (size_t)(parser->offset - resumed_offset);)
         if (!carried || closing) {
             S_lookahead_close_run(lookahead, this_line, start);
             lookahead->active = false;
@@ -1751,7 +1755,7 @@ void markdown_core_parser_lookahead_end(markdown_core_block_lookahead *lookahead
         node->flags =
             (markdown_core_node_internal_flags)((node->flags & ~mask) | (parser->lookahead_chain_flags[i] & mask));
     }
-    parser->block_lookahead_work += (size_t)lookahead->depth;
+    MARKDOWN_CORE_DIAGNOSTIC(parser->block_lookahead_work += (size_t)lookahead->depth;)
     parser->offset = lookahead->saved_offset;
     parser->column = lookahead->saved_column;
     parser->first_nonspace = lookahead->saved_first_nonspace;
@@ -1761,6 +1765,24 @@ void markdown_core_parser_lookahead_end(markdown_core_block_lookahead *lookahead
     parser->partially_consumed_tab = lookahead->saved_partially_consumed_tab;
     lookahead->active = false;
     lookahead->parser = NULL;
+}
+
+const markdown_core_block_peek *markdown_core_parser_peek_block_line(markdown_core_parser *parser,
+                                                                     markdown_core_node *parent,
+                                                                     markdown_core_node_type child) {
+    parent = S_lookahead_parent(parent, child);
+    markdown_core_block_peek *peek = &parser->block_peek;
+    if (peek->parent == parent) {
+        return peek;
+    }
+    *peek = (markdown_core_block_peek){.parent = parent};
+    markdown_core_block_lookahead lookahead;
+    if (markdown_core_parser_lookahead_begin(parser, parent, child, &lookahead)) {
+        peek->available = markdown_core_parser_lookahead_next(&lookahead, &peek->input, &peek->first, &peek->indent,
+                                                              &peek->blanks) != 0;
+        markdown_core_parser_lookahead_end(&lookahead);
+    }
+    return peek;
 }
 
 static bool scan_element_start(markdown_core_parser *parser, block_start_context *context, block_start *start) {
@@ -1821,6 +1843,7 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
     size_t depth = 0;
 
     while (!element_accepts_lines(*container)) {
+        parser->block_peek.parent = NULL;
         depth++;
         markdown_core_block_find_first_nonspace(parser, input);
         /* Indentation ahead of whatever opens here is the CONTAINER's, not the
@@ -1999,6 +2022,7 @@ static void add_text_to_container(markdown_core_parser *parser, markdown_core_no
 
 /* See http://spec.commonmark.org/0.24/#phase-1-block-structure */
 static void S_process_line(markdown_core_parser *parser, const unsigned char *buffer, bufsize_t bytes) {
+    parser->block_peek.parent = NULL;
     markdown_core_node *last_matched_container;
     bool all_matched = true;
     markdown_core_node *container;
@@ -2135,7 +2159,7 @@ bool markdown_core_parser_register_definition(markdown_core_parser *parser,
         collection->capacity = capacity;
     }
     collection->values[collection->count++] = (markdown_core_definition_entry){definition, citation};
-    parser->definition_registration_work++;
+    MARKDOWN_CORE_DIAGNOSTIC(parser->definition_registration_work++;)
     if (inline_owner) {
         definition->prev = collection->last_inline;
         if (collection->last_inline) {

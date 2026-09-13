@@ -59,6 +59,18 @@ class SelectedBuildTests(unittest.TestCase):
             self.assertIn(str(self.build / "packages/markdown-core/elements/libmarkdown-core.a"), args)
             self.assertEqual(args[-2:], ["-o", str(probe)])
 
+    def test_product_archive_cannot_supply_diagnostic_layout(self):
+        header = self.source / "packages/markdown-core/core/diagnostics.h"
+        header.parent.mkdir(parents=True)
+        header.write_text("/* compile-time diagnostic layout */\n")
+        with (
+            patch.object(run.subprocess, "check_output", return_value="... all\n"),
+            patch.object(run.subprocess, "run") as command,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "MARKDOWN_CORE_TESTS=ON"):
+                run.prepare_probe(self.build)
+            command.assert_not_called()
+
     def test_existing_target_failure_is_not_hidden_by_fallback(self):
         with (
             patch.object(run.subprocess, "check_output", return_value="... incremental_probe\n"),

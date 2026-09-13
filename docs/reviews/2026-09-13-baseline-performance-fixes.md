@@ -1,6 +1,6 @@
 # Baseline 性能修复：第一批
 
-本文记录第一批 #272 修复及 #243、#248 的部分优化；后两项仍有未完成工作，不能自动关闭。完整 32 项的推进状态见
+本文保留第一批 #272 修复及 #243、#248 的部分优化记录。后续已补全 #243、#248、#258，见[审查补全记录](2026-09-13-performance-review-completion.md)。完整 32 项的推进状态见
 [task list](../plans/2026-09-13-baseline-performance.md)。
 当前结果不代表 baseline 已达到最佳性能。
 
@@ -22,7 +22,7 @@ prefix bytes，漏掉了本 issue 的主要成本。原 comment lookahead 测试
 新增列表单行、列表续行、quote 续行三种形状，各自覆盖深度 16–8192，并检查保留的容器数与段落续行。
 链本身仍按正常 begin/end 生命周期创建和恢复；本次消除的是每个嵌套列表 marker 的无效事务，
 未额外引入一种 persistent chain 机制。
-普通 `- item` 行仍有文本表头路径的逐行 lookahead 固定成本；此部分保持开放，后续与 #250 共用行探测推进。
+第一批仍保留普通 `- item` 行的表头探测成本；后续已用共享 next-line peek 补全。
 
 ### #272：无界线性探测
 
@@ -46,7 +46,7 @@ API tests 验证 binary keys、empty/prefix keys、三种插入顺序、duplicat
 
 测试覆盖所有现有 whitespace scalars 及 VT、NEL、ZWSP、Unicode line/paragraph separator、emoji
 等非空白邻居，验证最后一个 boundary、单个 delimiter summary 和只访问尾部的确定性工作界。
-`scan_delimiter` 两侧的 ASCII 分类路径仍未完成，#248 保持开放。
+第一批未包含 `scan_delimiter` 两侧的 ASCII 分类；后续已补全。
 
 ## 同机对照
 
@@ -101,7 +101,7 @@ ES/Kotlin runtime 与 TSan 本次未重跑。后续节点存储、分发、位�
 - dash scanner 穷举短行所有后缀，比较每次 memo 命中和重新扫描；grammar 源文件记录 memo 所依赖的拒绝性质。
 - whitespace 测试使用正常 parser/owner/source map 初始化；边界取解码宽度，工作计数按扫描量统一累加。
 - ancestor chain 的三遍访问在循环外按 depth 累加，保持工作口径，减少内层写入。
-- 后续计数器复查将本 PR 的 content-map、attribute 和 separator 扫描改为按区间计数或局部累计后写回；Text suffix 直接用扫描区间计数。2,071 个固定及随机输入的所有已观测工作与分配计数均与修改前一致。此处只消除这些扫描中的逐字节共享写入，#258 的其余既有计数器仍待处理。
+- 后续计数器复查将本 PR 的 content-map、attribute 和 separator 扫描改为按区间计数或局部累计后写回；Text suffix 直接用扫描区间计数。2,071 个固定及随机输入的所有已观测工作与分配计数均与修改前一致。该提交只消除这些扫描中的逐字节共享写入；后续 #258 已将全部诊断计数隔离到内部诊断构建。
 - 规范 README 的本 PR 新增导航已移除。增量设计和 PoC 保留在研究目录，属于原任务要求，未交付增量 API。
 
 - Codex 的 alternate-build 评论：probe target 从选中构建的 CMake graph 判断；私有 adapter、头文件、编译器和源码元数据均来自该构建，取消调用方修改全局 ROOT 的做法。旧版、当前版及未启用 benchmark target 的三种实际构建均通过 16 个 witness 和 1,392 个流式前缀对照，7 项构建选择/失败边界测试纳入 CI。

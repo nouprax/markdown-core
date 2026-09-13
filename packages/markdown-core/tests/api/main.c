@@ -3323,6 +3323,82 @@ static bool inspect_text_boundary(markdown_core_parser *parser, void *context) {
     return true;
 }
 
+/* Verify every ASCII class and Unicode boundary, then their pairwise
+ * flanking decisions through the registered delimiter owners. */
+static bool inspect_delimiter_classes(markdown_core_parser *parser, void *context) {
+    test_batch_runner *runner = context;
+    int32_t scalars[180];
+    size_t count = 0;
+    for (int32_t c = 0; c < 128; c++) {
+        scalars[count++] = c;
+    }
+    static const int32_t unicode[] = {128,  133,  160,  161,  169,  170,  171,   5760,   8191,   8192,
+                                      8202, 8203, 8232, 8233, 8239, 8287, 12288, 0x6587, 0x1f600};
+    for (size_t i = 0; i < sizeof(unicode) / sizeof(*unicode); i++) {
+        scalars[count++] = unicode[i];
+    }
+    bool classes = true, flanking = true;
+    for (size_t i = 0; i < count; i++) {
+        markdown_core_char_class actual = markdown_core_utf8proc_classify(scalars[i]);
+        classes &= (actual == MARKDOWN_CORE_CHAR_SPACE) == !!markdown_core_utf8proc_is_space(scalars[i]);
+        classes &=
+            (actual == MARKDOWN_CORE_CHAR_PUNCT) == !!markdown_core_utf8proc_is_punctuation_or_symbol(scalars[i]);
+    }
+    markdown_core_node *owner = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_PARAGRAPH, parser->mem);
+    owner->start_line = owner->start_column = 1;
+    for (size_t r = 1; r < MARKDOWN_CORE_DELIM_RULE_COUNT; r++) {
+        const markdown_core_element *element = parser->delimiter_owners[r];
+        if (!element || !element->delimiter_character || element->delimiter.body == DELIMITER_WORD_BODY) {
+            continue;
+        }
+        for (size_t i = 0; i < count; i++) {
+            for (size_t j = 0; j < count; j++) {
+                int32_t before = scalars[i], after = scalars[j];
+                if (before == 0 || after == 0 || before == element->delimiter_character ||
+                    after == element->delimiter_character || (before < 256 && parser->skip_chars[before]) ||
+                    (after < 256 && parser->skip_chars[after])) {
+                    continue;
+                }
+                markdown_core_strbuf_clear(&owner->content);
+                markdown_core_utf8proc_encode_char(before, &owner->content);
+                bufsize_t start = owner->content.size;
+                for (bufsize_t n = 0; n < element->delimiter.minimum_width; n++) {
+                    markdown_core_strbuf_putc(&owner->content, element->delimiter_character);
+                }
+                markdown_core_utf8proc_encode_char(after, &owner->content);
+                markdown_core_strbuf_putc(&owner->content, 'x');
+                markdown_core_inline_state state;
+                markdown_core_inline_start_inlines(parser, owner, parser->refmap, &state);
+                state.pos = start;
+                markdown_core_node *text = markdown_core_inline_match_delimiter(element, &state);
+                bool sb = markdown_core_utf8proc_is_space(before), sa = markdown_core_utf8proc_is_space(after);
+                bool pb = markdown_core_utf8proc_is_punctuation_or_symbol(before);
+                bool pa = markdown_core_utf8proc_is_punctuation_or_symbol(after);
+                bool left = !sa && (!pa || sb || pb), right = !sb && (!pb || sa || pa);
+                flanking &=
+                    state.cached_run.can_open == (left && (!element->delimiter.punctuation_bound || !right || pb));
+                flanking &=
+                    state.cached_run.can_close == (right && (!element->delimiter.punctuation_bound || !left || pa));
+                markdown_core_inline_clear_inlines(&state);
+                if (text) {
+                    markdown_core_node_free(text);
+                }
+            }
+        }
+    }
+    OK(runner, classes, "ASCII and Unicode flanking classes preserve the exact whitespace and punctuation sets");
+    OK(runner, flanking, "every neighboring class pair preserves all registered delimiter flanking rules");
+    markdown_core_node_free(owner);
+    return true;
+}
+
+static void delimiter_character_classes(test_batch_runner *runner) {
+    markdown_core_node *root = markdown_core_parse_document_with_mem("", 0, markdown_core_get_default_mem_allocator(),
+                                                                     inspect_delimiter_classes, runner);
+    OK(runner, root != NULL, "delimiter matrix completes the parse transaction");
+    markdown_core_node_free(root);
+}
+
 static void text_whitespace_boundary(test_batch_runner *runner) {
     markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
     const int32_t scalars[] = {9,    10,   12,   13,   32,   160,  5760,  8192, 8193, 8194, 8195, 8196, 8197,   8198,
@@ -5424,6 +5500,36 @@ static void grid_opening_memory(test_batch_runner *runner) {
 
 /* Failed grammar searches, row growth and column growth all use the same
  * candidate algorithm. Work counts source inspections, independent of time. */
+/* Plain headers require an adjacent separator. Rejected paragraph starts
+ * must share one next-line query and never allocate a table workspace. */
+static void ordinary_block_peek_work(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    static const char *units[] = {"- item\n", "word\n\n", "> word\n>\n", "- [label](/url)\n"};
+    for (size_t shape = 0; shape < sizeof(units) / sizeof(*units); shape++) {
+        for (size_t n = 128; n <= 8192; n *= 2) {
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+            for (size_t i = 0; i < n; i++) {
+                markdown_core_strbuf_puts(&source, units[shape]);
+            }
+            inline_work work = {0};
+            markdown_core_node *root = markdown_core_parse_document_with_mem((const char *)source.ptr, source.size, mem,
+                                                                             measure_inline_work, &work);
+            OK(runner, root && count_kind(root, MARKDOWN_CORE_NODE_PARAGRAPH) == n,
+               "ordinary block starts preserve every paragraph: shape=%zu n=%zu", shape, n);
+            OK(runner,
+               work.table_workspace_growth == 0 && work.table_separator_scans == 0 && work.table_geometry_lines == 0,
+               "plain text without a following separator never enters table recognition");
+            OK(runner, work.lookahead <= 12 * n + 16,
+               "table and definition checks share one prefix-matched peek: shape=%zu n=%zu work=%zu", shape, n,
+               work.lookahead);
+            if (root) {
+                markdown_core_node_free(root);
+            }
+            markdown_core_strbuf_free(&source);
+        }
+    }
+}
+
 static void table_candidate_work(test_batch_runner *runner) {
     markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
     for (size_t shape = 0; shape < 13; shape++) {
@@ -6004,6 +6110,7 @@ int main(int argc, char **argv) {
     autolink_domain_linear_work(runner);
     inline_content_projection(runner);
     text_whitespace_boundary(runner);
+    delimiter_character_classes(runner);
     key_index_radix(runner);
     key_index_adversarial(runner);
     key_index_failure(runner);
@@ -6069,6 +6176,7 @@ int main(int argc, char **argv) {
     table_values(runner);
     grid_opening_memory(runner);
     table_candidate_work(runner);
+    ordinary_block_peek_work(runner);
     bounded_scanners(runner);
     simple_table_body_boundaries(runner);
     simple_table_footer_work(runner);

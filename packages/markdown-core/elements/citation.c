@@ -58,7 +58,7 @@ static bool source_escaped(markdown_core_inline_state *inline_state, bufsize_t a
     bufsize_t escape = at;
     while (escape > begin && inline_state->input.data[escape - 1] == '\\') {
         escape--;
-        inline_state->owner_parser->citation_work++;
+        MARKDOWN_CORE_DIAGNOSTIC(inline_state->owner_parser->citation_work++;)
     }
     return (at - escape) % 2 != 0;
 }
@@ -101,7 +101,7 @@ static void prepare_citation_braces(markdown_core_inline_state *inline_state) {
             while (at < opaque_end) {
                 int32_t scalar;
                 int width = markdown_core_utf8proc_iterate(inline_state->input.data + at, opaque_end - at, &scalar);
-                inline_state->owner_parser->citation_work++;
+                MARKDOWN_CORE_DIAGNOSTIC(inline_state->owner_parser->citation_work++;)
                 if (top >= 0) {
                     index->entries[top].content = true;
                     if (markdown_core_utf8proc_is_space(scalar)) {
@@ -112,7 +112,7 @@ static void prepare_citation_braces(markdown_core_inline_state *inline_state) {
             }
             continue;
         }
-        inline_state->owner_parser->citation_work++;
+        MARKDOWN_CORE_DIAGNOSTIC(inline_state->owner_parser->citation_work++;)
         if (c == '{') {
             if (index->count == capacity) {
                 if (capacity > SIZE_MAX / sizeof(*index->entries) / 2) {
@@ -126,7 +126,8 @@ static void prepare_citation_braces(markdown_core_inline_state *inline_state) {
                     return;
                 }
                 index->entries = entries;
-                inline_state->owner_parser->citation_brace_bytes += (grown - capacity) * sizeof(*index->entries);
+                MARKDOWN_CORE_DIAGNOSTIC(inline_state->owner_parser->citation_brace_bytes +=
+                                         (grown - capacity) * sizeof(*index->entries);)
                 capacity = grown;
             }
             index->entries[index->count] = (citation_brace){.start = at++, .previous = top, .valid = true};
@@ -179,7 +180,7 @@ static bool scan_citation_key(markdown_core_inline_state *inline_state, bufsize_
             return false;
         }
         while (index->cursor < index->count && index->entries[index->cursor].start < pos) {
-            inline_state->owner_parser->citation_work++;
+            MARKDOWN_CORE_DIAGNOSTIC(inline_state->owner_parser->citation_work++;)
             index->cursor++;
         }
         if (index->cursor == index->count || index->entries[index->cursor].start != pos ||
@@ -196,7 +197,7 @@ static bool scan_citation_key(markdown_core_inline_state *inline_state, bufsize_
         int32_t scalar;
         int width =
             markdown_core_utf8proc_iterate(inline_state->input.data + pos, inline_state->input.len - pos, &scalar);
-        inline_state->owner_parser->citation_work++;
+        MARKDOWN_CORE_DIAGNOSTIC(inline_state->owner_parser->citation_work++;)
         if (citation_key_char(scalar)) {
             pos += width;
         } else if (pos > token->key_start && scalar < 128 && strchr(":.#$%&-+?<>~/", scalar) &&
@@ -250,7 +251,7 @@ static markdown_core_node *markdown_core_inline_read_citation_token(markdown_cor
                                                 markdown_core_inline_peek_at(inline_state, at) == '\t' ||
                                                 markdown_core_inline_peek_at(inline_state, at) == '\n' ||
                                                 markdown_core_inline_peek_at(inline_state, at) == '\r')) {
-            inline_state->owner_parser->citation_work++;
+            MARKDOWN_CORE_DIAGNOSTIC(inline_state->owner_parser->citation_work++;)
             if (markdown_core_inline_peek_at(inline_state, at) == '\n') {
                 lines++;
             }
@@ -327,7 +328,7 @@ static void trim_citation_source(markdown_core_inline_state *inline_state, bufsi
     while (*start < *end) {
         int32_t scalar;
         int width = markdown_core_utf8proc_iterate(inline_state->input.data + *start, *end - *start, &scalar);
-        inline_state->owner_parser->citation_work++;
+        MARKDOWN_CORE_DIAGNOSTIC(inline_state->owner_parser->citation_work++;)
         if (!markdown_core_utf8proc_is_space(scalar)) {
             break;
         }
@@ -340,7 +341,7 @@ static void trim_citation_source(markdown_core_inline_state *inline_state, bufsi
         }
         int32_t scalar;
         markdown_core_utf8proc_iterate(inline_state->input.data + at, *end - at, &scalar);
-        inline_state->owner_parser->citation_work++;
+        MARKDOWN_CORE_DIAGNOSTIC(inline_state->owner_parser->citation_work++;)
         if (!markdown_core_utf8proc_is_space(scalar)) {
             break;
         }
@@ -401,7 +402,7 @@ static void take_citation_affix(markdown_core_inline_state *inline_state, markdo
     trim_citation_source(inline_state, &start, &end);
     while (first != after && !inline_state->oom) {
         markdown_core_node *next = first->next;
-        inline_state->owner_parser->citation_work++;
+        MARKDOWN_CORE_DIAGNOSTIC(inline_state->owner_parser->citation_work++;)
         if (trim_affix_node(inline_state, first, start, end)) {
             if (!*slot) {
                 *slot = markdown_core_inline_make_simple_with_state(inline_state, MARKDOWN_CORE_NODE_PARAGRAPH);
@@ -671,7 +672,7 @@ static void resolve_citation_tail(markdown_core_inline_state *inline_state, cita
                 continue;
             }
             frame->next = child->next;
-            inline_state->owner_parser->citation_work++;
+            MARKDOWN_CORE_DIAGNOSTIC(inline_state->owner_parser->citation_work++;)
             bool child_ordinary;
             if (frame->partitioned) {
                 child_ordinary = !frame->first;

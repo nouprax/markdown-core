@@ -188,9 +188,7 @@ static const delimiter_run *scan_delimiter(markdown_core_inline_state *inline_st
     while (run.end < inline_state->input.len && markdown_core_inline_peek_at(inline_state, run.end) == c &&
            (!spec->run_limit || run.end - run.start < spec->run_limit)) {
         run.end++;
-        if (inline_state->owner_parser) {
-            inline_state->owner_parser->delimiter_work++;
-        }
+        MARKDOWN_CORE_DIAGNOSTIC(if (inline_state->owner_parser) { inline_state->owner_parser->delimiter_work++; })
     }
     if (spec->body == DELIMITER_WORD_BODY) {
         /* A raw whitespace scalar immediately after an opener cannot become
@@ -198,8 +196,11 @@ static const delimiter_run *scan_delimiter(markdown_core_inline_state *inline_st
          * escaped space or an inline token may belong to a valid body. */
         int32_t next = 10;
         if (run.end < inline_state->input.len) {
-            markdown_core_utf8proc_iterate(inline_state->input.data + run.end, inline_state->input.len - run.end,
-                                           &next);
+            next = inline_state->input.data[run.end];
+            if (next >= 128) {
+                markdown_core_utf8proc_iterate(inline_state->input.data + run.end, inline_state->input.len - run.end,
+                                               &next);
+            }
         }
         run.can_open = !markdown_core_utf8proc_is_space(next);
         run.can_close = run.start > 0;
@@ -224,8 +225,10 @@ static const delimiter_run *scan_delimiter(markdown_core_inline_state *inline_st
                before_char_pos > 0) {
             before_char_pos--;
         }
-        len = markdown_core_utf8proc_iterate(inline_state->input.data + before_char_pos, run.start - before_char_pos,
-                                             &before_char);
+        before_char = inline_state->input.data[before_char_pos];
+        len = before_char < 128 ? 1
+                                : markdown_core_utf8proc_iterate(inline_state->input.data + before_char_pos,
+                                                                 run.start - before_char_pos, &before_char);
         if (len == -1 || (before_char < 256 && inline_state->skip_chars[(unsigned char)before_char])) {
             before_char = 10;
         }
@@ -237,25 +240,23 @@ static const delimiter_run *scan_delimiter(markdown_core_inline_state *inline_st
         while (after_char_pos < inline_state->input.len && flanking_skip_at(inline_state, after_char_pos)) {
             after_char_pos++;
         }
-        len = markdown_core_utf8proc_iterate(inline_state->input.data + after_char_pos,
-                                             inline_state->input.len - after_char_pos, &after_char);
+        after_char = after_char_pos < inline_state->input.len ? inline_state->input.data[after_char_pos] : 10;
+        len = after_char < 128 ? 1
+                               : markdown_core_utf8proc_iterate(inline_state->input.data + after_char_pos,
+                                                                inline_state->input.len - after_char_pos, &after_char);
         if (len == -1 || (after_char < 256 && inline_state->skip_chars[(unsigned char)after_char])) {
             after_char = 10;
         }
     }
+    markdown_core_char_class before = markdown_core_utf8proc_classify(before_char);
+    markdown_core_char_class after = markdown_core_utf8proc_classify(after_char);
     bool left_flanking =
-        !markdown_core_utf8proc_is_space(after_char) &&
-        (!markdown_core_utf8proc_is_punctuation_or_symbol(after_char) || markdown_core_utf8proc_is_space(before_char) ||
-         markdown_core_utf8proc_is_punctuation_or_symbol(before_char));
+        after != MARKDOWN_CORE_CHAR_SPACE && (after != MARKDOWN_CORE_CHAR_PUNCT || before != MARKDOWN_CORE_CHAR_OTHER);
     bool right_flanking =
-        !markdown_core_utf8proc_is_space(before_char) &&
-        (!markdown_core_utf8proc_is_punctuation_or_symbol(before_char) || markdown_core_utf8proc_is_space(after_char) ||
-         markdown_core_utf8proc_is_punctuation_or_symbol(after_char));
+        before != MARKDOWN_CORE_CHAR_SPACE && (before != MARKDOWN_CORE_CHAR_PUNCT || after != MARKDOWN_CORE_CHAR_OTHER);
     if (spec->punctuation_bound) {
-        run.can_open =
-            left_flanking && (!right_flanking || markdown_core_utf8proc_is_punctuation_or_symbol(before_char));
-        run.can_close =
-            right_flanking && (!left_flanking || markdown_core_utf8proc_is_punctuation_or_symbol(after_char));
+        run.can_open = left_flanking && (!right_flanking || before == MARKDOWN_CORE_CHAR_PUNCT);
+        run.can_close = right_flanking && (!left_flanking || after == MARKDOWN_CORE_CHAR_PUNCT);
     } else {
         run.can_open = left_flanking;
         run.can_close = right_flanking;
@@ -346,9 +347,7 @@ static void reduce_delimiter_range(markdown_core_inline_state *inline_state, del
     while (entry != before) {
         delimiter *previous = entry->previous;
         assert(entry->kind != DELIMITER_FIELD);
-        if (inline_state->owner_parser) {
-            inline_state->owner_parser->delimiter_work++;
-        }
+        MARKDOWN_CORE_DIAGNOSTIC(if (inline_state->owner_parser) { inline_state->owner_parser->delimiter_work++; })
         if (entry->kind == DELIMITER_BOUNDARY && !boundary) {
             boundary = true;
         } else {
@@ -497,9 +496,8 @@ void markdown_core_inline_process_delimiters(markdown_core_parser *parser, markd
             opener_found = false;
             while (opener != NULL && opener->position >= stack_bottom &&
                    opener->position >= openers_bottom[closer->length % 3][closer->rule]) {
-                if (inline_state->owner_parser) {
-                    inline_state->owner_parser->delimiter_work++;
-                }
+                MARKDOWN_CORE_DIAGNOSTIC(
+                    if (inline_state->owner_parser) { inline_state->owner_parser->delimiter_work++; })
                 if (opener->can_open && opener->rule == closer->rule) {
                     // interior closer of size 2 can't match opener of size 1
                     // or of size 1 can't match 2
@@ -594,9 +592,7 @@ static delimiter *S_insert_delimited_inline(markdown_core_inline_state *inline_s
 
         while (tmp && tmp != closer_inl) {
             tmpnext = tmp->next;
-            if (inline_state->owner_parser) {
-                inline_state->owner_parser->delimiter_work++;
-            }
+            MARKDOWN_CORE_DIAGNOSTIC(if (inline_state->owner_parser) { inline_state->owner_parser->delimiter_work++; })
             tmp->parent = inline_node;
             if (tmpnext == closer_inl) {
                 inline_node->last_child = tmp;
@@ -799,7 +795,7 @@ append:
     endpos = inline_state->pos;
     while (endpos > token_start) {
         unsigned char byte = inline_state->input.data[--endpos];
-        parser->footnote_body_work++;
+        MARKDOWN_CORE_DIAGNOSTIC(parser->footnote_body_work++;)
         if (byte != ' ' && byte != '\t') {
             inline_state->nonblank_end = endpos + 1;
             break;
@@ -905,7 +901,7 @@ int markdown_core_inline_state_find_opaque_close(markdown_core_inline_state *inl
     for (int at = from; at < inline_state->input.len;) {
         bool closes = false;
         int width = scan(inline_state->input.data, inline_state->input.len, at, rule, &closes);
-        inline_state->owner_parser->opaque_scan_work++;
+        MARKDOWN_CORE_DIAGNOSTIC(inline_state->owner_parser->opaque_scan_work++;)
         if (closes) {
             return at;
         }
@@ -962,55 +958,6 @@ void markdown_core_inline_state_push_delimiter(markdown_core_inline_state *inlin
                                                const markdown_core_element *owner, markdown_core_delimiter_rule rule,
                                                int can_open, int can_close, markdown_core_node *inl_text) {
     push_delimiter(inline_state, owner, rule, can_open != 0, can_close != 0, inl_text);
-}
-
-int markdown_core_inline_state_scan_delimiters(markdown_core_inline_state *inline_state, int max_delims,
-                                               unsigned char c, int *left_flanking, int *right_flanking,
-                                               int *punct_before, int *punct_after) {
-    int numdelims = 0;
-    bufsize_t before_char_pos;
-    int32_t after_char = 0;
-    int32_t before_char = 0;
-    int len;
-    bool space_before, space_after;
-
-    if (inline_state->pos == 0) {
-        before_char = 10;
-    } else {
-        before_char_pos = inline_state->pos - 1;
-        // walk back to the beginning of the UTF_8 sequence:
-        while (markdown_core_inline_peek_at(inline_state, before_char_pos) >> 6 == 2 && before_char_pos > 0) {
-            before_char_pos -= 1;
-        }
-        len = markdown_core_utf8proc_iterate(inline_state->input.data + before_char_pos,
-                                             inline_state->pos - before_char_pos, &before_char);
-        if (len == -1) {
-            before_char = 10;
-        }
-    }
-
-    while (markdown_core_inline_peek_char(inline_state) == c && numdelims < max_delims) {
-        numdelims++;
-        advance(inline_state);
-    }
-
-    len = markdown_core_utf8proc_iterate(inline_state->input.data + inline_state->pos,
-                                         inline_state->input.len - inline_state->pos, &after_char);
-    if (len == -1) {
-        after_char = 10;
-    }
-
-    *punct_before = markdown_core_utf8proc_is_punctuation_or_symbol(before_char);
-    *punct_after = markdown_core_utf8proc_is_punctuation_or_symbol(after_char);
-    space_before = markdown_core_utf8proc_is_space(before_char) != 0;
-    space_after = markdown_core_utf8proc_is_space(after_char) != 0;
-
-    *left_flanking = numdelims > 0 && !markdown_core_utf8proc_is_space(after_char) &&
-                     !(*punct_after && !space_before && !*punct_before);
-    *right_flanking = numdelims > 0 && !markdown_core_utf8proc_is_space(before_char) &&
-                      !(*punct_before && !space_after && !*punct_after);
-
-    return numdelims;
 }
 
 void markdown_core_inline_state_advance_offset(markdown_core_inline_state *inline_state) { advance(inline_state); }

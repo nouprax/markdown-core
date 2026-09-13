@@ -655,13 +655,13 @@ static bool table_reserve(markdown_core_parser *parser, void **values, size_t *c
 
 static bool table_source_push(table_source *source, table_source_line line) {
     markdown_core_parser *parser = source->parser;
-    size_t capacity = parser->table_lines_capacity;
+    MARKDOWN_CORE_DIAGNOSTIC(size_t capacity = parser->table_lines_capacity;)
     if (!table_reserve(parser, (void **)&parser->table_lines, &parser->table_lines_capacity, source->count + 1,
                        sizeof(*source->lines))) {
         return false;
     }
     source->lines = parser->table_lines;
-    parser->table_workspace_growth += parser->table_lines_capacity != capacity;
+    MARKDOWN_CORE_DIAGNOSTIC(parser->table_workspace_growth += parser->table_lines_capacity != capacity;)
     line.input_length = line.length;
     while (line.length && (line.data[line.length - 1] == '\n' || line.data[line.length - 1] == '\r')) {
         line.length--;
@@ -722,7 +722,7 @@ static bool table_source_columns(table_source *source, size_t index) {
     if (line->bytes) {
         return true;
     }
-    source->parser->table_geometry_lines++;
+    MARKDOWN_CORE_DIAGNOSTIC(source->parser->table_geometry_lines++;)
     size_t capacity = 0;
     for (int byte = line->offset, column = 0;;) {
         if (!table_reserve(source->parser, (void **)&line->bytes, &capacity, (size_t)column + 5,
@@ -750,7 +750,7 @@ static bool table_source_columns(table_source *source, size_t index) {
 }
 
 static int table_character(const table_source_line *line, int column) {
-    line->parser->table_scan_work++;
+    MARKDOWN_CORE_DIAGNOSTIC(line->parser->table_scan_work++;)
     if (column < 0 || column >= line->columns) {
         return 0;
     }
@@ -784,11 +784,12 @@ static size_t table_dash_count(table_source *source, size_t index) {
     table_source_line *line = &source->lines[index];
     if (!line->dashes_scanned) {
         line->dashes_scanned = true;
-        source->parser->table_separator_scans++;
+        MARKDOWN_CORE_DIAGNOSTIC(source->parser->table_separator_scans++;)
         if (line->indent > 3) {
             return 0;
         }
-        const unsigned char *p = line->data + line->offset, *from, *start = p;
+        const unsigned char *p = line->data + line->offset, *from;
+        MARKDOWN_CORE_DIAGNOSTIC(const unsigned char *start = p;)
         int result;
         do {
             result = scan_table_dash(&p, line->data + line->length, &from);
@@ -797,7 +798,7 @@ static size_t table_dash_count(table_source *source, size_t index) {
                 line->full_boundary = line->dash_count == 1 && p - from >= 3;
             }
         } while (result > 0);
-        source->parser->table_scan_work += (size_t)(p - start) + line->dash_count + 1;
+        MARKDOWN_CORE_DIAGNOSTIC(source->parser->table_scan_work += (size_t)(p - start) + line->dash_count + 1;)
         if (result < 0) {
             line->dash_count = 0;
             line->full_boundary = false;
@@ -830,7 +831,7 @@ static const table_interval *table_dashes(table_source *source, size_t index) {
             line->dashes[i] = (table_interval){start, column};
             before = p;
         }
-        source->parser->table_scan_work += (size_t)(p - line->data - line->offset);
+        MARKDOWN_CORE_DIAGNOSTIC(source->parser->table_scan_work += (size_t)(p - line->data - line->offset);)
     }
     return line->dashes;
 }
@@ -1025,7 +1026,7 @@ static bool table_same_dashes(table_source *source, size_t left, size_t right) {
         return false;
     }
     for (size_t i = 0; i < count; i++) {
-        source->parser->table_scan_work++;
+        MARKDOWN_CORE_DIAGNOSTIC(source->parser->table_scan_work++;)
         if (a[i].start != b[i].start || a[i].end != b[i].end) {
             return false;
         }
@@ -1047,7 +1048,7 @@ typedef struct {
  * digits, so distinct widths, offsets and column counts cost source-linear
  * work without hashing or repeatedly comparing long shared prefixes. */
 static unsigned table_separator_digit(table_source *source, table_separator_key key, size_t digit) {
-    source->parser->table_scan_work++;
+    MARKDOWN_CORE_DIAGNOSTIC(source->parser->table_scan_work++;)
     if (digit / 16 >= key.count) {
         return 0;
     }
@@ -1270,13 +1271,13 @@ failed:
 
 static int table_grid_root(table_source *source, int *parents, int column) {
     int root = column;
-    source->parser->table_scan_work++;
+    MARKDOWN_CORE_DIAGNOSTIC(source->parser->table_scan_work++;)
     while (parents[root] != root) {
-        source->parser->table_scan_work++;
+        MARKDOWN_CORE_DIAGNOSTIC(source->parser->table_scan_work++;)
         root = parents[root];
     }
     while (parents[column] != column) {
-        source->parser->table_scan_work++;
+        MARKDOWN_CORE_DIAGNOSTIC(source->parser->table_scan_work++;)
         int next = parents[column];
         parents[column] = root;
         column = next;
@@ -1285,7 +1286,7 @@ static int table_grid_root(table_source *source, int *parents, int column) {
 }
 
 static int table_horizontal_bytes(const table_source_line *line, int first, int last) {
-    line->parser->table_scan_work += (size_t)(last - first);
+    MARKDOWN_CORE_DIAGNOSTIC(line->parser->table_scan_work += (size_t)(last - first);)
     return scan_table_horizontal(line->data, last, first);
 }
 
@@ -1447,9 +1448,8 @@ static bool table_grid_cells(table_source *source, table_candidate *candidate, c
         source->parser->oom = true;
         goto done;
     }
-    if (capacity > source->parser->table_frontier_peak) {
-        source->parser->table_frontier_peak = capacity;
-    }
+    MARKDOWN_CORE_DIAGNOSTIC(
+        if (capacity > source->parser->table_frontier_peak) { source->parser->table_frontier_peak = capacity; })
     for (size_t r = 0; r < row_count; r++) {
         size_t used = active_count + width;
         for (size_t i = 0; i < used; i++) {
@@ -1516,7 +1516,7 @@ static bool table_grid_cells(table_source *source, table_candidate *candidate, c
         source->parser->oom = true;
         goto done;
     }
-    source->parser->table_scan_work += 16 * closed_count;
+    MARKDOWN_CORE_DIAGNOSTIC(source->parser->table_scan_work += 16 * closed_count;)
     valid = table_grid_rows(source, candidate, columns, boundaries, row_count, closed, closed_count);
 done:
     source->parser->mem->free(parents);
@@ -1541,7 +1541,7 @@ static bool table_grid_opening(table_source *source, size_t index, int *left, in
     table_source_line *line = &source->lines[index];
     int last = line->length;
     while (last > line->first && (line->data[last - 1] == ' ' || line->data[last - 1] == '\t')) {
-        line->parser->table_scan_work++;
+        MARKDOWN_CORE_DIAGNOSTIC(line->parser->table_scan_work++;)
         last--;
     }
     if (!table_horizontal_bytes(line, line->first, last) || !table_source_columns(source, index)) {
@@ -2038,6 +2038,19 @@ markdown_core_node *markdown_core_table_try_open(markdown_core_parser *parser, m
         (!parent->last_child || parent->last_child->kind != MARKDOWN_CORE_NODE_TABLE)) {
         return NULL;
     }
+    /* Grid/dash boundaries and captions identify themselves on this line.
+     * A plain textual header instead requires an adjacent dash separator.
+     * Share its prefix-matched next line with definition/identifier owners,
+     * before allocating a table workspace or starting a table transaction. */
+    unsigned char first = input[parser->first_nonspace];
+    if (first != '+' && first != '-' &&
+        table_caption_start(input, length, parser->first_nonspace, parser->indent) < 0) {
+        const markdown_core_block_peek *peek =
+            markdown_core_parser_peek_block_line(parser, parent, MARKDOWN_CORE_NODE_TABLE);
+        if (!peek->available || peek->blanks || peek->indent >= 4 || peek->input.data[peek->first] != '-') {
+            return NULL;
+        }
+    }
     table_source source = {.parser = parser, .lines = parser->table_lines};
     table_candidate candidate = {0};
     markdown_core_node *result = NULL;
@@ -2127,12 +2140,13 @@ static markdown_core_node *try_interrupting_block(markdown_core_parser *parser, 
         end--;
     }
     int result;
-    size_t scans = 0;
+    MARKDOWN_CORE_DIAGNOSTIC(size_t scans = 0;)
     do {
         result = scan_table_dash(&cursor, end, &from);
-        scans++;
+        MARKDOWN_CORE_DIAGNOSTIC(scans++;)
     } while (result > 0);
-    parser->table_scan_work += (size_t)(cursor - input->data - parser->first_nonspace) + scans;
+    MARKDOWN_CORE_DIAGNOSTIC(parser->table_scan_work +=
+                             (size_t)(cursor - input->data - parser->first_nonspace) + scans;)
     if (result < 0) {
         parser->table_separator_kill_pos = (bufsize_t)(cursor - input->data);
         return NULL;

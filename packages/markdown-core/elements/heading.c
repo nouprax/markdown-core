@@ -36,7 +36,7 @@ void markdown_core_block_register_heading(markdown_core_parser *parser, markdown
 
 static markdown_core_key_index_slot *anchor_slot(markdown_core_parser *parser, anchor_registry *registry,
                                                  markdown_core_chunk key) {
-    parser->anchor_work += (size_t)key.len + 1;
+    MARKDOWN_CORE_DIAGNOSTIC(parser->anchor_work += (size_t)key.len + 1;)
     markdown_core_key_index_slot *slot = markdown_core_key_index_entry(&registry->index, key.data, key.len);
     if (!slot) {
         parser->oom = true;
@@ -50,7 +50,7 @@ void markdown_core_block_reserve_node_anchor(markdown_core_parser *parser, ancho
     if (!anchor->len) {
         return;
     }
-    parser->anchor_work++;
+    MARKDOWN_CORE_DIAGNOSTIC(parser->anchor_work++;)
     if (anchor != &node->attributes.anchor) {
         const unsigned char *identity = (const unsigned char *)&node->as.link->resource;
         void *existing = NULL;
@@ -99,7 +99,7 @@ void markdown_core_block_dispose_headings(markdown_core_parser *parser, markdown
 
 static void project_anchor_literal(markdown_core_parser *parser, markdown_core_strbuf *base, const unsigned char *text,
                                    bufsize_t length) {
-    parser->anchor_work += (size_t)length;
+    MARKDOWN_CORE_DIAGNOSTIC(parser->anchor_work += (size_t)length;)
     markdown_core_utf8proc_anchor(base, text, length);
 }
 
@@ -132,7 +132,7 @@ static void heading_anchor_base(markdown_core_parser *parser, markdown_core_node
     while (stack.count && !parser->oom && !base->oom) {
         anchor_projection projection = stack.values[--stack.count];
         markdown_core_node *node = projection.node;
-        parser->anchor_work++;
+        MARKDOWN_CORE_DIAGNOSTIC(parser->anchor_work++;)
         if (projection.kind == ANCHOR_KEY) {
             project_anchor_literal(parser, base, (const unsigned char *)"@", 1);
             project_anchor_literal(parser, base, node->as.citation->value.data, node->as.citation->value.len);

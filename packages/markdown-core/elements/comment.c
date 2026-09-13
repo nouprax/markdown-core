@@ -132,7 +132,7 @@ static markdown_core_node *match(const markdown_core_element *element, markdown_
     if (character != '%') {
         return NULL;
     }
-    parser->comment_scan_work++;
+    MARKDOWN_CORE_DIAGNOSTIC(parser->comment_scan_work++;)
     if (start + 1 >= input->len || input->data[start + 1] != '%') {
         return NULL;
     }

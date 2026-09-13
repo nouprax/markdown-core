@@ -29,9 +29,9 @@ static bool markdown_core_block_parse_callout_metadata(markdown_core_parser *par
     bufsize_t begin = pos;
     while (pos < input->len && input->data[pos] == ' ' && pos - begin < 3) {
         pos++;
-        parser->callout_scan_work++;
+        MARKDOWN_CORE_DIAGNOSTIC(parser->callout_scan_work++;)
     }
-    parser->callout_scan_work++;
+    MARKDOWN_CORE_DIAGNOSTIC(parser->callout_scan_work++;)
     if (parser->partially_consumed_tab || pos + 2 >= input->len || input->data[pos] != '[' ||
         input->data[pos + 1] != '!') {
         return false;
@@ -40,7 +40,7 @@ static bool markdown_core_block_parse_callout_metadata(markdown_core_parser *par
     begin = pos;
     while (pos < input->len) {
         unsigned char c = input->data[pos];
-        parser->callout_scan_work++;
+        MARKDOWN_CORE_DIAGNOSTIC(parser->callout_scan_work++;)
         if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-')) {
             break;
         }
@@ -60,13 +60,13 @@ static bool markdown_core_block_parse_callout_metadata(markdown_core_parser *par
     }
     while (pos < input->len && markdown_core_block_is_space_or_tab(input->data[pos])) {
         pos++;
-        parser->callout_scan_work++;
+        MARKDOWN_CORE_DIAGNOSTIC(parser->callout_scan_work++;)
     }
     bufsize_t end = input->len;
     while (end > pos && (markdown_core_block_is_space_or_tab(input->data[end - 1]) ||
                          markdown_core_is_line_end(input->data[end - 1]))) {
         end--;
-        parser->callout_scan_work++;
+        MARKDOWN_CORE_DIAGNOSTIC(parser->callout_scan_work++;)
     }
     if (!markdown_core_chunk_to_cstr(parser->mem, &variant)) {
         parser->oom = true;

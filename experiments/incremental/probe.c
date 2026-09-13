@@ -5,6 +5,9 @@
 #include "parser.h"
 #include "element.h"
 #include "map.h"
+#if !MARKDOWN_CORE_DIAGNOSTICS
+#error "The private probe requires the diagnostic library and matching structure layout"
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

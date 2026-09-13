@@ -3,12 +3,13 @@
 #include "inline_internal.h"
 #include "block_internal.h"
 static bool dimension_component(const unsigned char *s, bufsize_t *pos, bufsize_t end, int32_t *value, size_t *work) {
+    (void)work;
     if (*pos == end || s[*pos] < '1' || s[*pos] > '9') {
         return false;
     }
     int32_t number = 0;
     while (*pos < end && s[*pos] >= '0' && s[*pos] <= '9') {
-        (*work)++;
+        MARKDOWN_CORE_DIAGNOSTIC((*work)++;)
         int digit = s[(*pos)++] - '0';
         if (number > (INT32_MAX - digit) / 10) {
             return false;
@@ -21,9 +22,10 @@ static bool dimension_component(const unsigned char *s, bufsize_t *pos, bufsize_
 
 bool markdown_core_parse_dimensions(markdown_core_chunk label, bufsize_t suffix, bufsize_t separator_length,
                                     markdown_core_dimensions *value, size_t *work) {
+    (void)work;
     bufsize_t pos = suffix + separator_length;
     markdown_core_dimensions parsed = {0};
-    (*work)++;
+    MARKDOWN_CORE_DIAGNOSTIC((*work)++;)
     if ((suffix > 0 && markdown_core_isspace(label.data[suffix - 1])) ||
         !dimension_component(label.data, &pos, label.len, &parsed.width, work)) {
         return false;
@@ -54,7 +56,7 @@ void markdown_core_inline_apply_image_dimensions(markdown_core_inline_state *inl
     markdown_core_dimensions dimensions;
     markdown_core_chunk label = markdown_core_chunk_dup(&inline_state->input, opener->position, end - opener->position);
     if (!markdown_core_parse_dimensions(label, suffix - opener->position, opener->image_pipe >= 0 ? 1 : 0, &dimensions,
-                                        &inline_state->owner_parser->dimension_work)) {
+                                        MARKDOWN_CORE_DIAGNOSTIC_ADDRESS(inline_state->owner_parser->dimension_work))) {
         return;
     }
 
@@ -78,7 +80,7 @@ void markdown_core_embedded_record_text(markdown_core_parser *parser, markdown_c
                                         bufsize_t endpos) {
     if (inline_state->last_bracket && inline_state->last_bracket->kind == BRACKET_IMAGE) {
         for (bufsize_t i = inline_state->pos; i < endpos; i++) {
-            parser->dimension_work++;
+            MARKDOWN_CORE_DIAGNOSTIC(parser->dimension_work++;)
             if (inline_state->input.data[i] == '|') {
                 inline_state->last_bracket->image_pipe = i;
             }

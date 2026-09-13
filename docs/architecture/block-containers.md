@@ -47,3 +47,23 @@ Terms and bodies preserve source order without duplicating source or ownership.
 Allocation failure leaves every partially built root on this ownership graph,
 so parser failure uses ordinary destruction. Strict OOM sweeps cover term roots,
 body roots, nameless attributes, reference probes and nested continuation.
+
+## Shared block-start peek
+
+Table, definition-list, and block-identifier decisions share the first nonblank
+line under the nearest parent that can contain the proposed block. The result
+borrows normalized source bytes and records indentation and preceding blank
+lines. It is computed by the existing lookahead matcher, with its flags restored
+before returning; there is no second container-prefix algorithm.
+
+The cache belongs to one block-start arbitration. It is invalidated before each
+physical line and before opening another container, and keyed by the resolved
+parent within that context. Mapped cell inputs pass through the same line entry.
+A cache hit neither rebuilds the ancestor chain nor replays prefix matching.
+Longer caption/table recognition still owns a normal lookahead transaction.
+
+Grid/dash boundaries and captions can identify themselves on the current line.
+An ordinary textual table header requires an adjacent dash separator, so it can
+be rejected using the shared peek before creating a table workspace. Definition
+terms first require a following marker; only a surviving candidate needs the
+reference-definition precedence check. All allocation failures remain terminal.

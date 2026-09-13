@@ -131,6 +131,11 @@ add_executable(facade_test facade.c)
 target_include_directories(facade_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../include")
 target_link_libraries(facade_test ${MARKDOWN_CORE_TEST_LIBRARIES})
 
+# Compile-time accounting must not change the facade's canonical semantics.
+add_executable(facade_diagnostics_test facade.c)
+target_include_directories(facade_diagnostics_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../include")
+target_link_libraries(facade_diagnostics_test markdown-core-diagnostics)
+
 add_executable(facade_cplusplus_test facade_cplusplus.cpp)
 target_include_directories(facade_cplusplus_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../include")
 target_link_libraries(facade_cplusplus_test ${MARKDOWN_CORE_TEST_LIBRARIES})
@@ -158,6 +163,14 @@ markdown_core_add_test(
     conformance
     120
     facade_test
+    --fixtures
+    "${MARKDOWN_CORE_CANONICAL_AST_DIR}"
+    ${MARKDOWN_CORE_CANONICAL_NAMES})
+markdown_core_add_test(
+    facade_diagnostics
+    conformance
+    120
+    facade_diagnostics_test
     --fixtures
     "${MARKDOWN_CORE_CANONICAL_AST_DIR}"
     ${MARKDOWN_CORE_CANONICAL_NAMES})
@@ -406,17 +419,6 @@ markdown_core_add_test(packaging_corpus_guard packaging 60 corpus_guard --root "
 # promote hosted-runner timing into a merge gate. The explicit benchmark preset
 # enables this block and reports measurements without wall-clock assertions.
 if(MARKDOWN_CORE_BENCHMARKS)
-    # Diagnostic private-API adapter: opt-in, never installed. CI builds this
-    # target so changes to parser fields cannot silently break the experiments.
-    add_library(incremental_probe SHARED "${CMAKE_CURRENT_SOURCE_DIR}/../../../experiments/incremental/probe.c")
-    target_include_directories(incremental_probe PRIVATE ${MARKDOWN_CORE_TEST_SUPPORT_INCLUDES})
-    target_link_libraries(incremental_probe PRIVATE libmarkdown-core-public-static)
-    set_target_properties(
-        incremental_probe
-        PROPERTIES PREFIX ""
-                   OUTPUT_NAME "incremental-probe"
-                   LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
-                   WINDOWS_EXPORT_ALL_SYMBOLS ON)
     set(MARKDOWN_CORE_BENCH_SAMPLES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../benchmarks/samples")
     # The public flavour on purpose: the PR benchmark times the product library
     # and reports the size of the shared library this target therefore builds.
@@ -452,3 +454,15 @@ if(WIN32 AND MARKDOWN_CORE_SHARED)
     string(REPLACE ";" "\\;" NEWPATH "${NEWPATH}")
     set_tests_properties(${MARKDOWN_CORE_ALL_TESTS} PROPERTIES ENVIRONMENT "PATH=${NEWPATH}")
 endif()
+
+# Private diagnostic adapter, available in every test build.
+add_library(incremental_probe SHARED EXCLUDE_FROM_ALL
+            "${CMAKE_CURRENT_SOURCE_DIR}/../../../experiments/incremental/probe.c")
+target_include_directories(incremental_probe PRIVATE ${MARKDOWN_CORE_TEST_SUPPORT_INCLUDES})
+target_link_libraries(incremental_probe PRIVATE markdown-core-diagnostics)
+set_target_properties(
+    incremental_probe
+    PROPERTIES PREFIX ""
+               OUTPUT_NAME "incremental-probe"
+               LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
+               WINDOWS_EXPORT_ALL_SYMBOLS ON)

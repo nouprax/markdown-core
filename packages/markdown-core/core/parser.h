@@ -2,6 +2,7 @@
 #define MARKDOWN_CORE_PARSER_H
 
 #include <stdint.h>
+#include "diagnostics.h"
 #include "references.h"
 #include "node.h"
 #include "buffer.h"
@@ -58,6 +59,16 @@ typedef struct {
     const markdown_core_element *element;
     bool dispatches, terminates;
 } markdown_core_inline_candidate;
+
+/* First nonblank line under one prospective block parent. Shared by block
+ * owners during a single block-start arbitration; no speculative state or
+ * owned storage survives here. Reset before the parser mutates that context. */
+typedef struct {
+    struct markdown_core_node *parent;
+    markdown_core_chunk input;
+    int first, indent, blanks;
+    bool available;
+} markdown_core_block_peek;
 
 struct markdown_core_parser {
     struct markdown_core_mem *mem;
@@ -126,6 +137,7 @@ struct markdown_core_parser {
      * one-shot transaction reports the whole parse as failed (NULL) instead of
      * returning a silently truncated document. */
     bool oom;
+#if MARKDOWN_CORE_DIAGNOSTICS
     /* Bytes inspected by the cross-link scanner, for deterministic complexity gates. */
     size_t cross_link_scan_work;
     size_t autolink_domain_work;
@@ -163,6 +175,7 @@ struct markdown_core_parser {
     /* Cumulative capacity bytes reserved for per-inline state brace event records. */
     size_t citation_brace_bytes;
     size_t definition_list_work;
+#endif
     /* THE SOURCE AFTER THE LINE BEING PROCESSED. `S_parse_source` sets the
      * cursor to the first byte of the next raw line before it hands each line
      * to `S_process_line`, so a block start whose grammar needs a later line --
@@ -187,6 +200,7 @@ struct markdown_core_parser {
     int lookahead_entries_alloc;
     int lookahead_entries_used;
     int lookahead_base_line;
+    markdown_core_block_peek block_peek;
     /* One active table query borrows this reusable line workspace. Per-line
      * geometry is released by the query; the allocation dies with the parser. */
     struct markdown_core_table_source_line *table_lines;
@@ -314,6 +328,12 @@ bool markdown_core_parser_queue_block_input(markdown_core_parser *parser, markdo
 int markdown_core_parser_source_column(markdown_core_parser *parser, int line, int column);
 int markdown_core_parser_append_source_marks(markdown_core_parser *parser, markdown_core_node *node, int line,
                                              int column, bufsize_t length, bufsize_t offset);
+
+/* The borrowed result lasts until the next peek or block-start context.
+ * Uses exactly the same container matching and blank rules as lookahead. */
+const markdown_core_block_peek *markdown_core_parser_peek_block_line(markdown_core_parser *parser,
+                                                                     struct markdown_core_node *parent,
+                                                                     markdown_core_node_type child);
 
 bool markdown_core_parser_lookahead_begin(markdown_core_parser *parser, struct markdown_core_node *parent_container,
                                           markdown_core_node_type child, markdown_core_block_lookahead *lookahead);

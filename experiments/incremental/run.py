@@ -68,6 +68,8 @@ def prepare_probe(build):
         adapter = source / "experiments/incremental/probe.c"
         if not adapter.is_file():
             raise RuntimeError(f"Selected build source has no compatible experiment adapter: {adapter}")
+        if (source / "packages/markdown-core/core/diagnostics.h").exists():
+            raise RuntimeError("Selected build omits the diagnostic target; configure it with MARKDOWN_CORE_TESTS=ON")
         subprocess.run([
             compiler, "-std=c11", "-O3", "-shared", "-fPIC",
             "-I" + str(source / "packages/markdown-core/include"),

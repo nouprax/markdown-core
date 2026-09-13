@@ -32,7 +32,7 @@ bool markdown_core_block_resolve_reference_link_definitions(markdown_core_parser
     if (attributes.oom) {
         parser->oom = true;
     }
-    parser->attribute_work += attributes.work;
+    MARKDOWN_CORE_DIAGNOSTIC(parser->attribute_work += attributes.work;)
     markdown_core_attribute_parser_free(&attributes);
     // The definitions are dropped off the FRONT of the block's content, so what
     // is left starts further down the source than the block was told it did.
@@ -549,7 +549,7 @@ void markdown_core_inline_take_bracket_content(markdown_core_parser *parser, bra
         markdown_core_node *next = child->next;
         markdown_core_node_unlink(child);
         markdown_core_node_attach_owned(owner, child, NULL);
-        parser->bracket_work++;
+        MARKDOWN_CORE_DIAGNOSTIC(parser->bracket_work++;)
         child = next;
     }
 }
@@ -624,7 +624,7 @@ void markdown_core_inline_replace_bracket_opener(markdown_core_inline_state *inl
 
 markdown_core_node *markdown_core_inline_handle_close_bracket(markdown_core_parser *parser,
                                                               markdown_core_inline_state *inline_state) {
-    parser->bracket_work++;
+    MARKDOWN_CORE_DIAGNOSTIC(parser->bracket_work++;)
     advance(inline_state);
     bufsize_t initial_pos = inline_state->pos;
     bracket *opener = inline_state->last_bracket;

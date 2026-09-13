@@ -164,6 +164,16 @@ if(MARKDOWN_CORE_STATIC OR MARKDOWN_CORE_SHARED)
     endif()
 endif()
 
+# Complexity tests and the private experiment probe use the same source graph
+# with compile-time accounting. No installed target links this archive; PUBLIC
+# propagates the private structure layout to every diagnostic consumer.
+if(MARKDOWN_CORE_TESTS)
+    add_library(markdown-core-diagnostics STATIC EXCLUDE_FROM_ALL ${MARKDOWN_CORE_ENGINE_SOURCES} ${LIBRARY_SOURCES})
+    target_compile_definitions(markdown-core-diagnostics PUBLIC MARKDOWN_CORE_DIAGNOSTICS=1 MARKDOWN_CORE_STATIC_DEFINE
+                                                                MARKDOWN_CORE_ELEMENTS_STATIC_DEFINE)
+    set_target_properties(markdown-core-diagnostics PROPERTIES POSITION_INDEPENDENT_CODE ON)
+endif()
+
 set(CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS_NO_WARNINGS ON)
 
 include(InstallRequiredSystemLibraries)

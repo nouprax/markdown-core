@@ -2,6 +2,7 @@
 #define MARKDOWN_CORE_ATTRIBUTES_H
 
 #include "chunk.h"
+#include "diagnostics.h"
 #include "map.h"
 
 typedef struct {
@@ -28,7 +29,9 @@ typedef struct {
     bufsize_t length;
     markdown_core_key_index facts;
     struct markdown_core_attribute_arena *arena;
+#if MARKDOWN_CORE_DIAGNOSTICS
     size_t work;
+#endif
     int oom;
 } markdown_core_attribute_parser;
 

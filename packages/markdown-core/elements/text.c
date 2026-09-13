@@ -33,7 +33,7 @@ static markdown_core_node *handle_backslash(markdown_core_parser *parser, markdo
                !markdown_core_is_line_end(markdown_core_inline_peek_at(inline_state, end)) &&
                markdown_core_isspace(markdown_core_inline_peek_at(inline_state, end))) {
             end++;
-            parser->whitespace_work++;
+            MARKDOWN_CORE_DIAGNOSTIC(parser->whitespace_work++;)
         }
         if ((end == inline_state->input.len && !MARKDOWN_CORE_NODE_TYPE_INLINE_P(inline_state->owner->kind)) ||
             (end < inline_state->input.len &&
@@ -169,7 +169,7 @@ markdown_core_node *markdown_core_text_parse(markdown_core_parser *parser, markd
             break;
         }
     }
-    parser->whitespace_work += (size_t)(endpos - at);
+    MARKDOWN_CORE_DIAGNOSTIC(parser->whitespace_work += (size_t)(endpos - at);)
     /* Text runs are disjoint, so recording separators costs at most one
      * extra visit per byte, regardless of bracket nesting or digit-run
      * length. No image closer scans its label again. */

@@ -48,6 +48,28 @@ C data-driven runners also offer `spec_runner --list/--example/--section`,
 `scripts/audit-test-topology.sh` compares discovery with CTest registration.
 The optional benchmark runner's workload list is separate from test discovery.
 
+## Deterministic work accounting
+
+Product libraries, the CLI, and language bindings compile with
+`MARKDOWN_CORE_DIAGNOSTICS=0` by default. Diagnostic fields, counter updates,
+and local accounting variables disappear during preprocessing. Macros may only
+contain observation: no semantic mutations, allocation, or required side effects.
+
+The private `markdown-core-diagnostics` archive builds the same engine and
+element sources with accounting enabled. Its public compile definition propagates
+the matching private structure layout to `api_test`, `facade_diagnostics_test`,
+and `incremental_probe`. It is never installed or linked into product targets.
+The public and diagnostic facades run the same canonical manifest. Complexity
+tests require the diagnostic archive; OOM injection and ordinary facade tests
+continue to exercise the product implementation.
+
+`incremental_probe` is available, but excluded from the default build, whenever
+`MARKDOWN_CORE_TESTS=ON`; benchmarks need not be enabled. The experiment adapter
+builds this target from its selected build graph. Its allocation/work statistics
+come from the diagnostic layout, while elapsed-time measurements use the public
+product library. A current product-only archive cannot substitute for the
+private diagnostic ABI. Older builds use their own compatible adapter and headers.
+
 ## Correctness and conformance
 
 Correctness verifies behavior, failure boundaries, ownership, Unicode,
