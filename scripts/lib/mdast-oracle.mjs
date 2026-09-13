@@ -182,7 +182,7 @@ function convert(node, definitions, parentType = "root") {
     }
     // The citation model (M4): a call is a one-item `Cite` whose `Citation`
     // names the footnote by id and carries empty affix groups; a definition
-    // is a `Footnote` value. mdast's `identifier` is its normalized label,
+    // is a `Footnote` node. mdast's `identifier` is its normalized label,
     // upper-cased by micromark's normalizer where this side's is case-folded,
     // so the two meet in lower case.
     if (node.type === "footnoteReference") {

@@ -1,0 +1,9 @@
+package com.nouprax.markdown.core
+
+public class Heading internal constructor(
+    public val level: Int,
+    public val content: kotlin.collections.List<Markup>,
+    override val scope: Scope,
+    override val anchor: String?,
+    override val attributes: Attributes,
+) : Markup

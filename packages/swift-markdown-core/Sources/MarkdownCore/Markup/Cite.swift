@@ -23,49 +23,49 @@ public enum CitationReferent: Sendable, Hashable {
     case specimen(id: String)
 }
 
-/// One item of a ``Cite``: a scoped value the cite owns, outside the markup
-/// union.
-///
-/// It has no ``MarkupVisitor`` case; the walk reports it through the
-/// ``MarkupWalkingVisitor`` case that takes a `Citation`, between the cite's
-/// entering and exiting.
-public struct Citation: Sendable {
+/// A Markup node owned by a cite's citations field.
+/// Its prefix and suffix contain inline markup and are empty when absent.
+public struct Citation: Markup {
     struct Fields: Sendable {
         let scope: Scope
+        let anchor: String?
+        let attributes: Attributes
         let referent: CitationReferent
-        let prefix: [Int]
-        let suffix: [Int]
+        let prefix: MarkupReferences<any Markup>
+        let suffix: MarkupReferences<any Markup>
     }
 
-    @Stored var fields: Fields
+    let fields: Stored<Fields>
 
     /// Where it is. See ``Scope`` — boundaries, not a byte range.
     public var scope: Scope { fields.scope }
+    /// The optional anchor attached to this node.
+    public var anchor: String? { fields.anchor }
+    /// The ordered attributes attached to this node.
+    public var attributes: Attributes { fields.attributes }
     /// What it names.
     public var referent: CitationReferent { fields.referent }
     /// The inline content before the referent, owned by the citation; empty
     /// for an inherited call.
-    public var prefix: MarkupCollection<any Markup> { $fields.collection(fields.prefix) }
+    public var prefix: MarkupCollection<any Markup> { fields.prefix }
     /// The inline content after the referent, owned by the citation; empty
     /// for an inherited call.
-    public var suffix: MarkupCollection<any Markup> { $fields.collection(fields.suffix) }
+    public var suffix: MarkupCollection<any Markup> { fields.suffix }
+
+    /// Dispatches this node to its typed visitor method.
 }
 
-/// An inline citation: one or more ``Citation`` items in authored order.
-///
-/// An inherited `[^label]` call is a one-item cite naming its footnote; the
-/// citation syntaxes module, which fills in ``CitationReferent/bib(key:mode:)``
-/// items, lands with `P7`. Its items are scoped values, not content, so a
-/// cite is a leaf.
+/// An inline citation cluster owning one or more Citation nodes in source order.
+/// A footnote call contains one item with an ID referent and empty affixes.
 public struct Cite: Markup {
     struct Fields: Sendable {
         let scope: Scope
         let anchor: String?
         let attributes: Attributes
-        let citations: [Int]
+        let citations: MarkupReferences<Citation>
     }
 
-    @Stored var fields: Fields
+    let fields: Stored<Fields>
 
     /// Where it is. See ``Scope`` — boundaries, not a byte range.
     public var scope: Scope { fields.scope }
@@ -74,10 +74,7 @@ public struct Cite: Markup {
     /// Ordered classes and records, including duplicates.
     public var attributes: Attributes { fields.attributes }
     /// Never empty: every cite is authored with at least one item.
-    public var citations: MarkupCollection<Citation> { $fields.collection(fields.citations) }
-
-    /// Dispatches to the visitor's `Cite` case.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
+    public var citations: MarkupCollection<Citation> { fields.citations }
 }
 
 extension BibMode {
@@ -111,10 +108,12 @@ extension CitationReferent {
 extension Citation.Fields {
     init(from citation: OpaquePointer, prefix: [Int], suffix: [Int]) {
         self.init(
-            scope: Scope(from: markdown_core_citation_scope(citation)),
+            scope: Scope(from: markdown_core_node_scope(citation)),
+            anchor: markdown_core_node_anchor(citation).string,
+            attributes: Attributes(from: citation),
             referent: CitationReferent(from: citation),
-            prefix: prefix,
-            suffix: suffix
+            prefix: .init(indices: prefix),
+            suffix: .init(indices: suffix)
         )
     }
 }
@@ -125,7 +124,7 @@ extension Cite.Fields {
             scope: Scope(from: markdown_core_node_scope(node)),
             anchor: markdown_core_node_anchor(node).string,
             attributes: Attributes(from: node),
-            citations: citations
+            citations: .init(indices: citations)
         )
     }
 }

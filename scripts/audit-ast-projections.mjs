@@ -186,7 +186,7 @@ const modelProjections = [
     }),
     projection({
         label: "ES model",
-        directories: ["packages/es-markdown-core/src/model", "packages/es-markdown-core/src/values.ts"],
+        directories: ["packages/es-markdown-core/src/markup", "packages/es-markdown-core/src/common"],
         // A kind with no fields is a type alias, not an interface — which is
         // the correct TypeScript for it, and reads as "declared with zero
         // fields", not as "missing".
@@ -203,17 +203,8 @@ const contract = JSON.parse(fs.readFileSync(path.join(root, CONTRACT_PATH), "utf
  * a scalar token. This includes typed ownership fields such as `label`; nested
  * dump layout does not make every such field part of a generic child list. */
 const kindNames = new Set(contract.kinds.map((kind) => kind.name));
-/** A scoped value -- `Citation`, `Footnote` -- is dumped as a nested value
- * line, like a kind, so a field holding one is structural too. */
-const scopedValueNames = new Set(
-    Object.entries(contract.values ?? {})
-        .filter(([, value]) => value.scoped)
-        .map(([name]) => name)
-);
 const structural = (field) =>
-    [...field.type.matchAll(/[A-Za-z]+/g)].some(
-        (word) => word[0] === "Markup" || kindNames.has(word[0]) || scopedValueNames.has(word[0])
-    );
+    [...field.type.matchAll(/[A-Za-z]+/g)].some((word) => word[0] === "Markup" || kindNames.has(word[0]));
 
 let failed = false;
 
@@ -310,8 +301,8 @@ const kindSurfaces = [
         label: "Kotlin dumper",
         expect: [...kinds.keys()],
         actual: namedKinds(
-            "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/visitor/TreeDumper.kt",
-            /override fun visit\(\s*[a-zA-Z]+: ([A-Za-z]+)\)/g
+            "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/visitor/MarkupDumper.kt",
+            /override fun visit\(\s*[a-zA-Z]+: ([A-Za-z]+),\s*phase: MarkupVisitPhase,?\s*\)/g
         )
     },
     {
@@ -344,14 +335,41 @@ const kindSurfaces = [
     {
         label: "ES dumper",
         expect: [...kinds.keys()].map(camel),
-        actual: namedKinds("packages/es-markdown-core/src/tree-dumper.ts", /^\s+([a-zA-Z]+): \(node\) =>/gm)
+        actual: namedKinds(
+            "packages/es-markdown-core/src/visitor/markup-dumper.ts",
+            /^\s+([a-zA-Z]+): \(node, phase\) =>/gm
+        )
     },
     {
         label: "Swift dumper",
         expect: [...kinds.keys()],
         actual: namedKinds(
-            "packages/swift-markdown-core/Sources/MarkdownCore/Visitor/TreeDumper.swift",
-            /mutating func visit\(_:? ?n?o?d?e?:? (?:MarkdownCore\.)?([A-Za-z]+)\)/g
+            "packages/swift-markdown-core/Sources/MarkdownCore/Visitor/MarkupDumper.swift",
+            /mutating func visit\(_ node: (?:MarkdownCore\.)?([A-Za-z]+), phase: MarkupVisitPhase\)/g
+        )
+    },
+    {
+        label: "Swift markup walker",
+        expect: [...kinds.keys()],
+        actual: namedKinds(
+            "packages/swift-markdown-core/Sources/MarkdownCore/Visitor/MarkupWalker.swift",
+            /case let node as ([A-Za-z]+):/g
+        )
+    },
+    {
+        label: "Kotlin markup walker",
+        expect: [...kinds.keys()],
+        actual: namedKinds(
+            "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/visitor/MarkupWalker.kt",
+            /\bis ([A-Z][A-Za-z]+)/g
+        )
+    },
+    {
+        label: "ES markup walker schedule",
+        expect: [...kinds.keys()].map(camel),
+        actual: namedKinds(
+            "packages/es-markdown-core/src/visitor/markup-walker.ts",
+            /^ {4}([a-zA-Z]+)(?:\(node, actions\) \{|: \(\) => undefined)/gm
         )
     },
     {
@@ -414,7 +432,7 @@ for (const { label, expect, actual } of kindSurfaces) {
             failed = true;
         }
         // BOTH WAYS. The models may carry members the contract does not name --
-        // `accept`, `dump`, an initializer -- so their check is one-directional.
+        // `dump`, an initializer -- so their check is one-directional.
         // The dump's line has no such slack: every `name=` on it is a contract
         // field or it is a field the contract deleted and nobody removed.
         const extra = printed.filter((field) => !expected.includes(field));
@@ -515,5 +533,5 @@ if (failed) {
 console.log(
     `AST-projection audit passed: ${String(kinds.size)} kinds over ` +
         `${String(kindSurfaces.length)} surfaces, the C dump's fields, the prose table, the dump grammar, and ` +
-        `${String(modelProjections.length)} models including ${String(scopedValueNames.size)} scoped values.`
+        `${String(modelProjections.length)} models.`
 );

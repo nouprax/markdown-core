@@ -11,28 +11,28 @@ public struct TableColumn: Sendable {
 /// One table model for every table syntax. Rows belong to their named group.
 public struct Table: Markup {
     struct Fields: Sendable {
-        let caption: Int?
+        let caption: MarkupReference<TableCaption>?
         let columns: [TableColumn]
-        let head: [Int]
-        let content: [Int]
-        let foot: [Int]
+        let head: MarkupReferences<TableRow>
+        let content: MarkupReferences<TableRow>
+        let foot: MarkupReferences<TableRow>
         let scope: Scope
         let anchor: String?
         let attributes: Attributes
     }
 
-    @Stored var fields: Fields
+    let fields: Stored<Fields>
 
     /// The independently owned inline caption, visited before all rows.
-    public var caption: TableCaption? { fields.caption.map { $fields.value(at: $0, as: TableCaption.self) } }
+    public var caption: TableCaption? { fields.caption }
     /// The non-empty logical column grid.
     public var columns: [TableColumn] { fields.columns }
     /// Header rows in stored order.
-    public var head: MarkupCollection<TableRow> { $fields.collection(fields.head) }
+    public var head: MarkupCollection<TableRow> { fields.head }
     /// Body rows in stored order.
-    public var content: MarkupCollection<TableRow> { $fields.collection(fields.content) }
+    public var content: MarkupCollection<TableRow> { fields.content }
     /// Footer rows in stored order.
-    public var foot: MarkupCollection<TableRow> { $fields.collection(fields.foot) }
+    public var foot: MarkupCollection<TableRow> { fields.foot }
     /// Authored source extent. See ``Scope``.
     public var scope: Scope { fields.scope }
     /// The explicit anchor, absent when none was attached.
@@ -41,7 +41,6 @@ public struct Table: Markup {
     public var attributes: Attributes { fields.attributes }
 
     /// Dispatches to this node kind's visitor callback.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 }
 
 extension Table.Fields {
@@ -62,11 +61,11 @@ extension Table.Fields {
         let rows: [Int] = children
         precondition(headCount + contentCount + footCount == rows.count)
         self.init(
-            caption: caption,
+            caption: caption.map { .init(index: $0) },
             columns: columns,
-            head: Array(rows[..<headCount]),
-            content: Array(rows[headCount..<(headCount + contentCount)]),
-            foot: Array(rows[(headCount + contentCount)...]),
+            head: .init(indices: Array(rows[..<headCount])),
+            content: .init(indices: Array(rows[headCount..<(headCount + contentCount)])),
+            foot: .init(indices: Array(rows[(headCount + contentCount)...])),
             scope: Scope(from: markdown_core_node_scope(node)),
             anchor: markdown_core_node_anchor(node).string,
             attributes: Attributes(from: node)
@@ -77,16 +76,16 @@ extension Table.Fields {
 /// Cells whose upper-left coordinate starts in this row, in logical order.
 public struct TableRow: Markup {
     struct Fields: Sendable {
-        let cells: [Int]
+        let cells: MarkupReferences<TableCell>
         let scope: Scope
         let anchor: String?
         let attributes: Attributes
     }
 
-    @Stored var fields: Fields
+    let fields: Stored<Fields>
 
     /// Cells starting in this row, in logical column order.
-    public var cells: MarkupCollection<TableCell> { $fields.collection(fields.cells) }
+    public var cells: MarkupCollection<TableCell> { fields.cells }
     /// Authored source extent. See ``Scope``.
     public var scope: Scope { fields.scope }
     /// The explicit anchor, absent when none was attached.
@@ -95,13 +94,12 @@ public struct TableRow: Markup {
     public var attributes: Attributes { fields.attributes }
 
     /// Dispatches to this node kind's visitor callback.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 }
 
 extension TableRow.Fields {
     init(from node: OpaquePointer, children: [Int]) {
         self.init(
-            cells: children,
+            cells: .init(indices: children),
             scope: Scope(from: markdown_core_node_scope(node)),
             anchor: markdown_core_node_anchor(node).string,
             attributes: Attributes(from: node)
@@ -114,20 +112,20 @@ public struct TableCell: Markup {
     struct Fields: Sendable {
         let rowspan: Int
         let colspan: Int
-        let content: [Int]
+        let content: MarkupReferences<any Markup>
         let scope: Scope
         let anchor: String?
         let attributes: Attributes
     }
 
-    @Stored var fields: Fields
+    let fields: Stored<Fields>
 
     /// Number of rows occupied within this row group.
     public var rowspan: Int { fields.rowspan }
     /// Number of logical columns occupied.
     public var colspan: Int { fields.colspan }
     /// Inline or block content as parsed, without paragraph normalization.
-    public var content: MarkupCollection<any Markup> { $fields.collection(fields.content) }
+    public var content: MarkupCollection<any Markup> { fields.content }
     /// Authored source extent. See ``Scope``.
     public var scope: Scope { fields.scope }
     /// The explicit anchor, absent when none was attached.
@@ -136,7 +134,6 @@ public struct TableCell: Markup {
     public var attributes: Attributes { fields.attributes }
 
     /// Dispatches to this node kind's visitor callback.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 }
 
 extension TableCell.Fields {
@@ -147,7 +144,7 @@ extension TableCell.Fields {
         self.init(
             rowspan: Int(rowspan),
             colspan: Int(colspan),
-            content: content,
+            content: .init(indices: content),
             scope: Scope(from: markdown_core_node_scope(node)),
             anchor: markdown_core_node_anchor(node).string,
             attributes: Attributes(from: node)
@@ -158,16 +155,16 @@ extension TableCell.Fields {
 /// A table's authored caption, with ordinary inline content.
 public struct TableCaption: Markup {
     struct Fields: Sendable {
-        let content: [Int]
+        let content: MarkupReferences<any Markup>
         let scope: Scope
         let anchor: String?
         let attributes: Attributes
     }
 
-    @Stored var fields: Fields
+    let fields: Stored<Fields>
 
     /// Inline content after removing the caption marker.
-    public var content: MarkupCollection<any Markup> { $fields.collection(fields.content) }
+    public var content: MarkupCollection<any Markup> { fields.content }
     /// Authored source extent, including the caption marker.
     public var scope: Scope { fields.scope }
     /// The explicit anchor, absent when none was attached.
@@ -176,13 +173,12 @@ public struct TableCaption: Markup {
     public var attributes: Attributes { fields.attributes }
 
     /// Dispatches to this node kind's visitor callback.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 }
 
 extension TableCaption.Fields {
     init(from node: OpaquePointer, content: [Int]) {
         self.init(
-            content: content,
+            content: .init(indices: content),
             scope: Scope(from: markdown_core_node_scope(node)),
             anchor: markdown_core_node_anchor(node).string,
             attributes: Attributes(from: node)

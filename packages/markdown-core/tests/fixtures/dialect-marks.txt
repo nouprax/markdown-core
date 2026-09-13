@@ -411,11 +411,11 @@ Document scope=1:1..8:21 anchor=null attributes={} children=2
 ├── Paragraph scope=6:1..6:8 anchor=null attributes={} children=3
 │   ├── Text scope=6:1..6:3 anchor=null attributes={} literal="Use" children=0
 │   ├── Cite scope=6:4..6:7 anchor=null attributes={} children=1
-│   │   └── Citation scope=6:5..6:6 referent=footnote(id="n") children=0
+│   │   └── Citation scope=6:5..6:6 anchor=null attributes={} referent=footnote(id="n") children=0
 │   │       ├── CitationPrefix children=0
 │   │       └── CitationSuffix children=0
 │   └── Text scope=6:8..6:8 anchor=null attributes={} literal="." children=0
-└── Footnote scope=8:1..8:21 id="n" children=1
+└── Footnote scope=8:1..8:21 anchor=null attributes={} id="n" children=1
     └── Paragraph scope=8:7..8:21 anchor=null attributes={} children=1
         └── Mark scope=8:7..8:21 anchor=null attributes={} children=2
             ├── Text scope=8:9..8:13 anchor=null attributes={} literal="foot " children=0

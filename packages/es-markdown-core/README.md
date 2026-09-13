@@ -37,7 +37,11 @@ document. Metadata directly exposes ten optional fields:
 and later duplicates are ignored; valid neighboring fields survive. `authors`
 and `keywords` accept a single string, a bracketed array, or a block list.
 `abstract` and `comment` accept single-line text and indented multiline text
-with `: |`. Metadata stays outside Markup children and visitor callbacks.
+with `: |`. `Metadata` is a leaf Markup node stored in `Document.metadata`,
+outside `Document.content`. The walker reports its `"enter"` and `"exit"`
+callbacks before content, even when all metadata fields are absent. Every
+`MarkupVisitor` must provide the `metadata(node, phase)` callback; the node's
+scalar/list values do not receive separate Markup callbacks.
 Numbers retain exact decimal strings. Missing fields are null; an authored null
 is a present scalar value. No field order or individual field scope is stored.
 `Embedded.dimensions: Dimensions | null` reads complete `W`, `WxH`, `alt|W` and
@@ -52,13 +56,13 @@ for size-only labels). Ordinary cross-link labels and invalid suffixes stay raw.
 ## Parse Markdown
 
 ```js
-import { Document, TreeDumper } from "@nouprax/es-markdown-core";
+import { Document, MarkupDumper } from "@nouprax/es-markdown-core";
 
 const document = Document.parse("# Hello");
 
 console.log(document.content[0].kind);
 console.log(document.dump());
-console.log(TreeDumper.dump(document.content[0]));
+console.log(MarkupDumper.dump(document.content[0]));
 ```
 
 `Document.parse` takes no options. It parses the one Markdown Core dialect,
@@ -83,12 +87,12 @@ between paired inline HTML tags remains eligible for Markdown parsing.
 
 `==highlight==` produces `Mark` with parsed inline `content`, including nested
 emphasis, links, and other inline nodes. Matching consumes two equals signs
-at a time; unmatched signs remain text. Typed visitors and walking visitors
+at a time; unmatched signs remain text. Typed visitor callbacks
 include the `Mark` case, and its scope covers both delimiters and the body.
 
 `++inserted++` produces `Insertion` with parsed inline `content`. Repeated pairs
 nest (`++++text++++`), and an odd leftover plus stays outside the matching
-pairs (`+++text+++`). Insertion participates in exhaustive and walking visitors;
+pairs (`+++text+++`). Insertion participates in exhaustive visitor callbacks;
 its scope includes the delimiters. Escapes and opaque bodies retain literal plus signs.
 
 `^[inline note]` produces a one-item `Cite` and a document-owned `Footnote`
@@ -119,8 +123,7 @@ Bracketed spans (`[text]{.class}`) produce `Span(content)` with the shared
 anchor and attributes. Superscript (`^text^`) and subscript (`~text~`) retain
 parsed inline content; their bodies must be non-empty and contain no raw
 whitespace. An escaped ASCII space within a completed body becomes NBSP.
-Strikethrough uses `~~text~~`. All three kinds support typed visitors and
-walking visitors, and their scopes include their authored delimiters.
+Strikethrough uses `~~text~~`. All three kinds support typed visitor callbacks, and their scopes include their authored delimiters.
 Their ES kind tags are `"span"`, `"superscript"` and `"subscript"`.
 
 Nameless fenced containers (`::: {.class}` or `::: class`) expose
@@ -133,33 +136,39 @@ introducing extra Markup wrappers.
 
 ## Traverse and Inspect
 
-`visit(markup, visitor)` dispatches exactly one node to an exhaustive typed
-`Visitor`. `walk(markup, walkingVisitor)` performs a stack-safe depth-first walk
-and dispatches `entering` and `exiting` to an exhaustive `WalkingVisitor` by
-node kind. Each node-kind branch chooses its typed fields and content; there is
-no public iterator or uniform child projection. A directive label is walked as
-the named `label` field, not as directive content.
+Source files are grouped into `common` (shared constraints and support),
+`markup` (nodes and their values), and `visitor` (callbacks, traversal, and dump).
+The public callback interface is named `MarkupVisitor` in all three bindings.
 
-Callback keys match the existing `kind` tags: `embedded`, `paragraph`,
-`tableRow`, and so on. `Visitor<Result>` derives every required callback and its
-parameter type directly from the `Markup` union:
+`walk(markup, visitor)` performs a stack-safe depth-first traversal and drives
+all `MarkupVisitor` callbacks, supplying `"enter"` before descendants and
+`"exit"` after them. Consumers accumulate results in their own state; there
+is no separate single-node dispatch API. Callbacks return `undefined`, which
+rejects return values that TypeScript's `void` would silently discard.
+
+Callback keys match `kind` tags, and each parameter has its concrete node type:
 
 ```typescript
-type Visitor<Result> = {
-    [Node in Markup as Node["kind"]]: (this: void, node: Node) => Result;
+type MarkupVisitor = {
+    [Kind in Markup["kind"]]: (
+        this: void,
+        node: Extract<Markup, { kind: Kind }>,
+        phase: MarkupVisitPhase
+    ) => undefined;
 };
 ```
 
-Within a complete `Visitor<Result>` object, `embedded(embedded)` automatically
-receives an `Embedded`; `heading(heading)` receives a `Heading`. All callbacks
-are required, and `visit(markup, visitor)` returns the chosen callback's result.
-`WalkingVisitor` uses the same keys with a second `phase` parameter, plus
-`citation`, `footnote`, and `specimen` callbacks for scoped values that have no
-`kind`. Consumers must rename the former `visitEmbedded`, `visitHeading`, and
-other `visitXxx` keys to their kind names. Missing callbacks are type errors and
-are never silently skipped during dispatch.
+Object methods such as `heading(node, phase) { ... }` infer `Heading` and
+`MarkupVisitPhase` automatically. Internally, the walker indexes callbacks by
+`node.kind`; its mapped union preserves the correlation without `any` or casts.
 
-`TreeDumper.dump(markup)` and each Markup's non-enumerable `dump()` method emit
+Every callback is required; missing callbacks are compile errors. Metadata,
+citations, footnotes and specimens are Markup and use the same callbacks.
+Visitors process callbacks without recursively visiting descendants; the dumper
+uses the same traversal. The walker schedules each node's typed fields in canonical order. A directive
+label remains the named `label` field, outside directive content.
+
+`MarkupDumper.dump(markup)` and each Markup's non-enumerable `dump()` method emit
 the canonical debug tree for a complete document or focused subtree. The
 text is intended for logs, snapshots, and debugging rather than persistence or
 data interchange.

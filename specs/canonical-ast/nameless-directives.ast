@@ -10,7 +10,7 @@ Document scope=1:1..17:3 anchor=null attributes={} children=4
 │   │           └── Paragraph scope=5:3..5:31 anchor=null attributes={} children=4
 │   │               ├── Text scope=5:3..5:12 anchor=null attributes={} literal="body with " children=0
 │   │               ├── Cite scope=5:13..5:16 anchor=null attributes={} children=1
-│   │               │   └── Citation scope=5:13..5:16 referent=bib(key="key",mode=authorInText) children=0
+│   │               │   └── Citation scope=5:13..5:16 anchor=null attributes={} referent=bib(key="key",mode=authorInText) children=0
 │   │               │       ├── CitationPrefix children=0
 │   │               │       └── CitationSuffix children=0
 │   │               ├── Text scope=5:17..5:21 anchor=null attributes={} literal=" and " children=0

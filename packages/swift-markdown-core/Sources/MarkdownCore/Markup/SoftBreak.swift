@@ -10,9 +10,6 @@ public struct SoftBreak: Markup {
     public let anchor: String?
     /// Ordered classes and records, including duplicates.
     public let attributes: Attributes
-
-    /// Dispatches to the visitor's `SoftBreak` case.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 }
 
 extension SoftBreak {

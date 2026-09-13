@@ -32,13 +32,13 @@ public struct Document: Markup {
         let scope: Scope
         let anchor: String?
         let attributes: Attributes
-        let content: [Int]
-        let metadata: Metadata?
-        let footnotes: [Int]
-        let specimens: [Int]
+        let content: MarkupReferences<any Markup>
+        let metadata: MarkupReference<Metadata>?
+        let footnotes: MarkupReferences<Footnote>
+        let specimens: MarkupReferences<Specimen>
     }
 
-    @Stored var fields: Fields
+    let fields: Stored<Fields>
 
     /// The whole document's boundaries. See ``Scope``.
     public var scope: Scope { fields.scope }
@@ -47,16 +47,14 @@ public struct Document: Markup {
     /// Ordered classes and records, including duplicates.
     public var attributes: Attributes { fields.attributes }
     /// The document's blocks. Block content, not inline.
-    public var content: MarkupCollection<any Markup> { $fields.collection(fields.content) }
-    /// Parsed Properties, absent until their syntax is implemented.
+    public var content: MarkupCollection<any Markup> { fields.content }
+    /// The parsed Properties node, absent when no Properties block was authored.
     public var metadata: Metadata? { fields.metadata }
     /// The footnotes the document owns, ordered by scope start; never part of
     /// `content`.
-    public var footnotes: MarkupCollection<Footnote> { $fields.collection(fields.footnotes) }
+    public var footnotes: MarkupCollection<Footnote> { fields.footnotes }
     /// The specimen definitions, ordered by scope start and visited after footnotes.
-    public var specimens: MarkupCollection<Specimen> { $fields.collection(fields.specimens) }
-    /// Dispatches to the visitor's `Document` case.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
+    public var specimens: MarkupCollection<Specimen> { fields.specimens }
 
     /// Parses `source` and returns the whole tree as values.
     ///
@@ -92,16 +90,9 @@ public struct Document: Markup {
 /// Copies scalars and indexed relations once. No stored Swift record owns
 /// another record, and no native pointer survives the copy.
 private struct DocumentBuilder {
-    /// Each queued handle has the facade type needed to read its owned relations.
-    private enum Record {
-        case markup(OpaquePointer)
-        case footnote(OpaquePointer)
-        case specimen(OpaquePointer)
-        case citation(OpaquePointer)
-    }
-
     /// Source-order indices recorded while copying one native value.
     private struct Relations {
+        var metadata: Int?
         var children: [Int] = []
         var caption: Int?
         var label: Int?
@@ -111,14 +102,16 @@ private struct DocumentBuilder {
         var footnotes: [Int] = []
         var specimens: [Int] = []
         var citations: [Int] = []
+        var prefix: [Int] = []
+        var suffix: [Int] = []
     }
 
-    private var pending: [Record] = []
+    private var pending: [OpaquePointer] = []
     private var stored: [StoredMarkup] = []
     private var resources: [UnsafeRawPointer: SharedResource] = [:]
 
     init(root: OpaquePointer) {
-        pending = [.markup(root)]
+        pending = [root]
         var index = 0
         while index < pending.count {
             let record = copy(pending[index])
@@ -127,24 +120,9 @@ private struct DocumentBuilder {
         }
     }
 
-    private mutating func copy(_ value: Record) -> StoredMarkup {
-        switch value {
-        case let .markup(node):
-            let relations = record(relations: node)
-            return Self.stored(from: node, relations: relations, resources: &resources)
-        case let .footnote(node):
-            return .footnote(
-                Footnote.Fields(from: node, content: record(chain: markdown_core_footnote_content(node)))
-            )
-        case let .specimen(node):
-            return .specimen(
-                Specimen.Fields(from: node, content: record(chain: markdown_core_specimen_content(node)))
-            )
-        case let .citation(node):
-            let prefix = record(chain: markdown_core_citation_prefix(node))
-            let suffix = record(chain: markdown_core_citation_suffix(node))
-            return .citation(Citation.Fields(from: node, prefix: prefix, suffix: suffix))
-        }
+    private mutating func copy(_ node: OpaquePointer) -> StoredMarkup {
+        let relations = record(relations: node)
+        return Self.stored(from: node, relations: relations, resources: &resources)
     }
 
     // Enumerate each facade-owned relation alongside its native kind.
@@ -170,44 +148,48 @@ private struct DocumentBuilder {
                 body = markdown_core_definition_body_next(current)
             }
         case MARKDOWN_CORE_KIND_DOCUMENT:
+            relations.metadata = record(field: markdown_core_node_document_metadata(node))
             var note = markdown_core_node_document_footnotes(node)
             while let current = note {
-                relations.footnotes.append(enqueue(.footnote(current)))
-                note = markdown_core_footnote_next(current)
+                relations.footnotes.append(enqueue(current))
+                note = markdown_core_node_get_next_sibling(current)
             }
             var specimen = markdown_core_node_document_specimens(node)
             while let current = specimen {
-                relations.specimens.append(enqueue(.specimen(current)))
-                specimen = markdown_core_specimen_next(current)
+                relations.specimens.append(enqueue(current))
+                specimen = markdown_core_node_get_next_sibling(current)
             }
         case MARKDOWN_CORE_KIND_CITE:
             var citation = markdown_core_node_cite_citations(node)
             while let current = citation {
-                relations.citations.append(enqueue(.citation(current)))
-                citation = markdown_core_citation_next(current)
+                relations.citations.append(enqueue(current))
+                citation = markdown_core_node_get_next_sibling(current)
             }
             precondition(!relations.citations.isEmpty)
+        case MARKDOWN_CORE_KIND_CITATION:
+            relations.prefix = record(chain: markdown_core_citation_prefix(node))
+            relations.suffix = record(chain: markdown_core_citation_suffix(node))
         default:
             break
         }
         return relations
     }
 
-    private mutating func enqueue(_ value: Record) -> Int {
+    private mutating func enqueue(_ value: OpaquePointer) -> Int {
         let index = pending.count
         pending.append(value)
         return index
     }
 
     private mutating func record(field node: OpaquePointer?) -> Int? {
-        node.map { enqueue(.markup($0)) }
+        node.map { enqueue($0) }
     }
 
     private mutating func record(chain first: OpaquePointer?) -> [Int] {
         var indices: [Int] = []
         var node = first
         while let current = node {
-            indices.append(enqueue(.markup(current)))
+            indices.append(enqueue(current))
             node = markdown_core_node_get_next_sibling(current)
         }
         return indices
@@ -233,10 +215,19 @@ extension DocumentBuilder {
                 Document.Fields(
                     from: node,
                     content: relations.children,
+                    metadata: relations.metadata,
                     footnotes: relations.footnotes,
                     specimens: relations.specimens
                 )
             )
+        case MARKDOWN_CORE_KIND_CITATION:
+            .citation(Citation.Fields(from: node, prefix: relations.prefix, suffix: relations.suffix))
+        case MARKDOWN_CORE_KIND_FOOTNOTE:
+            .footnote(Footnote.Fields(from: node, content: relations.children))
+        case MARKDOWN_CORE_KIND_SPECIMEN:
+            .specimen(Specimen.Fields(from: node, content: relations.children))
+        case MARKDOWN_CORE_KIND_METADATA:
+            .metadata(Metadata(from: node))
         case MARKDOWN_CORE_KIND_CALLOUT:
             .callout(Callout.Fields(from: node, title: relations.title, content: relations.children))
         case MARKDOWN_CORE_KIND_DEFINITION_LIST:
@@ -291,15 +282,15 @@ extension DocumentBuilder {
 }
 
 extension Document.Fields {
-    init(from node: OpaquePointer, content: [Int], footnotes: [Int], specimens: [Int]) {
+    init(from node: OpaquePointer, content: [Int], metadata: Int?, footnotes: [Int], specimens: [Int]) {
         self.init(
             scope: Scope(from: markdown_core_node_scope(node)),
             anchor: markdown_core_node_anchor(node).string,
             attributes: Attributes(from: node),
-            content: content,
-            metadata: markdown_core_node_document_metadata(node).map { Metadata(from: $0) },
-            footnotes: footnotes,
-            specimens: specimens
+            content: .init(indices: content),
+            metadata: metadata.map { .init(index: $0) },
+            footnotes: .init(indices: footnotes),
+            specimens: .init(indices: specimens)
         )
     }
 }

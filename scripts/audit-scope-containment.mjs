@@ -90,7 +90,7 @@ for (const example of fixtureCorpus(root)) {
             }
         else skipped += children.length;
 
-        // Document content and its scoped value collections are separate
+        // Document content and its owned node collections are separate
         // ownership edges, printed in field order rather than source order.
         const sequences =
             node.kind === "Document"

@@ -10,9 +10,6 @@ public struct Text: Markup {
     public let attributes: Attributes
     /// The text as the reader sees it, not as the source spells it.
     public let literal: String
-
-    /// Dispatches to the visitor's `Text` case.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 }
 
 extension Text {

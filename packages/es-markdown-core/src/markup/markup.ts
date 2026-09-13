@@ -1,0 +1,82 @@
+import type { Metadata } from "./metadata.js";
+import type { Footnote } from "./footnote.js";
+import type { Specimen } from "./specimen.js";
+import type { Callout } from "./callout.js";
+import type { Cite, Citation } from "./cite.js";
+import type { CodeBlock } from "./code-block.js";
+import type { Code } from "./code.js";
+import type { Comment } from "./comment.js";
+import type { CrossLink } from "./cross-link.js";
+import type { CrossEmbedded } from "./cross-embedded.js";
+import type { DirectiveBlock } from "./directive-block.js";
+import type { DirectiveLabel } from "./directive-label.js";
+import type { Directive } from "./directive.js";
+import type { Document } from "./document.js";
+import type { Emphasis } from "./emphasis.js";
+import type { FormulaBlock } from "./formula-block.js";
+import type { Formula } from "./formula.js";
+import type { Heading } from "./heading.js";
+import type { HTMLBlock } from "./html-block.js";
+import type { HTML } from "./html.js";
+import type { Embedded } from "./embedded.js";
+import type { LineBreak } from "./line-break.js";
+import type { Link } from "./link.js";
+import type { List, ListItem } from "./list.js";
+import type { Paragraph } from "./paragraph.js";
+import type { SoftBreak } from "./soft-break.js";
+import type { Strikethrough } from "./strikethrough.js";
+import type { Mark } from "./mark.js";
+import type { Insertion } from "./insertion.js";
+import type { Span } from "./span.js";
+import type { Superscript } from "./superscript.js";
+import type { DefinitionList, Definition } from "./definition-list.js";
+import type { Subscript } from "./subscript.js";
+import type { Strong } from "./strong.js";
+import type { Table, TableCaption, TableCell, TableRow } from "./table.js";
+import type { Text } from "./text.js";
+import type { ThematicBreak } from "./thematic-break.js";
+
+export type Markup =
+    | Document
+    | Callout
+    | Paragraph
+    | Heading
+    | ThematicBreak
+    | List
+    | ListItem
+    | CodeBlock
+    | HTMLBlock
+    | FormulaBlock
+    | Table
+    | TableCaption
+    | TableRow
+    | TableCell
+    | DirectiveBlock
+    | DirectiveLabel
+    | Text
+    | SoftBreak
+    | LineBreak
+    | Code
+    | HTML
+    | Comment
+    | CrossLink
+    | CrossEmbedded
+    | Formula
+    | Emphasis
+    | Strong
+    | Strikethrough
+    | Mark
+    | Insertion
+    | Span
+    | Superscript
+    | DefinitionList
+    | Definition
+    | Subscript
+    | Link
+    | Embedded
+    | Directive
+    | Cite
+    | Citation
+    | Footnote
+    | Specimen
+    | Metadata;

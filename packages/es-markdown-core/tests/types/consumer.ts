@@ -10,8 +10,7 @@ import {
     type CrossLink,
     type CrossEmbedded,
     type Dimensions,
-    TreeDumper,
-    visit,
+    MarkupDumper,
     walk,
     type Citation,
     type CitationReferent,
@@ -22,61 +21,139 @@ import {
     type Table,
     type TableCell,
     type TableRow,
-    type Visitor,
-    type WalkingVisitor,
-    type WalkPhase
+    type MarkupVisitor,
+    type MarkupVisitPhase
 } from "@nouprax/es-markdown-core";
 
 const document: Document = Document.parse("# typed");
 // @ts-expect-error the dialect has no switches: parse takes the source and nothing else
 Document.parse("# typed", { tables: true });
 const dump: string = document.dump();
-const explicitDump: string = TreeDumper.dump(document);
+const explicitDump: string = MarkupDumper.dump(document);
 void dump;
 void explicitDump;
-const visitor: Visitor<string> = {
-    document: (node) => node.kind,
-    callout: (node) => node.kind,
-    paragraph: (node) => node.kind,
+const visitor: MarkupVisitor = {
+    citation: (node) => {
+        void node.kind;
+    },
+    footnote: (node) => {
+        void node.kind;
+    },
+    specimen: (node) => {
+        void node.kind;
+    },
+    metadata: (node) => {
+        void node.kind;
+    },
+
+    document: (node) => {
+        void node.kind;
+    },
+    callout: (node) => {
+        void node.kind;
+    },
+    paragraph: (node) => {
+        void node.kind;
+    },
     heading(heading) {
         const inferred: Heading = heading;
-        return String(inferred.level);
+        void inferred.level;
     },
-    thematicBreak: (node) => node.kind,
-    list: (node) => node.kind,
-    listItem: (node) => node.kind,
-    codeBlock: (node) => node.kind,
-    htmlBlock: (node) => node.kind,
-    formulaBlock: (node) => node.kind,
-    table: (node) => node.kind,
-    tableCaption: (node) => node.kind,
-    tableRow: () => "row",
-    tableCell: (node) => node.kind,
-    directiveBlock: (node) => node.kind,
-    directiveLabel: (node) => node.kind,
-    text: (node) => node.kind,
-    softBreak: (node) => node.kind,
-    lineBreak: (node) => node.kind,
-    code: (node) => node.kind,
-    html: (node) => node.kind,
-    comment: (node) => node.kind,
-    crossLink: (node) => node.kind,
-    crossEmbedded: (node) => node.kind,
-    formula: (node) => node.kind,
-    emphasis: (node) => node.kind,
-    strong: (node) => node.kind,
-    strikethrough: (node) => node.kind,
-    mark: (node) => node.kind,
-    insertion: (node) => node.kind,
-    span: (node) => node.kind,
-    superscript: (node) => node.kind,
-    subscript: (node) => node.kind,
-    definitionList: (node) => node.kind,
-    definition: (node) => node.kind,
+    thematicBreak: (node) => {
+        void node.kind;
+    },
+    list: (node) => {
+        void node.kind;
+    },
+    listItem: (node) => {
+        void node.kind;
+    },
+    codeBlock: (node) => {
+        void node.kind;
+    },
+    htmlBlock: (node) => {
+        void node.kind;
+    },
+    formulaBlock: (node) => {
+        void node.kind;
+    },
+    table: (node) => {
+        void node.kind;
+    },
+    tableCaption: (node) => {
+        void node.kind;
+    },
+    tableRow: () => undefined,
+    tableCell: (node) => {
+        void node.kind;
+    },
+    directiveBlock: (node) => {
+        void node.kind;
+    },
+    directiveLabel: (node) => {
+        void node.kind;
+    },
+    text: (node) => {
+        void node.kind;
+    },
+    softBreak: (node) => {
+        void node.kind;
+    },
+    lineBreak: (node) => {
+        void node.kind;
+    },
+    code: (node) => {
+        void node.kind;
+    },
+    html: (node) => {
+        void node.kind;
+    },
+    comment: (node) => {
+        void node.kind;
+    },
+    crossLink: (node) => {
+        void node.kind;
+    },
+    crossEmbedded: (node) => {
+        void node.kind;
+    },
+    formula: (node) => {
+        void node.kind;
+    },
+    emphasis: (node) => {
+        void node.kind;
+    },
+    strong: (node) => {
+        void node.kind;
+    },
+    strikethrough: (node) => {
+        void node.kind;
+    },
+    mark: (node) => {
+        void node.kind;
+    },
+    insertion: (node) => {
+        void node.kind;
+    },
+    span: (node) => {
+        void node.kind;
+    },
+    superscript: (node) => {
+        void node.kind;
+    },
+    subscript: (node) => {
+        void node.kind;
+    },
+    definitionList: (node) => {
+        void node.kind;
+    },
+    definition: (node) => {
+        void node.kind;
+    },
     link(link) {
         // @ts-expect-error the inferred Link parameter has no dimensions
         void link.dimensions;
-        return link.kind;
+        void link.kind;
     },
     embedded(embedded) {
         const inferred: Embedded = embedded;
@@ -84,58 +161,106 @@ const visitor: Visitor<string> = {
         // @ts-expect-error Embedded is not a Heading
         void embedded.level;
         void dimensions;
-        return embedded.kind;
+        void embedded.kind;
     },
-    directive: (node) => node.kind,
-    cite: (node) => node.kind
+    directive: (node) => {
+        void node.kind;
+    },
+    cite: (node) => {
+        void node.kind;
+    }
 };
-const result: string = visit(document, visitor);
-const explicit: string = visit<string>(document, visitor);
-void [result, explicit];
+walk(document, visitor);
+// @ts-expect-error node-level dispatch is not public
+document.accept(visitor);
 // @ts-expect-error a document cannot be passed to the Embedded callback
-visitor.embedded(document);
-const mismatchedVisitor: Visitor<string> = {
+visitor.embedded(document, "enter");
+const mismatchedVisitor: MarkupVisitor = {
     ...visitor,
     // @ts-expect-error the Embedded handler cannot accept only Headings
-    embedded: (heading: Heading) => String(heading.level)
+    embedded: (heading: Heading) => {
+        void heading.level;
+    }
 };
 void mismatchedVisitor;
 const { embedded: omitted, ...remaining } = visitor;
 // @ts-expect-error even one missing kind makes a visitor incomplete
-const missingEmbedded: Visitor<string> = remaining;
+const missingEmbedded: MarkupVisitor = remaining;
 void [omitted, missingEmbedded];
-const walkingVisitor: WalkingVisitor = {
-    ...visitor,
+const walkingVisitor: MarkupVisitor = {
+    document: () => undefined,
+    callout: () => undefined,
+    paragraph: () => undefined,
+    thematicBreak: () => undefined,
+    list: () => undefined,
+    listItem: () => undefined,
+    codeBlock: () => undefined,
+    htmlBlock: () => undefined,
+    formulaBlock: () => undefined,
+    table: () => undefined,
+    tableCaption: () => undefined,
+    tableRow: () => undefined,
+    tableCell: () => undefined,
+    directiveBlock: () => undefined,
+    directiveLabel: () => undefined,
+    text: () => undefined,
+    softBreak: () => undefined,
+    lineBreak: () => undefined,
+    code: () => undefined,
+    html: () => undefined,
+    crossLink: () => undefined,
+    crossEmbedded: () => undefined,
+    comment: () => undefined,
+    formula: () => undefined,
+    emphasis: () => undefined,
+    strong: () => undefined,
+    strikethrough: () => undefined,
+    mark: () => undefined,
+    insertion: () => undefined,
+    span: () => undefined,
+    superscript: () => undefined,
+    subscript: () => undefined,
+    link: () => undefined,
+    embedded: () => undefined,
+    directive: () => undefined,
+    cite: () => undefined,
+    definitionList: () => undefined,
+    definition: () => undefined,
+    metadata: () => undefined,
     heading(heading, phase) {
         const inferred: Heading = heading;
-        const inferredPhase: WalkPhase = phase;
+        const inferredPhase: MarkupVisitPhase = phase;
         void [inferred.level, inferredPhase];
     },
-    // The scoped values are not `Markup`: they arrive through their own
-    // callbacks and never through a kind case.
+    // Owned elements use the same discriminated Markup union.
     citation(citation, phase) {
         const inferred: Citation = citation;
         const referent: CitationReferent = inferred.referent;
-        const inferredPhase: WalkPhase = phase;
-        // @ts-expect-error a Citation remains a scoped value without a kind
-        void citation.kind;
+        const inferredPhase: MarkupVisitPhase = phase;
+        const node: Markup = citation;
+        const kind: "citation" = node.kind;
+        void kind;
         void [referent, inferredPhase];
     },
     specimen(specimen, phase) {
         const inferred: Specimen = specimen;
-        const inferredPhase: WalkPhase = phase;
+        const inferredPhase: MarkupVisitPhase = phase;
         void [inferred, inferredPhase];
     },
     footnote(footnote, phase) {
         const inferred: Footnote = footnote;
-        const inferredPhase: WalkPhase = phase;
+        const inferredPhase: MarkupVisitPhase = phase;
         void [inferred.id, inferredPhase];
     }
 };
 walk(document, walkingVisitor);
+// @ts-expect-error every callback is a no-result callback, even in a mixed object
+walk(document, { ...walkingVisitor, text: () => 1 });
+// @ts-expect-error the phase domain is closed
+visitor.document(document, "unknown");
 const { citation: omittedCitation, ...remainingWalking } = walkingVisitor;
-// @ts-expect-error value callbacks are required as well as Markup callbacks
-const missingCitation: WalkingVisitor = remainingWalking;
+// @ts-expect-error every Markup callback is required
+const missingCitation: MarkupVisitor = remainingWalking;
 void [omittedCitation, missingCitation];
 // @ts-expect-error recursively readonly content cannot be replaced
 document.content[0] = document;
@@ -153,14 +278,16 @@ void rowMarkup;
 void cellMarkup;
 void cell;
 
-// @ts-expect-error Visitor is exhaustive and requires one method per Markup kind
-const incompleteVisitor: Visitor<string> = {
-    document: (node) => node.kind
+// @ts-expect-error MarkupVisitor is exhaustive and requires one method per Markup kind
+const incompleteVisitor: MarkupVisitor = {
+    document: (node) => {
+        void node.kind;
+    }
 };
 void incompleteVisitor;
 
-// @ts-expect-error WalkingVisitor is exhaustive and requires one method per Markup kind
-const incompleteWalkingVisitor: WalkingVisitor = {
+// @ts-expect-error MarkupVisitor is exhaustive and requires one method per Markup kind
+const incompleteWalkingVisitor: MarkupVisitor = {
     document: (node, phase) => {
         void node;
         void phase;
@@ -176,6 +303,12 @@ const scalar: MetadataScalar = { kind: "number", value: "9007199254740993" };
 const listItem: MetadataListItem = { kind: "text", value: "" };
 const metadataValue: MetadataValue = { kind: "scalar", value: scalar };
 const metadata: Metadata = {
+    kind: "metadata",
+    anchor: null,
+    attributes: empty,
+    dump() {
+        return MarkupDumper.dump(this);
+    },
     name: metadataValue,
     title: null,
     subtitle: null,
@@ -219,3 +352,7 @@ void crossLink.dimensions;
 void crossLink.embedded;
 // @ts-expect-error CrossEmbedded also has no redundant embedded flag
 void crossEmbedded.embedded;
+
+// @ts-expect-error dispatch is internal; walk is the only visitor execution API
+import { visit } from "@nouprax/es-markdown-core";
+void visit;

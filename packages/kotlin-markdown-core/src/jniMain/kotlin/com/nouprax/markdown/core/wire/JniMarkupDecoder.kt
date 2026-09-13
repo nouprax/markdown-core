@@ -31,6 +31,26 @@ private class Decoder(
                 document(scope, anchor, attributes, consume)
             }
 
+            JniNodeKind.CITATION -> {
+                citation(scope, anchor, attributes, consume)
+            }
+
+            JniNodeKind.FOOTNOTE -> {
+                val id = reader.required()
+                children { consume(Footnote(id, it, scope, anchor, attributes)) }
+            }
+
+            JniNodeKind.SPECIMEN -> {
+                val id = reader.string()
+                val startValue = reader.long()
+                val start = if (reader.boolean()) startValue else null
+                children { consume(Specimen(id, start, it, scope, anchor, attributes)) }
+            }
+
+            JniNodeKind.METADATA -> {
+                consume(metadata(scope, anchor, attributes))
+            }
+
             JniNodeKind.CALLOUT -> {
                 callout(scope, anchor, attributes, consume)
             }
@@ -223,7 +243,19 @@ private class Decoder(
             }
 
             JniNodeKind.CITE -> {
-                citations { consume(Cite(it, scope, anchor, attributes)) }
+                values("citation", ::node) { values ->
+                    require(values.isNotEmpty()) { "invalid native citation count" }
+                    consume(
+                        Cite(
+                            values.immutableMap {
+                                requireNotNull(it as? Citation) { "invalid citation node" }
+                            },
+                            scope,
+                            anchor,
+                            attributes,
+                        ),
+                    )
+                }
             }
 
             JniNodeKind.TABLE_CAPTION -> {
@@ -261,7 +293,11 @@ private class Decoder(
         actions.addLast {
             consume(
                 immutableList(count) { index ->
-                    requireNotNull(values[index]) { "JNI child was not decoded" }
+                    requireNotNull(values[index]) { "JNI child was not decoded" }.also {
+                        require(
+                            it !is Citation && it !is Footnote && it !is Specimen && it !is Metadata,
+                        ) { "owned node in ordinary content" }
+                    }
                 },
             )
         }
@@ -281,11 +317,18 @@ private class Decoder(
         attributes: Attributes,
         consume: (Markup) -> Unit,
     ) {
-        val metadata = metadata()
+        val hasMetadata = reader.boolean()
+        var metadata: Metadata? = null
         var content: kotlin.collections.List<Markup>? = null
         var footnotes: kotlin.collections.List<Footnote>? = null
         actions.addLast {
-            values("specimen", ::specimen) { specimens ->
+            values("specimen", ::node) { specimenNodes ->
+                val specimens =
+                    specimenNodes.immutableMap {
+                        requireNotNull(
+                            it as? Specimen,
+                        ) { "invalid specimen node" }
+                    }
                 consume(
                     Document(
                         requireNotNull(content),
@@ -299,8 +342,23 @@ private class Decoder(
                 )
             }
         }
-        actions.addLast { values("footnote", ::footnote) { footnotes = it } }
+        actions.addLast {
+            values("footnote", ::node) { nodes ->
+                footnotes =
+                    nodes.immutableMap { requireNotNull(it as? Footnote) { "invalid footnote node" } }
+            }
+        }
         actions.addLast { children { content = it } }
+        if (hasMetadata) {
+            actions.addLast {
+                node {
+                    metadata =
+                        requireNotNull(
+                            it as? Metadata,
+                        ) { "invalid metadata node" }
+                }
+            }
+        }
     }
 
     private fun <T> values(
@@ -317,43 +375,12 @@ private class Decoder(
         for (index in count - 1 downTo 0) actions.addLast { read { values[index] = it } }
     }
 
-    private fun specimen(consume: (Specimen) -> Unit) {
-        val scope = reader.scope()
-        val id = reader.string()
-        val startValue = reader.long()
-        val start = if (reader.boolean()) startValue else null
-        children { consume(Specimen(id, start, it, scope)) }
-    }
-
-    private fun footnote(consume: (Footnote) -> Unit) {
-        val scope = reader.scope()
-        val id = reader.required()
-        children { consume(Footnote(id, it, scope)) }
-    }
-
-    /**
-     * A cite's items are a counted list of values, each its scope, its
-     * referent -- the branch ordinal, then only that branch's fields -- and
-     * its prefix and suffix content in that order.
-     */
-    private fun citations(consume: (kotlin.collections.List<Citation>) -> Unit) {
-        val count = reader.int()
-        require(count >= 1) { "invalid native citation count" }
-        val values = arrayOfNulls<Citation>(count)
-        actions.addLast {
-            consume(
-                immutableList(count) { index ->
-                    requireNotNull(values[index]) { "JNI citation was not decoded" }
-                },
-            )
-        }
-        for (index in count - 1 downTo 0) {
-            actions.addLast { citation { values[index] = it } }
-        }
-    }
-
-    private fun citation(consume: (Citation) -> Unit) {
-        val scope = reader.scope()
+    private fun citation(
+        scope: Scope,
+        anchor: String?,
+        attributes: Attributes,
+        consume: (Markup) -> Unit,
+    ) {
         val referent =
             when (val branch = reader.byte().toInt()) {
                 1 -> CitationReferent.Bib(reader.required(), bibMode())
@@ -363,7 +390,9 @@ private class Decoder(
             }
         var prefix: kotlin.collections.List<Markup>? = null
         actions.addLast {
-            children { suffix -> consume(Citation(referent, requireNotNull(prefix), suffix, scope)) }
+            children { suffix ->
+                consume(Citation(referent, requireNotNull(prefix), suffix, scope, anchor, attributes))
+            }
         }
         actions.addLast {
             children { prefix = it }
@@ -507,10 +536,12 @@ private class Decoder(
         return Attributes(classes, records)
     }
 
-    private fun metadata(): Metadata? {
-        if (!reader.boolean()) return null
-        val scope = reader.scope()
-        return Metadata(
+    private fun metadata(
+        scope: Scope,
+        anchor: String?,
+        attributes: Attributes,
+    ): Metadata =
+        Metadata(
             name = metadataValue(),
             title = metadataValue(),
             subtitle = metadataValue(),
@@ -522,8 +553,9 @@ private class Decoder(
             state = metadataValue(),
             comment = metadataValue(),
             scope = scope,
+            anchor = anchor,
+            attributes = attributes,
         )
-    }
 
     private fun metadataValue(): MetadataValue? {
         if (!reader.boolean()) return null

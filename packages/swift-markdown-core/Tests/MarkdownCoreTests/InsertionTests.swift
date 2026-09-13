@@ -10,8 +10,8 @@ extension APISuite {
         insertion.walk(with: &visitor)
         #expect(
             visitor.events == [
-                "entering:Insertion", "entering:Text", "exiting:Text", "entering:Emphasis",
-                "entering:Text", "exiting:Text", "exiting:Emphasis", "exiting:Insertion",
+                "enter:Insertion", "enter:Text", "exit:Text", "enter:Emphasis",
+                "enter:Text", "exit:Text", "exit:Emphasis", "exit:Insertion",
             ]
         )
         #expect(insertion.content.count == 2)

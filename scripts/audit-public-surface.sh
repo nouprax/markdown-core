@@ -139,14 +139,14 @@ if grep -R -n -E \
     packages/swift-markdown-core/Sources/MarkdownCore; then
     fail "Swift exports a retired API, mutation, or native implementation detail"
 fi
-grep -q 'public enum TreeDumper' packages/swift-markdown-core/Sources/MarkdownCore/Visitor/TreeDumper.swift \
-    && grep -q 'public static func dump' packages/swift-markdown-core/Sources/MarkdownCore/Visitor/TreeDumper.swift \
+grep -q 'public enum MarkupDumper' packages/swift-markdown-core/Sources/MarkdownCore/Visitor/MarkupDumper.swift \
+    && grep -q 'public static func dump' packages/swift-markdown-core/Sources/MarkdownCore/Visitor/MarkupDumper.swift \
     && grep -q 'func dump() -> String' packages/swift-markdown-core/Sources/MarkdownCore/Markup/Markup.swift \
     || fail "Swift does not expose the reviewed Markup debug dump API"
 grep -q 'public struct TableRow: Markup' packages/swift-markdown-core/Sources/MarkdownCore/Markup/Table.swift \
     && grep -q 'public struct TableCell: Markup' packages/swift-markdown-core/Sources/MarkdownCore/Markup/Table.swift \
-    && grep -q 'visit(_ node: TableRow)' packages/swift-markdown-core/Sources/MarkdownCore/Visitor/MarkupVisitor.swift \
-    && grep -q 'visit(_ node: TableCell)' packages/swift-markdown-core/Sources/MarkdownCore/Visitor/MarkupVisitor.swift \
+    && grep -q 'visit(_ node: TableRow, phase: MarkupVisitPhase)' packages/swift-markdown-core/Sources/MarkdownCore/Visitor/MarkupVisitor.swift \
+    && grep -q 'visit(_ node: TableCell, phase: MarkupVisitPhase)' packages/swift-markdown-core/Sources/MarkdownCore/Visitor/MarkupVisitor.swift \
     || fail "Swift table rows and cells are not first-class Markup visitor nodes"
 # The kind count is the CONTRACT's, not a number written here. It was 28 in
 # three places until Step 7 added a 29th kind and all three said the same wrong
@@ -156,26 +156,27 @@ kind_count=$(node -e 'process.stdout.write(String(JSON.parse(require("node:fs").
 if grep -R -n 'defaultVisit' packages/swift-markdown-core/Sources/MarkdownCore; then
     fail "Swift MarkupVisitor exposes a catch-all fallback"
 fi
-test "$(grep -c 'mutating func visit' packages/swift-markdown-core/Sources/MarkdownCore/Visitor/MarkupVisitor.swift)" -eq "$kind_count" \
+test "$(awk '/public protocol MarkupVisitor/{inside=1; next} inside && /^}/{exit} inside && /mutating func visit/{count++} END{print count+0}' packages/swift-markdown-core/Sources/MarkdownCore/Visitor/MarkupVisitor.swift)" -eq "$kind_count" \
     || fail "Swift MarkupVisitor is not exhaustive over all $kind_count Markup kinds"
-grep -q 'public enum WalkPhase' \
-    packages/swift-markdown-core/Sources/MarkdownCore/Visitor/MarkupWalkingVisitor.swift \
-    && grep -q 'public protocol MarkupWalkingVisitor' \
-        packages/swift-markdown-core/Sources/MarkdownCore/Visitor/MarkupWalkingVisitor.swift \
-    && grep -q 'public func walk<Visitor: MarkupWalkingVisitor>' \
-        packages/swift-markdown-core/Sources/MarkdownCore/Visitor/MarkupWalkingVisitor.swift \
-    || fail "Swift does not expose the typed walking visitor contract"
-# A walking visitor names every Markup kind through a `node` entry and every
-# scoped value of the contract (M4) through exactly one `value` entry; the two
-# are counted apart so a value entry can neither stand in for a kind nor go
-# missing.
-scoped_values=$(node -e 'const contract = JSON.parse(require("node:fs").readFileSync("docs/specs/canonical-ast.json", "utf8")); process.stdout.write(Object.entries(contract.values).filter(([, value]) => value.scoped && value.walk !== false).map(([name]) => name).join(" "))')
-test "$(awk '/public protocol MarkupWalkingVisitor/{inside=1; next} inside && /^}/{exit} inside && /mutating func visit\(_ node:/{count++} END{print count+0}' packages/swift-markdown-core/Sources/MarkdownCore/Visitor/MarkupWalkingVisitor.swift)" -eq "$kind_count" \
-    || fail "Swift MarkupWalkingVisitor is not exhaustive over all $kind_count Markup kinds"
-for value in $scoped_values; do
-    test "$(grep -c "mutating func visit(_ value: $value, phase: WalkPhase)" packages/swift-markdown-core/Sources/MarkdownCore/Visitor/MarkupWalkingVisitor.swift)" -eq 1 \
-        || fail "Swift MarkupWalkingVisitor does not name the scoped value $value exactly once"
-done
+grep -q 'public enum MarkupVisitPhase' \
+    packages/swift-markdown-core/Sources/MarkdownCore/Visitor/MarkupVisitor.swift \
+    && grep -q 'public func walk<V: MarkupVisitor>(with visitor: inout V)' \
+        packages/swift-markdown-core/Sources/MarkdownCore/Visitor/MarkupVisitor.swift \
+    || fail "Swift does not use the unified visitor for no-result walks"
+if grep -R -n 'public protocol MarkupWalkingVisitor' packages/swift-markdown-core/Sources; then
+    fail "Swift retains a separate walking visitor protocol"
+fi
+
+# Single-node dispatch is private to the walker; public visitors are callbacks only.
+if grep -R -n -E 'public func (accept|dispatch)|associatedtype Result' packages/swift-markdown-core/Sources; then
+    fail "Swift exposes independent visitor dispatch or return values"
+fi
+if grep -R -n -E 'fun (<Result> )?accept|interface MarkupVisitor<' packages/kotlin-markdown-core/src/commonMain; then
+    fail "Kotlin exposes independent visitor dispatch or return values"
+fi
+if grep -R -n -E 'export function (visit|dispatch)|export type MarkupVisitor<' packages/es-markdown-core/src; then
+    fail "ES exposes independent visitor dispatch or return values"
+fi
 
 grep -q 'explicitApi()' packages/kotlin-markdown-core/build.gradle.kts \
     || fail "Kotlin explicit API mode is disabled"
@@ -184,25 +185,22 @@ if grep -R -n -E \
     packages/kotlin-markdown-core/src/commonMain; then
     fail "Kotlin exports a retired API, mutation, or native implementation detail"
 fi
-grep -q 'public object TreeDumper' \
-    packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/visitor/TreeDumper.kt \
+grep -q 'public object MarkupDumper' \
+    packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/visitor/MarkupDumper.kt \
     && grep -q 'public fun dump(root: Markup): String' \
-        packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/visitor/TreeDumper.kt \
+        packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/visitor/MarkupDumper.kt \
     && grep -q 'public fun dump(): String' \
-        packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/Markup.kt \
+        packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/markup/Markup.kt \
     || fail "Kotlin does not expose the reviewed Markup debug dump API"
-# Overloads are identified by their concrete parameter types, including scoped values.
+# Overloads are identified by their concrete Markup parameter types.
 node --input-type=module <<'NODE'
 import assert from "node:assert/strict";
 import fs from "node:fs";
 
 const contract = JSON.parse(fs.readFileSync("docs/specs/canonical-ast.json", "utf8"));
 const kinds = contract.kinds.map(({ name }) => name);
-const scoped = Object.entries(contract.values)
-    .filter(([, value]) => value.scoped && value.walk !== false)
-    .map(([name]) => name);
 const directory = "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/visitor";
-for (const [name, types] of [["Visitor", kinds], ["WalkingVisitor", [...kinds, ...scoped]]]) {
+for (const [name, types] of [["MarkupVisitor", kinds]]) {
     const source = fs.readFileSync(`${directory}/${name}.kt`, "utf8");
     const body = source.match(new RegExp(`public interface ${name}(?:<Result>)? \\{([\\s\\S]*?)^\\}`, "m"))?.[1];
     assert.ok(body, `missing Kotlin ${name} interface`);
@@ -214,20 +212,16 @@ for (const [name, types] of [["Visitor", kinds], ["WalkingVisitor", [...kinds, .
         assert.equal(method, "visit", `${name}.${method} must use the overloaded visit name`);
         const expected = type.replace(/^[A-Z]+(?=[A-Z][a-z]|$)|^[A-Z]/, (prefix) => prefix.toLowerCase());
         assert.equal(parameter, expected, `${name}.visit(${type}) parameter name`);
-        if (name === "Visitor") {
-            assert.equal(remaining, "", `${name}.visit(${type}) has extra parameters`);
-            assert.equal(result, "Result", `${name}.visit(${type}) return type`);
-        } else {
-            assert.match(remaining, /^,\s*phase: WalkPhase,?\s*$/, `${name}.visit(${type}) phase`);
-        }
+        assert.match(remaining, /^,\s*phase: MarkupVisitPhase,?\s*$/, `${name}.visit(${type}) phase`);
+        assert.equal(result, "Unit", `${name}.visit(${type}) return type`);
     }
 }
 NODE
-grep -q 'public enum class WalkPhase' \
-    packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/visitor/WalkingVisitor.kt \
-    && grep -q 'public fun Markup.walk(visitor: WalkingVisitor)' \
-        packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/visitor/WalkingVisitor.kt \
-    || fail "Kotlin does not expose the typed walking visitor contract"
+grep -q 'public enum class MarkupVisitPhase' \
+    packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/visitor/MarkupVisitor.kt \
+    && grep -q 'public fun Markup.walk(visitor: MarkupVisitor)' \
+        packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/visitor/MarkupVisitor.kt \
+    || fail "Kotlin does not use the unified visitor for no-result walks"
 grep -q '^headers = markdown_core.h$' \
     packages/kotlin-markdown-core/src/nativeInterop/cinterop/markdown_core_kotlin.def \
     && grep -q '^package = com.nouprax.markdown.core.internal.capi$' \
@@ -259,7 +253,7 @@ grep -qx '_JNI_OnLoad' packages/kotlin-markdown-core/src/native/markdown_core_ko
     && grep -q '^        JNI_OnLoad;$' packages/kotlin-markdown-core/src/native/markdown_core_kotlin.map \
     || fail "Kotlin JNI export allowlists must contain only JNI_OnLoad"
 
-if grep -R -E -n 'readonly children' packages/es-markdown-core/src/model; then
+if grep -R -E -n 'readonly children' packages/es-markdown-core/src/markup; then
     fail "ES exposes generic children"
 fi
 if grep -R -n -E \
@@ -267,8 +261,8 @@ if grep -R -n -E \
     packages/es-markdown-core/src; then
     fail "ES exports a retired API, mutation, or native implementation detail"
 fi
-grep -q 'TableRow extends MarkupBase<"tableRow">' packages/es-markdown-core/src/model/table.ts \
-    && grep -q 'TableCell extends MarkupBase<"tableCell">' packages/es-markdown-core/src/model/table.ts \
+grep -q 'TableRow extends MarkupBase<"tableRow">' packages/es-markdown-core/src/markup/table.ts \
+    && grep -q 'TableCell extends MarkupBase<"tableCell">' packages/es-markdown-core/src/markup/table.ts \
     || fail "ES table rows and cells are not first-class Markup nodes"
 if grep -R -E -n 'defaultVisit|visit[A-Z][A-Za-z]+' packages/es-markdown-core/src; then
     fail "ES retains a catch-all or a retired visitor callback name"
@@ -279,27 +273,14 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 
 const read = (name) => fs.readFileSync(`packages/es-markdown-core/src/${name}.ts`, "utf8");
-assert.match(read("visitor"), /export type Visitor<Result> = \{\s*\[Node in Markup as Node\["kind"\]\]: \(this: void, node: Node\) => Result;\s*\};/);
-const walking = read("walking-visitor");
-const values = walking.match(/export type WalkingVisitor = \{\s*\[Node in Markup as Node\["kind"\]\]: \(this: void, node: Node, phase: WalkPhase\) => void;\s*\} & \{([\s\S]*?)^\};/m)?.[1];
-assert.ok(values, "ES WalkingVisitor must map every Markup kind and retain its value callbacks");
-const contract = JSON.parse(fs.readFileSync("docs/specs/canonical-ast.json", "utf8"));
-const expected = Object.entries(contract.values)
-    .filter(([, value]) => value.scoped && value.walk !== false)
-    .map(([name]) => name).sort();
-const callbacks = [...values.matchAll(/^    ([a-zA-Z]+): \(this: void, ([a-zA-Z]+): ([A-Za-z]+), phase: WalkPhase\) => void;/gm)];
-assert.deepEqual(callbacks.map((callback) => callback[3]).sort(), expected, "ES walking value callback types");
-for (const [, key, parameter, type] of callbacks) {
-    const name = type[0].toLowerCase() + type.slice(1);
-    assert.equal(key, name, `${type} callback key`);
-    assert.equal(parameter, name, `${type} callback parameter`);
-}
+assert.match(read("visitor/markup-visitor"), /export type MarkupVisitor = \{\s*\[Kind in Markup\["kind"\]\]: \(\s*this: void,\s*node: Extract<Markup, \{ kind: Kind \}>,\s*phase: MarkupVisitPhase\s*\) => undefined;\s*\};/);
+
 NODE
-grep -q 'export type WalkPhase = "entering" | "exiting"' \
-    packages/es-markdown-core/src/walking-visitor.ts \
-    && grep -q 'export function walk(root: Markup, walkingVisitor: WalkingVisitor)' \
-        packages/es-markdown-core/src/walking-visitor.ts \
-    || fail "ES does not expose the typed walking visitor contract"
+grep -q 'export type MarkupVisitPhase = "enter" | "exit"' \
+    packages/es-markdown-core/src/visitor/markup-visitor.ts \
+    && grep -q 'export function walk(root: Markup, visitor: MarkupVisitor): void' \
+        packages/es-markdown-core/src/visitor/markup-walker.ts \
+    || fail "ES does not use the unified visitor for no-result walks"
 
 node - packages/es-markdown-core/package.json packages/es-markdown-core/src/index.ts <<'NODE'
 import fs from "node:fs";
@@ -323,7 +304,7 @@ const runtimeExports = [
         match[1].split(",").map((name) => name.trim())
     )
 ].sort();
-const expectedRuntime = ["Attributes", "Document", "ParseError", "TreeDumper", "visit", "walk"].sort();
+const expectedRuntime = ["Attributes", "Document", "ParseError", "MarkupDumper", "walk"].sort();
 if (runtimeExports.join("\n") !== expectedRuntime.join("\n")) {
     throw new Error(`Unexpected ES runtime exports: ${runtimeExports.join(", ")}`);
 }

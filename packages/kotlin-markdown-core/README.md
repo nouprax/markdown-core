@@ -44,7 +44,11 @@ document. Metadata directly exposes ten optional fields:
 and later duplicates are ignored; valid neighboring fields survive. `authors`
 and `keywords` accept a single string, a bracketed array, or a block list.
 `abstract` and `comment` accept single-line text and indented multiline text
-with `: |`. Metadata stays outside Markup children and visitor callbacks.
+with `: |`. `Metadata` is a leaf Markup node stored in `Document.metadata`,
+outside `Document.content`. The walker reports its `ENTER` and `EXIT` callbacks
+before content, even when all metadata fields are absent. Every `MarkupVisitor`
+must implement `visit(metadata: Metadata, phase: MarkupVisitPhase)`; the node's
+scalar/list values do not receive separate Markup callbacks.
 Numbers retain exact decimal strings. Missing fields are null; an authored null
 is a present scalar value. No field order or individual field scope is stored.
 `Embedded.dimensions: Dimensions?` reads complete `W`, `WxH`, `alt|W` and
@@ -99,12 +103,12 @@ between paired inline HTML tags remains eligible for Markdown parsing.
 
 `==highlight==` produces `Mark` with parsed inline `content`, including nested
 emphasis, links, and other inline nodes. Matching consumes two equals signs
-at a time; unmatched signs remain text. Typed visitors and walking visitors
+at a time; unmatched signs remain text. Typed visitor callbacks
 include the `Mark` case, and its scope covers both delimiters and the body.
 
 `++inserted++` produces `Insertion` with parsed inline `content`. Repeated pairs
 nest (`++++text++++`), and an odd leftover plus stays outside the matching
-pairs (`+++text+++`). Insertion participates in exhaustive and walking visitors;
+pairs (`+++text+++`). Insertion participates in exhaustive visitor callbacks;
 its scope includes the delimiters. Escapes and opaque bodies retain literal plus signs.
 
 `^[inline note]` produces a one-item `Cite` and a document-owned `Footnote`
@@ -122,8 +126,7 @@ Bracketed spans (`[text]{.class}`) produce `Span(content)` with the shared
 anchor and attributes. Superscript (`^text^`) and subscript (`~text~`) retain
 parsed inline content; their bodies must be non-empty and contain no raw
 whitespace. An escaped ASCII space within a completed body becomes NBSP.
-Strikethrough uses `~~text~~`. All three kinds support typed visitors and
-walking visitors, and their scopes include their authored delimiters.
+Strikethrough uses `~~text~~`. All three kinds support typed visitor callbacks, and their scopes include their authored delimiters.
 
 Nameless fenced containers (`::: {.class}` or `::: class`) expose
 `DirectiveBlock.name` as null; named and nameless forms share closing and nesting
@@ -135,32 +138,35 @@ introducing extra Markup wrappers.
 
 ## Traverse and Inspect
 
-`Markup.accept(visitor)` dispatches exactly one node to an exhaustive typed
-`Visitor`. `Markup.walk(walkingVisitor)` performs a stack-safe depth-first walk
-and dispatches `ENTERING` and `EXITING` to an exhaustive `WalkingVisitor` by
-node kind. Each node-kind branch chooses its typed fields and content; there is
-no public iterator or uniform child projection. A directive label is walked as
-the named `label` field, not as directive content.
+Source files are grouped into `common` (shared constraints and support),
+`markup` (nodes and their values), and `visitor` (callbacks, traversal, and dump).
+The public callback interface is named `MarkupVisitor` in all three bindings.
 
-Both interfaces use `visit` overloads with concrete parameter types and names:
-`Visitor<Result>` declares `fun visit(embedded: Embedded): Result`, while
-`WalkingVisitor` declares `fun visit(embedded: Embedded, phase: WalkPhase)`.
-Implementations use the same names, including `paragraph`, `tableRow`, and
-`citation`. A concrete node can be passed directly with `visitor.visit(embedded)`
-or `visitor.visit(embedded = embedded)`; use `node.accept(visitor)` when the
-static type is `Markup`. These overloads replace the former `visitEmbedded`,
-`visitParagraph`, and other `visitXxx` methods; visitor implementations must
-update their overrides and recompile.
+`Markup.walk(visitor)` performs a stack-safe depth-first traversal and drives
+all `MarkupVisitor` callbacks. Each required overload receives a concrete node and
+`MarkupVisitPhase` and returns `Unit`. The walker supplies `ENTER` before a
+node's descendants and `EXIT` after them. Consumers accumulate results in
+visitor state; there is no separate single-node dispatch API.
+
+`MarkupVisitor` requires a `fun visit(embedded: Embedded, phase: MarkupVisitPhase): Unit`
+overload for every concrete kind. Implementations use the declared parameter
+names, including `paragraph`, `tableRow`, and `citation`. Adding a kind makes
+incomplete implementations fail to compile. Visitors process callbacks without
+recursively visiting descendants; the dumper uses this same traversal.
+
+Traversal schedules each node's typed fields in canonical order. A directive
+label remains the named `label` field, outside directive content. Metadata,
+citations, footnotes and specimens are Markup and use the same callbacks.
 
 Every immutable `Markup` exposes `dump()`, which delegates to the public
-`TreeDumper` and returns the canonical file-tree dump for that subtree:
+`MarkupDumper` and returns the canonical file-tree dump for that subtree:
 
 ```kotlin
-import com.nouprax.markdown.core.TreeDumper
+import com.nouprax.markdown.core.MarkupDumper
 
 val document = Document.parse("# Hello")
 println(document.dump())
-println(TreeDumper.dump(document.content.first()))
+println(MarkupDumper.dump(document.content.first()))
 ```
 
 On JDK 26 and later, JVM applications should launch with

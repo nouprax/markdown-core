@@ -37,9 +37,8 @@ maintaining the contract and comparison policies.
   layout, highlighting, and generated HTML are excluded.
 - Adjacent `Text` nodes in one content array are merged into one node spanning
   from the first's start to the last's end, and a `Text` node is never empty.
-- Besides `Markup`, exactly the scoped values `Citation`, `Footnote`, `Specimen`,
-  and `Metadata` carry a `scope`, because they are written;
-  every other value is located by its owner's scope.
+- Every independently scoped semantic element is `Markup`, including `Citation`,
+  `Footnote`, `Specimen`, and `Metadata`. Other values use their owner’s scope.
 
 ## Coordinates
 
@@ -188,9 +187,10 @@ reference targets, including forward references. These use `Destination.url`
 with the final `#anchor`, no title, and no inherited heading attributes; all
 occurrences share the existing reference resource. Explicit definitions win.
 `Document.metadata: Metadata?` holds ten named optional values defined by the
-[properties grammar](dialect/properties.md). Metadata is never
-Markup and has no visitor callbacks. It is produced by the leading properties envelope.
-It retains only the envelope scope; absent fields differ from explicit null values.
+[properties grammar](dialect/properties.md). Metadata is a leaf `Markup` node
+produced by the leading properties envelope. It receives ordinary visitor and
+walking callbacks. Its fields have no separate scopes; absent fields differ
+from explicit null values.
 
 ### Dimensions
 
@@ -254,10 +254,9 @@ by [bibliography citations](dialect/citations.md); every referenced
 `[^label]` call and inline `^[content]` note produce the `footnote` branch,
 whose `id` names the `Footnote` in `Document.footnotes` with the equal id.
 
-`Citation` and `Footnote` are scoped values, not `Markup` kinds, as the
-[footnotes](dialect/footnotes.md) module defines them: they are written, so
-each carries a `scope`, and each owns Markup, but neither is ever a child of
-a node. A `Citation` is reached only through `Cite.citations`, which holds at
+`Citation` and `Footnote` are `Markup` kinds with the common scope, anchor,
+and attributes fields. Ownership remains explicit: a `Citation` is reached
+through `Cite.citations`, which holds at
 least one item in source order; its `prefix` and `suffix` are non-null inline
 content, empty when absent. A `Footnote` is reached only through
 `Document.footnotes`, which holds every referenced definition and inline note
@@ -269,10 +268,9 @@ nested), with the smallest free `-K` suffix when necessary. All authored ids
 are reserved before ids are assigned during document finalization. Nested
 citations are id edges, including semantic cycles, never object references.
 A later definition of an id already defined is a `Footnote` after the first, which every call resolves to, so a consumer
-keying footnotes by id takes the first. The C facade answers the values through the opaque handles
-`markdown_core_citation` and `markdown_core_footnote` and their accessors,
-never through `markdown_core_node`; Swift, Kotlin, and ECMAScript model them
-as value types outside their `Markup` unions, and `CitationReferent` as
+keying footnotes by id takes the first. The C facade exposes these nodes through `markdown_core_node` and typed
+field accessors. Swift, Kotlin, and ECMAScript include them in `Markup`.
+`CitationReferent` remains a value, modeled as
 `Destination` is modeled: a Swift enum with associated values, a Kotlin sealed
 interface, and an ECMAScript discriminated union on `kind`.
 
@@ -283,7 +281,7 @@ ones. Its nullable `id` retains the authored label; a `specimen(id)` referent
 names the first equal non-null id. Its nullable `start` retains an effective
 explicit counter reset. A consumer derives displayed numbers in definition
 order; neither definitions nor references store that derived state. The C
-facade exposes `markdown_core_specimen` and its typed accessors. See [specimens](dialect/specimens.md) for definition and reference syntax. Ordinary lists have no specimen variant or label field.
+facade exposes a `markdown_core_node` with kind `Specimen` and typed field accessors. See [specimens](dialect/specimens.md) for definition and reference syntax. Ordinary lists have no specimen variant or label field.
 
 ## Node inventory
 
@@ -295,7 +293,7 @@ and returns no document.
 
 | Kind | Fields in canonical order | Nullability and invariants |
 | --- | --- | --- |
-| `Document` | `content: [Markup]`, `metadata: Metadata?`, `footnotes: [Footnote]`, `specimens: [Specimen]` | block content; document-owned footnotes and specimens retain their values in scope-start order; visit content, then footnotes, then specimens; neither definition sequence counts as children |
+| `Document` | `content: [Markup]`, `metadata: Metadata?`, `footnotes: [Footnote]`, `specimens: [Specimen]` | block content; document-owned footnotes and specimens retain their values in scope-start order; visit metadata, then content, then footnotes, then specimens; neither definition sequence counts as children |
 | `Callout` | `variant: String?`, `collapsed: Bool?`, `title: [Markup]?`, `content: [Markup]` | every `>` container; `variant` is the authored type as written or null when the container has no metadata line, and then `collapsed` and `title` are null; `collapsed` is null when no `+` or `-` fold marker was authored, false for `+` and true for `-`; `title` is a node-valued field of inline content visited before `content` and never counted among its children; a present title holds at least one node; block content |
 | `Paragraph` | `content: [Markup]` | inline content |
 | `Heading` | `level: Int`, `content: [Markup]` | `level` is 1 through 6; inline content |
@@ -331,9 +329,13 @@ and returns no document.
 | `Link` | `dest: Destination`, `title: String?`, `content: [Markup]` | `dest` is the tagged `Destination` value and is never absent: `[a]()` and `[a](<>)` wrote one and wrote nothing in it, so it is `url("")`; a reference occurrence answers the destination its definition stated, and an unresolved reference is the inherited literal text; every `Link` owns the `url` branch; absent and empty title remain distinct; inline content |
 | `Embedded` | `dest: Destination`, `title: String?`, `dimensions: Dimensions?`, `content: [Markup]` | `dest` is the tagged `Destination` value and is never absent, for the reason `Link.dest` is not; every `Embedded` owns the `url` branch; absent and empty title remain distinct; content is parsed alt-text inline content |
 | `Directive` | `name: String`, `label: DirectiveLabel?` | letter-first name; attributes use the inherited fields; label is a typed Markup field spanning its brackets, never content; absent and empty labels remain distinct; leaf |
-| `Cite` | `citations: [Citation]` | one or more items in source order; every item has exactly one referent and one cite never mixes referent families; an inherited `[^label]` call is one item with a `footnote` referent whose id is the normalized label without the caret and with empty affixes; its items are scoped values, never children, so it is a leaf |
+| `Cite` | `citations: [Citation]` | one or more items in source order; every item has exactly one referent and one cite never mixes referent families; an inherited `[^label]` call is one item with a `footnote` referent whose id is the normalized label without the caret and with empty affixes; its items are owned Citation nodes in the citations field; ordinary content remains empty |
 | `DefinitionList` | `definitions: [Definition]` | non-empty ordered associations |
 | `Definition` | `term: [Markup]`, `content: [[Markup]]`, `compact: Bool` | inline term; non-empty outer content; each inner collection is one block body; compact records the absence of a blank term gap; visit term then bodies |
+| `Citation` | `referent: CitationReferent`, `prefix: [Markup]`, `suffix: [Markup]` | One Markup node owned by Cite.citations. Its non-null prefix and suffix contain inline markup, empty when absent. It is not ordinary content. |
+| `Footnote` | `id: String`, `content: [Markup]` | A document-owned Markup definition. Referenced definitions keep normalized IDs and block content; inline notes keep direct inline content and collision-free generated IDs. All definitions remain in scope-start order, including duplicates and unused definitions. Calls store IDs, never owned bodies. |
+| `Specimen` | `id: String?`, `start: Int?`, `content: [Markup]` | A document-owned Markup definition in scope-start order, including duplicates and anonymous definitions. id is the authored label or null; start is an explicit effective counter reset or null. Display numbers are derived. |
+| `Metadata` | `name: MetadataValue?`, `title: MetadataValue?`, `subtitle: MetadataValue?`, `time: MetadataValue?`, `date: MetadataValue?`, `authors: MetadataValue?`, `keywords: MetadataValue?`, `abstract: MetadataValue?`, `state: MetadataValue?`, `comment: MetadataValue?` | A leaf Markup node owned by Document.metadata. Field absence differs from explicit null. Its scope covers the authored properties block; unsupported attribute syntax yields null anchor and empty attributes. |
 
 Every row also has the ordered inherited fields `scope: Scope`,
 `anchor: String?`, and `attributes: Attributes`; they are not repeated in the table. The `url` of a `Link` or `Embedded` destination, and
@@ -391,21 +393,29 @@ that detects a category violation in the C facade fails with its platform
 contract-violation error. Valid UTF-8 is a precondition of the C API; the
 bindings provide valid UTF-8 input.
 
-## Visitor and walking
+## MarkupVisitor and walking
 
-The typed `Visitor<Result>` has one dispatch method for every `Markup` kind in
-the node inventory, including `TableRow`, `TableCell`, and `DirectiveLabel`.
-The interface is exhaustive: every typed method is required, there is
-no `defaultVisit`, optional handler, catch-all adapter, or protocol-extension
-fallback. Adding a `Markup` kind must therefore produce compile errors in every
-visitor until the new case is handled. Visiting one node does not implicitly
-recurse.
+The typed `MarkupVisitor` is a callback interface for `walk`, with one required method
+for every `Markup` kind in the node inventory. Each callback receives a concrete
+node and `MarkupVisitPhase` and returns no
+value (`Void` in Swift, `Unit` in Kotlin, `undefined` in TypeScript). Consumers
+accumulate results in their own state. There is no public single-node
+`accept` or `visit` operation and no caller-supplied phase on `walk`.
 
-The bindings also expose a read-only, depth-first `walk` operation driven by an
-exhaustive node-kind-dispatched walking visitor. Every typed callback receives
-an `entering` phase before the node's owned markup relations and an `exiting`
-phase after them. The walk is implemented with an explicit action stack, so
-language call-stack depth does not grow with AST depth.
+The interface is exhaustive: no `defaultVisit`, optional handler, catch-all
+adapter, or protocol-extension fallback. Adding a kind requires updating every
+visitor. TypeScript uses `undefined` because `void` also permits callbacks to
+return values that the traversal would silently discard.
+
+`Markup.walk(with:)` in Swift, `Markup.walk(visitor)` in Kotlin, and
+`walk(markup, visitor)` in TypeScript are the traversal entry points. The walker
+alone schedules descendants and supplies `enter` before their traversal and
+`exit` after it. An explicit stack keeps language call-stack depth independent
+of AST depth. The walker is an implementation detail, not another public
+visitor implementation. Its internal dispatch selects typed callbacks. Swift
+and Kotlin use private per-kind dispatch overloads. TypeScript indexes a mapped
+callback object by `node.kind`, with the node type inferred from that key; its
+walker uses the same type relationship for the per-kind scheduling table.
 
 Walking does not expose an iterator or a generic child projection. Each
 node-kind traversal branch selects its own typed, owned relations. Relations
@@ -415,31 +425,36 @@ are visited in canonical field order and arrays retain their stored order:
 complete AST walk as the named `label` field without becoming directive
 content or contributing to a `children` collection.
 
-The scoped values `Citation`, `Footnote`, and `Specimen` receive value callbacks and the
-walk descends into their markup arrays in declared field order: a `Cite`
-visits each `Citation`, whose `prefix` precedes its `suffix`, and `Document`
-visits `content`, `footnotes`, then `specimens`, each definition descending into its
-`content`. Metadata carries its envelope scope and ten fields but no Markup edges, so
-it receives no visitor callbacks. Unscoped values are likewise not descended into.
+Walking covers all Markup kinds. A `Cite` visits each
+`Citation`, whose `prefix` precedes its `suffix`. `Document` visits present
+`metadata`, `content`, `footnotes`, then `specimens`; definitions descend into
+their own content. Metadata is a leaf and receives both phases. Unscoped
+values, including reference IDs, do not create traversal edges. A semantic
+reference cycle therefore cannot create an ownership or traversal cycle.
 
-The walking visitor is exhaustive under the same rule as `Visitor`: every
-node-kind callback is required and there is no default, optional handler,
-untyped callback, or catch-all adapter. The walk is observation only; it has no
-prune, replace, remove, setter, parent mutation, or native-handle callback.
-
-Operations that need relation-specific policy rather than the canonical full
-walk continue to implement recursion in their own exhaustive per-node Visitor.
+There is no separate walking visitor protocol or forwarding adapter. The walk
+is observation only; it has no prune, replace, remove, setter, parent mutation,
+or native-handle callback. Business visitors do not schedule or recursively
+visit descendants. Nested walks explicitly requested by consumer code use an
+independent walker and do not share pending events. In Kotlin and TypeScript,
+a thrown callback error stops the walk immediately and propagates unchanged;
+pending callbacks, including ancestor exits, are not delivered. A subsequent
+walk starts with its own event stack.
 
 ## Debug dump
 
-Swift, Kotlin, and TypeScript publish `TreeDumper.dump(markup)` and a
-convenience `Markup.dump()` method. Each TreeDumper uses exhaustive per-node
-Visitor dispatch, like cmark's per-node render callback: that node's dump
-function emits its fields and decides which content or field nodes to visit.
-No binding calls the C debug dump. Dumping a non-Document Markup treats that
-value as the root and emits only its operation-defined dump projection. The
-canonical text grammar is defined in `canonical-ast-dump.md` and is for
-debugging rather than serialization.
+Swift, Kotlin, and TypeScript publish `MarkupDumper.dump(markup)` and a
+convenience `Markup.dump()` method. Every dumper is a callback consumer of the
+same walker used by other clients. Its enter callback formats the current
+node, and its exit callback completes that node's output layout.
+
+Output frames describe group names, counts, and indentation only. They contain
+no Markup nodes and do not traverse the tree. This preserves empty groups and
+named sections such as `TableHead` and `DefinitionBody` without adding fake
+Markup kinds or giving the walker dump-specific events. Dumping a subtree uses
+that node as the root. No binding calls the C debug dump. The shared text
+grammar in `canonical-ast-dump.md` remains unchanged and is intended for debugging
+rather than serialization.
 
 ## Kotlin `List` naming contract
 

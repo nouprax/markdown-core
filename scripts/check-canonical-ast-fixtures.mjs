@@ -155,7 +155,8 @@ const stateValidators = {
     "markup.attributes.classes": (tree) => / attributes=\{\./.test(tree),
     "markup.attributes.records": (tree) => / attributes=\{[^}]*[A-Za-z]+="/.test(tree),
     "document.metadata.present": (tree) => /Metadata scope=/.test(tree),
-    "document.metadata.empty": (tree) => /Metadata scope=\S+(?: [a-z]+=null){10} children=0/.test(tree),
+    "document.metadata.empty": (tree) =>
+        /Metadata scope=\S+ anchor=null attributes=\{\}(?: [a-z]+=null){10} children=0/.test(tree),
     "metadata.fields.populated": (tree) => /Metadata scope=.*=(?:scalar|list)\(/.test(tree),
     "metadata.scalar.null": (tree) => /Metadata scope=.*[a-z]=scalar\(null\)/.test(tree),
     "metadata.scalar.bool": (tree) => /Metadata scope=.*[a-z]=scalar\(bool\(/.test(tree),
@@ -225,12 +226,12 @@ const stateValidators = {
     // its own and not an absence.
     "destination.url.empty": (tree) => / dest=url\(""\) /.test(tree),
     "destination.url.value": (tree) => / dest=url\("(?:\\.|[^"\\])+"\) /.test(tree),
-    // The citation model (M4): a `Citation` is a value line under its `Cite`
+    // A `Citation` is a node line under its `Cite`
     // with a tagged referent, its affixes are groups printed even when
-    // empty, and a `Footnote` is a value line under `Document` after the
+    // empty, and a `Footnote` is a node line under `Document` after the
     // content, or absent.
     "citation.referent.footnote": (tree) =>
-        /^.*Citation scope=\S+ referent=footnote\(id="[^"]*"\) children=0$/m.test(tree),
+        /^.*Citation scope=\S+ anchor=null attributes=\{\} referent=footnote\(id="[^"]*"\) children=0$/m.test(tree),
     "citation.affix.empty": (tree) => /CitationPrefix children=0\n.*CitationSuffix children=0(?:\n|$)/.test(tree),
     "document.specimens.empty": (tree) =>
         tree.startsWith("Document scope=") && !/^(?:├──|└──) Specimen scope=/m.test(tree),
@@ -240,7 +241,8 @@ const stateValidators = {
         parentEdges(tree).some((edge) => edge.parent === "Footnote" && edge.kind === "Paragraph"),
     "document.footnotes.empty": (tree) =>
         tree.startsWith("Document scope=") && !/^(?:├──|└──) Footnote scope=/m.test(tree),
-    "document.footnotes.populated": (tree) => /^(?:├──|└──) Footnote scope=\S+ id="[^"]*" children=\d+$/m.test(tree),
+    "document.footnotes.populated": (tree) =>
+        /^(?:├──|└──) Footnote scope=\S+ anchor=null attributes=\{\} id="[^"]*" children=\d+$/m.test(tree),
     "list.variant.alpha.lower": (tree) => /^.*List scope=.* variant=alpha\(lowercased=true\) /m.test(tree),
     "list.variant.alpha.upper": (tree) => /^.*List scope=.* variant=alpha\(lowercased=false\) /m.test(tree),
     "list.variant.roman.lower": (tree) => /^.*List scope=.* variant=roman\(lowercased=true\) /m.test(tree),
@@ -249,19 +251,25 @@ const stateValidators = {
     "list.delimiter.default": (tree) => /^.*List scope=.* delimiter=default /m.test(tree),
     "list.delimiter.parenthesis.closed": (tree) => /^.*List scope=.* delimiter=parenthesis\(closed=true\) /m.test(tree),
     "citation.bib.mode.normal": (tree) =>
-        /Citation scope=\S+ referent=bib\(key="(?:\\.|[^"\\])*",mode=normal\)/.test(tree),
+        /Citation scope=\S+ anchor=null attributes=\{\} referent=bib\(key="(?:\\.|[^"\\])*",mode=normal\)/.test(tree),
     "citation.bib.mode.authorInText": (tree) =>
-        /Citation scope=\S+ referent=bib\(key="(?:\\.|[^"\\])*",mode=authorInText\)/.test(tree),
+        /Citation scope=\S+ anchor=null attributes=\{\} referent=bib\(key="(?:\\.|[^"\\])*",mode=authorInText\)/.test(
+            tree
+        ),
     "citation.bib.mode.suppressAuthor": (tree) =>
-        /Citation scope=\S+ referent=bib\(key="(?:\\.|[^"\\])*",mode=suppressAuthor\)/.test(tree),
-    "citation.referent.specimen": (tree) => /Citation scope=\S+ referent=specimen\(id="[^"\n]+"\)/.test(tree),
+        /Citation scope=\S+ anchor=null attributes=\{\} referent=bib\(key="(?:\\.|[^"\\])*",mode=suppressAuthor\)/.test(
+            tree
+        ),
+    "citation.referent.specimen": (tree) =>
+        /Citation scope=\S+ anchor=null attributes=\{\} referent=specimen\(id="[^"\n]+"\)/.test(tree),
     "citation.prefix.populated": (tree) => /CitationPrefix children=[1-9]\d*/.test(tree),
     "citation.suffix.populated": (tree) => /CitationSuffix children=[1-9]\d*/.test(tree),
     "document.specimens.populated": (tree) => /^(?:├──|└──) Specimen scope=/m.test(tree),
-    "specimen.id.null": (tree) => /Specimen scope=\S+ id=null /.test(tree),
-    "specimen.id.value": (tree) => /Specimen scope=\S+ id="[^"\n]+" /.test(tree),
-    "specimen.start.null": (tree) => /Specimen scope=\S+ id=\S+ start=null /.test(tree),
-    "specimen.start.value": (tree) => /Specimen scope=\S+ id=\S+ start=[1-9]\d* /.test(tree),
+    "specimen.id.null": (tree) => /Specimen scope=\S+ anchor=null attributes=\{\} id=null /.test(tree),
+    "specimen.id.value": (tree) => /Specimen scope=\S+ anchor=null attributes=\{\} id="[^"\n]+" /.test(tree),
+    "specimen.start.null": (tree) => /Specimen scope=\S+ anchor=null attributes=\{\} id=\S+ start=null /.test(tree),
+    "specimen.start.value": (tree) =>
+        /Specimen scope=\S+ anchor=null attributes=\{\} id=\S+ start=[1-9]\d* /.test(tree),
     "span.content.empty": (tree) => /Span scope=.* children=0(?:\n|$)/.test(tree),
     "span.content.populated": (tree) => /Span scope=.* children=[1-9]\d*(?:\n|$)/.test(tree)
 };
@@ -280,8 +288,7 @@ const orderValidators = {
     "markup.attributes.source-order": (tree) =>
         /DirectiveBlock scope=.*attributes=\{[^}]*properties=".*" metadata=".*"\}/.test(tree),
     "inline.source-order": (tree) => /Paragraph scope=.* children=(?:[2-9]|[1-9]\d+)(?:\n|$)/.test(tree),
-    // Every `Footnote` value nests under `Document` after the last content
-    // line (M4).
+    // Every `Footnote` node nests under `Document` after the last content line.
     "document.content-before-footnotes": (tree) => {
         const top = tree
             .split("\n")
@@ -376,14 +383,6 @@ const GROUPS = new Set([
     "TableBody",
     "TableFoot"
 ]);
-// A scoped value prints as a value line -- scope, its scalar fields, children
-// -- without being a kind (M4).
-const scopedValues = Object.fromEntries(
-    Object.entries(contract.values ?? {})
-        .filter(([, value]) => value.scoped)
-        .map(([name, value]) => [name, value.fields])
-);
-
 if (!Array.isArray(manifest.cases) || manifest.cases.length === 0) {
     failures.push("manifest cases must be a non-empty array");
 }
@@ -445,11 +444,8 @@ for (const testCase of manifest.cases ?? []) {
             continue;
         }
         const kind = match[1];
-        const value = kind in scopedValues;
-        if (!value) {
-            actualKinds.add(kind);
-            for (const field of fieldsByKind[kind] ?? []) allObservedFields.add(`${kind}.${field}`);
-        }
+        actualKinds.add(kind);
+        for (const field of fieldsByKind[kind] ?? []) allObservedFields.add(`${kind}.${field}`);
         // Strings first, then bracketed groups: `attributes={a="1" b="2"}` is
         // ONE field, and without the second pass ` b=` reads as a second one.
         const lineWithoutStrings = line
@@ -469,7 +465,7 @@ for (const testCase of manifest.cases ?? []) {
         const kindNames = new Set(contract.kinds.map((kind) => kind.name));
         const isNodeValuedField = (type, seen = new Set()) =>
             [...type.matchAll(/[A-Za-z]+/g)].some(([name]) => {
-                if (name === "Markup" || kindNames.has(name) || name in scopedValues) return true;
+                if (name === "Markup" || kindNames.has(name)) return true;
                 if (seen.has(name)) return false;
                 const value = contract.values[name];
                 if (!Array.isArray(value?.branches)) return false;
@@ -479,14 +475,12 @@ for (const testCase of manifest.cases ?? []) {
                 );
             });
         const dumpFields = Object.fromEntries(
-            [...contract.kinds, ...Object.entries(scopedValues).map(([name, fields]) => ({ name, fields }))].map(
-                (kind) => [
-                    kind.name,
-                    kind.fields.filter((field) => !isNodeValuedField(field.type)).map((field) => field.name)
-                ]
-            )
+            contract.kinds.map((kind) => [
+                kind.name,
+                kind.fields.filter((field) => !isNodeValuedField(field.type)).map((field) => field.name)
+            ])
         );
-        const inherited = value ? ["scope"] : contract.inheritedFields.map((field) => field.name);
+        const inherited = contract.inheritedFields.map((field) => field.name);
         const expectedFieldNames = [...inherited, ...(dumpFields[kind] ?? []), "children"];
         if (!sameArray(fieldNames, expectedFieldNames)) {
             failures.push(

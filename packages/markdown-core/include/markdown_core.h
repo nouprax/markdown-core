@@ -95,11 +95,10 @@ typedef struct markdown_core_scope {
     markdown_core_position end;
 } markdown_core_scope;
 
-/** Metadata is a scoped value, not Markup. It receives no visitor callbacks.
+/** Metadata is a leaf node owned by Document.metadata.
  * Ten optional fields hold values; list items retain order and numbers their exact
  * spelling. Every returned handle and string borrows the document. Field
  * accessors return NULL when absent; an explicit null is a present scalar. */
-typedef struct markdown_core_metadata markdown_core_metadata;
 typedef struct markdown_core_metadata_value markdown_core_metadata_value;
 typedef enum markdown_core_metadata_value_kind {
     MARKDOWN_CORE_METADATA_SCALAR = 1,
@@ -127,28 +126,22 @@ typedef struct markdown_core_metadata_list_item {
     markdown_core_string value;
 } markdown_core_metadata_list_item;
 
-MARKDOWN_CORE_API const markdown_core_metadata *markdown_core_node_document_metadata(const markdown_core_node *node);
-MARKDOWN_CORE_API markdown_core_scope markdown_core_metadata_scope(const markdown_core_metadata *metadata);
+MARKDOWN_CORE_API const markdown_core_node *markdown_core_node_document_metadata(const markdown_core_node *node);
+MARKDOWN_CORE_API const markdown_core_metadata_value *markdown_core_metadata_name(const markdown_core_node *metadata);
+MARKDOWN_CORE_API const markdown_core_metadata_value *markdown_core_metadata_title(const markdown_core_node *metadata);
 MARKDOWN_CORE_API const markdown_core_metadata_value *
-markdown_core_metadata_name(const markdown_core_metadata *metadata);
+markdown_core_metadata_subtitle(const markdown_core_node *metadata);
+MARKDOWN_CORE_API const markdown_core_metadata_value *markdown_core_metadata_time(const markdown_core_node *metadata);
+MARKDOWN_CORE_API const markdown_core_metadata_value *markdown_core_metadata_date(const markdown_core_node *metadata);
 MARKDOWN_CORE_API const markdown_core_metadata_value *
-markdown_core_metadata_title(const markdown_core_metadata *metadata);
+markdown_core_metadata_authors(const markdown_core_node *metadata);
 MARKDOWN_CORE_API const markdown_core_metadata_value *
-markdown_core_metadata_subtitle(const markdown_core_metadata *metadata);
+markdown_core_metadata_keywords(const markdown_core_node *metadata);
 MARKDOWN_CORE_API const markdown_core_metadata_value *
-markdown_core_metadata_time(const markdown_core_metadata *metadata);
+markdown_core_metadata_abstract(const markdown_core_node *metadata);
+MARKDOWN_CORE_API const markdown_core_metadata_value *markdown_core_metadata_state(const markdown_core_node *metadata);
 MARKDOWN_CORE_API const markdown_core_metadata_value *
-markdown_core_metadata_date(const markdown_core_metadata *metadata);
-MARKDOWN_CORE_API const markdown_core_metadata_value *
-markdown_core_metadata_authors(const markdown_core_metadata *metadata);
-MARKDOWN_CORE_API const markdown_core_metadata_value *
-markdown_core_metadata_keywords(const markdown_core_metadata *metadata);
-MARKDOWN_CORE_API const markdown_core_metadata_value *
-markdown_core_metadata_abstract(const markdown_core_metadata *metadata);
-MARKDOWN_CORE_API const markdown_core_metadata_value *
-markdown_core_metadata_state(const markdown_core_metadata *metadata);
-MARKDOWN_CORE_API const markdown_core_metadata_value *
-markdown_core_metadata_comment(const markdown_core_metadata *metadata);
+markdown_core_metadata_comment(const markdown_core_node *metadata);
 MARKDOWN_CORE_API markdown_core_metadata_value_kind
 markdown_core_metadata_value_get_kind(const markdown_core_metadata_value *value);
 MARKDOWN_CORE_API bool markdown_core_metadata_value_scalar(const markdown_core_metadata_value *value,
@@ -214,7 +207,11 @@ typedef enum markdown_core_node_kind {
     MARKDOWN_CORE_KIND_SUBSCRIPT,
     MARKDOWN_CORE_KIND_DEFINITION_LIST,
     MARKDOWN_CORE_KIND_DEFINITION,
-    MARKDOWN_CORE_KIND_TABLE_CAPTION
+    MARKDOWN_CORE_KIND_TABLE_CAPTION,
+    MARKDOWN_CORE_KIND_CITATION,
+    MARKDOWN_CORE_KIND_FOOTNOTE,
+    MARKDOWN_CORE_KIND_SPECIMEN,
+    MARKDOWN_CORE_KIND_METADATA
 } markdown_core_node_kind;
 
 typedef enum markdown_core_list_flavor {
@@ -329,7 +326,6 @@ MARKDOWN_CORE_API void markdown_core_error_free(markdown_core_error *error);
 
 MARKDOWN_CORE_API markdown_core_node_kind markdown_core_node_get_kind(const markdown_core_node *node);
 MARKDOWN_CORE_API const char *markdown_core_node_kind_name(markdown_core_node_kind kind);
-MARKDOWN_CORE_API markdown_core_scope markdown_core_node_scope(const markdown_core_node *node);
 
 /** A directive's `label` is a separate node-valued field and is not part of
  * its child sequence. For a `DirectiveBlock`, these functions traverse only
@@ -339,6 +335,7 @@ MARKDOWN_CORE_API markdown_core_scope markdown_core_node_scope(const markdown_co
  * collections are read through the definition accessors below. */
 MARKDOWN_CORE_API const markdown_core_node *markdown_core_node_get_first_child(const markdown_core_node *node);
 MARKDOWN_CORE_API const markdown_core_node *markdown_core_node_get_next_sibling(const markdown_core_node *node);
+MARKDOWN_CORE_API markdown_core_scope markdown_core_node_scope(const markdown_core_node *node);
 MARKDOWN_CORE_API size_t markdown_core_node_child_count(const markdown_core_node *node);
 
 MARKDOWN_CORE_API bool markdown_core_node_heading_level(const markdown_core_node *node, int32_t *level);
@@ -502,16 +499,8 @@ MARKDOWN_CORE_API bool markdown_core_node_title(const markdown_core_node *node, 
 typedef struct markdown_core_resource markdown_core_resource;
 #endif
 MARKDOWN_CORE_API const markdown_core_resource *markdown_core_node_resource(const markdown_core_node *node);
-/** The scoped values of the citation model (M4). A `Citation` is one item of
- * a `Cite` and a `Footnote` is one element of `Document.footnotes`. Each is
- * written, so it has a scope, and each owns Markup, but neither is a `Markup`
- * kind: a value is reached only through its owner's accessor below, never as
- * a child, and it has no `markdown_core_node_kind`. The handle types are
- * never defined, so nothing can pass one where a node is expected. Both are
- * valid only while the document is. */
-typedef struct markdown_core_citation markdown_core_citation;
-typedef struct markdown_core_footnote markdown_core_footnote;
-typedef struct markdown_core_specimen markdown_core_specimen;
+/** Citation items and document definitions are Markup nodes reached through
+ * their typed owning relations. The accessors below read kind-specific fields. */
 
 /** How a bibliographic citation is to be rendered (M4): `[@key]` is normal,
  * `@key` in running text names the author in text, and `-@key` suppresses
@@ -531,8 +520,7 @@ typedef enum markdown_core_referent_kind {
 /** The tagged `CitationReferent` value (M4): a value, not a node, so it has
  * no scope, and a branch's fields exist only in that branch. `BIB` fills
  * `key` and `mode` and zeroes `id`; `FOOTNOTE` and `SPECIMEN` fill `id`, the definition id
- * the item names, and zeroes `key` and `mode`. Every referent is the
- * `FOOTNOTE` branch until `P7`. */
+ * the item names, and zeroes `key` and `mode`. */
 typedef struct markdown_core_referent {
     markdown_core_referent_kind kind;
     markdown_core_string key;
@@ -541,27 +529,23 @@ typedef struct markdown_core_referent {
 } markdown_core_referent;
 
 /** The first item of a `Cite`, or NULL for a non-cite input; a cite holds at
- * least one item, and the items follow by `markdown_core_citation_next` in
+ * least one item, and the items follow by `markdown_core_node_get_next_sibling` in
  * source order. */
-MARKDOWN_CORE_API const markdown_core_citation *markdown_core_node_cite_citations(const markdown_core_node *node);
-MARKDOWN_CORE_API const markdown_core_citation *markdown_core_citation_next(const markdown_core_citation *citation);
-MARKDOWN_CORE_API markdown_core_scope markdown_core_citation_scope(const markdown_core_citation *citation);
-MARKDOWN_CORE_API bool markdown_core_citation_referent(const markdown_core_citation *citation,
+MARKDOWN_CORE_API const markdown_core_node *markdown_core_node_cite_citations(const markdown_core_node *node);
+MARKDOWN_CORE_API bool markdown_core_citation_referent(const markdown_core_node *citation,
                                                        markdown_core_referent *referent);
 /** The first node of an item's `prefix` or `suffix`, the inline nodes
  * following by `markdown_core_node_get_next_sibling`, or NULL when the affix
- * is empty; every affix is empty until `P7`. */
-MARKDOWN_CORE_API const markdown_core_node *markdown_core_citation_prefix(const markdown_core_citation *citation);
-MARKDOWN_CORE_API const markdown_core_node *markdown_core_citation_suffix(const markdown_core_citation *citation);
+ * is empty. */
+MARKDOWN_CORE_API const markdown_core_node *markdown_core_citation_prefix(const markdown_core_node *citation);
+MARKDOWN_CORE_API const markdown_core_node *markdown_core_citation_suffix(const markdown_core_node *citation);
 
 /** The first element of `Document.footnotes`, or NULL when the document has
  * none or the node is not the document root. Footnotes follow by
- * `markdown_core_footnote_next` in ascending scope order: every winning or
+ * `markdown_core_node_get_next_sibling` in ascending scope order: every winning or
  * unreferenced definition, wherever it was written, and none of them is a
  * child of any node. */
-MARKDOWN_CORE_API const markdown_core_footnote *markdown_core_node_document_footnotes(const markdown_core_node *node);
-MARKDOWN_CORE_API const markdown_core_footnote *markdown_core_footnote_next(const markdown_core_footnote *footnote);
-MARKDOWN_CORE_API markdown_core_scope markdown_core_footnote_scope(const markdown_core_footnote *footnote);
+MARKDOWN_CORE_API const markdown_core_node *markdown_core_node_document_footnotes(const markdown_core_node *node);
 /** The id: the definition's label under the reference-label normalization --
  * full Unicode case fold, trimmed, internal whitespace collapsed -- WITHOUT
  * the caret, exactly the `id` of every `footnote` referent that names it.
@@ -569,22 +553,19 @@ MARKDOWN_CORE_API markdown_core_scope markdown_core_footnote_scope(const markdow
  * NORMATIVE: an id is compared with memcmp over its bytes. It is never case
  * mapped, never NFC/NFD normalized, never re-encoded, and never used as a key
  * in a language map whose equality has an opinion about Unicode. */
-MARKDOWN_CORE_API bool markdown_core_footnote_id(const markdown_core_footnote *footnote, markdown_core_string *id);
+MARKDOWN_CORE_API bool markdown_core_footnote_id(const markdown_core_node *footnote, markdown_core_string *id);
 /** The first node of the footnote's block content, the rest following by
  * `markdown_core_node_get_next_sibling`, or NULL when the content is empty. */
-MARKDOWN_CORE_API const markdown_core_node *markdown_core_footnote_content(const markdown_core_footnote *footnote);
+MARKDOWN_CORE_API const markdown_core_node *markdown_core_footnote_content(const markdown_core_node *footnote);
 
 /** Specimens are document-owned scoped citation definitions, visited after
- * footnotes and never counted as content children. The syntax first lands in
- * P9b. An anonymous definition has no id, and an absent start means no
+ * footnotes and never counted as content children. An anonymous definition has no id, and an absent start means no
  * explicit counter reset. Display numbers are not stored in the AST. */
-MARKDOWN_CORE_API const markdown_core_specimen *markdown_core_node_document_specimens(const markdown_core_node *node);
-MARKDOWN_CORE_API const markdown_core_specimen *markdown_core_specimen_next(const markdown_core_specimen *specimen);
-MARKDOWN_CORE_API markdown_core_scope markdown_core_specimen_scope(const markdown_core_specimen *specimen);
-MARKDOWN_CORE_API bool markdown_core_specimen_properties(const markdown_core_specimen *specimen,
+MARKDOWN_CORE_API const markdown_core_node *markdown_core_node_document_specimens(const markdown_core_node *node);
+MARKDOWN_CORE_API bool markdown_core_specimen_properties(const markdown_core_node *specimen,
                                                          markdown_core_optional_string *id,
                                                          markdown_core_optional_i64 *start);
-MARKDOWN_CORE_API const markdown_core_node *markdown_core_specimen_content(const markdown_core_specimen *specimen);
+MARKDOWN_CORE_API const markdown_core_node *markdown_core_specimen_content(const markdown_core_node *specimen);
 
 /** Allocates the canonical file-tree dump. Free it with markdown_core_dump_free. */
 MARKDOWN_CORE_API bool markdown_core_document_dump(const markdown_core_document *document, uint8_t **output,

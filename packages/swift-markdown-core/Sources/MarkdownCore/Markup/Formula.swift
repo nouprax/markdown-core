@@ -17,9 +17,6 @@ public struct Formula: Markup {
     /// trailing space or line ending is stripped when the body is not all
     /// whitespace.
     public let literal: String
-
-    /// Dispatches to the visitor's `Formula` case.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 }
 
 extension Formula {

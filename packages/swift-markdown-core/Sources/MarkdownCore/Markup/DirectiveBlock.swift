@@ -10,11 +10,11 @@ public struct DirectiveBlock: Markup {
         let anchor: String?
         let attributes: Attributes
         let name: String?
-        let label: Int?
-        let content: [Int]
+        let label: MarkupReference<DirectiveLabel>?
+        let content: MarkupReferences<any Markup>
     }
 
-    @Stored var fields: Fields
+    let fields: Stored<Fields>
 
     /// Where it is, opening fence through closing fence. See ``Scope``.
     public var scope: Scope { fields.scope }
@@ -25,12 +25,9 @@ public struct DirectiveBlock: Markup {
     /// The directive's name without colons, or nil for a nameless container.
     public var name: String? { fields.name }
     /// The bracketed label, or `nil` when the source wrote none.
-    public var label: DirectiveLabel? { fields.label.map { $fields.value(at: $0, as: DirectiveLabel.self) } }
+    public var label: DirectiveLabel? { fields.label }
     /// The block content the fence encloses.
-    public var content: MarkupCollection<any Markup> { $fields.collection(fields.content) }
-
-    /// Dispatches to the visitor's `DirectiveBlock` case.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
+    public var content: MarkupCollection<any Markup> { fields.content }
 }
 
 extension DirectiveBlock.Fields {
@@ -41,8 +38,8 @@ extension DirectiveBlock.Fields {
             anchor: markdown_core_node_anchor(node).string,
             attributes: Attributes(from: node),
             name: values.name,
-            label: label,
-            content: content
+            label: label.map { .init(index: $0) },
+            content: .init(indices: content)
         )
     }
 }

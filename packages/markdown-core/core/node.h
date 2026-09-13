@@ -186,7 +186,7 @@ typedef struct {
  * authored definitions out of the block tree and orders all values by scope.
  * The root owns this chain beside its content. */
 typedef struct {
-    markdown_core_metadata *metadata;
+    struct markdown_core_node *metadata;
     struct markdown_core_node *footnotes;
     struct markdown_core_node *specimens;
 } markdown_core_document_value;
@@ -257,6 +257,7 @@ typedef union {
     markdown_core_footnote_value *footnote;
     markdown_core_specimen_value *specimen;
     markdown_core_document_value *document;
+    markdown_core_metadata_fields *metadata;
     markdown_core_definition *definition;
     markdown_core_definition_body_value *definition_body;
     markdown_core_html_block *html_block;

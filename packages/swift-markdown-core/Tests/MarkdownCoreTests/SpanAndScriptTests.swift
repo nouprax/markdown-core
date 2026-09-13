@@ -10,8 +10,8 @@ extension APISuite {
         span.walk(with: &visitor)
         #expect(
             visitor.events == [
-                "entering:Span", "entering:Text", "exiting:Text", "entering:Emphasis",
-                "entering:Text", "exiting:Text", "exiting:Emphasis", "exiting:Span",
+                "enter:Span", "enter:Text", "exit:Text", "enter:Emphasis",
+                "enter:Text", "exit:Text", "exit:Emphasis", "exit:Span",
             ]
         )
         #expect(span.content.count == 2)
@@ -26,8 +26,8 @@ extension APISuite {
         superscript.walk(with: &visitor)
         #expect(
             visitor.events == [
-                "entering:Superscript", "entering:Text", "exiting:Text", "entering:Emphasis",
-                "entering:Text", "exiting:Text", "exiting:Emphasis", "exiting:Superscript",
+                "enter:Superscript", "enter:Text", "exit:Text", "enter:Emphasis",
+                "enter:Text", "exit:Text", "exit:Emphasis", "exit:Superscript",
             ]
         )
         #expect(superscript.content.count == 2)
@@ -42,8 +42,8 @@ extension APISuite {
         script.walk(with: &visitor)
         #expect(
             visitor.events == [
-                "entering:Subscript", "entering:Text", "exiting:Text", "entering:Emphasis",
-                "entering:Text", "exiting:Text", "exiting:Emphasis", "exiting:Subscript",
+                "enter:Subscript", "enter:Text", "exit:Text", "enter:Emphasis",
+                "enter:Text", "exit:Text", "exit:Emphasis", "exit:Subscript",
             ]
         )
         #expect(script.content.count == 2)

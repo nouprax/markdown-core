@@ -6,10 +6,10 @@ public struct DefinitionList: Markup {
         let scope: Scope
         let anchor: String?
         let attributes: Attributes
-        let definitions: [Int]
+        let definitions: MarkupReferences<Definition>
     }
 
-    @Stored var fields: Fields
+    let fields: Stored<Fields>
 
     /// The authored source range, including the term and all bodies.
     public var scope: Scope { fields.scope }
@@ -18,12 +18,7 @@ public struct DefinitionList: Markup {
     /// Ordered classes and records, including duplicates.
     public var attributes: Attributes { fields.attributes }
     /// The nonempty ordered collection of term/body associations.
-    public var definitions: MarkupCollection<Definition> {
-        $fields.collection(fields.definitions)
-    }
-
-    /// Dispatches to the visitor's `DefinitionList` case.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
+    public var definitions: MarkupCollection<Definition> { fields.definitions }
 }
 
 extension DefinitionList.Fields {
@@ -33,7 +28,7 @@ extension DefinitionList.Fields {
             scope: Scope(from: markdown_core_node_scope(node)),
             anchor: markdown_core_node_anchor(node).string,
             attributes: Attributes(from: node),
-            definitions: children
+            definitions: .init(indices: children)
         )
     }
 }

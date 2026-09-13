@@ -39,7 +39,7 @@ public struct List: Markup {
         let scope: Scope
         let anchor: String?
         let attributes: Attributes
-        let items: [Int]
+        let items: MarkupReferences<ListItem>
         let flavor: ListFlavor
         let start: Int64?
         let variant: OrderedListVariant?
@@ -47,7 +47,7 @@ public struct List: Markup {
         let tight: Bool
     }
 
-    @Stored var fields: Fields
+    let fields: Stored<Fields>
 
     /// Where it is. See ``Scope`` — boundaries, not a byte range.
     public var scope: Scope { fields.scope }
@@ -56,7 +56,7 @@ public struct List: Markup {
     /// Ordered classes and records, including duplicates.
     public var attributes: Attributes { fields.attributes }
     /// A list owns `ListItem`s and nothing else.
-    public var items: MarkupCollection<ListItem> { $fields.collection(fields.items) }
+    public var items: MarkupCollection<ListItem> { fields.items }
     /// Bulleted or numbered.
     public var flavor: ListFlavor { fields.flavor }
     /// The first number an ordered list counts from, and `nil` for a bulleted
@@ -70,9 +70,6 @@ public struct List: Markup {
     /// wraps each item's text in a ``Paragraph``; a tight one does not, so
     /// this is already visible in the tree and is stated here as well.
     public var tight: Bool { fields.tight }
-
-    /// Dispatches to the visitor's `List` case.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 }
 
 extension List.Fields {
@@ -87,7 +84,7 @@ extension List.Fields {
             scope: Scope(from: markdown_core_node_scope(node)),
             anchor: markdown_core_node_anchor(node).string,
             attributes: Attributes(from: node),
-            items: children,
+            items: .init(indices: children),
             flavor: flavor == MARKDOWN_CORE_LIST_FLAVOR_ORDERED ? .ordered : .bullet,
             start: start.has_value ? start.value : nil,
             variant: start.has_value ? Self.variant(variant) : nil,
@@ -121,11 +118,11 @@ public struct ListItem: Markup {
         let scope: Scope
         let anchor: String?
         let attributes: Attributes
-        let content: [Int]
+        let content: MarkupReferences<any Markup>
         let marker: String?
     }
 
-    @Stored var fields: Fields
+    let fields: Stored<Fields>
 
     /// Where it is. See ``Scope`` — boundaries, not a byte range.
     public var scope: Scope { fields.scope }
@@ -134,7 +131,7 @@ public struct ListItem: Markup {
     /// Ordered classes and records, including duplicates.
     public var attributes: Attributes { fields.attributes }
     /// The item's blocks. Block content, not inline.
-    public var content: MarkupCollection<any Markup> { $fields.collection(fields.content) }
+    public var content: MarkupCollection<any Markup> { fields.content }
     /// The authored task marker, or `nil` when this is not a task item.
     public var marker: String? { fields.marker }
     /// Whether this item authored a task marker.
@@ -142,9 +139,6 @@ public struct ListItem: Markup {
     /// Whether this item authored a completed or custom-state task marker.
     /// Non-task items and the incomplete marker (`" "`) are not complete.
     public var completed: Bool { marker != nil && marker != " " }
-
-    /// Dispatches to the visitor's `ListItem` case.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 }
 
 extension ListItem.Fields {
@@ -155,7 +149,7 @@ extension ListItem.Fields {
             scope: Scope(from: markdown_core_node_scope(node)),
             anchor: markdown_core_node_anchor(node).string,
             attributes: Attributes(from: node),
-            content: content,
+            content: .init(indices: content),
             marker: marker.string,
         )
     }

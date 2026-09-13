@@ -35,7 +35,7 @@ extension APISuite {
         #expect(parsed.anchor == nil && parsed.attributes == .empty && parsed.metadata == nil)
     }
 
-    @Test("metadata values preserve decimal text and stay outside Markup walking")
+    @Test("metadata is a leaf Markup and preserves decimal text")
     func metadataValues() throws {
         let parsed = try Document.parse("body")
         let values: [MetadataValue] = [
@@ -51,18 +51,19 @@ extension APISuite {
             authors: values[5],
             scope: parsed.scope
         )
-        var records = parsed.$fields.records
+        var records = parsed.fields.store.records
         records[0] = .document(
             .init(
                 scope: parsed.scope,
                 anchor: nil,
                 attributes: .empty,
-                content: parsed.content.recordIndices,
-                metadata: metadata,
-                footnotes: [],
-                specimens: []
+                content: .init(indices: parsed.content.recordIndices),
+                metadata: .init(index: records.count),
+                footnotes: .init(indices: []),
+                specimens: .init(indices: [])
             )
         )
+        records.append(.metadata(metadata))
         let document = MarkupStore(records: records).value(at: 0, as: Document.self)
         #expect(
             [
@@ -75,7 +76,7 @@ extension APISuite {
         #expect(document.dump().contains("date=list([])"))
         var visitor = RecordingWalkingVisitor()
         document.walk(with: &visitor)
-        #expect(!visitor.events.contains { $0.contains("Metadata") })
+        #expect(Array(visitor.events.prefix(3)) == ["enter:Document", "enter:Metadata", "exit:Metadata"])
     }
 }
 
@@ -171,5 +172,4 @@ extension ErrorsSuite {
             #expect(url.withUTF8 { UnsafeRawPointer($0.baseAddress!) } == storage)
         }
     }
-
 }

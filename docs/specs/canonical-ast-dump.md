@@ -9,10 +9,10 @@ JSON, XML, a renderer, or a serialization/transport API.
 The complete reviewed `.ast` golden corpus and its v1 coverage manifest live
 only at `specs/canonical-ast/`. C, Swift, Kotlin, and ES conformance targets
 enumerate that same non-empty manifest. Swift, Kotlin, and ES each export
-`TreeDumper` and implement this tree format independently over their public
+`MarkupDumper` and implement this tree format independently over their public
 immutable AST; they never call the native C dump or another binding output.
 Every platform `Markup` also offers `dump()`, which delegates to
-`TreeDumper.dump(markup)` and therefore supports focused subtree inspection.
+`MarkupDumper.dump(markup)` and therefore supports focused subtree inspection.
 Dump text is never used to construct production AST values.
 
 The API is public, but the text remains a human-readable debug contract,
@@ -178,6 +178,10 @@ that the dump represents as nested descendants.
 | `Cite` | `anchor`, `attributes` |
 | `DefinitionList` | `anchor`, `attributes` |
 | `Definition` | `anchor`, `attributes`, `compact` |
+| `Citation` | `anchor`, `attributes`, `referent` |
+| `Footnote` | `anchor`, `attributes`, `id` |
+| `Specimen` | `anchor`, `attributes`, `id`, `start` |
+| `Metadata` | `anchor`, `attributes`, `name`, `title`, `subtitle`, `time`, `date`, `authors`, `keywords`, `abstract`, `state`, `comment` |
 
 Example:
 
@@ -195,30 +199,27 @@ implementations in the same reviewed change.
 `scripts/generate-canonical-ast-candidates.sh` writes C dump candidates below
 `build/canonical-ast-candidates/` for human review; tests never accept them.
 
-## Scoped values and groups
+## Owned nodes and groups
 
-A scoped value is written, so it has a scope, but it is not a `Markup` kind
-and never a child: the dump nests it under its owner with the same connectors
-as a child line, and it prints as a VALUE line,
-`Kind scope=L:C..L:C <fields> children=N`, without universal anchor/attribute fields. A
-GROUP line, `Kind children=N`, nests a node-valued list under its owner with
-no scope and no fields; its own `children` is the number of lines nested
-under it. Nested value and group lines are never counted by their owner.
+Every scoped node uses the common node line, including `anchor` and
+`attributes`. Named ownership fields determine nesting without becoming
+ordinary content. A group line, `Kind children=N`, organizes a node-valued
+list and has no scope or common node fields. Groups are not Markup.
 
 - A tagged value prints its branch and named fields with no spaces, as `dest`
   does: `referent=bib(key="...",mode=normal)` and
   `referent=footnote(id="...")`.
-- `Cite` prints one `Citation` value line per item, in source order, with
+- `Cite` prints one `Citation` node line per item, in source order, with
   `referent` as its one field and a `children` of zero; each item nests a
   `CitationPrefix` group and then a `CitationSuffix` group holding the affix
   nodes, both printed even when empty. The cite's own `children` counts the
   items.
-- `Document` prints its content, then one `Footnote` value line per element
+- `Document` prints its content, then one `Footnote` node line per element
   of `footnotes`, in that order, each with `id` as its one field and a
   `children` counting its content, which nests one level below it. The
   document's own `children` counts the content alone. An inline footnote nests
-  its inline body directly under the value line; no `Paragraph` is synthesized.
-  Referenced and inline values share scope-start order.
+  its inline body directly under the node line; no `Paragraph` is synthesized.
+  Referenced and inline definitions share scope-start order.
 
 Example, for the source `[^a]` followed by a blank line and `[^a]: note`:
 
@@ -226,27 +227,26 @@ Example, for the source `[^a]` followed by a blank line and `[^a]: note`:
 Document scope=1:1..3:10 anchor=null attributes={} children=1
 ├── Paragraph scope=1:1..1:4 anchor=null attributes={} children=1
 │   └── Cite scope=1:1..1:4 anchor=null attributes={} children=1
-│       └── Citation scope=1:2..1:3 referent=footnote(id="a") children=0
+│       └── Citation scope=1:2..1:3 anchor=null attributes={} referent=footnote(id="a") children=0
 │           ├── CitationPrefix children=0
 │           └── CitationSuffix children=0
-└── Footnote scope=3:1..3:10 id="a" children=1
+└── Footnote scope=3:1..3:10 anchor=null attributes={} id="a" children=1
     └── Paragraph scope=3:7..3:10 anchor=null attributes={} children=1
         └── Text scope=3:7..3:10 anchor=null attributes={} literal="note" children=0
 ```
 
-## Metadata and specimen values
+## Metadata and specimen nodes
 
 A present `Document.metadata` prints one `Metadata` line before document
-content. It prints `scope`, then `name`, `title`, `subtitle`, `time`, `date`,
+content. It prints `scope`, `anchor`, `attributes`, then `name`, `title`, `subtitle`, `time`, `date`,
 `authors`, `keywords`, `abstract`, `state`, and `comment`, then `children=0`.
 A missing field prints `null`. A present field prints `scalar(null)`,
 `scalar(bool(true|false))`, `scalar(number("lexeme"))`, `scalar(text("..."))`,
-or `list([number("lexeme"),text("...")])`; lists may be empty. Metadata has no
-nested record lines, field scopes, anchors, attributes, or visitor events.
+or `list([number("lexeme"),text("...")])`; lists may be empty. Metadata is a leaf node with no nested record lines or separate field scopes.
 Absent metadata emits no line.
 
 After content and footnotes, a document prints each specimen definition as
-`Specimen scope=L:C..L:C id=<string or null> start=<integer or null> children=N`,
+`Specimen scope=L:C..L:C anchor=null attributes={} id=<string or null> start=<integer or null> children=N`,
 followed by its block content. Definitions do not increase the document's
 `children` count. A specimen reference prints a `Cite` containing a `Citation`
 with `referent=specimen(id="...")` and empty affix groups. No derived display

@@ -699,7 +699,7 @@ const metadataDumpCanary = Object.fromEntries(
     ])
 );
 const capturedMetadata = parseCanonicalDump(
-    'Document scope=1:1..3:3 anchor=null attributes={} children=0\n└── Metadata scope=1:1..3:3 name=scalar(text("a b")) title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0\n'
+    'Document scope=1:1..3:3 anchor=null attributes={} children=0\n└── Metadata scope=1:1..3:3 anchor=null attributes={} name=scalar(text("a b")) title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0\n'
 );
 if (JSON.stringify(parseMetadataDump(capturedMetadata)) !== JSON.stringify(metadataDumpCanary)) {
     throw new Error("obsidian parity: metadata parser rejected direct fields");

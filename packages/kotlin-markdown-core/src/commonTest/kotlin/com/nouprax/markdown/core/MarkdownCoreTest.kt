@@ -10,6 +10,90 @@ import kotlin.test.assertTrue
 
 class ApiTest {
     @Test
+    fun callbackFailureStopsTheWalkAndDoesNotLeakPendingEvents() {
+        val recorder = RecordingWalkingVisitor()
+        val failure = IllegalStateException("exit failure")
+        val visitor =
+            object : MarkupVisitor by recorder {
+                override fun visit(
+                    text: Text,
+                    phase: MarkupVisitPhase,
+                ) {
+                    recorder.visit(text, phase)
+                    if (phase == MarkupVisitPhase.EXIT) throw failure
+                }
+            }
+        assertEquals(failure, assertFailsWith<IllegalStateException> { Document.parse("text").walk(visitor) })
+        assertEquals(
+            listOf("enter:Document", "enter:Paragraph", "enter:Text", "exit:Text"),
+            recorder.events,
+        )
+        Document.parse("").walk(visitor)
+        assertEquals(listOf("enter:Document", "exit:Document"), recorder.events.drop(4))
+    }
+
+    @Test
+    fun deepDumpsConsumeWalkerCallbacks() {
+        val depth = 512
+        val lines =
+            Document
+                .parse("- ".repeat(depth) + "leaf\n")
+                .dump()
+                .trimEnd('\n')
+                .lines()
+        assertEquals(depth * 2 + 3, lines.size)
+        assertTrue(lines.first().startsWith("Document "))
+        assertTrue(lines.last().contains("literal=\"leaf\""))
+        assertTrue(lines.last().startsWith("    ".repeat(depth * 2 + 1) + "└── "))
+    }
+
+    @Test
+    fun walkerControlsCallbackPhases() {
+        val document = Document.parse("text")
+        val visitor = RecordingWalkingVisitor()
+        document.walk(visitor)
+        assertEquals(
+            listOf(
+                "enter:Document",
+                "enter:Paragraph",
+                "enter:Text",
+                "exit:Text",
+                "exit:Paragraph",
+                "exit:Document",
+            ),
+            visitor.events,
+        )
+        val text = assertIs<Paragraph>(document.content.first()).content.first()
+        val leafVisitor = RecordingWalkingVisitor()
+        text.walk(leafVisitor)
+        assertEquals(listOf("enter:Text", "exit:Text"), leafVisitor.events)
+    }
+
+    @Test
+    fun ownedScopedElementsAreMarkupWithFiniteWalks() {
+        val document =
+            Document.parse(
+                "---\ntitle: Example\n---\n[^Label]\n\n[^label]: self [^LABEL]\n\n(@sample) Body\n",
+            )
+        val citation = assertIs<Cite>(assertIs<Paragraph>(document.content.first()).content.first()).citations.single()
+        val nodes: kotlin.collections.List<Markup> =
+            listOf(document.metadata!!, citation, document.footnotes.single(), document.specimens.single())
+        val names = listOf("Metadata", "Citation", "Footnote", "Specimen")
+        for ((index, node) in nodes.withIndex()) {
+            assertEquals(null, node.anchor)
+            assertTrue(node.attributes.classes.isEmpty() && node.attributes.records.isEmpty())
+            val walker = RecordingWalkingVisitor()
+            node.walk(walker)
+            assertEquals(walker.entered, walker.exited)
+            assertTrue(walker.entered > 0)
+            assertEquals("enter:${names[index]}", walker.events.first())
+            assertEquals("exit:${names[index]}", walker.events.last())
+        }
+        assertEquals("label", assertIs<CitationReferent.Footnote>(citation.referent).id)
+        assertEquals("label", document.footnotes.single().id)
+    }
+
+    @Test
     fun embeddedCrossLinksShareDimensionsAndKeepRawPrefixes() {
         val document = Document.parse("![[v.mp4|*raw*|2147483647x2]] ![[n|3]] [[n|100]] ![[n|bad|01]] ![[n]]\n")
         val links = assertIs<Paragraph>(document.content.single()).content.filterIsInstance<CrossEmbedded>()
@@ -45,12 +129,12 @@ class ApiTest {
         images[0].walk(visitor)
         assertEquals(
             listOf(
-                "entering:Embedded",
-                "entering:Emphasis",
-                "entering:Text",
-                "exiting:Text",
-                "exiting:Emphasis",
-                "exiting:Embedded",
+                "enter:Embedded",
+                "enter:Emphasis",
+                "enter:Text",
+                "exit:Text",
+                "exit:Emphasis",
+                "exit:Embedded",
             ),
             visitor.events,
         )
@@ -79,7 +163,22 @@ class ApiTest {
                 .scope.start.line,
         )
         val empty = assertNotNull(Document.parse("---\nunknown: 1\nfree text\n---").metadata)
-        assertEquals(Metadata(scope = empty.scope), empty)
+        assertTrue(
+            listOf(
+                empty.name,
+                empty.title,
+                empty.subtitle,
+                empty.time,
+                empty.date,
+                empty.authors,
+                empty.keywords,
+                empty.`abstract`,
+                empty.state,
+                empty.comment,
+            ).all { it == null },
+        )
+        assertEquals(null, empty.anchor)
+        assertTrue(empty.attributes.classes.isEmpty() && empty.attributes.records.isEmpty())
         assertEquals(null, Document.parse("---\nname: 1\n").metadata)
     }
 
@@ -126,19 +225,15 @@ class ApiTest {
     @Test
     fun visitorIsTypedAndDispatchesByNodeKind() {
         val document = Document.parse("# Heading\n\nBody ![alt](image.png)\n")
-        val visitor: Visitor<String> = KindVisitor()
+        val visitor = KindVisitor()
         val paragraph = assertIs<Paragraph>(document.content.last())
         val embedded = paragraph.content.filterIsInstance<Embedded>().single()
         val node: Markup = embedded
-        assertEquals("heading:1", document.content.first().accept(visitor))
-        assertEquals("Document", document.accept(visitor))
-        assertEquals("Paragraph", paragraph.accept(visitor))
-        assertEquals("Embedded", node.accept(visitor))
-        assertEquals("Document", visitor.visit(document = document))
-        assertEquals("Paragraph", visitor.visit(paragraph = paragraph))
-        assertEquals("Embedded", visitor.visit(embedded = embedded))
-        val visit: (Embedded) -> String = visitor::visit
-        assertEquals("Embedded", visit(embedded))
+        document.walk(visitor)
+        assertEquals(listOf("Document", "heading:1", "Text", "Paragraph", "Text", "Embedded", "Text"), visitor.kinds)
+        visitor.kinds.clear()
+        node.walk(visitor)
+        assertEquals(listOf("Embedded", "Text"), visitor.kinds)
     }
 
     @Test
@@ -149,14 +244,14 @@ class ApiTest {
         mark.walk(visitor)
         assertEquals(
             listOf(
-                "entering:Mark",
-                "entering:Text",
-                "exiting:Text",
-                "entering:Emphasis",
-                "entering:Text",
-                "exiting:Text",
-                "exiting:Emphasis",
-                "exiting:Mark",
+                "enter:Mark",
+                "enter:Text",
+                "exit:Text",
+                "enter:Emphasis",
+                "enter:Text",
+                "exit:Text",
+                "exit:Emphasis",
+                "exit:Mark",
             ),
             visitor.events,
         )
@@ -173,14 +268,14 @@ class ApiTest {
         insertion.walk(visitor)
         assertEquals(
             listOf(
-                "entering:Insertion",
-                "entering:Text",
-                "exiting:Text",
-                "entering:Emphasis",
-                "entering:Text",
-                "exiting:Text",
-                "exiting:Emphasis",
-                "exiting:Insertion",
+                "enter:Insertion",
+                "enter:Text",
+                "exit:Text",
+                "enter:Emphasis",
+                "enter:Text",
+                "exit:Text",
+                "exit:Emphasis",
+                "exit:Insertion",
             ),
             visitor.events,
         )
@@ -197,14 +292,14 @@ class ApiTest {
         span.walk(visitor)
         assertEquals(
             listOf(
-                "entering:Span",
-                "entering:Text",
-                "exiting:Text",
-                "entering:Emphasis",
-                "entering:Text",
-                "exiting:Text",
-                "exiting:Emphasis",
-                "exiting:Span",
+                "enter:Span",
+                "enter:Text",
+                "exit:Text",
+                "enter:Emphasis",
+                "enter:Text",
+                "exit:Text",
+                "exit:Emphasis",
+                "exit:Span",
             ),
             visitor.events,
         )
@@ -221,14 +316,14 @@ class ApiTest {
         superscript.walk(visitor)
         assertEquals(
             listOf(
-                "entering:Superscript",
-                "entering:Text",
-                "exiting:Text",
-                "entering:Emphasis",
-                "entering:Text",
-                "exiting:Text",
-                "exiting:Emphasis",
-                "exiting:Superscript",
+                "enter:Superscript",
+                "enter:Text",
+                "exit:Text",
+                "enter:Emphasis",
+                "enter:Text",
+                "exit:Text",
+                "exit:Emphasis",
+                "exit:Superscript",
             ),
             visitor.events,
         )
@@ -245,14 +340,14 @@ class ApiTest {
         subscript.walk(visitor)
         assertEquals(
             listOf(
-                "entering:Subscript",
-                "entering:Text",
-                "exiting:Text",
-                "entering:Emphasis",
-                "entering:Text",
-                "exiting:Text",
-                "exiting:Emphasis",
-                "exiting:Subscript",
+                "enter:Subscript",
+                "enter:Text",
+                "exit:Text",
+                "enter:Emphasis",
+                "enter:Text",
+                "exit:Text",
+                "exit:Emphasis",
+                "exit:Subscript",
             ),
             visitor.events,
         )
@@ -269,16 +364,16 @@ class ApiTest {
 
         assertEquals(
             listOf(
-                "entering:DirectiveBlock",
-                "entering:DirectiveLabel",
-                "entering:Text",
-                "exiting:Text",
-                "exiting:DirectiveLabel",
-                "entering:Paragraph",
-                "entering:Text",
-                "exiting:Text",
-                "exiting:Paragraph",
-                "exiting:DirectiveBlock",
+                "enter:DirectiveBlock",
+                "enter:DirectiveLabel",
+                "enter:Text",
+                "exit:Text",
+                "exit:DirectiveLabel",
+                "enter:Paragraph",
+                "enter:Text",
+                "exit:Text",
+                "exit:Paragraph",
+                "exit:DirectiveBlock",
             ),
             visitor.events,
         )
@@ -289,10 +384,10 @@ class ApiTest {
         table.walk(tableVisitor)
         assertEquals(listOf(1, 3), tableVisitor.tableRowKinds)
         tableVisitor.events.clear()
-        val typed: WalkingVisitor = tableVisitor
-        typed.visit(tableRow = table.head.single(), phase = WalkPhase.ENTERING)
-        typed.visit(table = table, phase = WalkPhase.EXITING)
-        assertEquals(listOf("entering:TableRow", "exiting:Table"), tableVisitor.events)
+        val typed: MarkupVisitor = tableVisitor
+        typed.visit(tableRow = table.head.single(), phase = MarkupVisitPhase.ENTER)
+        typed.visit(table = table, phase = MarkupVisitPhase.EXIT)
+        assertEquals(listOf("enter:TableRow", "exit:Table"), tableVisitor.events)
     }
 }
 
@@ -349,16 +444,16 @@ class BindingMappingTest {
         callout.walk(visitor)
         assertEquals(
             listOf(
-                "entering:Callout",
-                "entering:Strong",
-                "entering:Text",
-                "exiting:Text",
-                "exiting:Strong",
-                "entering:Paragraph",
-                "entering:Text",
-                "exiting:Text",
-                "exiting:Paragraph",
-                "exiting:Callout",
+                "enter:Callout",
+                "enter:Strong",
+                "enter:Text",
+                "exit:Text",
+                "exit:Strong",
+                "enter:Paragraph",
+                "enter:Text",
+                "exit:Text",
+                "exit:Paragraph",
+                "exit:Callout",
             ),
             visitor.events,
         )
@@ -463,30 +558,30 @@ class BindingMappingTest {
         document.walk(visitor)
         assertEquals(
             listOf(
-                "entering:Document",
-                "entering:Paragraph",
-                "entering:Cite",
-                "entering:Citation",
-                "exiting:Citation",
-                "exiting:Cite",
-                "exiting:Paragraph",
-                "entering:Footnote",
-                "entering:Cite",
-                "entering:Citation",
-                "exiting:Citation",
-                "exiting:Cite",
-                "exiting:Footnote",
-                "entering:Footnote",
-                "entering:Text",
-                "exiting:Text",
-                "exiting:Footnote",
-                "entering:Footnote",
-                "entering:Paragraph",
-                "entering:Text",
-                "exiting:Text",
-                "exiting:Paragraph",
-                "exiting:Footnote",
-                "exiting:Document",
+                "enter:Document",
+                "enter:Paragraph",
+                "enter:Cite",
+                "enter:Citation",
+                "exit:Citation",
+                "exit:Cite",
+                "exit:Paragraph",
+                "enter:Footnote",
+                "enter:Cite",
+                "enter:Citation",
+                "exit:Citation",
+                "exit:Cite",
+                "exit:Footnote",
+                "enter:Footnote",
+                "enter:Text",
+                "exit:Text",
+                "exit:Footnote",
+                "enter:Footnote",
+                "enter:Paragraph",
+                "enter:Text",
+                "exit:Text",
+                "exit:Paragraph",
+                "exit:Footnote",
+                "exit:Document",
             ),
             visitor.events,
         )
@@ -518,7 +613,7 @@ class BindingMappingTest {
         assertEquals("twice", assertIs<Text>(assertIs<Paragraph>(later.content.single()).content.single()).literal)
         assertTrue(
             document.dump().endsWith(
-                "└── Footnote scope=5:1..5:11 id=\"a\" children=1\n" +
+                "└── Footnote scope=5:1..5:11 anchor=null attributes={} id=\"a\" children=1\n" +
                     "    └── Paragraph scope=5:7..5:11 anchor=null attributes={} children=1\n" +
                     "        └── Text scope=5:7..5:11 anchor=null attributes={} literal=\"twice\" children=0\n",
             ),
@@ -527,19 +622,19 @@ class BindingMappingTest {
 
         val visitor = RecordingWalkingVisitor()
         document.walk(visitor)
-        val cite = listOf("entering:Cite", "entering:Citation", "exiting:Citation", "exiting:Cite")
+        val cite = listOf("enter:Cite", "enter:Citation", "exit:Citation", "exit:Cite")
         val footnoteEvents =
             listOf(
-                "entering:Footnote",
-                "entering:Paragraph",
-                "entering:Text",
-                "exiting:Text",
-                "exiting:Paragraph",
-                "exiting:Footnote",
+                "enter:Footnote",
+                "enter:Paragraph",
+                "enter:Text",
+                "exit:Text",
+                "exit:Paragraph",
+                "exit:Footnote",
             )
         assertEquals(
-            listOf("entering:Document", "entering:Paragraph") + cite + listOf("entering:Text", "exiting:Text") + cite +
-                listOf("exiting:Paragraph") + footnoteEvents + footnoteEvents + listOf("exiting:Document"),
+            listOf("enter:Document", "enter:Paragraph") + cite + listOf("enter:Text", "exit:Text") + cite +
+                listOf("exit:Paragraph") + footnoteEvents + footnoteEvents + listOf("exit:Document"),
             visitor.events,
         )
     }

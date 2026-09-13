@@ -12,11 +12,11 @@ public struct Callout: Markup {
         let attributes: Attributes
         let variant: String?
         let collapsed: Bool?
-        let title: [Int]?
-        let content: [Int]
+        let title: MarkupReferences<any Markup>?
+        let content: MarkupReferences<any Markup>
     }
 
-    @Stored var fields: Fields
+    let fields: Stored<Fields>
 
     /// Where it is. See ``Scope`` — boundaries, not a byte range.
     public var scope: Scope { fields.scope }
@@ -32,14 +32,9 @@ public struct Callout: Markup {
     public var collapsed: Bool? { fields.collapsed }
     /// The title's inline content, or `nil` when no title was authored; never
     /// empty. The callout owns it as a field; it is never part of `content`.
-    public var title: MarkupCollection<any Markup>? {
-        fields.title.map { $fields.collection($0) }
-    }
+    public var title: MarkupCollection<any Markup>? { fields.title }
     /// The quoted blocks. Block content, not inline.
-    public var content: MarkupCollection<any Markup> { $fields.collection(fields.content) }
-
-    /// Dispatches to the visitor's `Callout` case.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
+    public var content: MarkupCollection<any Markup> { fields.content }
 }
 
 extension Callout.Fields {
@@ -53,8 +48,8 @@ extension Callout.Fields {
             attributes: Attributes(from: node),
             variant: variant.string,
             collapsed: collapsed.has_value ? collapsed.value : nil,
-            title: title,
-            content: content
+            title: title.map { .init(indices: $0) },
+            content: .init(indices: content)
         )
     }
 }

@@ -37,7 +37,11 @@ export type NativeKind =
     | "subscript"
     | "definitionList"
     | "definition"
-    | "tableCaption";
+    | "tableCaption"
+    | "citation"
+    | "footnote"
+    | "specimen"
+    | "metadata";
 
 export const kinds: readonly (NativeKind | "none")[] = Object.freeze([
     "none",
@@ -79,5 +83,9 @@ export const kinds: readonly (NativeKind | "none")[] = Object.freeze([
     "subscript",
     "definitionList",
     "definition",
-    "tableCaption"
+    "tableCaption",
+    "citation",
+    "footnote",
+    "specimen",
+    "metadata"
 ]);

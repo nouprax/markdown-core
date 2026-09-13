@@ -42,11 +42,16 @@ internal enum class JniNodeKind(
     DEFINITION_LIST(37),
     DEFINITION(38),
     TABLE_CAPTION(39),
+    CITATION(40),
+    FOOTNOTE(41),
+    SPECIMEN(42),
+    METADATA(43),
     ;
 
     companion object {
         private val byRawValue = entries.associateBy(JniNodeKind::rawValue)
 
-        fun from(rawValue: Int): JniNodeKind = byRawValue[rawValue] ?: error("unsupported native node kind $rawValue")
+        fun from(rawValue: Int): JniNodeKind =
+            requireNotNull(byRawValue[rawValue]) { "unsupported native node kind $rawValue" }
     }
 }

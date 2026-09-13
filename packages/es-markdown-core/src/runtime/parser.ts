@@ -1,5 +1,5 @@
-import type { Document } from "../model/document.js";
-import { ParseError } from "../parse-error.js";
+import type { Document } from "../markup/document.js";
+import { ParseError } from "../common/parse-error.js";
 import { Decoder, transferHeaderSize } from "../wire/node-decoder.js";
 import { native, type NativeExports } from "./native.js";
 

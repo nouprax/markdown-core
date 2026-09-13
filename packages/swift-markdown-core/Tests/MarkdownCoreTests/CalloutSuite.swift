@@ -16,8 +16,8 @@ import Testing
         callout.walk(with: &visitor)
         #expect(
             visitor.events == [
-                "entering:Callout", "entering:Strong", "entering:Text", "exiting:Text", "exiting:Strong",
-                "entering:Paragraph", "entering:Text", "exiting:Text", "exiting:Paragraph", "exiting:Callout",
+                "enter:Callout", "enter:Strong", "enter:Text", "exit:Text", "exit:Strong",
+                "enter:Paragraph", "enter:Text", "exit:Text", "exit:Paragraph", "exit:Callout",
             ]
         )
         let values = try Document.parse("> [!note]+ %%t%%\n\n> [!note]\n").content
@@ -29,5 +29,4 @@ import Testing
         #expect(empty.title == nil)
         #expect(empty.collapsed == nil)
     }
-
 }

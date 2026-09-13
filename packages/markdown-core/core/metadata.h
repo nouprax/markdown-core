@@ -20,8 +20,7 @@ struct markdown_core_metadata_value {
 
 /* Named values are inline and owned by the document. No authored field order
  * or per-field source position is retained. */
-struct markdown_core_metadata {
-    markdown_core_scope scope;
+typedef struct markdown_core_metadata_fields {
     markdown_core_metadata_value name;
     markdown_core_metadata_value title;
     markdown_core_metadata_value subtitle;
@@ -32,9 +31,9 @@ struct markdown_core_metadata {
     markdown_core_metadata_value abstract;
     markdown_core_metadata_value state;
     markdown_core_metadata_value comment;
-};
+} markdown_core_metadata_fields;
 
 /* The document owns the committed result; decoder temporaries use the same allocator. */
-void markdown_core_metadata_free(markdown_core_mem *mem, markdown_core_metadata *metadata);
+void markdown_core_metadata_fields_free(markdown_core_mem *mem, markdown_core_metadata_fields *metadata);
 
 #endif

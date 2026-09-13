@@ -91,8 +91,8 @@ Document scope=1:1..11:29 anchor=null attributes={} children=6
 │   │       └── Superscript scope=11:21..11:22 anchor=null attributes={} children=0
 │   ├── Text scope=11:24..11:24 anchor=null attributes={} literal=" " children=0
 │   └── Cite scope=11:25..11:29 anchor=null attributes={} children=1
-│       └── Citation scope=11:27..11:28 referent=footnote(id="inline-1") children=0
+│       └── Citation scope=11:27..11:28 anchor=null attributes={} referent=footnote(id="inline-1") children=0
 │           ├── CitationPrefix children=0
 │           └── CitationSuffix children=0
-└── Footnote scope=11:25..11:29 id="inline-1" children=1
+└── Footnote scope=11:25..11:29 anchor=null attributes={} id="inline-1" children=1
     └── Superscript scope=11:27..11:28 anchor=null attributes={} children=0

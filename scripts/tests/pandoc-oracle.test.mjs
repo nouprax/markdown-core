@@ -141,7 +141,7 @@ test("citation projection compares keys, modes and ordered affixes without fallb
             "Document scope=1:1..1:16 anchor=null attributes={} children=1\n" +
                 "└── Paragraph scope=1:1..1:16 anchor=null attributes={} children=1\n" +
                 "    └── Cite scope=1:1..1:16 anchor=null attributes={} children=1\n" +
-                '        └── Citation scope=1:2..1:15 referent=bib(key="key",mode=suppressAuthor) children=0\n' +
+                '        └── Citation scope=1:2..1:15 anchor=null attributes={} referent=bib(key="key",mode=suppressAuthor) children=0\n' +
                 "            ├── CitationPrefix children=1\n" +
                 '            │   └── Text scope=1:2..1:4 anchor=null attributes={} literal="pre" children=0\n' +
                 "            └── CitationSuffix children=1\n" +

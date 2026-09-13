@@ -5,10 +5,8 @@ MARKDOWN_CORE_1.0 {
     markdown_core_attribute_value_class_count;
     markdown_core_attribute_value_record_at;
     markdown_core_attribute_value_record_count;
-    markdown_core_citation_next;
     markdown_core_citation_prefix;
     markdown_core_citation_referent;
-    markdown_core_citation_scope;
     markdown_core_citation_suffix;
     markdown_core_definition_body_content;
     markdown_core_definition_body_next;
@@ -22,15 +20,12 @@ MARKDOWN_CORE_1.0 {
     markdown_core_error_get_message;
     markdown_core_footnote_content;
     markdown_core_footnote_id;
-    markdown_core_footnote_next;
-    markdown_core_footnote_scope;
     markdown_core_metadata_abstract;
     markdown_core_metadata_authors;
     markdown_core_metadata_comment;
     markdown_core_metadata_date;
     markdown_core_metadata_keywords;
     markdown_core_metadata_name;
-    markdown_core_metadata_scope;
     markdown_core_metadata_state;
     markdown_core_metadata_subtitle;
     markdown_core_metadata_time;
@@ -79,9 +74,7 @@ MARKDOWN_CORE_1.0 {
     markdown_core_node_table_properties;
     markdown_core_node_title;
     markdown_core_specimen_content;
-    markdown_core_specimen_next;
     markdown_core_specimen_properties;
-    markdown_core_specimen_scope;
   local:
     *;
 };

@@ -17,7 +17,7 @@ state: draft
 The document body starts here.
 ```
 
-The document has a `Metadata` value with title text, author and keyword lists,
+The document has a `Metadata` node with title text, author and keyword lists,
 and state text. The envelope is excluded from ordinary document content; the
 body starts after its closing fence with its original source coordinates.
 Metadata text is atomic and is not parsed as Markdown.
@@ -136,6 +136,11 @@ a whole, with no partial values.
 
 This is a bounded properties language, not general YAML: nested objects/lists,
 aliases, tags, merge keys, JSON root objects, and multiline quoted/plain folding
-are unsupported. Metadata has one envelope scope, no individual field scopes,
-and no markup visitor callbacks. The named `comment` field is data, not a
-`Comment` node.
+are unsupported.
+
+`Metadata` is a leaf Markup node exposed through `Document.metadata`, outside
+`Document.content`. A document walk reports its `enter` and `exit` callbacks
+before visiting content, including when every metadata field is absent.
+Every `MarkupVisitor` must handle Metadata. The node has one envelope scope;
+its scalar/list values have no individual scopes or separate Markup callbacks.
+The named `comment` field is data, not a `Comment` node.

@@ -446,10 +446,10 @@ Document scope=1:1..6:8 anchor=null attributes={} children=2
 ├── Paragraph scope=6:1..6:8 anchor=null attributes={} children=2
 │   ├── Text scope=6:1..6:4 anchor=null attributes={} literal="call" children=0
 │   └── Cite scope=6:5..6:8 anchor=null attributes={} children=1
-│       └── Citation scope=6:6..6:7 referent=footnote(id="n") children=0
+│       └── Citation scope=6:6..6:7 anchor=null attributes={} referent=footnote(id="n") children=0
 │           ├── CitationPrefix children=0
 │           └── CitationSuffix children=0
-└── Footnote scope=4:1..5:0 id="n" children=1
+└── Footnote scope=4:1..5:0 anchor=null attributes={} id="n" children=1
     └── Paragraph scope=4:7..4:14 anchor=null attributes={} children=1
         └── CrossLink scope=4:7..4:14 anchor=null attributes={} dest=cross(path="Note",anchor=null) label=null children=0
 ````````````````````````````````

@@ -403,11 +403,11 @@ if unzip -Z1 "$kotlin_jvm_jar" | grep -E '(^|/)(canonical-ast|manifest\.json)|\.
     echo "Kotlin JVM publication contains shared conformance spec data" >&2
     exit 1
 fi
-if unzip -Z1 "$kotlin_jvm_jar" | grep -E '(^|/)(NativeBridge[^/]*|JvmNative|Walker|MarkupWalker)(\$[^/]*)?\.class$'; then
+if unzip -Z1 "$kotlin_jvm_jar" | grep -E '(^|/)(NativeBridge[^/]*|JvmNative|Walker|Visitor|VisitorKt|WalkingVisitor|WalkingVisitorKt)(\$[^/]*)?\.class$'; then
     echo "Kotlin JVM publication contains a retired bridge or legacy walker class" >&2
     exit 1
 fi
-for required_class in WalkPhase WalkingVisitor WalkingVisitorKt; do
+for required_class in MarkupVisitPhase MarkupVisitor MarkupVisitorKt MarkupWalker; do
     if ! unzip -Z1 "$kotlin_jvm_jar" \
         | grep -qx "com/nouprax/markdown/core/$required_class.class"; then
         echo "Kotlin JVM publication is missing $required_class" >&2
@@ -418,16 +418,16 @@ if [ ! -f "$kotlin_jvm_sources" ]; then
     echo "Kotlin JVM source publication JAR is missing" >&2
     exit 1
 fi
-if unzip -Z1 "$kotlin_jvm_sources" | grep -E '(^|/)(NativeBridge[^/]*|Walker|MarkupWalker|WireDecoder|WireKind|WireMarkupDecoder)[^/]*\.kt$|^commonMain/.*/(walker|wire)/|(^|/)native-bridge(/|$)'; then
+if unzip -Z1 "$kotlin_jvm_sources" | grep -E '(^|/)(NativeBridge[^/]*|Walker|Visitor|WalkingVisitor|WireDecoder|WireKind|WireMarkupDecoder)[^/]*\.kt$|^commonMain/.*/(walker|wire)/|(^|/)native-bridge(/|$)'; then
     echo "Kotlin JVM source publication contains a retired bridge, legacy walker, or shared wire source" >&2
     exit 1
 fi
-if ! unzip -Z1 "$kotlin_jvm_sources" \
-    | grep -qx 'commonMain/com/nouprax/markdown/core/visitor/WalkingVisitor.kt'; then
-    echo "Kotlin JVM source publication is missing the typed walking visitor" >&2
-    exit 1
-fi
 for required_source in \
+    commonMain/com/nouprax/markdown/core/common/Collections.kt \
+    commonMain/com/nouprax/markdown/core/common/Constraints.kt \
+    commonMain/com/nouprax/markdown/core/markup/Markup.kt \
+    commonMain/com/nouprax/markdown/core/visitor/MarkupVisitor.kt \
+    commonMain/com/nouprax/markdown/core/visitor/MarkupWalker.kt \
     jvmMain/com/nouprax/markdown/core/PlatformParser.jvm.kt \
     jvmMain/com/nouprax/markdown/core/wire/JniPayloadDecoder.kt \
     jvmMain/com/nouprax/markdown/core/wire/JniNodeKind.kt \

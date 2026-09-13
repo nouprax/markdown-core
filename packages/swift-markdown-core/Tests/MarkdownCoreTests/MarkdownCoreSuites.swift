@@ -18,29 +18,44 @@ import Testing
                     scope: scope,
                     anchor: nil,
                     attributes: .empty,
-                    content: [1],
+                    content: .init(indices: [1]),
                     metadata: nil,
-                    footnotes: [4],
-                    specimens: [5, 6]
+                    footnotes: .init(indices: [4]),
+                    specimens: .init(indices: [5, 6])
                 )
             ),
-            .paragraph(.init(scope: scope, anchor: nil, attributes: .empty, content: [2])),
-            .cite(.init(scope: scope, anchor: nil, attributes: .empty, citations: [3])),
-            .citation(.init(scope: scope, referent: .specimen(id: "étude"), prefix: [], suffix: [])),
-            .footnote(.init(scope: scope, id: "n", content: [])),
-            .specimen(.init(scope: scope, id: "étude", start: 5, content: [])),
-            .specimen(.init(scope: scope, id: nil, start: nil, content: [])),
+            .paragraph(.init(scope: scope, anchor: nil, attributes: .empty, content: .init(indices: [2]))),
+            .cite(.init(scope: scope, anchor: nil, attributes: .empty, citations: .init(indices: [3]))),
+            .citation(
+                .init(
+                    scope: scope,
+                    anchor: nil,
+                    attributes: .empty,
+                    referent: .specimen(id: "étude"),
+                    prefix: .init(indices: []),
+                    suffix: .init(indices: [])
+                )
+            ),
+            .footnote(.init(scope: scope, anchor: nil, attributes: .empty, id: "n", content: .init(indices: []))),
+            .specimen(
+                .init(scope: scope, anchor: nil, attributes: .empty, id: "étude", start: 5, content: .init(indices: []))
+            ),
+            .specimen(
+                .init(scope: scope, anchor: nil, attributes: .empty, id: nil, start: nil, content: .init(indices: []))
+            ),
         ])
         let document = store.value(at: 0, as: Document.self)
         #expect(document.specimens[0].start == 5)
         #expect(document.specimens[1].id == nil)
         #expect(document.dump().contains("referent=specimen(id=\"étude\")"))
-        #expect(document.dump().contains("Specimen scope=1:1..1:4 id=null start=null children=0"))
+        #expect(
+            document.dump().contains("Specimen scope=1:1..1:4 anchor=null attributes={} id=null start=null children=0")
+        )
         var visitor = RecordingWalkingVisitor()
         document.walk(with: &visitor)
-        #expect(visitor.events.filter { $0 == "entering:Specimen" }.count == 2)
-        let footnoteExit = try #require(visitor.events.firstIndex(of: "exiting:Footnote"))
-        let specimenEnter = try #require(visitor.events.firstIndex(of: "entering:Specimen"))
+        #expect(visitor.events.filter { $0 == "enter:Specimen" }.count == 2)
+        let footnoteExit = try #require(visitor.events.firstIndex(of: "exit:Footnote"))
+        let specimenEnter = try #require(visitor.events.firstIndex(of: "enter:Specimen"))
         #expect(footnoteExit < specimenEnter)
     }
 
@@ -57,16 +72,21 @@ import Testing
         }
     }
 
-    @Test("parse and visitor dispatch use the public Swift API")
+    @Test("typed callbacks collect results through the public walk API")
     func publicAPI() throws {
         let document = try Document.parse("# Heading\n")
         var visitor = KindVisitor()
-        #expect(document.content[0].accept(&visitor) == "heading:1")
+        document.content[0].walk(with: &visitor)
+        #expect(visitor.kinds == ["heading:1", "Text"])
         let table = try #require(
             Document.parse("| a |\n| --- |\n| b |\n").content.first as? Table
         )
-        #expect(table.head[0].accept(&visitor) == "row")
-        #expect(table.head[0].cells[0].accept(&visitor) == "cell")
+        visitor = KindVisitor()
+        table.head[0].walk(with: &visitor)
+        #expect(visitor.kinds == ["row", "cell", "Text"])
+        visitor = KindVisitor()
+        table.head[0].cells[0].walk(with: &visitor)
+        #expect(visitor.kinds == ["cell", "Text"])
     }
 
     @Test("the dialect has no switches: every feature is recognised by a plain parse")
@@ -91,8 +111,8 @@ import Testing
         mark.walk(with: &visitor)
         #expect(
             visitor.events == [
-                "entering:Mark", "entering:Text", "exiting:Text", "entering:Emphasis",
-                "entering:Text", "exiting:Text", "exiting:Emphasis", "exiting:Mark",
+                "enter:Mark", "enter:Text", "exit:Text", "enter:Emphasis",
+                "enter:Text", "exit:Text", "exit:Emphasis", "exit:Mark",
             ]
         )
         #expect(mark.content.count == 2)
@@ -110,16 +130,16 @@ import Testing
 
         #expect(
             visitor.events == [
-                "entering:DirectiveBlock",
-                "entering:DirectiveLabel",
-                "entering:Text",
-                "exiting:Text",
-                "exiting:DirectiveLabel",
-                "entering:Paragraph",
-                "entering:Text",
-                "exiting:Text",
-                "exiting:Paragraph",
-                "exiting:DirectiveBlock",
+                "enter:DirectiveBlock",
+                "enter:DirectiveLabel",
+                "enter:Text",
+                "exit:Text",
+                "exit:DirectiveLabel",
+                "enter:Paragraph",
+                "enter:Text",
+                "exit:Text",
+                "exit:Paragraph",
+                "exit:DirectiveBlock",
             ]
         )
         #expect(block.content.count == 1)
@@ -224,7 +244,7 @@ import Testing
         let dump = document.dump()
         #expect(dump.hasPrefix("Document scope=1:1..5:11 anchor=null attributes={} children=1\n"))
         let tail = """
-            └── Footnote scope=5:1..5:11 id="a" children=1
+            └── Footnote scope=5:1..5:11 anchor=null attributes={} id="a" children=1
                 └── Paragraph scope=5:7..5:11 anchor=null attributes={} children=1
                     └── Text scope=5:7..5:11 anchor=null attributes={} literal="twice" children=0
 
@@ -234,15 +254,15 @@ import Testing
         var visitor = RecordingWalkingVisitor()
         document.walk(with: &visitor)
         let expected = [
-            "entering:Document", "entering:Paragraph",
-            "entering:Cite", "entering:Citation", "exiting:Citation", "exiting:Cite",
-            "entering:Text", "exiting:Text",
-            "entering:Cite", "entering:Citation", "exiting:Citation", "exiting:Cite",
-            "exiting:Paragraph",
-            "entering:Footnote", "entering:Paragraph", "entering:Text", "exiting:Text", "exiting:Paragraph",
-            "exiting:Footnote",
-            "entering:Footnote", "entering:Paragraph", "entering:Text", "exiting:Text", "exiting:Paragraph",
-            "exiting:Footnote", "exiting:Document",
+            "enter:Document", "enter:Paragraph",
+            "enter:Cite", "enter:Citation", "exit:Citation", "exit:Cite",
+            "enter:Text", "exit:Text",
+            "enter:Cite", "enter:Citation", "exit:Citation", "exit:Cite",
+            "exit:Paragraph",
+            "enter:Footnote", "enter:Paragraph", "enter:Text", "exit:Text", "exit:Paragraph",
+            "exit:Footnote",
+            "enter:Footnote", "enter:Paragraph", "enter:Text", "exit:Text", "exit:Paragraph",
+            "exit:Footnote", "exit:Document",
         ]
         #expect(visitor.events == expected)
     }
@@ -311,121 +331,4 @@ import Testing
         #expect(walkingVisitor.entered > 20_000)
         for _ in 0..<2_000 { #expect(try Document.parse("# Copy\n\n- [x] item\n").content.count == 2) }
     }
-}
-
-private struct KindVisitor: MarkupVisitor {
-    mutating func visit(_ node: Document) -> String { kindName(node) }
-    mutating func visit(_ node: Callout) -> String { kindName(node) }
-    mutating func visit(_ node: Paragraph) -> String { kindName(node) }
-    mutating func visit(_ node: Heading) -> String { "heading:\(node.level)" }
-    mutating func visit(_ node: ThematicBreak) -> String { kindName(node) }
-    mutating func visit(_ node: MarkdownCore.List) -> String { kindName(node) }
-    mutating func visit(_ node: ListItem) -> String { kindName(node) }
-    mutating func visit(_ node: CodeBlock) -> String { kindName(node) }
-    mutating func visit(_ node: HTMLBlock) -> String { kindName(node) }
-    mutating func visit(_ node: FormulaBlock) -> String { kindName(node) }
-    mutating func visit(_ node: Table) -> String { kindName(node) }
-    mutating func visit(_ node: DirectiveBlock) -> String { kindName(node) }
-
-    mutating func visit(_ node: DirectiveLabel) -> String { kindName(node) }
-    mutating func visit(_ node: Text) -> String { kindName(node) }
-    mutating func visit(_ node: SoftBreak) -> String { kindName(node) }
-    mutating func visit(_ node: LineBreak) -> String { kindName(node) }
-    mutating func visit(_ node: Code) -> String { kindName(node) }
-    mutating func visit(_ node: HTML) -> String { kindName(node) }
-    mutating func visit(_ node: MarkdownCore.Comment) -> String { kindName(node) }
-    mutating func visit(_ node: MarkdownCore.CrossLink) -> String { kindName(node) }
-    mutating func visit(_ node: MarkdownCore.CrossEmbedded) -> String { kindName(node) }
-    mutating func visit(_ node: Formula) -> String { kindName(node) }
-    mutating func visit(_ node: Emphasis) -> String { kindName(node) }
-    mutating func visit(_ node: Strong) -> String { kindName(node) }
-    mutating func visit(_ node: Strikethrough) -> String { kindName(node) }
-    mutating func visit(_ node: Mark) -> String { kindName(node) }
-    mutating func visit(_ node: Insertion) -> String { kindName(node) }
-    mutating func visit(_ node: Span) -> String { kindName(node) }
-    mutating func visit(_ node: Superscript) -> String { kindName(node) }
-    mutating func visit(_ node: Subscript) -> String { kindName(node) }
-    mutating func visit(_ node: DefinitionList) -> String { kindName(node) }
-    mutating func visit(_ node: Definition) -> String { kindName(node) }
-    mutating func visit(_ node: Link) -> String { kindName(node) }
-    mutating func visit(_ node: Embedded) -> String { kindName(node) }
-    mutating func visit(_ node: Directive) -> String { kindName(node) }
-    mutating func visit(_ node: Cite) -> String { kindName(node) }
-    mutating func visit(_ node: TableCaption) -> String { kindName(node) }
-    mutating func visit(_ node: TableRow) -> String { "row" }
-    mutating func visit(_ node: TableCell) -> String { "cell" }
-}
-
-private func kindName(_ node: any Markup) -> String {
-    String(describing: type(of: node))
-}
-
-struct RecordingWalkingVisitor: MarkupWalkingVisitor {
-    private let recordEvents: Bool
-    var events: [String] = []
-    var tableRowKinds: [Int] = []
-    var entered = 0
-    var exited = 0
-
-    init(recordEvents: Bool = true) {
-        self.recordEvents = recordEvents
-    }
-
-    private mutating func record(_ node: any Markup, _ phase: WalkPhase) {
-        record(kindName(node), phase)
-    }
-
-    private mutating func record(_ name: String, _ phase: WalkPhase) {
-        switch phase {
-        case .entering: entered += 1
-        case .exiting: exited += 1
-        }
-        if recordEvents { events.append("\(phase):\(name)") }
-    }
-
-    mutating func visit(_ node: Document, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: Callout, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: Paragraph, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: Heading, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: ThematicBreak, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: MarkdownCore.List, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: ListItem, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: CodeBlock, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: HTMLBlock, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: FormulaBlock, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: Table, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: DirectiveBlock, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: DirectiveLabel, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: Text, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: SoftBreak, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: LineBreak, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: Code, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: HTML, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: MarkdownCore.Comment, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: MarkdownCore.CrossLink, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: MarkdownCore.CrossEmbedded, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: Formula, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: Emphasis, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: Strong, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: Strikethrough, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: Mark, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: Insertion, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: Span, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: Superscript, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: Subscript, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: DefinitionList, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: Definition, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: Link, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: Embedded, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: Directive, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: Cite, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: TableCaption, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: TableRow, phase: WalkPhase) {
-        record(node, phase)
-        if phase == .entering { tableRowKinds.append(Int(node.scope.start.line)) }
-    }
-    mutating func visit(_ node: TableCell, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ value: Citation, phase: WalkPhase) { record("Citation", phase) }
-    mutating func visit(_ value: Footnote, phase: WalkPhase) { record("Footnote", phase) }
-    mutating func visit(_ value: Specimen, phase: WalkPhase) { record("Specimen", phase) }
 }

@@ -1,16 +1,19 @@
-import type { Attributes, Dimensions, Metadata, MetadataValue } from "../values.js";
-import type { MarkupBase } from "../model/base.js";
-import type { DirectiveLabel } from "../model/directive-label.js";
-import type { Citation } from "../model/cite.js";
-import type { Document } from "../model/document.js";
-import type { Specimen } from "../model/specimen.js";
-import type { Footnote } from "../model/footnote.js";
-import type { ListItem } from "../model/list.js";
-import type { Markup } from "../model/markup.js";
-import type { TableCell, TableRow } from "../model/table.js";
-import { ParseError, type ParseErrorCode } from "../parse-error.js";
-import { TreeDumper } from "../tree-dumper.js";
-import type { BibMode, CitationReferent, Destination, ListFlavor, Placement, Scope, Flow } from "../values.js";
+import type { Attributes } from "../markup/attributes.js";
+import type { Dimensions } from "../common/constraints.js";
+import type { Metadata, MetadataValue } from "../markup/metadata.js";
+import type { MarkupBase } from "../markup/base.js";
+import type { DirectiveLabel } from "../markup/directive-label.js";
+import type { Citation } from "../markup/cite.js";
+import type { Document } from "../markup/document.js";
+import type { Specimen } from "../markup/specimen.js";
+import type { Footnote } from "../markup/footnote.js";
+import type { ListItem } from "../markup/list.js";
+import type { Markup } from "../markup/markup.js";
+import type { TableCell, TableRow } from "../markup/table.js";
+import { ParseError, type ParseErrorCode } from "../common/parse-error.js";
+import { MarkupDumper } from "../visitor/markup-dumper.js";
+import type { BibMode, CitationReferent, Destination, ListFlavor, Placement, Scope } from "../markup/values.js";
+import type { Flow } from "../common/constraints.js";
 import { kinds, type NativeKind } from "./kinds.js";
 
 /*
@@ -27,25 +30,14 @@ const nodeSize = 160;
 const attributeSize = 16;
 const columnSize = 16;
 const noIndex = 0xffff_ffff;
-/**
- * The scoped values travel as records above the node-kind space (M4):
- * a citation's prefix is its child range and its suffix its auxiliary range,
- * a footnote's content is its child range, a cite's items are its child
- * range, and the document's definitions are its auxiliary range.
- */
-type ValueKind = "definitionBody" | "citation" | "footnote" | "specimen" | "metadata" | "metadataValue";
+type ValueKind = "metadataValue" | "definitionBody";
 const valueKindBase = 0x100;
-const valueKinds: readonly ValueKind[] = Object.freeze([
-    "citation",
-    "footnote",
-    "specimen",
-    "metadata",
-    "metadataValue",
-    "definitionBody"
-]);
+const valueKinds: readonly ValueKind[] = Object.freeze(["metadataValue", "definitionBody"]);
 type DefinitionBody = { readonly body: readonly Markup[] };
-type Decoded = DefinitionBody | Markup | Citation | Footnote | Specimen | Metadata | MetadataValue;
+type Decoded = DefinitionBody | Markup | MetadataValue;
 const isMarkup = (value: Decoded): value is Markup => "kind" in value && "scope" in value;
+const isContent = (value: Decoded): value is Markup =>
+    isMarkup(value) && !["metadata", "citation", "footnote", "specimen"].includes(value.kind);
 
 const header = {
     totalSize: 4,
@@ -148,14 +140,10 @@ export class Decoder {
         for (let remaining = this.layout.nodeCount; remaining > 0; --remaining) {
             const index = remaining - 1;
             const record = this.record(index);
-            if (record.kind === "citation") values[index] = this.citation(record);
-            else if (record.kind === "footnote") values[index] = this.footnote(record);
-            else if (record.kind === "specimen") values[index] = this.specimen(record);
-            else if (record.kind === "definitionBody") {
+            if (record.kind === "definitionBody") {
                 this.flags(record, 0);
                 values[index] = { body: this.content(record) };
-            } else if (record.kind === "metadata") values[index] = this.metadata(record);
-            else if (record.kind === "metadataValue") values[index] = this.metadataValue(record);
+            } else if (record.kind === "metadataValue") values[index] = this.metadataValue(record);
             else values[index] = this.markup(this.value(record));
         }
         const document = values[0];
@@ -280,7 +268,7 @@ export class Decoder {
                     this.uint(record.offset + nodeField.classesCount) !== 0 ||
                     this.uint(record.offset + nodeField.recordsCount) !== 0)
             )
-                throw new Error("scoped value carries Markup fields");
+                throw new Error("non-node record carries Markup fields");
             const metadata = this.uint(record.offset + nodeField.metadata);
             if (metadata !== noIndex) {
                 if (record.kind !== "document" || this.record(metadata).kind !== "metadata")
@@ -344,28 +332,27 @@ export class Decoder {
         Object.defineProperty(value, "dump", {
             enumerable: false,
             value(this: Markup): string {
-                return TreeDumper.dump(this);
+                return MarkupDumper.dump(this);
             }
         });
         return value as Markup;
     }
 
     private value(record: Record): MarkupValue {
-        // The scoped values are decoded by their owners, never as nodes,
-        // so the kind dispatch below is over Markup kinds alone.
         const kind = record.kind;
-        if (
-            kind === "citation" ||
-            kind === "footnote" ||
-            kind === "specimen" ||
-            kind === "metadata" ||
-            kind === "metadataValue" ||
-            kind === "definitionBody"
-        ) {
+        if (kind === "metadataValue" || kind === "definitionBody") {
             throw new Error(`native result places a ${kind} value where a node belongs`);
         }
         const base = this.base(record);
         switch (kind) {
+            case "citation":
+                return this.citation(record);
+            case "footnote":
+                return this.footnote(record);
+            case "specimen":
+                return this.specimen(record);
+            case "metadata":
+                return this.metadata(record);
             case "document":
                 this.flags(record, 0);
                 return {
@@ -468,7 +455,7 @@ export class Decoder {
             case "definition": {
                 this.flags(record, 1);
                 const term = this.edgeRange(record.auxiliaryStart, record.auxiliaryCount, "term").map((value) => {
-                    if (!isMarkup(value)) throw new Error("invalid definition term");
+                    if (!isContent(value)) throw new Error("invalid definition term");
                     return value;
                 });
                 const content = this.edgeRange(record.childStart, record.childCount, "body").map((value) => {
@@ -544,7 +531,7 @@ export class Decoder {
         if (record.auxiliaryCount !== 0) {
             this.range(record.auxiliaryStart, record.auxiliaryCount, this.layout.edgeCount, "callout title range");
             title = this.edgeRange(record.auxiliaryStart, record.auxiliaryCount, "callout title").map((value) => {
-                if (!isMarkup(value)) throw new Error("native result callout title is a value, not a node");
+                if (!isContent(value)) throw new Error("native result callout title is not ordinary content");
                 return value;
             });
         }
@@ -678,7 +665,7 @@ export class Decoder {
 
     private content(record: Record): readonly Markup[] {
         return this.edgeRange(record.childStart, record.childCount, "child").map((value) => {
-            if (!isMarkup(value)) throw new Error("native result child is a value, not a node");
+            if (!isContent(value)) throw new Error("native result child is not ordinary content");
             return value;
         });
     }
@@ -696,17 +683,23 @@ export class Decoder {
      * integer and its key or id the first string; its prefix is its child
      * range and its suffix its auxiliary range.
      */
-    private citation(record: Record): Citation {
+    private citation(record: Record): MarkupValueOf<"citation"> {
         this.flags(record, 0);
         let suffix: readonly Markup[] = [];
         if (record.auxiliaryCount !== 0) {
             this.range(record.auxiliaryStart, record.auxiliaryCount, this.layout.edgeCount, "suffix range");
             suffix = this.edgeRange(record.auxiliaryStart, record.auxiliaryCount, "suffix").map((value) => {
-                if (!isMarkup(value)) throw new Error("native result suffix is a value, not a node");
+                if (!isContent(value)) throw new Error("native result suffix is not ordinary content");
                 return value;
             });
         }
-        return { scope: record.scope, referent: this.referent(record), prefix: this.content(record), suffix };
+        return {
+            ...this.base(record),
+            kind: "citation",
+            referent: this.referent(record),
+            prefix: this.content(record),
+            suffix
+        };
     }
 
     private referent(record: Record): CitationReferent {
@@ -730,24 +723,25 @@ export class Decoder {
     }
 
     /** A footnote (M4): its id is the first string and its content its child range. */
-    private footnote(record: Record): Footnote {
+    private footnote(record: Record): MarkupValueOf<"footnote"> {
         this.flags(record, 0);
-        return { scope: record.scope, id: this.required(record, 0), content: this.content(record) };
+        return { ...this.base(record), kind: "footnote", id: this.required(record, 0), content: this.content(record) };
     }
 
     private citations(record: Record): readonly Citation[] {
         const items = this.edgeRange(record.childStart, record.childCount, "citation").map((value) => {
-            if (isMarkup(value) || !("referent" in value)) throw new Error("cite contains a non-citation record");
+            if (!isMarkup(value) || value.kind !== "citation") throw new Error("cite contains a non-citation record");
             return value;
         });
         if (items.length === 0) throw new Error("native result gives a cite no items");
         return items;
     }
 
-    private specimen(record: Record): Specimen {
+    private specimen(record: Record): MarkupValueOf<"specimen"> {
         this.flags(record, 1);
         return {
-            scope: record.scope,
+            ...this.base(record),
+            kind: "specimen",
             id: this.string(record, 0),
             start: (record.flags & 1) === 0 ? null : this.safeInteger(record.integer, "specimen start"),
             content: this.content(record)
@@ -760,9 +754,9 @@ export class Decoder {
         const footnotes: Footnote[] = [];
         const specimens: Specimen[] = [];
         for (const value of this.edgeRange(record.auxiliaryStart, record.auxiliaryCount, "definition")) {
-            if (isMarkup(value) || !("id" in value))
+            if (!isMarkup(value) || (value.kind !== "footnote" && value.kind !== "specimen"))
                 throw new Error("document definitions contain a non-definition record");
-            if ("start" in value) specimens.push(value);
+            if (value.kind === "specimen") specimens.push(value);
             else {
                 if (specimens.length !== 0) throw new Error("document footnotes follow specimens");
                 footnotes.push(value);
@@ -908,10 +902,10 @@ export class Decoder {
         const index = this.uint(record.offset + nodeField.metadata);
         if (index === noIndex) return null;
         const value = this.values[index];
-        if (!value || "kind" in value || !("title" in value)) throw new Error("invalid document metadata");
+        if (!value || !isMarkup(value) || value.kind !== "metadata") throw new Error("invalid document metadata");
         return value;
     }
-    private metadata(record: Record): Metadata {
+    private metadata(record: Record): MarkupValueOf<"metadata"> {
         this.flags(record, 0x3ff);
         const values = this.edgeRange(record.childStart, record.childCount, "metadata fields");
         let cursor = 0;
@@ -922,8 +916,9 @@ export class Decoder {
                 throw new Error("invalid metadata field value");
             return value;
         };
-        const metadata: Metadata = {
-            scope: record.scope,
+        const metadata: MarkupValueOf<"metadata"> = {
+            ...this.base(record),
+            kind: "metadata",
             name: field(0),
             title: field(1),
             subtitle: field(2),

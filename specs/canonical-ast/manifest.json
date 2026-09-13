@@ -48,7 +48,11 @@
             "Directive",
             "Cite",
             "DefinitionList",
-            "Definition"
+            "Definition",
+            "Citation",
+            "Footnote",
+            "Specimen",
+            "Metadata"
         ],
         "states": [
             "directiveBlock.name.null",
@@ -244,7 +248,8 @@
                     "CodeBlock",
                     "HTMLBlock",
                     "Link",
-                    "Embedded"
+                    "Embedded",
+                    "Footnote"
                 ],
                 "states": [
                     "callout.variant.null",
@@ -371,7 +376,9 @@
                     "LineBreak",
                     "HTML",
                     "SoftBreak",
-                    "Cite"
+                    "Cite",
+                    "Citation",
+                    "Footnote"
                 ],
                 "states": [
                     "markup.attributes.records",
@@ -536,7 +543,9 @@
                     "Table",
                     "TableRow",
                     "TableCell",
-                    "Cite"
+                    "Cite",
+                    "Citation",
+                    "Footnote"
                 ],
                 "states": ["scope.positive", "children.empty", "children.populated"],
                 "orders": ["inline.source-order", "document.source-order"]
@@ -547,7 +556,17 @@
             "input": "inline-footnotes.md",
             "expected": "inline-footnotes.ast",
             "coverage": {
-                "kinds": ["Document", "Paragraph", "Cite", "Text", "Comment", "Directive", "DirectiveLabel"],
+                "kinds": [
+                    "Document",
+                    "Paragraph",
+                    "Cite",
+                    "Text",
+                    "Comment",
+                    "Directive",
+                    "DirectiveLabel",
+                    "Citation",
+                    "Footnote"
+                ],
                 "states": [
                     "footnote.content.inline",
                     "footnote.content.block",
@@ -579,7 +598,7 @@
             "input": "properties.md",
             "expected": "properties.ast",
             "coverage": {
-                "kinds": ["Document", "Paragraph", "Text"],
+                "kinds": ["Document", "Paragraph", "Text", "Metadata"],
                 "states": [
                     "document.metadata.present",
                     "metadata.fields.populated",
@@ -598,7 +617,7 @@
             "input": "properties-empty.md",
             "expected": "properties-empty.ast",
             "coverage": {
-                "kinds": ["Document"],
+                "kinds": ["Document", "Metadata"],
                 "states": ["document.metadata.present", "document.metadata.empty"],
                 "orders": []
             }
@@ -608,7 +627,7 @@
             "input": "properties-boundaries.md",
             "expected": "properties-boundaries.ast",
             "coverage": {
-                "kinds": ["Document", "Paragraph", "Text"],
+                "kinds": ["Document", "Paragraph", "Text", "Metadata"],
                 "states": [
                     "document.metadata.present",
                     "metadata.fields.populated",
@@ -624,7 +643,7 @@
             "input": "properties-forms.md",
             "expected": "properties-forms.ast",
             "coverage": {
-                "kinds": ["Document", "Paragraph", "Text"],
+                "kinds": ["Document", "Paragraph", "Text", "Metadata"],
                 "states": ["document.metadata.present", "metadata.fields.populated", "metadata.scalar.text"],
                 "orders": []
             }
@@ -634,7 +653,7 @@
             "input": "properties-lists.md",
             "expected": "properties-lists.ast",
             "coverage": {
-                "kinds": ["Document", "Paragraph", "Text"],
+                "kinds": ["Document", "Paragraph", "Text", "Metadata"],
                 "states": ["document.metadata.present", "metadata.fields.populated", "metadata.list.populated"],
                 "orders": []
             }
@@ -655,7 +674,9 @@
                     "DirectiveLabel",
                     "Link",
                     "Comment",
-                    "Cite"
+                    "Cite",
+                    "Citation",
+                    "Footnote"
                 ],
                 "states": [
                     "callout.variant.value",
@@ -723,7 +744,10 @@
                     "Table",
                     "TableRow",
                     "TableCell",
-                    "CodeBlock"
+                    "CodeBlock",
+                    "Citation",
+                    "Footnote",
+                    "Metadata"
                 ],
                 "states": [
                     "document.metadata.present",
@@ -773,7 +797,9 @@
                     "Table",
                     "TableCell",
                     "TableRow",
-                    "Text"
+                    "Text",
+                    "Citation",
+                    "Footnote"
                 ],
                 "states": ["scope.positive", "children.empty", "children.populated"],
                 "orders": ["inline.source-order", "document.source-order"]
@@ -820,7 +846,9 @@
                     "Directive",
                     "DirectiveLabel",
                     "Cite",
-                    "Span"
+                    "Span",
+                    "Citation",
+                    "Footnote"
                 ],
                 "states": ["scope.positive", "children.populated"],
                 "orders": ["inline.source-order"]
@@ -842,7 +870,8 @@
                     "Emphasis",
                     "Code",
                     "Mark",
-                    "Insertion"
+                    "Insertion",
+                    "Footnote"
                 ],
                 "states": [
                     "markup.anchor.value",
@@ -890,7 +919,9 @@
                     "Span",
                     "Link",
                     "Directive",
-                    "Cite"
+                    "Cite",
+                    "Citation",
+                    "Footnote"
                 ],
                 "states": [
                     "citation.bib.mode.normal",
@@ -908,7 +939,18 @@
             "input": "specimens.md",
             "expected": "specimens.ast",
             "coverage": {
-                "kinds": ["Document", "Callout", "Paragraph", "Heading", "Text", "Emphasis", "Cite"],
+                "kinds": [
+                    "Document",
+                    "Callout",
+                    "Paragraph",
+                    "Heading",
+                    "Text",
+                    "Emphasis",
+                    "Cite",
+                    "Citation",
+                    "Footnote",
+                    "Specimen"
+                ],
                 "states": [
                     "citation.referent.specimen",
                     "document.specimens.populated",
@@ -955,7 +997,8 @@
                     "Paragraph",
                     "Cite",
                     "Link",
-                    "DirectiveLabel"
+                    "DirectiveLabel",
+                    "Citation"
                 ],
                 "states": ["directiveBlock.name.null"],
                 "orders": ["document.source-order", "definition.term-before-bodies"]
@@ -1047,7 +1090,19 @@
             "input": "table-mapped.md",
             "expected": "table-mapped.ast",
             "coverage": {
-                "kinds": ["Document", "Paragraph", "Heading", "Table", "TableRow", "TableCell", "Text", "Link", "Cite"],
+                "kinds": [
+                    "Document",
+                    "Paragraph",
+                    "Heading",
+                    "Table",
+                    "TableRow",
+                    "TableCell",
+                    "Text",
+                    "Link",
+                    "Cite",
+                    "Citation",
+                    "Footnote"
+                ],
                 "states": [],
                 "orders": []
             }

@@ -12,9 +12,6 @@ public struct Comment: Markup {
     public let attributes: Attributes
     /// The bytes between the delimiters, exactly as written.
     public let literal: String
-
-    /// Dispatches to the visitor's `Comment` case.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 }
 
 extension Comment {
