@@ -136,6 +136,11 @@ a whole, with no partial values.
 
 This is a bounded properties language, not general YAML: nested objects/lists,
 aliases, tags, merge keys, JSON root objects, and multiline quoted/plain folding
-are unsupported. Metadata has one envelope scope, no individual field scopes,
-and no markup visitor callbacks. The named `comment` field is data, not a
-`Comment` node.
+are unsupported.
+
+`Metadata` is a leaf Markup node exposed through `Document.metadata`, outside
+`Document.content`. A document walk reports its `enter` and `exit` callbacks
+before visiting content, including when every metadata field is absent.
+Every `MarkupVisitor` must handle Metadata. The node has one envelope scope;
+its scalar/list values have no individual scopes or separate Markup callbacks.
+The named `comment` field is data, not a `Comment` node.

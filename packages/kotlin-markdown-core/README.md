@@ -44,7 +44,11 @@ document. Metadata directly exposes ten optional fields:
 and later duplicates are ignored; valid neighboring fields survive. `authors`
 and `keywords` accept a single string, a bracketed array, or a block list.
 `abstract` and `comment` accept single-line text and indented multiline text
-with `: |`. Metadata stays outside Markup children and visitor callbacks.
+with `: |`. `Metadata` is a leaf Markup node stored in `Document.metadata`,
+outside `Document.content`. The walker reports its `ENTER` and `EXIT` callbacks
+before content, even when all metadata fields are absent. Every `MarkupVisitor`
+must implement `visit(metadata: Metadata, phase: MarkupVisitPhase)`; the node's
+scalar/list values do not receive separate Markup callbacks.
 Numbers retain exact decimal strings. Missing fields are null; an authored null
 is a present scalar value. No field order or individual field scope is stored.
 `Embedded.dimensions: Dimensions?` reads complete `W`, `WxH`, `alt|W` and
