@@ -194,6 +194,9 @@ struct markdown_core_parser {
     size_t text_run_extensions, code_block_move_work;
     size_t table_scan_work, table_frontier_peak;
     size_t table_workspace_growth, table_geometry_lines, table_separator_scans;
+    /* Pipe row recognitions and the bytes they read; column-map allocations;
+     * growth steps of the table scratch region. */
+    size_t table_row_scans, table_row_work, table_geometry_allocations, table_scratch_growth;
     /* Properties work: source ranges decoded once at their owning boundary. */
     size_t metadata_decoded_bytes;
     /* Bytes examined by the shared block-identifier suffix scanner. */
@@ -241,6 +244,13 @@ struct markdown_core_parser {
      * geometry is released by the query; the allocation dies with the parser. */
     struct markdown_core_table_source_line *table_lines;
     size_t table_lines_capacity;
+    /* The pipe row geometry recognized on the current line, kept from the
+     * open table's matcher for the row opener that follows on the same line;
+     * and one scratch region every table search carves its arrays from,
+     * sized once to the peak a candidate asked for (see table.c). */
+    struct markdown_core_table_row_geometry *table_row;
+    void *table_scratch;
+    size_t table_scratch_capacity;
     /* Borrow the fixed immutable dialect registry. Private setup callers may
      * extend it before parsing; only that replacement buffer is owned here. */
     const markdown_core_element *const *elements;

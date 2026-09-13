@@ -175,6 +175,15 @@ padding. The generated functions own this boundary; there is no shared scanner
 wrapper, callback dispatch or forwarding macro. Table's cursor-based dash
 scanner additionally reports matched spans for its geometry pass.
 
+A pipe row is recognized once per line: the open table's matcher keeps the
+geometry it read, with the row's cells, on the parser, and the row opener
+that the block-start pass reaches on the same line reuses it. A header is the
+last line of its paragraph and is located from the buffer's end, so the
+paragraph in front of it is never walked. Grid, multiline and simple searches
+carve their scratch arrays from one parser region sized to the peak a
+candidate asked for, and a line's column map is one allocation sized by the
+line.
+
 The generator retains each grammar's encoding, and the Makefile and
 reproducibility check use the same pinned re2c command. Ordinary builds consume
 committed C files.

@@ -3218,6 +3218,7 @@ typedef struct {
     size_t block_dispatch, reference_probes;
     size_t completion, finishing, lifecycle, text_run_extensions, code_block_moves;
     size_t reference_folds, footnote_folds;
+    size_t table_row_scans, table_row_work, table_geometry_allocations, table_scratch_growth;
 } inline_work;
 static markdown_core_node *record_inline_work(const markdown_core_element *element, markdown_core_parser *parser,
                                               markdown_core_node *root) {
@@ -3246,6 +3247,10 @@ static markdown_core_node *record_inline_work(const markdown_core_element *eleme
     work->text_run_extensions = parser->text_run_extensions;
     work->code_block_moves = parser->code_block_move_work;
     work->reference_folds = parser->refmap ? parser->refmap->fold_work : 0;
+    work->table_row_scans = parser->table_row_scans;
+    work->table_row_work = parser->table_row_work;
+    work->table_geometry_allocations = parser->table_geometry_allocations;
+    work->table_scratch_growth = parser->table_scratch_growth;
     work->footnote_folds = parser->footnote_defs ? parser->footnote_defs->fold_work : 0;
     work->tables = parser->table_scan_work;
     work->table_frontier = parser->table_frontier_peak;
@@ -3968,6 +3973,76 @@ static void bracket_owner_triage(test_batch_runner *runner) {
     }
 }
 
+/* A pipe row is recognized once per line: the open table's matcher keeps the
+ * geometry it read and the row opener reuses it. A header is found from the
+ * end of its paragraph, so a long paragraph in front costs nothing. Grid and
+ * multiline geometry carve their scratch from one parser region and map each
+ * line's columns with one allocation. */
+static void table_row_geometry_reuse(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    for (size_t rows = 256; rows <= 4096; rows *= 4) {
+        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+        markdown_core_strbuf_puts(&source, "| a | b |\n| - | - |\n");
+        for (size_t i = 0; i < rows; i++) {
+            markdown_core_strbuf_puts(&source, "| c | d |\n");
+        }
+        inline_work work = {0};
+        markdown_core_node *root =
+            markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
+        OK(runner, root != NULL, "pipe table parses: rows=%zu", rows);
+        if (root) {
+            INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_TABLE_ROW), rows + 1, "every row is a row: rows=%zu",
+                   rows);
+            OK(runner, work.table_row_scans <= rows + 3, "each row line is recognized once: rows=%zu scans=%zu", rows,
+               work.table_row_scans);
+            OK(runner, work.table_row_work <= (size_t)source.size + 32,
+               "row recognition reads each byte once: rows=%zu bytes=%zu", rows, work.table_row_work);
+            markdown_core_node_free(root);
+        }
+        markdown_core_strbuf_free(&source);
+    }
+    for (size_t lines = 256; lines <= 4096; lines *= 4) {
+        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+        for (size_t i = 0; i < lines; i++) {
+            markdown_core_strbuf_puts(&source, "a paragraph line that precedes the header\n");
+        }
+        markdown_core_strbuf_puts(&source, "| h | i |\n| - | - |\n| c | d |\n");
+        inline_work work = {0};
+        markdown_core_node *root =
+            markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
+        OK(runner, root != NULL, "header after a paragraph parses: lines=%zu", lines);
+        if (root) {
+            INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_TABLE), 1, "the last line becomes the header: lines=%zu",
+                   lines);
+            OK(runner, work.table_row_work <= 64,
+               "the header is found from the end of its paragraph: lines=%zu bytes=%zu", lines, work.table_row_work);
+            markdown_core_node_free(root);
+        }
+        markdown_core_strbuf_free(&source);
+    }
+    for (size_t rows = 64; rows <= 1024; rows *= 4) {
+        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+        markdown_core_strbuf_puts(&source, "+---+---+\n");
+        for (size_t i = 0; i < rows; i++) {
+            markdown_core_strbuf_puts(&source, "| a | b |\n+---+---+\n");
+        }
+        inline_work work = {0};
+        markdown_core_node *root =
+            markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
+        OK(runner, root != NULL, "grid table parses: rows=%zu", rows);
+        if (root) {
+            INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_TABLE_ROW), rows, "every grid row is a row: rows=%zu",
+                   rows);
+            INT_EQ(runner, work.table_geometry_allocations, work.table_geometry_lines,
+                   "a line's column map is one allocation: rows=%zu", rows);
+            OK(runner, work.table_scratch_growth <= 8,
+               "the grid scratch region grows to its peak once: rows=%zu steps=%zu", rows, work.table_scratch_growth);
+            markdown_core_node_free(root);
+        }
+        markdown_core_strbuf_free(&source);
+    }
+}
+
 static void key_index_consumer_work(test_batch_runner *runner) {
     enum { PREFIX = 160, LABEL = PREFIX + 16 };
     markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
@@ -4630,28 +4705,39 @@ static void speculative_probe_allocations(test_batch_runner *runner) {
             OK(runner, parser.attribute_work > 0, "probe attribute recognition work is accounted");
         }
     }
+    /* The row geometry a matcher reads lives in the parser's table workspace,
+     * allocated once per parser; a row's recognition itself allocates nothing. */
     const char *rows[] = {"| a | b |\n", "| a \\| b | c |\n", "\n"};
-    for (size_t i = 0; i < sizeof(rows) / sizeof(*rows); i++) {
+    {
         markdown_core_parser parser = {.mem = &mem};
         markdown_core_node table = {.kind = MARKDOWN_CORE_NODE_TABLE};
-        text_allocation_calls = 0;
-        int matched = MARKDOWN_CORE_ELEMENT_TABLE.last_block_matches(
-            &MARKDOWN_CORE_ELEMENT_TABLE, &parser, (unsigned char *)rows[i], (int)strlen(rows[i]), &table);
-        INT_EQ(runner, matched, i != 2, "table continuation grammar is retained");
-        INT_EQ(runner, text_allocation_calls, 0, "table continuation allocates no temporary geometry");
+        MARKDOWN_CORE_ELEMENT_TABLE.last_block_matches(&MARKDOWN_CORE_ELEMENT_TABLE, &parser, (unsigned char *)rows[0],
+                                                       (int)strlen(rows[0]), &table);
+        for (size_t i = 0; i < sizeof(rows) / sizeof(*rows); i++) {
+            text_allocation_calls = 0;
+            int matched = MARKDOWN_CORE_ELEMENT_TABLE.last_block_matches(
+                &MARKDOWN_CORE_ELEMENT_TABLE, &parser, (unsigned char *)rows[i], (int)strlen(rows[i]), &table);
+            INT_EQ(runner, matched, i != 2, "table continuation grammar is retained");
+            INT_EQ(runner, text_allocation_calls, 0, "table continuation allocates no temporary geometry");
+        }
+        MARKDOWN_CORE_ELEMENT_TABLE.dispose_parser(&parser);
     }
     {
         markdown_core_parser parser = {.mem = &mem};
+        markdown_core_node table = {.kind = MARKDOWN_CORE_NODE_TABLE};
         markdown_core_node *paragraph = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_PARAGRAPH, &mem);
         markdown_core_node_set_string_content(paragraph, "| a | b |\n");
         unsigned char delimiter[] = "| --- |\n";
+        MARKDOWN_CORE_ELEMENT_TABLE.last_block_matches(&MARKDOWN_CORE_ELEMENT_TABLE, &parser, delimiter,
+                                                       sizeof(delimiter) - 1, &table);
         text_allocation_calls = 0;
-        markdown_core_node *table = MARKDOWN_CORE_ELEMENT_TABLE.try_opening_block(
+        markdown_core_node *opened = MARKDOWN_CORE_ELEMENT_TABLE.try_opening_block(
             &MARKDOWN_CORE_ELEMENT_TABLE, 0, &parser, paragraph, delimiter, sizeof(delimiter) - 1);
-        OK(runner, table == NULL && paragraph->kind == MARKDOWN_CORE_NODE_PARAGRAPH,
+        OK(runner, opened == NULL && paragraph->kind == MARKDOWN_CORE_NODE_PARAGRAPH,
            "a mismatched header remains a paragraph");
         INT_EQ(runner, text_allocation_calls, 0, "mismatched pipe header allocates no row or cell geometry");
         markdown_core_node_free(paragraph);
+        MARKDOWN_CORE_ELEMENT_TABLE.dispose_parser(&parser);
     }
     for (size_t length = 64; length <= 65536; length *= 4) {
         markdown_core_parser parser = {.mem = &mem};
@@ -6745,6 +6831,7 @@ int main(int argc, char **argv) {
     inline_lifecycle_projection(runner);
     literal_run_growth(runner);
     bracket_owner_triage(runner);
+    table_row_geometry_reuse(runner);
     table_dash_suffixes(runner);
     nested_block_lookahead(runner);
     deep_inline_construction(runner);
