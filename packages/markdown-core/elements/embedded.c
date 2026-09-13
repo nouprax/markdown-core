@@ -68,7 +68,7 @@ void markdown_core_inline_apply_image_dimensions(markdown_core_inline_state *inl
     bufsize_t start = end - tail->as.literal->len;
     tail->as.literal->len -= end - suffix;
     if (tail->as.literal->len == 0) {
-        markdown_core_node_free(tail);
+        markdown_core_node_recycle(inline_state->arena, tail);
     } else {
         markdown_core_inline_state_place(inline_state, tail, start, suffix - 1);
     }

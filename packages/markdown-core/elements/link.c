@@ -460,7 +460,7 @@ bool markdown_core_link_commit(markdown_core_parser *parser, markdown_core_inlin
         markdown_core_optional_chunk_free(inline_state->mem, &title);
         return false;
     }
-    inl = markdown_core_inline_make_simple(inline_state->mem,
+    inl = markdown_core_inline_make_simple(inline_state,
                                            is_image ? MARKDOWN_CORE_NODE_EMBEDDED : MARKDOWN_CORE_NODE_LINK);
     if (inl && record) {
         /* A RESOLVED REFERENCE IS THE LINK OR EMBEDDED IT NAMES (M2), and it reads
@@ -476,7 +476,7 @@ bool markdown_core_link_commit(markdown_core_parser *parser, markdown_core_inlin
     } else if (inl) {
         inl->as.link->resource = markdown_core_resource_new(inline_state->mem, url, title);
         if (!inl->as.link->resource) {
-            markdown_core_node_free(inl);
+            markdown_core_node_recycle(inline_state->arena, inl);
             inl = NULL;
         }
     }
@@ -524,7 +524,7 @@ bool markdown_core_link_commit(markdown_core_parser *parser, markdown_core_inlin
     }
 
     // Free the bracket [:
-    markdown_core_node_free(opener->inl_text);
+    markdown_core_node_recycle(inline_state->arena, opener->inl_text);
 
     markdown_core_inline_process_delimiters(parser, inline_state, opener->position, opener->delim_end);
     markdown_core_inline_pop_bracket(inline_state);
@@ -554,6 +554,17 @@ void markdown_core_inline_take_bracket_content(markdown_core_parser *parser, bra
     }
 }
 
+/* A bracket record and its tokens go back to where they came from: the
+ * parse arena's pool, or the allocator for a state built without one. */
+static void release_bracket(markdown_core_inline_state *inline_state, bracket *b) {
+    markdown_core_inline_free_citation_tokens(inline_state, &b->citations);
+    if (inline_state->arena) {
+        markdown_core_arena_recycle(inline_state->arena, b, sizeof(*b));
+    } else {
+        inline_state->mem->free(b);
+    }
+}
+
 void markdown_core_inline_pop_bracket(markdown_core_inline_state *inline_state) {
     bracket *b;
     if (inline_state->last_bracket == NULL) {
@@ -572,13 +583,13 @@ void markdown_core_inline_pop_bracket(markdown_core_inline_state *inline_state) 
         }
         markdown_core_inline_remove_delimiter(inline_state, b->delim_end);
     }
-    markdown_core_inline_free_citation_tokens(inline_state, &b->citations);
-    inline_state->mem->free(b);
+    release_bracket(inline_state, b);
 }
 
 void markdown_core_inline_push_bracket(markdown_core_inline_state *inline_state, bracket_kind kind,
                                        markdown_core_node *inl_text) {
-    bracket *b = (bracket *)inline_state->mem->calloc(1, sizeof(bracket));
+    bracket *b = inline_state->arena ? (bracket *)markdown_core_arena_take(inline_state->arena, sizeof(bracket))
+                                     : (bracket *)inline_state->mem->calloc(1, sizeof(bracket));
     if (!b) {
         inline_state->oom = 1;
         return;
@@ -618,7 +629,7 @@ void markdown_core_inline_replace_bracket_opener(markdown_core_inline_state *inl
         markdown_core_node_attach_owned(opener->inl_text->parent, replacement, opener->inl_text->next);
     } else {
         markdown_core_node_attach_owned(opener->inl_text->parent, replacement, opener->inl_text);
-        markdown_core_node_free(opener->inl_text);
+        markdown_core_node_recycle(inline_state->arena, opener->inl_text);
     }
 }
 
@@ -700,8 +711,7 @@ static void dispose_inline(markdown_core_inline_state *inline_state) {
     }
     while (inline_state->pending_brackets) {
         bracket *next = inline_state->pending_brackets->pending_next;
-        markdown_core_inline_free_citation_tokens(inline_state, &inline_state->pending_brackets->citations);
-        inline_state->mem->free(inline_state->pending_brackets);
+        release_bracket(inline_state, inline_state->pending_brackets);
         inline_state->pending_brackets = next;
     }
 }

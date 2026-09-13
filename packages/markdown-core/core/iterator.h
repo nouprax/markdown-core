@@ -19,6 +19,9 @@ struct markdown_core_iter {
     markdown_core_iter_state next;
 };
 
+/* Start a caller-owned iterator over `root`; nothing to free afterwards. */
+void markdown_core_iter_init(markdown_core_iter *iter, markdown_core_node *root);
+
 /* Consolidation with the region set kept in step: the survivor of each merged
  * text run takes the regions the nodes it absorbed owned (requirement 11b).
  * `markdown_core_consolidate_text_nodes` is this with no parser. */

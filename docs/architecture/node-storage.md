@@ -14,6 +14,26 @@ It makes one allocation for the node and its kind's record, establishes
 defaults, and only then exposes the node. Failure releases all acquired storage.
 Node data and its strings use the node's allocator.
 
+## Transaction storage
+
+A parse transaction owns one arena (`core/arena.h`). Every node the parse
+constructs, with its initial record, and the parser's fixed-size records
+(delimiter stack entries, bracket records) are carved out of arena blocks that
+the transaction's allocator supplies; the blocks double up to a bound, so the
+allocator is called once per block rather than once per node. A record the
+parse gives back — a delimiter text node absorbed by its emphasis, a bracket
+that closed, a text run merged into its neighbour — joins a size-class pool of
+the arena and is handed out again, so the arena holds the peak live records
+plus at most one partially filled block. The root document node carries the
+arena; `markdown_core_node_free` on that root first lets every node release
+what it owns separately (attribute values, content buffers, transformed
+literals, shared resources, element state), then releases the arena. Nodes of
+one transaction therefore share one lifetime: a node may be unlinked and
+released before its tree, never kept after it. A node constructed without an
+arena is an ordinary allocation and is freed individually, so manual trees and
+tests keep the previous behaviour. Growth failure of the arena is the same
+terminal failure as any other allocation failure of the transaction.
+
 `CrossLink` stores a `markdown_core_cross_reference` record containing its raw
 path, optional anchor, and optional label. `CrossEmbedded` stores a
 `markdown_core_cross_embedded` record containing the same reference fields and

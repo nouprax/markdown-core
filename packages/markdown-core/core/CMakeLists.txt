@@ -11,6 +11,7 @@ set(HEADERS
     markdown-core-element-api.h
     parser.h
     diagnostics.h
+    arena.h
     buffer.h
     node.h
     iterator.h
@@ -37,6 +38,7 @@ set(LIBRARY_SOURCES
     buffer.c
     references.c
     map.c
+    arena.c
     houdini_html_u.c
     markdown_core_ctype.c
     linked_list.c

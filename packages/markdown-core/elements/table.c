@@ -211,7 +211,7 @@ static void try_inserting_table_header_paragraph(markdown_core_parser *parser, m
     // with the allocation refused. The other three lose the lead paragraph
     // WITHOUT setting parser->oom, so the document comes back short and the
     // failure bit says everything was fine.
-    paragraph = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_PARAGRAPH, parser->mem);
+    paragraph = markdown_core_node_create(parser->arena, parser->mem, MARKDOWN_CORE_NODE_PARAGRAPH, NULL);
     if (!paragraph) {
         parser->oom = true;
         return;
@@ -236,7 +236,7 @@ static void try_inserting_table_header_paragraph(markdown_core_parser *parser, m
     markdown_core_strbuf_put(&paragraph->content, parent_string + first, content_end - first);
     if (paragraph->content.oom) {
         parser->oom = true;
-        markdown_core_node_free(paragraph);
+        markdown_core_node_recycle(parser->arena, paragraph);
         return;
     }
 
@@ -261,7 +261,7 @@ static void try_inserting_table_header_paragraph(markdown_core_parser *parser, m
         // markdown_core_node_free, not mem->free: the node owns a content
         // buffer by now, and freeing the struct alone leaks it.
         parser->oom = true;
-        markdown_core_node_free(paragraph);
+        markdown_core_node_recycle(parser->arena, paragraph);
         return;
     }
     /* A table split completes this paragraph just as a later block start
@@ -1891,7 +1891,7 @@ static void table_fill_cell(table_source *source, markdown_core_node *node, cons
 static markdown_core_node *table_child(markdown_core_parser *parser, markdown_core_node *parent,
                                        markdown_core_node_type kind, int first_line, int first_column, int last_line,
                                        int last_column) {
-    markdown_core_node *node = markdown_core_node_new_with_mem(kind, parser->mem);
+    markdown_core_node *node = markdown_core_node_create(parser->arena, parser->mem, kind, NULL);
     if (!node) {
         parser->oom = true;
         return NULL;
@@ -1904,7 +1904,7 @@ static markdown_core_node *table_child(markdown_core_parser *parser, markdown_co
     node->start_column = markdown_core_parser_source_column(parser, first_line, first_column);
     node->end_column = markdown_core_parser_source_column(parser, last_line, last_column);
     if (parent && !markdown_core_node_attach_owned(parent, node, NULL)) {
-        markdown_core_node_free(node);
+        markdown_core_node_recycle(parser->arena, node);
         parser->oom = true;
         return NULL;
     }

@@ -460,12 +460,12 @@ static int is_backslash_delim(markdown_core_delimiter_rule delim_char) {
     return delim_char == FORMULA_DELIM_LATEX_BACKSLASH_INLINE || delim_char == FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY;
 }
 
-static void free_nodes_through(markdown_core_node *first, markdown_core_node *last) {
+static void free_nodes_through(markdown_core_arena *arena, markdown_core_node *first, markdown_core_node *last) {
     markdown_core_node *node = first;
 
     while (node) {
         markdown_core_node *next = markdown_core_node_next(node);
-        markdown_core_node_free(node);
+        markdown_core_node_recycle(arena, node);
         if (node == last) {
             break;
         }
@@ -528,21 +528,21 @@ static markdown_core_node *make_formula_node(const markdown_core_element *elemen
                                              markdown_core_formula_mode mode, const unsigned char *literal,
                                              bufsize_t literal_len) {
     markdown_core_node *node =
-        markdown_core_node_new_with_mem_and_ext(MARKDOWN_CORE_NODE_FORMULA, parser->mem, element);
+        markdown_core_node_create(parser->arena, parser->mem, MARKDOWN_CORE_NODE_FORMULA, element);
     if (!node) {
         parser->oom = true;
         return NULL;
     }
     if (!get_formula(node)) {
         parser->oom = true;
-        markdown_core_node_free(node);
+        markdown_core_node_recycle(parser->arena, node);
         return NULL;
     }
 
     get_formula(node)->mode = mode;
     if (!set_formula_literal_bytes(node, literal, literal_len)) {
         parser->oom = true;
-        markdown_core_node_free(node);
+        markdown_core_node_recycle(parser->arena, node);
         return NULL;
     }
     return node;
@@ -622,9 +622,9 @@ static void insert_formula(const markdown_core_element *element, markdown_core_p
          * the bytes between them are its content. `free_nodes_through` below
          * frees EVERY node the span was built from, so without these claims the
          * whole construct would fall back to the block. */
-        free_nodes_through(opener_node, closer_node);
+        free_nodes_through(parser->arena, opener_node, closer_node);
     } else {
-        markdown_core_node_free(formula);
+        markdown_core_node_recycle(parser->arena, formula);
     }
 
 done:
@@ -661,16 +661,16 @@ static int info_is_formula(const markdown_core_optional_chunk *info) {
     return info->has_value && info->value.len == 7 && memcmp(info->value.data, "formula", 7) == 0;
 }
 
-static markdown_core_node *new_formula_block_from_literal(const markdown_core_element *element, markdown_core_mem *mem,
-                                                          markdown_core_node *oldnode, const unsigned char *literal,
-                                                          bufsize_t literal_len) {
+static markdown_core_node *new_formula_block_from_literal(const markdown_core_element *element,
+                                                          markdown_core_parser *parser, markdown_core_node *oldnode,
+                                                          const unsigned char *literal, bufsize_t literal_len) {
     markdown_core_node *formula =
-        markdown_core_node_new_with_mem_and_ext(MARKDOWN_CORE_NODE_FORMULA_BLOCK, mem, element);
+        markdown_core_node_create(parser->arena, parser->mem, MARKDOWN_CORE_NODE_FORMULA_BLOCK, element);
     if (!formula) {
         return NULL;
     }
     if (!get_formula(formula)) {
-        markdown_core_node_free(formula);
+        markdown_core_node_recycle(parser->arena, formula);
         return NULL;
     }
 
@@ -680,7 +680,7 @@ static markdown_core_node *new_formula_block_from_literal(const markdown_core_el
     formula->end_line = oldnode->end_line;
     formula->end_column = oldnode->end_column;
     if (!set_formula_literal_trimmed(formula, literal, literal_len)) {
-        markdown_core_node_free(formula);
+        markdown_core_node_recycle(parser->arena, formula);
         return NULL;
     }
     return formula;
@@ -689,7 +689,7 @@ static markdown_core_node *new_formula_block_from_literal(const markdown_core_el
 static markdown_core_node *replace_with_formula_block(const markdown_core_element *element,
                                                       markdown_core_parser *parser, markdown_core_node *oldnode,
                                                       const unsigned char *literal, bufsize_t literal_len) {
-    markdown_core_node *formula = new_formula_block_from_literal(element, parser->mem, oldnode, literal, literal_len);
+    markdown_core_node *formula = new_formula_block_from_literal(element, parser, oldnode, literal, literal_len);
     if (!formula) {
         return NULL;
     }
@@ -697,10 +697,10 @@ static markdown_core_node *replace_with_formula_block(const markdown_core_elemen
     if (markdown_core_node_attach_owned(oldnode->parent, formula, oldnode)) {
         /* The bytes did not change hands, the node did. Said before the free,
          * because after it there is nothing left to name. */
-        markdown_core_node_free(oldnode);
+        markdown_core_node_recycle(parser->arena, oldnode);
         return formula;
     }
-    markdown_core_node_free(formula);
+    markdown_core_node_recycle(parser->arena, formula);
     return NULL;
 }
 
@@ -754,13 +754,11 @@ static markdown_core_node *postprocess_node(const markdown_core_element *element
 
 static markdown_core_node *postprocess(const markdown_core_element *element, markdown_core_parser *parser,
                                        markdown_core_node *root) {
-    markdown_core_iter *iter = markdown_core_iter_new(root);
+    markdown_core_iter walker;
+    markdown_core_iter *iter = &walker;
     markdown_core_event_type event;
 
-    if (!iter) {
-        parser->oom = true;
-        return NULL;
-    }
+    markdown_core_iter_init(iter, root);
     while (!parser->oom && (event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
         markdown_core_node *node;
         markdown_core_node *processed;
@@ -782,7 +780,6 @@ static markdown_core_node *postprocess(const markdown_core_element *element, mar
             root = processed;
         }
     }
-    markdown_core_iter_free(iter);
     return root;
 }
 

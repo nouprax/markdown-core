@@ -1,3 +1,4 @@
+#include <assert.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -181,15 +182,27 @@ static void S_init_node_as(markdown_core_node_type type, markdown_core_node_data
     }
 }
 
-markdown_core_node *markdown_core_node_new_with_mem_and_ext(markdown_core_node_type type, markdown_core_mem *mem,
-                                                            const markdown_core_element *element) {
-    /* Construction gives the node and its record one aligned allocation. */
+markdown_core_node *markdown_core_node_create(markdown_core_arena *arena, markdown_core_mem *mem,
+                                              markdown_core_node_type type, const markdown_core_element *element) {
+    /* Construction gives the node and its record one aligned allocation.
+     * Records are measured in 64-byte steps so that the few distinct kind
+     * sizes share the arena's pools: a node released during the parse serves
+     * the next node of any kind of the same step, whatever its payload. */
     size_t payload_size = S_node_payload_size(type);
-    markdown_core_node *node =
-        (markdown_core_node *)mem->calloc(1, sizeof(markdown_core_node_allocation) + payload_size);
+    size_t record_size = (sizeof(markdown_core_node_allocation) + payload_size + 63) & ~(size_t)63;
+    markdown_core_node *node;
+    assert(record_size <= UINT16_MAX);
+    if (arena) {
+        mem = markdown_core_arena_mem(arena);
+        node = (markdown_core_node *)markdown_core_arena_take(arena, record_size);
+    } else {
+        node = (markdown_core_node *)mem->calloc(1, record_size);
+    }
     if (!node) {
         return NULL;
     }
+    node->record_size = (uint16_t)record_size;
+    node->arena_owned = arena != NULL;
     markdown_core_strbuf_init(mem, &node->content, 0);
     node->kind = (uint16_t)type;
     node->element = element;
@@ -201,6 +214,11 @@ markdown_core_node *markdown_core_node_new_with_mem_and_ext(markdown_core_node_t
     }
 
     return node;
+}
+
+markdown_core_node *markdown_core_node_new_with_mem_and_ext(markdown_core_node_type type, markdown_core_mem *mem,
+                                                            const markdown_core_element *element) {
+    return markdown_core_node_create(NULL, mem, type, element);
 }
 
 markdown_core_node *markdown_core_node_new_with_ext(markdown_core_node_type type,
@@ -327,9 +345,18 @@ static void S_splice_owned_fields(markdown_core_node *owner, markdown_core_node 
     }
 }
 
-static void S_free_nodes(markdown_core_node *e) {
+/* Release everything the nodes own, then their storage: allocator nodes go
+ * back to the allocator, arena nodes to `pool` when the caller named it and
+ * otherwise stay in their arena. The root of a parse transaction carries
+ * that arena and releases it last, after the walk has left every node. */
+static void S_free_nodes(markdown_core_node *e, markdown_core_arena *pool) {
     markdown_core_node *next;
+    markdown_core_arena *owned = NULL;
     while (e != NULL) {
+        if (e->kind == MARKDOWN_CORE_NODE_DOCUMENT && e->as.document && e->as.document->arena) {
+            owned = e->as.document->arena;
+            e->as.document->arena = NULL;
+        }
         markdown_core_attributes_free(NODE_MEM(e), &e->attributes);
         markdown_core_strbuf_free(&e->content);
 
@@ -353,15 +380,28 @@ static void S_free_nodes(markdown_core_node *e) {
             e->next = e->first_child;
         }
         next = e->next;
-        NODE_MEM(e)->free(e);
+        if (!e->arena_owned) {
+            NODE_MEM(e)->free(e);
+        } else if (pool) {
+            markdown_core_arena_recycle(pool, e, e->record_size);
+        }
         e = next;
+    }
+    if (owned) {
+        markdown_core_arena_free(owned);
     }
 }
 
 void markdown_core_node_free(markdown_core_node *node) {
     S_node_unlink(node);
     node->next = NULL;
-    S_free_nodes(node);
+    S_free_nodes(node, NULL);
+}
+
+void markdown_core_node_recycle(markdown_core_arena *arena, markdown_core_node *node) {
+    S_node_unlink(node);
+    node->next = NULL;
+    S_free_nodes(node, arena);
 }
 
 markdown_core_node_type markdown_core_node_get_type(markdown_core_node *node) {
@@ -392,7 +432,7 @@ markdown_core_node_set_kind_result markdown_core_node_set_kind(markdown_core_nod
     S_init_node_as(kind, &replacement);
     markdown_core_node fields = {0};
     S_splice_owned_fields(node, &fields);
-    S_free_nodes(fields.next);
+    S_free_nodes(fields.next, NULL);
     free_node_as(node);
     node->as = replacement;
     node->node_data_allocation = replacement.data;

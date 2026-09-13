@@ -1879,8 +1879,9 @@ static void reference_attribute_lifecycle(test_batch_runner *runner) {
     attribute_eq(runner, second, 0, "k", "1", "first inherited declaration");
     attribute_eq(runner, second, 1, "k", "1", "duplicate inherited declaration");
     attribute_eq(runner, second, 2, "k", "2", "local declaration is last");
-    markdown_core_node_unlink(second);
-    markdown_core_node_free(root);
+    /* Every node of a parse shares the transaction's storage and lifetime:
+     * an occurrence may lose its siblings, never its tree. */
+    markdown_core_node_free(first);
     attribute_eq(runner, second, 0, "k", "1", "retained occurrence keeps its definition alive");
     markdown_core_string value = {0};
     OK(runner, markdown_core_attribute_value_class_at(inherited, 0, &value),
@@ -1891,7 +1892,7 @@ static void reference_attribute_lifecycle(test_batch_runner *runner) {
        !markdown_core_attribute_value_anchor(NULL).has_value && markdown_core_attribute_value_class_count(NULL) == 0 &&
            markdown_core_attribute_value_record_count(NULL) == 0,
        "absent normalized values are empty");
-    markdown_core_node_free(second);
+    markdown_core_node_free(root);
 }
 
 static size_t payload_allocations, payload_fail_at, payload_live;
@@ -2957,9 +2958,10 @@ typedef union {
     long double alignment;
     void *pointer;
 } properties_allocation;
-static size_t properties_live_bytes, properties_peak_bytes, properties_requested_bytes;
+static size_t properties_live_bytes, properties_peak_bytes, properties_requested_bytes, properties_allocations;
 static void properties_account(size_t old_size, size_t new_size) {
     properties_requested_bytes += new_size;
+    properties_allocations += old_size == 0 && new_size != 0;
     properties_live_bytes = properties_live_bytes - old_size + new_size;
     if (properties_live_bytes > properties_peak_bytes) {
         properties_peak_bytes = properties_live_bytes;
@@ -4999,6 +5001,120 @@ static void attribute_dense_tail_memory(test_batch_runner *runner) {
     }
 }
 
+/* A parse transaction stores its nodes, delimiters and brackets in one arena
+ * owned by the root: the allocator sees block growth, not node construction,
+ * and records released during the parse are handed out again, so the live
+ * storage stays proportional to the finished tree. Every byte goes with the
+ * root. What the allocator still sees per construct is stated per shape: a
+ * content buffer per block, and the resource and literal copies of links,
+ * embeds and code spans. */
+static void parse_transaction_storage(test_batch_runner *runner) {
+    markdown_core_mem mem = {properties_calloc, properties_realloc, properties_free};
+    static const struct {
+        const char *unit;
+        size_t per_block;
+    } shapes[] = {{"a *b* c **d** e _f_ g\n", 0}, {"[x](/u) ![y](/v) `c` a\n\n", 8}, {"- item\n", 1}};
+    for (size_t shape = 0; shape < sizeof(shapes) / sizeof(*shapes); shape++) {
+        for (size_t lines = 256; lines <= 4096; lines *= 4) {
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(markdown_core_get_default_mem_allocator());
+            for (size_t i = 0; i < lines; i++) {
+                markdown_core_strbuf_puts(&source, shapes[shape].unit);
+            }
+            properties_live_bytes = properties_peak_bytes = properties_requested_bytes = properties_allocations = 0;
+            markdown_core_node *root =
+                markdown_core_parse_document_with_mem((const char *)source.ptr, source.size, &mem, NULL, NULL);
+            OK(runner, root != NULL, "arena shape parses: shape=%zu lines=%zu", shape, lines);
+            size_t nodes = 0, blocks = 0;
+            if (root) {
+                markdown_core_iter *iter = markdown_core_iter_new(root);
+                while (markdown_core_iter_next(iter) != MARKDOWN_CORE_EVENT_DONE) {
+                    if (markdown_core_iter_get_event_type(iter) == MARKDOWN_CORE_EVENT_ENTER) {
+                        nodes++;
+                        blocks += !MARKDOWN_CORE_NODE_TYPE_INLINE_P(markdown_core_iter_get_node(iter)->kind);
+                    }
+                }
+                markdown_core_iter_free(iter);
+            }
+            size_t allocations = properties_allocations, peak = properties_peak_bytes;
+            OK(runner, allocations <= 128 + (size_t)source.size / 4096 + shapes[shape].per_block * blocks,
+               "allocator calls come from block growth and stated per-construct copies: shape=%zu lines=%zu "
+               "nodes=%zu blocks=%zu calls=%zu",
+               shape, lines, nodes, blocks, allocations);
+            /* The transient peak holds every delimiter text run before the
+             * delimiter algorithm folds them; it is bounded by the tree, not
+             * by the number of records the parse released along the way. */
+            OK(runner, peak <= nodes * 512 + 4 * (size_t)source.size + (1u << 20),
+               "the peak stays proportional to the finished tree: shape=%zu peak=%zu nodes=%zu", shape, peak, nodes);
+            markdown_core_node_free(root);
+            INT_EQ(runner, properties_live_bytes, 0, "the root releases every byte of the transaction");
+            markdown_core_strbuf_free(&source);
+        }
+    }
+}
+
+/* The arena hands released records out again by size class and never by
+ * accident to a different class; a record above the pooled sizes is plain
+ * arena storage. Growth failure is reported, never hidden. */
+static void arena_recycling(test_batch_runner *runner) {
+    markdown_core_mem mem = {properties_calloc, properties_realloc, properties_free};
+    properties_live_bytes = properties_peak_bytes = properties_requested_bytes = properties_allocations = 0;
+    markdown_core_arena *arena = markdown_core_arena_new(&mem);
+    OK(runner, arena != NULL && markdown_core_arena_mem(arena) == &mem, "arena keeps the transaction's allocator");
+    enum { RECORDS = 512 };
+    void *records[RECORDS];
+    bool zeroed = true;
+    for (size_t i = 0; i < RECORDS; i++) {
+        records[i] = markdown_core_arena_take(arena, 48);
+        unsigned char *bytes = records[i];
+        for (size_t b = 0; bytes && b < 48; b++) {
+            zeroed &= bytes[b] == 0;
+        }
+        if (bytes) {
+            memset(bytes, 0xAB, 48);
+        }
+    }
+    size_t grown = properties_allocations;
+    OK(runner, zeroed && grown >= 2 && grown <= 8, "records come zeroed from doubling blocks: allocations=%zu", grown);
+    for (size_t i = 0; i < RECORDS; i++) {
+        markdown_core_arena_recycle(arena, records[i], 48);
+    }
+    bool reused = true;
+    for (size_t i = 0; i < RECORDS; i++) {
+        unsigned char *again = markdown_core_arena_take(arena, 40);
+        bool known = false;
+        for (size_t j = 0; j < RECORDS && !known; j++) {
+            known = again == records[j];
+        }
+        reused &= known && again[0] == 0 && again[47] == 0;
+    }
+    OK(runner, reused && properties_allocations == grown,
+       "released records of a size class serve the next takes of that class, zeroed, without growth");
+    void *other = markdown_core_arena_take(arena, 224);
+    bool distinct = other != NULL;
+    for (size_t j = 0; j < RECORDS; j++) {
+        distinct &= other != records[j];
+    }
+    OK(runner, distinct, "a different size class never receives another class's records");
+    void *large = markdown_core_arena_take(arena, 4096);
+    markdown_core_arena_recycle(arena, large, 4096);
+    OK(runner, large != NULL && markdown_core_arena_take(arena, 4096) != large,
+       "records above the pooled sizes are arena storage and are not handed out twice");
+    OK(runner, markdown_core_arena_take(arena, (1u << 20) + 1) != NULL, "a request beyond a block gets its own");
+    markdown_core_arena_free(arena);
+    INT_EQ(runner, properties_live_bytes, 0, "the arena releases every block, oversized ones included");
+    payload_allocations = payload_fail_at = payload_live = 0;
+    arena = markdown_core_arena_new(&payload_test_mem);
+    OK(runner, arena != NULL, "arena for the failure probe");
+    if (arena) {
+        payload_fail_at = payload_allocations + 1;
+        OK(runner, markdown_core_arena_take(arena, 48) == NULL, "block growth failure is reported");
+        payload_fail_at = 0;
+        OK(runner, markdown_core_arena_take(arena, 48) != NULL, "a later request grows again");
+        markdown_core_arena_free(arena);
+    }
+    INT_EQ(runner, payload_live, 0, "a failed growth leaves nothing behind");
+}
+
 static void attribute_linear_work(test_batch_runner *runner) {
     markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
     static const struct {
@@ -5250,11 +5366,9 @@ static void heading_reference_resource_lifetime(test_batch_runner *runner) {
            !resource->title.has_value && !resource->attributes.anchor.len && !resource->attributes.class_count &&
                !resource->attributes.record_count,
            "heading metadata never becomes inherited reference metadata");
-        markdown_core_node *occurrences = root->last_child;
-        markdown_core_node_unlink(occurrences);
-        markdown_core_node_free(root);
+        markdown_core_node_free(root->first_child);
         OK(runner, resource->url.data[length] == 'a', "shared targets outlive both parser and heading declaration");
-        markdown_core_node_free(occurrences);
+        markdown_core_node_free(root);
     }
     markdown_core_strbuf_clear(&source);
     markdown_core_strbuf_puts(&source, "# x\n\n[r]: /u {id=");
@@ -6224,6 +6338,8 @@ int main(int argc, char **argv) {
     reference_definition_lifetime(runner);
     attribute_sparse_memory(runner);
     attribute_dense_tail_memory(runner);
+    parse_transaction_storage(runner);
+    arena_recycling(runner);
     attribute_linear_work(runner);
     attribute_attachment_linear_work(runner);
     heading_completion_invariants(runner);

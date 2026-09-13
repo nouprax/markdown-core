@@ -17,7 +17,7 @@ static int continue_paragraph(const markdown_core_element *self, markdown_core_p
 }
 static void complete_block(markdown_core_parser *parser, markdown_core_node *node) {
     if (node->flags & MARKDOWN_CORE_NODE__REFERENCE_DEFINITION_ONLY) {
-        markdown_core_node_free(node);
+        markdown_core_node_recycle(parser->arena, node);
     }
 }
 static bool accepts_lazy(markdown_core_parser *parser, markdown_core_node *node) { return true; }

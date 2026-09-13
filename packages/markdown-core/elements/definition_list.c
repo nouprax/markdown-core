@@ -102,7 +102,8 @@ static markdown_core_node *markdown_core_block_open_definition(markdown_core_par
         return NULL;
     }
     definition->as.definition->compact = compact;
-    markdown_core_node *term = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_PARAGRAPH, parser->mem);
+    markdown_core_node *term =
+        markdown_core_node_create(parser->arena, parser->mem, MARKDOWN_CORE_NODE_PARAGRAPH, NULL);
     if (!term) {
         parser->oom = true;
         return definition;

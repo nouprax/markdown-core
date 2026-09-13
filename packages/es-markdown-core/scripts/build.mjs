@@ -16,6 +16,7 @@ const core = [
     "buffer.c",
     "references.c",
     "map.c",
+    "arena.c",
     "houdini_html_u.c",
     "markdown_core_ctype.c",
     "linked_list.c"

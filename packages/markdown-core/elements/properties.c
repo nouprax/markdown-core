@@ -743,7 +743,7 @@ size_t markdown_core_properties_parse(markdown_core_parser *parser, const unsign
         return 0;
     }
     properties p = {.parser = parser, .source = source};
-    markdown_core_node *node = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_METADATA, parser->mem);
+    markdown_core_node *node = markdown_core_node_create(parser->arena, parser->mem, MARKDOWN_CORE_NODE_METADATA, NULL);
     if (!node) {
         parser->oom = true;
         return 0;
@@ -756,7 +756,7 @@ size_t markdown_core_properties_parse(markdown_core_parser *parser, const unsign
     node->end_column = 3;
     payload(&p, start, close);
     if (parser->oom) {
-        markdown_core_node_free(node);
+        markdown_core_node_recycle(parser->arena, node);
         return 0;
     }
     parser->root->as.document->metadata = node;

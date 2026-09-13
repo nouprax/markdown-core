@@ -72,6 +72,10 @@ typedef struct {
 
 struct markdown_core_parser {
     struct markdown_core_mem *mem;
+    /* The transaction's storage. Created with the parser, handed to the root
+     * document with the tree, and released by whichever of the two ends up
+     * owning the root. */
+    markdown_core_arena *arena;
     /* Source-ordered reference declarations, indexed by normalized label. */
     struct markdown_core_map *refmap;
     /* The labels this document defines footnotes for (see references.h). The

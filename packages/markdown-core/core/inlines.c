@@ -51,7 +51,7 @@ void markdown_core_inline_state_place(markdown_core_inline_state *inline_state, 
 markdown_core_node *markdown_core_inline_make_literal(markdown_core_inline_state *inline_state,
                                                       markdown_core_node_type t, int start_column, int end_column,
                                                       markdown_core_chunk s) {
-    markdown_core_node *e = markdown_core_node_new_with_mem(t, inline_state->mem);
+    markdown_core_node *e = markdown_core_node_create(inline_state->arena, inline_state->mem, t, NULL);
     if (!e) {
         /* Frees an owned literal; borrowed chunks only reset fields. */
         markdown_core_chunk_free(inline_state->mem, &s);
@@ -64,15 +64,16 @@ markdown_core_node *markdown_core_inline_make_literal(markdown_core_inline_state
 }
 
 // Create an inline with no value.
-markdown_core_node *markdown_core_inline_make_simple(markdown_core_mem *mem, markdown_core_node_type t) {
-    return markdown_core_node_new_with_mem(t, mem);
+markdown_core_node *markdown_core_inline_make_simple(markdown_core_inline_state *inline_state,
+                                                     markdown_core_node_type t) {
+    return markdown_core_node_create(inline_state->arena, inline_state->mem, t, NULL);
 }
 
 /* markdown_core_inline_make_simple with the inline state's loss flag for handlers that consume input
  * before creating the node. */
 markdown_core_node *markdown_core_inline_make_simple_with_state(markdown_core_inline_state *inline_state,
                                                                 markdown_core_node_type t) {
-    markdown_core_node *e = markdown_core_inline_make_simple(inline_state->mem, t);
+    markdown_core_node *e = markdown_core_inline_make_simple(inline_state, t);
     if (!e) {
         inline_state->oom = 1;
     }
@@ -86,6 +87,7 @@ void markdown_core_inline_state_from_buf(markdown_core_parser *parser, markdown_
     inline_state->special_chars = parser ? parser->special_chars : EMPTY_CHAR_SET;
     inline_state->skip_chars = parser ? parser->skip_chars : EMPTY_CHAR_SET;
     inline_state->mem = mem;
+    inline_state->arena = parser ? parser->arena : NULL;
     inline_state->input = *chunk;
     inline_state->line = line_number;
     inline_state->owner_parser = parser;
@@ -309,12 +311,18 @@ void markdown_core_inline_remove_delimiter(markdown_core_inline_state *inline_st
     if (delim->can_close) {
         inline_state->delim_closers[delim->rule]--;
     }
-    inline_state->mem->free(delim);
+    if (inline_state->arena) {
+        markdown_core_arena_recycle(inline_state->arena, delim, sizeof(*delim));
+    } else {
+        inline_state->mem->free(delim);
+    }
 }
 
 delimiter *markdown_core_inline_push_delimiter_entry(markdown_core_inline_state *inline_state, delimiter_kind kind,
                                                      bufsize_t position) {
-    delimiter *entry = (delimiter *)inline_state->mem->calloc(1, sizeof(delimiter));
+    delimiter *entry = inline_state->arena
+                           ? (delimiter *)markdown_core_arena_take(inline_state->arena, sizeof(delimiter))
+                           : (delimiter *)inline_state->mem->calloc(1, sizeof(delimiter));
     if (!entry) {
         inline_state->oom = 1;
         return NULL;
@@ -571,7 +579,7 @@ static delimiter *S_insert_delimited_inline(markdown_core_inline_state *inline_s
 
     // Allocate before mutating either run. OOM leaves the source intact and
     // aborts the shared parse transaction.
-    inline_node = markdown_core_inline_make_simple(inline_state->mem, kind);
+    inline_node = markdown_core_inline_make_simple(inline_state, kind);
     if (!inline_node) {
         inline_state->oom = 1;
         return closer->next;
@@ -636,7 +644,7 @@ static delimiter *S_insert_delimited_inline(markdown_core_inline_state *inline_s
 
     // if opener has 0 characters, remove it and its associated inline
     if (opener_num_chars == 0) {
-        markdown_core_node_free(opener_inl);
+        markdown_core_node_recycle(inline_state->arena, opener_inl);
         markdown_core_inline_remove_delimiter(inline_state, opener);
     } else if (opener_num_chars < minimum_width) {
         markdown_core_inline_remove_delimiter(inline_state, opener); // A remaining single sign is only text.
@@ -645,7 +653,7 @@ static delimiter *S_insert_delimited_inline(markdown_core_inline_state *inline_s
     // if closer has 0 characters, remove it and its associated inline
     if (closer_num_chars == 0) {
         // remove empty closer inline
-        markdown_core_node_free(closer_inl);
+        markdown_core_node_recycle(inline_state->arena, closer_inl);
         // remove closer from list
         tmp_delim = closer->next;
         markdown_core_inline_remove_delimiter(inline_state, closer);

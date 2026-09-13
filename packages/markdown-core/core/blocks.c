@@ -64,15 +64,16 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser);
 
 static void S_process_line(markdown_core_parser *parser, const unsigned char *buffer, bufsize_t bytes);
 
-static markdown_core_node *make_block(markdown_core_mem *mem, markdown_core_node_type tag, int start_line,
+static markdown_core_node *make_block(markdown_core_parser *parser, markdown_core_node_type tag, int start_line,
                                       int start_column) {
     markdown_core_node *e;
 
-    e = markdown_core_node_new_with_mem(tag, mem);
+    e = markdown_core_node_create(parser->arena, parser->mem, tag, NULL);
     if (!e) {
         return NULL;
     }
-    markdown_core_strbuf_grow(&e->content, 32);
+    /* Content storage grows with the first line fed to the block; a container
+     * that never receives one keeps the shared empty buffer. */
     e->flags = MARKDOWN_CORE_NODE__OPEN;
     e->start_line = start_line;
     e->start_column = start_column;
@@ -82,8 +83,11 @@ static markdown_core_node *make_block(markdown_core_mem *mem, markdown_core_node
 }
 
 // Create a root document node.
-static markdown_core_node *make_document(markdown_core_mem *mem) {
-    markdown_core_node *e = make_block(mem, MARKDOWN_CORE_NODE_DOCUMENT, 1, 1);
+static markdown_core_node *make_document(markdown_core_parser *parser) {
+    markdown_core_node *e = make_block(parser, MARKDOWN_CORE_NODE_DOCUMENT, 1, 1);
+    if (e) {
+        e->as.document->arena = parser->arena;
+    }
     return e;
 }
 
@@ -132,6 +136,8 @@ static void S_parser_dispose(markdown_core_parser *parser) {
     parser->mem->free(parser->inline_dispatch);
     parser->inline_dispatch = NULL;
     if (parser->root) {
+        /* The root owns the arena from its creation on. */
+        parser->arena = NULL;
         markdown_core_node_free(parser->root);
     }
 
@@ -167,11 +173,16 @@ static markdown_core_parser *S_parser_new(markdown_core_mem *mem) {
         return NULL;
     }
     parser->mem = mem;
+    parser->arena = markdown_core_arena_new(mem);
+    if (!parser->arena) {
+        mem->free(parser);
+        return NULL;
+    }
     markdown_core_strbuf_init(parser->mem, &parser->curline, 256);
     markdown_core_strbuf_init(parser->mem, &parser->line_scratch, 0);
     markdown_core_strbuf_init(parser->mem, &parser->lookahead_last_line, 0);
 
-    document = make_document(parser->mem);
+    document = make_document(parser);
     parser->document_structure = markdown_core_structure_for_kind(MARKDOWN_CORE_NODE_DOCUMENT);
     parser->document_structure->init_document(parser);
     parser->root = document;
@@ -196,6 +207,9 @@ static void S_parser_free(markdown_core_parser *parser) {
     }
     mem = parser->mem;
     S_parser_dispose(parser);
+    /* Only a parser whose root never existed still holds the arena here. */
+    markdown_core_arena_free(parser->arena);
+    parser->arena = NULL;
     parser->mem->free(parser->element_allocation);
     markdown_core_strbuf_free(&parser->curline);
     markdown_core_strbuf_free(&parser->line_scratch);
@@ -657,12 +671,12 @@ markdown_core_node *markdown_core_parser_add_child(markdown_core_parser *parser,
     parent = markdown_core_block_parent_for(parser, parent, block_type);
 
     markdown_core_node *child =
-        make_block(parser->mem, block_type, parser->line_number,
+        make_block(parser, block_type, parser->line_number,
                    markdown_core_parser_source_column(parser, parser->line_number, start_column));
     if (!child || child->content.oom) {
         parser->oom = true;
         if (child) {
-            markdown_core_node_free(child);
+            markdown_core_node_recycle(parser->arena, child);
         }
         /* The loop above may have finalized blocks; keep the parser anchored
          * at a still-open ancestor so the finish path stays consistent. */
@@ -670,7 +684,7 @@ markdown_core_node *markdown_core_parser_add_child(markdown_core_parser *parser,
         return NULL;
     }
     if (!markdown_core_node_attach_owned(parent, child, NULL)) {
-        markdown_core_node_free(child);
+        markdown_core_node_recycle(parser->arena, child);
         parser->oom = true;
         return NULL;
     }
@@ -773,15 +787,13 @@ void markdown_core_manage_elements_special_characters(markdown_core_parser *pars
 /* Parse each source buffer once. Inline parsing completes fields at their
  * owning token; the structural walk therefore skips the emitted inline tree. */
 static bool process_inline_tree(markdown_core_parser *parser, markdown_core_node *root, markdown_core_map *refmap) {
-    markdown_core_iter *iter = markdown_core_iter_new(root);
+    markdown_core_iter walker;
+    markdown_core_iter *iter = &walker;
     markdown_core_node *cur;
     markdown_core_event_type ev_type;
     bool whitespace = false;
 
-    if (!iter) {
-        parser->oom = true;
-        return false;
-    }
+    markdown_core_iter_init(iter, root);
 
     while (!parser->oom && (ev_type = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
         cur = markdown_core_iter_get_node(iter);
@@ -796,7 +808,6 @@ static bool process_inline_tree(markdown_core_parser *parser, markdown_core_node
         }
     }
 
-    markdown_core_iter_free(iter);
     return whitespace;
 }
 
@@ -831,7 +842,8 @@ typedef void (*tree_node_func)(markdown_core_parser *parser, markdown_core_node 
 
 typedef struct {
     markdown_core_node **slot;
-    markdown_core_iter *iter;
+    markdown_core_iter iter;
+    bool started;
     int script_depth;
 } owned_tree_frame;
 
@@ -861,7 +873,7 @@ static int push_owned_tree(markdown_core_node **slot, void *context) {
         walk->frames = frames;
         walk->capacity = capacity;
     }
-    walk->frames[walk->count++] = (owned_tree_frame){slot, NULL, walk->script_depth};
+    walk->frames[walk->count++] = (owned_tree_frame){.slot = slot, .script_depth = walk->script_depth};
     return 1;
 }
 
@@ -874,24 +886,20 @@ static int walk_owned_trees(markdown_core_parser *parser, markdown_core_node **s
     push_owned_tree(slot, &walk);
     while (walk.count && !parser->oom) {
         owned_tree_frame *frame = &walk.frames[walk.count - 1];
-        if (!frame->iter) {
-            frame->iter = markdown_core_iter_new(*frame->slot);
-            if (!frame->iter) {
-                parser->oom = true;
-                break;
-            }
+        if (!frame->started) {
+            markdown_core_iter_init(&frame->iter, *frame->slot);
+            frame->started = true;
         }
-        markdown_core_event_type event = markdown_core_iter_next(frame->iter);
+        markdown_core_event_type event = markdown_core_iter_next(&frame->iter);
         if (event == MARKDOWN_CORE_EVENT_DONE) {
             markdown_core_node **completed = frame->slot;
-            markdown_core_iter_free(frame->iter);
             walk.count--;
             if (finish && !finish(parser, completed, context)) {
                 parser->oom = true;
             }
             continue;
         }
-        markdown_core_node *node = markdown_core_iter_get_node(frame->iter);
+        markdown_core_node *node = markdown_core_iter_get_node(&frame->iter);
         if (node->element && node->element->delimiter.body == DELIMITER_WORD_BODY) {
             frame->script_depth += event == MARKDOWN_CORE_EVENT_ENTER ? 1 : -1;
         }
@@ -912,11 +920,6 @@ static int walk_owned_trees(markdown_core_parser *parser, markdown_core_node **s
             owned_tree_frame swap = walk.frames[left];
             walk.frames[left] = walk.frames[right];
             walk.frames[right] = swap;
-        }
-    }
-    for (size_t i = 0; i < walk.count; i++) {
-        if (walk.frames[i].iter) {
-            markdown_core_iter_free(walk.frames[i].iter);
         }
     }
     parser->mem->free(walk.frames);
@@ -2315,10 +2318,12 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
 
     res = parser->root;
     parser->root = NULL;
+    parser->arena = NULL;
     return res;
 
 failed:
     parser->document_structure->dispose_document(parser);
+    parser->arena = NULL;
     markdown_core_node_free(parser->root);
     parser->root = NULL;
     return NULL;

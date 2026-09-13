@@ -238,7 +238,7 @@ static markdown_core_node *markdown_core_inline_read_citation_token(markdown_cor
         token ? markdown_core_inline_push_delimiter_entry(inline_state, DELIMITER_CITATION_TOKEN, value.end) : NULL;
     if (!boundary) {
         inline_state->mem->free(token);
-        markdown_core_node_free(text);
+        markdown_core_node_recycle(inline_state->arena, text);
         inline_state->oom = 1;
         return NULL;
     }
@@ -414,7 +414,7 @@ static void take_citation_affix(markdown_core_inline_state *inline_state, markdo
             markdown_core_node_unlink(first);
             markdown_core_node_attach_owned(*slot, first, NULL);
         } else {
-            markdown_core_node_free(first);
+            markdown_core_node_recycle(inline_state->arena, first);
         }
         first = next;
     }
@@ -425,7 +425,7 @@ static void remove_specimen_parenthesis(markdown_core_inline_state *inline_state
     assert(text && text->kind == MARKDOWN_CORE_NODE_TEXT && text->as.literal->len);
     markdown_core_chunk *literal = text->as.literal;
     if (literal->len == 1) {
-        markdown_core_node_free(text);
+        markdown_core_node_recycle(inline_state->arena, text);
         return;
     }
     if (first) {
@@ -454,7 +454,7 @@ static void materialize_citation_key(markdown_core_inline_state *inline_state, c
     markdown_core_node *item = cite ? new_bib_item(inline_state, cite, NULL, token, false) : NULL;
     if (!item) {
         if (cite) {
-            markdown_core_node_free(cite);
+            markdown_core_node_recycle(inline_state->arena, cite);
         }
         return;
     }
@@ -478,7 +478,7 @@ static void materialize_citation_key(markdown_core_inline_state *inline_state, c
     }
     markdown_core_inline_state_place(inline_state, cite, start, end - 1);
     markdown_core_node_attach_owned(token->node->parent, cite, token->node);
-    markdown_core_node_free(token->node);
+    markdown_core_node_recycle(inline_state->arena, token->node);
     token->node = cite;
 }
 
@@ -547,7 +547,7 @@ bool markdown_core_inline_close_bibliography(markdown_core_parser *parser, markd
         markdown_core_node_attach_owned(old->parent, cite, old);
         while (old != content) {
             markdown_core_node *next = old->next;
-            markdown_core_node_free(old);
+            markdown_core_node_recycle(inline_state->arena, old);
             old = next;
         }
         opener->author->node = cite;
@@ -581,7 +581,7 @@ bool markdown_core_inline_close_bibliography(markdown_core_parser *parser, markd
         if (!author_item) {
             take_citation_affix(inline_state, &item->as.citation->prefix, content, key->node, item_start, key->start);
             content = key->node->next;
-            markdown_core_node_free(key->node);
+            markdown_core_node_recycle(inline_state->arena, key->node);
         }
         if (author_item && tail_starts_item) {
             author_item = false;
@@ -593,7 +593,7 @@ bool markdown_core_inline_close_bibliography(markdown_core_parser *parser, markd
         author_item = false;
         if (separator) {
             content = separator->node->next;
-            markdown_core_node_free(separator->node);
+            markdown_core_node_recycle(inline_state->arena, separator->node);
             item_start = separator->end;
             token = separator->next;
         } else {
@@ -624,9 +624,9 @@ static void resume_citation_tail(markdown_core_inline_state *inline_state, citat
     inline_state->no_link_openers = pending->pending_no_link_openers;
     markdown_core_node *literal = markdown_core_inline_handle_close_bracket(inline_state->owner_parser, inline_state);
     if (literal) {
-        markdown_core_node_free(literal);
+        markdown_core_node_recycle(inline_state->arena, literal);
     } else if (!inline_state->oom && !inline_state->owner_parser->oom) {
-        markdown_core_node_free(close);
+        markdown_core_node_recycle(inline_state->arena, close);
     }
     inline_state->pos = saved_pos;
     inline_state->last_bracket = saved_bracket;
@@ -706,7 +706,7 @@ bool markdown_core_citation_defer_tail(markdown_core_inline_state *inline_state,
                   : NULL;
         if (!end) {
             if (close) {
-                markdown_core_node_free(close);
+                markdown_core_node_recycle(inline_state->arena, close);
             }
             inline_state->oom = 1;
             return true;

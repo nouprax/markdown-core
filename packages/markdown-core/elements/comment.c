@@ -141,7 +141,7 @@ static markdown_core_node *match(const markdown_core_element *element, markdown_
     if (close < 0) {
         return NULL;
     }
-    node = markdown_core_node_new_with_mem_and_ext(MARKDOWN_CORE_NODE_COMMENT, parser->mem, element);
+    node = markdown_core_node_create(parser->arena, parser->mem, MARKDOWN_CORE_NODE_COMMENT, element);
     if (!node) {
         parser->oom = true;
         return NULL;
@@ -149,7 +149,7 @@ static markdown_core_node *match(const markdown_core_element *element, markdown_
     *node->as.literal = markdown_core_chunk_dup(input, start + 2, close - start - 2);
     if (!markdown_core_chunk_to_cstr(parser->mem, node->as.literal)) {
         parser->oom = true;
-        markdown_core_node_free(node);
+        markdown_core_node_recycle(inline_state->arena, node);
         return NULL;
     }
     /* The scope covers both delimiters and the body. */

@@ -263,18 +263,18 @@ static int parse_directive_suffix(markdown_core_parser *parser, unsigned char *d
     return 1;
 }
 
-static markdown_core_node *make_label_node(const markdown_core_element *element, markdown_core_mem *mem,
+static markdown_core_node *make_label_node(const markdown_core_element *element, markdown_core_parser *parser,
                                            const unsigned char *label, bufsize_t label_len, int start_line,
                                            int start_column, int end_column) {
     markdown_core_node *label_node =
-        markdown_core_node_new_with_mem_and_ext(MARKDOWN_CORE_NODE_DIRECTIVE_LABEL, mem, element);
+        markdown_core_node_create(parser->arena, parser->mem, MARKDOWN_CORE_NODE_DIRECTIVE_LABEL, element);
     if (!label_node) {
         return NULL;
     }
 
     markdown_core_strbuf_put(&label_node->content, label, label_len);
     if (label_node->content.oom) {
-        markdown_core_node_free(label_node);
+        markdown_core_node_recycle(parser->arena, label_node);
         return NULL;
     }
     label_node->start_line = label_node->end_line = start_line;
@@ -288,20 +288,19 @@ static markdown_core_node *make_label_node(const markdown_core_element *element,
     return label_node;
 }
 
-static int attach_label_node(const markdown_core_element *element, markdown_core_node *directive_node,
-                             const unsigned char *label, bufsize_t label_len, int start_line, int start_column,
-                             int end_column) {
+static int attach_label_node(const markdown_core_element *element, markdown_core_parser *parser,
+                             markdown_core_node *directive_node, const unsigned char *label, bufsize_t label_len,
+                             int start_line, int start_column, int end_column) {
     markdown_core_node *label_node;
 
-    label_node = make_label_node(element, markdown_core_node_mem(directive_node), label, label_len, start_line,
-                                 start_column, end_column);
+    label_node = make_label_node(element, parser, label, label_len, start_line, start_column, end_column);
     if (!label_node) {
         return 0;
     }
 
     node_directive *directive = get_directive(directive_node);
     if (!directive || directive->label) {
-        markdown_core_node_free(label_node);
+        markdown_core_node_recycle(parser->arena, label_node);
         return 0;
     }
 
@@ -353,7 +352,7 @@ static int apply_parsed_directive(const markdown_core_element *element, markdown
         int label_start_column = start_column + (int)parsed->label_start;
         int label_end_column = label_start_column + (int)parsed->label_len + 1;
 
-        if (!attach_label_node(element, node, data + parsed->label_start, parsed->label_len, start_line,
+        if (!attach_label_node(element, parser, node, data + parsed->label_start, parsed->label_len, start_line,
                                label_start_column, label_end_column)) {
             return 0;
         }
@@ -366,7 +365,7 @@ static markdown_core_node *make_directive_node(const markdown_core_element *elem
                                                const unsigned char *name, bufsize_t name_len, int start_line,
                                                int start_column, int end_line, int end_column) {
     markdown_core_node *node =
-        markdown_core_node_new_with_mem_and_ext(MARKDOWN_CORE_NODE_DIRECTIVE, parser->mem, element);
+        markdown_core_node_create(parser->arena, parser->mem, MARKDOWN_CORE_NODE_DIRECTIVE, element);
     node_directive *directive;
 
     if (!node) {
@@ -377,12 +376,12 @@ static markdown_core_node *make_directive_node(const markdown_core_element *elem
     directive = get_directive(node);
     if (!directive) {
         parser->oom = true;
-        markdown_core_node_free(node);
+        markdown_core_node_recycle(parser->arena, node);
         return NULL;
     }
     if (!set_chunk_bytes(parser->mem, &directive->name, name, name_len)) {
         parser->oom = true;
-        markdown_core_node_free(node);
+        markdown_core_node_recycle(parser->arena, node);
         return NULL;
     }
     node->start_line = start_line;
@@ -484,17 +483,17 @@ static markdown_core_node *match_colon_directive(const markdown_core_element *el
         int label_line = start_line;
         int label_column = start_column + (int)(label_open - offset);
         markdown_core_inline_state_set_offset(inline_state, (int)(label_start + label_len + 1));
-        label_node = make_label_node(element, parser->mem, chunk->data + label_start, label_len, label_line,
-                                     label_column, markdown_core_inline_state_get_column(inline_state) - 1);
+        label_node = make_label_node(element, parser, chunk->data + label_start, label_len, label_line, label_column,
+                                     markdown_core_inline_state_get_column(inline_state) - 1);
         if (!label_node) {
-            markdown_core_node_free(node);
+            markdown_core_node_recycle(parser->arena, node);
             parser->oom = true;
             return NULL;
         }
         label_node->end_line = markdown_core_inline_state_get_line(inline_state);
         if (directive->label) {
-            markdown_core_node_free(label_node);
-            markdown_core_node_free(node);
+            markdown_core_node_recycle(parser->arena, label_node);
+            markdown_core_node_recycle(parser->arena, node);
             parser->oom = true;
             return NULL;
         }
@@ -626,7 +625,7 @@ static markdown_core_node *open_directive_block(const markdown_core_element *ele
     if (!node->opaque) {
         free_parsed_directive(parser, &parsed);
         parser->oom = true;
-        markdown_core_node_free(node);
+        markdown_core_node_recycle(parser->arena, node);
 
         return NULL;
     }
@@ -637,7 +636,7 @@ static markdown_core_node *open_directive_block(const markdown_core_element *ele
     if (!applied) {
         /* The suffix already validated; failure here is allocation loss. */
         parser->oom = true;
-        markdown_core_node_free(node);
+        markdown_core_node_recycle(parser->arena, node);
 
         return NULL;
     }

@@ -75,7 +75,8 @@ static bool markdown_core_block_parse_callout_metadata(markdown_core_parser *par
     node->as.callout->variant = markdown_core_optional_chunk_present(variant);
     node->as.callout->collapsed = (markdown_core_optional_bool){has_fold, collapsed};
     if (end > pos) {
-        markdown_core_node *title = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_PARAGRAPH, parser->mem);
+        markdown_core_node *title =
+            markdown_core_node_create(parser->arena, parser->mem, MARKDOWN_CORE_NODE_PARAGRAPH, NULL);
         if (!title) {
             parser->oom = true;
             return true;

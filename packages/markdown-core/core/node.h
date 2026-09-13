@@ -12,6 +12,7 @@ extern "C" {
 #include "markdown-core-element-api.h"
 #include "buffer.h"
 #include "chunk.h"
+#include "arena.h"
 #include "attributes.h"
 #include "metadata.h"
 
@@ -189,6 +190,9 @@ typedef struct {
     struct markdown_core_node *metadata;
     struct markdown_core_node *footnotes;
     struct markdown_core_node *specimens;
+    /* The parse transaction's storage, owned by the root and released after
+     * every node it holds has released what it owns. NULL outside a parse. */
+    markdown_core_arena *arena;
 } markdown_core_document_value;
 
 /* A link reference definition is not a node (M2). The block phase reads it off
@@ -291,6 +295,10 @@ struct markdown_core_node {
     int content_mark_offset;
     uint16_t kind;
     markdown_core_node_internal_flags flags;
+    /* The bytes this node and its initial record occupy, and whether they
+     * belong to a parse arena instead of the allocator. */
+    uint16_t record_size;
+    uint8_t arena_owned;
 
     const markdown_core_element *element;
     /* Element-owned data, allocated by opaque_alloc_func and released by
@@ -302,6 +310,17 @@ struct markdown_core_node {
     void *node_data_allocation;
     markdown_core_node_data as;
 };
+
+/* ONE constructor for every kind. A node made inside a parse transaction
+ * takes its storage from the transaction's arena and is recycled into it;
+ * one made without an arena is an ordinary allocation that `markdown_core_node_free`
+ * returns to the allocator. Either way the node releases what it owns
+ * (attributes, content, payload strings, resources) exactly once. */
+markdown_core_node *markdown_core_node_create(markdown_core_arena *arena, markdown_core_mem *mem,
+                                              markdown_core_node_type type, const markdown_core_element *element);
+/* Unlink and release a node and its subtree; arena-owned records return to
+ * `arena`'s pools. With a NULL arena this is `markdown_core_node_free`. */
+void markdown_core_node_recycle(markdown_core_arena *arena, markdown_core_node *node);
 
 /* The effective declaration is occurrence-local, then inherited from its
  * shared definition. All consumers, including synthesis reservation, use it. */
