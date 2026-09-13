@@ -6,6 +6,12 @@ bufsize_t markdown_core_inline_reference_label_length(const unsigned char *data,
 int markdown_core_inline_link_label(markdown_core_inline_state *inline_state, markdown_core_chunk *raw_label);
 bool markdown_core_reference_definition_possible(const unsigned char *data, bufsize_t length);
 bool markdown_core_block_resolve_reference_link_definitions(markdown_core_parser *parser, markdown_core_node *b);
+/* LINK_EXPLICIT: a destination or a matching `[label]` follows the bracket.
+ * LINK_SHORTCUT: nothing that could be a link's tail follows, so the bracket
+ * is a shortcut reference candidate whose label -- its own content -- has
+ * NOT been looked up yet; every owner of a cheaper form is offered the
+ * bracket first, and only then markdown_core_link_resolve_shortcut asks the
+ * reference map. */
 typedef enum { LINK_UNMATCHED, LINK_SHORTCUT, LINK_EXPLICIT } markdown_core_link_match;
 typedef struct {
     markdown_core_map_record *record;
@@ -15,6 +21,8 @@ typedef struct {
 } markdown_core_link_candidate;
 markdown_core_link_match markdown_core_link_recognize(markdown_core_inline_state *inline_state, struct bracket *opener,
                                                       markdown_core_link_candidate *candidate);
+bool markdown_core_link_resolve_shortcut(markdown_core_inline_state *inline_state, struct bracket *opener,
+                                         bufsize_t initial_pos, markdown_core_link_candidate *candidate);
 bool markdown_core_link_commit(markdown_core_parser *parser, markdown_core_inline_state *inline_state,
                                struct bracket *opener, markdown_core_link_candidate *candidate, bufsize_t initial_pos);
 extern const markdown_core_element MARKDOWN_CORE_ELEMENT_LINK;

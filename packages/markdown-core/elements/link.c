@@ -446,25 +446,41 @@ markdown_core_link_match markdown_core_link_recognize(markdown_core_inline_state
         // If we have a shortcut reference link, back up
         // to before the spacse we skipped.
         inline_state->pos = initial_pos;
+        markdown_core_chunk_free(inline_state->mem, &raw_label);
+        candidate->record = NULL;
+        candidate->explicit_tail = false;
+        /* The label would be the bracket's own content, and folding it costs
+         * as much as the bracket is long: a span, a citation group or a
+         * bibliography claims most such brackets by their shape alone, so
+         * the map is asked only once none of them has. */
+        return link_allowed && !opener->bracket_after ? LINK_SHORTCUT : LINK_UNMATCHED;
     }
 
-    if ((!found_label || raw_label.len == 0) && !opener->bracket_after) {
+    if (raw_label.len == 0 && !opener->bracket_after) {
         markdown_core_chunk_free(inline_state->mem, &raw_label);
         raw_label = markdown_core_chunk_dup(&inline_state->input, opener->position, initial_pos - opener->position - 1);
-        found_label = true;
     }
 
     /* `[t][l]`, `[l][]` and `[l]` resolve identically and to the same node: the
      * `Link` or `Embedded` the definition names (M2). Nothing records which of the
      * three spellings the author wrote, and nothing downstream can recover it
      * -- the module states one node for every successful form. */
-    if (link_allowed && found_label) {
+    if (link_allowed) {
         record = markdown_core_map_lookup(inline_state->refmap, &raw_label);
     }
     markdown_core_chunk_free(inline_state->mem, &raw_label);
     candidate->record = record;
     candidate->explicit_tail = explicit_tail;
-    return record ? (explicit_tail ? LINK_EXPLICIT : LINK_SHORTCUT) : LINK_UNMATCHED;
+    return record ? LINK_EXPLICIT : LINK_UNMATCHED;
+}
+
+bool markdown_core_link_resolve_shortcut(markdown_core_inline_state *inline_state, bracket *opener,
+                                         bufsize_t initial_pos, markdown_core_link_candidate *candidate) {
+    markdown_core_chunk label =
+        markdown_core_chunk_dup(&inline_state->input, opener->position, initial_pos - opener->position - 1);
+    candidate->record = markdown_core_map_lookup(inline_state->refmap, &label);
+    candidate->explicit_tail = false;
+    return candidate->record != NULL;
 }
 
 bool markdown_core_link_commit(markdown_core_parser *parser, markdown_core_inline_state *inline_state, bracket *opener,
@@ -693,7 +709,7 @@ markdown_core_node *markdown_core_inline_handle_close_bracket(markdown_core_pars
     if (markdown_core_inline_close_bibliography(parser, inline_state, opener)) {
         return NULL;
     }
-    if (match == LINK_SHORTCUT) {
+    if (match == LINK_SHORTCUT && markdown_core_link_resolve_shortcut(inline_state, opener, initial_pos, &link)) {
         if (markdown_core_link_commit(parser, inline_state, opener, &link, initial_pos)) {
             return NULL;
         }

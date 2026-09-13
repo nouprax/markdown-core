@@ -23,11 +23,13 @@ static markdown_core_map_record *definition_create(markdown_core_mem *mem, markd
     reflabel = &map->label_buffer;
     /* Every declaration keeps its own normalized label, including duplicates.
      * Scratch is reused; the final spelling is owned with the record. */
+    MARKDOWN_CORE_DIAGNOSTIC(map->fold_work += (size_t)label->len;)
     if (!normalize_map_label_into(reflabel, label)) {
         map->oom = reflabel->oom;
         markdown_core_resource_release(mem, resource);
         return NULL;
     }
+    map->first_bytes[reflabel->ptr[0] >> 6] |= (uint64_t)1 << (reflabel->ptr[0] & 63);
 
     record = map->mem->calloc(1, sizeof(*record) + (size_t)reflabel->size + 1);
     if (!record) {
@@ -56,6 +58,6 @@ markdown_core_map *markdown_core_footnote_definition_map_new(markdown_core_mem *
     return markdown_core_map_new(mem);
 }
 
-void markdown_core_footnote_definition_create(markdown_core_map *map, markdown_core_chunk *label) {
-    definition_create(map ? map->mem : NULL, map, label, NULL);
+markdown_core_map_record *markdown_core_footnote_definition_create(markdown_core_map *map, markdown_core_chunk *label) {
+    return definition_create(map ? map->mem : NULL, map, label, NULL);
 }

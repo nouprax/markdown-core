@@ -224,10 +224,35 @@ static int index_map(markdown_core_map *map) {
     return 1;
 }
 
+/* Normalization trims leading whitespace and folds case, and folds an ASCII
+ * letter to its lowercase byte, so a label's folded first significant byte is
+ * its key's first byte. When no key begins with that byte the label cannot
+ * match, and the lookup ends here without folding a thing. A label whose
+ * first significant scalar is not ASCII takes the full normalization. */
+static int map_may_hold(const markdown_core_map *map, const markdown_core_chunk *label) {
+    const unsigned char *at = label->data, *end = label->data + label->len;
+    while (at < end && markdown_core_isspace((char)*at)) {
+        at++;
+    }
+    if (at == end) {
+        return 0;
+    }
+    unsigned char first = *at;
+    if (first >= 0x80) {
+        return 1;
+    }
+    if (first >= 'A' && first <= 'Z') {
+        first = (unsigned char)(first + ('a' - 'A'));
+    }
+    return (map->first_bytes[first >> 6] >> (first & 63)) & 1;
+}
+
 markdown_core_map_record *markdown_core_map_lookup(markdown_core_map *map, markdown_core_chunk *label) {
-    if (label->len < 1 || label->len > MAX_LINK_LABEL_LENGTH || !map || !map->size || map->oom) {
+    if (label->len < 1 || label->len > MAX_LINK_LABEL_LENGTH || !map || !map->size || map->oom ||
+        !map_may_hold(map, label)) {
         return NULL;
     }
+    MARKDOWN_CORE_DIAGNOSTIC(map->fold_work += (size_t)label->len;)
     if (!normalize_map_label_into(&map->label_buffer, label)) {
         map->oom = map->label_buffer.oom;
         return NULL;

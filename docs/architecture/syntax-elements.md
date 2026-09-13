@@ -139,7 +139,15 @@ runs do not create unnecessary Text nodes or get rescanned at dispatch.
 
 Link's shared bracket owner arbitrates explicit Link/Embedded tails, Span, citation
 tails/groups, shortcut links and named footnotes. Each alternative consumes
-the existing parsed range; none reparses bracket contents. Heading suspension,
+the existing parsed range; none reparses bracket contents. A bracket that no
+link tail follows is a shortcut candidate whose label is looked up only after
+Span, citation and bibliography have declined it by shape, and a map refuses
+a label whose folded first byte begins none of its keys before normalizing
+it, so a `[@key]`, `[^note]` or `[text]{.c}` in a document with headings
+folds nothing on the reference map. A named footnote's label is folded once,
+by the definition lookup, and the call's id copies the record's spelling; a
+definition folds its label once into its record and copies it back the same
+way. Heading suspension,
 field completion, ordinary whitespace boundaries and source positions use
 the same services as ordinary inline parsing.
 

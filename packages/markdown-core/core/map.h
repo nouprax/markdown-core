@@ -63,8 +63,13 @@ struct markdown_core_map {
     size_t size;
     int prepared;
     markdown_core_strbuf label_buffer;
+    /* The first byte of every normalized key: a label whose folded first
+     * significant byte begins no key is refused before it is normalized. */
+    uint64_t first_bytes[4];
     /* Sticky flag: any allocation failure is terminal for the owning parse. */
     int oom;
+    /* Label bytes normalized by lookups and declarations. */
+    MARKDOWN_CORE_DIAGNOSTIC(size_t fold_work;)
 };
 
 typedef struct markdown_core_map markdown_core_map;

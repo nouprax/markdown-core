@@ -3217,6 +3217,7 @@ typedef struct {
     size_t key_index_branches, key_index_operations;
     size_t block_dispatch, reference_probes;
     size_t completion, finishing, lifecycle, text_run_extensions, code_block_moves;
+    size_t reference_folds, footnote_folds;
 } inline_work;
 static markdown_core_node *record_inline_work(const markdown_core_element *element, markdown_core_parser *parser,
                                               markdown_core_node *root) {
@@ -3244,6 +3245,8 @@ static markdown_core_node *record_inline_work(const markdown_core_element *eleme
     work->lifecycle = parser->inline_lifecycle_work;
     work->text_run_extensions = parser->text_run_extensions;
     work->code_block_moves = parser->code_block_move_work;
+    work->reference_folds = parser->refmap ? parser->refmap->fold_work : 0;
+    work->footnote_folds = parser->footnote_defs ? parser->footnote_defs->fold_work : 0;
     work->tables = parser->table_scan_work;
     work->table_frontier = parser->table_frontier_peak;
     work->table_workspace_growth = parser->table_workspace_growth;
@@ -3885,6 +3888,80 @@ static void literal_run_growth(test_batch_runner *runner) {
                    "the body starts on the line after the fence: lines=%zu", lines);
             }
             INT_EQ(runner, work.code_block_moves, 0, "closing the block relocates no body byte: lines=%zu", lines);
+            markdown_core_node_free(root);
+        }
+        markdown_core_strbuf_free(&source);
+    }
+}
+
+/* With a heading in the document the reference map is never empty, and every
+ * `]` used to fold its bracket's content to ask that map before Span,
+ * citation or footnote could claim it. The fold now happens only for a
+ * bracket no cheaper owner took, and only when some key begins with the
+ * label's first byte; a footnote call and a footnote definition each fold
+ * their label exactly once. Fold work counts label bytes normalized. */
+static void bracket_owner_triage(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    static const struct {
+        const char *unit;
+        markdown_core_node_type produced;
+        size_t reference_bytes, footnote_bytes;
+    } shapes[] = {
+        {"[@key] ", MARKDOWN_CORE_NODE_CITE, 0, 0},    {"[text]{.c} ", MARKDOWN_CORE_NODE_SPAN, 0, 0},
+        {"[^n] ", MARKDOWN_CORE_NODE_CITE, 0, 1},      {"[word] ", MARKDOWN_CORE_NODE_PARAGRAPH, 0, 0},
+        {"[heading] ", MARKDOWN_CORE_NODE_LINK, 7, 0},
+    };
+    for (size_t shape = 0; shape < sizeof(shapes) / sizeof(*shapes); shape++) {
+        for (size_t units = 256; units <= 4096; units *= 4) {
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+            markdown_core_strbuf_puts(&source, "# Heading\n\n[^n]: note\n\n");
+            for (size_t i = 0; i < units; i++) {
+                markdown_core_strbuf_puts(&source, shapes[shape].unit);
+            }
+            markdown_core_strbuf_puts(&source, "\n");
+            inline_work work = {0};
+            markdown_core_node *root = markdown_core_parse_document_with_mem((const char *)source.ptr, source.size, mem,
+                                                                             measure_inline_work, &work);
+            OK(runner, root != NULL, "bracket shape parses: shape=%zu units=%zu", shape, units);
+            if (root) {
+                size_t produced = count_kind(root, shapes[shape].produced);
+                bool literal = shapes[shape].produced == MARKDOWN_CORE_NODE_PARAGRAPH;
+                OK(runner, literal ? count_kind(root, MARKDOWN_CORE_NODE_LINK) == 0 : produced >= units,
+                   "every bracket found its owner: shape=%zu units=%zu produced=%zu", shape, units, produced);
+                OK(runner, work.reference_folds <= shapes[shape].reference_bytes * units + 32,
+                   "the reference map folds only labels that may match: shape=%zu units=%zu folded=%zu", shape, units,
+                   work.reference_folds);
+                OK(runner, work.footnote_folds <= shapes[shape].footnote_bytes * units + 32,
+                   "a footnote call folds its label once: shape=%zu units=%zu folded=%zu", shape, units,
+                   work.footnote_folds);
+                markdown_core_node_free(root);
+            }
+            markdown_core_strbuf_free(&source);
+        }
+    }
+    for (size_t definitions = 256; definitions <= 4096; definitions *= 4) {
+        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+        size_t label_bytes = 0;
+        for (size_t i = 0; i < definitions; i++) {
+            char line[64];
+            int length = snprintf(line, sizeof(line), "[^Note%zu]: body\n", i);
+            markdown_core_strbuf_puts(&source, line);
+            label_bytes += (size_t)length - 10;
+        }
+        inline_work work = {0};
+        markdown_core_node *root = markdown_core_parse_document_with_mem((const char *)source.ptr, source.size, mem,
+                                                                         measure_inline_work, &work);
+        OK(runner, root != NULL, "footnote definitions parse: definitions=%zu", definitions);
+        if (root) {
+            size_t count = 0;
+            for (markdown_core_node *note = root->as.document->footnotes; note; note = note->next) {
+                count += note->kind == MARKDOWN_CORE_NODE_FOOTNOTE && note->as.footnote->id.len > 4 &&
+                         !memcmp(note->as.footnote->id.data, "note", 4);
+            }
+            INT_EQ(runner, count, definitions, "every definition owns its normalized id: definitions=%zu", definitions);
+            OK(runner, work.footnote_folds <= label_bytes,
+               "a definition folds its label once: definitions=%zu folded=%zu bytes=%zu", definitions,
+               work.footnote_folds, label_bytes);
             markdown_core_node_free(root);
         }
         markdown_core_strbuf_free(&source);
@@ -6667,6 +6744,7 @@ int main(int argc, char **argv) {
     finishing_walk_work(runner);
     inline_lifecycle_projection(runner);
     literal_run_growth(runner);
+    bracket_owner_triage(runner);
     table_dash_suffixes(runner);
     nested_block_lookahead(runner);
     deep_inline_construction(runner);
