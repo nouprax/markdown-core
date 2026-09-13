@@ -168,7 +168,7 @@ markdown_core_add_test(
     ${MARKDOWN_CORE_CANONICAL_NAMES})
 markdown_core_add_test(
     facade_diagnostics
-    conformance
+    regression
     120
     facade_diagnostics_test
     --fixtures
