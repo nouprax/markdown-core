@@ -86,14 +86,12 @@ only dump syntax; it never changes the stored class or the attribute grammar.
 - The inherited fields `scope`, `anchor`, `attributes` lead in that order.
   Kind-specific scalar fields follow; `children` is last.
 
-The dump prints the native C parser's public scope coordinates exactly, without
-normalizing or interpreting particular line/column combinations. The
-coordinate contract is [`canonical-ast.md`](canonical-ast.md#coordinates):
-one-based lines and one-based, end-inclusive byte columns, with that
-contract's one sentinel: an end column of `0` names the boundary before the
-first byte of its line, so a block closed by a line ending it consumed ends
-at `L:0` and the empty document dumps as `1:1..1:0`. A dumper prints the
-sentinel as the parser reports it, and a validator accepts it.
+The dump prints the native C parser's public editor coordinates exactly,
+without validation, conversion, or normalization. The coordinate contract is
+[`canonical-ast.md`](canonical-ast.md#coordinates); these coordinates are not
+string ranges and are not converted to half-open intervals. A zero-byte
+document dumps as `1:1..0:0`, while a document containing one newline dumps as
+`1:1..1:0`. Native sentinel coordinates are printed as reported.
 
 A directive's label is a node-valued FIELD, not a member of directive content.
 The directive-specific dump function nests that field before content to
@@ -115,7 +113,7 @@ have no scope and are not Markup. An empty body still prints its group with
 zero children. The definition's `children` counts bodies only, while its
 `compact` flag records the authored term gap.
 
-A table prints its columns as compact `alignment:relative` values, for example
+A table prints its columns as compact `flow:relative` values, for example
 `columns=[left:0.25,none:null]`. A double uses the shortest decimal that
 round-trips, using ordinary decimal notation for values in `[1e-6, 1e21)`
 and scientific notation otherwise (lowercase `e`, explicit `+` for a positive
@@ -125,7 +123,7 @@ counts their rows, not the group lines. A row prints no scalar fields; each
 cell prints `rowspan` then `colspan`, followed by its unchanged content.
 
 A `Dimensions` value prints `(width=W,height=H)` with no internal spaces;
-`H` is `null` when only width was authored. `Media.dimensions` and `CrossEmbedded.dimensions` print `null`
+`H` is `null` when only width was authored. `Embedded.dimensions` and `CrossEmbedded.dimensions` print `null`
 when absent, so `dimensions=null` and `dimensions=(width=100,height=null)`
 remain distinct. A present value always has positive width; height without
 width is invalid. The value introduces no node or child line.
@@ -175,7 +173,7 @@ that the dump represents as nested descendants.
 | `Superscript` | `anchor`, `attributes` |
 | `Subscript` | `anchor`, `attributes` |
 | `Link` | `anchor`, `attributes`, `dest`, `title` |
-| `Media` | `anchor`, `attributes`, `dest`, `title`, `dimensions` |
+| `Embedded` | `anchor`, `attributes`, `dest`, `title`, `dimensions` |
 | `Directive` | `anchor`, `attributes`, `name` |
 | `Cite` | `anchor`, `attributes` |
 | `DefinitionList` | `anchor`, `attributes` |

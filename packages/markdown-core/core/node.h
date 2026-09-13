@@ -56,7 +56,7 @@ typedef struct {
     struct markdown_core_node *title;
 } markdown_core_callout;
 
-/* THE RESOURCE a Link or Media reads its destination and title from (M2).
+/* THE RESOURCE a Link or Embedded reads its destination and title from (M2).
  *
  * It is COUNTED and SHARED. A link reference definition's resource is built
  * once, when the block phase reads the definition into the parser's map, and
@@ -194,7 +194,7 @@ typedef struct {
 /* A link reference definition is not a node (M2). The block phase reads it off
  * the front of the paragraph that held it into the parser's map, which owns
  * its resource once, and every reference that resolves to it is the `Link` or
- * `Media` it names, sharing that resource. This is the inherited grammar's
+ * `Embedded` it names, sharing that resource. This is the inherited grammar's
  * model: a definition exists to be referred to, an unreferenced one produces
  * nothing, and the first definition of a label in source order wins. A footnote
  * definition stays a node while it is parsed, because its body is flow
@@ -359,6 +359,14 @@ int markdown_core_visit_inline_subtrees(markdown_core_node *node, markdown_core_
                                         void *context);
 int markdown_core_visit_block_subtrees(markdown_core_node *node, markdown_core_owned_subtree_visitor visitor,
                                        void *context);
+
+/* Attach an exclusively owned, detached subtree before a child of parent,
+ * or at the end when before is NULL. The caller must establish that the
+ * subtree is disjoint from parent, by construction or an earlier cycle check.
+ * No ancestor walk, allocation, or transfer occurs on rejection. This private
+ * operation validates construction and shares its non-failing splice with
+ * the checked mutation API. */
+int markdown_core_node_attach_owned(markdown_core_node *parent, markdown_core_node *child, markdown_core_node *before);
 
 #ifdef __cplusplus
 }

@@ -1,0 +1,44 @@
+name: CI Changes
+
+on:
+    workflow_call:
+        outputs:
+            required:
+                description: Whether execution inputs require full validation
+                value: ${{ jobs.changes.outputs.required }}
+
+permissions:
+    actions: read
+    contents: read
+
+jobs:
+    changes:
+        name: Check - CI Inputs
+        runs-on: ubuntu-latest
+        outputs:
+            required: ${{ steps.changes.outputs.required }}
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+              with:
+                  fetch-depth: 0
+                  persist-credentials: false
+            - name: Check repository, documentation contracts, and release coordinates
+              run: |
+                  scripts/audit-repository.sh --clean
+                  scripts/audit-test-topology.sh
+                  node scripts/check-release-version.mjs --skip-swift
+            - name: Compare execution inputs and prior validation
+              id: changes
+              uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+              with:
+                  script: |
+                      const { check } = await import(`${process.env.GITHUB_WORKSPACE}/scripts/ci-changes.mjs`);
+                      await check({ github, context, core });
+            - name: Record the actual validation inputs
+              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+              with:
+                  name: ci-inputs
+                  path: build/ci/inputs.json
+                  if-no-files-found: error
+                  overwrite: true
+                  retention-days: 30

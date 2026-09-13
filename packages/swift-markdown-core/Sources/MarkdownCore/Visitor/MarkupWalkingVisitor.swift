@@ -55,7 +55,7 @@ public protocol MarkupWalkingVisitor {
     mutating func visit(_ node: DefinitionList, phase: WalkPhase)
     mutating func visit(_ node: Definition, phase: WalkPhase)
     mutating func visit(_ node: Link, phase: WalkPhase)
-    mutating func visit(_ node: Media, phase: WalkPhase)
+    mutating func visit(_ node: Embedded, phase: WalkPhase)
     mutating func visit(_ node: Directive, phase: WalkPhase)
     mutating func visit(_ node: Cite, phase: WalkPhase)
     mutating func visit(_ node: TableCaption, phase: WalkPhase)
@@ -405,7 +405,7 @@ extension WalkingDriver: MarkupVisitor {
         }
     }
 
-    mutating func visit(_ node: Media) {
+    mutating func visit(_ node: Embedded) {
         visitor.visit(node, phase: phase)
         scheduleExit(node)
         if phase == .entering {

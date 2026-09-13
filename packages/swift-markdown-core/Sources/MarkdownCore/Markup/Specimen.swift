@@ -4,18 +4,27 @@ import MarkdownCoreC
 /// Definitions are ordered by source scope and visited after footnotes. The
 /// syntax first lands with P9b; display numbering is derived by consumers.
 public struct Specimen: Sendable {
+    struct Fields: Sendable {
+        let scope: Scope
+        let id: String?
+        let start: Int64?
+        let content: [Int]
+    }
+
+    @Stored var fields: Fields
+
     /// The source range of the definition.
-    public let scope: Scope
+    public var scope: Scope { fields.scope }
     /// The authored label, or `nil` for an anonymous definition.
-    public let id: String?
+    public var id: String? { fields.id }
     /// An explicit counter reset, or `nil` when numbering continues.
-    public let start: Int64?
+    public var start: Int64? { fields.start }
     /// The parsed content of the definition.
-    public let content: [any Markup]
+    public var content: MarkupCollection<any Markup> { $fields.collection(fields.content) }
 }
 
-extension Specimen {
-    init(from specimen: OpaquePointer, content: [any Markup]) {
+extension Specimen.Fields {
+    init(from specimen: OpaquePointer, content: [Int]) {
         var id = markdown_core_optional_string()
         var start = markdown_core_optional_i64()
         precondition(markdown_core_specimen_properties(specimen, &id, &start), "Invalid native specimen")

@@ -21,7 +21,7 @@ export type NativeKind =
     | "strong"
     | "strikethrough"
     | "link"
-    | "media"
+    | "embedded"
     | "directive"
     | "cite"
     | "tableRow"
@@ -63,7 +63,7 @@ export const kinds: readonly (NativeKind | "none")[] = Object.freeze([
     "strong",
     "strikethrough",
     "link",
-    "media",
+    "embedded",
     "directive",
     "cite",
     "tableRow",

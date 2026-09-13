@@ -1,51 +1,52 @@
 // Canonical spellings for values; tree topology stays in TreeDumper.
-func scopeString(_ value: Scope) -> String {
+func dump(scope value: Scope) -> String {
     "scope=\(value.start.line):\(value.start.column)..\(value.end.line):\(value.end.column)"
 }
 
-func boolean(_ value: Bool) -> String { value ? "true" : "false" }
+func dump(boolean value: Bool) -> String { value ? "true" : "false" }
 
 /// A tagged value prints its branch and its named fields with no spaces.
-func referentString(_ value: CitationReferent) -> String {
+func dump(referent value: CitationReferent) -> String {
     switch value {
-    case .bib(let key, let mode): "bib(key=\(jsonString(key)),mode=\(mode.rawValue))"
-    case .footnote(let id): "footnote(id=\(jsonString(id)))"
-    case .specimen(let id): "specimen(id=\(jsonString(id)))"
+    case .bib(let key, let mode): "bib(key=\(dump(escaped: key)),mode=\(mode.rawValue))"
+    case .footnote(let id): "footnote(id=\(dump(escaped: id)))"
+    case .specimen(let id): "specimen(id=\(dump(escaped: id)))"
     }
 }
 
 /// A tagged value prints its branch and its named fields with no spaces.
-func destinationString(_ value: Destination) -> String {
+func dump(destination value: Destination) -> String {
     switch value {
-    case .url(let url): "url(\(jsonString(url)))"
-    case .cross(let path, let anchor): "cross(path=\(jsonString(path)),anchor=\(optionalString(anchor)))"
+    case .url(let url): "url(\(dump(escaped: url)))"
+    case .cross(let path, let anchor): "cross(path=\(dump(escaped: path)),anchor=\(dump(optional: anchor)))"
     }
 }
 
-func orderedListDelimiter(_ value: OrderedListDelimiter?) -> String {
+func dump(delimiter value: OrderedListDelimiter?) -> String {
     switch value {
     case .period: "period"
-    case .parenthesis(let closed): "parenthesis(closed=\(boolean(closed)))"
+    case .parenthesis(let closed): "parenthesis(closed=\(dump(boolean: closed)))"
     case .default: "default"
     case nil: "null"
     }
 }
 
-func orderedListVariant(_ value: OrderedListVariant?) -> String {
+func dump(variant value: OrderedListVariant?) -> String {
     switch value {
     case .decimal: "decimal"
-    case .alpha(let lowercased): "alpha(lowercased=\(boolean(lowercased)))"
-    case .roman(let lowercased): "roman(lowercased=\(boolean(lowercased)))"
+    case .alpha(let lowercased): "alpha(lowercased=\(dump(boolean: lowercased)))"
+    case .roman(let lowercased): "roman(lowercased=\(dump(boolean: lowercased)))"
     case .default: "default"
     case nil: "null"
     }
 }
 
-func optionalString(_ value: String?) -> String {
-    value.map(jsonString) ?? "null"
+func dump(optional value: String?) -> String {
+    value.map(dump(escaped:)) ?? "null"
 }
 
-func jsonString(_ value: String) -> String {
+/// Quotes a string and escapes its contents using JSON string-literal rules.
+func dump(escaped value: String) -> String {
     let hex = Array("0123456789abcdef")
     var result = "\""
     for scalar in value.unicodeScalars {
@@ -67,7 +68,7 @@ func jsonString(_ value: String) -> String {
 
 /// Normalize the runtime's shortest round-trip digits to the dump's decimal
 /// notation in [1e-6, 1e21), scientific notation outside that interval.
-func decimal(_ value: Double) -> String {
+func dump(decimal value: Double) -> String {
     let parts = String(value).lowercased().split(separator: "e")
     let mantissa = parts[0].split(separator: ".")
     var digits = String(mantissa.joined())
@@ -90,43 +91,44 @@ func decimal(_ value: Double) -> String {
     return String(digits[..<index]) + "." + digits[index...]
 }
 
-func attributesString(_ value: Attributes) -> String {
+func dump(attributes value: Attributes) -> String {
     "{"
-        + (value.classes.map { "." + attributeClass($0) } + value.records.map { "\($0.name)=\(jsonString($0.value))" })
+        + (value.classes.map { "." + dump(attributeClass: $0) }
+        + value.records.map { "\($0.name)=\(dump(escaped: $0.value))" })
         .joined(separator: " ") + "}"
 }
-func metadataValue(_ value: MetadataValue) -> String {
+func dump(metadata value: MetadataValue) -> String {
     switch value {
     case .scalar(let scalar):
         let text: String
         switch scalar {
         case .null: text = "null"
-        case .bool(let value): text = "bool(\(boolean(value)))"
-        case .number(let value): text = "number(\(jsonString(value)))"
-        case .text(let value): text = "text(\(jsonString(value)))"
+        case .bool(let value): text = "bool(\(dump(boolean: value)))"
+        case .number(let value): text = "number(\(dump(escaped: value)))"
+        case .text(let value): text = "text(\(dump(escaped: value)))"
         }
         return "scalar(\(text))"
     case .list(let items):
         return "list(["
             + items.map { item in
                 switch item {
-                case .number(let value): return "number(\(jsonString(value)))"
-                case .text(let value): return "text(\(jsonString(value)))"
+                case .number(let value): return "number(\(dump(escaped: value)))"
+                case .text(let value): return "text(\(dump(escaped: value)))"
                 }
             }.joined(separator: ",") + "])"
     }
 }
 
-func attributeClass(_ value: String) -> String {
+func dump(attributeClass value: String) -> String {
     let plain =
         !value.isEmpty
         && value.utf8.allSatisfy {
             $0 > 32 && $0 < 127 && ![34, 92, 123, 125, 91, 93, 40, 41, 61].contains($0)
         }
-    return plain ? value : jsonString(value)
+    return plain ? value : dump(escaped: value)
 }
 
-func dimensionsString(_ value: Dimensions?) -> String {
+func dump(dimensions value: Dimensions?) -> String {
     guard let value else { return "null" }
     return "(width=\(value.width),height=\(value.height.map(String.init) ?? "null"))"
 }

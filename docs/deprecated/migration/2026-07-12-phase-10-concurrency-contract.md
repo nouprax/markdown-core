@@ -1,147 +1,163 @@
-# Phase 10 Migration Report:C 缺陷清零与并发契约冻结
+# Phase 10 migration report: close C defects and freeze the concurrency contract
 
-本报告记录 Phase 10 的线程模型、portable once 设计、registry lifecycle 决策、
-修复内容、测试复现方式、sanitizer/TSan 结果、platform/package 审计和 workaround
-删除情况。缺陷明细(复现、根因、影响面、回归测试、关闭证据)见
-`2026-07-12-phase-10-defect-ledger.md`。
+This report records Phase 10's thread model, portable-once design, registry
+lifecycle decision, fixes, test reproduction, sanitizer/TSan results,
+platform/package audit, and workaround removal. Defect details, including
+reproduction, root cause, impact, regressions, and closure evidence, are in
+`2026-07-12-phase-10-defect-ledger.md`.
 
-## 1. 冻结的线程模型
+## 1. Frozen thread model
 
-公开契约完整写入 `packages/markdown-core/include/markdown_core.h` 头部注释:
+The complete public contract appears in the header comment of
+`packages/markdown-core/include/markdown_core.h`:
 
-1. **初始化**:library 在 `markdown_core_document_parse` 内部经进程级 once
-   自初始化;并发首次调用安全,无需 warmup、外部锁或显式 init。
-2. **registry 生命周期**:首次成功注册后 extension registry 对整个进程
-   生命周期 immutable;不存在 teardown 或重初始化路径。
-3. **不同 document**:parse/traverse/dump/free 可完全并发;parse 调用之间
-   不共享任何可变状态。
-4. **同一 document**:parse 返回后 document 及其 nodes 经此 API 逻辑上
-   immutable,多线程只读访问(traverse、accessors、dump)安全;
-   `markdown_core_document_free` 是唯一 mutation,由调用方保证与所有其他
-   访问互斥且此后不再访问。node handle 与 string view 借用自所属 document,
-   随其一同结束。
-5. **error/dump 所有权**:out-parameter 返回的 error 与 dump buffer 归调用方
-   所有,分别经 `markdown_core_error_free`/`markdown_core_dump_free` 释放
-   (均接受 NULL)。
-6. 契约声明自身完备:bindings 不得依赖未公开约定。
+1. **Initialization:** the library initializes itself through a process-wide
+   once inside `markdown_core_document_parse`. Concurrent first calls are safe,
+   without warmup, an external lock, or explicit initialization.
+2. **Registry lifetime:** after the first successful registration, the extension
+   registry is immutable for the process lifetime. There is no teardown or
+   reinitialization path.
+3. **Different documents:** parse/traverse/dump/free can run fully concurrently;
+   parse calls share no mutable state.
+4. **The same document:** after parse returns, the document and its nodes are
+   logically immutable through this API. Concurrent read-only traversal,
+   accessor calls, and dumping are safe. `markdown_core_document_free` is the
+   only mutation; callers must make it mutually exclusive with every other
+   access and perform no access afterward. Node handles and string views borrow
+   from their owning document and expire with it.
+5. **Error/dump ownership:** errors and dump buffers returned through out
+   parameters belong to the caller and are released with
+   `markdown_core_error_free`/`markdown_core_dump_free`, both accepting NULL.
+6. The contract is self-contained: bindings must not depend on undocumented
+   conventions.
 
-## 2. Portable once 设计
+## 2. Portable-once design
 
-`core/once.{h,c}`(internal header,不进入公开 API):
+`core/once.{h,c}` is internal and does not enter the public API:
 
-- POSIX(macOS、Linux、Android、Emscripten):`pthread_once_t` +
-  `pthread_once`。
-- Windows(MSVC、MinGW-w64):`INIT_ONCE` + `InitOnceExecuteOnce`;函数指针
-  经 union 穿越 `PVOID` 参数,规避 C99 函数指针/对象指针转换限制。
-- 两个原语均保证回调恰好执行一次,且所有经过 once 的线程观察到回调的全部
-  写入(happens-before),因此 once 事务内的 node-type 计数器、node flag
-  和 registry 写入对所有 parse 线程可见。
-- 满足项目 C99 baseline;CMake 侧经 `find_package(Threads)` 以
-  `CMAKE_THREAD_LIBS_INIT`(纯 flag,不向 install(EXPORT) 引入 imported
-  target 依赖)链接。
+- POSIX (macOS, Linux, Android, Emscripten): `pthread_once_t` + `pthread_once`.
+- Windows (MSVC, MinGW-w64): `INIT_ONCE` + `InitOnceExecuteOnce`. A union carries
+  the function pointer through the `PVOID` parameter, avoiding C99 restrictions
+  on converting between function and object pointers.
+- Both primitives guarantee exactly one callback execution and visibility of
+  all its writes to every thread passing through once (happens-before).
+  Node-type counters, node flags, and registry writes within the transaction
+  are therefore visible to all parsing threads.
+- The design meets the C99 baseline. CMake uses `find_package(Threads)` and
+  links with `CMAKE_THREAD_LIBS_INIT`, a flag-only value that does not add an
+  imported-target dependency to install(EXPORT).
 
-`markdown_core_core_extensions_ensure_registered` 用该 once 包住**整个**
-core-extension 注册事务;没有对 `markdown_core_register_node_flag` 的局部
-加锁,也没有任何 consumer warmup 要求。
+`markdown_core_core_extensions_ensure_registered` wraps the **entire**
+core-extension registration transaction in once. It does not merely lock
+`markdown_core_register_node_flag`, and requires no consumer warmup.
 
-## 3. Registry lifecycle 决策
+## 3. Registry lifecycle decision
 
-方案:**process-lifetime 冻结,删除释放路径**。
+Decision: **freeze for the process lifetime and remove release paths**.
 
-- `markdown_core_release_plugins` 从 `registry.h`/`registry.c` 删除,CLI
-  (`main.c`)不再调用。理由:该 API 与 once 状态本质脱节(见 ledger
-  MC10-02),而 registry 是每 process 一次、几 KB 级的固定描述符集合,
-  由 OS 在进程退出时回收是唯一无竞争的生命周期。
-- `registry.h` 写明:注册是 initialization-time 操作,必须先于并发 parse;
-  注册后的 extensions immutable 且 process-lifetime;不存在
-  release/unregister,因此"已初始化标志为真但 registry 已释放"的状态在
-  类型系统层面不可再现。
-- 全局 registry 指针保持可达,LeakSanitizer 不将其计为泄漏(ASan 全套
-  通过)。
+- Remove `markdown_core_release_plugins` from `registry.h`/`registry.c` and its
+  CLI (`main.c`) call. That API is inherently disconnected from the once state
+  (ledger MC10-02). The registry is a fixed descriptor set of a few KB created
+  once per process; reclamation by the OS at process exit provides a lifecycle
+  without races.
+- `registry.h` states that registration occurs during initialization, before
+  concurrent parsing. Registered extensions are immutable and live for the
+  process lifetime. With no release/unregister operation, the API cannot
+  represent "initialized flag true but registry already freed."
+- Global registry pointers remain reachable, so LeakSanitizer does not classify
+  them as leaks. The complete ASan suite passes.
 
-## 4. 修复与代码变更
+## 4. Fixes and code changes
 
-| 变更 | 文件 |
+| Change | Files |
 | --- | --- |
-| 新增 portable once | `core/once.h`、`core/once.c`(加入 core CMake、Package.swift、Android JNI CMake 三处源列表) |
-| once 包住注册事务 | `extensions/core-extensions.c` |
-| 删除 release 路径、冻结 registry | `core/registry.{h,c}`、`core/main.c` |
-| special/skip 字符表 parser-local 化(ledger MC10-03) | `core/parser.h`、`core/inlines.{h,c}`、`core/blocks.c` |
-| 公开线程契约 | `include/markdown_core.h` |
-| 并发/生命周期回归 | `packages/markdown-core/tests/runners/concurrency_runner.c`、`packages/markdown-core/tests/CMakeLists.txt` |
-| sanitizer 全包插桩 + Tsan build type | `packages/markdown-core/CMakeLists.txt`、`core/CMakeLists.txt` |
-| tsan presets/targets/CI、补 ubsan CI job | `CMakePresets.json`、`Makefile`、`.github/workflows/ci.yml` |
-| 删除 Swift warmup workaround | `packages/swift-markdown-core/Tests/MarkdownCoreTests/MarkdownCoreSuites.swift` |
-| 冻结契约文档同步 | `docs/specs/test-architecture.md` |
+| Add portable once | `core/once.h`, `core/once.c`, added to core CMake, Package.swift, and Android JNI CMake source lists |
+| Wrap registration in once | `extensions/core-extensions.c` |
+| Remove release paths and freeze registry | `core/registry.{h,c}`, `core/main.c` |
+| Make special/skip character tables parser-local (MC10-03) | `core/parser.h`, `core/inlines.{h,c}`, `core/blocks.c` |
+| Publish thread contract | `include/markdown_core.h` |
+| Add concurrency/lifecycle regressions | `packages/markdown-core/tests/runners/concurrency_runner.c`, `packages/markdown-core/tests/CMakeLists.txt` |
+| Instrument the whole package for sanitizers and add Tsan build type | `packages/markdown-core/CMakeLists.txt`, `core/CMakeLists.txt` |
+| Add tsan presets/targets/CI and the missing ubsan CI job | `CMakePresets.json`, `Makefile`, `.github/workflows/ci.yml` |
+| Remove Swift warmup workaround | `packages/swift-markdown-core/Tests/MarkdownCoreTests/MarkdownCoreSuites.swift` |
+| Synchronize frozen contract documentation | `docs/specs/test-architecture.md` |
 
-单线程解析行为零变更:全部既有 goldens(spec/extensions/regression/
-pathological/fuzz)在修复前后 byte-for-byte 一致。
+Single-threaded parsing behavior is unchanged: every existing
+spec/extensions/regression/pathological/fuzz golden matches byte for byte before
+and after the fixes.
 
-## 5. 测试与复现方式
+## 5. Tests and reproduction
 
-新增 3 项 CTest(沿用冻结 label taxonomy,无新 label):
+Three CTest cases are added within the frozen label taxonomy, with no new label:
 
-| 测试 | Label | 内容 |
+| Test | Label | Coverage |
 | --- | --- | --- |
-| `facade_concurrent_first_parse` | `facade` | 全新进程,barrier 同时释放 8 线程进入各自**首次** parse(无 warmup),覆盖 parse、extension attach、traverse、dump、free;全部 dump 与线程 join 后计算的单线程参考 byte-for-byte 一致 |
-| `facade_concurrent_stress` | `facade` | 初始化完成后 8 线程 × 200 轮 × 6 输入 × 3 ParseOptions 变体(default/minimal/split)并发,专门混合互相矛盾的 extension 集合以钉住 parser-local 字符表;线程内重复解析亦须自一致 |
-| `regression_registry_lifecycle` | `regression` | 2000 次 parse/free 循环交错失败路径(NULL source),末次 parse 仍附加全部 extensions 且 dump 与首次一致 |
+| `facade_concurrent_first_parse` | `facade` | A fresh process releases 8 threads from a barrier into their **first** parses, without warmup. Covers parse, extension attachment, traversal, dump, and free. Every dump matches a single-threaded reference computed after joining the threads, byte for byte |
+| `facade_concurrent_stress` | `facade` | After initialization, runs 8 threads × 200 rounds × 6 inputs × 3 ParseOptions variants (default/minimal/split), deliberately mixing conflicting extension sets to protect parser-local character tables. Repeated parses within each thread must also agree |
+| `regression_registry_lifecycle` | `regression` | Interleaves 2000 parse/free cycles with failure paths (NULL source). The final parse still attaches every extension and matches the first dump |
 
-Runner 为纯原生 C(POSIX pthread / Win32 threads + 自实现 barrier),无
-脚本语言、无网络、无 warmup;TSan 不可用的平台经 default preset 运行同一
-批测试,不静默跳过。
+The runner is native C using POSIX pthreads or Win32 threads and its own
+barrier, with no scripting language, network, or warmup. Platforms without TSan
+run the same tests through the default preset rather than silently skipping.
 
-**缺陷敏感性验证**(修复回退演示,均已恢复):
+**Defect-sensitivity checks** (temporary reversions, all restored):
 
-- 将 once 临时回退为旧 `static int registered`:
-  `facade_concurrent_first_parse` 在 TSan build 下确定性失败——
-  `flag initialization error in markdown_core_register_node_flag` abort。
-- 将字符表临时回退为进程级:`facade_concurrent_stress` 报多起 TSan
-  `data race` 且线程 dump 出现功能性分歧。
+- Temporarily reverting once to the old `static int registered` makes
+  `facade_concurrent_first_parse` fail deterministically in a TSan build with
+  `flag initialization error in markdown_core_register_node_flag` and abort.
+- Temporarily reverting character tables to process-global storage makes
+  `facade_concurrent_stress` report multiple TSan `data race` findings and
+  functional differences in thread dumps.
 
-## 6. 验证矩阵(本机 macOS arm64,Xcode clang)
+## 6. Validation matrix (local macOS arm64, Xcode clang)
 
-| 验证 | 结果 |
+| Validation | Result |
 | --- | --- |
-| `ctest --preset correctness`(Release,shared) | 56/56 通过 |
-| `ctest --preset correctness-asan`(static) | 56/56 通过 |
-| `ctest --preset correctness-ubsan`(static,全包插桩) | 56/56 通过 |
-| `ctest --preset correctness-tsan`(static,新增) | 56/56 通过 |
-| `swift test`(并行,无 warmup,真实并发首次调用) | 4 suites / 10 tests 通过 |
-| C/C++ consumer(`consumer_facade_cplusplus`) | 通过(上列各 preset 内) |
-| packaging guard(`packaging_corpus_guard`) | 通过 |
-| `scripts/audit-test-topology.sh` | 全部检查通过 |
-| `pnpm format:c:check` / `format:cmake:check` / `lint:c` / `check:contracts` | 通过 |
+| `ctest --preset correctness` (Release, shared) | 56/56 passed |
+| `ctest --preset correctness-asan` (static) | 56/56 passed |
+| `ctest --preset correctness-ubsan` (static, whole-package instrumentation) | 56/56 passed |
+| `ctest --preset correctness-tsan` (static, new) | 56/56 passed |
+| `swift test` (parallel, no warmup, real concurrent first calls) | 4 suites / 10 tests passed |
+| C/C++ consumer (`consumer_facade_cplusplus`) | Passed in every preset above |
+| Packaging guard (`packaging_corpus_guard`) | Passed |
+| `scripts/audit-test-topology.sh` | All checks passed |
+| `pnpm format:c:check` / `format:cmake:check` / `lint:c` / `check:contracts` | Passed |
 
-CI 侧新增 `ubsan`、`tsan` jobs(ubuntu-latest/clang),与既有
-default(shared/static × clang/gcc × ubuntu/macos/windows)、asan、Swift
-jobs 共同构成矩阵;Windows 无 TSan,由 default 矩阵运行同一并发回归。
+CI adds `ubsan` and `tsan` jobs on ubuntu-latest/clang alongside the existing
+default (shared/static × clang/gcc × ubuntu/macos/windows), ASan, and Swift jobs.
+Windows has no TSan and runs the same concurrency regressions in the default
+matrix.
 
-## 7. Platform/package 审计
+## 7. Platform/package audit
 
-- 编译 C engine 的全部四处构建已同步 `once.c`:core CMake、SwiftPM
-  (`Package.swift`)、Android JNI(`android/src/main/cpp/CMakeLists.txt`)、
-  (nmake/appveyor 委托 CMake,无独立源列表)。
-- 公开导出面未扩大:`once.h`/`registry.h` 仍为 internal headers;
-  `exports/markdown_core.map` 无变更(`markdown_core_release_plugins` 本就
-  不在导出集内);安装的公开 header 仍只有 `include/markdown_core.h`。
-- `markdown_core_parse_inlines` 等 internal API 签名变更均在同一 commit 内
-  完成全部调用点迁移,无 compatibility shim、无 deprecated alias。
+- All four build routes compiling the C engine are synchronized with `once.c`:
+  core CMake, SwiftPM (`Package.swift`), Android JNI
+  (`android/src/main/cpp/CMakeLists.txt`), and nmake/appveyor, which delegates to
+  CMake and has no separate source list.
+- Public exports do not expand. `once.h`/`registry.h` remain internal;
+  `exports/markdown_core.map` is unchanged because
+  `markdown_core_release_plugins` was never exported. The only installed public
+  header remains `include/markdown_core.h`.
+- All callers of changed internal signatures such as
+  `markdown_core_parse_inlines` migrate in the same commit, without compatibility
+  shims or deprecated aliases.
 
-## 8. Workaround 删除情况
+## 8. Workaround removal
 
-- Swift Testing 的全局 facade warmup(`facadeWarmedUp` global `let` 及每次
-  parse 前的 `#expect`)已删除;Swift 并行测试现在直接覆盖真实首次调用。
-- C 侧不存在其他测试侧串行化或 binding 层锁;`concurrency_runner` 的三个
-  用例均为无预热原生并发。
-- Swift、Kotlin、ES production binding 中无任何被迁移的 workaround
-  (Kotlin/ES binding 尚未创建;Swift 侧仅存在测试 target,已清理)。
+- Swift Testing's global facade warmup (`facadeWarmedUp` global `let` and the
+  `#expect` before every parse) is removed. Parallel Swift tests now exercise
+  real first calls directly.
+- No other test-side serialization or binding-level lock exists in C. All three
+  `concurrency_runner` cases run natively without warmup.
+- No workaround is carried into Swift, Kotlin, or ES production bindings.
+  Kotlin/ES bindings do not yet exist at this phase; Swift has only a test
+  target, which has been cleaned up.
 
 ## 9. Acceptance
 
-- [x] 并发首次与后续 facade parse 无需预热或外部锁 ✅(first_parse/stress 测试)
-- [x] registry 初始化/释放无竞争、无状态脱节 ✅(release 路径删除 + lifecycle 回归)
-- [x] 原生并发 regression、TSan(支持平台)、ASan、UBSan、Release、shared/static、consumer、package 验证全部通过 ✅(§6)
-- [x] defect ledger 中截至阶段开始已确认的 C 缺陷全部关闭 ✅(ledger 4/4)
-- [x] Swift 测试 warmup 已删除 ✅(§8)
-- [x] platform bindings 可只依赖公开 C 契约 ✅(§1 契约写入公开 header)
+- [x] Concurrent first and subsequent facade parses need no warmup or external lock ✅ (first_parse/stress tests)
+- [x] Registry initialization/release has no races or disconnected state ✅ (release path removed + lifecycle regression)
+- [x] Native concurrency regressions, TSan where supported, ASan, UBSan, Release, shared/static, consumer, and package checks all pass ✅ (§6)
+- [x] Every confirmed C defect known at the start of the phase is closed ✅ (ledger 4/4)
+- [x] Swift test warmup is removed ✅ (§8)
+- [x] Platform bindings can depend solely on the public C contract ✅ (§1 contract in the public header)

@@ -52,7 +52,7 @@ bool markdown_core_node_can_contain_type(markdown_core_node *node, markdown_core
     case MARKDOWN_CORE_NODE_SUPERSCRIPT:
     case MARKDOWN_CORE_NODE_SUBSCRIPT:
     case MARKDOWN_CORE_NODE_LINK:
-    case MARKDOWN_CORE_NODE_MEDIA:
+    case MARKDOWN_CORE_NODE_EMBEDDED:
         return MARKDOWN_CORE_NODE_TYPE_INLINE_P(child_type);
 
     default:
@@ -69,22 +69,8 @@ static bool S_can_contain(markdown_core_node *node, markdown_core_node *child) {
     if (NODE_MEM(node) != NODE_MEM(child)) {
         return 0;
     }
-    /* `child` must not be `node` and must not be one of its ancestors.
-     *
-     * This used to sit behind `markdown_core_enable_safety_checks`, a
-     * process-global flag that defaulted to OFF and that only the test suite
-     * ever set -- so the shipped library answered `append_child(q, q)` with
-     * SUCCESS and left `q->parent == q`, and a two-node cycle took two calls.
-     * Measured before it was made unconditional, with the flag in its shipped
-     * position:
-     *
-     *     append_child(q, q)   returned 1, parent == self
-     *     prepend_child(r, r)  returned 1, parent == self
-     *     append_child(a, b) then append_child(b, a)  ->  a->parent == b
-     *
-     * A library that makes a cycle on request while its own tests deny it is
-     * not testing the library. The walk is O(depth) per link and the parse's
-     * depth is the document's nesting; §4.14.3b has the cost. */
+    /* Arbitrary reparenting must reject cycles. Parser construction instead
+     * transfers an independently owned subtree through attach_owned. */
     {
         markdown_core_node *cur = node;
         do {
@@ -146,7 +132,7 @@ static size_t S_node_payload_size(markdown_core_node_type type) {
         size = sizeof(markdown_core_chunk);
         break;
     case MARKDOWN_CORE_NODE_LINK:
-    case MARKDOWN_CORE_NODE_MEDIA:
+    case MARKDOWN_CORE_NODE_EMBEDDED:
         size = sizeof(markdown_core_link);
         break;
     case MARKDOWN_CORE_NODE_CROSS_LINK:
@@ -273,7 +259,7 @@ static void free_node_as(markdown_core_node *node) {
         markdown_core_chunk_free(NODE_MEM(node), &node->as.footnote->id);
         break;
     case MARKDOWN_CORE_NODE_LINK:
-    case MARKDOWN_CORE_NODE_MEDIA:
+    case MARKDOWN_CORE_NODE_EMBEDDED:
         /* One holder fewer; a resource shared with other occurrences, or
          * still held by the reference map, stays. */
         markdown_core_resource_release(NODE_MEM(node), node->as.link->resource);
@@ -388,10 +374,8 @@ markdown_core_node_set_kind_result markdown_core_node_set_kind(markdown_core_nod
     if (kind == initial_kind) {
         return MARKDOWN_CORE_NODE_SET_KIND_OK;
     }
-    node->kind = (uint16_t)kind;
-    bool allowed = S_can_contain(node->parent, node);
-    node->kind = (uint16_t)initial_kind;
-    if (!allowed) {
+    /* Conversion preserves every tree edge, so it cannot introduce a cycle. */
+    if (!node->parent || !markdown_core_node_can_contain_type(node->parent, kind)) {
         return MARKDOWN_CORE_NODE_SET_KIND_REJECTED;
     }
 
@@ -485,8 +469,8 @@ const char *markdown_core_node_get_type_string(markdown_core_node *node) {
         return "subscript";
     case MARKDOWN_CORE_NODE_LINK:
         return "link";
-    case MARKDOWN_CORE_NODE_MEDIA:
-        return "media";
+    case MARKDOWN_CORE_NODE_EMBEDDED:
+        return "embedded";
     case MARKDOWN_CORE_NODE_CITE:
         return "cite";
     case MARKDOWN_CORE_NODE_CITATION:
@@ -973,91 +957,51 @@ void markdown_core_node_unlink(markdown_core_node *node) {
     node->parent = NULL;
 }
 
+/* Commit a validated, detached subtree. No callbacks or rejecting checks may
+ * run here: public mutations have already detached the child from its owner. */
+static void S_node_attach(markdown_core_node *parent, markdown_core_node *child, markdown_core_node *before) {
+    markdown_core_node *previous = before ? before->prev : parent->last_child;
+    child->parent = parent;
+    child->prev = previous;
+    child->next = before;
+    if (previous) {
+        previous->next = child;
+    } else {
+        parent->first_child = child;
+    }
+    if (before) {
+        before->prev = child;
+    } else {
+        parent->last_child = child;
+    }
+}
+
+/* The caller owns a detached subtree, disjoint from the destination tree. */
+int markdown_core_node_attach_owned(markdown_core_node *parent, markdown_core_node *child, markdown_core_node *before) {
+    if (!parent || !child || parent == child || child->parent || child->prev || child->next ||
+        (before && before->parent != parent) || NODE_MEM(parent) != NODE_MEM(child) ||
+        !markdown_core_node_can_contain_type(parent, (markdown_core_node_type)child->kind)) {
+        return 0;
+    }
+    S_node_attach(parent, child, before);
+    return 1;
+}
+
 int markdown_core_node_insert_before(markdown_core_node *node, markdown_core_node *sibling) {
-    if (node == NULL || sibling == NULL) {
+    if (!node || node == sibling || !S_can_contain(node->parent, sibling)) {
         return 0;
     }
-
-    /* A node cannot be its own sibling. `S_can_contain(node->parent, sibling)`
-     * cannot see this: with `sibling == node`, the ancestor walk starts at the
-     * PARENT and never meets the child, so it answers yes. The splice below
-     * then unlinks the node and re-links it to itself -- measured,
-     * `insert_before(b, b)` returns 1 and leaves `b->next == b` and
-     * `b->prev == b`, an unbounded sibling list that any traversal walks
-     * forever. That is D34, and the safety flag never covered it. */
-    if (node == sibling) {
-        return 0;
-    }
-
-    if (!node->parent || !S_can_contain(node->parent, sibling)) {
-        return 0;
-    }
-
-    S_node_unlink(sibling);
-
-    markdown_core_node *old_prev = node->prev;
-
-    // Insert 'sibling' between 'old_prev' and 'node'.
-    if (old_prev) {
-        old_prev->next = sibling;
-    }
-    sibling->prev = old_prev;
-    sibling->next = node;
-    node->prev = sibling;
-
-    // Set new parent.
-    markdown_core_node *parent = node->parent;
-    sibling->parent = parent;
-
-    // Adjust first_child of parent if inserted as first child.
-    if (parent && !old_prev) {
-        parent->first_child = sibling;
-    }
-
+    markdown_core_node_unlink(sibling);
+    S_node_attach(node->parent, sibling, node);
     return 1;
 }
 
 int markdown_core_node_insert_after(markdown_core_node *node, markdown_core_node *sibling) {
-    if (node == NULL || sibling == NULL) {
+    if (!node || node == sibling || !S_can_contain(node->parent, sibling)) {
         return 0;
     }
-
-    /* A node cannot be its own sibling. `S_can_contain(node->parent, sibling)`
-     * cannot see this: with `sibling == node`, the ancestor walk starts at the
-     * PARENT and never meets the child, so it answers yes. The splice below
-     * then unlinks the node and re-links it to itself -- measured,
-     * `insert_before(b, b)` returns 1 and leaves `b->next == b` and
-     * `b->prev == b`, an unbounded sibling list that any traversal walks
-     * forever. That is D34, and the safety flag never covered it. */
-    if (node == sibling) {
-        return 0;
-    }
-
-    if (!node->parent || !S_can_contain(node->parent, sibling)) {
-        return 0;
-    }
-
-    S_node_unlink(sibling);
-
-    markdown_core_node *old_next = node->next;
-
-    // Insert 'sibling' between 'node' and 'old_next'.
-    if (old_next) {
-        old_next->prev = sibling;
-    }
-    sibling->next = old_next;
-    sibling->prev = node;
-    node->next = sibling;
-
-    // Set new parent.
-    markdown_core_node *parent = node->parent;
-    sibling->parent = parent;
-
-    // Adjust last_child of parent if inserted as last child.
-    if (parent && !old_next) {
-        parent->last_child = sibling;
-    }
-
+    markdown_core_node_unlink(sibling);
+    S_node_attach(node->parent, sibling, node->next);
     return 1;
 }
 
@@ -1073,23 +1017,8 @@ int markdown_core_node_prepend_child(markdown_core_node *node, markdown_core_nod
     if (!S_can_contain(node, child)) {
         return 0;
     }
-
-    S_node_unlink(child);
-
-    markdown_core_node *old_first_child = node->first_child;
-
-    child->next = old_first_child;
-    child->prev = NULL;
-    child->parent = node;
-    node->first_child = child;
-
-    if (old_first_child) {
-        old_first_child->prev = child;
-    } else {
-        // Also set last_child if node previously had no children.
-        node->last_child = child;
-    }
-
+    markdown_core_node_unlink(child);
+    S_node_attach(node, child, node->first_child);
     return 1;
 }
 
@@ -1097,23 +1026,8 @@ int markdown_core_node_append_child(markdown_core_node *node, markdown_core_node
     if (!S_can_contain(node, child)) {
         return 0;
     }
-
-    S_node_unlink(child);
-
-    markdown_core_node *old_last_child = node->last_child;
-
-    child->next = NULL;
-    child->prev = old_last_child;
-    child->parent = node;
-    node->last_child = child;
-
-    if (old_last_child) {
-        old_last_child->next = child;
-    } else {
-        // Also set first_child if node previously had no children.
-        node->first_child = child;
-    }
-
+    markdown_core_node_unlink(child);
+    S_node_attach(node, child, NULL);
     return 1;
 }
 
@@ -1183,7 +1097,8 @@ int markdown_core_node_check(markdown_core_node *node, FILE *out) {
 
 const markdown_core_chunk *markdown_core_node_anchor_chunk(const markdown_core_node *node) {
     if (!node->attributes.anchor.len &&
-        (node->kind == MARKDOWN_CORE_NODE_LINK || node->kind == MARKDOWN_CORE_NODE_MEDIA) && node->as.link->resource) {
+        (node->kind == MARKDOWN_CORE_NODE_LINK || node->kind == MARKDOWN_CORE_NODE_EMBEDDED) &&
+        node->as.link->resource) {
         return &node->as.link->resource->attributes.anchor;
     }
     return &node->attributes.anchor;

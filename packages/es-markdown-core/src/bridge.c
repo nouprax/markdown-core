@@ -839,7 +839,7 @@ static void collect_node_fields(es_build *build, size_t node_index) {
         record->strings[0] = required_string(first);
         break;
     case MARKDOWN_CORE_KIND_FORMULA: {
-        markdown_core_placement_mode mode;
+        markdown_core_placement mode;
         if (!markdown_core_node_formula_properties(node, &mode, &first)) {
             build->failure = ES_BUILD_INTERNAL;
             break;
@@ -849,7 +849,7 @@ static void collect_node_fields(es_build *build, size_t node_index) {
         break;
     }
     case MARKDOWN_CORE_KIND_FORMULA_BLOCK: {
-        markdown_core_placement_mode mode;
+        markdown_core_placement mode;
         if (!markdown_core_node_formula_properties(node, &mode, &first)) {
             build->failure = ES_BUILD_INTERNAL;
             break;
@@ -913,7 +913,7 @@ static void collect_node_fields(es_build *build, size_t node_index) {
         break;
     }
     case MARKDOWN_CORE_KIND_LINK:
-    case MARKDOWN_CORE_KIND_MEDIA: {
+    case MARKDOWN_CORE_KIND_EMBEDDED: {
         /* The tagged `Destination`: the branch is the scalar, its strings are
          * the first slots -- the url, or the path and the optional anchor --
          * and the title is the third, so a slot never means two things. The
@@ -1148,7 +1148,7 @@ static uint8_t *success_result(const es_build *build, es_build_failure *failure)
         if (column.relative.has_value) {
             memcpy(&bits, &column.relative.value, sizeof(bits));
         }
-        put_u32(output, offset, (uint32_t)column.alignment);
+        put_u32(output, offset, (uint32_t)column.flow);
         put_u32(output, offset + 4, column.relative.has_value ? 1 : 0);
         put_i64(output, offset + 8, bits);
     }

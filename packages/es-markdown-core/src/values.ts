@@ -1,8 +1,11 @@
+/** Native cmark UTF-8 editor coordinates, not JavaScript string indices.
+ * Values are copied unchanged, including the empty document end (0, 0). */
 export interface Position {
     readonly line: number;
     readonly column: number;
 }
 
+/** Authored editor start/end positions; not a substring or half-open range. */
 export interface Scope {
     readonly start: Position;
     readonly end: Position;
@@ -16,7 +19,7 @@ export type OrderedListVariant =
     | "default";
 export type OrderedListDelimiter = "period" | { readonly kind: "parenthesis"; readonly closed: boolean } | "default";
 /**
- * The target of a `Link` or `Media`: a tagged value, not a node, so it has no
+ * The target of a `Link` or `Embedded`: a tagged value, not a node, so it has no
  * scope and no children, and a branch's fields exist only in that branch.
  * Every link and image owns the `url` branch, the complete semantic
  * destination the inherited grammar produced -- decoded, not percent-encoded,
@@ -26,7 +29,7 @@ export type OrderedListDelimiter = "period" | { readonly kind: "parenthesis"; re
 export type Destination =
     | { readonly kind: "url"; readonly value: string }
     | { readonly kind: "cross"; readonly path: string; readonly anchor: string | null };
-export type PlacementMode = "embedded" | "standalone";
+export type Placement = "embedded" | "standalone";
 /**
  * How a bibliographic citation is rendered: `[@key]` is `normal`, `@key` in
  * running text names the author in text, and `-@key` suppresses the author.
@@ -42,7 +45,8 @@ export type CitationReferent =
     | { readonly kind: "bib"; readonly key: string; readonly mode: BibMode }
     | { readonly kind: "footnote"; readonly id: string }
     | { readonly kind: "specimen"; readonly id: string };
-export type TableAlignment = "none" | "left" | "center" | "right";
+/** Authored horizontal content alignment; "none" means no explicit alignment. */
+export type Flow = "none" | "left" | "center" | "right";
 
 export interface Record {
     readonly name: string;

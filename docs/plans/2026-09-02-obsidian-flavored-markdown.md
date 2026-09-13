@@ -33,7 +33,7 @@ behavior, including Markdown recognition between paired inline HTML tags, and
 add no HTML element-region suppression. Block identifiers populate the same
 universal `Markup.anchor` string used by other extensions; they do not introduce
 a block-specific target type. Outgoing references use the shared tagged
-`Destination`: ordinary Markdown `Link` and `Media` values own
+`Destination`: ordinary Markdown `Link` and `Embedded` values own
 `Destination.url`, while `CrossLink` and `CrossEmbedded` values own the
 `Destination.cross(path, anchor)` branch. Heading and block source spellings
 populate the same optional anchor field and introduce no discriminator. No destination populates the
@@ -76,7 +76,7 @@ does not define Pandoc `@key` syntax; the citations module does.
       visitor callbacks; source field order and per-field scopes are not stored.
 - [x] Resolve direct, full, collapsed, shortcut, and autolinks to the same `Link`
       shape with `dest=Destination.url(...)`, and direct/reference images to the
-      same `Media(dest=Destination.url(...), ...)` shape. Remove
+      same `Embedded(dest=Destination.url(...), ...)` shape. Remove
       `LinkReference`, `ImageReference`, `ReferenceDefinition`, and
       `ReferenceForm` from the public AST. Keep labels, form, definition storage,
       and normalization in the existing parser-owned lookup operation; add no
@@ -84,15 +84,15 @@ does not define Pandoc `@key` syntax; the citations module does.
 - [x] Add the remaining target value types and kinds to
       `docs/specs/canonical-ast.json`, `docs/specs/canonical-ast.md`, and
       `docs/specs/canonical-ast-dump.md`:
-      the shared `Destination` enum and `Link.dest`/`Media.dest`; `CrossLink`,
+      the shared `Destination` enum and `Link.dest`/`Embedded.dest`; `CrossLink`,
       `CrossEmbedded`, `Mark`, and `Comment`; `Destination.cross(path, anchor)`;
       nullable `Callout.collapsed`; `marker` on `ListItem`; and the independent
-      `Dimensions` value held only by Media and CrossEmbedded. Only the
+      `Dimensions` value held only by Embedded and CrossEmbedded. Only the
       addressable kinds named by the block-identifier grammar receive a non-null
       anchor from that source rule.
 - [x] Add the universal nullable `anchor` field and optional image dimensions
       across the facade, models and transports (`M7`, grouped into the
-      node-independent `Media.dimensions: Dimensions?` by `O9`, also held by
+      node-independent `Embedded.dimensions: Dimensions?` by `O9`, also held by
       `CrossEmbedded.dimensions`). O9 produces typed dimensions from
       labels; directive IDs populate anchors independently.
 - [x] Replace stored `checked: Bool?` with the authored `marker: String?`.

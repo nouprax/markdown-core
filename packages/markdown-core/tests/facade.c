@@ -88,6 +88,23 @@ done:
  * would be invisible to a golden that only ever sees the rendering. Both arms
  * of every optional string are asserted here, and so is the fact that a
  * destination has no absent arm at all (Q26). */
+static void check_native_coordinate_contract(void) {
+    static const struct {
+        const char *source;
+        int end_line, end_column;
+    } cases[] = {{"", 0, 0}, {"\n", 1, 0}, {"\r\n", 1, 0}, {"é", 1, 2}, {"🚀", 1, 4}, {"a\r\nb", 2, 1}};
+    for (size_t i = 0; i < sizeof(cases) / sizeof(*cases); i++) {
+        markdown_core_document *document =
+            markdown_core_document_parse((const uint8_t *)cases[i].source, strlen(cases[i].source), NULL);
+        check(document != NULL, "native coordinate witness parses");
+        markdown_core_scope scope = markdown_core_node_scope(markdown_core_document_root(document));
+        check(scope.start.line == 1 && scope.start.column == 1 && scope.end.line == cases[i].end_line &&
+                  scope.end.column == cases[i].end_column,
+              "UTF-8 coordinates and empty-input sentinels are preserved verbatim");
+        markdown_core_document_free(document);
+    }
+}
+
 static void check_null_and_empty(void) {
     static const struct {
         const char *source;
@@ -101,14 +118,14 @@ static void check_null_and_empty(void) {
         {"[a](/u)\n", MARKDOWN_CORE_KIND_LINK, "/u", false, ""},
         {"[a](/u \"\")\n", MARKDOWN_CORE_KIND_LINK, "/u", true, ""},
         {"[a](/u \"t\")\n", MARKDOWN_CORE_KIND_LINK, "/u", true, "t"},
-        {"![a]()\n", MARKDOWN_CORE_KIND_MEDIA, "", false, ""},
-        {"![a](/s \"\")\n", MARKDOWN_CORE_KIND_MEDIA, "/s", true, ""},
+        {"![a]()\n", MARKDOWN_CORE_KIND_EMBEDDED, "", false, ""},
+        {"![a](/s \"\")\n", MARKDOWN_CORE_KIND_EMBEDDED, "/s", true, ""},
         /* M2: a resolved reference answers what its definition stated,
          * through the same accessors, and the definition is not a node. */
         {"[a]: <>\n\n[a]\n", MARKDOWN_CORE_KIND_LINK, "", false, ""},
         {"[a]: <> \"\"\n\n[a][]\n", MARKDOWN_CORE_KIND_LINK, "", true, ""},
         {"[a]: /u \"t\"\n\n[x][a]\n", MARKDOWN_CORE_KIND_LINK, "/u", true, "t"},
-        {"![a][r]\n\n[r]: /s \"\"\n", MARKDOWN_CORE_KIND_MEDIA, "/s", true, ""},
+        {"![a][r]\n\n[r]: /s \"\"\n", MARKDOWN_CORE_KIND_EMBEDDED, "/s", true, ""},
     };
     static const struct {
         const char *source;
@@ -202,7 +219,7 @@ static void check_image_dimensions(void) {
     int index = 0;
     for (const markdown_core_node *node = markdown_core_node_get_first_child(paragraph); node;
          node = markdown_core_node_get_next_sibling(node)) {
-        if (markdown_core_node_get_kind(node) != MARKDOWN_CORE_KIND_MEDIA) {
+        if (markdown_core_node_get_kind(node) != MARKDOWN_CORE_KIND_EMBEDDED) {
             continue;
         }
         const markdown_core_dimensions *dimensions = markdown_core_node_dimensions(node);
@@ -250,7 +267,7 @@ static void check_resource_identity(void) {
          child = markdown_core_node_get_next_sibling(child)) {
         const markdown_core_resource *resource = markdown_core_node_resource(child);
         markdown_core_node_kind kind = markdown_core_node_get_kind(child);
-        if (kind != MARKDOWN_CORE_KIND_LINK && kind != MARKDOWN_CORE_KIND_MEDIA) {
+        if (kind != MARKDOWN_CORE_KIND_LINK && kind != MARKDOWN_CORE_KIND_EMBEDDED) {
             check(resource == NULL, "a text node has no resource");
             others++;
             continue;
@@ -550,13 +567,12 @@ static void check_table_model(void) {
     check(markdown_core_node_table_properties(table, &columns, &head, &content, &foot), "table properties");
     check(columns == 4 && head == 1 && content == 1 && foot == 0, "pipe table group partition");
     check(markdown_core_node_child_count(table) == head + content + foot, "table rows have one structural owner");
-    const markdown_core_table_alignment expected[] = {
-        MARKDOWN_CORE_TABLE_ALIGNMENT_LEFT, MARKDOWN_CORE_TABLE_ALIGNMENT_CENTER, MARKDOWN_CORE_TABLE_ALIGNMENT_RIGHT,
-        MARKDOWN_CORE_TABLE_ALIGNMENT_NONE};
+    const markdown_core_flow expected[] = {MARKDOWN_CORE_FLOW_LEFT, MARKDOWN_CORE_FLOW_CENTER, MARKDOWN_CORE_FLOW_RIGHT,
+                                           MARKDOWN_CORE_FLOW_NONE};
     for (size_t i = 0; i < columns; i++) {
         markdown_core_table_column column;
         check(markdown_core_node_table_column_at(table, i, &column), "column value");
-        check(column.alignment == expected[i] && !column.relative.has_value, "column authored facts");
+        check(column.flow == expected[i] && !column.relative.has_value, "column authored facts");
     }
     markdown_core_table_column column = {0};
     check(!markdown_core_node_table_column_at(table, columns, &column), "column upper bound");
@@ -638,6 +654,7 @@ int main(int argc, char **argv) {
     check_table_model();
     check_definition_model();
     check_dialect_is_whole();
+    check_native_coordinate_contract();
     check_null_and_empty();
     check_resource_identity();
     check_image_dimensions();

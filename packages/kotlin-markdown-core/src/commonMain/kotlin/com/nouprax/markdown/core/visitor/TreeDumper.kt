@@ -4,13 +4,13 @@ package com.nouprax.markdown.core
 public object TreeDumper {
     /** Returns the canonical debug dump for [root] and its owned markup. */
     public fun dump(root: Markup): String =
-        DumpState().run {
+        State().run {
             dump(root)
             result()
         }
 }
 
-private class DumpState {
+private class State {
     private val remainingNodes = mutableListOf<Int>()
     private val lines = mutableListOf<String>()
     private val visitor = DumpVisitor(this)
@@ -40,7 +40,7 @@ private class DumpState {
         line(
             kind,
             node.scope,
-            listOf("anchor=${optionalString(node.anchor)}", "attributes=${attributesString(node.attributes)}") + fields,
+            listOf("anchor=${optional(node.anchor)}", "attributes=${attributes(node.attributes)}") + fields,
             children,
         )
     }
@@ -94,19 +94,20 @@ private class DumpState {
 
 /** Each visit emits exactly that node and chooses its children and fields. */
 private class DumpVisitor(
-    private val state: DumpState,
+    private val state: State,
 ) : Visitor<Unit> {
-    override fun visitDocument(node: Document) {
+    override fun visit(document: Document) {
         // The footnotes are value lines after the content, each nesting its
         // own content; `children` counts the content alone.
-        state.line("Document", node, children = node.content.size)
+        state.line("Document", document, children = document.content.size)
         state.nested(
-            node.content.size + node.footnotes.size + node.specimens.size + (if (node.metadata == null) 0 else 1),
+            document.content.size + document.footnotes.size + document.specimens.size +
+                (if (document.metadata == null) 0 else 1),
         ) {
-            node.metadata?.let { metadata(it) }
-            node.content.forEach(state::dump)
-            node.footnotes.forEach { footnote(it) }
-            node.specimens.forEach { specimen(it) }
+            document.metadata?.let { metadata(it) }
+            document.content.forEach(state::dump)
+            document.footnotes.forEach { footnote(it) }
+            document.specimens.forEach { specimen(it) }
         }
     }
 
@@ -131,7 +132,7 @@ private class DumpVisitor(
     }
 
     private fun footnote(value: Footnote) {
-        state.line("Footnote", value.scope, listOf("id=${jsonString(value.id)}"), value.content.size)
+        state.line("Footnote", value.scope, listOf("id=${escaped(value.id)}"), value.content.size)
         state.nested(value.content.size) { value.content.forEach(state::dump) }
     }
 
@@ -139,100 +140,100 @@ private class DumpVisitor(
         state.line(
             "Specimen",
             value.scope,
-            listOf("id=${optionalString(value.id)}", "start=${value.start ?: "null"}"),
+            listOf("id=${optional(value.id)}", "start=${value.start ?: "null"}"),
             value.content.size,
         )
         state.nested(value.content.size) { value.content.forEach(state::dump) }
     }
 
-    override fun visitCallout(node: Callout) {
+    override fun visit(callout: Callout) {
         state.line(
             "Callout",
-            node,
-            listOf("variant=${optionalString(node.variant)}", "collapsed=${node.collapsed ?: "null"}"),
-            node.content.size,
+            callout,
+            listOf("variant=${optional(callout.variant)}", "collapsed=${callout.collapsed ?: "null"}"),
+            callout.content.size,
         )
         // A non-null title is a `Title` group before the content; a
         // null one prints nothing. Neither is counted by `children`.
-        state.nested(node.content.size + (if (node.title == null) 0 else 1)) {
-            node.title?.let { title ->
+        state.nested(callout.content.size + (if (callout.title == null) 0 else 1)) {
+            callout.title?.let { title ->
                 state.group("Title", title.size)
                 state.nested(title.size) { title.forEach(state::dump) }
             }
-            node.content.forEach(state::dump)
+            callout.content.forEach(state::dump)
         }
     }
 
-    override fun visitParagraph(node: Paragraph) {
-        state.container("Paragraph", node, children = node.content)
+    override fun visit(paragraph: Paragraph) {
+        state.container("Paragraph", paragraph, children = paragraph.content)
     }
 
-    override fun visitHeading(node: Heading) {
-        state.container("Heading", node, listOf("level=${node.level}"), node.content)
+    override fun visit(heading: Heading) {
+        state.container("Heading", heading, listOf("level=${heading.level}"), heading.content)
     }
 
-    override fun visitThematicBreak(node: ThematicBreak) {
-        state.line("ThematicBreak", node)
+    override fun visit(thematicBreak: ThematicBreak) {
+        state.line("ThematicBreak", thematicBreak)
     }
 
-    override fun visitList(node: List) {
+    override fun visit(list: List) {
         state.container(
             "List",
-            node,
+            list,
             listOf(
-                "flavor=${node.flavor.token()}",
-                "start=${node.start ?: "null"}",
-                "variant=${node.variant?.token() ?: "null"}",
-                "delimiter=${node.delimiter?.token() ?: "null"}",
-                "tight=${node.tight}",
+                "flavor=${list.flavor.token()}",
+                "start=${list.start ?: "null"}",
+                "variant=${list.variant?.token() ?: "null"}",
+                "delimiter=${list.delimiter?.token() ?: "null"}",
+                "tight=${list.tight}",
             ),
-            node.items,
+            list.items,
         )
     }
 
-    override fun visitListItem(node: ListItem) {
+    override fun visit(listItem: ListItem) {
         state.container(
             "ListItem",
-            node,
-            listOf("marker=${optionalString(node.marker)}"),
-            node.content,
+            listItem,
+            listOf("marker=${optional(listItem.marker)}"),
+            listItem.content,
         )
     }
 
-    override fun visitCodeBlock(node: CodeBlock) {
+    override fun visit(codeBlock: CodeBlock) {
         state.line(
             "CodeBlock",
-            node,
+            codeBlock,
             listOf(
-                "info=${optionalString(node.info)}",
-                "language=${optionalString(node.language)}",
-                "literal=${jsonString(node.literal)}",
-                "fenced=${node.fenced}",
-                "closed=${node.closed}",
+                "info=${optional(codeBlock.info)}",
+                "language=${optional(codeBlock.language)}",
+                "literal=${escaped(codeBlock.literal)}",
+                "fenced=${codeBlock.fenced}",
+                "closed=${codeBlock.closed}",
             ),
         )
     }
 
-    override fun visitHTMLBlock(node: HTMLBlock) {
-        state.line("HTMLBlock", node, listOf("literal=${jsonString(node.literal)}"))
+    override fun visit(htmlBlock: HTMLBlock) {
+        state.line("HTMLBlock", htmlBlock, listOf("literal=${escaped(htmlBlock.literal)}"))
     }
 
-    override fun visitFormulaBlock(node: FormulaBlock) {
-        state.line("FormulaBlock", node, listOf("literal=${jsonString(node.literal)}"))
+    override fun visit(formulaBlock: FormulaBlock) {
+        state.line("FormulaBlock", formulaBlock, listOf("literal=${escaped(formulaBlock.literal)}"))
     }
 
-    override fun visitTable(node: Table) {
+    override fun visit(table: Table) {
         val columns =
-            node.columns.joinToString(
+            table.columns.joinToString(
                 ",",
-            ) { "${it.alignment.token()}:${it.relative?.let(::decimal) ?: "null"}" }
-        state.line("Table", node, listOf("columns=[$columns]"), node.head.size + node.content.size + node.foot.size)
-        state.nested(3 + if (node.caption == null) 0 else 1) {
-            node.caption?.let(state::dump)
+            ) { "${it.flow.token()}:${it.relative?.let(::decimal) ?: "null"}" }
+        state.line("Table", table, listOf("columns=[$columns]"), table.head.size + table.content.size + table.foot.size)
+        state.nested(3 + if (table.caption == null) 0 else 1) {
+            table.caption?.let(state::dump)
             for ((name, rows) in listOf(
-                "TableHead" to node.head,
-                "TableBody" to node.content,
-                "TableFoot" to node.foot,
+                "TableHead" to table.head,
+                "TableBody" to table.content,
+                "TableFoot" to table.foot,
             )) {
                 state.group(name, rows.size)
                 state.nested(rows.size) { rows.forEach(state::dump) }
@@ -240,160 +241,169 @@ private class DumpVisitor(
         }
     }
 
-    override fun visitTableCaption(node: TableCaption): Unit =
-        state.container("TableCaption", node, emptyList(), node.content)
+    override fun visit(tableCaption: TableCaption): Unit =
+        state.container("TableCaption", tableCaption, emptyList(), tableCaption.content)
 
-    override fun visitTableRow(node: TableRow): Unit = state.container("TableRow", node, emptyList(), node.cells)
+    override fun visit(tableRow: TableRow): Unit = state.container("TableRow", tableRow, emptyList(), tableRow.cells)
 
-    override fun visitTableCell(node: TableCell): Unit =
-        state.container("TableCell", node, listOf("rowspan=${node.rowspan}", "colspan=${node.colspan}"), node.content)
+    override fun visit(tableCell: TableCell): Unit =
+        state.container(
+            "TableCell",
+            tableCell,
+            listOf("rowspan=${tableCell.rowspan}", "colspan=${tableCell.colspan}"),
+            tableCell.content,
+        )
 
-    override fun visitDirectiveBlock(node: DirectiveBlock) {
+    override fun visit(directiveBlock: DirectiveBlock) {
         state.line(
             "DirectiveBlock",
-            node,
-            listOf("name=${optionalString(node.name)}"),
-            children = node.content.size,
+            directiveBlock,
+            listOf("name=${optional(directiveBlock.name)}"),
+            children = directiveBlock.content.size,
         )
-        state.nested(node.content.size + if (node.label == null) 0 else 1) {
-            node.label?.let(state::dump)
-            node.content.forEach(state::dump)
+        state.nested(directiveBlock.content.size + if (directiveBlock.label == null) 0 else 1) {
+            directiveBlock.label?.let(state::dump)
+            directiveBlock.content.forEach(state::dump)
         }
     }
 
-    override fun visitDirectiveLabel(node: DirectiveLabel) {
-        state.container("DirectiveLabel", node, children = node.content)
+    override fun visit(directiveLabel: DirectiveLabel) {
+        state.container("DirectiveLabel", directiveLabel, children = directiveLabel.content)
     }
 
-    override fun visitText(node: Text) {
-        state.line("Text", node, listOf("literal=${jsonString(node.literal)}"))
+    override fun visit(text: Text) {
+        state.line("Text", text, listOf("literal=${escaped(text.literal)}"))
     }
 
-    override fun visitSoftBreak(node: SoftBreak) {
-        state.line("SoftBreak", node)
+    override fun visit(softBreak: SoftBreak) {
+        state.line("SoftBreak", softBreak)
     }
 
-    override fun visitLineBreak(node: LineBreak) {
-        state.line("LineBreak", node)
+    override fun visit(lineBreak: LineBreak) {
+        state.line("LineBreak", lineBreak)
     }
 
-    override fun visitCode(node: Code) {
-        state.line("Code", node, listOf("literal=${jsonString(node.literal)}"))
+    override fun visit(code: Code) {
+        state.line("Code", code, listOf("literal=${escaped(code.literal)}"))
     }
 
-    override fun visitHTML(node: HTML) {
-        state.line("HTML", node, listOf("literal=${jsonString(node.literal)}"))
+    override fun visit(html: HTML) {
+        state.line("HTML", html, listOf("literal=${escaped(html.literal)}"))
     }
 
-    override fun visitCrossLink(node: CrossLink) {
-        state.line("CrossLink", node, listOf("dest=${destination(node.dest)}", "label=${optionalString(node.label)}"))
+    override fun visit(crossLink: CrossLink) {
+        state.line(
+            "CrossLink",
+            crossLink,
+            listOf("dest=${destination(crossLink.dest)}", "label=${optional(crossLink.label)}"),
+        )
     }
 
-    override fun visitCrossEmbedded(node: CrossEmbedded) {
+    override fun visit(crossEmbedded: CrossEmbedded) {
         state.line(
             "CrossEmbedded",
-            node,
+            crossEmbedded,
             listOf(
-                "dest=${destination(node.dest)}",
-                "label=${optionalString(node.label)}",
-                "dimensions=${dimensionsString(node.dimensions)}",
+                "dest=${destination(crossEmbedded.dest)}",
+                "label=${optional(crossEmbedded.label)}",
+                "dimensions=${dimensions(crossEmbedded.dimensions)}",
             ),
         )
     }
 
-    override fun visitComment(node: Comment) {
-        state.line("Comment", node, listOf("literal=${jsonString(node.literal)}"))
+    override fun visit(comment: Comment) {
+        state.line("Comment", comment, listOf("literal=${escaped(comment.literal)}"))
     }
 
-    override fun visitFormula(node: Formula) {
-        state.line("Formula", node, listOf("mode=${node.mode.token()}", "literal=${jsonString(node.literal)}"))
+    override fun visit(formula: Formula) {
+        state.line("Formula", formula, listOf("mode=${formula.mode.token()}", "literal=${escaped(formula.literal)}"))
     }
 
-    override fun visitEmphasis(node: Emphasis) {
-        state.container("Emphasis", node, children = node.content)
+    override fun visit(emphasis: Emphasis) {
+        state.container("Emphasis", emphasis, children = emphasis.content)
     }
 
-    override fun visitStrong(node: Strong) {
-        state.container("Strong", node, children = node.content)
+    override fun visit(strong: Strong) {
+        state.container("Strong", strong, children = strong.content)
     }
 
-    override fun visitStrikethrough(node: Strikethrough) {
-        state.container("Strikethrough", node, children = node.content)
+    override fun visit(strikethrough: Strikethrough) {
+        state.container("Strikethrough", strikethrough, children = strikethrough.content)
     }
 
-    override fun visitMark(node: Mark) {
-        state.container("Mark", node, children = node.content)
+    override fun visit(mark: Mark) {
+        state.container("Mark", mark, children = mark.content)
     }
 
-    override fun visitInsertion(node: Insertion) {
-        state.container("Insertion", node, children = node.content)
+    override fun visit(insertion: Insertion) {
+        state.container("Insertion", insertion, children = insertion.content)
     }
 
-    override fun visitSpan(node: Span) {
-        state.container("Span", node, children = node.content)
+    override fun visit(span: Span) {
+        state.container("Span", span, children = span.content)
     }
 
-    override fun visitSuperscript(node: Superscript) {
-        state.container("Superscript", node, children = node.content)
+    override fun visit(superscript: Superscript) {
+        state.container("Superscript", superscript, children = superscript.content)
     }
 
-    override fun visitDefinitionList(node: DefinitionList) {
-        state.container("DefinitionList", node, children = node.definitions)
+    override fun visit(definitionList: DefinitionList) {
+        state.container("DefinitionList", definitionList, children = definitionList.definitions)
     }
 
-    override fun visitDefinition(node: Definition) {
-        state.line("Definition", node, listOf("compact=${node.compact}"), node.content.size)
-        state.nested(node.content.size + 1) {
-            state.group("DefinitionTerm", node.term.size)
-            state.nested(node.term.size) { node.term.forEach(state::dump) }
-            for (body in node.content) {
+    override fun visit(definition: Definition) {
+        state.line("Definition", definition, listOf("compact=${definition.compact}"), definition.content.size)
+        state.nested(definition.content.size + 1) {
+            state.group("DefinitionTerm", definition.term.size)
+            state.nested(definition.term.size) { definition.term.forEach(state::dump) }
+            for (body in definition.content) {
                 state.group("DefinitionBody", body.size)
                 state.nested(body.size) { body.forEach(state::dump) }
             }
         }
     }
 
-    override fun visitSubscript(node: Subscript) {
-        state.container("Subscript", node, children = node.content)
+    override fun visit(subscript: Subscript) {
+        state.container("Subscript", subscript, children = subscript.content)
     }
 
-    override fun visitLink(node: Link) {
+    override fun visit(link: Link) {
         state.container(
             "Link",
-            node,
+            link,
             listOf(
-                "dest=${destination(node.dest)}",
-                "title=${optionalString(node.title)}",
+                "dest=${destination(link.dest)}",
+                "title=${optional(link.title)}",
             ),
-            node.content,
+            link.content,
         )
     }
 
-    override fun visitMedia(node: Media) {
+    override fun visit(embedded: Embedded) {
         state.container(
-            "Media",
-            node,
+            "Embedded",
+            embedded,
             listOf(
-                "dest=${destination(node.dest)}",
-                "title=${optionalString(node.title)}",
-                "dimensions=${dimensionsString(node.dimensions)}",
+                "dest=${destination(embedded.dest)}",
+                "title=${optional(embedded.title)}",
+                "dimensions=${dimensions(embedded.dimensions)}",
             ),
-            node.content,
+            embedded.content,
         )
     }
 
-    override fun visitDirective(node: Directive) {
-        state.line("Directive", node, listOf("name=${jsonString(node.name)}"))
-        state.nested(if (node.label == null) 0 else 1) {
-            node.label?.let(state::dump)
+    override fun visit(directive: Directive) {
+        state.line("Directive", directive, listOf("name=${escaped(directive.name)}"))
+        state.nested(if (directive.label == null) 0 else 1) {
+            directive.label?.let(state::dump)
         }
     }
 
-    override fun visitCite(node: Cite) {
+    override fun visit(cite: Cite) {
         // The items are value lines under the cite, and `children` counts
         // them; each item's affixes are groups whose nodes nest below them.
-        state.line("Cite", node, children = node.citations.size)
-        state.nested(node.citations.size) { node.citations.forEach { citation(it) } }
+        state.line("Cite", cite, children = cite.citations.size)
+        state.nested(cite.citations.size) { cite.citations.forEach { citation(it) } }
     }
 
     private fun citation(value: Citation) {
@@ -410,20 +420,20 @@ private class DumpVisitor(
 private fun scope(value: Scope): String =
     "scope=${value.start.line}:${value.start.column}..${value.end.line}:${value.end.column}"
 
-private fun optionalString(value: String?): String = value?.let(::jsonString) ?: "null"
+private fun optional(value: String?): String = value?.let(::escaped) ?: "null"
 
 /** A tagged value prints as its branch name applied to its fields, in declaration order. */
 private fun destination(value: Destination): String =
     when (value) {
-        is Destination.Url -> "url(${jsonString(value.value)})"
-        is Destination.Cross -> "cross(path=${jsonString(value.path)},anchor=${optionalString(value.anchor)})"
+        is Destination.Url -> "url(${escaped(value.value)})"
+        is Destination.Cross -> "cross(path=${escaped(value.path)},anchor=${optional(value.anchor)})"
     }
 
 private fun referent(value: CitationReferent): String =
     when (value) {
-        is CitationReferent.Bib -> "bib(key=${jsonString(value.key)},mode=${value.mode.token()})"
-        is CitationReferent.Footnote -> "footnote(id=${jsonString(value.id)})"
-        is CitationReferent.Specimen -> "specimen(id=${jsonString(value.id)})"
+        is CitationReferent.Bib -> "bib(key=${escaped(value.key)},mode=${value.mode.token()})"
+        is CitationReferent.Footnote -> "footnote(id=${escaped(value.id)})"
+        is CitationReferent.Specimen -> "specimen(id=${escaped(value.id)})"
     }
 
 private fun BibMode.token(): String =
@@ -433,7 +443,7 @@ private fun BibMode.token(): String =
         BibMode.SUPPRESS_AUTHOR -> "suppressAuthor"
     }
 
-private fun PlacementMode.token(): String = name.lowercase()
+private fun Placement.token(): String = name.lowercase()
 
 private fun ListFlavor.token(): String = name.lowercase()
 
@@ -452,9 +462,9 @@ private fun OrderedListDelimiter.token(): String =
         OrderedListDelimiter.Default -> "default"
     }
 
-private fun TableAlignment.token(): String = name.lowercase()
+private fun Flow.token(): String = name.lowercase()
 
-private fun jsonString(value: String): String =
+private fun escaped(value: String): String =
     buildString {
         append('"')
         value.forEach { character ->
@@ -531,11 +541,11 @@ private fun decimal(value: Double): String {
     return digits.take(point) + "." + digits.drop(point)
 }
 
-private fun attributesString(value: Attributes): String =
+private fun attributes(value: Attributes): String =
     (
         value.classes.map {
-            "." + attributeClass(it)
-        } + value.records.map { "${it.name}=${jsonString(it.value)}" }
+            "." + identifier(it)
+        } + value.records.map { "${it.name}=${escaped(it.value)}" }
     ).joinToString(" ", "{", "}")
 
 private fun metadataValue(value: MetadataValue): String =
@@ -545,8 +555,8 @@ private fun metadataValue(value: MetadataValue): String =
                 when (val scalar = value.value) {
                     MetadataScalar.Null -> "null"
                     is MetadataScalar.Bool -> "bool(${scalar.value})"
-                    is MetadataScalar.Number -> "number(${jsonString(scalar.value)})"
-                    is MetadataScalar.Text -> "text(${jsonString(scalar.value)})"
+                    is MetadataScalar.Number -> "number(${escaped(scalar.value)})"
+                    is MetadataScalar.Text -> "text(${escaped(scalar.value)})"
                 } + ")"
         }
 
@@ -554,19 +564,19 @@ private fun metadataValue(value: MetadataValue): String =
             "list([" +
                 value.items.joinToString(",") { item ->
                     when (item) {
-                        is MetadataListItem.Number -> "number(${jsonString(item.value)})"
-                        is MetadataListItem.Text -> "text(${jsonString(item.value)})"
+                        is MetadataListItem.Number -> "number(${escaped(item.value)})"
+                        is MetadataListItem.Text -> "text(${escaped(item.value)})"
                     }
                 } + "])"
         }
     }
 
-private fun attributeClass(value: String): String {
+private fun identifier(value: String): String {
     val plain =
         value.isNotEmpty() &&
             value.all { it.code in 33..126 && it.code !in listOf(34, 92, 123, 125, 91, 93, 40, 41, 61) }
-    return if (plain) value else jsonString(value)
+    return if (plain) value else escaped(value)
 }
 
-private fun dimensionsString(value: Dimensions?): String =
+private fun dimensions(value: Dimensions?): String =
     value?.let { "(width=${it.width},height=${it.height ?: "null"})" } ?: "null"

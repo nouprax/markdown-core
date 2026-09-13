@@ -354,7 +354,7 @@ markdown_core_add_test(
     --corpus
     "${MARKDOWN_CORE_CANONICAL_AST_DIR}/inlines.md"
     --corpus
-    "${MARKDOWN_CORE_CANONICAL_AST_DIR}/media-dimensions.md"
+    "${MARKDOWN_CORE_CANONICAL_AST_DIR}/embedded-dimensions.md"
     --corpus
     "${MARKDOWN_CORE_CANONICAL_AST_DIR}/obsidian-integration.md"
     --corpus

@@ -6,12 +6,12 @@ import { Document, TreeDumper, visit, walk } from "../dist/index.js";
 import { native } from "../dist/runtime/native.js";
 import { parseDocumentWithNative } from "../dist/runtime/parser.js";
 import { kinds } from "../dist/wire/kinds.js";
-import { NodeDecoder } from "../dist/wire/node-decoder.js";
+import { Decoder } from "../dist/wire/node-decoder.js";
 import { kindVisitor } from "./visitor.mjs";
 
 test("ast: dimensions belong to each image occurrence while its destination stays shared", () => {
     const document = Document.parse('![*alt*|2147483647x2][r] ![3][r] ![bad|01][r]\n\n[r]: /shared "title"\n');
-    const images = document.content[0].content.filter((node) => node.kind === "media");
+    const images = document.content[0].content.filter((node) => node.kind === "embedded");
     assert.deepEqual(
         images.map((node) => node.dimensions),
         [{ width: 2147483647, height: 2 }, { width: 3, height: null }, null]
@@ -30,12 +30,12 @@ test("ast: dimensions belong to each image occurrence while its destination stay
         walkingVisitor((node, phase) => events.push(`${phase}:${nodeKindName(node)}`))
     );
     assert.deepEqual(events, [
-        "entering:Media",
+        "entering:Embedded",
         "entering:Emphasis",
         "entering:Text",
         "exiting:Text",
         "exiting:Emphasis",
-        "exiting:Media"
+        "exiting:Embedded"
     ]);
 });
 
@@ -44,11 +44,34 @@ test("api: synchronous parse and typed visitor dispatch", () => {
     assert.equal(
         visit(document.content[0], {
             ...kindVisitor,
-            visitHeading: (node) => `heading:${node.level}`
+            heading: (node) => `heading:${node.level}`
         }),
         "heading:1"
     );
     assert.equal(visit(document, kindVisitor), "document");
+    const token = {};
+    assert.equal(
+        visit(document, {
+            ...kindVisitor,
+            document(node) {
+                assert.equal(node, document);
+                return token;
+            }
+        }),
+        token
+    );
+    const failure = new Error("visitor failure");
+    assert.throws(
+        () =>
+            visit(document, {
+                ...kindVisitor,
+                document() {
+                    throw failure;
+                }
+            }),
+        (error) => error === failure
+    );
+    assert.throws(() => visit(document, { ...kindVisitor, document: undefined }), TypeError);
 });
 
 test("api: walking dispatch is typed and preserves owned-field semantics", () => {
@@ -86,7 +109,7 @@ test("api: walking dispatch is typed and preserves owned-field semantics", () =>
 
 test("ast: marks retain typed content and walk both phases after native release", () => {
     const mark = Document.parse("==a *b*==").content[0].content[0];
-    assert.equal(visit(mark, { ...kindVisitor, visitMark: (node) => node.content.length }), 2);
+    assert.equal(visit(mark, { ...kindVisitor, mark: (node) => node.content.length }), 2);
     const events = [];
     walk(
         mark,
@@ -108,7 +131,7 @@ test("ast: marks retain typed content and walk both phases after native release"
 
 test("ast: insertions retain typed content and walk both phases after native release", () => {
     const insertion = Document.parse("++a *b*++").content[0].content[0];
-    assert.equal(visit(insertion, { ...kindVisitor, visitInsertion: (node) => node.content.length }), 2);
+    assert.equal(visit(insertion, { ...kindVisitor, insertion: (node) => node.content.length }), 2);
     const events = [];
     walk(
         insertion,
@@ -130,7 +153,7 @@ test("ast: insertions retain typed content and walk both phases after native rel
 
 test("ast: spans retain typed content and walk both phases after native release", () => {
     const span = Document.parse("[a *b*]{}").content[0].content[0];
-    assert.equal(visit(span, { ...kindVisitor, visitSpan: (node) => node.content.length }), 2);
+    assert.equal(visit(span, { ...kindVisitor, span: (node) => node.content.length }), 2);
     const events = [];
     walk(
         span,
@@ -152,7 +175,7 @@ test("ast: spans retain typed content and walk both phases after native release"
 
 test("ast: superscripts retain typed content and walk both phases after native release", () => {
     const superscript = Document.parse("^a*b*^").content[0].content[0];
-    assert.equal(visit(superscript, { ...kindVisitor, visitSuperscript: (node) => node.content.length }), 2);
+    assert.equal(visit(superscript, { ...kindVisitor, superscript: (node) => node.content.length }), 2);
     const events = [];
     walk(
         superscript,
@@ -174,7 +197,7 @@ test("ast: superscripts retain typed content and walk both phases after native r
 
 test("ast: subscripts retain typed content and walk both phases after native release", () => {
     const subscript = Document.parse("~a*b*~").content[0].content[0];
-    assert.equal(visit(subscript, { ...kindVisitor, visitSubscript: (node) => node.content.length }), 2);
+    assert.equal(visit(subscript, { ...kindVisitor, subscript: (node) => node.content.length }), 2);
     const events = [];
     walk(
         subscript,
@@ -234,7 +257,7 @@ test("ast: typed fields are copied from the native result", () => {
     assert.equal(document.content[0].flavor, "ordered");
     assert.equal(document.content[0].start, 3);
     assert.deepEqual(
-        document.content[1].columns.map((column) => column.alignment),
+        document.content[1].columns.map((column) => column.flow),
         ["center"]
     );
 });
@@ -255,6 +278,8 @@ test("unicode: UTF-8 survives native document release", () => {
 
 test("errors: empty input is valid and arguments are checked", () => {
     assert.deepEqual(Document.parse("").content, []);
+    assert.deepEqual(Document.parse("").scope, { start: { line: 1, column: 1 }, end: { line: 0, column: 0 } });
+    assert.deepEqual(Document.parse("é").scope, { start: { line: 1, column: 1 }, end: { line: 1, column: 2 } });
     assert.throws(() => Document.parse(null), TypeError);
 });
 
@@ -470,7 +495,7 @@ test("ast: a title is decoded from the auxiliary range before the content and du
     view.setUint32(edgesOffset + 4, 2, true);
     bytes.set(strings, stringsOffset);
 
-    const document = new NodeDecoder(bytes).decodeDocument();
+    const document = new Decoder(bytes).decode();
     const [callout] = document.content;
     assert.equal(callout.kind, "callout");
     assert.equal(callout.variant, "note");
@@ -558,9 +583,9 @@ function walkingVisitor(callback) {
     return {
         ...Object.fromEntries(Object.keys(kindVisitor).map((method) => [method, callback])),
         // The scoped values have no `kind`; their callbacks report their names.
-        visitCitation: (value, phase) => callback({ kind: "citation", ...value }, phase),
-        visitSpecimen: (value, phase) => callback({ kind: "specimen", ...value }, phase),
-        visitFootnote: (value, phase) => callback({ kind: "footnote", ...value }, phase)
+        citation: (value, phase) => callback({ kind: "citation", ...value }, phase),
+        specimen: (value, phase) => callback({ kind: "specimen", ...value }, phase),
+        footnote: (value, phase) => callback({ kind: "footnote", ...value }, phase)
     };
 }
 
@@ -755,29 +780,29 @@ test("errors: malformed native values are rejected before they enter the AST", (
     // a decoder that silently mapped an unknown value would turn a protocol
     // mismatch into a wrong document. Nothing proved any of them fires, so a
     // renumbering could have removed the check and stayed green.
-    const decoder = new NodeDecoder(new Uint8Array(64));
+    const decoder = new Decoder(new Uint8Array(64));
     assert.throws(() => decoder.placement(9), /invalid placement mode 9/u);
-    assert.throws(() => decoder.listFlavor(9), /invalid list flavor 9/u);
-    assert.throws(() => decoder.tableAlignment(9), /invalid table alignment 9/u);
+    assert.throws(() => decoder.flavor(9), /invalid list flavor 9/u);
+    assert.throws(() => decoder.flow(9), /invalid table flow 9/u);
     assert.throws(() => decoder.nullableBoolean(9, "checked"), /invalid checked 9/u);
     assert.equal(decoder.placement(2), "standalone");
-    assert.equal(decoder.listFlavor(2), "ordered");
-    assert.equal(decoder.tableAlignment(0), "none");
+    assert.equal(decoder.flavor(2), "ordered");
+    assert.equal(decoder.flow(0), "none");
     assert.equal(decoder.nullableBoolean(-1, "checked"), null);
 
     // Native parse failures keep their terminal category across the WASM
     // boundary. In particular, allocation failure must not be collapsed into
     // an internal error that a consumer could mistake for a recoverable path.
     assert.throws(
-        () => new NodeDecoder(errorResult(1, "bad")).decodeDocument(),
+        () => new Decoder(errorResult(1, "bad")).decode(),
         (error) => error.code === "invalidArgument"
     );
     assert.throws(
-        () => new NodeDecoder(errorResult(2, "out of memory")).decodeDocument(),
+        () => new Decoder(errorResult(2, "out of memory")).decode(),
         (error) => error.code === "allocationFailed"
     );
     assert.throws(
-        () => new NodeDecoder(errorResult(99, "bad")).decodeDocument(),
+        () => new Decoder(errorResult(99, "bad")).decode(),
         (error) => error.code === "internal"
     );
 
@@ -789,18 +814,15 @@ test("errors: malformed native values are rejected before they enter the AST", (
     const fieldIndex = new DataView(malformedDirective.buffer).getUint32(directiveOffset + 32, true);
     const nodesOffset = new DataView(malformedDirective.buffer).getUint32(40, true);
     new DataView(malformedDirective.buffer).setUint32(nodesOffset + fieldIndex * 160, 3, true);
-    assert.throws(
-        () => new NodeDecoder(malformedDirective).decodeDocument(),
-        /directive label field contains a non-label node/u
-    );
+    assert.throws(() => new Decoder(malformedDirective).decode(), /directive label field contains a non-label node/u);
 
     const unknownKind = nativeResult("text\n");
     new DataView(unknownKind.buffer).setUint32(findNode(unknownKind, kinds.indexOf("text")), 99, true);
-    assert.throws(() => new NodeDecoder(unknownKind).decodeDocument(), /unknown node kind 99/u);
+    assert.throws(() => new Decoder(unknownKind).decode(), /unknown node kind 99/u);
 
     const badMagic = nativeResult("text\n");
     badMagic[0] = 0;
-    assert.throws(() => new NodeDecoder(badMagic).decodeDocument(), /invalid native result/u);
+    assert.throws(() => new Decoder(badMagic).decode(), /invalid native result/u);
 });
 
 function errorResult(code, message) {
@@ -839,7 +861,7 @@ test("ast: every ordered delimiter and associated numbering value survives decod
                     flags | (variantRaw << 2) | (delimiterRaw << 5) | (Number(closed) << 8) | (Number(lowercased) << 9),
                     true
                 );
-                const document = new NodeDecoder(bytes).decodeDocument();
+                const document = new Decoder(bytes).decode();
                 assert.deepEqual(document.content[0].variant, { kind, lowercased });
                 assert.deepEqual(document.content[0].delimiter, expected);
                 assert.match(TreeDumper.dump(document), new RegExp(`variant=${kind}\\(lowercased=${lowercased}\\)`));
@@ -852,7 +874,7 @@ test("ast: every ordered delimiter and associated numbering value survives decod
     const view = new DataView(malformed.buffer);
     const at = findNode(malformed, kinds.indexOf("list")) + 4;
     view.setUint32(at, view.getUint32(at, true) | (7 << 5), true);
-    assert.throws(() => new NodeDecoder(malformed).decodeDocument(), /invalid ordered list facts/u);
+    assert.throws(() => new Decoder(malformed).decode(), /invalid ordered list facts/u);
 });
 
 test("ast: a UTF-8 task marker is an owned string, independent of the payload", () => {
@@ -862,7 +884,7 @@ test("ast: a UTF-8 task marker is an owned string, independent of the payload", 
     const item = findNode(bytes, kinds.indexOf("listItem"));
     view.setUint32(item + 64, view.getUint32(text + 64, true), true);
     view.setUint32(item + 68, view.getUint32(text + 68, true), true);
-    const document = new NodeDecoder(bytes).decodeDocument();
+    const document = new Decoder(bytes).decode();
     bytes.fill(0);
     assert.equal(document.content[0].items[0].marker, "🚀");
     assert.ok(TreeDumper.dump(document).includes('marker="🚀"'));
@@ -921,10 +943,10 @@ test("ast: specimen definitions and references retain ownership, nulls and reset
             }
         }
     }
-    const document = new NodeDecoder(bytes).decodeDocument();
+    const document = new Decoder(bytes).decode();
     const invalid = bytes.slice();
     new DataView(invalid.buffer).setBigInt64(firstSpecimen + 56, 9007199254740993n, true);
-    assert.throws(() => new NodeDecoder(invalid).decodeDocument(), /precision/);
+    assert.throws(() => new Decoder(invalid).decode(), /precision/);
     bytes.fill(0);
     assert.equal(document.footnotes.length, 1);
     assert.deepEqual(
@@ -962,14 +984,14 @@ test("ast: table groups, column widths and spans survive the wire as owned facts
     const column = view.getUint32(52, true);
     view.setUint32(column + 4, 1, true);
     view.setFloat64(column + 8, 0.1, true);
-    const document = new NodeDecoder(bytes).decodeDocument();
+    const document = new Decoder(bytes).decode();
     const value = document.content[0];
     assert.equal(value.head[0].cells[0].content[0].literal, "h");
     assert.equal(value.content[0].cells[0].content[0].literal, "b");
     assert.equal(value.foot[0].cells[0].content[0].literal, "f");
     assert.deepEqual(value.columns, [
-        { alignment: "none", relative: 0.1 },
-        { alignment: "none", relative: null }
+        { flow: "none", relative: 0.1 },
+        { flow: "none", relative: null }
     ]);
     assert.ok(!("isHeader" in value.head[0]));
     const visited = [];
@@ -986,7 +1008,7 @@ test("ast: table groups, column widths and spans survive the wire as owned facts
     const malformed = (change, pattern) => {
         const copy = bytes.slice();
         change(new DataView(copy.buffer));
-        assert.throws(() => new NodeDecoder(copy).decodeDocument(), pattern);
+        assert.throws(() => new Decoder(copy).decode(), pattern);
     };
     malformed((v) => v.setInt32(table + 44, -1, true), /row groups/);
     malformed((v) => v.setBigInt64(table + 56, 2n, true), /row groups/);
@@ -1076,10 +1098,10 @@ test("ast: metadata preserves tags, decimal text, duplicate keys and owned lists
     string(attributes + 8, 9);
     string(attributes + 16, 8);
     string(attributes + 24, 10);
-    const document = new NodeDecoder(bytes).decodeDocument();
+    const document = new Decoder(bytes).decode();
     const bad = bytes.slice();
     new DataView(bad.buffer).setUint32(nodes + 3 * 160 + 4, 9, true);
-    assert.throws(() => new NodeDecoder(bad).decodeDocument(), /metadata scalar/);
+    assert.throws(() => new Decoder(bad).decode(), /metadata scalar/);
     bytes.fill(0);
     assert.deepEqual(
         [
@@ -1121,23 +1143,23 @@ test("ast: metadata preserves tags, decimal text, duplicate keys and owned lists
 test("ast: dimensions belong to occurrences and universal attributes survive release", () => {
     const bytes = nativeResult("![a][r] ![b][r]\n\n[r]: /u\n");
     const view = new DataView(bytes.buffer);
-    const image = findNode(bytes, kinds.indexOf("media"));
+    const image = findNode(bytes, kinds.indexOf("embedded"));
     view.setUint32(image + 124, 640, true);
     view.setUint32(image + 128, 480, true);
-    const document = new NodeDecoder(bytes).decodeDocument();
-    const images = document.content[0].content.filter((value) => value.kind === "media");
+    const document = new Decoder(bytes).decode();
+    const images = document.content[0].content.filter((value) => value.kind === "embedded");
     assert.equal(images[0].dest, images[1].dest);
     assert.deepEqual(
         images.map((value) => value.dimensions),
         [{ width: 640, height: 480 }, null]
     );
     view.setUint32(image + 124, 0, true);
-    assert.throws(() => new NodeDecoder(bytes).decodeDocument(), /invalid dimensions/);
+    assert.throws(() => new Decoder(bytes).decode(), /invalid dimensions/);
     view.setUint32(image + 124, 0xffff_ffff, true);
-    assert.throws(() => new NodeDecoder(bytes).decodeDocument(), /invalid dimensions/);
+    assert.throws(() => new Decoder(bytes).decode(), /invalid dimensions/);
     view.setUint32(image + 124, 640, true);
     view.setUint32(image + 128, 0xffff_ffff, true);
-    assert.throws(() => new NodeDecoder(bytes).decodeDocument(), /invalid dimensions/);
+    assert.throws(() => new Decoder(bytes).decode(), /invalid dimensions/);
     bytes.fill(0);
     const directive = Document.parse(':n{#id .a class="a b}c" k=1 k=2}').content[0].content[0];
     assert.equal(directive.anchor, "id");
@@ -1153,7 +1175,7 @@ test("ast: dimensions belong to occurrences and universal attributes survive rel
 
 test("ast: cross links retain raw values after native release and reject wrong wire branches", () => {
     const bytes = nativeResult("[[Note]] [[Note|]] ![[#^id|raw *label*]]\n");
-    const document = new NodeDecoder(bytes).decodeDocument();
+    const document = new Decoder(bytes).decode();
     const links = document.content[0].content.filter(
         (node) => node.kind === "crossLink" || node.kind === "crossEmbedded"
     );
@@ -1176,7 +1198,7 @@ test("ast: cross links retain raw values after native release and reject wrong w
     assert.deepEqual(events, ["entering:crossEmbedded", "exiting:crossEmbedded"]);
     const malformed = bytes.slice();
     new DataView(malformed.buffer).setInt32(findNode(malformed, kinds.indexOf("crossLink")) + 44, 1, true);
-    assert.throws(() => new NodeDecoder(malformed).decodeDocument(), /cross reference requires a cross destination/u);
+    assert.throws(() => new Decoder(malformed).decode(), /cross reference requires a cross destination/u);
     bytes.fill(0);
     assert.equal(links[2].label, "raw *label*");
 });
@@ -1187,7 +1209,7 @@ test("ast: Properties keep recognized fields and literal prose after native rele
         "comment: *x\r\nname: duplicate\r\nabstract: |\r\n  first\r\n\r\n  second\r\n" +
         "comment: |\r\n  # prose\r\n---\r\nbody\r\n";
     const bytes = nativeResult(source);
-    const document = new NodeDecoder(bytes).decodeDocument();
+    const document = new Decoder(bytes).decode();
     bytes.fill(0);
     assert.deepEqual(
         [
@@ -1216,20 +1238,20 @@ test("ast: Properties keep recognized fields and literal prose after native rele
 test("ast: embedded dimensions survive the wire lifetime and require an embedded label", () => {
     const bytes = nativeResult("![[#^id|raw *label*|2147483647x2]]\n");
     const record = findNode(bytes, kinds.indexOf("crossEmbedded"));
-    const document = new NodeDecoder(bytes).decodeDocument();
+    const document = new Decoder(bytes).decode();
     const link = document.content[0].content[0];
     assert.equal(link.label, "raw *label*");
     assert.deepEqual(link.dimensions, { width: 2147483647, height: 2 });
     const view = new DataView(bytes.buffer);
     view.setUint32(record, kinds.indexOf("crossLink"), true);
-    assert.throws(() => new NodeDecoder(bytes).decodeDocument(), /dimensions require/u);
+    assert.throws(() => new Decoder(bytes).decode(), /dimensions require/u);
     view.setUint32(record, kinds.indexOf("crossEmbedded"), true);
     view.setUint32(record + 124, 0, true);
-    assert.throws(() => new NodeDecoder(bytes).decodeDocument(), /invalid dimensions/u);
+    assert.throws(() => new Decoder(bytes).decode(), /invalid dimensions/u);
     view.setUint32(record + 124, 100, true);
     view.setUint32(record + 80, 0xffff_ffff, true);
     view.setUint32(record + 84, 0, true);
-    assert.throws(() => new NodeDecoder(bytes).decodeDocument(), /dimensions require/u);
+    assert.throws(() => new Decoder(bytes).decode(), /dimensions require/u);
     bytes.fill(0);
     assert.equal(link.label, "raw *label*");
     assert.deepEqual(link.dimensions, { width: 2147483647, height: 2 });
@@ -1265,7 +1287,7 @@ test("ast: P2 attributes preserve native arrays, inheritance, dimensions and occ
 
 test("ast: definition terms and ordered bodies are owned and walk without body wrapper nodes", () => {
     const bytes = nativeResult("::: box\n*T*\n: one\n~\n\nU\n\n: two\n:::\n");
-    const block = new NodeDecoder(bytes).decodeDocument().content[0];
+    const block = new Decoder(bytes).decode().content[0];
     bytes.fill(0);
     assert.equal(block.name, null);
     assert.deepEqual(block.attributes.classes, ["box"]);
@@ -1315,7 +1337,7 @@ test("errors: definition body values cannot leak into markup or accept markup in
     const malformed = (change, pattern) => {
         const bytes = original.slice();
         change(new DataView(bytes.buffer));
-        assert.throws(() => new NodeDecoder(bytes).decodeDocument(), pattern);
+        assert.throws(() => new Decoder(bytes).decode(), pattern);
     };
     malformed((v) => v.setUint32(body, kinds.indexOf("paragraph"), true), /invalid definition body/);
     malformed((v) => v.setUint32(definition, kinds.indexOf("paragraph"), true), /not uniquely owned|non-markup/);
@@ -1330,12 +1352,12 @@ test("errors: definition body values cannot leak into markup or accept markup in
         kinds.indexOf("definitionList"),
         true
     );
-    assert.throws(() => new NodeDecoder(emptyList).decodeDocument(), /empty definition list/);
+    assert.throws(() => new Decoder(emptyList).decode(), /empty definition list/);
     const noBodies = nativeResult("Term\n");
     new DataView(noBodies.buffer).setUint32(
         findNode(noBodies, kinds.indexOf("text")),
         kinds.indexOf("definition"),
         true
     );
-    assert.throws(() => new NodeDecoder(noBodies).decodeDocument(), /definition has no bodies/);
+    assert.throws(() => new Decoder(noBodies).decode(), /definition has no bodies/);
 });

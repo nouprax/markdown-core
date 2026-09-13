@@ -1,41 +1,7 @@
-import type { Callout } from "./model/callout.js";
-import type { Citation, Cite } from "./model/cite.js";
-import type { CodeBlock } from "./model/code-block.js";
-import type { Code } from "./model/code.js";
-import type { Comment } from "./model/comment.js";
-import type { CrossLink } from "./model/cross-link.js";
-import type { CrossEmbedded } from "./model/cross-embedded.js";
-import type { DirectiveBlock } from "./model/directive-block.js";
-import type { DirectiveLabel } from "./model/directive-label.js";
-import type { Directive } from "./model/directive.js";
-import type { Document } from "./model/document.js";
-import type { Emphasis } from "./model/emphasis.js";
-import type { Specimen } from "./model/specimen.js";
+import type { Citation } from "./model/cite.js";
 import type { Footnote } from "./model/footnote.js";
-import type { FormulaBlock } from "./model/formula-block.js";
-import type { Formula } from "./model/formula.js";
-import type { Heading } from "./model/heading.js";
-import type { HTMLBlock } from "./model/html-block.js";
-import type { HTML } from "./model/html.js";
-import type { Media } from "./model/media.js";
-import type { LineBreak } from "./model/line-break.js";
-import type { Link } from "./model/link.js";
-import type { List, ListItem } from "./model/list.js";
 import type { Markup } from "./model/markup.js";
-import type { Paragraph } from "./model/paragraph.js";
-import type { SoftBreak } from "./model/soft-break.js";
-import type { Strikethrough } from "./model/strikethrough.js";
-import type { Mark } from "./model/mark.js";
-import type { Insertion } from "./model/insertion.js";
-import type { Span } from "./model/span.js";
-import type { Superscript } from "./model/superscript.js";
-import type { DefinitionList, Definition } from "./model/definition-list.js";
-import type { Subscript } from "./model/subscript.js";
-import type { Strong } from "./model/strong.js";
-import type { Table, TableCaption, TableCell, TableRow } from "./model/table.js";
-import type { Text } from "./model/text.js";
-import type { ThematicBreak } from "./model/thematic-break.js";
-import { visit, type Visitor } from "./visitor.js";
+import type { Specimen } from "./model/specimen.js";
 
 /** The phase of a depth-first markup walk. */
 export type WalkPhase = "entering" | "exiting";
@@ -47,52 +13,16 @@ export type WalkPhase = "entering" | "exiting";
  * Markup-valued fields are not projected into a generic children collection:
  * each node-kind traversal branch schedules its own typed relations.
  */
-export interface WalkingVisitor {
-    visitDocument(this: void, node: Document, phase: WalkPhase): void;
-    visitCallout(this: void, node: Callout, phase: WalkPhase): void;
-    visitParagraph(this: void, node: Paragraph, phase: WalkPhase): void;
-    visitHeading(this: void, node: Heading, phase: WalkPhase): void;
-    visitThematicBreak(this: void, node: ThematicBreak, phase: WalkPhase): void;
-    visitList(this: void, node: List, phase: WalkPhase): void;
-    visitListItem(this: void, node: ListItem, phase: WalkPhase): void;
-    visitCodeBlock(this: void, node: CodeBlock, phase: WalkPhase): void;
-    visitHTMLBlock(this: void, node: HTMLBlock, phase: WalkPhase): void;
-    visitFormulaBlock(this: void, node: FormulaBlock, phase: WalkPhase): void;
-    visitTable(this: void, node: Table, phase: WalkPhase): void;
-    visitTableCaption(this: void, node: TableCaption, phase: WalkPhase): void;
-    visitTableRow(this: void, node: TableRow, phase: WalkPhase): void;
-    visitTableCell(this: void, node: TableCell, phase: WalkPhase): void;
-    visitDirectiveBlock(this: void, node: DirectiveBlock, phase: WalkPhase): void;
-    visitDirectiveLabel(this: void, node: DirectiveLabel, phase: WalkPhase): void;
-    visitText(this: void, node: Text, phase: WalkPhase): void;
-    visitSoftBreak(this: void, node: SoftBreak, phase: WalkPhase): void;
-    visitLineBreak(this: void, node: LineBreak, phase: WalkPhase): void;
-    visitCode(this: void, node: Code, phase: WalkPhase): void;
-    visitHTML(this: void, node: HTML, phase: WalkPhase): void;
-    visitComment(this: void, node: Comment, phase: WalkPhase): void;
-    visitCrossLink(this: void, node: CrossLink, phase: WalkPhase): void;
-    visitCrossEmbedded(this: void, node: CrossEmbedded, phase: WalkPhase): void;
-    visitFormula(this: void, node: Formula, phase: WalkPhase): void;
-    visitEmphasis(this: void, node: Emphasis, phase: WalkPhase): void;
-    visitStrong(this: void, node: Strong, phase: WalkPhase): void;
-    visitStrikethrough(this: void, node: Strikethrough, phase: WalkPhase): void;
-    visitMark(this: void, node: Mark, phase: WalkPhase): void;
-    visitInsertion(this: void, node: Insertion, phase: WalkPhase): void;
-    visitSpan(this: void, node: Span, phase: WalkPhase): void;
-    visitSuperscript(this: void, node: Superscript, phase: WalkPhase): void;
-    visitSubscript(this: void, node: Subscript, phase: WalkPhase): void;
-    visitDefinitionList(this: void, node: DefinitionList, phase: WalkPhase): void;
-    visitDefinition(this: void, node: Definition, phase: WalkPhase): void;
-    visitLink(this: void, node: Link, phase: WalkPhase): void;
-    visitMedia(this: void, node: Media, phase: WalkPhase): void;
-    visitDirective(this: void, node: Directive, phase: WalkPhase): void;
-    visitCite(this: void, node: Cite, phase: WalkPhase): void;
-    /** A value callback: a `Citation` is a scoped value, not a `Markup` kind. */
-    visitCitation(this: void, value: Citation, phase: WalkPhase): void;
-    /** A value callback: a `Footnote` is a scoped value, not a `Markup` kind. */
-    visitSpecimen(this: void, value: Specimen, phase: WalkPhase): void;
-    visitFootnote(this: void, value: Footnote, phase: WalkPhase): void;
-}
+export type WalkingVisitor = {
+    [Node in Markup as Node["kind"]]: (this: void, node: Node, phase: WalkPhase) => void;
+} & {
+    /** A citation is a scoped value outside the markup union. */
+    citation: (this: void, citation: Citation, phase: WalkPhase) => void;
+    /** A footnote is a scoped value outside the markup union. */
+    footnote: (this: void, footnote: Footnote, phase: WalkPhase) => void;
+    /** A specimen is a scoped value outside the markup union. */
+    specimen: (this: void, specimen: Specimen, phase: WalkPhase) => void;
+};
 
 type WalkAction =
     | { readonly kind: "markup"; readonly node: Markup; readonly phase: WalkPhase }
@@ -136,244 +66,326 @@ export function walk(root: Markup, walkingVisitor: WalkingVisitor): void {
             actions.push({ kind: "specimen", value: specimens[index]!, phase: "entering" });
         }
     };
-    const visitCitation = (value: Citation): void => {
-        walkingVisitor.visitCitation(value, phase);
+    const citation = (value: Citation): void => {
+        walkingVisitor.citation(value, phase);
         if (phase === "entering") {
             actions.push({ kind: "citation", value, phase: "exiting" });
             schedule(value.suffix);
             schedule(value.prefix);
         }
     };
-    const visitFootnote = (value: Footnote): void => {
-        walkingVisitor.visitFootnote(value, phase);
+    const footnote = (value: Footnote): void => {
+        walkingVisitor.footnote(value, phase);
         if (phase === "entering") {
             actions.push({ kind: "footnote", value, phase: "exiting" });
             schedule(value.content);
         }
     };
-    const visitSpecimen = (value: Specimen): void => {
-        walkingVisitor.visitSpecimen(value, phase);
+    const specimen = (value: Specimen): void => {
+        walkingVisitor.specimen(value, phase);
         if (phase === "entering") {
             actions.push({ kind: "specimen", value, phase: "exiting" });
             schedule(value.content);
         }
     };
 
-    // Each callback owns the schedule for that node kind. This is traversal
-    // control flow, not a public iterator or a generic child projection.
-    const driver: Visitor<void> = {
-        visitDocument: (node) => {
-            walkingVisitor.visitDocument(node, phase);
-            scheduleExit(node);
-            if (phase === "entering") {
-                // The footnotes are visited after the content.
-                scheduleSpecimens(node.specimens);
-                scheduleFootnotes(node.footnotes);
-                schedule(node.content);
+    // Each branch reports its node and schedules that node's typed relations.
+    // Dispatch directly without allocating an intermediate table of callbacks.
+    const markup = (node: Markup): void => {
+        switch (node.kind) {
+            case "document": {
+                walkingVisitor.document(node, phase);
+                scheduleExit(node);
+                if (phase === "entering") {
+                    // The footnotes are visited after the content.
+                    scheduleSpecimens(node.specimens);
+                    scheduleFootnotes(node.footnotes);
+                    schedule(node.content);
+                }
+
+                return;
             }
-        },
-        visitCallout: (node) => {
-            walkingVisitor.visitCallout(node, phase);
-            scheduleExit(node);
-            if (phase === "entering") {
-                schedule(node.content);
-                // The title is a node-valued field, visited before the content.
-                if (node.title !== null) schedule(node.title);
+            case "callout": {
+                walkingVisitor.callout(node, phase);
+                scheduleExit(node);
+                if (phase === "entering") {
+                    schedule(node.content);
+                    // The title is a node-valued field, visited before the content.
+                    if (node.title !== null) schedule(node.title);
+                }
+
+                return;
             }
-        },
-        visitParagraph: (node) => {
-            walkingVisitor.visitParagraph(node, phase);
-            scheduleExit(node);
-            if (phase === "entering") schedule(node.content);
-        },
-        visitHeading: (node) => {
-            walkingVisitor.visitHeading(node, phase);
-            scheduleExit(node);
-            if (phase === "entering") schedule(node.content);
-        },
-        visitThematicBreak: (node) => {
-            walkingVisitor.visitThematicBreak(node, phase);
-            scheduleExit(node);
-        },
-        visitList: (node) => {
-            walkingVisitor.visitList(node, phase);
-            scheduleExit(node);
-            if (phase === "entering") schedule(node.items);
-        },
-        visitListItem: (node) => {
-            walkingVisitor.visitListItem(node, phase);
-            scheduleExit(node);
-            if (phase === "entering") schedule(node.content);
-        },
-        visitCodeBlock: (node) => {
-            walkingVisitor.visitCodeBlock(node, phase);
-            scheduleExit(node);
-        },
-        visitHTMLBlock: (node) => {
-            walkingVisitor.visitHTMLBlock(node, phase);
-            scheduleExit(node);
-        },
-        visitFormulaBlock: (node) => {
-            walkingVisitor.visitFormulaBlock(node, phase);
-            scheduleExit(node);
-        },
-        visitTable: (node) => {
-            walkingVisitor.visitTable(node, phase);
-            scheduleExit(node);
-            if (phase === "entering") {
-                schedule(node.foot);
-                schedule(node.content);
-                schedule(node.head);
-                if (node.caption) schedule([node.caption]);
+            case "paragraph": {
+                walkingVisitor.paragraph(node, phase);
+                scheduleExit(node);
+                if (phase === "entering") schedule(node.content);
+
+                return;
             }
-        },
-        visitTableCaption: (node) => {
-            walkingVisitor.visitTableCaption(node, phase);
-            scheduleExit(node);
-            if (phase === "entering") schedule(node.content);
-        },
-        visitTableRow: (node) => {
-            walkingVisitor.visitTableRow(node, phase);
-            scheduleExit(node);
-            if (phase === "entering") schedule(node.cells);
-        },
-        visitTableCell: (node) => {
-            walkingVisitor.visitTableCell(node, phase);
-            scheduleExit(node);
-            if (phase === "entering") schedule(node.content);
-        },
-        visitDirectiveBlock: (node) => {
-            walkingVisitor.visitDirectiveBlock(node, phase);
-            scheduleExit(node);
-            if (phase === "entering") {
-                schedule(node.content);
-                if (node.label !== null) actions.push({ kind: "markup", node: node.label, phase: "entering" });
+            case "heading": {
+                walkingVisitor.heading(node, phase);
+                scheduleExit(node);
+                if (phase === "entering") schedule(node.content);
+
+                return;
             }
-        },
-        visitDirectiveLabel: (node) => {
-            walkingVisitor.visitDirectiveLabel(node, phase);
-            scheduleExit(node);
-            if (phase === "entering") schedule(node.content);
-        },
-        visitText: (node) => {
-            walkingVisitor.visitText(node, phase);
-            scheduleExit(node);
-        },
-        visitSoftBreak: (node) => {
-            walkingVisitor.visitSoftBreak(node, phase);
-            scheduleExit(node);
-        },
-        visitLineBreak: (node) => {
-            walkingVisitor.visitLineBreak(node, phase);
-            scheduleExit(node);
-        },
-        visitCode: (node) => {
-            walkingVisitor.visitCode(node, phase);
-            scheduleExit(node);
-        },
-        visitHTML: (node) => {
-            walkingVisitor.visitHTML(node, phase);
-            scheduleExit(node);
-        },
-        visitCrossLink: (node) => {
-            walkingVisitor.visitCrossLink(node, phase);
-            scheduleExit(node);
-        },
-        visitCrossEmbedded: (node) => {
-            walkingVisitor.visitCrossEmbedded(node, phase);
-            scheduleExit(node);
-        },
-        visitComment: (node) => {
-            walkingVisitor.visitComment(node, phase);
-            scheduleExit(node);
-        },
-        visitFormula: (node) => {
-            walkingVisitor.visitFormula(node, phase);
-            scheduleExit(node);
-        },
-        visitEmphasis: (node) => {
-            walkingVisitor.visitEmphasis(node, phase);
-            scheduleExit(node);
-            if (phase === "entering") schedule(node.content);
-        },
-        visitStrong: (node) => {
-            walkingVisitor.visitStrong(node, phase);
-            scheduleExit(node);
-            if (phase === "entering") schedule(node.content);
-        },
-        visitStrikethrough: (node) => {
-            walkingVisitor.visitStrikethrough(node, phase);
-            scheduleExit(node);
-            if (phase === "entering") schedule(node.content);
-        },
-        visitMark: (node) => {
-            walkingVisitor.visitMark(node, phase);
-            scheduleExit(node);
-            if (phase === "entering") schedule(node.content);
-        },
-        visitInsertion: (node) => {
-            walkingVisitor.visitInsertion(node, phase);
-            scheduleExit(node);
-            if (phase === "entering") schedule(node.content);
-        },
-        visitSpan: (node) => {
-            walkingVisitor.visitSpan(node, phase);
-            scheduleExit(node);
-            if (phase === "entering") schedule(node.content);
-        },
-        visitSuperscript: (node) => {
-            walkingVisitor.visitSuperscript(node, phase);
-            scheduleExit(node);
-            if (phase === "entering") schedule(node.content);
-        },
-        visitDefinitionList: (node) => {
-            walkingVisitor.visitDefinitionList(node, phase);
-            scheduleExit(node);
-            if (phase === "entering") schedule(node.definitions);
-        },
-        visitDefinition: (node) => {
-            walkingVisitor.visitDefinition(node, phase);
-            scheduleExit(node);
-            if (phase === "entering") {
-                for (let index = node.content.length - 1; index >= 0; --index) schedule(node.content[index]!);
-                schedule(node.term);
+            case "thematicBreak": {
+                walkingVisitor.thematicBreak(node, phase);
+                scheduleExit(node);
+
+                return;
             }
-        },
-        visitSubscript: (node) => {
-            walkingVisitor.visitSubscript(node, phase);
-            scheduleExit(node);
-            if (phase === "entering") schedule(node.content);
-        },
-        visitLink: (node) => {
-            walkingVisitor.visitLink(node, phase);
-            scheduleExit(node);
-            if (phase === "entering") schedule(node.content);
-        },
-        visitMedia: (node) => {
-            walkingVisitor.visitMedia(node, phase);
-            scheduleExit(node);
-            if (phase === "entering") schedule(node.content);
-        },
-        visitDirective: (node) => {
-            walkingVisitor.visitDirective(node, phase);
-            scheduleExit(node);
-            if (phase === "entering" && node.label !== null) {
-                actions.push({ kind: "markup", node: node.label, phase: "entering" });
+            case "list": {
+                walkingVisitor.list(node, phase);
+                scheduleExit(node);
+                if (phase === "entering") schedule(node.items);
+
+                return;
             }
-        },
-        visitCite: (node) => {
-            walkingVisitor.visitCite(node, phase);
-            scheduleExit(node);
-            if (phase === "entering") scheduleCitations(node.citations);
+            case "listItem": {
+                walkingVisitor.listItem(node, phase);
+                scheduleExit(node);
+                if (phase === "entering") schedule(node.content);
+
+                return;
+            }
+            case "codeBlock": {
+                walkingVisitor.codeBlock(node, phase);
+                scheduleExit(node);
+
+                return;
+            }
+            case "htmlBlock": {
+                walkingVisitor.htmlBlock(node, phase);
+                scheduleExit(node);
+
+                return;
+            }
+            case "formulaBlock": {
+                walkingVisitor.formulaBlock(node, phase);
+                scheduleExit(node);
+
+                return;
+            }
+            case "table": {
+                walkingVisitor.table(node, phase);
+                scheduleExit(node);
+                if (phase === "entering") {
+                    schedule(node.foot);
+                    schedule(node.content);
+                    schedule(node.head);
+                    if (node.caption) schedule([node.caption]);
+                }
+
+                return;
+            }
+            case "tableCaption": {
+                walkingVisitor.tableCaption(node, phase);
+                scheduleExit(node);
+                if (phase === "entering") schedule(node.content);
+
+                return;
+            }
+            case "tableRow": {
+                walkingVisitor.tableRow(node, phase);
+                scheduleExit(node);
+                if (phase === "entering") schedule(node.cells);
+
+                return;
+            }
+            case "tableCell": {
+                walkingVisitor.tableCell(node, phase);
+                scheduleExit(node);
+                if (phase === "entering") schedule(node.content);
+
+                return;
+            }
+            case "directiveBlock": {
+                walkingVisitor.directiveBlock(node, phase);
+                scheduleExit(node);
+                if (phase === "entering") {
+                    schedule(node.content);
+                    if (node.label !== null) actions.push({ kind: "markup", node: node.label, phase: "entering" });
+                }
+
+                return;
+            }
+            case "directiveLabel": {
+                walkingVisitor.directiveLabel(node, phase);
+                scheduleExit(node);
+                if (phase === "entering") schedule(node.content);
+
+                return;
+            }
+            case "text": {
+                walkingVisitor.text(node, phase);
+                scheduleExit(node);
+
+                return;
+            }
+            case "softBreak": {
+                walkingVisitor.softBreak(node, phase);
+                scheduleExit(node);
+
+                return;
+            }
+            case "lineBreak": {
+                walkingVisitor.lineBreak(node, phase);
+                scheduleExit(node);
+
+                return;
+            }
+            case "code": {
+                walkingVisitor.code(node, phase);
+                scheduleExit(node);
+
+                return;
+            }
+            case "html": {
+                walkingVisitor.html(node, phase);
+                scheduleExit(node);
+
+                return;
+            }
+            case "crossLink": {
+                walkingVisitor.crossLink(node, phase);
+                scheduleExit(node);
+
+                return;
+            }
+            case "crossEmbedded": {
+                walkingVisitor.crossEmbedded(node, phase);
+                scheduleExit(node);
+
+                return;
+            }
+            case "comment": {
+                walkingVisitor.comment(node, phase);
+                scheduleExit(node);
+
+                return;
+            }
+            case "formula": {
+                walkingVisitor.formula(node, phase);
+                scheduleExit(node);
+
+                return;
+            }
+            case "emphasis": {
+                walkingVisitor.emphasis(node, phase);
+                scheduleExit(node);
+                if (phase === "entering") schedule(node.content);
+
+                return;
+            }
+            case "strong": {
+                walkingVisitor.strong(node, phase);
+                scheduleExit(node);
+                if (phase === "entering") schedule(node.content);
+
+                return;
+            }
+            case "strikethrough": {
+                walkingVisitor.strikethrough(node, phase);
+                scheduleExit(node);
+                if (phase === "entering") schedule(node.content);
+
+                return;
+            }
+            case "mark": {
+                walkingVisitor.mark(node, phase);
+                scheduleExit(node);
+                if (phase === "entering") schedule(node.content);
+
+                return;
+            }
+            case "insertion": {
+                walkingVisitor.insertion(node, phase);
+                scheduleExit(node);
+                if (phase === "entering") schedule(node.content);
+
+                return;
+            }
+            case "span": {
+                walkingVisitor.span(node, phase);
+                scheduleExit(node);
+                if (phase === "entering") schedule(node.content);
+
+                return;
+            }
+            case "superscript": {
+                walkingVisitor.superscript(node, phase);
+                scheduleExit(node);
+                if (phase === "entering") schedule(node.content);
+
+                return;
+            }
+            case "definitionList": {
+                walkingVisitor.definitionList(node, phase);
+                scheduleExit(node);
+                if (phase === "entering") schedule(node.definitions);
+
+                return;
+            }
+            case "definition": {
+                walkingVisitor.definition(node, phase);
+                scheduleExit(node);
+                if (phase === "entering") {
+                    for (let index = node.content.length - 1; index >= 0; --index) schedule(node.content[index]!);
+                    schedule(node.term);
+                }
+
+                return;
+            }
+            case "subscript": {
+                walkingVisitor.subscript(node, phase);
+                scheduleExit(node);
+                if (phase === "entering") schedule(node.content);
+
+                return;
+            }
+            case "link": {
+                walkingVisitor.link(node, phase);
+                scheduleExit(node);
+                if (phase === "entering") schedule(node.content);
+
+                return;
+            }
+            case "embedded": {
+                walkingVisitor.embedded(node, phase);
+                scheduleExit(node);
+                if (phase === "entering") schedule(node.content);
+
+                return;
+            }
+            case "directive": {
+                walkingVisitor.directive(node, phase);
+                scheduleExit(node);
+                if (phase === "entering" && node.label !== null) {
+                    actions.push({ kind: "markup", node: node.label, phase: "entering" });
+                }
+
+                return;
+            }
+            case "cite": {
+                walkingVisitor.cite(node, phase);
+                scheduleExit(node);
+                if (phase === "entering") scheduleCitations(node.citations);
+
+                return;
+            }
         }
+        node satisfies never;
+        throw new Error(`unreachable markup ${String(node)}`);
     };
 
     while (actions.length > 0) {
         const action = actions.pop()!;
         phase = action.phase;
-        if (action.kind === "markup") visit(action.node, driver);
-        else if (action.kind === "citation") visitCitation(action.value);
-        else if (action.kind === "footnote") visitFootnote(action.value);
-        else visitSpecimen(action.value);
+        if (action.kind === "markup") markup(action.node);
+        else if (action.kind === "citation") citation(action.value);
+        else if (action.kind === "footnote") footnote(action.value);
+        else specimen(action.value);
     }
 }

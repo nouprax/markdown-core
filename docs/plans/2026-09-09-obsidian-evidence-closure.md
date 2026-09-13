@@ -23,22 +23,22 @@ which all four public surfaces consume; no second case list drives execution.
 | Normative module | C fixture files | Shared canonical cases |
 | --- | --- | --- |
 | [Properties](../specs/dialect/properties.md) | `dialect-properties.txt` | `properties`, `properties-empty`, `properties-forms`, `properties-lists`, `properties-boundaries` |
-| [Cross links](../specs/dialect/cross-links.md) | `dialect-cross-links.txt` | `cross-links`, `destinations`, `media-dimensions` |
+| [Cross links](../specs/dialect/cross-links.md) | `dialect-cross-links.txt` | `cross-links`, `destinations`, `embedded-dimensions` |
 | [Marks](../specs/dialect/marks.md) | `dialect-marks.txt` | `marks` |
 | [Comments](../specs/dialect/comments.md) | `dialect-comments.txt` | `comments` |
 | [Footnotes](../specs/dialect/footnotes.md) | `dialect-footnotes.txt` | `inline-footnotes`, `references` |
 | [Task lists](../specs/dialect/task-lists.md) | `dialect-task-lists.txt` | `task-markers` |
 | [Block identifiers](../specs/dialect/block-identifiers.md) | `dialect-block-identifiers.txt` | `block-identifiers` |
 | [Callouts](../specs/dialect/callouts.md) | `dialect-callouts.txt` | `callouts` |
-| [Links and images](../specs/dialect/links-and-images.md) | `dialect-links-and-images.txt` | `references`, `media-dimensions` |
-| [Tables](../specs/dialect/tables.md) | `dialect-tables.txt`; cross-link and media fixtures own their escaped-cell compositions | `structure`, `cross-links`, `media-dimensions` |
+| [Links and images](../specs/dialect/links-and-images.md) | `dialect-links-and-images.txt` | `references`, `embedded-dimensions` |
+| [Tables](../specs/dialect/tables.md) | `dialect-tables.txt`; cross-link and media fixtures own their escaped-cell compositions | `structure`, `cross-links`, `embedded-dimensions` |
 | [Formulas](../specs/dialect/formulas.md) | `elements-formula-github.txt`, `elements-formula-latex.txt`, `elements-formula-conflicts.txt` | `formulas` |
 | [Base language](../specs/dialect/base.md) | `spec.txt`, `regression.txt` | `blocks`, `inlines`, `scopes`, `completeness` |
 
 The new `obsidian-integration` canonical case composes Properties, HTML tokens
 and live content between tags, comments and raw cross labels, overlapping mark
 delimiters, failed cross-link fallback, callout titles, anchored task items,
-resolved Media dimensions, escaped table pipes, generic CodeBlock opacity, and
+resolved Embedded dimensions, escaped table pipes, generic CodeBlock opacity, and
 inline/block formulas. Its source positions and public ownership edges are
 reviewed in the shared golden. Existing module fixtures remain unchanged.
 
@@ -75,7 +75,7 @@ descriptor and the core handlers:
 | Formulas | Shared opaque-close and delimiter operations own inline bodies. The documented block/sole-formula projection runs on the existing iterative postorder walker; it is not an OFM repair path. |
 | Directives | Label boundaries are recognized once; deferred label content is parsed through the shared inline-field queue. Attributes use the shared attribute scanner. |
 | Autolinks | URL/www recognition protects the owned run; inherited email finalization visits Text through the common tree walker, excluding existing link content. |
-| Links, Media and footnotes | Shared bracket handling resolves tails, constructs occurrence-owned values, and registers footnotes before document finalization. It uses the existing reference map and field queue. |
+| Links, Embedded and footnotes | Shared bracket handling resolves tails, constructs occurrence-owned values, and registers footnotes before document finalization. It uses the existing reference map and field queue. |
 
 No obsolete OFM-specific skip table, alternate parser, or repair callback remains
 to delete. The shared character tables, formula projection and inherited email

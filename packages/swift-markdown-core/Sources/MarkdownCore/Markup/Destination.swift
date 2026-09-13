@@ -1,6 +1,6 @@
 import MarkdownCoreC
 
-/// The target of a ``Link`` or ``Media``: a tagged value, not a node, so it
+/// The target of a ``Link`` or ``Embedded``: a tagged value, not a node, so it
 /// has no scope and no children, and a branch's fields exist only in that
 /// branch.
 public enum Destination: Sendable, Hashable {
@@ -56,9 +56,9 @@ extension Destination {
         markdown_core_node_destination(node, &destination)
         switch destination.kind {
         case MARKDOWN_CORE_DESTINATION_CROSS:
-            self = .cross(path: destination.path.requiredString, anchor: destination.anchor.string)
+            self = .cross(path: destination.path.required, anchor: destination.anchor.string)
         default:
-            self = .url(destination.url.requiredString)
+            self = .url(destination.url.required)
         }
     }
 }

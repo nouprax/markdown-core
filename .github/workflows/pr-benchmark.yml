@@ -20,9 +20,16 @@ env:
     CXX: clang++
 
 jobs:
+    changes:
+        uses: ./.github/workflows/changes.yml
+        permissions:
+            actions: read
+            contents: read
+
     publish-baseline:
+        needs: changes
         name: Publish - C benchmark baseline
-        if: ${{ github.event_name == 'push' }}
+        if: ${{ github.event_name == 'push' && needs.changes.outputs.required == 'true' }}
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -58,8 +65,9 @@ jobs:
                   retention-days: 30
 
     measure-head:
+        needs: changes
         name: Measure - C parser at PR head
-        if: ${{ github.event_name == 'pull_request' }}
+        if: ${{ github.event_name == 'pull_request' && needs.changes.outputs.required == 'true' }}
         runs-on: ubuntu-latest
         steps:
             - name: Check out the PR head

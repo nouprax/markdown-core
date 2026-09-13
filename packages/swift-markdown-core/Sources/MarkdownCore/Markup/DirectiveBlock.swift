@@ -5,28 +5,39 @@ import MarkdownCoreC
 /// Nameless containers use `::: {.class}` or `::: class` and have a nil name.
 /// All container forms share the same closing-fence and block-content rules.
 public struct DirectiveBlock: Markup {
+    struct Fields: Sendable {
+        let scope: Scope
+        let anchor: String?
+        let attributes: Attributes
+        let name: String?
+        let label: Int?
+        let content: [Int]
+    }
+
+    @Stored var fields: Fields
+
     /// Where it is, opening fence through closing fence. See ``Scope``.
-    public let scope: Scope
+    public var scope: Scope { fields.scope }
     /// The explicit anchor, absent when none was attached.
-    public let anchor: String?
+    public var anchor: String? { fields.anchor }
     /// Ordered classes and records, including duplicates.
-    public let attributes: Attributes
+    public var attributes: Attributes { fields.attributes }
     /// The directive's name without colons, or nil for a nameless container.
-    public let name: String?
+    public var name: String? { fields.name }
     /// The bracketed label, or `nil` when the source wrote none.
-    public let label: DirectiveLabel?
+    public var label: DirectiveLabel? { fields.label.map { $fields.value(at: $0, as: DirectiveLabel.self) } }
     /// The block content the fence encloses.
-    public let content: [any Markup]
+    public var content: MarkupCollection<any Markup> { $fields.collection(fields.content) }
 
     /// Dispatches to the visitor's `DirectiveBlock` case.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 }
 
-extension DirectiveBlock {
-    init(from node: OpaquePointer, label: DirectiveLabel?, content: [any Markup]) {
+extension DirectiveBlock.Fields {
+    init(from node: OpaquePointer, label: Int?, content: [Int]) {
         let values = DirectiveValues(from: node)
         self.init(
-            scope: Self.scope(from: node),
+            scope: Scope(from: markdown_core_node_scope(node)),
             anchor: markdown_core_node_anchor(node).string,
             attributes: Attributes(from: node),
             name: values.name,

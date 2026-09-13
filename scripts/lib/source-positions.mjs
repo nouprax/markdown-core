@@ -48,7 +48,7 @@ export const INLINE_KINDS = new Set([
     "Strong",
     "Strikethrough",
     "Link",
-    "Media",
+    "Embedded",
     "Directive",
     "Cite",
     "CrossLink",

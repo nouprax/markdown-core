@@ -25,8 +25,8 @@
             "status": "projection",
             "reason": "The table syntax is implemented. The normative relative field stores each source interior width divided by their sum. Pandoc stores widths including separators against its default page width. Both original values remain compared; this is a documented semantic width difference, not a missing producer or an AST-only equivalence.",
             "inputDigest": "31017a429fd3f7d01127eed33c83565196bf0250ebf8abd659361caa8e193fee",
-            "oracleDigest": "1687b61fcaa74d36ba293b760d1df461072284b5089415202d3009b4e2574df7",
-            "coreDigest": "e20fb4f41486587ade9d3fcfd067972adde744b473f9457ef838b4c1155a11ab"
+            "oracleDigest": "3384260a4c3bcf7f52c053e0465818204d94d25370a0789124b3ce893d79e990",
+            "coreDigest": "2a4108c17374bd66898dd4fa510dce311311a194e606da8881fe65c0f69a5775"
         },
         {
             "id": "grid-table-block-cells",
@@ -34,8 +34,8 @@
             "status": "projection",
             "reason": "The table syntax is implemented. The normative relative field stores each source interior width divided by their sum. Pandoc stores widths including separators against its default page width. Both original values remain compared; this is a documented semantic width difference, not a missing producer or an AST-only equivalence.",
             "inputDigest": "e3f2adfd6c2b97d1fce4b953d128724261d28dec1a7c1103f26235a255b9476f",
-            "oracleDigest": "b804e0099c44aea4f6eaf497a200ccdc750feff0ebef41b1a556242c6fdc0b71",
-            "coreDigest": "5d47921e44cdc0fc7ce980278c03cdf2d7c384728d064dae247dc448e3fd729b"
+            "oracleDigest": "14847ca290a00b31b87b6957a93e0e04641a27c3b36b799c4f7570caf81d8a1e",
+            "coreDigest": "07519f22d0d656bf24f108840328da3aa7ff6eb70d15a77e84e9d3093ddfbe1c"
         },
         {
             "id": "grid-table-row-and-column-spans",
@@ -43,8 +43,8 @@
             "status": "projection",
             "reason": "The table syntax is implemented. The normative relative field stores each source interior width divided by their sum. Pandoc stores widths including separators against its default page width. Both original values remain compared; this is a documented semantic width difference, not a missing producer or an AST-only equivalence.",
             "inputDigest": "206bef115bc4526effee567d071147b6786467c2ad1a80e052325d5794497eea",
-            "oracleDigest": "ba4f169109672fa6a5cb01ce4c0067b655afb4f94c5fb61556396a720c3c23ed",
-            "coreDigest": "ddfdf60b1960868bdabfa7cc4b76aff61db30736e3205e3925b4b8ac84e0b32d"
+            "oracleDigest": "d898a2d3b9f064c28daf28c63b3b2a1c8971cbb8b67362b311416f3b4dc6530b",
+            "coreDigest": "bf7641d1ae31c7a551ea048f1ce277c1e9d3cbd701792b4fb7e8f10beddc56e5"
         },
         {
             "id": "example-lists-and-reference",

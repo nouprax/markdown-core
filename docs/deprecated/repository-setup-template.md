@@ -1,63 +1,71 @@
-# 跨平台仓库 Setup 模板
+# Cross-platform Repository Setup Template
 
-> 适用范围：同一仓库维护一个核心实现及多个平台 binding/package，需要统一 PR quality
-> gate、default-branch CI、无密钥 release dry run，以及由受保护 SemVer tag 驱动的协调发布。
+> Scope: repositories that maintain one core implementation and multiple platform bindings/packages,
+> with unified PR quality gates, default-branch CI, a release dry run without credentials, and
+> coordinated releases driven by protected SemVer tags.
 >
-> 本文只定义仓库控制面和交付合同，不依赖产品名称、源码内容、语言组合、包坐标或 registry。
-> 文中的 `<...>` 必须在目标仓库中替换；`scripts/repo` 是目标仓库需要实现的唯一 adapter。
+> This document defines only repository control-plane and delivery contracts. It does not depend on
+> product names, source contents, language combinations, package coordinates, or registries.
+> Replace every `<...>` in the target repository; `scripts/repo` is the sole adapter it must implement.
 
-## 1. 模板目标
+## 1. Template Goals
 
-迁移完成后，目标仓库应满足以下结果：
+After migration, the target repository should meet these goals:
 
-1. 所有 binding 都消费同一 commit 中的 core，不允许跨版本拼装。
-2. correctness、跨端 conformance、consumer 和 package-content 验证彼此独立且全部阻塞 PR。
-3. ruleset 只依赖两个稳定汇总 check：`Required gates` 与 `CodeQL gate`。
-4. push、pull request 和 merge queue 使用独立 concurrency lane；push 不抢占 PR required check。
-5. benchmark、coverage、binary size 和 PR metrics 只提供观测，不进入 required checks。
-6. release dry run 不读取 environment、repository secret 或长期 signing key。
-7. 正式发布只由不可变 `vX.Y.Z` tag 触发，并在 tag snapshot 上重新运行完整 CI。
-8. artifact 先构建、审计并经过 staged consumer，再获得发布权限；发布 job 使用最小权限。
-9. 所有生态 package 和 GitHub Release 来自相同 tag 和版本；各自发布的字节不从历史 CI run
-   拼装。
-10. GitHub 控制面可由本文的 bootstrap 脚本重复、幂等地配置。
+1. Every binding consumes the core from the same commit; combining versions is prohibited.
+2. Correctness, cross-platform conformance, consumer, and package-content verification remain
+   independent, and all block PRs.
+3. Rulesets depend on only two stable aggregate checks: `Required gates` and `CodeQL gate`.
+4. Push, pull request, and merge queue events use separate concurrency lanes; pushes do not preempt
+   required PR checks.
+5. Benchmarks, coverage, binary size, and PR metrics provide observations only, without becoming
+   required checks.
+6. Release dry runs do not read environments, repository secrets, or long-lived signing keys.
+7. Production releases are triggered only by immutable `vX.Y.Z` tags and rerun full CI on the tag snapshot.
+8. Artifacts are built, audited, and tested by staged consumers before publishing permissions are
+   granted; publishing jobs use minimum permissions.
+9. All ecosystem packages and the GitHub Release come from the same tag and version. Published bytes
+   are not assembled from historical CI runs.
+10. The bootstrap script in this document can configure the GitHub control plane repeatedly and
+    idempotently.
 
-本模板抽象自当前仓库的以下已运行结构：
+This template derives from the following structures already operating in this repository:
 
 - [CI workflow](../.github/workflows/ci.yml)
 - [CodeQL workflow](../.github/workflows/codeql.yml)
-- [release dry run](../.github/workflows/release-dry-run.yml)
-- [tag release](../.github/workflows/release.yml)
-- [PR metrics producer](../.github/workflows/pr-metrics.yml) 与
+- [Release dry run](../.github/workflows/release-dry-run.yml)
+- [Tag release](../.github/workflows/release.yml)
+- [PR metrics producer](../.github/workflows/pr-metrics.yml) and
   [privileged commenter](../.github/workflows/pr-metrics-comment.yml)
-- [default-branch ruleset](../.github/rulesets/main.json)、
-  [release-tag ruleset](../.github/rulesets/release-tags.json) 与
+- [Default-branch ruleset](../.github/rulesets/main.json),
+  [release-tag ruleset](../.github/rulesets/release-tags.json), and
   [release environment policy](../.github/environments/release.json)
 
-这些文件是设计证据，不是可原样复制的通用模板；其中的语言版本、runner、包坐标、actor ID、
-artifact 路径和发布顺序都属于当前仓库 adapter。
+These files are design evidence, not generic templates to copy verbatim. Their language versions,
+runners, package coordinates, actor IDs, artifact paths, and publishing order belong to this
+repository's adapter.
 
-## 2. 不变量、adapter 与扩展项
+## 2. Invariants, Adapter, and Extensions
 
-### 2.1 必须保持的不变量
+### 2.1 Required Invariants
 
-| 不变量 | 原因 |
+| Invariant | Reason |
 | --- | --- |
-| 单一 commit、单一版本、协调发布 | 防止 core 与 binding 产生不可验证的组合 |
-| 同一份 canonical fixtures/spec 驱动所有 binding conformance | 防止各平台测试各自证明自己 |
-| 每个平台都有真实 consumer | 单元测试不能证明 package metadata、link、loader 或 exports 可用 |
-| required check 使用稳定聚合名 | matrix、runner 和 binding 增减不应要求修改 ruleset |
-| 聚合 job 使用 `if: always()` 并显式要求全部依赖为 `success` | cancelled、skipped 和 failure 必须 fail closed |
-| PR/push/merge queue 分开 concurrency | push runner teardown 不得取消或饿死 PR check |
-| dry run 与正式 release 使用相同 staging/audit adapter | 避免“测试了一套，发布了另一套” |
-| release 从 tag snapshot 自证，不查询旧 check-run | 避免发布正确性依赖可变的历史运行时序 |
-| build/stage job 无 publish 权限 | 被构建脚本入侵时仍不能直接发布 |
-| release environment 只允许 SemVer tag | 手工 branch workflow 不得获得 release secrets |
+| One commit, one version, coordinated releases | Prevent unverifiable core/binding combinations |
+| The same canonical fixtures/spec drive conformance for all bindings | Prevent each platform's tests from proving only their own behavior |
+| Every platform has a real consumer | Unit tests cannot establish that package metadata, linking, loaders, or exports work |
+| Required checks have stable aggregate names | Changes to matrices, runners, or bindings should not require ruleset changes |
+| Aggregate jobs use `if: always()` and explicitly require every dependency to be `success` | Cancellation, skipping, and failure must fail closed |
+| Separate concurrency for PR/push/merge queue | Push runner teardown must not cancel or starve PR checks |
+| Dry runs and production releases use the same staging/audit adapter | Prevent testing one pipeline and publishing through another |
+| Releases verify the tag snapshot directly without querying old check runs | Avoid depending on mutable historical run timing for release correctness |
+| Build/stage jobs have no publishing permissions | Compromised build scripts still cannot publish directly |
+| The release environment accepts only SemVer tags | Manually triggered branch workflows must not obtain release secrets |
 
-### 2.2 目标仓库必须实现的 adapter
+### 2.2 Adapter Required in the Target Repository
 
-所有 workflow 只调用根级 `scripts/repo`。它可以转发给 Make、CMake、SwiftPM、Gradle、
-pnpm、Cargo、Bazel 或其他原生命令，但 workflow 不应复制业务逻辑。
+All workflows call only the root-level `scripts/repo`. It may delegate to Make, CMake, SwiftPM,
+Gradle, pnpm, Cargo, Bazel, or other native commands, but workflows should not duplicate business logic.
 
 ```text
 scripts/repo doctor --check <capability...>
@@ -75,53 +83,55 @@ scripts/repo release publish <channel> <artifact-path>
 scripts/repo release checksums <release-dir>
 ```
 
-Adapter 的通用合同：
+General adapter contract:
 
-- 所有命令必须在 repo root 可执行，并使用非交互模式。
-- `--check`、test、conformance、consumer、audit 和 stage 成功返回 `0`，失败返回非零。
-- 正常 CI、PR 与 dry run 不得读取 publish credential。
-- stage 只写指定 output/build 目录，不修改 tracked files。
-- stage 产物必须可离线交给 consumer；consumer 不得回退到 workspace 源码。
-- `release check-version --tag` 必须接受且只接受 `v<exact VERSION>`。
-- 版本检查必须覆盖根版本、全部 package manifest、consumer fixture、release notes 和 artifact
-  metadata；任一漂移都失败。
-- `release sign --ephemeral` 只能生成一次性 key，完成后销毁；它用于证明签名和 bundle 结构，
-  不能证明正式 key 的身份。
-- publish 必须消费已经 stage、verify 和 consumer-tested 的字节，不得在 publish job 重新 build。
-- 每个 adapter 命令应能在本地运行；GitHub Actions 只是调度器，不是唯一实现。
+- All commands run noninteractively from the repository root.
+- `--check`, test, conformance, consumer, audit, and stage commands return `0` on success and nonzero on failure.
+- Normal CI, PRs, and dry runs must not read publishing credentials.
+- Staging writes only to the specified output/build directory and does not modify tracked files.
+- Staged artifacts must be consumable offline; consumers must not fall back to workspace sources.
+- `release check-version --tag` must accept only `v<exact VERSION>`.
+- Version checks cover the root version, every package manifest, consumer fixtures, release notes, and
+  artifact metadata. Any drift fails the check.
+- `release sign --ephemeral` may generate only a disposable key, destroyed afterward. It proves the
+  signing mechanics and bundle structure, not the identity of the production key.
+- Publishing consumes bytes that have already been staged, verified, and consumer-tested. Publishing
+  jobs must not rebuild them.
+- Every adapter command should run locally. GitHub Actions is the scheduler, not the sole implementation.
 
-### 2.3 可按仓库裁剪的扩展项
+### 2.3 Optional Extensions
 
-可以删减不存在的平台、registry 或 sanitizer，但不能删减仍被声明支持的平台。典型扩展项包括：
+Platforms, registries, and sanitizers that do not apply may be omitted, but declared platform support
+must not be removed from verification. Typical extensions include:
 
-- ASan、UBSan、TSan、fuzz、ABI/API compatibility。
-- iOS Simulator、Android Emulator、Windows、Linux、macOS deployment target matrix。
-- npm、Maven Central、PyPI、crates.io、NuGet、GitHub Packages。
-- source archive、binary archive、XCFramework、WASM、JNI/native payload。
-- benchmark、coverage、binary size 和性能回归 comment。
+- ASan, UBSan, TSan, fuzzing, and ABI/API compatibility.
+- iOS Simulator, Android Emulator, Windows, Linux, and macOS deployment target matrices.
+- npm, Maven Central, PyPI, crates.io, NuGet, and GitHub Packages.
+- Source archives, binary archives, XCFrameworks, WASM, and JNI/native payloads.
+- Benchmarks, coverage, binary size, and performance regression comments.
 
-## 3. 推荐仓库形态
+## 3. Recommended Repository Layout
 
 ```text
 .
 ├── .github/
 │   ├── environments/
-│   │   ├── release.json                 # 可审计 recipe，不包含 secret value
+│   │   ├── release.json                 # Auditable recipe; no secret values
 │   │   └── release-tag-policy.json
 │   ├── rulesets/
 │   │   ├── main.json
 │   │   └── release-tags.json
 │   └── workflows/
 │       ├── ci.yml                       # reusable + PR/push/merge_group
-│       ├── codeql.yml                   # 独立安全 gate
-│       ├── pr-metrics.yml               # untrusted producer，可选
-│       ├── pr-metrics-comment.yml       # privileged workflow_run consumer，可选
-│       ├── benchmark.yml                # schedule/manual，可选
-│       ├── release-dry-run.yml           # PR/manual，无 secret
+│       ├── codeql.yml                   # Independent security gate
+│       ├── pr-metrics.yml               # Untrusted producer; optional
+│       ├── pr-metrics-comment.yml       # Privileged workflow_run consumer; optional
+│       ├── benchmark.yml                # Scheduled/manual; optional
+│       ├── release-dry-run.yml           # PR/manual; no secrets
 │       └── release.yml                   # protected tag only
 ├── docs/
-│   ├── releasing.md                     # 人员、密钥轮换、recovery runbook
-│   └── toolchains.md                    # 精确工具链与 runner matrix
+│   ├── releasing.md                     # People, key rotation, recovery runbook
+│   └── toolchains.md                    # Exact toolchains and runner matrix
 ├── packages/
 │   ├── core/
 │   ├── <binding-a>/
@@ -129,60 +139,63 @@ Adapter 的通用合同：
 │   └── <binding-c>/
 ├── specs/                               # canonical public contract
 ├── scripts/
-│   ├── repo                             # workflow 唯一 adapter
-│   ├── audit-ci-policy                  # 检查本文不变量
-│   └── <内部实现脚本>
+│   ├── repo                             # Sole workflow adapter
+│   ├── audit-ci-policy                  # Checks the invariants in this document
+│   └── <internal-implementation-scripts>
 ├── tests/
-│   └── consumers/                       # 按实际发布方式消费 staged artifact
-├── VERSION                              # 单一 canonical SemVer，推荐
-└── <根级 package/build manifests>
+│   └── consumers/                       # Consumes staged artifacts as published
+├── VERSION                              # Single canonical SemVer; recommended
+└── <root-package/build-manifests>
 ```
 
-若生态要求 manifest 位于根目录，例如 SwiftPM tag package，则保留根 manifest；目录形式不是
-目标，不变量和命令合同才是目标。
+If an ecosystem requires a root manifest, such as a SwiftPM tag package, retain it there. Directory
+layout is not the goal; invariants and command contracts are.
 
-## 4. 跨平台 binding 验证模型
+## 4. Cross-platform Binding Verification Model
 
-### 4.1 Binding 清单
+### 4.1 Binding Inventory
 
-迁移前填写此表，未填写的 target 不得声称受支持：
+Complete this table before migration. Targets not listed must not be claimed as supported:
 
 | Binding | Host/build target | Correctness | Conformance | Consumer | Release artifact |
 | --- | --- | --- | --- | --- | --- |
-| `<core>` | `<linux/macos/windows>` | 必须 | canonical source | install/link/run | `<archive/package>` |
-| `<binding-a>` | `<targets>` | 必须 | shared fixtures | clean external project | `<registry/source>` |
-| `<binding-b>` | `<targets>` | 必须 | shared fixtures | clean external project | `<registry/binary>` |
-| `<binding-c>` | `<targets>` | 必须 | shared fixtures | pack/install/import | `<registry/binary>` |
+| `<core>` | `<linux/macos/windows>` | Required | canonical source | install/link/run | `<archive/package>` |
+| `<binding-a>` | `<targets>` | Required | shared fixtures | clean external project | `<registry/source>` |
+| `<binding-b>` | `<targets>` | Required | shared fixtures | clean external project | `<registry/binary>` |
+| `<binding-c>` | `<targets>` | Required | shared fixtures | pack/install/import | `<registry/binary>` |
 
-### 4.2 四种证据不得合并
+### 4.2 Keep Four Kinds of Evidence Separate
 
-1. **Correctness**：实现自身行为、错误路径、边界和回归。
-2. **Conformance**：所有 binding 对同一输入、选项、schema 和 expected output 产生相同语义。
-3. **Consumer**：从 staged artifact 安装/解析依赖，完成 build、link/load/import 和最小运行。
-4. **Package audit**：检查 allowlist/denylist、metadata、license、checksums、签名和禁止泄露的文件。
+1. **Correctness**: implementation behavior, error paths, boundaries, and regressions.
+2. **Conformance**: every binding produces the same semantics for the same input, options, schema,
+   and expected output.
+3. **Consumer**: install/resolve dependencies from staged artifacts, build, link/load/import, and run
+   a minimal example.
+4. **Package audit**: inspect allowlists/denylists, metadata, licenses, checksums, signatures, and files
+   that must not leak into packages.
 
-`consumer` 不得通过 workspace dependency、composite build、源码相对路径、未发布 target 或
-开发机全局缓存绕过 staged artifact。应在临时目录、独立 dependency cache 或显式本地 registry
-中运行。
+A `consumer` must not bypass staged artifacts through workspace dependencies, composite builds,
+source-relative paths, unpublished targets, or a developer machine's global cache. Run it in a
+temporary directory, an isolated dependency cache, or an explicit local registry.
 
-### 4.3 Canonical conformance
+### 4.3 Canonical Conformance
 
-共享 conformance 必须至少固定：
+Shared conformance must fix at least:
 
-- schema/version；
-- input bytes 与编码；
-- parse/config options；
-- 节点或数据结构的顺序、nullability、默认值和错误语义；
-- deterministic serialization/dump；
-- Unicode、换行、locale 和 platform path 规范化；
-- 每个字段的 non-default、empty、null 和边界 fixture。
+- Schema/version.
+- Input bytes and encoding.
+- Parse/config options.
+- Node or data-structure order, nullability, defaults, and error semantics.
+- Deterministic serialization/dumps.
+- Unicode, newline, locale, and platform-path normalization.
+- Non-default, empty, null, and boundary fixtures for every field.
 
-有意改变公共行为时，同一 reviewed commit 必须同时修改 schema、core、全部 binding、fixtures、
-goldens 和 consumer；不得提供静默吞掉 drift 的 normalization。
+Intentional public behavior changes must update the schema, core, every binding, fixtures, goldens,
+and consumers in the same reviewed commit. Do not add normalization that silently hides drift.
 
-## 5. PR quality gate
+## 5. PR Quality Gates
 
-### 5.1 `ci.yml` 触发器与并发
+### 5.1 `ci.yml` Triggers and Concurrency
 
 ```yaml
 name: CI
@@ -203,27 +216,28 @@ concurrency:
   cancel-in-progress: true
 ```
 
-不要按 SHA 跨事件去重。相同 SHA 的 push 与 pull request 是不同控制面；一个被取消或长时间
-teardown 的 push runner 不能阻止 required PR run 启动。
+Do not deduplicate across events by SHA. A push and a pull request with the same SHA belong to
+separate control planes. A canceled push runner or one with slow teardown must not prevent the
+required PR run from starting.
 
-### 5.2 Blocking job 分层
+### 5.2 Blocking Job Layers
 
-建议将 job 分为：
+Recommended job layers:
 
-| 层 | 必须包含 |
+| Layer | Required contents |
 | --- | --- |
-| Hygiene | frozen dependency install、format check、lint、contract audit、repo cleanliness |
-| Core | 主要 host/compiler/build-mode matrix、correctness、conformance |
-| Binding | 每个声明平台的 correctness 与 conformance |
-| Deployment | 最低/最高 deployment target、ABI/loader/packaging target |
-| Consumer | 每个发行生态的 staged/installed consumer |
-| Package audit | 实际 pack/archive/publication 内容与 metadata |
-| Runtime safety | 与项目风险匹配的 sanitizer、race、emulator 或 browser runtime |
+| Hygiene | Frozen dependency installation, formatting checks, lint, contract audits, repository cleanliness |
+| Core | Main host/compiler/build-mode matrix, correctness, conformance |
+| Binding | Correctness and conformance for every declared platform |
+| Deployment | Minimum/maximum deployment targets, ABI/loader/packaging targets |
+| Consumer | Staged/installed consumers for every distribution ecosystem |
+| Package audit | Actual packed/archive/publication contents and metadata |
+| Runtime safety | Sanitizer, race, emulator, or browser runtime checks appropriate to the project's risks |
 
-matrix 使用 `fail-fast: false`，让一次 CI 提供完整故障面。runner 和 toolchain 必须在
-`docs/toolchains.md` 固定；升级工具链与修改产品行为应尽量分离。
+Use `fail-fast: false` in matrices so one CI run reveals the full failure surface. Pin runners and
+toolchains in `docs/toolchains.md`; separate toolchain upgrades from product behavior changes where possible.
 
-### 5.3 唯一稳定聚合 check
+### 5.3 The Single Stable Aggregate Check
 
 ```yaml
   required-gates:
@@ -254,17 +268,19 @@ matrix 使用 `fail-fast: false`，让一次 CI 提供完整故障面。runner �
           done
 ```
 
-规则：
+Rules:
 
-- 所有 blocking job 都必须出现在 `needs` 和显式结果检查中。
-- 不使用 `contains(needs.*.result, 'failure')` 之类会漏掉 skipped/cancelled 的宽松表达式。
-- push 汇总名必须是 `Development branch gates`，不能产生 ruleset 所需的 `Required gates`。
-- ruleset 不直接引用 matrix 展开后的 job 名。
+- Every blocking job appears in both `needs` and the explicit result checks.
+- Do not use permissive expressions such as `contains(needs.*.result, 'failure')` that miss skipped or
+  canceled jobs.
+- The push aggregate must be named `Development branch gates`; it must not produce the ruleset's
+  required `Required gates` context.
+- Rulesets do not reference expanded matrix job names directly.
 
 ### 5.4 CodeQL
 
-CodeQL 独立运行在 `main` PR、`main` push、merge queue 和 schedule。为每种实际产品语言选择
-正确的 build mode，并用同样的 fail-closed 聚合：
+CodeQL runs independently on `main` PRs, `main` pushes, merge queues, and schedules. Choose the correct
+build mode for every product language and use the same fail-closed aggregation:
 
 ```yaml
   codeql-gate:
@@ -280,81 +296,89 @@ CodeQL 独立运行在 `main` PR、`main` push、merge queue 和 schedule。为�
         run: test "$RESULT" = success
 ```
 
-只有 CodeQL analyze job 获得 `security-events: write`。如果仓库或 GitHub plan 不支持某语言，
-必须在启用 active ruleset 前解决，不能把 required `CodeQL gate` 留成永远不会出现的 context。
+Only CodeQL analysis jobs receive `security-events: write`. If the repository or GitHub plan does not
+support a language, resolve that before activating the ruleset. Do not leave the required
+`CodeQL gate` as a context that can never appear.
 
-### 5.5 Default-branch ruleset
+### 5.5 Default-branch Ruleset
 
-`main quality gates` 只要求：
+`main quality gates` requires only:
 
 - `Required gates`
 - `CodeQL gate`
 
-并启用：
+Also enable:
 
-- 禁止删除 default branch；
-- 禁止 non-fast-forward；
-- 所有变更必须通过 PR；
-- strict required status checks，即 PR 必须基于最新 default branch；
-- 可按团队政策增加 approvals、CODEOWNERS、last-push approval 和 thread resolution。
+- No default-branch deletion.
+- No non-fast-forward updates.
+- PRs for every change.
+- Strict required status checks: PRs must be based on the latest default branch.
+- Approvals, CODEOWNERS, last-push approval, and thread resolution as required by team policy.
 
-不要把 benchmark、metrics、coverage、release dry run 或易变化的 matrix job 名加入 ruleset。
+Do not add benchmarks, metrics, coverage, release dry runs, or unstable matrix job names to the ruleset.
 
-## 6. Main CI 与非阻塞观测
+## 6. Main CI and Nonblocking Observations
 
-同一 `ci.yml` 同时服务 PR、merge queue、所有开发 branch push、default-branch push和 release 的
-`workflow_call`。这样本地命令、PR、main 和 tag 不会形成四套互相漂移的测试定义。
+The same `ci.yml` serves PRs, merge queues, all development-branch pushes, default-branch pushes, and
+release `workflow_call` events. This prevents local commands, PRs, main, and tags from developing four
+independently drifting test definitions.
 
-Main CI 的职责是提供 default branch 健康状态和可追溯证据；正式 release 不查询或复用该 run。
+Main CI establishes default-branch health and traceable evidence. Production releases do not query or
+reuse that run.
 
-建议把以下任务放在独立 scheduled/manual workflow：
+Place the following in separate scheduled/manual workflows:
 
-- benchmark、长时间 fuzz；
-- coverage trend、binary size；
-- dependency freshness；
-- 跨版本兼容扫描；
-- 不稳定或成本很高但尚未声明为 release support 的平台。
+- Benchmarks and long-running fuzzing.
+- Coverage trends and binary size.
+- Dependency freshness.
+- Cross-version compatibility scans.
+- Unstable or expensive platforms that are not yet declared as supported for releases.
 
-### 6.1 Fork-safe PR metrics
+### 6.1 Fork-safe PR Metrics
 
-需要在 PR 写 comment 时，必须拆成两个 workflow：
+PR comments require two separate workflows:
 
-1. `pull_request` producer：`contents: read`，运行不可信 PR 代码，只上传小型 JSON artifact。
-2. `workflow_run` consumer：可以 `pull-requests: write`，**不 checkout、不执行 PR 代码**，只把
-   artifact 当数据处理。
+1. A `pull_request` producer with `contents: read` runs untrusted PR code and uploads only a small
+   JSON artifact.
+2. A `workflow_run` consumer may have `pull-requests: write`, but **does not check out or execute PR
+   code**. It handles artifacts strictly as data.
 
-Privileged consumer 下载前必须校验 artifact name、数量、单文件大小、总大小和 expiry；解析后
-还要校验 schema、PR 关联、head SHA、允许的平台/metric 枚举与数值范围。comment 使用隐藏 marker
-更新同一条记录，不重复刷屏。任何 artifact 缺失或非法只产生 notice/warning，不能阻塞 PR。
+Before downloading, the privileged consumer validates artifact names, count, individual and total
+size, and expiry. After parsing, it also validates the schema, PR association, head SHA, allowed
+platform/metric enums, and numeric ranges. A hidden marker identifies one comment to update instead
+of repeatedly posting. Missing or invalid artifacts produce only notices/warnings and cannot block PRs.
 
-## 7. Release dry run
+## 7. Release Dry Run
 
-`release-dry-run.yml` 在 PR 和手动触发，顶层只授予 `contents: read`，不得声明 `environment`。
+`release-dry-run.yml` runs on PRs and manual triggers. Its top level grants only `contents: read`, and
+it must not declare an `environment`.
 
-建议顺序：
+Recommended order:
 
-1. 校验 coordinated version、manifest 和 tag namespace，但不要求当前已存在 tag。
-2. 显式证明预期 release secret 环境变量为空。
-3. 各 runner 独立 stage 真实 release artifact。
-4. 上传 artifact；聚合 job 只下载这些 artifact，不从 workspace 偷取已构建输出。
-5. 需要签名的生态使用 disposable key 完成 detached signature、checksum 和 bundle audit。
-6. 所有 consumer 从 staged artifact 运行。
-7. `Release dry-run gate` 使用 `if: always()`，要求每个 stage/aggregate job 为 `success`。
+1. Validate the coordinated version, manifests, and tag namespace without requiring a tag to exist yet.
+2. Explicitly prove that expected release-secret environment variables are empty.
+3. Stage real release artifacts independently on each runner.
+4. Upload artifacts. The aggregate job downloads only those artifacts, without taking existing build
+   outputs from the workspace.
+5. For ecosystems requiring signatures, use disposable keys for detached signatures, checksums, and
+   bundle audits.
+6. Run every consumer against staged artifacts.
+7. `Release dry-run gate` uses `if: always()` and requires every stage/aggregate job to be `success`.
 
-Dry run 可以证明 artifact graph、签名机械流程、consumer 和内容审计，但不能证明：
+A dry run proves the artifact graph, signing mechanics, consumers, and content audits, but cannot prove:
 
-- 正式 registry credential 有效；
-- protected environment reviewer 流程有效；
-- npm/PyPI 等 trusted publisher 配置正确；
-- 正式 PGP 身份或 public key 可检索；
-- package name/namespace 的外部 ownership 已完成。
+- Production registry credentials are valid.
+- Protected-environment reviewer workflows work.
+- Trusted publishers for npm/PyPI or other registries are configured correctly.
+- The production PGP identity or public key is retrievable.
+- External ownership of package names/namespaces is established.
 
-## 8. Tag-based release
+## 8. Tag-based Releases
 
-### 8.1 Tag、版本与 snapshot
+### 8.1 Tags, Versions, and Snapshots
 
-workflow trigger 可以使用 GitHub glob `v*.*.*`，但 glob 不是 SemVer regex，因此 validate job
-必须再次执行严格检查：
+The workflow trigger may use GitHub's `v*.*.*` glob, but a glob is not a SemVer regex. The validation
+job must therefore perform strict checks again:
 
 ```text
 tag == "v" + VERSION
@@ -365,8 +389,8 @@ docs/releases/VERSION.md exists and is non-empty
 tag commit is reachable from origin/<default-branch>
 ```
 
-Tag 必须禁止 update 和 deletion。失败的 tag 是不可变 release attempt；修复任何字节都使用新
-SemVer，不能移动或复用原 tag。
+Tags must prohibit updates and deletion. A failed tag remains an immutable release attempt. Any
+byte-level fix requires a new SemVer; the original tag must not be moved or reused.
 
 ### 8.2 Release DAG
 
@@ -396,56 +420,60 @@ reusable full CI on tag snapshot
        checksums + provenance + GitHub Release
 ```
 
-关键规则：
+Key rules:
 
-- `quality` 通过 `uses: ./.github/workflows/ci.yml` 在 tag checkout 上运行完整 suite。
-- CodeQL 保持 PR/default-branch gate；release 不等待或查询历史 CodeQL run。
-- stage job 只有 `contents: read`，不进入 release environment。
-- 第一个需要 signing/publish credential 的 job 才进入 `release` environment。
-- npm/PyPI 等支持的生态优先使用 OIDC trusted publishing，不保存长期 write token。
-- 只有 npm publish job 获得 `id-token: write`；只有 GitHub Release job 获得
-  `contents: write` 和 `attestations: write`。
-- release job 下载已 stage artifact，不能重新 build。
-- 先验证所有不可逆操作的输入，再开始第一个 publish。
-- 多 registry 无法原子提交，因此必须文档化顺序、partial failure 和 recovery。
+- `quality` runs the full suite on the tag checkout using `uses: ./.github/workflows/ci.yml`.
+- CodeQL remains a PR/default-branch gate. Releases do not wait for or query historical CodeQL runs.
+- Staging jobs have only `contents: read` and do not enter the release environment.
+- The first job that needs signing/publishing credentials enters the `release` environment.
+- Prefer OIDC trusted publishing for supported ecosystems such as npm/PyPI, without storing
+  long-lived write tokens.
+- Only the npm publishing job receives `id-token: write`; only the GitHub Release job receives
+  `contents: write` and `attestations: write`.
+- Release jobs download staged artifacts and cannot rebuild them.
+- Validate the inputs for every irreversible operation before the first publish operation.
+- Multiple registries cannot commit atomically, so document ordering, partial failures, and recovery.
 
-### 8.3 推荐发布顺序
+### 8.3 Recommended Publishing Order
 
-1. Build/stage/audit 全部 artifacts。
-2. 聚合跨 host 产物，签名、生成生态要求的 checksum，运行 staged consumers。
-3. 对支持“上传后验证、稍后发布”的 registry 先上传并等待 `VALIDATED`。
-4. 发布 OIDC registry package。
-5. 发布已验证但尚未公开的 deployment，并等待 `PUBLISHED`。
-6. 生成总 release checksum 与 provenance attestation。
-7. 使用人工维护的 release notes 创建 GitHub Release。
+1. Build/stage/audit every artifact.
+2. Aggregate outputs across hosts, sign them, generate ecosystem-required checksums, and run staged consumers.
+3. For registries supporting upload-and-validate before publication, upload first and wait for `VALIDATED`.
+4. Publish packages to OIDC registries.
+5. Publish validated deployments that are not yet public, and wait for `PUBLISHED`.
+6. Generate aggregate release checksums and provenance attestations.
+7. Create the GitHub Release with manually maintained release notes.
 
-不要自动生成面向用户的 release notes，也不要把内部 phase、acceptance log 或 CI transcript
-写入 release notes。
+Do not automatically generate user-facing release notes or include internal phases, acceptance logs,
+or CI transcripts in them.
 
 ### 8.4 Recovery
 
-若发布可能在部分 registry 成功后失败，workflow 可以提供手动 recovery，但必须同时要求：
+If a release can fail after succeeding in some registries, the workflow may provide manual recovery,
+but it must require all of the following:
 
-- 已存在且受保护的 `release-tag`；
-- 在剩余操作可证明幂等时，优先 rerun 原始 tag workflow 的 failed jobs；只有原 run 无法安全
-  恢复时才使用 dispatch；
-- 使用 dispatch 时，workflow 的触发 ref 本身必须是 `refs/tags/<release-tag>`，并在 job 中显式
-  校验；仅在 step 中 checkout tag 不会改变 environment policy 所看到的触发 ref；
-- 产生已验证 artifact 的 `source-run-id`；
-- source run 的 workflow、event、head SHA、tag 和 artifact allowlist 全部匹配；overall conclusion
-  必须符合已记录的失败阶段，所有 artifact-producing jobs 必须成功；
-- artifact 未过期，name/count/size 和 digest 满足策略；
-- recovery checkout 使用 tag，而不是 default branch；
-- 已发布 registry 通过查询确认相同 version/digest 后跳过，不得 republish；
-- 所有继续发布动作仍经过 `release` environment reviewer。
+- An existing, protected `release-tag`.
+- Prefer rerunning failed jobs in the original tag workflow when the remaining operations are provably
+  idempotent. Use dispatch only when the original run cannot be recovered safely.
+- With dispatch, the workflow's triggering ref itself must be `refs/tags/<release-tag>`, explicitly
+  checked in the job. Checking out a tag in a step does not change the triggering ref seen by the
+  environment policy.
+- The `source-run-id` that produced the verified artifacts.
+- Matching source-run workflow, event, head SHA, tag, and artifact allowlist. Its overall conclusion
+  must match the documented failure stage, and every artifact-producing job must have succeeded.
+- Unexpired artifacts whose names, count, sizes, and digests satisfy policy.
+- Recovery checks out the tag, not the default branch.
+- Already published registries are skipped after querying and confirming the same version/digest.
+  They must not be republished.
+- Every resumed publishing action still passes through the `release` environment reviewer.
 
-任何 artifact 字节变化、签名变化或版本 metadata 变化都不是 recovery，必须发布新 SemVer。
+Changes to artifact bytes, signatures, or version metadata are not recovery and require a new SemVer.
 
-## 9. 权限与 secret 边界
+## 9. Permissions and Secret Boundaries
 
-### 9.1 默认权限
+### 9.1 Default Permissions
 
-仓库 Actions 默认设置为：
+Set repository Actions defaults to:
 
 ```json
 {
@@ -454,9 +482,9 @@ reusable full CI on tag snapshot
 }
 ```
 
-每个 job 只提升必需权限：
+Each job elevates only the permissions it needs:
 
-| Job | 最小权限 |
+| Job | Minimum permissions |
 | --- | --- |
 | build/test/stage | `contents: read` |
 | CodeQL analyze | `contents: read`, `actions: read`, `security-events: write` |
@@ -464,33 +492,38 @@ reusable full CI on tag snapshot
 | OIDC registry publish | `contents: read`, `id-token: write` |
 | GitHub Release/attestation | `contents: write`, `id-token: write`, `attestations: write` |
 
-### 9.2 Secret 分类
+### 9.2 Secret Categories
 
-| 类型 | 存放位置 | 规则 |
+| Type | Location | Rules |
 | --- | --- | --- |
-| OIDC trusted publisher | registry 外部配置 | GitHub 不保存 write token |
-| Registry token | `release` environment secret | 最小 scope、有过期时间、记录 owner 与轮换日 |
-| PGP/private signing key | `release` environment secret | passphrase、离线备份、revocation certificate |
-| Public key/certificate | 公开 key server/仓库文档 | 发布前验证可检索 |
-| GitHub Release token | workflow `GITHUB_TOKEN` | 不创建长期 PAT |
+| OIDC trusted publisher | External registry configuration | GitHub stores no write token |
+| Registry token | `release` environment secret | Minimum scope, expiration, documented owner and rotation date |
+| PGP/private signing key | `release` environment secret | Passphrase, offline backup, revocation certificate |
+| Public key/certificate | Public key server/repository documentation | Verify retrievability before publishing |
+| GitHub Release token | Workflow `GITHUB_TOKEN` | Do not create a long-lived PAT |
 
-禁止把 secret value 写入 recipe JSON、repo variable、Gradle properties、`.npmrc`、日志、artifact
-或文档。Fork PR、普通 CI、dry run 和 stage job 永远不能获得 release environment secret。
+Never put secret values in recipe JSON, repository variables, Gradle properties, `.npmrc`, logs,
+artifacts, or documentation. Fork PRs, normal CI, dry runs, and staging jobs must never receive release
+environment secrets.
 
-## 10. 一键 GitHub 控制面 bootstrap
+## 10. One-command GitHub Control-plane Bootstrap
 
-### 10.1 前置条件
+### 10.1 Prerequisites
 
-- 目标 repo 已创建，workflow 和 adapter 已通过至少一次手动/PR 验证。
-- 执行者拥有 repo admin 权限，已安装并登录 `gh`，本机有 `jq`。
-- 已确定 release reviewer；若只有一个 release operator，不能同时开启 self-review prevention。
-- 下方脚本只配置 GitHub 控制面，不上传 secret，不配置外部 registry ownership/trusted publisher。
-- 对 organization ruleset、team reviewer 或企业策略有额外要求时，应在脚本中替换 `User` actor。
+- The target repository exists, and its workflows and adapter have passed at least one manual/PR run.
+- The operator has repository admin access, an installed and authenticated `gh`, and local `jq`.
+- A release reviewer has been chosen. If there is only one release operator, self-review prevention
+  cannot also be enabled.
+- The script below configures only the GitHub control plane. It does not upload secrets or configure
+  external registry ownership/trusted publishers.
+- Replace the `User` actor in the script when organization rulesets, team reviewers, or enterprise
+  policies require it.
 
-### 10.2 Bootstrap 脚本
+### 10.2 Bootstrap Script
 
-将下列脚本保存为目标仓库的 `scripts/bootstrap-repository.sh`，review 后执行。它会幂等更新同名
-ruleset，创建/更新 `release` environment，并确保存在唯一 release tag deployment policy。
+Save this script as `scripts/bootstrap-repository.sh` in the target repository and review it before
+running it. It idempotently updates rulesets with matching names, creates/updates the `release`
+environment, and ensures there is exactly one release-tag deployment policy.
 
 ```bash
 #!/usr/bin/env bash
@@ -649,7 +682,7 @@ upsert_ruleset "$TAG_RULESET_NAME" "$tmp/release-tag-ruleset.json"
 echo "Repository control plane reconciled with enforcement=$RULESET_ENFORCEMENT"
 ```
 
-首次迁移使用 evaluate 模式：
+Use evaluate mode for the initial migration:
 
 ```sh
 GH_REPO=<owner/repo> \
@@ -658,7 +691,8 @@ RULESET_ENFORCEMENT=evaluate \
 scripts/bootstrap-repository.sh
 ```
 
-完成第 12 节的远端验证后，用同一命令把两个 ruleset 切换到 active 目标状态：
+After completing the remote verification in Section 12, use the same command to switch both rulesets
+to the target active state:
 
 ```sh
 GH_REPO=<owner/repo> \
@@ -667,28 +701,29 @@ RULESET_ENFORCEMENT=active \
 scripts/bootstrap-repository.sh
 ```
 
-如果 GitHub plan 不提供 evaluate 模式，首次迁移使用 `RULESET_ENFORCEMENT=disabled`，完成验证后
-直接切换为 active。如果只有 reviewer 本人可以发布，`PREVENT_SELF_REVIEW=true` 会造成死锁；
-有独立 reviewer/team 后再开启。脚本不会删除未知 deployment policies，而是在发现额外策略时
-fail closed。
+If the GitHub plan does not offer evaluate mode, use `RULESET_ENFORCEMENT=disabled` initially and
+switch directly to active after verification. If only the reviewer can publish,
+`PREVENT_SELF_REVIEW=true` creates a deadlock; enable it only after adding an independent reviewer/team.
+The script does not delete unknown deployment policies; it fails closed when extra policies exist.
 
-## 11. 外部 registry 一次性设置
+## 11. One-time External Registry Setup
 
-这一部分不能由 GitHub repo bootstrap 安全代办。
+GitHub repository bootstrap cannot safely perform this part on your behalf.
 
-### 11.1 每个 registry 都要记录
+### 11.1 Record for Every Registry
 
-- namespace/package owner 与证明方式；
-- 发布 workflow 精确文件名、repo、environment；
-- credential/trusted publisher 的权限与过期时间；
-- signing key UID、fingerprint、expiry、public key URL；
-- offline backup 与 revocation certificate owner；
-- token/key 轮换和泄漏处置 runbook；
-- 首次 bootstrap publish 是否需要人工 2FA，以及完成后如何撤销临时 session/token。
+- Namespace/package owner and proof of ownership.
+- Exact publishing workflow filename, repository, and environment.
+- Credential/trusted-publisher permissions and expiration.
+- Signing-key UID, fingerprint, expiry, and public-key URL.
+- Owners of the offline backup and revocation certificate.
+- Token/key rotation and compromise-response runbooks.
+- Whether the initial bootstrap publish requires manual 2FA, and how to revoke the temporary
+  session/token afterward.
 
-### 11.2 Environment secrets
+### 11.2 Environment Secrets
 
-只为不支持 OIDC 的 registry 设置 secret，且使用目标仓库自己的名称：
+Set secrets only for registries without OIDC support, using names chosen for the target repository:
 
 ```sh
 gh secret set <REGISTRY_USERNAME> --repo <owner/repo> --env release
@@ -698,48 +733,49 @@ gh secret set <SIGNING_PASSWORD> --repo <owner/repo> --env release
 gh secret list --repo <owner/repo> --env release
 ```
 
-不要在 shell command line 直接展开 secret；让 `gh secret set` 从交互输入或 stdin 读取。文档只记录
-secret name，不记录 value。
+Do not expand secrets directly on the shell command line. Let `gh secret set` read interactive input
+or stdin. Documentation records secret names, never values.
 
-## 12. 迁移与验收 Runbook
+## 12. Migration and Acceptance Runbook
 
-### 12.1 本地迁移
+### 12.1 Local Migration
 
-- [ ] 填写 binding/target/artifact 清单。
-- [ ] 实现 `scripts/repo` 全部适用命令。
-- [ ] 固定 toolchain、wrapper、lockfile 和 runner。
-- [ ] 从 clean checkout 运行 format、lint、correctness、conformance 和 consumer。
-- [ ] 从 staged artifact 运行 consumer，证明没有 workspace fallback。
-- [ ] 运行 package audit，检查 licenses、metadata、allowlist/denylist。
-- [ ] 运行 release dry run，证明 release secrets 为空且 disposable signing 成功。
-- [ ] 审计 workflow permissions、trigger、concurrency、stable gate names 和 release DAG。
+- [ ] Complete the binding/target/artifact inventory.
+- [ ] Implement every applicable `scripts/repo` command.
+- [ ] Pin toolchains, wrappers, lockfiles, and runners.
+- [ ] Run formatting, lint, correctness, conformance, and consumers from a clean checkout.
+- [ ] Run consumers against staged artifacts and prove there is no workspace fallback.
+- [ ] Run package audits for licenses, metadata, and allowlists/denylists.
+- [ ] Run a release dry run, proving release secrets are empty and disposable signing succeeds.
+- [ ] Audit workflow permissions, triggers, concurrency, stable gate names, and the release DAG.
 
-### 12.2 远端 evaluate 验证
+### 12.2 Remote Verification in Evaluate Mode
 
-- [ ] 以 `RULESET_ENFORCEMENT=evaluate` 执行 bootstrap。
-- [ ] 创建测试 PR，确认只有 PR run 产生 `Required gates`。
-- [ ] 同时 push 同一 branch，确认其汇总名为 `Development branch gates`。
-- [ ] 确认 `Required gates` 覆盖每个 blocking job，并在 job cancelled/skipped 时失败。
-- [ ] 确认全部 CodeQL language 成功后才产生绿色 `CodeQL gate`。
-- [ ] 若使用 merge queue，实际触发一次 `merge_group` 并确认两个 required contexts。
-- [ ] 确认 metrics/benchmark/dry-run 不在 ruleset 中。
-- [ ] 确认 fork PR 无 write token、environment secret 或 privileged code execution。
-- [ ] 运行远端 release dry run，下载并独立检查 artifact。
+- [ ] Run bootstrap with `RULESET_ENFORCEMENT=evaluate`.
+- [ ] Create a test PR and confirm only the PR run produces `Required gates`.
+- [ ] Push to the same branch concurrently and confirm its aggregate is `Development branch gates`.
+- [ ] Confirm `Required gates` covers every blocking job and fails when a job is canceled/skipped.
+- [ ] Confirm `CodeQL gate` turns green only after every CodeQL language succeeds.
+- [ ] If using a merge queue, trigger a real `merge_group` and confirm both required contexts.
+- [ ] Confirm metrics/benchmarks/dry runs are absent from the ruleset.
+- [ ] Confirm fork PRs have no write token, environment secrets, or privileged code execution.
+- [ ] Run the remote release dry run, then download and independently inspect its artifacts.
 
-### 12.3 Active 与 release 演练
+### 12.3 Activation and Release Rehearsal
 
-- [ ] 用 `RULESET_ENFORCEMENT=active` 再执行 bootstrap。
-- [ ] 证明绕过 PR、缺失 required check、过期 branch 和 force-push 都被阻止。
-- [ ] 证明非 SemVer tag 即使匹配宽松 glob，也会在 validate job 失败。
-- [ ] 证明 release environment 只有一个 `v*.*.*` tag policy。
-- [ ] 证明普通 branch/manual workflow 不能获得 release environment。
-- [ ] 使用未发布测试版本或 disposable registry 完成一次端到端演练。
-- [ ] 验证 registry provenance、PGP signature、SHA-256/SHA-512 和 GitHub attestation。
-- [ ] 验证 GitHub Release、各 registry 与 source tag 指向相同 commit/version/digest。
-- [ ] 演练 partial failure recovery；确认 recovery 以受保护 tag 为触发 ref，且不会临时放宽
-      environment 到 default branch、移动 tag、覆盖版本或重建 artifact。
+- [ ] Run bootstrap again with `RULESET_ENFORCEMENT=active`.
+- [ ] Prove PR bypasses, missing required checks, outdated branches, and force pushes are blocked.
+- [ ] Prove non-SemVer tags fail validation even when they match the permissive glob.
+- [ ] Prove the release environment has exactly one `v*.*.*` tag policy.
+- [ ] Prove ordinary branch/manual workflows cannot access the release environment.
+- [ ] Complete an end-to-end rehearsal with an unpublished test version or disposable registry.
+- [ ] Verify registry provenance, PGP signatures, SHA-256/SHA-512, and GitHub attestations.
+- [ ] Verify the GitHub Release, every registry, and source tag refer to the same commit/version/digest.
+- [ ] Rehearse partial-failure recovery. Confirm recovery uses a protected tag as its triggering ref
+      without temporarily allowing the default branch into the environment, moving tags, overwriting
+      versions, or rebuilding artifacts.
 
-### 12.4 Live policy 查询
+### 12.4 Live Policy Queries
 
 ```sh
 gh api repos/<owner>/<repo>/actions/permissions/workflow
@@ -749,228 +785,248 @@ gh api repos/<owner>/<repo>/environments/release/deployment-branch-policies
 gh secret list --repo <owner/repo> --env release
 ```
 
-Checked-in JSON 是 recipe，GitHub live API 才是实际 enforcement。每次 ruleset、reviewer、tag policy、
-workflow permission 或 secret name 变更，都应同步更新 recipe、CI policy audit 与本 runbook。
+Checked-in JSON is a recipe; GitHub's live API reports actual enforcement. Whenever rulesets, reviewers,
+tag policies, workflow permissions, or secret names change, update the recipes, CI policy audit, and
+this runbook together.
 
-## 13. 必须由 CI 自审的策略
+## 13. Policies CI Must Audit
 
-`scripts/repo audit ci` 至少检查：
+`scripts/repo audit ci` checks at least:
 
-- `ci.yml` 同时声明 `workflow_call`、`pull_request`、push、`merge_group`。
-- concurrency 包含 event name 和 PR number/ref，且 `cancel-in-progress: true`。
-- PR/merge queue 的稳定名为 `Required gates`，push 名为 `Development branch gates`。
-- 聚合 job `if: always()` 且覆盖全部 blocking dependencies。
-- `CodeQL gate` 存在且 fail closed。
-- ruleset required contexts 精确等于 `Required gates`、`CodeQL gate`。
-- release dry run 无 environment、无 write permission、无 secret reference。
-- release 只接受 tag push；若保留 recovery dispatch，其 job 与正常 publish DAG 严格隔离。
-- release validate 严格检查 tag/version/notes/default-branch ancestry。
-- release 从本地 reusable CI 运行 tag snapshot，不查询历史 check-runs。
-- build/stage 不在 release environment，publish job 才进入。
-- OIDC、contents write、attestations write 只出现在需要的 job。
-- tag ruleset限制 creation/update/deletion，environment 只接受一个 SemVer tag policy。
-- workflow action 引用使用组织批准的 pinning 策略，并由依赖更新工具维护。
+- `ci.yml` declares `workflow_call`, `pull_request`, push, and `merge_group`.
+- Concurrency includes the event name and PR number/ref, with `cancel-in-progress: true`.
+- PR/merge queue aggregates use `Required gates`; pushes use `Development branch gates`.
+- Aggregate jobs use `if: always()` and cover every blocking dependency.
+- `CodeQL gate` exists and fails closed.
+- Ruleset required contexts are exactly `Required gates` and `CodeQL gate`.
+- Release dry runs have no environment, write permissions, or secret references.
+- Releases accept only tag pushes; if recovery dispatch remains, its jobs are strictly isolated from
+  the normal publishing DAG.
+- Release validation strictly checks tags, versions, notes, and default-branch ancestry.
+- Releases run local reusable CI on the tag snapshot without querying historical check runs.
+- Build/stage jobs stay outside the release environment; publishing jobs enter it.
+- OIDC, contents-write, and attestations-write permissions appear only where needed.
+- Tag rulesets restrict creation/update/deletion, and the environment accepts only one SemVer tag policy.
+- Workflow action references follow organization-approved pinning policy and are maintained by
+  dependency-update tooling.
 
-策略 audit 应验证安全结果和数据流，不应僵化无关的 YAML 排版、job 顺序或当前 Action major。
+Policy audits should verify security outcomes and data flow without freezing irrelevant YAML layout,
+job ordering, or the current Action major version.
 
-## 14. 弯路与设计理由
+## 14. Lessons and Design Rationale
 
-本节记录的是从真实 setup、PR 验证和 release 演练中得到的因果经验。迁移者可以替换具体
-toolchain 和平台，但不应在没有等价证据的情况下删除这些约束。
+This section records causal lessons from real setup, PR verification, and release rehearsals. Teams
+may replace specific toolchains and platforms, but should not remove these constraints without
+equivalent evidence.
 
-后续新增经验时，应记录发生日期/阶段、可观察症状、根因、被否决的表面修复、永久规则和回归
-验证；详细 run/PR 可以留在项目自己的 migration/ADR 文档，本模板只保留可跨仓复用的结论。
-不得在经验记录中复制 token、private key、内部 credential command 或其他 secret。
+New lessons should record the date/phase, observable symptoms, root cause, rejected superficial fixes,
+permanent rule, and regression verification. Detailed runs/PRs may remain in each project's migration
+or ADR documents; this template keeps only conclusions reusable across repositories. Never copy
+tokens, private keys, internal credential commands, or other secrets into these records.
 
-### 14.1 共享语义合同，不强求 binding 外形对称
+### 14.1 Share Semantic Contracts without Forcing Symmetric Binding Shapes
 
-**走过的弯路**：为了让多个 binding 看起来统一，把一个平台的目录、API、构建、异常、内存或
-发布习惯直接复制到其他平台。这样通常能较快通过 workspace 单元测试，却会在 IDE import、
-deployment target、package metadata、native loader、外部 consumer 或 registry publication
-阶段失败。
+**Failed approach**: copying one platform's directories, APIs, builds, exceptions, memory model, or
+publishing conventions to other platforms to make bindings look uniform. Workspace unit tests may
+pass quickly, but IDE imports, deployment targets, package metadata, native loaders, external
+consumers, or registry publication then fail.
 
-**形成的规则**：跨端只统一公共语义、类型含义、nullability、错误分类、fixture 和版本；每个平台
-的公开 API、构建和发布外形必须遵守该生态的最佳实践。
+**Rule**: unify public semantics, type meanings, nullability, error categories, fixtures, and versions.
+Each platform's public API, build, and publishing shape must follow its ecosystem's best practices.
 
-| 平台族 | 应遵守的平台原生实践 | 不能用什么替代 |
+| Platform family | Native practices to follow | Inadequate substitutes |
 | --- | --- | --- |
-| C/C++ | CMake configure/build/install/export、CTest suite、shared/static、compiler/OS matrix、sanitizer、真实 link consumer | 只在源码树内 link 私有 target |
-| Swift/Apple | SwiftPM package/product identity、声明 deployment target、Swift 原生 value/error/concurrency 模型、macOS/iOS Simulator、外部 package consumer | 把 C pointer/lifetime 暴露给用户，或只在 macOS host 跑测试 |
-| Kotlin/KMP | repo-owned Gradle Wrapper、Java toolchain、KMP target publications、Gradle Module Metadata、Android/JVM/Native consumer、IDE model smoke、按 task 延迟 signing/publish 配置 | 只证明 JVM unit test，或让 IDE sync 读取发布 credential |
-| ES/TypeScript/WASM | `npm pack` 后安装、严格 `exports`/types/files、Node 与 browser runtime、WASM loader、ESM 语义、OIDC trusted publishing | workspace link、直接运行源码或只做 TypeScript compile |
+| C/C++ | CMake configure/build/install/export, CTest suites, shared/static builds, compiler/OS matrices, sanitizers, real linking consumers | Linking only private targets inside the source tree |
+| Swift/Apple | SwiftPM package/product identity, declared deployment targets, native Swift value/error/concurrency models, macOS/iOS Simulator, external package consumers | Exposing C pointers/lifetimes to users or testing only on a macOS host |
+| Kotlin/KMP | Repository-owned Gradle Wrapper, Java toolchains, KMP target publications, Gradle Module Metadata, Android/JVM/Native consumers, IDE model smoke tests, task-lazy signing/publishing configuration | Proving only JVM unit tests or reading publishing credentials during IDE sync |
+| ES/TypeScript/WASM | Install after `npm pack`, strict `exports`/types/files, Node and browser runtimes, WASM loaders, ESM semantics, OIDC trusted publishing | Workspace links, running sources directly, or TypeScript compilation alone |
 
-**验证方法**：每个声明支持的平台至少提供一个使用其标准 package manager/build system 的 clean
-consumer；consumer 只能看到 staged/public artifact，不能看到 repo 私有 target 或源码相对路径。
+**Verification**: every declared platform provides at least one clean consumer using its standard
+package manager/build system. Consumers can see only staged/public artifacts, not private repository
+targets or source-relative paths.
 
-### 14.2 SHA 是审计身份，不是调度身份
+### 14.2 SHA Is an Audit Identity, Not a Scheduling Identity
 
-**走过的弯路**：本模板来源仓库实际尝试过用 commit SHA 跨 `push`、`pull_request`、
-`merge_group` 和 tag event 去重，也尝试过让 release 根据 tag SHA 查询历史 PR/main checks。
-结果形成了两类循环：
+**Failed approach**: the source repository for this template tried deduplicating `push`,
+`pull_request`, `merge_group`, and tag events by commit SHA, and having releases query historical
+PR/main checks by tag SHA. This created two cycles:
 
-1. 相同 SHA 的 push run 被取消后仍在 `always()` 汇总或 runner teardown，PR run 因共用
-   concurrency group 无法启动，而 ruleset 又等待 PR required check。
-2. Release 要求 tag SHA 已有某个 branch/PR check，但 tag event 自身不产生该 context；tag 又是
-   启动 release 自证的前提，于是验证依赖一个可能不存在、已过期或属于另一 event 的历史 run。
+1. A canceled push run with the same SHA remained in `always()` aggregation or runner teardown. Its
+   shared concurrency group prevented the PR run from starting while the ruleset waited for the
+   required PR check.
+2. A release required an existing branch/PR check for its tag SHA, but the tag event did not produce
+   that context. The tag was also needed to start release verification, leaving validation dependent
+   on a historical run that might not exist, might have expired, or might belong to another event.
 
-**形成的规则**：
+**Rules**:
 
-- SHA 必须写入 artifact metadata、provenance、attestation 和日志，用于证明“验证了哪些字节”。
-- SHA 不得作为跨 event concurrency key；使用 `event_name + PR number/ref`。
-- PR/merge queue 才拥有 `Required gates`；push 使用不同的 `Development branch gates`。
-- Tag release 从该不可变 tag 直接调用 reusable CI，在当前 snapshot 上重新验证。
-- CodeQL 等 merge-time gate 可以留在 PR/main；release 不通过 SHA 查询或等待其历史 run。
-- Recovery 可以引用 source run，但必须验证 workflow、event、tag、head SHA、conclusion、artifact
-  digest 和 allowlist，而不是“SHA 相同就信任”。
+- Record SHA in artifact metadata, provenance, attestations, and logs to identify the verified bytes.
+- Never use SHA as a cross-event concurrency key; use `event_name + PR number/ref`.
+- Only PRs/merge queues own `Required gates`; pushes use `Development branch gates`.
+- Tag releases invoke reusable CI directly from the immutable tag to reverify the current snapshot.
+- Merge-time gates such as CodeQL may remain on PR/main. Releases do not query or await their
+  historical runs by SHA.
+- Recovery may reference a source run, but must verify its workflow, event, tag, head SHA, conclusion,
+  artifact digests, and allowlist. Matching SHA alone does not establish trust.
 
-**验证方法**：对同一 commit 同时制造 push 与 PR run，主动取消其中一个；PR gate 必须仍能启动并
-独立结束。创建 release candidate 时，隐藏或删除历史 branch check 不应影响 tag snapshot 的完整
-build/test，但 source tag、artifact provenance 仍必须显示精确 SHA。
+**Verification**: trigger push and PR runs for the same commit and deliberately cancel one. The PR
+gate must still start and finish independently. Hiding or deleting historical branch checks when
+creating a release candidate must not affect the tag snapshot's full build/test run, while the source
+tag and artifact provenance must still identify the exact SHA.
 
-### 14.3 Stable gate name 是仓库的控制面 API
+### 14.3 Stable Gate Names Are a Repository Control-plane API
 
-**走过的弯路**：ruleset 直接引用 matrix leaf jobs，或者 push 和 PR 都产生同名 required context。
-增加一个 runner、重命名 binding、matrix fail-fast 或 push cancellation 都可能让合并永久阻塞，
-也可能让错误 event 的绿色 check 被误当成 PR 证据。
+**Failed approach**: rulesets directly referenced matrix leaf jobs, or both push and PR runs produced
+the same required context. Adding runners, renaming bindings, matrix fail-fast behavior, or push
+cancellation could permanently block merging or let a green check from the wrong event serve as PR evidence.
 
-**形成的规则**：ruleset 只认识 `Required gates` 与 `CodeQL gate`。Leaf jobs 可以演进，但聚合 job
-必须 `if: always()`，并要求每一个 blocking dependency 精确为 `success`。稳定 check 名相当于
-workflow 与 GitHub ruleset 之间的 API，改名必须按 breaking control-plane change 处理。
+**Rule**: rulesets know only `Required gates` and `CodeQL gate`. Leaf jobs may evolve, but aggregate
+jobs must use `if: always()` and require every blocking dependency to be exactly `success`. Stable
+check names form an API between workflows and GitHub rulesets; renaming them is a breaking
+control-plane change.
 
-**验证方法**：让一个 leaf job 分别 failure、cancelled 和 skipped，三种情况都必须留下失败的稳定
-gate；新增 matrix entry 后无需修改 live ruleset。
+**Verification**: make a leaf job fail, cancel, and skip. All three cases must leave a failed stable
+gate. Adding a matrix entry must not require changing the live ruleset.
 
-### 14.4 Build 成功不等于 package 可消费
+### 14.4 A Successful Build Does Not Prove a Package Is Consumable
 
-**走过的弯路**：只执行 workspace build/unit tests，默认认为 package、archive 或二进制一定可用。
-这会漏掉 exports、POM/module metadata、source archive、headers、pkg-config/CMake export、native
-payload、loader、license 和错误打包私有文件等问题。
+**Failed approach**: running only workspace builds/unit tests and assuming packages, archives, or
+binaries must work. This misses problems in exports, POM/module metadata, source archives, headers,
+pkg-config/CMake exports, native payloads, loaders, licenses, and accidentally packaged private files.
 
-**形成的规则**：每个生态都要先 stage/pack/publish 到隔离本地 repository，再从 clean consumer
-安装、build/link/load/import 并执行最小公共 API。Package-content audit 与 consumer 是 blocking
-证据，不能由 unit test 替代。
+**Rule**: first stage/pack/publish each ecosystem's artifacts to an isolated local repository. Then
+install them from a clean consumer, build/link/load/import, and execute a minimal public API example.
+Package-content audits and consumers are blocking evidence that unit tests cannot replace.
 
-**验证方法**：临时移除 workspace/composite dependency 和开发缓存；若 consumer 还能从 staged
-artifact 成功运行，并且 package audit 只看到 allowlist 内容，才算通过。
+**Verification**: temporarily remove workspace/composite dependencies and developer caches. The check
+passes only if the consumer still runs successfully from staged artifacts and the package audit finds
+only allowlisted contents.
 
-### 14.5 IDE/model load 也是交付面
+### 14.5 IDE/Model Loading Is Part of Delivery
 
-**走过的弯路**：命令行 compile 绿色就认为 Gradle/KMP、Xcode/SwiftPM 或其他 IDE 工程已正确。
-实际上 eager native build、configuration-time signing、缺失 SDK、preview toolchain warning 或读取
-release secret 都可能只在 clean import/model load 暴露。
+**Failed approach**: treating green command-line compilation as proof that Gradle/KMP, Xcode/SwiftPM,
+or other IDE projects work. Eager native builds, configuration-time signing, missing SDKs, preview
+toolchain warnings, or release-secret reads may surface only during clean imports/model loading.
 
-**形成的规则**：IDE sync/model load 必须无 credential、无已构建 native binary、无 publish task
-执行即可成功。昂贵 packaging、signing 和 upload 只能在显式 execution task 中配置和执行。发布前
-要用支持的稳定 IDE/toolchain 做一次 clean import，并在 CI 保留 headless model smoke。
+**Rule**: IDE sync/model loading must succeed without credentials, prebuilt native binaries, or
+executing publishing tasks. Expensive packaging, signing, and upload operations are configured and
+run only within explicit execution tasks. Before release, perform a clean import in a supported
+stable IDE/toolchain and retain headless model smoke tests in CI.
 
-### 14.6 Dry run 必须逼真，但不能借用正式权限
+### 14.6 Dry Runs Must Be Realistic without Production Permissions
 
-**走过的弯路**：dry run 进入正式 environment、读取真实 secret，或只调用 registry 的
-`--dry-run` 而没有真实 stage、签名、聚合和 consumer。前者扩大 PR 权限面，后者无法证明待发布
-字节。
+**Failed approach**: entering production environments or reading real secrets during a dry run, or
+merely invoking a registry's `--dry-run` without real staging, signing, aggregation, and consumers.
+The former expands PR permissions; the latter cannot prove the bytes to be published.
 
-**形成的规则**：dry run 与 release 共用 staging/audit adapter，使用 disposable signing key，
-完整生成 artifact、checksum、signature 和 consumer evidence，但顶层只有 `contents: read`，没有
-environment 和 secret。Registry ownership、正式 key 身份和 credential 另行演练。
+**Rule**: dry runs and releases share staging/audit adapters. Disposable signing keys produce the full
+artifacts, checksums, signatures, and consumer evidence, but top-level permissions remain
+`contents: read`, with no environments or secrets. Rehearse registry ownership, production key
+identity, and credentials separately.
 
-### 14.7 不可信计算与写权限必须分两段
+### 14.7 Separate Untrusted Computation from Write Permissions
 
-**走过的弯路**：为了给 PR 写 benchmark/size comment，在有 write token 的 workflow 中 checkout
-或执行 PR 代码，或者直接信任 PR 上传的 artifact 内容。
+**Failed approach**: checking out or executing PR code in a workflow with a write token to post
+benchmark/size comments, or directly trusting artifacts uploaded by PRs.
 
-**形成的规则**：只读 `pull_request` producer 执行不可信代码；`workflow_run` consumer 只解析
-经过 name/count/size/schema/SHA/PR association allowlist 校验的数据，不 checkout、不执行任何
-PR 或 artifact 内容。Metrics 永远不进入 required gate。
+**Rule**: a read-only `pull_request` producer executes untrusted code. The `workflow_run` consumer
+only parses data validated against name/count/size/schema/SHA/PR-association allowlists. It does not
+check out or execute PR or artifact contents. Metrics never enter required gates.
 
-### 14.8 Release 失败是不可变历史，不是可覆盖草稿
+### 14.8 Failed Releases Are Immutable History, Not Overwritable Drafts
 
-**走过的弯路**：在部分 registry 成功后重新 build、移动 tag、覆盖相同 version，或让 recovery
-从 default branch 获取新脚本/新字节。另一个实际出现的陷阱是：从 `main` 触发
-`workflow_dispatch`，然后在 step 中 checkout release tag；GitHub environment 仍按 dispatch 的
-触发 ref 判断 policy，不会把 checkout ref 当成 tag。为了让 recovery 通过而临时允许 `main` 进入
-release environment，会扩大 credential 暴露面。这些做法都会使 provenance、checksum、权限边界
-和不同 registry 的内容失去共同身份。
+**Failed approach**: rebuilding after some registries succeeded, moving tags, overwriting the same
+version, or recovering with new scripts/bytes from the default branch. Another observed trap was
+triggering `workflow_dispatch` from `main`, then checking out a release tag in a step. GitHub evaluates
+environment policy against the dispatch ref, not the checkout ref. Temporarily allowing `main` into
+the release environment to unblock recovery expands credential exposure. These approaches break the
+shared identity of provenance, checksums, permission boundaries, and registry contents.
 
-**形成的规则**：失败 tag 保留为不可变 release attempt。Recovery 只复用已验证 artifact；已发布
-registry 先核对 version/digest 后跳过。剩余 jobs 可证明幂等时优先 rerun 原始 tag run；必须
-dispatch 时，用受保护 tag 作为 workflow dispatch ref，并校验
-`github.ref == refs/tags/<release-tag>`。不要临时向 default branch 开放 release environment。任何
-byte、metadata 或签名变化都使用新 SemVer。多 registry 发布顺序和不可逆点必须在首次正式发布前
-演练。
+**Rule**: retain failed tags as immutable release attempts. Recovery reuses verified artifacts only;
+check version/digest before skipping registries that already published. Prefer rerunning the original
+tag run when remaining jobs are provably idempotent. If dispatch is necessary, use a protected tag as
+the dispatch ref and check `github.ref == refs/tags/<release-tag>`. Do not temporarily open the release
+environment to the default branch. Any byte, metadata, or signature change requires a new SemVer.
+Rehearse multi-registry ordering and irreversible steps before the first production release.
 
-### 14.9 策略审计应冻结结果，不应冻结偶然实现
+### 14.9 Policy Audits Should Freeze Outcomes, Not Incidental Implementations
 
-**走过的弯路**：policy audit 对 Action major、YAML 行顺序、job 排版或暂时的 toolchain 名称做硬
-编码。正常依赖升级会被误报，而真正的权限、trigger、data flow 或 gate 漂移反而可能未被发现。
+**Failed approach**: hardcoding Action majors, YAML line order, job layout, or temporary toolchain
+names in policy audits. Routine dependency upgrades produce false alarms while actual permission,
+trigger, data-flow, or gate drift may go unnoticed.
 
-**形成的规则**：audit 检查安全结果：触发器、权限、environment/secret 边界、stable gates、
-fail-closed 聚合、tag snapshot 自证、artifact 流和 live ruleset contexts。Action 引用按组织批准的
-pinning 策略管理，但不把当前 major 当成永恒业务规则。
+**Rule**: audit security outcomes: triggers, permissions, environment/secret boundaries, stable gates,
+fail-closed aggregation, tag-snapshot verification, artifact flow, and live ruleset contexts. Manage
+Action references under organization-approved pinning policy without making the current major an
+eternal business rule.
 
-### 14.10 Ruleset 应最后激活
+### 14.10 Activate Rulesets Last
 
-**走过的弯路**：workflow 尚未在远端产生稳定 context 就启用 active ruleset，或者唯一 release
-operator 同时开启 prevent self-review，导致 default branch 或 release environment 自锁。
+**Failed approach**: enabling active rulesets before workflows produce stable remote contexts, or
+enabling self-review prevention when there is only one release operator, locking the default branch
+or release environment.
 
-**形成的规则**：先合入 workflow，使用 evaluate/disabled 模式跑真实 PR、merge queue 和 dry run，
-再启用 active enforcement。Reviewer、bypass actor 和 self-review policy 必须保证至少存在一条经过
-审查的恢复路径。
+**Rule**: land workflows first, run real PRs, merge queues, and dry runs in evaluate/disabled mode,
+then activate enforcement. Reviewer, bypass-actor, and self-review policies must leave at least one
+reviewed recovery path.
 
-### 14.11 快速反模式索引
+### 14.11 Quick Antipattern Index
 
-| 错误 | 后果 | 修复 |
+| Mistake | Consequence | Fix |
 | --- | --- | --- |
-| 为了跨端一致而复制另一平台的构建/API 外形 | package、IDE 或 runtime 行为不符合生态 | 共享语义 spec，binding follow 平台最佳实践 |
-| ruleset 直接要求 matrix job 名 | 平台增减即破坏 merge | 只要求稳定聚合 gate |
-| push 和 PR 共用 SHA concurrency | push teardown 可饿死 PR | 按 event + PR/ref 分 lane |
-| 把 SHA 当成历史 check-run 的授权凭据 | 形成缺失 context 或验证循环 | tag snapshot 重新运行 reusable CI |
-| 聚合只检查 `failure` | skipped/cancelled 可能放行 | 要求每个结果精确为 `success` |
-| release 查询 main/PR check-run | 发布依赖历史时序和可变状态 | tag snapshot 重新调用 reusable CI |
-| dry run 使用正式 environment | PR 可能接触 secret 或等待 reviewer | dry run 只读且 disposable signing |
-| publish job 重新 build | 发布字节未被 consumer 验证 | 下载 stage artifact 原样发布 |
-| 只跑 workspace consumer | 无法发现 package/link/loader 问题 | clean temp project 消费 staged artifact |
-| privileged `workflow_run` checkout PR | 不可信代码获得 write token | privileged side 只解析严格校验的数据 |
-| `v*.*.*` 被当成 SemVer regex | 非法 tag 可能触发 workflow | validate job 做 exact parser + `vVERSION` |
-| tag 可移动或复用 | provenance 与 registry 不再可追溯 | ruleset 禁止 update/delete，新字节新版本 |
-| 从 main dispatch 后只在 step checkout tag | tag-only environment 仍看到 main ref | rerun tag run，或以受保护 tag 作为 dispatch ref |
-| active ruleset 先于远端演练 | 新 repo 可能被永久阻塞 | evaluate 验证后再 active |
-| sole reviewer + prevent self-review | release 永远无法批准 | 增加独立 reviewer/team 或暂时关闭 |
+| Copying another platform's build/API shape for cross-platform consistency | Packages, IDEs, or runtime behavior violate ecosystem conventions | Share semantic specs; bindings follow platform best practices |
+| Requiring matrix job names in rulesets | Platform changes break merging | Require stable aggregate gates only |
+| Sharing SHA concurrency between push and PR | Push teardown can starve PRs | Separate lanes by event + PR/ref |
+| Treating SHA as authorization for historical check runs | Missing contexts or validation cycles | Rerun reusable CI on the tag snapshot |
+| Checking only `failure` in aggregates | Skipped/canceled jobs may pass | Require every result to be exactly `success` |
+| Querying main/PR check runs during release | Releases depend on historical timing and mutable state | Invoke reusable CI again on the tag snapshot |
+| Using the production environment for dry runs | PRs may access secrets or wait for reviewers | Read-only dry runs with disposable signing |
+| Rebuilding in publishing jobs | Published bytes lack consumer verification | Download and publish staged artifacts unchanged |
+| Running only workspace consumers | Package/link/loader issues go undetected | Clean temporary projects consume staged artifacts |
+| Checking out PRs in privileged `workflow_run` jobs | Untrusted code obtains write tokens | The privileged side parses only strictly validated data |
+| Treating `v*.*.*` as a SemVer regex | Invalid tags may trigger workflows | Validate with an exact parser plus `vVERSION` |
+| Allowing tags to move or be reused | Provenance and registries lose traceability | Prohibit update/delete through rulesets; new bytes require new versions |
+| Dispatching from main, then checking out a tag in a step | Tag-only environments still see the main ref | Rerun the tag run or dispatch with a protected tag ref |
+| Activating rulesets before remote rehearsal | New repositories can become permanently blocked | Verify in evaluate mode before activating |
+| Sole reviewer + prevent self-review | Releases can never be approved | Add an independent reviewer/team or temporarily disable prevention |
 
 ## 15. Definition of Done
 
-只有同时满足以下条件，repo setup 才完成：
+Repository setup is complete only when all of the following hold:
 
-- 本地 adapter、PR、main、merge queue 和 tag release 调用同一套可复现命令合同。
-- 每个声明支持的 binding/target 都有 correctness、shared conformance 和真实 consumer 证据。
-- `Required gates` 与 `CodeQL gate` 是 active ruleset 的唯一 required contexts。
-- 非阻塞观测无法影响 merge，fork PR 无法跨越 trust boundary。
-- Release dry run 不读取 credential，却完整复现 stage/sign/audit/consumer graph。
-- 正式 release 在不可变 tag snapshot 上自证，并只发布已验证字节。
-- Release environment、tag ruleset、OIDC/secret、signing 和 recovery 均经过实际演练。
-- GitHub、所有 registry、checksums、signatures 和 attestations 可追溯到同一 tag commit。
-- Bootstrap 可重复执行且不会默默删除未知策略；策略漂移由 CI audit 和 live API 验证发现。
+- Local adapters, PRs, main, merge queues, and tag releases use the same reproducible command contracts.
+- Every declared binding/target has correctness, shared-conformance, and real-consumer evidence.
+- `Required gates` and `CodeQL gate` are the only required contexts in the active ruleset.
+- Nonblocking observations cannot affect merging, and fork PRs cannot cross trust boundaries.
+- Release dry runs read no credentials while fully reproducing the stage/sign/audit/consumer graph.
+- Production releases verify immutable tag snapshots and publish only verified bytes.
+- Release environments, tag rulesets, OIDC/secrets, signing, and recovery have all been rehearsed.
+- GitHub, every registry, checksums, signatures, and attestations trace to the same tag commit.
+- Bootstrap is repeatable and never silently deletes unknown policies; CI audits and live API
+  verification detect policy drift.
 
-## 16. 当前仓库到通用模板的映射
+## 16. Mapping This Repository to the Generic Template
 
-迁移时应复制“职责”，不应复制当前项目名或 job 数量：
+Migrate responsibilities rather than copying current project names or job counts:
 
-| 通用职责 | 当前仓库实现 | 迁移规则 |
+| Generic responsibility | Current implementation | Migration rule |
 | --- | --- | --- |
-| 根级 adapter | `package.json` 的 `pnpm` scripts 加 `scripts/*` | 收敛为目标 repo 的 `scripts/repo`，保留原生构建器 |
-| Hygiene | `ci.yml` 的 `hygiene` | 替换 formatter/linter，保留 frozen install 与 policy audits |
-| Package audit | `package-audit` | 对目标生态检查真实 pack/archive/publication 内容 |
-| Core matrix | Linux/macOS/Windows C、shared/static、GCC/Clang | 替换为目标 core 的 host/compiler/linkage 支持矩阵 |
-| Binding matrix | Swift、Kotlin/KMP/Android、ES/WASM | 只保留目标 repo 声明支持的 binding 和 deployment target |
-| Runtime safety | ASan、UBSan、TSan、Android emulator、browser | 按目标语言风险选择，blocking 项必须进入聚合 gate |
-| Stable PR gate | `Required gates` | 名称保持不变，内部 `needs` 随目标 repo 改变 |
-| Push summary | `Development branch gates` | 名称保持与 required context 隔离 |
-| Security gate | 四语言 CodeQL + `CodeQL gate` | matrix 改为目标产品语言，聚合名保持不变 |
-| PR observability | metrics producer + `workflow_run` commenter | 可删除；保留时必须维持不可信代码/写权限隔离 |
-| Dry run | C、Swift source、npm、Maven staged artifacts | 替换 artifact graph，继续禁止 secrets/environment |
-| Formal release | tag CI → stage → sign/audit/consumer → publish | registry 可变，tag snapshot 自证与发布已验证字节不变 |
-| GitHub policy | checked-in environment/ruleset JSON | actor ID、reviewer、repo、tag pattern 必须由 bootstrap 生成 |
+| Root adapter | `pnpm` scripts in `package.json` plus `scripts/*` | Consolidate behind the target repository's `scripts/repo`, retaining native builders |
+| Hygiene | `hygiene` in `ci.yml` | Replace formatters/linters; retain frozen installation and policy audits |
+| Package audit | `package-audit` | Inspect real packed/archive/publication contents for target ecosystems |
+| Core matrix | Linux/macOS/Windows C, shared/static, GCC/Clang | Replace with the target core's host/compiler/linkage support matrix |
+| Binding matrix | Swift, Kotlin/KMP/Android, ES/WASM | Retain only declared bindings and deployment targets |
+| Runtime safety | ASan, UBSan, TSan, Android emulator, browser | Select by target-language risk; blocking checks must enter the aggregate gate |
+| Stable PR gate | `Required gates` | Keep the name; adapt internal `needs` to the target repository |
+| Push summary | `Development branch gates` | Keep its name separate from the required context |
+| Security gate | Four-language CodeQL + `CodeQL gate` | Adapt the language matrix; retain the aggregate name |
+| PR observability | Metrics producer + `workflow_run` commenter | Optional; preserve isolation between untrusted code and write permissions if retained |
+| Dry run | C, Swift source, npm, and Maven staged artifacts | Replace the artifact graph; continue prohibiting secrets/environments |
+| Production release | Tag CI → stage → sign/audit/consumer → publish | Registries may vary; retain tag-snapshot verification and publication of verified bytes |
+| GitHub policy | Checked-in environment/ruleset JSON | Bootstrap must generate actor IDs, reviewers, repository, and tag patterns |
 
-当前仓库 release 的具体 registry 顺序是：聚合并签名 Maven bundle、运行 staged consumers、上传
-Central 并等待验证、通过 npm OIDC 发布、发布已验证的 Central deployment，最后创建带 checksum
-和 attestation 的 GitHub Release。目标仓库可以使用不同 registry，但必须为自己的不可逆操作定义
-同样明确的顺序和 partial-failure recovery。
+This repository's specific registry order is: aggregate and sign Maven bundles, run staged consumers,
+upload to Central and await validation, publish through npm OIDC, publish the validated Central
+deployment, and finally create a GitHub Release with checksums and attestations. Target repositories
+may use different registries, but must define equally explicit ordering and partial-failure recovery
+for their irreversible operations.

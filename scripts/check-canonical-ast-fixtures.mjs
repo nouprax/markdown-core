@@ -66,7 +66,7 @@ const INLINE_CONTENT = new Set([
     "Strong",
     "Strikethrough",
     "Link",
-    "Media"
+    "Embedded"
 ]);
 
 function taskMarkers(tree) {
@@ -164,10 +164,10 @@ const stateValidators = {
     "metadata.list.empty": (tree) => /Metadata scope=.*[a-z]=list\(\[\]\)/.test(tree),
     "metadata.list.populated": (tree) => /Metadata scope=.*[a-z]=list\(\[(?:text|number)\(/.test(tree),
     "document.metadata.null": (tree) => !/Metadata scope=/.test(tree),
-    "media.dimensions.width": (tree) => /Media scope=.* dimensions=\(width=[1-9][0-9]*,height=null\) /.test(tree),
-    "media.dimensions.width-height": (tree) =>
-        /Media scope=.* dimensions=\(width=[1-9][0-9]*,height=[1-9][0-9]*\) /.test(tree),
-    "media.dimensions.null": (tree) => /Media scope=.* dimensions=null /.test(tree),
+    "embedded.dimensions.width": (tree) => /Embedded scope=.* dimensions=\(width=[1-9][0-9]*,height=null\) /.test(tree),
+    "embedded.dimensions.width-height": (tree) =>
+        /Embedded scope=.* dimensions=\(width=[1-9][0-9]*,height=[1-9][0-9]*\) /.test(tree),
+    "embedded.dimensions.null": (tree) => /Embedded scope=.* dimensions=null /.test(tree),
     // The dump visualizes the DirectiveLabel field as a nested Markup node:
     // absent emits no label node, empty has `children=0`, and populated owns
     // inline descendants.
@@ -178,12 +178,12 @@ const stateValidators = {
     "directive.label.empty": (tree) => /DirectiveLabel scope=\S+ anchor=null attributes=\{\} children=0$/m.test(tree),
     "directive.label.populated": (tree) =>
         /DirectiveLabel scope=\S+ anchor=null attributes=\{\} children=[1-9]\d*$/m.test(tree),
-    // M2: a reference occurrence is the `Link` or `Media` it names, and dumps
+    // M2: a reference occurrence is the `Link` or `Embedded` it names, and dumps
     // identically to a direct one apart from scope. The case holds one direct
     // and several reference occurrences of each kind, so every `Link` line and
-    // every `Media` line, scope removed, must be one line.
+    // every `Embedded` line, scope removed, must be one line.
     "reference.resolution.identical": (tree) =>
-        ["Link", "Media"].every((kind) => {
+        ["Link", "Embedded"].every((kind) => {
             const lines = tree
                 .split("\n")
                 .filter((line) => new RegExp(`(?:^|\u2500 )${kind} scope=`).test(line))
@@ -193,8 +193,8 @@ const stateValidators = {
     "link.title.null": (tree) => /^.*Link scope=.* title=null /m.test(tree),
     "link.title.empty": (tree) => /^.*Link scope=.* title="" /m.test(tree),
     "link.title.value": (tree) => /^.*Link scope=.* title=".+" /m.test(tree),
-    "media.title.null": (tree) => /^.*Media scope=.* title=null /m.test(tree),
-    "media.title.value": (tree) => /^.*Media scope=.* title=".+" /m.test(tree),
+    "embedded.title.null": (tree) => /^.*Embedded scope=.* title=null /m.test(tree),
+    "embedded.title.value": (tree) => /^.*Embedded scope=.* title=".+" /m.test(tree),
     "scope.positive": (tree) => / scope=[1-9]\d*:[1-9]\d*\.\./.test(tree),
     /* `scope.zero` was here, and it required the canonical corpus to demonstrate
        a node with NO position -- 0:0..0:0. Its only two witnesses in that corpus

@@ -207,6 +207,18 @@ public final class com/nouprax/markdown/core/Document$Companion {
 	public final fun parse (Ljava/lang/String;)Lcom/nouprax/markdown/core/Document;
 }
 
+public final class com/nouprax/markdown/core/Embedded : com/nouprax/markdown/core/Markup {
+	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
+	public fun dump ()Ljava/lang/String;
+	public fun getAnchor ()Ljava/lang/String;
+	public fun getAttributes ()Lcom/nouprax/markdown/core/Attributes;
+	public final fun getContent ()Ljava/util/List;
+	public final fun getDest ()Lcom/nouprax/markdown/core/Destination;
+	public final fun getDimensions ()Lcom/nouprax/markdown/core/Dimensions;
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+	public final fun getTitle ()Ljava/lang/String;
+}
+
 public final class com/nouprax/markdown/core/Emphasis : com/nouprax/markdown/core/Markup {
 	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
 	public fun dump ()Ljava/lang/String;
@@ -214,6 +226,16 @@ public final class com/nouprax/markdown/core/Emphasis : com/nouprax/markdown/cor
 	public fun getAttributes ()Lcom/nouprax/markdown/core/Attributes;
 	public final fun getContent ()Ljava/util/List;
 	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+}
+
+public final class com/nouprax/markdown/core/Flow : java/lang/Enum {
+	public static final field CENTER Lcom/nouprax/markdown/core/Flow;
+	public static final field LEFT Lcom/nouprax/markdown/core/Flow;
+	public static final field NONE Lcom/nouprax/markdown/core/Flow;
+	public static final field RIGHT Lcom/nouprax/markdown/core/Flow;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/nouprax/markdown/core/Flow;
+	public static fun values ()[Lcom/nouprax/markdown/core/Flow;
 }
 
 public final class com/nouprax/markdown/core/Footnote {
@@ -228,7 +250,7 @@ public final class com/nouprax/markdown/core/Formula : com/nouprax/markdown/core
 	public fun getAnchor ()Ljava/lang/String;
 	public fun getAttributes ()Lcom/nouprax/markdown/core/Attributes;
 	public final fun getLiteral ()Ljava/lang/String;
-	public final fun getMode ()Lcom/nouprax/markdown/core/PlacementMode;
+	public final fun getMode ()Lcom/nouprax/markdown/core/Placement;
 	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 }
 
@@ -350,18 +372,6 @@ public abstract interface class com/nouprax/markdown/core/Markup {
 
 public final class com/nouprax/markdown/core/Markup$DefaultImpls {
 	public static fun dump (Lcom/nouprax/markdown/core/Markup;)Ljava/lang/String;
-}
-
-public final class com/nouprax/markdown/core/Media : com/nouprax/markdown/core/Markup {
-	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
-	public fun dump ()Ljava/lang/String;
-	public fun getAnchor ()Ljava/lang/String;
-	public fun getAttributes ()Lcom/nouprax/markdown/core/Attributes;
-	public final fun getContent ()Ljava/util/List;
-	public final fun getDest ()Lcom/nouprax/markdown/core/Destination;
-	public final fun getDimensions ()Lcom/nouprax/markdown/core/Dimensions;
-	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
-	public final fun getTitle ()Ljava/lang/String;
 }
 
 public final class com/nouprax/markdown/core/Metadata {
@@ -553,12 +563,12 @@ public final class com/nouprax/markdown/core/ParseException : java/lang/RuntimeE
 	public fun getMessage ()Ljava/lang/String;
 }
 
-public final class com/nouprax/markdown/core/PlacementMode : java/lang/Enum {
-	public static final field EMBEDDED Lcom/nouprax/markdown/core/PlacementMode;
-	public static final field STANDALONE Lcom/nouprax/markdown/core/PlacementMode;
+public final class com/nouprax/markdown/core/Placement : java/lang/Enum {
+	public static final field EMBEDDED Lcom/nouprax/markdown/core/Placement;
+	public static final field STANDALONE Lcom/nouprax/markdown/core/Placement;
 	public static fun getEntries ()Lkotlin/enums/EnumEntries;
-	public static fun valueOf (Ljava/lang/String;)Lcom/nouprax/markdown/core/PlacementMode;
-	public static fun values ()[Lcom/nouprax/markdown/core/PlacementMode;
+	public static fun valueOf (Ljava/lang/String;)Lcom/nouprax/markdown/core/Placement;
+	public static fun values ()[Lcom/nouprax/markdown/core/Placement;
 }
 
 public final class com/nouprax/markdown/core/Position {
@@ -673,16 +683,6 @@ public final class com/nouprax/markdown/core/Table : com/nouprax/markdown/core/M
 	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 }
 
-public final class com/nouprax/markdown/core/TableAlignment : java/lang/Enum {
-	public static final field CENTER Lcom/nouprax/markdown/core/TableAlignment;
-	public static final field LEFT Lcom/nouprax/markdown/core/TableAlignment;
-	public static final field NONE Lcom/nouprax/markdown/core/TableAlignment;
-	public static final field RIGHT Lcom/nouprax/markdown/core/TableAlignment;
-	public static fun getEntries ()Lkotlin/enums/EnumEntries;
-	public static fun valueOf (Ljava/lang/String;)Lcom/nouprax/markdown/core/TableAlignment;
-	public static fun values ()[Lcom/nouprax/markdown/core/TableAlignment;
-}
-
 public final class com/nouprax/markdown/core/TableCaption : com/nouprax/markdown/core/Markup {
 	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
 	public fun dump ()Ljava/lang/String;
@@ -704,7 +704,7 @@ public final class com/nouprax/markdown/core/TableCell : com/nouprax/markdown/co
 }
 
 public final class com/nouprax/markdown/core/TableColumn {
-	public final fun getAlignment ()Lcom/nouprax/markdown/core/TableAlignment;
+	public final fun getFlow ()Lcom/nouprax/markdown/core/Flow;
 	public final fun getRelative ()Ljava/lang/Double;
 }
 
@@ -740,45 +740,45 @@ public final class com/nouprax/markdown/core/TreeDumper {
 }
 
 public abstract interface class com/nouprax/markdown/core/Visitor {
-	public abstract fun visitCallout (Lcom/nouprax/markdown/core/Callout;)Ljava/lang/Object;
-	public abstract fun visitCite (Lcom/nouprax/markdown/core/Cite;)Ljava/lang/Object;
-	public abstract fun visitCode (Lcom/nouprax/markdown/core/Code;)Ljava/lang/Object;
-	public abstract fun visitCodeBlock (Lcom/nouprax/markdown/core/CodeBlock;)Ljava/lang/Object;
-	public abstract fun visitComment (Lcom/nouprax/markdown/core/Comment;)Ljava/lang/Object;
-	public abstract fun visitCrossEmbedded (Lcom/nouprax/markdown/core/CrossEmbedded;)Ljava/lang/Object;
-	public abstract fun visitCrossLink (Lcom/nouprax/markdown/core/CrossLink;)Ljava/lang/Object;
-	public abstract fun visitDefinition (Lcom/nouprax/markdown/core/Definition;)Ljava/lang/Object;
-	public abstract fun visitDefinitionList (Lcom/nouprax/markdown/core/DefinitionList;)Ljava/lang/Object;
-	public abstract fun visitDirective (Lcom/nouprax/markdown/core/Directive;)Ljava/lang/Object;
-	public abstract fun visitDirectiveBlock (Lcom/nouprax/markdown/core/DirectiveBlock;)Ljava/lang/Object;
-	public abstract fun visitDirectiveLabel (Lcom/nouprax/markdown/core/DirectiveLabel;)Ljava/lang/Object;
-	public abstract fun visitDocument (Lcom/nouprax/markdown/core/Document;)Ljava/lang/Object;
-	public abstract fun visitEmphasis (Lcom/nouprax/markdown/core/Emphasis;)Ljava/lang/Object;
-	public abstract fun visitFormula (Lcom/nouprax/markdown/core/Formula;)Ljava/lang/Object;
-	public abstract fun visitFormulaBlock (Lcom/nouprax/markdown/core/FormulaBlock;)Ljava/lang/Object;
-	public abstract fun visitHTML (Lcom/nouprax/markdown/core/HTML;)Ljava/lang/Object;
-	public abstract fun visitHTMLBlock (Lcom/nouprax/markdown/core/HTMLBlock;)Ljava/lang/Object;
-	public abstract fun visitHeading (Lcom/nouprax/markdown/core/Heading;)Ljava/lang/Object;
-	public abstract fun visitInsertion (Lcom/nouprax/markdown/core/Insertion;)Ljava/lang/Object;
-	public abstract fun visitLineBreak (Lcom/nouprax/markdown/core/LineBreak;)Ljava/lang/Object;
-	public abstract fun visitLink (Lcom/nouprax/markdown/core/Link;)Ljava/lang/Object;
-	public abstract fun visitList (Lcom/nouprax/markdown/core/List;)Ljava/lang/Object;
-	public abstract fun visitListItem (Lcom/nouprax/markdown/core/ListItem;)Ljava/lang/Object;
-	public abstract fun visitMark (Lcom/nouprax/markdown/core/Mark;)Ljava/lang/Object;
-	public abstract fun visitMedia (Lcom/nouprax/markdown/core/Media;)Ljava/lang/Object;
-	public abstract fun visitParagraph (Lcom/nouprax/markdown/core/Paragraph;)Ljava/lang/Object;
-	public abstract fun visitSoftBreak (Lcom/nouprax/markdown/core/SoftBreak;)Ljava/lang/Object;
-	public abstract fun visitSpan (Lcom/nouprax/markdown/core/Span;)Ljava/lang/Object;
-	public abstract fun visitStrikethrough (Lcom/nouprax/markdown/core/Strikethrough;)Ljava/lang/Object;
-	public abstract fun visitStrong (Lcom/nouprax/markdown/core/Strong;)Ljava/lang/Object;
-	public abstract fun visitSubscript (Lcom/nouprax/markdown/core/Subscript;)Ljava/lang/Object;
-	public abstract fun visitSuperscript (Lcom/nouprax/markdown/core/Superscript;)Ljava/lang/Object;
-	public abstract fun visitTable (Lcom/nouprax/markdown/core/Table;)Ljava/lang/Object;
-	public abstract fun visitTableCaption (Lcom/nouprax/markdown/core/TableCaption;)Ljava/lang/Object;
-	public abstract fun visitTableCell (Lcom/nouprax/markdown/core/TableCell;)Ljava/lang/Object;
-	public abstract fun visitTableRow (Lcom/nouprax/markdown/core/TableRow;)Ljava/lang/Object;
-	public abstract fun visitText (Lcom/nouprax/markdown/core/Text;)Ljava/lang/Object;
-	public abstract fun visitThematicBreak (Lcom/nouprax/markdown/core/ThematicBreak;)Ljava/lang/Object;
+	public abstract fun visit (Lcom/nouprax/markdown/core/Callout;)Ljava/lang/Object;
+	public abstract fun visit (Lcom/nouprax/markdown/core/Cite;)Ljava/lang/Object;
+	public abstract fun visit (Lcom/nouprax/markdown/core/Code;)Ljava/lang/Object;
+	public abstract fun visit (Lcom/nouprax/markdown/core/CodeBlock;)Ljava/lang/Object;
+	public abstract fun visit (Lcom/nouprax/markdown/core/Comment;)Ljava/lang/Object;
+	public abstract fun visit (Lcom/nouprax/markdown/core/CrossEmbedded;)Ljava/lang/Object;
+	public abstract fun visit (Lcom/nouprax/markdown/core/CrossLink;)Ljava/lang/Object;
+	public abstract fun visit (Lcom/nouprax/markdown/core/Definition;)Ljava/lang/Object;
+	public abstract fun visit (Lcom/nouprax/markdown/core/DefinitionList;)Ljava/lang/Object;
+	public abstract fun visit (Lcom/nouprax/markdown/core/Directive;)Ljava/lang/Object;
+	public abstract fun visit (Lcom/nouprax/markdown/core/DirectiveBlock;)Ljava/lang/Object;
+	public abstract fun visit (Lcom/nouprax/markdown/core/DirectiveLabel;)Ljava/lang/Object;
+	public abstract fun visit (Lcom/nouprax/markdown/core/Document;)Ljava/lang/Object;
+	public abstract fun visit (Lcom/nouprax/markdown/core/Embedded;)Ljava/lang/Object;
+	public abstract fun visit (Lcom/nouprax/markdown/core/Emphasis;)Ljava/lang/Object;
+	public abstract fun visit (Lcom/nouprax/markdown/core/Formula;)Ljava/lang/Object;
+	public abstract fun visit (Lcom/nouprax/markdown/core/FormulaBlock;)Ljava/lang/Object;
+	public abstract fun visit (Lcom/nouprax/markdown/core/HTML;)Ljava/lang/Object;
+	public abstract fun visit (Lcom/nouprax/markdown/core/HTMLBlock;)Ljava/lang/Object;
+	public abstract fun visit (Lcom/nouprax/markdown/core/Heading;)Ljava/lang/Object;
+	public abstract fun visit (Lcom/nouprax/markdown/core/Insertion;)Ljava/lang/Object;
+	public abstract fun visit (Lcom/nouprax/markdown/core/LineBreak;)Ljava/lang/Object;
+	public abstract fun visit (Lcom/nouprax/markdown/core/Link;)Ljava/lang/Object;
+	public abstract fun visit (Lcom/nouprax/markdown/core/List;)Ljava/lang/Object;
+	public abstract fun visit (Lcom/nouprax/markdown/core/ListItem;)Ljava/lang/Object;
+	public abstract fun visit (Lcom/nouprax/markdown/core/Mark;)Ljava/lang/Object;
+	public abstract fun visit (Lcom/nouprax/markdown/core/Paragraph;)Ljava/lang/Object;
+	public abstract fun visit (Lcom/nouprax/markdown/core/SoftBreak;)Ljava/lang/Object;
+	public abstract fun visit (Lcom/nouprax/markdown/core/Span;)Ljava/lang/Object;
+	public abstract fun visit (Lcom/nouprax/markdown/core/Strikethrough;)Ljava/lang/Object;
+	public abstract fun visit (Lcom/nouprax/markdown/core/Strong;)Ljava/lang/Object;
+	public abstract fun visit (Lcom/nouprax/markdown/core/Subscript;)Ljava/lang/Object;
+	public abstract fun visit (Lcom/nouprax/markdown/core/Superscript;)Ljava/lang/Object;
+	public abstract fun visit (Lcom/nouprax/markdown/core/Table;)Ljava/lang/Object;
+	public abstract fun visit (Lcom/nouprax/markdown/core/TableCaption;)Ljava/lang/Object;
+	public abstract fun visit (Lcom/nouprax/markdown/core/TableCell;)Ljava/lang/Object;
+	public abstract fun visit (Lcom/nouprax/markdown/core/TableRow;)Ljava/lang/Object;
+	public abstract fun visit (Lcom/nouprax/markdown/core/Text;)Ljava/lang/Object;
+	public abstract fun visit (Lcom/nouprax/markdown/core/ThematicBreak;)Ljava/lang/Object;
 }
 
 public final class com/nouprax/markdown/core/WalkPhase : java/lang/Enum {
@@ -790,48 +790,48 @@ public final class com/nouprax/markdown/core/WalkPhase : java/lang/Enum {
 }
 
 public abstract interface class com/nouprax/markdown/core/WalkingVisitor {
-	public abstract fun visitCallout (Lcom/nouprax/markdown/core/Callout;Lcom/nouprax/markdown/core/WalkPhase;)V
-	public abstract fun visitCitation (Lcom/nouprax/markdown/core/Citation;Lcom/nouprax/markdown/core/WalkPhase;)V
-	public abstract fun visitCite (Lcom/nouprax/markdown/core/Cite;Lcom/nouprax/markdown/core/WalkPhase;)V
-	public abstract fun visitCode (Lcom/nouprax/markdown/core/Code;Lcom/nouprax/markdown/core/WalkPhase;)V
-	public abstract fun visitCodeBlock (Lcom/nouprax/markdown/core/CodeBlock;Lcom/nouprax/markdown/core/WalkPhase;)V
-	public abstract fun visitComment (Lcom/nouprax/markdown/core/Comment;Lcom/nouprax/markdown/core/WalkPhase;)V
-	public abstract fun visitCrossEmbedded (Lcom/nouprax/markdown/core/CrossEmbedded;Lcom/nouprax/markdown/core/WalkPhase;)V
-	public abstract fun visitCrossLink (Lcom/nouprax/markdown/core/CrossLink;Lcom/nouprax/markdown/core/WalkPhase;)V
-	public abstract fun visitDefinition (Lcom/nouprax/markdown/core/Definition;Lcom/nouprax/markdown/core/WalkPhase;)V
-	public abstract fun visitDefinitionList (Lcom/nouprax/markdown/core/DefinitionList;Lcom/nouprax/markdown/core/WalkPhase;)V
-	public abstract fun visitDirective (Lcom/nouprax/markdown/core/Directive;Lcom/nouprax/markdown/core/WalkPhase;)V
-	public abstract fun visitDirectiveBlock (Lcom/nouprax/markdown/core/DirectiveBlock;Lcom/nouprax/markdown/core/WalkPhase;)V
-	public abstract fun visitDirectiveLabel (Lcom/nouprax/markdown/core/DirectiveLabel;Lcom/nouprax/markdown/core/WalkPhase;)V
-	public abstract fun visitDocument (Lcom/nouprax/markdown/core/Document;Lcom/nouprax/markdown/core/WalkPhase;)V
-	public abstract fun visitEmphasis (Lcom/nouprax/markdown/core/Emphasis;Lcom/nouprax/markdown/core/WalkPhase;)V
-	public abstract fun visitFootnote (Lcom/nouprax/markdown/core/Footnote;Lcom/nouprax/markdown/core/WalkPhase;)V
-	public abstract fun visitFormula (Lcom/nouprax/markdown/core/Formula;Lcom/nouprax/markdown/core/WalkPhase;)V
-	public abstract fun visitFormulaBlock (Lcom/nouprax/markdown/core/FormulaBlock;Lcom/nouprax/markdown/core/WalkPhase;)V
-	public abstract fun visitHTML (Lcom/nouprax/markdown/core/HTML;Lcom/nouprax/markdown/core/WalkPhase;)V
-	public abstract fun visitHTMLBlock (Lcom/nouprax/markdown/core/HTMLBlock;Lcom/nouprax/markdown/core/WalkPhase;)V
-	public abstract fun visitHeading (Lcom/nouprax/markdown/core/Heading;Lcom/nouprax/markdown/core/WalkPhase;)V
-	public abstract fun visitInsertion (Lcom/nouprax/markdown/core/Insertion;Lcom/nouprax/markdown/core/WalkPhase;)V
-	public abstract fun visitLineBreak (Lcom/nouprax/markdown/core/LineBreak;Lcom/nouprax/markdown/core/WalkPhase;)V
-	public abstract fun visitLink (Lcom/nouprax/markdown/core/Link;Lcom/nouprax/markdown/core/WalkPhase;)V
-	public abstract fun visitList (Lcom/nouprax/markdown/core/List;Lcom/nouprax/markdown/core/WalkPhase;)V
-	public abstract fun visitListItem (Lcom/nouprax/markdown/core/ListItem;Lcom/nouprax/markdown/core/WalkPhase;)V
-	public abstract fun visitMark (Lcom/nouprax/markdown/core/Mark;Lcom/nouprax/markdown/core/WalkPhase;)V
-	public abstract fun visitMedia (Lcom/nouprax/markdown/core/Media;Lcom/nouprax/markdown/core/WalkPhase;)V
-	public abstract fun visitParagraph (Lcom/nouprax/markdown/core/Paragraph;Lcom/nouprax/markdown/core/WalkPhase;)V
-	public abstract fun visitSoftBreak (Lcom/nouprax/markdown/core/SoftBreak;Lcom/nouprax/markdown/core/WalkPhase;)V
-	public abstract fun visitSpan (Lcom/nouprax/markdown/core/Span;Lcom/nouprax/markdown/core/WalkPhase;)V
-	public abstract fun visitSpecimen (Lcom/nouprax/markdown/core/Specimen;Lcom/nouprax/markdown/core/WalkPhase;)V
-	public abstract fun visitStrikethrough (Lcom/nouprax/markdown/core/Strikethrough;Lcom/nouprax/markdown/core/WalkPhase;)V
-	public abstract fun visitStrong (Lcom/nouprax/markdown/core/Strong;Lcom/nouprax/markdown/core/WalkPhase;)V
-	public abstract fun visitSubscript (Lcom/nouprax/markdown/core/Subscript;Lcom/nouprax/markdown/core/WalkPhase;)V
-	public abstract fun visitSuperscript (Lcom/nouprax/markdown/core/Superscript;Lcom/nouprax/markdown/core/WalkPhase;)V
-	public abstract fun visitTable (Lcom/nouprax/markdown/core/Table;Lcom/nouprax/markdown/core/WalkPhase;)V
-	public abstract fun visitTableCaption (Lcom/nouprax/markdown/core/TableCaption;Lcom/nouprax/markdown/core/WalkPhase;)V
-	public abstract fun visitTableCell (Lcom/nouprax/markdown/core/TableCell;Lcom/nouprax/markdown/core/WalkPhase;)V
-	public abstract fun visitTableRow (Lcom/nouprax/markdown/core/TableRow;Lcom/nouprax/markdown/core/WalkPhase;)V
-	public abstract fun visitText (Lcom/nouprax/markdown/core/Text;Lcom/nouprax/markdown/core/WalkPhase;)V
-	public abstract fun visitThematicBreak (Lcom/nouprax/markdown/core/ThematicBreak;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visit (Lcom/nouprax/markdown/core/Callout;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visit (Lcom/nouprax/markdown/core/Citation;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visit (Lcom/nouprax/markdown/core/Cite;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visit (Lcom/nouprax/markdown/core/Code;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visit (Lcom/nouprax/markdown/core/CodeBlock;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visit (Lcom/nouprax/markdown/core/Comment;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visit (Lcom/nouprax/markdown/core/CrossEmbedded;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visit (Lcom/nouprax/markdown/core/CrossLink;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visit (Lcom/nouprax/markdown/core/Definition;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visit (Lcom/nouprax/markdown/core/DefinitionList;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visit (Lcom/nouprax/markdown/core/Directive;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visit (Lcom/nouprax/markdown/core/DirectiveBlock;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visit (Lcom/nouprax/markdown/core/DirectiveLabel;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visit (Lcom/nouprax/markdown/core/Document;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visit (Lcom/nouprax/markdown/core/Embedded;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visit (Lcom/nouprax/markdown/core/Emphasis;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visit (Lcom/nouprax/markdown/core/Footnote;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visit (Lcom/nouprax/markdown/core/Formula;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visit (Lcom/nouprax/markdown/core/FormulaBlock;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visit (Lcom/nouprax/markdown/core/HTML;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visit (Lcom/nouprax/markdown/core/HTMLBlock;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visit (Lcom/nouprax/markdown/core/Heading;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visit (Lcom/nouprax/markdown/core/Insertion;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visit (Lcom/nouprax/markdown/core/LineBreak;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visit (Lcom/nouprax/markdown/core/Link;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visit (Lcom/nouprax/markdown/core/List;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visit (Lcom/nouprax/markdown/core/ListItem;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visit (Lcom/nouprax/markdown/core/Mark;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visit (Lcom/nouprax/markdown/core/Paragraph;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visit (Lcom/nouprax/markdown/core/SoftBreak;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visit (Lcom/nouprax/markdown/core/Span;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visit (Lcom/nouprax/markdown/core/Specimen;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visit (Lcom/nouprax/markdown/core/Strikethrough;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visit (Lcom/nouprax/markdown/core/Strong;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visit (Lcom/nouprax/markdown/core/Subscript;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visit (Lcom/nouprax/markdown/core/Superscript;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visit (Lcom/nouprax/markdown/core/Table;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visit (Lcom/nouprax/markdown/core/TableCaption;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visit (Lcom/nouprax/markdown/core/TableCell;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visit (Lcom/nouprax/markdown/core/TableRow;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visit (Lcom/nouprax/markdown/core/Text;Lcom/nouprax/markdown/core/WalkPhase;)V
+	public abstract fun visit (Lcom/nouprax/markdown/core/ThematicBreak;Lcom/nouprax/markdown/core/WalkPhase;)V
 }
 
 public final class com/nouprax/markdown/core/WalkingVisitorKt {

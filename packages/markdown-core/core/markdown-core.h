@@ -49,7 +49,7 @@ typedef enum {
      * markdown_core_node_kind numbers the facade's kinds -- so the gap costs
      * nothing, but the natural assumption is that the next value is free and
      * it is not. (A link reference definition took 0x0010 until M2 resolved
-     * every reference into the `Link` or `Media` it names and the definition
+     * every reference into the `Link` or `Embedded` it names and the definition
      * went back into the parser's map, where the inherited grammar keeps it.)
      *
      * A block comment: an HTML block that opened with `<!--` and whose end
@@ -77,7 +77,7 @@ typedef enum {
     MARKDOWN_CORE_NODE_EMPHASIS = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x0006,
     MARKDOWN_CORE_NODE_STRONG = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x0007,
     MARKDOWN_CORE_NODE_LINK = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x0008,
-    MARKDOWN_CORE_NODE_MEDIA = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x0009,
+    MARKDOWN_CORE_NODE_EMBEDDED = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x0009,
     /* A citation cluster (M4): the inline `Cite` kind, whose items are a
      * chain of CITATION nodes it owns beside its children, which it never
      * has. */

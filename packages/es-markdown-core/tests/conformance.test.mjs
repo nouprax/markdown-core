@@ -54,7 +54,7 @@ test("conformance: public node schema is reachable", () => {
             "superscript",
             "subscript",
             "link",
-            "media",
+            "embedded",
             "directive",
             "cite"
         ])
@@ -79,7 +79,7 @@ test("conformance: fields, nullability, and typed table nodes map to JavaScript"
     assert.equal(document.content[1].items[0].tasked, true);
     assert.equal(document.content[1].items[0].completed, true);
     assert.deepEqual(
-        document.content[2].columns.map((column) => column.alignment),
+        document.content[2].columns.map((column) => column.flow),
         ["center"]
     );
     assert.equal(document.content[2].head.length, 1);
@@ -91,14 +91,14 @@ test("conformance: fields, nullability, and typed table nodes map to JavaScript"
     assert.equal(
         visit(document.content[2].head[0], {
             ...kindVisitor,
-            visitTableRow: () => "row"
+            tableRow: () => "row"
         }),
         "row"
     );
     assert.equal(
         visit(document.content[2].head[0].cells[0], {
             ...kindVisitor,
-            visitTableCell: () => "cell"
+            tableCell: () => "cell"
         }),
         "cell"
     );

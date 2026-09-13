@@ -169,7 +169,7 @@ selected Pandoc extension participates.
       rule before synthesis, generate headings in source order,
       resolve generated collisions deterministically, and build virtual
       implicit-reference entries from the same final values.
-- [x] Audit every existing Link/Media, Heading, Code/CodeBlock, directive, and
+- [x] Audit every existing Link/Embedded, Heading, Code/CodeBlock, directive, and
       reference-definition caller. Remove repair passes or duplicated fields made
       obsolete by the shared operation.
 

@@ -1,7 +1,7 @@
-import type { PlacementMode } from "../values.js";
+import type { Placement } from "../values.js";
 import type { MarkupBase } from "./base.js";
 
 export interface Formula extends MarkupBase<"formula"> {
-    readonly mode: PlacementMode;
+    readonly mode: Placement;
     readonly literal: string;
 }

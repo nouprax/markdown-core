@@ -28,7 +28,7 @@ class ApiTest {
     @Test
     fun imageDimensionsBelongToOccurrencesWithSharedDestinations() {
         val document = Document.parse("![*alt*|2147483647x2][r] ![3][r] ![bad|01][r]\n\n[r]: /shared \"title\"\n")
-        val images = assertIs<Paragraph>(document.content.single()).content.filterIsInstance<Media>()
+        val images = assertIs<Paragraph>(document.content.single()).content.filterIsInstance<Embedded>()
         assertEquals(listOf(Dimensions(2147483647, 2), Dimensions(3), null), images.map { it.dimensions })
         assertEquals(1, setOf(Dimensions(640, 480), Dimensions(640, 480)).size)
         assertFailsWith<IllegalArgumentException> { Dimensions(0) }
@@ -45,12 +45,12 @@ class ApiTest {
         images[0].walk(visitor)
         assertEquals(
             listOf(
-                "entering:Media",
+                "entering:Embedded",
                 "entering:Emphasis",
                 "entering:Text",
                 "exiting:Text",
                 "exiting:Emphasis",
-                "exiting:Media",
+                "exiting:Embedded",
             ),
             visitor.events,
         )
@@ -125,11 +125,20 @@ class ApiTest {
 
     @Test
     fun visitorIsTypedAndDispatchesByNodeKind() {
-        val document = Document.parse("# Heading\n\nBody\n")
-        val visitor = KindVisitor()
+        val document = Document.parse("# Heading\n\nBody ![alt](image.png)\n")
+        val visitor: Visitor<String> = KindVisitor()
+        val paragraph = assertIs<Paragraph>(document.content.last())
+        val embedded = paragraph.content.filterIsInstance<Embedded>().single()
+        val node: Markup = embedded
         assertEquals("heading:1", document.content.first().accept(visitor))
         assertEquals("Document", document.accept(visitor))
-        assertEquals("Paragraph", document.content.last().accept(visitor))
+        assertEquals("Paragraph", paragraph.accept(visitor))
+        assertEquals("Embedded", node.accept(visitor))
+        assertEquals("Document", visitor.visit(document = document))
+        assertEquals("Paragraph", visitor.visit(paragraph = paragraph))
+        assertEquals("Embedded", visitor.visit(embedded = embedded))
+        val visit: (Embedded) -> String = visitor::visit
+        assertEquals("Embedded", visit(embedded))
     }
 
     @Test
@@ -279,6 +288,11 @@ class ApiTest {
         val tableVisitor = RecordingWalkingVisitor()
         table.walk(tableVisitor)
         assertEquals(listOf(1, 3), tableVisitor.tableRowKinds)
+        tableVisitor.events.clear()
+        val typed: WalkingVisitor = tableVisitor
+        typed.visit(tableRow = table.head.single(), phase = WalkPhase.ENTERING)
+        typed.visit(table = table, phase = WalkPhase.EXITING)
+        assertEquals(listOf("entering:TableRow", "exiting:Table"), tableVisitor.events)
     }
 }
 
@@ -294,6 +308,8 @@ class UnicodeTest {
 class ErrorsTest {
     @Test
     fun emptyInputIsAValidDocument() {
+        assertEquals(Scope(Position(1, 1), Position(0, 0)), Document.parse("").scope)
+        assertEquals(Scope(Position(1, 1), Position(1, 2)), Document.parse("é").scope)
         assertTrue(
             Document
                 .parse("")
@@ -381,7 +397,7 @@ class BindingMappingTest {
         val document = Document.parse(source)
 
         // M2: the definition produces no node, and every reference form is
-        // the Link or Media it names, with the definition's destination and
+        // the Link or Embedded it names, with the definition's destination and
         // title.
         val block = assertIs<DirectiveBlock>(document.content[0])
         assertIs<DirectiveLabel>(assertNotNull(block.label))
@@ -402,10 +418,10 @@ class BindingMappingTest {
             assertEquals("t", link.title)
         }
         assertSame(links[0].dest, links[1].dest, "one definition materializes one resource")
-        val image = inlines.filterIsInstance<Media>().single()
+        val image = inlines.filterIsInstance<Embedded>().single()
         assertEquals("/url", assertIs<Destination.Url>(image.dest).value)
         assertSame(links[0].dest, image.dest, "an image reference shares the definition's resource too")
-        assertEquals(PlacementMode.STANDALONE, inlines.filterIsInstance<Formula>().single().mode)
+        assertEquals(Placement.STANDALONE, inlines.filterIsInstance<Formula>().single().mode)
 
         // Fully qualified: the model's `List` shadows `kotlin.collections.List`.
         val list = assertIs<com.nouprax.markdown.core.List>(document.content[2])
@@ -415,18 +431,18 @@ class BindingMappingTest {
         val table = assertIs<Table>(document.content[3])
         assertEquals(
             listOf(
-                TableAlignment.LEFT,
-                TableAlignment.CENTER,
-                TableAlignment.RIGHT,
-                TableAlignment.NONE,
+                Flow.LEFT,
+                Flow.CENTER,
+                Flow.RIGHT,
+                Flow.NONE,
             ),
-            table.columns.map { it.alignment },
+            table.columns.map { it.flow },
         )
 
         // The owning node keeps its label field separate from block content;
         // the per-node dumper deliberately emits both relations.
         val dump = document.dump()
-        for (fragment in listOf("Link scope=", "Media scope=", "DirectiveLabel")) {
+        for (fragment in listOf("Link scope=", "Embedded scope=", "DirectiveLabel")) {
             assertTrue(dump.contains(fragment), "dump is missing $fragment")
         }
         assertEquals(listOf("Paragraph"), block.content.map { it::class.simpleName })
@@ -584,10 +600,10 @@ class BindingMappingTest {
 
         val rich = assertIs<Paragraph>(withEverything.content[1]).content
         assertEquals("t", rich.filterIsInstance<Link>().single().title)
-        assertEquals("u", rich.filterIsInstance<Media>().single().title)
+        assertEquals("u", rich.filterIsInstance<Embedded>().single().title)
         val plain = assertIs<Paragraph>(withNothing.content[1]).content
         assertEquals(null, plain.filterIsInstance<Link>().single().title)
-        assertEquals(null, plain.filterIsInstance<Media>().single().title)
+        assertEquals(null, plain.filterIsInstance<Embedded>().single().title)
 
         assertEquals(listOf(Record("k", "v")), assertIs<DirectiveBlock>(withEverything.content[2]).attributes.records)
         assertEquals(emptyList(), assertIs<DirectiveBlock>(withNothing.content[2]).attributes.records)
@@ -727,7 +743,7 @@ class RobustnessTest {
         val paragraph = assertIs<Paragraph>(document.content[1])
         val code = assertIs<Code>(paragraph.content[0])
         val link = assertIs<Link>(paragraph.content[2])
-        val image = assertIs<Media>(paragraph.content[4])
+        val image = assertIs<Embedded>(paragraph.content[4])
         assertEquals(listOf("code"), code.attributes.classes)
         assertEquals(10, code.scope.end.column)
         assertEquals("own", link.anchor)

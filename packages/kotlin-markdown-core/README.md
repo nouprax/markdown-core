@@ -47,7 +47,7 @@ and `keywords` accept a single string, a bracketed array, or a block list.
 with `: |`. Metadata stays outside Markup children and visitor callbacks.
 Numbers retain exact decimal strings. Missing fields are null; an authored null
 is a present scalar value. No field order or individual field scope is stored.
-`Media.dimensions: Dimensions?` reads complete `W`, `WxH`, `alt|W` and
+`Embedded.dimensions: Dimensions?` reads complete `W`, `WxH`, `alt|W` and
 `alt|WxH` suffixes on direct and resolved images. Values range from 1 to
 2147483647 without leading zeros; malformed suffixes remain parsed alt content.
 Numeric-only labels have empty alt content. Embedded cross links use the same
@@ -141,6 +141,16 @@ and dispatches `ENTERING` and `EXITING` to an exhaustive `WalkingVisitor` by
 node kind. Each node-kind branch chooses its typed fields and content; there is
 no public iterator or uniform child projection. A directive label is walked as
 the named `label` field, not as directive content.
+
+Both interfaces use `visit` overloads with concrete parameter types and names:
+`Visitor<Result>` declares `fun visit(embedded: Embedded): Result`, while
+`WalkingVisitor` declares `fun visit(embedded: Embedded, phase: WalkPhase)`.
+Implementations use the same names, including `paragraph`, `tableRow`, and
+`citation`. A concrete node can be passed directly with `visitor.visit(embedded)`
+or `visitor.visit(embedded = embedded)`; use `node.accept(visitor)` when the
+static type is `Markup`. These overloads replace the former `visitEmbedded`,
+`visitParagraph`, and other `visitXxx` methods; visitor implementations must
+update their overrides and recompile.
 
 Every immutable `Markup` exposes `dump()`, which delegates to the public
 `TreeDumper` and returns the canonical file-tree dump for that subtree:

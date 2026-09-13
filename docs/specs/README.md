@@ -16,6 +16,7 @@ input. All syntax is enabled on every platform.
 - [Canonical AST contract](canonical-ast.md): node fields, ownership, source coordinates, and traversal.
 - [Machine-readable AST contract](canonical-ast.json): the kind and field inventory used by repository audits.
 - [Debug dump format](canonical-ast-dump.md): how to read diagnostic tree output.
+- [Swift storage](../architecture/swift-storage.md): immutable collections, subtree retention, and release behavior.
 - [Package usage](../../README.md#usage): installation and the parsing APIs.
 
 The syntax guide defines the accepted language. The AST contract defines the

@@ -2,30 +2,43 @@ import MarkdownCoreC
 
 /// A definition-list association preserving its authored collections.
 public struct Definition: Markup {
+    struct Fields: Sendable {
+        let scope: Scope
+        let anchor: String?
+        let attributes: Attributes
+        let term: [Int]
+        let content: [[Int]]
+        let compact: Bool
+    }
+
+    @Stored var fields: Fields
+
     /// The authored source range, including the term and all bodies.
-    public let scope: Scope
+    public var scope: Scope { fields.scope }
     /// The explicit anchor, absent when none was attached.
-    public let anchor: String?
+    public var anchor: String? { fields.anchor }
     /// Ordered classes and records, including duplicates.
-    public let attributes: Attributes
+    public var attributes: Attributes { fields.attributes }
     /// The inline term, visited before the body collections.
-    public let term: [any Markup]
+    public var term: MarkupCollection<any Markup> { $fields.collection(fields.term) }
     /// The nonempty ordered collection of block bodies; an individual body may be empty.
-    public let content: [[any Markup]]
+    public var content: MarkupGroups<any Markup> {
+        $fields.groups(fields.content)
+    }
     /// Whether the first body immediately follows its term without a blank line.
-    public let compact: Bool
+    public var compact: Bool { fields.compact }
 
     /// Dispatches to the visitor's `Definition` case.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 }
 
-extension Definition {
-    init(from node: OpaquePointer, term: [any Markup], content: [[any Markup]]) {
+extension Definition.Fields {
+    init(from node: OpaquePointer, term: [Int], content: [[Int]]) {
         var compact = false
         precondition(markdown_core_node_definition_compact(node, &compact), "Invalid definition")
         precondition(!content.isEmpty, "Definition has no bodies")
         self.init(
-            scope: Self.scope(from: node),
+            scope: Scope(from: markdown_core_node_scope(node)),
             anchor: markdown_core_node_anchor(node).string,
             attributes: Attributes(from: node),
             term: term,

@@ -1,35 +1,8 @@
 #!/usr/bin/env node
-/**
- * The product attaches core elements through exactly one path, and that path
- * puts `table` last.
- *
- * This is D15's own statement, and until 0a.11 nothing in the repository could
- * see it. `core/main.c` attached `directive` FIRST and `elements/ast.c` — the
- * path every binding goes through — attached it LAST, so the CLI's default
- * language was not the facade's. Measured over 2,744 ordered triples of 14
- * significant lines with D8 already fixed, the two orders still disagreed on 4;
- * no fixture contained any of them, and none ever could, because every fixture
- * runs through the facade and so can only see one of the two orders.
- *
- * `elements-conflicts.txt` gates the ORDER — revert the table below and its
- * last two examples fail. Nothing there gates the number of attach SITES, and
- * two sites is how the defect was spelled. So this audit reads the source,
- * which is the only place that fact lives:
- *
- *   1. `markdown_core_parser_attach_element` is called from exactly
- *      one function in the shipped library, and that function is
- *      `markdown_core_core_elements_attach`.
- *   2. Its table names every registered core element exactly once, so an
- *      element cannot become attachable without being given a position.
- *   3. `table` is last (Q9): a table's row matcher claims any line inside an
- *      open table, so every narrower claim is offered the line first. D8
- *      answers the case where table DECLINES; only the order answers the case
- *      where its matcher succeeds.
- *
- * Tests may attach synthetic fault-injection or observation probes. The
- * engine still attaches the complete core table before any setup callback,
- * so those probes never select a subset of the dialect.
- */
+/** The parser selects the complete immutable core registry at exactly one
+ * transaction boundary. Every descriptor occurs once and table is last.
+ * Private setup probes can extend a snapshot; production parsing must not
+ * rebuild a per-call registration list or choose a different dialect. */
 
 import fs from "node:fs";
 import path from "node:path";
@@ -110,14 +83,9 @@ for (const file of librarySources()) {
         sites.push({ file, function: enclosingFunction(source, match.index) });
     }
 }
-const strays = sites.filter((site) => site.function !== "markdown_core_core_elements_attach");
-if (sites.length === 0) {
-    failures.push(`no call to ${ATTACH} in the library at all — this audit is reading the wrong tree`);
-}
-for (const stray of strays) {
+for (const site of sites) {
     failures.push(
-        `${stray.file}: ${ATTACH} is called from \`${stray.function}\`. ` +
-            "A second attach site is a second attach ORDER, which is D15."
+        `${site.file}: ${ATTACH} is called from ${site.function}; the fixed dialect must borrow its registry`
     );
 }
 
@@ -136,7 +104,7 @@ for (const file of cSources(pkg)) {
         failures.push(`${path.relative(pkg, file)} retains a parse option`);
     }
     if (!file.endsWith(".c")) continue;
-    for (const match of source.matchAll(/\bmarkdown_core_core_elements_attach\s*\(/g)) {
+    for (const match of source.matchAll(/\bmarkdown_core_core_elements\s*\(/g)) {
         const end = endOfArguments(source, source.indexOf("(", match.index));
         if (end < 0 || /^\s*\{/.test(source.slice(end))) continue;
         dialectAttachSites.push({ file: path.relative(pkg, file), function: enclosingFunction(source, match.index) });
@@ -147,7 +115,7 @@ if (
     dialectAttachSites[0].file !== "core/blocks.c" ||
     dialectAttachSites[0].function !== "markdown_core_parse_document_with_mem"
 ) {
-    failures.push("the sole engine parse transaction must be the sole complete-dialect attachment site");
+    failures.push("the sole engine parse transaction must select the complete immutable dialect registry");
 }
 
 // (2) The shared inventory proves every descriptor has exactly one position.
@@ -169,5 +137,5 @@ if (failures.length) {
     process.stderr.write(`element attach order audit FAILED\n  ${failures.join("\n  ")}\n`);
     process.exit(1);
 }
-process.stdout.write(`  one attach site, ${sites.length} call(s), in markdown_core_core_elements_attach.\n`);
+process.stdout.write("  one immutable registry selection site; no production attachment calls.\n");
 process.stdout.write("element attach order audit passed.\n");

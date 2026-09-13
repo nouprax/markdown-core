@@ -31,7 +31,12 @@ print(document.dump())
 ```
 
 The AST is an immutable, `Sendable` value tree with typed visitors and
-stack-safe walking.
+stack-safe walking. Child relations use read-only `MarkupCollection` and
+`MarkupGroups` values with constant-time random access; use `Array(...)` when
+an array is required. Retaining a subtree keeps its immutable Swift store alive.
+The native C document is freed before `parse` returns. See
+[Swift storage](docs/architecture/swift-storage.md) for ownership and lifecycle
+details.
 
 ### Kotlin Multiplatform
 

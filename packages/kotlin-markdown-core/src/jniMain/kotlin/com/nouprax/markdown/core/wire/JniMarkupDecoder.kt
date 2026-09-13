@@ -1,23 +1,23 @@
 package com.nouprax.markdown.core
 
-internal fun JniPayloadReader.decodeTree(): Document = JniTreeDecoder(this).decodeDocument()
+internal fun JniPayloadReader.document(): Document = Decoder(this).decode()
 
 /** Decodes the depth-first JNI payload with heap-backed actions, never the JVM stack. */
-private class JniTreeDecoder(
+private class Decoder(
     private val reader: JniPayloadReader,
 ) {
     private val actions = ArrayDeque<() -> Unit>()
     private var nodesStarted = 0
 
-    fun decodeDocument(): Document {
+    fun decode(): Document {
         var root: Markup? = null
-        actions.addLast { readNode { root = it } }
+        actions.addLast { node { root = it } }
         while (actions.isNotEmpty()) actions.removeLast().invoke()
         require(reader.finished) { "JNI payload contains trailing data" }
         return requireNotNull(root as? Document) { "JNI payload contains an invalid document tree" }
     }
 
-    private fun readNode(consume: (Markup) -> Unit) {
+    private fun node(consume: (Markup) -> Unit) {
         val kind = reader.kind()
         val isRoot = nodesStarted++ == 0
         require((kind == JniNodeKind.DOCUMENT) == isRoot) {
@@ -28,20 +28,20 @@ private class JniTreeDecoder(
         val attributes = attributes()
         when (kind) {
             JniNodeKind.DOCUMENT -> {
-                readDocument(scope, anchor, attributes, consume)
+                document(scope, anchor, attributes, consume)
             }
 
             JniNodeKind.CALLOUT -> {
-                readCallout(scope, anchor, attributes, consume)
+                callout(scope, anchor, attributes, consume)
             }
 
             JniNodeKind.PARAGRAPH -> {
-                readChildren { consume(Paragraph(it, scope, anchor, attributes)) }
+                children { consume(Paragraph(it, scope, anchor, attributes)) }
             }
 
             JniNodeKind.HEADING -> {
                 val level = reader.int()
-                readChildren { consume(Heading(level, it, scope, anchor, attributes)) }
+                children { consume(Heading(level, it, scope, anchor, attributes)) }
             }
 
             JniNodeKind.THEMATIC_BREAK -> {
@@ -49,12 +49,12 @@ private class JniTreeDecoder(
             }
 
             JniNodeKind.LIST -> {
-                readList(scope, anchor, attributes, consume)
+                list(scope, anchor, attributes, consume)
             }
 
             JniNodeKind.LIST_ITEM -> {
                 val marker = reader.string()
-                readChildren { consume(ListItem(marker, it, scope, anchor, attributes)) }
+                children { consume(ListItem(marker, it, scope, anchor, attributes)) }
             }
 
             JniNodeKind.CODE_BLOCK -> {
@@ -62,7 +62,7 @@ private class JniTreeDecoder(
                     CodeBlock(
                         reader.string(),
                         reader.string(),
-                        reader.requiredString(),
+                        reader.required(),
                         reader.boolean(),
                         reader.boolean(),
                         scope,
@@ -73,19 +73,19 @@ private class JniTreeDecoder(
             }
 
             JniNodeKind.HTML_BLOCK -> {
-                consume(HTMLBlock(reader.requiredString(), scope, anchor, attributes))
+                consume(HTMLBlock(reader.required(), scope, anchor, attributes))
             }
 
             JniNodeKind.FORMULA_BLOCK -> {
-                consume(FormulaBlock(reader.requiredString(), scope, anchor, attributes))
+                consume(FormulaBlock(reader.required(), scope, anchor, attributes))
             }
 
             JniNodeKind.TABLE -> {
-                readTable(scope, anchor, attributes, consume)
+                table(scope, anchor, attributes, consume)
             }
 
             JniNodeKind.DEFINITION_LIST -> {
-                readChildren { children ->
+                children { children ->
                     require(children.isNotEmpty()) { "empty definition list" }
                     val definitions =
                         immutableList(children.size) { index ->
@@ -101,20 +101,20 @@ private class JniTreeDecoder(
                 val compact = reader.boolean()
                 var term: kotlin.collections.List<Markup>? = null
                 actions.addLast {
-                    readValues("definition body", ::readChildren) { bodies ->
+                    values("definition body", ::children) { bodies ->
                         require(bodies.isNotEmpty()) { "definition has no bodies" }
                         consume(Definition(requireNotNull(term), bodies, compact, scope, anchor, attributes))
                     }
                 }
-                actions.addLast { readChildren { term = it } }
+                actions.addLast { children { term = it } }
             }
 
             JniNodeKind.DIRECTIVE_BLOCK -> {
-                readDirectiveBlock(scope, anchor, attributes, consume)
+                directiveBlock(scope, anchor, attributes, consume)
             }
 
             JniNodeKind.TEXT -> {
-                consume(Text(reader.requiredString(), scope, anchor, attributes))
+                consume(Text(reader.required(), scope, anchor, attributes))
             }
 
             JniNodeKind.SOFT_BREAK -> {
@@ -126,11 +126,11 @@ private class JniTreeDecoder(
             }
 
             JniNodeKind.CODE -> {
-                consume(Code(reader.requiredString(), scope, anchor, attributes))
+                consume(Code(reader.required(), scope, anchor, attributes))
             }
 
             JniNodeKind.HTML -> {
-                consume(HTML(reader.requiredString(), scope, anchor, attributes))
+                consume(HTML(reader.required(), scope, anchor, attributes))
             }
 
             JniNodeKind.CROSS_LINK, JniNodeKind.CROSS_EMBEDDED -> {
@@ -145,48 +145,48 @@ private class JniTreeDecoder(
             }
 
             JniNodeKind.COMMENT -> {
-                consume(Comment(reader.requiredString(), scope, anchor, attributes))
+                consume(Comment(reader.required(), scope, anchor, attributes))
             }
 
             JniNodeKind.FORMULA -> {
-                consume(Formula(placement(), reader.requiredString(), scope, anchor, attributes))
+                consume(Formula(placement(), reader.required(), scope, anchor, attributes))
             }
 
             JniNodeKind.EMPHASIS -> {
-                readChildren { consume(Emphasis(it, scope, anchor, attributes)) }
+                children { consume(Emphasis(it, scope, anchor, attributes)) }
             }
 
             JniNodeKind.STRONG -> {
-                readChildren { consume(Strong(it, scope, anchor, attributes)) }
+                children { consume(Strong(it, scope, anchor, attributes)) }
             }
 
             JniNodeKind.STRIKETHROUGH -> {
-                readChildren { consume(Strikethrough(it, scope, anchor, attributes)) }
+                children { consume(Strikethrough(it, scope, anchor, attributes)) }
             }
 
             JniNodeKind.MARK -> {
-                readChildren { consume(Mark(it, scope, anchor, attributes)) }
+                children { consume(Mark(it, scope, anchor, attributes)) }
             }
 
             JniNodeKind.INSERTION -> {
-                readChildren { consume(Insertion(it, scope, anchor, attributes)) }
+                children { consume(Insertion(it, scope, anchor, attributes)) }
             }
 
             JniNodeKind.SPAN -> {
-                readChildren { consume(Span(it, scope, anchor, attributes)) }
+                children { consume(Span(it, scope, anchor, attributes)) }
             }
 
             JniNodeKind.SUPERSCRIPT -> {
-                readChildren { consume(Superscript(it, scope, anchor, attributes)) }
+                children { consume(Superscript(it, scope, anchor, attributes)) }
             }
 
             JniNodeKind.SUBSCRIPT -> {
-                readChildren { consume(Subscript(it, scope, anchor, attributes)) }
+                children { consume(Subscript(it, scope, anchor, attributes)) }
             }
 
             JniNodeKind.LINK -> {
                 val resource = resource()
-                readChildren {
+                children {
                     consume(
                         Link(
                             resource.dest,
@@ -200,12 +200,12 @@ private class JniTreeDecoder(
                 }
             }
 
-            JniNodeKind.MEDIA -> {
+            JniNodeKind.EMBEDDED -> {
                 val resource = resource()
                 val dimensions = dimensions()
-                readChildren {
+                children {
                     consume(
-                        Media(
+                        Embedded(
                             resource.dest,
                             resource.title,
                             dimensions,
@@ -219,41 +219,41 @@ private class JniTreeDecoder(
             }
 
             JniNodeKind.DIRECTIVE -> {
-                readDirective(scope, anchor, attributes, consume)
+                directive(scope, anchor, attributes, consume)
             }
 
             JniNodeKind.CITE -> {
-                readCitations { consume(Cite(it, scope, anchor, attributes)) }
+                citations { consume(Cite(it, scope, anchor, attributes)) }
             }
 
             JniNodeKind.TABLE_CAPTION -> {
-                readChildren { consume(TableCaption(it, scope, anchor, attributes)) }
+                children { consume(TableCaption(it, scope, anchor, attributes)) }
             }
 
             JniNodeKind.TABLE_ROW -> {
-                readTableRow(scope, anchor, attributes, consume)
+                tableRow(scope, anchor, attributes, consume)
             }
 
             JniNodeKind.TABLE_CELL -> {
                 val rowspan = reader.long().toTableSpan()
                 val colspan = reader.long().toTableSpan()
-                readChildren { consume(TableCell(rowspan, colspan, it, scope, anchor, attributes)) }
+                children { consume(TableCell(rowspan, colspan, it, scope, anchor, attributes)) }
             }
 
             JniNodeKind.DIRECTIVE_LABEL -> {
-                readChildren { consume(DirectiveLabel(it, scope, anchor, attributes)) }
+                children { consume(DirectiveLabel(it, scope, anchor, attributes)) }
             }
         }
     }
 
-    private fun readChildren(consume: (kotlin.collections.List<Markup>) -> Unit) {
+    private fun children(consume: (kotlin.collections.List<Markup>) -> Unit) {
         val count = reader.int()
         require(count >= 0) { "invalid native child count" }
-        readNodes(count, consume)
+        nodes(count, consume)
     }
 
     /** Schedules `count` nodes and then the list they form, in payload order. */
-    private fun readNodes(
+    private fun nodes(
         count: Int,
         consume: (kotlin.collections.List<Markup>) -> Unit,
     ) {
@@ -266,7 +266,7 @@ private class JniTreeDecoder(
             )
         }
         for (index in count - 1 downTo 0) {
-            actions.addLast { readNode { values[index] = it } }
+            actions.addLast { node { values[index] = it } }
         }
     }
 
@@ -275,7 +275,7 @@ private class JniTreeDecoder(
      * follow as a counted list of values, each its scope, its id, and its
      * content.
      */
-    private fun readDocument(
+    private fun document(
         scope: Scope,
         anchor: String?,
         attributes: Attributes,
@@ -285,7 +285,7 @@ private class JniTreeDecoder(
         var content: kotlin.collections.List<Markup>? = null
         var footnotes: kotlin.collections.List<Footnote>? = null
         actions.addLast {
-            readValues("specimen", ::readSpecimen) { specimens ->
+            values("specimen", ::specimen) { specimens ->
                 consume(
                     Document(
                         requireNotNull(content),
@@ -299,11 +299,11 @@ private class JniTreeDecoder(
                 )
             }
         }
-        actions.addLast { readValues("footnote", ::readFootnote) { footnotes = it } }
-        actions.addLast { readChildren { content = it } }
+        actions.addLast { values("footnote", ::footnote) { footnotes = it } }
+        actions.addLast { children { content = it } }
     }
 
-    private fun <T> readValues(
+    private fun <T> values(
         name: String,
         read: ((T) -> Unit) -> Unit,
         consume: (kotlin.collections.List<T>) -> Unit,
@@ -317,18 +317,18 @@ private class JniTreeDecoder(
         for (index in count - 1 downTo 0) actions.addLast { read { values[index] = it } }
     }
 
-    private fun readSpecimen(consume: (Specimen) -> Unit) {
+    private fun specimen(consume: (Specimen) -> Unit) {
         val scope = reader.scope()
         val id = reader.string()
         val startValue = reader.long()
         val start = if (reader.boolean()) startValue else null
-        readChildren { consume(Specimen(id, start, it, scope)) }
+        children { consume(Specimen(id, start, it, scope)) }
     }
 
-    private fun readFootnote(consume: (Footnote) -> Unit) {
+    private fun footnote(consume: (Footnote) -> Unit) {
         val scope = reader.scope()
-        val id = reader.requiredString()
-        readChildren { consume(Footnote(id, it, scope)) }
+        val id = reader.required()
+        children { consume(Footnote(id, it, scope)) }
     }
 
     /**
@@ -336,7 +336,7 @@ private class JniTreeDecoder(
      * referent -- the branch ordinal, then only that branch's fields -- and
      * its prefix and suffix content in that order.
      */
-    private fun readCitations(consume: (kotlin.collections.List<Citation>) -> Unit) {
+    private fun citations(consume: (kotlin.collections.List<Citation>) -> Unit) {
         val count = reader.int()
         require(count >= 1) { "invalid native citation count" }
         val values = arrayOfNulls<Citation>(count)
@@ -348,25 +348,25 @@ private class JniTreeDecoder(
             )
         }
         for (index in count - 1 downTo 0) {
-            actions.addLast { readCitation { values[index] = it } }
+            actions.addLast { citation { values[index] = it } }
         }
     }
 
-    private fun readCitation(consume: (Citation) -> Unit) {
+    private fun citation(consume: (Citation) -> Unit) {
         val scope = reader.scope()
         val referent =
             when (val branch = reader.byte().toInt()) {
-                1 -> CitationReferent.Bib(reader.requiredString(), bibMode())
-                2 -> CitationReferent.Footnote(reader.requiredString())
-                3 -> CitationReferent.Specimen(reader.requiredString())
+                1 -> CitationReferent.Bib(reader.required(), bibMode())
+                2 -> CitationReferent.Footnote(reader.required())
+                3 -> CitationReferent.Specimen(reader.required())
                 else -> error("invalid native citation referent $branch")
             }
         var prefix: kotlin.collections.List<Markup>? = null
         actions.addLast {
-            readChildren { suffix -> consume(Citation(referent, requireNotNull(prefix), suffix, scope)) }
+            children { suffix -> consume(Citation(referent, requireNotNull(prefix), suffix, scope)) }
         }
         actions.addLast {
-            readChildren { prefix = it }
+            children { prefix = it }
         }
     }
 
@@ -378,7 +378,7 @@ private class JniTreeDecoder(
             else -> error("invalid native bib mode $rawValue")
         }
 
-    private fun readList(
+    private fun list(
         scope: Scope,
         anchor: String?,
         attributes: Attributes,
@@ -414,33 +414,33 @@ private class JniTreeDecoder(
                 else -> error("invalid native list delimiter $delimiterKind")
             }
         val tight = reader.boolean()
-        readChildren { children ->
+        children { children ->
             val items = children.immutableMap { requireNotNull(it as? ListItem) { "list contains a non-item node" } }
             consume(List(flavor, start, variant, delimiter, tight, items, scope, anchor, attributes))
         }
     }
 
-    private fun readDirectiveBlock(
+    private fun directiveBlock(
         scope: Scope,
         anchor: String?,
         attributes: Attributes,
         consume: (Markup) -> Unit,
     ) {
         val name = reader.string()
-        readNodeFieldAndChildren { field, children ->
+        relations { field, children ->
             val label = field?.let { requireNotNull(it as? DirectiveLabel) { "invalid directive label kind" } }
             consume(DirectiveBlock(name, label, children, scope, anchor, attributes))
         }
     }
 
-    private fun readDirective(
+    private fun directive(
         scope: Scope,
         anchor: String?,
         attributes: Attributes,
         consume: (Markup) -> Unit,
     ) {
-        val name = reader.requiredString()
-        readNodeFieldAndChildren { field, children ->
+        val name = reader.required()
+        relations { field, children ->
             val label = field?.let { requireNotNull(it as? DirectiveLabel) { "invalid directive label kind" } }
             require(children.isEmpty()) { "inline directive contains block content" }
             consume(Directive(name, label, scope, anchor, attributes))
@@ -453,7 +453,7 @@ private class JniTreeDecoder(
      * is its presence because a present title holds at least one node -- and
      * then the content. An absent title has a zero count.
      */
-    private fun readCallout(
+    private fun callout(
         scope: Scope,
         anchor: String?,
         attributes: Attributes,
@@ -464,32 +464,32 @@ private class JniTreeDecoder(
         val titleCount = reader.int()
         require(titleCount >= 0) { "invalid native callout title count" }
         if (titleCount == 0) {
-            readChildren { consume(Callout(variant, collapsed, null, it, scope, anchor, attributes)) }
+            children { consume(Callout(variant, collapsed, null, it, scope, anchor, attributes)) }
             return
         }
         var title: kotlin.collections.List<Markup>? = null
         actions.addLast {
-            readChildren { children ->
+            children { children ->
                 consume(Callout(variant, collapsed, requireNotNull(title), children, scope, anchor, attributes))
             }
         }
         actions.addLast {
-            readNodes(titleCount) { title = it }
+            nodes(titleCount) { title = it }
         }
     }
 
     /** Reads a singular owned field before the ordinary child chain. */
-    private fun readNodeFieldAndChildren(consume: (Markup?, kotlin.collections.List<Markup>) -> Unit) {
+    private fun relations(consume: (Markup?, kotlin.collections.List<Markup>) -> Unit) {
         if (!reader.boolean()) {
-            readChildren { consume(null, it) }
+            children { consume(null, it) }
             return
         }
         var field: Markup? = null
         actions.addLast {
-            readChildren { children -> consume(requireNotNull(field), children) }
+            children { children -> consume(requireNotNull(field), children) }
         }
         actions.addLast {
-            readNode { node ->
+            node { node ->
                 field = node
             }
         }
@@ -498,8 +498,8 @@ private class JniTreeDecoder(
     private fun count(name: String): Int = reader.int().also { require(it >= 0) { "invalid native $name count" } }
 
     private fun attributes(): Attributes {
-        val classes = immutableList(count("class")) { reader.requiredString() }
-        val records = immutableList(count("record")) { Record(reader.requiredString(), reader.requiredString()) }
+        val classes = immutableList(count("class")) { reader.required() }
+        val records = immutableList(count("record")) { Record(reader.required(), reader.required()) }
         require(classes.none { it.isEmpty() }) { "empty normalized class" }
         require(
             records.none { it.name.isEmpty() || it.name == "id" || it.name == "class" },
@@ -533,8 +533,8 @@ private class JniTreeDecoder(
                     when (val kind = reader.byte().toInt()) {
                         0 -> MetadataScalar.Null
                         1 -> MetadataScalar.Bool(reader.boolean())
-                        2 -> MetadataScalar.Number(reader.requiredString())
-                        3 -> MetadataScalar.Text(reader.requiredString())
+                        2 -> MetadataScalar.Number(reader.required())
+                        3 -> MetadataScalar.Text(reader.required())
                         else -> error("invalid native metadata scalar $kind")
                     },
                 )
@@ -544,8 +544,8 @@ private class JniTreeDecoder(
                 MetadataValue.List(
                     immutableList(count("metadata item")) {
                         when (val kind = reader.byte().toInt()) {
-                            1 -> MetadataListItem.Number(reader.requiredString())
-                            2 -> MetadataListItem.Text(reader.requiredString())
+                            1 -> MetadataListItem.Number(reader.required())
+                            2 -> MetadataListItem.Text(reader.required())
                             else -> error("invalid native metadata item $kind")
                         }
                     },
@@ -565,7 +565,7 @@ private class JniTreeDecoder(
             null
         }
 
-    private fun readTable(
+    private fun table(
         scope: Scope,
         anchor: String?,
         attributes: Attributes,
@@ -575,16 +575,16 @@ private class JniTreeDecoder(
         require(columnCount > 0) { "invalid native table column count" }
         val columns =
             immutableList(columnCount) {
-                val alignment = tableAlignment(reader.byte().toInt() and 0xff)
+                val flow = flow(reader.byte().toInt() and 0xff)
                 val relative = if (reader.boolean()) Double.fromBits(reader.long()) else null
                 require(relative == null || (relative.isFinite() && relative > 0)) { "invalid table column width" }
-                TableColumn(alignment, relative)
+                TableColumn(flow, relative)
             }
         val head = reader.int()
         val content = reader.int()
         val foot = reader.int()
         require(head >= 0 && content >= 0 && foot >= 0) { "invalid table row groups" }
-        readNodeFieldAndChildren { field, children ->
+        relations { field, children ->
             val caption = field?.let { requireNotNull(it as? TableCaption) { "invalid table caption kind" } }
             require(head.toLong() + content + foot == children.size.toLong()) { "invalid table row groups" }
             val rows = children.immutableMap { requireNotNull(it as? TableRow) { "table contains a non-row node" } }
@@ -608,13 +608,13 @@ private class JniTreeDecoder(
         return toInt()
     }
 
-    private fun readTableRow(
+    private fun tableRow(
         scope: Scope,
         anchor: String?,
         attributes: Attributes,
         consume: (Markup) -> Unit,
     ) {
-        readChildren { children ->
+        children { children ->
             val cells = children.immutableMap { requireNotNull(it as? TableCell) { "table row contains a non-cell" } }
             consume(TableRow(cells, scope, anchor, attributes))
         }
@@ -641,24 +641,24 @@ private class JniTreeDecoder(
     /** The branch ordinal leads; only that branch's fields follow it. */
     private fun destination(): Destination =
         when (val rawValue = reader.int()) {
-            1 -> Destination.Url(reader.requiredString())
-            2 -> Destination.Cross(reader.requiredString(), reader.string())
+            1 -> Destination.Url(reader.required())
+            2 -> Destination.Cross(reader.required(), reader.string())
             else -> error("invalid native destination kind $rawValue")
         }
 
-    private fun placement(): PlacementMode =
+    private fun placement(): Placement =
         when (val rawValue = reader.int()) {
-            1 -> PlacementMode.EMBEDDED
-            2 -> PlacementMode.STANDALONE
+            1 -> Placement.EMBEDDED
+            2 -> Placement.STANDALONE
             else -> error("invalid native placement mode $rawValue")
         }
 
-    private fun tableAlignment(rawValue: Int): TableAlignment =
+    private fun flow(rawValue: Int): Flow =
         when (rawValue) {
-            0 -> TableAlignment.NONE
-            1 -> TableAlignment.LEFT
-            2 -> TableAlignment.CENTER
-            3 -> TableAlignment.RIGHT
-            else -> error("invalid native table alignment $rawValue")
+            0 -> Flow.NONE
+            1 -> Flow.LEFT
+            2 -> Flow.CENTER
+            3 -> Flow.RIGHT
+            else -> error("invalid native table flow $rawValue")
         }
 }

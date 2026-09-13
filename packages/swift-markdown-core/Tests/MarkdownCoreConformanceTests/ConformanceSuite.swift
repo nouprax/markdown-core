@@ -31,7 +31,7 @@ private typealias Comment = Testing.Comment
             "LineBreak",
             "Code", "HTML", "Comment", "CrossLink", "CrossEmbedded", "Formula", "Emphasis", "Strong",
             "Strikethrough", "Mark", "Insertion", "Span", "Superscript", "Subscript", "DefinitionList", "Definition",
-            "Link", "Media", "Directive",
+            "Link", "Embedded", "Directive",
             "Cite",
             "TableRow", "TableCell",
         ]
@@ -56,13 +56,13 @@ private typealias Comment = Testing.Comment
         #expect(task.items.first?.tasked == true)
         #expect(task.items.first?.completed == true)
         let table = try #require(document.content[2] as? Table)
-        #expect(table.columns.map(\.alignment) == [.center])
+        #expect(table.columns.map(\.flow) == [.center])
         #expect(table.head.count == 1)
         #expect(table.content.count == 1 && table.foot.isEmpty)
         #expect(table.head[0].cells.count == 1)
         let paragraph = try #require(document.content[3] as? Paragraph)
         let link = try #require(paragraph.content[0] as? Link)
-        let image = try #require(paragraph.content[2] as? Media)
+        let image = try #require(paragraph.content[2] as? Embedded)
         #expect(link.dest == .url("/go") && link.title == nil)
         #expect(image.dest == .url("/image") && image.title == "title")
     }

@@ -42,7 +42,7 @@ const canonicalKinds = new Set([
     ...Object.values(leafKinds),
     "TableFoot",
     "Document",
-    "Media",
+    "Embedded",
     "CrossLink",
     "CrossEmbedded",
     "Mark",
@@ -88,7 +88,10 @@ export function fromTokens(tokens) {
             if (stack.length === 1 || stack.at(-1).type !== type) throw new Error(`unbalanced token: ${token.type}`);
             stack.pop();
         } else if (token.type === "image") {
-            append(stack.at(-1).node.children, { kind: "Media", children: fromTokens(token.children ?? []).children });
+            append(stack.at(-1).node.children, {
+                kind: "Embedded",
+                children: fromTokens(token.children ?? []).children
+            });
         } else {
             const kind = leafKinds[token.type];
             if (!kind) throw new Error(`unmapped token: ${token.type}`);

@@ -1,128 +1,144 @@
 # Phase 10 C Defect Ledger
 
-本 ledger 汇总截至 Phase 10 开始时,由 migration reports、sanitizer、并发测试和
-人工审计确认的全部 C engine/facade 缺陷。每项记录复现、根因、影响面、回归测试
-和关闭证据。所有修复均落在 C 层;未引入任何 platform workaround。
+This ledger collects every C engine/facade defect confirmed by migration
+reports, sanitizers, concurrency tests, and manual audits at the start of
+Phase 10. Each entry records reproduction, root cause, impact, regression tests,
+and closure evidence. Every fix is in C; no platform workaround is introduced.
 
-状态汇总:**4 项缺陷,全部关闭**。无未关闭的 C correctness、memory-safety、
-thread-safety 或 lifecycle 缺陷阻塞 Phase 11。
-
----
-
-## MC10-01 并发首次 parse 的无同步 core-extension 注册
-
-- **来源**:Phase 7 migration report §3.5(Swift Testing 并行执行时崩溃)。
-- **复现**:全新进程中多个线程同时调用 `markdown_core_document_parse`。
-  `markdown_core_core_extensions_ensure_registered` 的无同步
-  `static int registered` 使多个线程同时执行整个注册事务。确定性复现:
-  `concurrency_runner --case first_parse`(barrier 同时释放 8 线程)。
-- **根因**:首次注册事务包含三类 process-global mutation——extension
-  node-type 计数器(`MARKDOWN_CORE_NODE_LAST_BLOCK/_INLINE` 经
-  `markdown_core_syntax_extension_add_node`)、node flag 分配
-  (`markdown_core_register_node_flag`,重复注册直接 `abort()`)和 registry
-  链表 append——全部无同步。
-- **影响面**:任何多线程 consumer 的首次 parse:崩溃
-  (`flag initialization error in markdown_core_register_node_flag` abort)、
-  重复/撕裂的 extension 注册、错误 node type 分配。三端 binding 全部暴露。
-- **修复**:新增可移植进程级 once(`core/once.{h,c}`:POSIX `pthread_once`,
-  Windows `InitOnceExecuteOnce`),包住**整个**注册事务
-  (`extensions/core-extensions.c`)。未采用局部锁,未要求 consumer warmup。
-- **回归测试**:`facade_concurrent_first_parse`(facade label,无 warmup、
-  全新进程、barrier 同步首次 parse,覆盖 parse/attach/traverse/dump/free 并
-  与单线程参考 dump byte-for-byte 比较)。
-- **关闭证据**:修复前该测试在 TSan build 下确定性失败
-  (`Subprocess aborted`,stderr 出现 4 次 flag initialization abort);修复后
-  default/ASan/UBSan/TSan 全部通过。Swift Testing 全局 warmup 已删除,
-  `swift test`(并行执行,真实并发首次调用)10/10 通过。
-
-## MC10-02 `markdown_core_release_plugins` 与初始化状态脱节
-
-- **来源**:Phase 10 规范审计(spec §Phase 10 任务列表)。
-- **复现**(代码路径审计):`markdown_core_release_plugins` 释放并清空
-  registry,但注册侧的"已初始化"标志保持为真。此后同进程内的
-  `markdown_core_document_parse` 在 `attach_extension` 找不到 extension,
-  全部失败(`required syntax extension is unavailable`);若与并行 parse
-  重叠,则是对 registry 链表的并发释放/读取(use-after-free)。
-- **根因**:注册(once 语义)与释放(可重复调用)两个生命周期互不知情;
-  存在"已初始化标志为真但 registry 已释放"的非法状态。
-- **影响面**:CLI teardown 路径(`main.c` 曾在退出前调用);任何未来在
-  library 场景调用该 API 的 consumer。
-- **修复**:冻结 registry 生命周期——首次成功注册后 extension descriptors
-  对 facade parse 保持 process-lifetime immutable。删除
-  `markdown_core_release_plugins`(`registry.h`/`registry.c`)及 CLI 调用点;
-  `registry.h` 写明注册是 initialization-time 操作、无 release/unregister
-  路径。进程退出时由 OS 回收(全局指针保持可达,LeakSanitizer 不报泄漏)。
-- **回归测试**:`regression_registry_lifecycle`(regression label,2000 次
-  parse/free 循环、交错失败路径,最终 parse 仍附加全部 extensions 且 dump
-  与首次 byte-for-byte 一致)。
-- **关闭证据**:符号已从源码/头文件/调用点删除(全仓 grep 无余留);回归
-  测试在 default/ASan/UBSan/TSan 下通过;ASan(leak 检测启用的平台)对 CLI
-  与全部测试无泄漏报告。
-
-## MC10-03 `SPECIAL_CHARS`/`SKIP_CHARS` 的每次 parse 进程级写入
-
-- **来源**:本阶段规定的 facade parse 路径 process-global mutable state 审计
-  (Phase 10 任务)中新确认。
-- **复现**:`process_inlines`(每次 `markdown_core_parser_finish`)按当前
-  parser 附加的 inline extensions 在进程级表 `SPECIAL_CHARS[256]`/
-  `SKIP_CHARS[256]` 上先加后删。两个并发 parse 只要 extension 集合不同
-  (例如一个启用 strikethrough、一个关闭),就互相污染:字符 `~`/`$`/`:`
-  的 special/emphasis-skip 状态在另一个 parser 的 inline 扫描与 emphasis
-  flanking 判定中间翻转,产生错误 AST;TSan 视角为纯粹 data race。确定性
-  复现:`concurrency_runner --case stress`(混合 option 组合并发 parse)。
-- **根因**:per-parse 的可变状态错误地放在进程级——初始化边界(MC10-01 的
-  once)无法覆盖,因为它在每次 parse 中都要按 parser 的 option 集写入。
-- **影响面**:初始化完成**之后**的所有并发 parse(比 MC10-01 更广):静默的
-  AST 语义错误(emphasis 边界、extension inline 构造)、TSan data race。
-- **修复**:表迁移为 parser-local(`parser.h` 新增 `special_chars[256]`/
-  `skip_chars[256]`,`markdown_core_parser_reset` 以 immutable 基表初始化;
-  `markdown_core_inlines_add/remove_special_character` 与
-  `markdown_core_manage_extensions_special_characters` 全部改写 parser 表;
-  `subject` 借用 parser 表指针,无 parser 的 reference 解析路径借用 const
-  基表)。进程级不再存在任何 parse 期写入的表;`SMART_PUNCT_CHARS` 与基表
-  声明为 `const`。
-- **回归测试**:`facade_concurrent_stress`(facade label,8 线程 × 200 轮 ×
-  6 输入 × 3 option 变体,含 `*a~b*c~`、`*a$b*c$` 等 skip-char 敏感输入,
-  全部 dump 与参考 byte-for-byte 比较)。
-- **关闭证据**:以进程级表模拟修复前行为时,该测试在 TSan 下报多起
-  `WARNING: ThreadSanitizer: data race` 且出现功能性 dump 分歧
-  (`thread 0 reported a violation`);恢复 parser-local 实现后
-  default/ASan/UBSan/TSan 全部通过,单线程 goldens(spec/extensions/
-  regression 全部 56 项 correctness 测试)无任何行为漂移。
-
-## MC10-04 UBSan 插桩缺口(验证基础设施)
-
-- **来源**:本阶段 sanitizer 配置审计。
-- **复现**:`Ubsan` build type 的 `-fsanitize=undefined` 只在
-  `core/CMakeLists.txt` 目录作用域追加,extensions 与 tests 目录未插桩;
-  `correctness-ubsan` 因此从未真正检查过 extensions/ast.c、六个 extension
-  实现和全部 test runners 的 UB。
-- **根因**:sanitizer flag 放错目录作用域。
-- **影响面**:UBSan 验证结论对超过一半的 C 代码无效。
-- **修复**:sanitizer build type 的编译 flags 上移到
-  `packages/markdown-core/CMakeLists.txt`(core、extensions、tests 全部
-  插桩);同层新增 `Tsan` build type 与 `tsan`/`correctness-tsan` presets、
-  `make tsan-test`、CI `ubsan`/`tsan` jobs(此前 CI 亦无 ubsan job)。
-- **回归测试**:`ctest --preset correctness-ubsan` / `correctness-tsan`
-  本身(现在覆盖全部 56 项 correctness 测试与全部 C 源)。
-- **关闭证据**:全插桩后 UBSan/TSan 各 56/56 通过。
+Status: **4 defects, all closed**. No open C correctness, memory-safety,
+thread-safety, or lifecycle defect blocks Phase 11.
 
 ---
 
-## 审计范围备注(非缺陷)
+## MC10-01 Unsynchronized core-extension registration during concurrent first parses
 
-facade parse 路径其余 process-global state 审计结论:
+- **Source:** Phase 7 migration report §3.5, crashes during parallel Swift
+  Testing execution.
+- **Reproduction:** multiple threads in a fresh process simultaneously call
+  `markdown_core_document_parse`. The unsynchronized `static int registered` in
+  `markdown_core_core_extensions_ensure_registered` allows several threads to
+  execute the registration transaction. Deterministic reproduction:
+  `concurrency_runner --case first_parse`, releasing 8 threads from a barrier.
+- **Root cause:** first registration performs three types of process-global
+  mutation without synchronization: extension node-type counters
+  (`MARKDOWN_CORE_NODE_LAST_BLOCK/_INLINE` through
+  `markdown_core_syntax_extension_add_node`), node-flag allocation
+  (`markdown_core_register_node_flag`, which calls `abort()` on duplicate
+  registration), and registry-list appends.
+- **Impact:** any multithreaded consumer's first parses can crash with
+  `flag initialization error in markdown_core_register_node_flag`, register
+  duplicate or inconsistent extensions, or allocate incorrect node types. All
+  three binding platforms are exposed.
+- **Fix:** add portable process-wide once in `core/once.{h,c}` using POSIX
+  `pthread_once` and Windows `InitOnceExecuteOnce`, wrapping the **entire**
+  registration transaction in `extensions/core-extensions.c`. No partial lock
+  or consumer warmup requirement.
+- **Regression:** `facade_concurrent_first_parse`, facade label, fresh process,
+  no warmup, barrier-synchronized first parses, covering
+  parse/attach/traverse/dump/free and byte-for-byte comparison to a
+  single-threaded reference dump.
+- **Closure evidence:** before the fix, the TSan build failed deterministically
+  with `Subprocess aborted` and 4 flag-initialization aborts on stderr. After
+  the fix, default/ASan/UBSan/TSan all pass. Swift Testing's global warmup is
+  removed; parallel `swift test` with real concurrent first calls passes 10/10.
 
-| 状态 | 结论 |
+## MC10-02 `markdown_core_release_plugins` is disconnected from initialization state
+
+- **Source:** Phase 10 specification audit, spec §Phase 10 task list.
+- **Reproduction (code-path audit):** `markdown_core_release_plugins` frees and
+  clears the registry but leaves registration's initialized flag true.
+  Subsequent `markdown_core_document_parse` calls in the same process cannot
+  find extensions in `attach_extension` and all fail with
+  `required syntax extension is unavailable`. Overlap with a concurrent parse
+  instead produces a registry-list free/read race and use-after-free.
+- **Root cause:** once-only registration and repeatable release have independent
+  lifecycles, allowing the invalid state "initialized flag true but registry
+  already freed."
+- **Impact:** the CLI teardown path (`main.c` previously called it before exit)
+  and any future consumer calling the API as a library operation.
+- **Fix:** freeze registry lifetime. After successful first registration,
+  extension descriptors are immutable for the process lifetime for facade
+  parsing. Remove `markdown_core_release_plugins` from `registry.h`/`registry.c`
+  and its CLI caller. `registry.h` documents initialization-time registration
+  with no release/unregister path. The OS reclaims storage at process exit;
+  global pointers remain reachable, so LeakSanitizer does not report leaks.
+- **Regression:** `regression_registry_lifecycle`, regression label, 2000
+  parse/free cycles interleaved with failures. The final parse still attaches
+  every extension and matches the first dump byte for byte.
+- **Closure evidence:** the symbol is removed from source, headers, and callers,
+  with no remaining repository-wide grep matches. The regression passes under
+  default/ASan/UBSan/TSan. ASan reports no leaks in the CLI or any test on
+  platforms with leak detection enabled.
+
+## MC10-03 Per-parse process-global writes to `SPECIAL_CHARS`/`SKIP_CHARS`
+
+- **Source:** newly confirmed in this phase's required audit of process-global
+  mutable state on the facade parse path.
+- **Reproduction:** `process_inlines`, called on every
+  `markdown_core_parser_finish`, adds then removes characters in process-global
+  `SPECIAL_CHARS[256]`/`SKIP_CHARS[256]` tables according to attached inline
+  extensions. Concurrent parses with different extension sets, such as enabling
+  versus disabling strikethrough, interfere. The special/emphasis-skip state of
+  `~`/`$`/`:` changes during another parser's inline scanning and emphasis
+  flanking checks, producing incorrect ASTs and TSan data races. Deterministic
+  reproduction: `concurrency_runner --case stress` with mixed parse options.
+- **Root cause:** per-parse mutable state is incorrectly process-global. The
+  initialization boundary from MC10-01 cannot cover writes required on every
+  parse for its option set.
+- **Impact:** all concurrent parses **after** initialization, broader than
+  MC10-01: silent AST errors in emphasis boundaries and extension inline
+  construction, plus TSan data races.
+- **Fix:** make tables parser-local. Add `special_chars[256]`/`skip_chars[256]`
+  to `parser.h`; `markdown_core_parser_reset` initializes them from immutable
+  base tables. `markdown_core_inlines_add/remove_special_character` and
+  `markdown_core_manage_extensions_special_characters` modify only parser
+  tables. `subject` borrows their pointers; reference parsing without a parser
+  borrows const base tables. No process-global table is written during parsing;
+  `SMART_PUNCT_CHARS` and base tables are declared `const`.
+- **Regression:** `facade_concurrent_stress`, facade label, 8 threads × 200
+  rounds × 6 inputs × 3 option variants, including skip-character-sensitive
+  `*a~b*c~` and `*a$b*c$`. All dumps match reference bytes exactly.
+- **Closure evidence:** simulating the old process-global tables produces
+  multiple `WARNING: ThreadSanitizer: data race` reports and functional dump
+  differences (`thread 0 reported a violation`). Restoring parser-local tables
+  passes default/ASan/UBSan/TSan with no drift in single-threaded goldens across
+  all 56 correctness tests, including spec/extensions/regression.
+
+## MC10-04 UBSan instrumentation gap (validation infrastructure)
+
+- **Source:** sanitizer configuration audit in this phase.
+- **Reproduction:** the `Ubsan` build type adds `-fsanitize=undefined` only in
+  the directory scope of `core/CMakeLists.txt`; extensions and tests are not
+  instrumented. `correctness-ubsan` therefore never actually checked UB in
+  extensions/ast.c, the six extension implementations, or all test runners.
+- **Root cause:** sanitizer flags are set in the wrong directory scope.
+- **Impact:** UBSan validation does not apply to more than half the C code.
+- **Fix:** move sanitizer build-type compile flags to
+  `packages/markdown-core/CMakeLists.txt` so core, extensions, and tests are all
+  instrumented. At the same level add `Tsan`, `tsan`/`correctness-tsan` presets,
+  `make tsan-test`, and CI `ubsan`/`tsan` jobs; CI previously lacked a ubsan job.
+- **Regression:** `ctest --preset correctness-ubsan` / `correctness-tsan`
+  themselves, now covering all 56 correctness tests and all C source.
+- **Closure evidence:** fully instrumented UBSan and TSan each pass 56/56.
+
+---
+
+## Audit-scope notes (not defects)
+
+Other process-global state on the facade parse path:
+
+| State | Finding |
 | --- | --- |
-| `MARKDOWN_CORE_NODE_LAST_BLOCK/_INLINE`、node flag 计数器、registry 链表 | 只在 once 事务内写入,之后 process-lifetime immutable;once 建立 happens-before |
-| `MARKDOWN_CORE_DEFAULT_MEM_ALLOCATOR`、`syntax_extension.c:_mem` | 静态初始化后从不写入 |
-| `inlines.c` 基表、`SMART_PUNCT_CHARS`、scanners/entities/houdini 表 | `const`/只读 |
-| `arena.c` 静态 arena | 仅 CLI(`main.c`)使用的诊断 allocator,不在 facade parse 路径;facade 固定使用 default allocator |
-| `node.c:enable_safety_checks` | legacy engine API 的启动期开关,不属于 facade 公开面;必须在并发开始前设置(已在头文件契约中排除未公开约定) |
+| `MARKDOWN_CORE_NODE_LAST_BLOCK/_INLINE`, node-flag counters, registry list | Written only within once, then immutable for the process lifetime; once establishes happens-before |
+| `MARKDOWN_CORE_DEFAULT_MEM_ALLOCATOR`, `syntax_extension.c:_mem` | Never written after static initialization |
+| `inlines.c` base tables, `SMART_PUNCT_CHARS`, scanners/entities/houdini tables | `const`/read-only |
+| Static arena in `arena.c` | Diagnostic allocator used only by CLI `main.c`, outside facade parsing, which always uses the default allocator |
+| `node.c:enable_safety_checks` | Startup switch in the legacy engine API, outside the public facade; must be set before concurrency starts. The header contract excludes undocumented conventions |
 
-facade 失败路径复审:parse 的四条失败路径(invalid argument、parser 分配
-失败、document 分配失败、root 缺失)均正确释放已获取资源且不触碰全局状态;
-`set_error` 在 error 结构自身分配失败时保持 `*error == NULL`(调用方按
-document == NULL 判定失败,不解引用 error),无泄漏、无双重释放。dump 的
-determinism 由每个并发/生命周期用例的双 dump byte 比较持续验证。
+Facade failure-path review: all four parse failures (invalid argument, parser
+allocation failure, document allocation failure, missing root) correctly release
+acquired resources without touching global state. `set_error` leaves
+`*error == NULL` if allocating the error itself fails; callers detect failure
+through document == NULL and do not dereference the error. There are no leaks or
+double frees. Each concurrency/lifecycle case continually checks determinism
+through two byte-compared dumps.

@@ -2,7 +2,7 @@ package com.nouprax.markdown.core
 
 /** A logical column, with an authored width share when present. */
 public class TableColumn internal constructor(
-    public val alignment: TableAlignment,
+    public val flow: Flow,
     public val relative: Double?,
 )
 
@@ -15,7 +15,7 @@ public class TableCell internal constructor(
     override val anchor: String?,
     override val attributes: Attributes,
 ) : Markup {
-    override fun <Result> accept(visitor: Visitor<Result>): Result = visitor.visitTableCell(this)
+    override fun <Result> accept(visitor: Visitor<Result>): Result = visitor.visit(this)
 }
 
 public class TableRow internal constructor(
@@ -24,7 +24,7 @@ public class TableRow internal constructor(
     override val anchor: String?,
     override val attributes: Attributes,
 ) : Markup {
-    override fun <Result> accept(visitor: Visitor<Result>): Result = visitor.visitTableRow(this)
+    override fun <Result> accept(visitor: Visitor<Result>): Result = visitor.visit(this)
 }
 
 public class Table internal constructor(
@@ -37,7 +37,7 @@ public class Table internal constructor(
     override val anchor: String?,
     override val attributes: Attributes,
 ) : Markup {
-    override fun <Result> accept(visitor: Visitor<Result>): Result = visitor.visitTable(this)
+    override fun <Result> accept(visitor: Visitor<Result>): Result = visitor.visit(this)
 }
 
 /** An independently owned table caption with ordinary inline content. */
@@ -47,5 +47,5 @@ public class TableCaption internal constructor(
     override val anchor: String?,
     override val attributes: Attributes,
 ) : Markup {
-    override fun <Result> accept(visitor: Visitor<Result>): Result = visitor.visitTableCaption(this)
+    override fun <Result> accept(visitor: Visitor<Result>): Result = visitor.visit(this)
 }

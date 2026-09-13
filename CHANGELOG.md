@@ -6,6 +6,20 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
+- Rename `TableAlignment` to the shared `Flow` value across Swift, Kotlin and
+  ES, with `markdown_core_flow` and `MARKDOWN_CORE_FLOW_*` in C. Rename
+  `TableColumn.alignment` to `flow` across all bindings. Enum values and wire
+  numbers remain unchanged. Swift's `Dimensions` and `Flow` share
+  `Markup/Common.swift`.
+
+- Rename `PlacementMode` to `Placement` across Swift, Kotlin and ES, and the C
+  typedef to `markdown_core_placement`. Formula's `mode` field and the enum
+  values remain unchanged.
+
+- Rename the Markdown image node from `Media` to `Embedded` across C, Swift,
+  Kotlin and ES, including visitors, kind names and canonical dumps. Fields,
+  parsing behavior and numeric kind identifiers are unchanged.
+
 - Parse nameless fenced containers with nullable `DirectiveBlock.name` across
   C, Swift, Kotlin and ES. Named and nameless forms share attributes, nesting
   and closer ownership; code and other opaque blocks retain their own fences.
@@ -63,9 +77,9 @@ promised to remain compatible between releases.
   `obsidianmd/obsidian-help@d780d6b48a92ee6a150304b40ee888f322bf43bf`
   (read 2026-09-03); the dialect modules own the documented adaptations.
 
-- Rename the canonical `Image` node to `Media` across C, Swift, Kotlin, ES,
-  visitors and dumps. ES uses `kind: "media"`; C uses
-  `MARKDOWN_CORE_KIND_MEDIA` and `markdown_core_node_dimensions`.
+- Rename the canonical `Image` node to `Embedded` across C, Swift, Kotlin, ES,
+  visitors and dumps. ES uses `kind: "embedded"`; C uses
+  `MARKDOWN_CORE_KIND_EMBEDDED` and `markdown_core_node_dimensions`.
   The parser preserves the authored target without inferring its media type.
 
 - Parse external image dimensions from complete `W`, `WxH`, `alt|W` and
@@ -77,7 +91,7 @@ promised to remain compatible between releases.
   flag. CrossEmbedded labels use the same size grammar,
   retaining only the raw label prefix. Ordinary cross-link labels and malformed
   suffixes remain unchanged. C exposes the shared `markdown_core_node_dimensions`.
-  Replace separate image width/height fields with `Media.dimensions`, an optional
+  Replace separate image width/height fields with `Embedded.dimensions`, an optional
   node-independent `Dimensions(width, height?)` value across every public surface.
 
 - Recognize opening callout metadata on C, Swift, Kotlin and ES. Preserve the

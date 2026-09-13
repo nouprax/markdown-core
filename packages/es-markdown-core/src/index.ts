@@ -18,7 +18,7 @@ export type { Formula } from "./model/formula.js";
 export type { Heading } from "./model/heading.js";
 export type { HTMLBlock } from "./model/html-block.js";
 export type { HTML } from "./model/html.js";
-export type { Media } from "./model/media.js";
+export type { Embedded } from "./model/embedded.js";
 export type { LineBreak } from "./model/line-break.js";
 export type { Link } from "./model/link.js";
 export type { List, ListItem } from "./model/list.js";
@@ -47,10 +47,10 @@ export type {
     ListFlavor,
     OrderedListDelimiter,
     OrderedListVariant,
-    PlacementMode,
+    Placement,
     Position,
     Scope,
-    TableAlignment
+    Flow
 } from "./values.js";
 export { visit } from "./visitor.js";
 export type { Visitor } from "./visitor.js";

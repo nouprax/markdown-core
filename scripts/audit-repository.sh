@@ -87,8 +87,8 @@ git ls-files | while IFS= read -r path; do
     fi
 done
 
-for required in LICENSE COPYING UPSTREAM.md; do
-    [ -f "$required" ] || fail "required attribution file is missing: $required"
+for required in LICENSE COPYING UPSTREAM.md packages/es-markdown-core/README.md; do
+    [ -f "$required" ] || fail "required package documentation is missing: $required"
 done
 cmp LICENSE packages/es-markdown-core/LICENSE >/dev/null \
     || fail "the npm package license differs from the repository license"

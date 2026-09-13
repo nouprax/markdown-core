@@ -192,8 +192,42 @@ explicit tasks using the native harness and corpus, not default tests.
 Pull requests and merge-group snapshots must produce the fail-closed
 `Required gates`, `CodeQL gate`, and `Release Dry Run - Ready` contexts.
 Release readiness includes coordinated versions and all C, Swift, npm, and
-cross-host Maven artifact producers. A failed, cancelled, skipped, or missing
-producer blocks readiness; a manual dry run has a different context.
+cross-host Maven artifact producers. When full validation is required, a
+failed, cancelled, skipped, or missing producer blocks readiness; a manual
+dry run has a different context.
+
+Every CI, CodeQL, release dry-run, and PR benchmark run first uses the shared
+`changes.yml` preflight. Repository integrity, documentation contracts, test
+topology, and documented release coordinates are checked even for
+documentation-only changes. Required workflows always start; their gates may
+skip only after a successful preflight explicitly permits it. A failed preflight
+or missing decision fails the gates rather than leaving
+required contexts pending or treating an unexpected skip as success.
+
+`scripts/ci-changes.mjs` identifies prose through a conservative path allowlist.
+Markdown fixtures, machine-readable specifications, source, build configuration,
+lockfiles, and workflows remain execution inputs. The fingerprint covers Git
+paths, modes, and blob identities; executable Markdown, symlinks, and submodules
+also remain inputs. Renaming source into a documentation path changes the
+fingerprint because the original source disappears.
+
+A PR or merge-group snapshot containing only documentation relative to its
+integration base skips the build, test, security scan, release artifact, and
+benchmark jobs. A documentation follow-up on a PR containing code may instead
+reuse validation from the immediately preceding push, provided the latest CI,
+CodeQL, and Release Dry Run runs all completed successfully with identical
+execution inputs and the same tested merge base. Main-branch pushes apply the
+same rule to CI and CodeQL. Older successes cannot bypass a newer failure or
+unfinished run. Code-changing merge groups always run fully.
+
+Each workflow records its actual inputs in a small `ci-inputs` artifact retained
+for 30 days. PR bases come from the tested merge's parents, because historical
+run API responses can contain updated PR metadata. Evidence is accepted only
+from a successful run for the same repository, event, ref, and PR. Re-running a
+workflow replaces its record; failed-job retries can retain the original record
+for that fixed snapshot. Missing, expired, incomplete, or unreadable evidence
+falls back to full validation. Manual, scheduled, and formal release runs always
+execute fully. A skipped PR benchmark produces no comparison comment.
 
 `pnpm audit:tests` checks contracts without compiling. After an existing C build,
 `scripts/audit-test-topology.sh build/cmake` additionally checks dynamic discovery,

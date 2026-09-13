@@ -691,7 +691,7 @@ static void write_node(jni_payload_buffer *buffer, jni_payload_stack *stack, jni
         put_string(buffer, first, true);
         break;
     case MARKDOWN_CORE_KIND_FORMULA: {
-        markdown_core_placement_mode mode;
+        markdown_core_placement mode;
         if (!markdown_core_node_formula_properties(node, &mode, &first)) {
             buffer->failure = JNI_PAYLOAD_INTERNAL;
             return;
@@ -701,7 +701,7 @@ static void write_node(jni_payload_buffer *buffer, jni_payload_stack *stack, jni
         break;
     }
     case MARKDOWN_CORE_KIND_FORMULA_BLOCK: {
-        markdown_core_placement_mode mode;
+        markdown_core_placement mode;
         if (!markdown_core_node_formula_properties(node, &mode, &first) || mode != MARKDOWN_CORE_PLACEMENT_STANDALONE) {
             buffer->failure = JNI_PAYLOAD_INTERNAL;
             return;
@@ -726,7 +726,7 @@ static void write_node(jni_payload_buffer *buffer, jni_payload_stack *stack, jni
                 buffer->failure = JNI_PAYLOAD_INTERNAL;
                 return;
             }
-            put_u8(buffer, (uint8_t)column.alignment);
+            put_u8(buffer, (uint8_t)column.flow);
             put_u8(buffer, column.relative.has_value ? 1 : 0);
             if (column.relative.has_value) {
                 int64_t bits;
@@ -807,7 +807,7 @@ static void write_node(jni_payload_buffer *buffer, jni_payload_stack *stack, jni
         break;
     }
     case MARKDOWN_CORE_KIND_LINK:
-    case MARKDOWN_CORE_KIND_MEDIA: {
+    case MARKDOWN_CORE_KIND_EMBEDDED: {
         /* The resource's ordinal leads. Only its first sight carries the
          * destination and title; a later occurrence names the ordinal and
          * nothing else, so the decoder materializes each resource once. */
@@ -847,7 +847,7 @@ static void write_node(jni_payload_buffer *buffer, jni_payload_stack *stack, jni
             put_optional_string(buffer, optional_first);
             write_attributes(buffer, markdown_core_node_inherited_attributes(node));
         }
-        if (kind == MARKDOWN_CORE_KIND_MEDIA) {
+        if (kind == MARKDOWN_CORE_KIND_EMBEDDED) {
             put_dimensions(buffer, markdown_core_node_dimensions(node));
         }
         schedule_children(buffer, stack, node);

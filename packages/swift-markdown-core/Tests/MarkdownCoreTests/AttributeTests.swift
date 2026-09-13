@@ -51,15 +51,19 @@ extension APISuite {
             authors: values[5],
             scope: parsed.scope
         )
-        let document = Document(
-            scope: parsed.scope,
-            anchor: nil,
-            attributes: .empty,
-            content: parsed.content,
-            metadata: metadata,
-            footnotes: [],
-            specimens: []
+        var records = parsed.$fields.records
+        records[0] = .document(
+            .init(
+                scope: parsed.scope,
+                anchor: nil,
+                attributes: .empty,
+                content: parsed.content.recordIndices,
+                metadata: metadata,
+                footnotes: [],
+                specimens: []
+            )
         )
+        let document = MarkupStore(records: records).value(at: 0, as: Document.self)
         #expect(
             [
                 document.metadata?.name, document.metadata?.title, document.metadata?.subtitle,
@@ -86,7 +90,7 @@ extension APISuite {
         let paragraph = try #require(document.content[1] as? Paragraph)
         let code = try #require(paragraph.content[0] as? Code)
         let link = try #require(paragraph.content[2] as? Link)
-        let image = try #require(paragraph.content[4] as? Media)
+        let image = try #require(paragraph.content[4] as? Embedded)
         #expect(code.literal == "x" && code.attributes.classes == ["code"])
         #expect(code.scope.end.column == 10)
         #expect(link.anchor == "own")

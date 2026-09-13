@@ -10,7 +10,7 @@ public enum class WalkPhase {
 }
 
 /**
- * An exhaustive, node-kind-dispatched observer for a depth-first markup walk.
+ * An exhaustive observer with [visit] overloads for every concrete type in a depth-first markup walk.
  *
  * There is no untyped callback or default implementation. Adding a [Markup]
  * kind therefore breaks every walking visitor until it handles the new kind.
@@ -23,213 +23,213 @@ public enum class WalkPhase {
  * footnote's own content.
  */
 public interface WalkingVisitor {
-    public fun visitDocument(
-        node: Document,
+    public fun visit(
+        document: Document,
         phase: WalkPhase,
     )
 
-    public fun visitCallout(
-        node: Callout,
+    public fun visit(
+        callout: Callout,
         phase: WalkPhase,
     )
 
-    public fun visitParagraph(
-        node: Paragraph,
+    public fun visit(
+        paragraph: Paragraph,
         phase: WalkPhase,
     )
 
-    public fun visitHeading(
-        node: Heading,
+    public fun visit(
+        heading: Heading,
         phase: WalkPhase,
     )
 
-    public fun visitThematicBreak(
-        node: ThematicBreak,
+    public fun visit(
+        thematicBreak: ThematicBreak,
         phase: WalkPhase,
     )
 
-    public fun visitList(
-        node: List,
+    public fun visit(
+        list: List,
         phase: WalkPhase,
     )
 
-    public fun visitListItem(
-        node: ListItem,
+    public fun visit(
+        listItem: ListItem,
         phase: WalkPhase,
     )
 
-    public fun visitCodeBlock(
-        node: CodeBlock,
+    public fun visit(
+        codeBlock: CodeBlock,
         phase: WalkPhase,
     )
 
-    public fun visitHTMLBlock(
-        node: HTMLBlock,
+    public fun visit(
+        htmlBlock: HTMLBlock,
         phase: WalkPhase,
     )
 
-    public fun visitFormulaBlock(
-        node: FormulaBlock,
+    public fun visit(
+        formulaBlock: FormulaBlock,
         phase: WalkPhase,
     )
 
-    public fun visitTable(
-        node: Table,
+    public fun visit(
+        table: Table,
         phase: WalkPhase,
     )
 
-    public fun visitTableCaption(
-        node: TableCaption,
+    public fun visit(
+        tableCaption: TableCaption,
         phase: WalkPhase,
     )
 
-    public fun visitTableRow(
-        node: TableRow,
+    public fun visit(
+        tableRow: TableRow,
         phase: WalkPhase,
     )
 
-    public fun visitTableCell(
-        node: TableCell,
+    public fun visit(
+        tableCell: TableCell,
         phase: WalkPhase,
     )
 
-    public fun visitDirectiveBlock(
-        node: DirectiveBlock,
+    public fun visit(
+        directiveBlock: DirectiveBlock,
         phase: WalkPhase,
     )
 
-    public fun visitDirectiveLabel(
-        node: DirectiveLabel,
+    public fun visit(
+        directiveLabel: DirectiveLabel,
         phase: WalkPhase,
     )
 
-    public fun visitText(
-        node: Text,
+    public fun visit(
+        text: Text,
         phase: WalkPhase,
     )
 
-    public fun visitSoftBreak(
-        node: SoftBreak,
+    public fun visit(
+        softBreak: SoftBreak,
         phase: WalkPhase,
     )
 
-    public fun visitLineBreak(
-        node: LineBreak,
+    public fun visit(
+        lineBreak: LineBreak,
         phase: WalkPhase,
     )
 
-    public fun visitCode(
-        node: Code,
+    public fun visit(
+        code: Code,
         phase: WalkPhase,
     )
 
-    public fun visitHTML(
-        node: HTML,
+    public fun visit(
+        html: HTML,
         phase: WalkPhase,
     )
 
-    public fun visitCrossLink(
-        node: CrossLink,
+    public fun visit(
+        crossLink: CrossLink,
         phase: WalkPhase,
     )
 
-    public fun visitCrossEmbedded(
-        node: CrossEmbedded,
+    public fun visit(
+        crossEmbedded: CrossEmbedded,
         phase: WalkPhase,
     )
 
-    public fun visitComment(
-        node: Comment,
+    public fun visit(
+        comment: Comment,
         phase: WalkPhase,
     )
 
-    public fun visitFormula(
-        node: Formula,
+    public fun visit(
+        formula: Formula,
         phase: WalkPhase,
     )
 
-    public fun visitEmphasis(
-        node: Emphasis,
+    public fun visit(
+        emphasis: Emphasis,
         phase: WalkPhase,
     )
 
-    public fun visitStrong(
-        node: Strong,
+    public fun visit(
+        strong: Strong,
         phase: WalkPhase,
     )
 
-    public fun visitStrikethrough(
-        node: Strikethrough,
+    public fun visit(
+        strikethrough: Strikethrough,
         phase: WalkPhase,
     )
 
-    public fun visitMark(
-        node: Mark,
+    public fun visit(
+        mark: Mark,
         phase: WalkPhase,
     )
 
-    public fun visitInsertion(
-        node: Insertion,
+    public fun visit(
+        insertion: Insertion,
         phase: WalkPhase,
     )
 
-    public fun visitSpan(
-        node: Span,
+    public fun visit(
+        span: Span,
         phase: WalkPhase,
     )
 
-    public fun visitSuperscript(
-        node: Superscript,
+    public fun visit(
+        superscript: Superscript,
         phase: WalkPhase,
     )
 
-    public fun visitDefinitionList(
-        node: DefinitionList,
+    public fun visit(
+        definitionList: DefinitionList,
         phase: WalkPhase,
     )
 
-    public fun visitDefinition(
-        node: Definition,
+    public fun visit(
+        definition: Definition,
         phase: WalkPhase,
     )
 
-    public fun visitSubscript(
-        node: Subscript,
+    public fun visit(
+        subscript: Subscript,
         phase: WalkPhase,
     )
 
-    public fun visitLink(
-        node: Link,
+    public fun visit(
+        link: Link,
         phase: WalkPhase,
     )
 
-    public fun visitMedia(
-        node: Media,
+    public fun visit(
+        embedded: Embedded,
         phase: WalkPhase,
     )
 
-    public fun visitDirective(
-        node: Directive,
+    public fun visit(
+        directive: Directive,
         phase: WalkPhase,
     )
 
-    public fun visitCite(
-        node: Cite,
+    public fun visit(
+        cite: Cite,
         phase: WalkPhase,
     )
 
-    public fun visitCitation(
-        value: Citation,
+    public fun visit(
+        citation: Citation,
         phase: WalkPhase,
     )
 
-    public fun visitFootnote(
-        value: Footnote,
+    public fun visit(
+        footnote: Footnote,
         phase: WalkPhase,
     )
 
-    public fun visitSpecimen(
-        value: Specimen,
+    public fun visit(
+        specimen: Specimen,
         phase: WalkPhase,
     )
 }
@@ -296,9 +296,9 @@ private class WalkingDriver(
                 }
             when (action) {
                 is WalkAction.Node -> action.node.accept(this)
-                is WalkAction.CitationValue -> visitCitation(action.value)
-                is WalkAction.FootnoteValue -> visitFootnote(action.value)
-                is WalkAction.SpecimenValue -> visitSpecimen(action.value)
+                is WalkAction.CitationValue -> visit(action.value)
+                is WalkAction.FootnoteValue -> visit(action.value)
+                is WalkAction.SpecimenValue -> visit(action.value)
             }
         }
     }
@@ -313,279 +313,279 @@ private class WalkingDriver(
         }
     }
 
-    override fun visitDocument(node: Document) {
-        visitor.visitDocument(node, phase)
-        scheduleExit(node)
+    override fun visit(document: Document) {
+        visitor.visit(document, phase)
+        scheduleExit(document)
         if (phase == WalkPhase.ENTERING) {
             // The footnotes are visited after the content, in their order.
-            for (index in node.specimens.indices.reversed()) {
-                actions += WalkAction.SpecimenValue(node.specimens[index], ActionPhase.ENTER)
+            for (index in document.specimens.indices.reversed()) {
+                actions += WalkAction.SpecimenValue(document.specimens[index], ActionPhase.ENTER)
             }
-            for (index in node.footnotes.indices.reversed()) {
-                actions += WalkAction.FootnoteValue(node.footnotes[index], ActionPhase.ENTER)
+            for (index in document.footnotes.indices.reversed()) {
+                actions += WalkAction.FootnoteValue(document.footnotes[index], ActionPhase.ENTER)
             }
-            schedule(node.content)
+            schedule(document.content)
         }
     }
 
     /** A citation's prefix is visited before its suffix, between its phases. */
-    private fun visitCitation(value: Citation) {
-        visitor.visitCitation(value, phase)
+    private fun visit(citation: Citation) {
+        visitor.visit(citation, phase)
         if (phase == WalkPhase.ENTERING) {
-            actions += WalkAction.CitationValue(value, ActionPhase.EXIT)
-            schedule(value.suffix)
-            schedule(value.prefix)
+            actions += WalkAction.CitationValue(citation, ActionPhase.EXIT)
+            schedule(citation.suffix)
+            schedule(citation.prefix)
         }
     }
 
-    private fun visitFootnote(value: Footnote) {
-        visitor.visitFootnote(value, phase)
+    private fun visit(footnote: Footnote) {
+        visitor.visit(footnote, phase)
         if (phase == WalkPhase.ENTERING) {
-            actions += WalkAction.FootnoteValue(value, ActionPhase.EXIT)
-            schedule(value.content)
+            actions += WalkAction.FootnoteValue(footnote, ActionPhase.EXIT)
+            schedule(footnote.content)
         }
     }
 
-    private fun visitSpecimen(value: Specimen) {
-        visitor.visitSpecimen(value, phase)
+    private fun visit(specimen: Specimen) {
+        visitor.visit(specimen, phase)
         if (phase == WalkPhase.ENTERING) {
-            actions += WalkAction.SpecimenValue(value, ActionPhase.EXIT)
-            schedule(value.content)
+            actions += WalkAction.SpecimenValue(specimen, ActionPhase.EXIT)
+            schedule(specimen.content)
         }
     }
 
-    override fun visitCallout(node: Callout) {
-        visitor.visitCallout(node, phase)
-        scheduleExit(node)
+    override fun visit(callout: Callout) {
+        visitor.visit(callout, phase)
+        scheduleExit(callout)
         if (phase == WalkPhase.ENTERING) {
-            schedule(node.content)
-            // The title is a node-valued field, visited before the content.
-            node.title?.let(::schedule)
+            schedule(callout.content)
+            // The title is a callout-valued field, visited before the content.
+            callout.title?.let(::schedule)
         }
     }
 
-    override fun visitParagraph(node: Paragraph) {
-        visitor.visitParagraph(node, phase)
-        scheduleExit(node)
-        if (phase == WalkPhase.ENTERING) schedule(node.content)
+    override fun visit(paragraph: Paragraph) {
+        visitor.visit(paragraph, phase)
+        scheduleExit(paragraph)
+        if (phase == WalkPhase.ENTERING) schedule(paragraph.content)
     }
 
-    override fun visitHeading(node: Heading) {
-        visitor.visitHeading(node, phase)
-        scheduleExit(node)
-        if (phase == WalkPhase.ENTERING) schedule(node.content)
+    override fun visit(heading: Heading) {
+        visitor.visit(heading, phase)
+        scheduleExit(heading)
+        if (phase == WalkPhase.ENTERING) schedule(heading.content)
     }
 
-    override fun visitThematicBreak(node: ThematicBreak) {
-        visitor.visitThematicBreak(node, phase)
-        scheduleExit(node)
+    override fun visit(thematicBreak: ThematicBreak) {
+        visitor.visit(thematicBreak, phase)
+        scheduleExit(thematicBreak)
     }
 
-    override fun visitList(node: List) {
-        visitor.visitList(node, phase)
-        scheduleExit(node)
-        if (phase == WalkPhase.ENTERING) schedule(node.items)
+    override fun visit(list: List) {
+        visitor.visit(list, phase)
+        scheduleExit(list)
+        if (phase == WalkPhase.ENTERING) schedule(list.items)
     }
 
-    override fun visitListItem(node: ListItem) {
-        visitor.visitListItem(node, phase)
-        scheduleExit(node)
-        if (phase == WalkPhase.ENTERING) schedule(node.content)
+    override fun visit(listItem: ListItem) {
+        visitor.visit(listItem, phase)
+        scheduleExit(listItem)
+        if (phase == WalkPhase.ENTERING) schedule(listItem.content)
     }
 
-    override fun visitCodeBlock(node: CodeBlock) {
-        visitor.visitCodeBlock(node, phase)
-        scheduleExit(node)
+    override fun visit(codeBlock: CodeBlock) {
+        visitor.visit(codeBlock, phase)
+        scheduleExit(codeBlock)
     }
 
-    override fun visitHTMLBlock(node: HTMLBlock) {
-        visitor.visitHTMLBlock(node, phase)
-        scheduleExit(node)
+    override fun visit(htmlBlock: HTMLBlock) {
+        visitor.visit(htmlBlock, phase)
+        scheduleExit(htmlBlock)
     }
 
-    override fun visitFormulaBlock(node: FormulaBlock) {
-        visitor.visitFormulaBlock(node, phase)
-        scheduleExit(node)
+    override fun visit(formulaBlock: FormulaBlock) {
+        visitor.visit(formulaBlock, phase)
+        scheduleExit(formulaBlock)
     }
 
-    override fun visitTable(node: Table) {
-        visitor.visitTable(node, phase)
-        scheduleExit(node)
+    override fun visit(table: Table) {
+        visitor.visit(table, phase)
+        scheduleExit(table)
         if (phase == WalkPhase.ENTERING) {
-            schedule(node.foot)
-            schedule(node.content)
-            schedule(node.head)
-            node.caption?.let { schedule(listOf(it)) }
+            schedule(table.foot)
+            schedule(table.content)
+            schedule(table.head)
+            table.caption?.let { schedule(listOf(it)) }
         }
     }
 
-    override fun visitTableCaption(node: TableCaption) {
-        visitor.visitTableCaption(node, phase)
-        scheduleExit(node)
-        if (phase == WalkPhase.ENTERING) schedule(node.content)
+    override fun visit(tableCaption: TableCaption) {
+        visitor.visit(tableCaption, phase)
+        scheduleExit(tableCaption)
+        if (phase == WalkPhase.ENTERING) schedule(tableCaption.content)
     }
 
-    override fun visitTableRow(node: TableRow) {
-        visitor.visitTableRow(node, phase)
-        scheduleExit(node)
-        if (phase == WalkPhase.ENTERING) schedule(node.cells)
+    override fun visit(tableRow: TableRow) {
+        visitor.visit(tableRow, phase)
+        scheduleExit(tableRow)
+        if (phase == WalkPhase.ENTERING) schedule(tableRow.cells)
     }
 
-    override fun visitTableCell(node: TableCell) {
-        visitor.visitTableCell(node, phase)
-        scheduleExit(node)
-        if (phase == WalkPhase.ENTERING) schedule(node.content)
+    override fun visit(tableCell: TableCell) {
+        visitor.visit(tableCell, phase)
+        scheduleExit(tableCell)
+        if (phase == WalkPhase.ENTERING) schedule(tableCell.content)
     }
 
-    override fun visitDirectiveBlock(node: DirectiveBlock) {
-        visitor.visitDirectiveBlock(node, phase)
-        scheduleExit(node)
+    override fun visit(directiveBlock: DirectiveBlock) {
+        visitor.visit(directiveBlock, phase)
+        scheduleExit(directiveBlock)
         if (phase == WalkPhase.ENTERING) {
-            schedule(node.content)
-            node.label?.let { actions += WalkAction.Node(it, ActionPhase.ENTER) }
+            schedule(directiveBlock.content)
+            directiveBlock.label?.let { actions += WalkAction.Node(it, ActionPhase.ENTER) }
         }
     }
 
-    override fun visitDirectiveLabel(node: DirectiveLabel) {
-        visitor.visitDirectiveLabel(node, phase)
-        scheduleExit(node)
-        if (phase == WalkPhase.ENTERING) schedule(node.content)
+    override fun visit(directiveLabel: DirectiveLabel) {
+        visitor.visit(directiveLabel, phase)
+        scheduleExit(directiveLabel)
+        if (phase == WalkPhase.ENTERING) schedule(directiveLabel.content)
     }
 
-    override fun visitText(node: Text) {
-        visitor.visitText(node, phase)
-        scheduleExit(node)
+    override fun visit(text: Text) {
+        visitor.visit(text, phase)
+        scheduleExit(text)
     }
 
-    override fun visitSoftBreak(node: SoftBreak) {
-        visitor.visitSoftBreak(node, phase)
-        scheduleExit(node)
+    override fun visit(softBreak: SoftBreak) {
+        visitor.visit(softBreak, phase)
+        scheduleExit(softBreak)
     }
 
-    override fun visitLineBreak(node: LineBreak) {
-        visitor.visitLineBreak(node, phase)
-        scheduleExit(node)
+    override fun visit(lineBreak: LineBreak) {
+        visitor.visit(lineBreak, phase)
+        scheduleExit(lineBreak)
     }
 
-    override fun visitCode(node: Code) {
-        visitor.visitCode(node, phase)
-        scheduleExit(node)
+    override fun visit(code: Code) {
+        visitor.visit(code, phase)
+        scheduleExit(code)
     }
 
-    override fun visitHTML(node: HTML) {
-        visitor.visitHTML(node, phase)
-        scheduleExit(node)
+    override fun visit(html: HTML) {
+        visitor.visit(html, phase)
+        scheduleExit(html)
     }
 
-    override fun visitCrossLink(node: CrossLink) {
-        visitor.visitCrossLink(node, phase)
-        scheduleExit(node)
+    override fun visit(crossLink: CrossLink) {
+        visitor.visit(crossLink, phase)
+        scheduleExit(crossLink)
     }
 
-    override fun visitCrossEmbedded(node: CrossEmbedded) {
-        visitor.visitCrossEmbedded(node, phase)
-        scheduleExit(node)
+    override fun visit(crossEmbedded: CrossEmbedded) {
+        visitor.visit(crossEmbedded, phase)
+        scheduleExit(crossEmbedded)
     }
 
-    override fun visitComment(node: Comment) {
-        visitor.visitComment(node, phase)
-        scheduleExit(node)
+    override fun visit(comment: Comment) {
+        visitor.visit(comment, phase)
+        scheduleExit(comment)
     }
 
-    override fun visitFormula(node: Formula) {
-        visitor.visitFormula(node, phase)
-        scheduleExit(node)
+    override fun visit(formula: Formula) {
+        visitor.visit(formula, phase)
+        scheduleExit(formula)
     }
 
-    override fun visitEmphasis(node: Emphasis) {
-        visitor.visitEmphasis(node, phase)
-        scheduleExit(node)
-        if (phase == WalkPhase.ENTERING) schedule(node.content)
+    override fun visit(emphasis: Emphasis) {
+        visitor.visit(emphasis, phase)
+        scheduleExit(emphasis)
+        if (phase == WalkPhase.ENTERING) schedule(emphasis.content)
     }
 
-    override fun visitStrong(node: Strong) {
-        visitor.visitStrong(node, phase)
-        scheduleExit(node)
-        if (phase == WalkPhase.ENTERING) schedule(node.content)
+    override fun visit(strong: Strong) {
+        visitor.visit(strong, phase)
+        scheduleExit(strong)
+        if (phase == WalkPhase.ENTERING) schedule(strong.content)
     }
 
-    override fun visitStrikethrough(node: Strikethrough) {
-        visitor.visitStrikethrough(node, phase)
-        scheduleExit(node)
-        if (phase == WalkPhase.ENTERING) schedule(node.content)
+    override fun visit(strikethrough: Strikethrough) {
+        visitor.visit(strikethrough, phase)
+        scheduleExit(strikethrough)
+        if (phase == WalkPhase.ENTERING) schedule(strikethrough.content)
     }
 
-    override fun visitMark(node: Mark) {
-        visitor.visitMark(node, phase)
-        scheduleExit(node)
-        if (phase == WalkPhase.ENTERING) schedule(node.content)
+    override fun visit(mark: Mark) {
+        visitor.visit(mark, phase)
+        scheduleExit(mark)
+        if (phase == WalkPhase.ENTERING) schedule(mark.content)
     }
 
-    override fun visitInsertion(node: Insertion) {
-        visitor.visitInsertion(node, phase)
-        scheduleExit(node)
-        if (phase == WalkPhase.ENTERING) schedule(node.content)
+    override fun visit(insertion: Insertion) {
+        visitor.visit(insertion, phase)
+        scheduleExit(insertion)
+        if (phase == WalkPhase.ENTERING) schedule(insertion.content)
     }
 
-    override fun visitSpan(node: Span) {
-        visitor.visitSpan(node, phase)
-        scheduleExit(node)
-        if (phase == WalkPhase.ENTERING) schedule(node.content)
+    override fun visit(span: Span) {
+        visitor.visit(span, phase)
+        scheduleExit(span)
+        if (phase == WalkPhase.ENTERING) schedule(span.content)
     }
 
-    override fun visitSuperscript(node: Superscript) {
-        visitor.visitSuperscript(node, phase)
-        scheduleExit(node)
-        if (phase == WalkPhase.ENTERING) schedule(node.content)
+    override fun visit(superscript: Superscript) {
+        visitor.visit(superscript, phase)
+        scheduleExit(superscript)
+        if (phase == WalkPhase.ENTERING) schedule(superscript.content)
     }
 
-    override fun visitDefinitionList(node: DefinitionList) {
-        visitor.visitDefinitionList(node, phase)
-        scheduleExit(node)
-        if (phase == WalkPhase.ENTERING) schedule(node.definitions)
+    override fun visit(definitionList: DefinitionList) {
+        visitor.visit(definitionList, phase)
+        scheduleExit(definitionList)
+        if (phase == WalkPhase.ENTERING) schedule(definitionList.definitions)
     }
 
-    override fun visitDefinition(node: Definition) {
-        visitor.visitDefinition(node, phase)
-        scheduleExit(node)
+    override fun visit(definition: Definition) {
+        visitor.visit(definition, phase)
+        scheduleExit(definition)
         if (phase == WalkPhase.ENTERING) {
-            for (body in node.content.asReversed()) schedule(body)
-            schedule(node.term)
+            for (body in definition.content.asReversed()) schedule(body)
+            schedule(definition.term)
         }
     }
 
-    override fun visitSubscript(node: Subscript) {
-        visitor.visitSubscript(node, phase)
-        scheduleExit(node)
-        if (phase == WalkPhase.ENTERING) schedule(node.content)
+    override fun visit(subscript: Subscript) {
+        visitor.visit(subscript, phase)
+        scheduleExit(subscript)
+        if (phase == WalkPhase.ENTERING) schedule(subscript.content)
     }
 
-    override fun visitLink(node: Link) {
-        visitor.visitLink(node, phase)
-        scheduleExit(node)
-        if (phase == WalkPhase.ENTERING) schedule(node.content)
+    override fun visit(link: Link) {
+        visitor.visit(link, phase)
+        scheduleExit(link)
+        if (phase == WalkPhase.ENTERING) schedule(link.content)
     }
 
-    override fun visitMedia(node: Media) {
-        visitor.visitMedia(node, phase)
-        scheduleExit(node)
-        if (phase == WalkPhase.ENTERING) schedule(node.content)
+    override fun visit(embedded: Embedded) {
+        visitor.visit(embedded, phase)
+        scheduleExit(embedded)
+        if (phase == WalkPhase.ENTERING) schedule(embedded.content)
     }
 
-    override fun visitDirective(node: Directive) {
-        visitor.visitDirective(node, phase)
-        scheduleExit(node)
+    override fun visit(directive: Directive) {
+        visitor.visit(directive, phase)
+        scheduleExit(directive)
         if (phase == WalkPhase.ENTERING) {
-            node.label?.let { actions += WalkAction.Node(it, ActionPhase.ENTER) }
+            directive.label?.let { actions += WalkAction.Node(it, ActionPhase.ENTER) }
         }
     }
 
-    override fun visitCite(node: Cite) {
-        visitor.visitCite(node, phase)
-        scheduleExit(node)
+    override fun visit(cite: Cite) {
+        visitor.visit(cite, phase)
+        scheduleExit(cite)
         if (phase == WalkPhase.ENTERING) {
-            for (index in node.citations.indices.reversed()) {
-                actions += WalkAction.CitationValue(node.citations[index], ActionPhase.ENTER)
+            for (index in cite.citations.indices.reversed()) {
+                actions += WalkAction.CitationValue(cite.citations[index], ActionPhase.ENTER)
             }
         }
     }

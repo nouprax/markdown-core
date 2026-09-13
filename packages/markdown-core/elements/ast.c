@@ -206,8 +206,8 @@ markdown_core_node_kind markdown_core_node_get_kind(const markdown_core_node *no
     if (node->kind == MARKDOWN_CORE_NODE_LINK) {
         return MARKDOWN_CORE_KIND_LINK;
     }
-    if (node->kind == MARKDOWN_CORE_NODE_MEDIA) {
-        return MARKDOWN_CORE_KIND_MEDIA;
+    if (node->kind == MARKDOWN_CORE_NODE_EMBEDDED) {
+        return MARKDOWN_CORE_KIND_EMBEDDED;
     }
     if (node->kind == MARKDOWN_CORE_NODE_CROSS_LINK) {
         return MARKDOWN_CORE_KIND_CROSS_LINK;
@@ -278,7 +278,7 @@ const char *markdown_core_node_kind_name(markdown_core_node_kind kind) {
         "Strong",
         "Strikethrough",
         "Link",
-        "Media",
+        "Embedded",
         "Directive",
         "Cite",
         "TableRow",
@@ -436,7 +436,7 @@ bool markdown_core_node_literal(const markdown_core_node *node, markdown_core_st
     }
 }
 
-bool markdown_core_node_formula_properties(const markdown_core_node *node, markdown_core_placement_mode *mode,
+bool markdown_core_node_formula_properties(const markdown_core_node *node, markdown_core_placement *mode,
                                            markdown_core_string *literal) {
     const char *value;
     markdown_core_formula_mode native_mode;
@@ -599,7 +599,7 @@ const markdown_core_dimensions *markdown_core_node_dimensions(const markdown_cor
         return NULL;
     }
     const markdown_core_optional_dimensions *dimensions;
-    if (node->kind == MARKDOWN_CORE_NODE_MEDIA) {
+    if (node->kind == MARKDOWN_CORE_NODE_EMBEDDED) {
         dimensions = &node->as.link->dimensions;
     } else if (node->kind == MARKDOWN_CORE_NODE_CROSS_EMBEDDED) {
         dimensions = &node->as.cross_embedded->dimensions;
@@ -690,7 +690,7 @@ const markdown_core_node *markdown_core_node_callout_title(const markdown_core_n
 }
 
 static bool is_link(const markdown_core_node *node) {
-    return node && (node->kind == MARKDOWN_CORE_NODE_LINK || node->kind == MARKDOWN_CORE_NODE_MEDIA);
+    return node && (node->kind == MARKDOWN_CORE_NODE_LINK || node->kind == MARKDOWN_CORE_NODE_EMBEDDED);
 }
 
 /* Every link and image the parser produces reads through a resource, and
@@ -986,20 +986,20 @@ static bool ensure_more(dump_buffer *buffer, size_t depth) {
     return true;
 }
 
-static const char *alignment_name(markdown_core_table_alignment alignment) {
-    switch (alignment) {
-    case MARKDOWN_CORE_TABLE_ALIGNMENT_LEFT:
+static const char *flow_name(markdown_core_flow flow) {
+    switch (flow) {
+    case MARKDOWN_CORE_FLOW_LEFT:
         return "left";
-    case MARKDOWN_CORE_TABLE_ALIGNMENT_CENTER:
+    case MARKDOWN_CORE_FLOW_CENTER:
         return "center";
-    case MARKDOWN_CORE_TABLE_ALIGNMENT_RIGHT:
+    case MARKDOWN_CORE_FLOW_RIGHT:
         return "right";
     default:
         return "none";
     }
 }
 
-static const char *mode_name(markdown_core_placement_mode mode) {
+static const char *mode_name(markdown_core_placement mode) {
     return mode == MARKDOWN_CORE_PLACEMENT_EMBEDDED ? "embedded" : "standalone";
 }
 
@@ -1104,7 +1104,7 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
     markdown_core_ordered_list_variant variant;
     markdown_core_ordered_list_delimiter delimiter;
     markdown_core_list_flavor flavor;
-    markdown_core_placement_mode mode;
+    markdown_core_placement mode;
     markdown_core_destination destination;
     bool x, y;
     size_t count, i;
@@ -1223,7 +1223,7 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
             if (i) {
                 buffer_cstr(buffer, ",");
             }
-            buffer_cstr(buffer, alignment_name(column.alignment));
+            buffer_cstr(buffer, flow_name(column.flow));
             buffer_cstr(buffer, ":");
             if (column.relative.has_value) {
                 buffer_double(buffer, column.relative.value);
@@ -1277,7 +1277,7 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
         buffer_cstr(buffer, " dimensions=");
         buffer_dimensions(buffer, markdown_core_node_dimensions(node));
         break;
-    case MARKDOWN_CORE_KIND_MEDIA: {
+    case MARKDOWN_CORE_KIND_EMBEDDED: {
         markdown_core_node_destination(node, &destination);
         markdown_core_node_title(node, &oa);
         buffer_cstr(buffer, " dest=");
@@ -1735,7 +1735,7 @@ static void dump_node(dump_buffer *buffer, const markdown_core_node *node, size_
     case MARKDOWN_CORE_KIND_SUBSCRIPT:
     case MARKDOWN_CORE_KIND_STRIKETHROUGH:
     case MARKDOWN_CORE_KIND_LINK:
-    case MARKDOWN_CORE_KIND_MEDIA:
+    case MARKDOWN_CORE_KIND_EMBEDDED:
         dump_children(buffer, node, depth, child_count);
         break;
     case MARKDOWN_CORE_KIND_THEMATIC_BREAK:

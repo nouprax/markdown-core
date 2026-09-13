@@ -191,29 +191,43 @@ grep -q 'public object TreeDumper' \
     && grep -q 'public fun dump(): String' \
         packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/Markup.kt \
     || fail "Kotlin does not expose the reviewed Markup debug dump API"
-grep -q 'visitor.visitTableRow(this)' packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/Table.kt \
-    && grep -q 'visitor.visitTableCell(this)' packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/Table.kt \
-    && grep -q 'visitTableRow' packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/visitor/Visitor.kt \
-    && grep -q 'visitTableCell' packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/visitor/Visitor.kt \
-    || fail "Kotlin table rows and cells are not first-class Markup visitor nodes"
-if grep -R -n 'defaultVisit' packages/kotlin-markdown-core/src/commonMain; then
-    fail "Kotlin Visitor exposes a catch-all fallback"
-fi
-test "$(grep -c 'public fun visit' packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/visitor/Visitor.kt)" -eq "$kind_count" \
-    || fail "Kotlin Visitor is not exhaustive over all $kind_count Markup kinds"
+# Overloads are identified by their concrete parameter types, including scoped values.
+node --input-type=module <<'NODE'
+import assert from "node:assert/strict";
+import fs from "node:fs";
+
+const contract = JSON.parse(fs.readFileSync("docs/specs/canonical-ast.json", "utf8"));
+const kinds = contract.kinds.map(({ name }) => name);
+const scoped = Object.entries(contract.values)
+    .filter(([, value]) => value.scoped && value.walk !== false)
+    .map(([name]) => name);
+const directory = "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/visitor";
+for (const [name, types] of [["Visitor", kinds], ["WalkingVisitor", [...kinds, ...scoped]]]) {
+    const source = fs.readFileSync(`${directory}/${name}.kt`, "utf8");
+    const body = source.match(new RegExp(`public interface ${name}(?:<Result>)? \\{([\\s\\S]*?)^\\}`, "m"))?.[1];
+    assert.ok(body, `missing Kotlin ${name} interface`);
+    assert.ok(!body.includes("{"), `${name} must have no default implementations`);
+    const methods = [...body.matchAll(/public fun (\w+)\(\s*(\w+): (\w+)([^)]*)\)(?:: (\w+))?/g)];
+    assert.equal(methods.length, types.length, `${name} must have one overload per type`);
+    assert.deepEqual(methods.map((method) => method[3]).sort(), [...types].sort(), `${name} parameter types`);
+    for (const [, method, parameter, type, remaining, result] of methods) {
+        assert.equal(method, "visit", `${name}.${method} must use the overloaded visit name`);
+        const expected = type.replace(/^[A-Z]+(?=[A-Z][a-z]|$)|^[A-Z]/, (prefix) => prefix.toLowerCase());
+        assert.equal(parameter, expected, `${name}.visit(${type}) parameter name`);
+        if (name === "Visitor") {
+            assert.equal(remaining, "", `${name}.visit(${type}) has extra parameters`);
+            assert.equal(result, "Result", `${name}.visit(${type}) return type`);
+        } else {
+            assert.match(remaining, /^,\s*phase: WalkPhase,?\s*$/, `${name}.visit(${type}) phase`);
+        }
+    }
+}
+NODE
 grep -q 'public enum class WalkPhase' \
     packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/visitor/WalkingVisitor.kt \
-    && grep -q 'public interface WalkingVisitor' \
-        packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/visitor/WalkingVisitor.kt \
     && grep -q 'public fun Markup.walk(visitor: WalkingVisitor)' \
         packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/visitor/WalkingVisitor.kt \
     || fail "Kotlin does not expose the typed walking visitor contract"
-test "$(awk '/public interface WalkingVisitor/{inside=1; next} inside && /^}/{exit} inside && /^        node: /{count++} END{print count+0}' packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/visitor/WalkingVisitor.kt)" -eq "$kind_count" \
-    || fail "Kotlin WalkingVisitor is not exhaustive over all $kind_count Markup kinds"
-for value in $scoped_values; do
-    test "$(awk -v value="$value" '/public interface WalkingVisitor/{inside=1; next} inside && /^}/{exit} inside && $0 == "    public fun visit" value "(" {found++} END{print found+0}' packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/visitor/WalkingVisitor.kt)" -eq 1 \
-        || fail "Kotlin WalkingVisitor does not name the scoped value $value exactly once"
-done
 grep -q '^headers = markdown_core.h$' \
     packages/kotlin-markdown-core/src/nativeInterop/cinterop/markdown_core_kotlin.def \
     && grep -q '^package = com.nouprax.markdown.core.internal.capi$' \
@@ -255,26 +269,37 @@ if grep -R -n -E \
 fi
 grep -q 'TableRow extends MarkupBase<"tableRow">' packages/es-markdown-core/src/model/table.ts \
     && grep -q 'TableCell extends MarkupBase<"tableCell">' packages/es-markdown-core/src/model/table.ts \
-    && grep -q 'visitTableRow(this:' packages/es-markdown-core/src/visitor.ts \
-    && grep -q 'visitTableCell(this:' packages/es-markdown-core/src/visitor.ts \
-    || fail "ES table rows and cells are not first-class Markup visitor nodes"
-if grep -R -E -n 'defaultVisit|visit[A-Z][A-Za-z]+\?' packages/es-markdown-core/src; then
-    fail "ES Visitor exposes a catch-all or optional typed handlers"
+    || fail "ES table rows and cells are not first-class Markup nodes"
+if grep -R -E -n 'defaultVisit|visit[A-Z][A-Za-z]+' packages/es-markdown-core/src; then
+    fail "ES retains a catch-all or a retired visitor callback name"
 fi
-test "$(grep -c '^    visit[A-Z].*(this:' packages/es-markdown-core/src/visitor.ts)" -eq "$kind_count" \
-    || fail "ES Visitor is not exhaustive over all $kind_count Markup kinds"
+# Each mapping derives all required node callbacks from the already-audited Markup union.
+node --input-type=module <<'NODE'
+import assert from "node:assert/strict";
+import fs from "node:fs";
+
+const read = (name) => fs.readFileSync(`packages/es-markdown-core/src/${name}.ts`, "utf8");
+assert.match(read("visitor"), /export type Visitor<Result> = \{\s*\[Node in Markup as Node\["kind"\]\]: \(this: void, node: Node\) => Result;\s*\};/);
+const walking = read("walking-visitor");
+const values = walking.match(/export type WalkingVisitor = \{\s*\[Node in Markup as Node\["kind"\]\]: \(this: void, node: Node, phase: WalkPhase\) => void;\s*\} & \{([\s\S]*?)^\};/m)?.[1];
+assert.ok(values, "ES WalkingVisitor must map every Markup kind and retain its value callbacks");
+const contract = JSON.parse(fs.readFileSync("docs/specs/canonical-ast.json", "utf8"));
+const expected = Object.entries(contract.values)
+    .filter(([, value]) => value.scoped && value.walk !== false)
+    .map(([name]) => name).sort();
+const callbacks = [...values.matchAll(/^    ([a-zA-Z]+): \(this: void, ([a-zA-Z]+): ([A-Za-z]+), phase: WalkPhase\) => void;/gm)];
+assert.deepEqual(callbacks.map((callback) => callback[3]).sort(), expected, "ES walking value callback types");
+for (const [, key, parameter, type] of callbacks) {
+    const name = type[0].toLowerCase() + type.slice(1);
+    assert.equal(key, name, `${type} callback key`);
+    assert.equal(parameter, name, `${type} callback parameter`);
+}
+NODE
 grep -q 'export type WalkPhase = "entering" | "exiting"' \
     packages/es-markdown-core/src/walking-visitor.ts \
-    && grep -q 'export interface WalkingVisitor' packages/es-markdown-core/src/walking-visitor.ts \
     && grep -q 'export function walk(root: Markup, walkingVisitor: WalkingVisitor)' \
         packages/es-markdown-core/src/walking-visitor.ts \
     || fail "ES does not expose the typed walking visitor contract"
-test "$(grep -c '^    visit[A-Z].*(this: void, node:' packages/es-markdown-core/src/walking-visitor.ts)" -eq "$kind_count" \
-    || fail "ES WalkingVisitor is not exhaustive over all $kind_count Markup kinds"
-for value in $scoped_values; do
-    test "$(grep -c "^    visit$value(this: void, value: $value, phase: WalkPhase): void;" packages/es-markdown-core/src/walking-visitor.ts)" -eq 1 \
-        || fail "ES WalkingVisitor does not name the scoped value $value exactly once"
-done
 
 node - packages/es-markdown-core/package.json packages/es-markdown-core/src/index.ts <<'NODE'
 import fs from "node:fs";

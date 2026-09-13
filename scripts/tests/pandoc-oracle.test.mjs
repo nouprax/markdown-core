@@ -107,8 +107,8 @@ test("list variants and table columns compare as values rather than wire spellin
         )
     );
     assert.deepEqual(table.children[0].columns, [
-        { alignment: "left", relative: null },
-        { alignment: "right", relative: 0.25 }
+        { flow: "left", relative: null },
+        { flow: "right", relative: 0.25 }
     ]);
 });
 

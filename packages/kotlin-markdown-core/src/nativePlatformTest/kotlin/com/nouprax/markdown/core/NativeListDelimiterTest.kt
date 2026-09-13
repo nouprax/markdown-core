@@ -20,18 +20,18 @@ class NativeListDelimiterTest {
             val value = alloc<markdown_core_ordered_list_delimiter>()
             value.kind = MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PERIOD
             value.closed = false
-            assertEquals(OrderedListDelimiter.Period, decodeNativeListDelimiter(value))
+            assertEquals(OrderedListDelimiter.Period, value.toDelimiter())
             value.kind = MARKDOWN_CORE_ORDERED_LIST_DELIMITER_DEFAULT
-            assertEquals(OrderedListDelimiter.Default, decodeNativeListDelimiter(value))
+            assertEquals(OrderedListDelimiter.Default, value.toDelimiter())
             value.kind = MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PARENTHESIS
             for (closed in listOf(false, true)) {
                 value.closed = closed
                 assertEquals(
                     closed,
-                    assertIs<OrderedListDelimiter.Parenthesis>(decodeNativeListDelimiter(value)).closed,
+                    assertIs<OrderedListDelimiter.Parenthesis>(value.toDelimiter()).closed,
                 )
             }
             value.kind = 99u
-            assertFailsWith<IllegalStateException> { decodeNativeListDelimiter(value) }
+            assertFailsWith<IllegalStateException> { value.toDelimiter() }
         }
 }

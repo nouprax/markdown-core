@@ -40,7 +40,7 @@ and `keywords` accept a single string, a bracketed array, or a block list.
 with `: |`. Metadata stays outside Markup children and visitor callbacks.
 Numbers retain exact decimal strings. Missing fields are null; an authored null
 is a present scalar value. No field order or individual field scope is stored.
-`Media.dimensions: Dimensions | null` reads complete `W`, `WxH`, `alt|W` and
+`Embedded.dimensions: Dimensions | null` reads complete `W`, `WxH`, `alt|W` and
 `alt|WxH` suffixes on direct and resolved images. Values range from 1 to
 2147483647 without leading zeros; malformed suffixes remain parsed alt content.
 Numeric-only labels have empty alt content. Embedded cross links use the same
@@ -139,6 +139,25 @@ and dispatches `entering` and `exiting` to an exhaustive `WalkingVisitor` by
 node kind. Each node-kind branch chooses its typed fields and content; there is
 no public iterator or uniform child projection. A directive label is walked as
 the named `label` field, not as directive content.
+
+Callback keys match the existing `kind` tags: `embedded`, `paragraph`,
+`tableRow`, and so on. `Visitor<Result>` derives every required callback and its
+parameter type directly from the `Markup` union:
+
+```typescript
+type Visitor<Result> = {
+    [Node in Markup as Node["kind"]]: (this: void, node: Node) => Result;
+};
+```
+
+Within a complete `Visitor<Result>` object, `embedded(embedded)` automatically
+receives an `Embedded`; `heading(heading)` receives a `Heading`. All callbacks
+are required, and `visit(markup, visitor)` returns the chosen callback's result.
+`WalkingVisitor` uses the same keys with a second `phase` parameter, plus
+`citation`, `footnote`, and `specimen` callbacks for scoped values that have no
+`kind`. Consumers must rename the former `visitEmbedded`, `visitHeading`, and
+other `visitXxx` keys to their kind names. Missing callbacks are type errors and
+are never silently skipped during dispatch.
 
 `TreeDumper.dump(markup)` and each Markup's non-enumerable `dump()` method emit
 the canonical debug tree for a complete document or focused subtree. The

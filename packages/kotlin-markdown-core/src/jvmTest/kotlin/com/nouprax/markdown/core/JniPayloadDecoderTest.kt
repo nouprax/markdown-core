@@ -66,7 +66,7 @@ class JniPayloadDecoderTest {
         val definition =
             (
                 JniPayloadDecoder
-                    .decodeDocument(
+                    .decode(
                         bytes,
                     ).content
                     .single() as DefinitionList
@@ -75,9 +75,9 @@ class JniPayloadDecoderTest {
         assertTrue(definition.compact)
         assertTrue(definition.term.isEmpty())
         assertEquals(listOf(emptyList()), definition.content)
-        assertFailsWith<IllegalArgumentException> { JniPayloadDecoder.decodeDocument(payload(bodyCount = 0)) }
-        assertFailsWith<IllegalStateException> { JniPayloadDecoder.decodeDocument(payload(compact = 2)) }
-        assertFailsWith<IllegalArgumentException> { JniPayloadDecoder.decodeDocument(payload(childKind = 3)) }
+        assertFailsWith<IllegalArgumentException> { JniPayloadDecoder.decode(payload(bodyCount = 0)) }
+        assertFailsWith<IllegalStateException> { JniPayloadDecoder.decode(payload(compact = 2)) }
+        assertFailsWith<IllegalArgumentException> { JniPayloadDecoder.decode(payload(childKind = 3)) }
     }
 
     @Test
@@ -101,7 +101,7 @@ class JniPayloadDecoderTest {
         for (occurrences in listOf(1, 64, 4096)) {
             val bytes = payload(occurrences, long)
             assertEquals(attributeGrowth, bytes.size - payload(occurrences, short).size)
-            val document = JniPayloadDecoder.decodeDocument(bytes)
+            val document = JniPayloadDecoder.decode(bytes)
             bytes.fill(0)
             val links = document.content.map { assertIs<Link>(assertIs<Paragraph>(it).content.single()) }
             assertEquals(occurrences, links.size)
@@ -163,20 +163,20 @@ class JniPayloadDecoderTest {
                 0,
                 0,
             )
-        val ordinary = JniPayloadDecoder.decodeDocument(payload(kind = 30, withDimensions = false))
+        val ordinary = JniPayloadDecoder.decode(payload(kind = 30, withDimensions = false))
         assertEquals("", assertIs<CrossLink>(assertIs<Paragraph>(ordinary.content.single()).content.single()).label)
         val bytes = payload()
-        val document = JniPayloadDecoder.decodeDocument(bytes)
+        val document = JniPayloadDecoder.decode(bytes)
         val link = assertIs<CrossEmbedded>(assertIs<Paragraph>(document.content.single()).content.single())
         assertEquals("", link.label)
         assertEquals("", assertIs<Destination.Cross>(link.dest).path)
         bytes.fill(0)
         assertEquals("id", assertIs<Destination.Cross>(link.dest).anchor)
         assertEquals(Dimensions(640, 480), link.dimensions)
-        assertFailsWith<IllegalArgumentException> { JniPayloadDecoder.decodeDocument(payload(kind = 30)) }
-        assertFailsWith<IllegalArgumentException> { JniPayloadDecoder.decodeDocument(payload(width = 0)) }
-        assertFailsWith<IllegalArgumentException> { JniPayloadDecoder.decodeDocument(payload(height = 0)) }
-        assertFailsWith<IllegalArgumentException> { JniPayloadDecoder.decodeDocument(payload(1)) }
+        assertFailsWith<IllegalArgumentException> { JniPayloadDecoder.decode(payload(kind = 30)) }
+        assertFailsWith<IllegalArgumentException> { JniPayloadDecoder.decode(payload(width = 0)) }
+        assertFailsWith<IllegalArgumentException> { JniPayloadDecoder.decode(payload(height = 0)) }
+        assertFailsWith<IllegalArgumentException> { JniPayloadDecoder.decode(payload(1)) }
     }
 
     @Test
@@ -265,7 +265,7 @@ class JniPayloadDecoderTest {
                 0,
             )
         val bytes = payload()
-        val document = JniPayloadDecoder.decodeDocument(bytes)
+        val document = JniPayloadDecoder.decode(bytes)
         bytes.fill(0)
         val metadata = document.metadata!!
         assertEquals(MetadataScalar.Null, assertIs<MetadataValue.Scalar>(metadata.name).value)
@@ -279,8 +279,8 @@ class JniPayloadDecoderTest {
         )
         assertEquals(null, metadata.keywords)
         assertEquals(null, metadata.comment)
-        val first = document.content[0] as Media
-        val second = document.content[1] as Media
+        val first = document.content[0] as Embedded
+        val second = document.content[1] as Embedded
         assertTrue(first.dest === second.dest)
         assertEquals(Dimensions(640, 480), first.dimensions)
         assertEquals(null, second.dimensions)
@@ -291,9 +291,9 @@ class JniPayloadDecoderTest {
         val visitor = RecordingWalkingVisitor()
         document.walk(visitor)
         assertTrue(visitor.events.none { it.contains("Metadata") })
-        assertFailsWith<IllegalStateException> { JniPayloadDecoder.decodeDocument(payload(scalarKind = 9)) }
-        assertFailsWith<IllegalArgumentException> { JniPayloadDecoder.decodeDocument(payload(width = 0)) }
-        assertFailsWith<IllegalArgumentException> { JniPayloadDecoder.decodeDocument(payload(height = 0)) }
+        assertFailsWith<IllegalStateException> { JniPayloadDecoder.decode(payload(scalarKind = 9)) }
+        assertFailsWith<IllegalArgumentException> { JniPayloadDecoder.decode(payload(width = 0)) }
+        assertFailsWith<IllegalArgumentException> { JniPayloadDecoder.decode(payload(height = 0)) }
     }
 
     @Test
@@ -367,7 +367,7 @@ class JniPayloadDecoderTest {
             return jniPayload(*parts.toTypedArray())
         }
         val bytes = payload()
-        val table = JniPayloadDecoder.decodeDocument(bytes).content.single() as Table
+        val table = JniPayloadDecoder.decode(bytes).content.single() as Table
         bytes.fill(0)
         assertEquals(0.25, table.columns[0].relative)
         assertEquals(null, table.columns[1].relative)
@@ -376,10 +376,10 @@ class JniPayloadDecoderTest {
         assertEquals(1, table.foot.size)
         assertEquals(2, table.foot[0].cells[0].colspan)
         assertTrue(table.dump().contains("TableFoot children=1"))
-        assertFailsWith<IllegalArgumentException> { JniPayloadDecoder.decodeDocument(payload(head = -1)) }
-        assertFailsWith<IllegalArgumentException> { JniPayloadDecoder.decodeDocument(payload(head = 2)) }
-        assertFailsWith<IllegalArgumentException> { JniPayloadDecoder.decodeDocument(payload(relative = Double.NaN)) }
-        assertFailsWith<IllegalArgumentException> { JniPayloadDecoder.decodeDocument(payload(rowspan = 0)) }
+        assertFailsWith<IllegalArgumentException> { JniPayloadDecoder.decode(payload(head = -1)) }
+        assertFailsWith<IllegalArgumentException> { JniPayloadDecoder.decode(payload(head = 2)) }
+        assertFailsWith<IllegalArgumentException> { JniPayloadDecoder.decode(payload(relative = Double.NaN)) }
+        assertFailsWith<IllegalArgumentException> { JniPayloadDecoder.decode(payload(rowspan = 0)) }
     }
 
     @Test
@@ -473,7 +473,7 @@ class JniPayloadDecoderTest {
                 0.toByte(),
                 0, // anonymous, no reset
             )
-        val document = JniPayloadDecoder.decodeDocument(payload)
+        val document = JniPayloadDecoder.decode(payload)
         payload.fill(0)
         assertEquals("n", document.footnotes.single().id)
         assertEquals(listOf("étude", null), document.specimens.map { it.id })
@@ -566,7 +566,7 @@ class JniPayloadDecoderTest {
             for (lowercased in listOf(false, true)) {
                 for ((delimiter, closed, expected) in delimiters) {
                     val bytes = payload(variant, lowercased, delimiter, closed)
-                    val document = JniPayloadDecoder.decodeDocument(bytes)
+                    val document = JniPayloadDecoder.decode(bytes)
                     bytes.fill(0)
                     val list = document.content.single() as List
                     val decodedLowercased =
@@ -604,7 +604,7 @@ class JniPayloadDecoderTest {
                 }
             }
         }
-        assertFailsWith<IllegalStateException> { JniPayloadDecoder.decodeDocument(payload(2, true, 99, false)) }
+        assertFailsWith<IllegalStateException> { JniPayloadDecoder.decode(payload(2, true, 99, false)) }
     }
 
     @Test
@@ -654,7 +654,7 @@ class JniPayloadDecoderTest {
                 0,
                 0,
             )
-        val document = JniPayloadDecoder.decodeDocument(payload)
+        val document = JniPayloadDecoder.decode(payload)
         val callout = document.content.single() as Callout
         assertEquals("note", callout.variant)
         assertEquals(true, callout.collapsed)
@@ -670,15 +670,15 @@ class JniPayloadDecoderTest {
         val events = mutableListOf<String>()
         callout.walk(
             object : WalkingVisitor by RecordingWalkingVisitor() {
-                override fun visitCallout(
-                    node: Callout,
+                override fun visit(
+                    callout: Callout,
                     phase: WalkPhase,
                 ) {
                     events += "$phase:Callout"
                 }
 
-                override fun visitText(
-                    node: Text,
+                override fun visit(
+                    text: Text,
                     phase: WalkPhase,
                 ) {
                     events += "$phase:Text"
@@ -764,7 +764,7 @@ class JniPayloadDecoderTest {
                 *text(3, 6, 3, 9, "note"),
                 0, // no document specimens
             )
-        val document = JniPayloadDecoder.decodeDocument(payload)
+        val document = JniPayloadDecoder.decode(payload)
         val cite = (document.content.single() as Paragraph).content.single() as Cite
         val citation = cite.citations.single()
         val referent = citation.referent as CitationReferent.Bib
@@ -807,7 +807,7 @@ class JniPayloadDecoderTest {
     @Test
     fun corruptedPayloadFailsInsteadOfProducingAPartialTree() {
         assertFailsWith<IllegalArgumentException> {
-            JniPayloadDecoder.decodeDocument(byteArrayOf(0x4d, 0x4b, 0x4a))
+            JniPayloadDecoder.decode(byteArrayOf(0x4d, 0x4b, 0x4a))
         }
     }
 
@@ -820,7 +820,7 @@ class JniPayloadDecoderTest {
         assertEquals(JniNodeKind.CROSS_EMBEDDED, JniNodeKind.from(32))
         assertEquals(JniNodeKind.CITE, JniNodeKind.from(25))
         assertFailsWith<IllegalArgumentException> {
-            JniPayloadDecoder.decodeDocument("MKJ1".encodeToByteArray())
+            JniPayloadDecoder.decode("MKJ1".encodeToByteArray())
         }
     }
 
@@ -828,37 +828,37 @@ class JniPayloadDecoderTest {
     fun failedAndStructurallyInvalidPayloadsAreRejected() {
         val failure =
             assertFailsWith<ParseException> {
-                JniPayloadDecoder.decodeDocument(jniPayload("MKJ1", 1.toByte(), 1, 3, "bad"))
+                JniPayloadDecoder.decode(jniPayload("MKJ1", 1.toByte(), 1, 3, "bad"))
             }
         assertEquals(ParseErrorCode.INVALID_ARGUMENT, failure.code)
         assertEquals("bad", failure.message)
         assertEquals(
             ParseErrorCode.INTERNAL,
             assertFailsWith<ParseException> {
-                JniPayloadDecoder.decodeDocument(jniPayload("MKJ1", 1.toByte(), 99, 1, "x"))
+                JniPayloadDecoder.decode(jniPayload("MKJ1", 1.toByte(), 99, 1, "x"))
             }.code,
         )
         val allocationFailure =
             assertFailsWith<ParseException> {
-                JniPayloadDecoder.decodeDocument(jniPayload("MKJ1", 1.toByte(), 2, 13, "out of memory"))
+                JniPayloadDecoder.decode(jniPayload("MKJ1", 1.toByte(), 2, 13, "out of memory"))
             }
         assertEquals(ParseErrorCode.ALLOCATION_FAILED, allocationFailure.code)
         assertEquals("out of memory", allocationFailure.message)
 
         assertFailsWith<IllegalStateException> {
-            JniPayloadDecoder.decodeDocument(jniPayload("MKJ1", 2.toByte()))
+            JniPayloadDecoder.decode(jniPayload("MKJ1", 2.toByte()))
         }
         assertFailsWith<IllegalArgumentException> {
-            JniPayloadDecoder.decodeDocument(jniPayload("MKJ0", 0.toByte()))
+            JniPayloadDecoder.decode(jniPayload("MKJ0", 0.toByte()))
         }
         assertFailsWith<IllegalArgumentException> {
-            JniPayloadDecoder.decodeDocument(jniPayload("MKJ1", 0.toByte(), 3.toByte()))
+            JniPayloadDecoder.decode(jniPayload("MKJ1", 0.toByte(), 3.toByte()))
         }
         assertFailsWith<IllegalArgumentException> {
-            JniPayloadDecoder.decodeDocument(jniPayload("MKJ1", 0.toByte(), 1.toByte(), 1, 1))
+            JniPayloadDecoder.decode(jniPayload("MKJ1", 0.toByte(), 1.toByte(), 1, 1))
         }
         assertFailsWith<IllegalArgumentException> {
-            JniPayloadDecoder.decodeDocument(jniPayload("MKJ1", 1.toByte(), 1, -2))
+            JniPayloadDecoder.decode(jniPayload("MKJ1", 1.toByte(), 1, -2))
         }
     }
 }

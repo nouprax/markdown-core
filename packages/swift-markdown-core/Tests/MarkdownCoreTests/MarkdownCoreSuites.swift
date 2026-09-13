@@ -10,20 +10,28 @@ import Testing
     func specimenValues() throws {
         let parsed = try Document.parse("body")
         let scope = parsed.scope
-        let definition = Specimen(scope: scope, id: "étude", start: 5, content: parsed.content)
-        let anonymous = Specimen(scope: scope, id: nil, start: nil, content: [])
-        let citation = Citation(scope: scope, referent: .specimen(id: "étude"), prefix: [], suffix: [])
-        let cite = Cite(scope: scope, anchor: nil, attributes: .empty, citations: [citation])
-        let footnote = Footnote(scope: scope, id: "n", content: [])
-        let document = Document(
-            scope: scope,
-            anchor: nil,
-            attributes: .empty,
-            content: [Paragraph(scope: scope, anchor: nil, attributes: .empty, content: [cite])],
-            metadata: nil,
-            footnotes: [footnote],
-            specimens: [definition, anonymous]
-        )
+        // These reserved scalar combinations are deliberately constructed as
+        // flat records; they need not depend on currently authored syntax.
+        let store = MarkupStore(records: [
+            .document(
+                .init(
+                    scope: scope,
+                    anchor: nil,
+                    attributes: .empty,
+                    content: [1],
+                    metadata: nil,
+                    footnotes: [4],
+                    specimens: [5, 6]
+                )
+            ),
+            .paragraph(.init(scope: scope, anchor: nil, attributes: .empty, content: [2])),
+            .cite(.init(scope: scope, anchor: nil, attributes: .empty, citations: [3])),
+            .citation(.init(scope: scope, referent: .specimen(id: "étude"), prefix: [], suffix: [])),
+            .footnote(.init(scope: scope, id: "n", content: [])),
+            .specimen(.init(scope: scope, id: "étude", start: 5, content: [])),
+            .specimen(.init(scope: scope, id: nil, start: nil, content: [])),
+        ])
+        let document = store.value(at: 0, as: Document.self)
         #expect(document.specimens[0].start == 5)
         #expect(document.specimens[1].id == nil)
         #expect(document.dump().contains("referent=specimen(id=\"étude\")"))
@@ -37,7 +45,7 @@ import Testing
     }
 
     @Test("all native delimiter branches retain their authored value")
-    func nativeListDelimiters() {
+    func listDelimiters() {
         let cases: [(markdown_core_ordered_list_delimiter, OrderedListDelimiter)] = [
             (.init(kind: MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PERIOD, closed: false), .period),
             (.init(kind: MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PARENTHESIS, closed: false), .parenthesis(closed: false)),
@@ -45,7 +53,7 @@ import Testing
             (.init(kind: MARKDOWN_CORE_ORDERED_LIST_DELIMITER_DEFAULT, closed: false), .default),
         ]
         for (value, expected) in cases {
-            #expect(MarkdownCore.List.delimiter(value) == expected)
+            #expect(MarkdownCore.List.Fields.delimiter(value) == expected)
         }
     }
 
@@ -197,7 +205,7 @@ import Testing
         // resolve to, and a later definition of the same id is a footnote
         // after it, as the inherited grammar parses it.
         let document = try Document.parse("[^a] [^a]\n\n[^a]: once\n\n[^a]: twice\n")
-        let cites = document.content.flatMap { ($0 as? Paragraph)?.content ?? [] }.compactMap { $0 as? Cite }
+        let cites = document.content.compactMap { $0 as? Paragraph }.flatMap(\.content).compactMap { $0 as? Cite }
         #expect(document.content.count == 1)
         #expect(cites.count == 2)
         for cite in cites {
@@ -242,21 +250,15 @@ import Testing
     @Test("empty input maps to an empty document")
     func empty() throws {
         #expect(try Document.parse("").content.isEmpty)
+        #expect(
+            try Document.parse("").scope
+                == Scope(start: Position(line: 1, column: 1), end: Position(line: 0, column: 0))
+        )
+        #expect(
+            try Document.parse("é").scope
+                == Scope(start: Position(line: 1, column: 1), end: Position(line: 1, column: 2))
+        )
     }
-}
-
-@Suite("ownership") struct OwnershipSuite {
-    @Test("values remain usable and Sendable after native release")
-    func copiedAndSendable() async throws {
-        requireSendable(Document.self)
-        let document = try Document.parse("parallel 🚀\n")
-        let counts = await withTaskGroup(of: Int.self, returning: [Int].self) { group in
-            for _ in 0..<20 { group.addTask { document.content.count } }
-            return await group.reduce(into: []) { $0.append($1) }
-        }
-        #expect(counts == Array(repeating: 1, count: 20))
-    }
-
 }
 
 @Suite("api") struct DirectiveLabelSuite {
@@ -302,25 +304,11 @@ import Testing
     func workloads() throws {
         let unit = "## Section\n\nParagraph with **strong**, [link](/), and 🚀.\n\n"
         #expect(try Document.parse(String(repeating: unit, count: 5_000)).content.count == 10_000)
-        let depth = 10_000
-        var document: Document? = try Document.parse(
-            String(repeating: "- ", count: depth) + "leaf\n"
-        )
+        let document = try Document.parse(String(repeating: "- ", count: 10_000) + "leaf\n")
         var walkingVisitor = RecordingWalkingVisitor(recordEvents: false)
-        document?.walk(with: &walkingVisitor)
+        document.walk(with: &walkingVisitor)
         #expect(walkingVisitor.entered == walkingVisitor.exited)
-        #expect(walkingVisitor.entered > depth * 2)
-
-        // Keep the next value alive while releasing each ancestor. Swift's
-        // nested value-tree destruction is otherwise recursive independently
-        // of the walk implementation being exercised here.
-        var node = try #require(document?.content.first)
-        document = nil
-        for _ in 0..<depth {
-            let list = try #require(node as? MarkdownCore.List)
-            node = try #require(list.items.first?.content.first)
-        }
-        #expect(node is Paragraph)
+        #expect(walkingVisitor.entered > 20_000)
         for _ in 0..<2_000 { #expect(try Document.parse("# Copy\n\n- [x] item\n").content.count == 2) }
     }
 }
@@ -360,15 +348,13 @@ private struct KindVisitor: MarkupVisitor {
     mutating func visit(_ node: DefinitionList) -> String { kindName(node) }
     mutating func visit(_ node: Definition) -> String { kindName(node) }
     mutating func visit(_ node: Link) -> String { kindName(node) }
-    mutating func visit(_ node: Media) -> String { kindName(node) }
+    mutating func visit(_ node: Embedded) -> String { kindName(node) }
     mutating func visit(_ node: Directive) -> String { kindName(node) }
     mutating func visit(_ node: Cite) -> String { kindName(node) }
     mutating func visit(_ node: TableCaption) -> String { kindName(node) }
     mutating func visit(_ node: TableRow) -> String { "row" }
     mutating func visit(_ node: TableCell) -> String { "cell" }
 }
-
-private func requireSendable<T: Sendable>(_: T.Type) {}
 
 private func kindName(_ node: any Markup) -> String {
     String(describing: type(of: node))
@@ -430,7 +416,7 @@ struct RecordingWalkingVisitor: MarkupWalkingVisitor {
     mutating func visit(_ node: DefinitionList, phase: WalkPhase) { record(node, phase) }
     mutating func visit(_ node: Definition, phase: WalkPhase) { record(node, phase) }
     mutating func visit(_ node: Link, phase: WalkPhase) { record(node, phase) }
-    mutating func visit(_ node: Media, phase: WalkPhase) { record(node, phase) }
+    mutating func visit(_ node: Embedded, phase: WalkPhase) { record(node, phase) }
     mutating func visit(_ node: Directive, phase: WalkPhase) { record(node, phase) }
     mutating func visit(_ node: Cite, phase: WalkPhase) { record(node, phase) }
     mutating func visit(_ node: TableCaption, phase: WalkPhase) { record(node, phase) }

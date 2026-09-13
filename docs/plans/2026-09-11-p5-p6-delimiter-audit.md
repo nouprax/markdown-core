@@ -39,7 +39,7 @@ The follow-up is based on that merged commit.
    the authored fallback and the existing strikethrough rejection invariant.
 
    The same failure audit exposed unchecked bracket-owner attachment: rejecting
-   Span, Link, Media or either footnote Cite form could discard authored content
+   Span, Link, Embedded or either footnote Cite form could discard authored content
    after transferring it to an unattached node. All five regression cases fail
    before the fix. Every bracket alternative now checks the same parent policy
    before moving children or consuming a suffix; tests assert both retained

@@ -79,7 +79,7 @@ class AstTest {
             val table =
                 Table(
                     null,
-                    listOf(TableColumn(TableAlignment.NONE, width)),
+                    listOf(TableColumn(Flow.NONE, width)),
                     emptyList(),
                     emptyList(),
                     emptyList(),
@@ -106,7 +106,7 @@ class AstTest {
         val table =
             Table(
                 null,
-                listOf(TableColumn(TableAlignment.LEFT, 0.1), TableColumn(TableAlignment.NONE, null)),
+                listOf(TableColumn(Flow.LEFT, 0.1), TableColumn(Flow.NONE, null)),
                 listOf(rows[0]),
                 listOf(rows[1]),
                 listOf(rows[2]),
@@ -176,7 +176,7 @@ class AstTest {
                 "Superscript",
                 "Subscript",
                 "Link",
-                "Media",
+                "Embedded",
                 "Directive",
                 "Cite",
                 "TableRow",
@@ -199,7 +199,7 @@ class AstTest {
         assertEquals(3, ordered.start)
         assertEquals("x", (document.content[1] as List).items.single().marker)
         val table = document.content[2] as Table
-        assertEquals(listOf(TableAlignment.CENTER), table.columns.map { it.alignment })
+        assertEquals(listOf(Flow.CENTER), table.columns.map { it.flow })
         assertEquals(1, table.head.size)
         assertEquals(1, table.content.size)
         assertTrue(table.foot.isEmpty())
@@ -212,7 +212,7 @@ class AstTest {
         )
         val paragraph = document.content[3] as Paragraph
         val link = paragraph.content[0] as Link
-        val image = paragraph.content[2] as Media
+        val image = paragraph.content[2] as Embedded
         assertEquals("/go", (link.dest as Destination.Url).value)
         assertNull(link.title)
         assertEquals("/image", (image.dest as Destination.Url).value)

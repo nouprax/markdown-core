@@ -872,7 +872,7 @@ Document scope=1:1..25:32 anchor=null attributes={} children=13
 │       └── Link scope=11:16..11:29 anchor=null attributes={} dest=url("http://inlines") title=null children=1
 │           └── Text scope=11:16..11:29 anchor=null attributes={} literal="http://inlines" children=0
 ├── Paragraph scope=13:1..13:51 anchor=null attributes={} children=1
-│   └── Media scope=13:1..13:51 anchor=null attributes={} dest=url("http://inline.com/image") title=null dimensions=null children=1
+│   └── Embedded scope=13:1..13:51 anchor=null attributes={} dest=url("http://inline.com/image") title=null dimensions=null children=1
 │       └── Text scope=13:3..13:25 anchor=null attributes={} literal="http://inline.com/image" children=0
 ├── Paragraph scope=15:1..15:7 anchor=null attributes={} children=1
 │   └── Link scope=15:1..15:7 anchor=null attributes={} dest=url("mailto:a.w@b.c") title=null children=1

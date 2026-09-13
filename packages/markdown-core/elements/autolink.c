@@ -83,7 +83,7 @@ static MARKDOWN_CORE_INLINE markdown_core_node *make_autolink(markdown_core_inli
     markdown_core_inline_state_place(inline_state, link, start_column, end_column);
     text = make_str_with_entities(inline_state, start_column + 1, end_column - 1, &url);
     if (text) {
-        markdown_core_inline_append_child(link, text);
+        markdown_core_node_attach_owned(link, text, NULL);
     }
     markdown_core_inline_attach_inline_attributes(inline_state, link, start_column);
     /* The pointy braces are the syntax; what they enclose is the text. */
@@ -213,8 +213,14 @@ static size_t autolink_delim(uint8_t *data, size_t link_end) {
     return link_end;
 }
 
-static size_t check_domain(uint8_t *data, size_t size, int allow_short) {
-    size_t i, np = 0, uscore1 = 0, uscore2 = 0;
+static size_t check_domain(markdown_core_parser *parser, markdown_core_inline_state *inline_state, uint8_t *data,
+                           size_t size, int allow_short) {
+    size_t i, np = 0, uscore1 = 0, uscore2 = 0, last_underscore = 0;
+    bufsize_t start = (bufsize_t)(data - inline_state->input.data);
+    parser->autolink_domain_work++;
+    if (start < inline_state->autolink_rejected_until) {
+        return 0;
+    }
 
     /* The purpose of this code is to reject urls that contain an underscore
      * in one of the last two segments. Examples:
@@ -228,11 +234,13 @@ static size_t check_domain(uint8_t *data, size_t size, int allow_short) {
      * but host names are not. See: https://stackoverflow.com/a/2183140
      */
     for (i = 1; i < size - 1; i++) {
+        parser->autolink_domain_work++;
         if (data[i] == '\\' && i < size - 2) {
             i++;
         }
         if (data[i] == '_') {
             uscore2++;
+            last_underscore = i;
         } else if (data[i] == '.') {
             uscore1 = uscore2;
             uscore2 = 0;
@@ -243,15 +251,12 @@ static size_t check_domain(uint8_t *data, size_t size, int allow_short) {
     }
 
     if (uscore1 > 0 || uscore2 > 0) {
-        /* If the url is very long then accept it despite the underscores,
-         * to avoid quadratic behavior causing a denial of service. See:
-         * https://github.com/advisories/GHSA-29g3-96g3-jg6c
-         * Reasonable urls are unlikely to have more than 10 segments, so
-         * this extra condition shouldn't have any impact on normal usage.
-         */
-        if (np <= 10) {
-            return 0;
-        }
+        /* Every later candidate before this underscore still has it in its
+         * last two segments. Keep that rejection frontier, not the whole
+         * host end: a candidate after the underscore may be valid. A shared
+         * suffix is scanned once, with no segment-count change in grammar. */
+        inline_state->autolink_rejected_until = start + (bufsize_t)last_underscore;
+        return 0;
     }
 
     if (allow_short) {
@@ -324,7 +329,7 @@ static markdown_core_node *www_match(markdown_core_parser *parser, markdown_core
         return 0;
     }
 
-    link_end = check_domain(data, size, 0);
+    link_end = check_domain(parser, inline_state, data, size, 0);
 
     if (link_end == 0) {
         return NULL;
@@ -367,7 +372,7 @@ static markdown_core_node *www_match(markdown_core_parser *parser, markdown_core
         return NULL;
     }
     *text->as.literal = markdown_core_chunk_dup(chunk, (bufsize_t)max_rewind, (bufsize_t)link_end);
-    markdown_core_node_append_child(node, text);
+    markdown_core_node_attach_owned(node, text, NULL);
 
     markdown_core_inline_state_place(inline_state, node, (int)max_rewind, (int)(max_rewind + link_end - 1));
     markdown_core_inline_state_place(inline_state, text, (int)max_rewind, (int)(max_rewind + link_end - 1));
@@ -399,7 +404,7 @@ static markdown_core_node *url_match(markdown_core_parser *parser, markdown_core
 
     link_end = strlen("://");
 
-    domain_len = check_domain(data + link_end, size - link_end, 1);
+    domain_len = check_domain(parser, inline_state, data + link_end, size - link_end, 1);
 
     if (domain_len == 0) {
         return 0;
@@ -436,7 +441,7 @@ static markdown_core_node *url_match(markdown_core_parser *parser, markdown_core
         return NULL;
     }
     *text->as.literal = url;
-    markdown_core_node_append_child(node, text);
+    markdown_core_node_attach_owned(node, text, NULL);
 
     markdown_core_inline_state_place(inline_state, node, max_rewind - rewind, (int)(max_rewind + link_end - 1));
     markdown_core_inline_state_place(inline_state, text, max_rewind - rewind, (int)(max_rewind + link_end - 1));
@@ -553,6 +558,26 @@ static bool validate_protocol(const char protocol[], uint8_t *data, size_t rewin
     return !markdown_core_isalnum(prev_char);
 }
 
+/* Construct only a nonempty fragment of an already recognized split. */
+static markdown_core_node *email_text_fragment(markdown_core_parser *parser, markdown_core_node *source_map,
+                                               const markdown_core_chunk *source, size_t start, size_t length) {
+    assert(length);
+    markdown_core_node *text = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_TEXT, parser->mem);
+    if (!text) {
+        parser->oom = true;
+        return NULL;
+    }
+    markdown_core_chunk literal = markdown_core_chunk_dup(source, (bufsize_t)start, (bufsize_t)length);
+    if (!markdown_core_chunk_to_cstr(parser->mem, &literal)) {
+        parser->oom = true;
+        markdown_core_node_free(text);
+        return NULL;
+    }
+    *text->as.literal = literal;
+    set_sourcepos_from_range(parser, text, source_map, start, length);
+    return text;
+}
+
 static void postprocess_text(markdown_core_parser *parser, markdown_core_node *text) {
     size_t start = 0;
     size_t offset = 0;
@@ -560,16 +585,11 @@ static void postprocess_text(markdown_core_parser *parser, markdown_core_node *t
     source_map.content_mark = text->content_mark;
     source_map.content_mark_count = text->content_mark_count;
     source_map.content_mark_offset = text->content_mark_offset;
-    // `text` is going to be split into a list of nodes containing shorter segments
-    // of text, so we detach the memory buffer from text and use `markdown_core_chunk_dup` to
-    // create references to it. Later, `markdown_core_chunk_to_cstr` is used to convert
-    // the references into allocated buffers. The detached buffer is freed before we
-    // return.
-    markdown_core_chunk detached_chunk = *text->as.literal;
-    *text->as.literal = markdown_core_chunk_dup(&detached_chunk, 0, detached_chunk.len);
-
-    uint8_t *data = text->as.literal->data;
-    size_t remaining = text->as.literal->len;
+    /* The original Text owns the immutable source until every split is
+     * committed. A failed search neither detaches nor copies its buffer. */
+    markdown_core_chunk source = *text->as.literal;
+    uint8_t *data = source.data;
+    size_t remaining = source.len;
 
     while (true) {
         size_t link_end;
@@ -672,7 +692,6 @@ static void postprocess_text(markdown_core_parser *parser, markdown_core_node *t
         size_t link_start = start + offset + max_rewind - rewind;
         size_t link_len = link_end + rewind;
         size_t post_start = start + offset + max_rewind + link_end;
-        size_t post_len = remaining - offset - max_rewind - link_end;
         markdown_core_strbuf buf;
         markdown_core_strbuf_init(parser->mem, &buf, 10);
         if (auto_mailto) {
@@ -686,83 +705,47 @@ static void postprocess_text(markdown_core_parser *parser, markdown_core_node *t
             if (!link_node->as.link->resource) {
                 markdown_core_chunk_free(parser->mem, &url);
                 parser->oom = true;
+                markdown_core_node_free(link_node);
+                break;
             }
         }
         set_sourcepos_from_range(parser, link_node, &source_map, link_start, link_len);
 
-        markdown_core_node *link_text = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_TEXT, parser->mem);
+        markdown_core_node *link_text = email_text_fragment(parser, &source_map, &source, link_start, link_len);
         if (!link_text) {
-            parser->oom = true;
             markdown_core_node_free(link_node);
             break;
         }
-        markdown_core_chunk email = markdown_core_chunk_dup(
-            &detached_chunk, (bufsize_t)(start + offset + max_rewind - rewind), (bufsize_t)(link_end + rewind));
-        /* The copy must own its bytes before detached_chunk is freed below. */
-        if (!markdown_core_chunk_to_cstr(parser->mem, &email)) {
-            parser->oom = true;
-            markdown_core_chunk_set_cstr(parser->mem, &email, NULL);
+        markdown_core_node_attach_owned(link_node, link_text, NULL);
+        if (prefix_len) {
+            markdown_core_node *prefix = email_text_fragment(parser, &source_map, &source, prefix_start, prefix_len);
+            if (!prefix) {
+                markdown_core_node_free(link_node);
+                break;
+            }
+            markdown_core_node_attach_owned(text->parent, prefix, text);
         }
-        *link_text->as.literal = email;
-        set_sourcepos_from_range(parser, link_text, &source_map, link_start, link_len);
-        markdown_core_node_append_child(link_node, link_text);
-
-        markdown_core_node_insert_after(text, link_node);
-
-        markdown_core_node *post = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_TEXT, parser->mem);
-        if (!post) {
-            parser->oom = true;
-            break;
-        }
-        *post->as.literal = markdown_core_chunk_dup(&detached_chunk, (bufsize_t)post_start, (bufsize_t)post_len);
-        set_sourcepos_from_range(parser, post, &source_map, post_start, post_len);
-
-        markdown_core_node_insert_after(link_node, post);
-
-        *text->as.literal = markdown_core_chunk_dup(&detached_chunk, (bufsize_t)prefix_start, (bufsize_t)prefix_len);
-        if (!markdown_core_chunk_to_cstr(parser->mem, text->as.literal)) {
-            parser->oom = true;
-            markdown_core_chunk_set_cstr(parser->mem, text->as.literal, NULL);
-        }
-        set_sourcepos_from_range(parser, text, &source_map, prefix_start, prefix_len);
-
-        // A link at the very start of the run leaves a prefix with no bytes.
-        // `set_sourcepos_from_range` has already zeroed all four coordinates and
-        // then returned early on `len == 0`, so what would stay in the tree is a
-        // node with no literal and no position -- and consolidation cannot clean
-        // it up, because it runs BEFORE every element postprocess. So it goes
-        // here, where it is made. `markdown_core_node_free` unlinks first, and
-        // `link_node` is already spliced in after this node, so the list stays
-        // whole.
-        if (prefix_len == 0) {
-            markdown_core_node_free(text);
-        }
-
-        text = post;
-        start += offset + max_rewind + link_end;
-        remaining -= offset + max_rewind + link_end;
+        markdown_core_node_attach_owned(text->parent, link_node, text);
+        start = post_start;
+        remaining = source.len - start;
         offset = 0;
     }
 
-    // The same for the tail: a link that ends the run leaves it with no bytes.
-    // Only ever reached when the split ran at least once -- `postprocess`
-    // consolidates before it iterates, and consolidation now drops an empty
-    // `TEXT`, so the node this function is handed always owned bytes on entry.
-    if (text->as.literal->len == 0) {
-        markdown_core_node_free(text);
-        markdown_core_chunk_free(parser->mem, &detached_chunk);
+    if (!start || parser->oom) {
         return;
     }
-
-    // Convert the reference to allocated memory.
-    assert(!text->as.literal->alloc);
-    if (!markdown_core_chunk_to_cstr(parser->mem, text->as.literal)) {
-        parser->oom = true;
-        markdown_core_chunk_set_cstr(parser->mem, text->as.literal, NULL);
+    if (!remaining) {
+        markdown_core_node_free(text);
+        return;
     }
-
-    // Free the detached buffer.
-    markdown_core_chunk_free(parser->mem, &detached_chunk);
+    markdown_core_chunk tail = markdown_core_chunk_dup(&source, (bufsize_t)start, (bufsize_t)remaining);
+    if (!markdown_core_chunk_to_cstr(parser->mem, &tail)) {
+        parser->oom = true;
+        return;
+    }
+    set_sourcepos_from_range(parser, text, &source_map, start, remaining);
+    *text->as.literal = tail;
+    markdown_core_chunk_free(parser->mem, &source);
 }
 
 static markdown_core_node *postprocess(const markdown_core_element *element, markdown_core_parser *parser,
@@ -772,9 +755,7 @@ static markdown_core_node *postprocess(const markdown_core_element *element, mar
     markdown_core_node *node;
     bool in_link = false;
 
-    if (!markdown_core_consolidate_text_nodes_with_parser(parser, root)) {
-        parser->oom = true;
-    }
+    /* The parser consolidates main and owned inline roots before postprocessing. */
     iter = markdown_core_iter_new(root);
     if (!iter) {
         parser->oom = true;
@@ -795,13 +776,8 @@ static markdown_core_node *postprocess(const markdown_core_element *element, mar
             continue;
         }
 
-        /* EXIT, not ENTER. `postprocess_text` splices new siblings in after
-         * this node and may empty it, and the iterator's lookahead at a node's
-         * EXIT is the sibling that FOLLOWED it before the splice -- which is
-         * both the mutation rule and the behaviour this walk always had, when
-         * `TEXT`'s EXIT was suppressed and ENTER's lookahead was that same
-         * sibling. Doing it at ENTER once the contract is total makes the walk
-         * descend into the autolinks it just created. */
+        /* EXIT lookahead already holds the original following sibling.
+         * Splits are inserted before Text, which may itself be freed. */
         if (ev == MARKDOWN_CORE_EVENT_EXIT && node->kind == MARKDOWN_CORE_NODE_TEXT) {
             postprocess_text(parser, node);
         }

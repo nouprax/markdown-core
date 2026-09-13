@@ -189,7 +189,7 @@ static void heading_anchor_base(markdown_core_parser *parser, markdown_core_node
         case MARKDOWN_CORE_NODE_SUPERSCRIPT:
         case MARKDOWN_CORE_NODE_SUBSCRIPT:
         case MARKDOWN_CORE_NODE_LINK:
-        case MARKDOWN_CORE_NODE_MEDIA:
+        case MARKDOWN_CORE_NODE_EMBEDDED:
         case MARKDOWN_CORE_NODE_DIRECTIVE_LABEL:
             push_anchor_projection(parser, &stack, node->first_child, ANCHOR_CONTENT);
             break;

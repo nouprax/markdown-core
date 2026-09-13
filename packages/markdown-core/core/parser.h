@@ -118,6 +118,7 @@ struct markdown_core_parser {
     bool oom;
     /* Bytes inspected by the cross-link scanner, for deterministic complexity gates. */
     size_t cross_link_scan_work;
+    size_t autolink_domain_work;
     size_t opaque_scan_work;
     size_t footnote_body_work;
     size_t definition_registration_work;
@@ -142,7 +143,7 @@ struct markdown_core_parser {
     size_t attribute_work;
     /* Projection bytes and registry spelling work, including collision probes. */
     size_t anchor_work;
-    /* Ordinary image-label bytes and bounded dimension work for Media and embeds. */
+    /* Ordinary image-label bytes and bounded dimension work for Embedded and embeds. */
     size_t dimension_work;
     size_t list_marker_work;
     size_t specimen_work;
@@ -178,14 +179,11 @@ struct markdown_core_parser {
      * geometry is released by the query; the allocation dies with the parser. */
     struct markdown_core_table_source_line *table_lines;
     size_t table_lines_capacity;
-    markdown_core_llist *block_elements;
-    /* Fallback/opening-boundary participants, excluding inline-only owners. */
-    markdown_core_llist *block_alternatives;
-    markdown_core_llist *elements;
-    markdown_core_llist *inline_elements;
-    /* Only descriptors with inline state lifecycle work; ordinary token owners
-     * must not be visited for each inline state's initialization and disposal. */
-    markdown_core_llist *inline_lifecycle_elements;
+    /* Borrow the fixed immutable dialect registry. Private setup callers may
+     * extend it before parsing; only that replacement buffer is owned here. */
+    const markdown_core_element *const *elements;
+    const markdown_core_element **element_allocation;
+    size_t element_count;
     /* Stable descriptor order projected by byte once before inline parsing.
      * Each token visits only its possible owners; offsets include an end sentinel. */
     size_t inline_dispatch_offsets[257];

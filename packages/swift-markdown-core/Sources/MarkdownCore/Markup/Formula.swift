@@ -2,7 +2,7 @@ import MarkdownCoreC
 
 /// A formula. Requires the `formula` extension.
 ///
-/// The one kind that still carries ``PlacementMode``, because here it is a fact
+/// The one kind that still carries ``Placement``, because here it is a fact
 /// about the source rather than about the kind.
 public struct Formula: Markup {
     /// Where it is. See ``Scope`` — boundaries, not a byte range.
@@ -12,7 +12,7 @@ public struct Formula: Markup {
     /// Ordered classes and records, including duplicates.
     public let attributes: Attributes
     /// Whether the author wrote it inside a line or on its own.
-    public let mode: PlacementMode
+    public let mode: Placement
     /// The formula's body, its delimiters excluded. One leading and one
     /// trailing space or line ending is stripped when the body is not all
     /// whitespace.
@@ -31,8 +31,8 @@ extension Formula {
             scope: Self.scope(from: node),
             anchor: markdown_core_node_anchor(node).string,
             attributes: Attributes(from: node),
-            mode: PlacementMode(from: mode),
-            literal: literal.requiredString
+            mode: Placement(from: mode),
+            literal: literal.required
         )
     }
 }

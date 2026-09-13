@@ -169,11 +169,9 @@ const modelProjections = [
     projection({
         label: "Swift model",
         directories: ["packages/swift-markdown-core/Sources/MarkdownCore"],
-        // Document is a final class — it owns the native parse, which a value
-        // type cannot release — while every other kind is a struct. Both are
-        // declarations; only the keyword differs.
+        // Public value records may expose stored or computed read-only fields.
         declaration: (kind) => new RegExp(`public (?:final class|struct) ${kind}\\b[^\\n]*\\{`),
-        field: /public (?:let|var) ([A-Za-z]+)\s*:\s*([^\n]+)/g,
+        field: /public (?:let|var) ([A-Za-z]+)\s*:\s*([^\n{]+)/g,
         optional: (m) => m[2].trim().endsWith("?")
     }),
     projection({
@@ -313,7 +311,7 @@ const kindSurfaces = [
         expect: [...kinds.keys()],
         actual: namedKinds(
             "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/visitor/TreeDumper.kt",
-            /override fun visit([A-Za-z]+)\(/g
+            /override fun visit\(\s*[a-zA-Z]+: ([A-Za-z]+)\)/g
         )
     },
     {
@@ -345,8 +343,8 @@ const kindSurfaces = [
     },
     {
         label: "ES dumper",
-        expect: [...kinds.keys()],
-        actual: namedKinds("packages/es-markdown-core/src/tree-dumper.ts", /^\s+visit([A-Za-z]+): \(/gm)
+        expect: [...kinds.keys()].map(camel),
+        actual: namedKinds("packages/es-markdown-core/src/tree-dumper.ts", /^\s+([a-zA-Z]+): \(node\) =>/gm)
     },
     {
         label: "Swift dumper",

@@ -53,27 +53,25 @@ UTF-8 is a caller precondition; Markdown Core has no validation or repair mode
 for malformed input. Swift, Kotlin, and ECMAScript strings are encoded as UTF-8
 before entering that same parse path.
 
-`line` is 1-based and increments once per line ending, whether LF, CR, or CRLF.
-`column` is the 1-based byte index within the line; a tab is one byte. `start`
-is the first byte of the node's first code point and `end` the last byte of its
-last code point, inclusive. Column 0 is the one sentinel: an end position `L:0`
-names the boundary before the first byte of line `L`, that is, the position
-just after the line ending of line `L - 1`. It is the end of a block whose
-extent closes with a line ending it consumed, such as a list item, a footnote
-definition, an indented code block, or a Setext heading that is followed by a
-blank line, and an empty document has the scope `1:1..1:0`. A node's scope
-never includes the line ending that terminates its last line, with one
-exception: `SoftBreak` and `LineBreak` are the nodes of a line ending, so their
-scopes cover those line-ending bytes. `SoftBreak` covers the line-ending bytes
-of its break. `LineBreak` covers the line-ending bytes together with the
-backslash that produced it; when trailing spaces produced it, the spaces stay
-inside the preceding `Text` node's scope and `LineBreak` covers the line ending
-alone. A multiline or grid table cell under the dialect's table options is the
-one construct whose scope may include bytes of sibling cells, because its
-segments are written on shared lines. A grid table cell whose `rowspan`
-exceeds one is the one construct whose scope leaves its parent's: a
-`TableRow` covers its own lines, the spanning cell reaches into the lines of
-later rows, and the scope-containment gate ledgers that exception.
+A scope is the pair of editor source coordinates reported by the parser,
+using cmark's UTF-8 coordinate convention. It is not a string range: neither
+platform string indices nor the decoded `literal` determine these values.
+For example, the source `é &amp; 🚀` has Text scope `1:1..1:13`, while its
+literal is `é & 🚀`. Bindings do not convert columns to UTF-16 or graphemes,
+add one to an end coordinate, or impose half-open interval semantics.
+
+Lines normally begin at 1 and increment once for LF, CR, or CRLF. Columns
+follow the native byte-oriented convention; a tab occupies one source byte.
+The native sentinel values are preserved too: a zero-byte document has scope
+`1:1..0:0`, whereas a document containing only one newline has `1:1..1:0`.
+An end at `L:0` can also be produced when a block closes on a following blank
+line. The coordinates are reported without validation or repair.
+
+SoftBreak and LineBreak locate the authored break using this same convention;
+their scopes do not promise retrievable string slices. A multiline table cell
+can occupy segments on lines shared with other cells. A spanning grid cell can
+reach beyond its starting row. These positions describe editor locations,
+not a partition of the source into independently sliceable substrings.
 
 Scopes inherit the native C parser's source-position values and semantics
 exactly. The C facade and platform bindings copy `line` and `column` without
@@ -95,7 +93,8 @@ so typed table boundaries do not discard source information.
 
 ### Syntax-specific ranges
 
-The following rules refine the general coordinate contract. A syntax's
+The following rules describe authored editor positions, not independently
+sliceable string ranges. They refine the general coordinate contract. A syntax's
 punctuation can be inside its owner's scope without appearing in visible
 content. Unscoped semantic fields, including generated anchors and inherited
 resources, never gain a range of their own.
@@ -104,7 +103,7 @@ resources, never gain a range of their own.
 | --- | --- |
 | Heading | Includes ATX markers, an optional closing sequence, a Setext underline, and attached attributes. |
 | Inline formatting and spans | Includes opening/closing delimiters and any attached container; content children exclude removed suffixes. |
-| Link or media | Includes opener, label/alt, tail, dimensions, and occurrence attributes; resolved references keep only their occurrence's range. |
+| Link or image | Includes opener, label/alt, tail, dimensions, and occurrence attributes; resolved references keep only their occurrence's range. |
 | Autolink | Includes the angle brackets or the complete accepted bare token. |
 | Cross link/embed | Includes the optional exclamation mark, both bracket pairs, target, label, and dimensions. |
 | Directive | Runs from the colon through the last accepted name, label, or attribute byte. |
@@ -149,9 +148,9 @@ the containment exception above permits.
 
 ## Shared value types
 
-### PlacementMode
+### Placement
 
-`PlacementMode` has exactly two values:
+`Placement` has exactly two values:
 
 - `embedded`: content participates in surrounding inline flow.
 - `standalone`: content is presented independently from surrounding inline
@@ -198,7 +197,7 @@ It retains only the envelope scope; absent fields differ from explicit null valu
 `Dimensions(width: Int, height: Int?)` is a node-independent value. Width is
 required and height is optional; every present component is in 1..2147483647.
 It has no kind, scope, anchor, attributes, children or visitor callbacks.
-`Media.dimensions` and `CrossEmbedded.dimensions` have type `Dimensions?`, absent when no complete valid suffix was
+`Embedded.dimensions` and `CrossEmbedded.dimensions` have type `Dimensions?`, absent when no complete valid suffix was
 recognized, including malformed labels. The dimension suffix produces this value from image
 labels and embedded cross-link labels. `CrossLink` has no dimensions field.
 The value is independent of a destination's shared identity and attribute records.
@@ -211,7 +210,7 @@ Destination = url(String) | cross(path: String, anchor: String?)
 
 `Destination` is a tagged value, not a node: it has no scope, children,
 anchor, or attributes, and a branch's fields exist only in that branch. It is
-the `dest` of every `Link` and `Media`, which own the `url` branch: the
+the `dest` of every `Link` and `Embedded`, which own the `url` branch: the
 complete semantic destination the inherited grammar produced, the bytes
 between angle brackets or the bare destination with backslash escapes and
 character references decoded and no percent-encoding, normalization, or
@@ -231,8 +230,12 @@ BibMode = normal | authorInText | suppressAuthor
 ListFlavor = bullet | ordered
 OrderedListVariant = decimal | alpha(lowercased: Bool) | roman(lowercased: Bool) | default
 OrderedListDelimiter = period | parenthesis(closed: Bool) | default
-TableAlignment = none | left | center | right
+Flow = none | left | center | right
 ```
+
+`Flow` is a shared value for authored horizontal content alignment. `none`
+means no explicit alignment was authored. `TableColumn.flow` uses this
+value; its producing syntax determines which value is stored.
 
 ### CitationReferent, Citation, Footnote, and Specimen
 
@@ -316,7 +319,7 @@ and returns no document.
 | `CrossLink` | `dest: Destination`, `label: String?` | inline leaf; cross destination; complete raw label; no separator means null |
 | `CrossEmbedded` | `dest: Destination`, `label: String?`, `dimensions: Dimensions?` | inline leaf; workspace transclusion; cross destination; label is the raw prefix after a valid size suffix; no separator means null |
 | `Comment` | `literal: String` | an HTML comment or a `%%` comment, the one kind valid in both block and inline content, which the parent edge records; `literal` excludes the delimiters and keeps every byte between them; leaf |
-| `Formula` | `mode: PlacementMode`, `literal: String` | either mode; leaf |
+| `Formula` | `mode: Placement`, `literal: String` | either mode; leaf |
 | `Emphasis` | `content: [Markup]` | inline content |
 | `Strong` | `content: [Markup]` | inline content |
 | `Strikethrough` | `content: [Markup]` | inline content |
@@ -326,18 +329,18 @@ and returns no document.
 | `Superscript` | `content: [Markup]` | inline content; empty bodies are retained |
 | `Subscript` | `content: [Markup]` | inline content; non-empty body |
 | `Link` | `dest: Destination`, `title: String?`, `content: [Markup]` | `dest` is the tagged `Destination` value and is never absent: `[a]()` and `[a](<>)` wrote one and wrote nothing in it, so it is `url("")`; a reference occurrence answers the destination its definition stated, and an unresolved reference is the inherited literal text; every `Link` owns the `url` branch; absent and empty title remain distinct; inline content |
-| `Media` | `dest: Destination`, `title: String?`, `dimensions: Dimensions?`, `content: [Markup]` | `dest` is the tagged `Destination` value and is never absent, for the reason `Link.dest` is not; every `Media` owns the `url` branch; absent and empty title remain distinct; content is parsed alt-text inline content |
+| `Embedded` | `dest: Destination`, `title: String?`, `dimensions: Dimensions?`, `content: [Markup]` | `dest` is the tagged `Destination` value and is never absent, for the reason `Link.dest` is not; every `Embedded` owns the `url` branch; absent and empty title remain distinct; content is parsed alt-text inline content |
 | `Directive` | `name: String`, `label: DirectiveLabel?` | letter-first name; attributes use the inherited fields; label is a typed Markup field spanning its brackets, never content; absent and empty labels remain distinct; leaf |
 | `Cite` | `citations: [Citation]` | one or more items in source order; every item has exactly one referent and one cite never mixes referent families; an inherited `[^label]` call is one item with a `footnote` referent whose id is the normalized label without the caret and with empty affixes; its items are scoped values, never children, so it is a leaf |
 | `DefinitionList` | `definitions: [Definition]` | non-empty ordered associations |
 | `Definition` | `term: [Markup]`, `content: [[Markup]]`, `compact: Bool` | inline term; non-empty outer content; each inner collection is one block body; compact records the absence of a blank term gap; visit term then bodies |
 
 Every row also has the ordered inherited fields `scope: Scope`,
-`anchor: String?`, and `attributes: Attributes`; they are not repeated in the table. The `url` of a `Link` or `Media` destination, and
+`anchor: String?`, and `attributes: Attributes`; they are not repeated in the table. The `url` of a `Link` or `Embedded` destination, and
 every `title`, are the CommonMark-unescaped values with angle-bracket
 wrappers removed and no percent-encoding or normalization. A link reference
 definition produces no node: the parser consumes it, and every successful
-full, collapsed, shortcut, or autolink form is the `Link` or `Media` it names,
+full, collapsed, shortcut, or autolink form is the `Link` or `Embedded` it names,
 with the definition's destination and title and its own occurrence scope. An
 unresolved reference is the inherited literal text with its brackets.
 
@@ -346,7 +349,7 @@ unresolved reference is the inherited literal text with its brackets.
 ```text
 Table(caption: TableCaption?, columns: [TableColumn], head: [TableRow], content: [TableRow], foot: [TableRow], scope)
 TableCaption(content: [Markup], scope)
-TableColumn(alignment: TableAlignment, relative: Double?)
+TableColumn(flow: Flow, relative: Double?)
 TableRow(cells: [TableCell], scope)
 TableCell(rowspan: Int, colspan: Int, content: [Markup], scope)
 ```

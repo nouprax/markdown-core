@@ -10,7 +10,7 @@ extension ParseError {
         let code = ParseErrorCode(rawValue: Int32(rawCode)) ?? .internal
         self.init(
             code: code,
-            message: markdown_core_error_get_message(error).requiredString
+            message: markdown_core_error_get_message(error).required
         )
     }
 }
@@ -25,7 +25,7 @@ extension Scope {
 }
 
 extension markdown_core_string {
-    var requiredString: String {
+    var required: String {
         guard let data else { return "" }
         // Swift input reaches the native parser as valid UTF-8. This defensive
         // decoding also remains total if an internal payload violates that invariant.
@@ -38,18 +38,18 @@ extension markdown_core_string {
     // `markdown_core_optional_string.string`.
 }
 
-extension PlacementMode {
-    init(from mode: markdown_core_placement_mode) {
+extension Placement {
+    init(from mode: markdown_core_placement) {
         self = mode == MARKDOWN_CORE_PLACEMENT_EMBEDDED ? .embedded : .standalone
     }
 }
 
-extension TableAlignment {
-    init(from alignment: markdown_core_table_alignment) {
-        switch alignment {
-        case MARKDOWN_CORE_TABLE_ALIGNMENT_LEFT: self = .left
-        case MARKDOWN_CORE_TABLE_ALIGNMENT_CENTER: self = .center
-        case MARKDOWN_CORE_TABLE_ALIGNMENT_RIGHT: self = .right
+extension Flow {
+    init(from flow: markdown_core_flow) {
+        switch flow {
+        case MARKDOWN_CORE_FLOW_LEFT: self = .left
+        case MARKDOWN_CORE_FLOW_CENTER: self = .center
+        case MARKDOWN_CORE_FLOW_RIGHT: self = .right
         default: self = .none
         }
     }
@@ -59,6 +59,6 @@ extension markdown_core_optional_string {
     /// `nil` when the source did not write this, and `""` when it wrote it and
     /// it was empty. The presence flag decides; the pointer never does.
     var string: String? {
-        has_value ? value.requiredString : nil
+        has_value ? value.required : nil
     }
 }

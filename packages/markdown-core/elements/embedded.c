@@ -1,5 +1,5 @@
 #include "link.h"
-#include "media.h"
+#include "embedded.h"
 #include "inline_internal.h"
 #include "block_internal.h"
 static bool dimension_component(const unsigned char *s, bufsize_t *pos, bufsize_t end, int32_t *value, size_t *work) {
@@ -74,8 +74,8 @@ void markdown_core_inline_apply_image_dimensions(markdown_core_inline_state *inl
     image->as.link->dimensions.has_value = true;
 }
 
-void markdown_core_media_record_text(markdown_core_parser *parser, markdown_core_inline_state *inline_state,
-                                     bufsize_t endpos) {
+void markdown_core_embedded_record_text(markdown_core_parser *parser, markdown_core_inline_state *inline_state,
+                                        bufsize_t endpos) {
     if (inline_state->last_bracket && inline_state->last_bracket->kind == BRACKET_IMAGE) {
         for (bufsize_t i = inline_state->pos; i < endpos; i++) {
             parser->dimension_work++;
@@ -106,10 +106,10 @@ static markdown_core_node *match(const markdown_core_element *self, markdown_cor
     return make_str(inline_state, inline_state->pos - 1, inline_state->pos - 1, markdown_core_chunk_literal("!"));
 }
 
-const markdown_core_element MARKDOWN_CORE_ELEMENT_MEDIA = {
+const markdown_core_element MARKDOWN_CORE_ELEMENT_EMBEDDED = {
     .inline_precedence = MARKDOWN_CORE_INLINE_FALLBACK,
 
-    .name = "media",
+    .name = "embedded",
     .match_inline = match,
     .terminates_text = "!",
     .dispatch = "!",

@@ -49,7 +49,9 @@ https://example.com/guide www.example.com reader@example.com
 These become links. Email destinations gain `mailto:` and bare `www.`
 destinations gain `http://`. Bare URL schemes accept `http`, `https`, and `ftp`
 case-insensitively. The `www.` form needs an eligible boundary and a domain
-containing a dot.
+containing a dot. The final two domain segments cannot contain an underscore;
+earlier segments may contain underscores. This rule applies regardless of how
+many segments precede them.
 
 Bare URLs end at whitespace or `<`, with trailing punctuation, entity-shaped
 suffixes, and unmatched closing parentheses excluded. Their bodies are opaque:
@@ -70,7 +72,7 @@ Add `!` before a link or reference image:
 [photo]: /sunrise.png
 ```
 
-Each image becomes `Media`. Its content is parsed alt text, its destination is
+Each image becomes `Embedded`. Its content is parsed alt text, its destination is
 a URL value, and its title is optional. The parser does not infer a media type
 from the filename or load the resource. Internal `![[...]]` embeds use the
 separate [cross-embed syntax](cross-links.md).

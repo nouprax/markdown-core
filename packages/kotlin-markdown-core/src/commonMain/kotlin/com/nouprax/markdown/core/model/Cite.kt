@@ -13,13 +13,13 @@ public class Cite internal constructor(
     override val anchor: String?,
     override val attributes: Attributes,
 ) : Markup {
-    override fun <Result> accept(visitor: Visitor<Result>): Result = visitor.visitCite(this)
+    override fun <Result> accept(visitor: Visitor<Result>): Result = visitor.visit(this)
 }
 
 /**
  * One item of a [Cite]: a scoped value the cite owns, outside the markup
  * union. It has no visitor entry; the walk reports it through
- * [WalkingVisitor.visitCitation] between the cite's entering and exiting.
+ * [WalkingVisitor.visit] between the cite's entering and exiting.
  */
 public class Citation internal constructor(
     public val referent: CitationReferent,

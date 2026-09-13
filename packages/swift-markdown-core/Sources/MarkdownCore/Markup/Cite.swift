@@ -30,16 +30,25 @@ public enum CitationReferent: Sendable, Hashable {
 /// ``MarkupWalkingVisitor`` case that takes a `Citation`, between the cite's
 /// entering and exiting.
 public struct Citation: Sendable {
+    struct Fields: Sendable {
+        let scope: Scope
+        let referent: CitationReferent
+        let prefix: [Int]
+        let suffix: [Int]
+    }
+
+    @Stored var fields: Fields
+
     /// Where it is. See ``Scope`` — boundaries, not a byte range.
-    public let scope: Scope
+    public var scope: Scope { fields.scope }
     /// What it names.
-    public let referent: CitationReferent
+    public var referent: CitationReferent { fields.referent }
     /// The inline content before the referent, owned by the citation; empty
     /// for an inherited call.
-    public let prefix: [any Markup]
+    public var prefix: MarkupCollection<any Markup> { $fields.collection(fields.prefix) }
     /// The inline content after the referent, owned by the citation; empty
     /// for an inherited call.
-    public let suffix: [any Markup]
+    public var suffix: MarkupCollection<any Markup> { $fields.collection(fields.suffix) }
 }
 
 /// An inline citation: one or more ``Citation`` items in authored order.
@@ -49,14 +58,23 @@ public struct Citation: Sendable {
 /// items, lands with `P7`. Its items are scoped values, not content, so a
 /// cite is a leaf.
 public struct Cite: Markup {
+    struct Fields: Sendable {
+        let scope: Scope
+        let anchor: String?
+        let attributes: Attributes
+        let citations: [Int]
+    }
+
+    @Stored var fields: Fields
+
     /// Where it is. See ``Scope`` — boundaries, not a byte range.
-    public let scope: Scope
+    public var scope: Scope { fields.scope }
     /// The explicit anchor, absent when none was attached.
-    public let anchor: String?
+    public var anchor: String? { fields.anchor }
     /// Ordered classes and records, including duplicates.
-    public let attributes: Attributes
+    public var attributes: Attributes { fields.attributes }
     /// Never empty: every cite is authored with at least one item.
-    public let citations: [Citation]
+    public var citations: MarkupCollection<Citation> { $fields.collection(fields.citations) }
 
     /// Dispatches to the visitor's `Cite` case.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
@@ -79,19 +97,19 @@ extension CitationReferent {
         markdown_core_citation_referent(citation, &referent)
         switch referent.kind {
         case MARKDOWN_CORE_REFERENT_BIB:
-            self = .bib(key: referent.key.requiredString, mode: BibMode(from: referent.mode))
+            self = .bib(key: referent.key.required, mode: BibMode(from: referent.mode))
         case MARKDOWN_CORE_REFERENT_FOOTNOTE:
-            self = .footnote(id: referent.id.requiredString)
+            self = .footnote(id: referent.id.required)
         case MARKDOWN_CORE_REFERENT_SPECIMEN:
-            self = .specimen(id: referent.id.requiredString)
+            self = .specimen(id: referent.id.required)
         default:
             preconditionFailure("Unsupported native citation referent")
         }
     }
 }
 
-extension Citation {
-    init(from citation: OpaquePointer, prefix: [any Markup], suffix: [any Markup]) {
+extension Citation.Fields {
+    init(from citation: OpaquePointer, prefix: [Int], suffix: [Int]) {
         self.init(
             scope: Scope(from: markdown_core_citation_scope(citation)),
             referent: CitationReferent(from: citation),
@@ -101,10 +119,10 @@ extension Citation {
     }
 }
 
-extension Cite {
-    init(from node: OpaquePointer, citations: [Citation]) {
+extension Cite.Fields {
+    init(from node: OpaquePointer, citations: [Int]) {
         self.init(
-            scope: Self.scope(from: node),
+            scope: Scope(from: markdown_core_node_scope(node)),
             anchor: markdown_core_node_anchor(node).string,
             attributes: Attributes(from: node),
             citations: citations

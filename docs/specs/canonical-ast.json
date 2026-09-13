@@ -8,10 +8,10 @@
         "order": "Depth first. A node enters, then its owned Markup-valued fields are visited in canonical field order with arrays retaining stored order, then the node exits. Relations remain named fields; the walk does not project them into generic children. Citation, Footnote, and Specimen receive their own entering/exiting callbacks and traverse their owned Markup fields. Metadata is a data value and emits no visitor callbacks. Document visits content, footnotes, specimens in that order."
     },
     "enums": {
-        "PlacementMode": ["embedded", "standalone"],
+        "Placement": ["embedded", "standalone"],
         "BibMode": ["normal", "authorInText", "suppressAuthor"],
         "ListFlavor": ["bullet", "ordered"],
-        "TableAlignment": ["none", "left", "center", "right"]
+        "Flow": ["none", "left", "center", "right"]
     },
     "kinds": [
         {
@@ -405,7 +405,7 @@
             "fields": [
                 {
                     "name": "mode",
-                    "type": "PlacementMode",
+                    "type": "Placement",
                     "optional": false
                 },
                 {
@@ -526,7 +526,7 @@
             "invariants": "`dest` is the tagged `Destination` value and is never absent: `[a]()` and `[a](<>)` wrote one and wrote nothing in it, so it is `url(\"\")`; a reference occurrence answers the destination its definition stated, and an unresolved reference is the inherited literal text; every `Link` owns the `url` branch; absent and empty title remain distinct; inline content"
         },
         {
-            "name": "Media",
+            "name": "Embedded",
             "fields": [
                 {
                     "name": "dest",
@@ -549,7 +549,7 @@
                     "optional": false
                 }
             ],
-            "invariants": "`dest` is the tagged `Destination` value and is never absent, for the reason `Link.dest` is not; every `Media` owns the `url` branch; absent and empty title remain distinct; content is parsed alt-text inline content"
+            "invariants": "`dest` is the tagged `Destination` value and is never absent, for the reason `Link.dest` is not; every `Embedded` owns the `url` branch; absent and empty title remain distinct; content is parsed alt-text inline content"
         },
         {
             "name": "Directive",
@@ -613,7 +613,7 @@
     ],
     "values": {
         "Destination": {
-            "purpose": "A tagged value, not a node: it has no scope, children, anchor, or attributes, and a branch's fields exist only in that branch. Every Link and Media owns the url branch; the cross branch is the workspace address CrossLink and CrossEmbedded produce.",
+            "purpose": "A tagged value, not a node: it has no scope, children, anchor, or attributes, and a branch's fields exist only in that branch. Every Link and Embedded owns the url branch; the cross branch is the workspace address CrossLink and CrossEmbedded produce.",
             "branches": {
                 "url": [
                     {
@@ -795,8 +795,8 @@
             "scoped": false,
             "fields": [
                 {
-                    "name": "alignment",
-                    "type": "TableAlignment",
+                    "name": "flow",
+                    "type": "Flow",
                     "optional": false
                 },
                 {
@@ -805,7 +805,7 @@
                     "optional": true
                 }
             ],
-            "dump": "alignment:relative within the compact columns array"
+            "dump": "flow:relative within the compact columns array"
         },
         "Record": {
             "scoped": false,

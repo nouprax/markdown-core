@@ -30,7 +30,9 @@ at the end of a block, without another inline line to follow, is ordinary text.
 
 ## Source positions
 
-A soft break covers the original line-ending bytes. A backslash hard break
-also covers its backslash. For a spaces-based hard break, trailing spaces
-remain in the preceding text node's scope but not its literal; the break covers
-the line ending. LF, CR, and CRLF are all accepted.
+LF, CR, and CRLF are all accepted. `SoftBreak` and `LineBreak` report the
+parser's editor coordinates for the authored break. A backslash hard break
+includes its backslash; for a spaces-based hard break, trailing spaces remain
+in the preceding text node's scope but not its literal. As with every
+[scope](../canonical-ast.md#coordinates), these positions do not promise a
+retrievable string slice, and the bindings do not convert them.

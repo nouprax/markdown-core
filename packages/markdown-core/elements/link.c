@@ -7,7 +7,7 @@
 #include "attributes.h"
 #include "citation.h"
 #include "link.h"
-#include "media.h"
+#include "embedded.h"
 #include "inline_internal.h"
 #include "block_internal.h"
 
@@ -433,7 +433,7 @@ markdown_core_link_match markdown_core_link_recognize(markdown_core_inline_state
     }
 
     /* `[t][l]`, `[l][]` and `[l]` resolve identically and to the same node: the
-     * `Link` or `Media` the definition names (M2). Nothing records which of the
+     * `Link` or `Embedded` the definition names (M2). Nothing records which of the
      * three spellings the author wrote, and nothing downstream can recover it
      * -- the module states one node for every successful form. */
     if (link_allowed && found_label) {
@@ -455,15 +455,15 @@ bool markdown_core_link_commit(markdown_core_parser *parser, markdown_core_inlin
     markdown_core_node *inl;
     markdown_core_inline_finish_citation_tokens(inline_state, &opener->citations);
     if (!markdown_core_node_can_contain_type(opener->inl_text->parent,
-                                             is_image ? MARKDOWN_CORE_NODE_MEDIA : MARKDOWN_CORE_NODE_LINK)) {
+                                             is_image ? MARKDOWN_CORE_NODE_EMBEDDED : MARKDOWN_CORE_NODE_LINK)) {
         markdown_core_chunk_free(inline_state->mem, &url);
         markdown_core_optional_chunk_free(inline_state->mem, &title);
         return false;
     }
     inl = markdown_core_inline_make_simple(inline_state->mem,
-                                           is_image ? MARKDOWN_CORE_NODE_MEDIA : MARKDOWN_CORE_NODE_LINK);
+                                           is_image ? MARKDOWN_CORE_NODE_EMBEDDED : MARKDOWN_CORE_NODE_LINK);
     if (inl && record) {
-        /* A RESOLVED REFERENCE IS THE LINK OR MEDIA IT NAMES (M2), and it reads
+        /* A RESOLVED REFERENCE IS THE LINK OR EMBEDDED IT NAMES (M2), and it reads
          * its destination and title through the definition's resource, which
          * the map owns once and every occurrence shares. Nothing is copied, so
          * there is nothing to charge and no budget can make whether a reference
@@ -516,7 +516,7 @@ bool markdown_core_link_commit(markdown_core_parser *parser, markdown_core_inlin
     // handler consumed for itself. Counting from the OPENING bracket instead
     // would count the label's own newlines a second time -- measured,
     // `[a\nb](/u) tail` then reports line 3 of a two-line document.
-    markdown_core_node_insert_before(opener->inl_text, inl);
+    markdown_core_node_attach_owned(opener->inl_text->parent, inl, opener->inl_text);
     markdown_core_inline_take_bracket_content(parser, opener, inl);
 
     if (is_image) {
@@ -548,7 +548,7 @@ void markdown_core_inline_take_bracket_content(markdown_core_parser *parser, bra
     while (child != opener->close_text) {
         markdown_core_node *next = child->next;
         markdown_core_node_unlink(child);
-        markdown_core_inline_append_child(owner, child);
+        markdown_core_node_attach_owned(owner, child, NULL);
         parser->bracket_work++;
         child = next;
     }
@@ -615,9 +615,9 @@ void markdown_core_inline_replace_bracket_opener(markdown_core_inline_state *inl
     if (opener->kind == BRACKET_IMAGE) {
         opener->inl_text->as.literal->len = 1;
         markdown_core_inline_state_place(inline_state, opener->inl_text, opener->position - 2, opener->position - 2);
-        markdown_core_node_insert_after(opener->inl_text, replacement);
+        markdown_core_node_attach_owned(opener->inl_text->parent, replacement, opener->inl_text->next);
     } else {
-        markdown_core_node_insert_before(opener->inl_text, replacement);
+        markdown_core_node_attach_owned(opener->inl_text->parent, replacement, opener->inl_text);
         markdown_core_node_free(opener->inl_text);
     }
 }

@@ -5,7 +5,7 @@ import java.nio.file.Path
 
 internal actual fun parsePlatformDocument(source: ByteArray): Document {
     DesktopNativeLoader.ensureLoaded()
-    return JniPayloadDecoder.decodeDocument(JniParser.parsePayload(source))
+    return JniPayloadDecoder.decode(JniParser.parsePayload(source))
 }
 
 private object JniParser {

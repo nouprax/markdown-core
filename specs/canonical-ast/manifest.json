@@ -44,7 +44,7 @@
             "Superscript",
             "Subscript",
             "Link",
-            "Media",
+            "Embedded",
             "Directive",
             "Cite",
             "DefinitionList",
@@ -133,9 +133,9 @@
             "metadata.list.empty",
             "metadata.list.populated",
             "document.metadata.null",
-            "media.dimensions.width",
-            "media.dimensions.width-height",
-            "media.dimensions.null",
+            "embedded.dimensions.width",
+            "embedded.dimensions.width-height",
+            "embedded.dimensions.null",
             "directive.label.null",
             "directive.label.empty",
             "directive.label.populated",
@@ -143,8 +143,8 @@
             "link.title.null",
             "link.title.empty",
             "link.title.value",
-            "media.title.null",
-            "media.title.value",
+            "embedded.title.null",
+            "embedded.title.value",
             "scope.positive",
             "children.empty",
             "children.populated",
@@ -244,7 +244,7 @@
                     "CodeBlock",
                     "HTMLBlock",
                     "Link",
-                    "Media"
+                    "Embedded"
                 ],
                 "states": [
                     "callout.variant.null",
@@ -288,7 +288,7 @@
                     "Paragraph",
                     "Text",
                     "Link",
-                    "Media",
+                    "Embedded",
                     "Directive",
                     "DirectiveLabel",
                     "Table",
@@ -320,7 +320,7 @@
                     "directive.label.empty",
                     "link.title.null",
                     "link.title.empty",
-                    "media.title.null",
+                    "embedded.title.null",
                     "scope.positive",
                     "children.empty",
                     "children.populated",
@@ -329,7 +329,7 @@
                     "markup.anchor.value",
                     "markup.attributes.classes",
                     "document.metadata.null",
-                    "media.dimensions.null"
+                    "embedded.dimensions.null"
                 ],
                 "orders": ["document.source-order", "table.head-content-foot", "inline.source-order"]
             }
@@ -364,7 +364,7 @@
                     "Strikethrough",
                     "Code",
                     "Link",
-                    "Media",
+                    "Embedded",
                     "Directive",
                     "DirectiveLabel",
                     "Formula",
@@ -377,7 +377,7 @@
                     "markup.attributes.records",
                     "directive.label.populated",
                     "link.title.value",
-                    "media.title.value",
+                    "embedded.title.value",
                     "scope.positive",
                     "children.empty",
                     "children.populated",
@@ -468,14 +468,14 @@
             "input": "destinations.md",
             "expected": "destinations.ast",
             "coverage": {
-                "kinds": ["Document", "Paragraph", "Link", "Media", "Text"],
+                "kinds": ["Document", "Paragraph", "Link", "Embedded", "Text"],
                 "states": [
                     "destination.url.empty",
                     "destination.url.value",
                     "link.title.null",
                     "link.title.value",
-                    "media.title.null",
-                    "media.title.value",
+                    "embedded.title.null",
+                    "embedded.title.value",
                     "scope.positive",
                     "children.empty",
                     "children.populated"
@@ -488,12 +488,12 @@
             "input": "references.md",
             "expected": "references.ast",
             "coverage": {
-                "kinds": ["Document", "Paragraph", "Link", "Media", "Text"],
+                "kinds": ["Document", "Paragraph", "Link", "Embedded", "Text"],
                 "states": [
                     "reference.resolution.identical",
                     "destination.url.value",
                     "link.title.value",
-                    "media.title.value",
+                    "embedded.title.value",
                     "scope.positive",
                     "children.empty",
                     "children.populated"
@@ -667,14 +667,14 @@
             }
         },
         {
-            "name": "media-dimensions",
-            "input": "media-dimensions.md",
-            "expected": "media-dimensions.ast",
+            "name": "embedded-dimensions",
+            "input": "embedded-dimensions.md",
+            "expected": "embedded-dimensions.ast",
             "coverage": {
                 "kinds": [
                     "Document",
                     "Paragraph",
-                    "Media",
+                    "Embedded",
                     "Text",
                     "Emphasis",
                     "Code",
@@ -685,9 +685,9 @@
                     "CrossEmbedded"
                 ],
                 "states": [
-                    "media.dimensions.width",
-                    "media.dimensions.width-height",
-                    "media.dimensions.null",
+                    "embedded.dimensions.width",
+                    "embedded.dimensions.width-height",
+                    "embedded.dimensions.null",
                     "crossEmbedded.dimensions.width",
                     "crossEmbedded.dimensions.width-height",
                     "crossEmbedded.dimensions.null",
@@ -719,7 +719,7 @@
                     "Callout",
                     "List",
                     "ListItem",
-                    "Media",
+                    "Embedded",
                     "Table",
                     "TableRow",
                     "TableCell",
@@ -734,7 +734,7 @@
                     "listItem.marker.custom",
                     "listItem.marker.space",
                     "markup.anchor.value",
-                    "media.dimensions.width",
+                    "embedded.dimensions.width",
                     "crossEmbedded.dimensions.width-height",
                     "codeBlock.language.value",
                     "codeBlock.fenced.true",
@@ -784,13 +784,13 @@
             "input": "attribute-sites.md",
             "expected": "attribute-sites.ast",
             "coverage": {
-                "kinds": ["Document", "Heading", "CodeBlock", "Paragraph", "Code", "Link", "Media", "Text"],
+                "kinds": ["Document", "Heading", "CodeBlock", "Paragraph", "Code", "Link", "Embedded", "Text"],
                 "states": [
                     "markup.anchor.value",
                     "markup.attributes.classes",
                     "markup.attributes.records",
                     "scope.positive",
-                    "media.dimensions.width-height"
+                    "embedded.dimensions.width-height"
                 ],
                 "orders": ["document.source-order", "inline.source-order"]
             }

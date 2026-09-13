@@ -134,7 +134,7 @@ function pandocNode({ t, c }) {
         case "Link":
         case "Image":
             return node(
-                t === "Link" ? "Link" : "Media",
+                t === "Link" ? "Link" : "Embedded",
                 { dest: { kind: "url", value: c[2][0] }, title: c[2][1] || null },
                 sequence(c[1]),
                 c[0]
@@ -222,7 +222,7 @@ function pandocNode({ t, c }) {
                 "Table",
                 {
                     columns: c[2].map(([align, width]) => ({
-                        alignment: alignment(align),
+                        flow: alignment(align),
                         relative: width.t === "ColWidthDefault" ? null : width.c
                     }))
                 },
@@ -304,9 +304,9 @@ export function fromCanonical(value) {
         result.start = optional("start");
     }
     if (value.kind === "Heading") result.level = Number(f.level);
-    if (["Link", "Media", "CrossLink", "CrossEmbedded"].includes(value.kind)) {
+    if (["Link", "Embedded", "CrossLink", "CrossEmbedded"].includes(value.kind)) {
         result.dest = parseDestination(f.dest);
-        if (value.kind === "Link" || value.kind === "Media") result.title = optional("title") || null;
+        if (value.kind === "Link" || value.kind === "Embedded") result.title = optional("title") || null;
         else result.label = f.label;
     }
     if (value.kind === "Callout") {
@@ -335,8 +335,8 @@ export function fromCanonical(value) {
                       .slice(1, -1)
                       .split(",")
                       .map((column) => {
-                          const [alignment, width] = column.split(":");
-                          return { alignment, relative: width === "null" ? null : Number(width) };
+                          const [flow, width] = column.split(":");
+                          return { flow, relative: width === "null" ? null : Number(width) };
                       });
     }
     if (value.kind === "TableCell") {

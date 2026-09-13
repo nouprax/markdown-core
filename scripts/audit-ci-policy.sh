@@ -5,6 +5,7 @@ root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$root"
 
 ci=.github/workflows/ci.yml
+changes=.github/workflows/changes.yml
 codeql=.github/workflows/codeql.yml
 release=.github/workflows/release.yml
 release_dry_run=.github/workflows/release-dry-run.yml
@@ -60,6 +61,7 @@ fi
 
 for required in \
     "$ci" \
+    "$changes" \
     "$codeql" \
     "$release" \
     "$release_dry_run" \
@@ -75,6 +77,8 @@ for required in \
         exit 1
     fi
 done
+
+node --test scripts/tests/ci-changes.test.mjs
 
 # Retire the old cross-runtime metrics pipeline. The replacement is a single C
 # parser workload in an independent workflow; it is informational, exact-base
@@ -384,8 +388,6 @@ if search '^        name:.*matrix\.(os|suite|compiler|shared|sanitizer|platform|
     exit 1
 fi
 
-tests_ready_job=$(job_body tests-ready "$ci")
-grep -Fq '        if: ${{ always() }}' <<<"$tests_ready_job"
 oracle_job=$(job_body upstream-parity "$ci")
 grep -Fq 'scripts/init-environment.sh --install oracle-cmark oracle-cmark-gfm' <<<"$oracle_job"
 grep -Fq 'pnpm check:commonmark-parity' <<<"$oracle_job"
@@ -532,12 +534,12 @@ done
 
 # The stable release-readiness context is a fail-closed projection of the
 # complete artifact graph. Keep every leaf producer explicit here: an omitted
-# or skipped result must fail rather than allowing branch protection to see a
-# misleading successful aggregate.
+# or skipped result must fail when full validation is required. Documentation
+# skips and classification failures are covered by the behavioral tests above.
 dry_run_gate=$(job_body dry-run-gate "$release_dry_run")
-grep -Fq '        if: ${{ always() }}' <<<"$dry_run_gate"
-grep -Fq '        needs: [validate, c-artifacts, swift-source, npm-package, maven-linux, maven-macos, maven-aggregate]' <<<"$dry_run_gate"
+grep -Fq '        needs: [changes, validate, c-artifacts, swift-source, npm-package, maven-linux, maven-macos, maven-aggregate]' <<<"$dry_run_gate"
 for result in \
+    'needs.changes.result' \
     'needs.validate.result' \
     "needs['c-artifacts'].result" \
     "needs['swift-source'].result" \

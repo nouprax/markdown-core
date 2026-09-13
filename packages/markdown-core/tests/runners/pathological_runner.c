@@ -204,7 +204,7 @@ static int case_pattern_image_link(pc_context *context) {
         return -1;
     }
     if (pc_expect_count(context, MARKDOWN_CORE_KIND_LINK, 160000, "Link") != 0 ||
-        pc_expect_count(context, MARKDOWN_CORE_KIND_MEDIA, 0, "Media") != 0) {
+        pc_expect_count(context, MARKDOWN_CORE_KIND_EMBEDDED, 0, "Embedded") != 0) {
         return -1;
     }
     expected = ts_repeat("![", 160000, &expected_length);
@@ -1063,7 +1063,7 @@ static int pc_formula_case(pc_context *context, const char *prefix, const char *
         const markdown_core_node *root = markdown_core_document_root(context->document);
         const markdown_core_node *paragraph = markdown_core_node_get_first_child(root);
         const markdown_core_node *formula = markdown_core_node_get_first_child(paragraph);
-        markdown_core_placement_mode mode;
+        markdown_core_placement mode;
         markdown_core_string literal;
         size_t expected_length = strlen(expected_literal);
         if (markdown_core_node_get_kind(formula) != MARKDOWN_CORE_KIND_FORMULA ||

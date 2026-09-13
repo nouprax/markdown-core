@@ -1,5 +1,6 @@
-import MarkdownCore
 import Testing
+
+@testable import MarkdownCore
 
 @Suite("ast") struct DefinitionListTests {
     @Test("definition terms and ordered bodies survive native release and walk without body wrapper nodes")
@@ -27,5 +28,24 @@ import Testing
                 "entering:Text", "exiting:Text", "exiting:Paragraph", "exiting:Definition", "exiting:DefinitionList",
             ]
         )
+    }
+
+    @Test("body groups preserve empty and multiblock bodies without adding AST records", arguments: [1, 4_096])
+    func groupedFields(repetitions: Int) throws {
+        let document = try Document.parse("T\n" + String(repeating: ":\n: one\n\n    two\n", count: repetitions))
+        let list = try #require(document.content.first as? DefinitionList)
+        let definition = try #require(list.definitions.first)
+        #expect(definition.content.count == repetitions * 2)
+        for offset in stride(from: 0, to: definition.content.count, by: 2) {
+            #expect(definition.content[offset].isEmpty)
+            let body = definition.content[offset + 1]
+            #expect(body.count == 2)
+            #expect(((body[0] as? Paragraph)?.content.first as? Text)?.literal == "one")
+            #expect(((body[1] as? Paragraph)?.content.first as? Text)?.literal == "two")
+        }
+        var visitor = RecordingWalkingVisitor(recordEvents: false)
+        document.walk(with: &visitor)
+        #expect(visitor.entered == 4 + repetitions * 4)
+        #expect(document.$fields.records.count == visitor.entered)
     }
 }

@@ -10,22 +10,14 @@ import type { Markup } from "../model/markup.js";
 import type { TableCell, TableRow } from "../model/table.js";
 import { ParseError, type ParseErrorCode } from "../parse-error.js";
 import { TreeDumper } from "../tree-dumper.js";
-import type {
-    BibMode,
-    CitationReferent,
-    Destination,
-    ListFlavor,
-    PlacementMode,
-    Scope,
-    TableAlignment
-} from "../values.js";
+import type { BibMode, CitationReferent, Destination, ListFlavor, Placement, Scope, Flow } from "../values.js";
 import { kinds, type NativeKind } from "./kinds.js";
 
 /*
  * MCB1 is an ES-only result ABI over WebAssembly linear memory. Native emits
  * fixed-width records in breadth-first order, so relationships always point
  * forward and this decoder can construct the immutable value tree bottom-up.
- * It performs no calls into Wasm and retains no view after decodeDocument
+ * It performs no calls into Wasm and retains no view after decode
  * returns; the runtime frees the result immediately afterwards.
  */
 
@@ -99,7 +91,7 @@ const nodeField = {
 type MarkupValue = Markup extends infer Node ? (Node extends Markup ? Omit<Node, "dump"> : never) : never;
 type MarkupValueOf<Kind extends Markup["kind"]> = Extract<MarkupValue, { readonly kind: Kind }>;
 
-interface ResultLayout {
+interface Layout {
     readonly totalSize: number;
     readonly nodeCount: number;
     readonly edgeCount: number;
@@ -121,7 +113,7 @@ interface Resource {
     readonly attributes: Attributes;
 }
 
-interface NodeRecord {
+interface Record {
     readonly index: number;
     readonly offset: number;
     readonly kind: NativeKind | ValueKind;
@@ -137,10 +129,10 @@ interface NodeRecord {
     readonly integer2: bigint;
 }
 
-export class NodeDecoder {
+export class Decoder {
     private readonly view: DataView;
-    private readonly utf8Decoder = new TextDecoder("utf-8", { fatal: false });
-    private layout!: ResultLayout;
+    private readonly utf8 = new TextDecoder("utf-8", { fatal: false });
+    private layout!: Layout;
     private values: readonly (Decoded | undefined)[] = [];
     private readonly resources = new Map<number, Resource>();
 
@@ -148,14 +140,14 @@ export class NodeDecoder {
         this.view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     }
 
-    decodeDocument(): Document {
-        this.readHeader();
-        this.validateTopology();
+    decode(): Document {
+        this.header();
+        this.topology();
         const values: (Decoded | undefined)[] = Array.from({ length: this.layout.nodeCount });
         this.values = values;
         for (let remaining = this.layout.nodeCount; remaining > 0; --remaining) {
             const index = remaining - 1;
-            const record = this.readRecord(index);
+            const record = this.record(index);
             if (record.kind === "citation") values[index] = this.citation(record);
             else if (record.kind === "footnote") values[index] = this.footnote(record);
             else if (record.kind === "specimen") values[index] = this.specimen(record);
@@ -173,7 +165,7 @@ export class NodeDecoder {
         return document;
     }
 
-    private readHeader(): void {
+    private header(): void {
         if (this.bytes.byteLength < transferHeaderSize) throw new Error("truncated native result header");
         for (const [index, expected] of magic.entries()) {
             const actual = this.bytes[index];
@@ -184,7 +176,7 @@ export class NodeDecoder {
         const totalSize = this.uint(header.totalSize);
         if (totalSize !== this.bytes.byteLength) throw new Error("native result length does not match its header");
         const status = this.uint(header.status);
-        if (status === 1) throw this.parseError();
+        if (status === 1) throw this.error();
         if (status !== 0) throw new Error(`unsupported native result status ${status}`);
         if (
             this.uint(header.errorCode) !== 0 ||
@@ -194,7 +186,7 @@ export class NodeDecoder {
             throw new Error("successful native result carries an error payload");
         }
 
-        const layout: ResultLayout = {
+        const layout: Layout = {
             totalSize,
             nodeCount: this.uint(header.nodeCount),
             edgeCount: this.uint(header.edgeCount),
@@ -231,7 +223,7 @@ export class NodeDecoder {
         this.layout = layout;
     }
 
-    private parseError(): ParseError {
+    private error(): ParseError {
         const code = errorCode(this.int(header.errorCode));
         const offset = this.uint(header.errorOffset);
         const length = this.uint(header.errorLength);
@@ -241,10 +233,10 @@ export class NodeDecoder {
         ) {
             throw new Error("invalid native result error payload");
         }
-        return new ParseError(code, this.utf8Decoder.decode(this.bytes.subarray(offset, offset + length)));
+        return new ParseError(code, this.utf8.decode(this.bytes.subarray(offset, offset + length)));
     }
 
-    private readRecord(index: number): NodeRecord {
+    private record(index: number): Record {
         const offset = this.layout.nodesOffset + index * nodeSize;
         const rawKind = this.uint(offset + nodeField.kind);
         const kind = rawKind >= valueKindBase ? valueKinds[rawKind - valueKindBase] : kinds[rawKind];
@@ -269,16 +261,16 @@ export class NodeDecoder {
         };
     }
 
-    private validateTopology(): void {
+    private topology(): void {
         const incoming = new Uint8Array(this.layout.nodeCount);
         for (let index = 0; index < this.layout.nodeCount; ++index) {
-            const record = this.readRecord(index);
+            const record = this.record(index);
             if ((index === 0) !== (record.kind === "document")) {
                 throw new Error("native result must contain exactly one document at its root");
             }
             this.range(record.childStart, record.childCount, this.layout.edgeCount, "child edge range");
             for (let offset = 0; offset < record.childCount; ++offset) {
-                this.recordRelation(record, this.edge(record.childStart + offset), incoming, "child");
+                this.relation(record, this.edge(record.childStart + offset), incoming, "child");
             }
             const anchor = this.stringAt(record.offset + nodeField.anchor);
             if (anchor === "") throw new Error("empty normalized anchor");
@@ -291,22 +283,22 @@ export class NodeDecoder {
                 throw new Error("scoped value carries Markup fields");
             const metadata = this.uint(record.offset + nodeField.metadata);
             if (metadata !== noIndex) {
-                if (record.kind !== "document" || this.readRecord(metadata).kind !== "metadata")
+                if (record.kind !== "document" || this.record(metadata).kind !== "metadata")
                     throw new Error("invalid metadata relation");
-                this.recordRelation(record, metadata, incoming, "metadata");
+                this.relation(record, metadata, incoming, "metadata");
             }
             if (
-                record.kind !== "media" &&
+                record.kind !== "embedded" &&
                 record.kind !== "crossEmbedded" &&
                 (this.uint(record.offset + nodeField.dimensions) !== 0 ||
                     this.uint(record.offset + nodeField.dimensions + 4) !== 0)
             )
-                throw new Error("dimensions require Media or CrossEmbedded");
+                throw new Error("dimensions require Embedded or CrossEmbedded");
             if (record.fieldIndex !== noIndex) {
                 if (record.kind !== "directive" && record.kind !== "directiveBlock" && record.kind !== "table") {
                     throw new Error("node kind cannot own a singular field relation");
                 }
-                this.recordRelation(record, record.fieldIndex, incoming, "owned node");
+                this.relation(record, record.fieldIndex, incoming, "owned node");
             }
             if (record.kind === "callout" && record.auxiliaryCount !== 0) {
                 // The title's nodes are owned through the auxiliary range, as
@@ -314,7 +306,7 @@ export class NodeDecoder {
                 // holds at least one node, so the range's count is its presence.
                 this.range(record.auxiliaryStart, record.auxiliaryCount, this.layout.edgeCount, "callout title range");
                 for (let offset = 0; offset < record.auxiliaryCount; ++offset) {
-                    this.recordRelation(record, this.edge(record.auxiliaryStart + offset), incoming, "title");
+                    this.relation(record, this.edge(record.auxiliaryStart + offset), incoming, "title");
                 }
             }
             // The document's definitions and a citation's suffix are owned
@@ -330,7 +322,7 @@ export class NodeDecoder {
             if (auxiliary !== null && record.auxiliaryCount !== 0) {
                 this.range(record.auxiliaryStart, record.auxiliaryCount, this.layout.edgeCount, `${auxiliary} range`);
                 for (let offset = 0; offset < record.auxiliaryCount; ++offset) {
-                    this.recordRelation(record, this.edge(record.auxiliaryStart + offset), incoming, auxiliary);
+                    this.relation(record, this.edge(record.auxiliaryStart + offset), incoming, auxiliary);
                 }
             }
         }
@@ -340,7 +332,7 @@ export class NodeDecoder {
         }
     }
 
-    private recordRelation(record: NodeRecord, target: number, incoming: Uint8Array, field: string): void {
+    private relation(record: Record, target: number, incoming: Uint8Array, field: string): void {
         if (target <= record.index || target >= incoming.length) {
             throw new Error(`native result ${field} relation does not point forward`);
         }
@@ -358,7 +350,7 @@ export class NodeDecoder {
         return value as Markup;
     }
 
-    private value(record: NodeRecord): MarkupValue {
+    private value(record: Record): MarkupValue {
         // The scoped values are decoded by their owners, never as nodes,
         // so the kind dispatch below is over Markup kinds alone.
         const kind = record.kind;
@@ -435,7 +427,7 @@ export class NodeDecoder {
                     ...base,
                     info: this.string(record, 0),
                     language: this.string(record, 1),
-                    literal: this.requiredString(record, 2),
+                    literal: this.required(record, 2),
                     fenced: (record.flags & 1) !== 0,
                     closed: (record.flags & 2) !== 0
                 } as MarkupValue;
@@ -446,18 +438,18 @@ export class NodeDecoder {
             case "comment":
                 this.flags(record, 0);
                 this.leaf(record);
-                return { ...base, literal: this.requiredString(record, 0) } as MarkupValue;
+                return { ...base, literal: this.required(record, 0) } as MarkupValue;
             case "formulaBlock":
                 this.flags(record, 0);
                 this.leaf(record);
-                return { ...base, literal: this.requiredString(record, 0) } as MarkupValue;
+                return { ...base, literal: this.required(record, 0) } as MarkupValue;
             case "formula":
                 this.flags(record, 0);
                 this.leaf(record);
                 return {
                     ...base,
                     mode: this.placement(record.scalar0),
-                    literal: this.requiredString(record, 0)
+                    literal: this.required(record, 0)
                 } as MarkupValue;
             case "tableCaption":
                 this.flags(record, 0);
@@ -513,14 +505,14 @@ export class NodeDecoder {
                 return fields as MarkupValue;
             }
             case "link":
-            case "media": {
+            case "embedded": {
                 this.flags(record, 0);
                 const resource = this.resource(record);
                 return {
                     ...base,
                     dest: resource.dest,
                     title: resource.title,
-                    ...(kind === "media"
+                    ...(kind === "embedded"
                         ? {
                               dimensions: this.dimensions(record)
                           }
@@ -546,7 +538,7 @@ export class NodeDecoder {
      * list beside the content, and an empty range is no title because a
      * present title holds at least one node.
      */
-    private callout(record: NodeRecord): MarkupValueOf<"callout"> {
+    private callout(record: Record): MarkupValueOf<"callout"> {
         this.flags(record, 0);
         let title: readonly Markup[] | null = null;
         if (record.auxiliaryCount !== 0) {
@@ -565,9 +557,9 @@ export class NodeDecoder {
         };
     }
 
-    private list(record: NodeRecord): MarkupValueOf<"list"> {
+    private list(record: Record): MarkupValueOf<"list"> {
         this.flags(record, 0x3ff);
-        const flavor = this.listFlavor(record.scalar0);
+        const flavor = this.flavor(record.scalar0);
         const start = (record.flags & 1) === 0 ? null : this.safeInteger(record.integer, "list start");
         if (flavor === "bullet" && start !== null) throw new Error("native result gives a bullet list a start");
         const children = this.content(record);
@@ -611,18 +603,18 @@ export class NodeDecoder {
         };
     }
 
-    private table(record: NodeRecord): MarkupValueOf<"table"> {
+    private table(record: Record): MarkupValueOf<"table"> {
         this.flags(record, 0);
         this.range(record.auxiliaryStart, record.auxiliaryCount, this.layout.columnCount, "table column range");
         if (record.auxiliaryCount === 0) throw new Error("table has no columns");
         const columns = Array.from({ length: record.auxiliaryCount }, (_, index) => {
             const offset = this.layout.columnsOffset + (record.auxiliaryStart + index) * columnSize;
-            const alignment = this.tableAlignment(this.uint(offset));
+            const flow = this.flow(this.uint(offset));
             const present = this.uint(offset + 4);
             if (present > 1) throw new Error("invalid table column width presence");
             const value = this.view.getFloat64(offset + 8, true);
             if (present && (!Number.isFinite(value) || value <= 0)) throw new Error("invalid table column width");
-            return { alignment, relative: present ? value : null };
+            return { flow, relative: present ? value : null };
         });
         const rows = this.content(record);
         if (!rows.every((child): child is TableRow => child.kind === "tableRow")) {
@@ -653,7 +645,7 @@ export class NodeDecoder {
         };
     }
 
-    private tableRow(record: NodeRecord): Omit<TableRow, "dump"> {
+    private tableRow(record: Record): Omit<TableRow, "dump"> {
         this.flags(record, 0);
         const cells = this.content(record);
         if (!cells.every((child): child is TableCell => child.kind === "tableCell")) {
@@ -662,7 +654,7 @@ export class NodeDecoder {
         return { ...this.base(record, "tableRow"), cells };
     }
 
-    private directiveFields(record: NodeRecord): {
+    private directiveFields(record: Record): {
         readonly name: string | null;
         readonly label: DirectiveLabel | null;
         readonly content: readonly Markup[];
@@ -675,7 +667,7 @@ export class NodeDecoder {
         };
     }
 
-    private directiveLabel(record: NodeRecord): DirectiveLabel | null {
+    private directiveLabel(record: Record): DirectiveLabel | null {
         if (record.fieldIndex === noIndex) return null;
         const label = this.values[record.fieldIndex];
         if (label === undefined || !isMarkup(label) || label.kind !== "directiveLabel") {
@@ -684,7 +676,7 @@ export class NodeDecoder {
         return label;
     }
 
-    private content(record: NodeRecord): readonly Markup[] {
+    private content(record: Record): readonly Markup[] {
         return this.edgeRange(record.childStart, record.childCount, "child").map((value) => {
             if (!isMarkup(value)) throw new Error("native result child is a value, not a node");
             return value;
@@ -704,7 +696,7 @@ export class NodeDecoder {
      * integer and its key or id the first string; its prefix is its child
      * range and its suffix its auxiliary range.
      */
-    private citation(record: NodeRecord): Citation {
+    private citation(record: Record): Citation {
         this.flags(record, 0);
         let suffix: readonly Markup[] = [];
         if (record.auxiliaryCount !== 0) {
@@ -717,14 +709,14 @@ export class NodeDecoder {
         return { scope: record.scope, referent: this.referent(record), prefix: this.content(record), suffix };
     }
 
-    private referent(record: NodeRecord): CitationReferent {
+    private referent(record: Record): CitationReferent {
         switch (record.scalar0) {
             case 1:
-                return { kind: "bib", key: this.requiredString(record, 0), mode: this.bibMode(record.integer) };
+                return { kind: "bib", key: this.required(record, 0), mode: this.bibMode(record.integer) };
             case 2:
-                return { kind: "footnote", id: this.requiredString(record, 0) };
+                return { kind: "footnote", id: this.required(record, 0) };
             case 3:
-                return { kind: "specimen", id: this.requiredString(record, 0) };
+                return { kind: "specimen", id: this.required(record, 0) };
             default:
                 throw new Error(`native result contains unknown referent kind ${String(record.scalar0)}`);
         }
@@ -738,12 +730,12 @@ export class NodeDecoder {
     }
 
     /** A footnote (M4): its id is the first string and its content its child range. */
-    private footnote(record: NodeRecord): Footnote {
+    private footnote(record: Record): Footnote {
         this.flags(record, 0);
-        return { scope: record.scope, id: this.requiredString(record, 0), content: this.content(record) };
+        return { scope: record.scope, id: this.required(record, 0), content: this.content(record) };
     }
 
-    private citations(record: NodeRecord): readonly Citation[] {
+    private citations(record: Record): readonly Citation[] {
         const items = this.edgeRange(record.childStart, record.childCount, "citation").map((value) => {
             if (isMarkup(value) || !("referent" in value)) throw new Error("cite contains a non-citation record");
             return value;
@@ -752,7 +744,7 @@ export class NodeDecoder {
         return items;
     }
 
-    private specimen(record: NodeRecord): Specimen {
+    private specimen(record: Record): Specimen {
         this.flags(record, 1);
         return {
             scope: record.scope,
@@ -762,7 +754,7 @@ export class NodeDecoder {
         };
     }
 
-    private definitions(record: NodeRecord): { footnotes: readonly Footnote[]; specimens: readonly Specimen[] } {
+    private definitions(record: Record): { footnotes: readonly Footnote[]; specimens: readonly Specimen[] } {
         if (record.auxiliaryCount === 0) return { footnotes: [], specimens: [] };
         this.range(record.auxiliaryStart, record.auxiliaryCount, this.layout.edgeCount, "definitions range");
         const footnotes: Footnote[] = [];
@@ -786,15 +778,15 @@ export class NodeDecoder {
      * resource decodes from whichever occurrence is met first, and every
      * record naming that index shares the one value.
      */
-    private resource(record: NodeRecord): Resource {
+    private resource(record: Record): Resource {
         const first = this.safeInteger(record.integer, "resource index");
         if (first < 0 || first > record.index) {
             throw new Error("native result resource does not name its first occurrence");
         }
         let resource = this.resources.get(first);
         if (resource === undefined) {
-            const definition = this.readRecord(first);
-            if ((definition.kind !== "link" && definition.kind !== "media") || definition.integer !== BigInt(first))
+            const definition = this.record(first);
+            if ((definition.kind !== "link" && definition.kind !== "embedded") || definition.integer !== BigInt(first))
                 throw new Error("invalid definition resource");
             const offset = definition.offset + nodeField.inheritedAttributes;
             const anchor = this.stringAt(offset);
@@ -815,28 +807,28 @@ export class NodeDecoder {
      * branch's own strings follow -- the url, or the path and the optional
      * anchor -- so a field of the other branch is never read.
      */
-    private destination(record: NodeRecord): Destination {
+    private destination(record: Record): Destination {
         switch (record.scalar0) {
             case 1:
-                return { kind: "url", value: this.requiredString(record, 0) };
+                return { kind: "url", value: this.required(record, 0) };
             case 2:
-                return { kind: "cross", path: this.requiredString(record, 0), anchor: this.string(record, 1) };
+                return { kind: "cross", path: this.required(record, 0), anchor: this.string(record, 1) };
             default:
                 throw new Error(`native result contains unknown destination kind ${String(record.scalar0)}`);
         }
     }
 
-    private string(record: NodeRecord, slot: number): string | null {
+    private string(record: Record, slot: number): string | null {
         return this.stringAt(record.offset + nodeField.strings + slot * 8);
     }
 
-    private requiredString(record: NodeRecord, slot: number): string {
+    private required(record: Record, slot: number): string {
         const value = this.string(record, slot);
         if (value === null) throw new Error("native result is missing a required string");
         return value;
     }
 
-    private requiredStringAt(referenceOffset: number): string {
+    private requiredAt(referenceOffset: number): string {
         const value = this.stringAt(referenceOffset);
         if (value === null) throw new Error("native result is missing a required string");
         return value;
@@ -855,7 +847,7 @@ export class NodeDecoder {
         ) {
             throw new Error("native result string lies outside the string blob");
         }
-        return this.utf8Decoder.decode(this.bytes.subarray(offset, offset + length));
+        return this.utf8.decode(this.bytes.subarray(offset, offset + length));
     }
 
     private edge(index: number): number {
@@ -863,12 +855,12 @@ export class NodeDecoder {
     }
 
     private base<Kind extends Markup["kind"]>(
-        record: NodeRecord,
+        record: Record,
         kind: Kind = record.kind as Kind
     ): Omit<MarkupBase<Kind>, "dump"> {
         const primaryAnchor = this.stringAt(record.offset + nodeField.anchor);
         const primary = this.attributes(record.offset + nodeField.anchor);
-        if (kind !== "link" && kind !== "media")
+        if (kind !== "link" && kind !== "embedded")
             return { kind, scope: record.scope, anchor: primaryAnchor, attributes: primary };
         const inherited = this.resource(record);
         // Keep ordinary JS arrays. Definition-only occurrences reuse the native
@@ -900,10 +892,10 @@ export class NodeDecoder {
         this.range(start, count, this.layout.attributeCount, "attribute range");
         return Array.from({ length: count }, (_, index) => {
             const offset = this.layout.attributesOffset + (start + index) * attributeSize;
-            return Object.freeze({ name: this.requiredStringAt(offset), value: this.requiredStringAt(offset + 8) });
+            return Object.freeze({ name: this.requiredAt(offset), value: this.requiredAt(offset + 8) });
         });
     }
-    private dimensions(record: NodeRecord): Dimensions | null {
+    private dimensions(record: Record): Dimensions | null {
         // The value occupies two u32s. Zero width encodes absence and requires
         // zero height; otherwise width is required and zero height is optional.
         const width = this.uint(record.offset + nodeField.dimensions);
@@ -912,14 +904,14 @@ export class NodeDecoder {
             throw new Error("invalid dimensions");
         return width === 0 ? null : { width, height: height === 0 ? null : height };
     }
-    private documentMetadata(record: NodeRecord): Metadata | null {
+    private documentMetadata(record: Record): Metadata | null {
         const index = this.uint(record.offset + nodeField.metadata);
         if (index === noIndex) return null;
         const value = this.values[index];
         if (!value || "kind" in value || !("title" in value)) throw new Error("invalid document metadata");
         return value;
     }
-    private metadata(record: NodeRecord): Metadata {
+    private metadata(record: Record): Metadata {
         this.flags(record, 0x3ff);
         const values = this.edgeRange(record.childStart, record.childCount, "metadata fields");
         let cursor = 0;
@@ -946,7 +938,7 @@ export class NodeDecoder {
         if (cursor !== values.length) throw new Error("invalid metadata field count");
         return metadata;
     }
-    private metadataValue(record: NodeRecord): MetadataValue {
+    private metadataValue(record: Record): MetadataValue {
         this.leaf(record);
         let value: MetadataValue;
         if (record.scalar0 === 1) {
@@ -959,10 +951,10 @@ export class NodeDecoder {
                     value = { kind: "scalar", value: { kind: "bool", value: record.integer === 1n } };
                     break;
                 case 2:
-                    value = { kind: "scalar", value: { kind: "number", value: this.requiredString(record, 1) } };
+                    value = { kind: "scalar", value: { kind: "number", value: this.required(record, 1) } };
                     break;
                 case 3:
-                    value = { kind: "scalar", value: { kind: "text", value: this.requiredString(record, 1) } };
+                    value = { kind: "scalar", value: { kind: "text", value: this.required(record, 1) } };
                     break;
                 default:
                     throw new Error("invalid metadata scalar");
@@ -980,11 +972,11 @@ export class NodeDecoder {
         return value;
     }
 
-    private flags(record: NodeRecord, allowed: number): void {
+    private flags(record: Record, allowed: number): void {
         if ((record.flags & ~allowed) !== 0) throw new Error(`native result contains invalid flags for ${record.kind}`);
     }
 
-    private leaf(record: NodeRecord): void {
+    private leaf(record: Record): void {
         if (record.childCount !== 0) throw new Error(`native result gives leaf ${record.kind} child relations`);
     }
 
@@ -1013,23 +1005,23 @@ export class NodeDecoder {
         throw new Error(`native result contains invalid ${field} ${value}`);
     }
 
-    private placement(value: number): PlacementMode {
+    private placement(value: number): Placement {
         if (value === 1) return "embedded";
         if (value === 2) return "standalone";
         throw new Error(`native result contains invalid placement mode ${value}`);
     }
 
-    private listFlavor(value: number): ListFlavor {
+    private flavor(value: number): ListFlavor {
         if (value === 1) return "bullet";
         if (value === 2) return "ordered";
         throw new Error(`native result contains invalid list flavor ${value}`);
     }
 
-    private tableAlignment(value: number): TableAlignment {
-        const alignments: readonly TableAlignment[] = ["none", "left", "center", "right"];
-        const alignment = alignments[value];
-        if (alignment === undefined) throw new Error(`native result contains invalid table alignment ${value}`);
-        return alignment;
+    private flow(value: number): Flow {
+        const flows: readonly Flow[] = ["none", "left", "center", "right"];
+        const flow = flows[value];
+        if (flow === undefined) throw new Error(`native result contains invalid table flow ${value}`);
+        return flow;
     }
 
     private uint(offset: number): number {
