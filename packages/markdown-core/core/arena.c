@@ -123,10 +123,14 @@ void markdown_core_arena_recycle(markdown_core_arena *arena, void *record, size_
 }
 
 bool markdown_core_arena_owns(const markdown_core_arena *arena, const void *record) {
-    const unsigned char *at = (const unsigned char *)record;
+    /* On the addresses as integers: a relational comparison of pointers into
+     * different objects is undefined, and a record of another transaction is
+     * exactly such a pointer. The unsigned difference wraps for an address
+     * below the block, so one test covers both ends of the block. */
+    uintptr_t at = (uintptr_t)record;
     for (const arena_block *block = arena->current; block; block = block->next) {
-        const unsigned char *data = block_data((arena_block *)block);
-        if (at >= data && at < data + block->used) {
+        uintptr_t data = (uintptr_t)block_data((arena_block *)block);
+        if (at - data < (uintptr_t)block->used) {
             return true;
         }
     }
