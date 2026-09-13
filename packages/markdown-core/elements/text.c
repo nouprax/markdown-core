@@ -1,4 +1,4 @@
-#include "media.h"
+#include "embedded.h"
 #include "text.h"
 #include "inline_internal.h"
 #define advance(inline_state) ((inline_state)->pos += 1)
@@ -160,7 +160,7 @@ markdown_core_node *markdown_core_text_parse(markdown_core_parser *parser, markd
     /* Text runs are disjoint, so recording separators costs at most one
      * extra visit per byte, regardless of bracket nesting or digit-run
      * length. No image closer scans its label again. */
-    markdown_core_media_record_text(parser, inline_state, endpos);
+    markdown_core_embedded_record_text(parser, inline_state, endpos);
     contents = markdown_core_chunk_dup(&inline_state->input, inline_state->pos, endpos - inline_state->pos);
     startpos = inline_state->pos;
     inline_state->pos = endpos;

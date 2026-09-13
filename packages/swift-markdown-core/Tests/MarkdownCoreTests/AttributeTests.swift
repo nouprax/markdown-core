@@ -90,7 +90,7 @@ extension APISuite {
         let paragraph = try #require(document.content[1] as? Paragraph)
         let code = try #require(paragraph.content[0] as? Code)
         let link = try #require(paragraph.content[2] as? Link)
-        let image = try #require(paragraph.content[4] as? Media)
+        let image = try #require(paragraph.content[4] as? Embedded)
         #expect(code.literal == "x" && code.attributes.classes == ["code"])
         #expect(code.scope.end.column == 10)
         #expect(link.anchor == "own")

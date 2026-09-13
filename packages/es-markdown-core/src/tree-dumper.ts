@@ -18,7 +18,7 @@ import type { Formula } from "./model/formula.js";
 import type { Heading } from "./model/heading.js";
 import type { HTMLBlock } from "./model/html-block.js";
 import type { HTML } from "./model/html.js";
-import type { Media } from "./model/media.js";
+import type { Embedded } from "./model/embedded.js";
 import type { LineBreak } from "./model/line-break.js";
 import type { Link } from "./model/link.js";
 import type { List, ListItem } from "./model/list.js";
@@ -195,9 +195,9 @@ class DumpState {
                 [`dest=${destination(node.dest)}`, `title=${optionalString(node.title)}`],
                 node.content
             ),
-        visitMedia: (node: Media) =>
+        visitEmbedded: (node: Embedded) =>
             this.container(
-                "Media",
+                "Embedded",
                 node,
                 [
                     `dest=${destination(node.dest)}`,

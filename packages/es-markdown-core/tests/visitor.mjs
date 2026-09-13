@@ -35,7 +35,7 @@ export const kindVisitor = {
     visitSuperscript: (node) => node.kind,
     visitSubscript: (node) => node.kind,
     visitLink: (node) => node.kind,
-    visitMedia: (node) => node.kind,
+    visitEmbedded: (node) => node.kind,
     visitDirective: (node) => node.kind,
     visitCite: (node) => node.kind
 };

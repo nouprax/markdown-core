@@ -172,7 +172,7 @@ It retains only the envelope scope; absent fields differ from explicit null valu
 `Dimensions(width: Int, height: Int?)` is a node-independent value. Width is
 required and height is optional; every present component is in 1..2147483647.
 It has no kind, scope, anchor, attributes, children or visitor callbacks.
-`Media.dimensions` and `CrossEmbedded.dimensions` have type `Dimensions?`, absent when no complete valid suffix was
+`Embedded.dimensions` and `CrossEmbedded.dimensions` have type `Dimensions?`, absent when no complete valid suffix was
 recognized, including malformed labels. O9 produces this value from image
 labels and embedded cross-link labels. `CrossLink` has no dimensions field.
 The value is independent of a destination's shared identity and attribute records.
@@ -185,7 +185,7 @@ Destination = url(String) | cross(path: String, anchor: String?)
 
 `Destination` is a tagged value, not a node: it has no scope, children,
 anchor, or attributes, and a branch's fields exist only in that branch. It is
-the `dest` of every `Link` and `Media`, which own the `url` branch: the
+the `dest` of every `Link` and `Embedded`, which own the `url` branch: the
 complete semantic destination the inherited grammar produced, the bytes
 between angle brackets or the bare destination with backslash escapes and
 character references decoded and no percent-encoding, normalization, or
@@ -302,18 +302,18 @@ and returns no document.
 | `Superscript` | `content: [Markup]` | inline content; empty bodies are retained |
 | `Subscript` | `content: [Markup]` | inline content; non-empty body |
 | `Link` | `dest: Destination`, `title: String?`, `content: [Markup]` | `dest` is the tagged `Destination` value and is never absent: `[a]()` and `[a](<>)` wrote one and wrote nothing in it, so it is `url("")`; a reference occurrence answers the destination its definition stated, and an unresolved reference is the inherited literal text; every `Link` owns the `url` branch; absent and empty title remain distinct; inline content |
-| `Media` | `dest: Destination`, `title: String?`, `dimensions: Dimensions?`, `content: [Markup]` | `dest` is the tagged `Destination` value and is never absent, for the reason `Link.dest` is not; every `Media` owns the `url` branch; absent and empty title remain distinct; content is parsed alt-text inline content |
+| `Embedded` | `dest: Destination`, `title: String?`, `dimensions: Dimensions?`, `content: [Markup]` | `dest` is the tagged `Destination` value and is never absent, for the reason `Link.dest` is not; every `Embedded` owns the `url` branch; absent and empty title remain distinct; content is parsed alt-text inline content |
 | `Directive` | `name: String`, `label: DirectiveLabel?` | letter-first name; attributes use the inherited fields; label is a typed Markup field spanning its brackets, never content; absent and empty labels remain distinct; leaf |
 | `Cite` | `citations: [Citation]` | one or more items in source order; every item has exactly one referent and one cite never mixes referent families; an inherited `[^label]` call is one item with a `footnote` referent whose id is the normalized label without the caret and with empty affixes; its items are scoped values, never children, so it is a leaf |
 | `DefinitionList` | `definitions: [Definition]` | non-empty ordered associations |
 | `Definition` | `term: [Markup]`, `content: [[Markup]]`, `compact: Bool` | inline term; non-empty outer content; each inner collection is one block body; compact records the absence of a blank term gap; visit term then bodies |
 
 Every row also has the ordered inherited fields `scope: Scope`,
-`anchor: String?`, and `attributes: Attributes`; they are not repeated in the table. The `url` of a `Link` or `Media` destination, and
+`anchor: String?`, and `attributes: Attributes`; they are not repeated in the table. The `url` of a `Link` or `Embedded` destination, and
 every `title`, are the CommonMark-unescaped values with angle-bracket
 wrappers removed and no percent-encoding or normalization. A link reference
 definition produces no node: the parser consumes it, and every successful
-full, collapsed, shortcut, or autolink form is the `Link` or `Media` it names,
+full, collapsed, shortcut, or autolink form is the `Link` or `Embedded` it names,
 with the definition's destination and title and its own occurrence scope. An
 unresolved reference is the inherited literal text with its brackets.
 
@@ -483,10 +483,10 @@ therefore produce metadata in place of the initial body blocks. Unsupported
 members are ignored and never enter Markup.
 
 O9 adds the exact-input `image-dimensions` CommonMark delta. Complete positive
-32-bit `W`, `WxH`, `alt|W` and `alt|WxH` suffixes populate each Media's `dimensions`
+32-bit `W`, `WxH`, `alt|W` and `alt|WxH` suffixes populate each Embedded's `dimensions`
 value and leave only the parsed prefix as alt content. CommonMark retains the
 suffix as alt text. The [links and images module](dialect/links-and-images.md),
-package fixtures, and shared canonical `media-dimensions` case own this syntax,
+package fixtures, and shared canonical `embedded-dimensions` case own this syntax,
 its malformed fallbacks, source scopes and cross-context compositions.
 
 ### Bracketed spans and script delimiters

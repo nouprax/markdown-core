@@ -124,7 +124,7 @@ counts their rows, not the group lines. A row prints no scalar fields; each
 cell prints `rowspan` then `colspan`, followed by its unchanged content.
 
 A `Dimensions` value prints `(width=W,height=H)` with no internal spaces;
-`H` is `null` when only width was authored. `Media.dimensions` and `CrossEmbedded.dimensions` print `null`
+`H` is `null` when only width was authored. `Embedded.dimensions` and `CrossEmbedded.dimensions` print `null`
 when absent, so `dimensions=null` and `dimensions=(width=100,height=null)`
 remain distinct. A present value always has positive width; height without
 width is invalid. The value introduces no node or child line.
@@ -174,7 +174,7 @@ that the dump represents as nested descendants.
 | `Superscript` | `anchor`, `attributes` |
 | `Subscript` | `anchor`, `attributes` |
 | `Link` | `anchor`, `attributes`, `dest`, `title` |
-| `Media` | `anchor`, `attributes`, `dest`, `title`, `dimensions` |
+| `Embedded` | `anchor`, `attributes`, `dest`, `title`, `dimensions` |
 | `Directive` | `anchor`, `attributes`, `name` |
 | `Cite` | `anchor`, `attributes` |
 | `DefinitionList` | `anchor`, `attributes` |

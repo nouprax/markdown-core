@@ -203,8 +203,8 @@ public interface WalkingVisitor {
         phase: WalkPhase,
     )
 
-    public fun visitMedia(
-        node: Media,
+    public fun visitEmbedded(
+        node: Embedded,
         phase: WalkPhase,
     )
 
@@ -566,8 +566,8 @@ private class WalkingDriver(
         if (phase == WalkPhase.ENTERING) schedule(node.content)
     }
 
-    override fun visitMedia(node: Media) {
-        visitor.visitMedia(node, phase)
+    override fun visitEmbedded(node: Embedded) {
+        visitor.visitEmbedded(node, phase)
         scheduleExit(node)
         if (phase == WalkPhase.ENTERING) schedule(node.content)
     }

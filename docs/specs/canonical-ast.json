@@ -526,7 +526,7 @@
             "invariants": "`dest` is the tagged `Destination` value and is never absent: `[a]()` and `[a](<>)` wrote one and wrote nothing in it, so it is `url(\"\")`; a reference occurrence answers the destination its definition stated, and an unresolved reference is the inherited literal text; every `Link` owns the `url` branch; absent and empty title remain distinct; inline content"
         },
         {
-            "name": "Media",
+            "name": "Embedded",
             "fields": [
                 {
                     "name": "dest",
@@ -549,7 +549,7 @@
                     "optional": false
                 }
             ],
-            "invariants": "`dest` is the tagged `Destination` value and is never absent, for the reason `Link.dest` is not; every `Media` owns the `url` branch; absent and empty title remain distinct; content is parsed alt-text inline content"
+            "invariants": "`dest` is the tagged `Destination` value and is never absent, for the reason `Link.dest` is not; every `Embedded` owns the `url` branch; absent and empty title remain distinct; content is parsed alt-text inline content"
         },
         {
             "name": "Directive",
@@ -613,7 +613,7 @@
     ],
     "values": {
         "Destination": {
-            "purpose": "A tagged value, not a node: it has no scope, children, anchor, or attributes, and a branch's fields exist only in that branch. Every Link and Media owns the url branch; the cross branch is the workspace address CrossLink and CrossEmbedded produce.",
+            "purpose": "A tagged value, not a node: it has no scope, children, anchor, or attributes, and a branch's fields exist only in that branch. Every Link and Embedded owns the url branch; the cross branch is the workspace address CrossLink and CrossEmbedded produce.",
             "branches": {
                 "url": [
                     {

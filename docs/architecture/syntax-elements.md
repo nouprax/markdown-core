@@ -26,8 +26,8 @@ Commit abbreviations identify the reviewed history, not implementation layers.
 | Autolink: angle-delimited URI/email and bare links | `autolink.c` | Inherited |
 | Comment: HTML comments and `%%` inline/block comments | `comment.c` | `ab01af37`, `b7dc8daf` |
 | Link: direct destinations, shared reference resources, reference definitions, attribute attachment | `link.c`, using `attributes.c` | `18602b2e`, `1c5c7a39`, `8d9177fa` |
-| Media: image prefix, destinations and authored label dimensions | `media.c`, using Link's shared destination and bracket grammar | `18602b2e`, `1c5c7a39`, `9ab6dfee` |
-| CrossLink and CrossEmbedded: `[[...]]` and `![[...]]` | `cross_link.c`, using the same `media.c` dimension parser | `4853f2ad`, `9ab6dfee` |
+| Embedded: image prefix, destinations and authored label dimensions | `embedded.c`, using Link's shared destination and bracket grammar | `18602b2e`, `1c5c7a39`, `9ab6dfee` |
+| CrossLink and CrossEmbedded: `[[...]]` and `![[...]]` | `cross_link.c`, using the same `embedded.c` dimension parser | `4853f2ad`, `9ab6dfee` |
 | Callout: quote container, variant/fold metadata and inline title | `callout.c` | `b6a11e50`, `d53b6f53` |
 | Citation: bibliography groups, author forms, affixes and specimen references | `citation.c` | `078cf4cf`, `012cb4e1`, `5f5a516c` |
 | Footnote: named definitions, named calls and `^[...]` bodies | `footnote.c`, using Citation's shared referent construction | `078cf4cf`, `fbe1d5e5` |
@@ -131,7 +131,7 @@ There is no input-size threshold or second text-scanning algorithm. The shared
 text scanner retains its cached maximal delimiter run, so literal `=` and `+`
 runs do not create unnecessary Text nodes or get rescanned at dispatch.
 
-Link's shared bracket owner arbitrates explicit Link/Media tails, Span, citation
+Link's shared bracket owner arbitrates explicit Link/Embedded tails, Span, citation
 tails/groups, shortcut links and named footnotes. Each alternative consumes
 the existing parsed range; none reparses bracket contents. Heading suspension,
 field completion, ordinary whitespace boundaries and source positions use

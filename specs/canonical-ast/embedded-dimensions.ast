@@ -1,20 +1,20 @@
 Document scope=1:1..13:55 anchor=null attributes={} children=5
 ├── Paragraph scope=1:1..1:61 anchor=null attributes={} children=5
-│   ├── Media scope=1:1..1:40 anchor=null attributes={} dest=url("/shared") title="title" dimensions=(width=2147483647,height=2147483647) children=3
+│   ├── Embedded scope=1:1..1:40 anchor=null attributes={} dest=url("/shared") title="title" dimensions=(width=2147483647,height=2147483647) children=3
 │   │   ├── Emphasis scope=1:3..1:7 anchor=null attributes={} children=1
 │   │   │   └── Text scope=1:4..1:6 anchor=null attributes={} literal="alt" children=0
 │   │   ├── Text scope=1:8..1:8 anchor=null attributes={} literal=" " children=0
 │   │   └── Code scope=1:9..1:14 anchor=null attributes={} literal="code" children=0
 │   ├── Text scope=1:41..1:41 anchor=null attributes={} literal=" " children=0
-│   ├── Media scope=1:42..1:48 anchor=null attributes={} dest=url("/shared") title="title" dimensions=(width=2,height=null) children=0
+│   ├── Embedded scope=1:42..1:48 anchor=null attributes={} dest=url("/shared") title="title" dimensions=(width=2,height=null) children=0
 │   ├── Text scope=1:49..1:49 anchor=null attributes={} literal=" " children=0
-│   └── Media scope=1:50..1:61 anchor=null attributes={} dest=url("/shared") title="title" dimensions=null children=1
+│   └── Embedded scope=1:50..1:61 anchor=null attributes={} dest=url("/shared") title="title" dimensions=null children=1
 │       └── Text scope=1:52..1:57 anchor=null attributes={} literal="bad|01" children=0
 ├── Paragraph scope=3:1..3:52 anchor=null attributes={} children=5
-│   ├── Media scope=3:1..3:17 anchor=null attributes={} dest=url("/direct") title=null dimensions=(width=1,height=null) children=1
+│   ├── Embedded scope=3:1..3:17 anchor=null attributes={} dest=url("/direct") title=null dimensions=(width=1,height=null) children=1
 │   │   └── Text scope=3:3..3:5 anchor=null attributes={} literal="alt" children=0
 │   ├── Text scope=3:18..3:18 anchor=null attributes={} literal=" " children=0
-│   ├── Media scope=3:19..3:33 anchor=null attributes={} dest=url("/empty") title=null dimensions=(width=3,height=4) children=0
+│   ├── Embedded scope=3:19..3:33 anchor=null attributes={} dest=url("/empty") title=null dimensions=(width=3,height=4) children=0
 │   ├── Text scope=3:34..3:34 anchor=null attributes={} literal=" " children=0
 │   └── CrossEmbedded scope=3:35..3:52 anchor=null attributes={} dest=cross(path="image",anchor=null) label="" dimensions=(width=100,height=200) children=0
 ├── Table scope=5:1..7:31 anchor=null attributes={} columns=[none:null,none:null] children=2
@@ -27,10 +27,10 @@ Document scope=1:1..13:55 anchor=null attributes={} children=5
 │   ├── TableBody children=1
 │   │   └── TableRow scope=7:1..7:31 anchor=null attributes={} children=2
 │   │       ├── TableCell scope=7:2..7:18 anchor=null attributes={} rowspan=1 colspan=1 children=1
-│   │       │   └── Media scope=7:3..7:17 anchor=null attributes={} dest=url("/shared") title="title" dimensions=(width=10,height=20) children=1
+│   │       │   └── Embedded scope=7:3..7:17 anchor=null attributes={} dest=url("/shared") title="title" dimensions=(width=10,height=20) children=1
 │   │       │       └── Text scope=7:5..7:6 anchor=null attributes={} literal="é" children=0
 │   │       └── TableCell scope=7:20..7:30 anchor=null attributes={} rowspan=1 colspan=1 children=1
-│   │           └── Media scope=7:21..7:29 anchor=null attributes={} dest=url("/i") title=null dimensions=(width=30,height=null) children=0
+│   │           └── Embedded scope=7:21..7:29 anchor=null attributes={} dest=url("/i") title=null dimensions=(width=30,height=null) children=0
 │   └── TableFoot children=0
 ├── Paragraph scope=11:1..11:72 anchor=null attributes={} children=5
 │   ├── CrossEmbedded scope=11:1..11:41 anchor=null attributes={} dest=cross(path="movie.mp4",anchor=null) label="raw *caption*" dimensions=(width=2147483647,height=2) children=0

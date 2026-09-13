@@ -15,7 +15,7 @@ import type { Formula } from "./model/formula.js";
 import type { Heading } from "./model/heading.js";
 import type { HTMLBlock } from "./model/html-block.js";
 import type { HTML } from "./model/html.js";
-import type { Media } from "./model/media.js";
+import type { Embedded } from "./model/embedded.js";
 import type { LineBreak } from "./model/line-break.js";
 import type { Link } from "./model/link.js";
 import type { List, ListItem } from "./model/list.js";
@@ -71,7 +71,7 @@ export interface Visitor<Result> {
     visitDefinitionList(this: void, node: DefinitionList): Result;
     visitDefinition(this: void, node: Definition): Result;
     visitLink(this: void, node: Link): Result;
-    visitMedia(this: void, node: Media): Result;
+    visitEmbedded(this: void, node: Embedded): Result;
     visitDirective(this: void, node: Directive): Result;
     visitCite(this: void, node: Cite): Result;
 }
@@ -150,8 +150,8 @@ export function visit<Result>(node: Markup, visitor: Visitor<Result>): Result {
             return visitor.visitSubscript(node);
         case "link":
             return visitor.visitLink(node);
-        case "media":
-            return visitor.visitMedia(node);
+        case "embedded":
+            return visitor.visitEmbedded(node);
         case "directive":
             return visitor.visitDirective(node);
         case "cite":

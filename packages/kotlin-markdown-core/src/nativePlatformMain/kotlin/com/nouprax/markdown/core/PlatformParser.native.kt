@@ -31,6 +31,7 @@ import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_DIRECTIVE
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_DIRECTIVE_LABEL
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_DOCUMENT
+import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_EMBEDDED
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_EMPHASIS
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_FORMULA
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_FORMULA_BLOCK
@@ -43,7 +44,6 @@ import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_LINK
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_LIST
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_LIST_ITEM
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_MARK
-import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_MEDIA
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_PARAGRAPH
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_SOFT_BREAK
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_SPAN
@@ -433,7 +433,7 @@ private class NativeTreeBuilder(
         val scope = nativeScope(node)
         val inherited =
             if (kind == MARKDOWN_CORE_KIND_LINK ||
-                kind == MARKDOWN_CORE_KIND_MEDIA
+                kind == MARKDOWN_CORE_KIND_EMBEDDED
             ) {
                 resource(node)
             } else {
@@ -615,9 +615,9 @@ private class NativeTreeBuilder(
                 Link(resource.dest, resource.title, children, scope, anchor, attributes)
             }
 
-            MARKDOWN_CORE_KIND_MEDIA -> {
+            MARKDOWN_CORE_KIND_EMBEDDED -> {
                 val resource = resource(node)
-                Media(resource.dest, resource.title, scratch.dimensions(node), children, scope, anchor, attributes)
+                Embedded(resource.dest, resource.title, scratch.dimensions(node), children, scope, anchor, attributes)
             }
 
             MARKDOWN_CORE_KIND_DIRECTIVE -> {

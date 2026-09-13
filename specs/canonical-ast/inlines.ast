@@ -15,7 +15,7 @@ Document scope=1:1..5:19 anchor=null attributes={} children=1
 │   ├── Link scope=1:40..1:58 anchor=null attributes={} dest=url("/go") title="title" children=1
 │   │   └── Text scope=1:41..1:44 anchor=null attributes={} literal="link" children=0
 │   ├── Text scope=1:59..1:59 anchor=null attributes={} literal=" " children=0
-│   ├── Media scope=1:60..1:85 anchor=null attributes={} dest=url("/image.png") title="image" dimensions=null children=1
+│   ├── Embedded scope=1:60..1:85 anchor=null attributes={} dest=url("/image.png") title="image" dimensions=null children=1
 │   │   └── Text scope=1:62..1:64 anchor=null attributes={} literal="alt" children=0
 │   ├── Text scope=1:86..1:86 anchor=null attributes={} literal=" " children=0
 │   ├── Directive scope=1:87..1:115 anchor=null attributes={data-kind="demo"} name="badge" children=0

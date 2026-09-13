@@ -73,7 +73,7 @@ public interface Visitor<Result> {
 
     public fun visitLink(node: Link): Result
 
-    public fun visitMedia(node: Media): Result
+    public fun visitEmbedded(node: Embedded): Result
 
     public fun visitDirective(node: Directive): Result
 

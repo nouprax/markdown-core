@@ -188,7 +188,7 @@ typedef enum markdown_core_node_kind {
     MARKDOWN_CORE_KIND_STRONG,
     MARKDOWN_CORE_KIND_STRIKETHROUGH,
     MARKDOWN_CORE_KIND_LINK,
-    MARKDOWN_CORE_KIND_MEDIA,
+    MARKDOWN_CORE_KIND_EMBEDDED,
     MARKDOWN_CORE_KIND_DIRECTIVE,
     MARKDOWN_CORE_KIND_CITE,
     MARKDOWN_CORE_KIND_TABLE_ROW,
@@ -426,7 +426,7 @@ MARKDOWN_CORE_API bool markdown_core_attribute_value_record_at(const markdown_co
                                                                size_t index, markdown_core_string *name,
                                                                markdown_core_string *value);
 /** Borrowed dimensions, valid for the document lifetime; NULL for absent
- * dimensions, NULL, or a node other than Media or CrossEmbedded.
+ * dimensions, NULL, or a node other than Embedded or CrossEmbedded.
  * Dimension values have no node identity. */
 MARKDOWN_CORE_API const markdown_core_dimensions *markdown_core_node_dimensions(const markdown_core_node *node);
 /** The directive's optional `DirectiveLabel` field. The returned node is not
@@ -446,12 +446,12 @@ MARKDOWN_CORE_API bool markdown_core_node_callout_properties(const markdown_core
  * children. A present title holds at least one node, so NULL means no title,
  * or a non-callout input. */
 MARKDOWN_CORE_API const markdown_core_node *markdown_core_node_callout_title(const markdown_core_node *node);
-/** The tagged `Destination` value of a `Link`, `Media`, `CrossLink`, or `CrossEmbedded`: a value, not
+/** The tagged `Destination` value of a `Link`, `Embedded`, `CrossLink`, or `CrossEmbedded`: a value, not
  * a node, so it has no scope and no children, and a branch's fields exist
  * only in that branch. `MARKDOWN_CORE_DESTINATION_URL` fills `url` and zeroes
  * `path` and `anchor`; `MARKDOWN_CORE_DESTINATION_CROSS`, the workspace
  * address a cross link produces, fills `path` and `anchor`
- * and zeroes `url`. Every `Link` and `Media` answers the `url` branch.
+ * and zeroes `url`. Every `Link` and `Embedded` answers the `url` branch.
  *
  * A destination is REQUIRED (Q26, requirement 14): `[a]()` and `[a](<>)`
  * wrote one and wrote nothing in it, so `url` is the empty string, and a
@@ -472,7 +472,7 @@ typedef struct markdown_core_destination {
     markdown_core_optional_string anchor;
 } markdown_core_destination;
 
-/** Answers for `Link` and `Media` and refuses every other kind. */
+/** Answers for `Link` and `Embedded` and refuses every other kind. */
 MARKDOWN_CORE_API bool markdown_core_node_destination(const markdown_core_node *node,
                                                       markdown_core_destination *destination);
 /** The raw label of CrossLink or remaining raw prefix of CrossEmbedded after
@@ -480,11 +480,11 @@ MARKDOWN_CORE_API bool markdown_core_node_destination(const markdown_core_node *
  * kinds, or for NULL. A size-only CrossEmbedded label is present and empty. */
 MARKDOWN_CORE_API markdown_core_optional_string markdown_core_node_cross_label(const markdown_core_node *node);
 
-/** The OPTIONAL title of a `Link` or `Media`: `[a](/u)` wrote no title and
+/** The OPTIONAL title of a `Link` or `Embedded`: `[a](/u)` wrote no title and
  * `[a](/u "")` wrote an empty one. False for other kinds or null outputs. */
 MARKDOWN_CORE_API bool markdown_core_node_title(const markdown_core_node *node, markdown_core_optional_string *title);
 
-/** The resource a `Link` or `Media` reads its destination and title from, as
+/** The resource a `Link` or `Embedded` reads its destination and title from, as
  * an opaque identity (M2). Two nodes answer the same pointer exactly when they
  * share one resource: every occurrence that resolved through one link
  * reference definition does -- `[t][l]`, `[l][]` and `[l]` alike -- and a

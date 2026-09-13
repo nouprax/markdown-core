@@ -200,12 +200,12 @@ private class JniTreeDecoder(
                 }
             }
 
-            JniNodeKind.MEDIA -> {
+            JniNodeKind.EMBEDDED -> {
                 val resource = resource()
                 val dimensions = dimensions()
                 readChildren {
                     consume(
-                        Media(
+                        Embedded(
                             resource.dest,
                             resource.title,
                             dimensions,

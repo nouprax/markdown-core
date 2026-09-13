@@ -17,7 +17,7 @@ import type { Formula } from "./model/formula.js";
 import type { Heading } from "./model/heading.js";
 import type { HTMLBlock } from "./model/html-block.js";
 import type { HTML } from "./model/html.js";
-import type { Media } from "./model/media.js";
+import type { Embedded } from "./model/embedded.js";
 import type { LineBreak } from "./model/line-break.js";
 import type { Link } from "./model/link.js";
 import type { List, ListItem } from "./model/list.js";
@@ -84,7 +84,7 @@ export interface WalkingVisitor {
     visitDefinitionList(this: void, node: DefinitionList, phase: WalkPhase): void;
     visitDefinition(this: void, node: Definition, phase: WalkPhase): void;
     visitLink(this: void, node: Link, phase: WalkPhase): void;
-    visitMedia(this: void, node: Media, phase: WalkPhase): void;
+    visitEmbedded(this: void, node: Embedded, phase: WalkPhase): void;
     visitDirective(this: void, node: Directive, phase: WalkPhase): void;
     visitCite(this: void, node: Cite, phase: WalkPhase): void;
     /** A value callback: a `Citation` is a scoped value, not a `Markup` kind. */
@@ -349,8 +349,8 @@ export function walk(root: Markup, walkingVisitor: WalkingVisitor): void {
             scheduleExit(node);
             if (phase === "entering") schedule(node.content);
         },
-        visitMedia: (node) => {
-            walkingVisitor.visitMedia(node, phase);
+        visitEmbedded: (node) => {
+            walkingVisitor.visitEmbedded(node, phase);
             scheduleExit(node);
             if (phase === "entering") schedule(node.content);
         },

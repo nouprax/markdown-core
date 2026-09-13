@@ -35,7 +35,7 @@ set(LIBRARY_SOURCES
     link_scanners.c
     list.c
     mark.c
-    media.c
+    embedded.c
     paragraph.c
     properties.c
     span.c

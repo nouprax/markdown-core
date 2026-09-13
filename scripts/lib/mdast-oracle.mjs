@@ -23,7 +23,7 @@ import {
  *     ownership semantics.
  *   - mdast keeps a link reference definition as a node and its references
  *     unresolved; Markdown Core consumes the definition into the parser's map
- *     and resolves every successful reference into the `Link` or `Media` it
+ *     and resolves every successful reference into the `Link` or `Embedded` it
  *     names, as cmark does (M2, registered delta `reference-resolution-model`).
  *     This module resolves mdast's references against mdast's own definitions
  *     -- the first definition of an identifier wins in both grammars -- so a
@@ -44,7 +44,7 @@ const MDAST_KIND = {
     code: "CodeBlock",
     html: "HTML",
     link: "Link",
-    image: "Media",
+    image: "Embedded",
     list: "List",
     listItem: "ListItem",
     blockquote: "Callout",
@@ -107,7 +107,7 @@ function convert(node, definitions, parentType = "root") {
 
     // Registered shape delta `reference-resolution-model`: a definition is
     // consumed and produces no node, and a reference that resolves is the
-    // `Link` or `Media` it names, carrying the definition's destination and
+    // `Link` or `Embedded` it names, carrying the definition's destination and
     // title -- the shape this repository's parser, like cmark, produces (M2).
     if (node.type === "definition") return [];
     if (node.type === "linkReference" || node.type === "imageReference") {
@@ -120,7 +120,7 @@ function convert(node, definitions, parentType = "root") {
         }
         return [
             {
-                kind: node.type === "linkReference" ? "Link" : "Media",
+                kind: node.type === "linkReference" ? "Link" : "Embedded",
                 fields: {
                     dest: urlDestination(definition.url ?? ""),
                     title: definition.title ?? "null"
@@ -288,7 +288,7 @@ export const MDAST_COMPARED = {
     HTML: ["literal"],
     Comment: ["literal"],
     Link: ["dest", "title"],
-    Media: ["dest", "title"],
+    Embedded: ["dest", "title"],
     Table: ["columns"],
     TableCell: ["rowspan", "colspan"],
     // §5.6: footnote label bytes used to be compared by NOBODY, on either

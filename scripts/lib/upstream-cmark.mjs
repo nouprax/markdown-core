@@ -27,7 +27,7 @@ const XML_KIND = {
     html_block: "HTMLBlock",
     html_inline: "HTML",
     link: "Link",
-    image: "Media",
+    image: "Embedded",
     list: "List",
     item: "ListItem",
     tasklist: "ListItem",
@@ -62,7 +62,7 @@ const COMPARED = {
     HTMLBlock: ["literal"],
     Comment: ["literal"],
     Link: ["dest", "title"],
-    Media: ["dest", "title"],
+    Embedded: ["dest", "title"],
     TableCell: ["rowspan", "colspan"]
 };
 
@@ -532,7 +532,7 @@ export function applyUpstreamFootnoteModel(root, fired) {
 }
 
 /* No reference projection any more (M2): both sides consume a link reference
- * definition into a map and resolve every reference into the `Link` or `Media`
+ * definition into a map and resolve every reference into the `Link` or `Embedded`
  * it names, so a reference that resolved to the wrong definition, or to none,
  * shows up as a plain difference in `dest`, `title`, or kind. */
 

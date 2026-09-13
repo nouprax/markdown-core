@@ -1,12 +1,12 @@
 import MarkdownCore
 import Testing
 
-@Suite("ast") struct MediaDimensionsSuite {
+@Suite("ast") struct EmbeddedDimensionsSuite {
     @Test("image dimensions preserve formatted alt and per-occurrence values")
     func imageDimensions() throws {
         let document = try Document.parse("![*alt*|2147483647x2][r] ![3][r] ![bad|01][r]\n\n[r]: /shared \"title\"\n")
         let paragraph = try #require(document.content.first as? Paragraph)
-        let images = paragraph.content.compactMap { $0 as? Media }
+        let images = paragraph.content.compactMap { $0 as? Embedded }
         #expect(images.map(\.dimensions) == [Dimensions(width: 2147483647, height: 2), Dimensions(width: 3), nil])
         let size = Dimensions(width: 640, height: 480)
         #expect(Set([size, Dimensions(width: 640, height: 480)]).count == 1)
@@ -21,8 +21,8 @@ import Testing
         images[0].walk(with: &visitor)
         #expect(
             visitor.events == [
-                "entering:Media", "entering:Emphasis", "entering:Text", "exiting:Text", "exiting:Emphasis",
-                "exiting:Media",
+                "entering:Embedded", "entering:Emphasis", "entering:Text", "exiting:Text", "exiting:Emphasis",
+                "exiting:Embedded",
             ]
         )
     }

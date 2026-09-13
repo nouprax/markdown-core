@@ -128,7 +128,7 @@ The base of a heading is derived from its parsed inline content:
 
 1. Project the content to plain text: `Text` and `Code` contribute `literal`;
    `Emphasis`, `Strong`, `Strikethrough`, `Span`, `Superscript`, `Subscript`,
-   `Mark`, `Insertion`, `Link`, `Media`, and `DirectiveLabel` contribute their
+   `Mark`, `Insertion`, `Link`, `Embedded`, and `DirectiveLabel` contribute their
    concatenated child text; `Directive` contributes its label text; `SoftBreak`
    and `LineBreak` contribute one space; `Formula` contributes `literal`;
    `CrossLink` and `CrossEmbedded` contribute `label` when non-null and otherwise its authored
@@ -197,7 +197,7 @@ by the inherited reference-label normalization. The virtual definition
 targets `#` followed by the final anchor and has `title=null`, `anchor=null`,
 and `Attributes.empty` for `merge`. The full, collapsed, and shortcut forms
 resolve through the ordinary reference resolver: link spellings produce `Link`
-and image spellings produce `Media`. A virtual definition is not link-only.
+and image spellings produce `Embedded`. A virtual definition is not link-only.
 The resolver belongs to the
 [links and images](links-and-images.md) module, in the same order-independent
 document finalization that resolves specimen labels. In particular, `# *Foo*`
@@ -326,7 +326,7 @@ Every example of this module is a package fixture. Tests also cover
 `anchor=null` on every kind; explicit identifiers at every attachment site;
 block identifiers; identical values from different rules; last-identifier,
 clearing, and occurrence-over-definition precedence; every kind of the
-projection table inside a heading, `Formula`, `HTML`, `Comment`, `Media`,
+projection table inside a heading, `Formula`, `HTML`, `Comment`, `Embedded`,
 line breaks, and directive labels included; combining marks and connectors;
 reservation of every explicit anchor from every rule before synthesis, including an anchor on an unreferenced definition reserving
 nothing; headings inside footnotes; explicit and generated duplicates;

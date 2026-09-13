@@ -1,13 +1,13 @@
 import MarkdownCoreC
 
-/// Inline media — `![alt](source)` or a resolved reference.
+/// An inline embed — `![alt](source)` or a resolved reference.
 /// The target type is not inferred.
 ///
 /// Its content is PARSED alt text: `![a *b*](s)` has an ``Emphasis`` in it, and
 /// flattening it to a string is the consumer's decision, not the parser's.
 /// Complete `W`, `WxH`, `alt|W` and `alt|WxH` labels supply positive 32-bit
 /// dimensions without leading zeros, on both direct and resolved images.
-public struct Media: Markup {
+public struct Embedded: Markup {
     struct Fields: Sendable {
         let scope: Scope
         let anchor: String?
@@ -36,11 +36,11 @@ public struct Media: Markup {
     /// Authored size from a complete label suffix, or nil. Independent of attribute records.
     public var dimensions: Dimensions? { fields.dimensions }
 
-    /// Dispatches to the visitor's `Media` case.
+    /// Dispatches to the visitor's `Embedded` case.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 }
 
-extension Media.Fields {
+extension Embedded.Fields {
     init(from node: OpaquePointer, content: [Int], resources: inout [UnsafeRawPointer: SharedResource]) {
         let resource = SharedResource.shared(by: node, in: &resources)
         let dimensions = markdown_core_node_dimensions(node).map { Dimensions($0.pointee) }

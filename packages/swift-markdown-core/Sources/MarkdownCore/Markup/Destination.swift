@@ -1,6 +1,6 @@
 import MarkdownCoreC
 
-/// The target of a ``Link`` or ``Media``: a tagged value, not a node, so it
+/// The target of a ``Link`` or ``Embedded``: a tagged value, not a node, so it
 /// has no scope and no children, and a branch's fields exist only in that
 /// branch.
 public enum Destination: Sendable, Hashable {

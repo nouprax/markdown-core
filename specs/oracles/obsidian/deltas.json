@@ -151,7 +151,7 @@
         },
         {
             "id": "image-alt-content-model",
-            "summary": "mdast stores an image's alt text as one string, while the target Media owns parsed inline content.",
+            "summary": "mdast stores an image's alt text as one string, while the target Embedded owns parsed inline content.",
             "handling": "The semantic projection maps a non-empty mdast alt string to one Text child. The corpus exercises the plain-text intersection; product fixtures own nested inline image-alt structure."
         },
         {

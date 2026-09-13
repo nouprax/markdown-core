@@ -279,8 +279,8 @@ class JniPayloadDecoderTest {
         )
         assertEquals(null, metadata.keywords)
         assertEquals(null, metadata.comment)
-        val first = document.content[0] as Media
-        val second = document.content[1] as Media
+        val first = document.content[0] as Embedded
+        val second = document.content[1] as Embedded
         assertTrue(first.dest === second.dest)
         assertEquals(Dimensions(640, 480), first.dimensions)
         assertEquals(null, second.dimensions)

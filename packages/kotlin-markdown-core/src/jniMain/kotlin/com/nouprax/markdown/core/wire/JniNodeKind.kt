@@ -25,7 +25,7 @@ internal enum class JniNodeKind(
     STRONG(20),
     STRIKETHROUGH(21),
     LINK(22),
-    MEDIA(23),
+    EMBEDDED(23),
     DIRECTIVE(24),
     CITE(25),
     TABLE_ROW(26),

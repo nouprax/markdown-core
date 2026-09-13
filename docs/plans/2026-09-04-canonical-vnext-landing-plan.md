@@ -32,7 +32,7 @@ parallel and every merge leaves `main` releasable.
 | #190 release dry-run readiness                | landed | Every pull request must pass the credential-free `Release Dry Run - Ready` check, so an intermediate state that cannot build every artifact cannot merge.                                                       |
 | #191 UTF-8 repair removal and table positions | landed | Valid UTF-8 is a caller precondition, so new scanners add no validation or repair path. The position ledgers are fail-closed ratchets that every parser change keeps exact.                                    |
 | #192 extension module contracts               | specs  | The Obsidian module set, the Pandoc module set, the shared attributes, citation, and insertion contracts, Remark directive attachment, the Pandoc and Obsidian oracle pins, and the two implementation plans. |
-| #193 anchors and destinations                 | specs  | The universal `Markup.anchor` field, the tagged `Destination` value on `Link`, `Media`, and `CrossLink`, and the simplified `Attributes` shape.                                                                 |
+| #193 anchors and destinations                 | specs  | The universal `Markup.anchor` field, the tagged `Destination` value on `Link`, `Embedded`, and `CrossLink`, and the simplified `Attributes` shape.                                                                 |
 | #194 Obsidian Properties                      | specs  | `Document.metadata`, the shared metadata value model, the Properties envelope, and the `yaml@2.9.0` oracle.                                                                                                     |
 | #196 Properties corrections                   | specs  | Textual mapping keys and tightened oracle canaries; the original null-root rejection is superseded by O6 member skipping.                                                                                                       |
 
@@ -230,7 +230,7 @@ and the manifest order.
 | `Definition`                                                                                       | `term: [Markup]`, `content: [[Markup]]`, `compact: Bool`                                                          | new                                              | `P10`        |
 | `Text`, `SoftBreak`, `LineBreak`, `Code`, `HTML`, `Formula`, `Emphasis`, `Strong`, `Strikethrough` | as today                                                                                                          | unchanged                                        | —            |
 | `Link`                                                                                             | `dest: Destination`, `title`, `content`                                                                           | changed                                          | `M1`         |
-| `Media`                                                                                            | `dest: Destination`, `title`, `dimensions: Dimensions?`, `content`                                            | changed                                          | `M1`, `M7`, `O9`   |
+| `Embedded`                                                                                            | `dest: Destination`, `title`, `dimensions: Dimensions?`, `content`                                            | changed                                          | `M1`, `M7`, `O9`   |
 | `Directive`                                                                                        | `name`, `label`                                                                                                   | changed; attributes move to the inherited field  | `M7`         |
 | `CrossLink` | `dest: Destination`, `label: String?` | new | `O1` |
 | `CrossEmbedded` | `dest: Destination`, `label: String?`, `dimensions: Dimensions?` | new; transclusion separated from CrossLink | `O9` |
@@ -253,7 +253,7 @@ value carries `scope` only.
 | Value                                                                               | Item and first producer                                       |
 | ----------------------------------------------------------------------------------- | ------------------------------------------------------------- |
 | `Destination = url(String) \| cross(path: String, anchor: String?)`                 | `M1`; `cross` first produced by `O1`                          |
-| `Dimensions(width: Int, height: Int?)` | `O9`; node-independent, first held by `Media.dimensions` |
+| `Dimensions(width: Int, height: Int?)` | `O9`; node-independent, first held by `Embedded.dimensions` |
 | `Attributes(classes: [String], records: [Record])`, `Record(name, value)`           | `M7`; populated from directive syntax in `M7`                 |
 | `CitationReferent = bib(key, mode: BibMode) \| footnote(id)`, `BibMode`             | `M4`; `bib` first produced by `P7`                            |
 | `Citation(referent, prefix: [Markup], suffix: [Markup], scope)`                     | `M4`; scoped and traversed, not `Markup`                      |
@@ -390,7 +390,7 @@ its behavior, with no separate publication step.
       closing sequence included, as the base module's example shows; the
       current parser ends it at the content. Manifest states: `comment.placement.block`,
       `comment.placement.inline`. Requires `S0`.
-- [x] **M1 — `Destination` on `Link` and `Media`.** Add the tagged `Destination`
+- [x] **M1 — `Destination` on `Link` and `Embedded`.** Add the tagged `Destination`
       value with both branches and replace `Link.destination` and `Image.source`
       with `dest`; only `url` is produced until `O1`. New facade accessors
       reporting the branch and its strings replace
@@ -401,7 +401,7 @@ its behavior, with no separate publication step.
       `destination.url.empty`, `destination.url.value`. Requires `S0`.
 - [x] **M2 — Resolved reference links and images.** Resolve every successful
       full, collapsed, shortcut, and autolink form to `Link(dest=url(...))` and
-      every reference image to `Media` inside the existing parser-owned lookup,
+      every reference image to `Embedded` inside the existing parser-owned lookup,
       and remove `LinkReference`, `ImageReference`, `ReferenceDefinition`, and
       `ReferenceForm` from every surface with their facade accessors;
       `markdown_core_node_association` narrows to the footnote kinds until `M4`.
@@ -485,7 +485,7 @@ its behavior, with no separate publication step.
       turning the contract's single inherited field into an ordered set that the
       projection audit, the fixture checker, and the dump grammar understand;
       add `Document.metadata: Metadata?` with the metadata value types; add
-      optional image dimensions as `null` (regrouped as `Media.dimensions` in O9). Add facade accessors for the
+      optional image dimensions as `null` (regrouped as `Embedded.dimensions` in O9). Add facade accessors for the
       anchor, classes, records, metadata fields, and dimensions, and carry the
       values through the JNI and Wasm transports. Implement the shared Pandoc
       3.11 braced-attribute scanner and normalization once in the C core (the
@@ -510,7 +510,7 @@ its behavior, with no separate publication step.
       dialect's attributes module, and regenerate every golden once. The
       Obsidian gate reads `metadata` from the dump's nested `Metadata` lines.
       Manifest states: `markup.anchor.null`, `markup.attributes.empty`,
-      `document.metadata.null`, `media.dimensions.null`. Exit: the attributes
+      `document.metadata.null`, `embedded.dimensions.null`. Exit: the attributes
       and Remark attribute conformance cases pass, no second attribute tokenizer
       remains, and size-doubling valid, duplicate, malformed, and unclosed
       containers are linear. Requires `M0` through `M6`.
@@ -949,7 +949,7 @@ its behavior, with no separate publication step.
   run for C, Swift, npm and Maven. Full cross-host release aggregation remains
   the required CI check.
 
-- [x] **O9 — Media dimensions.** Parse the complete
+- [x] **O9 — Embedded dimensions.** Parse the complete
       `W`, `WxH`, `alt|W`, and `alt|WxH` alt-label suffixes in the shared image
       construction path into `dimensions: Dimensions?`, keep the whole label as alt
       content on any malformed suffix. Apply the shared size grammar to embedded
@@ -960,21 +960,21 @@ its behavior, with no separate publication step.
       `height` attribute record, each retained independently, is a cross-item
       case owned by whichever of `O9` and `P2d` merges later. Requires `O1`.
 
-  O9 renames the canonical `Image` node to `Media` across the C kinds and
+  O9 renames the canonical `Image` node to `Embedded` across the C kinds and
   accessor, Swift/Kotlin/ES models, visitors, decoders, dumps and public API
   inventories. The inherited `![...](...)` syntax does not infer the target
   media type; `CrossEmbedded` remains a workspace transclusion.
 
   O9 also groups the previously independent width/height fields into the
   node-independent `Dimensions(width: Int, height: Int?)` value, held by
-  `Media.dimensions: Dimensions?`. Its C facade, binding models, transports,
+  `Embedded.dimensions: Dimensions?`. Its C facade, binding models, transports,
   dump grammar, fixtures and API inventories change together; there is no
   legacy pair of image fields or Dimensions visitor callback. Embedded cross
   references are now `CrossEmbedded`, sharing the same dimension parser and value,
   with the generic C accessor
   `markdown_core_node_dimensions`; a size-only embed label stays present as
   an empty string. `CrossLink` has only `dest` and `label`; no node carries
-  an `embedded` flag. Raw cross-link scanners and Media inline brackets each
+  an `embedded` flag. Raw cross-link scanners and Embedded inline brackets each
   supply their own separator boundaries without reparsing or rescanning labels.
 
   Implementation notes (2026-09-09): the shared successful-image branch
@@ -987,7 +987,7 @@ its behavior, with no separate publication step.
 
   Package fixtures include every module example, numeric limits and malformed
   forms, all reference forms, formatted alt, opacity, nested images, table
-  escapes and exact scopes. The shared `media-dimensions` case covers both
+  escapes and exact scopes. The shared `embedded-dimensions` case covers both
   produced dimension states on every binding. Size-doubling digit/pipe runs
   and nested image labels assert a linear work bound; strict OOM sweeps cover
   truncation and empty alt. Nine exact CommonMark inputs register the authored
@@ -1130,7 +1130,7 @@ its behavior, with no separate publication step.
       extend `pathological_reference_expansion_bound` and its transport and
       decoder counterparts. Within each binding, decode inherited values once per
       definition using that language's native collection and ownership conventions;
-      keep `width` and `height` unit strings as records. Audit every Link, Media, Heading, Code,
+      keep `width` and `height` unit strings as records. Audit every Link, Embedded, Heading, Code,
       CodeBlock, directive, and reference-definition caller and delete repair
       passes made obsolete by the shared operation. Two cross-item cases are
       owned by whichever item merges later: a link tail claiming the container
@@ -1179,13 +1179,13 @@ its behavior, with no separate publication step.
       every explicit anchor from every enabled extension before synthesis, then
       generates GFM anchors in heading order from the per-kind text projection
       of the anchors module (`Text` and `Code` literals; the concatenated child
-      text of formatting, `Link`, `Media`, and directive labels; one space per
+      text of formatting, `Link`, `Embedded`, and directive labels; one space per
       soft or hard line break; nothing for `HTML`, `Comment`, and a footnote
       `Cite`; `Formula.literal`), Unicode lowercasing, whitespace to `-` without
       collapsing, and the permitted-scalar filter, falling back to `section` and
       uniquifying with the smallest free `-N`. A generated anchor has no scope.
       Fixtures cover the module's cases, a projection case for every kind that
-      exists when this item lands, `Formula`, `HTML`, `Comment`, `Media`, line
+      exists when this item lands, `Formula`, `HTML`, `Comment`, `Embedded`, line
       breaks, and directive labels included, and large duplicate sets; remove
       the `gfm-auto-anchors` gap. Reserving an explicit anchor before synthesis
       is a cross-item case with every explicit-anchor producer that neither

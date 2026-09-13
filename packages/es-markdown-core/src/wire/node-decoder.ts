@@ -296,12 +296,12 @@ export class NodeDecoder {
                 this.recordRelation(record, metadata, incoming, "metadata");
             }
             if (
-                record.kind !== "media" &&
+                record.kind !== "embedded" &&
                 record.kind !== "crossEmbedded" &&
                 (this.uint(record.offset + nodeField.dimensions) !== 0 ||
                     this.uint(record.offset + nodeField.dimensions + 4) !== 0)
             )
-                throw new Error("dimensions require Media or CrossEmbedded");
+                throw new Error("dimensions require Embedded or CrossEmbedded");
             if (record.fieldIndex !== noIndex) {
                 if (record.kind !== "directive" && record.kind !== "directiveBlock" && record.kind !== "table") {
                     throw new Error("node kind cannot own a singular field relation");
@@ -513,14 +513,14 @@ export class NodeDecoder {
                 return fields as MarkupValue;
             }
             case "link":
-            case "media": {
+            case "embedded": {
                 this.flags(record, 0);
                 const resource = this.resource(record);
                 return {
                     ...base,
                     dest: resource.dest,
                     title: resource.title,
-                    ...(kind === "media"
+                    ...(kind === "embedded"
                         ? {
                               dimensions: this.dimensions(record)
                           }
@@ -794,7 +794,7 @@ export class NodeDecoder {
         let resource = this.resources.get(first);
         if (resource === undefined) {
             const definition = this.readRecord(first);
-            if ((definition.kind !== "link" && definition.kind !== "media") || definition.integer !== BigInt(first))
+            if ((definition.kind !== "link" && definition.kind !== "embedded") || definition.integer !== BigInt(first))
                 throw new Error("invalid definition resource");
             const offset = definition.offset + nodeField.inheritedAttributes;
             const anchor = this.stringAt(offset);
@@ -868,7 +868,7 @@ export class NodeDecoder {
     ): Omit<MarkupBase<Kind>, "dump"> {
         const primaryAnchor = this.stringAt(record.offset + nodeField.anchor);
         const primary = this.attributes(record.offset + nodeField.anchor);
-        if (kind !== "link" && kind !== "media")
+        if (kind !== "link" && kind !== "embedded")
             return { kind, scope: record.scope, anchor: primaryAnchor, attributes: primary };
         const inherited = this.resource(record);
         // Keep ordinary JS arrays. Definition-only occurrences reuse the native

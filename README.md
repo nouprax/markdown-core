@@ -228,7 +228,7 @@ and `keywords` accept a single string, a bracketed array, or a block list.
 with `: |`. Metadata stays outside Markup children and visitor callbacks.
 Numbers retain exact decimal strings. Missing fields are null; an authored null
 is a present scalar value. No field order or individual field scope is stored.
-`Media.dimensions: Dimensions?` reads complete `W`, `WxH`, `alt|W` and
+`Embedded.dimensions: Dimensions?` reads complete `W`, `WxH`, `alt|W` and
 `alt|WxH` suffixes on direct and resolved images. Values range from 1 to
 2147483647 without leading zeros; malformed suffixes remain parsed alt content.
 Numeric-only labels have empty alt content. Embedded cross links use the same

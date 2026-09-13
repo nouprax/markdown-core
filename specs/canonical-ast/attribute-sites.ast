@@ -10,7 +10,7 @@ Document scope=1:1..12:51 anchor=null attributes={} children=4
     ├── Link scope=10:19..10:45 anchor="definition" attributes={.same .base .same .local k="1" k="1" k="2"} dest=url("/url") title="title" children=1
     │   └── Text scope=10:20..10:23 anchor=null attributes={} literal="link" children=0
     ├── Text scope=10:46..10:46 anchor=null attributes={} literal=" " children=0
-    ├── Media scope=10:47..10:83 anchor="definition" attributes={.same .base k="1" k="1" width="50%" height="2in"} dest=url("/url") title="title" dimensions=(width=20,height=30) children=1
+    ├── Embedded scope=10:47..10:83 anchor="definition" attributes={.same .base k="1" k="1" width="50%" height="2in"} dest=url("/url") title="title" dimensions=(width=20,height=30) children=1
     │   └── Text scope=10:49..10:51 anchor=null attributes={} literal="alt" children=0
     ├── Text scope=10:84..10:84 anchor=null attributes={} literal=" " children=0
     └── Link scope=10:85..10:116 anchor=null attributes={.external} dest=url("https://example.com") title=null children=1

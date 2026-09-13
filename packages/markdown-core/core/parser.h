@@ -143,7 +143,7 @@ struct markdown_core_parser {
     size_t attribute_work;
     /* Projection bytes and registry spelling work, including collision probes. */
     size_t anchor_work;
-    /* Ordinary image-label bytes and bounded dimension work for Media and embeds. */
+    /* Ordinary image-label bytes and bounded dimension work for Embedded and embeds. */
     size_t dimension_work;
     size_t list_marker_work;
     size_t specimen_work;

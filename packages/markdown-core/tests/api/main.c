@@ -63,11 +63,11 @@ static const markdown_core_node_type node_types[] = {
     MARKDOWN_CORE_NODE_THEMATIC_BREAK, MARKDOWN_CORE_NODE_TEXT,       MARKDOWN_CORE_NODE_SOFT_BREAK,
     MARKDOWN_CORE_NODE_LINE_BREAK,     MARKDOWN_CORE_NODE_CODE,       MARKDOWN_CORE_NODE_HTML,
     MARKDOWN_CORE_NODE_COMMENT,        MARKDOWN_CORE_NODE_EMPHASIS,   MARKDOWN_CORE_NODE_STRONG,
-    MARKDOWN_CORE_NODE_LINK,           MARKDOWN_CORE_NODE_MEDIA};
+    MARKDOWN_CORE_NODE_LINK,           MARKDOWN_CORE_NODE_EMBEDDED};
 static const char *const node_type_names[] = {
     "document",  "callout", "list",           "list_item", "code_block", "html_block", "comment_block",
     "paragraph", "heading", "thematic_break", "text",      "soft_break", "line_break", "code",
-    "html",      "comment", "emphasis",       "strong",    "link",       "media"};
+    "html",      "comment", "emphasis",       "strong",    "link",       "embedded"};
 static const int num_node_types = sizeof(node_types) / sizeof(*node_types);
 
 static void test_md_paragraph_text(test_batch_runner *runner, const char *markdown, const char *expected_text,
@@ -106,7 +106,7 @@ static void node_type_values(test_batch_runner *runner) {
         MARKDOWN_CORE_NODE_LINE_BREAK,     MARKDOWN_CORE_NODE_CODE,
         MARKDOWN_CORE_NODE_HTML,           MARKDOWN_CORE_NODE_EMPHASIS,
         MARKDOWN_CORE_NODE_STRONG,         MARKDOWN_CORE_NODE_LINK,
-        MARKDOWN_CORE_NODE_MEDIA,          MARKDOWN_CORE_NODE_CITE,
+        MARKDOWN_CORE_NODE_EMBEDDED,       MARKDOWN_CORE_NODE_CITE,
         MARKDOWN_CORE_NODE_STRIKETHROUGH,  MARKDOWN_CORE_NODE_FORMULA,
         MARKDOWN_CORE_NODE_DIRECTIVE,      MARKDOWN_CORE_NODE_DIRECTIVE_LABEL,
         MARKDOWN_CORE_NODE_COMMENT,        MARKDOWN_CORE_NODE_CITATION,
@@ -716,7 +716,7 @@ void hierarchy(test_batch_runner *runner) {
                                   MARKDOWN_CORE_NODE_EMPHASIS,
                                   MARKDOWN_CORE_NODE_STRONG,
                                   MARKDOWN_CORE_NODE_LINK,
-                                  MARKDOWN_CORE_NODE_MEDIA,
+                                  MARKDOWN_CORE_NODE_EMBEDDED,
                                   0};
 
     test_content(runner, MARKDOWN_CORE_NODE_DOCUMENT, top_level_blocks);
@@ -738,7 +738,7 @@ void hierarchy(test_batch_runner *runner) {
     test_content(runner, MARKDOWN_CORE_NODE_EMPHASIS, all_inlines);
     test_content(runner, MARKDOWN_CORE_NODE_STRONG, all_inlines);
     test_content(runner, MARKDOWN_CORE_NODE_LINK, all_inlines);
-    test_content(runner, MARKDOWN_CORE_NODE_MEDIA, all_inlines);
+    test_content(runner, MARKDOWN_CORE_NODE_EMBEDDED, all_inlines);
 }
 
 static void test_content(test_batch_runner *runner, markdown_core_node_type type, unsigned int *allowed_content) {
@@ -1510,7 +1510,7 @@ static void source_pos(test_batch_runner *runner) {
         "            └── Paragraph scope=9:6..10:20 anchor=null attributes={} children=3\n"
         "                ├── Text scope=9:6..9:15 anchor=null attributes={} literal=\"Yes, okay.\" children=0\n"
         "                ├── SoftBreak scope=9:16..9:16 anchor=null attributes={} children=0\n"
-        "                └── Media scope=10:6..10:20 anchor=null attributes={} dest=url(\"hi\") title=\"yes\" "
+        "                └── Embedded scope=10:6..10:20 anchor=null attributes={} dest=url(\"hi\") title=\"yes\" "
         "dimensions=null "
         "children=1\n"
         "                    └── Text scope=10:8..10:9 anchor=null attributes={} literal=\"ok\" children=0\n",
@@ -1647,7 +1647,7 @@ static void link_resource_lifecycle(test_batch_runner *runner) {
      * reading another arm's bytes as a resource pointer. */
     markdown_core_node *paragraph = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
     markdown_core_node *link = markdown_core_node_new(MARKDOWN_CORE_NODE_LINK);
-    markdown_core_node *image = markdown_core_node_new(MARKDOWN_CORE_NODE_MEDIA);
+    markdown_core_node *image = markdown_core_node_new(MARKDOWN_CORE_NODE_EMBEDDED);
     markdown_core_node *converted = markdown_core_node_new(MARKDOWN_CORE_NODE_TEXT);
     markdown_core_destination destination;
     markdown_core_optional_string title;
@@ -2026,7 +2026,7 @@ static void kind_conversion_containment(test_batch_runner *runner) {
         {MARKDOWN_CORE_NODE_STRIKETHROUGH, MARKDOWN_CORE_NODE_PARAGRAPH, "!~~text~~\n", "!~~text~~"},
         {MARKDOWN_CORE_NODE_SPAN, MARKDOWN_CORE_NODE_PARAGRAPH, "![text]{}\n", "![text]{}"},
         {MARKDOWN_CORE_NODE_LINK, MARKDOWN_CORE_NODE_PARAGRAPH, "! [text](u)\n", "! [text](u)"},
-        {MARKDOWN_CORE_NODE_MEDIA, MARKDOWN_CORE_NODE_PARAGRAPH, "![text](u)\n", "![text](u)"},
+        {MARKDOWN_CORE_NODE_EMBEDDED, MARKDOWN_CORE_NODE_PARAGRAPH, "![text](u)\n", "![text](u)"},
         {MARKDOWN_CORE_NODE_CITE, MARKDOWN_CORE_NODE_PARAGRAPH, "!^[text]\n", "!^[text]"},
         {MARKDOWN_CORE_NODE_CITE, MARKDOWN_CORE_NODE_PARAGRAPH, "![^n]\n\n[^n]: text\n", "![^n]"},
         {MARKDOWN_CORE_NODE_EMPHASIS, MARKDOWN_CORE_NODE_PARAGRAPH, "!*text*\n", "!*text*"},
@@ -3112,7 +3112,7 @@ static void deep_inline_construction(test_batch_runner *runner) {
                         continue;
                     }
                     markdown_core_node *node = markdown_core_iter_get_node(iter);
-                    containers += node->kind == (shape ? MARKDOWN_CORE_NODE_SPAN : MARKDOWN_CORE_NODE_MEDIA);
+                    containers += node->kind == (shape ? MARKDOWN_CORE_NODE_SPAN : MARKDOWN_CORE_NODE_EMBEDDED);
                     links += node->kind == MARKDOWN_CORE_NODE_LINK;
                 }
                 INT_EQ(runner, containers, sizes[d], "all nesting survives construction");
@@ -4582,7 +4582,7 @@ static void image_dimension_linear_work(test_batch_runner *runner) {
                 markdown_core_node *node = root->first_child->first_child;
                 size_t images = 0, sized = 0;
                 while (node) {
-                    if (node->kind == MARKDOWN_CORE_NODE_MEDIA) {
+                    if (node->kind == MARKDOWN_CORE_NODE_EMBEDDED) {
                         images++;
                         sized += node->as.link->dimensions.has_value;
                     }

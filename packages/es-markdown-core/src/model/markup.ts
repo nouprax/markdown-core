@@ -15,7 +15,7 @@ import type { Formula } from "./formula.js";
 import type { Heading } from "./heading.js";
 import type { HTMLBlock } from "./html-block.js";
 import type { HTML } from "./html.js";
-import type { Media } from "./media.js";
+import type { Embedded } from "./embedded.js";
 import type { LineBreak } from "./line-break.js";
 import type { Link } from "./link.js";
 import type { List, ListItem } from "./list.js";
@@ -70,6 +70,6 @@ export type Markup =
     | Definition
     | Subscript
     | Link
-    | Media
+    | Embedded
     | Directive
     | Cite;

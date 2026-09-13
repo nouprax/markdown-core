@@ -134,7 +134,7 @@ function pandocNode({ t, c }) {
         case "Link":
         case "Image":
             return node(
-                t === "Link" ? "Link" : "Media",
+                t === "Link" ? "Link" : "Embedded",
                 { dest: { kind: "url", value: c[2][0] }, title: c[2][1] || null },
                 sequence(c[1]),
                 c[0]
@@ -304,9 +304,9 @@ export function fromCanonical(value) {
         result.start = optional("start");
     }
     if (value.kind === "Heading") result.level = Number(f.level);
-    if (["Link", "Media", "CrossLink", "CrossEmbedded"].includes(value.kind)) {
+    if (["Link", "Embedded", "CrossLink", "CrossEmbedded"].includes(value.kind)) {
         result.dest = parseDestination(f.dest);
-        if (value.kind === "Link" || value.kind === "Media") result.title = optional("title") || null;
+        if (value.kind === "Link" || value.kind === "Embedded") result.title = optional("title") || null;
         else result.label = f.label;
     }
     if (value.kind === "Callout") {

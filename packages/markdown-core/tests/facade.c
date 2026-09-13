@@ -118,14 +118,14 @@ static void check_null_and_empty(void) {
         {"[a](/u)\n", MARKDOWN_CORE_KIND_LINK, "/u", false, ""},
         {"[a](/u \"\")\n", MARKDOWN_CORE_KIND_LINK, "/u", true, ""},
         {"[a](/u \"t\")\n", MARKDOWN_CORE_KIND_LINK, "/u", true, "t"},
-        {"![a]()\n", MARKDOWN_CORE_KIND_MEDIA, "", false, ""},
-        {"![a](/s \"\")\n", MARKDOWN_CORE_KIND_MEDIA, "/s", true, ""},
+        {"![a]()\n", MARKDOWN_CORE_KIND_EMBEDDED, "", false, ""},
+        {"![a](/s \"\")\n", MARKDOWN_CORE_KIND_EMBEDDED, "/s", true, ""},
         /* M2: a resolved reference answers what its definition stated,
          * through the same accessors, and the definition is not a node. */
         {"[a]: <>\n\n[a]\n", MARKDOWN_CORE_KIND_LINK, "", false, ""},
         {"[a]: <> \"\"\n\n[a][]\n", MARKDOWN_CORE_KIND_LINK, "", true, ""},
         {"[a]: /u \"t\"\n\n[x][a]\n", MARKDOWN_CORE_KIND_LINK, "/u", true, "t"},
-        {"![a][r]\n\n[r]: /s \"\"\n", MARKDOWN_CORE_KIND_MEDIA, "/s", true, ""},
+        {"![a][r]\n\n[r]: /s \"\"\n", MARKDOWN_CORE_KIND_EMBEDDED, "/s", true, ""},
     };
     static const struct {
         const char *source;
@@ -219,7 +219,7 @@ static void check_image_dimensions(void) {
     int index = 0;
     for (const markdown_core_node *node = markdown_core_node_get_first_child(paragraph); node;
          node = markdown_core_node_get_next_sibling(node)) {
-        if (markdown_core_node_get_kind(node) != MARKDOWN_CORE_KIND_MEDIA) {
+        if (markdown_core_node_get_kind(node) != MARKDOWN_CORE_KIND_EMBEDDED) {
             continue;
         }
         const markdown_core_dimensions *dimensions = markdown_core_node_dimensions(node);
@@ -267,7 +267,7 @@ static void check_resource_identity(void) {
          child = markdown_core_node_get_next_sibling(child)) {
         const markdown_core_resource *resource = markdown_core_node_resource(child);
         markdown_core_node_kind kind = markdown_core_node_get_kind(child);
-        if (kind != MARKDOWN_CORE_KIND_LINK && kind != MARKDOWN_CORE_KIND_MEDIA) {
+        if (kind != MARKDOWN_CORE_KIND_LINK && kind != MARKDOWN_CORE_KIND_EMBEDDED) {
             check(resource == NULL, "a text node has no resource");
             others++;
             continue;

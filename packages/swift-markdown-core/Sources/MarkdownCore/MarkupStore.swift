@@ -92,7 +92,7 @@ enum StoredMarkup: Sendable {
     case superscript(Superscript.Fields)
     case `subscript`(Subscript.Fields)
     case link(Link.Fields)
-    case media(Media.Fields)
+    case embedded(Embedded.Fields)
     case directive(Directive.Fields)
     case cite(Cite.Fields)
     case tableCaption(TableCaption.Fields)
@@ -142,7 +142,7 @@ final class MarkupStore: Sendable {
         case let .superscript(value): fields = value as? Fields
         case let .subscript(value): fields = value as? Fields
         case let .link(value): fields = value as? Fields
-        case let .media(value): fields = value as? Fields
+        case let .embedded(value): fields = value as? Fields
         case let .directive(value): fields = value as? Fields
         case let .cite(value): fields = value as? Fields
         case let .tableCaption(value): fields = value as? Fields
@@ -199,7 +199,7 @@ final class MarkupStore: Sendable {
         case .superscript: value = Superscript(fields: Stored(store: self, index: index))
         case .subscript: value = Subscript(fields: Stored(store: self, index: index))
         case .link: value = Link(fields: Stored(store: self, index: index))
-        case .media: value = Media(fields: Stored(store: self, index: index))
+        case .embedded: value = Embedded(fields: Stored(store: self, index: index))
         case .directive: value = Directive(fields: Stored(store: self, index: index))
         case .cite: value = Cite(fields: Stored(store: self, index: index))
         case .tableCaption: value = TableCaption(fields: Stored(store: self, index: index))

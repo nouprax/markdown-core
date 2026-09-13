@@ -6,7 +6,7 @@ import {
     type MetadataValue,
     type MetadataScalar,
     type MetadataListItem,
-    type Media,
+    type Embedded,
     type CrossLink,
     type CrossEmbedded,
     type Dimensions,
@@ -73,7 +73,7 @@ const visitor: Visitor<string> = {
     visitDefinitionList: (node) => node.kind,
     visitDefinition: (node) => node.kind,
     visitLink: (node) => node.kind,
-    visitMedia: (node) => node.kind,
+    visitEmbedded: (node) => node.kind,
     visitDirective: (node) => node.kind,
     visitCite: (node) => node.kind
 };
@@ -154,7 +154,7 @@ const metadata: Metadata = {
 };
 const parsedMetadata: Metadata | null = document.metadata;
 void [anchor, attributes, empty, record, listItem, metadata, parsedMetadata];
-declare const image: Media;
+declare const image: Embedded;
 const dimensions: Dimensions | null = image.dimensions;
 const standaloneSize: Dimensions = { width: 640, height: null };
 void [dimensions, standaloneSize];

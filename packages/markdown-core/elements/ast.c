@@ -206,8 +206,8 @@ markdown_core_node_kind markdown_core_node_get_kind(const markdown_core_node *no
     if (node->kind == MARKDOWN_CORE_NODE_LINK) {
         return MARKDOWN_CORE_KIND_LINK;
     }
-    if (node->kind == MARKDOWN_CORE_NODE_MEDIA) {
-        return MARKDOWN_CORE_KIND_MEDIA;
+    if (node->kind == MARKDOWN_CORE_NODE_EMBEDDED) {
+        return MARKDOWN_CORE_KIND_EMBEDDED;
     }
     if (node->kind == MARKDOWN_CORE_NODE_CROSS_LINK) {
         return MARKDOWN_CORE_KIND_CROSS_LINK;
@@ -278,7 +278,7 @@ const char *markdown_core_node_kind_name(markdown_core_node_kind kind) {
         "Strong",
         "Strikethrough",
         "Link",
-        "Media",
+        "Embedded",
         "Directive",
         "Cite",
         "TableRow",
@@ -599,7 +599,7 @@ const markdown_core_dimensions *markdown_core_node_dimensions(const markdown_cor
         return NULL;
     }
     const markdown_core_optional_dimensions *dimensions;
-    if (node->kind == MARKDOWN_CORE_NODE_MEDIA) {
+    if (node->kind == MARKDOWN_CORE_NODE_EMBEDDED) {
         dimensions = &node->as.link->dimensions;
     } else if (node->kind == MARKDOWN_CORE_NODE_CROSS_EMBEDDED) {
         dimensions = &node->as.cross_embedded->dimensions;
@@ -690,7 +690,7 @@ const markdown_core_node *markdown_core_node_callout_title(const markdown_core_n
 }
 
 static bool is_link(const markdown_core_node *node) {
-    return node && (node->kind == MARKDOWN_CORE_NODE_LINK || node->kind == MARKDOWN_CORE_NODE_MEDIA);
+    return node && (node->kind == MARKDOWN_CORE_NODE_LINK || node->kind == MARKDOWN_CORE_NODE_EMBEDDED);
 }
 
 /* Every link and image the parser produces reads through a resource, and
@@ -1277,7 +1277,7 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
         buffer_cstr(buffer, " dimensions=");
         buffer_dimensions(buffer, markdown_core_node_dimensions(node));
         break;
-    case MARKDOWN_CORE_KIND_MEDIA: {
+    case MARKDOWN_CORE_KIND_EMBEDDED: {
         markdown_core_node_destination(node, &destination);
         markdown_core_node_title(node, &oa);
         buffer_cstr(buffer, " dest=");
@@ -1735,7 +1735,7 @@ static void dump_node(dump_buffer *buffer, const markdown_core_node *node, size_
     case MARKDOWN_CORE_KIND_SUBSCRIPT:
     case MARKDOWN_CORE_KIND_STRIKETHROUGH:
     case MARKDOWN_CORE_KIND_LINK:
-    case MARKDOWN_CORE_KIND_MEDIA:
+    case MARKDOWN_CORE_KIND_EMBEDDED:
         dump_children(buffer, node, depth, child_count);
         break;
     case MARKDOWN_CORE_KIND_THEMATIC_BREAK:

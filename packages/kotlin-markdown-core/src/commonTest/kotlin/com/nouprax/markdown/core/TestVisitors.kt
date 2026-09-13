@@ -73,7 +73,7 @@ internal class KindVisitor : Visitor<String> {
 
     override fun visitLink(node: Link): String = name(node)
 
-    override fun visitMedia(node: Media): String = name(node)
+    override fun visitEmbedded(node: Embedded): String = name(node)
 
     override fun visitDirective(node: Directive): String = name(node)
 
@@ -155,7 +155,7 @@ internal class RecordingVisitor : Visitor<Unit> {
 
     override fun visitLink(node: Link): Unit = record(node)
 
-    override fun visitMedia(node: Media): Unit = record(node)
+    override fun visitEmbedded(node: Embedded): Unit = record(node)
 
     override fun visitDirective(node: Directive): Unit = record(node)
 
@@ -379,8 +379,8 @@ internal class RecordingWalkingVisitor(
         phase: WalkPhase,
     ): Unit = record(node, phase)
 
-    override fun visitMedia(
-        node: Media,
+    override fun visitEmbedded(
+        node: Embedded,
         phase: WalkPhase,
     ): Unit = record(node, phase)
 

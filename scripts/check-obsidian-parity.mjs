@@ -78,7 +78,7 @@ const mdastKinds = {
     inlineCode: "Code",
     code: "CodeBlock",
     link: "Link",
-    image: "Media",
+    image: "Embedded",
     break: "LineBreak",
     thematicBreak: "ThematicBreak",
     wikilink: "CrossLink",
@@ -93,7 +93,7 @@ const comparedFields = {
     Code: ["literal"],
     CodeBlock: ["literal", "info"],
     Link: ["dest", "title"],
-    Media: ["dest", "title"],
+    Embedded: ["dest", "title"],
     CrossLink: ["dest", "label"],
     CrossEmbedded: ["dest", "label"]
 };

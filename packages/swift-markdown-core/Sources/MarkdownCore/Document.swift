@@ -274,8 +274,8 @@ private func stored(
     case MARKDOWN_CORE_KIND_SUBSCRIPT: .subscript(Subscript.Fields(from: node, content: relations.children))
     case MARKDOWN_CORE_KIND_LINK:
         .link(Link.Fields(from: node, content: relations.children, resources: &resources))
-    case MARKDOWN_CORE_KIND_MEDIA:
-        .media(Media.Fields(from: node, content: relations.children, resources: &resources))
+    case MARKDOWN_CORE_KIND_EMBEDDED:
+        .embedded(Embedded.Fields(from: node, content: relations.children, resources: &resources))
     case MARKDOWN_CORE_KIND_DIRECTIVE: .directive(Directive.Fields(from: node, label: relations.label))
     case MARKDOWN_CORE_KIND_CITE: .cite(Cite.Fields(from: node, citations: relations.citations))
     case MARKDOWN_CORE_KIND_TABLE_CAPTION:

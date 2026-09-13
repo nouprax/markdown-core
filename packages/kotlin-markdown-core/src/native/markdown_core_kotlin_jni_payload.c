@@ -807,7 +807,7 @@ static void write_node(jni_payload_buffer *buffer, jni_payload_stack *stack, jni
         break;
     }
     case MARKDOWN_CORE_KIND_LINK:
-    case MARKDOWN_CORE_KIND_MEDIA: {
+    case MARKDOWN_CORE_KIND_EMBEDDED: {
         /* The resource's ordinal leads. Only its first sight carries the
          * destination and title; a later occurrence names the ordinal and
          * nothing else, so the decoder materializes each resource once. */
@@ -847,7 +847,7 @@ static void write_node(jni_payload_buffer *buffer, jni_payload_stack *stack, jni
             put_optional_string(buffer, optional_first);
             write_attributes(buffer, markdown_core_node_inherited_attributes(node));
         }
-        if (kind == MARKDOWN_CORE_KIND_MEDIA) {
+        if (kind == MARKDOWN_CORE_KIND_EMBEDDED) {
             put_dimensions(buffer, markdown_core_node_dimensions(node));
         }
         schedule_children(buffer, stack, node);

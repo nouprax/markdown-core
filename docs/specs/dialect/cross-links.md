@@ -18,7 +18,7 @@ CrossEmbedded(dest: Destination, label: String?, dimensions: Dimensions?)
 `[[...]]` produces a `CrossLink`; `![[...]]` produces a `CrossEmbedded` requesting
 workspace transclusion. Both are inline leaves with `Destination.cross(path,
 anchor)`. The node kind carries the distinction; neither stores an `embedded`
-flag. Only `Media` and `CrossEmbedded` have `dimensions`.
+flag. Only `Embedded` and `CrossEmbedded` have `dimensions`.
 
 - A target without an anchor has `anchor == null` and a non-empty `path`.
 - A target with an anchor stores a non-empty `anchor`; its `path` excludes the
@@ -348,7 +348,7 @@ independently of the resolved resource type. The parser never fetches the target
 
 Only `CrossEmbedded` (`![[...]]`) recognizes a complete `W`, `WxH`,
 `label|W`, or `label|WxH` in its authored label. It uses the same `Dimensions`
-value and positive 32-bit integer grammar as `Media`: no leading zero, signs,
+value and positive 32-bit integer grammar as `Embedded`: no leading zero, signs,
 spaces, uppercase `X`, missing component, overflow or trailing bytes. The last
 label separator is the only suffix candidate, and ASCII whitespace immediately before
 it invalidates the suffix. Both `|` and `\|` are separators, matching the cross-link

@@ -52,7 +52,7 @@ bool markdown_core_node_can_contain_type(markdown_core_node *node, markdown_core
     case MARKDOWN_CORE_NODE_SUPERSCRIPT:
     case MARKDOWN_CORE_NODE_SUBSCRIPT:
     case MARKDOWN_CORE_NODE_LINK:
-    case MARKDOWN_CORE_NODE_MEDIA:
+    case MARKDOWN_CORE_NODE_EMBEDDED:
         return MARKDOWN_CORE_NODE_TYPE_INLINE_P(child_type);
 
     default:
@@ -132,7 +132,7 @@ static size_t S_node_payload_size(markdown_core_node_type type) {
         size = sizeof(markdown_core_chunk);
         break;
     case MARKDOWN_CORE_NODE_LINK:
-    case MARKDOWN_CORE_NODE_MEDIA:
+    case MARKDOWN_CORE_NODE_EMBEDDED:
         size = sizeof(markdown_core_link);
         break;
     case MARKDOWN_CORE_NODE_CROSS_LINK:
@@ -259,7 +259,7 @@ static void free_node_as(markdown_core_node *node) {
         markdown_core_chunk_free(NODE_MEM(node), &node->as.footnote->id);
         break;
     case MARKDOWN_CORE_NODE_LINK:
-    case MARKDOWN_CORE_NODE_MEDIA:
+    case MARKDOWN_CORE_NODE_EMBEDDED:
         /* One holder fewer; a resource shared with other occurrences, or
          * still held by the reference map, stays. */
         markdown_core_resource_release(NODE_MEM(node), node->as.link->resource);
@@ -469,8 +469,8 @@ const char *markdown_core_node_get_type_string(markdown_core_node *node) {
         return "subscript";
     case MARKDOWN_CORE_NODE_LINK:
         return "link";
-    case MARKDOWN_CORE_NODE_MEDIA:
-        return "media";
+    case MARKDOWN_CORE_NODE_EMBEDDED:
+        return "embedded";
     case MARKDOWN_CORE_NODE_CITE:
         return "cite";
     case MARKDOWN_CORE_NODE_CITATION:
@@ -1088,7 +1088,8 @@ int markdown_core_node_check(markdown_core_node *node, FILE *out) {
 
 const markdown_core_chunk *markdown_core_node_anchor_chunk(const markdown_core_node *node) {
     if (!node->attributes.anchor.len &&
-        (node->kind == MARKDOWN_CORE_NODE_LINK || node->kind == MARKDOWN_CORE_NODE_MEDIA) && node->as.link->resource) {
+        (node->kind == MARKDOWN_CORE_NODE_LINK || node->kind == MARKDOWN_CORE_NODE_EMBEDDED) &&
+        node->as.link->resource) {
         return &node->as.link->resource->attributes.anchor;
     }
     return &node->attributes.anchor;

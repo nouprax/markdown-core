@@ -913,7 +913,7 @@ static void collect_node_fields(es_build *build, size_t node_index) {
         break;
     }
     case MARKDOWN_CORE_KIND_LINK:
-    case MARKDOWN_CORE_KIND_MEDIA: {
+    case MARKDOWN_CORE_KIND_EMBEDDED: {
         /* The tagged `Destination`: the branch is the scalar, its strings are
          * the first slots -- the url, or the path and the optional anchor --
          * and the title is the third, so a slot never means two things. The

@@ -319,9 +319,9 @@ private struct DumpVisitor: MarkupVisitor {
         state.nested(node.content.count) { node.content.forEach(state.dump) }
     }
 
-    mutating func visit(_ node: Media) {
+    mutating func visit(_ node: Embedded) {
         state.line(
-            "Media",
+            "Embedded",
             node,
             fields: [
                 "dest=\(destinationString(node.dest))", "title=\(optionalString(node.title))",

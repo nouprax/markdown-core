@@ -369,9 +369,9 @@ private class DumpVisitor(
         )
     }
 
-    override fun visitMedia(node: Media) {
+    override fun visitEmbedded(node: Embedded) {
         state.container(
-            "Media",
+            "Embedded",
             node,
             listOf(
                 "dest=${destination(node.dest)}",

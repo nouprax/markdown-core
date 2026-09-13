@@ -11,7 +11,7 @@ import { kindVisitor } from "./visitor.mjs";
 
 test("ast: dimensions belong to each image occurrence while its destination stays shared", () => {
     const document = Document.parse('![*alt*|2147483647x2][r] ![3][r] ![bad|01][r]\n\n[r]: /shared "title"\n');
-    const images = document.content[0].content.filter((node) => node.kind === "media");
+    const images = document.content[0].content.filter((node) => node.kind === "embedded");
     assert.deepEqual(
         images.map((node) => node.dimensions),
         [{ width: 2147483647, height: 2 }, { width: 3, height: null }, null]
@@ -30,12 +30,12 @@ test("ast: dimensions belong to each image occurrence while its destination stay
         walkingVisitor((node, phase) => events.push(`${phase}:${nodeKindName(node)}`))
     );
     assert.deepEqual(events, [
-        "entering:Media",
+        "entering:Embedded",
         "entering:Emphasis",
         "entering:Text",
         "exiting:Text",
         "exiting:Emphasis",
-        "exiting:Media"
+        "exiting:Embedded"
     ]);
 });
 
@@ -1123,11 +1123,11 @@ test("ast: metadata preserves tags, decimal text, duplicate keys and owned lists
 test("ast: dimensions belong to occurrences and universal attributes survive release", () => {
     const bytes = nativeResult("![a][r] ![b][r]\n\n[r]: /u\n");
     const view = new DataView(bytes.buffer);
-    const image = findNode(bytes, kinds.indexOf("media"));
+    const image = findNode(bytes, kinds.indexOf("embedded"));
     view.setUint32(image + 124, 640, true);
     view.setUint32(image + 128, 480, true);
     const document = new NodeDecoder(bytes).decodeDocument();
-    const images = document.content[0].content.filter((value) => value.kind === "media");
+    const images = document.content[0].content.filter((value) => value.kind === "embedded");
     assert.equal(images[0].dest, images[1].dest);
     assert.deepEqual(
         images.map((value) => value.dimensions),

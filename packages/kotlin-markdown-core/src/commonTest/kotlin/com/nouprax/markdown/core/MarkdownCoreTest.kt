@@ -28,7 +28,7 @@ class ApiTest {
     @Test
     fun imageDimensionsBelongToOccurrencesWithSharedDestinations() {
         val document = Document.parse("![*alt*|2147483647x2][r] ![3][r] ![bad|01][r]\n\n[r]: /shared \"title\"\n")
-        val images = assertIs<Paragraph>(document.content.single()).content.filterIsInstance<Media>()
+        val images = assertIs<Paragraph>(document.content.single()).content.filterIsInstance<Embedded>()
         assertEquals(listOf(Dimensions(2147483647, 2), Dimensions(3), null), images.map { it.dimensions })
         assertEquals(1, setOf(Dimensions(640, 480), Dimensions(640, 480)).size)
         assertFailsWith<IllegalArgumentException> { Dimensions(0) }
@@ -45,12 +45,12 @@ class ApiTest {
         images[0].walk(visitor)
         assertEquals(
             listOf(
-                "entering:Media",
+                "entering:Embedded",
                 "entering:Emphasis",
                 "entering:Text",
                 "exiting:Text",
                 "exiting:Emphasis",
-                "exiting:Media",
+                "exiting:Embedded",
             ),
             visitor.events,
         )
@@ -383,7 +383,7 @@ class BindingMappingTest {
         val document = Document.parse(source)
 
         // M2: the definition produces no node, and every reference form is
-        // the Link or Media it names, with the definition's destination and
+        // the Link or Embedded it names, with the definition's destination and
         // title.
         val block = assertIs<DirectiveBlock>(document.content[0])
         assertIs<DirectiveLabel>(assertNotNull(block.label))
@@ -404,7 +404,7 @@ class BindingMappingTest {
             assertEquals("t", link.title)
         }
         assertSame(links[0].dest, links[1].dest, "one definition materializes one resource")
-        val image = inlines.filterIsInstance<Media>().single()
+        val image = inlines.filterIsInstance<Embedded>().single()
         assertEquals("/url", assertIs<Destination.Url>(image.dest).value)
         assertSame(links[0].dest, image.dest, "an image reference shares the definition's resource too")
         assertEquals(PlacementMode.STANDALONE, inlines.filterIsInstance<Formula>().single().mode)
@@ -428,7 +428,7 @@ class BindingMappingTest {
         // The owning node keeps its label field separate from block content;
         // the per-node dumper deliberately emits both relations.
         val dump = document.dump()
-        for (fragment in listOf("Link scope=", "Media scope=", "DirectiveLabel")) {
+        for (fragment in listOf("Link scope=", "Embedded scope=", "DirectiveLabel")) {
             assertTrue(dump.contains(fragment), "dump is missing $fragment")
         }
         assertEquals(listOf("Paragraph"), block.content.map { it::class.simpleName })
@@ -586,10 +586,10 @@ class BindingMappingTest {
 
         val rich = assertIs<Paragraph>(withEverything.content[1]).content
         assertEquals("t", rich.filterIsInstance<Link>().single().title)
-        assertEquals("u", rich.filterIsInstance<Media>().single().title)
+        assertEquals("u", rich.filterIsInstance<Embedded>().single().title)
         val plain = assertIs<Paragraph>(withNothing.content[1]).content
         assertEquals(null, plain.filterIsInstance<Link>().single().title)
-        assertEquals(null, plain.filterIsInstance<Media>().single().title)
+        assertEquals(null, plain.filterIsInstance<Embedded>().single().title)
 
         assertEquals(listOf(Record("k", "v")), assertIs<DirectiveBlock>(withEverything.content[2]).attributes.records)
         assertEquals(emptyList(), assertIs<DirectiveBlock>(withNothing.content[2]).attributes.records)
@@ -729,7 +729,7 @@ class RobustnessTest {
         val paragraph = assertIs<Paragraph>(document.content[1])
         val code = assertIs<Code>(paragraph.content[0])
         val link = assertIs<Link>(paragraph.content[2])
-        val image = assertIs<Media>(paragraph.content[4])
+        val image = assertIs<Embedded>(paragraph.content[4])
         assertEquals(listOf("code"), code.attributes.classes)
         assertEquals(10, code.scope.end.column)
         assertEquals("own", link.anchor)

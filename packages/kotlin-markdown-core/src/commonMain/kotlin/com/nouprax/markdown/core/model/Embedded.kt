@@ -1,11 +1,11 @@
 package com.nouprax.markdown.core
 
 /**
- * Inline media from direct or resolved Markdown image syntax. The target type is not inferred.
+ * An inline embed from direct or resolved Markdown image syntax. The target type is not inferred.
  * Complete `W`, `WxH`, `alt|W` and `alt|WxH` labels
  * supply positive 32-bit dimensions without leading zeros.
  */
-public class Media internal constructor(
+public class Embedded internal constructor(
     /** Required, for the reason [Link.dest] is. */
     public val dest: Destination,
     public val title: String?,
@@ -17,5 +17,5 @@ public class Media internal constructor(
     override val anchor: String?,
     override val attributes: Attributes,
 ) : Markup {
-    override fun <Result> accept(visitor: Visitor<Result>): Result = visitor.visitMedia(this)
+    override fun <Result> accept(visitor: Visitor<Result>): Result = visitor.visitEmbedded(this)
 }

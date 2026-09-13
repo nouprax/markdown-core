@@ -19,7 +19,7 @@ export type OrderedListVariant =
     | "default";
 export type OrderedListDelimiter = "period" | { readonly kind: "parenthesis"; readonly closed: boolean } | "default";
 /**
- * The target of a `Link` or `Media`: a tagged value, not a node, so it has no
+ * The target of a `Link` or `Embedded`: a tagged value, not a node, so it has no
  * scope and no children, and a branch's fields exist only in that branch.
  * Every link and image owns the `url` branch, the complete semantic
  * destination the inherited grammar produced -- decoded, not percent-encoded,

@@ -59,7 +59,7 @@ const elements = [
     "link.c",
     "list.c",
     "mark.c",
-    "media.c",
+    "embedded.c",
     "properties.c",
     "span.c",
     "specimen.c",

@@ -20,20 +20,20 @@ Destination =
 
 Link(dest: Destination, title: String?, content: [Markup])
 Dimensions(width: Int, height: Int?)
-Media(dest: Destination, title: String?, dimensions: Dimensions?, content: [Markup])
+Embedded(dest: Destination, title: String?, dimensions: Dimensions?, content: [Markup])
 ```
 
 `Destination` is a tagged value, not a node: it has no scope, children,
 anchor, or attributes, and branch fields exist only in their branch. Every
-`Link` and `Media` owns the `url` branch; every `CrossLink` or `CrossEmbedded` of the
+`Link` and `Embedded` owns the `url` branch; every `CrossLink` or `CrossEmbedded` of the
 [cross links](cross-links.md) module owns the `cross` branch. `Link.content`
-is the parsed label content and `Media.content` the parsed alt content.
+is the parsed label content and `Embedded.content` the parsed alt content.
 `Dimensions` is an independent value, with required width and optional
 height. It has no node identity, kind, scope, children, anchor, attributes or
-visitor callbacks. `Media.dimensions` is optional and belongs to its occurrence.
+visitor callbacks. `Embedded.dimensions` is optional and belongs to its occurrence.
 `Int` is a 32-bit signed integer on every surface.
 
-`Media` is the canonical node for Markdown image syntax, for both direct and
+`Embedded` is the canonical node for Markdown image syntax, for both direct and
 resolved references. Its destination may name any media resource; the parser
 does not inspect the target, infer a MIME type, or choose how to render it.
 Workspace transclusions written as `![[...]]` produce `CrossEmbedded`
@@ -88,7 +88,7 @@ Every successful link form produces the same node:
 <autolink>            /
 ```
 
-and every successful direct or reference image produces `Media`. A reference
+and every successful direct or reference image produces `Embedded`. A reference
 resolves through the parser-owned reference map: one lookup of the normalized
 label per candidate, the first definition in source order winning among
 duplicates, and the inherited definition grammar deciding what is a
@@ -137,12 +137,12 @@ Document scope=1:1..4:12 anchor=null attributes={} children=1
 .
 Document scope=1:1..3:11 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..1:33 anchor=null attributes={} children=3
-    ├── Media scope=1:1..1:23 anchor=null attributes={} dest=url("/i.png") title="t" dimensions=null children=2
+    ├── Embedded scope=1:1..1:23 anchor=null attributes={} dest=url("/i.png") title="t" dimensions=null children=2
     │   ├── Text scope=1:3..1:6 anchor=null attributes={} literal="alt " children=0
     │   └── Emphasis scope=1:7..1:10 anchor=null attributes={} children=1
     │       └── Text scope=1:8..1:9 anchor=null attributes={} literal="em" children=0
     ├── Text scope=1:24..1:24 anchor=null attributes={} literal=" " children=0
-    └── Media scope=1:25..1:33 anchor=null attributes={} dest=url("/r.png") title=null dimensions=null children=1
+    └── Embedded scope=1:25..1:33 anchor=null attributes={} dest=url("/r.png") title=null dimensions=null children=1
         └── Text scope=1:27..1:29 anchor=null attributes={} literal="alt" children=0
 ````````````````````````````````
 
@@ -161,17 +161,17 @@ parser tests these alternatives in order and takes the first success. A failed
 alternative leaves the cursor at the `]`; the container after a failed
 alternative is text.
 
-1. A valid direct tail `(...)` produces `Link` or `Media`; a following
+1. A valid direct tail `(...)` produces `Link` or `Embedded`; a following
    container attaches.
 2. A full `[label]` or collapsed `[]` tail whose label resolves, explicitly or
-   through a virtual heading definition, produces `Link` or `Media`; a
+   through a virtual heading definition, produces `Link` or `Embedded`; a
    following container attaches. A tail whose label does not resolve does
    not block the later alternatives.
 3. A valid attribute container beginning at the byte after `]` produces a
    `Span`.
 4. A valid cite group produces a `Cite`.
 5. A shortcut reference whose label resolves, not followed by `[]` or by a
-   link label, produces `Link` or `Media`; a following container belongs to
+   link label, produces `Link` or `Embedded`; a following container belongs to
    alternative 3, so none attaches here.
 6. A `[^label]` whose label is defined is a footnote call and produces a
    `Cite`; the [footnotes](footnotes.md) module states it. As cmark-gfm
@@ -312,15 +312,15 @@ the pipe are the alt content, parsed by the inline parser, and may be empty.
 .
 Document scope=1:1..3:54 anchor=null attributes={} children=2
 ├── Paragraph scope=1:1..1:17 anchor=null attributes={} children=1
-│   └── Media scope=1:1..1:17 anchor=null attributes={} dest=url("a.png") title=null dimensions=(width=100,height=145) children=0
+│   └── Embedded scope=1:1..1:17 anchor=null attributes={} dest=url("a.png") title=null dimensions=(width=100,height=145) children=0
 └── Paragraph scope=3:1..3:54 anchor=null attributes={} children=5
-    ├── Media scope=3:1..3:17 anchor=null attributes={} dest=url("a.png") title=null dimensions=(width=100,height=null) children=1
+    ├── Embedded scope=3:1..3:17 anchor=null attributes={} dest=url("a.png") title=null dimensions=(width=100,height=null) children=1
     │   └── Text scope=3:3..3:5 anchor=null attributes={} literal="alt" children=0
     ├── Text scope=3:18..3:18 anchor=null attributes={} literal=" " children=0
-    ├── Media scope=3:19..3:39 anchor=null attributes={} dest=url("a.png") title=null dimensions=(width=100,height=145) children=1
+    ├── Embedded scope=3:19..3:39 anchor=null attributes={} dest=url("a.png") title=null dimensions=(width=100,height=145) children=1
     │   └── Text scope=3:21..3:23 anchor=null attributes={} literal="alt" children=0
     ├── Text scope=3:40..3:40 anchor=null attributes={} literal=" " children=0
-    └── Media scope=3:41..3:54 anchor=null attributes={} dest=url("a.png") title=null dimensions=(width=200,height=null) children=0
+    └── Embedded scope=3:41..3:54 anchor=null attributes={} dest=url("a.png") title=null dimensions=(width=200,height=null) children=0
 ````````````````````````````````
 
 The suffix is matched against the raw source bytes between the last top-level
@@ -332,7 +332,7 @@ closing `]`; for a label with no such pipe, against the whole label:
 .
 Document scope=1:1..1:23 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..1:23 anchor=null attributes={} children=1
-    └── Media scope=1:1..1:23 anchor=null attributes={} dest=url("a.png") title=null dimensions=(width=300,height=null) children=3
+    └── Embedded scope=1:1..1:23 anchor=null attributes={} dest=url("a.png") title=null dimensions=(width=300,height=null) children=3
         ├── Emphasis scope=1:3..1:5 anchor=null attributes={} children=1
         │   └── Text scope=1:4..1:4 anchor=null attributes={} literal="a" children=0
         ├── Text scope=1:6..1:6 anchor=null attributes={} literal=" " children=0
@@ -350,10 +350,10 @@ label is alt content:
 .
 Document scope=1:1..3:18 anchor=null attributes={} children=2
 ├── Paragraph scope=1:1..1:13 anchor=null attributes={} children=1
-│   └── Media scope=1:1..1:13 anchor=null attributes={} dest=url("a.png") title=null dimensions=null children=1
+│   └── Embedded scope=1:1..1:13 anchor=null attributes={} dest=url("a.png") title=null dimensions=null children=1
 │       └── Text scope=1:3..1:5 anchor=null attributes={} literal="0x1" children=0
 └── Paragraph scope=3:1..3:18 anchor=null attributes={} children=1
-    └── Media scope=3:1..3:18 anchor=null attributes={} dest=url("a.png") title=null dimensions=null children=1
+    └── Embedded scope=3:1..3:18 anchor=null attributes={} dest=url("a.png") title=null dimensions=null children=1
         └── Text scope=3:3..3:10 anchor=null attributes={} literal="alt| 100" children=0
 ````````````````````````````````
 
@@ -366,7 +366,7 @@ The rule applies to direct and resolved reference images alike:
 .
 Document scope=1:1..3:11 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..1:13 anchor=null attributes={} children=1
-    └── Media scope=1:1..1:13 anchor=null attributes={} dest=url("/i.png") title=null dimensions=(width=100,height=null) children=1
+    └── Embedded scope=1:1..1:13 anchor=null attributes={} dest=url("/i.png") title=null dimensions=(width=100,height=null) children=1
         └── Text scope=1:3..1:5 anchor=null attributes={} literal="alt" children=0
 ````````````````````````````````
 
@@ -378,7 +378,7 @@ the raw prefix in `label`; ordinary cross links never produce dimensions.
 
 ## Scopes
 
-`Link.scope` and `Media.scope` cover the opener, the content, the tail, and
+`Link.scope` and `Embedded.scope` cover the opener, the content, the tail, and
 an occurrence-local attribute container. An autolink's scope covers the angle
 brackets or the bare URL. Content and alt child scopes end before a dimension
 suffix, and the suffix is inside the image's scope.

@@ -11,7 +11,7 @@
 #include "html.h"
 #include "line_break.h"
 #include "text.h"
-#include "media.h"
+#include "embedded.h"
 #include "link.h"
 #include "definition_list.h"
 #include "callout.h"
@@ -68,7 +68,7 @@ static const markdown_core_element *const CORE_ELEMENTS[] = {&MARKDOWN_CORE_ELEM
                                                              &MARKDOWN_CORE_ELEMENT_DIRECTIVE,
                                                              &MARKDOWN_CORE_ELEMENT_HTML,
                                                              &MARKDOWN_CORE_ELEMENT_LINK,
-                                                             &MARKDOWN_CORE_ELEMENT_MEDIA,
+                                                             &MARKDOWN_CORE_ELEMENT_EMBEDDED,
                                                              &MARKDOWN_CORE_ELEMENT_TEXT,
                                                              &MARKDOWN_CORE_ELEMENT_TABLE};
 
@@ -127,7 +127,7 @@ static const markdown_core_element *const INLINE_STRUCTURE[] = {
     [MARKDOWN_CORE_NODE_EMPHASIS & MARKDOWN_CORE_NODE_VALUE_MASK] = &MARKDOWN_CORE_ELEMENT_EMPHASIS,
     [MARKDOWN_CORE_NODE_STRONG & MARKDOWN_CORE_NODE_VALUE_MASK] = &MARKDOWN_CORE_ELEMENT_EMPHASIS,
     [MARKDOWN_CORE_NODE_LINK & MARKDOWN_CORE_NODE_VALUE_MASK] = &MARKDOWN_CORE_ELEMENT_LINK,
-    [MARKDOWN_CORE_NODE_MEDIA & MARKDOWN_CORE_NODE_VALUE_MASK] = &MARKDOWN_CORE_ELEMENT_MEDIA,
+    [MARKDOWN_CORE_NODE_EMBEDDED & MARKDOWN_CORE_NODE_VALUE_MASK] = &MARKDOWN_CORE_ELEMENT_EMBEDDED,
 };
 
 const markdown_core_element *markdown_core_structure_for_kind(markdown_core_node_type kind) {

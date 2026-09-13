@@ -22,9 +22,9 @@ occurrence owns its string chunks; optional presence remains independent of
 string length. The node kind identifies a link or transclusion, with no
 embedded flag in either record.
 
-Only `Media` and `CrossEmbedded` expose `Dimensions(width, height?)`. The
+Only `Embedded` and `CrossEmbedded` expose `Dimensions(width, height?)`. The
 optional value is stored inline in the occurrence's typed record, without a
-separate allocation, and its lifetime ends with that record. A `Media` node
+separate allocation, and its lifetime ends with that record. A `Embedded` node
 retains its own dimensions even when its destination and title come from a
 resource shared with other resolved references. Cross references own their raw
 destination fields directly and do not share a resource with a definition.

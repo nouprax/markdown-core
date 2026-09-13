@@ -80,7 +80,7 @@ let package = Package(
                 "elements/link.c",
                 "elements/list.c",
                 "elements/mark.c",
-                "elements/media.c",
+                "elements/embedded.c",
                 "elements/properties.c",
                 "elements/span.c",
                 "elements/specimen.c",

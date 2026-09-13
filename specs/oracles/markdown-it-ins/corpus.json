@@ -200,7 +200,7 @@
         "input": "++[a](/u)++ [++b++](/u) ++[c++](/u) [++d](/u)++\n"
     },
     {
-        "id": "media-content",
+        "id": "embedded-content",
         "source": "composition",
         "input": "![++alt++](/image.png) ++![alt](/image.png)++\n"
     },
