@@ -35,6 +35,10 @@ jobs:
                               per_page: 100,
                           },
                       );
+                      if (!artifacts.some((artifact) => artifact.name === "pr-benchmark-head")) {
+                          core.notice("This run produced no head measurement; no comparison is needed.");
+                          return;
+                      }
                       let pullRequests = run.pull_requests ?? [];
                       if (pullRequests.length !== 1) {
                           const associated =

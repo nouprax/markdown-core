@@ -10,7 +10,15 @@ on:
         - cron: "45 14 * * 3"
 
 jobs:
+    changes:
+        uses: ./.github/workflows/changes.yml
+        permissions:
+            actions: read
+            contents: read
+
     analyze:
+        needs: changes
+        if: ${{ needs.changes.outputs.required == 'true' }}
         name: Security Scan - ${{ matrix.label }}
         runs-on: ${{ matrix.os }}
         permissions:
@@ -74,16 +82,18 @@ jobs:
 
     codeql-gate:
         name: CodeQL gate
-        if: ${{ always() }}
-        needs: analyze
+        if: ${{ always() && (needs.changes.result != 'success' || needs.changes.outputs.required != 'false') }}
+        needs: [changes, analyze]
         runs-on: ubuntu-latest
         permissions:
             contents: read
         steps:
             - name: Require every CodeQL language
               env:
+                  CHANGES: ${{ needs.changes.result }}
                   RESULT: ${{ needs.analyze.result }}
               run: |
+                  test "$CHANGES" = success
                   if [ "$RESULT" != success ]; then
                       echo "CodeQL matrix concluded: $RESULT" >&2
                       exit 1

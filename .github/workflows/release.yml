@@ -49,6 +49,7 @@ jobs:
         name: Quality Gate - Release
         needs: validate
         permissions:
+            actions: read
             contents: read
         uses: ./.github/workflows/ci.yml
 

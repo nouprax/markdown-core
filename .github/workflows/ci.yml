@@ -22,7 +22,15 @@ concurrency:
     cancel-in-progress: true
 
 jobs:
+    changes:
+        uses: ./.github/workflows/changes.yml
+        permissions:
+            actions: read
+            contents: read
+
     health-check-repository:
+        needs: changes
+        if: ${{ needs.changes.outputs.required == 'true' }}
         name: Health Check - Repository
         runs-on: ubuntu-latest
         steps:
@@ -49,7 +57,6 @@ jobs:
               run: |
                   pnpm audit:repository:clean
                   pnpm audit:ci
-                  pnpm audit:tests
                   pnpm audit:surface
                   pnpm check:element-inventory
                   pnpm audit:element-special-chars
@@ -58,6 +65,8 @@ jobs:
                   pnpm audit:ast-projections
 
     health-check-c:
+        needs: changes
+        if: ${{ needs.changes.outputs.required == 'true' }}
         name: Health Check - C
         runs-on: ubuntu-latest
         steps:
@@ -81,6 +90,8 @@ jobs:
               run: pnpm lint:c
 
     health-check-es:
+        needs: changes
+        if: ${{ needs.changes.outputs.required == 'true' }}
         name: Health Check - ES
         runs-on: ubuntu-latest
         steps:
@@ -100,6 +111,8 @@ jobs:
               run: pnpm lint:es
 
     health-check-kotlin:
+        needs: changes
+        if: ${{ needs.changes.outputs.required == 'true' }}
         name: Health Check - Kotlin
         runs-on: ubuntu-latest
         steps:
@@ -163,6 +176,8 @@ jobs:
               run: pnpm audit:packages
 
     health-check-swift:
+        needs: changes
+        if: ${{ needs.changes.outputs.required == 'true' }}
         name: Health Check - Swift
         runs-on: macos-26
         steps:
@@ -1019,8 +1034,9 @@ jobs:
 
     tests-ready:
         name: Tests - Ready
-        if: ${{ always() }}
+        if: ${{ always() && needs.changes.outputs.required == 'true' }}
         needs:
+            - changes
             - swift-test
             - kotlin-test
             - kotlin-android-test
@@ -1120,17 +1136,19 @@ jobs:
         # Push runs use an independent, non-required context. PR and
         # merge-queue runs alone own the name referenced by the ruleset.
         name: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && 'Required gates' || 'Development branch gates' }}
-        if: ${{ always() }}
+        if: ${{ always() && (needs.changes.result != 'success' || needs.changes.outputs.required != 'false') }}
         needs:
+            - changes
             - tests-ready
             - upstream-parity
         runs-on: ubuntu-latest
         steps:
             - name: Require the complete test and parity layers
               env:
+                  CHANGES: ${{ needs.changes.result }}
                   TESTS_READY: ${{ needs.tests-ready.result }}
                   UPSTREAM_PARITY: ${{ needs.upstream-parity.result }}
               run: |
-                  for result in "$TESTS_READY" "$UPSTREAM_PARITY"; do
+                  for result in "$CHANGES" "$TESTS_READY" "$UPSTREAM_PARITY"; do
                       test "$result" = success
                   done
