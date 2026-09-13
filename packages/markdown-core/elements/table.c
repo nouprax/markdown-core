@@ -819,7 +819,7 @@ static const table_interval *table_dashes(table_source *source, size_t index) {
             source->parser->oom = true;
             return NULL;
         }
-        const unsigned char *p = line->data + line->offset, *from, *before = p;
+        const unsigned char *p = line->data + line->offset, *from = p, *before = p;
         int column = 0;
         for (size_t i = 0; i < count; i++) {
             scan_table_dash(&p, line->data + line->length, &from);

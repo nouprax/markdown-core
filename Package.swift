@@ -84,6 +84,7 @@ let package = Package(
                 .headerSearchPath("core/include"),
                 .define("MARKDOWN_CORE_STATIC_DEFINE"),
                 .define("MARKDOWN_CORE_ELEMENTS_STATIC_DEFINE"),
+                .define("NDEBUG", .when(configuration: .release)),
             ]
         ),
         .target(

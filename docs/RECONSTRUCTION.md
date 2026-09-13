@@ -248,6 +248,7 @@ ctest --preset correctness-tsan
 sh scripts/format-c.sh --check
 sh scripts/format-cmake.sh --check
 bash scripts/audit-public-surface.sh
+sh scripts/audit-build-flags.sh
 bash scripts/audit-package-contents.sh
 bash scripts/audit-test-topology.sh
 node scripts/audit-source-lists.mjs
@@ -285,6 +286,21 @@ to the versioned native C workload and binary size described above.
 Binding conformance and packaging tests remain part of the product boundary;
 they must parse through the same one-shot semantics rather than reproduce C
 parser behavior independently.
+
+Every target that carries the engine is built under one release policy,
+`packages/markdown-core/cmake/MarkdownCoreBuildFlags.cmake`: hidden
+visibility with the export list as the only public surface, `NDEBUG` in the
+optimized configurations, and interprocedural optimization there when the
+toolchain supports it (`MARKDOWN_CORE_LTO`, on by default). The CMake
+archives and facade library, the diagnostics archive, the CLI and both Kotlin
+JNI payloads apply it; the Swift package defines `NDEBUG` in its release
+configuration and its product artifact is a release build; the Wasm build
+optimizes across all of its units with `-flto`. Sanitizer configurations keep
+assertions and stay per-unit. Trivial kind-to-descriptor lookups and buffer
+primitives are defined in headers, so every build inlines them without link
+time optimization. `scripts/audit-build-flags.sh` holds each producer to this
+policy; any performance measurement of a binding comes from its release
+configuration only.
 
 ## 9. Change discipline
 

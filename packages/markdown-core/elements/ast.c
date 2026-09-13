@@ -1105,16 +1105,19 @@ static void dump_metadata_value(dump_buffer *buffer, const markdown_core_metadat
 static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, markdown_core_node_kind kind) {
     markdown_core_string a = {NULL, 0}, c = {NULL, 0};
     markdown_core_optional_string oa = {false, {NULL, 0}}, ob = {false, {NULL, 0}};
-    markdown_core_optional_i64 start;
-    markdown_core_optional_bool collapsed;
-    markdown_core_ordered_list_variant variant;
-    markdown_core_ordered_list_delimiter delimiter;
-    markdown_core_list_flavor flavor;
-    markdown_core_placement mode;
-    markdown_core_destination destination;
-    bool x, y;
-    size_t count, i;
-    int32_t level;
+    /* Every accessor below reports a failed lookup through its result and
+     * leaves its outputs alone, so each output starts at its neutral value:
+     * the dump then prints that value rather than reading an unset local. */
+    markdown_core_optional_i64 start = {false, 0};
+    markdown_core_optional_bool collapsed = {false, false};
+    markdown_core_ordered_list_variant variant = {MARKDOWN_CORE_ORDERED_LIST_VARIANT_DEFAULT, false};
+    markdown_core_ordered_list_delimiter delimiter = {MARKDOWN_CORE_ORDERED_LIST_DELIMITER_DEFAULT, false};
+    markdown_core_list_flavor flavor = MARKDOWN_CORE_LIST_FLAVOR_BULLET;
+    markdown_core_placement mode = MARKDOWN_CORE_PLACEMENT_EMBEDDED;
+    markdown_core_destination destination = {0};
+    bool x = false, y = false;
+    size_t count = 0, i;
+    int32_t level = 0;
     switch (kind) {
     case MARKDOWN_CORE_KIND_CITATION: {
         markdown_core_referent referent;
@@ -1269,7 +1272,7 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
         markdown_core_node_table_properties(node, &count, &head, &content, &foot);
         buffer_cstr(buffer, " columns=[");
         for (i = 0; i < count; i++) {
-            markdown_core_table_column column;
+            markdown_core_table_column column = {MARKDOWN_CORE_FLOW_LEFT, {false, 0.0}};
             markdown_core_node_table_column_at(node, i, &column);
             if (i) {
                 buffer_cstr(buffer, ",");
@@ -1286,7 +1289,7 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
         break;
     }
     case MARKDOWN_CORE_KIND_TABLE_CELL: {
-        int64_t rowspan, colspan;
+        int64_t rowspan = 0, colspan = 0;
         markdown_core_node_table_cell_spans(node, &rowspan, &colspan);
         buffer_cstr(buffer, " rowspan=");
         buffer_i64(buffer, rowspan);
@@ -1635,7 +1638,7 @@ static void dump_node(dump_buffer *buffer, const markdown_core_node *node, size_
         }
     }
     for (size_t i = 0; i < records; i++) {
-        markdown_core_string name, value;
+        markdown_core_string name = {NULL, 0}, value = {NULL, 0};
         markdown_core_node_attribute_record_at(node, i, &name, &value);
         if (i || classes) {
             buffer_cstr(buffer, " ");

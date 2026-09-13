@@ -9,6 +9,7 @@
     },
     "scripts": {
         "audit:ast-projections": "node scripts/audit-ast-projections.mjs",
+        "audit:build-flags": "scripts/audit-build-flags.sh",
         "audit:ci": "scripts/audit-ci-policy.sh",
         "audit:element-attach-order": "node scripts/audit-element-attach-order.mjs",
         "audit:element-special-chars": "node scripts/audit-element-special-chars.mjs",
@@ -76,7 +77,7 @@
         "test:kotlin-macos-arm64": "scripts/gradle.sh :packages:kotlin-markdown-core:macosArm64Test",
         "test:swift-ios-simulator": "scripts/run-swift-ios-tests.sh MarkdownCoreTests",
         "test:swift-macos": "CLANG_MODULE_CACHE_PATH=build/swift-module-cache swift test --disable-sandbox --filter '^MarkdownCoreTests\\.' && CLANG_MODULE_CACHE_PATH=build/swift-module-cache swift test --disable-sandbox --package-path packages/swift-markdown-core/Tests/Consumer",
-        "verify": "pnpm run format:check && pnpm run lint && pnpm run check:contracts && pnpm run check:gradle-model && pnpm run release:check-version && pnpm run audit:repository && pnpm run audit:ci && pnpm run audit:tests && pnpm run audit:surface && pnpm run check:element-inventory && pnpm run audit:element-special-chars && pnpm run audit:element-attach-order && pnpm run audit:source-lists && pnpm run audit:ast-projections && pnpm run audit:packages",
+        "verify": "pnpm run format:check && pnpm run lint && pnpm run check:contracts && pnpm run check:gradle-model && pnpm run release:check-version && pnpm run audit:repository && pnpm run audit:ci && pnpm run audit:tests && pnpm run audit:surface && pnpm run audit:build-flags && pnpm run check:element-inventory && pnpm run audit:element-special-chars && pnpm run audit:element-attach-order && pnpm run audit:source-lists && pnpm run audit:ast-projections && pnpm run audit:packages",
         "check:pandoc-parity": "node --test scripts/tests/pandoc-oracle.test.mjs scripts/tests/pandoc-compositions.test.mjs && node scripts/check-pandoc-parity.mjs",
         "probe:pandoc-composition": "node --test scripts/tests/pandoc-compositions.test.mjs && node scripts/check-pandoc-compositions.mjs"
     },

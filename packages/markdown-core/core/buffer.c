@@ -20,34 +20,6 @@ const unsigned char markdown_core_strbuf__initbuf[1] = {0};
 #define MIN(x, y) ((x < y) ? x : y)
 #endif
 
-void markdown_core_strbuf_init(markdown_core_mem *mem, markdown_core_strbuf *buf, bufsize_t initial_size) {
-    buf->mem = mem;
-    buf->asize = 0;
-    buf->size = 0;
-    buf->oom = 0;
-    /* The cast drops const and nothing writes through it: `asize` is 0 exactly
-     * while `ptr` is this sentinel, and every write path either grows first or
-     * is guarded by `asize > 0`. */
-    buf->ptr = (unsigned char *)markdown_core_strbuf__initbuf;
-
-    if (initial_size > 0) {
-        markdown_core_strbuf_grow(buf, initial_size);
-    }
-}
-
-/* `bufsize_t` is int32_t, so `buf->size + add` is undefined behaviour once the
- * sum passes INT32_MAX -- and the wrapped result is NEGATIVE, which
- * markdown_core_strbuf_grow used to read as "already big enough". The caller
- * then wrote `add` bytes past the end of a buffer that had not grown. Test
- * against the room the cap leaves, BEFORE adding, so the sum never happens. */
-static MARKDOWN_CORE_INLINE void S_strbuf_grow_by(markdown_core_strbuf *buf, bufsize_t add) {
-    if (add < 0 || add > (bufsize_t)(INT32_MAX / 2) - buf->size) {
-        buf->oom = 1;
-        return;
-    }
-    markdown_core_strbuf_grow(buf, buf->size + add);
-}
-
 void markdown_core_strbuf_grow(markdown_core_strbuf *buf, bufsize_t target_size) {
     /* A non-positive target is a caller error, and it must poison rather than
      * assert: the assert compiles out under NDEBUG, and the `target_size <
@@ -84,36 +56,6 @@ void markdown_core_strbuf_grow(markdown_core_strbuf *buf, bufsize_t target_size)
     buf->asize = new_size;
 }
 
-bufsize_t markdown_core_strbuf_len(const markdown_core_strbuf *buf) { return buf->size; }
-
-void markdown_core_strbuf_free(markdown_core_strbuf *buf) {
-    if (!buf) {
-        return;
-    }
-
-    if (buf->ptr != markdown_core_strbuf__initbuf) {
-        buf->mem->free(buf->ptr);
-    }
-
-    markdown_core_strbuf_init(buf->mem, buf, 0);
-}
-
-void markdown_core_strbuf_clear(markdown_core_strbuf *buf) {
-    buf->size = 0;
-
-    /* An allocation failure is a fact about the write that failed, not a
-     * property the buffer keeps. `oom` says "content was lost"; after a clear
-     * there is no content, so there is nothing left for it to say. It used to
-     * survive here, and `markdown_core_strbuf_detach` was the only operation
-     * that lifted it -- so a buffer cleared and reused across lines silently
-     * dropped every later write with the allocator working again. */
-    buf->oom = 0;
-
-    if (buf->asize > 0) {
-        buf->ptr[0] = '\0';
-    }
-}
-
 void markdown_core_strbuf_set(markdown_core_strbuf *buf, const unsigned char *data, bufsize_t len) {
     if (len <= 0 || data == NULL) {
         markdown_core_strbuf_clear(buf);
@@ -126,6 +68,12 @@ void markdown_core_strbuf_set(markdown_core_strbuf *buf, const unsigned char *da
                 return;
             }
             memmove(buf->ptr, data, len);
+        } else if (len >= buf->asize) {
+            /* A slice of the buffer's own bytes can only be this long when
+             * `ptr` is the shared sentinel; a caller error, so poison rather
+             * than write past it. */
+            buf->oom = 1;
+            return;
         }
         buf->size = len;
         buf->ptr[buf->size] = '\0';
@@ -134,33 +82,6 @@ void markdown_core_strbuf_set(markdown_core_strbuf *buf, const unsigned char *da
 
 void markdown_core_strbuf_sets(markdown_core_strbuf *buf, const char *string) {
     markdown_core_strbuf_set(buf, (const unsigned char *)string, string ? (bufsize_t)strlen(string) : 0);
-}
-
-void markdown_core_strbuf_putc(markdown_core_strbuf *buf, int c) {
-    S_strbuf_grow_by(buf, 1);
-    if (buf->oom) {
-        return;
-    }
-    buf->ptr[buf->size++] = (unsigned char)(c & 0xFF);
-    buf->ptr[buf->size] = '\0';
-}
-
-void markdown_core_strbuf_put(markdown_core_strbuf *buf, const unsigned char *data, bufsize_t len) {
-    if (len <= 0) {
-        return;
-    }
-
-    S_strbuf_grow_by(buf, len);
-    if (buf->oom) {
-        return;
-    }
-    memmove(buf->ptr + buf->size, data, len);
-    buf->size += len;
-    buf->ptr[buf->size] = '\0';
-}
-
-void markdown_core_strbuf_puts(markdown_core_strbuf *buf, const char *string) {
-    markdown_core_strbuf_put(buf, (const unsigned char *)string, (bufsize_t)strlen(string));
 }
 
 void markdown_core_strbuf_copy_cstr(char *data, bufsize_t datasize, const markdown_core_strbuf *buf) {
