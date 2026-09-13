@@ -181,7 +181,9 @@ the public facade and times the parse and the free of each document apart,
 reports every sample with the minimum and the median, throughput from the bytes
 and time per node from the tree, and writes the whole measurement as JSON with
 `--json` (the `metric` line of `binding_baseline` keeps the PR benchmark's
-contract and adds the same measurement's detail). The work-invariant lane,
+contract and adds the same measurement's detail, which the collector writes
+to a sidecar next to the contract artifact, so a comparison workflow from
+before the detail still validates the contract). The work-invariant lane,
 `work_runner`, links the diagnostics build with an injected allocator and
 reports counts instead of time: the parser's deterministic work counters, the
 nodes built, the allocations and the bytes they asked for, the peak of live
