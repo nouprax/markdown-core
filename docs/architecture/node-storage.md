@@ -149,12 +149,23 @@ the walk first absorbs the Text run that follows a Text into it, releases a
 Text that owns no bytes, and then hands the surviving node to each element's
 `finish_node` hook in registry order: autolink splits addresses and formula
 unwraps wrappers there, so the number of walks after inline parsing is two
-(completion and finishing) however many elements are attached. Hooks receive
+(completion and finishing) however many elements are attached. The walk
+counts the enclosing nodes that claim their text as their own (the node
+model's `markdown_core_node_type_claims_text`: a link's text is the link's)
+and hands each hook that count, so autolink leaves a link's own text alone
+in constant time per node and the engine never names an element's kind. Hooks receive
 resolved ids and the completed ownership model; removing a document value
 cannot leave a pointer in a parser index. OOM cleanup uses the document's
 existing ownership graph, and semantic reference cycles never become object
 cycles. The whole-tree `postprocess_func` remains a tooling hook that no
 built-in element declares.
+
+A node of a parse transaction lives exactly as long as its arena, which the
+transaction's document owns. The reparenting API therefore moves such a node
+only within that document's tree and refuses every other destination -- a tree
+built without an arena or another transaction's -- because freeing either tree
+would otherwise leave the other pointing into released storage; the arena is
+asked by address, so a node already unlinked still names its transaction.
 
 An inline construct is built from transaction records and borrowed bytes.
 The arena holds its nodes, delimiters, brackets, citation tokens, the backtick

@@ -1,6 +1,7 @@
 #ifndef MARKDOWN_CORE_ARENA_H
 #define MARKDOWN_CORE_ARENA_H
 
+#include <stdbool.h>
 #include <stddef.h>
 
 #include "markdown-core.h"
@@ -30,6 +31,9 @@ void *markdown_core_arena_alloc(markdown_core_arena *arena, size_t size);
 /* Zeroed storage for a record that may be recycled with the same size. */
 void *markdown_core_arena_take(markdown_core_arena *arena, size_t size);
 void markdown_core_arena_recycle(markdown_core_arena *arena, void *record, size_t size);
+/* Whether `record` lies inside storage this arena handed out: the identity of
+ * the transaction a node belongs to, read from its address. */
+bool markdown_core_arena_owns(const markdown_core_arena *arena, const void *record);
 
 #ifdef __cplusplus
 }

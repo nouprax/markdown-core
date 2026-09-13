@@ -250,8 +250,11 @@ jobs:
 
                       // The same measurement's detail, present since the runner reported
                       // the parse and the free apart; a baseline from an older runner has
-                      // none of it and compares on the fixed contract alone.
+                      // none of it and compares on the fixed contract alone. The three
+                      // rendered rows come as one tuple: an artifact carrying some of
+                      // them is not a runner's output and is refused whole.
                       const detailKeys = new Set(["minNs", "freeMedianNs", "nodes", "inputSha256"]);
+                      const detailRows = ["minNs", "freeMedianNs", "nodes"];
 
                       function readMetric(file, expectedSha, allowedOrigins) {
                           if (!fs.existsSync(file) || fs.statSync(file).size > 32768) return null;
@@ -260,8 +263,10 @@ jobs:
                               const contractKeys = metric
                                   ? Object.keys(metric).filter((key) => !detailKeys.has(key))
                                   : [];
+                              const detailPresent = metric ? detailRows.filter((key) => key in metric).length : 0;
                               const detailValid =
                                   metric &&
+                                  (detailPresent === 0 || detailPresent === detailRows.length) &&
                                   (!("minNs" in metric) ||
                                       (Number.isSafeInteger(metric.minNs) && metric.minNs > 0)) &&
                                   (!("freeMedianNs" in metric) ||

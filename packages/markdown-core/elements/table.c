@@ -2025,13 +2025,12 @@ static markdown_core_node *table_child(markdown_core_parser *parser, markdown_co
 static markdown_core_node *table_build(table_source *source, markdown_core_node *parent, table_candidate *candidate) {
     markdown_core_parser *parser = source->parser;
     table_source_line *first = &source->lines[candidate->first], *last = &source->lines[candidate->last];
-    markdown_core_node *node =
-        markdown_core_parser_add_child(parser, parent, MARKDOWN_CORE_NODE_TABLE, source->lines[0].first + 1);
+    /* Built with the element, so the payload is inside the node's record. */
+    markdown_core_node *node = markdown_core_parser_add_element_child(
+        parser, parent, MARKDOWN_CORE_NODE_TABLE, source->lines[0].first + 1, &MARKDOWN_CORE_ELEMENT_TABLE);
     if (!node) {
         return NULL;
     }
-    markdown_core_node_set_element(node, &MARKDOWN_CORE_ELEMENT_TABLE);
-    markdown_core_node_opaque_take(node, sizeof(markdown_core_table));
     if (!node->opaque) {
         parser->oom = true;
         return node;
@@ -2280,6 +2279,9 @@ static void dispose_parser(markdown_core_parser *parser) {
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_TABLE = {
     .dispose_parser = dispose_parser,
+    /* A Table built by the element carries its payload in its record; a
+     * paragraph converted into one takes the payload at the conversion. */
+    .opaque_size = sizeof(markdown_core_table),
 
     .try_interrupting_block = try_interrupting_block,
 

@@ -132,6 +132,12 @@ function validateDocument(document, sourceSha) {
     if (!document || contractKeys.sort().join("\n") !== exactKeys.join("\n")) {
         throw new Error("benchmark document fields changed");
     }
+    // The rendered detail rows are one tuple: a runner reports all three or,
+    // before it reported the parse and the free apart, none.
+    const detailRows = ["minNs", "freeMedianNs", "nodes"].filter((key) => key in document).length;
+    if (detailRows !== 0 && detailRows !== 3) {
+        throw new Error("incomplete benchmark detail");
+    }
     if (
         ("minNs" in document && !positive(document.minNs)) ||
         ("freeMedianNs" in document && !nonnegative(document.freeMedianNs)) ||

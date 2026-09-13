@@ -3705,10 +3705,10 @@ static void reference_probe_precheck(test_batch_runner *runner) {
  * must stay inside that bound at every key count, which is what makes the
  * whole parse linear in the number of keys. */
 static markdown_core_node *finish_nothing(const markdown_core_element *element, markdown_core_parser *parser,
-                                          markdown_core_node *node, int link_depth) {
+                                          markdown_core_node *node, int claim_depth) {
     (void)element;
     (void)parser;
-    (void)link_depth;
+    (void)claim_depth;
     return node;
 }
 static const markdown_core_element FINISH_PROBE = {.name = "finish-probe", .finish_node = finish_nothing};
@@ -4830,6 +4830,140 @@ static void phase_clock_sequence(test_batch_runner *runner) {
     ticks = 0;
     root = markdown_core_parse_document_with_mem(source, strlen(source), mem, NULL, NULL);
     OK(runner, root != NULL && ticks == 0, "a parse without a clock reads none");
+    markdown_core_node_free(root);
+}
+
+/* A citation affix is cut out of the Text that holds it by content offsets:
+ * a Text trimmed at a line ending keeps the marks of its bytes, so the
+ * punctuation before the key survives whatever the scanner folded around it. */
+static void citation_affix_across_line_ending(test_batch_runner *runner) {
+    const struct {
+        const char *source, *prefix, *suffix;
+        int prefix_column;
+    } cases[] = {{"[ ! \n@_ ok ]\n", "!", "ok", 3},
+                 {"[a! \n@_ b]\n", "a!", "b", 2},
+                 {"[see \n@_]\n", "see", NULL, 2},
+                 {"[ ! @_]\n", "!", NULL, 3}};
+    for (size_t i = 0; i < sizeof(cases) / sizeof(*cases); i++) {
+        markdown_core_node *root = markdown_core_parse_document(cases[i].source, strlen(cases[i].source));
+        markdown_core_node *cite = root && root->first_child ? root->first_child->first_child : NULL;
+        markdown_core_node *item = cite && cite->kind == MARKDOWN_CORE_NODE_CITE ? cite->as.cite->citations : NULL;
+        markdown_core_node *prefix = item ? item->as.citation->prefix : NULL;
+        markdown_core_node *suffix = item ? item->as.citation->suffix : NULL;
+        markdown_core_node *text = prefix ? prefix->first_child : NULL;
+        OK(runner, text && text->kind == MARKDOWN_CORE_NODE_TEXT, "the prefix holds its text: case=%zu", i);
+        if (text) {
+            OK(runner,
+               text->as.literal->len == (bufsize_t)strlen(cases[i].prefix) &&
+                   !memcmp(text->as.literal->data, cases[i].prefix, text->as.literal->len),
+               "the prefix keeps its punctuation: case=%zu", i);
+            INT_EQ(runner, text->start_column, cases[i].prefix_column, "the prefix projects to its source: case=%zu",
+                   i);
+            OK(runner, text->next == NULL, "the prefix is one text: case=%zu", i);
+        }
+        if (cases[i].suffix) {
+            markdown_core_node *tail = suffix ? suffix->first_child : NULL;
+            OK(runner,
+               tail && tail->kind == MARKDOWN_CORE_NODE_TEXT &&
+                   tail->as.literal->len == (bufsize_t)strlen(cases[i].suffix) &&
+                   !memcmp(tail->as.literal->data, cases[i].suffix, tail->as.literal->len),
+               "the suffix keeps its text: case=%zu", i);
+        } else {
+            OK(runner, !suffix || !suffix->first_child, "no suffix: case=%zu", i);
+        }
+        markdown_core_node_free(root);
+    }
+}
+
+/* A node of a parse transaction moves only within the tree that owns its
+ * arena: every other destination is refused, so no tree can outlive the
+ * storage of a node it was handed. */
+static void arena_nodes_stay_in_their_transaction(test_batch_runner *runner) {
+    const char *source = "one *two*\n\nthree\n";
+    markdown_core_node *first = markdown_core_parse_document(source, strlen(source));
+    markdown_core_node *second = markdown_core_parse_document(source, strlen(source));
+    markdown_core_node *built = markdown_core_node_new(MARKDOWN_CORE_NODE_DOCUMENT);
+    markdown_core_node *built_paragraph = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
+    markdown_core_node *emphasis = first->first_child->first_child->next;
+    markdown_core_node *plain = markdown_core_node_new(MARKDOWN_CORE_NODE_TEXT);
+    OK(runner, emphasis && emphasis->kind == MARKDOWN_CORE_NODE_EMPHASIS && emphasis->arena_owned,
+       "the parsed emphasis lives in its transaction's arena");
+    OK(runner, markdown_core_node_append_child(built, built_paragraph), "a hand-built tree assembles");
+    markdown_core_node_unlink(emphasis);
+    OK(runner, !markdown_core_node_append_child(second->first_child, emphasis),
+       "another transaction's tree refuses the node");
+    OK(runner, !markdown_core_node_insert_before(second->first_child->first_child, emphasis),
+       "and refuses it as a sibling");
+    OK(runner, !markdown_core_node_append_child(built_paragraph, emphasis), "a tree without an arena refuses it");
+    OK(runner, markdown_core_node_append_child(first->last_child, emphasis), "its own tree takes it back anywhere");
+    OK(runner, emphasis->parent == first->last_child, "the node moved within its transaction");
+    OK(runner, markdown_core_node_append_child(first->first_child, plain),
+       "a node the allocator owns may join a transaction's tree");
+    OK(runner, markdown_core_node_check(first, NULL) == 0 && markdown_core_node_check(second, NULL) == 0,
+       "both trees remain consistent");
+    markdown_core_node_free(first);
+    markdown_core_node_free(second);
+    markdown_core_node_free(built);
+}
+
+/* String content may be written to any node: an inline node without a
+ * buffer in its record gets one it owns on the first write. */
+static void string_content_on_every_kind(test_batch_runner *runner) {
+    markdown_core_node *text = markdown_core_node_new(MARKDOWN_CORE_NODE_TEXT);
+    markdown_core_node *paragraph = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
+    OK(runner, text->content == NULL, "an inline node starts without a content buffer");
+    OK(runner, markdown_core_node_set_string_content(text, "literal"), "the first write succeeds");
+    STR_EQ(runner, markdown_core_node_get_string_content(text), "literal", "and reads back");
+    OK(runner, markdown_core_node_set_string_content(text, "again"), "the second write reuses the buffer");
+    STR_EQ(runner, markdown_core_node_get_string_content(text), "again", "and reads back again");
+    OK(runner, markdown_core_node_set_string_content(paragraph, "block"), "a block writes into its record");
+    STR_EQ(runner, markdown_core_node_get_string_content(paragraph), "block", "and reads back");
+    markdown_core_node_free(text);
+    markdown_core_node_free(paragraph);
+}
+
+/* Attaching an element publishes the registry and its inline lifecycle
+ * projection together: when the projection cannot be allocated, the registry
+ * the parser dispatches on is the one it had. */
+static size_t atomic_attach_allocations_until_failure;
+static void *atomic_attach_calloc(size_t count, size_t size) {
+    if (atomic_attach_allocations_until_failure && --atomic_attach_allocations_until_failure == 0) {
+        return NULL;
+    }
+    return calloc(count, size);
+}
+static const markdown_core_element ATOMIC_ATTACH_PROBE = {.name = "atomic-attach-probe"};
+static bool atomic_attach_setup(markdown_core_parser *parser, void *context) {
+    test_batch_runner *runner = (test_batch_runner *)context;
+    size_t count = parser->element_count;
+    const void *registry = parser->elements;
+    const void *hooks = parser->inline_hooks.elements;
+    size_t hook_count =
+        parser->inline_hooks.init_count + parser->inline_hooks.finish_count + parser->inline_hooks.dispose_count;
+    /* The registry snapshot is the first allocation; the projection is the second. */
+    atomic_attach_allocations_until_failure = 2;
+    OK(runner, !markdown_core_parser_attach_element(parser, &ATOMIC_ATTACH_PROBE),
+       "an attachment whose projection fails reports failure");
+    atomic_attach_allocations_until_failure = 0;
+    OK(runner, parser->element_count == count && (const void *)parser->elements == registry,
+       "the registry the parser dispatches on is unchanged");
+    OK(runner,
+       (const void *)parser->inline_hooks.elements == hooks &&
+           parser->inline_hooks.init_count + parser->inline_hooks.finish_count + parser->inline_hooks.dispose_count ==
+               hook_count,
+       "and so is its inline lifecycle projection");
+    OK(runner, markdown_core_parser_attach_element(parser, &ATOMIC_ATTACH_PROBE), "the same attachment then succeeds");
+    OK(runner, parser->element_count == count + 1 && parser->elements[count] == &ATOMIC_ATTACH_PROBE,
+       "and the registry ends with the element");
+    return true;
+}
+static void attach_element_is_atomic(test_batch_runner *runner) {
+    markdown_core_mem mem = {atomic_attach_calloc, realloc, free};
+    const char *source = "a *b* [@k]\n";
+    markdown_core_node *root =
+        markdown_core_parse_document_with_mem(source, strlen(source), &mem, atomic_attach_setup, runner);
+    OK(runner, root != NULL && count_kind(root, MARKDOWN_CORE_NODE_CITE) == 1,
+       "the parse completes with the registry that was published");
     markdown_core_node_free(root);
 }
 
@@ -7109,6 +7243,10 @@ int main(int argc, char **argv) {
     properties_member_work(runner);
     properties_key_matching_allocations(runner);
     phase_clock_sequence(runner);
+    citation_affix_across_line_ending(runner);
+    arena_nodes_stay_in_their_transaction(runner);
+    string_content_on_every_kind(runner);
+    attach_element_is_atomic(runner);
     properties_text_memory(runner);
     block_identifier_linear_work(runner);
     callout_linear_work(runner);

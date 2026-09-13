@@ -393,6 +393,14 @@ static MARKDOWN_CORE_INLINE bool MARKDOWN_CORE_NODE_TYPE_INLINE_P(markdown_core_
     return (node_type & MARKDOWN_CORE_NODE_TYPE_MASK) == MARKDOWN_CORE_NODE_TYPE_INLINE;
 }
 
+/* Whether a node of `node_type` claims the text it encloses as its own: a
+ * link's text names what the link is, so a finisher that recognizes plain
+ * text (an address, say) leaves it be. The finishing walk asks this of every
+ * node event, which is why it is a kind test and not a descriptor lookup. */
+static MARKDOWN_CORE_INLINE bool markdown_core_node_type_claims_text(markdown_core_node_type node_type) {
+    return node_type == MARKDOWN_CORE_NODE_LINK;
+}
+
 static MARKDOWN_CORE_INLINE bool MARKDOWN_CORE_NODE_INLINE_P(markdown_core_node *node) {
     return node != NULL && MARKDOWN_CORE_NODE_TYPE_INLINE_P((markdown_core_node_type)node->kind);
 }

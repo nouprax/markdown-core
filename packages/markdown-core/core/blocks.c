@@ -65,10 +65,10 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser);
 static void S_process_line(markdown_core_parser *parser, const unsigned char *buffer, bufsize_t bytes);
 
 static markdown_core_node *make_block(markdown_core_parser *parser, markdown_core_node_type tag, int start_line,
-                                      int start_column) {
+                                      int start_column, const markdown_core_element *element) {
     markdown_core_node *e;
 
-    e = markdown_core_node_create(parser->arena, parser->mem, tag, NULL);
+    e = markdown_core_node_create(parser->arena, parser->mem, tag, element);
     if (!e) {
         return NULL;
     }
@@ -82,13 +82,10 @@ static markdown_core_node *make_block(markdown_core_parser *parser, markdown_cor
     return e;
 }
 
-// Create a root document node.
+/* Create the root document node: made in the transaction's arena, it is the
+ * document that owns the arena. */
 static markdown_core_node *make_document(markdown_core_parser *parser) {
-    markdown_core_node *e = make_block(parser, MARKDOWN_CORE_NODE_DOCUMENT, 1, 1);
-    if (e) {
-        e->as.document->arena = parser->arena;
-    }
-    return e;
+    return make_block(parser, MARKDOWN_CORE_NODE_DOCUMENT, 1, 1, NULL);
 }
 
 static void S_register_element(markdown_core_parser *parser, const markdown_core_element *element) {
@@ -102,9 +99,12 @@ static void S_register_element(markdown_core_parser *parser, const markdown_core
 
 /* Setup extends the same registry read by every phase. The fixed dialect is
  * borrowed; an extension acquires an independent contiguous snapshot before
- * replacing it. Allocation failure leaves the previous registry intact. */
+ * replacing it. The registry and its inline lifecycle projection are built
+ * first and published together, so an allocation failure leaves the previous
+ * registry, its projections and the dispatch it drives all intact. */
 int markdown_core_parser_attach_element(markdown_core_parser *parser, const markdown_core_element *element) {
     size_t count = parser->element_count;
+    markdown_core_inline_hooks hooks;
     const markdown_core_element **entries = parser->mem->calloc(count + 1, sizeof(*entries));
     if (!entries) {
         return 0;
@@ -113,18 +113,22 @@ int markdown_core_parser_attach_element(markdown_core_parser *parser, const mark
         memcpy(entries, parser->elements, count * sizeof(*entries));
     }
     entries[count] = element;
+    if (!markdown_core_inlines_project_hooks_of(parser->mem, entries, count + 1, &hooks)) {
+        parser->mem->free(entries);
+        return 0;
+    }
     parser->mem->free(parser->element_allocation);
     parser->element_allocation = entries;
     parser->elements = entries;
     parser->element_count = count + 1;
     S_register_element(parser, element);
-    /* The block owner projection follows the registry; rebuilt on demand.
-     * The inline lifecycle projection is rebuilt now, since every inline root
-     * relies on it. */
+    /* The block owner projection follows the registry; rebuilt on demand. */
     parser->mem->free(parser->block_owners);
     parser->block_owners = NULL;
     parser->block_owner_count = 0;
-    return markdown_core_inlines_project_hooks(parser);
+    markdown_core_inlines_release_hooks(parser);
+    parser->inline_hooks = hooks;
+    return 1;
 }
 
 static bool S_block_owner_accepts(const markdown_core_block_owner *owner, unsigned char c) {
@@ -723,13 +727,13 @@ markdown_core_node *markdown_core_block_parent_for(markdown_core_parser *parser,
 }
 
 // Add a node as child of another.  Return pointer to child.
-markdown_core_node *markdown_core_parser_add_child(markdown_core_parser *parser, markdown_core_node *parent,
-                                                   markdown_core_node_type block_type, int start_column) {
-    parent = markdown_core_block_parent_for(parser, parent, block_type);
-
-    markdown_core_node *child =
-        make_block(parser, block_type, parser->line_number,
-                   markdown_core_parser_source_column(parser, parser->line_number, start_column));
+/* The shared tail of block creation: `child` is the block just made for
+ * `parent` (already the deepest open container that takes `block_type`), or
+ * NULL when it could not be made. The constructor call stays at each entry so
+ * the engine's own blocks, which carry no element payload, keep a constant-
+ * propagated constructor. */
+static markdown_core_node *attach_new_block(markdown_core_parser *parser, markdown_core_node *parent,
+                                            markdown_core_node *child) {
     if (!child || child->content->oom) {
         parser->oom = true;
         if (child) {
@@ -746,6 +750,25 @@ markdown_core_node *markdown_core_parser_add_child(markdown_core_parser *parser,
         return NULL;
     }
     return child;
+}
+
+markdown_core_node *markdown_core_parser_add_element_child(markdown_core_parser *parser, markdown_core_node *parent,
+                                                           markdown_core_node_type block_type, int start_column,
+                                                           const markdown_core_element *element) {
+    parent = markdown_core_block_parent_for(parser, parent, block_type);
+    return attach_new_block(parser, parent,
+                            make_block(parser, block_type, parser->line_number,
+                                       markdown_core_parser_source_column(parser, parser->line_number, start_column),
+                                       element));
+}
+
+markdown_core_node *markdown_core_parser_add_child(markdown_core_parser *parser, markdown_core_node *parent,
+                                                   markdown_core_node_type block_type, int start_column) {
+    parent = markdown_core_block_parent_for(parser, parent, block_type);
+    return attach_new_block(parser, parent,
+                            make_block(parser, block_type, parser->line_number,
+                                       markdown_core_parser_source_column(parser, parser->line_number, start_column),
+                                       NULL));
 }
 
 /* Project the union of dispatch and terminator ownership once. Flanking
@@ -899,13 +922,13 @@ typedef void (*tree_node_func)(markdown_core_parser *parser, markdown_core_node 
 /* Runs at a node's EXIT with the frame's iterator, whose lookahead already
  * names a node outside the subtree; returns the node now in the position. */
 typedef markdown_core_node *(*tree_exit_func)(markdown_core_parser *parser, markdown_core_iter *iter,
-                                              markdown_core_node *node, int link_depth, void *context);
+                                              markdown_core_node *node, int claim_depth, void *context);
 
 typedef struct {
     markdown_core_node **slot;
     markdown_core_iter iter;
     bool started;
-    int script_depth, link_depth;
+    int script_depth, claim_depth;
 } owned_tree_frame;
 
 typedef struct {
@@ -966,8 +989,8 @@ static int walk_owned_trees(markdown_core_parser *parser, markdown_core_node **s
         if (node->element && node->element->delimiter.body == DELIMITER_WORD_BODY) {
             frame->script_depth += step;
         }
-        if (node->kind == MARKDOWN_CORE_NODE_LINK) {
-            frame->link_depth += step;
+        if (markdown_core_node_type_claims_text((markdown_core_node_type)node->kind)) {
+            frame->claim_depth += step;
         }
         if (event != MARKDOWN_CORE_EVENT_ENTER) {
             if (exit) {
@@ -975,7 +998,7 @@ static int walk_owned_trees(markdown_core_parser *parser, markdown_core_node **s
                  * take a replacement here; a failed walk keeps the tree for
                  * the transaction's cleanup. */
                 bool root = node == frame->iter.root;
-                markdown_core_node *now = exit(parser, &frame->iter, node, frame->link_depth, context);
+                markdown_core_node *now = exit(parser, &frame->iter, node, frame->claim_depth, context);
                 if (root && !parser->oom) {
                     *frame->slot = now;
                 }
@@ -2364,7 +2387,7 @@ typedef struct {
 } finishing_walk;
 
 static markdown_core_node *S_finish_node(markdown_core_parser *parser, markdown_core_iter *iter,
-                                         markdown_core_node *node, int link_depth, void *context) {
+                                         markdown_core_node *node, int claim_depth, void *context) {
     const finishing_walk *walk = context;
     MARKDOWN_CORE_DIAGNOSTIC(parser->finishing_work++;)
     if (node->kind == MARKDOWN_CORE_NODE_TEXT) {
@@ -2381,7 +2404,7 @@ static markdown_core_node *S_finish_node(markdown_core_parser *parser, markdown_
     }
     for (size_t i = 0; i < walk->count && node; i++) {
         const markdown_core_element *element = walk->finishers[i];
-        node = element->finish_node(element, parser, node, link_depth);
+        node = element->finish_node(element, parser, node, claim_depth);
         if (parser->oom) {
             return NULL;
         }

@@ -753,9 +753,10 @@ static markdown_core_node *postprocess_text(markdown_core_parser *parser, markdo
  * linked again, and a run without `@` is left untouched without allocating;
  * splits land before the Text, which the walk never revisits. */
 static markdown_core_node *finish_node(const markdown_core_element *element, markdown_core_parser *parser,
-                                       markdown_core_node *node, int link_depth) {
+                                       markdown_core_node *node, int claim_depth) {
     (void)element;
-    if (node->kind != MARKDOWN_CORE_NODE_TEXT || link_depth > 0) {
+    /* Text a link already claims is the link's own: never an address. */
+    if (node->kind != MARKDOWN_CORE_NODE_TEXT || claim_depth > 0) {
         return node;
     }
     return postprocess_text(parser, node);

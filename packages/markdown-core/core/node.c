@@ -4,6 +4,7 @@
 
 #include "config.h"
 #include "node.h"
+#include "arena.h"
 #include "references.h"
 #include "element.h"
 #include "../elements/markdown-core-elements.h"
@@ -73,14 +74,23 @@ static bool S_can_contain(markdown_core_node *node, markdown_core_node *child) {
     }
     /* Arbitrary reparenting must reject cycles. Parser construction instead
      * transfers an independently owned subtree through attach_owned. */
-    {
-        markdown_core_node *cur = node;
-        do {
-            if (cur == child) {
-                return false;
-            }
-            cur = cur->parent;
-        } while (cur != NULL);
+    markdown_core_node *root = node;
+    for (markdown_core_node *cur = node; cur != NULL; cur = cur->parent) {
+        if (cur == child) {
+            return false;
+        }
+        root = cur;
+    }
+    /* A node of a parse transaction lives exactly as long as its arena, which
+     * the transaction's document owns: it may move within that document's
+     * tree and nowhere else, or freeing either tree would leave the other
+     * pointing into released storage. The arena is asked by address, so a
+     * node already unlinked from its tree still names its transaction. */
+    if (child->arena_owned) {
+        markdown_core_arena *arena = root->kind == MARKDOWN_CORE_NODE_DOCUMENT ? root->as.document->arena : NULL;
+        if (!arena || !markdown_core_arena_owns(arena, child)) {
+            return false;
+        }
     }
 
     return markdown_core_node_can_contain_type(node, (markdown_core_node_type)child->kind);
@@ -181,8 +191,14 @@ static size_t S_node_payload_size(markdown_core_node_type type) {
 }
 
 /* Establish defaults over zero-initialized storage. */
-static void S_init_node_as(markdown_core_node_type type, markdown_core_node_data *as) {
+/* The payload's initial values; `arena` is the parse arena the node was made
+ * in, which a document made in one owns and releases after its tree (see
+ * S_free_nodes). */
+static void S_init_node_as(markdown_core_node_type type, markdown_core_node_data *as, markdown_core_arena *arena) {
     switch ((uint16_t)type) {
+    case MARKDOWN_CORE_NODE_DOCUMENT:
+        as->document->arena = arena;
+        break;
     case MARKDOWN_CORE_NODE_HEADING:
         as->heading->level = 1;
         break;
@@ -232,7 +248,7 @@ markdown_core_node *markdown_core_node_create(markdown_core_arena *arena, markdo
     node->kind = (uint16_t)type;
     node->element = element;
     node->as.data = payload_size ? S_record_start(node) + content_size : NULL;
-    S_init_node_as(type, &node->as);
+    S_init_node_as(type, &node->as, arena);
     /* The reservation is claimed by the element's opaque_alloc_func through
      * markdown_core_node_opaque_take, for the kinds it carries a payload on;
      * `opaque` stays NULL on every other node it creates. */
@@ -508,7 +524,7 @@ markdown_core_node_set_kind_result markdown_core_node_set_kind(markdown_core_nod
         }
         markdown_core_strbuf_init(NODE_MEM(node), content, 0);
     }
-    S_init_node_as(kind, &replacement);
+    S_init_node_as(kind, &replacement, NULL);
     markdown_core_node fields = {0};
     S_splice_owned_fields(node, &fields);
     S_free_nodes(fields.next, NULL);
@@ -706,7 +722,16 @@ const char *markdown_core_node_get_string_content(markdown_core_node *node) {
 
 int markdown_core_node_set_string_content(markdown_core_node *node, const char *content) {
     if (!node->content) {
-        return false;
+        /* An inline kind carries no buffer in its record; the first write
+         * gives it one the node owns and frees with itself. */
+        markdown_core_mem *mem = NODE_MEM(node);
+        markdown_core_strbuf *buffer = (markdown_core_strbuf *)mem->calloc(1, sizeof(*buffer));
+        if (!buffer) {
+            return false;
+        }
+        markdown_core_strbuf_init(mem, buffer, 0);
+        node->content = buffer;
+        node->owned |= MARKDOWN_CORE_NODE_OWNS_CONTENT;
     }
     markdown_core_strbuf_sets(node->content, content);
     return !node->content->oom;

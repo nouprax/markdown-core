@@ -25,19 +25,46 @@ static bufsize_t inline_state_find_special_char(markdown_core_inline_state *inli
 
 /* Project each endpoint once. The same run indexes describe a borrowed Text
  * slice; transformed literals instead map to their decoded token's extent. */
+/* A borrowed run trimmed at a line ending keeps the scope of the spaces it
+ * dropped and the marks of the bytes it kept, so its literal still projects
+ * to source byte by byte (a citation affix is cut out of it by those
+ * offsets). The literal's last byte is projected from the cursor as it stood
+ * before the run's end was, so the shared cursor only ever moves forward.
+ * Kept out of the placement itself: its address-taken locals would otherwise
+ * put a stack guard on every placement. */
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) void place_trimmed_run(markdown_core_inline_state *inline_state,
+                                                                  markdown_core_node *node, int from, int first,
+                                                                  int last, int cursor) {
+    int line, column;
+    int last_byte =
+        markdown_core_parser_project_content(inline_state->owner_parser, inline_state->owner,
+                                             from + node->as.literal->len - 1, true, &cursor, &line, &column);
+    node->content_mark = first;
+    node->content_mark_count = (last_byte >= 0 ? last_byte : last) - first + 1;
+    node->content_mark_offset = inline_state->owner->content_mark_offset + from;
+}
+
 void markdown_core_inline_state_place(markdown_core_inline_state *inline_state, markdown_core_node *node, int from,
                                       int to) {
     markdown_core_parser *parser = inline_state->owner_parser;
     markdown_core_node *owner = inline_state->owner;
     int first = markdown_core_parser_project_content(parser, owner, from, false, &inline_state->content_mark_cursor,
                                                      &node->start_line, &node->start_column);
+    int cursor_at_start = inline_state->content_mark_cursor;
     int last = markdown_core_parser_project_content(parser, owner, to, true, &inline_state->content_mark_cursor,
                                                     &node->end_line, &node->end_column);
     if (node->kind == MARKDOWN_CORE_NODE_TEXT && node->as.literal->len > 0 && first >= 0 && last >= 0) {
-        if (node->as.literal->len == to - from + 1 && node->as.literal->data == inline_state->input.data + from) {
+        if (node->as.literal->data != inline_state->input.data + from) {
+            node->content_mark_count = 0;
+            node->content_mark_offset = 0;
+            markdown_core_parser_append_content_mark(parser, node, 0, node->start_line, node->start_column,
+                                                     node->end_column - node->start_column + 1, 0);
+        } else if (node->as.literal->len == to - from + 1) {
             node->content_mark = first;
             node->content_mark_count = last - first + 1;
             node->content_mark_offset = owner->content_mark_offset + from;
+        } else if (node->as.literal->len < to - from + 1) {
+            place_trimmed_run(inline_state, node, from, first, last, cursor_at_start);
         } else {
             node->content_mark_count = 0;
             node->content_mark_offset = 0;
@@ -80,24 +107,25 @@ markdown_core_node *markdown_core_inline_make_simple_with_state(markdown_core_in
     return e;
 }
 
-bool markdown_core_inlines_project_hooks(markdown_core_parser *parser) {
+bool markdown_core_inlines_project_hooks_of(markdown_core_mem *mem, const markdown_core_element *const *elements,
+                                            size_t count, markdown_core_inline_hooks *projected) {
     markdown_core_inline_hooks hooks = {0};
-    for (size_t i = 0; i < parser->element_count; i++) {
-        const markdown_core_element *element = parser->elements[i];
+    for (size_t i = 0; i < count; i++) {
+        const markdown_core_element *element = elements[i];
         hooks.init_count += element->init_inline != NULL;
         hooks.finish_count += element->finish_inline != NULL;
         hooks.dispose_count += element->dispose_inline != NULL;
     }
     size_t total = hooks.init_count + hooks.finish_count + hooks.dispose_count;
     if (total) {
-        hooks.elements = parser->mem->calloc(total, sizeof(*hooks.elements));
+        hooks.elements = mem->calloc(total, sizeof(*hooks.elements));
         if (!hooks.elements) {
             return false;
         }
         const markdown_core_element **init = hooks.elements, **finish = init + hooks.init_count,
                                     **dispose = finish + hooks.finish_count;
-        for (size_t i = 0; i < parser->element_count; i++) {
-            const markdown_core_element *element = parser->elements[i];
+        for (size_t i = 0; i < count; i++) {
+            const markdown_core_element *element = elements[i];
             if (element->init_inline) {
                 *init++ = element;
             }
@@ -108,6 +136,15 @@ bool markdown_core_inlines_project_hooks(markdown_core_parser *parser) {
                 *dispose++ = element;
             }
         }
+    }
+    *projected = hooks;
+    return true;
+}
+
+bool markdown_core_inlines_project_hooks(markdown_core_parser *parser) {
+    markdown_core_inline_hooks hooks;
+    if (!markdown_core_inlines_project_hooks_of(parser->mem, parser->elements, parser->element_count, &hooks)) {
+        return false;
     }
     markdown_core_inlines_release_hooks(parser);
     parser->inline_hooks = hooks;
@@ -709,7 +746,10 @@ static delimiter *S_insert_delimited_inline(markdown_core_inline_state *inline_s
 
 /* Return the end of a proven literal run, or `at` when an owner can begin
  * syntax. Exact-width delimiter owners claim their entire run even on failure;
- * later owners cannot reinterpret those bytes (notably strike versus subscript). */
+ * later owners cannot reinterpret those bytes (notably strike versus subscript).
+ * A candidate with a delimiter rule dispatches only on its delimiter byte, so
+ * the rule alone says the candidate is a run owner here: two owners may share
+ * the byte (the tilde pair) while only one may declare it as its default. */
 static bufsize_t inline_literal_end(markdown_core_inline_state *state, bufsize_t at) {
     markdown_core_parser *parser = state->owner_parser;
     if (!parser) {
@@ -723,7 +763,7 @@ static bufsize_t inline_literal_end(markdown_core_inline_state *state, bufsize_t
         if (!candidate->terminates || (element->can_start && !element->can_start(state, at))) {
             continue;
         }
-        if (element->delimiter_character == c) {
+        if (element->delimiter_rule != MARKDOWN_CORE_DELIM_RULE_NONE) {
             const delimiter_run *run = scan_delimiter(state, at, element->delimiter_rule);
             if (run->end - at < element->delimiter.minimum_width) {
                 continue;

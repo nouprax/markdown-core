@@ -739,8 +739,8 @@ static markdown_core_node *replace_with_formula_block(const markdown_core_elemen
  * position. The parser's finishing walk owns traversal, so enabled formula
  * syntax is safe for an arbitrarily deep tree even when it holds no formula. */
 static markdown_core_node *finish_node(const markdown_core_element *element, markdown_core_parser *parser,
-                                       markdown_core_node *node, int link_depth) {
-    (void)link_depth;
+                                       markdown_core_node *node, int claim_depth) {
+    (void)claim_depth;
     if (node->kind == MARKDOWN_CORE_NODE_FORMULA_BLOCK) {
         node_formula *formula = get_formula(node);
         if (formula && !formula->literal.data) {

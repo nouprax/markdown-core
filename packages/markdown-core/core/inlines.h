@@ -23,6 +23,10 @@ void markdown_core_inlines_reset_special_chars(markdown_core_parser *parser);
 /* Project the lifecycle hook implementers of the current registry; false on
  * allocation failure, leaving the previous projection in place. */
 bool markdown_core_inlines_project_hooks(markdown_core_parser *parser);
+/* The projection of a registry that is not (yet) the parser's, so a registry
+ * and its projection can be published together or not at all. */
+bool markdown_core_inlines_project_hooks_of(markdown_core_mem *mem, const markdown_core_element *const *elements,
+                                            size_t count, markdown_core_inline_hooks *projected);
 void markdown_core_inlines_release_hooks(markdown_core_parser *parser);
 void markdown_core_inlines_add_text_terminator(markdown_core_parser *parser, unsigned char c);
 void markdown_core_inlines_remove_text_terminator(markdown_core_parser *parser, unsigned char c);

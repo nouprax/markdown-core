@@ -197,14 +197,16 @@ typedef markdown_core_node *(*markdown_core_postprocess_func)(const markdown_cor
 
 /* One call at the EXIT of every node of every owned tree, in the parser's
  * single finishing walk: after inline completion, document finalization and
- * the consolidation of the node's own Text run. `link_depth` counts the Link
- * ancestors within the same tree. Returns the node now occupying the
+ * the consolidation of the node's own Text run. `claim_depth` counts the
+ * ancestors within the same tree that claim the text they enclose as their
+ * own (markdown_core_node_type_claims_text: a link's text is the link's), so
+ * a hook that recognizes plain text leaves theirs be. Returns the node now occupying the
  * position: `node` itself, a replacement already spliced in, or NULL once the
  * position is released; a failure sets `parser->oom`. Nodes inserted before
  * `node` are never revisited. */
 typedef markdown_core_node *(*markdown_core_finish_node_func)(const markdown_core_element *element,
                                                               markdown_core_parser *parser, markdown_core_node *node,
-                                                              int link_depth);
+                                                              int claim_depth);
 
 typedef int (*markdown_core_ispunct_func)(char c);
 
@@ -438,6 +440,14 @@ int markdown_core_parser_get_last_line_length(markdown_core_parser *parser);
 MARKDOWN_CORE_EXPORT
 markdown_core_node *markdown_core_parser_add_child(markdown_core_parser *parser, markdown_core_node *parent,
                                                    markdown_core_node_type block_type, int start_column);
+/* The same, for a block the element itself builds: the node is created with
+ * `element` set, so a payload the element declares through `opaque_size` is
+ * reserved inside the node's record and claimed by its opaque_alloc_func. */
+MARKDOWN_CORE_EXPORT markdown_core_node *markdown_core_parser_add_element_child(markdown_core_parser *parser,
+                                                                                markdown_core_node *parent,
+                                                                                markdown_core_node_type block_type,
+                                                                                int start_column,
+                                                                                const markdown_core_element *element);
 
 /** Advance the 'offset' of the parser in the current line.
  *

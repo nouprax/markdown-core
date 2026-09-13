@@ -121,3 +121,14 @@ void markdown_core_arena_recycle(markdown_core_arena *arena, void *record, size_
     entry->next = arena->pools[class];
     arena->pools[class] = entry;
 }
+
+bool markdown_core_arena_owns(const markdown_core_arena *arena, const void *record) {
+    const unsigned char *at = (const unsigned char *)record;
+    for (const arena_block *block = arena->current; block; block = block->next) {
+        const unsigned char *data = block_data((arena_block *)block);
+        if (at >= data && at < data + block->used) {
+            return true;
+        }
+    }
+    return false;
+}
