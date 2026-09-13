@@ -131,7 +131,7 @@ private struct NativeTreeBuilder {
         switch value {
         case let .markup(node):
             let relations = markupRelations(node)
-            return copyMarkup(from: node, relations: relations, resources: &resources)
+            return stored(from: node, relations: relations, resources: &resources)
         case let .footnote(node):
             return .footnote(
                 Footnote.Fields(from: node, content: chain(markdown_core_footnote_content(node)))
@@ -221,7 +221,7 @@ private struct NativeTreeBuilder {
 // Keep the exhaustive native-kind switch in one place so a newly added native
 // kind cannot silently bypass value-tree copying.
 // swiftlint:disable:next cyclomatic_complexity function_body_length
-private func copyMarkup(
+private func stored(
     from node: OpaquePointer,
     relations: NativeRelations,
     resources: inout [UnsafeRawPointer: SharedResource]
