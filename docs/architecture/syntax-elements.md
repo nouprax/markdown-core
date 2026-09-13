@@ -72,7 +72,10 @@ expose the shared parser services and the single `markdown_core_inline_state`
 type, whose parameters are named `inline_state`; they do not
 create another parser or transfer AST ownership. Citation, bracket and heading
 state records live beside their grammar owners. Inline state resources are released
-through their owners' disposal hooks, including on allocation failure.
+through their owners' disposal hooks, including on allocation failure. The
+implementers of `init_inline`, `finish_inline` and `dispose_inline` are
+projected from the registry whenever it is set or extended, so an inline root
+calls exactly those elements rather than consulting the whole registry.
 
 The immutable registry projects node kinds to element structure descriptors separately
 from scanner precedence. Structure follows a node's current kind; its existing

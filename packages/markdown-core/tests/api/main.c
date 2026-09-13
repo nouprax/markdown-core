@@ -3216,7 +3216,7 @@ typedef struct {
         specimens;
     size_t key_index_branches, key_index_operations;
     size_t block_dispatch, reference_probes;
-    size_t completion, finishing;
+    size_t completion, finishing, lifecycle;
 } inline_work;
 static markdown_core_node *record_inline_work(const markdown_core_element *element, markdown_core_parser *parser,
                                               markdown_core_node *root) {
@@ -3241,6 +3241,7 @@ static markdown_core_node *record_inline_work(const markdown_core_element *eleme
     work->reference_probes = parser->reference_probe_work;
     work->completion = parser->completion_work;
     work->finishing = parser->finishing_work;
+    work->lifecycle = parser->inline_lifecycle_work;
     work->tables = parser->table_scan_work;
     work->table_frontier = parser->table_frontier_peak;
     work->table_workspace_growth = parser->table_workspace_growth;
@@ -3746,6 +3747,60 @@ static void finishing_walk_work(test_batch_runner *runner) {
                    "the finishing walk produced every unit's node: shape=%zu units=%zu", shape, units);
                 INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_TEXT), shapes[shape].texts * units + 1,
                        "every Text run is consolidated: shape=%zu units=%zu", shape, units);
+                markdown_core_node_free(root);
+            }
+            if (again) {
+                markdown_core_node_free(again);
+            }
+            markdown_core_strbuf_free(&source);
+        }
+    }
+}
+
+static const markdown_core_element HOOKLESS_PROBES[4] = {
+    {.name = "hookless-1"}, {.name = "hookless-2"}, {.name = "hookless-3"}, {.name = "hookless-4"}};
+static bool measure_inline_work_with_hookless(markdown_core_parser *parser, void *context) {
+    if (!measure_inline_work(parser, context)) {
+        return false;
+    }
+    for (size_t i = 0; i < sizeof(HOOKLESS_PROBES) / sizeof(*HOOKLESS_PROBES); i++) {
+        if (!markdown_core_parser_attach_element(parser, &HOOKLESS_PROBES[i])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/* An inline root's init, finish and dispose reach only the elements that
+ * implement each hook: the core dialect has six such hook calls per root
+ * (link init and dispose, citation finish and dispose, attributes and code
+ * dispose), and attaching elements without hooks changes nothing. */
+static void inline_lifecycle_projection(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    static const struct {
+        const char *unit;
+        size_t roots;
+    } shapes[] = {{"- item\n", 1}, {"word\n\n", 1}, {"# head\n\n", 1}, {"a *b* c\n\n", 1}};
+    for (size_t shape = 0; shape < sizeof(shapes) / sizeof(*shapes); shape++) {
+        for (size_t units = 256; units <= 4096; units *= 4) {
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+            for (size_t i = 0; i < units; i++) {
+                markdown_core_strbuf_puts(&source, shapes[shape].unit);
+            }
+            markdown_core_strbuf_puts(&source, "tail\n");
+            inline_work work = {0}, probed = {0};
+            markdown_core_node *root = markdown_core_parse_document_with_mem((const char *)source.ptr, source.size, mem,
+                                                                             measure_inline_work, &work);
+            markdown_core_node *again = markdown_core_parse_document_with_mem(
+                (const char *)source.ptr, source.size, mem, measure_inline_work_with_hookless, &probed);
+            OK(runner, root != NULL && again != NULL, "lifecycle shape parses: shape=%zu units=%zu", shape, units);
+            size_t roots = shapes[shape].roots * units + 1;
+            OK(runner, work.lifecycle <= 6 * roots,
+               "an inline root visits hook implementers only: shape=%zu units=%zu calls=%zu roots=%zu", shape, units,
+               work.lifecycle, roots);
+            INT_EQ(runner, probed.lifecycle, work.lifecycle,
+                   "elements without lifecycle hooks add no visit: shape=%zu units=%zu", shape, units);
+            if (root) {
                 markdown_core_node_free(root);
             }
             if (again) {
@@ -6530,6 +6585,7 @@ int main(int argc, char **argv) {
     block_start_dispatch_work(runner);
     reference_probe_precheck(runner);
     finishing_walk_work(runner);
+    inline_lifecycle_projection(runner);
     table_dash_suffixes(runner);
     nested_block_lookahead(runner);
     deep_inline_construction(runner);

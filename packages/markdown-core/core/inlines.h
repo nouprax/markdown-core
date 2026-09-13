@@ -20,6 +20,10 @@ bool markdown_core_parse_inline_subtrees(markdown_core_parser *parser, markdown_
 
 /* Parser-local projections are built entirely from the attached syntax declarations. */
 void markdown_core_inlines_reset_special_chars(markdown_core_parser *parser);
+/* Project the lifecycle hook implementers of the current registry; false on
+ * allocation failure, leaving the previous projection in place. */
+bool markdown_core_inlines_project_hooks(markdown_core_parser *parser);
+void markdown_core_inlines_release_hooks(markdown_core_parser *parser);
 void markdown_core_inlines_add_text_terminator(markdown_core_parser *parser, unsigned char c);
 void markdown_core_inlines_remove_text_terminator(markdown_core_parser *parser, unsigned char c);
 void markdown_core_inlines_add_flanking_transparent(markdown_core_parser *parser, unsigned char c);

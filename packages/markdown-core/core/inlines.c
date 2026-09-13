@@ -80,6 +80,47 @@ markdown_core_node *markdown_core_inline_make_simple_with_state(markdown_core_in
     return e;
 }
 
+bool markdown_core_inlines_project_hooks(markdown_core_parser *parser) {
+    markdown_core_inline_hooks hooks = {0};
+    for (size_t i = 0; i < parser->element_count; i++) {
+        const markdown_core_element *element = parser->elements[i];
+        hooks.init_count += element->init_inline != NULL;
+        hooks.finish_count += element->finish_inline != NULL;
+        hooks.dispose_count += element->dispose_inline != NULL;
+    }
+    size_t total = hooks.init_count + hooks.finish_count + hooks.dispose_count;
+    if (total) {
+        hooks.elements = parser->mem->calloc(total, sizeof(*hooks.elements));
+        if (!hooks.elements) {
+            return false;
+        }
+        const markdown_core_element **init = hooks.elements, **finish = init + hooks.init_count,
+                                    **dispose = finish + hooks.finish_count;
+        for (size_t i = 0; i < parser->element_count; i++) {
+            const markdown_core_element *element = parser->elements[i];
+            if (element->init_inline) {
+                *init++ = element;
+            }
+            if (element->finish_inline) {
+                *finish++ = element;
+            }
+            if (element->dispose_inline) {
+                *dispose++ = element;
+            }
+        }
+    }
+    markdown_core_inlines_release_hooks(parser);
+    parser->inline_hooks = hooks;
+    return true;
+}
+
+void markdown_core_inlines_release_hooks(markdown_core_parser *parser) {
+    if (parser->inline_hooks.elements) {
+        parser->mem->free(parser->inline_hooks.elements);
+    }
+    parser->inline_hooks = (markdown_core_inline_hooks){0};
+}
+
 void markdown_core_inline_state_from_buf(markdown_core_parser *parser, markdown_core_mem *mem, int line_number,
                                          markdown_core_inline_state *inline_state, markdown_core_chunk *chunk,
                                          markdown_core_map *refmap) {
@@ -94,11 +135,10 @@ void markdown_core_inline_state_from_buf(markdown_core_parser *parser, markdown_
     inline_state->refmap = refmap;
     inline_state->text_end = -1;
     if (parser) {
-        for (size_t i = 0; i < parser->element_count; i++) {
-            const markdown_core_element *structure = parser->elements[i];
-            if (structure->init_inline) {
-                structure->init_inline(inline_state);
-            }
+        const markdown_core_inline_hooks *hooks = &parser->inline_hooks;
+        for (size_t i = 0; i < hooks->init_count; i++) {
+            MARKDOWN_CORE_DIAGNOSTIC(parser->inline_lifecycle_work++;)
+            hooks->elements[i]->init_inline(inline_state);
         }
     }
 }
@@ -856,11 +896,11 @@ void markdown_core_inline_start_inlines(markdown_core_parser *parser, markdown_c
 
 void markdown_core_inline_clear_inlines(markdown_core_inline_state *inline_state) {
     markdown_core_parser *parser = inline_state->owner_parser;
-    for (size_t i = 0; i < parser->element_count; i++) {
-        const markdown_core_element *structure = parser->elements[i];
-        if (structure->dispose_inline) {
-            structure->dispose_inline(inline_state);
-        }
+    const markdown_core_inline_hooks *hooks = &parser->inline_hooks;
+    const markdown_core_element **dispose = hooks->elements + hooks->init_count + hooks->finish_count;
+    for (size_t i = 0; i < hooks->dispose_count; i++) {
+        MARKDOWN_CORE_DIAGNOSTIC(parser->inline_lifecycle_work++;)
+        dispose[i]->dispose_inline(inline_state);
     }
     while (inline_state->last_delim) {
         markdown_core_inline_remove_delimiter(inline_state, inline_state->last_delim);
@@ -879,11 +919,11 @@ bool markdown_core_inline_finish_inlines(markdown_core_parser *parser, markdown_
         }
     }
     if (!parser->oom && !inline_state->oom) {
-        for (size_t i = 0; i < parser->element_count; i++) {
-            const markdown_core_element *structure = parser->elements[i];
-            if (structure->finish_inline) {
-                structure->finish_inline(inline_state);
-            }
+        const markdown_core_inline_hooks *hooks = &parser->inline_hooks;
+        const markdown_core_element **finish = hooks->elements + hooks->init_count;
+        for (size_t i = 0; i < hooks->finish_count; i++) {
+            MARKDOWN_CORE_DIAGNOSTIC(parser->inline_lifecycle_work++;)
+            finish[i]->finish_inline(inline_state);
         }
         markdown_core_inline_process_delimiters(parser, inline_state, 0, NULL);
     }

@@ -118,11 +118,13 @@ int markdown_core_parser_attach_element(markdown_core_parser *parser, const mark
     parser->elements = entries;
     parser->element_count = count + 1;
     S_register_element(parser, element);
-    /* The block owner projection follows the registry; rebuilt on demand. */
+    /* The block owner projection follows the registry; rebuilt on demand.
+     * The inline lifecycle projection is rebuilt now, since every inline root
+     * relies on it. */
     parser->mem->free(parser->block_owners);
     parser->block_owners = NULL;
     parser->block_owner_count = 0;
-    return 1;
+    return markdown_core_inlines_project_hooks(parser);
 }
 
 static bool S_block_owner_accepts(const markdown_core_block_owner *owner, unsigned char c) {
@@ -184,6 +186,7 @@ static void S_parser_dispose(markdown_core_parser *parser) {
     parser->inline_dispatch = NULL;
     parser->mem->free(parser->block_owners);
     parser->block_owners = NULL;
+    markdown_core_inlines_release_hooks(parser);
     if (parser->root) {
         /* The root owns the arena from its creation on. */
         parser->arena = NULL;
@@ -1144,7 +1147,7 @@ markdown_core_node *markdown_core_parse_document_with_mem(const char *source, si
     for (size_t i = 0; i < parser->element_count; i++) {
         S_register_element(parser, parser->elements[i]);
     }
-    if (setup && !setup(parser, context)) {
+    if (!markdown_core_inlines_project_hooks(parser) || (setup && !setup(parser, context))) {
         S_parser_free(parser);
         return NULL;
     }

@@ -68,6 +68,14 @@ typedef struct {
     uint64_t bytes[4];
 } markdown_core_block_owner;
 
+/* The elements that implement an inline root's `init_inline`, then
+ * `finish_inline`, then `dispose_inline`, each list in registry order and the
+ * three stored back to back in one allocation. */
+typedef struct {
+    const markdown_core_element **elements;
+    size_t init_count, finish_count, dispose_count;
+} markdown_core_inline_hooks;
+
 /* First nonblank line under one prospective block parent. Shared by block
  * owners during a single block-start arbitration; no speculative state or
  * owned storage survives here. Reset before the parser mutates that context. */
@@ -178,6 +186,8 @@ struct markdown_core_parser {
     /* Hook deliveries of the inline completion walk and of the node finishing
      * walk: one per node each, however many elements are attached. */
     size_t completion_work, finishing_work;
+    /* Lifecycle hook calls made for inline roots: implementers only. */
+    size_t inline_lifecycle_work;
     size_t table_scan_work, table_frontier_peak;
     size_t table_workspace_growth, table_geometry_lines, table_separator_scans;
     /* Properties work: source ranges decoded once at their owning boundary. */
@@ -240,6 +250,9 @@ struct markdown_core_parser {
      * attached elements (see markdown_core_block_owner). */
     markdown_core_block_owner *block_owners;
     size_t block_owner_count;
+    /* Implementers of the inline root lifecycle hooks, projected whenever the
+     * registry is set or extended, so a root visits implementers only. */
+    markdown_core_inline_hooks inline_hooks;
     markdown_core_ispunct_func backslash_ispunct;
     /* Inline special-character tables for this parser: the core defaults plus
      * the special/emphasis-skip characters of the attached inline elements.
