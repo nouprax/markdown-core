@@ -14,9 +14,9 @@ public struct DirectiveBlock: Markup {
     /// The directive's name without colons, or nil for a nameless container.
     public var name: String? { fields.name }
     /// The bracketed label, or `nil` when the source wrote none.
-    public var label: DirectiveLabel? { fields.label.map { tree.value(at: $0, as: DirectiveLabel.self) } }
+    public var label: DirectiveLabel? { fields.label.map { $fields.value(at: $0, as: DirectiveLabel.self) } }
     /// The block content the fence encloses.
-    public var content: MarkupCollection<any Markup> { MarkupCollection(tree: tree, recordIndices: fields.content) }
+    public var content: MarkupCollection<any Markup> { $fields.collection(fields.content) }
 
     /// Dispatches to the visitor's `DirectiveBlock` case.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
@@ -30,14 +30,7 @@ public struct DirectiveBlock: Markup {
         let content: [Int]
     }
 
-    let tree: ValueTree
-    let index: Int
-    private var fields: Fields {
-        guard case let .directiveBlock(fields) = tree.records[index] else {
-            preconditionFailure("Invalid DirectiveBlock record")
-        }
-        return fields
-    }
+    @Stored var fields: Fields
 }
 
 extension DirectiveBlock.Fields {

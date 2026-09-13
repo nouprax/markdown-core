@@ -35,14 +35,14 @@ public struct Document: Markup {
     /// Ordered classes and records, including duplicates.
     public var attributes: Attributes { fields.attributes }
     /// The document's blocks. Block content, not inline.
-    public var content: MarkupCollection<any Markup> { MarkupCollection(tree: tree, recordIndices: fields.content) }
+    public var content: MarkupCollection<any Markup> { $fields.collection(fields.content) }
     /// Parsed Properties, absent until their syntax is implemented.
     public var metadata: Metadata? { fields.metadata }
     /// The footnotes the document owns, ordered by scope start; never part of
     /// `content`.
-    public var footnotes: MarkupCollection<Footnote> { MarkupCollection(tree: tree, recordIndices: fields.footnotes) }
+    public var footnotes: MarkupCollection<Footnote> { $fields.collection(fields.footnotes) }
     /// The specimen definitions, ordered by scope start and visited after footnotes.
-    public var specimens: MarkupCollection<Specimen> { MarkupCollection(tree: tree, recordIndices: fields.specimens) }
+    public var specimens: MarkupCollection<Specimen> { $fields.collection(fields.specimens) }
     /// Dispatches to the visitor's `Document` case.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 
@@ -86,14 +86,7 @@ public struct Document: Markup {
         let specimens: [Int]
     }
 
-    let tree: ValueTree
-    let index: Int
-    private var fields: Fields {
-        guard case let .document(fields) = tree.records[index] else {
-            preconditionFailure("Invalid Document record")
-        }
-        return fields
-    }
+    @Stored var fields: Fields
 }
 
 /// Source-order indices recorded while copying one native value.
@@ -221,7 +214,7 @@ private struct NativeTreeBuilder {
     }
 
     func document() -> Document {
-        ValueTree(records: records).value(at: 0, as: Document.self)
+        MarkupStore(records: records).value(at: 0, as: Document.self)
     }
 }
 

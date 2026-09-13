@@ -184,6 +184,8 @@ Swift 子关系从数组改为只读 `MarkupCollection<Element>`，定义的分�
 持有容器子树会保留整个不可变 Swift store，直到最后一个持有者释放。没有 native handle、
 缓存、同步或清理队列。Document 独有的 metadata payload 间接存储一次，避免
 其容量决定所有普通节点的 stride。详见 [Swift storage](../architecture/swift-storage.md)。
+`MarkupStore` 集中字段查询和投影；29 个节点类型通过 `@Stored` 引用字段，
+不再各自保存下标并检查 enum。定位信息保存在统一引用中，视图仍为 16 bytes。
 
 ### 修复证据
 
@@ -203,7 +205,7 @@ Swift 子关系从数组改为只读 `MarkupCollection<Element>`，定义的分�
 - 域名测试覆盖阈值两侧、最后/倒数第二/倒数第三段 underscore、URL/www
   两种入口，以及 16–8,192 个重叠候选；确定的扫描工作不超过 3× 输入字节。
 - C Release 88 项 correctness 加 8 项 benchmark，ASan/UBSan 各 88 项，
-  TSan 并发 2 项通过。Swift 40 tests / 10 suites 及独立 consumer 的 2 项测试通过。
+  TSan 并发 2 项通过。Swift 42 tests / 10 suites 及独立 consumer 的 2 项测试通过。
   定义分组与所有权测试亦通过 Release 构建；8,192 个 body 不再增加集合 record。
   ES 41 correctness / 40 conformance、Kotlin JVM 42+8、Native 31+8 通过。
 - position places 15,072 项无新增差异（现在包含真正零字节输入）；

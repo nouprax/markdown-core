@@ -11,7 +11,7 @@ public struct Specimen: Sendable {
     /// An explicit counter reset, or `nil` when numbering continues.
     public var start: Int64? { fields.start }
     /// The parsed content of the definition.
-    public var content: MarkupCollection<any Markup> { MarkupCollection(tree: tree, recordIndices: fields.content) }
+    public var content: MarkupCollection<any Markup> { $fields.collection(fields.content) }
 
     struct Fields: Sendable {
         let scope: Scope
@@ -20,14 +20,7 @@ public struct Specimen: Sendable {
         let content: [Int]
     }
 
-    let tree: ValueTree
-    let index: Int
-    private var fields: Fields {
-        guard case let .specimen(fields) = tree.records[index] else {
-            preconditionFailure("Invalid Specimen record")
-        }
-        return fields
-    }
+    @Stored var fields: Fields
 }
 
 extension Specimen.Fields {

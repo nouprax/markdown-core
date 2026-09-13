@@ -3,14 +3,23 @@
 The public AST is immutable and `Sendable`. A parse copies each native AST value
 exactly once into a flat `StoredMarkup` array, then frees the C document before
 returning. Records contain owned scalar values and integer relation indices.
-They never contain a container view or a reference back to `ValueTree`.
+They never contain a container view or a reference back to `MarkupStore`.
 The unique Document payload is stored indirectly: its inline Metadata value
 must not determine the stride of every ordinary node in the record array.
 That one box contains scalars and indices, so it adds no recursive tree edge.
 
-A container or scoped value is a small `(ValueTree, index)` view. Its scalar
-fields read that record; its node relations are `MarkupCollection<Element>`
-values carrying the same store and a copy-on-write array of indices. Count,
+A container or scoped value declares `@Stored var fields: Fields`. `Stored`
+is a typed value reference containing the store and a private record index;
+it queries the payload without storing or caching a copy. `MarkupStore` owns
+the exhaustive field lookup, node projection, and collection construction.
+Individual markup types do not inspect records, match storage enum cases,
+or implement index checks. The wrapper adds no heap allocation or synchronization.
+The index identifies an occurrence within a particular store; it is not a
+source coordinate, and querying by kind alone cannot distinguish two paragraphs.
+
+Scalar properties read through `fields`; `$fields` exposes the owning store
+for relation queries. Node relations are `MarkupCollection<Element>` values
+carrying that store and a copy-on-write array of indices. Count,
 indexing, and obtaining the relation view are O(1), with no materialization of
 descendants. Iteration visits the requested elements. `Array(relation)` explicitly
 materializes an array for consumers that require one. Leaves carry their scalar
@@ -51,3 +60,6 @@ collection consumption, concurrent reads, and normal root/subtree release at
 they do not keep the next child alive to manually dismantle ancestors.
 Grouped-relation tests cover empty and multiblock bodies, wide definitions,
 concurrent reads, and the last release of retained outer and inner collections.
+Typed-reference tests distinguish same-kind occurrences and different stores
+after the roots are released. Layout checks keep container views within the
+existential inline buffer, including the root with its large metadata payload.

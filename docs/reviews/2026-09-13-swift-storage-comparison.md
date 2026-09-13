@@ -33,6 +33,39 @@ swift-markdown 同样将公开节点包装与内部存储分开：
 `MarkupCollection`，取得视图及下标访问均为 O(1)，没有逐组物化。已删除
 原先把 body 集合作为独立 record 的设计；分组不再进入存储枚举或构建队列。
 
+## 字段查询与节点定位
+
+`MarkupStore` 统一持有 records，负责类型化字段查询、节点投影和集合构造。
+29 个容器或 scoped value 都通过 `@Stored var fields: Fields` 声明所需字段；
+节点类型不再直接访问 records、匹配存储 enum 或重复编写错误检查。
+`Stored` 是普通的泛型 property wrapper，保存 store 和私有 index，
+没有 payload 副本、缓存、额外堆对象或宏依赖。`$fields` 提供关系查询所需的 store。
+
+index 的职责是定位一个 store 内的具体 occurrence。同一个 store 可以包含
+多个 Paragraph，不同 store 也可以在相同位置保存不同节点，因此类型本身
+不足以查询出正确字段。定位信息集中在引用实现中，业务节点不依赖数组下标。
+
+对比实验以 `72f14045` 的分散访问器为基线，在 arm64、Apple Swift 6.3.3 下
+使用相同优化 C 对象及 Swift `-O -whole-module-optimization` 构建：
+
+| 诊断项 | 原访问器 | 集中查询 |
+| --- | ---: | ---: |
+| TableCaption / Paragraph / Document stride | 各 16 bytes | 各 16 bytes |
+| 4,000 个富文本段落，单次读取 | 2.917 ms | 2.848 ms |
+| 1,000 组 callout/directive/table，单次读取 | 0.340 ms | 0.338 ms |
+| 同一富文本输入，parse + release | 9.521 ms | 9.445 ms |
+
+读取实验访问顶层 block 的 scope 及 paragraph 的直接 inline 子节点，未遍历
+所有后代。两种程序顺序运行，每项为五个样本的中位数；这些差异不能作为稳定
+加速比，但未观察到集中查询引入读取退化。优化 LLVM IR 中，Paragraph 和
+TableCaption 的 scope getter 均没有动态 cast 或堆分配；节点投影中的分配
+调用点也与基线相同。类型化查询被特化为对应的 case 检查，没有擦除 Fields
+再装箱的中间步骤。
+
+此前将完整 Fields 直接存进节点的实验仍被排除：TableCaption 从 16 增至
+64 bytes，投影时新增一个 80-byte 堆对象。这个结论只适用于内联 payload，
+不能据此否定把查询职责集中进 store。当前实现保留小型引用并消除分散的访问器。
+
 ## 上游的释放修复与剩余边界
 
 [PR #276](https://github.com/swiftlang/swift-markdown/pull/276) 于 2026-06-22 合并。

@@ -42,7 +42,7 @@ public struct List: Markup {
     /// Ordered classes and records, including duplicates.
     public var attributes: Attributes { fields.attributes }
     /// A list owns `ListItem`s and nothing else.
-    public var items: MarkupCollection<ListItem> { MarkupCollection(tree: tree, recordIndices: fields.items) }
+    public var items: MarkupCollection<ListItem> { $fields.collection(fields.items) }
     /// Bulleted or numbered.
     public var flavor: ListFlavor { fields.flavor }
     /// The first number an ordered list counts from, and `nil` for a bulleted
@@ -72,14 +72,7 @@ public struct List: Markup {
         let tight: Bool
     }
 
-    let tree: ValueTree
-    let index: Int
-    private var fields: Fields {
-        guard case let .list(fields) = tree.records[index] else {
-            preconditionFailure("Invalid List record")
-        }
-        return fields
-    }
+    @Stored var fields: Fields
 }
 
 extension List.Fields {
@@ -131,7 +124,7 @@ public struct ListItem: Markup {
     /// Ordered classes and records, including duplicates.
     public var attributes: Attributes { fields.attributes }
     /// The item's blocks. Block content, not inline.
-    public var content: MarkupCollection<any Markup> { MarkupCollection(tree: tree, recordIndices: fields.content) }
+    public var content: MarkupCollection<any Markup> { $fields.collection(fields.content) }
     /// The authored task marker, or `nil` when this is not a task item.
     public var marker: String? { fields.marker }
     /// Whether this item authored a task marker.
@@ -151,14 +144,7 @@ public struct ListItem: Markup {
         let marker: String?
     }
 
-    let tree: ValueTree
-    let index: Int
-    private var fields: Fields {
-        guard case let .listItem(fields) = tree.records[index] else {
-            preconditionFailure("Invalid ListItem record")
-        }
-        return fields
-    }
+    @Stored var fields: Fields
 }
 
 extension ListItem.Fields {

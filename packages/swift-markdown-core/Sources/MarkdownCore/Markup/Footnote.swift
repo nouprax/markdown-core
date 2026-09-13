@@ -14,7 +14,7 @@ public struct Footnote: Sendable {
     /// The normalized label without the caret.
     public var id: String { fields.id }
     /// The definition's block content.
-    public var content: MarkupCollection<any Markup> { MarkupCollection(tree: tree, recordIndices: fields.content) }
+    public var content: MarkupCollection<any Markup> { $fields.collection(fields.content) }
 
     struct Fields: Sendable {
         let scope: Scope
@@ -22,14 +22,7 @@ public struct Footnote: Sendable {
         let content: [Int]
     }
 
-    let tree: ValueTree
-    let index: Int
-    private var fields: Fields {
-        guard case let .footnote(fields) = tree.records[index] else {
-            preconditionFailure("Invalid Footnote record")
-        }
-        return fields
-    }
+    @Stored var fields: Fields
 }
 
 extension Footnote.Fields {

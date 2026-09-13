@@ -9,7 +9,7 @@ public struct Mark: Markup {
     /// Ordered classes and records, including duplicates.
     public var attributes: Attributes { fields.attributes }
     /// The highlighted inline content.
-    public var content: MarkupCollection<any Markup> { MarkupCollection(tree: tree, recordIndices: fields.content) }
+    public var content: MarkupCollection<any Markup> { $fields.collection(fields.content) }
 
     /// Dispatches to the visitor's `Mark` case.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
@@ -21,14 +21,7 @@ public struct Mark: Markup {
         let content: [Int]
     }
 
-    let tree: ValueTree
-    let index: Int
-    private var fields: Fields {
-        guard case let .mark(fields) = tree.records[index] else {
-            preconditionFailure("Invalid Mark record")
-        }
-        return fields
-    }
+    @Stored var fields: Fields
 }
 
 extension Mark.Fields {

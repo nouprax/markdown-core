@@ -51,7 +51,7 @@ extension APISuite {
             authors: values[5],
             scope: parsed.scope
         )
-        var records = parsed.tree.records
+        var records = parsed.$fields.records
         records[0] = .document(
             .init(
                 scope: parsed.scope,
@@ -63,7 +63,7 @@ extension APISuite {
                 specimens: []
             )
         )
-        let document = ValueTree(records: records).value(at: 0, as: Document.self)
+        let document = MarkupStore(records: records).value(at: 0, as: Document.self)
         #expect(
             [
                 document.metadata?.name, document.metadata?.title, document.metadata?.subtitle,

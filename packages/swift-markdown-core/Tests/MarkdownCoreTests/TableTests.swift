@@ -12,7 +12,7 @@ extension APISuite {
             (1.2345678901234567, "1.2345678901234567"),
         ]
         for (width, expected) in widths {
-            let table = ValueTree(records: [
+            let table = MarkupStore(records: [
                 .table(
                     .init(
                         caption: nil,
@@ -44,7 +44,7 @@ extension APISuite {
         #expect(kinds == ["entering:Heading", "entering:Paragraph", "entering:ThematicBreak"])
         #expect(table.dump().contains("columns=[left:0.1,none:null] children=3"))
         #expect(table.dump().contains("TableFoot children=1"))
-        let empty = ValueTree(records: [
+        let empty = MarkupStore(records: [
             .table(
                 .init(
                     caption: nil,
@@ -66,7 +66,7 @@ extension APISuite {
 
 private func groupedTable() throws -> Table {
     let parsed = try Document.parse("# head\n\nbody\n\n---\n")
-    var records = parsed.tree.records
+    var records = parsed.$fields.records
     var rows: [Int] = []
     for index in parsed.content.recordIndices {
         let cell = records.count
@@ -102,5 +102,5 @@ private func groupedTable() throws -> Table {
             )
         )
     )
-    return ValueTree(records: records).value(at: index, as: Table.self)
+    return MarkupStore(records: records).value(at: index, as: Table.self)
 }

@@ -12,7 +12,7 @@ public struct Heading: Markup {
     /// Ordered classes and records, including duplicates.
     public var attributes: Attributes { fields.attributes }
     /// The heading's inline content, its `#` markers excluded.
-    public var content: MarkupCollection<any Markup> { MarkupCollection(tree: tree, recordIndices: fields.content) }
+    public var content: MarkupCollection<any Markup> { $fields.collection(fields.content) }
     /// 1 through 6. A `#######` line is not a heading at all.
     public var level: Int32 { fields.level }
 
@@ -27,14 +27,7 @@ public struct Heading: Markup {
         let level: Int32
     }
 
-    let tree: ValueTree
-    let index: Int
-    private var fields: Fields {
-        guard case let .heading(fields) = tree.records[index] else {
-            preconditionFailure("Invalid Heading record")
-        }
-        return fields
-    }
+    @Stored var fields: Fields
 }
 
 extension Heading.Fields {

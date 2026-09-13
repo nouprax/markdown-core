@@ -12,7 +12,7 @@ import Testing
         let scope = parsed.scope
         // These reserved scalar combinations are deliberately constructed as
         // flat records; they need not depend on currently authored syntax.
-        let tree = ValueTree(records: [
+        let store = MarkupStore(records: [
             .document(
                 .init(
                     scope: scope,
@@ -31,7 +31,7 @@ import Testing
             .specimen(.init(scope: scope, id: "étude", start: 5, content: [])),
             .specimen(.init(scope: scope, id: nil, start: nil, content: [])),
         ])
-        let document = tree.value(at: 0, as: Document.self)
+        let document = store.value(at: 0, as: Document.self)
         #expect(document.specimens[0].start == 5)
         #expect(document.specimens[1].id == nil)
         #expect(document.dump().contains("referent=specimen(id=\"étude\")"))

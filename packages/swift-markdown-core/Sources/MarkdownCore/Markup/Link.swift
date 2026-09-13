@@ -13,7 +13,7 @@ public struct Link: Markup {
     /// Ordered classes and records, including duplicates.
     public var attributes: Attributes { fields.attributes }
     /// The link text, as inline content.
-    public var content: MarkupCollection<any Markup> { MarkupCollection(tree: tree, recordIndices: fields.content) }
+    public var content: MarkupCollection<any Markup> { $fields.collection(fields.content) }
     /// Required: `[a]()` and `[a](<>)` wrote a destination and wrote nothing
     /// in it, so they answer `.url("")`; a reference occurrence answers the
     /// destination its definition stated.
@@ -33,14 +33,7 @@ public struct Link: Markup {
         let title: String?
     }
 
-    let tree: ValueTree
-    let index: Int
-    private var fields: Fields {
-        guard case let .link(fields) = tree.records[index] else {
-            preconditionFailure("Invalid Link record")
-        }
-        return fields
-    }
+    @Stored var fields: Fields
 }
 
 extension Link.Fields {

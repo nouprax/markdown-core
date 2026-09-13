@@ -21,10 +21,10 @@ public struct Callout: Markup {
     /// The title's inline content, or `nil` when no title was authored; never
     /// empty. The callout owns it as a field; it is never part of `content`.
     public var title: MarkupCollection<any Markup>? {
-        fields.title.map { MarkupCollection(tree: tree, recordIndices: $0) }
+        fields.title.map { $fields.collection($0) }
     }
     /// The quoted blocks. Block content, not inline.
-    public var content: MarkupCollection<any Markup> { MarkupCollection(tree: tree, recordIndices: fields.content) }
+    public var content: MarkupCollection<any Markup> { $fields.collection(fields.content) }
 
     /// Dispatches to the visitor's `Callout` case.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
@@ -39,14 +39,7 @@ public struct Callout: Markup {
         let content: [Int]
     }
 
-    let tree: ValueTree
-    let index: Int
-    private var fields: Fields {
-        guard case let .callout(fields) = tree.records[index] else {
-            preconditionFailure("Invalid Callout record")
-        }
-        return fields
-    }
+    @Stored var fields: Fields
 }
 
 extension Callout.Fields {

@@ -9,10 +9,10 @@ public struct Definition: Markup {
     /// Ordered classes and records, including duplicates.
     public var attributes: Attributes { fields.attributes }
     /// The inline term, visited before the body collections.
-    public var term: MarkupCollection<any Markup> { MarkupCollection(tree: tree, recordIndices: fields.term) }
+    public var term: MarkupCollection<any Markup> { $fields.collection(fields.term) }
     /// The nonempty ordered collection of block bodies; an individual body may be empty.
     public var content: MarkupGroups<any Markup> {
-        MarkupGroups(tree: tree, recordIndices: fields.content)
+        $fields.groups(fields.content)
     }
     /// Whether the first body immediately follows its term without a blank line.
     public var compact: Bool { fields.compact }
@@ -29,14 +29,7 @@ public struct Definition: Markup {
         let compact: Bool
     }
 
-    let tree: ValueTree
-    let index: Int
-    private var fields: Fields {
-        guard case let .definition(fields) = tree.records[index] else {
-            preconditionFailure("Invalid Definition record")
-        }
-        return fields
-    }
+    @Stored var fields: Fields
 }
 
 extension Definition.Fields {

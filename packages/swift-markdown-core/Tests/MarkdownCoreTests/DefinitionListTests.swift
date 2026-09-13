@@ -46,6 +46,6 @@ import Testing
         var visitor = RecordingWalkingVisitor(recordEvents: false)
         document.walk(with: &visitor)
         #expect(visitor.entered == 4 + repetitions * 4)
-        #expect(document.tree.records.count == visitor.entered)
+        #expect(document.$fields.records.count == visitor.entered)
     }
 }

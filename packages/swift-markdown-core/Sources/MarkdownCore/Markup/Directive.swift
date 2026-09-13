@@ -15,7 +15,7 @@ public struct Directive: Markup {
     /// The directive's name, without its colons.
     public var name: String { fields.name }
     /// The bracketed label, or `nil` when the source wrote none.
-    public var label: DirectiveLabel? { fields.label.map { tree.value(at: $0, as: DirectiveLabel.self) } }
+    public var label: DirectiveLabel? { fields.label.map { $fields.value(at: $0, as: DirectiveLabel.self) } }
 
     /// Dispatches to the visitor's `Directive` case.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
@@ -28,14 +28,7 @@ public struct Directive: Markup {
         let label: Int?
     }
 
-    let tree: ValueTree
-    let index: Int
-    private var fields: Fields {
-        guard case let .directive(fields) = tree.records[index] else {
-            preconditionFailure("Invalid Directive record")
-        }
-        return fields
-    }
+    @Stored var fields: Fields
 }
 
 extension Directive.Fields {

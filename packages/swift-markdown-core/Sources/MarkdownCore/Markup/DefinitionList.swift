@@ -10,7 +10,7 @@ public struct DefinitionList: Markup {
     public var attributes: Attributes { fields.attributes }
     /// The nonempty ordered collection of term/body associations.
     public var definitions: MarkupCollection<Definition> {
-        MarkupCollection(tree: tree, recordIndices: fields.definitions)
+        $fields.collection(fields.definitions)
     }
 
     /// Dispatches to the visitor's `DefinitionList` case.
@@ -23,14 +23,7 @@ public struct DefinitionList: Markup {
         let definitions: [Int]
     }
 
-    let tree: ValueTree
-    let index: Int
-    private var fields: Fields {
-        guard case let .definitionList(fields) = tree.records[index] else {
-            preconditionFailure("Invalid DefinitionList record")
-        }
-        return fields
-    }
+    @Stored var fields: Fields
 }
 
 extension DefinitionList.Fields {

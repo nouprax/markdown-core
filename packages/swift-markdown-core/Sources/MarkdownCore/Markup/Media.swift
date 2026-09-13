@@ -16,7 +16,7 @@ public struct Media: Markup {
     public var attributes: Attributes { fields.attributes }
     /// Parsed alt content excluding a valid dimension suffix; empty for a numeric-only label.
     /// A malformed suffix remains part of the alt content.
-    public var content: MarkupCollection<any Markup> { MarkupCollection(tree: tree, recordIndices: fields.content) }
+    public var content: MarkupCollection<any Markup> { $fields.collection(fields.content) }
     /// Required, for the reason ``Link/dest`` is.
     public var dest: Destination { fields.dest }
     /// Optional.
@@ -37,14 +37,7 @@ public struct Media: Markup {
         let dimensions: Dimensions?
     }
 
-    let tree: ValueTree
-    let index: Int
-    private var fields: Fields {
-        guard case let .media(fields) = tree.records[index] else {
-            preconditionFailure("Invalid Media record")
-        }
-        return fields
-    }
+    @Stored var fields: Fields
 }
 
 extension Media.Fields {

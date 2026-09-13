@@ -23,15 +23,15 @@ public struct TableColumn: Sendable {
 /// One table model for every table syntax. Rows belong to their named group.
 public struct Table: Markup {
     /// The independently owned inline caption, visited before all rows.
-    public var caption: TableCaption? { fields.caption.map { tree.value(at: $0, as: TableCaption.self) } }
+    public var caption: TableCaption? { fields.caption.map { $fields.value(at: $0, as: TableCaption.self) } }
     /// The non-empty logical column grid.
     public var columns: [TableColumn] { fields.columns }
     /// Header rows in stored order.
-    public var head: MarkupCollection<TableRow> { MarkupCollection(tree: tree, recordIndices: fields.head) }
+    public var head: MarkupCollection<TableRow> { $fields.collection(fields.head) }
     /// Body rows in stored order.
-    public var content: MarkupCollection<TableRow> { MarkupCollection(tree: tree, recordIndices: fields.content) }
+    public var content: MarkupCollection<TableRow> { $fields.collection(fields.content) }
     /// Footer rows in stored order.
-    public var foot: MarkupCollection<TableRow> { MarkupCollection(tree: tree, recordIndices: fields.foot) }
+    public var foot: MarkupCollection<TableRow> { $fields.collection(fields.foot) }
     /// Authored source extent. See ``Scope``.
     public var scope: Scope { fields.scope }
     /// The explicit anchor, absent when none was attached.
@@ -53,14 +53,7 @@ public struct Table: Markup {
         let attributes: Attributes
     }
 
-    let tree: ValueTree
-    let index: Int
-    private var fields: Fields {
-        guard case let .table(fields) = tree.records[index] else {
-            preconditionFailure("Invalid Table record")
-        }
-        return fields
-    }
+    @Stored var fields: Fields
 }
 
 extension Table.Fields {
@@ -96,7 +89,7 @@ extension Table.Fields {
 /// Cells whose upper-left coordinate starts in this row, in logical order.
 public struct TableRow: Markup {
     /// Cells starting in this row, in logical column order.
-    public var cells: MarkupCollection<TableCell> { MarkupCollection(tree: tree, recordIndices: fields.cells) }
+    public var cells: MarkupCollection<TableCell> { $fields.collection(fields.cells) }
     /// Authored source extent. See ``Scope``.
     public var scope: Scope { fields.scope }
     /// The explicit anchor, absent when none was attached.
@@ -114,14 +107,7 @@ public struct TableRow: Markup {
         let attributes: Attributes
     }
 
-    let tree: ValueTree
-    let index: Int
-    private var fields: Fields {
-        guard case let .tableRow(fields) = tree.records[index] else {
-            preconditionFailure("Invalid TableRow record")
-        }
-        return fields
-    }
+    @Stored var fields: Fields
 }
 
 extension TableRow.Fields {
@@ -142,7 +128,7 @@ public struct TableCell: Markup {
     /// Number of logical columns occupied.
     public var colspan: Int { fields.colspan }
     /// Inline or block content as parsed, without paragraph normalization.
-    public var content: MarkupCollection<any Markup> { MarkupCollection(tree: tree, recordIndices: fields.content) }
+    public var content: MarkupCollection<any Markup> { $fields.collection(fields.content) }
     /// Authored source extent. See ``Scope``.
     public var scope: Scope { fields.scope }
     /// The explicit anchor, absent when none was attached.
@@ -162,14 +148,7 @@ public struct TableCell: Markup {
         let attributes: Attributes
     }
 
-    let tree: ValueTree
-    let index: Int
-    private var fields: Fields {
-        guard case let .tableCell(fields) = tree.records[index] else {
-            preconditionFailure("Invalid TableCell record")
-        }
-        return fields
-    }
+    @Stored var fields: Fields
 }
 
 extension TableCell.Fields {
@@ -191,7 +170,7 @@ extension TableCell.Fields {
 /// A table's authored caption, with ordinary inline content.
 public struct TableCaption: Markup {
     /// Inline content after removing the caption marker.
-    public var content: MarkupCollection<any Markup> { MarkupCollection(tree: tree, recordIndices: fields.content) }
+    public var content: MarkupCollection<any Markup> { $fields.collection(fields.content) }
     /// Authored source extent, including the caption marker.
     public var scope: Scope { fields.scope }
     /// The explicit anchor, absent when none was attached.
@@ -209,14 +188,7 @@ public struct TableCaption: Markup {
         let attributes: Attributes
     }
 
-    let tree: ValueTree
-    let index: Int
-    private var fields: Fields {
-        guard case let .tableCaption(fields) = tree.records[index] else {
-            preconditionFailure("Invalid TableCaption record")
-        }
-        return fields
-    }
+    @Stored var fields: Fields
 }
 
 extension TableCaption.Fields {

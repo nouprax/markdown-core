@@ -16,10 +16,10 @@ import Testing
 
     @Test("deep trees and independently retained subtrees release with bounded stack", arguments: [30_000, 65_536])
     func deepRelease(depth: Int) throws {
-        weak var storage: ValueTree?
+        weak var storage: MarkupStore?
         do {
             let document = try Document.parse(String(repeating: "- ", count: depth) + "leaf\n")
-            storage = document.tree
+            storage = document.$fields
             withExtendedLifetime(document) { #expect(document.content.count == 1) }
         }
         #expect(storage == nil)
@@ -27,7 +27,7 @@ import Testing
         var subtree: MarkdownCore.List?
         do {
             let document = try Document.parse(String(repeating: "- ", count: depth) + "leaf\n")
-            storage = document.tree
+            storage = document.$fields
             subtree = try #require(document.content.first as? MarkdownCore.List)
         }
         #expect(storage != nil)
@@ -44,12 +44,12 @@ import Testing
     @Test("retained body groups and individual bodies own the store through their last release")
     func retainedGroups() async throws {
         requireSendable(MarkupGroups<any Markup>.self)
-        weak var storage: ValueTree?
+        weak var storage: MarkupStore?
         var groups: MarkupGroups<any Markup>?
         var body: MarkupCollection<any Markup>?
         do {
             let document = try Document.parse("T\n: one\n:\n")
-            storage = document.tree
+            storage = document.$fields
             let list = try #require(document.content.first as? DefinitionList)
             groups = list.definitions[0].content
         }
@@ -68,6 +68,30 @@ import Testing
         #expect(((body?.first as? Paragraph)?.content.first as? Text)?.literal == "one")
         body = nil
         #expect(storage == nil)
+    }
+
+    @Test("typed store references distinguish occurrences and documents after root release")
+    func storedReferences() throws {
+        let (first, second) = try {
+            let document = try Document.parse("first\n\nsecond\n")
+            return (
+                try #require(document.content[0] as? Paragraph),
+                try #require(document.content[1] as? Paragraph)
+            )
+        }()
+        let other = try #require(Document.parse("other\n").content.first as? Paragraph)
+        #expect((first.content.first as? Text)?.literal == "first")
+        #expect((second.content.first as? Text)?.literal == "second")
+        #expect((other.content.first as? Text)?.literal == "other")
+        #expect(first.scope.start.line == 1 && second.scope.start.line == 3 && other.scope.start.line == 1)
+    }
+
+    @Test("container views fit the existential inline buffer without copying their fields")
+    func inlineViews() {
+        let inlineCapacity = 3 * MemoryLayout<Int>.size
+        #expect(MemoryLayout<Document>.size <= inlineCapacity)
+        #expect(MemoryLayout<Paragraph>.size <= inlineCapacity)
+        #expect(MemoryLayout<TableCaption>.size <= inlineCapacity)
     }
 
 }

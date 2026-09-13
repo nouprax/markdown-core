@@ -36,10 +36,10 @@ public struct Citation: Sendable {
     public var referent: CitationReferent { fields.referent }
     /// The inline content before the referent, owned by the citation; empty
     /// for an inherited call.
-    public var prefix: MarkupCollection<any Markup> { MarkupCollection(tree: tree, recordIndices: fields.prefix) }
+    public var prefix: MarkupCollection<any Markup> { $fields.collection(fields.prefix) }
     /// The inline content after the referent, owned by the citation; empty
     /// for an inherited call.
-    public var suffix: MarkupCollection<any Markup> { MarkupCollection(tree: tree, recordIndices: fields.suffix) }
+    public var suffix: MarkupCollection<any Markup> { $fields.collection(fields.suffix) }
 
     struct Fields: Sendable {
         let scope: Scope
@@ -48,14 +48,7 @@ public struct Citation: Sendable {
         let suffix: [Int]
     }
 
-    let tree: ValueTree
-    let index: Int
-    private var fields: Fields {
-        guard case let .citation(fields) = tree.records[index] else {
-            preconditionFailure("Invalid Citation record")
-        }
-        return fields
-    }
+    @Stored var fields: Fields
 }
 
 /// An inline citation: one or more ``Citation`` items in authored order.
@@ -72,7 +65,7 @@ public struct Cite: Markup {
     /// Ordered classes and records, including duplicates.
     public var attributes: Attributes { fields.attributes }
     /// Never empty: every cite is authored with at least one item.
-    public var citations: MarkupCollection<Citation> { MarkupCollection(tree: tree, recordIndices: fields.citations) }
+    public var citations: MarkupCollection<Citation> { $fields.collection(fields.citations) }
 
     /// Dispatches to the visitor's `Cite` case.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
@@ -84,14 +77,7 @@ public struct Cite: Markup {
         let citations: [Int]
     }
 
-    let tree: ValueTree
-    let index: Int
-    private var fields: Fields {
-        guard case let .cite(fields) = tree.records[index] else {
-            preconditionFailure("Invalid Cite record")
-        }
-        return fields
-    }
+    @Stored var fields: Fields
 }
 
 extension BibMode {
