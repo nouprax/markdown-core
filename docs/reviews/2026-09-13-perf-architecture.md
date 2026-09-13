@@ -152,15 +152,23 @@
 
 未执行完整的平台矩阵、Android/iOS 真机或模拟器、浏览器运行矩阵、全量外部 AST parity campaign。计时是本机诊断数据；allocation bytes 是累计申请量，包括 realloc 的目标容量，**不是峰值存活内存或 RSS**。没有将 sanitizer 或现有测试通过解释为全输入的性能/无泄漏证明。
 
-独立审查产物保存在 [build/review](/Users/donz/.codex/worktrees/1f65/markdown-core/build/review)，该目录被 Git 忽略；本报告是持久的审查记录：
+上文计时、初审 allocator 计数和 LLDB 调用栈来自未入库的本机诊断产物，
+仅作为这次审查的历史观测；仓库不提供这些原始产物，也不提供重跑该次
+测量的命令。不能把本报告中的数字视为可独立复现的 benchmark 基线。
 
-- [scaling.py](/Users/donz/.codex/worktrees/1f65/markdown-core/build/review/scaling.py)、[scaling-baseline.jsonl](/Users/donz/.codex/worktrees/1f65/markdown-core/build/review/scaling-baseline.jsonl)：8 类规模递增输入和原始计时。
-- [ancestor-probe.c](/Users/donz/.codex/worktrees/1f65/markdown-core/build/review/ancestor-probe.c)、[node-instrumented.c](/Users/donz/.codex/worktrees/1f65/markdown-core/build/review/node-instrumented.c)、[ancestor-work.txt](/Users/donz/.codex/worktrees/1f65/markdown-core/build/review/ancestor-work.txt)：确定的祖先访问次数。
-- [probe.c](/Users/donz/.codex/worktrees/1f65/markdown-core/build/review/probe.c)、[allocation-baseline.txt](/Users/donz/.codex/worktrees/1f65/markdown-core/build/review/allocation-baseline.txt)：allocator、directive/table probe 与属性索引证据。
-- [release.swift](/Users/donz/.codex/worktrees/1f65/markdown-core/build/review/release.swift)、[swift-optimized-release-results.json](/Users/donz/.codex/worktrees/1f65/markdown-core/build/review/swift-optimized-release-results.json)、[swift-lldb-backtrace.txt](/Users/donz/.codex/worktrees/1f65/markdown-core/build/review/swift-lldb-backtrace.txt)：普通释放与跳过释放的对照，以及主机调用栈。
-- [semantic-probes.txt](/Users/donz/.codex/worktrees/1f65/markdown-core/build/review/semantic-probes.txt)：scope、域名阈值和 Formula 属性的原始输出。
+当前修复的不变量由入库测试保护，以下路径和命令可在其他 checkout 使用：
 
-对初审保留的基线构建，可重跑 `python3 build/review/scaling.py nested_media_mail nested_media_prose`、`build/review/ancestor-probe`、`build/review/probe`。Swift 用 `build/review/swift-release-optimized-probe 30000` 复现正常释放崩溃；追加任意第三个参数走诊断性的 skip-release 对照，该对照不是修复方案。
+- [C API tests](../../packages/markdown-core/tests/api/main.c)：
+  `deep_inline_construction` 独立变化深度和宽度，检查完整树；
+  `speculative_probe_allocations` 检查识别阶段的分配及无命中时的 buffer 所有权；
+  `autolink_domain_linear_work` 检查域名语义和确定的扫描工作上界。
+  在仓库根目录运行 `pnpm test:c-host`。
+- [Parser boundary tests](../../scripts/tests/parser-boundaries.test.mjs)：
+  限制 parser 构造路径的任意重挂接调用；运行 `pnpm check:element-inventory`。
+- [Swift ownership tests](../../packages/swift-markdown-core/Tests/MarkdownCoreTests/OwnershipTests.swift)：
+  覆盖完整树和独立保留子树的正常释放；运行 `pnpm test:swift-macos`。
+- 当前工具链见 [环境说明](../toolchains.md)，测试入口见 [仓库说明](../../README.md)。这些回归检查验证语义、
+  所有权和工作量，不承诺复现某台机器上的时间或 RSS 数字。
 
 
 ## 修复结果
@@ -214,3 +222,11 @@ Swift 子关系从数组改为只读 `MarkupCollection<Element>`，定义的分�
 没有通过修改现有兼容性 ledger 掩盖回归。上文两个设计观察仍保持其原有边界：
 Formula 字段丢弃是现行规范行为，属性索引是线性辅助空间成本，本轮不额外改变
 这两项语义/算法。未运行完整移动平台或浏览器矩阵。
+
+后续 review 修正了公共节点重挂接的事务边界：containment predicate 只在
+解绑前调用一次，提交共用无失败的 splice。`attachment_containment` 覆盖
+五种修改操作、同父/跨父节点移动和拒绝时两棵树保持原样；测试在修复前失败。
+
+`alignment` 更名为 `flow` 后，Pandoc parity 的三个表格记录需要同步两侧的
+投影摘要。逐项确认仅还原字段名即可重现原先六个摘要后更新；输入、相对列宽、
+内容、结构及差异理由均未改变，未增加或放宽差异豁免。
