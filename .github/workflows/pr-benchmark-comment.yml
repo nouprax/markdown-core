@@ -248,13 +248,31 @@ jobs:
                           "workloadVersion",
                       ];
 
+                      // The same measurement's detail, present since the runner reported
+                      // the parse and the free apart; a baseline from an older runner has
+                      // none of it and compares on the fixed contract alone.
+                      const detailKeys = new Set(["minNs", "freeMedianNs", "nodes", "inputSha256"]);
+
                       function readMetric(file, expectedSha, allowedOrigins) {
                           if (!fs.existsSync(file) || fs.statSync(file).size > 32768) return null;
                           try {
                               const metric = JSON.parse(fs.readFileSync(file, "utf8"));
+                              const contractKeys = metric
+                                  ? Object.keys(metric).filter((key) => !detailKeys.has(key))
+                                  : [];
+                              const detailValid =
+                                  metric &&
+                                  (!("minNs" in metric) ||
+                                      (Number.isSafeInteger(metric.minNs) && metric.minNs > 0)) &&
+                                  (!("freeMedianNs" in metric) ||
+                                      (Number.isSafeInteger(metric.freeMedianNs) && metric.freeMedianNs >= 0)) &&
+                                  (!("nodes" in metric) ||
+                                      (Number.isSafeInteger(metric.nodes) && metric.nodes > 0)) &&
+                                  (!("inputSha256" in metric) || /^[0-9a-f]{64}$/u.test(metric.inputSha256));
                               const valid =
                                   metric &&
-                                  Object.keys(metric).sort().join("\n") === exactKeys.join("\n") &&
+                                  detailValid &&
+                                  contractKeys.sort().join("\n") === exactKeys.join("\n") &&
                                   metric.schema === 1 &&
                                   metric.sourceSha === expectedSha &&
                                   allowedOrigins.has(metric.origin) &&
@@ -312,7 +330,11 @@ jobs:
                               head.workloadVersion === base.workloadVersion &&
                               head.bytes === base.bytes &&
                               head.warmup === base.warmup &&
-                              head.repeats === base.repeats;
+                              head.repeats === base.repeats &&
+                              (head.inputSha256 === undefined ||
+                                  base.inputSha256 === undefined ||
+                                  head.inputSha256 === base.inputSha256);
+                          const detail = "minNs" in head && "minNs" in base;
                           const baselineLabel =
                               base.origin === "main-build"
                                   ? "published exact-base baseline"
@@ -324,6 +346,18 @@ jobs:
                               "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
                               `| C | ${head.workload} (v${head.workloadVersion}) | ${head.bytes.toLocaleString("en-US")} B | ${(head.medianNs / 1e6).toFixed(3)} ms | ${(base.medianNs / 1e6).toFixed(3)} ms | ${contractMatches ? percent(head.medianNs, base.medianNs) : "n/a"} | ${head.memoryKiB.toLocaleString("en-US")} KiB | ${base.memoryKiB.toLocaleString("en-US")} KiB | ${contractMatches ? percent(head.memoryKiB, base.memoryKiB) : "n/a"} |`,
                               "",
+                          );
+                          if (detail) {
+                              lines.push(
+                                  "| Detail | Head | Base | Diff |",
+                                  "| --- | ---: | ---: | ---: |",
+                                  `| Parse, minimum | ${(head.minNs / 1e6).toFixed(3)} ms | ${(base.minNs / 1e6).toFixed(3)} ms | ${contractMatches ? percent(head.minNs, base.minNs) : "n/a"} |`,
+                                  `| Free, median | ${(head.freeMedianNs / 1e6).toFixed(3)} ms | ${(base.freeMedianNs / 1e6).toFixed(3)} ms | ${contractMatches ? percent(head.freeMedianNs, base.freeMedianNs) : "n/a"} |`,
+                                  `| Nodes | ${head.nodes.toLocaleString("en-US")} | ${base.nodes.toLocaleString("en-US")} | ${contractMatches ? percent(head.nodes, base.nodes) : "n/a"} |`,
+                                  "",
+                              );
+                          }
+                          lines.push(
                               "### Binary size",
                               "",
                               "| Artifact | Head | Base | Diff |",

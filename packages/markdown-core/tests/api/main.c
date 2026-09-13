@@ -4806,6 +4806,33 @@ static void *count_text_realloc(void *pointer, size_t size) {
     return realloc(pointer, size);
 }
 
+/* The finishing phases read an installed clock at their sequence points, in
+ * order, and a parse without one installs nothing and reads nothing. */
+static uint64_t counting_clock(void *context) { return ++*(uint64_t *)context; }
+static bool install_phase_clock(markdown_core_parser *parser, void *context) {
+    parser->phase_clock = (markdown_core_phase_clock *)context;
+    return true;
+}
+static void phase_clock_sequence(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    const char *source = "# Title\n\nA *paragraph* with [a link](/u) and `code`.\n\n- item\n";
+    uint64_t ticks = 0;
+    markdown_core_phase_clock clock = {counting_clock, &ticks, 0, 0, 0, 0};
+    markdown_core_node *root =
+        markdown_core_parse_document_with_mem(source, strlen(source), mem, install_phase_clock, &clock);
+    OK(runner, root != NULL, "the phase clock does not change the parse");
+    INT_EQ(runner, (int)clock.blocks, 1, "the block pass is complete at the first reading");
+    INT_EQ(runner, (int)clock.prepared, 2, "the document is prepared at the second");
+    INT_EQ(runner, (int)clock.inlines, 3, "inline trees are built at the third");
+    INT_EQ(runner, (int)clock.finished, 4, "the tree is finished at the fourth");
+    INT_EQ(runner, (int)ticks, 4, "no sequence point reads the clock twice");
+    markdown_core_node_free(root);
+    ticks = 0;
+    root = markdown_core_parse_document_with_mem(source, strlen(source), mem, NULL, NULL);
+    OK(runner, root != NULL && ticks == 0, "a parse without a clock reads none");
+    markdown_core_node_free(root);
+}
+
 /* A front-matter key is matched against the field names where it lies on
  * the source: an unknown member costs no allocation, so the members a
  * document carries beyond the fields cost nothing beyond their bytes. */
@@ -7081,6 +7108,7 @@ int main(int argc, char **argv) {
     properties_source_boundaries(runner);
     properties_member_work(runner);
     properties_key_matching_allocations(runner);
+    phase_clock_sequence(runner);
     properties_text_memory(runner);
     block_identifier_linear_work(runner);
     callout_linear_work(runner);

@@ -227,6 +227,8 @@ struct markdown_core_parser {
      * first line is processed; `cursor == end` once the input has run out. */
     const unsigned char *lookahead_cursor;
     const unsigned char *lookahead_end;
+    /* The finishing-phase clock a setup hook installed, or NULL. */
+    struct markdown_core_phase_clock *phase_clock;
     /* The input's last line as the block parser will see it, normalized once
      * and reused by every lookahead that reaches it: it has no terminator of
      * its own in the source, and a line handed to the prefix matchers must
@@ -426,6 +428,18 @@ bool markdown_core_parser_register_definition(markdown_core_parser *parser,
  * read. Tests may add instrumentation; no caller selects the language.
  * Returning false aborts the transaction. The
  * parser never escapes this call and is destroyed before it returns. */
+/* Readings of a caller's clock at the sequence points of the finishing
+ * phases, for a phase breakdown: the block pass is complete at `blocks`,
+ * the document is prepared at `prepared`, inline trees are built at
+ * `inlines`, and the tree is finished and consolidated at `finished`.
+ * A setup hook installs it; a product parse leaves it NULL and pays one
+ * test per sequence point. */
+typedef struct markdown_core_phase_clock {
+    uint64_t (*now)(void *context);
+    void *context;
+    uint64_t blocks, prepared, inlines, finished;
+} markdown_core_phase_clock;
+
 typedef bool (*markdown_core_parser_setup_func)(markdown_core_parser *parser, void *context);
 markdown_core_node *markdown_core_parse_document_with_mem(const char *source, size_t length, markdown_core_mem *mem,
                                                           markdown_core_parser_setup_func setup, void *context);

@@ -67,7 +67,17 @@ async function collect() {
         "median_ns",
         "peak_rss_kib"
     ];
-    if ([...fields.keys()].sort().join("\n") !== [...expectedFields].sort().join("\n")) {
+    // The same measurement's detail, present since the runner reported the
+    // parse and the free apart: a baseline built from an older runner has
+    // none of it, and a comparison then uses the fixed contract alone.
+    const detailFields = new Map([
+        ["min_ns", "minNs"],
+        ["free_median_ns", "freeMedianNs"],
+        ["nodes", "nodes"],
+        ["input_sha256", "inputSha256"]
+    ]);
+    const contractNames = [...fields.keys()].filter((name) => !detailFields.has(name));
+    if (contractNames.sort().join("\n") !== [...expectedFields].sort().join("\n")) {
         throw new Error(`benchmark fields changed: ${[...fields.keys()].sort().join(", ")}`);
     }
 
@@ -85,6 +95,10 @@ async function collect() {
         memoryKiB: integer(fields, "peak_rss_kib"),
         binaryBytes: await sharedLibrarySize(buildDirectory)
     };
+    for (const [field, key] of detailFields) {
+        if (!fields.has(field)) continue;
+        document[key] = field === "input_sha256" ? fields.get(field) : integer(fields, field);
+    }
     validateDocument(document, sourceSha);
     await mkdir(path.dirname(output), { recursive: true });
     await writeFile(output, `${JSON.stringify(document, null, 2)}\n`);
@@ -113,8 +127,18 @@ function validateDocument(document, sourceSha) {
         "workload",
         "workloadVersion"
     ];
-    if (!document || Object.keys(document).sort().join("\n") !== exactKeys.join("\n")) {
+    const detailKeys = new Set(["minNs", "freeMedianNs", "nodes", "inputSha256"]);
+    const contractKeys = document ? Object.keys(document).filter((key) => !detailKeys.has(key)) : [];
+    if (!document || contractKeys.sort().join("\n") !== exactKeys.join("\n")) {
         throw new Error("benchmark document fields changed");
+    }
+    if (
+        ("minNs" in document && !positive(document.minNs)) ||
+        ("freeMedianNs" in document && !nonnegative(document.freeMedianNs)) ||
+        ("nodes" in document && !positive(document.nodes)) ||
+        ("inputSha256" in document && !/^[0-9a-f]{64}$/u.test(document.inputSha256))
+    ) {
+        throw new Error("invalid benchmark detail");
     }
     if (
         document.schema !== 1 ||

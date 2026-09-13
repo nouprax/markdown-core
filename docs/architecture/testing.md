@@ -166,6 +166,34 @@ is absent from default, sanitizer, required-CI, and release test artifacts.
 Measurements cover representative documents and adversarial shapes, using
 tracked samples or deterministic generation without runtime downloads.
 
+The workloads are one shared module (`tests/support/bench_workloads.c`): each
+case is a tracked sample or an in-process generator with its parameters, is
+versioned with its workload, and is identified by the SHA-256 of the bytes it
+produced, so two measurements can prove they read the same input. A sample
+repeated for the representative workload is separated from its next copy by a
+blank line, so the repeated shape is the sample's shape. Doubling series cover
+the sample block, quote nesting, directives, unclosed links and emphasis, one
+long fenced block, one long paragraph, references with their definitions at the
+end, leading blank lines, and nested spans over independent autolinks.
+
+Two lanes read the workloads. The timing lane, `bench_runner`, parses through
+the public facade and times the parse and the free of each document apart,
+reports every sample with the minimum and the median, throughput from the bytes
+and time per node from the tree, and writes the whole measurement as JSON with
+`--json` (the `metric` line of `binding_baseline` keeps the PR benchmark's
+contract and adds the same measurement's detail). The work-invariant lane,
+`work_runner`, links the diagnostics build with an injected allocator and
+reports counts instead of time: the parser's deterministic work counters, the
+nodes built, the allocations and the bytes they asked for, the peak of live
+bytes and the bytes a document retains. Those counts are an exact contract per
+case in `benchmarks/work-invariants.txt`: `benchmark_work_invariants` fails on
+any difference, and on a doubling series whose work grows by more than 2.25x
+across a doubling, so a change of work is a reviewed line in a diff; the
+expectations are regenerated with `work_runner --all --samples DIR --write FILE`
+when the change is intended. The finishing phases of a parse are timed through
+the parser's phase clock, which a setup hook installs, and reported by the work
+lane as information only.
+
 The separate PR benchmark measures a versioned parser workload and library
 size against the exact base SHA. The untrusted PR producer builds only the
 head and uploads its result. A privileged default-branch workflow uses a

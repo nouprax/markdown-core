@@ -2436,6 +2436,15 @@ static int S_postprocess_tree(markdown_core_parser *parser, markdown_core_node *
     return !parser->oom;
 }
 
+/* One reading of the installed phase clock at a sequence point; the clock is
+ * dereferenced only once it is known to be installed. */
+#define S_PHASE(parser, field)                                                                                         \
+    do {                                                                                                               \
+        if ((parser)->phase_clock) {                                                                                   \
+            (parser)->phase_clock->field = (parser)->phase_clock->now((parser)->phase_clock->context);                 \
+        }                                                                                                              \
+    } while (0)
+
 static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
     markdown_core_node *res;
 
@@ -2443,6 +2452,7 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
         return NULL;
     }
 
+    S_PHASE(parser, blocks);
     finalize_document(parser);
     S_parse_block_inputs(parser);
     S_complete_block_tree(parser, parser->root);
@@ -2452,9 +2462,11 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
             parser->document_structure->prepare_document(parser);
         }
     }
+    S_PHASE(parser, prepared);
     if (!parser->oom) {
         process_inlines(parser, parser->refmap, NULL);
     }
+    S_PHASE(parser, inlines);
     if (!parser->oom) {
         parser->document_structure->finish_document(parser);
     }
@@ -2466,6 +2478,7 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
         parser->oom = true;
         goto failed;
     }
+    S_PHASE(parser, finished);
 
 #if MARKDOWN_CORE_DEBUG_NODES
     if (!S_apply_tree_phase(parser, &parser->root, S_check_tree, NULL)) {
