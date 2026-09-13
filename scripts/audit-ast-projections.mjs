@@ -169,11 +169,9 @@ const modelProjections = [
     projection({
         label: "Swift model",
         directories: ["packages/swift-markdown-core/Sources/MarkdownCore"],
-        // Document is a final class — it owns the native parse, which a value
-        // type cannot release — while every other kind is a struct. Both are
-        // declarations; only the keyword differs.
+        // Public value records may expose stored or computed read-only fields.
         declaration: (kind) => new RegExp(`public (?:final class|struct) ${kind}\\b[^\\n]*\\{`),
-        field: /public (?:let|var) ([A-Za-z]+)\s*:\s*([^\n]+)/g,
+        field: /public (?:let|var) ([A-Za-z]+)\s*:\s*([^\n{]+)/g,
         optional: (m) => m[2].trim().endsWith("?")
     }),
     projection({

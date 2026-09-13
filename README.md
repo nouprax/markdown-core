@@ -118,7 +118,16 @@ print(document.dump())
 
 The Swift AST is an immutable, `Sendable` value tree. The module also provides
 exhaustive typed visitors and stack-safe, read-only depth-first walking through
-`MarkupWalkingVisitor` and `Markup.walk(with:)`.
+`MarkupWalkingVisitor` and `Markup.walk(with:)`. Child relations such as
+`content`, `items`, and `cells` are read-only `MarkupCollection` values conforming
+to `RandomAccessCollection`: count, indexing, and obtaining a collection view
+are constant time. Use `Array(node.content)` when an array is required.
+
+Containers hold views into one immutable Swift record store. Keeping a subtree
+keeps that store alive, so children remain usable after the original `Document`
+value is released. Construction, walking, and final storage release use bounded
+stack depth. The native C document is freed before `parse` returns; there is no
+lazy cache or synchronization. See [Swift storage](docs/architecture/swift-storage.md).
 
 ### Kotlin Multiplatform
 

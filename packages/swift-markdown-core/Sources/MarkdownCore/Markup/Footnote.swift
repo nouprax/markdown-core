@@ -10,15 +10,30 @@ import MarkdownCoreC
 /// the document's content.
 public struct Footnote: Sendable {
     /// The source range, from the opening bracket of the definition.
-    public let scope: Scope
+    public var scope: Scope { fields.scope }
     /// The normalized label without the caret.
-    public let id: String
+    public var id: String { fields.id }
     /// The definition's block content.
-    public let content: [any Markup]
+    public var content: MarkupCollection<any Markup> { MarkupCollection(tree: tree, recordIndices: fields.content) }
+
+    struct Fields: Sendable {
+        let scope: Scope
+        let id: String
+        let content: [Int]
+    }
+
+    let tree: ValueTree
+    let index: Int
+    private var fields: Fields {
+        guard case let .valueFootnote(fields) = tree.records[index] else {
+            preconditionFailure("Invalid Footnote record")
+        }
+        return fields
+    }
 }
 
-extension Footnote {
-    init(from footnote: OpaquePointer, content: [any Markup]) {
+extension Footnote.Fields {
+    init(from footnote: OpaquePointer, content: [Int]) {
         var id = markdown_core_string()
         markdown_core_footnote_id(footnote, &id)
         self.init(

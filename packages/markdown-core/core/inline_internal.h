@@ -31,6 +31,8 @@ struct markdown_core_inline_state {
     bufsize_t heading_attributes_start, text_end, heading_label_end;
     unsigned flags;
     bufsize_t opaque_end;
+    /* Starts before this underscore share a rejected domain suffix. */
+    bufsize_t autolink_rejected_until;
     /* One plus the start of a suffix proven to contain no closer of a rule. */
     bufsize_t opaque_failed_from[MARKDOWN_CORE_DELIM_RULE_COUNT];
     int line;
@@ -78,7 +80,6 @@ markdown_core_node *markdown_core_inline_make_literal(markdown_core_inline_state
 markdown_core_node *markdown_core_inline_make_simple(markdown_core_mem *mem, markdown_core_node_type t);
 markdown_core_node *markdown_core_inline_make_simple_with_state(markdown_core_inline_state *inline_state,
                                                                 markdown_core_node_type t);
-void markdown_core_inline_append_child(markdown_core_node *node, markdown_core_node *child);
 void markdown_core_inline_state_from_buf(markdown_core_parser *parser, markdown_core_mem *mem, int line_number,
                                          markdown_core_inline_state *inline_state, markdown_core_chunk *chunk,
                                          markdown_core_map *refmap);

@@ -360,6 +360,13 @@ int markdown_core_visit_inline_subtrees(markdown_core_node *node, markdown_core_
 int markdown_core_visit_block_subtrees(markdown_core_node *node, markdown_core_owned_subtree_visitor visitor,
                                        void *context);
 
+/* Attach an exclusively owned, detached subtree before a child of parent,
+ * or at the end when before is NULL. The caller must establish that the
+ * subtree is disjoint from parent, by construction or an earlier cycle check.
+ * No ancestor walk, allocation, or transfer occurs on rejection. This private
+ * operation is shared by parser construction and the checked mutation API. */
+int markdown_core_node_attach_owned(markdown_core_node *parent, markdown_core_node *child, markdown_core_node *before);
+
 #ifdef __cplusplus
 }
 #endif

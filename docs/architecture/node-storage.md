@@ -29,6 +29,17 @@ retains its own dimensions even when its destination and title come from a
 resource shared with other resolved references. Cross references own their raw
 destination fields directly and do not share a resource with a definition.
 
+Parser construction transfers a detached, independently owned subtree through
+`markdown_core_node_attach_owned`. The caller establishes disjoint ownership
+by creating the subtree or detaching it from a known separate owner; merely
+having no parent is not proof of disjointness. The operation checks local
+containment and allocator invariants, then splices once in constant time.
+The arbitrary mutation API first checks ancestry and unlinks, then uses this
+same splice. Kind conversion changes no edges and checks only containment.
+There is no safety mode, ancestry cache, or separate inline splice algorithm.
+A source-boundary audit keeps arbitrary reparenting out of parser construction;
+regression inputs vary nesting depth and autolink count independently.
+
 Kind conversion preserves node identity and tree links. After containment
 validation, it allocates a replacement record before releasing the old fields.
 The original record shares the node's allocation and is reclaimed with the

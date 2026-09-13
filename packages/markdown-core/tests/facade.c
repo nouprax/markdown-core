@@ -88,6 +88,23 @@ done:
  * would be invisible to a golden that only ever sees the rendering. Both arms
  * of every optional string are asserted here, and so is the fact that a
  * destination has no absent arm at all (Q26). */
+static void check_native_coordinate_contract(void) {
+    static const struct {
+        const char *source;
+        int end_line, end_column;
+    } cases[] = {{"", 0, 0}, {"\n", 1, 0}, {"\r\n", 1, 0}, {"é", 1, 2}, {"🚀", 1, 4}, {"a\r\nb", 2, 1}};
+    for (size_t i = 0; i < sizeof(cases) / sizeof(*cases); i++) {
+        markdown_core_document *document =
+            markdown_core_document_parse((const uint8_t *)cases[i].source, strlen(cases[i].source), NULL);
+        check(document != NULL, "native coordinate witness parses");
+        markdown_core_scope scope = markdown_core_node_scope(markdown_core_document_root(document));
+        check(scope.start.line == 1 && scope.start.column == 1 && scope.end.line == cases[i].end_line &&
+                  scope.end.column == cases[i].end_column,
+              "UTF-8 coordinates and empty-input sentinels are preserved verbatim");
+        markdown_core_document_free(document);
+    }
+}
+
 static void check_null_and_empty(void) {
     static const struct {
         const char *source;
@@ -638,6 +655,7 @@ int main(int argc, char **argv) {
     check_table_model();
     check_definition_model();
     check_dialect_is_whole();
+    check_native_coordinate_contract();
     check_null_and_empty();
     check_resource_identity();
     check_image_dimensions();

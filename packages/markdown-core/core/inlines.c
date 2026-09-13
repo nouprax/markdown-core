@@ -111,24 +111,6 @@ markdown_core_node *markdown_core_inline_make_simple_with_state(markdown_core_in
     return e;
 }
 
-// Like markdown_core_node_append_child but without costly sanity checks.
-// Assumes that child was newly created.
-void markdown_core_inline_append_child(markdown_core_node *node, markdown_core_node *child) {
-    markdown_core_node *old_last_child = node->last_child;
-
-    child->next = NULL;
-    child->prev = old_last_child;
-    child->parent = node;
-    node->last_child = child;
-
-    if (old_last_child) {
-        old_last_child->next = child;
-    } else {
-        // Also set first_child if node previously had no children.
-        node->first_child = child;
-    }
-}
-
 void markdown_core_inline_state_from_buf(markdown_core_parser *parser, markdown_core_mem *mem, int line_number,
                                          markdown_core_inline_state *inline_state, markdown_core_chunk *chunk,
                                          markdown_core_map *refmap) {
@@ -142,8 +124,8 @@ void markdown_core_inline_state_from_buf(markdown_core_parser *parser, markdown_
     inline_state->refmap = refmap;
     inline_state->text_end = -1;
     if (parser) {
-        for (markdown_core_llist *entry = parser->inline_lifecycle_elements; entry; entry = entry->next) {
-            const markdown_core_element *structure = entry->data;
+        for (size_t i = 0; i < parser->element_count; i++) {
+            const markdown_core_element *structure = parser->elements[i];
             if (structure->init_inline) {
                 structure->init_inline(inline_state);
             }
@@ -814,7 +796,7 @@ append:
         }
     }
     if (new_inl != NULL) {
-        markdown_core_inline_append_child(parent, new_inl);
+        markdown_core_node_attach_owned(parent, new_inl, NULL);
         bool has_fields = false;
         markdown_core_visit_inline_subtrees(new_inl, has_inline_field, &has_fields);
         if (has_fields) {
@@ -858,8 +840,8 @@ void markdown_core_inline_start_inlines(markdown_core_parser *parser, markdown_c
 
 void markdown_core_inline_clear_inlines(markdown_core_inline_state *inline_state) {
     markdown_core_parser *parser = inline_state->owner_parser;
-    for (markdown_core_llist *entry = parser->inline_lifecycle_elements; entry; entry = entry->next) {
-        const markdown_core_element *structure = entry->data;
+    for (size_t i = 0; i < parser->element_count; i++) {
+        const markdown_core_element *structure = parser->elements[i];
         if (structure->dispose_inline) {
             structure->dispose_inline(inline_state);
         }
@@ -881,8 +863,8 @@ bool markdown_core_inline_finish_inlines(markdown_core_parser *parser, markdown_
         }
     }
     if (!parser->oom && !inline_state->oom) {
-        for (markdown_core_llist *entry = parser->inline_lifecycle_elements; entry; entry = entry->next) {
-            const markdown_core_element *structure = entry->data;
+        for (size_t i = 0; i < parser->element_count; i++) {
+            const markdown_core_element *structure = parser->elements[i];
             if (structure->finish_inline) {
                 structure->finish_inline(inline_state);
             }

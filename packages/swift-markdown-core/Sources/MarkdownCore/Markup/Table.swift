@@ -23,28 +23,48 @@ public struct TableColumn: Sendable {
 /// One table model for every table syntax. Rows belong to their named group.
 public struct Table: Markup {
     /// The independently owned inline caption, visited before all rows.
-    public let caption: TableCaption?
+    public var caption: TableCaption? { fields.caption.map { tree.value(at: $0, as: TableCaption.self) } }
     /// The non-empty logical column grid.
-    public let columns: [TableColumn]
+    public var columns: [TableColumn] { fields.columns }
     /// Header rows in stored order.
-    public let head: [TableRow]
+    public var head: MarkupCollection<TableRow> { MarkupCollection(tree: tree, recordIndices: fields.head) }
     /// Body rows in stored order.
-    public let content: [TableRow]
+    public var content: MarkupCollection<TableRow> { MarkupCollection(tree: tree, recordIndices: fields.content) }
     /// Footer rows in stored order.
-    public let foot: [TableRow]
+    public var foot: MarkupCollection<TableRow> { MarkupCollection(tree: tree, recordIndices: fields.foot) }
     /// Authored source extent. See ``Scope``.
-    public let scope: Scope
+    public var scope: Scope { fields.scope }
     /// The explicit anchor, absent when none was attached.
-    public let anchor: String?
+    public var anchor: String? { fields.anchor }
     /// Ordered classes and records, including duplicates.
-    public let attributes: Attributes
+    public var attributes: Attributes { fields.attributes }
 
     /// Dispatches to this node kind's visitor callback.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
+
+    struct Fields: Sendable {
+        let caption: Int?
+        let columns: [TableColumn]
+        let head: [Int]
+        let content: [Int]
+        let foot: [Int]
+        let scope: Scope
+        let anchor: String?
+        let attributes: Attributes
+    }
+
+    let tree: ValueTree
+    let index: Int
+    private var fields: Fields {
+        guard case let .markupTable(fields) = tree.records[index] else {
+            preconditionFailure("Invalid Table record")
+        }
+        return fields
+    }
 }
 
-extension Table {
-    init(from node: OpaquePointer, caption: TableCaption?, children: [any Markup]) {
+extension Table.Fields {
+    init(from node: OpaquePointer, caption: Int?, children: [Int]) {
         var count = 0
         var headCount = 0
         var contentCount = 0
@@ -58,7 +78,7 @@ extension Table {
                 relative: column.relative.has_value ? column.relative.value : nil
             )
         }
-        let rows: [TableRow] = Self.typedChildren(children)
+        let rows: [Int] = children
         precondition(headCount + contentCount + footCount == rows.count)
         self.init(
             caption: caption,
@@ -66,7 +86,7 @@ extension Table {
             head: Array(rows[..<headCount]),
             content: Array(rows[headCount..<(headCount + contentCount)]),
             foot: Array(rows[(headCount + contentCount)...]),
-            scope: Self.scope(from: node),
+            scope: Scope(from: markdown_core_node_scope(node)),
             anchor: markdown_core_node_anchor(node).string,
             attributes: Attributes(from: node)
         )
@@ -76,23 +96,39 @@ extension Table {
 /// Cells whose upper-left coordinate starts in this row, in logical order.
 public struct TableRow: Markup {
     /// Cells starting in this row, in logical column order.
-    public let cells: [TableCell]
+    public var cells: MarkupCollection<TableCell> { MarkupCollection(tree: tree, recordIndices: fields.cells) }
     /// Authored source extent. See ``Scope``.
-    public let scope: Scope
+    public var scope: Scope { fields.scope }
     /// The explicit anchor, absent when none was attached.
-    public let anchor: String?
+    public var anchor: String? { fields.anchor }
     /// Ordered classes and records, including duplicates.
-    public let attributes: Attributes
+    public var attributes: Attributes { fields.attributes }
 
     /// Dispatches to this node kind's visitor callback.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
+
+    struct Fields: Sendable {
+        let cells: [Int]
+        let scope: Scope
+        let anchor: String?
+        let attributes: Attributes
+    }
+
+    let tree: ValueTree
+    let index: Int
+    private var fields: Fields {
+        guard case let .markupTableRow(fields) = tree.records[index] else {
+            preconditionFailure("Invalid TableRow record")
+        }
+        return fields
+    }
 }
 
-extension TableRow {
-    init(from node: OpaquePointer, children: [any Markup]) {
+extension TableRow.Fields {
+    init(from node: OpaquePointer, children: [Int]) {
         self.init(
-            cells: Self.typedChildren(children),
-            scope: Self.scope(from: node),
+            cells: children,
+            scope: Scope(from: markdown_core_node_scope(node)),
             anchor: markdown_core_node_anchor(node).string,
             attributes: Attributes(from: node)
         )
@@ -102,24 +138,42 @@ extension TableRow {
 /// One cell; its spans are positive and cannot cross a row-group boundary.
 public struct TableCell: Markup {
     /// Number of rows occupied within this row group.
-    public let rowspan: Int
+    public var rowspan: Int { fields.rowspan }
     /// Number of logical columns occupied.
-    public let colspan: Int
+    public var colspan: Int { fields.colspan }
     /// Inline or block content as parsed, without paragraph normalization.
-    public let content: [any Markup]
+    public var content: MarkupCollection<any Markup> { MarkupCollection(tree: tree, recordIndices: fields.content) }
     /// Authored source extent. See ``Scope``.
-    public let scope: Scope
+    public var scope: Scope { fields.scope }
     /// The explicit anchor, absent when none was attached.
-    public let anchor: String?
+    public var anchor: String? { fields.anchor }
     /// Ordered classes and records, including duplicates.
-    public let attributes: Attributes
+    public var attributes: Attributes { fields.attributes }
 
     /// Dispatches to this node kind's visitor callback.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
+
+    struct Fields: Sendable {
+        let rowspan: Int
+        let colspan: Int
+        let content: [Int]
+        let scope: Scope
+        let anchor: String?
+        let attributes: Attributes
+    }
+
+    let tree: ValueTree
+    let index: Int
+    private var fields: Fields {
+        guard case let .markupTableCell(fields) = tree.records[index] else {
+            preconditionFailure("Invalid TableCell record")
+        }
+        return fields
+    }
 }
 
-extension TableCell {
-    init(from node: OpaquePointer, content: [any Markup]) {
+extension TableCell.Fields {
+    init(from node: OpaquePointer, content: [Int]) {
         var rowspan: Int64 = 0
         var colspan: Int64 = 0
         precondition(markdown_core_node_table_cell_spans(node, &rowspan, &colspan))
@@ -127,7 +181,7 @@ extension TableCell {
             rowspan: Int(rowspan),
             colspan: Int(colspan),
             content: content,
-            scope: Self.scope(from: node),
+            scope: Scope(from: markdown_core_node_scope(node)),
             anchor: markdown_core_node_anchor(node).string,
             attributes: Attributes(from: node)
         )
@@ -137,23 +191,39 @@ extension TableCell {
 /// A table's authored caption, with ordinary inline content.
 public struct TableCaption: Markup {
     /// Inline content after removing the caption marker.
-    public let content: [any Markup]
+    public var content: MarkupCollection<any Markup> { MarkupCollection(tree: tree, recordIndices: fields.content) }
     /// Authored source extent, including the caption marker.
-    public let scope: Scope
+    public var scope: Scope { fields.scope }
     /// The explicit anchor, absent when none was attached.
-    public let anchor: String?
+    public var anchor: String? { fields.anchor }
     /// Ordered classes and records, including duplicates.
-    public let attributes: Attributes
+    public var attributes: Attributes { fields.attributes }
 
     /// Dispatches to this node kind's visitor callback.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
+
+    struct Fields: Sendable {
+        let content: [Int]
+        let scope: Scope
+        let anchor: String?
+        let attributes: Attributes
+    }
+
+    let tree: ValueTree
+    let index: Int
+    private var fields: Fields {
+        guard case let .markupTableCaption(fields) = tree.records[index] else {
+            preconditionFailure("Invalid TableCaption record")
+        }
+        return fields
+    }
 }
 
-extension TableCaption {
-    init(from node: OpaquePointer, content: [any Markup]) {
+extension TableCaption.Fields {
+    init(from node: OpaquePointer, content: [Int]) {
         self.init(
             content: content,
-            scope: Self.scope(from: node),
+            scope: Scope(from: markdown_core_node_scope(node)),
             anchor: markdown_core_node_anchor(node).string,
             attributes: Attributes(from: node)
         )

@@ -47,8 +47,9 @@ The base language produces these kinds of
 rules below fix what the CommonMark specification leaves to the
 implementation.
 
-An empty document is a `Document` with no content; its scope is the
-[coordinate contract's](../canonical-ast.md#coordinates) empty range:
+A zero-byte input produces a `Document` with no content and native scope
+`1:1..0:0`. The fixture below contains a newline and therefore ends at `1:0`;
+it is not the zero-byte case. See the [coordinate contract](../canonical-ast.md#coordinates):
 
 ```````````````````````````````` example
 
@@ -77,8 +78,8 @@ Document scope=1:1..1:12 anchor=null attributes={} children=1
 the line-ending bytes together with the backslash that produced it; for a
 break produced by two or more trailing spaces, the spaces stay inside the
 preceding `Text` node's scope and outside its literal, and `LineBreak` covers
-the line ending alone. Neither node's literal is stored; a consumer that needs
-the bytes reads the scope:
+the line ending alone. Neither node stores a literal. Scope retains editor coordinates; it does
+not provide a string slice or an API for recovering the original break bytes:
 
 ```````````````````````````````` example
 soft

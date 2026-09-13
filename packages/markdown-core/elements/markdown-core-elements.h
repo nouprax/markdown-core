@@ -68,7 +68,7 @@ typedef enum {
  * and putting it there would make the attach order part of the public ABI at
  * the exact moment the point is that callers cannot choose it.
  */
-int markdown_core_core_elements_attach(markdown_core_parser *parser);
+const markdown_core_element *const *markdown_core_core_elements(size_t *count);
 
 /** Returns the literal formula payload for formula element nodes, or NULL on error.
  */

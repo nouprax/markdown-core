@@ -411,7 +411,7 @@ static void take_citation_affix(markdown_core_inline_state *inline_state, markdo
                 markdown_core_inline_state_place(inline_state, *slot, start, end - 1);
             }
             markdown_core_node_unlink(first);
-            markdown_core_inline_append_child(*slot, first);
+            markdown_core_node_attach_owned(*slot, first, NULL);
         } else {
             markdown_core_node_free(first);
         }
@@ -476,7 +476,7 @@ static void materialize_citation_key(markdown_core_inline_state *inline_state, c
         }
     }
     markdown_core_inline_state_place(inline_state, cite, start, end - 1);
-    markdown_core_node_insert_before(token->node, cite);
+    markdown_core_node_attach_owned(token->node->parent, cite, token->node);
     markdown_core_node_free(token->node);
     token->node = cite;
 }
@@ -543,7 +543,7 @@ bool markdown_core_inline_close_bibliography(markdown_core_parser *parser, markd
     markdown_core_node *content = opener->inl_text->next;
     if (tail) {
         markdown_core_node *old = opener->author->node;
-        markdown_core_node_insert_before(old, cite);
+        markdown_core_node_attach_owned(old->parent, cite, old);
         while (old != content) {
             markdown_core_node *next = old->next;
             markdown_core_node_free(old);

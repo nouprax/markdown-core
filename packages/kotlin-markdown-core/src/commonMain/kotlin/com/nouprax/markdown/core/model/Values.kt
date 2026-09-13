@@ -1,10 +1,14 @@
 package com.nouprax.markdown.core
 
+/** Native cmark UTF-8 editor coordinates, copied without conversion to Kotlin string indices.
+ * A zero-byte document ends at (0, 0); other native column-zero sentinels are retained.
+ */
 public data class Position(
     public val line: Int,
     public val column: Int,
 )
 
+/** Authored editor start/end coordinates, not a substring or half-open range. */
 public data class Scope(
     public val start: Position,
     public val end: Position,

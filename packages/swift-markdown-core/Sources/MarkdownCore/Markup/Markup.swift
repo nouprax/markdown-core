@@ -1,15 +1,14 @@
 import MarkdownCoreC
 
-/// One boundary in the source: a line and a column, both counted from 1.
+/// One editor source coordinate, copied using cmark's UTF-8 convention.
 ///
-/// A position is not an index. `column` counts BOUNDARIES between bytes, so a
-/// line of L bytes has boundaries 1 through L + 1, and column 0 is the
-/// boundary before a line begins — which is where a block closed by a blank
-/// line ends.
+/// This is not a Swift string index. Native sentinel values are retained:
+/// a zero-byte document ends at (0, 0), and a block can end at column 0.
+/// No UTF-16, grapheme, half-open, or sentinel conversion is performed.
 public struct Position: Sendable, Hashable {
-    /// The 1-based source line.
+    /// The native source line, normally 1-based; see the empty-document sentinel.
     public let line: Int32
-    /// The 1-based boundary within the line, counted in BYTES, not characters.
+    /// The native UTF-8 source column, including column-zero sentinels.
     public let column: Int32
 
     /// Creates a position from a line and a column. Neither is validated
@@ -83,17 +82,4 @@ extension Markup {
         Scope(from: markdown_core_node_scope(node))
     }
 
-    /// Narrows an already-copied content relation to its semantic element kind.
-    ///
-    /// A `List` owns `ListItem`s and a `TableRow` owns `TableCell`s; the C tree
-    /// cannot say so and the typed model can, so the narrowing happens once,
-    /// here, instead of at every use site.
-    static func typedChildren<T: Markup>(_ children: [any Markup]) -> [T] {
-        children.map { child in
-            guard let typed = child as? T else {
-                preconditionFailure("\(type(of: child)) is not a \(T.self)")
-            }
-            return typed
-        }
-    }
 }

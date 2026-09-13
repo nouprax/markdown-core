@@ -29,20 +29,20 @@ public struct ParseError: Error, Sendable {
 /// The immutable semantic root returned by a parse.
 public struct Document: Markup {
     /// The whole document's boundaries. See ``Scope``.
-    public let scope: Scope
+    public var scope: Scope { fields.scope }
     /// The explicit anchor, absent when none was attached.
-    public let anchor: String?
+    public var anchor: String? { fields.anchor }
     /// Ordered classes and records, including duplicates.
-    public let attributes: Attributes
+    public var attributes: Attributes { fields.attributes }
     /// The document's blocks. Block content, not inline.
-    public let content: [any Markup]
+    public var content: MarkupCollection<any Markup> { MarkupCollection(tree: tree, recordIndices: fields.content) }
     /// Parsed Properties, absent until their syntax is implemented.
-    public let metadata: Metadata?
+    public var metadata: Metadata? { fields.metadata }
     /// The footnotes the document owns, ordered by scope start; never part of
     /// `content`.
-    public let footnotes: [Footnote]
+    public var footnotes: MarkupCollection<Footnote> { MarkupCollection(tree: tree, recordIndices: fields.footnotes) }
     /// The specimen definitions, ordered by scope start and visited after footnotes.
-    public let specimens: [Specimen]
+    public var specimens: MarkupCollection<Specimen> { MarkupCollection(tree: tree, recordIndices: fields.specimens) }
     /// Dispatches to the visitor's `Document` case.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 
@@ -75,291 +75,233 @@ public struct Document: Markup {
         }
         return NativeTreeBuilder(root: root).document()
     }
+
+    struct Fields: Sendable {
+        let scope: Scope
+        let anchor: String?
+        let attributes: Attributes
+        let content: [Int]
+        let metadata: Metadata?
+        let footnotes: [Int]
+        let specimens: [Int]
+    }
+
+    let tree: ValueTree
+    let index: Int
+    private var fields: Fields {
+        guard case let .markupDocument(fields) = tree.records[index] else {
+            preconditionFailure("Invalid Document record")
+        }
+        return fields
+    }
 }
 
-private struct NativeNodeRecord {
-    let node: OpaquePointer
+/// Source-order indices recorded while copying one native value.
+private struct NativeRelations {
     var children: [Int] = []
     var caption: Int?
     var label: Int?
     var title: [Int]?
     var term: [Int] = []
-    var bodies: [[Int]] = []
-    /// The document's footnotes, each with the records of its content.
-    var footnotes: [NativeFootnoteRecord] = []
-    var specimens: [NativeSpecimenRecord] = []
-    /// The cite's items, each with the records of its prefix and suffix.
-    var citations: [NativeCitationRecord] = []
+    var bodies: [Int] = []
+    var footnotes: [Int] = []
+    var specimens: [Int] = []
+    var citations: [Int] = []
 }
 
-private struct NativeFootnoteRecord {
-    let footnote: OpaquePointer
-    let content: [Int]
+/// Each queued handle has the facade type needed to read its owned relations.
+private enum NativeValue {
+    case markup(OpaquePointer)
+    case footnote(OpaquePointer)
+    case specimen(OpaquePointer)
+    case citation(OpaquePointer)
+    case definitionBody(OpaquePointer)
 }
 
-private struct NativeSpecimenRecord {
-    let specimen: OpaquePointer
-    let content: [Int]
-}
-
-private struct NativeCitationRecord {
-    let citation: OpaquePointer
-    let prefix: [Int]
-    let suffix: [Int]
-}
-
-/// The relations a node owns, materialized before the node itself: its
-/// children, its node-valued fields, and the scoped values it owns.
-struct NativeRelations {
-    let children: [any Markup]
-    let caption: TableCaption?
-    let label: DirectiveLabel?
-    let title: [any Markup]?
-    let term: [any Markup]
-    let bodies: [[any Markup]]
-    let footnotes: [Footnote]
-    let specimens: [Specimen]
-    let citations: [Citation]
-}
-
-/// Copies the C tree without making Swift's call stack proportional to input
-/// depth. A directive label is recorded as its own node-valued field, never as
-/// an entry in the directive's content relation, and the nodes a scoped value
-/// owns -- a footnote's content, a citation's affixes -- are recorded like
-/// children under the value's owner.
+/// Copies scalars and indexed relations once. No stored Swift record owns
+/// another record, and no native pointer survives the copy.
 private struct NativeTreeBuilder {
-    private var records: [NativeNodeRecord]
+    private var pending: [NativeValue] = []
+    private var records: [StoredValue] = []
+    private var resources: [UnsafeRawPointer: SharedResource] = [:]
 
     init(root: OpaquePointer) {
-        records = [NativeNodeRecord(node: root)]
-        var recordIndex = 0
-        while recordIndex < records.count {
-            let node = records[recordIndex].node
-            let expectedChildren = markdown_core_node_child_count(node)
-            records[recordIndex].children.reserveCapacity(expectedChildren)
-
-            var child = markdown_core_node_get_first_child(node)
-            while let current = child {
-                records[recordIndex].children.append(records.count)
-                records.append(NativeNodeRecord(node: current))
-                child = markdown_core_node_get_next_sibling(current)
-            }
-            precondition(
-                records[recordIndex].children.count == expectedChildren,
-                "native child count does not match its sibling chain"
-            )
-            recordOwnedRelations(of: node, at: recordIndex)
-            recordIndex += 1
+        pending = [.markup(root)]
+        var index = 0
+        while index < pending.count {
+            let record = copy(pending[index])
+            records.append(record)
+            index += 1
         }
     }
 
-    /// Records every node of a sibling chain a value owns and answers their indices.
-    private mutating func recordChain(_ first: OpaquePointer?) -> [Int] {
+    private mutating func copy(_ value: NativeValue) -> StoredValue {
+        switch value {
+        case let .markup(node):
+            let relations = markupRelations(node)
+            return copyMarkup(from: node, relations: relations, resources: &resources)
+        case let .footnote(node):
+            return .valueFootnote(
+                Footnote.Fields(from: node, content: chain(markdown_core_footnote_content(node)))
+            )
+        case let .specimen(node):
+            return .valueSpecimen(
+                Specimen.Fields(from: node, content: chain(markdown_core_specimen_content(node)))
+            )
+        case let .citation(node):
+            let prefix = chain(markdown_core_citation_prefix(node))
+            let suffix = chain(markdown_core_citation_suffix(node))
+            return .valueCitation(Citation.Fields(from: node, prefix: prefix, suffix: suffix))
+        case let .definitionBody(node):
+            return .definitionBody(chain(markdown_core_definition_body_content(node)))
+        }
+    }
+
+    // Enumerate each facade-owned relation alongside its native kind.
+    // swiftlint:disable:next cyclomatic_complexity
+    private mutating func markupRelations(_ node: OpaquePointer) -> NativeRelations {
+        var relations = NativeRelations()
+        relations.children = chain(markdown_core_node_get_first_child(node))
+        precondition(relations.children.count == markdown_core_node_child_count(node))
+        switch markdown_core_node_get_kind(node) {
+        case MARKDOWN_CORE_KIND_TABLE:
+            relations.caption = field(markdown_core_node_table_caption(node))
+        case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK, MARKDOWN_CORE_KIND_DIRECTIVE:
+            relations.label = field(markdown_core_node_directive_label(node))
+        case MARKDOWN_CORE_KIND_CALLOUT:
+            if let title = markdown_core_node_callout_title(node) {
+                relations.title = chain(title)
+            }
+        case MARKDOWN_CORE_KIND_DEFINITION:
+            relations.term = chain(markdown_core_node_definition_term(node))
+            var body = markdown_core_node_definition_bodies(node)
+            while let current = body {
+                relations.bodies.append(enqueue(.definitionBody(current)))
+                body = markdown_core_definition_body_next(current)
+            }
+        case MARKDOWN_CORE_KIND_DOCUMENT:
+            var note = markdown_core_node_document_footnotes(node)
+            while let current = note {
+                relations.footnotes.append(enqueue(.footnote(current)))
+                note = markdown_core_footnote_next(current)
+            }
+            var specimen = markdown_core_node_document_specimens(node)
+            while let current = specimen {
+                relations.specimens.append(enqueue(.specimen(current)))
+                specimen = markdown_core_specimen_next(current)
+            }
+        case MARKDOWN_CORE_KIND_CITE:
+            var citation = markdown_core_node_cite_citations(node)
+            while let current = citation {
+                relations.citations.append(enqueue(.citation(current)))
+                citation = markdown_core_citation_next(current)
+            }
+            precondition(!relations.citations.isEmpty)
+        default:
+            break
+        }
+        return relations
+    }
+
+    private mutating func enqueue(_ value: NativeValue) -> Int {
+        let index = pending.count
+        pending.append(value)
+        return index
+    }
+
+    private mutating func field(_ node: OpaquePointer?) -> Int? {
+        node.map { enqueue(.markup($0)) }
+    }
+
+    private mutating func chain(_ first: OpaquePointer?) -> [Int] {
         var indices: [Int] = []
         var node = first
         while let current = node {
-            indices.append(records.count)
-            records.append(NativeNodeRecord(node: current))
+            indices.append(enqueue(.markup(current)))
             node = markdown_core_node_get_next_sibling(current)
         }
         return indices
     }
 
-    private mutating func recordNode(_ node: OpaquePointer?) -> Int? {
-        guard let node else { return nil }
-        let index = records.count
-        records.append(NativeNodeRecord(node: node))
-        return index
-    }
-
-    /// The relations a kind owns beside its children: a directive's label, a
-    /// callout's title, the document's footnotes, and a cite's items.
-    private mutating func recordOwnedRelations(of node: OpaquePointer, at recordIndex: Int) {
-        switch markdown_core_node_get_kind(node) {
-        case MARKDOWN_CORE_KIND_TABLE:
-            let caption = recordNode(markdown_core_node_table_caption(node))
-            records[recordIndex].caption = caption
-        case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK, MARKDOWN_CORE_KIND_DIRECTIVE:
-            let label = recordNode(markdown_core_node_directive_label(node))
-            records[recordIndex].label = label
-        case MARKDOWN_CORE_KIND_CALLOUT:
-            // The title is a sibling chain the callout owns beside its
-            // content; its nodes are recorded like children, and the
-            // record remembers which are the title's.
-            if let titleNode = markdown_core_node_callout_title(node) {
-                let title = recordChain(titleNode)
-                records[recordIndex].title = title
-            }
-        case MARKDOWN_CORE_KIND_DEFINITION:
-            records[recordIndex].term = recordChain(markdown_core_node_definition_term(node))
-            var body = markdown_core_node_definition_bodies(node)
-            while let current = body {
-                let content = recordChain(markdown_core_definition_body_content(current))
-                records[recordIndex].bodies.append(content)
-                body = markdown_core_definition_body_next(current)
-            }
-        case MARKDOWN_CORE_KIND_DOCUMENT:
-            recordFootnotes(of: node, at: recordIndex)
-            recordSpecimens(of: node, at: recordIndex)
-        case MARKDOWN_CORE_KIND_CITE:
-            recordCitations(of: node, at: recordIndex)
-        default:
-            break
-        }
-    }
-
-    /// The footnotes are values the document owns beside its content (M4);
-    /// each one's content is recorded like children.
-    private mutating func recordFootnotes(of node: OpaquePointer, at recordIndex: Int) {
-        var footnote = markdown_core_node_document_footnotes(node)
-        while let current = footnote {
-            let content = recordChain(markdown_core_footnote_content(current))
-            records[recordIndex].footnotes.append(NativeFootnoteRecord(footnote: current, content: content))
-            footnote = markdown_core_footnote_next(current)
-        }
-    }
-
-    private mutating func recordSpecimens(of node: OpaquePointer, at recordIndex: Int) {
-        var specimen = markdown_core_node_document_specimens(node)
-        while let current = specimen {
-            let content = recordChain(markdown_core_specimen_content(current))
-            records[recordIndex].specimens.append(NativeSpecimenRecord(specimen: current, content: content))
-            specimen = markdown_core_specimen_next(current)
-        }
-    }
-
-    /// The items are values the cite owns (M4); each one's prefix and suffix
-    /// are recorded like children.
-    private mutating func recordCitations(of node: OpaquePointer, at recordIndex: Int) {
-        var citation = markdown_core_node_cite_citations(node)
-        while let current = citation {
-            let prefix = recordChain(markdown_core_citation_prefix(current))
-            let suffix = recordChain(markdown_core_citation_suffix(current))
-            records[recordIndex].citations.append(
-                NativeCitationRecord(citation: current, prefix: prefix, suffix: suffix)
-            )
-            citation = markdown_core_citation_next(current)
-        }
-        precondition(!records[recordIndex].citations.isEmpty, "native cite holds no citation")
-    }
-
-    private func field<Value: Markup>(_ index: Int?, in values: [(any Markup)?], as type: Value.Type) -> Value? {
-        index.map {
-            guard let value = values[$0] as? Value else {
-                preconditionFailure("native owned field has the wrong kind")
-            }
-            return value
-        }
-    }
-
     func document() -> Document {
-        var values: [(any Markup)?] = Array(repeating: nil, count: records.count)
-        // Every occurrence of one reference definition shares one resource in
-        // the C tree; this materializes each distinct one once.
-        var resources: [UnsafeRawPointer: SharedResource] = [:]
-        func nodes(_ indices: [Int], _ what: String) -> [any Markup] {
-            indices.map { nodeIndex -> any Markup in
-                guard let node = values[nodeIndex] else {
-                    preconditionFailure("native \(what) was not materialized before its owner")
-                }
-                return node
-            }
-        }
-        for index in records.indices.reversed() {
-            let record = records[index]
-            let relations = NativeRelations(
-                children: nodes(record.children, "child"),
-                caption: field(record.caption, in: values, as: TableCaption.self),
-                label: field(record.label, in: values, as: DirectiveLabel.self),
-                title: record.title.map { nodes($0, "callout title") },
-                term: nodes(record.term, "definition term"),
-                bodies: record.bodies.map { nodes($0, "definition body") },
-                footnotes: record.footnotes.map { footnote in
-                    Footnote(from: footnote.footnote, content: nodes(footnote.content, "footnote content"))
-                },
-                specimens: record.specimens.map { specimen in
-                    Specimen(from: specimen.specimen, content: nodes(specimen.content, "specimen content"))
-                },
-                citations: record.citations.map { citation in
-                    Citation(
-                        from: citation.citation,
-                        prefix: nodes(citation.prefix, "citation prefix"),
-                        suffix: nodes(citation.suffix, "citation suffix")
-                    )
-                }
-            )
-            values[index] = markup(from: record.node, relations: relations, resources: &resources)
-        }
-        guard let document = values[0] as? Document else {
-            preconditionFailure("native tree root is not a document")
-        }
-        return document
+        ValueTree(records: records).value(at: 0, as: Document.self)
     }
 }
 
 // Keep the exhaustive native-kind switch in one place so a newly added native
 // kind cannot silently bypass value-tree copying.
-// swiftlint:disable:next cyclomatic_complexity
-func markup(
+// swiftlint:disable:next cyclomatic_complexity function_body_length
+private func copyMarkup(
     from node: OpaquePointer,
     relations: NativeRelations,
     resources: inout [UnsafeRawPointer: SharedResource]
-) -> any Markup {
+) -> StoredValue {
     switch markdown_core_node_get_kind(node) {
     case MARKDOWN_CORE_KIND_DOCUMENT:
-        Document(
-            from: node,
-            content: relations.children,
-            footnotes: relations.footnotes,
-            specimens: relations.specimens
+        .markupDocument(
+            Document.Fields(
+                from: node,
+                content: relations.children,
+                footnotes: relations.footnotes,
+                specimens: relations.specimens
+            )
         )
-    case MARKDOWN_CORE_KIND_CALLOUT: Callout(from: node, title: relations.title, content: relations.children)
-    case MARKDOWN_CORE_KIND_DEFINITION_LIST: DefinitionList(from: node, children: relations.children)
-    case MARKDOWN_CORE_KIND_DEFINITION: Definition(from: node, term: relations.term, content: relations.bodies)
-    case MARKDOWN_CORE_KIND_PARAGRAPH: Paragraph(from: node, content: relations.children)
-    case MARKDOWN_CORE_KIND_HEADING: Heading(from: node, content: relations.children)
-    case MARKDOWN_CORE_KIND_THEMATIC_BREAK: ThematicBreak(from: node)
-    case MARKDOWN_CORE_KIND_LIST: List(from: node, children: relations.children)
-    case MARKDOWN_CORE_KIND_LIST_ITEM: ListItem(from: node, content: relations.children)
-    case MARKDOWN_CORE_KIND_CODE_BLOCK: CodeBlock(from: node)
-    case MARKDOWN_CORE_KIND_HTML_BLOCK: HTMLBlock(from: node)
-    case MARKDOWN_CORE_KIND_FORMULA_BLOCK: FormulaBlock(from: node)
-    case MARKDOWN_CORE_KIND_TABLE: Table(from: node, caption: relations.caption, children: relations.children)
+    case MARKDOWN_CORE_KIND_CALLOUT:
+        .markupCallout(Callout.Fields(from: node, title: relations.title, content: relations.children))
+    case MARKDOWN_CORE_KIND_DEFINITION_LIST:
+        .markupDefinitionList(DefinitionList.Fields(from: node, children: relations.children))
+    case MARKDOWN_CORE_KIND_DEFINITION:
+        .markupDefinition(Definition.Fields(from: node, term: relations.term, content: relations.bodies))
+    case MARKDOWN_CORE_KIND_PARAGRAPH: .markupParagraph(Paragraph.Fields(from: node, content: relations.children))
+    case MARKDOWN_CORE_KIND_HEADING: .markupHeading(Heading.Fields(from: node, content: relations.children))
+    case MARKDOWN_CORE_KIND_THEMATIC_BREAK: .markupThematicBreak(ThematicBreak(from: node))
+    case MARKDOWN_CORE_KIND_LIST: .markupList(List.Fields(from: node, children: relations.children))
+    case MARKDOWN_CORE_KIND_LIST_ITEM: .markupListItem(ListItem.Fields(from: node, content: relations.children))
+    case MARKDOWN_CORE_KIND_CODE_BLOCK: .markupCodeBlock(CodeBlock(from: node))
+    case MARKDOWN_CORE_KIND_HTML_BLOCK: .markupHTMLBlock(HTMLBlock(from: node))
+    case MARKDOWN_CORE_KIND_FORMULA_BLOCK: .markupFormulaBlock(FormulaBlock(from: node))
+    case MARKDOWN_CORE_KIND_TABLE:
+        .markupTable(Table.Fields(from: node, caption: relations.caption, children: relations.children))
     case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
-        DirectiveBlock(from: node, label: relations.label, content: relations.children)
-    case MARKDOWN_CORE_KIND_TEXT: Text(from: node)
-    case MARKDOWN_CORE_KIND_SOFT_BREAK: SoftBreak(from: node)
-    case MARKDOWN_CORE_KIND_LINE_BREAK: LineBreak(from: node)
-    case MARKDOWN_CORE_KIND_CODE: Code(from: node)
-    case MARKDOWN_CORE_KIND_HTML: HTML(from: node)
-    case MARKDOWN_CORE_KIND_COMMENT: Comment(from: node)
-    case MARKDOWN_CORE_KIND_CROSS_LINK: CrossLink(from: node)
-    case MARKDOWN_CORE_KIND_CROSS_EMBEDDED: CrossEmbedded(from: node)
-    case MARKDOWN_CORE_KIND_FORMULA: Formula(from: node)
-    case MARKDOWN_CORE_KIND_EMPHASIS: Emphasis(from: node, content: relations.children)
-    case MARKDOWN_CORE_KIND_STRONG: Strong(from: node, content: relations.children)
-    case MARKDOWN_CORE_KIND_STRIKETHROUGH: Strikethrough(from: node, content: relations.children)
-    case MARKDOWN_CORE_KIND_MARK: Mark(from: node, content: relations.children)
-    case MARKDOWN_CORE_KIND_INSERTION: Insertion(from: node, content: relations.children)
-    case MARKDOWN_CORE_KIND_SPAN: Span(from: node, content: relations.children)
-    case MARKDOWN_CORE_KIND_SUPERSCRIPT: Superscript(from: node, content: relations.children)
-    case MARKDOWN_CORE_KIND_SUBSCRIPT: Subscript(from: node, content: relations.children)
-    case MARKDOWN_CORE_KIND_LINK: Link(from: node, content: relations.children, resources: &resources)
-    case MARKDOWN_CORE_KIND_MEDIA: Media(from: node, content: relations.children, resources: &resources)
-    case MARKDOWN_CORE_KIND_DIRECTIVE: Directive(from: node, label: relations.label)
-    case MARKDOWN_CORE_KIND_CITE: Cite(from: node, citations: relations.citations)
-    case MARKDOWN_CORE_KIND_TABLE_CAPTION: TableCaption(from: node, content: relations.children)
-    case MARKDOWN_CORE_KIND_TABLE_ROW: TableRow(from: node, children: relations.children)
-    case MARKDOWN_CORE_KIND_TABLE_CELL: TableCell(from: node, content: relations.children)
-    case MARKDOWN_CORE_KIND_DIRECTIVE_LABEL: DirectiveLabel(from: node, content: relations.children)
+        .markupDirectiveBlock(DirectiveBlock.Fields(from: node, label: relations.label, content: relations.children))
+    case MARKDOWN_CORE_KIND_TEXT: .markupText(Text(from: node))
+    case MARKDOWN_CORE_KIND_SOFT_BREAK: .markupSoftBreak(SoftBreak(from: node))
+    case MARKDOWN_CORE_KIND_LINE_BREAK: .markupLineBreak(LineBreak(from: node))
+    case MARKDOWN_CORE_KIND_CODE: .markupCode(Code(from: node))
+    case MARKDOWN_CORE_KIND_HTML: .markupHTML(HTML(from: node))
+    case MARKDOWN_CORE_KIND_COMMENT: .markupComment(Comment(from: node))
+    case MARKDOWN_CORE_KIND_CROSS_LINK: .markupCrossLink(CrossLink(from: node))
+    case MARKDOWN_CORE_KIND_CROSS_EMBEDDED: .markupCrossEmbedded(CrossEmbedded(from: node))
+    case MARKDOWN_CORE_KIND_FORMULA: .markupFormula(Formula(from: node))
+    case MARKDOWN_CORE_KIND_EMPHASIS: .markupEmphasis(Emphasis.Fields(from: node, content: relations.children))
+    case MARKDOWN_CORE_KIND_STRONG: .markupStrong(Strong.Fields(from: node, content: relations.children))
+    case MARKDOWN_CORE_KIND_STRIKETHROUGH:
+        .markupStrikethrough(Strikethrough.Fields(from: node, content: relations.children))
+    case MARKDOWN_CORE_KIND_MARK: .markupMark(Mark.Fields(from: node, content: relations.children))
+    case MARKDOWN_CORE_KIND_INSERTION: .markupInsertion(Insertion.Fields(from: node, content: relations.children))
+    case MARKDOWN_CORE_KIND_SPAN: .markupSpan(Span.Fields(from: node, content: relations.children))
+    case MARKDOWN_CORE_KIND_SUPERSCRIPT: .markupSuperscript(Superscript.Fields(from: node, content: relations.children))
+    case MARKDOWN_CORE_KIND_SUBSCRIPT: .markupSubscript(Subscript.Fields(from: node, content: relations.children))
+    case MARKDOWN_CORE_KIND_LINK:
+        .markupLink(Link.Fields(from: node, content: relations.children, resources: &resources))
+    case MARKDOWN_CORE_KIND_MEDIA:
+        .markupMedia(Media.Fields(from: node, content: relations.children, resources: &resources))
+    case MARKDOWN_CORE_KIND_DIRECTIVE: .markupDirective(Directive.Fields(from: node, label: relations.label))
+    case MARKDOWN_CORE_KIND_CITE: .markupCite(Cite.Fields(from: node, citations: relations.citations))
+    case MARKDOWN_CORE_KIND_TABLE_CAPTION:
+        .markupTableCaption(TableCaption.Fields(from: node, content: relations.children))
+    case MARKDOWN_CORE_KIND_TABLE_ROW: .markupTableRow(TableRow.Fields(from: node, children: relations.children))
+    case MARKDOWN_CORE_KIND_TABLE_CELL: .markupTableCell(TableCell.Fields(from: node, content: relations.children))
+    case MARKDOWN_CORE_KIND_DIRECTIVE_LABEL:
+        .markupDirectiveLabel(DirectiveLabel.Fields(from: node, content: relations.children))
     default: preconditionFailure("native parser returned an unknown node kind")
     }
 }
 
-extension Document {
-    init(from node: OpaquePointer, content: [any Markup], footnotes: [Footnote], specimens: [Specimen]) {
+extension Document.Fields {
+    init(from node: OpaquePointer, content: [Int], footnotes: [Int], specimens: [Int]) {
         self.init(
-            scope: Self.scope(from: node),
+            scope: Scope(from: markdown_core_node_scope(node)),
             anchor: markdown_core_node_anchor(node).string,
             attributes: Attributes(from: node),
             content: content,

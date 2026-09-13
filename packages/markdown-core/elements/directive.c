@@ -29,12 +29,10 @@ typedef struct {
     bufsize_t label_start;
     bufsize_t label_len;
     int has_label;
-    markdown_core_attributes attributes;
+    /* Borrowed authored attributes: a braced envelope or one class word. */
+    bufsize_t attributes_start;
+    bufsize_t attributes_len;
     bufsize_t end;
-    /* Set when attribute parsing failed from allocation loss rather than
-     * invalid syntax; the caller flags the parser instead of silently
-     * treating the directive as plain text. */
-    int oom;
 } parsed_directive;
 
 static int is_directive_node(markdown_core_node *node) {
@@ -170,40 +168,23 @@ markdown_core_node *markdown_core_directive_label(markdown_core_node *node) {
     return directive ? directive->label : NULL;
 }
 
-static int directive_name_is_valid(markdown_core_mem *mem, const char *name) {
-    size_t raw_len;
-    unsigned char *copy;
-    bufsize_t len;
-    bufsize_t name_start;
-    bufsize_t name_len;
-    int valid;
-
+static int directive_name_is_valid(const char *name) {
     if (!name) {
         return 0;
     }
-
-    raw_len = strlen(name);
+    size_t raw_len = strlen(name);
     if (raw_len == 0 || raw_len > INT_MAX) {
         return 0;
     }
-
-    len = (bufsize_t)raw_len;
-    copy = (unsigned char *)mem->calloc((size_t)len + 1, 1);
-    if (!copy) {
-        return 0;
-    }
-
-    memcpy(copy, name, (size_t)len);
-    valid = scan_name(copy, len, 0, &name_start, &name_len) && name_start == 0 && name_len == len;
-    mem->free(copy);
-    return valid;
+    bufsize_t start, length;
+    return scan_name((const unsigned char *)name, (bufsize_t)raw_len, 0, &start, &length) && start == 0 &&
+           length == (bufsize_t)raw_len;
 }
 
 int markdown_core_elements_set_directive_name(markdown_core_node *node, const char *name) {
     node_directive *directive = get_directive(node);
 
-    if (!directive || (name ? !directive_name_is_valid(markdown_core_node_mem(node), name)
-                            : node->kind != MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK)) {
+    if (!directive || (name ? !directive_name_is_valid(name) : node->kind != MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK)) {
         return 0;
     }
 
@@ -233,11 +214,25 @@ static void directive_opaque_free(const markdown_core_element *element, markdown
     node->opaque = NULL;
 }
 
-static void free_parsed_directive(markdown_core_mem *mem, parsed_directive *parsed) {
-    markdown_core_attributes_free(mem, &parsed->attributes);
+/* Recognize the shared attribute grammar without constructing semantic
+ * strings or records. The parser owns and accounts for recognition work. */
+static int scan_directive_attributes(markdown_core_parser *parser, unsigned char *data, bufsize_t len, bufsize_t *pos,
+                                     parsed_directive *parsed) {
+    markdown_core_attribute_parser attributes = {.mem = parser->mem, .data = data, .length = len};
+    bufsize_t end = markdown_core_attributes_end(&attributes, *pos);
+    parser->oom |= attributes.oom;
+    parser->attribute_work += attributes.work;
+    markdown_core_attribute_parser_free(&attributes);
+    if (!end) {
+        return 0;
+    }
+    parsed->attributes_start = *pos;
+    parsed->attributes_len = end - *pos;
+    *pos = end;
+    return 1;
 }
 
-static int parse_directive_suffix(markdown_core_mem *mem, unsigned char *data, bufsize_t len, bufsize_t pos,
+static int parse_directive_suffix(markdown_core_parser *parser, unsigned char *data, bufsize_t len, bufsize_t pos,
                                   parsed_directive *parsed) {
     memset(parsed, 0, sizeof(*parsed));
 
@@ -254,17 +249,8 @@ static int parse_directive_suffix(markdown_core_mem *mem, unsigned char *data, b
         }
     }
 
-    if (pos < len && data[pos] == '{') {
-        markdown_core_attribute_parser attributes = {0};
-        attributes.mem = mem;
-        attributes.data = data;
-        attributes.length = len;
-        int matched = markdown_core_attributes_parse(&attributes, pos, &parsed->attributes, &pos);
-        parsed->oom = attributes.oom;
-        markdown_core_attribute_parser_free(&attributes);
-        if (!matched) {
-            return 0;
-        }
+    if (pos < len && data[pos] == '{' && !scan_directive_attributes(parser, data, len, &pos, parsed)) {
+        return 0;
     }
 
     parsed->end = pos;
@@ -318,9 +304,9 @@ static int attach_label_node(const markdown_core_element *element, markdown_core
     return 1;
 }
 
-static int apply_parsed_directive(const markdown_core_element *element, markdown_core_node *node,
-                                  const unsigned char *data, parsed_directive *parsed, int start_line,
-                                  int start_column) {
+static int apply_parsed_directive(const markdown_core_element *element, markdown_core_parser *parser,
+                                  markdown_core_node *node, const unsigned char *data, parsed_directive *parsed,
+                                  int start_line, int start_column) {
     node_directive *directive = get_directive(node);
     markdown_core_mem *mem = markdown_core_node_mem(node);
 
@@ -331,8 +317,29 @@ static int apply_parsed_directive(const markdown_core_element *element, markdown
     if (parsed->name_len && !set_chunk_bytes(mem, &directive->name, data + parsed->name_start, parsed->name_len)) {
         return 0;
     }
-    node->attributes = parsed->attributes;
-    memset(&parsed->attributes, 0, sizeof(parsed->attributes));
+    if (parsed->attributes_len) {
+        const unsigned char *source = data + parsed->attributes_start;
+        if (*source == '{') {
+            markdown_core_attribute_parser attributes = {.mem = mem, .data = source, .length = parsed->attributes_len};
+            bufsize_t end;
+            int matched = markdown_core_attributes_parse(&attributes, 0, &node->attributes, &end);
+            parser->attribute_work += attributes.work;
+            parser->oom |= attributes.oom;
+            markdown_core_attribute_parser_free(&attributes);
+            if (!matched) {
+                return 0;
+            }
+        } else {
+            node->attributes.classes = mem->calloc(1, sizeof(markdown_core_chunk));
+            if (!node->attributes.classes) {
+                return 0;
+            }
+            node->attributes.class_count = node->attributes.class_capacity = 1;
+            if (!set_chunk_bytes(mem, node->attributes.classes, source, parsed->attributes_len)) {
+                return 0;
+            }
+        }
+    }
 
     if (parsed->has_label) {
         /* THE LABEL'S SCOPE SPANS ITS BRACKETS. It used to span the content
@@ -528,18 +535,14 @@ static bufsize_t count_colons(const unsigned char *data, bufsize_t len, bufsize_
 
 /* Nameless containers share the named container's ownership and closer. Only
  * the opener's attribute spelling differs; a class word is one literal class. */
-static int parse_nameless_suffix(markdown_core_mem *mem, unsigned char *data, bufsize_t len, bufsize_t pos,
+static int parse_nameless_suffix(markdown_core_parser *parser, unsigned char *data, bufsize_t len, bufsize_t pos,
                                  parsed_directive *parsed) {
     memset(parsed, 0, sizeof(*parsed));
     while (pos < len && ascii_is_line_space(data[pos])) {
         pos++;
     }
     if (pos < len && data[pos] == '{') {
-        markdown_core_attribute_parser attributes = {.mem = mem, .data = data, .length = len};
-        int matched = markdown_core_attributes_parse(&attributes, pos, &parsed->attributes, &pos);
-        parsed->oom = attributes.oom;
-        markdown_core_attribute_parser_free(&attributes);
-        if (!matched) {
+        if (!scan_directive_attributes(parser, data, len, &pos, parsed)) {
             return 0;
         }
     } else {
@@ -555,16 +558,8 @@ static int parse_nameless_suffix(markdown_core_mem *mem, unsigned char *data, bu
         if (pos == start) {
             return 0;
         }
-        parsed->attributes.classes = mem->calloc(1, sizeof(markdown_core_chunk));
-        if (!parsed->attributes.classes) {
-            parsed->oom = 1;
-            return 0;
-        }
-        parsed->attributes.class_count = parsed->attributes.class_capacity = 1;
-        if (!set_chunk_bytes(mem, parsed->attributes.classes, data + start, pos - start)) {
-            parsed->oom = 1;
-            return 0;
-        }
+        parsed->attributes_start = start;
+        parsed->attributes_len = pos - start;
     }
     while (pos < len && ascii_is_line_space(data[pos])) {
         pos++;
@@ -587,9 +582,8 @@ static bufsize_t scan_directive_block(markdown_core_parser *parser, unsigned cha
 
     bufsize_t suffix = first + colon_count;
     bool nameless = colon_count >= 3 && suffix < len && (ascii_is_line_space(input[suffix]) || input[suffix] == '{');
-    int matched = nameless ? parse_nameless_suffix(parser->mem, input, len, suffix, parsed)
-                           : parse_directive_suffix(parser->mem, input, len, suffix, parsed);
-    parser->oom |= parsed->oom;
+    int matched = nameless ? parse_nameless_suffix(parser, input, len, suffix, parsed)
+                           : parse_directive_suffix(parser, input, len, suffix, parsed);
     return matched && has_only_spaces_until_line_end(input, len, parsed->end) ? colon_count : 0;
 }
 
@@ -598,7 +592,7 @@ static int probe_directive_block(markdown_core_parser *parser, markdown_core_chu
     (void)reader;
     parsed_directive parsed;
     bool matched = scan_directive_block(parser, input->data, input->len, first, indent, &parsed) != 0;
-    free_parsed_directive(parser->mem, &parsed);
+
     return matched;
 }
 
@@ -613,14 +607,14 @@ static markdown_core_node *open_directive_block(const markdown_core_element *ele
     markdown_core_node *node;
     node_directive *directive;
     if (!colon_count) {
-        free_parsed_directive(parser->mem, &parsed);
+
         return NULL;
     }
 
     node = markdown_core_parser_add_child(parser, parent_container, MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK,
                                           (int)first_nonspace + 1);
     if (!node) {
-        free_parsed_directive(parser->mem, &parsed);
+
         return NULL;
     }
 
@@ -629,16 +623,16 @@ static markdown_core_node *open_directive_block(const markdown_core_element *ele
     if (!node->opaque) {
         parser->oom = true;
         markdown_core_node_free(node);
-        free_parsed_directive(parser->mem, &parsed);
+
         return NULL;
     }
 
-    if (!apply_parsed_directive(element, node, input, &parsed, markdown_core_parser_get_line_number(parser),
+    if (!apply_parsed_directive(element, parser, node, input, &parsed, markdown_core_parser_get_line_number(parser),
                                 (int)first_nonspace)) {
         /* The suffix already validated; failure here is allocation loss. */
         parser->oom = true;
         markdown_core_node_free(node);
-        free_parsed_directive(parser->mem, &parsed);
+
         return NULL;
     }
 
@@ -648,7 +642,6 @@ static markdown_core_node *open_directive_block(const markdown_core_element *ele
 
     markdown_core_parser_advance_offset(parser, (char *)input, len - markdown_core_parser_get_offset(parser), false);
 
-    free_parsed_directive(parser->mem, &parsed);
     return node;
 }
 

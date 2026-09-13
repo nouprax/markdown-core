@@ -617,7 +617,7 @@ static void insert_formula(const markdown_core_element *element, markdown_core_p
     formula->start_column = opener_node->start_column;
     formula->end_column = closer_node->end_column;
 
-    if (markdown_core_node_insert_before(opener_node, formula)) {
+    if (markdown_core_node_attach_owned(opener_node->parent, formula, opener_node)) {
         /* REQUIREMENT 11b: the two delimiter runs are the formula's markers and
          * the bytes between them are its content. `free_nodes_through` below
          * frees EVERY node the span was built from, so without these claims the
@@ -694,7 +694,7 @@ static markdown_core_node *replace_with_formula_block(const markdown_core_elemen
         return NULL;
     }
 
-    if (markdown_core_node_replace(oldnode, formula)) {
+    if (markdown_core_node_attach_owned(oldnode->parent, formula, oldnode)) {
         /* The bytes did not change hands, the node did. Said before the free,
          * because after it there is nothing left to name. */
         markdown_core_node_free(oldnode);

@@ -31,15 +31,31 @@ public enum CitationReferent: Sendable, Hashable {
 /// entering and exiting.
 public struct Citation: Sendable {
     /// Where it is. See ``Scope`` — boundaries, not a byte range.
-    public let scope: Scope
+    public var scope: Scope { fields.scope }
     /// What it names.
-    public let referent: CitationReferent
+    public var referent: CitationReferent { fields.referent }
     /// The inline content before the referent, owned by the citation; empty
     /// for an inherited call.
-    public let prefix: [any Markup]
+    public var prefix: MarkupCollection<any Markup> { MarkupCollection(tree: tree, recordIndices: fields.prefix) }
     /// The inline content after the referent, owned by the citation; empty
     /// for an inherited call.
-    public let suffix: [any Markup]
+    public var suffix: MarkupCollection<any Markup> { MarkupCollection(tree: tree, recordIndices: fields.suffix) }
+
+    struct Fields: Sendable {
+        let scope: Scope
+        let referent: CitationReferent
+        let prefix: [Int]
+        let suffix: [Int]
+    }
+
+    let tree: ValueTree
+    let index: Int
+    private var fields: Fields {
+        guard case let .valueCitation(fields) = tree.records[index] else {
+            preconditionFailure("Invalid Citation record")
+        }
+        return fields
+    }
 }
 
 /// An inline citation: one or more ``Citation`` items in authored order.
@@ -50,16 +66,32 @@ public struct Citation: Sendable {
 /// cite is a leaf.
 public struct Cite: Markup {
     /// Where it is. See ``Scope`` — boundaries, not a byte range.
-    public let scope: Scope
+    public var scope: Scope { fields.scope }
     /// The explicit anchor, absent when none was attached.
-    public let anchor: String?
+    public var anchor: String? { fields.anchor }
     /// Ordered classes and records, including duplicates.
-    public let attributes: Attributes
+    public var attributes: Attributes { fields.attributes }
     /// Never empty: every cite is authored with at least one item.
-    public let citations: [Citation]
+    public var citations: MarkupCollection<Citation> { MarkupCollection(tree: tree, recordIndices: fields.citations) }
 
     /// Dispatches to the visitor's `Cite` case.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
+
+    struct Fields: Sendable {
+        let scope: Scope
+        let anchor: String?
+        let attributes: Attributes
+        let citations: [Int]
+    }
+
+    let tree: ValueTree
+    let index: Int
+    private var fields: Fields {
+        guard case let .markupCite(fields) = tree.records[index] else {
+            preconditionFailure("Invalid Cite record")
+        }
+        return fields
+    }
 }
 
 extension BibMode {
@@ -90,8 +122,8 @@ extension CitationReferent {
     }
 }
 
-extension Citation {
-    init(from citation: OpaquePointer, prefix: [any Markup], suffix: [any Markup]) {
+extension Citation.Fields {
+    init(from citation: OpaquePointer, prefix: [Int], suffix: [Int]) {
         self.init(
             scope: Scope(from: markdown_core_citation_scope(citation)),
             referent: CitationReferent(from: citation),
@@ -101,10 +133,10 @@ extension Citation {
     }
 }
 
-extension Cite {
-    init(from node: OpaquePointer, citations: [Citation]) {
+extension Cite.Fields {
+    init(from node: OpaquePointer, citations: [Int]) {
         self.init(
-            scope: Self.scope(from: node),
+            scope: Scope(from: markdown_core_node_scope(node)),
             anchor: markdown_core_node_anchor(node).string,
             attributes: Attributes(from: node),
             citations: citations

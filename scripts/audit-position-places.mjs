@@ -1,47 +1,8 @@
 #!/usr/bin/env node
-/**
- * Position oracle (c): a position must be a place.
- *
- * OWNER RULING, 2026-08-24, and it is what this oracle now checks:
- *
- *   "A scope's line and column do not stand for any source subrange, and no
- *    subrange can be taken with them. What they are for is telling an editor
- *    which line-and-column range this element occupies. So they are
- *    BOUNDARIES, not the byte range you took them for."
- *
- * A SCOPE IS A BOUNDARY PAIR, not a byte range. It tells an editor which
- * (line, column) rectangle an element occupies; it is not something a consumer
- * takes a substring with, and it never was. So a line of L bytes has L+1
- * boundaries on it, column 0 is the boundary before a line's first — which is
- * how "ended at the end of the line above" is spelled — and both are places.
- *
- * Three faults are rejected. `zero-column` is not one of them, because that
- * was this plan's rule and not the engine's: it said "there is no column 0",
- * the 57 rows it produced were closed at §4.14.11c2 by walking every such end
- * back to the previous line's last byte, and the walk is deleted with the
- * ruling. What upstream cmark-gfm reports — `code_block
- * sourcepos="3:5-4:0"` for an indented block closed by a blank line — is the
- * boundary form, and it is correct.
- *
- *   off-line     the line is not in the document at all.
- *   off-column   the column is past the LAST BOUNDARY of a line that exists,
- *                which is L+1 and not L.
- *   reversed     the scope's end precedes its start.
- *
- * Q40's narrow exception goes with the same ruling: it admitted column L+1 for
- * a `SoftBreak` and a `LineBreak` alone, on the reading that L+1 was a place
- * only for a node that IS a line ending. Under boundary semantics L+1 is the
- * last boundary of every line and needs no exception. The twelve rows that
- * reading was protecting (eleven `Text`, one `Emphasis`) are long gone — this
- * ledger has been EMPTY since §4.14.11c2 — so nothing is excused by widening
- * it, which is the same test 0a.12b applied and failed.
- *
- * Line zero and reversed scopes used to be owned by a separate shrinking
- * ledger. Its final row was the empty table cell at `3:6..3:5`; after the table
- * source-position producer was fixed, that ledger reached zero and was
- * removed. This fail-closed oracle now rejects both shapes directly.
- *
- *   node scripts/audit-position-places.mjs [--update] [--verbose]
+/** Checks editor positions against the native cmark coordinate contract.
+ * The empty document's 1:1..0:0 sentinel is valid only for zero-byte input.
+ * Ordinary coordinates retain the existing source-place checks. This audit
+ * validates producers; bindings must never repair or convert their output.
  */
 
 import path from "node:path";
@@ -87,7 +48,11 @@ const fault = ([line, column], lengths) => {
 const measured = [];
 const surveyed = { inline: 0, block: 0 };
 let scanned = 0;
-const corpus = [...configuredFixtureCorpus(root), ...canonicalCorpus(root)];
+const corpus = [
+    { source: "native:zero-byte-document", input: "", args: [] },
+    ...configuredFixtureCorpus(root),
+    ...canonicalCorpus(root)
+];
 for (const example of corpus) {
     const tree = parseCanonicalDump(
         example.binary ? runBinary(example.binary, example.args) : runBinary(ours, example.args, example.input)
@@ -99,6 +64,15 @@ for (const example of corpus) {
         if (scope === null) continue;
         surveyed[INLINE_KINDS.has(node.kind) ? "inline" : "block"] += 1;
         scanned += 1;
+        if (
+            example.input === "" &&
+            node.kind === "Document" &&
+            scope.start[0] === 1 &&
+            scope.start[1] === 1 &&
+            scope.end[0] === 0 &&
+            scope.end[1] === 0
+        )
+            continue;
         const start = fault(scope.start, lengths);
         const end = fault(scope.end, lengths);
         const order = before(scope.end, scope.start) ? "reversed" : "ordered";

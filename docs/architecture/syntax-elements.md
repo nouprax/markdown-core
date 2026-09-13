@@ -175,3 +175,15 @@ parser-boundary audit rejects concrete element kinds, payload access, scanner
 calls and spelling dispatch in either engine. The source-list
 audit compares CMake, both Swift manifests, Android CMake and the ES/Wasm
 build, so moving an implementation cannot leave a binding on an old source.
+
+### Registry lifetime
+
+Every parse borrows the same immutable, contiguous core descriptor table.
+Hook presence on each descriptor is the authority for participation; there
+are no separately owned block, inline, or lifecycle membership lists. The
+byte dispatch index is the one runtime projection, stably ordered by inline
+precedence within each byte. It is built once before inline parsing.
+Private setup extensions acquire a contiguous snapshot before replacing the
+borrowed table. They use the same readers and dispatch construction as the
+fixed dialect; failed allocation preserves the previous registry. No global
+initialization cache or lock is needed.

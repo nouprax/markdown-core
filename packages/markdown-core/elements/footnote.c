@@ -125,7 +125,7 @@ markdown_core_node *markdown_core_inline_close_inline_footnote(markdown_core_par
     markdown_core_inline_finish_citation_tokens(inline_state, &opener->citations);
     markdown_core_inline_process_delimiters(parser, inline_state, opener->position, opener->delim_end);
     markdown_core_inline_take_bracket_content(parser, opener, footnote);
-    markdown_core_node_insert_before(opener->inl_text, cite);
+    markdown_core_node_attach_owned(opener->inl_text->parent, cite, opener->inl_text);
     if (!markdown_core_parser_register_definition(parser, &parser->footnotes, footnote, cite->as.cite->citations,
                                                   &parser->root->as.document->footnotes)) {
         markdown_core_node_free(footnote);

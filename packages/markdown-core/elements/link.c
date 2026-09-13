@@ -516,7 +516,7 @@ bool markdown_core_link_commit(markdown_core_parser *parser, markdown_core_inlin
     // handler consumed for itself. Counting from the OPENING bracket instead
     // would count the label's own newlines a second time -- measured,
     // `[a\nb](/u) tail` then reports line 3 of a two-line document.
-    markdown_core_node_insert_before(opener->inl_text, inl);
+    markdown_core_node_attach_owned(opener->inl_text->parent, inl, opener->inl_text);
     markdown_core_inline_take_bracket_content(parser, opener, inl);
 
     if (is_image) {
@@ -548,7 +548,7 @@ void markdown_core_inline_take_bracket_content(markdown_core_parser *parser, bra
     while (child != opener->close_text) {
         markdown_core_node *next = child->next;
         markdown_core_node_unlink(child);
-        markdown_core_inline_append_child(owner, child);
+        markdown_core_node_attach_owned(owner, child, NULL);
         parser->bracket_work++;
         child = next;
     }
@@ -615,9 +615,9 @@ void markdown_core_inline_replace_bracket_opener(markdown_core_inline_state *inl
     if (opener->kind == BRACKET_IMAGE) {
         opener->inl_text->as.literal->len = 1;
         markdown_core_inline_state_place(inline_state, opener->inl_text, opener->position - 2, opener->position - 2);
-        markdown_core_node_insert_after(opener->inl_text, replacement);
+        markdown_core_node_attach_owned(opener->inl_text->parent, replacement, opener->inl_text->next);
     } else {
-        markdown_core_node_insert_before(opener->inl_text, replacement);
+        markdown_core_node_attach_owned(opener->inl_text->parent, replacement, opener->inl_text);
         markdown_core_node_free(opener->inl_text);
     }
 }

@@ -36,33 +36,54 @@ public enum OrderedListDelimiter: Equatable, Sendable {
 /// A bulleted or numbered list.
 public struct List: Markup {
     /// Where it is. See ``Scope`` — boundaries, not a byte range.
-    public let scope: Scope
+    public var scope: Scope { fields.scope }
     /// The explicit anchor, absent when none was attached.
-    public let anchor: String?
+    public var anchor: String? { fields.anchor }
     /// Ordered classes and records, including duplicates.
-    public let attributes: Attributes
+    public var attributes: Attributes { fields.attributes }
     /// A list owns `ListItem`s and nothing else.
-    public let items: [ListItem]
+    public var items: MarkupCollection<ListItem> { MarkupCollection(tree: tree, recordIndices: fields.items) }
     /// Bulleted or numbered.
-    public let flavor: ListFlavor
+    public var flavor: ListFlavor { fields.flavor }
     /// The first number an ordered list counts from, and `nil` for a bulleted
     /// one — which is the only reason it is optional.
-    public let start: Int64?
+    public var start: Int64? { fields.start }
     /// The authored numbering variant, or `nil` for a bullet list.
-    public let variant: OrderedListVariant?
+    public var variant: OrderedListVariant? { fields.variant }
     /// The authored delimiter, or `nil` for a bullet list.
-    public let delimiter: OrderedListDelimiter?
+    public var delimiter: OrderedListDelimiter? { fields.delimiter }
     /// Whether the source separated the items by blank lines. A loose list
     /// wraps each item's text in a ``Paragraph``; a tight one does not, so
     /// this is already visible in the tree and is stated here as well.
-    public let tight: Bool
+    public var tight: Bool { fields.tight }
 
     /// Dispatches to the visitor's `List` case.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
+
+    struct Fields: Sendable {
+        let scope: Scope
+        let anchor: String?
+        let attributes: Attributes
+        let items: [Int]
+        let flavor: ListFlavor
+        let start: Int64?
+        let variant: OrderedListVariant?
+        let delimiter: OrderedListDelimiter?
+        let tight: Bool
+    }
+
+    let tree: ValueTree
+    let index: Int
+    private var fields: Fields {
+        guard case let .markupList(fields) = tree.records[index] else {
+            preconditionFailure("Invalid List record")
+        }
+        return fields
+    }
 }
 
-extension List {
-    init(from node: OpaquePointer, children: [any Markup]) {
+extension List.Fields {
+    init(from node: OpaquePointer, children: [Int]) {
         var flavor = MARKDOWN_CORE_LIST_FLAVOR_BULLET
         var start = markdown_core_optional_i64()
         var variant = markdown_core_ordered_list_variant()
@@ -70,10 +91,10 @@ extension List {
         var tight = false
         markdown_core_node_list_properties(node, &flavor, &start, &variant, &delimiter, &tight)
         self.init(
-            scope: Self.scope(from: node),
+            scope: Scope(from: markdown_core_node_scope(node)),
             anchor: markdown_core_node_anchor(node).string,
             attributes: Attributes(from: node),
-            items: Self.typedChildren(children),
+            items: children,
             flavor: flavor == MARKDOWN_CORE_LIST_FLAVOR_ORDERED ? .ordered : .bullet,
             start: start.has_value ? start.value : nil,
             variant: start.has_value ? Self.variant(variant) : nil,
@@ -104,15 +125,15 @@ extension List {
 /// One item of a ``List``.
 public struct ListItem: Markup {
     /// Where it is. See ``Scope`` — boundaries, not a byte range.
-    public let scope: Scope
+    public var scope: Scope { fields.scope }
     /// The explicit anchor, absent when none was attached.
-    public let anchor: String?
+    public var anchor: String? { fields.anchor }
     /// Ordered classes and records, including duplicates.
-    public let attributes: Attributes
+    public var attributes: Attributes { fields.attributes }
     /// The item's blocks. Block content, not inline.
-    public let content: [any Markup]
+    public var content: MarkupCollection<any Markup> { MarkupCollection(tree: tree, recordIndices: fields.content) }
     /// The authored task marker, or `nil` when this is not a task item.
-    public let marker: String?
+    public var marker: String? { fields.marker }
     /// Whether this item authored a task marker.
     public var tasked: Bool { marker != nil }
     /// Whether this item authored a completed or custom-state task marker.
@@ -121,14 +142,31 @@ public struct ListItem: Markup {
 
     /// Dispatches to the visitor's `ListItem` case.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
+
+    struct Fields: Sendable {
+        let scope: Scope
+        let anchor: String?
+        let attributes: Attributes
+        let content: [Int]
+        let marker: String?
+    }
+
+    let tree: ValueTree
+    let index: Int
+    private var fields: Fields {
+        guard case let .markupListItem(fields) = tree.records[index] else {
+            preconditionFailure("Invalid ListItem record")
+        }
+        return fields
+    }
 }
 
-extension ListItem {
-    init(from node: OpaquePointer, content: [any Markup]) {
+extension ListItem.Fields {
+    init(from node: OpaquePointer, content: [Int]) {
         var marker = markdown_core_optional_string()
         markdown_core_node_list_item_marker(node, &marker)
         self.init(
-            scope: Self.scope(from: node),
+            scope: Scope(from: markdown_core_node_scope(node)),
             anchor: markdown_core_node_anchor(node).string,
             attributes: Attributes(from: node),
             content: content,

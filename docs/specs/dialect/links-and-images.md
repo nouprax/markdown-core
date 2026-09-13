@@ -200,6 +200,13 @@ extension are recognized at the same step:
   domain containing at least one dot.
 - The email form is step E, a post-pass over `Text` nodes only.
 
+The last two domain segments cannot contain an underscore, regardless of the
+number of preceding segments. Earlier segments may contain underscores.
+Rejected overlapping candidates reuse the last invalid underscore boundary;
+a later candidate starting after that boundary is checked independently.
+This rule intentionally removes the inherited cmark-gfm segment-count
+exception, which accepted invalid long hosts to avoid repeated suffix scans.
+
 A URL or `www.` candidate extends to the first whitespace or `<`; then
 trailing `?`, `!`, `.`, `,`, `:`, `*`, `_`, `~`, `'`, `"`, a trailing
 entity-shaped `&...;`, and every `)` beyond the number of `(` inside the run

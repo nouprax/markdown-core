@@ -3022,6 +3022,7 @@ static void universal_values(test_batch_runner *runner) {
 /* Count visited source positions as well as verifying values. Repeated failed
  * candidates share one extent, so they cannot rescan each other's suffixes. */
 typedef struct {
+    size_t autolink_domains;
     size_t cross_link, opaque, delimiters, comment, lookahead, footnote_body, block_identifier, callout, dimensions;
     size_t registered_definitions, definition_lists, citation_brace_bytes, tables, table_frontier;
     size_t table_workspace_growth, table_geometry_lines, table_separator_scans;
@@ -3037,6 +3038,7 @@ static markdown_core_node *record_inline_work(const markdown_core_element *eleme
         return root;
     }
     work->cross_link = parser->cross_link_scan_work;
+    work->autolink_domains = parser->autolink_domain_work;
     work->opaque = parser->opaque_scan_work;
     work->delimiters = parser->delimiter_work;
     work->whitespace = parser->whitespace_work;
@@ -3079,6 +3081,100 @@ static const markdown_core_element WORK_RECORDER = {.name = "work-recorder", .po
 static bool measure_inline_work(markdown_core_parser *parser, void *context) {
     parser->root->user_data = context;
     return markdown_core_parser_attach_element(parser, &WORK_RECORDER);
+}
+
+/* Depth and width vary independently. Construction transfers disjoint
+ * subtrees, while the separate mutation tests retain all cycle checks. The
+ * parser-boundary audit excludes arbitrary reparenting from these paths. */
+static void deep_inline_construction(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    const size_t sizes[] = {1, 64, 1024, 8192};
+    for (size_t shape = 0; shape < 2; shape++) {
+        for (size_t d = 0; d < 4; d++) {
+            for (size_t w = 0; w < 4; w++) {
+                markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+                for (size_t i = 0; i < sizes[d]; i++) {
+                    markdown_core_strbuf_puts(&source, shape ? "[" : "![");
+                }
+                for (size_t i = 0; i < sizes[w]; i++) {
+                    markdown_core_strbuf_puts(&source, "a@b.co ");
+                }
+                for (size_t i = 0; i < sizes[d]; i++) {
+                    markdown_core_strbuf_puts(&source, shape ? "]{}" : "](u)");
+                }
+                markdown_core_node *root = markdown_core_parse_document((char *)source.ptr, source.size);
+                OK(runner, root != NULL, "depth/width construction succeeds");
+                size_t containers = 0, links = 0;
+                markdown_core_iter *iter = markdown_core_iter_new(root);
+                markdown_core_event_type event;
+                while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+                    if (event != MARKDOWN_CORE_EVENT_ENTER) {
+                        continue;
+                    }
+                    markdown_core_node *node = markdown_core_iter_get_node(iter);
+                    containers += node->kind == (shape ? MARKDOWN_CORE_NODE_SPAN : MARKDOWN_CORE_NODE_MEDIA);
+                    links += node->kind == MARKDOWN_CORE_NODE_LINK;
+                }
+                INT_EQ(runner, containers, sizes[d], "all nesting survives construction");
+                INT_EQ(runner, links, sizes[w], "all independent autolinks survive construction");
+                INT_EQ(runner, markdown_core_node_check(root, NULL), 0, "all parent and sibling relations agree");
+                markdown_core_iter_free(iter);
+                markdown_core_node_free(root);
+                markdown_core_strbuf_free(&source);
+            }
+        }
+    }
+}
+
+static void autolink_domain_linear_work(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    const size_t segments[] = {8, 9, 10, 11, 64};
+    const char *suffixes[] = {"_b\n", "_a.b\n", "_a.b.c\n"};
+    for (size_t prefix = 0; prefix < 2; prefix++) {
+        for (size_t n = 0; n < sizeof(segments) / sizeof(*segments); n++) {
+            for (size_t suffix = 0; suffix < 3; suffix++) {
+                markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+                markdown_core_strbuf_puts(&source, prefix ? "https://" : "www.");
+                for (size_t i = 0; i < segments[n]; i++) {
+                    markdown_core_strbuf_puts(&source, "a.");
+                }
+                markdown_core_strbuf_puts(&source, suffixes[suffix]);
+                markdown_core_node *root = parse((const char *)source.ptr);
+                OK(runner, root != NULL, "host suffix candidate parses");
+                INT_EQ(runner, root->first_child->first_child->kind,
+                       suffix == 2 ? MARKDOWN_CORE_NODE_LINK : MARKDOWN_CORE_NODE_TEXT,
+                       "the last two segments alone determine underscore rejection");
+                markdown_core_node_free(root);
+                markdown_core_strbuf_free(&source);
+            }
+        }
+    }
+    for (size_t n = 16; n <= 8192; n *= 2) {
+        for (size_t valid_tail = 0; valid_tail < 2; valid_tail++) {
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+            for (size_t i = 0; i < n; i++) {
+                markdown_core_strbuf_puts(&source, "www._");
+            }
+            markdown_core_strbuf_puts(&source, valid_tail ? "www.com\n" : "b\n");
+            inline_work work = {0};
+            markdown_core_node *root = markdown_core_parse_document_with_mem((const char *)source.ptr, source.size, mem,
+                                                                             measure_inline_work, &work);
+            OK(runner, root != NULL, "overlapping domain candidates parse");
+            size_t links = 0;
+            for (markdown_core_node *node = root->first_child->first_child; node; node = node->next) {
+                if (node->kind == MARKDOWN_CORE_NODE_LINK) {
+                    links++;
+                    STR_EQ(runner, markdown_core_chunk_to_cstr(mem, &node->as.link->resource->url), "http://www.com",
+                           "a candidate after the invalid underscore remains eligible");
+                }
+            }
+            INT_EQ(runner, links, valid_tail, "host grammar is independent of segment count");
+            OK(runner, work.autolink_domains <= 3 * (size_t)source.size,
+               "overlapping failed hosts have bounded domain work");
+            markdown_core_node_free(root);
+            markdown_core_strbuf_free(&source);
+        }
+    }
 }
 
 static void ordered_numeral_ceiling(test_batch_runner *runner) {
@@ -3485,6 +3581,70 @@ static void *count_text_calloc(size_t count, size_t size) {
 static void *count_text_realloc(void *pointer, size_t size) {
     text_allocation_calls++;
     return realloc(pointer, size);
+}
+
+/* Recognition may allocate its shared suffix index, but never semantic
+ * attribute strings or row cells that would be thrown away by a probe. */
+static void speculative_probe_allocations(test_batch_runner *runner) {
+    markdown_core_mem mem = {count_text_calloc, count_text_realloc, free};
+    const char *directives[] = {"::: {.a k=1} junk\n", "::: {.a k=1}\n", "::: classname junk\n", "::: classname\n",
+                                "::: {.a k=1\n"};
+    for (size_t i = 0; i < sizeof(directives) / sizeof(*directives); i++) {
+        markdown_core_parser parser = {.mem = &mem};
+        markdown_core_chunk input = {(unsigned char *)directives[i], (bufsize_t)strlen(directives[i]), 0};
+        text_allocation_calls = 0;
+        int matched = MARKDOWN_CORE_ELEMENT_DIRECTIVE.probe_block(&parser, &input, 0, 0, NULL);
+        INT_EQ(runner, matched, i == 1 || i == 3, "directive probe validates the complete opener");
+        OK(runner, text_allocation_calls <= (i == 2 || i == 3 ? 0 : 1),
+           "directive probes allocate no semantic attributes");
+        if (i != 2 && i != 3) {
+            OK(runner, parser.attribute_work > 0, "probe attribute recognition work is accounted");
+        }
+    }
+    const char *rows[] = {"| a | b |\n", "| a \\| b | c |\n", "\n"};
+    for (size_t i = 0; i < sizeof(rows) / sizeof(*rows); i++) {
+        markdown_core_parser parser = {.mem = &mem};
+        markdown_core_node table = {.kind = MARKDOWN_CORE_NODE_TABLE};
+        text_allocation_calls = 0;
+        int matched = MARKDOWN_CORE_ELEMENT_TABLE.last_block_matches(
+            &MARKDOWN_CORE_ELEMENT_TABLE, &parser, (unsigned char *)rows[i], (int)strlen(rows[i]), &table);
+        INT_EQ(runner, matched, i != 2, "table continuation grammar is retained");
+        INT_EQ(runner, text_allocation_calls, 0, "table continuation allocates no temporary geometry");
+    }
+    {
+        markdown_core_parser parser = {.mem = &mem};
+        markdown_core_node *paragraph = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_PARAGRAPH, &mem);
+        markdown_core_node_set_string_content(paragraph, "| a | b |\n");
+        unsigned char delimiter[] = "| --- |\n";
+        text_allocation_calls = 0;
+        markdown_core_node *table = MARKDOWN_CORE_ELEMENT_TABLE.try_opening_block(
+            &MARKDOWN_CORE_ELEMENT_TABLE, 0, &parser, paragraph, delimiter, sizeof(delimiter) - 1);
+        OK(runner, table == NULL && paragraph->kind == MARKDOWN_CORE_NODE_PARAGRAPH,
+           "a mismatched header remains a paragraph");
+        INT_EQ(runner, text_allocation_calls, 0, "mismatched pipe header allocates no row or cell geometry");
+        markdown_core_node_free(paragraph);
+    }
+    for (size_t length = 64; length <= 65536; length *= 4) {
+        markdown_core_parser parser = {.mem = &mem};
+        markdown_core_node *root = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_DOCUMENT, &mem);
+        markdown_core_node *paragraph = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_PARAGRAPH, &mem);
+        markdown_core_node *text = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_TEXT, &mem);
+        char *source = malloc(length + 1);
+        memset(source, 'a', length);
+        source[length - 1] = '@'; /* A failed candidate, as well as ordinary text. */
+        source[length] = 0;
+        markdown_core_node_set_literal(text, source);
+        markdown_core_node_attach_owned(root, paragraph, NULL);
+        markdown_core_node_attach_owned(paragraph, text, NULL);
+        const unsigned char *original = text->as.literal->data;
+        text_allocation_calls = 0;
+        MARKDOWN_CORE_ELEMENT_AUTOLINK.postprocess_func(&MARKDOWN_CORE_ELEMENT_AUTOLINK, &parser, root);
+        OK(runner, text->as.literal->data == original, "a failed email scan retains the original owned buffer");
+        OK(runner, paragraph->first_child == text && text->next == NULL, "failed email scan preserves the tree");
+        OK(runner, text_allocation_calls <= 1, "no-hit postprocessing only needs its iterator");
+        markdown_core_node_free(root);
+        free(source);
+    }
 }
 
 /* Known-literal runs occupy the same text slice as surrounding prose.
@@ -5242,6 +5402,8 @@ int main(void) {
     heading_registry_invariants(runner);
     heading_reference_resource_lifetime(runner);
     heading_label_length_boundary(runner);
+    autolink_domain_linear_work(runner);
+    deep_inline_construction(runner);
     ordered_numeral_ceiling(runner);
     citation_sparse_brace_storage(runner);
     definition_list_linear_work(runner);
@@ -5250,6 +5412,7 @@ int main(void) {
     inline_footnote_linear_work(runner);
     footnote_registration(runner);
     footnote_postprocessing(runner);
+    speculative_probe_allocations(runner);
     literal_text_allocations(runner);
     core_delimiter_stack_eligibility(runner);
     mark_linear_work(runner);

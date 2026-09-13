@@ -81,6 +81,10 @@ typedef struct markdown_core_string {
     size_t length;
 } markdown_core_string;
 
+/** Editor source coordinates in the native cmark UTF-8 convention, copied
+ * without validation or conversion. These are not string indices. In
+ * particular a zero-byte document has scope 1:1..0:0; column-zero block ends
+ * are also retained. End coordinates are not converted to half-open ranges. */
 typedef struct markdown_core_position {
     int32_t line;
     int32_t column;

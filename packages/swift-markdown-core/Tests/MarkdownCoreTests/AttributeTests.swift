@@ -51,15 +51,19 @@ extension APISuite {
             authors: values[5],
             scope: parsed.scope
         )
-        let document = Document(
-            scope: parsed.scope,
-            anchor: nil,
-            attributes: .empty,
-            content: parsed.content,
-            metadata: metadata,
-            footnotes: [],
-            specimens: []
+        var records = parsed.tree.records
+        records[0] = .markupDocument(
+            .init(
+                scope: parsed.scope,
+                anchor: nil,
+                attributes: .empty,
+                content: parsed.content.recordIndices,
+                metadata: metadata,
+                footnotes: [],
+                specimens: []
+            )
         )
+        let document = ValueTree(records: records).value(at: 0, as: Document.self)
         #expect(
             [
                 document.metadata?.name, document.metadata?.title, document.metadata?.subtitle,

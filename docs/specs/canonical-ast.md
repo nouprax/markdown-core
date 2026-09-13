@@ -65,27 +65,25 @@ UTF-8 is a caller precondition; Markdown Core has no validation or repair mode
 for malformed input. Swift, Kotlin, and ECMAScript strings are encoded as UTF-8
 before entering that same parse path.
 
-`line` is 1-based and increments once per line ending, whether LF, CR, or CRLF.
-`column` is the 1-based byte index within the line; a tab is one byte. `start`
-is the first byte of the node's first code point and `end` the last byte of its
-last code point, inclusive. Column 0 is the one sentinel: an end position `L:0`
-names the boundary before the first byte of line `L`, that is, the position
-just after the line ending of line `L - 1`. It is the end of a block whose
-extent closes with a line ending it consumed, such as a list item, a footnote
-definition, an indented code block, or a Setext heading that is followed by a
-blank line, and an empty document has the scope `1:1..1:0`. A node's scope
-never includes the line ending that terminates its last line, with one
-exception: `SoftBreak` and `LineBreak` are the nodes of a line ending, so their
-scopes cover those line-ending bytes. `SoftBreak` covers the line-ending bytes
-of its break. `LineBreak` covers the line-ending bytes together with the
-backslash that produced it; when trailing spaces produced it, the spaces stay
-inside the preceding `Text` node's scope and `LineBreak` covers the line ending
-alone. A multiline or grid table cell under the dialect's table options is the
-one construct whose scope may include bytes of sibling cells, because its
-segments are written on shared lines. A grid table cell whose `rowspan`
-exceeds one is the one construct whose scope leaves its parent's: a
-`TableRow` covers its own lines, the spanning cell reaches into the lines of
-later rows, and the scope-containment gate ledgers that exception.
+A scope is the pair of editor source coordinates reported by the parser,
+using cmark's UTF-8 coordinate convention. It is not a string range: neither
+platform string indices nor the decoded `literal` determine these values.
+For example, the source `é &amp; 🚀` has Text scope `1:1..1:13`, while its
+literal is `é & 🚀`. Bindings do not convert columns to UTF-16 or graphemes,
+add one to an end coordinate, or impose half-open interval semantics.
+
+Lines normally begin at 1 and increment once for LF, CR, or CRLF. Columns
+follow the native byte-oriented convention; a tab occupies one source byte.
+The native sentinel values are preserved too: a zero-byte document has scope
+`1:1..0:0`, whereas a document containing only one newline has `1:1..1:0`.
+An end at `L:0` can also be produced when a block closes on a following blank
+line. The coordinates are reported without validation or repair.
+
+SoftBreak and LineBreak locate the authored break using this same convention;
+their scopes do not promise retrievable string slices. A multiline table cell
+can occupy segments on lines shared with other cells. A spanning grid cell can
+reach beyond its starting row. These positions describe editor locations,
+not a partition of the source into independently sliceable substrings.
 
 Scopes inherit the native C parser's source-position values and semantics
 exactly. The C facade and platform bindings copy `line` and `column` without

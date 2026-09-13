@@ -255,6 +255,8 @@ test("unicode: UTF-8 survives native document release", () => {
 
 test("errors: empty input is valid and arguments are checked", () => {
     assert.deepEqual(Document.parse("").content, []);
+    assert.deepEqual(Document.parse("").scope, { start: { line: 1, column: 1 }, end: { line: 0, column: 0 } });
+    assert.deepEqual(Document.parse("é").scope, { start: { line: 1, column: 1 }, end: { line: 1, column: 2 } });
     assert.throws(() => Document.parse(null), TypeError);
 });
 

@@ -87,66 +87,9 @@ static markdown_core_node *make_document(markdown_core_mem *mem) {
     return e;
 }
 
-/* Both element lists hold pointers to `static const` descriptors, and every
- * reader casts `data` straight back to a
- * `const markdown_core_element *`. The const is discarded here and
- * nowhere else because markdown_core_llist is a generic list that cannot
- * carry it; typing the parameter keeps the cast to this one line. */
-static int S_element_list_append(markdown_core_mem *mem, markdown_core_llist **head,
-                                 const markdown_core_element *element) {
-    markdown_core_llist *node = (markdown_core_llist *)mem->calloc(1, sizeof(*node));
-    markdown_core_llist *tail;
-    if (!node) {
-        return 0;
-    }
-    node->data = (void *)(uintptr_t)element;
-    node->next = NULL;
-    if (!*head) {
-        *head = node;
-        return 1;
-    }
-    for (tail = *head; tail->next; tail = tail->next)
-        ;
-    tail->next = node;
-    return 1;
-}
-
-int markdown_core_parser_attach_element(markdown_core_parser *parser, const markdown_core_element *element) {
-    if (!S_element_list_append(parser->mem, &parser->elements, element)) {
-        return 0;
-    }
+static void S_register_element(markdown_core_parser *parser, const markdown_core_element *element) {
     if (element->parse_text) {
         parser->text_structure = element;
-    }
-    if (element->init_inline || element->finish_inline || element->dispose_inline) {
-        if (!S_element_list_append(parser->mem, &parser->inline_lifecycle_elements, element)) {
-            return 0;
-        }
-    }
-    if (element->match_inline || element->insert_inline_from_delim) {
-        markdown_core_llist *entry = parser->mem->calloc(1, sizeof(*entry));
-        if (!entry) {
-            return 0;
-        }
-        entry->data = (void *)(uintptr_t)element;
-        markdown_core_llist **at = &parser->inline_elements;
-        while (*at && ((const markdown_core_element *)(*at)->data)->inline_precedence <= element->inline_precedence) {
-            at = &(*at)->next;
-        }
-        entry->next = *at;
-        *at = entry;
-    }
-
-    if (element->scan_block_start) {
-        if (!S_element_list_append(parser->mem, &parser->block_elements, element)) {
-            return 0;
-        }
-    }
-    if (element->try_opening_block || element->try_opening_paragraph || element->try_interrupting_block ||
-        (element->interrupts_paragraph && element->probe_block)) {
-        if (!S_element_list_append(parser->mem, &parser->block_alternatives, element)) {
-            return 0;
-        }
     }
     if (element->delimiter_rule != MARKDOWN_CORE_DELIM_RULE_NONE) {
         parser->delimiter_owners[element->delimiter_rule] = element;
@@ -154,12 +97,32 @@ int markdown_core_parser_attach_element(markdown_core_parser *parser, const mark
             parser->delimiter_chars[element->delimiter_character] = element->delimiter_rule;
         }
     }
+}
+
+/* Setup extends the same registry read by every phase. The fixed dialect is
+ * borrowed; an extension acquires an independent contiguous snapshot before
+ * replacing it. Allocation failure leaves the previous registry intact. */
+int markdown_core_parser_attach_element(markdown_core_parser *parser, const markdown_core_element *element) {
+    size_t count = parser->element_count;
+    const markdown_core_element **entries = parser->mem->calloc(count + 1, sizeof(*entries));
+    if (!entries) {
+        return 0;
+    }
+    if (count) {
+        memcpy(entries, parser->elements, count * sizeof(*entries));
+    }
+    entries[count] = element;
+    parser->mem->free(parser->element_allocation);
+    parser->element_allocation = entries;
+    parser->elements = entries;
+    parser->element_count = count + 1;
+    S_register_element(parser, element);
     return 1;
 }
 
 static void S_parser_dispose(markdown_core_parser *parser) {
-    for (markdown_core_llist *entry = parser->elements; entry; entry = entry->next) {
-        const markdown_core_element *structure = entry->data;
+    for (size_t element_index = 0; element_index < parser->element_count; element_index++) {
+        const markdown_core_element *structure = parser->elements[element_index];
         if (structure->dispose_parser) {
             structure->dispose_parser(parser);
         }
@@ -236,14 +199,10 @@ static void S_parser_free(markdown_core_parser *parser) {
     }
     mem = parser->mem;
     S_parser_dispose(parser);
+    parser->mem->free(parser->element_allocation);
     markdown_core_strbuf_free(&parser->curline);
     markdown_core_strbuf_free(&parser->line_scratch);
     markdown_core_strbuf_free(&parser->lookahead_last_line);
-    markdown_core_llist_free(parser->mem, parser->elements);
-    markdown_core_llist_free(parser->mem, parser->inline_elements);
-    markdown_core_llist_free(parser->mem, parser->inline_lifecycle_elements);
-    markdown_core_llist_free(parser->mem, parser->block_elements);
-    markdown_core_llist_free(parser->mem, parser->block_alternatives);
     mem->free(parser);
 }
 
@@ -690,16 +649,11 @@ markdown_core_node *markdown_core_parser_add_child(markdown_core_parser *parser,
         parser->current = parent;
         return NULL;
     }
-    child->parent = parent;
-
-    if (parent->last_child) {
-        parent->last_child->next = child;
-        child->prev = parent->last_child;
-    } else {
-        parent->first_child = child;
-        child->prev = NULL;
+    if (!markdown_core_node_attach_owned(parent, child, NULL)) {
+        markdown_core_node_free(child);
+        parser->oom = true;
+        return NULL;
     }
-    parent->last_child = child;
     return child;
 }
 
@@ -707,15 +661,17 @@ markdown_core_node *markdown_core_parser_add_child(markdown_core_parser *parser,
  * retains every candidate in descriptor order, including overlapping owners.
  * The flattened index allocates once per parse, never once per token. */
 void markdown_core_manage_elements_special_characters(markdown_core_parser *parser, int add) {
-    markdown_core_llist *element_entry;
     size_t next[256];
 
     parser->mem->free(parser->inline_dispatch);
     parser->inline_dispatch = NULL;
     memset(parser->inline_dispatch_offsets, 0, sizeof(parser->inline_dispatch_offsets));
 
-    for (element_entry = parser->inline_elements; element_entry; element_entry = element_entry->next) {
-        const markdown_core_element *element = (const markdown_core_element *)element_entry->data;
+    for (size_t element_index = 0; element_index < parser->element_count; element_index++) {
+        const markdown_core_element *element = parser->elements[element_index];
+        if (!element->match_inline && !element->insert_inline_from_delim) {
+            continue;
+        }
         const unsigned char *c;
 
         if (add && element->match_inline) {
@@ -766,8 +722,11 @@ void markdown_core_manage_elements_special_characters(markdown_core_parser *pars
         parser->oom = true;
         return;
     }
-    for (element_entry = parser->inline_elements; element_entry; element_entry = element_entry->next) {
-        const markdown_core_element *element = element_entry->data;
+    for (size_t element_index = 0; element_index < parser->element_count; element_index++) {
+        const markdown_core_element *element = parser->elements[element_index];
+        if (!element->match_inline && !element->insert_inline_from_delim) {
+            continue;
+        }
         bool seen[256] = {false};
         if (!element->match_inline) {
             continue;
@@ -777,6 +736,18 @@ void markdown_core_manage_elements_special_characters(markdown_core_parser *pars
                 parser->inline_dispatch[next[*c]++] = element;
                 seen[*c] = true;
             }
+        }
+    }
+    for (size_t c = 0; c < 256; c++) {
+        size_t first = parser->inline_dispatch_offsets[c], end = parser->inline_dispatch_offsets[c + 1];
+        for (size_t i = first + 1; i < end; i++) {
+            const markdown_core_element *element = parser->inline_dispatch[i];
+            size_t at = i;
+            while (at > first && parser->inline_dispatch[at - 1]->inline_precedence > element->inline_precedence) {
+                parser->inline_dispatch[at] = parser->inline_dispatch[at - 1];
+                at--;
+            }
+            parser->inline_dispatch[at] = element;
         }
     }
 }
@@ -1076,7 +1047,11 @@ markdown_core_node *markdown_core_parse_document_with_mem(const char *source, si
     if (!parser) {
         return NULL;
     }
-    if (!markdown_core_core_elements_attach(parser) || (setup && !setup(parser, context))) {
+    parser->elements = markdown_core_core_elements(&parser->element_count);
+    for (size_t i = 0; i < parser->element_count; i++) {
+        S_register_element(parser, parser->elements[i]);
+    }
+    if (setup && !setup(parser, context)) {
         S_parser_free(parser);
         return NULL;
     }
@@ -1765,11 +1740,11 @@ void markdown_core_parser_lookahead_end(markdown_core_block_lookahead *lookahead
     lookahead->parser = NULL;
 }
 
-static bool scan_element_start(markdown_core_parser *parser, markdown_core_llist *elements,
-                               block_start_context *context, block_start *start) {
-    for (; elements; elements = elements->next) {
-        const markdown_core_element *element = elements->data;
-        if (context->indent <= element->maximum_block_indent && element->scan_block_start(parser, context, start)) {
+static bool scan_element_start(markdown_core_parser *parser, block_start_context *context, block_start *start) {
+    for (size_t i = 0; i < parser->element_count; i++) {
+        const markdown_core_element *element = parser->elements[i];
+        if (element->scan_block_start && context->indent <= element->maximum_block_indent &&
+            element->scan_block_start(parser, context, start)) {
             return true;
         }
         if (parser->oom) {
@@ -1781,7 +1756,7 @@ static bool scan_element_start(markdown_core_parser *parser, markdown_core_llist
 
 static block_start scan_block_start(markdown_core_parser *parser, block_start_context *context) {
     block_start start = {0};
-    scan_element_start(parser, parser->block_elements, context, &start);
+    scan_element_start(parser, context, &start);
     return start;
 }
 
@@ -1804,8 +1779,8 @@ bool markdown_core_parser_has_block_start(markdown_core_parser *parser, markdown
     if (start.kind != MARKDOWN_CORE_NODE_NONE) {
         return true;
     }
-    for (markdown_core_llist *entry = parser->block_alternatives; entry; entry = entry->next) {
-        const markdown_core_element *element = entry->data;
+    for (size_t element_index = 0; element_index < parser->element_count; element_index++) {
+        const markdown_core_element *element = parser->elements[element_index];
         if (element->interrupts_paragraph && element->probe_block &&
             element->probe_block(parser, input, first, indent, reader)) {
             return true;
@@ -1849,8 +1824,8 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
         /* Dash-led tables precede thematic breaks and lists. An opener may
          * close the old path before an allocation fails; OOM is terminal,
          * never a grammar miss that can try another owner on that path. */
-        for (markdown_core_llist *entry = parser->block_alternatives; entry; entry = entry->next) {
-            const markdown_core_element *owner = entry->data;
+        for (size_t element_index = 0; element_index < parser->element_count; element_index++) {
+            const markdown_core_element *owner = parser->elements[element_index];
             if (!owner->try_interrupting_block) {
                 continue;
             }
@@ -1869,11 +1844,10 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
                 return;
             }
         } else {
-            markdown_core_llist *tmp;
             markdown_core_node *new_container = NULL;
 
-            for (tmp = parser->block_alternatives; tmp; tmp = tmp->next) {
-                const markdown_core_element *element = (const markdown_core_element *)tmp->data;
+            for (size_t element_index = 0; element_index < parser->element_count; element_index++) {
+                const markdown_core_element *element = parser->elements[element_index];
 
                 if (element->try_opening_block) {
                     new_container = element->try_opening_block(element, parser->indent > element->maximum_block_indent,
@@ -1894,8 +1868,8 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
 
             if (!new_container) {
                 if (!maybe_lazy && !is_paragraph(*container)) {
-                    for (tmp = parser->block_alternatives; tmp; tmp = tmp->next) {
-                        const markdown_core_element *element = tmp->data;
+                    for (size_t element_index = 0; element_index < parser->element_count; element_index++) {
+                        const markdown_core_element *element = parser->elements[element_index];
                         if (!element->try_opening_paragraph) {
                             continue;
                         }
@@ -2242,7 +2216,6 @@ static int S_postprocess_tree(markdown_core_parser *parser, markdown_core_node *
 
 static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
     markdown_core_node *res;
-    markdown_core_llist *elements;
 
     if (parser->root == NULL || parser->oom) {
         return NULL;
@@ -2280,8 +2253,8 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
     }
 #endif
 
-    for (elements = parser->elements; elements && !parser->oom; elements = elements->next) {
-        const markdown_core_element *element = (const markdown_core_element *)elements->data;
+    for (size_t i = 0; i < parser->element_count && !parser->oom; i++) {
+        const markdown_core_element *element = parser->elements[i];
         if (element->postprocess_func) {
             if (!S_apply_tree_phase(parser, &parser->root, S_postprocess_tree, (void *)element)) {
                 parser->oom = true;

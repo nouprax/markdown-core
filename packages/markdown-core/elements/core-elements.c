@@ -74,20 +74,9 @@ static const markdown_core_element *const CORE_ELEMENTS[] = {&MARKDOWN_CORE_ELEM
 
 #define CORE_ELEMENT_COUNT (sizeof(CORE_ELEMENTS) / sizeof(CORE_ELEMENTS[0]))
 
-int markdown_core_core_elements_attach(markdown_core_parser *parser) {
-    size_t i;
-
-    if (!parser) {
-        return 0;
-    }
-
-    for (i = 0; i < CORE_ELEMENT_COUNT; i++) {
-        if (!markdown_core_parser_attach_element(parser, CORE_ELEMENTS[i])) {
-            return 0;
-        }
-    }
-
-    return 1;
+const markdown_core_element *const *markdown_core_core_elements(size_t *count) {
+    *count = CORE_ELEMENT_COUNT;
+    return CORE_ELEMENTS;
 }
 
 static const markdown_core_element *const BLOCK_STRUCTURE[] = {

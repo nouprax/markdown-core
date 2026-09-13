@@ -1,8 +1,11 @@
+/** Native cmark UTF-8 editor coordinates, not JavaScript string indices.
+ * Values are copied unchanged, including the empty document end (0, 0). */
 export interface Position {
     readonly line: number;
     readonly column: number;
 }
 
+/** Authored editor start/end positions; not a substring or half-open range. */
 export interface Scope {
     readonly start: Position;
     readonly end: Position;

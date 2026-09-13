@@ -294,6 +294,8 @@ class UnicodeTest {
 class ErrorsTest {
     @Test
     fun emptyInputIsAValidDocument() {
+        assertEquals(Scope(Position(1, 1), Position(0, 0)), Document.parse("").scope)
+        assertEquals(Scope(Position(1, 1), Position(1, 2)), Document.parse("é").scope)
         assertTrue(
             Document
                 .parse("")
