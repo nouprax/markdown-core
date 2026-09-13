@@ -293,7 +293,10 @@ visibility with the export list as the only public surface, `NDEBUG` in the
 optimized configurations, and interprocedural optimization there when the
 toolchain supports it (`MARKDOWN_CORE_LTO`, on by default). The CMake
 archives and facade library, the diagnostics archive, the CLI and both Kotlin
-JNI payloads apply it; the Swift package defines `NDEBUG` in its release
+JNI payloads apply it, and every program the tree links against an engine
+archive (the runners, tests and benchmarks) links across units in the same
+configurations, since clang loads its LTO linker plugin only for a link that
+asks for it; the Swift package defines `NDEBUG` in its release
 configuration and its product artifact is a release build; the Wasm build
 optimizes across all of its units with `-flto`. Sanitizer configurations keep
 assertions and stay per-unit. Trivial kind-to-descriptor lookups and buffer

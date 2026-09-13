@@ -35,6 +35,19 @@ if(NOT MARKDOWN_CORE_IPO_AVAILABLE)
     set(MARKDOWN_CORE_IPO_AVAILABLE OFF)
 endif()
 
+# A program that links an archive compiled across units links across units
+# too: clang loads its LTO linker plugin only for a link that asks for it, and
+# without the plugin GNU ld reads no bitcode ("file format not recognized"),
+# while GCC hands its plugin to every link. The variables seed the property of
+# every target defined in the directory that includes this module and below
+# it -- the runners, tests and benchmarks that link an engine archive -- in
+# the same optimized configurations the engine targets take it in.
+if(MARKDOWN_CORE_IPO_AVAILABLE)
+    set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE ON)
+    set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELWITHDEBINFO ON)
+    set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_MINSIZEREL ON)
+endif()
+
 function(markdown_core_apply_build_flags target)
     set_target_properties(${target} PROPERTIES C_VISIBILITY_PRESET hidden VISIBILITY_INLINES_HIDDEN ON)
     if(MARKDOWN_CORE_IPO_AVAILABLE)
