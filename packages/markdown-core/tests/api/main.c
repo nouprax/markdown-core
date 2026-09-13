@@ -9,6 +9,7 @@
 #include "table_scanners.h"
 #include "text_scanners.h"
 #include <stdio.h>
+#include <signal.h>
 #include "table.h"
 #include "autolink.h"
 #include "formula.h"
@@ -3291,6 +3292,37 @@ static void inline_content_projection(test_batch_runner *runner) {
     free(bytes);
 }
 
+typedef struct {
+    test_batch_runner *runner;
+    markdown_core_strbuf *source;
+    size_t boundary;
+} whitespace_probe;
+
+/* Inspect the boundary before delimiter completion removes it, using the
+ * normal parser setup, registered elements, owner and source-mark lifecycle. */
+static bool inspect_text_boundary(markdown_core_parser *parser, void *context) {
+    whitespace_probe *probe = context;
+    test_batch_runner *runner = probe->runner;
+    markdown_core_node *owner = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_PARAGRAPH, parser->mem);
+    owner->start_line = owner->start_column = 1;
+    markdown_core_strbuf_put(&owner->content, probe->source->ptr, probe->source->size);
+    markdown_core_inline_state state;
+    markdown_core_inline_start_inlines(parser, owner, parser->refmap, &state);
+    markdown_core_node *text = MARKDOWN_CORE_ELEMENT_TEXT.parse_text(parser, &state, state.input.len);
+    OK(runner, text && state.last_delim && state.last_delim->kind == DELIMITER_BOUNDARY,
+       "ordinary text records its whitespace boundary");
+    if (state.last_delim) {
+        INT_EQ(runner, state.last_delim->position, probe->boundary, "the exact Unicode whitespace set is preserved");
+        OK(runner, !state.last_delim->previous, "one barrier summarizes the complete text slice");
+    }
+    OK(runner, parser->whitespace_work <= 9, "only the suffix after the final boundary is inspected");
+    OK(runner, text && text->content_mark_count > 0, "text placement uses the owner's source map");
+    markdown_core_node_free(text);
+    markdown_core_inline_clear_inlines(&state);
+    markdown_core_node_free(owner);
+    return true;
+}
+
 static void text_whitespace_boundary(test_batch_runner *runner) {
     markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
     const int32_t scalars[] = {9,    10,   12,   13,   32,   160,  5760,  8192, 8193, 8194, 8195, 8196, 8197,   8198,
@@ -3304,20 +3336,10 @@ static void text_whitespace_boundary(test_batch_runner *runner) {
         markdown_core_utf8proc_encode_char(scalars[i], &source);
         size_t boundary = markdown_core_utf8proc_is_space(scalars[i]) ? (size_t)source.size : previous;
         markdown_core_strbuf_puts(&source, "文z");
-        markdown_core_parser parser = {.mem = mem};
-        markdown_core_inline_state state;
-        markdown_core_chunk input = {source.ptr, source.size, 0};
-        markdown_core_inline_state_from_buf(&parser, mem, 1, &state, &input, NULL);
-        markdown_core_node *text = MARKDOWN_CORE_ELEMENT_TEXT.parse_text(&parser, &state, input.len);
-        OK(runner, text && state.last_delim && state.last_delim->kind == DELIMITER_BOUNDARY,
-           "ordinary text records its whitespace boundary");
-        if (state.last_delim) {
-            INT_EQ(runner, state.last_delim->position, boundary, "the exact Unicode whitespace set is preserved");
-            OK(runner, !state.last_delim->previous, "one barrier summarizes the complete text slice");
-        }
-        OK(runner, parser.whitespace_work <= 9, "only the suffix after the final boundary is inspected");
-        markdown_core_node_free(text);
-        markdown_core_inline_clear_inlines(&state);
+        whitespace_probe probe = {runner, &source, boundary};
+        markdown_core_node *root = markdown_core_parse_document_with_mem("", 0, mem, inspect_text_boundary, &probe);
+        OK(runner, root != NULL, "boundary inspection completes the parse transaction");
+        markdown_core_node_free(root);
         markdown_core_strbuf_free(&source);
     }
 }
@@ -3378,6 +3400,131 @@ static void key_index_radix(test_batch_runner *runner) {
         markdown_core_key_index_free(&index);
     }
     free(keys);
+}
+
+/* All presence/value bits participate: a zero key has a prefix at every
+ * length and a neighbour differing at each bit. Its path reaches 9 * WIDTH
+ * branches; checking the actual tree makes this independent of host timing. */
+static void key_index_adversarial(test_batch_runner *runner) {
+    enum { WIDTH = MAX_LINK_LABEL_LENGTH, COUNT = 9 * WIDTH + 1 };
+    unsigned char (*keys)[WIDTH] = calloc(COUNT, WIDTH);
+    bufsize_t *lengths = calloc(COUNT, sizeof(*lengths));
+    for (int k = 0; k < COUNT; k++) {
+        lengths[k] = k < WIDTH ? k : WIDTH;
+        if (k >= WIDTH && k < COUNT - 1) {
+            keys[k][(k - WIDTH) / 8] = (unsigned char)(1u << ((k - WIDTH) % 8));
+        }
+    }
+    for (size_t order = 0; order < 3; order++) {
+        markdown_core_key_index index;
+        OK(runner, markdown_core_key_index_init(&index, markdown_core_get_default_mem_allocator(), 0),
+           "adversarial index initializes");
+        bool valid = true;
+        for (size_t i = 0; i < COUNT; i++) {
+            size_t k = order == 0 ? i : order == 1 ? COUNT - 1 - i : (i * 2) % COUNT;
+            valid &= markdown_core_key_index_insert(&index, keys[k], lengths[k], &lengths[k], 0, NULL) != 0;
+        }
+        size_t total = 0, maximum = 0;
+        for (size_t k = 0; k < COUNT && valid; k++) {
+            valid &= markdown_core_key_index_lookup(&index, keys[k], lengths[k]) == &lengths[k];
+            size_t ref = index.root, visits = 0;
+            bufsize_t previous_byte = -1;
+            unsigned previous_mask = 0;
+            while (ref && !(ref & 1) && visits <= 9 * (size_t)lengths[k] + 1) {
+                if ((ref >> 1) > index.size) {
+                    valid = false;
+                    break;
+                }
+                markdown_core_key_index_node *node = &index.nodes[(ref >> 1) - 1];
+                valid &= node->byte > previous_byte || (node->byte == previous_byte && node->mask < previous_mask);
+                previous_byte = node->byte;
+                previous_mask = node->mask;
+                unsigned direction =
+                    node->byte < lengths[k] && (node->mask == 256 || (keys[k][node->byte] & node->mask));
+                ref = node->children[direction];
+                visits++;
+            }
+            valid &= ref && (ref & 1) && visits <= 9 * (size_t)lengths[k] + 1;
+            total += visits;
+            if (visits > maximum) {
+                maximum = visits;
+            }
+        }
+        OK(runner, valid,
+           "prefix-first, extension-first and permuted trees preserve every key and strict bit progress");
+        INT_EQ(runner, maximum, 9 * WIDTH, "adversarial path reaches the complete key-length branch bound");
+        OK(runner, total <= (size_t)COUNT * (9 * WIDTH + 1), "all lookups have a deterministic key-byte work bound");
+        markdown_core_key_index_free(&index);
+    }
+    free(lengths);
+    free(keys);
+}
+
+/* OOM ends the owner transaction. Exercise destruction both when vector
+ * growth fails and when the caller cannot allocate a prepared entry's key. */
+static void key_index_failure(test_batch_runner *runner) {
+    unsigned char keys[129];
+    for (size_t capacity = 1; capacity <= 128; capacity *= 2) {
+        for (int fail_key = 0; fail_key <= 1; fail_key++) {
+            payload_allocations = payload_fail_at = payload_live = 0;
+            markdown_core_key_index index;
+            OK(runner, markdown_core_key_index_init(&index, &payload_test_mem, capacity), "failure index initializes");
+            for (size_t k = 0; k < capacity; k++) {
+                keys[k] = (unsigned char)k;
+                OK(runner, markdown_core_key_index_insert(&index, &keys[k], 1, &keys[k], 0, NULL),
+                   "fill reserved index");
+            }
+            keys[capacity] = (unsigned char)capacity;
+            if (!fail_key) {
+                payload_fail_at = payload_allocations + 1;
+            }
+            markdown_core_key_index_slot *slot = markdown_core_key_index_entry(&index, &keys[capacity], 1);
+            if (fail_key) {
+                OK(runner, slot && !slot->key, "prepare an entry before the caller's key allocation");
+                payload_fail_at = payload_allocations + 1;
+                OK(runner, !payload_test_calloc(1, 1), "the caller cannot allocate a durable key");
+            } else {
+                OK(runner, !slot, "growth failure propagates to the owner");
+            }
+            markdown_core_key_index_free(&index);
+            INT_EQ(runner, payload_live, 0, "OOM releases the complete index, including any pending entry");
+            payload_fail_at = 0;
+        }
+    }
+}
+
+/* Exhaust all short lexical shapes, including embedded NUL and potential
+ * future table punctuation. Fresh scans are the oracle for every memo hit. */
+static void table_dash_suffixes(test_batch_runner *runner) {
+    static const unsigned char alphabet[] = {'-', ' ', '\t', ':', '|', '+', 'x', 0};
+    unsigned char line[7];
+    size_t cases = 0;
+    bool valid = true;
+    for (size_t length = 0, combinations = 1; length <= 6; length++, combinations *= sizeof(alphabet)) {
+        for (size_t encoded = 0; encoded < combinations; encoded++) {
+            size_t remaining = encoded;
+            for (size_t i = 0; i < length; i++, remaining /= sizeof(alphabet)) {
+                line[i] = alphabet[remaining % sizeof(alphabet)];
+            }
+            line[length] = 0;
+            const unsigned char *kill = line;
+            for (size_t start = 0; start <= length; start++) {
+                const unsigned char *cursor = line + start, *from;
+                int result;
+                do {
+                    result = scan_table_dash(&cursor, line + length, &from);
+                } while (result > 0);
+                if (line + start < kill) {
+                    valid &= result < 0 && cursor == kill;
+                }
+                if (result < 0) {
+                    kill = cursor;
+                }
+                cases++;
+            }
+        }
+    }
+    OK(runner, valid, "every memoized rejection agrees with a fresh suffix scan (%zu queries)", cases);
 }
 
 static size_t count_kind(markdown_core_node *root, markdown_core_node_type kind);
@@ -5801,7 +5948,39 @@ static void table_nested_inputs(test_batch_runner *runner) {
     }
 }
 
-int main(void) {
+/* Each misuse runs in its own CTest process. Only SIGABRT is success:
+ * falling through, a segfault, or an assertion disabled by NDEBUG fails. */
+static void expected_key_index_abort(int signal_number) { _Exit(signal_number == SIGABRT ? 0 : 1); }
+
+static int key_index_misuse(const char *operation) {
+    markdown_core_key_index index;
+    const unsigned char key[] = "key";
+    if (!markdown_core_key_index_init(&index, markdown_core_get_default_mem_allocator(), 0)) {
+        return 1;
+    }
+    markdown_core_key_index_slot *slot = markdown_core_key_index_entry(&index, key, 3);
+    if (!slot || signal(SIGABRT, expected_key_index_abort) == SIG_ERR) {
+        return 1;
+    }
+    if (!strcmp(operation, "reentry")) {
+        markdown_core_key_index_entry(&index, key, 3);
+    } else if (!strcmp(operation, "wrong-slot")) {
+        markdown_core_key_index_slot wrong = {0};
+        markdown_core_key_index_commit(&index, &wrong, key);
+    } else if (!strcmp(operation, "null-key")) {
+        markdown_core_key_index_commit(&index, slot, NULL);
+    } else if (!strcmp(operation, "double-commit")) {
+        markdown_core_key_index_commit(&index, slot, key);
+        markdown_core_key_index_commit(&index, slot, key);
+    }
+    markdown_core_key_index_free(&index);
+    return 1;
+}
+
+int main(int argc, char **argv) {
+    if (argc == 3 && !strcmp(argv[1], "--key-index-misuse")) {
+        return key_index_misuse(argv[2]);
+    }
     int retval;
     test_batch_runner *runner = test_batch_runner_new();
 
@@ -5826,6 +6005,9 @@ int main(void) {
     inline_content_projection(runner);
     text_whitespace_boundary(runner);
     key_index_radix(runner);
+    key_index_adversarial(runner);
+    key_index_failure(runner);
+    table_dash_suffixes(runner);
     nested_block_lookahead(runner);
     deep_inline_construction(runner);
     ordered_numeral_ceiling(runner);

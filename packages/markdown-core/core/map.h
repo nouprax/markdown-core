@@ -72,7 +72,11 @@ int markdown_core_key_index_init(markdown_core_key_index *index, markdown_core_m
 void markdown_core_key_index_free(markdown_core_key_index *index);
 /* Find an occupied or vacant entry, growing only for a new key. NULL means
  * allocation failure. The entry is borrowed until the next insertion; a
- * vacant entry must be committed before another index operation. */
+ * vacant entry must be committed before another index operation. Reentry and
+ * invalid commits are programming errors and abort in all build modes.
+ * OOM ends the owning parse; destruction may abandon a pending entry when
+ * the caller cannot allocate its key. No recovery/retry contract is provided.
+ * commit borrows immutable bytes equal to the original query until free. */
 markdown_core_key_index_slot *markdown_core_key_index_entry(markdown_core_key_index *index, const unsigned char *key,
                                                             bufsize_t key_len);
 void markdown_core_key_index_commit(markdown_core_key_index *index, markdown_core_key_index_slot *entry,

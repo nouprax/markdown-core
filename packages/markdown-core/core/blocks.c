@@ -1550,8 +1550,8 @@ bool markdown_core_parser_lookahead_begin(markdown_core_parser *parser, markdown
     }
     for (node = parent; node; node = node == parser->block_root ? NULL : node->parent) {
         depth++;
-        parser->block_lookahead_work++;
     }
+    parser->block_lookahead_work += (size_t)depth;
     if (!S_lookahead_reserve_chain(parser, depth)) {
         return false;
     }
@@ -1560,8 +1560,8 @@ bool markdown_core_parser_lookahead_begin(markdown_core_parser *parser, markdown
         i--;
         parser->lookahead_chain[i] = node;
         parser->lookahead_chain_flags[i] = node->flags;
-        parser->block_lookahead_work++;
     }
+    parser->block_lookahead_work += (size_t)depth;
 
     lookahead->parser = parser;
     lookahead->parent = parent;
@@ -1741,12 +1741,12 @@ void markdown_core_parser_lookahead_end(markdown_core_block_lookahead *lookahead
     }
     for (i = 0; i < lookahead->depth; i++) {
         markdown_core_node *node = parser->lookahead_chain[i];
-        parser->block_lookahead_work++;
         const markdown_core_element *structure = markdown_core_node_structure(node);
         unsigned mask = structure ? structure->speculative_flags : 0;
         node->flags =
             (markdown_core_node_internal_flags)((node->flags & ~mask) | (parser->lookahead_chain_flags[i] & mask));
     }
+    parser->block_lookahead_work += (size_t)lookahead->depth;
     parser->offset = lookahead->saved_offset;
     parser->column = lookahead->saved_column;
     parser->first_nonspace = lookahead->saved_first_nonspace;

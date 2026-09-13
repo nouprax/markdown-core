@@ -68,16 +68,21 @@ class Core:
             function = getattr(self.lib, name)
             function.argtypes, function.restype = args, result
         probe = build / f"incremental-probe.{suffix}"
-        subprocess.run([
-            "cc", "-std=c11", "-O3", "-shared", "-fPIC",
-            "-I" + str(ROOT / "packages/markdown-core/include"),
-            "-I" + str(ROOT / "packages/markdown-core/core"),
-            "-I" + str(ROOT / "packages/markdown-core/elements"),
-            "-I" + str(build / "packages/markdown-core/core"),
-            str(Path(__file__).with_name("probe.c")),
-            str(build / "packages/markdown-core/elements/libmarkdown-core.a"),
-            "-o", str(probe),
-        ], check=True, capture_output=True)
+        if "incremental_probe" in (ROOT / "packages/markdown-core/tests/CMakeLists.txt").read_text():
+            subprocess.run(["cmake", "--build", str(build), "--target", "incremental_probe"], check=True, capture_output=True)
+        else:
+            # Archived baselines predate the diagnostic target. Only their
+            # adapter uses this compatibility build; current revisions use CMake.
+            subprocess.run([
+                "cc", "-std=c11", "-O3", "-shared", "-fPIC",
+                "-I" + str(ROOT / "packages/markdown-core/include"),
+                "-I" + str(ROOT / "packages/markdown-core/core"),
+                "-I" + str(ROOT / "packages/markdown-core/elements"),
+                "-I" + str(build / "packages/markdown-core/core"),
+                str(Path(__file__).with_name("probe.c")),
+                str(build / "packages/markdown-core/elements/libmarkdown-core.a"),
+                "-o", str(probe),
+            ], check=True, capture_output=True)
         self.probe = C.CDLL(str(probe))
         self.probe.mc_probe.argtypes = [C.c_char_p, SIZE, C.POINTER(Stats)]
         self.probe.mc_probe.restype = C.c_int

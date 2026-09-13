@@ -586,6 +586,10 @@ yy47:
 
 }
 
+/* table_separator_kill_pos relies on context-free rejection: after scanning
+ * whitespace/dash runs, every suffix starting before the rejected cursor also
+ * fails. Keep this invariant (tested by table_dash_suffixes) when extending the
+ * grammar, or replace the memo before admitting context-dependent tokens. */
 int scan_table_dash(const unsigned char **cursor, const unsigned char *limit,
                      const unsigned char **from)
 {

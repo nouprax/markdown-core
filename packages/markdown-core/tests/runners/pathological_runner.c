@@ -629,10 +629,11 @@ static int case_tables(pc_context *context) {
     return 0;
 }
 
-/* Port of the reference-map hash collision generator. */
 /* Replay a real 5eca3bc1 bucket flood, not cmark's unrelated sdbm hash.
- * 2048 keys sharing these bits collide at every capacity up to 4096. The
- * replacement radix tree is additionally checked structurally by api_test. */
+ * These 2048 keys collided at each baseline capacity through 4096. They have
+ * no special meaning to radix: this case replays former semantic failures,
+ * not a timing complexity gate. api_test checks the new tree at its full
+ * key-length bound, including prefix chains and allocation failure. */
 static int pc_baseline_bucket_zero(const char *key) {
     uint64_t hash = UINT64_C(1469598103934665603);
     for (const unsigned char *p = (const unsigned char *)key; *p; p++) {

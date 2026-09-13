@@ -18,7 +18,7 @@ static size_t leaf_ref(size_t position) { return ((position + 1) << 1) | 1; }
 static size_t branch_ref(size_t position) { return (position + 1) << 1; }
 static size_t ref_position(size_t ref) { return (ref >> 1) - 1; }
 
-static unsigned key_direction(const unsigned char *key, bufsize_t length, bufsize_t byte, unsigned mask) {
+static unsigned key_direction(const unsigned char *key, bufsize_t length, bufsize_t byte, uint16_t mask) {
     return byte < length && (mask == 256 || (key[byte] & mask) != 0);
 }
 
@@ -75,6 +75,12 @@ void markdown_core_key_index_free(markdown_core_key_index *index) {
 
 markdown_core_key_index_slot *markdown_core_key_index_entry(markdown_core_key_index *index, const unsigned char *key,
                                                             bufsize_t key_len) {
+    /* A prepared edge borrows the vector. Reject reentry before overwriting
+     * that edge or reallocating it, also in Release builds. Checking only in
+     * commit cannot distinguish two entries that reuse nodes[size]. */
+    if (index->pending_link) {
+        abort();
+    }
     size_t ref = find_leaf(index, key, key_len);
     bufsize_t byte = 0;
     uint16_t mask = 256;
@@ -124,7 +130,9 @@ markdown_core_key_index_slot *markdown_core_key_index_entry(markdown_core_key_in
 
 void markdown_core_key_index_commit(markdown_core_key_index *index, markdown_core_key_index_slot *entry,
                                     const unsigned char *key) {
-    assert(entry == &index->nodes[index->size].slot && !entry->key && key);
+    if (!index->pending_link || entry != &index->nodes[index->size].slot || entry->key || !key) {
+        abort();
+    }
     entry->key = key;
     *index->pending_link = index->size ? branch_ref(index->size) : leaf_ref(index->size);
     index->pending_link = NULL;

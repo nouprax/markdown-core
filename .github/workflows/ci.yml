@@ -88,6 +88,10 @@ jobs:
                   pnpm format:cmake:check
             - name: Lint C
               run: pnpm lint:c
+            - name: Compile private experiment adapter
+              run: |
+                  cmake --preset benchmark
+                  cmake --build --preset benchmark --target incremental_probe --parallel
 
     health-check-es:
         needs: changes

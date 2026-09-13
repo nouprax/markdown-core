@@ -148,6 +148,9 @@ endfunction()
 
 # api: legacy engine API harness (native C/C++).
 markdown_core_add_test(api_engine api 120 api_test)
+foreach(operation reentry wrong-slot null-key double-commit)
+    markdown_core_add_test(api_key_index_${operation} api 10 api_test --key-index-misuse ${operation})
+endforeach()
 
 # conformance: public facade/schema shape and every manifest-owned canonical dump.
 markdown_core_add_test(
@@ -402,6 +405,17 @@ markdown_core_add_test(packaging_corpus_guard packaging 60 corpus_guard --root "
 # promote hosted-runner timing into a merge gate. The explicit benchmark preset
 # enables this block and reports measurements without wall-clock assertions.
 if(MARKDOWN_CORE_BENCHMARKS)
+    # Diagnostic private-API adapter: opt-in, never installed. CI builds this
+    # target so changes to parser fields cannot silently break the experiments.
+    add_library(incremental_probe SHARED "${CMAKE_CURRENT_SOURCE_DIR}/../../../experiments/incremental/probe.c")
+    target_include_directories(incremental_probe PRIVATE ${MARKDOWN_CORE_TEST_SUPPORT_INCLUDES})
+    target_link_libraries(incremental_probe PRIVATE libmarkdown-core-public-static)
+    set_target_properties(
+        incremental_probe
+        PROPERTIES PREFIX ""
+                   OUTPUT_NAME "incremental-probe"
+                   LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
+                   WINDOWS_EXPORT_ALL_SYMBOLS ON)
     set(MARKDOWN_CORE_BENCH_SAMPLES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../benchmarks/samples")
     # The public flavour on purpose: the PR benchmark times the product library
     # and reports the size of the shared library this target therefore builds.

@@ -1,7 +1,7 @@
 # Baseline 性能修复：第一批
 
-完成 #243、#248、#272 的本地代码与验证，GitHub issues 尚未关闭。完整 32 项的推进状态见
-[task list](../plans/2026-09-13-baseline-performance.md)。其余 29 项（含汇总 #271）仍待完成，
+本文记录第一批 #272 修复及 #243、#248 的部分优化；后两项仍有未完成工作，不能自动关闭。完整 32 项的推进状态见
+[task list](../plans/2026-09-13-baseline-performance.md)。
 当前结果不代表 baseline 已达到最佳性能。
 
 ## 改动及约束
@@ -22,6 +22,7 @@ prefix bytes，漏掉了本 issue 的主要成本。原 comment lookahead 测试
 新增列表单行、列表续行、quote 续行三种形状，各自覆盖深度 16–8192，并检查保留的容器数与段落续行。
 链本身仍按正常 begin/end 生命周期创建和恢复；本次消除的是每个嵌套列表 marker 的无效事务，
 未额外引入一种 persistent chain 机制。
+普通 `- item` 行仍有文本表头路径的逐行 lookahead 固定成本；此部分保持开放，后续与 #250 共用行探测推进。
 
 ### #272：无界线性探测
 
@@ -31,7 +32,7 @@ prefix bytes，漏掉了本 issue 的主要成本。原 comment lookahead 测试
 再比较一个 leaf。扩容只搬移 dense records，不重新插入。
 
 保留 borrowed key、pointer/counter value、entry/commit、重复定义 source-order winner、OOM sticky
-和共享 resource 生存期。arm64 首次分配由 512 B 降为 384 B，无每次 parse 的随机 seed。
+和共享 resource 生存期。第一批 arm64 首次分配由 512 B 降为 384 B；后续统一从一个 record 起步，现为 48 B。无每次 parse 的随机 seed。
 
 原 pathological case 生成的是 cmark 旧 hash 的碰撞；现已改成真正 `5eca3bc1` hash 的 bucket flood。
 API tests 验证 binary keys、empty/prefix keys、三种插入顺序、duplicate/replace 和每条 branch 的
@@ -45,6 +46,7 @@ API tests 验证 binary keys、empty/prefix keys、三种插入顺序、duplicat
 
 测试覆盖所有现有 whitespace scalars 及 VT、NEL、ZWSP、Unicode line/paragraph separator、emoji
 等非空白邻居，验证最后一个 boundary、单个 delimiter summary 和只访问尾部的确定性工作界。
+`scan_delimiter` 两侧的 ASCII 分类路径仍未完成，#248 保持开放。
 
 ## 同机对照
 
@@ -66,7 +68,12 @@ API tests 验证 binary keys、empty/prefix keys、三种插入顺序、duplicat
 | Unicode 散文 | 0.802 | 0.716 | 1.12× |
 | 2000 行强调单段 | 4.208 | 4.120 | 1.02× |
 
-强调长段的改善有限，仍需要 #244 等后续工作。时间不能证明线性；复杂度结论由结构不变量和工作
+这张表只记录第一批结果，强调长段当时的改善有限；#244 的后续结果见 [inline 修复记录](2026-09-13-inline-performance-fixes.md)。
+radix 并非对所有输入更快：同机 map-only 隔离在普通 representative 输入上测得 parse +3.5%，
+见 [原始隔离结果](../../experiments/baseline-performance/map-attribution.json)。Claude 的独立 Linux callgrind
+复审也报告普通 reference/footnote/heading 的指令数增加约 1.7–3.6%；这是外部复审证据，非本机复测。
+确定性上界伴随普通 key 的常数成本，不能从碰撞输入的收益推断普遍加速。
+时间不能证明线性；复杂度结论由结构不变量和工作
 计数支持。52 个测量 case 中，46 个非深层 case 的完整 canonical dump 与 baseline 一致；
 深层 case 不生成本身具有二次输出大小的树形 dump，其语义由 C 测试覆盖。
 
@@ -86,3 +93,12 @@ API tests 验证 binary keys、empty/prefix keys、三种插入顺序、duplicat
 本批没有修改 public API、binding value model、源码语法或 CI benchmark contract；
 ES/Kotlin runtime 与 TSan 本次未重跑。后续节点存储、分发、位置映射、绑定解码和基准工程
 继续按 task list 推进。
+
+## Claude review follow-up
+
+- `entry/commit` 的生命周期在 Release 下也检查；阻止未提交 entry 的重入，OOM 后直接销毁整个失败事务，不支持恢复或重试。
+- radix 的 1,000 字节 key、完整位链、三种前缀插入顺序及OOM 完整释放都有确定性测试；历史 hash 碰撞只作为回放。
+- dash scanner 穷举短行所有后缀，比较每次 memo 命中和重新扫描；grammar 源文件记录 memo 所依赖的拒绝性质。
+- whitespace 测试使用正常 parser/owner/source map 初始化；边界取解码宽度，工作计数按扫描量统一累加。
+- ancestor chain 的三遍访问在循环外按 depth 累加，保持工作口径，减少内层写入。
+- 规范 README 的本 PR 新增导航已移除。增量设计和 PoC 保留在研究目录，属于原任务要求，未交付增量 API。

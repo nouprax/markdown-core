@@ -153,22 +153,25 @@ markdown_core_node *markdown_core_text_parse(markdown_core_parser *parser, markd
      * This preserves the dialect's exact Zs + LF/CR/TAB/FF set (not C isspace,
      * which also includes VT), and never scans preceding words needlessly. */
     const unsigned char *data = inline_state->input.data;
+    bufsize_t inspected = 0;
     for (bufsize_t after = endpos; after > inline_state->pos;) {
         bufsize_t at = after - 1;
         int32_t scalar = data[at];
+        int width = 1;
         if (scalar >= 128) {
             while (at > inline_state->pos && (data[at] & 0xC0) == 0x80) {
                 at--;
             }
-            markdown_core_utf8proc_iterate(data + at, after - at, &scalar);
+            width = markdown_core_utf8proc_iterate(data + at, after - at, &scalar);
         }
-        parser->whitespace_work += (size_t)(after - at);
+        inspected += after - at;
         if (markdown_core_utf8proc_is_space(scalar)) {
-            markdown_core_inline_push_boundary(inline_state, after);
+            markdown_core_inline_push_boundary(inline_state, at + width);
             break;
         }
         after = at;
     }
+    parser->whitespace_work += (size_t)inspected;
     /* Text runs are disjoint, so recording separators costs at most one
      * extra visit per byte, regardless of bracket nesting or digit-run
      * length. No image closer scans its label again. */

@@ -26,18 +26,12 @@ resource loading, and presentation belong to the application.
 
 ## For contributors
 
-- [Baseline performance remediation](../plans/2026-09-13-baseline-performance.md): issue triage, completed fixes and remaining work.
-
 - [Testing architecture](../architecture/testing.md): platform runners and correctness/conformance boundaries.
 - [Syntax conformance](../architecture/syntax-conformance.md): fixtures, pinned external parsers, and reviewing language changes.
 - [Parser architecture](../architecture/syntax-elements.md): ownership of syntax implementations.
-- [Incremental parsing proposal](../architecture/incremental-parsing.md): streaming/edit design, snapshot ownership, and complexity boundaries; not a shipped API.
-- [Incremental implementation tasklist](../plans/2026-09-13-incremental-parsing.md): current milestones, dependencies, and acceptance criteria.
-- [Baseline readiness review](../reviews/2026-09-13-incremental-readiness.md): performance evidence and remaining work before incremental performance claims.
 - [Toolchains and environment](../toolchains.md): toolchain setup.
 
 `docs/specs/` contains the readable language and API specifications. The root
 [`specs/`](../../specs) directory contains executable fixtures and external
-comparison policies. Implementation plans live in [`docs/plans/`](../plans).
-The syntax-extension plans are historical; the incremental parsing tasklist
-above explicitly tracks proposed work and its completion status.
+comparison policies. Historical implementation plans live in
+[`docs/plans/`](../plans); they do not describe pending syntax work.

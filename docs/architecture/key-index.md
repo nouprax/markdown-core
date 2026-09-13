@@ -10,8 +10,13 @@ A key is a borrowed, length-delimited byte string. Embedded NUL and the empty ke
 are representable; normalization belongs to each caller. The index neither
 copies nor frees keys or values. A slot contains either a caller-owned pointer
 or a counter. An occupied lookup never reallocates. A vacant `entry` may grow the
-vector, and must be `commit`ted before any other index operation. `commit` supplies
-the durable key bytes and publishes the prepared edge without allocating.
+vector, and must be `commit`ted before another index operation. `commit`
+borrows immutable bytes equal to the query and publishes the prepared edge
+without allocating. OOM is terminal for the owning parse. Destruction can abandon
+a pending entry after a caller allocation failure; recovery and retry are not
+part of the contract. Reentry and invalid commits abort in every build mode. The reentry
+check happens before touching the prepared node: a commit-time pointer check
+alone cannot distinguish two entries that reuse the same vector position.
 
 Reference winner selection stays in `index_map`: explicit declarations precede
 implicit headings, then the earliest source key wins. Tree shape does not affect
@@ -44,9 +49,10 @@ separate hash load-factor reserve.
 
 ## Failure and verification
 
-All size arithmetic is checked before allocation. Failed growth leaves the
-existing vector and published root intact; parser callers make allocation loss
-sticky and destroy the transaction. No externally visible parse API changes.
+All size arithmetic is checked before allocation. Failed allocation is reported
+to the owner, which makes the error sticky and destroys the complete parse
+transaction. A failed `realloc` retains its allocation for that cleanup; this is
+not a promise that parsing can continue. No externally visible parse API changes.
 Index destruction frees one allocation and never recursively walks its branches.
 
 `key_index_radix` tests binary keys, prefix chains including the empty key,
@@ -56,7 +62,17 @@ the structural bound rather than a timing threshold. The pathological reference
 workload now targets the actual **baseline** FNV/finalizer hash instead of cmark's
 unrelated sdbm hash. The comparison experiment replays these collisions through
 reference, heading, footnote and specimen consumers and compares complete dumps.
-OOM injection and sanitizers cover parse transaction failure and release.
+The collision replay is historical semantic coverage, not a timeout-based
+complexity gate. `key_index_adversarial` builds prefix-first, extension-first and
+permuted sets at `MAX_LINK_LABEL_LENGTH` (1,000 bytes), with a neighbour for every
+presence/value bit. It counts structural branch visits, verifies strict progress
+and reaches a 9,000-branch path. Thus long shared prefixes and the full key-length
+bound are exercised without adding instrumentation to production lookup loops.
+`key_index_failure` injects growth and caller key-allocation failures at
+capacities 1 through 128 and verifies complete release, including a prepared
+entry whose key allocation failed. Separate CTest processes require SIGABRT for reentry, wrong-slot, null-key
+and repeated commits, including Release/NDEBUG. OOM injection and sanitizers
+also cover parse transaction failure and release.
 
 ## Third-party hash-table candidates
 
