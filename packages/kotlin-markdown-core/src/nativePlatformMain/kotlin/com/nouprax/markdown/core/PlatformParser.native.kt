@@ -206,25 +206,25 @@ internal actual fun parsePlatformDocument(source: ByteArray): Document =
                 }
             }
         if (document == null) {
-            val nativeError = requireNotNull(error.value) { "native parser failed without an error" }
+            val failure = requireNotNull(error.value) { "native parser failed without an error" }
             try {
                 val code =
-                    when (markdown_core_error_get_code(nativeError)) {
+                    when (markdown_core_error_get_code(failure)) {
                         MARKDOWN_CORE_ERROR_INVALID_ARGUMENT -> ParseErrorCode.INVALID_ARGUMENT
                         MARKDOWN_CORE_ERROR_ALLOCATION_FAILED -> ParseErrorCode.ALLOCATION_FAILED
                         MARKDOWN_CORE_ERROR_INTERNAL -> ParseErrorCode.INTERNAL
                         else -> ParseErrorCode.INTERNAL
                     }
-                val message = markdown_core_error_get_message(nativeError).useContents { copyString() }
+                val message = markdown_core_error_get_message(failure).useContents { string() }
                 throw ParseException(code, message)
             } finally {
-                markdown_core_error_free(nativeError)
+                markdown_core_error_free(failure)
             }
         }
 
         try {
             val root = requireNotNull(markdown_core_document_root(document)) { "native document has no root" }
-            val markup = NativeTreeBuilder(root, NativeScratch(this)).build()
+            val markup = Builder(root, Scratch(this)).build()
             require(markup is Document) { "native document root has the wrong kind" }
             markup
         } finally {
@@ -232,60 +232,60 @@ internal actual fun parsePlatformDocument(source: ByteArray): Document =
         }
     }
 
-private data class NativeNodeRecord(
-    val pointer: CPointer<markdown_core_node>,
-    var childStart: Int = 0,
-    var childCount: Int = 0,
-    var captionIndex: Int = -1,
-    var labelIndex: Int = -1,
-    var titleStart: Int = 0,
-    var titleCount: Int = 0,
-    /** The document's footnote records or the cite's citation records: a start and a count. */
-    var valueStart: Int = 0,
-    var valueCount: Int = 0,
-    var specimenStart: Int = 0,
-    var specimenCount: Int = 0,
-    var termStart: Int = 0,
-    var termCount: Int = 0,
-    var bodies: kotlin.collections.List<NativeBodyRecord> = emptyList(),
-)
-
-/** One item a cite owns; its prefix and suffix nodes are recorded like children. */
-private class NativeCitationRecord(
-    val pointer: CPointer<markdown_core_citation>,
-    val prefixStart: Int,
-    val prefixCount: Int,
-    val suffixStart: Int,
-    val suffixCount: Int,
-)
-
-/** One footnote the document owns; its content nodes are recorded like children. */
-private class NativeFootnoteRecord(
-    val pointer: CPointer<markdown_core_footnote>,
-    val contentStart: Int,
-    val contentCount: Int,
-)
-
-private class NativeBodyRecord(
-    val start: Int,
-    val count: Int,
-)
-
-private class NativeSpecimenRecord(
-    val pointer: CPointer<markdown_core_specimen>,
-    val contentStart: Int,
-    val contentCount: Int,
-)
-
 /** Copies the C tree iteratively while the immutable native document is alive. */
-private class NativeTreeBuilder(
+private class Builder(
     root: CPointer<markdown_core_node>,
-    private val scratch: NativeScratch,
+    private val scratch: Scratch,
 ) {
-    private val records = mutableListOf(NativeNodeRecord(root))
-    private val citationRecords = mutableListOf<NativeCitationRecord>()
-    private val footnoteRecords = mutableListOf<NativeFootnoteRecord>()
-    private val specimenRecords = mutableListOf<NativeSpecimenRecord>()
+    private data class Record(
+        val pointer: CPointer<markdown_core_node>,
+        var childStart: Int = 0,
+        var childCount: Int = 0,
+        var captionIndex: Int = -1,
+        var labelIndex: Int = -1,
+        var titleStart: Int = 0,
+        var titleCount: Int = 0,
+        /** The document's footnote records or the cite's citation records: a start and a count. */
+        var valueStart: Int = 0,
+        var valueCount: Int = 0,
+        var specimenStart: Int = 0,
+        var specimenCount: Int = 0,
+        var termStart: Int = 0,
+        var termCount: Int = 0,
+        var bodies: kotlin.collections.List<Body> = emptyList(),
+    )
+
+    /** One item a cite owns; its prefix and suffix nodes are recorded like children. */
+    private class CitationRecord(
+        val pointer: CPointer<markdown_core_citation>,
+        val prefixStart: Int,
+        val prefixCount: Int,
+        val suffixStart: Int,
+        val suffixCount: Int,
+    )
+
+    /** One footnote the document owns; its content nodes are recorded like children. */
+    private class FootnoteRecord(
+        val pointer: CPointer<markdown_core_footnote>,
+        val contentStart: Int,
+        val contentCount: Int,
+    )
+
+    private class Body(
+        val start: Int,
+        val count: Int,
+    )
+
+    private class SpecimenRecord(
+        val pointer: CPointer<markdown_core_specimen>,
+        val contentStart: Int,
+        val contentCount: Int,
+    )
+
+    private val records = mutableListOf(Record(root))
+    private val citationRecords = mutableListOf<CitationRecord>()
+    private val footnoteRecords = mutableListOf<FootnoteRecord>()
+    private val specimenRecords = mutableListOf<SpecimenRecord>()
     private lateinit var built: Array<Markup?>
 
     /**
@@ -302,20 +302,20 @@ private class NativeTreeBuilder(
             DefinitionResource(
                 scratch.destination(node),
                 scratch.title(node),
-                markdown_core_attribute_value_anchor(inherited).useContents { copyOptionalString() },
+                markdown_core_attribute_value_anchor(inherited).useContents { string() },
                 scratch.attributes(inherited),
             )
         }
     }
 
     fun build(): Markup {
-        collectRelations()
+        collect()
         built = arrayOfNulls(records.size)
         for (index in records.indices.reversed()) built[index] = materialize(index)
         return requireNotNull(built[0])
     }
 
-    private fun collectRelations() {
+    private fun collect() {
         var index = 0
         while (index < records.size) {
             val record = records[index]
@@ -323,7 +323,7 @@ private class NativeTreeBuilder(
                 MARKDOWN_CORE_KIND_TABLE -> {
                     markdown_core_node_table_caption(record.pointer)?.let { caption ->
                         record.captionIndex = records.size
-                        records += NativeNodeRecord(caption)
+                        records += Record(caption)
                     }
                 }
 
@@ -332,7 +332,7 @@ private class NativeTreeBuilder(
                 -> {
                     markdown_core_node_directive_label(record.pointer)?.let { label ->
                         record.labelIndex = records.size
-                        records += NativeNodeRecord(label)
+                        records += Record(label)
                     }
                 }
 
@@ -342,18 +342,18 @@ private class NativeTreeBuilder(
                     // record remembers which are the title's. A present title
                     // holds at least one node, so its count is its presence.
                     record.titleStart = records.size
-                    record.titleCount = recordChain(markdown_core_node_callout_title(record.pointer))
+                    record.titleCount = record(markdown_core_node_callout_title(record.pointer))
                 }
 
                 MARKDOWN_CORE_KIND_DEFINITION -> {
                     record.termStart = records.size
-                    record.termCount = recordChain(markdown_core_node_definition_term(record.pointer))
-                    val bodies = mutableListOf<NativeBodyRecord>()
+                    record.termCount = record(markdown_core_node_definition_term(record.pointer))
+                    val bodies = mutableListOf<Body>()
                     var body = markdown_core_node_definition_bodies(record.pointer)
                     while (body != null) {
                         val start = records.size
-                        val count = recordChain(markdown_core_definition_body_content(body))
-                        bodies += NativeBodyRecord(start, count)
+                        val count = record(markdown_core_definition_body_content(body))
+                        bodies += Body(start, count)
                         body = markdown_core_definition_body_next(body)
                     }
                     record.bodies = bodies
@@ -366,8 +366,8 @@ private class NativeTreeBuilder(
                     var footnote = markdown_core_node_document_footnotes(record.pointer)
                     while (footnote != null) {
                         val contentStart = records.size
-                        val contentCount = recordChain(markdown_core_footnote_content(footnote))
-                        footnoteRecords += NativeFootnoteRecord(footnote, contentStart, contentCount)
+                        val contentCount = record(markdown_core_footnote_content(footnote))
+                        footnoteRecords += FootnoteRecord(footnote, contentStart, contentCount)
                         record.valueCount++
                         footnote = markdown_core_footnote_next(footnote)
                     }
@@ -375,8 +375,8 @@ private class NativeTreeBuilder(
                     var specimen = markdown_core_node_document_specimens(record.pointer)
                     while (specimen != null) {
                         val contentStart = records.size
-                        val contentCount = recordChain(markdown_core_specimen_content(specimen))
-                        specimenRecords += NativeSpecimenRecord(specimen, contentStart, contentCount)
+                        val contentCount = record(markdown_core_specimen_content(specimen))
+                        specimenRecords += SpecimenRecord(specimen, contentStart, contentCount)
                         record.specimenCount++
                         specimen = markdown_core_specimen_next(specimen)
                     }
@@ -389,11 +389,11 @@ private class NativeTreeBuilder(
                     var citation = markdown_core_node_cite_citations(record.pointer)
                     while (citation != null) {
                         val prefixStart = records.size
-                        val prefixCount = recordChain(markdown_core_citation_prefix(citation))
+                        val prefixCount = record(markdown_core_citation_prefix(citation))
                         val suffixStart = records.size
-                        val suffixCount = recordChain(markdown_core_citation_suffix(citation))
+                        val suffixCount = record(markdown_core_citation_suffix(citation))
                         citationRecords +=
-                            NativeCitationRecord(citation, prefixStart, prefixCount, suffixStart, suffixCount)
+                            CitationRecord(citation, prefixStart, prefixCount, suffixStart, suffixCount)
                         record.valueCount++
                         citation = markdown_core_citation_next(citation)
                     }
@@ -403,7 +403,7 @@ private class NativeTreeBuilder(
             record.childStart = records.size
             var child = markdown_core_node_get_first_child(record.pointer)
             while (child != null) {
-                records += NativeNodeRecord(child)
+                records += Record(child)
                 record.childCount++
                 child = markdown_core_node_get_next_sibling(child)
             }
@@ -415,11 +415,11 @@ private class NativeTreeBuilder(
     }
 
     /** Records every node of a sibling chain a value owns and answers how many there were. */
-    private fun recordChain(first: CPointer<markdown_core_node>?): Int {
+    private fun record(first: CPointer<markdown_core_node>?): Int {
         var count = 0
         var node = first
         while (node != null) {
-            records += NativeNodeRecord(node)
+            records += Record(node)
             count++
             node = markdown_core_node_get_next_sibling(node)
         }
@@ -430,7 +430,7 @@ private class NativeTreeBuilder(
         val record = records[index]
         val node = record.pointer
         val kind = markdown_core_node_get_kind(node)
-        val scope = nativeScope(node)
+        val scope = scope(node)
         val inherited =
             if (kind == MARKDOWN_CORE_KIND_LINK ||
                 kind == MARKDOWN_CORE_KIND_EMBEDDED
@@ -441,7 +441,7 @@ private class NativeTreeBuilder(
             }
         val primary = markdown_core_node_primary_attributes(node)
         val anchor =
-            markdown_core_attribute_value_anchor(primary).useContents { copyOptionalString() } ?: inherited?.anchor
+            markdown_core_attribute_value_anchor(primary).useContents { string() } ?: inherited?.anchor
         val attributes = scratch.attributes(primary).inheriting(inherited?.attributes ?: Attributes.empty)
         val children = children(record)
         return when (kind) {
@@ -508,7 +508,7 @@ private class NativeTreeBuilder(
             }
 
             MARKDOWN_CORE_KIND_LIST_ITEM -> {
-                ListItem(scratch.listItemMarker(node), children, scope, anchor, attributes)
+                ListItem(scratch.marker(node), children, scope, anchor, attributes)
             }
 
             MARKDOWN_CORE_KIND_CODE_BLOCK -> {
@@ -554,14 +554,14 @@ private class NativeTreeBuilder(
             }
 
             MARKDOWN_CORE_KIND_CROSS_LINK -> {
-                CrossLink(scratch.destination(node), scratch.crossLabel(node), scope, anchor, attributes)
+                CrossLink(scratch.destination(node), scratch.label(node), scope, anchor, attributes)
                     .also { requireLeaf(children, kind) }
             }
 
             MARKDOWN_CORE_KIND_CROSS_EMBEDDED -> {
                 CrossEmbedded(
                     scratch.destination(node),
-                    scratch.crossLabel(node),
+                    scratch.label(node),
                     scratch.dimensions(node),
                     scope,
                     anchor,
@@ -651,25 +651,25 @@ private class NativeTreeBuilder(
         }
     }
 
-    private fun children(record: NativeNodeRecord): kotlin.collections.List<Markup> =
+    private fun children(record: Record): kotlin.collections.List<Markup> =
         nodes(record.childStart, record.childCount, "child")
 
-    private fun title(record: NativeNodeRecord): kotlin.collections.List<Markup>? {
+    private fun title(record: Record): kotlin.collections.List<Markup>? {
         if (record.titleCount == 0) return null
         return nodes(record.titleStart, record.titleCount, "callout title")
     }
 
-    private fun footnotes(record: NativeNodeRecord): kotlin.collections.List<Footnote> =
+    private fun footnotes(record: Record): kotlin.collections.List<Footnote> =
         immutableList(record.valueCount) { offset ->
             val footnote = footnoteRecords[record.valueStart + offset]
             Footnote(
-                scratch.footnoteId(footnote.pointer),
+                scratch.id(footnote.pointer),
                 nodes(footnote.contentStart, footnote.contentCount, "footnote content"),
                 markdown_core_footnote_scope(footnote.pointer).toScope(),
             )
         }
 
-    private fun specimens(record: NativeNodeRecord): kotlin.collections.List<Specimen> =
+    private fun specimens(record: Record): kotlin.collections.List<Specimen> =
         immutableList(record.specimenCount) { offset ->
             val specimen = specimenRecords[record.specimenStart + offset]
             scratch.specimen(
@@ -679,7 +679,7 @@ private class NativeTreeBuilder(
             )
         }
 
-    private fun citations(record: NativeNodeRecord): kotlin.collections.List<Citation> =
+    private fun citations(record: Record): kotlin.collections.List<Citation> =
         immutableList(record.valueCount) { offset ->
             val citation = citationRecords[record.valueStart + offset]
             Citation(
@@ -699,19 +699,19 @@ private class NativeTreeBuilder(
             requireNotNull(built[start + offset]) { "native $what was not materialized" }
         }
 
-    private fun caption(record: NativeNodeRecord): TableCaption? {
+    private fun caption(record: Record): TableCaption? {
         if (record.captionIndex < 0) return null
         return requireNotNull(built[record.captionIndex] as? TableCaption) { "invalid native table caption kind" }
     }
 
-    private fun label(record: NativeNodeRecord): DirectiveLabel? {
+    private fun label(record: Record): DirectiveLabel? {
         if (record.labelIndex < 0) return null
         val value = requireNotNull(built[record.labelIndex]) { "native directive label was not materialized" }
         require(value is DirectiveLabel) { "directive label field contains a non-label node" }
         return value
     }
 
-    private fun nativeScope(node: CPointer<markdown_core_node>): Scope = markdown_core_node_scope(node).toScope()
+    private fun scope(node: CPointer<markdown_core_node>): Scope = markdown_core_node_scope(node).toScope()
 
     private fun requireLeaf(
         children: kotlin.collections.List<Markup>,
@@ -721,15 +721,15 @@ private class NativeTreeBuilder(
     }
 }
 
-internal fun decodeNativeListDelimiter(value: markdown_core_ordered_list_delimiter): OrderedListDelimiter =
-    when (value.kind) {
+internal fun markdown_core_ordered_list_delimiter.toDelimiter(): OrderedListDelimiter =
+    when (kind) {
         MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PERIOD -> OrderedListDelimiter.Period
-        MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PARENTHESIS -> OrderedListDelimiter.Parenthesis(value.closed)
+        MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PARENTHESIS -> OrderedListDelimiter.Parenthesis(closed)
         MARKDOWN_CORE_ORDERED_LIST_DELIMITER_DEFAULT -> OrderedListDelimiter.Default
-        else -> error("unsupported native list delimiter ${value.kind}")
+        else -> error("unsupported native list delimiter $kind")
     }
 
-private class NativeScratch(
+private class Scratch(
     scope: MemScope,
 ) {
     private val firstString = scope.alloc<markdown_core_string>()
@@ -806,7 +806,7 @@ private class NativeScratch(
             } else {
                 null
             }
-        val delimiter = if (optionalLong.has_value) decodeNativeListDelimiter(listDelimiter) else null
+        val delimiter = if (optionalLong.has_value) listDelimiter.toDelimiter() else null
         return List(
             flavor,
             optionalLong.value.takeIf { optionalLong.has_value },
@@ -820,11 +820,11 @@ private class NativeScratch(
         )
     }
 
-    fun listItemMarker(node: CPointer<markdown_core_node>): String? {
+    fun marker(node: CPointer<markdown_core_node>): String? {
         require(markdown_core_node_list_item_marker(node, firstOptionalString.ptr)) {
             "invalid list item node"
         }
-        return firstOptionalString.copyOptionalString()
+        return firstOptionalString.string()
     }
 
     fun codeBlock(
@@ -844,9 +844,9 @@ private class NativeScratch(
             ),
         ) { "invalid code block node" }
         return CodeBlock(
-            firstOptionalString.copyOptionalString(),
-            secondOptionalString.copyOptionalString(),
-            thirdString.copyString(),
+            firstOptionalString.string(),
+            secondOptionalString.string(),
+            thirdString.string(),
             firstBoolean.value,
             secondBoolean.value,
             scope,
@@ -857,14 +857,14 @@ private class NativeScratch(
 
     fun literal(node: CPointer<markdown_core_node>): String {
         require(markdown_core_node_literal(node, firstString.ptr)) { "invalid literal node" }
-        return firstString.copyString()
+        return firstString.string()
     }
 
     fun callout(node: CPointer<markdown_core_node>): Pair<String?, Boolean?> {
         require(markdown_core_node_callout_properties(node, firstOptionalString.ptr, optionalBoolean.ptr)) {
             "invalid callout node"
         }
-        return firstOptionalString.copyOptionalString() to optionalBoolean.value.takeIf { optionalBoolean.has_value }
+        return firstOptionalString.string() to optionalBoolean.value.takeIf { optionalBoolean.has_value }
     }
 
     fun formula(node: CPointer<markdown_core_node>): Pair<Placement, String> {
@@ -877,7 +877,7 @@ private class NativeScratch(
                 MARKDOWN_CORE_PLACEMENT_STANDALONE -> Placement.STANDALONE
                 else -> error("unsupported native placement mode ${placement.value}")
             }
-        return mode to firstString.copyString()
+        return mode to firstString.string()
     }
 
     fun table(
@@ -955,7 +955,7 @@ private class NativeScratch(
         anchor: String?,
         attributes: Attributes,
     ): DirectiveBlock {
-        val properties = directiveProperties(node)
+        val properties = properties(node)
         return DirectiveBlock(properties, label, children, scope, anchor, attributes)
     }
 
@@ -968,7 +968,7 @@ private class NativeScratch(
         attributes: Attributes,
     ): Directive {
         require(children.isEmpty()) { "inline directive contains block content" }
-        val properties = directiveProperties(node)
+        val properties = properties(node)
         return Directive(
             requireNotNull(properties) { "inline directive requires a name" },
             label,
@@ -978,9 +978,9 @@ private class NativeScratch(
         )
     }
 
-    private fun directiveProperties(node: CPointer<markdown_core_node>): String? {
+    private fun properties(node: CPointer<markdown_core_node>): String? {
         require(markdown_core_node_directive_properties(node, firstOptionalString.ptr)) { "invalid directive node" }
-        return firstOptionalString.copyOptionalString()
+        return firstOptionalString.string()
     }
 
     fun attributes(value: CPointer<markdown_core_attribute_value>?): Attributes {
@@ -989,7 +989,7 @@ private class NativeScratch(
                 require(
                     markdown_core_attribute_value_class_at(value, index.toULong(), firstString.ptr),
                 ) { "invalid class" }
-                firstString.copyString()
+                firstString.string()
             }
         val records =
             immutableList(markdown_core_attribute_value_record_count(value).checkedSize("record count")) { index ->
@@ -998,7 +998,7 @@ private class NativeScratch(
                 ) {
                     "invalid record"
                 }
-                Record(firstString.copyString(), secondString.copyString())
+                Record(firstString.string(), secondString.string())
             }
         return Attributes(classes, records)
     }
@@ -1046,13 +1046,13 @@ private class NativeScratch(
 
                         MARKDOWN_CORE_METADATA_NUMBER -> {
                             MetadataScalar.Number(
-                                metadataScalar.value.string.copyString(),
+                                metadataScalar.value.string.string(),
                             )
                         }
 
                         MARKDOWN_CORE_METADATA_TEXT -> {
                             MetadataScalar.Text(
-                                metadataScalar.value.string.copyString(),
+                                metadataScalar.value.string.string(),
                             )
                         }
 
@@ -1080,13 +1080,13 @@ private class NativeScratch(
                         when (metadataItem.kind) {
                             MARKDOWN_CORE_METADATA_ITEM_NUMBER -> {
                                 MetadataListItem.Number(
-                                    metadataItem.value.copyString(),
+                                    metadataItem.value.string(),
                                 )
                             }
 
                             MARKDOWN_CORE_METADATA_ITEM_TEXT -> {
                                 MetadataListItem.Text(
-                                    metadataItem.value.copyString(),
+                                    metadataItem.value.string(),
                                 )
                             }
 
@@ -1108,11 +1108,11 @@ private class NativeScratch(
         require(markdown_core_node_destination(node, destination.ptr)) { "invalid link or image node" }
         return when (destination.kind) {
             MARKDOWN_CORE_DESTINATION_URL -> {
-                Destination.Url(destination.url.copyString())
+                Destination.Url(destination.url.string())
             }
 
             MARKDOWN_CORE_DESTINATION_CROSS -> {
-                Destination.Cross(destination.path.copyString(), destination.anchor.copyOptionalString())
+                Destination.Cross(destination.path.string(), destination.anchor.string())
             }
 
             else -> {
@@ -1121,12 +1121,12 @@ private class NativeScratch(
         }
     }
 
-    fun crossLabel(node: CPointer<markdown_core_node>): String? =
-        markdown_core_node_cross_label(node).useContents { copyOptionalString() }
+    fun label(node: CPointer<markdown_core_node>): String? =
+        markdown_core_node_cross_label(node).useContents { string() }
 
     fun title(node: CPointer<markdown_core_node>): String? {
         require(markdown_core_node_title(node, firstOptionalString.ptr)) { "invalid link or image node" }
-        return firstOptionalString.copyOptionalString()
+        return firstOptionalString.string()
     }
 
     /** A branch's fields exist only in that branch, so only they are copied. */
@@ -1139,7 +1139,7 @@ private class NativeScratch(
             markdown_core_specimen_properties(pointer, firstOptionalString.ptr, optionalLong.ptr),
         ) { "invalid specimen" }
         return Specimen(
-            firstOptionalString.copyOptionalString(),
+            firstOptionalString.string(),
             optionalLong.value.takeIf {
                 optionalLong.has_value
             },
@@ -1152,15 +1152,15 @@ private class NativeScratch(
         require(markdown_core_citation_referent(citation, referent.ptr)) { "invalid citation" }
         return when (referent.kind) {
             MARKDOWN_CORE_REFERENT_BIB -> {
-                CitationReferent.Bib(referent.key.copyString(), bibMode())
+                CitationReferent.Bib(referent.key.string(), bibMode())
             }
 
             MARKDOWN_CORE_REFERENT_FOOTNOTE -> {
-                CitationReferent.Footnote(referent.id.copyString())
+                CitationReferent.Footnote(referent.id.string())
             }
 
             MARKDOWN_CORE_REFERENT_SPECIMEN -> {
-                CitationReferent.Specimen(referent.id.copyString())
+                CitationReferent.Specimen(referent.id.string())
             }
 
             else -> {
@@ -1177,9 +1177,9 @@ private class NativeScratch(
             else -> error("unsupported native bib mode ${referent.mode}")
         }
 
-    fun footnoteId(footnote: CPointer<markdown_core_footnote>): String {
+    fun id(footnote: CPointer<markdown_core_footnote>): String {
         require(markdown_core_footnote_id(footnote, firstString.ptr)) { "invalid footnote" }
-        return firstString.copyString()
+        return firstString.string()
     }
 }
 
@@ -1188,9 +1188,9 @@ private fun CValue<markdown_core_scope>.toScope(): Scope =
         Scope(Position(start.line, start.column), Position(end.line, end.column))
     }
 
-private fun markdown_core_optional_string.copyOptionalString(): String? = if (has_value) value.copyString() else null
+private fun markdown_core_optional_string.string(): String? = if (has_value) value.string() else null
 
-private fun markdown_core_string.copyString(): String {
+private fun markdown_core_string.string(): String {
     val byteCount = length.checkedSize("string length")
     if (byteCount == 0) return ""
     return requireNotNull(data) { "native string has bytes but no data" }.readBytes(byteCount).decodeToString()

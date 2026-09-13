@@ -4,13 +4,13 @@ package com.nouprax.markdown.core
 public object TreeDumper {
     /** Returns the canonical debug dump for [root] and its owned markup. */
     public fun dump(root: Markup): String =
-        DumpState().run {
+        State().run {
             dump(root)
             result()
         }
 }
 
-private class DumpState {
+private class State {
     private val remainingNodes = mutableListOf<Int>()
     private val lines = mutableListOf<String>()
     private val visitor = DumpVisitor(this)
@@ -40,7 +40,7 @@ private class DumpState {
         line(
             kind,
             node.scope,
-            listOf("anchor=${optionalString(node.anchor)}", "attributes=${attributesString(node.attributes)}") + fields,
+            listOf("anchor=${optional(node.anchor)}", "attributes=${attributes(node.attributes)}") + fields,
             children,
         )
     }
@@ -94,7 +94,7 @@ private class DumpState {
 
 /** Each visit emits exactly that node and chooses its children and fields. */
 private class DumpVisitor(
-    private val state: DumpState,
+    private val state: State,
 ) : Visitor<Unit> {
     override fun visitDocument(node: Document) {
         // The footnotes are value lines after the content, each nesting its
@@ -131,7 +131,7 @@ private class DumpVisitor(
     }
 
     private fun footnote(value: Footnote) {
-        state.line("Footnote", value.scope, listOf("id=${jsonString(value.id)}"), value.content.size)
+        state.line("Footnote", value.scope, listOf("id=${escaped(value.id)}"), value.content.size)
         state.nested(value.content.size) { value.content.forEach(state::dump) }
     }
 
@@ -139,7 +139,7 @@ private class DumpVisitor(
         state.line(
             "Specimen",
             value.scope,
-            listOf("id=${optionalString(value.id)}", "start=${value.start ?: "null"}"),
+            listOf("id=${optional(value.id)}", "start=${value.start ?: "null"}"),
             value.content.size,
         )
         state.nested(value.content.size) { value.content.forEach(state::dump) }
@@ -149,7 +149,7 @@ private class DumpVisitor(
         state.line(
             "Callout",
             node,
-            listOf("variant=${optionalString(node.variant)}", "collapsed=${node.collapsed ?: "null"}"),
+            listOf("variant=${optional(node.variant)}", "collapsed=${node.collapsed ?: "null"}"),
             node.content.size,
         )
         // A non-null title is a `Title` group before the content; a
@@ -194,7 +194,7 @@ private class DumpVisitor(
         state.container(
             "ListItem",
             node,
-            listOf("marker=${optionalString(node.marker)}"),
+            listOf("marker=${optional(node.marker)}"),
             node.content,
         )
     }
@@ -204,9 +204,9 @@ private class DumpVisitor(
             "CodeBlock",
             node,
             listOf(
-                "info=${optionalString(node.info)}",
-                "language=${optionalString(node.language)}",
-                "literal=${jsonString(node.literal)}",
+                "info=${optional(node.info)}",
+                "language=${optional(node.language)}",
+                "literal=${escaped(node.literal)}",
                 "fenced=${node.fenced}",
                 "closed=${node.closed}",
             ),
@@ -214,11 +214,11 @@ private class DumpVisitor(
     }
 
     override fun visitHTMLBlock(node: HTMLBlock) {
-        state.line("HTMLBlock", node, listOf("literal=${jsonString(node.literal)}"))
+        state.line("HTMLBlock", node, listOf("literal=${escaped(node.literal)}"))
     }
 
     override fun visitFormulaBlock(node: FormulaBlock) {
-        state.line("FormulaBlock", node, listOf("literal=${jsonString(node.literal)}"))
+        state.line("FormulaBlock", node, listOf("literal=${escaped(node.literal)}"))
     }
 
     override fun visitTable(node: Table) {
@@ -252,7 +252,7 @@ private class DumpVisitor(
         state.line(
             "DirectiveBlock",
             node,
-            listOf("name=${optionalString(node.name)}"),
+            listOf("name=${optional(node.name)}"),
             children = node.content.size,
         )
         state.nested(node.content.size + if (node.label == null) 0 else 1) {
@@ -266,7 +266,7 @@ private class DumpVisitor(
     }
 
     override fun visitText(node: Text) {
-        state.line("Text", node, listOf("literal=${jsonString(node.literal)}"))
+        state.line("Text", node, listOf("literal=${escaped(node.literal)}"))
     }
 
     override fun visitSoftBreak(node: SoftBreak) {
@@ -278,15 +278,15 @@ private class DumpVisitor(
     }
 
     override fun visitCode(node: Code) {
-        state.line("Code", node, listOf("literal=${jsonString(node.literal)}"))
+        state.line("Code", node, listOf("literal=${escaped(node.literal)}"))
     }
 
     override fun visitHTML(node: HTML) {
-        state.line("HTML", node, listOf("literal=${jsonString(node.literal)}"))
+        state.line("HTML", node, listOf("literal=${escaped(node.literal)}"))
     }
 
     override fun visitCrossLink(node: CrossLink) {
-        state.line("CrossLink", node, listOf("dest=${destination(node.dest)}", "label=${optionalString(node.label)}"))
+        state.line("CrossLink", node, listOf("dest=${destination(node.dest)}", "label=${optional(node.label)}"))
     }
 
     override fun visitCrossEmbedded(node: CrossEmbedded) {
@@ -295,18 +295,18 @@ private class DumpVisitor(
             node,
             listOf(
                 "dest=${destination(node.dest)}",
-                "label=${optionalString(node.label)}",
-                "dimensions=${dimensionsString(node.dimensions)}",
+                "label=${optional(node.label)}",
+                "dimensions=${dimensions(node.dimensions)}",
             ),
         )
     }
 
     override fun visitComment(node: Comment) {
-        state.line("Comment", node, listOf("literal=${jsonString(node.literal)}"))
+        state.line("Comment", node, listOf("literal=${escaped(node.literal)}"))
     }
 
     override fun visitFormula(node: Formula) {
-        state.line("Formula", node, listOf("mode=${node.mode.token()}", "literal=${jsonString(node.literal)}"))
+        state.line("Formula", node, listOf("mode=${node.mode.token()}", "literal=${escaped(node.literal)}"))
     }
 
     override fun visitEmphasis(node: Emphasis) {
@@ -363,7 +363,7 @@ private class DumpVisitor(
             node,
             listOf(
                 "dest=${destination(node.dest)}",
-                "title=${optionalString(node.title)}",
+                "title=${optional(node.title)}",
             ),
             node.content,
         )
@@ -375,15 +375,15 @@ private class DumpVisitor(
             node,
             listOf(
                 "dest=${destination(node.dest)}",
-                "title=${optionalString(node.title)}",
-                "dimensions=${dimensionsString(node.dimensions)}",
+                "title=${optional(node.title)}",
+                "dimensions=${dimensions(node.dimensions)}",
             ),
             node.content,
         )
     }
 
     override fun visitDirective(node: Directive) {
-        state.line("Directive", node, listOf("name=${jsonString(node.name)}"))
+        state.line("Directive", node, listOf("name=${escaped(node.name)}"))
         state.nested(if (node.label == null) 0 else 1) {
             node.label?.let(state::dump)
         }
@@ -410,20 +410,20 @@ private class DumpVisitor(
 private fun scope(value: Scope): String =
     "scope=${value.start.line}:${value.start.column}..${value.end.line}:${value.end.column}"
 
-private fun optionalString(value: String?): String = value?.let(::jsonString) ?: "null"
+private fun optional(value: String?): String = value?.let(::escaped) ?: "null"
 
 /** A tagged value prints as its branch name applied to its fields, in declaration order. */
 private fun destination(value: Destination): String =
     when (value) {
-        is Destination.Url -> "url(${jsonString(value.value)})"
-        is Destination.Cross -> "cross(path=${jsonString(value.path)},anchor=${optionalString(value.anchor)})"
+        is Destination.Url -> "url(${escaped(value.value)})"
+        is Destination.Cross -> "cross(path=${escaped(value.path)},anchor=${optional(value.anchor)})"
     }
 
 private fun referent(value: CitationReferent): String =
     when (value) {
-        is CitationReferent.Bib -> "bib(key=${jsonString(value.key)},mode=${value.mode.token()})"
-        is CitationReferent.Footnote -> "footnote(id=${jsonString(value.id)})"
-        is CitationReferent.Specimen -> "specimen(id=${jsonString(value.id)})"
+        is CitationReferent.Bib -> "bib(key=${escaped(value.key)},mode=${value.mode.token()})"
+        is CitationReferent.Footnote -> "footnote(id=${escaped(value.id)})"
+        is CitationReferent.Specimen -> "specimen(id=${escaped(value.id)})"
     }
 
 private fun BibMode.token(): String =
@@ -454,7 +454,7 @@ private fun OrderedListDelimiter.token(): String =
 
 private fun Flow.token(): String = name.lowercase()
 
-private fun jsonString(value: String): String =
+private fun escaped(value: String): String =
     buildString {
         append('"')
         value.forEach { character ->
@@ -531,11 +531,11 @@ private fun decimal(value: Double): String {
     return digits.take(point) + "." + digits.drop(point)
 }
 
-private fun attributesString(value: Attributes): String =
+private fun attributes(value: Attributes): String =
     (
         value.classes.map {
-            "." + attributeClass(it)
-        } + value.records.map { "${it.name}=${jsonString(it.value)}" }
+            "." + identifier(it)
+        } + value.records.map { "${it.name}=${escaped(it.value)}" }
     ).joinToString(" ", "{", "}")
 
 private fun metadataValue(value: MetadataValue): String =
@@ -545,8 +545,8 @@ private fun metadataValue(value: MetadataValue): String =
                 when (val scalar = value.value) {
                     MetadataScalar.Null -> "null"
                     is MetadataScalar.Bool -> "bool(${scalar.value})"
-                    is MetadataScalar.Number -> "number(${jsonString(scalar.value)})"
-                    is MetadataScalar.Text -> "text(${jsonString(scalar.value)})"
+                    is MetadataScalar.Number -> "number(${escaped(scalar.value)})"
+                    is MetadataScalar.Text -> "text(${escaped(scalar.value)})"
                 } + ")"
         }
 
@@ -554,19 +554,19 @@ private fun metadataValue(value: MetadataValue): String =
             "list([" +
                 value.items.joinToString(",") { item ->
                     when (item) {
-                        is MetadataListItem.Number -> "number(${jsonString(item.value)})"
-                        is MetadataListItem.Text -> "text(${jsonString(item.value)})"
+                        is MetadataListItem.Number -> "number(${escaped(item.value)})"
+                        is MetadataListItem.Text -> "text(${escaped(item.value)})"
                     }
                 } + "])"
         }
     }
 
-private fun attributeClass(value: String): String {
+private fun identifier(value: String): String {
     val plain =
         value.isNotEmpty() &&
             value.all { it.code in 33..126 && it.code !in listOf(34, 92, 123, 125, 91, 93, 40, 41, 61) }
-    return if (plain) value else jsonString(value)
+    return if (plain) value else escaped(value)
 }
 
-private fun dimensionsString(value: Dimensions?): String =
+private fun dimensions(value: Dimensions?): String =
     value?.let { "(width=${it.width},height=${it.height ?: "null"})" } ?: "null"

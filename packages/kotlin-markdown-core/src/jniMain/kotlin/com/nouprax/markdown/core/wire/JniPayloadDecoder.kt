@@ -4,7 +4,7 @@ internal object JniPayloadDecoder {
     /** Current JVM/Android JNI payload format. */
     private val magic = byteArrayOf(0x4d, 0x4b, 0x4a, 0x31)
 
-    fun decodeDocument(bytes: ByteArray): Document {
+    fun decode(bytes: ByteArray): Document {
         val reader = JniPayloadReader(bytes)
         magic.forEachIndexed { index, expected ->
             val actual = reader.byte()
@@ -17,7 +17,7 @@ internal object JniPayloadDecoder {
             1 -> throw reader.error()
             else -> error("unsupported JNI payload status")
         }
-        return reader.decodeTree()
+        return reader.document()
     }
 }
 
@@ -28,7 +28,7 @@ private fun JniPayloadReader.error(): ParseException {
             2 -> ParseErrorCode.ALLOCATION_FAILED
             else -> ParseErrorCode.INTERNAL
         }
-    val message = requiredString()
+    val message = required()
     require(finished) { "invalid native error payload" }
     return ParseException(code, message)
 }
@@ -66,7 +66,7 @@ internal class JniPayloadReader(
         return bytes.decodeToString(offset, end).also { offset = end }
     }
 
-    fun requiredString(): String = requireNotNull(string()) { "missing native field" }
+    fun required(): String = requireNotNull(string()) { "missing native field" }
 
     fun scope(): Scope = Scope(Position(int(), int()), Position(int(), int()))
 

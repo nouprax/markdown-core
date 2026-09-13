@@ -1,6 +1,6 @@
 import type { Document } from "../model/document.js";
 import { ParseError } from "../parse-error.js";
-import { NodeDecoder, transferHeaderSize } from "../wire/node-decoder.js";
+import { Decoder, transferHeaderSize } from "../wire/node-decoder.js";
 import { native, type NativeExports } from "./native.js";
 
 const utf8Encoder = new TextEncoder();
@@ -32,7 +32,7 @@ export function parseDocumentWithNative(nativeExports: NativeExports, source: st
         if (totalSize < transferHeaderSize || totalSize > memorySize - resultPointer) {
             throw new Error("native result lies outside WebAssembly memory");
         }
-        return new NodeDecoder(new Uint8Array(nativeExports.memory.buffer, resultPointer, totalSize)).decodeDocument();
+        return new Decoder(new Uint8Array(nativeExports.memory.buffer, resultPointer, totalSize)).decode();
     } finally {
         if (resultPointer) nativeExports.es_result_free(resultPointer);
         if (sourcePointer) nativeExports.free(sourcePointer);

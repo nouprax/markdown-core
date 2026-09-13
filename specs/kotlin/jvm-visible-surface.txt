@@ -14,7 +14,7 @@
 # payload method carries @JvmSynthetic, and the audit checks both properties.
 
 # `when` over an enum compiles to a lookup table in a nested class.
-JniTreeDecoder$WhenMappings
+Decoder$WhenMappings
 TreeDumperKt$WhenMappings
 WalkingDriver$WhenMappings
 
