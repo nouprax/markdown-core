@@ -343,8 +343,8 @@ const kindSurfaces = [
     },
     {
         label: "ES dumper",
-        expect: [...kinds.keys()],
-        actual: namedKinds("packages/es-markdown-core/src/tree-dumper.ts", /^\s+visit([A-Za-z]+): \(/gm)
+        expect: [...kinds.keys()].map(camel),
+        actual: namedKinds("packages/es-markdown-core/src/tree-dumper.ts", /^\s+([a-zA-Z]+): \(node\) =>/gm)
     },
     {
         label: "Swift dumper",

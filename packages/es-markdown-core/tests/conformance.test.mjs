@@ -91,14 +91,14 @@ test("conformance: fields, nullability, and typed table nodes map to JavaScript"
     assert.equal(
         visit(document.content[2].head[0], {
             ...kindVisitor,
-            visitTableRow: () => "row"
+            tableRow: () => "row"
         }),
         "row"
     );
     assert.equal(
         visit(document.content[2].head[0].cells[0], {
             ...kindVisitor,
-            visitTableCell: () => "cell"
+            tableCell: () => "cell"
         }),
         "cell"
     );

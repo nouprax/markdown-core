@@ -35,72 +35,108 @@ const explicitDump: string = TreeDumper.dump(document);
 void dump;
 void explicitDump;
 const visitor: Visitor<string> = {
-    visitDocument: (node) => node.kind,
-    visitCallout: (node) => node.kind,
-    visitParagraph: (node) => node.kind,
-    visitHeading(node: Heading) {
-        return String(node.level);
+    document: (node) => node.kind,
+    callout: (node) => node.kind,
+    paragraph: (node) => node.kind,
+    heading(heading) {
+        const inferred: Heading = heading;
+        return String(inferred.level);
     },
-    visitThematicBreak: (node) => node.kind,
-    visitList: (node) => node.kind,
-    visitListItem: (node) => node.kind,
-    visitCodeBlock: (node) => node.kind,
-    visitHTMLBlock: (node) => node.kind,
-    visitFormulaBlock: (node) => node.kind,
-    visitTable: (node) => node.kind,
-    visitTableCaption: (node) => node.kind,
-    visitTableRow: () => "row",
-    visitTableCell: (node) => node.kind,
-    visitDirectiveBlock: (node) => node.kind,
-    visitDirectiveLabel: (node) => node.kind,
-    visitText: (node) => node.kind,
-    visitSoftBreak: (node) => node.kind,
-    visitLineBreak: (node) => node.kind,
-    visitCode: (node) => node.kind,
-    visitHTML: (node) => node.kind,
-    visitComment: (node) => node.kind,
-    visitCrossLink: (node) => node.kind,
-    visitCrossEmbedded: (node) => node.kind,
-    visitFormula: (node) => node.kind,
-    visitEmphasis: (node) => node.kind,
-    visitStrong: (node) => node.kind,
-    visitStrikethrough: (node) => node.kind,
-    visitMark: (node) => node.kind,
-    visitInsertion: (node) => node.kind,
-    visitSpan: (node) => node.kind,
-    visitSuperscript: (node) => node.kind,
-    visitSubscript: (node) => node.kind,
-    visitDefinitionList: (node) => node.kind,
-    visitDefinition: (node) => node.kind,
-    visitLink: (node) => node.kind,
-    visitEmbedded: (node) => node.kind,
-    visitDirective: (node) => node.kind,
-    visitCite: (node) => node.kind
+    thematicBreak: (node) => node.kind,
+    list: (node) => node.kind,
+    listItem: (node) => node.kind,
+    codeBlock: (node) => node.kind,
+    htmlBlock: (node) => node.kind,
+    formulaBlock: (node) => node.kind,
+    table: (node) => node.kind,
+    tableCaption: (node) => node.kind,
+    tableRow: () => "row",
+    tableCell: (node) => node.kind,
+    directiveBlock: (node) => node.kind,
+    directiveLabel: (node) => node.kind,
+    text: (node) => node.kind,
+    softBreak: (node) => node.kind,
+    lineBreak: (node) => node.kind,
+    code: (node) => node.kind,
+    html: (node) => node.kind,
+    comment: (node) => node.kind,
+    crossLink: (node) => node.kind,
+    crossEmbedded: (node) => node.kind,
+    formula: (node) => node.kind,
+    emphasis: (node) => node.kind,
+    strong: (node) => node.kind,
+    strikethrough: (node) => node.kind,
+    mark: (node) => node.kind,
+    insertion: (node) => node.kind,
+    span: (node) => node.kind,
+    superscript: (node) => node.kind,
+    subscript: (node) => node.kind,
+    definitionList: (node) => node.kind,
+    definition: (node) => node.kind,
+    link(link) {
+        // @ts-expect-error the inferred Link parameter has no dimensions
+        void link.dimensions;
+        return link.kind;
+    },
+    embedded(embedded) {
+        const inferred: Embedded = embedded;
+        const dimensions: Dimensions | null = inferred.dimensions;
+        // @ts-expect-error Embedded is not a Heading
+        void embedded.level;
+        void dimensions;
+        return embedded.kind;
+    },
+    directive: (node) => node.kind,
+    cite: (node) => node.kind
 };
-visit(document, visitor);
+const result: string = visit(document, visitor);
+const explicit: string = visit<string>(document, visitor);
+void [result, explicit];
+// @ts-expect-error a document cannot be passed to the Embedded callback
+visitor.embedded(document);
+const mismatchedVisitor: Visitor<string> = {
+    ...visitor,
+    // @ts-expect-error the Embedded handler cannot accept only Headings
+    embedded: (heading: Heading) => String(heading.level)
+};
+void mismatchedVisitor;
+const { embedded: omitted, ...remaining } = visitor;
+// @ts-expect-error even one missing kind makes a visitor incomplete
+const missingEmbedded: Visitor<string> = remaining;
+void [omitted, missingEmbedded];
 const walkingVisitor: WalkingVisitor = {
     ...visitor,
-    visitHeading(node: Heading, phase: WalkPhase) {
-        void node.level;
-        void phase;
+    heading(heading, phase) {
+        const inferred: Heading = heading;
+        const inferredPhase: WalkPhase = phase;
+        void [inferred.level, inferredPhase];
     },
     // The scoped values are not `Markup`: they arrive through their own
     // callbacks and never through a kind case.
-    visitCitation(value: Citation, phase: WalkPhase) {
-        const referent: CitationReferent = value.referent;
-        void referent;
-        void phase;
+    citation(citation, phase) {
+        const inferred: Citation = citation;
+        const referent: CitationReferent = inferred.referent;
+        const inferredPhase: WalkPhase = phase;
+        // @ts-expect-error a Citation remains a scoped value without a kind
+        void citation.kind;
+        void [referent, inferredPhase];
     },
-    visitSpecimen(value: Specimen, phase: WalkPhase) {
-        void value;
-        void phase;
+    specimen(specimen, phase) {
+        const inferred: Specimen = specimen;
+        const inferredPhase: WalkPhase = phase;
+        void [inferred, inferredPhase];
     },
-    visitFootnote(value: Footnote, phase: WalkPhase) {
-        void value.id;
-        void phase;
+    footnote(footnote, phase) {
+        const inferred: Footnote = footnote;
+        const inferredPhase: WalkPhase = phase;
+        void [inferred.id, inferredPhase];
     }
 };
 walk(document, walkingVisitor);
+const { citation: omittedCitation, ...remainingWalking } = walkingVisitor;
+// @ts-expect-error value callbacks are required as well as Markup callbacks
+const missingCitation: WalkingVisitor = remainingWalking;
+void [omittedCitation, missingCitation];
 // @ts-expect-error recursively readonly content cannot be replaced
 document.content[0] = document;
 // @ts-expect-error readonly scope values cannot be mutated
@@ -119,13 +155,13 @@ void cell;
 
 // @ts-expect-error Visitor is exhaustive and requires one method per Markup kind
 const incompleteVisitor: Visitor<string> = {
-    visitDocument: (node) => node.kind
+    document: (node) => node.kind
 };
 void incompleteVisitor;
 
 // @ts-expect-error WalkingVisitor is exhaustive and requires one method per Markup kind
 const incompleteWalkingVisitor: WalkingVisitor = {
-    visitDocument: (node, phase) => {
+    document: (node, phase) => {
         void node;
         void phase;
     }

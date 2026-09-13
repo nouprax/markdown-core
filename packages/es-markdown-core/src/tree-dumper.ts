@@ -1,40 +1,8 @@
 import type { Attributes, Dimensions, Metadata, MetadataValue } from "./values.js";
-import type { Callout } from "./model/callout.js";
-import type { Citation, Cite } from "./model/cite.js";
-import type { CodeBlock } from "./model/code-block.js";
-import type { Code } from "./model/code.js";
-import type { Comment } from "./model/comment.js";
-import type { CrossLink } from "./model/cross-link.js";
-import type { CrossEmbedded } from "./model/cross-embedded.js";
-import type { DirectiveBlock } from "./model/directive-block.js";
-import type { DirectiveLabel } from "./model/directive-label.js";
-import type { Directive } from "./model/directive.js";
-import type { Document } from "./model/document.js";
-import type { Emphasis } from "./model/emphasis.js";
-import type { Specimen } from "./model/specimen.js";
+import type { Citation } from "./model/cite.js";
 import type { Footnote } from "./model/footnote.js";
-import type { FormulaBlock } from "./model/formula-block.js";
-import type { Formula } from "./model/formula.js";
-import type { Heading } from "./model/heading.js";
-import type { HTMLBlock } from "./model/html-block.js";
-import type { HTML } from "./model/html.js";
-import type { Embedded } from "./model/embedded.js";
-import type { LineBreak } from "./model/line-break.js";
-import type { Link } from "./model/link.js";
-import type { List, ListItem } from "./model/list.js";
 import type { Markup } from "./model/markup.js";
-import type { Paragraph } from "./model/paragraph.js";
-import type { SoftBreak } from "./model/soft-break.js";
-import type { Strikethrough } from "./model/strikethrough.js";
-import type { Mark } from "./model/mark.js";
-import type { Insertion } from "./model/insertion.js";
-import type { Span } from "./model/span.js";
-import type { Superscript } from "./model/superscript.js";
-import type { Subscript } from "./model/subscript.js";
-import type { Strong } from "./model/strong.js";
-import type { Table, TableCaption, TableCell, TableRow } from "./model/table.js";
-import type { Text } from "./model/text.js";
-import type { ThematicBreak } from "./model/thematic-break.js";
+import type { Specimen } from "./model/specimen.js";
 import type { CitationReferent, Destination, OrderedListDelimiter, OrderedListVariant, Scope } from "./values.js";
 import { visit, type Visitor } from "./visitor.js";
 
@@ -56,7 +24,7 @@ class State {
 
     /** Each callback emits exactly its node and chooses its children/fields. */
     private readonly visitor: Visitor<void> = {
-        visitDocument: (node: Document) => {
+        document: (node) => {
             // The footnotes are value lines after the content, never counted
             // by the document's own `children`.
             this.line("Document", node, [], node.content.length);
@@ -70,7 +38,7 @@ class State {
                 }
             );
         },
-        visitCallout: (node: Callout) => {
+        callout: (node) => {
             this.line(
                 "Callout",
                 node,
@@ -89,10 +57,10 @@ class State {
                 for (const child of node.content) this.dump(child);
             });
         },
-        visitParagraph: (node: Paragraph) => this.container("Paragraph", node, [], node.content),
-        visitHeading: (node: Heading) => this.container("Heading", node, [`level=${node.level}`], node.content),
-        visitThematicBreak: (node: ThematicBreak) => this.line("ThematicBreak", node),
-        visitList: (node: List) =>
+        paragraph: (node) => this.container("Paragraph", node, [], node.content),
+        heading: (node) => this.container("Heading", node, [`level=${node.level}`], node.content),
+        thematicBreak: (node) => this.line("ThematicBreak", node),
+        list: (node) =>
             this.container(
                 "List",
                 node,
@@ -105,9 +73,8 @@ class State {
                 ],
                 node.items
             ),
-        visitListItem: (node: ListItem) =>
-            this.container("ListItem", node, [`marker=${optional(node.marker)}`], node.content),
-        visitCodeBlock: (node: CodeBlock) =>
+        listItem: (node) => this.container("ListItem", node, [`marker=${optional(node.marker)}`], node.content),
+        codeBlock: (node) =>
             this.line("CodeBlock", node, [
                 `info=${optional(node.info)}`,
                 `language=${optional(node.language)}`,
@@ -115,10 +82,9 @@ class State {
                 `fenced=${node.fenced}`,
                 `closed=${node.closed}`
             ]),
-        visitHTMLBlock: (node: HTMLBlock) => this.line("HTMLBlock", node, [`literal=${escaped(node.literal)}`]),
-        visitFormulaBlock: (node: FormulaBlock) =>
-            this.line("FormulaBlock", node, [`literal=${escaped(node.literal)}`]),
-        visitTable: (node: Table) => {
+        htmlBlock: (node) => this.line("HTMLBlock", node, [`literal=${escaped(node.literal)}`]),
+        formulaBlock: (node) => this.line("FormulaBlock", node, [`literal=${escaped(node.literal)}`]),
+        table: (node) => {
             const columns = node.columns.map((column) => `${column.flow}:${column.relative ?? "null"}`).join(",");
             this.line(
                 "Table",
@@ -140,12 +106,12 @@ class State {
                 }
             });
         },
-        visitTableCaption: (node: TableCaption) => this.container("TableCaption", node, [], node.content),
-        visitTableRow: (node: TableRow) => this.container("TableRow", node, [], node.cells),
-        visitTableCell: (node: TableCell) =>
+        tableCaption: (node) => this.container("TableCaption", node, [], node.content),
+        tableRow: (node) => this.container("TableRow", node, [], node.cells),
+        tableCell: (node) =>
             this.container("TableCell", node, [`rowspan=${node.rowspan}`, `colspan=${node.colspan}`], node.content),
-        visitDefinitionList: (node) => this.container("DefinitionList", node, [], node.definitions),
-        visitDefinition: (node) => {
+        definitionList: (node) => this.container("DefinitionList", node, [], node.definitions),
+        definition: (node) => {
             this.line("Definition", node, [`compact=${node.compact}`], node.content.length);
             this.nested(node.content.length + 1, () => {
                 this.group("DefinitionTerm", node.term.length);
@@ -156,46 +122,45 @@ class State {
                 }
             });
         },
-        visitDirectiveBlock: (node: DirectiveBlock) => {
+        directiveBlock: (node) => {
             this.line("DirectiveBlock", node, [`name=${optional(node.name)}`], node.content.length);
             this.nested(node.content.length + (node.label === null ? 0 : 1), () => {
                 if (node.label !== null) this.dump(node.label);
                 for (const child of node.content) this.dump(child);
             });
         },
-        visitDirectiveLabel: (node: DirectiveLabel) => this.container("DirectiveLabel", node, [], node.content),
-        visitText: (node: Text) => this.line("Text", node, [`literal=${escaped(node.literal)}`]),
-        visitSoftBreak: (node: SoftBreak) => this.line("SoftBreak", node),
-        visitLineBreak: (node: LineBreak) => this.line("LineBreak", node),
-        visitCode: (node: Code) => this.line("Code", node, [`literal=${escaped(node.literal)}`]),
-        visitHTML: (node: HTML) => this.line("HTML", node, [`literal=${escaped(node.literal)}`]),
-        visitCrossLink: (node: CrossLink) =>
+        directiveLabel: (node) => this.container("DirectiveLabel", node, [], node.content),
+        text: (node) => this.line("Text", node, [`literal=${escaped(node.literal)}`]),
+        softBreak: (node) => this.line("SoftBreak", node),
+        lineBreak: (node) => this.line("LineBreak", node),
+        code: (node) => this.line("Code", node, [`literal=${escaped(node.literal)}`]),
+        html: (node) => this.line("HTML", node, [`literal=${escaped(node.literal)}`]),
+        crossLink: (node) =>
             this.line("CrossLink", node, [`dest=${destination(node.dest)}`, `label=${optional(node.label)}`]),
-        visitCrossEmbedded: (node: CrossEmbedded) =>
+        crossEmbedded: (node) =>
             this.line("CrossEmbedded", node, [
                 `dest=${destination(node.dest)}`,
                 `label=${optional(node.label)}`,
                 `dimensions=${dimensions(node.dimensions)}`
             ]),
-        visitComment: (node: Comment) => this.line("Comment", node, [`literal=${escaped(node.literal)}`]),
-        visitFormula: (node: Formula) =>
-            this.line("Formula", node, [`mode=${node.mode}`, `literal=${escaped(node.literal)}`]),
-        visitEmphasis: (node: Emphasis) => this.container("Emphasis", node, [], node.content),
-        visitStrong: (node: Strong) => this.container("Strong", node, [], node.content),
-        visitStrikethrough: (node: Strikethrough) => this.container("Strikethrough", node, [], node.content),
-        visitMark: (node: Mark) => this.container("Mark", node, [], node.content),
-        visitInsertion: (node: Insertion) => this.container("Insertion", node, [], node.content),
-        visitSpan: (node: Span) => this.container("Span", node, [], node.content),
-        visitSuperscript: (node: Superscript) => this.container("Superscript", node, [], node.content),
-        visitSubscript: (node: Subscript) => this.container("Subscript", node, [], node.content),
-        visitLink: (node: Link) =>
+        comment: (node) => this.line("Comment", node, [`literal=${escaped(node.literal)}`]),
+        formula: (node) => this.line("Formula", node, [`mode=${node.mode}`, `literal=${escaped(node.literal)}`]),
+        emphasis: (node) => this.container("Emphasis", node, [], node.content),
+        strong: (node) => this.container("Strong", node, [], node.content),
+        strikethrough: (node) => this.container("Strikethrough", node, [], node.content),
+        mark: (node) => this.container("Mark", node, [], node.content),
+        insertion: (node) => this.container("Insertion", node, [], node.content),
+        span: (node) => this.container("Span", node, [], node.content),
+        superscript: (node) => this.container("Superscript", node, [], node.content),
+        subscript: (node) => this.container("Subscript", node, [], node.content),
+        link: (node) =>
             this.container(
                 "Link",
                 node,
                 [`dest=${destination(node.dest)}`, `title=${optional(node.title)}`],
                 node.content
             ),
-        visitEmbedded: (node: Embedded) =>
+        embedded: (node) =>
             this.container(
                 "Embedded",
                 node,
@@ -206,13 +171,13 @@ class State {
                 ],
                 node.content
             ),
-        visitDirective: (node: Directive) => {
+        directive: (node) => {
             this.line("Directive", node, [`name=${escaped(node.name)}`]);
             this.nested(node.label === null ? 0 : 1, () => {
                 if (node.label !== null) this.dump(node.label);
             });
         },
-        visitCite: (node: Cite) => {
+        cite: (node) => {
             // Each item is a value line whose affixes are groups; the cite's
             // own `children` counts the items.
             this.line("Cite", node, [], node.citations.length);

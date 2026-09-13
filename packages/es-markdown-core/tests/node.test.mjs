@@ -44,11 +44,34 @@ test("api: synchronous parse and typed visitor dispatch", () => {
     assert.equal(
         visit(document.content[0], {
             ...kindVisitor,
-            visitHeading: (node) => `heading:${node.level}`
+            heading: (node) => `heading:${node.level}`
         }),
         "heading:1"
     );
     assert.equal(visit(document, kindVisitor), "document");
+    const token = {};
+    assert.equal(
+        visit(document, {
+            ...kindVisitor,
+            document(node) {
+                assert.equal(node, document);
+                return token;
+            }
+        }),
+        token
+    );
+    const failure = new Error("visitor failure");
+    assert.throws(
+        () =>
+            visit(document, {
+                ...kindVisitor,
+                document() {
+                    throw failure;
+                }
+            }),
+        (error) => error === failure
+    );
+    assert.throws(() => visit(document, { ...kindVisitor, document: undefined }), TypeError);
 });
 
 test("api: walking dispatch is typed and preserves owned-field semantics", () => {
@@ -86,7 +109,7 @@ test("api: walking dispatch is typed and preserves owned-field semantics", () =>
 
 test("ast: marks retain typed content and walk both phases after native release", () => {
     const mark = Document.parse("==a *b*==").content[0].content[0];
-    assert.equal(visit(mark, { ...kindVisitor, visitMark: (node) => node.content.length }), 2);
+    assert.equal(visit(mark, { ...kindVisitor, mark: (node) => node.content.length }), 2);
     const events = [];
     walk(
         mark,
@@ -108,7 +131,7 @@ test("ast: marks retain typed content and walk both phases after native release"
 
 test("ast: insertions retain typed content and walk both phases after native release", () => {
     const insertion = Document.parse("++a *b*++").content[0].content[0];
-    assert.equal(visit(insertion, { ...kindVisitor, visitInsertion: (node) => node.content.length }), 2);
+    assert.equal(visit(insertion, { ...kindVisitor, insertion: (node) => node.content.length }), 2);
     const events = [];
     walk(
         insertion,
@@ -130,7 +153,7 @@ test("ast: insertions retain typed content and walk both phases after native rel
 
 test("ast: spans retain typed content and walk both phases after native release", () => {
     const span = Document.parse("[a *b*]{}").content[0].content[0];
-    assert.equal(visit(span, { ...kindVisitor, visitSpan: (node) => node.content.length }), 2);
+    assert.equal(visit(span, { ...kindVisitor, span: (node) => node.content.length }), 2);
     const events = [];
     walk(
         span,
@@ -152,7 +175,7 @@ test("ast: spans retain typed content and walk both phases after native release"
 
 test("ast: superscripts retain typed content and walk both phases after native release", () => {
     const superscript = Document.parse("^a*b*^").content[0].content[0];
-    assert.equal(visit(superscript, { ...kindVisitor, visitSuperscript: (node) => node.content.length }), 2);
+    assert.equal(visit(superscript, { ...kindVisitor, superscript: (node) => node.content.length }), 2);
     const events = [];
     walk(
         superscript,
@@ -174,7 +197,7 @@ test("ast: superscripts retain typed content and walk both phases after native r
 
 test("ast: subscripts retain typed content and walk both phases after native release", () => {
     const subscript = Document.parse("~a*b*~").content[0].content[0];
-    assert.equal(visit(subscript, { ...kindVisitor, visitSubscript: (node) => node.content.length }), 2);
+    assert.equal(visit(subscript, { ...kindVisitor, subscript: (node) => node.content.length }), 2);
     const events = [];
     walk(
         subscript,
@@ -560,9 +583,9 @@ function walkingVisitor(callback) {
     return {
         ...Object.fromEntries(Object.keys(kindVisitor).map((method) => [method, callback])),
         // The scoped values have no `kind`; their callbacks report their names.
-        visitCitation: (value, phase) => callback({ kind: "citation", ...value }, phase),
-        visitSpecimen: (value, phase) => callback({ kind: "specimen", ...value }, phase),
-        visitFootnote: (value, phase) => callback({ kind: "footnote", ...value }, phase)
+        citation: (value, phase) => callback({ kind: "citation", ...value }, phase),
+        specimen: (value, phase) => callback({ kind: "specimen", ...value }, phase),
+        footnote: (value, phase) => callback({ kind: "footnote", ...value }, phase)
     };
 }
 

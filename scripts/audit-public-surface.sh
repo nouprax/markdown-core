@@ -269,26 +269,37 @@ if grep -R -n -E \
 fi
 grep -q 'TableRow extends MarkupBase<"tableRow">' packages/es-markdown-core/src/model/table.ts \
     && grep -q 'TableCell extends MarkupBase<"tableCell">' packages/es-markdown-core/src/model/table.ts \
-    && grep -q 'visitTableRow(this:' packages/es-markdown-core/src/visitor.ts \
-    && grep -q 'visitTableCell(this:' packages/es-markdown-core/src/visitor.ts \
-    || fail "ES table rows and cells are not first-class Markup visitor nodes"
-if grep -R -E -n 'defaultVisit|visit[A-Z][A-Za-z]+\?' packages/es-markdown-core/src; then
-    fail "ES Visitor exposes a catch-all or optional typed handlers"
+    || fail "ES table rows and cells are not first-class Markup nodes"
+if grep -R -E -n 'defaultVisit|visit[A-Z][A-Za-z]+' packages/es-markdown-core/src; then
+    fail "ES retains a catch-all or a retired visitor callback name"
 fi
-test "$(grep -c '^    visit[A-Z].*(this:' packages/es-markdown-core/src/visitor.ts)" -eq "$kind_count" \
-    || fail "ES Visitor is not exhaustive over all $kind_count Markup kinds"
+# Each mapping derives all required node callbacks from the already-audited Markup union.
+node --input-type=module <<'NODE'
+import assert from "node:assert/strict";
+import fs from "node:fs";
+
+const read = (name) => fs.readFileSync(`packages/es-markdown-core/src/${name}.ts`, "utf8");
+assert.match(read("visitor"), /export type Visitor<Result> = \{\s*\[Node in Markup as Node\["kind"\]\]: \(this: void, node: Node\) => Result;\s*\};/);
+const walking = read("walking-visitor");
+const values = walking.match(/export type WalkingVisitor = \{\s*\[Node in Markup as Node\["kind"\]\]: \(this: void, node: Node, phase: WalkPhase\) => void;\s*\} & \{([\s\S]*?)^\};/m)?.[1];
+assert.ok(values, "ES WalkingVisitor must map every Markup kind and retain its value callbacks");
+const contract = JSON.parse(fs.readFileSync("docs/specs/canonical-ast.json", "utf8"));
+const expected = Object.entries(contract.values)
+    .filter(([, value]) => value.scoped && value.walk !== false)
+    .map(([name]) => name).sort();
+const callbacks = [...values.matchAll(/^    ([a-zA-Z]+): \(this: void, ([a-zA-Z]+): ([A-Za-z]+), phase: WalkPhase\) => void;/gm)];
+assert.deepEqual(callbacks.map((callback) => callback[3]).sort(), expected, "ES walking value callback types");
+for (const [, key, parameter, type] of callbacks) {
+    const name = type[0].toLowerCase() + type.slice(1);
+    assert.equal(key, name, `${type} callback key`);
+    assert.equal(parameter, name, `${type} callback parameter`);
+}
+NODE
 grep -q 'export type WalkPhase = "entering" | "exiting"' \
     packages/es-markdown-core/src/walking-visitor.ts \
-    && grep -q 'export interface WalkingVisitor' packages/es-markdown-core/src/walking-visitor.ts \
     && grep -q 'export function walk(root: Markup, walkingVisitor: WalkingVisitor)' \
         packages/es-markdown-core/src/walking-visitor.ts \
     || fail "ES does not expose the typed walking visitor contract"
-test "$(grep -c '^    visit[A-Z].*(this: void, node:' packages/es-markdown-core/src/walking-visitor.ts)" -eq "$kind_count" \
-    || fail "ES WalkingVisitor is not exhaustive over all $kind_count Markup kinds"
-for value in $scoped_values; do
-    test "$(grep -c "^    visit$value(this: void, value: $value, phase: WalkPhase): void;" packages/es-markdown-core/src/walking-visitor.ts)" -eq 1 \
-        || fail "ES WalkingVisitor does not name the scoped value $value exactly once"
-done
 
 node - packages/es-markdown-core/package.json packages/es-markdown-core/src/index.ts <<'NODE'
 import fs from "node:fs";
