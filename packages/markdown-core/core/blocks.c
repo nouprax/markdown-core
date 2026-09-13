@@ -118,7 +118,54 @@ int markdown_core_parser_attach_element(markdown_core_parser *parser, const mark
     parser->elements = entries;
     parser->element_count = count + 1;
     S_register_element(parser, element);
+    /* The block owner projection follows the registry; rebuilt on demand. */
+    parser->mem->free(parser->block_owners);
+    parser->block_owners = NULL;
+    parser->block_owner_count = 0;
     return 1;
+}
+
+static bool S_block_owner_accepts(const markdown_core_block_owner *owner, unsigned char c) {
+    return (owner->bytes[c >> 6] >> (c & 63)) & 1;
+}
+
+/* Project the elements with block hooks, each with the first bytes it can
+ * accept at, in registry order. One allocation per parse, sized by the
+ * registry; nothing about the input's shape enters the projection. */
+static const markdown_core_block_owner *S_block_owners(markdown_core_parser *parser, size_t *count) {
+    if (!parser->block_owners && parser->element_count) {
+        markdown_core_block_owner *owners = parser->mem->calloc(parser->element_count, sizeof(*owners));
+        if (!owners) {
+            parser->oom = true;
+            *count = 0;
+            return NULL;
+        }
+        size_t used = 0;
+        for (size_t i = 0; i < parser->element_count; i++) {
+            const markdown_core_element *element = parser->elements[i];
+            if (!element->scan_block_start && !element->try_interrupting_block && !element->try_opening_block &&
+                !element->try_opening_paragraph) {
+                continue;
+            }
+            markdown_core_block_owner *owner = &owners[used++];
+            owner->element = element;
+            if (!element->block_start_bytes) {
+                memset(owner->bytes, 0xFF, sizeof(owner->bytes));
+            } else {
+                for (const unsigned char *c = (const unsigned char *)element->block_start_bytes; *c; c++) {
+                    owner->bytes[*c >> 6] |= (uint64_t)1 << (*c & 63);
+                }
+            }
+        }
+        parser->block_owners = owners;
+        parser->block_owner_count = used;
+    }
+    *count = parser->block_owner_count;
+    return parser->block_owners;
+}
+
+static unsigned char S_block_start_byte(const markdown_core_chunk *input, int first) {
+    return first < input->len ? input->data[first] : 0;
 }
 
 static void S_parser_dispose(markdown_core_parser *parser) {
@@ -135,6 +182,8 @@ static void S_parser_dispose(markdown_core_parser *parser) {
     parser->mem->free(parser->input_line_offsets);
     parser->mem->free(parser->inline_dispatch);
     parser->inline_dispatch = NULL;
+    parser->mem->free(parser->block_owners);
+    parser->block_owners = NULL;
     if (parser->root) {
         /* The root owns the arena from its creation on. */
         parser->arena = NULL;
@@ -1789,10 +1838,17 @@ const markdown_core_block_peek *markdown_core_parser_peek_block_line(markdown_co
 }
 
 static bool scan_element_start(markdown_core_parser *parser, block_start_context *context, block_start *start) {
-    for (size_t i = 0; i < parser->element_count; i++) {
-        const markdown_core_element *element = parser->elements[i];
-        if (element->scan_block_start && context->indent <= element->maximum_block_indent &&
-            element->scan_block_start(parser, context, start)) {
+    size_t count;
+    const markdown_core_block_owner *owners = S_block_owners(parser, &count);
+    unsigned char byte = S_block_start_byte(context->input, context->first);
+    for (size_t i = 0; i < count; i++) {
+        const markdown_core_element *element = owners[i].element;
+        if (!element->scan_block_start || context->indent > element->maximum_block_indent ||
+            !S_block_owner_accepts(&owners[i], byte)) {
+            continue;
+        }
+        MARKDOWN_CORE_DIAGNOSTIC(parser->block_dispatch_work++;)
+        if (element->scan_block_start(parser, context, start)) {
             return true;
         }
         if (parser->oom) {
@@ -1869,15 +1925,19 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
             return;
         }
         parser->thematic_break_kill_pos = context.thematic_kill;
+        size_t owner_count;
+        const markdown_core_block_owner *owners = S_block_owners(parser, &owner_count);
+        unsigned char byte = S_block_start_byte(input, parser->first_nonspace);
 
         /* Dash-led tables precede thematic breaks and lists. An opener may
          * close the old path before an allocation fails; OOM is terminal,
          * never a grammar miss that can try another owner on that path. */
-        for (size_t element_index = 0; element_index < parser->element_count; element_index++) {
-            const markdown_core_element *owner = parser->elements[element_index];
-            if (!owner->try_interrupting_block) {
+        for (size_t element_index = 0; element_index < owner_count; element_index++) {
+            const markdown_core_element *owner = owners[element_index].element;
+            if (!owner->try_interrupting_block || !S_block_owner_accepts(&owners[element_index], byte)) {
                 continue;
             }
+            MARKDOWN_CORE_DIAGNOSTIC(parser->block_dispatch_work++;)
             markdown_core_node *opened = owner->try_interrupting_block(parser, *container, input, maybe_lazy);
             if (parser->oom) {
                 return;
@@ -1895,10 +1955,11 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
         } else {
             markdown_core_node *new_container = NULL;
 
-            for (size_t element_index = 0; element_index < parser->element_count; element_index++) {
-                const markdown_core_element *element = parser->elements[element_index];
+            for (size_t element_index = 0; element_index < owner_count; element_index++) {
+                const markdown_core_element *element = owners[element_index].element;
 
-                if (element->try_opening_block) {
+                if (element->try_opening_block && S_block_owner_accepts(&owners[element_index], byte)) {
+                    MARKDOWN_CORE_DIAGNOSTIC(parser->block_dispatch_work++;)
                     new_container = element->try_opening_block(element, parser->indent > element->maximum_block_indent,
                                                                parser, *container, input->data, input->len);
                     if (parser->oom) {
@@ -1917,11 +1978,12 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
 
             if (!new_container) {
                 if (!maybe_lazy && !is_paragraph(*container)) {
-                    for (size_t element_index = 0; element_index < parser->element_count; element_index++) {
-                        const markdown_core_element *element = parser->elements[element_index];
-                        if (!element->try_opening_paragraph) {
+                    for (size_t element_index = 0; element_index < owner_count; element_index++) {
+                        const markdown_core_element *element = owners[element_index].element;
+                        if (!element->try_opening_paragraph || !S_block_owner_accepts(&owners[element_index], byte)) {
                             continue;
                         }
+                        MARKDOWN_CORE_DIAGNOSTIC(parser->block_dispatch_work++;)
                         new_container =
                             element->try_opening_paragraph(element, parser->indent > element->maximum_block_indent,
                                                            parser, *container, input->data, input->len);

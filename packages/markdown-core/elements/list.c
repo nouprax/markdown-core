@@ -1,4 +1,5 @@
 #include "list.h"
+#include <string.h>
 #include "tasklist.h"
 #define BLOCK_PEEK(input, at) ((input)->data[(at)])
 #include "block_internal.h"
@@ -100,8 +101,17 @@ static bufsize_t markdown_core_block_parse_list_marker(markdown_core_parser *par
         c = BLOCK_PEEK(input, pos);
         if (c == '#') {
             pos++;
-        } else {
-            while (markdown_core_isalnum(BLOCK_PEEK(input, pos))) {
+        } else if (markdown_core_isdigit(c)) {
+            while (markdown_core_isdigit(BLOCK_PEEK(input, pos))) {
+                MARKDOWN_CORE_DIAGNOSTIC(parser->list_marker_work++;)
+                pos++;
+            }
+        } else if (markdown_core_isalpha(c)) {
+            /* A single letter is an alphabetic marker; a longer run can only
+             * be a roman numeral, so the scan stops at the first byte that is
+             * no roman letter instead of reading a whole word. */
+            pos++;
+            while (strchr("ivxlcdmIVXLCDM", BLOCK_PEEK(input, pos)) && BLOCK_PEEK(input, pos)) {
                 MARKDOWN_CORE_DIAGNOSTIC(parser->list_marker_work++;)
                 pos++;
             }
@@ -287,6 +297,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_LIST = {
     .blank_runs = true,
     .maximum_block_indent = 3,
     .scan_block_start = markdown_core_list_scan,
+    .block_start_bytes = "*-+#(0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ",
 };
 
 int markdown_core_block_consume_item_marker(markdown_core_parser *parser, markdown_core_chunk *input,

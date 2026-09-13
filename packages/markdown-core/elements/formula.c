@@ -812,6 +812,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_FORMULA = {
     .last_block_matches = formula_block_matches,
     .maximum_block_indent = 3,
     .try_opening_block = try_opening_formula_block,
+    .block_start_bytes = "$\\",
     .probe_block = probe_formula_block,
     .postprocess_func = postprocess,
     .get_type_string_func = get_type_string,

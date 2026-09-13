@@ -124,6 +124,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_SPECIMEN = {
     .continue_container = continue_container,
     .maximum_block_indent = 3,
     .scan_block_start = markdown_core_specimen_scan,
+    .block_start_bytes = "(",
 };
 
 void markdown_core_specimen_finish(markdown_core_parser *parser) {

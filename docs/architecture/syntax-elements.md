@@ -106,9 +106,12 @@ cached lookahead.
 Inline descriptors declare protected-token, ordinary-alternative or literal-
 fallback precedence. One ordered dispatch loop handles all three. Its byte index
 is built once per parse, preserving candidate order and set membership without
-walking unrelated descriptors for each token. Inline state lifecycle and block
-alternative lists likewise include only participating descriptors, in registry
-order. A successful
+walking unrelated descriptors for each token. Block owners are projected the
+same way: each element with block hooks declares `block_start_bytes`, the
+first non-space bytes at which any of its hooks can accept (NULL for every
+byte), and a line's block-start arbitration visits only the owners of its
+byte, in registry order. Inline state lifecycle and block alternative lists
+likewise include only participating descriptors, in registry order. A successful
 alternative may consume input without emitting a node, as bracket commitment
 does. Ordinary elements, including test probes, still run before the literal
 `!`, `[` and backslash fallbacks. Every text-terminating byte comes from a

@@ -3215,6 +3215,7 @@ typedef struct {
     size_t attributes, anchors, definitions, definition_resources, whitespace, brackets, citations, list_markers,
         specimens;
     size_t key_index_branches, key_index_operations;
+    size_t block_dispatch;
 } inline_work;
 static markdown_core_node *record_inline_work(const markdown_core_element *element, markdown_core_parser *parser,
                                               markdown_core_node *root) {
@@ -3235,6 +3236,7 @@ static markdown_core_node *record_inline_work(const markdown_core_element *eleme
     work->list_markers = parser->list_marker_work;
     work->comment = parser->comment_scan_work;
     work->lookahead = parser->block_lookahead_work;
+    work->block_dispatch = parser->block_dispatch_work;
     work->tables = parser->table_scan_work;
     work->table_frontier = parser->table_frontier_peak;
     work->table_workspace_growth = parser->table_workspace_growth;
@@ -3604,6 +3606,49 @@ static void key_index_failure(test_batch_runner *runner) {
 }
 
 static size_t count_kind(markdown_core_node *root, markdown_core_node_type kind);
+
+/* A line consults only the block owners of its first non-space byte, in
+ * registry order: owners that declared no byte set for every line, the rest
+ * only where their grammar can begin. The bound is stated per shape and is
+ * independent of the number of attached elements that declare a set. A word
+ * that begins with a letter is never read past its roman-letter prefix by
+ * the list marker scanner. */
+static void block_start_dispatch_work(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    static const struct {
+        const char *unit;
+        size_t hooks_per_line;
+    } shapes[] = {
+        {"word\n\n", 5}, {"- item\n", 12}, {"\n", 5}, {"abcdefghijklmnopqrstuvwxyzabcdefghijklmnop word\n", 5}};
+    for (size_t shape = 0; shape < sizeof(shapes) / sizeof(*shapes); shape++) {
+        for (size_t lines = 256; lines <= 4096; lines *= 4) {
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+            for (size_t i = 0; i < lines; i++) {
+                markdown_core_strbuf_puts(&source, shapes[shape].unit);
+            }
+            markdown_core_strbuf_puts(&source, "tail\n");
+            inline_work work = {0};
+            markdown_core_node *root = markdown_core_parse_document_with_mem((const char *)source.ptr, source.size, mem,
+                                                                             measure_inline_work, &work);
+            OK(runner, root != NULL, "block dispatch shape parses: shape=%zu lines=%zu", shape, lines);
+            size_t line_count = 1;
+            for (bufsize_t at = 0; at < source.size; at++) {
+                line_count += source.ptr[at] == '\n';
+            }
+            OK(runner, work.block_dispatch <= shapes[shape].hooks_per_line * line_count + 16,
+               "a line consults only the owners of its first byte: shape=%zu lines=%zu hooks=%zu", shape, lines,
+               work.block_dispatch);
+            if (shape == 3) {
+                OK(runner, work.list_markers <= 3 * line_count + 16,
+                   "the list marker scanner stops at the first non-roman letter: work=%zu", work.list_markers);
+            }
+            if (root) {
+                markdown_core_node_free(root);
+            }
+            markdown_core_strbuf_free(&source);
+        }
+    }
+}
 
 /* Every consumer of the key index (reference map, heading anchors, footnote
  * ids, specimen ids) inherits the radix bound of 9 * key bytes + 1 branch
@@ -6379,6 +6424,7 @@ int main(int argc, char **argv) {
     key_index_adversarial(runner);
     key_index_failure(runner);
     key_index_consumer_work(runner);
+    block_start_dispatch_work(runner);
     table_dash_suffixes(runner);
     nested_block_lookahead(runner);
     deep_inline_construction(runner);

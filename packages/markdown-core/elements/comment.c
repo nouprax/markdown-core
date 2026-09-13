@@ -181,6 +181,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_COMMENT = {
     .last_block_matches = block_matches,
     .maximum_block_indent = 3,
     .try_opening_block = open_block,
+    .block_start_bytes = "%",
     .probe_block = probe_comment_block,
     .get_type_string_func = type_string,
     .accepts_lines_func = comment_accepts_lines,

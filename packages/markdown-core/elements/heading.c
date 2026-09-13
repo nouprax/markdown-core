@@ -511,6 +511,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_HEADING = {
     .name = "heading",
     .maximum_block_indent = 3,
     .scan_block_start = scan_heading,
+    .block_start_bytes = "#=-",
     .last_block_matches = continue_heading,
     .content_mode = MARKDOWN_CORE_CONTENT_PROSE,
     .inline_content = true,

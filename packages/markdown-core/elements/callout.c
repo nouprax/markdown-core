@@ -162,4 +162,5 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_CALLOUT = {
     .blank_opaque = true,
     .maximum_block_indent = 3,
     .scan_block_start = markdown_core_callout_scan,
+    .block_start_bytes = ">",
 };

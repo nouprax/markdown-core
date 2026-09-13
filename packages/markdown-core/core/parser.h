@@ -60,6 +60,14 @@ typedef struct {
     bool dispatches, terminates;
 } markdown_core_inline_candidate;
 
+/* An element with block hooks and the first-byte set they can accept at.
+ * Every block-start arbitration visits only the owners of the line's byte,
+ * in registry order; owners that declared no set are visited for every byte. */
+typedef struct {
+    const markdown_core_element *element;
+    uint64_t bytes[4];
+} markdown_core_block_owner;
+
 /* First nonblank line under one prospective block parent. Shared by block
  * owners during a single block-start arbitration; no speculative state or
  * owned storage survives here. Reset before the parser mutates that context. */
@@ -163,6 +171,8 @@ struct markdown_core_parser {
      * the linearity gates of both. */
     size_t comment_scan_work;
     size_t block_lookahead_work;
+    /* Block hook invocations: one per owner consulted for a line. */
+    size_t block_dispatch_work;
     size_t table_scan_work, table_frontier_peak;
     size_t table_workspace_growth, table_geometry_lines, table_separator_scans;
     /* Properties work: source ranges decoded once at their owning boundary. */
@@ -221,6 +231,10 @@ struct markdown_core_parser {
      * Each token visits only its possible owners; offsets include an end sentinel. */
     size_t inline_dispatch_offsets[257];
     markdown_core_inline_candidate *inline_dispatch;
+    /* Block owners in registry order, projected once per parse from the
+     * attached elements (see markdown_core_block_owner). */
+    markdown_core_block_owner *block_owners;
+    size_t block_owner_count;
     markdown_core_ispunct_func backslash_ispunct;
     /* Inline special-character tables for this parser: the core defaults plus
      * the special/emphasis-skip characters of the attached inline elements.
