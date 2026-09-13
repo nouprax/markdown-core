@@ -34,8 +34,11 @@ Parser construction transfers a detached, independently owned subtree through
 by creating the subtree or detaching it from a known separate owner; merely
 having no parent is not proof of disjointness. The operation checks local
 containment and allocator invariants, then splices once in constant time.
-The arbitrary mutation API first checks ancestry and unlinks, then uses this
-same splice. Kind conversion changes no edges and checks only containment.
+The arbitrary mutation API checks ancestry, allocator and containment once
+before unlinking, then commits through the same non-failing splice. In
+particular, a custom containment predicate observes the original tree and is
+never called again after detachment. Rejection leaves both trees unchanged.
+Kind conversion changes no edges and checks only containment.
 There is no safety mode, ancestry cache, or separate inline splice algorithm.
 A source-boundary audit keeps arbitrary reparenting out of parser construction;
 regression inputs vary nesting depth and autolink count independently.

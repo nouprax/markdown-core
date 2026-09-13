@@ -690,6 +690,118 @@ static void create_tree(test_batch_runner *runner) {
     markdown_core_node_free(emph);
 }
 
+typedef struct {
+    markdown_core_node *child, *owner;
+    size_t calls;
+} attachment_policy;
+
+static int attachment_can_contain(const markdown_core_element *element, markdown_core_node *node,
+                                  markdown_core_node_type child_kind) {
+    (void)element;
+    attachment_policy *policy = node->user_data;
+    policy->calls++;
+    return child_kind == MARKDOWN_CORE_NODE_TEXT && policy->child->parent == policy->owner;
+}
+
+static const markdown_core_element ATTACHMENT_POLICY = {
+    .name = "attachment-policy",
+    .can_contain_func = attachment_can_contain,
+};
+
+static void check_children(test_batch_runner *runner, markdown_core_node *parent, markdown_core_node **children,
+                           size_t count) {
+    OK(runner, parent->first_child == children[0] && parent->last_child == children[count - 1],
+       "parent retains the expected endpoints");
+    for (size_t i = 0; i < count; i++) {
+        OK(runner,
+           children[i]->parent == parent && children[i]->prev == (i ? children[i - 1] : NULL) &&
+               children[i]->next == (i + 1 < count ? children[i + 1] : NULL),
+           "child %zu retains the expected owner and siblings", i);
+    }
+}
+
+/* A containment policy may inspect the current tree. Every rejecting check
+ * must finish before detaching anything, including during same-parent moves. */
+static void attachment_containment(test_batch_runner *runner) {
+    static const struct {
+        int (*mutate)(markdown_core_node *, markdown_core_node *);
+        bool parent_target, at_end, replace;
+    } operations[] = {
+        {markdown_core_node_append_child, true, true, false},    {markdown_core_node_prepend_child, true, false, false},
+        {markdown_core_node_insert_before, false, false, false}, {markdown_core_node_insert_after, false, true, false},
+        {markdown_core_node_replace, false, false, true},
+    };
+    for (size_t op = 0; op < sizeof(operations) / sizeof(*operations); op++) {
+        for (int same_parent = 0; same_parent <= 1; same_parent++) {
+            for (int accepted = 0; accepted <= 1; accepted++) {
+                markdown_core_node *root = markdown_core_node_new(MARKDOWN_CORE_NODE_DOCUMENT);
+                markdown_core_node *source = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
+                markdown_core_node *destination =
+                    same_parent ? source : markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
+                markdown_core_node *child = markdown_core_node_new(MARKDOWN_CORE_NODE_TEXT);
+                markdown_core_node *anchor = markdown_core_node_new(MARKDOWN_CORE_NODE_TEXT);
+                markdown_core_node *first = markdown_core_node_new(MARKDOWN_CORE_NODE_TEXT);
+                markdown_core_node *last = markdown_core_node_new(MARKDOWN_CORE_NODE_TEXT);
+                markdown_core_node_append_child(root, source);
+                if (!same_parent) {
+                    markdown_core_node_append_child(root, destination);
+                }
+                markdown_core_node_append_child(source, first);
+                markdown_core_node_append_child(source, child);
+                markdown_core_node_append_child(source, last);
+                markdown_core_node_append_child(destination, anchor);
+                attachment_policy policy = {child, accepted ? source : NULL, 0};
+                destination->element = &ATTACHMENT_POLICY;
+                destination->user_data = &policy;
+
+                INT_EQ(runner, operations[op].mutate(operations[op].parent_target ? destination : anchor, child),
+                       accepted, "operation %zu honors containment before changing ownership", op);
+                INT_EQ(runner, policy.calls, 1, "containment is validated exactly once");
+                markdown_core_node *original[] = {first, child, last, anchor};
+                markdown_core_node *remaining[] = {first, last};
+                if (!accepted) {
+                    check_children(runner, source, original, same_parent ? 4 : 3);
+                    if (!same_parent) {
+                        check_children(runner, destination, &anchor, 1);
+                    }
+                } else {
+                    markdown_core_node *expected[4];
+                    size_t count = 0;
+                    if (operations[op].parent_target && !operations[op].at_end) {
+                        expected[count++] = child;
+                    }
+                    if (same_parent) {
+                        expected[count++] = first;
+                        expected[count++] = last;
+                    } else {
+                        check_children(runner, source, remaining, 2);
+                    }
+                    if (!operations[op].parent_target && !operations[op].at_end) {
+                        expected[count++] = child;
+                    }
+                    if (!operations[op].replace) {
+                        expected[count++] = anchor;
+                    } else {
+                        OK(runner, !anchor->parent && !anchor->prev && !anchor->next,
+                           "replacement detaches only the replaced node");
+                    }
+                    if (operations[op].at_end) {
+                        expected[count++] = child;
+                    }
+                    check_children(runner, destination, expected, count);
+                }
+                /* Free known nodes individually so a regression that detaches
+                 * one still leaves the test's ownership complete. */
+                markdown_core_node_free(child);
+                markdown_core_node_free(anchor);
+                markdown_core_node_free(first);
+                markdown_core_node_free(last);
+                markdown_core_node_free(root);
+            }
+        }
+    }
+}
+
 void hierarchy(test_batch_runner *runner) {
     markdown_core_node *bquote1 = markdown_core_node_new(MARKDOWN_CORE_NODE_CALLOUT);
     markdown_core_node *bquote2 = markdown_core_node_new(MARKDOWN_CORE_NODE_CALLOUT);
@@ -5435,6 +5547,7 @@ int main(void) {
     iterator(runner);
     iterator_delete(runner);
     create_tree(runner);
+    attachment_containment(runner);
     hierarchy(runner);
     parser(runner);
     utf8(runner);

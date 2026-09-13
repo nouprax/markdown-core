@@ -957,14 +957,9 @@ void markdown_core_node_unlink(markdown_core_node *node) {
     node->parent = NULL;
 }
 
-/* The caller owns a detached subtree, disjoint from the destination tree.
- * This is the single splice operation for construction and checked mutation. */
-int markdown_core_node_attach_owned(markdown_core_node *parent, markdown_core_node *child, markdown_core_node *before) {
-    if (!parent || !child || parent == child || child->parent || child->prev || child->next ||
-        (before && before->parent != parent) || NODE_MEM(parent) != NODE_MEM(child) ||
-        !markdown_core_node_can_contain_type(parent, (markdown_core_node_type)child->kind)) {
-        return 0;
-    }
+/* Commit a validated, detached subtree. No callbacks or rejecting checks may
+ * run here: public mutations have already detached the child from its owner. */
+static void S_node_attach(markdown_core_node *parent, markdown_core_node *child, markdown_core_node *before) {
     markdown_core_node *previous = before ? before->prev : parent->last_child;
     child->parent = parent;
     child->prev = previous;
@@ -979,6 +974,16 @@ int markdown_core_node_attach_owned(markdown_core_node *parent, markdown_core_no
     } else {
         parent->last_child = child;
     }
+}
+
+/* The caller owns a detached subtree, disjoint from the destination tree. */
+int markdown_core_node_attach_owned(markdown_core_node *parent, markdown_core_node *child, markdown_core_node *before) {
+    if (!parent || !child || parent == child || child->parent || child->prev || child->next ||
+        (before && before->parent != parent) || NODE_MEM(parent) != NODE_MEM(child) ||
+        !markdown_core_node_can_contain_type(parent, (markdown_core_node_type)child->kind)) {
+        return 0;
+    }
+    S_node_attach(parent, child, before);
     return 1;
 }
 
@@ -987,7 +992,8 @@ int markdown_core_node_insert_before(markdown_core_node *node, markdown_core_nod
         return 0;
     }
     markdown_core_node_unlink(sibling);
-    return markdown_core_node_attach_owned(node->parent, sibling, node);
+    S_node_attach(node->parent, sibling, node);
+    return 1;
 }
 
 int markdown_core_node_insert_after(markdown_core_node *node, markdown_core_node *sibling) {
@@ -995,7 +1001,8 @@ int markdown_core_node_insert_after(markdown_core_node *node, markdown_core_node
         return 0;
     }
     markdown_core_node_unlink(sibling);
-    return markdown_core_node_attach_owned(node->parent, sibling, node->next);
+    S_node_attach(node->parent, sibling, node->next);
+    return 1;
 }
 
 int markdown_core_node_replace(markdown_core_node *oldnode, markdown_core_node *newnode) {
@@ -1011,7 +1018,8 @@ int markdown_core_node_prepend_child(markdown_core_node *node, markdown_core_nod
         return 0;
     }
     markdown_core_node_unlink(child);
-    return markdown_core_node_attach_owned(node, child, node->first_child);
+    S_node_attach(node, child, node->first_child);
+    return 1;
 }
 
 int markdown_core_node_append_child(markdown_core_node *node, markdown_core_node *child) {
@@ -1019,7 +1027,8 @@ int markdown_core_node_append_child(markdown_core_node *node, markdown_core_node
         return 0;
     }
     markdown_core_node_unlink(child);
-    return markdown_core_node_attach_owned(node, child, NULL);
+    S_node_attach(node, child, NULL);
+    return 1;
 }
 
 static void S_print_error(FILE *out, markdown_core_node *node, const char *elem) {
