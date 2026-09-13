@@ -221,13 +221,22 @@ same rule to CI and CodeQL. Older successes cannot bypass a newer failure or
 unfinished run. Code-changing merge groups always run fully.
 
 Each workflow records its actual inputs in a small `ci-inputs` artifact retained
-for 30 days. PR bases come from the tested merge's parents, because historical
-run API responses can contain updated PR metadata. Evidence is accepted only
+for 30 days. This is an artifact storage limit, not an expiration date for
+successful validation. A successful documentation-only run carries the verified
+inputs forward, so consecutive documentation pushes may keep reusing them even
+after the original full run's artifact expires. There is no requirement to run
+CI again merely because time has passed. Each reuse must still establish the
+same inputs and base and successful results for the immediately preceding push;
+missing evidence or a failed or unfinished run breaks that continuity.
+
+PR bases come from the tested merge's parents, because historical run API
+responses can contain updated PR metadata. Evidence is accepted only
 from a successful run for the same repository, event, ref, and PR. Re-running a
 workflow replaces its record; failed-job retries can retain the original record
 for that fixed snapshot. Missing, expired, incomplete, or unreadable evidence
-falls back to full validation. Manual, scheduled, and formal release runs always
-execute fully. A skipped PR benchmark produces no comparison comment.
+from the immediately preceding push falls back to full validation. Manual,
+scheduled, and formal release runs always execute fully. A skipped PR benchmark
+produces no comparison comment.
 
 `pnpm audit:tests` checks contracts without compiling. After an existing C build,
 `scripts/audit-test-topology.sh build/cmake` additionally checks dynamic discovery,
