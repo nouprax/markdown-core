@@ -1,0 +1,812 @@
+{
+    "baseline": "5eca3bc1598b0313a0ac6a9e69f078a309feb3e1",
+    "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+    "machine": "arm64",
+    "python": "3.14.7",
+    "compiler": "Apple clang version 21.0.0 (clang-2100.1.1.101)",
+    "timing": "Uninstrumented public C parse + free and Python orchestration; no dumps or rendering. One warmup and seven samples for review; incremental sequence timings are one diagnostic run.",
+    "allocation": "Separate instrumented internal parse; includes one recorder registry attachment; requested capacity only; realloc transient old+new and allocator headers excluded.",
+    "review": {
+        "embedded_email_d256_w1": {
+            "bytes": 1543,
+            "parse_free_median_ns": 76917,
+            "allocations": 1317,
+            "requested_bytes": 203297,
+            "live_bytes": 0,
+            "peak_bytes": 113345,
+            "attributes": 256,
+            "lookahead": 0,
+            "tables": 0,
+            "anchors": 0,
+            "delimiters": 257,
+            "brackets": 512,
+            "node_size": 224,
+            "parser_size": 6584
+        },
+        "embedded_email_d1_w256": {
+            "bytes": 1798,
+            "parse_free_median_ns": 83791,
+            "allocations": 1827,
+            "requested_bytes": 243080,
+            "live_bytes": 0,
+            "peak_bytes": 240848,
+            "attributes": 1,
+            "lookahead": 0,
+            "tables": 0,
+            "anchors": 0,
+            "delimiters": 2,
+            "brackets": 2,
+            "node_size": 224,
+            "parser_size": 6584
+        },
+        "embedded_email_d256_w256": {
+            "bytes": 3328,
+            "parse_free_median_ns": 155750,
+            "allocations": 3102,
+            "requested_bytes": 433312,
+            "live_bytes": 0,
+            "peak_bytes": 343360,
+            "attributes": 256,
+            "lookahead": 0,
+            "tables": 0,
+            "anchors": 0,
+            "delimiters": 257,
+            "brackets": 512,
+            "node_size": 224,
+            "parser_size": 6584
+        },
+        "embedded_email_d1024_w1": {
+            "bytes": 6151,
+            "parse_free_median_ns": 285750,
+            "allocations": 5157,
+            "requested_bytes": 776225,
+            "live_bytes": 0,
+            "peak_bytes": 422081,
+            "attributes": 1024,
+            "lookahead": 0,
+            "tables": 0,
+            "anchors": 0,
+            "delimiters": 1025,
+            "brackets": 2048,
+            "node_size": 224,
+            "parser_size": 6584
+        },
+        "embedded_email_d1_w1024": {
+            "bytes": 7174,
+            "parse_free_median_ns": 327208,
+            "allocations": 7203,
+            "requested_bytes": 935816,
+            "live_bytes": 0,
+            "peak_bytes": 933584,
+            "attributes": 1,
+            "lookahead": 0,
+            "tables": 0,
+            "anchors": 0,
+            "delimiters": 2,
+            "brackets": 2,
+            "node_size": 224,
+            "parser_size": 6584
+        },
+        "embedded_email_d1024_w1024": {
+            "bytes": 13312,
+            "parse_free_median_ns": 568333,
+            "allocations": 12318,
+            "requested_bytes": 1698976,
+            "live_bytes": 0,
+            "peak_bytes": 1344832,
+            "attributes": 1024,
+            "lookahead": 0,
+            "tables": 0,
+            "anchors": 0,
+            "delimiters": 1025,
+            "brackets": 2048,
+            "node_size": 224,
+            "parser_size": 6584
+        },
+        "embedded_email_d4096_w1": {
+            "bytes": 24583,
+            "parse_free_median_ns": 1094917,
+            "allocations": 20517,
+            "requested_bytes": 3067937,
+            "live_bytes": 0,
+            "peak_bytes": 1657025,
+            "attributes": 4096,
+            "lookahead": 0,
+            "tables": 0,
+            "anchors": 0,
+            "delimiters": 4097,
+            "brackets": 8192,
+            "node_size": 224,
+            "parser_size": 6584
+        },
+        "embedded_email_d1_w4096": {
+            "bytes": 28678,
+            "parse_free_median_ns": 1089917,
+            "allocations": 28707,
+            "requested_bytes": 3706760,
+            "live_bytes": 0,
+            "peak_bytes": 3704528,
+            "attributes": 1,
+            "lookahead": 0,
+            "tables": 0,
+            "anchors": 0,
+            "delimiters": 2,
+            "brackets": 2,
+            "node_size": 224,
+            "parser_size": 6584
+        },
+        "embedded_email_d4096_w4096": {
+            "bytes": 53248,
+            "parse_free_median_ns": 1958292,
+            "allocations": 49182,
+            "requested_bytes": 6761632,
+            "live_bytes": 0,
+            "peak_bytes": 5350720,
+            "attributes": 4096,
+            "lookahead": 0,
+            "tables": 0,
+            "anchors": 0,
+            "delimiters": 4097,
+            "brackets": 8192,
+            "node_size": 224,
+            "parser_size": 6584
+        },
+        "plain_1024": {
+            "bytes": 1024,
+            "parse_free_median_ns": 6000,
+            "allocations": 30,
+            "requested_bytes": 14680,
+            "live_bytes": 0,
+            "peak_bytes": 13080,
+            "attributes": 0,
+            "lookahead": 0,
+            "tables": 0,
+            "anchors": 0,
+            "delimiters": 0,
+            "brackets": 0,
+            "node_size": 224,
+            "parser_size": 6584
+        },
+        "sparse_attribute_1024": {
+            "bytes": 1032,
+            "parse_free_median_ns": 19000,
+            "allocations": 38,
+            "requested_bytes": 23954,
+            "live_bytes": 0,
+            "peak_bytes": 21866,
+            "attributes": 1040,
+            "lookahead": 0,
+            "tables": 0,
+            "anchors": 0,
+            "delimiters": 1,
+            "brackets": 2,
+            "node_size": 224,
+            "parser_size": 6584
+        },
+        "plain_16384": {
+            "bytes": 16384,
+            "parse_free_median_ns": 62500,
+            "allocations": 30,
+            "requested_bytes": 60760,
+            "live_bytes": 0,
+            "peak_bytes": 59160,
+            "attributes": 0,
+            "lookahead": 0,
+            "tables": 0,
+            "anchors": 0,
+            "delimiters": 0,
+            "brackets": 0,
+            "node_size": 224,
+            "parser_size": 6584
+        },
+        "sparse_attribute_16384": {
+            "bytes": 16392,
+            "parse_free_median_ns": 256875,
+            "allocations": 38,
+            "requested_bytes": 192914,
+            "live_bytes": 0,
+            "peak_bytes": 190826,
+            "attributes": 16400,
+            "lookahead": 0,
+            "tables": 0,
+            "anchors": 0,
+            "delimiters": 1,
+            "brackets": 2,
+            "node_size": 224,
+            "parser_size": 6584
+        },
+        "plain_262144": {
+            "bytes": 262144,
+            "parse_free_median_ns": 900500,
+            "allocations": 30,
+            "requested_bytes": 798040,
+            "live_bytes": 0,
+            "peak_bytes": 796440,
+            "attributes": 0,
+            "lookahead": 0,
+            "tables": 0,
+            "anchors": 0,
+            "delimiters": 0,
+            "brackets": 0,
+            "node_size": 224,
+            "parser_size": 6584
+        },
+        "sparse_attribute_262144": {
+            "bytes": 262152,
+            "parse_free_median_ns": 3612333,
+            "allocations": 38,
+            "requested_bytes": 2896274,
+            "live_bytes": 0,
+            "peak_bytes": 2894186,
+            "attributes": 262160,
+            "lookahead": 0,
+            "tables": 0,
+            "anchors": 0,
+            "delimiters": 1,
+            "brackets": 2,
+            "node_size": 224,
+            "parser_size": 6584
+        },
+        "plain_1048576": {
+            "bytes": 1048576,
+            "parse_free_median_ns": 3137000,
+            "allocations": 30,
+            "requested_bytes": 3157336,
+            "live_bytes": 0,
+            "peak_bytes": 3155736,
+            "attributes": 0,
+            "lookahead": 0,
+            "tables": 0,
+            "anchors": 0,
+            "delimiters": 0,
+            "brackets": 0,
+            "node_size": 224,
+            "parser_size": 6584
+        },
+        "sparse_attribute_1048576": {
+            "bytes": 1048584,
+            "parse_free_median_ns": 13336500,
+            "allocations": 38,
+            "requested_bytes": 11547026,
+            "live_bytes": 0,
+            "peak_bytes": 11544938,
+            "attributes": 1048592,
+            "lookahead": 0,
+            "tables": 0,
+            "anchors": 0,
+            "delimiters": 1,
+            "brackets": 2,
+            "node_size": 224,
+            "parser_size": 6584
+        },
+        "hash_collision_256": {
+            "bytes": 6165,
+            "parse_free_median_ns": 81750,
+            "allocations": 821,
+            "requested_bytes": 123840,
+            "live_bytes": 0,
+            "peak_bytes": 85896,
+            "attributes": 258,
+            "lookahead": 1,
+            "tables": 4,
+            "anchors": 0,
+            "delimiters": 0,
+            "brackets": 2,
+            "node_size": 224,
+            "parser_size": 6584,
+            "keys": 256,
+            "generation_candidates": 127330,
+            "verified_insertion_slot_visits": 32896,
+            "equal_length_control": {
+                "bytes": 6165,
+                "parse_free_median_ns": 63458,
+                "allocations": 821,
+                "requested_bytes": 123840,
+                "live_bytes": 0,
+                "peak_bytes": 85896,
+                "attributes": 258,
+                "lookahead": 1,
+                "tables": 4,
+                "anchors": 0,
+                "delimiters": 0,
+                "brackets": 2,
+                "node_size": 224,
+                "parser_size": 6584
+            }
+        },
+        "hash_collision_512": {
+            "bytes": 12309,
+            "parse_free_median_ns": 194167,
+            "allocations": 1591,
+            "requested_bytes": 221432,
+            "live_bytes": 0,
+            "peak_bytes": 158088,
+            "attributes": 514,
+            "lookahead": 1,
+            "tables": 4,
+            "anchors": 0,
+            "delimiters": 0,
+            "brackets": 2,
+            "node_size": 224,
+            "parser_size": 6584,
+            "keys": 512,
+            "generation_candidates": 491381,
+            "verified_insertion_slot_visits": 131328,
+            "equal_length_control": {
+                "bytes": 12309,
+                "parse_free_median_ns": 124083,
+                "allocations": 1591,
+                "requested_bytes": 221432,
+                "live_bytes": 0,
+                "peak_bytes": 158088,
+                "attributes": 514,
+                "lookahead": 1,
+                "tables": 4,
+                "anchors": 0,
+                "delimiters": 0,
+                "brackets": 2,
+                "node_size": 224,
+                "parser_size": 6584
+            }
+        },
+        "hash_collision_1024": {
+            "bytes": 24597,
+            "parse_free_median_ns": 501417,
+            "allocations": 3130,
+            "requested_bytes": 439648,
+            "live_bytes": 0,
+            "peak_bytes": 302472,
+            "attributes": 1026,
+            "lookahead": 1,
+            "tables": 4,
+            "anchors": 0,
+            "delimiters": 0,
+            "brackets": 2,
+            "node_size": 224,
+            "parser_size": 6584,
+            "keys": 1024,
+            "generation_candidates": 2044617,
+            "verified_insertion_slot_visits": 524800,
+            "equal_length_control": {
+                "bytes": 24597,
+                "parse_free_median_ns": 249333,
+                "allocations": 3130,
+                "requested_bytes": 439648,
+                "live_bytes": 0,
+                "peak_bytes": 302472,
+                "attributes": 1026,
+                "lookahead": 1,
+                "tables": 4,
+                "anchors": 0,
+                "delimiters": 0,
+                "brackets": 2,
+                "node_size": 224,
+                "parser_size": 6584
+            }
+        },
+        "hash_collision_2048": {
+            "bytes": 49173,
+            "parse_free_median_ns": 1629291,
+            "allocations": 6205,
+            "requested_bytes": 888496,
+            "live_bytes": 0,
+            "peak_bytes": 591240,
+            "attributes": 2050,
+            "lookahead": 1,
+            "tables": 4,
+            "anchors": 0,
+            "delimiters": 0,
+            "brackets": 2,
+            "node_size": 224,
+            "parser_size": 6584,
+            "keys": 2048,
+            "generation_candidates": 8414544,
+            "verified_insertion_slot_visits": 2098176,
+            "equal_length_control": {
+                "bytes": 49173,
+                "parse_free_median_ns": 552959,
+                "allocations": 6205,
+                "requested_bytes": 888496,
+                "live_bytes": 0,
+                "peak_bytes": 591240,
+                "attributes": 2050,
+                "lookahead": 1,
+                "tables": 4,
+                "anchors": 0,
+                "delimiters": 0,
+                "brackets": 2,
+                "node_size": 224,
+                "parser_size": 6584
+            }
+        }
+    },
+    "witnesses": {
+        "forward_reference": {
+            "before": "[x]\n\n",
+            "append": "[x]: /target\n",
+            "old_dump": "Document scope=1:1..2:0 anchor=null attributes={} children=1\n└── Paragraph scope=1:1..1:3 anchor=null attributes={} children=1\n    └── Text scope=1:1..1:3 anchor=null attributes={} literal=\"[x]\" children=0\n",
+            "new_dump": "Document scope=1:1..3:12 anchor=null attributes={} children=1\n└── Paragraph scope=1:1..1:3 anchor=null attributes={} children=1\n    └── Link scope=1:1..1:3 anchor=null attributes={} dest=url(\"/target\") title=null children=1\n        └── Text scope=1:2..1:2 anchor=null attributes={} literal=\"x\" children=0\n"
+        },
+        "heading_reference": {
+            "before": "[Title]\n\n",
+            "append": "# Title\n",
+            "old_dump": "Document scope=1:1..2:0 anchor=null attributes={} children=1\n└── Paragraph scope=1:1..1:7 anchor=null attributes={} children=1\n    └── Text scope=1:1..1:7 anchor=null attributes={} literal=\"[Title]\" children=0\n",
+            "new_dump": "Document scope=1:1..3:7 anchor=null attributes={} children=2\n├── Paragraph scope=1:1..1:7 anchor=null attributes={} children=1\n│   └── Link scope=1:1..1:7 anchor=null attributes={} dest=url(\"#title\") title=null children=1\n│       └── Text scope=1:2..1:6 anchor=null attributes={} literal=\"Title\" children=0\n└── Heading scope=3:1..3:7 anchor=\"title\" attributes={} level=1 children=1\n    └── Text scope=3:3..3:7 anchor=null attributes={} literal=\"Title\" children=0\n"
+        },
+        "named_footnote": {
+            "before": "[^x]\n\n",
+            "append": "[^x]: body\n",
+            "old_dump": "Document scope=1:1..2:0 anchor=null attributes={} children=1\n└── Paragraph scope=1:1..1:4 anchor=null attributes={} children=1\n    └── Text scope=1:1..1:4 anchor=null attributes={} literal=\"[^x]\" children=0\n",
+            "new_dump": "Document scope=1:1..3:10 anchor=null attributes={} children=1\n├── Paragraph scope=1:1..1:4 anchor=null attributes={} children=1\n│   └── Cite scope=1:1..1:4 anchor=null attributes={} children=1\n│       └── Citation scope=1:2..1:3 anchor=null attributes={} referent=footnote(id=\"x\") children=0\n│           ├── CitationPrefix children=0\n│           └── CitationSuffix children=0\n└── Footnote scope=3:1..3:10 anchor=null attributes={} id=\"x\" children=1\n    └── Paragraph scope=3:7..3:10 anchor=null attributes={} children=1\n        └── Text scope=3:7..3:10 anchor=null attributes={} literal=\"body\" children=0\n"
+        },
+        "explicit_anchor_reservation": {
+            "before": "# title\n\n",
+            "append": "# other {#title}\n",
+            "old_dump": "Document scope=1:1..2:0 anchor=null attributes={} children=1\n└── Heading scope=1:1..1:7 anchor=\"title\" attributes={} level=1 children=1\n    └── Text scope=1:3..1:7 anchor=null attributes={} literal=\"title\" children=0\n",
+            "new_dump": "Document scope=1:1..3:16 anchor=null attributes={} children=2\n├── Heading scope=1:1..1:7 anchor=\"title-1\" attributes={} level=1 children=1\n│   └── Text scope=1:3..1:7 anchor=null attributes={} literal=\"title\" children=0\n└── Heading scope=3:1..3:16 anchor=\"title\" attributes={} level=1 children=1\n    └── Text scope=3:3..3:7 anchor=null attributes={} literal=\"other\" children=0\n"
+        },
+        "inline_footnote_id_reservation": {
+            "before": "^[body]\n\n",
+            "append": "[^inline-1]: named\n",
+            "old_dump": "Document scope=1:1..2:0 anchor=null attributes={} children=1\n├── Paragraph scope=1:1..1:7 anchor=null attributes={} children=1\n│   └── Cite scope=1:1..1:7 anchor=null attributes={} children=1\n│       └── Citation scope=1:3..1:6 anchor=null attributes={} referent=footnote(id=\"inline-1\") children=0\n│           ├── CitationPrefix children=0\n│           └── CitationSuffix children=0\n└── Footnote scope=1:1..1:7 anchor=null attributes={} id=\"inline-1\" children=1\n    └── Text scope=1:3..1:6 anchor=null attributes={} literal=\"body\" children=0\n",
+            "new_dump": "Document scope=1:1..3:18 anchor=null attributes={} children=1\n├── Paragraph scope=1:1..1:7 anchor=null attributes={} children=1\n│   └── Cite scope=1:1..1:7 anchor=null attributes={} children=1\n│       └── Citation scope=1:3..1:6 anchor=null attributes={} referent=footnote(id=\"inline-1-1\") children=0\n│           ├── CitationPrefix children=0\n│           └── CitationSuffix children=0\n├── Footnote scope=1:1..1:7 anchor=null attributes={} id=\"inline-1-1\" children=1\n│   └── Text scope=1:3..1:6 anchor=null attributes={} literal=\"body\" children=0\n└── Footnote scope=3:1..3:18 anchor=null attributes={} id=\"inline-1\" children=1\n    └── Paragraph scope=3:14..3:18 anchor=null attributes={} children=1\n        └── Text scope=3:14..3:18 anchor=null attributes={} literal=\"named\" children=0\n"
+        },
+        "percent_comment": {
+            "before": "%%\n\nold\n\n",
+            "append": "%%\n",
+            "old_dump": "Document scope=1:1..4:0 anchor=null attributes={} children=2\n├── Paragraph scope=1:1..1:2 anchor=null attributes={} children=1\n│   └── Text scope=1:1..1:2 anchor=null attributes={} literal=\"%%\" children=0\n└── Paragraph scope=3:1..3:3 anchor=null attributes={} children=1\n    └── Text scope=3:1..3:3 anchor=null attributes={} literal=\"old\" children=0\n",
+            "new_dump": "Document scope=1:1..5:2 anchor=null attributes={} children=1\n└── Comment scope=1:1..5:2 anchor=null attributes={} literal=\"\\nold\\n\\n\" children=0\n"
+        },
+        "setext": {
+            "before": "title\n",
+            "append": "---\n",
+            "old_dump": "Document scope=1:1..1:5 anchor=null attributes={} children=1\n└── Paragraph scope=1:1..1:5 anchor=null attributes={} children=1\n    └── Text scope=1:1..1:5 anchor=null attributes={} literal=\"title\" children=0\n",
+            "new_dump": "Document scope=1:1..2:3 anchor=null attributes={} children=1\n└── Heading scope=1:1..2:3 anchor=\"title\" attributes={} level=2 children=1\n    └── Text scope=1:1..1:5 anchor=null attributes={} literal=\"title\" children=0\n"
+        },
+        "pipe_table": {
+            "before": "| a | b |\n",
+            "append": "| - | - |\n",
+            "old_dump": "Document scope=1:1..1:9 anchor=null attributes={} children=1\n└── Paragraph scope=1:1..1:9 anchor=null attributes={} children=1\n    └── Text scope=1:1..1:9 anchor=null attributes={} literal=\"| a | b |\" children=0\n",
+            "new_dump": "Document scope=1:1..2:9 anchor=null attributes={} children=1\n└── Table scope=1:1..2:9 anchor=null attributes={} columns=[none:null,none:null] children=1\n    ├── TableHead children=1\n    │   └── TableRow scope=1:1..1:9 anchor=null attributes={} children=2\n    │       ├── TableCell scope=1:2..1:4 anchor=null attributes={} rowspan=1 colspan=1 children=1\n    │       │   └── Text scope=1:3..1:3 anchor=null attributes={} literal=\"a\" children=0\n    │       └── TableCell scope=1:6..1:8 anchor=null attributes={} rowspan=1 colspan=1 children=1\n    │           └── Text scope=1:7..1:7 anchor=null attributes={} literal=\"b\" children=0\n    ├── TableBody children=0\n    └── TableFoot children=0\n"
+        },
+        "table_caption_before": {
+            "before": "Table: caption\n\n",
+            "append": "| a |\n| - |\n",
+            "old_dump": "Document scope=1:1..2:0 anchor=null attributes={} children=1\n└── Paragraph scope=1:1..1:14 anchor=null attributes={} children=1\n    └── Text scope=1:1..1:14 anchor=null attributes={} literal=\"Table: caption\" children=0\n",
+            "new_dump": "Document scope=1:1..4:5 anchor=null attributes={} children=1\n└── Table scope=1:1..4:5 anchor=null attributes={} columns=[none:null] children=1\n    ├── TableCaption scope=1:1..1:14 anchor=null attributes={} children=1\n    │   └── Text scope=1:8..1:14 anchor=null attributes={} literal=\"caption\" children=0\n    ├── TableHead children=1\n    │   └── TableRow scope=3:1..3:5 anchor=null attributes={} children=1\n    │       └── TableCell scope=3:2..3:4 anchor=null attributes={} rowspan=1 colspan=1 children=1\n    │           └── Text scope=3:3..3:3 anchor=null attributes={} literal=\"a\" children=0\n    ├── TableBody children=0\n    └── TableFoot children=0\n"
+        },
+        "table_caption_after": {
+            "before": "| a |\n| - |\n\n",
+            "append": "Table: caption\n",
+            "old_dump": "Document scope=1:1..3:0 anchor=null attributes={} children=1\n└── Table scope=1:1..2:5 anchor=null attributes={} columns=[none:null] children=1\n    ├── TableHead children=1\n    │   └── TableRow scope=1:1..1:5 anchor=null attributes={} children=1\n    │       └── TableCell scope=1:2..1:4 anchor=null attributes={} rowspan=1 colspan=1 children=1\n    │           └── Text scope=1:3..1:3 anchor=null attributes={} literal=\"a\" children=0\n    ├── TableBody children=0\n    └── TableFoot children=0\n",
+            "new_dump": "Document scope=1:1..4:14 anchor=null attributes={} children=1\n└── Table scope=1:1..4:14 anchor=null attributes={} columns=[none:null] children=1\n    ├── TableCaption scope=4:1..4:14 anchor=null attributes={} children=1\n    │   └── Text scope=4:8..4:14 anchor=null attributes={} literal=\"caption\" children=0\n    ├── TableHead children=1\n    │   └── TableRow scope=1:1..1:5 anchor=null attributes={} children=1\n    │       └── TableCell scope=1:2..1:4 anchor=null attributes={} rowspan=1 colspan=1 children=1\n    │           └── Text scope=1:3..1:3 anchor=null attributes={} literal=\"a\" children=0\n    ├── TableBody children=0\n    └── TableFoot children=0\n"
+        },
+        "definition_list": {
+            "before": "term\n\n",
+            "append": ": definition\n",
+            "old_dump": "Document scope=1:1..2:0 anchor=null attributes={} children=1\n└── Paragraph scope=1:1..1:4 anchor=null attributes={} children=1\n    └── Text scope=1:1..1:4 anchor=null attributes={} literal=\"term\" children=0\n",
+            "new_dump": "Document scope=1:1..3:12 anchor=null attributes={} children=1\n└── DefinitionList scope=1:1..3:12 anchor=null attributes={} children=1\n    └── Definition scope=1:1..3:12 anchor=null attributes={} compact=false children=1\n        ├── DefinitionTerm children=1\n        │   └── Text scope=1:1..1:4 anchor=null attributes={} literal=\"term\" children=0\n        └── DefinitionBody children=1\n            └── Paragraph scope=3:3..3:12 anchor=null attributes={} children=1\n                └── Text scope=3:3..3:12 anchor=null attributes={} literal=\"definition\" children=0\n"
+        },
+        "list_tightness": {
+            "before": "- a\n\n",
+            "append": "- b\n",
+            "old_dump": "Document scope=1:1..2:0 anchor=null attributes={} children=1\n└── List scope=1:1..2:0 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1\n    └── ListItem scope=1:1..2:0 anchor=null attributes={} marker=null children=1\n        └── Paragraph scope=1:3..1:3 anchor=null attributes={} children=1\n            └── Text scope=1:3..1:3 anchor=null attributes={} literal=\"a\" children=0\n",
+            "new_dump": "Document scope=1:1..3:3 anchor=null attributes={} children=1\n└── List scope=1:1..3:3 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=false children=2\n    ├── ListItem scope=1:1..2:0 anchor=null attributes={} marker=null children=1\n    │   └── Paragraph scope=1:3..1:3 anchor=null attributes={} children=1\n    │       └── Text scope=1:3..1:3 anchor=null attributes={} literal=\"a\" children=0\n    └── ListItem scope=3:1..3:3 anchor=null attributes={} marker=null children=1\n        └── Paragraph scope=3:3..3:3 anchor=null attributes={} children=1\n            └── Text scope=3:3..3:3 anchor=null attributes={} literal=\"b\" children=0\n"
+        },
+        "block_identifier": {
+            "before": "- item\n\n",
+            "append": "#identity#\n",
+            "old_dump": "Document scope=1:1..2:0 anchor=null attributes={} children=1\n└── List scope=1:1..2:0 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1\n    └── ListItem scope=1:1..2:0 anchor=null attributes={} marker=null children=1\n        └── Paragraph scope=1:3..1:6 anchor=null attributes={} children=1\n            └── Text scope=1:3..1:6 anchor=null attributes={} literal=\"item\" children=0\n",
+            "new_dump": "Document scope=1:1..3:10 anchor=null attributes={} children=1\n└── List scope=1:1..3:10 anchor=\"identity\" attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1\n    └── ListItem scope=1:1..2:0 anchor=null attributes={} marker=null children=1\n        └── Paragraph scope=1:3..1:6 anchor=null attributes={} children=1\n            └── Text scope=1:3..1:6 anchor=null attributes={} literal=\"item\" children=0\n"
+        },
+        "properties_envelope": {
+            "before": "---\nname: value\n",
+            "append": "---\n",
+            "old_dump": "Document scope=1:1..2:11 anchor=null attributes={} children=2\n├── ThematicBreak scope=1:1..1:3 anchor=null attributes={} children=0\n└── Paragraph scope=2:1..2:11 anchor=null attributes={} children=1\n    └── Text scope=2:1..2:11 anchor=null attributes={} literal=\"name: value\" children=0\n",
+            "new_dump": "Document scope=1:1..3:3 anchor=null attributes={} children=0\n└── Metadata scope=1:1..3:3 anchor=null attributes={} name=scalar(text(\"value\")) title=null subtitle=null time=null date=null authors=null keywords=null abstract=null state=null comment=null children=0\n"
+        },
+        "fence_blank_line": {
+            "before": "```\na\n\n",
+            "append": "b\n```\n",
+            "old_dump": "Document scope=1:1..3:0 anchor=null attributes={} children=1\n└── CodeBlock scope=1:1..3:0 anchor=null attributes={} info=null language=null literal=\"a\\n\\n\" fenced=true closed=false children=0\n",
+            "new_dump": "Document scope=1:1..5:3 anchor=null attributes={} children=1\n└── CodeBlock scope=1:1..5:3 anchor=null attributes={} info=null language=null literal=\"a\\n\\nb\\n\" fenced=true closed=true children=0\n"
+        },
+        "directive": {
+            "before": "::: note\na\n\n",
+            "append": "b\n:::\n",
+            "old_dump": "Document scope=1:1..3:0 anchor=null attributes={} children=1\n└── DirectiveBlock scope=1:1..3:0 anchor=null attributes={.note} name=null children=1\n    └── Paragraph scope=2:1..2:1 anchor=null attributes={} children=1\n        └── Text scope=2:1..2:1 anchor=null attributes={} literal=\"a\" children=0\n",
+            "new_dump": "Document scope=1:1..5:3 anchor=null attributes={} children=1\n└── DirectiveBlock scope=1:1..5:3 anchor=null attributes={.note} name=null children=2\n    ├── Paragraph scope=2:1..2:1 anchor=null attributes={} children=1\n    │   └── Text scope=2:1..2:1 anchor=null attributes={} literal=\"a\" children=0\n    └── Paragraph scope=4:1..4:1 anchor=null attributes={} children=1\n        └── Text scope=4:1..4:1 anchor=null attributes={} literal=\"b\" children=0\n"
+        }
+    },
+    "prefix_checks": [
+        {
+            "case": "paragraphs",
+            "bytes": 600,
+            "chunk_bytes": 1,
+            "updates": 600,
+            "full_parsed_bytes": 180300,
+            "island_parsed_bytes": 20364,
+            "full": {
+                "total_ms": 3.640164,
+                "p50_us": 6.167,
+                "p95_us": 9.167
+            },
+            "island": {
+                "total_ms": 1.861688,
+                "p50_us": 2.958,
+                "p95_us": 3.334
+            },
+            "oracle_checked": "every prefix"
+        },
+        {
+            "case": "paragraphs",
+            "bytes": 600,
+            "chunk_bytes": 7,
+            "updates": 86,
+            "full_parsed_bytes": 26185,
+            "island_parsed_bytes": 3405,
+            "full": {
+                "total_ms": 0.509915,
+                "p50_us": 5.9585,
+                "p95_us": 9.333
+            },
+            "island": {
+                "total_ms": 0.26783,
+                "p50_us": 2.875,
+                "p95_us": 5.375
+            },
+            "oracle_checked": "every prefix"
+        },
+        {
+            "case": "paragraphs",
+            "bytes": 600,
+            "chunk_bytes": 64,
+            "updates": 10,
+            "full_parsed_bytes": 3480,
+            "island_parsed_bytes": 1032,
+            "full": {
+                "total_ms": 0.064168,
+                "p50_us": 6.625,
+                "p95_us": 9.459
+            },
+            "island": {
+                "total_ms": 0.051249,
+                "p50_us": 5.5415,
+                "p95_us": 5.958
+            },
+            "oracle_checked": "every prefix"
+        },
+        {
+            "case": "long_paragraph",
+            "bytes": 600,
+            "chunk_bytes": 1,
+            "updates": 600,
+            "full_parsed_bytes": 180300,
+            "island_parsed_bytes": 180300,
+            "full": {
+                "total_ms": 1.890689,
+                "p50_us": 3.125,
+                "p95_us": 4.042
+            },
+            "island": {
+                "total_ms": 2.356493,
+                "p50_us": 3.875,
+                "p95_us": 5.208
+            },
+            "oracle_checked": "every prefix"
+        },
+        {
+            "case": "long_paragraph",
+            "bytes": 600,
+            "chunk_bytes": 7,
+            "updates": 86,
+            "full_parsed_bytes": 26185,
+            "island_parsed_bytes": 26185,
+            "full": {
+                "total_ms": 0.27734,
+                "p50_us": 3.146,
+                "p95_us": 4.125
+            },
+            "island": {
+                "total_ms": 0.349295,
+                "p50_us": 3.979,
+                "p95_us": 5.375
+            },
+            "oracle_checked": "every prefix"
+        },
+        {
+            "case": "long_paragraph",
+            "bytes": 600,
+            "chunk_bytes": 64,
+            "updates": 10,
+            "full_parsed_bytes": 3480,
+            "island_parsed_bytes": 3480,
+            "full": {
+                "total_ms": 0.034292,
+                "p50_us": 3.3335,
+                "p95_us": 4.167
+            },
+            "island": {
+                "total_ms": 0.042874,
+                "p50_us": 4.25,
+                "p95_us": 5.458
+            },
+            "oracle_checked": "every prefix"
+        }
+    ],
+    "streaming": [
+        {
+            "case": "paragraphs",
+            "bytes": 34816,
+            "chunk_bytes": 16,
+            "updates": 2176,
+            "full_parsed_bytes": 37897216,
+            "island_parsed_bytes": 104448,
+            "full": {
+                "total_ms": 463.874664,
+                "p50_us": 215.8125,
+                "p95_us": 400.875
+            },
+            "island": {
+                "total_ms": 9.601831,
+                "p50_us": 3.292,
+                "p95_us": 6.0
+            },
+            "oracle_checked": "final snapshot"
+        },
+        {
+            "case": "paragraphs",
+            "bytes": 34816,
+            "chunk_bytes": 64,
+            "updates": 544,
+            "full_parsed_bytes": 9487360,
+            "island_parsed_bytes": 52224,
+            "full": {
+                "total_ms": 116.581818,
+                "p50_us": 210.4375,
+                "p95_us": 409.917
+            },
+            "island": {
+                "total_ms": 3.121341,
+                "p50_us": 5.834,
+                "p95_us": 6.542
+            },
+            "oracle_checked": "final snapshot"
+        },
+        {
+            "case": "paragraphs",
+            "bytes": 34816,
+            "chunk_bytes": 256,
+            "updates": 136,
+            "full_parsed_bytes": 2384896,
+            "island_parsed_bytes": 39168,
+            "full": {
+                "total_ms": 29.417124,
+                "p50_us": 217.25,
+                "p95_us": 401.083
+            },
+            "island": {
+                "total_ms": 1.755409,
+                "p50_us": 13.042,
+                "p95_us": 14.167
+            },
+            "oracle_checked": "final snapshot"
+        },
+        {
+            "case": "long_paragraph",
+            "bytes": 34816,
+            "chunk_bytes": 16,
+            "updates": 2176,
+            "full_parsed_bytes": 37897216,
+            "island_parsed_bytes": 37897216,
+            "full": {
+                "total_ms": 171.22727,
+                "p50_us": 78.3125,
+                "p95_us": 147.125
+            },
+            "island": {
+                "total_ms": 222.053349,
+                "p50_us": 100.792,
+                "p95_us": 187.792
+            },
+            "oracle_checked": "final snapshot"
+        },
+        {
+            "case": "long_paragraph",
+            "bytes": 34816,
+            "chunk_bytes": 64,
+            "updates": 544,
+            "full_parsed_bytes": 9487360,
+            "island_parsed_bytes": 9487360,
+            "full": {
+                "total_ms": 42.179858,
+                "p50_us": 81.438,
+                "p95_us": 145.625
+            },
+            "island": {
+                "total_ms": 54.037663,
+                "p50_us": 103.541,
+                "p95_us": 185.917
+            },
+            "oracle_checked": "final snapshot"
+        },
+        {
+            "case": "long_paragraph",
+            "bytes": 34816,
+            "chunk_bytes": 256,
+            "updates": 136,
+            "full_parsed_bytes": 2384896,
+            "island_parsed_bytes": 2384896,
+            "full": {
+                "total_ms": 10.883869,
+                "p50_us": 80.8125,
+                "p95_us": 144.416
+            },
+            "island": {
+                "total_ms": 13.823657,
+                "p50_us": 104.229,
+                "p95_us": 186.875
+            },
+            "oracle_checked": "final snapshot"
+        }
+    ],
+    "editing": [
+        {
+            "paragraphs": 128,
+            "initial_bytes": 6016,
+            "edits": 128,
+            "full_parsed_bytes": 778240,
+            "island_parsed_bytes": 6144,
+            "lookup_steps": 1024,
+            "full": {
+                "total_ms": 11.693621,
+                "p50_us": 91.375,
+                "p95_us": 92.791
+            },
+            "island": {
+                "total_ms": 0.593611,
+                "p50_us": 4.541,
+                "p95_us": 5.041
+            },
+            "oracle_checked": "every edit"
+        },
+        {
+            "paragraphs": 1024,
+            "initial_bytes": 48128,
+            "edits": 128,
+            "full_parsed_bytes": 6168576,
+            "island_parsed_bytes": 6144,
+            "lookup_steps": 1408,
+            "full": {
+                "total_ms": 88.252742,
+                "p50_us": 696.958,
+                "p95_us": 706.417
+            },
+            "island": {
+                "total_ms": 0.733162,
+                "p50_us": 5.5,
+                "p95_us": 7.417
+            },
+            "oracle_checked": "final snapshot"
+        },
+        {
+            "paragraphs": 8192,
+            "initial_bytes": 385024,
+            "edits": 128,
+            "full_parsed_bytes": 49291264,
+            "island_parsed_bytes": 6144,
+            "lookup_steps": 1792,
+            "full": {
+                "total_ms": 692.234121,
+                "p50_us": 5379.6045,
+                "p95_us": 5647.667
+            },
+            "island": {
+                "total_ms": 1.214254,
+                "p50_us": 8.5,
+                "p95_us": 14.125
+            },
+            "oracle_checked": "final snapshot"
+        }
+    ]
+}

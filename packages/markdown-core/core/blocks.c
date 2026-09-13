@@ -1537,6 +1537,7 @@ bool markdown_core_parser_lookahead_begin(markdown_core_parser *parser, markdown
     }
     for (node = parent; node; node = node == parser->block_root ? NULL : node->parent) {
         depth++;
+        parser->block_lookahead_work++;
     }
     if (!S_lookahead_reserve_chain(parser, depth)) {
         return false;
@@ -1546,6 +1547,7 @@ bool markdown_core_parser_lookahead_begin(markdown_core_parser *parser, markdown
         i--;
         parser->lookahead_chain[i] = node;
         parser->lookahead_chain_flags[i] = node->flags;
+        parser->block_lookahead_work++;
     }
 
     lookahead->parser = parser;
@@ -1644,8 +1646,8 @@ int markdown_core_parser_lookahead_next(markdown_core_block_lookahead *lookahead
                 parser->offset = entry->offset;
                 parser->column = entry->column;
                 parser->partially_consumed_tab = entry->partially_consumed_tab;
-                parser->first_nonspace = parser->offset;
-                parser->first_nonspace_column = parser->column;
+                parser->first_nonspace = entry->first_nonspace;
+                parser->first_nonspace_column = entry->first_nonspace_column;
             }
         }
         resumed_offset = parser->offset;
@@ -1686,6 +1688,8 @@ int markdown_core_parser_lookahead_next(markdown_core_block_lookahead *lookahead
             entry->depth = lookahead->depth - 1;
             entry->offset = parser->offset;
             entry->column = parser->column;
+            entry->first_nonspace = parser->first_nonspace;
+            entry->first_nonspace_column = parser->first_nonspace_column;
             entry->partially_consumed_tab = parser->partially_consumed_tab;
             entry->taken = taken;
             entry->blank = blank;
@@ -1724,6 +1728,7 @@ void markdown_core_parser_lookahead_end(markdown_core_block_lookahead *lookahead
     }
     for (i = 0; i < lookahead->depth; i++) {
         markdown_core_node *node = parser->lookahead_chain[i];
+        parser->block_lookahead_work++;
         const markdown_core_element *structure = markdown_core_node_structure(node);
         unsigned mask = structure ? structure->speculative_flags : 0;
         node->flags =
@@ -2006,6 +2011,7 @@ static void S_process_line(markdown_core_parser *parser, const unsigned char *bu
     parser->first_nonspace = 0;
     parser->first_nonspace_column = 0;
     parser->thematic_break_kill_pos = 0;
+    parser->table_separator_kill_pos = 0;
     parser->indent = 0;
     parser->blank = false;
     parser->partially_consumed_tab = false;

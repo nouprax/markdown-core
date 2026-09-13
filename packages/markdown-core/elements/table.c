@@ -2114,6 +2114,29 @@ static markdown_core_node *try_interrupting_block(markdown_core_parser *parser, 
         input->data[parser->first_nonspace] != '-') {
         return NULL;
     }
+    /* Only a dash separator can supersede a recognized list/thematic start.
+     * A textual header is tried by try_opening_table_block after ordinary
+     * block starts have been ruled out. Reuse the scanner's rejection across
+     * nested containers: each suffix before that byte fails the same grammar.
+     * This avoids both repeated suffix scans and speculative ancestor walks. */
+    if (parser->first_nonspace < parser->table_separator_kill_pos) {
+        return NULL;
+    }
+    const unsigned char *cursor = input->data + parser->first_nonspace, *from;
+    const unsigned char *end = input->data + input->len;
+    while (end > cursor && (end[-1] == '\n' || end[-1] == '\r')) {
+        end--;
+    }
+    int result;
+    do {
+        const unsigned char *before = cursor;
+        result = scan_table_dash(&cursor, end, &from);
+        parser->table_scan_work += (size_t)(cursor - before) + 1;
+    } while (result > 0);
+    if (result < 0) {
+        parser->table_separator_kill_pos = (bufsize_t)(cursor - input->data);
+        return NULL;
+    }
     return markdown_core_table_try_open(parser, node, input->data, input->len);
 }
 

@@ -7,10 +7,11 @@ postprocessors receive only the completed document.
 
 ## Declaration order and inline ownership
 
-Block finalization registers headings in source order, including headings in
-footnote definitions. A heading is a leaf block, so closure order is source
-order. The parser keeps borrowed node pointers in that order; no final tree
-search or sorting is needed. Explicit reference definitions are already in the
+Block finalization registers borrowed heading pointers, including headings in
+footnote definitions and deferred mapped table cells. Deferred inputs can close
+out of authored order, so document preparation stably orders the collection by
+original source coordinates using the shared fixed-pass radix operation. No
+final tree search is needed. Explicit reference definitions are already in the
 ordinary reference map before heading declarations are added. The map's
 first-definition rule therefore gives explicit definitions priority and selects
 the first duplicate heading. Both authored and heading definitions use the
@@ -136,7 +137,7 @@ disposes pending inline states before their nodes. Parse-time indices are discar
 before consolidation or element postprocessing can replace nodes.
 
 Expected work is proportional to parsed input, visited nodes, and produced
-anchor/target bytes, using the shared hash index's normal bounds. Memory is
+anchor/target bytes, using the shared radix index (at most nine bit tests per key byte plus the terminator). Memory is
 proportional to headings, unique reserved anchors and inherited resources, plus
 live inline state. Tests measure node/string/candidate work, rather than using
 timing to assert linearity. They include dense suffix reservations, nested live

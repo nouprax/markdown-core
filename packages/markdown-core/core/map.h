@@ -27,7 +27,6 @@ struct markdown_core_map_record {
 typedef struct markdown_core_map_record markdown_core_map_record;
 
 typedef struct markdown_core_key_index_slot {
-    uint64_t hash;
     const unsigned char *key;
     bufsize_t key_len;
     union {
@@ -36,9 +35,19 @@ typedef struct markdown_core_key_index_slot {
     } value;
 } markdown_core_key_index_slot;
 
+/* One leaf and its insertion branch. The first record has no branch. */
+typedef struct markdown_core_key_index_node {
+    markdown_core_key_index_slot slot;
+    size_t children[2];
+    bufsize_t byte;
+    unsigned short mask;
+} markdown_core_key_index_node;
+
 typedef struct markdown_core_key_index {
     markdown_core_mem *mem;
-    markdown_core_key_index_slot *slots;
+    markdown_core_key_index_node *nodes;
+    size_t root;
+    size_t *pending_link;
     size_t capacity;
     size_t size;
 } markdown_core_key_index;

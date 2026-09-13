@@ -630,15 +630,24 @@ static int case_tables(pc_context *context) {
 }
 
 /* Port of the reference-map hash collision generator. */
-static int pc_badhash(const char *key) {
-    uint32_t h = 0;
-    const char *cursor;
-    for (cursor = key; *cursor; cursor++) {
-        uint32_t a = h << 6;
-        uint32_t b = h << 16;
-        h = (uint32_t)*cursor + a + b - h;
+/* Replay a real 5eca3bc1 bucket flood, not cmark's unrelated sdbm hash.
+ * 2048 keys sharing these bits collide at every capacity up to 4096. The
+ * replacement radix tree is additionally checked structurally by api_test. */
+static int pc_baseline_bucket_zero(const char *key) {
+    uint64_t hash = UINT64_C(1469598103934665603);
+    for (const unsigned char *p = (const unsigned char *)key; *p; p++) {
+        hash ^= *p;
+        hash *= UINT64_C(1099511628211);
     }
-    return (h % 16) == 0;
+    hash ^= hash >> 33;
+    hash *= UINT64_C(0xff51afd7ed558ccd);
+    hash ^= hash >> 33;
+    hash *= UINT64_C(0xc4ceb9fe1a85ec53);
+    hash ^= hash >> 33;
+    if (!hash) {
+        hash = 1;
+    }
+    return (hash & 4095) == 0;
 }
 
 typedef struct pc_uniform_text {
@@ -663,7 +672,7 @@ static int pc_uniform_text_visit(const markdown_core_node *node, void *context) 
 }
 
 static int case_reference_collisions(pc_context *context) {
-    enum { COLLISIONS = 50000 };
+    enum { COLLISIONS = 2048 };
     char bad_key[32] = "";
     char key[32];
     size_t found = 0;
@@ -680,7 +689,7 @@ static int case_reference_collisions(pc_context *context) {
         }
         while (found < COLLISIONS) {
             snprintf(key, sizeof(key), "x%lu", candidate++);
-            if (!pc_badhash(key)) {
+            if (!pc_baseline_bucket_zero(key)) {
                 continue;
             }
             found++;

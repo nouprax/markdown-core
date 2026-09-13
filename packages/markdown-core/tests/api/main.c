@@ -21,6 +21,8 @@
 #include "buffer.h"
 #include "parser.h"
 #include "element.h"
+#include "inline_internal.h"
+#include "text.h"
 #include "markdown-core-elements.h"
 
 #include <markdown_core.h>
@@ -3198,6 +3200,131 @@ static bool measure_inline_work(markdown_core_parser *parser, void *context) {
     return markdown_core_parser_attach_element(parser, &WORK_RECORDER);
 }
 
+static void text_whitespace_boundary(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    const int32_t scalars[] = {9,    10,   12,   13,   32,   160,  5760,  8192, 8193, 8194, 8195, 8196, 8197,   8198,
+                               8199, 8200, 8201, 8202, 8239, 8287, 12288, 11,   133,  8203, 8232, 8233, 0x1f600};
+    for (size_t i = 0; i < sizeof(scalars) / sizeof(*scalars); i++) {
+        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+        for (size_t n = 0; n < 1024; n++) {
+            markdown_core_strbuf_puts(&source, "word ");
+        }
+        size_t previous = (size_t)source.size;
+        markdown_core_utf8proc_encode_char(scalars[i], &source);
+        size_t boundary = markdown_core_utf8proc_is_space(scalars[i]) ? (size_t)source.size : previous;
+        markdown_core_strbuf_puts(&source, "文z");
+        markdown_core_parser parser = {.mem = mem};
+        markdown_core_inline_state state;
+        markdown_core_chunk input = {source.ptr, source.size, 0};
+        markdown_core_inline_state_from_buf(&parser, mem, 1, &state, &input, NULL);
+        markdown_core_node *text = MARKDOWN_CORE_ELEMENT_TEXT.parse_text(&parser, &state, input.len);
+        OK(runner, text && state.last_delim && state.last_delim->kind == DELIMITER_BOUNDARY,
+           "ordinary text records its whitespace boundary");
+        if (state.last_delim) {
+            INT_EQ(runner, state.last_delim->position, boundary, "the exact Unicode whitespace set is preserved");
+            OK(runner, !state.last_delim->previous, "one barrier summarizes the complete text slice");
+        }
+        OK(runner, parser.whitespace_work <= 9, "only the suffix after the final boundary is inspected");
+        markdown_core_node_free(text);
+        markdown_core_inline_clear_inlines(&state);
+        markdown_core_strbuf_free(&source);
+    }
+}
+
+/* Radix structure is the complexity witness, independent of timing or hash
+ * distribution. Every edge advances a byte or a bit; leaves match borrowed
+ * binary keys, including empty keys, embedded NULs and prefix chains. */
+static void key_index_radix(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    enum { COUNT = 4096, WIDTH = 32 };
+    unsigned char (*keys)[WIDTH] = calloc(COUNT, WIDTH);
+    for (size_t order = 0; order < 3; order++) {
+        markdown_core_key_index index;
+        OK(runner, markdown_core_key_index_init(&index, mem, order ? COUNT : 0), "radix index initializes");
+        for (size_t i = 0; i < COUNT; i++) {
+            size_t k = order == 1 ? COUNT - 1 - i : order == 2 ? (i * 2053) % COUNT : i;
+            memset(keys[k], 'a', WIDTH);
+            keys[k][WIDTH - 2] = (unsigned char)(k >> 8);
+            keys[k][WIDTH - 1] = (unsigned char)k;
+            OK(runner, markdown_core_key_index_insert(&index, keys[k], WIDTH, &keys[k], 0, NULL),
+               "binary key inserts in any order");
+        }
+        for (size_t k = 0; k < COUNT; k++) {
+            OK(runner, markdown_core_key_index_lookup(&index, keys[k], WIDTH) == &keys[k], "binary lookup agrees");
+            markdown_core_key_index_slot *slot = markdown_core_key_index_entry(&index, keys[k], WIDTH);
+            OK(runner, slot && slot->key == keys[k], "duplicate entry preserves the first key");
+        }
+        INT_EQ(runner, index.size, COUNT, "duplicates do not grow the index");
+        for (size_t i = 1; i < index.size; i++) {
+            markdown_core_key_index_node *parent = &index.nodes[i];
+            OK(runner, parent->mask && parent->mask <= 256 && !(parent->mask & (parent->mask - 1)),
+               "one distinguishing bit per branch");
+            for (size_t side = 0; side < 2; side++) {
+                size_t ref = parent->children[side];
+                OK(runner, ref && (ref >> 1) <= index.size, "branch refers to a live record");
+                if (!(ref & 1)) {
+                    markdown_core_key_index_node *child = &index.nodes[(ref >> 1) - 1];
+                    OK(runner,
+                       child->byte > parent->byte || (child->byte == parent->byte && child->mask < parent->mask),
+                       "each branch advances the key: bounded by its bytes, never the key count");
+                }
+            }
+        }
+        for (bufsize_t length = 0; length < WIDTH; length++) {
+            OK(runner, !markdown_core_key_index_lookup(&index, keys[0], length), "shorter absent prefix misses");
+            OK(runner, markdown_core_key_index_insert(&index, keys[0], length, &keys[length], 0, NULL),
+               "all prefix lengths insert");
+        }
+        for (bufsize_t length = 0; length < WIDTH; length++) {
+            OK(runner, markdown_core_key_index_lookup(&index, keys[0], length) == &keys[length],
+               "presence bits distinguish prefixes including empty");
+        }
+        void *existing = NULL;
+        OK(runner, markdown_core_key_index_insert(&index, keys[0], WIDTH, &index, 1, &existing),
+           "replacement succeeds");
+        OK(runner, existing == &keys[0] && markdown_core_key_index_lookup(&index, keys[0], WIDTH) == &index,
+           "replacement reports the original value");
+        markdown_core_key_index_free(&index);
+    }
+    free(keys);
+}
+
+static size_t count_kind(markdown_core_node *root, markdown_core_node_type kind);
+
+static void nested_block_lookahead(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    for (size_t shape = 0; shape < 3; shape++) {
+        for (size_t depth = 16; depth <= 8192; depth *= 2) {
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+            for (size_t i = 0; i < depth; i++) {
+                markdown_core_strbuf_puts(&source, shape == 2 ? "> " : "- ");
+            }
+            markdown_core_strbuf_puts(&source, "leaf\n");
+            if (shape) {
+                for (size_t i = 0; i < depth; i++) {
+                    markdown_core_strbuf_puts(&source, shape == 2 ? "> " : "  ");
+                }
+                markdown_core_strbuf_puts(&source, "more\n");
+            }
+            inline_work work = {0};
+            markdown_core_node *root = markdown_core_parse_document_with_mem((const char *)source.ptr, source.size, mem,
+                                                                             measure_inline_work, &work);
+            OK(runner, root != NULL, "nested continuation parses");
+            if (root) {
+                INT_EQ(runner, count_kind(root, shape == 2 ? MARKDOWN_CORE_NODE_CALLOUT : MARKDOWN_CORE_NODE_LIST_ITEM),
+                       depth, "container depth is preserved");
+                INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_SOFT_BREAK), shape != 0,
+                       "continuation belongs to the deepest paragraph");
+                INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_TABLE), 0, "list content is not a table");
+            }
+            OK(runner, work.lookahead + work.tables <= 16 * (size_t)source.size,
+               "candidate bytes AND ancestor setup/restore stay bounded by input size");
+            markdown_core_node_free(root);
+            markdown_core_strbuf_free(&source);
+        }
+    }
+}
+
 /* Depth and width vary independently. Construction transfers disjoint
  * subtrees, while the separate mutation tests retain all cycle checks. The
  * parser-boundary audit excludes arbitrary reparenting from these paths. */
@@ -4230,7 +4357,9 @@ static void comment_block_linear_work(test_batch_runner *runner) {
             markdown_core_node *root =
                 markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
             OK(runner, root != NULL, "nested block comment candidates parse successfully");
-            OK(runner, work.lookahead <= 4 * (size_t)source.size,
+            /* Includes the three ancestor passes (count, snapshot, restore),
+             * previously omitted from this metric, as well as prefix visits. */
+            OK(runner, work.lookahead <= 12 * (size_t)source.size,
                "block lookahead work is linear: shape=%d size=%d work=%zu", shape, source.size, work.lookahead);
             INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_COMMENT_BLOCK), expected_comments,
                    "only a closed candidate is a block comment: shape=%d depth=%zu", shape, depth);
@@ -5518,6 +5647,9 @@ int main(void) {
     heading_reference_resource_lifetime(runner);
     heading_label_length_boundary(runner);
     autolink_domain_linear_work(runner);
+    text_whitespace_boundary(runner);
+    key_index_radix(runner);
+    nested_block_lookahead(runner);
     deep_inline_construction(runner);
     ordered_numeral_ceiling(runner);
     citation_sparse_brace_storage(runner);

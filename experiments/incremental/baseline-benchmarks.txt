@@ -1,0 +1,66 @@
+Baseline: 5eca3bc1598b0313a0ac6a9e69f078a309feb3e1
+Platform: macOS-26.6.2-arm64-arm-64bit-Mach-O
+Compiler: Apple clang version 21.0.0 (clang-2100.1.1.101)
+Command: ctest --preset benchmark
+Timing boundary: public C parse; free is outside the timed interval.
+
+benchmark case=binding_baseline bytes=158000 repeats=5 warmup=1 median_ms=5.609
+metric runtime=c workload=representative_large workload_version=1 bytes=158000 warmup=1 repeats=5 median_ns=5609000 peak_rss_kib=9744
+benchmark case=block-bq-flat.md bytes=49200 repeats=5 warmup=1 median_ms=1.080
+benchmark case=block-bq-nested.md bytes=71000 repeats=5 warmup=1 median_ms=1.496
+benchmark case=block-code.md bytes=14600 repeats=5 warmup=1 median_ms=0.083
+benchmark case=block-fences.md bytes=14400 repeats=5 warmup=1 median_ms=0.145
+benchmark case=block-heading.md bytes=24600 repeats=5 warmup=1 median_ms=0.905
+benchmark case=block-hr.md bytes=14800 repeats=5 warmup=1 median_ms=0.522
+benchmark case=block-html.md bytes=56600 repeats=5 warmup=1 median_ms=0.622
+benchmark case=block-lheading.md bytes=22600 repeats=5 warmup=1 median_ms=0.641
+benchmark case=block-list-flat.md bytes=105000 repeats=5 warmup=1 median_ms=4.771
+benchmark case=block-list-nested.md bytes=78200 repeats=5 warmup=1 median_ms=3.744
+benchmark case=block-ref-flat.md bytes=94800 repeats=5 warmup=1 median_ms=2.265
+benchmark case=block-ref-nested.md bytes=51400 repeats=5 warmup=1 median_ms=3.255
+benchmark case=directive.md bytes=223600 repeats=5 warmup=1 median_ms=8.378
+benchmark case=inline-autolink.md bytes=111400 repeats=5 warmup=1 median_ms=1.501
+benchmark case=inline-backticks.md bytes=12800 repeats=5 warmup=1 median_ms=0.285
+benchmark case=inline-em-flat.md bytes=31000 repeats=5 warmup=1 median_ms=1.446
+benchmark case=inline-em-nested.md bytes=31600 repeats=5 warmup=1 median_ms=1.207
+benchmark case=inline-em-worst.md bytes=34600 repeats=5 warmup=1 median_ms=1.177
+benchmark case=inline-entity.md bytes=65600 repeats=5 warmup=1 median_ms=1.389
+benchmark case=inline-escape.md bytes=37000 repeats=5 warmup=1 median_ms=2.008
+benchmark case=inline-html.md bytes=103200 repeats=5 warmup=1 median_ms=2.555
+benchmark case=inline-links-flat.md bytes=146000 repeats=5 warmup=1 median_ms=2.554
+benchmark case=inline-links-nested.md bytes=62600 repeats=5 warmup=1 median_ms=3.751
+benchmark case=inline-newlines.md bytes=28000 repeats=5 warmup=1 median_ms=1.233
+benchmark case=lorem1.md bytes=757800 repeats=5 warmup=1 median_ms=4.313
+benchmark case=rawtabs.md bytes=59000 repeats=5 warmup=1 median_ms=0.890
+benchmark case=large_document@128 bytes=1476224 repeats=5 warmup=1 median_ms=46.286
+benchmark case=large_document@256 bytes=2952448 repeats=5 warmup=1 median_ms=98.773
+benchmark scaling=large_document scale=256 adjacent_ratio=2.134
+benchmark case=large_document@512 bytes=5904896 repeats=5 warmup=1 median_ms=192.768
+benchmark scaling=large_document scale=512 adjacent_ratio=1.952
+benchmark case=deep_nesting@8192 bytes=16385 repeats=5 warmup=1 median_ms=1.079
+benchmark case=deep_nesting@16384 bytes=32769 repeats=5 warmup=1 median_ms=2.775
+benchmark scaling=deep_nesting scale=16384 adjacent_ratio=2.572
+benchmark case=deep_nesting@32768 bytes=65537 repeats=5 warmup=1 median_ms=6.207
+benchmark scaling=deep_nesting scale=32768 adjacent_ratio=2.237
+benchmark case=elements@100 bytes=111800 repeats=5 warmup=1 median_ms=4.267
+benchmark case=elements@200 bytes=223600 repeats=5 warmup=1 median_ms=8.795
+benchmark scaling=elements scale=200 adjacent_ratio=2.061
+benchmark case=elements@400 bytes=447200 repeats=5 warmup=1 median_ms=17.527
+benchmark scaling=elements scale=400 adjacent_ratio=1.993
+benchmark case=tables_pipe_caption bytes=58000 repeats=5 warmup=1 median_ms=3.388
+benchmark case=tables_simple bytes=50000 repeats=5 warmup=1 median_ms=3.113
+benchmark case=tables_multiline bytes=106000 repeats=5 warmup=1 median_ms=6.305
+benchmark case=tables_grid bytes=62000 repeats=5 warmup=1 median_ms=5.086
+benchmark case=tables_rejected bytes=70000 repeats=5 warmup=1 median_ms=1.908
+benchmark case=adversarial_links@16384 bytes=81920 repeats=5 warmup=1 median_ms=7.099
+benchmark case=adversarial_links@32768 bytes=163840 repeats=5 warmup=1 median_ms=14.256
+benchmark scaling=adversarial_links scale=32768 adjacent_ratio=2.008
+benchmark case=adversarial_links@65536 bytes=327680 repeats=5 warmup=1 median_ms=28.208
+benchmark scaling=adversarial_links scale=65536 adjacent_ratio=1.979
+benchmark case=adversarial_emphasis@16384 bytes=65536 repeats=5 warmup=1 median_ms=2.962
+benchmark case=adversarial_emphasis@32768 bytes=131072 repeats=5 warmup=1 median_ms=5.958
+benchmark scaling=adversarial_emphasis scale=32768 adjacent_ratio=2.011
+benchmark case=adversarial_emphasis@65536 bytes=262144 repeats=5 warmup=1 median_ms=12.131
+benchmark scaling=adversarial_emphasis scale=65536 adjacent_ratio=2.036
+
+8/8 benchmark tests completed, including the corpus guard.

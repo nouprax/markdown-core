@@ -146,16 +146,27 @@ markdown_core_node *markdown_core_text_parse(markdown_core_parser *parser, markd
                                              bufsize_t endpos) {
     markdown_core_chunk contents;
     bufsize_t startpos;
-    /* Disjoint ordinary text slices alone contribute whitespace barriers.
-     * Escapes, entities, and opaque tokens have their own token owners. */
-    for (bufsize_t at = inline_state->pos; at < endpos;) {
-        int32_t scalar = 0;
-        int width = markdown_core_utf8proc_iterate(inline_state->input.data + at, endpos - at, &scalar);
-        parser->whitespace_work++;
-        if (markdown_core_utf8proc_is_space(scalar)) {
-            markdown_core_inline_push_boundary(inline_state, at + width);
+    /* No token/delimiter is inserted inside an ordinary text slice. Its
+     * whitespace barriers therefore coalesce to the last one. Find that
+     * boundary backwards, decoding only non-ASCII scalars in the suffix.
+     * This preserves the dialect's exact Zs + LF/CR/TAB/FF set (not C isspace,
+     * which also includes VT), and never scans preceding words needlessly. */
+    const unsigned char *data = inline_state->input.data;
+    for (bufsize_t after = endpos; after > inline_state->pos;) {
+        bufsize_t at = after - 1;
+        int32_t scalar = data[at];
+        if (scalar >= 128) {
+            while (at > inline_state->pos && (data[at] & 0xC0) == 0x80) {
+                at--;
+            }
+            markdown_core_utf8proc_iterate(data + at, after - at, &scalar);
         }
-        at += width > 0 ? width : 1;
+        parser->whitespace_work += (size_t)(after - at);
+        if (markdown_core_utf8proc_is_space(scalar)) {
+            markdown_core_inline_push_boundary(inline_state, after);
+            break;
+        }
+        after = at;
     }
     /* Text runs are disjoint, so recording separators costs at most one
      * extra visit per byte, regardless of bracket nesting or digit-run

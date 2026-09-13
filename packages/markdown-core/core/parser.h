@@ -54,7 +54,7 @@ typedef struct {
 
 struct markdown_core_parser {
     struct markdown_core_mem *mem;
-    /* A hashtable of urls in the current document for cross-references */
+    /* Source-ordered reference declarations, indexed by normalized label. */
     struct markdown_core_map *refmap;
     /* The labels this document defines footnotes for (see references.h). The
      * block phase fills it as each definition opens; the inline phase reads it
@@ -97,6 +97,9 @@ struct markdown_core_parser {
      */
     bufsize_t first_nonspace_column;
     bufsize_t thematic_break_kill_pos;
+    /* A dash separator rejected at this byte also rejects every earlier
+     * suffix on the current physical line. Reset with the line cursor. */
+    bufsize_t table_separator_kill_pos;
     /* See the documentation for markdown_core_parser_get_indent() in markdown_core.h */
     int indent;
     /* See the documentation for markdown_core_parser_is_blank() in markdown_core.h */
@@ -223,9 +226,12 @@ typedef struct markdown_core_lookahead_entry {
     const struct markdown_core_node *container;
     /* Its distance from the document root: chain[depth] == container. */
     int depth;
-    /* The line state after that container's prefix: what S_advance_offset left. */
+    /* Prefix cursor plus the already scanned indentation suffix. Retain both
+     * so deeper candidates do not rescan the same leading whitespace. */
     bufsize_t offset;
     bufsize_t column;
+    bufsize_t first_nonspace;
+    bufsize_t first_nonspace_column;
     bool partially_consumed_tab;
     /* A list's second consecutive blank line at indentation zero: the innermost
      * open block owns the whole line and nothing below the list is asked. */
