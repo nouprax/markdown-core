@@ -401,7 +401,7 @@ The interface is exhaustive: every typed method is required, there is
 no `defaultVisit`, optional handler, catch-all adapter, or protocol-extension
 fallback. Adding a `Markup` kind must therefore produce compile errors in every
 visitor until the new case is handled. Each method receives the concrete node
-and a required `MarkupWalkPhase`, and returns `Result`. Single-node dispatch returns
+and a required `MarkupVisitPhase`, and returns `Result`. Single-node dispatch returns
 that result without traversing; `accept` (Swift/Kotlin) and `visit` (TypeScript)
 default to `entering` and also accept an explicit phase.
 

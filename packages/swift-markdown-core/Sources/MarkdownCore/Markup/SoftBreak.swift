@@ -12,7 +12,7 @@ public struct SoftBreak: Markup {
     public let attributes: Attributes
 
     /// Dispatches to the visitor's `SoftBreak` case.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupWalkPhase) -> V.Result {
+    public func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupVisitPhase) -> V.Result {
         visitor.visit(self, phase: phase)
     }
 }

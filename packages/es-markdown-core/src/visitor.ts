@@ -2,7 +2,7 @@ import type { Markup } from "./model/markup.js";
 
 /** One required, precisely typed callback for every markup kind. */
 export type Visitor<Result> = {
-    [Node in Markup as Node["kind"]]: (this: void, node: Node, phase: MarkupWalkPhase) => Result;
+    [Node in Markup as Node["kind"]]: (this: void, node: Node, phase: MarkupVisitPhase) => Result;
 };
 
 /**
@@ -10,7 +10,7 @@ export type Visitor<Result> = {
  * Each branch narrows the node and exposes a concrete call site for the
  * JavaScript engine to optimize.
  */
-export function visit<Result>(node: Markup, visitor: Visitor<Result>, phase: MarkupWalkPhase = "entering"): Result {
+export function visit<Result>(node: Markup, visitor: Visitor<Result>, phase: MarkupVisitPhase = "entering"): Result {
     switch (node.kind) {
         case "document":
             return visitor.document(node, phase);
@@ -107,9 +107,9 @@ function unreachable(value: never): never {
 }
 
 /** The phase supplied to a markup visit. */
-export type MarkupWalkPhase = "entering" | "exiting";
+export type MarkupVisitPhase = "entering" | "exiting";
 
-type WalkAction = { readonly node: Markup; readonly phase: MarkupWalkPhase };
+type WalkAction = { readonly node: Markup; readonly phase: MarkupVisitPhase };
 
 /**
  * Walks owned markup depth first, reporting both phases through the same visitor.

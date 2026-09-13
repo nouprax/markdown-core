@@ -698,14 +698,14 @@ class JniPayloadDecoderTest {
             object : Visitor<Unit> by RecordingWalkingVisitor() {
                 override fun visit(
                     callout: Callout,
-                    phase: MarkupWalkPhase,
+                    phase: MarkupVisitPhase,
                 ) {
                     events += "$phase:Callout"
                 }
 
                 override fun visit(
                     text: Text,
-                    phase: MarkupWalkPhase,
+                    phase: MarkupVisitPhase,
                 ) {
                     events += "$phase:Text"
                 }

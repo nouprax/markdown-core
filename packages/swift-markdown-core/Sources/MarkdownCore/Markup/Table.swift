@@ -41,7 +41,7 @@ public struct Table: Markup {
     public var attributes: Attributes { fields.attributes }
 
     /// Dispatches to this node kind's visitor callback.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupWalkPhase) -> V.Result {
+    public func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupVisitPhase) -> V.Result {
         visitor.visit(self, phase: phase)
     }
 }
@@ -97,7 +97,7 @@ public struct TableRow: Markup {
     public var attributes: Attributes { fields.attributes }
 
     /// Dispatches to this node kind's visitor callback.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupWalkPhase) -> V.Result {
+    public func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupVisitPhase) -> V.Result {
         visitor.visit(self, phase: phase)
     }
 }
@@ -140,7 +140,7 @@ public struct TableCell: Markup {
     public var attributes: Attributes { fields.attributes }
 
     /// Dispatches to this node kind's visitor callback.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupWalkPhase) -> V.Result {
+    public func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupVisitPhase) -> V.Result {
         visitor.visit(self, phase: phase)
     }
 }
@@ -182,7 +182,7 @@ public struct TableCaption: Markup {
     public var attributes: Attributes { fields.attributes }
 
     /// Dispatches to this node kind's visitor callback.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupWalkPhase) -> V.Result {
+    public func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupVisitPhase) -> V.Result {
         visitor.visit(self, phase: phase)
     }
 }

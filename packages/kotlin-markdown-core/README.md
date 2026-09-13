@@ -136,16 +136,16 @@ introducing extra Markup wrappers.
 ## Traverse and Inspect
 
 `Markup.accept(visitor)` dispatches one entering event and returns the result;
-`Markup.accept(visitor, MarkupWalkPhase.EXITING)` dispatches one explicit exit event.
+`Markup.accept(visitor, MarkupVisitPhase.EXITING)` dispatches one explicit exit event.
 Neither call traverses owned fields. `Markup.walk(visitor)` takes a
 `Visitor<Unit>` and performs a stack-safe depth-first walk, reporting both
 phases through the same interface.
 
-`Visitor<Result>` requires a `fun visit(embedded: Embedded, phase: MarkupWalkPhase): Result`
+`Visitor<Result>` requires a `fun visit(embedded: Embedded, phase: MarkupVisitPhase): Result`
 overload for every concrete Markup kind. Implementations use the declared
 parameter names, including `paragraph`, `tableRow`, and `citation`. All
 callbacks are required; adding a kind makes incomplete implementations fail
-to compile. Call `visitor.visit(embedded, MarkupWalkPhase.ENTERING)` for a concrete
+to compile. Call `visitor.visit(embedded, MarkupVisitPhase.ENTERING)` for a concrete
 node, or `node.accept(visitor)` when the static type is `Markup`.
 
 Traversal schedules each node's typed fields in canonical order. A directive

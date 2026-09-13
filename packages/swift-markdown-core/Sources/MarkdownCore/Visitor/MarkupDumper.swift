@@ -89,7 +89,7 @@ private final class DumpState {
 private struct DumpVisitor: MarkupVisitor {
     let state: DumpState
 
-    mutating func visit(_ node: Document, phase: MarkupWalkPhase) {
+    mutating func visit(_ node: Document, phase: MarkupVisitPhase) {
         // The footnotes are node lines after the content, each nesting its
         // own content; `children` counts the content alone.
         state.line("Document", node, children: node.content.count)
@@ -102,7 +102,7 @@ private struct DumpVisitor: MarkupVisitor {
         }
     }
 
-    mutating func visit(_ node: Callout, phase: MarkupWalkPhase) {
+    mutating func visit(_ node: Callout, phase: MarkupVisitPhase) {
         state.line(
             "Callout",
             node,
@@ -122,19 +122,19 @@ private struct DumpVisitor: MarkupVisitor {
         }
     }
 
-    mutating func visit(_ node: Paragraph, phase: MarkupWalkPhase) {
+    mutating func visit(_ node: Paragraph, phase: MarkupVisitPhase) {
         state.line("Paragraph", node, children: node.content.count)
         state.nested(node.content.count) { node.content.forEach(state.visit) }
     }
 
-    mutating func visit(_ node: Heading, phase: MarkupWalkPhase) {
+    mutating func visit(_ node: Heading, phase: MarkupVisitPhase) {
         state.line("Heading", node, fields: ["level=\(node.level)"], children: node.content.count)
         state.nested(node.content.count) { node.content.forEach(state.visit) }
     }
 
-    mutating func visit(_ node: ThematicBreak, phase: MarkupWalkPhase) { state.line("ThematicBreak", node) }
+    mutating func visit(_ node: ThematicBreak, phase: MarkupVisitPhase) { state.line("ThematicBreak", node) }
 
-    mutating func visit(_ node: MarkdownCore.List, phase: MarkupWalkPhase) {
+    mutating func visit(_ node: MarkdownCore.List, phase: MarkupVisitPhase) {
         state.line(
             "List",
             node,
@@ -150,7 +150,7 @@ private struct DumpVisitor: MarkupVisitor {
         state.nested(node.items.count) { node.items.forEach(state.visit) }
     }
 
-    mutating func visit(_ node: ListItem, phase: MarkupWalkPhase) {
+    mutating func visit(_ node: ListItem, phase: MarkupVisitPhase) {
         state.line(
             "ListItem",
             node,
@@ -160,7 +160,7 @@ private struct DumpVisitor: MarkupVisitor {
         state.nested(node.content.count) { node.content.forEach(state.visit) }
     }
 
-    mutating func visit(_ node: CodeBlock, phase: MarkupWalkPhase) {
+    mutating func visit(_ node: CodeBlock, phase: MarkupVisitPhase) {
         state.line(
             "CodeBlock",
             node,
@@ -174,15 +174,15 @@ private struct DumpVisitor: MarkupVisitor {
         )
     }
 
-    mutating func visit(_ node: HTMLBlock, phase: MarkupWalkPhase) {
+    mutating func visit(_ node: HTMLBlock, phase: MarkupVisitPhase) {
         state.line("HTMLBlock", node, fields: ["literal=\(dump(escaped: node.literal))"])
     }
 
-    mutating func visit(_ node: FormulaBlock, phase: MarkupWalkPhase) {
+    mutating func visit(_ node: FormulaBlock, phase: MarkupVisitPhase) {
         state.line("FormulaBlock", node, fields: ["literal=\(dump(escaped: node.literal))"])
     }
 
-    mutating func visit(_ node: Table, phase: MarkupWalkPhase) {
+    mutating func visit(_ node: Table, phase: MarkupVisitPhase) {
         let columns = node.columns.map { "\($0.flow.rawValue):\($0.relative.map(dump(decimal:)) ?? "null")" }.joined(
             separator: ","
         )
@@ -197,12 +197,12 @@ private struct DumpVisitor: MarkupVisitor {
         }
     }
 
-    mutating func visit(_ node: DefinitionList, phase: MarkupWalkPhase) {
+    mutating func visit(_ node: DefinitionList, phase: MarkupVisitPhase) {
         state.line("DefinitionList", node, fields: [], children: node.definitions.count)
         state.nested(node.definitions.count) { for definition in node.definitions { state.visit(definition) } }
     }
 
-    mutating func visit(_ node: Definition, phase: MarkupWalkPhase) {
+    mutating func visit(_ node: Definition, phase: MarkupVisitPhase) {
         state.line("Definition", node, fields: ["compact=\(node.compact)"], children: node.content.count)
         state.nested(node.content.count + 1) {
             state.group("DefinitionTerm", children: node.term.count)
@@ -214,7 +214,7 @@ private struct DumpVisitor: MarkupVisitor {
         }
     }
 
-    mutating func visit(_ node: DirectiveBlock, phase: MarkupWalkPhase) {
+    mutating func visit(_ node: DirectiveBlock, phase: MarkupVisitPhase) {
         state.line(
             "DirectiveBlock",
             node,
@@ -227,30 +227,30 @@ private struct DumpVisitor: MarkupVisitor {
         }
     }
 
-    mutating func visit(_ node: DirectiveLabel, phase: MarkupWalkPhase) {
+    mutating func visit(_ node: DirectiveLabel, phase: MarkupVisitPhase) {
         state.line("DirectiveLabel", node, children: node.content.count)
         state.nested(node.content.count) { node.content.forEach(state.visit) }
     }
 }
 
 extension DumpVisitor {
-    mutating func visit(_ node: Text, phase: MarkupWalkPhase) {
+    mutating func visit(_ node: Text, phase: MarkupVisitPhase) {
         state.line("Text", node, fields: ["literal=\(dump(escaped: node.literal))"])
     }
 
-    mutating func visit(_ node: SoftBreak, phase: MarkupWalkPhase) { state.line("SoftBreak", node) }
+    mutating func visit(_ node: SoftBreak, phase: MarkupVisitPhase) { state.line("SoftBreak", node) }
 
-    mutating func visit(_ node: LineBreak, phase: MarkupWalkPhase) { state.line("LineBreak", node) }
+    mutating func visit(_ node: LineBreak, phase: MarkupVisitPhase) { state.line("LineBreak", node) }
 
-    mutating func visit(_ node: Code, phase: MarkupWalkPhase) {
+    mutating func visit(_ node: Code, phase: MarkupVisitPhase) {
         state.line("Code", node, fields: ["literal=\(dump(escaped: node.literal))"])
     }
 
-    mutating func visit(_ node: HTML, phase: MarkupWalkPhase) {
+    mutating func visit(_ node: HTML, phase: MarkupVisitPhase) {
         state.line("HTML", node, fields: ["literal=\(dump(escaped: node.literal))"])
     }
 
-    mutating func visit(_ node: CrossLink, phase: MarkupWalkPhase) {
+    mutating func visit(_ node: CrossLink, phase: MarkupVisitPhase) {
         state.line(
             "CrossLink",
             node,
@@ -258,7 +258,7 @@ extension DumpVisitor {
         )
     }
 
-    mutating func visit(_ node: CrossEmbedded, phase: MarkupWalkPhase) {
+    mutating func visit(_ node: CrossEmbedded, phase: MarkupVisitPhase) {
         state.line(
             "CrossEmbedded",
             node,
@@ -269,11 +269,11 @@ extension DumpVisitor {
         )
     }
 
-    mutating func visit(_ node: Comment, phase: MarkupWalkPhase) {
+    mutating func visit(_ node: Comment, phase: MarkupVisitPhase) {
         state.line("Comment", node, fields: ["literal=\(dump(escaped: node.literal))"])
     }
 
-    mutating func visit(_ node: Formula, phase: MarkupWalkPhase) {
+    mutating func visit(_ node: Formula, phase: MarkupVisitPhase) {
         state.line(
             "Formula",
             node,
@@ -281,47 +281,47 @@ extension DumpVisitor {
         )
     }
 
-    mutating func visit(_ node: Emphasis, phase: MarkupWalkPhase) {
+    mutating func visit(_ node: Emphasis, phase: MarkupVisitPhase) {
         state.line("Emphasis", node, children: node.content.count)
         state.nested(node.content.count) { node.content.forEach(state.visit) }
     }
 
-    mutating func visit(_ node: Strong, phase: MarkupWalkPhase) {
+    mutating func visit(_ node: Strong, phase: MarkupVisitPhase) {
         state.line("Strong", node, children: node.content.count)
         state.nested(node.content.count) { node.content.forEach(state.visit) }
     }
 
-    mutating func visit(_ node: Strikethrough, phase: MarkupWalkPhase) {
+    mutating func visit(_ node: Strikethrough, phase: MarkupVisitPhase) {
         state.line("Strikethrough", node, children: node.content.count)
         state.nested(node.content.count) { node.content.forEach(state.visit) }
     }
 
-    mutating func visit(_ node: Mark, phase: MarkupWalkPhase) {
+    mutating func visit(_ node: Mark, phase: MarkupVisitPhase) {
         state.line("Mark", node, children: node.content.count)
         state.nested(node.content.count) { node.content.forEach(state.visit) }
     }
 
-    mutating func visit(_ node: Insertion, phase: MarkupWalkPhase) {
+    mutating func visit(_ node: Insertion, phase: MarkupVisitPhase) {
         state.line("Insertion", node, children: node.content.count)
         state.nested(node.content.count) { node.content.forEach(state.visit) }
     }
 
-    mutating func visit(_ node: Span, phase: MarkupWalkPhase) {
+    mutating func visit(_ node: Span, phase: MarkupVisitPhase) {
         state.line("Span", node, children: node.content.count)
         state.nested(node.content.count) { node.content.forEach(state.visit) }
     }
 
-    mutating func visit(_ node: Superscript, phase: MarkupWalkPhase) {
+    mutating func visit(_ node: Superscript, phase: MarkupVisitPhase) {
         state.line("Superscript", node, children: node.content.count)
         state.nested(node.content.count) { node.content.forEach(state.visit) }
     }
 
-    mutating func visit(_ node: Subscript, phase: MarkupWalkPhase) {
+    mutating func visit(_ node: Subscript, phase: MarkupVisitPhase) {
         state.line("Subscript", node, children: node.content.count)
         state.nested(node.content.count) { node.content.forEach(state.visit) }
     }
 
-    mutating func visit(_ node: Link, phase: MarkupWalkPhase) {
+    mutating func visit(_ node: Link, phase: MarkupVisitPhase) {
         state.line(
             "Link",
             node,
@@ -331,7 +331,7 @@ extension DumpVisitor {
         state.nested(node.content.count) { node.content.forEach(state.visit) }
     }
 
-    mutating func visit(_ node: Embedded, phase: MarkupWalkPhase) {
+    mutating func visit(_ node: Embedded, phase: MarkupVisitPhase) {
         state.line(
             "Embedded",
             node,
@@ -344,14 +344,14 @@ extension DumpVisitor {
         state.nested(node.content.count) { node.content.forEach(state.visit) }
     }
 
-    mutating func visit(_ node: Directive, phase: MarkupWalkPhase) {
+    mutating func visit(_ node: Directive, phase: MarkupVisitPhase) {
         state.line("Directive", node, fields: ["name=\(dump(escaped: node.name))"])
         state.nested(node.label == nil ? 0 : 1) {
             if let label = node.label { state.visit(label) }
         }
     }
 
-    mutating func visit(_ node: Cite, phase: MarkupWalkPhase) {
+    mutating func visit(_ node: Cite, phase: MarkupVisitPhase) {
         // The items are value lines under the cite, and `children` counts
         // them; each item's affixes are groups whose nodes nest below them.
         state.line("Cite", node, children: node.citations.count)
@@ -360,12 +360,12 @@ extension DumpVisitor {
         }
     }
 
-    mutating func visit(_ node: TableCaption, phase: MarkupWalkPhase) {
+    mutating func visit(_ node: TableCaption, phase: MarkupVisitPhase) {
         state.line("TableCaption", node, children: node.content.count)
         state.nested(node.content.count) { node.content.forEach(state.visit) }
     }
 
-    mutating func visit(_ node: TableRow, phase: MarkupWalkPhase) {
+    mutating func visit(_ node: TableRow, phase: MarkupVisitPhase) {
         state.line(
             "TableRow",
             node,
@@ -374,7 +374,7 @@ extension DumpVisitor {
         state.nested(node.cells.count) { node.cells.forEach(state.visit) }
     }
 
-    mutating func visit(_ node: TableCell, phase: MarkupWalkPhase) {
+    mutating func visit(_ node: TableCell, phase: MarkupVisitPhase) {
         state.line(
             "TableCell",
             node,
@@ -384,7 +384,7 @@ extension DumpVisitor {
         state.nested(node.content.count) { node.content.forEach(state.visit) }
     }
 
-    mutating func visit(_ node: Metadata, phase: MarkupWalkPhase) {
+    mutating func visit(_ node: Metadata, phase: MarkupVisitPhase) {
         state.line(
             "Metadata",
             node,
@@ -404,7 +404,7 @@ extension DumpVisitor {
         )
     }
 
-    mutating func visit(_ node: Footnote, phase: MarkupWalkPhase) {
+    mutating func visit(_ node: Footnote, phase: MarkupVisitPhase) {
         state.line(
             "Footnote",
             node,
@@ -414,7 +414,7 @@ extension DumpVisitor {
         state.nested(node.content.count) { node.content.forEach(state.visit) }
     }
 
-    mutating func visit(_ node: Specimen, phase: MarkupWalkPhase) {
+    mutating func visit(_ node: Specimen, phase: MarkupVisitPhase) {
         state.line(
             "Specimen",
             node,
@@ -424,7 +424,7 @@ extension DumpVisitor {
         state.nested(node.content.count) { node.content.forEach(state.visit) }
     }
 
-    mutating func visit(_ node: Citation, phase: MarkupWalkPhase) {
+    mutating func visit(_ node: Citation, phase: MarkupVisitPhase) {
         state.line(
             "Citation",
             node,

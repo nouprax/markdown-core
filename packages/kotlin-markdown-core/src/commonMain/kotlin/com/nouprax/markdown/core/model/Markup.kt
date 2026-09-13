@@ -7,7 +7,7 @@ public sealed interface Markup {
 
     public fun <Result> accept(
         visitor: Visitor<Result>,
-        phase: MarkupWalkPhase = MarkupWalkPhase.ENTERING,
+        phase: MarkupVisitPhase = MarkupVisitPhase.ENTERING,
     ): Result
 
     /** Returns the canonical debug dump for this markup subtree. */

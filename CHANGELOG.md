@@ -9,7 +9,7 @@ promised to remain compatible between releases.
 - Treat `Citation`, `Footnote`, `Specimen`, and `Metadata` as Markup nodes in
   every binding, reached through their named owning relations. A single visitor
   handles direct dispatch and entering/exiting walks across all 43 kinds,
-  with `MarkupWalkPhase` naming the visit phase.
+  with `MarkupVisitPhase` naming the visit phase.
   Rename `TreeDumper` to `MarkupDumper` and remove the separate walking visitor
   protocols. Swift field views resolve typed relations through the same member
   syntax as scalar values while retaining flat, stack-safe storage.

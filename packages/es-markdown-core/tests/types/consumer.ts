@@ -23,7 +23,7 @@ import {
     type TableCell,
     type TableRow,
     type Visitor,
-    type MarkupWalkPhase
+    type MarkupVisitPhase
 } from "@nouprax/es-markdown-core";
 
 const document: Document = Document.parse("# typed");
@@ -150,14 +150,14 @@ const walkingVisitor: Visitor<undefined> = {
     metadata: () => undefined,
     heading(heading, phase) {
         const inferred: Heading = heading;
-        const inferredPhase: MarkupWalkPhase = phase;
+        const inferredPhase: MarkupVisitPhase = phase;
         void [inferred.level, inferredPhase];
     },
     // Owned elements use the same discriminated Markup union.
     citation(citation, phase) {
         const inferred: Citation = citation;
         const referent: CitationReferent = inferred.referent;
-        const inferredPhase: MarkupWalkPhase = phase;
+        const inferredPhase: MarkupVisitPhase = phase;
         const node: Markup = citation;
         const kind: "citation" = node.kind;
         void kind;
@@ -165,12 +165,12 @@ const walkingVisitor: Visitor<undefined> = {
     },
     specimen(specimen, phase) {
         const inferred: Specimen = specimen;
-        const inferredPhase: MarkupWalkPhase = phase;
+        const inferredPhase: MarkupVisitPhase = phase;
         void [inferred, inferredPhase];
     },
     footnote(footnote, phase) {
         const inferred: Footnote = footnote;
-        const inferredPhase: MarkupWalkPhase = phase;
+        const inferredPhase: MarkupVisitPhase = phase;
         void [inferred.id, inferredPhase];
     }
 };

@@ -13,6 +13,6 @@ public class DirectiveLabel internal constructor(
 ) : Markup {
     override fun <Result> accept(
         visitor: Visitor<Result>,
-        phase: MarkupWalkPhase,
+        phase: MarkupVisitPhase,
     ): Result = visitor.visit(this, phase)
 }

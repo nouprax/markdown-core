@@ -27,7 +27,7 @@ public struct Heading: Markup {
     public var level: Int32 { fields.level }
 
     /// Dispatches to the visitor's `Heading` case.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupWalkPhase) -> V.Result {
+    public func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupVisitPhase) -> V.Result {
         visitor.visit(self, phase: phase)
     }
 }

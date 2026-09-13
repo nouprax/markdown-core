@@ -4,222 +4,222 @@ package com.nouprax.markdown.core
 public interface Visitor<Result> {
     public fun visit(
         document: Document,
-        phase: MarkupWalkPhase,
+        phase: MarkupVisitPhase,
     ): Result
 
     public fun visit(
         callout: Callout,
-        phase: MarkupWalkPhase,
+        phase: MarkupVisitPhase,
     ): Result
 
     public fun visit(
         paragraph: Paragraph,
-        phase: MarkupWalkPhase,
+        phase: MarkupVisitPhase,
     ): Result
 
     public fun visit(
         heading: Heading,
-        phase: MarkupWalkPhase,
+        phase: MarkupVisitPhase,
     ): Result
 
     public fun visit(
         thematicBreak: ThematicBreak,
-        phase: MarkupWalkPhase,
+        phase: MarkupVisitPhase,
     ): Result
 
     public fun visit(
         list: List,
-        phase: MarkupWalkPhase,
+        phase: MarkupVisitPhase,
     ): Result
 
     public fun visit(
         listItem: ListItem,
-        phase: MarkupWalkPhase,
+        phase: MarkupVisitPhase,
     ): Result
 
     public fun visit(
         codeBlock: CodeBlock,
-        phase: MarkupWalkPhase,
+        phase: MarkupVisitPhase,
     ): Result
 
     public fun visit(
         htmlBlock: HTMLBlock,
-        phase: MarkupWalkPhase,
+        phase: MarkupVisitPhase,
     ): Result
 
     public fun visit(
         formulaBlock: FormulaBlock,
-        phase: MarkupWalkPhase,
+        phase: MarkupVisitPhase,
     ): Result
 
     public fun visit(
         table: Table,
-        phase: MarkupWalkPhase,
+        phase: MarkupVisitPhase,
     ): Result
 
     public fun visit(
         tableCaption: TableCaption,
-        phase: MarkupWalkPhase,
+        phase: MarkupVisitPhase,
     ): Result
 
     public fun visit(
         tableRow: TableRow,
-        phase: MarkupWalkPhase,
+        phase: MarkupVisitPhase,
     ): Result
 
     public fun visit(
         tableCell: TableCell,
-        phase: MarkupWalkPhase,
+        phase: MarkupVisitPhase,
     ): Result
 
     public fun visit(
         directiveBlock: DirectiveBlock,
-        phase: MarkupWalkPhase,
+        phase: MarkupVisitPhase,
     ): Result
 
     public fun visit(
         directiveLabel: DirectiveLabel,
-        phase: MarkupWalkPhase,
+        phase: MarkupVisitPhase,
     ): Result
 
     public fun visit(
         text: Text,
-        phase: MarkupWalkPhase,
+        phase: MarkupVisitPhase,
     ): Result
 
     public fun visit(
         softBreak: SoftBreak,
-        phase: MarkupWalkPhase,
+        phase: MarkupVisitPhase,
     ): Result
 
     public fun visit(
         lineBreak: LineBreak,
-        phase: MarkupWalkPhase,
+        phase: MarkupVisitPhase,
     ): Result
 
     public fun visit(
         code: Code,
-        phase: MarkupWalkPhase,
+        phase: MarkupVisitPhase,
     ): Result
 
     public fun visit(
         html: HTML,
-        phase: MarkupWalkPhase,
+        phase: MarkupVisitPhase,
     ): Result
 
     public fun visit(
         comment: Comment,
-        phase: MarkupWalkPhase,
+        phase: MarkupVisitPhase,
     ): Result
 
     public fun visit(
         crossLink: CrossLink,
-        phase: MarkupWalkPhase,
+        phase: MarkupVisitPhase,
     ): Result
 
     public fun visit(
         crossEmbedded: CrossEmbedded,
-        phase: MarkupWalkPhase,
+        phase: MarkupVisitPhase,
     ): Result
 
     public fun visit(
         formula: Formula,
-        phase: MarkupWalkPhase,
+        phase: MarkupVisitPhase,
     ): Result
 
     public fun visit(
         emphasis: Emphasis,
-        phase: MarkupWalkPhase,
+        phase: MarkupVisitPhase,
     ): Result
 
     public fun visit(
         strong: Strong,
-        phase: MarkupWalkPhase,
+        phase: MarkupVisitPhase,
     ): Result
 
     public fun visit(
         strikethrough: Strikethrough,
-        phase: MarkupWalkPhase,
+        phase: MarkupVisitPhase,
     ): Result
 
     public fun visit(
         mark: Mark,
-        phase: MarkupWalkPhase,
+        phase: MarkupVisitPhase,
     ): Result
 
     public fun visit(
         insertion: Insertion,
-        phase: MarkupWalkPhase,
+        phase: MarkupVisitPhase,
     ): Result
 
     public fun visit(
         span: Span,
-        phase: MarkupWalkPhase,
+        phase: MarkupVisitPhase,
     ): Result
 
     public fun visit(
         superscript: Superscript,
-        phase: MarkupWalkPhase,
+        phase: MarkupVisitPhase,
     ): Result
 
     public fun visit(
         subscript: Subscript,
-        phase: MarkupWalkPhase,
+        phase: MarkupVisitPhase,
     ): Result
 
     public fun visit(
         definitionList: DefinitionList,
-        phase: MarkupWalkPhase,
+        phase: MarkupVisitPhase,
     ): Result
 
     public fun visit(
         definition: Definition,
-        phase: MarkupWalkPhase,
+        phase: MarkupVisitPhase,
     ): Result
 
     public fun visit(
         link: Link,
-        phase: MarkupWalkPhase,
+        phase: MarkupVisitPhase,
     ): Result
 
     public fun visit(
         embedded: Embedded,
-        phase: MarkupWalkPhase,
+        phase: MarkupVisitPhase,
     ): Result
 
     public fun visit(
         directive: Directive,
-        phase: MarkupWalkPhase,
+        phase: MarkupVisitPhase,
     ): Result
 
     public fun visit(
         cite: Cite,
-        phase: MarkupWalkPhase,
+        phase: MarkupVisitPhase,
     ): Result
 
     public fun visit(
         citation: Citation,
-        phase: MarkupWalkPhase,
+        phase: MarkupVisitPhase,
     ): Result
 
     public fun visit(
         footnote: Footnote,
-        phase: MarkupWalkPhase,
+        phase: MarkupVisitPhase,
     ): Result
 
     public fun visit(
         specimen: Specimen,
-        phase: MarkupWalkPhase,
+        phase: MarkupVisitPhase,
     ): Result
 
     public fun visit(
         metadata: Metadata,
-        phase: MarkupWalkPhase,
+        phase: MarkupVisitPhase,
     ): Result
 }
 
 /** The phase supplied to a markup visit. */
-public enum class MarkupWalkPhase {
+public enum class MarkupVisitPhase {
     /** During a walk, the node is reached before its owned markup. */
     ENTERING,
 
@@ -233,19 +233,19 @@ public enum class MarkupWalkPhase {
  * Only a visitor without a result can be used for automatic traversal.
  */
 public fun Markup.walk(visitor: Visitor<Unit>) {
-    val actions = mutableListOf(WalkAction(this, MarkupWalkPhase.ENTERING))
+    val actions = mutableListOf(WalkAction(this, MarkupVisitPhase.ENTERING))
     while (actions.isNotEmpty()) {
         val action = actions.removeAt(actions.lastIndex)
         action.node.accept(visitor, action.phase)
-        if (action.phase == MarkupWalkPhase.EXITING) continue
-        actions += WalkAction(action.node, MarkupWalkPhase.EXITING)
+        if (action.phase == MarkupVisitPhase.EXITING) continue
+        actions += WalkAction(action.node, MarkupVisitPhase.EXITING)
         scheduleOwnedMarkup(action.node, actions)
     }
 }
 
 private data class WalkAction(
     val node: Markup,
-    val phase: MarkupWalkPhase,
+    val phase: MarkupVisitPhase,
 )
 
 // Typed ownership fields determine traversal order; no flattened children projection is built.
@@ -254,14 +254,14 @@ private fun scheduleOwnedMarkup(
     actions: MutableList<WalkAction>,
 ) {
     fun schedule(nodes: kotlin.collections.List<Markup>) {
-        for (index in nodes.indices.reversed()) actions += WalkAction(nodes[index], MarkupWalkPhase.ENTERING)
+        for (index in nodes.indices.reversed()) actions += WalkAction(nodes[index], MarkupVisitPhase.ENTERING)
     }
     when (node) {
         is Document -> {
             schedule(node.specimens)
             schedule(node.footnotes)
             schedule(node.content)
-            node.metadata?.let { actions += WalkAction(it, MarkupWalkPhase.ENTERING) }
+            node.metadata?.let { actions += WalkAction(it, MarkupVisitPhase.ENTERING) }
         }
 
         is Callout -> {
@@ -289,7 +289,7 @@ private fun scheduleOwnedMarkup(
             schedule(node.foot)
             schedule(node.content)
             schedule(node.head)
-            node.caption?.let { actions += WalkAction(it, MarkupWalkPhase.ENTERING) }
+            node.caption?.let { actions += WalkAction(it, MarkupVisitPhase.ENTERING) }
         }
 
         is TableCaption -> {
@@ -306,7 +306,7 @@ private fun scheduleOwnedMarkup(
 
         is DirectiveBlock -> {
             schedule(node.content)
-            node.label?.let { actions += WalkAction(it, MarkupWalkPhase.ENTERING) }
+            node.label?.let { actions += WalkAction(it, MarkupVisitPhase.ENTERING) }
         }
 
         is DirectiveLabel -> {
@@ -354,7 +354,7 @@ private fun scheduleOwnedMarkup(
         }
 
         is Directive -> {
-            node.label?.let { actions += WalkAction(it, MarkupWalkPhase.ENTERING) }
+            node.label?.let { actions += WalkAction(it, MarkupVisitPhase.ENTERING) }
         }
 
         is Cite -> {

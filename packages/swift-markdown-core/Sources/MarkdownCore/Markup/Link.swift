@@ -33,7 +33,7 @@ public struct Link: Markup {
     public var title: String? { fields.title }
 
     /// Dispatches to the visitor's `Link` case.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupWalkPhase) -> V.Result {
+    public func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupVisitPhase) -> V.Result {
         visitor.visit(self, phase: phase)
     }
 }

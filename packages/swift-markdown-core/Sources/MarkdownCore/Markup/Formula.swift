@@ -19,7 +19,7 @@ public struct Formula: Markup {
     public let literal: String
 
     /// Dispatches to the visitor's `Formula` case.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupWalkPhase) -> V.Result {
+    public func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupVisitPhase) -> V.Result {
         visitor.visit(self, phase: phase)
     }
 }

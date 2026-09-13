@@ -144,7 +144,7 @@ Callback keys match `kind` tags, and each parameter has its concrete node type:
 
 ```typescript
 type Visitor<Result> = {
-    [Node in Markup as Node["kind"]]: (this: void, node: Node, phase: MarkupWalkPhase) => Result;
+    [Node in Markup as Node["kind"]]: (this: void, node: Node, phase: MarkupVisitPhase) => Result;
 };
 ```
 

@@ -53,7 +53,7 @@ export type {
     Flow
 } from "./values.js";
 export { visit, walk } from "./visitor.js";
-export type { Visitor, MarkupWalkPhase } from "./visitor.js";
+export type { Visitor, MarkupVisitPhase } from "./visitor.js";
 
 export { Attributes } from "./values.js";
 export type { Record, Metadata, MetadataValue, MetadataScalar, MetadataListItem } from "./values.js";

@@ -56,7 +56,7 @@ public struct Document: Markup {
     /// The specimen definitions, ordered by scope start and visited after footnotes.
     public var specimens: MarkupCollection<Specimen> { fields.specimens }
     /// Dispatches to the visitor's `Document` case.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupWalkPhase) -> V.Result {
+    public func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupVisitPhase) -> V.Result {
         visitor.visit(self, phase: phase)
     }
 

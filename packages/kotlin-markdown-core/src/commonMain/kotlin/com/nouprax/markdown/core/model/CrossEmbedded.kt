@@ -17,6 +17,6 @@ public class CrossEmbedded internal constructor(
 
     override fun <Result> accept(
         visitor: Visitor<Result>,
-        phase: MarkupWalkPhase,
+        phase: MarkupVisitPhase,
     ): Result = visitor.visit(this, phase)
 }

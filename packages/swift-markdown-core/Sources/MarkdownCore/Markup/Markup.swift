@@ -54,7 +54,7 @@ public protocol Markup: Sendable {
     var anchor: String? { get }
     var attributes: Attributes { get }
     /// Dispatches to the visitor case for this element's kind.
-    func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupWalkPhase) -> V.Result
+    func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupVisitPhase) -> V.Result
     /// The canonical debug dump of this element and everything under it.
     ///
     /// One grammar across C, Swift, Kotlin and ECMAScript, checked against the

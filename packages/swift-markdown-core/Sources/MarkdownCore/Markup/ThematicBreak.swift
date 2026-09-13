@@ -12,7 +12,7 @@ public struct ThematicBreak: Markup {
     public let attributes: Attributes
 
     /// Dispatches to the visitor's `ThematicBreak` case.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupWalkPhase) -> V.Result {
+    public func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupVisitPhase) -> V.Result {
         visitor.visit(self, phase: phase)
     }
 }

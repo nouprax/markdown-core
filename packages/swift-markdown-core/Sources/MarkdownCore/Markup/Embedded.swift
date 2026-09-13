@@ -37,7 +37,7 @@ public struct Embedded: Markup {
     public var dimensions: Dimensions? { fields.dimensions }
 
     /// Dispatches to the visitor's `Embedded` case.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupWalkPhase) -> V.Result {
+    public func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupVisitPhase) -> V.Result {
         visitor.visit(self, phase: phase)
     }
 }

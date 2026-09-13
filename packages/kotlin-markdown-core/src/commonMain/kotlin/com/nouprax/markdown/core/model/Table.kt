@@ -17,7 +17,7 @@ public class TableCell internal constructor(
 ) : Markup {
     override fun <Result> accept(
         visitor: Visitor<Result>,
-        phase: MarkupWalkPhase,
+        phase: MarkupVisitPhase,
     ): Result = visitor.visit(this, phase)
 }
 
@@ -29,7 +29,7 @@ public class TableRow internal constructor(
 ) : Markup {
     override fun <Result> accept(
         visitor: Visitor<Result>,
-        phase: MarkupWalkPhase,
+        phase: MarkupVisitPhase,
     ): Result = visitor.visit(this, phase)
 }
 
@@ -45,7 +45,7 @@ public class Table internal constructor(
 ) : Markup {
     override fun <Result> accept(
         visitor: Visitor<Result>,
-        phase: MarkupWalkPhase,
+        phase: MarkupVisitPhase,
     ): Result = visitor.visit(this, phase)
 }
 
@@ -58,6 +58,6 @@ public class TableCaption internal constructor(
 ) : Markup {
     override fun <Result> accept(
         visitor: Visitor<Result>,
-        phase: MarkupWalkPhase,
+        phase: MarkupVisitPhase,
     ): Result = visitor.visit(this, phase)
 }

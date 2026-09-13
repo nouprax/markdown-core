@@ -21,7 +21,7 @@ public struct DefinitionList: Markup {
     public var definitions: MarkupCollection<Definition> { fields.definitions }
 
     /// Dispatches to the visitor's `DefinitionList` case.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupWalkPhase) -> V.Result {
+    public func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupVisitPhase) -> V.Result {
         visitor.visit(self, phase: phase)
     }
 }

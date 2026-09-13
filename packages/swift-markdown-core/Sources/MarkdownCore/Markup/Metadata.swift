@@ -59,7 +59,7 @@ public struct Metadata: Markup, Hashable {
         self.attributes = attributes
     }
     /// Dispatches this node to its typed visitor method.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupWalkPhase) -> V.Result {
+    public func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupVisitPhase) -> V.Result {
         visitor.visit(self, phase: phase)
     }
 }

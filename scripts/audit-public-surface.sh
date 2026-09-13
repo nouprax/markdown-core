@@ -145,8 +145,8 @@ grep -q 'public enum MarkupDumper' packages/swift-markdown-core/Sources/Markdown
     || fail "Swift does not expose the reviewed Markup debug dump API"
 grep -q 'public struct TableRow: Markup' packages/swift-markdown-core/Sources/MarkdownCore/Markup/Table.swift \
     && grep -q 'public struct TableCell: Markup' packages/swift-markdown-core/Sources/MarkdownCore/Markup/Table.swift \
-    && grep -q 'visit(_ node: TableRow, phase: MarkupWalkPhase)' packages/swift-markdown-core/Sources/MarkdownCore/Visitor/MarkupVisitor.swift \
-    && grep -q 'visit(_ node: TableCell, phase: MarkupWalkPhase)' packages/swift-markdown-core/Sources/MarkdownCore/Visitor/MarkupVisitor.swift \
+    && grep -q 'visit(_ node: TableRow, phase: MarkupVisitPhase)' packages/swift-markdown-core/Sources/MarkdownCore/Visitor/MarkupVisitor.swift \
+    && grep -q 'visit(_ node: TableCell, phase: MarkupVisitPhase)' packages/swift-markdown-core/Sources/MarkdownCore/Visitor/MarkupVisitor.swift \
     || fail "Swift table rows and cells are not first-class Markup visitor nodes"
 # The kind count is the CONTRACT's, not a number written here. It was 28 in
 # three places until Step 7 added a 29th kind and all three said the same wrong
@@ -158,7 +158,7 @@ if grep -R -n 'defaultVisit' packages/swift-markdown-core/Sources/MarkdownCore; 
 fi
 test "$(awk '/public protocol MarkupVisitor/{inside=1; next} inside && /^}/{exit} inside && /mutating func visit/{count++} END{print count+0}' packages/swift-markdown-core/Sources/MarkdownCore/Visitor/MarkupVisitor.swift)" -eq "$kind_count" \
     || fail "Swift MarkupVisitor is not exhaustive over all $kind_count Markup kinds"
-grep -q 'public enum MarkupWalkPhase' \
+grep -q 'public enum MarkupVisitPhase' \
     packages/swift-markdown-core/Sources/MarkdownCore/Visitor/MarkupVisitor.swift \
     && grep -q 'public func walk<V: MarkupVisitor>(with visitor: inout V) where V.Result == Void' \
         packages/swift-markdown-core/Sources/MarkdownCore/Visitor/MarkupVisitor.swift \
@@ -201,12 +201,12 @@ for (const [name, types] of [["Visitor", kinds]]) {
         assert.equal(method, "visit", `${name}.${method} must use the overloaded visit name`);
         const expected = type.replace(/^[A-Z]+(?=[A-Z][a-z]|$)|^[A-Z]/, (prefix) => prefix.toLowerCase());
         assert.equal(parameter, expected, `${name}.visit(${type}) parameter name`);
-        assert.match(remaining, /^,\s*phase: MarkupWalkPhase,?\s*$/, `${name}.visit(${type}) phase`);
+        assert.match(remaining, /^,\s*phase: MarkupVisitPhase,?\s*$/, `${name}.visit(${type}) phase`);
         assert.equal(result, "Result", `${name}.visit(${type}) return type`);
     }
 }
 NODE
-grep -q 'public enum class MarkupWalkPhase' \
+grep -q 'public enum class MarkupVisitPhase' \
     packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/visitor/Visitor.kt \
     && grep -q 'public fun Markup.walk(visitor: Visitor<Unit>)' \
         packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/visitor/Visitor.kt \
@@ -262,10 +262,10 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 
 const read = (name) => fs.readFileSync(`packages/es-markdown-core/src/${name}.ts`, "utf8");
-assert.match(read("visitor"), /export type Visitor<Result> = \{\s*\[Node in Markup as Node\["kind"\]\]: \(this: void, node: Node, phase: MarkupWalkPhase\) => Result;\s*\};/);
+assert.match(read("visitor"), /export type Visitor<Result> = \{\s*\[Node in Markup as Node\["kind"\]\]: \(this: void, node: Node, phase: MarkupVisitPhase\) => Result;\s*\};/);
 
 NODE
-grep -q 'export type MarkupWalkPhase = "entering" | "exiting"' \
+grep -q 'export type MarkupVisitPhase = "entering" | "exiting"' \
     packages/es-markdown-core/src/visitor.ts \
     && grep -q 'export function walk(root: Markup, visitor: Visitor<undefined>): void' \
         packages/es-markdown-core/src/visitor.ts \

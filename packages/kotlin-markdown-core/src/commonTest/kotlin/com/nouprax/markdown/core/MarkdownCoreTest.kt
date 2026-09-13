@@ -14,7 +14,7 @@ class ApiTest {
         val document = Document.parse("text")
         val visitor = RecordingWalkingVisitor()
         document.accept(visitor)
-        document.accept(visitor, MarkupWalkPhase.EXITING)
+        document.accept(visitor, MarkupVisitPhase.EXITING)
         assertEquals(listOf("entering:Document", "exiting:Document"), visitor.events)
         document.walk(visitor)
         assertEquals(
@@ -29,7 +29,7 @@ class ApiTest {
             visitor.events.drop(2),
         )
         val text = assertIs<Paragraph>(document.content.first()).content.first()
-        assertEquals("Text", text.accept(KindVisitor(), MarkupWalkPhase.EXITING))
+        assertEquals("Text", text.accept(KindVisitor(), MarkupVisitPhase.EXITING))
     }
 
     @Test
@@ -197,11 +197,11 @@ class ApiTest {
         assertEquals("Document", document.accept(visitor))
         assertEquals("Paragraph", paragraph.accept(visitor))
         assertEquals("Embedded", node.accept(visitor))
-        assertEquals("Document", visitor.visit(document = document, phase = MarkupWalkPhase.ENTERING))
-        assertEquals("Paragraph", visitor.visit(paragraph = paragraph, phase = MarkupWalkPhase.ENTERING))
-        assertEquals("Embedded", visitor.visit(embedded = embedded, phase = MarkupWalkPhase.ENTERING))
-        val visit: (Embedded, MarkupWalkPhase) -> String = visitor::visit
-        assertEquals("Embedded", visit(embedded, MarkupWalkPhase.EXITING))
+        assertEquals("Document", visitor.visit(document = document, phase = MarkupVisitPhase.ENTERING))
+        assertEquals("Paragraph", visitor.visit(paragraph = paragraph, phase = MarkupVisitPhase.ENTERING))
+        assertEquals("Embedded", visitor.visit(embedded = embedded, phase = MarkupVisitPhase.ENTERING))
+        val visit: (Embedded, MarkupVisitPhase) -> String = visitor::visit
+        assertEquals("Embedded", visit(embedded, MarkupVisitPhase.EXITING))
     }
 
     @Test
@@ -353,8 +353,8 @@ class ApiTest {
         assertEquals(listOf(1, 3), tableVisitor.tableRowKinds)
         tableVisitor.events.clear()
         val typed: Visitor<Unit> = tableVisitor
-        typed.visit(tableRow = table.head.single(), phase = MarkupWalkPhase.ENTERING)
-        typed.visit(table = table, phase = MarkupWalkPhase.EXITING)
+        typed.visit(tableRow = table.head.single(), phase = MarkupVisitPhase.ENTERING)
+        typed.visit(table = table, phase = MarkupVisitPhase.EXITING)
         assertEquals(listOf("entering:TableRow", "exiting:Table"), tableVisitor.events)
     }
 }

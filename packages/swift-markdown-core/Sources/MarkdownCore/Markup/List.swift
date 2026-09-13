@@ -72,7 +72,7 @@ public struct List: Markup {
     public var tight: Bool { fields.tight }
 
     /// Dispatches to the visitor's `List` case.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupWalkPhase) -> V.Result {
+    public func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupVisitPhase) -> V.Result {
         visitor.visit(self, phase: phase)
     }
 }
@@ -146,7 +146,7 @@ public struct ListItem: Markup {
     public var completed: Bool { marker != nil && marker != " " }
 
     /// Dispatches to the visitor's `ListItem` case.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupWalkPhase) -> V.Result {
+    public func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupVisitPhase) -> V.Result {
         visitor.visit(self, phase: phase)
     }
 }

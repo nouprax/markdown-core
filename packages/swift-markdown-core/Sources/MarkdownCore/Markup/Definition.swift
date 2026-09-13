@@ -27,7 +27,7 @@ public struct Definition: Markup {
     public var compact: Bool { fields.compact }
 
     /// Dispatches to the visitor's `Definition` case.
-    public func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupWalkPhase) -> V.Result {
+    public func accept<V: MarkupVisitor>(_ visitor: inout V, phase: MarkupVisitPhase) -> V.Result {
         visitor.visit(self, phase: phase)
     }
 }

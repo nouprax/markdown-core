@@ -302,7 +302,7 @@ const kindSurfaces = [
         expect: [...kinds.keys()],
         actual: namedKinds(
             "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/visitor/MarkupDumper.kt",
-            /override fun visit\(\s*[a-zA-Z]+: ([A-Za-z]+),\s*phase: MarkupWalkPhase,?\s*\)/g
+            /override fun visit\(\s*[a-zA-Z]+: ([A-Za-z]+),\s*phase: MarkupVisitPhase,?\s*\)/g
         )
     },
     {
@@ -342,15 +342,15 @@ const kindSurfaces = [
         expect: [...kinds.keys()],
         actual: namedKinds(
             "packages/swift-markdown-core/Sources/MarkdownCore/Visitor/MarkupDumper.swift",
-            /mutating func visit\(_ node: (?:MarkdownCore\.)?([A-Za-z]+), phase: MarkupWalkPhase\)/g
+            /mutating func visit\(_ node: (?:MarkdownCore\.)?([A-Za-z]+), phase: MarkupVisitPhase\)/g
         )
     },
     {
-        label: "Swift walk ownership schedule",
+        label: "Swift markup walker",
         expect: [...kinds.keys()],
         actual: namedKinds(
             "packages/swift-markdown-core/Sources/MarkdownCore/Visitor/MarkupVisitor.swift",
-            /mutating func visit\(_ node: ([A-Za-z]+), phase: MarkupWalkPhase\)/g
+            /mutating func visit\(_ node: ([A-Za-z]+), phase: MarkupVisitPhase\)/g
         )
     },
     {

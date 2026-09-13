@@ -407,7 +407,7 @@ if unzip -Z1 "$kotlin_jvm_jar" | grep -E '(^|/)(NativeBridge[^/]*|JvmNative|Walk
     echo "Kotlin JVM publication contains a retired bridge or legacy walker class" >&2
     exit 1
 fi
-for required_class in MarkupWalkPhase Visitor VisitorKt; do
+for required_class in MarkupVisitPhase Visitor VisitorKt; do
     if ! unzip -Z1 "$kotlin_jvm_jar" \
         | grep -qx "com/nouprax/markdown/core/$required_class.class"; then
         echo "Kotlin JVM publication is missing $required_class" >&2
