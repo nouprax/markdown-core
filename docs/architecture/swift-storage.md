@@ -1,6 +1,6 @@
 # Swift value storage
 
-The public AST is immutable and `Sendable`. A parse copies each native value
+The public AST is immutable and `Sendable`. A parse copies each native AST value
 exactly once into a flat `StoredMarkup` array, then frees the C document before
 returning. Records contain owned scalar values and integer relation indices.
 They never contain a container view or a reference back to `ValueTree`.
@@ -17,11 +17,21 @@ materializes an array for consumers that require one. Leaves carry their scalar
 values directly. The exhaustive stored enum prevents a recursively owned
 container from entering storage through an erased `any Markup` field.
 
+Collections are stored directly in their owning node's fields. Callout and
+directive content use `[Int]`; definition content uses `[[Int]]` to preserve
+body boundaries, including empty bodies. A `MarkupGroups<Element>` view shares
+the outer array and returns a `MarkupCollection<Element>` for each inner array
+in O(1), without mapping or allocating the groups on access. Groups have no
+record, queued handle, or stored-kind dispatch of their own. Nested definitions
+still refer to nodes by index, so array nesting is bounded by the field's shape,
+not the depth of the document.
+
 The projection queue holds native handles only during construction. Indices
 refer to queue positions, so no partially initialized semantic nodes or repair
-pass are needed. Each facade ownership relation has one queue edge: generic
-children, labels, captions, callout titles, definition terms and bodies,
-footnotes, specimens, and citation affixes. Reference resources are copied once
+pass are needed. Only markup and scoped AST values enter the queue. Their owned
+relations enqueue the referenced nodes: generic children, labels, captions,
+callout titles, definition terms and the blocks in each body, footnotes,
+specimens, and citation affixes. Reference resources are copied once
 per native identity and remain shared scalar resources across occurrences.
 
 This ownership graph has bounded ARC destruction depth. Releasing the last
@@ -32,10 +42,12 @@ tradeoff: extracting a subtree does not copy it or sever it from the store.
 There is no native handle, mutation, lazy cache, cleanup queue, or lock.
 
 The former `[Node]` child properties are now `MarkupCollection<Node>` (including
-`MarkupCollection<any Markup>` and collections of definition-body collections).
+`MarkupCollection<any Markup>`); `Definition.content` is `MarkupGroups<any Markup>`.
 Callers using array-specific APIs should explicitly construct `Array(...)`.
 Property names, ordering, scalar semantics, visitors, and native coordinates are
 unchanged. Tests cover canonical projections, shared-resource identity, public
 collection consumption, concurrent reads, and normal root/subtree release at
 30,000 and 65,536 levels. The release tests assert that the store is reclaimed;
 they do not keep the next child alive to manually dismantle ancestors.
+Grouped-relation tests cover empty and multiblock bodies, wide definitions,
+concurrent reads, and the last release of retained outer and inner collections.

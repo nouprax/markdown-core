@@ -19,6 +19,27 @@ public struct MarkupCollection<Element: Sendable>: RandomAccessCollection, Senda
     }
 }
 
+/// A read-only, random-access collection of grouped markup relations.
+///
+/// Groups live in their owning node's fields. Obtaining this view or an inner
+/// collection is constant time and shares the stored index arrays. Empty
+/// groups remain present, and retaining either view keeps the store alive.
+public struct MarkupGroups<Value: Sendable>: RandomAccessCollection, Sendable {
+    /// Zero-based position of a group.
+    public typealias Index = Int
+    let tree: ValueTree
+    let recordIndices: [[Int]]
+
+    /// The first valid position, or `endIndex` for no groups.
+    public var startIndex: Int { recordIndices.startIndex }
+    /// The position immediately after the last group.
+    public var endIndex: Int { recordIndices.endIndex }
+    /// The group at a valid position, without copying its elements.
+    public subscript(position: Int) -> MarkupCollection<Value> {
+        MarkupCollection(tree: tree, recordIndices: recordIndices[position])
+    }
+}
+
 /// Records contain scalar values and integer edges only. Consequently ARC
 /// destruction has bounded stack depth, including after extracting a subtree.
 enum StoredMarkup: Sendable {
@@ -66,7 +87,6 @@ enum StoredMarkup: Sendable {
     case footnote(Footnote.Fields)
     case specimen(Specimen.Fields)
     case citation(Citation.Fields)
-    case definitionBody([Int])
 }
 
 final class ValueTree: Sendable {
@@ -123,7 +143,6 @@ final class ValueTree: Sendable {
         case .footnote: value = Footnote(tree: self, index: index)
         case .specimen: value = Specimen(tree: self, index: index)
         case .citation: value = Citation(tree: self, index: index)
-        case let .definitionBody(indices): value = MarkupCollection<any Markup>(tree: self, recordIndices: indices)
         }
         guard let result = value as? Value else {
             preconditionFailure("Invalid value kind in a typed relation")

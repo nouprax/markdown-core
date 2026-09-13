@@ -11,8 +11,8 @@ public struct Definition: Markup {
     /// The inline term, visited before the body collections.
     public var term: MarkupCollection<any Markup> { MarkupCollection(tree: tree, recordIndices: fields.term) }
     /// The nonempty ordered collection of block bodies; an individual body may be empty.
-    public var content: MarkupCollection<MarkupCollection<any Markup>> {
-        MarkupCollection(tree: tree, recordIndices: fields.content)
+    public var content: MarkupGroups<any Markup> {
+        MarkupGroups(tree: tree, recordIndices: fields.content)
     }
     /// Whether the first body immediately follows its term without a blank line.
     public var compact: Bool { fields.compact }
@@ -25,7 +25,7 @@ public struct Definition: Markup {
         let anchor: String?
         let attributes: Attributes
         let term: [Int]
-        let content: [Int]
+        let content: [[Int]]
         let compact: Bool
     }
 
@@ -40,7 +40,7 @@ public struct Definition: Markup {
 }
 
 extension Definition.Fields {
-    init(from node: OpaquePointer, term: [Int], content: [Int]) {
+    init(from node: OpaquePointer, term: [Int], content: [[Int]]) {
         var compact = false
         precondition(markdown_core_node_definition_compact(node, &compact), "Invalid definition")
         precondition(!content.isEmpty, "Definition has no bodies")

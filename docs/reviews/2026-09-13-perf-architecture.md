@@ -178,9 +178,10 @@
 | [#238](https://github.com/nouprax/markdown-core/issues/238) | 删除域名 10 段语义阈值；共享单调拒绝边界保持失败后缀扫描线性，同时允许 underscore 后的有效候选。规范同步说明这一继承行为的改变。 |
 | [#239](https://github.com/nouprax/markdown-core/issues/239) | 统一 C/Swift/ES/Kotlin 注释、规范和审计；增加真实零字节及 UTF-8 边界测试。生产坐标保持原样。 |
 
-Swift 子关系从数组改为只读 `MarkupCollection<Element>`，支持
-`RandomAccessCollection`；需要数组的调用者使用 `Array(...)`。持有容器子树
-会保留整个不可变 Swift store，直到最后一个持有者释放。没有 native handle、
+Swift 子关系从数组改为只读 `MarkupCollection<Element>`，定义的分组关系使用
+`MarkupGroups<Element>`，均支持 `RandomAccessCollection`；需要数组的调用者
+使用 `Array(...)`。集合直接存入所属节点的 `Fields`，分组不占独立 record。
+持有容器子树会保留整个不可变 Swift store，直到最后一个持有者释放。没有 native handle、
 缓存、同步或清理队列。Document 独有的 metadata payload 间接存储一次，避免
 其容量决定所有普通节点的 stride。详见 [Swift storage](../architecture/swift-storage.md)。
 
@@ -202,7 +203,8 @@ Swift 子关系从数组改为只读 `MarkupCollection<Element>`，支持
 - 域名测试覆盖阈值两侧、最后/倒数第二/倒数第三段 underscore、URL/www
   两种入口，以及 16–8,192 个重叠候选；确定的扫描工作不超过 3× 输入字节。
 - C Release 88 项 correctness 加 8 项 benchmark，ASan/UBSan 各 88 项，
-  TSan 并发 2 项通过。Swift 38 tests / 10 suites 及独立 consumer 通过。
+  TSan 并发 2 项通过。Swift 40 tests / 10 suites 及独立 consumer 的 2 项测试通过。
+  定义分组与所有权测试亦通过 Release 构建；8,192 个 body 不再增加集合 record。
   ES 41 correctness / 40 conformance、Kotlin JVM 42+8、Native 31+8 通过。
 - position places 15,072 项无新增差异（现在包含真正零字节输入）；
   containment 16,206 项及 inline positions 71 项仍保持原 ledger。

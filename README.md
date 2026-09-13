@@ -122,6 +122,8 @@ exhaustive typed visitors and stack-safe, read-only depth-first walking through
 `content`, `items`, and `cells` are read-only `MarkupCollection` values conforming
 to `RandomAccessCollection`: count, indexing, and obtaining a collection view
 are constant time. Use `Array(node.content)` when an array is required.
+`Definition.content` uses `MarkupGroups<any Markup>` for its ordered body
+collections, with the same access guarantees and preserved empty groups.
 
 Containers hold views into one immutable Swift record store. Keeping a subtree
 keeps that store alive, so children remain usable after the original `Document`

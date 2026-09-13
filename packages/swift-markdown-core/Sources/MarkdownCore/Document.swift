@@ -103,7 +103,7 @@ private struct NativeRelations {
     var label: Int?
     var title: [Int]?
     var term: [Int] = []
-    var bodies: [Int] = []
+    var bodies: [[Int]] = []
     var footnotes: [Int] = []
     var specimens: [Int] = []
     var citations: [Int] = []
@@ -115,7 +115,6 @@ private enum NativeValue {
     case footnote(OpaquePointer)
     case specimen(OpaquePointer)
     case citation(OpaquePointer)
-    case definitionBody(OpaquePointer)
 }
 
 /// Copies scalars and indexed relations once. No stored Swift record owns
@@ -152,8 +151,6 @@ private struct NativeTreeBuilder {
             let prefix = chain(markdown_core_citation_prefix(node))
             let suffix = chain(markdown_core_citation_suffix(node))
             return .citation(Citation.Fields(from: node, prefix: prefix, suffix: suffix))
-        case let .definitionBody(node):
-            return .definitionBody(chain(markdown_core_definition_body_content(node)))
         }
     }
 
@@ -176,7 +173,7 @@ private struct NativeTreeBuilder {
             relations.term = chain(markdown_core_node_definition_term(node))
             var body = markdown_core_node_definition_bodies(node)
             while let current = body {
-                relations.bodies.append(enqueue(.definitionBody(current)))
+                relations.bodies.append(chain(markdown_core_definition_body_content(current)))
                 body = markdown_core_definition_body_next(current)
             }
         case MARKDOWN_CORE_KIND_DOCUMENT:

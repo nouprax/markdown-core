@@ -28,6 +28,11 @@ swift-markdown 同样将公开节点包装与内部存储分开：
 重新进入 record 并形成递归拥有关系。其名称与逐类型访问代码可以继续改善；
 这些可读性问题本身不足以推翻所有权模型。
 
+集合本身直接保存在所属节点的 `Fields` 中：普通关系为 `[Int]`，
+`Definition.content` 为 `[[Int]]`。后者通过 `MarkupGroups` 按需返回内层
+`MarkupCollection`，取得视图及下标访问均为 O(1)，没有逐组物化。已删除
+原先把 body 集合作为独立 record 的设计；分组不再进入存储枚举或构建队列。
+
 ## 上游的释放修复与剩余边界
 
 [PR #276](https://github.com/swiftlang/swift-markdown/pull/276) 于 2026-06-22 合并。
