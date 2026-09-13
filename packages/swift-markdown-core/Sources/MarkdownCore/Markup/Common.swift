@@ -21,3 +21,15 @@ extension Dimensions {
         self.init(width: Int(value.width), height: value.height.has_value ? Int(value.height.value) : nil)
     }
 }
+
+/// Authored horizontal content alignment.
+public enum Flow: String, Sendable {
+    /// No explicit alignment was authored.
+    case none
+    /// Align to the left.
+    case left
+    /// Align to the center.
+    case center
+    /// Align to the right.
+    case right
+}

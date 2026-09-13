@@ -347,9 +347,8 @@ static markdown_core_node *try_opening_table_header(const markdown_core_element 
     for (i = 0; pipe_row_next(&markers, &geometry); ++i) {
         const markdown_core_chunk *cell = &geometry.content;
         bool left = cell->data[0] == ':', right = cell->data[cell->len - 1] == ':';
-        table->columns[i].alignment =
-            left ? (right ? MARKDOWN_CORE_TABLE_ALIGNMENT_CENTER : MARKDOWN_CORE_TABLE_ALIGNMENT_LEFT)
-                 : (right ? MARKDOWN_CORE_TABLE_ALIGNMENT_RIGHT : MARKDOWN_CORE_TABLE_ALIGNMENT_NONE);
+        table->columns[i].flow = left ? (right ? MARKDOWN_CORE_FLOW_CENTER : MARKDOWN_CORE_FLOW_LEFT)
+                                      : (right ? MARKDOWN_CORE_FLOW_RIGHT : MARKDOWN_CORE_FLOW_NONE);
     }
 
     table_header = markdown_core_parser_add_child(parser, parent_container, MARKDOWN_CORE_NODE_TABLE_ROW, 1);
@@ -939,10 +938,9 @@ static bool table_set_columns(table_source *source, table_candidate *candidate, 
         bool occupied = right > left;
         bool left_space = table_character(line, left) == ' ';
         bool right_space = right - runs[i].start < runs[i].end - runs[i].start;
-        candidate->columns[i].alignment =
-            !occupied    ? MARKDOWN_CORE_TABLE_ALIGNMENT_NONE
-            : left_space ? (right_space ? MARKDOWN_CORE_TABLE_ALIGNMENT_CENTER : MARKDOWN_CORE_TABLE_ALIGNMENT_RIGHT)
-                         : (right_space ? MARKDOWN_CORE_TABLE_ALIGNMENT_LEFT : MARKDOWN_CORE_TABLE_ALIGNMENT_NONE);
+        candidate->columns[i].flow = !occupied    ? MARKDOWN_CORE_FLOW_NONE
+                                     : left_space ? (right_space ? MARKDOWN_CORE_FLOW_CENTER : MARKDOWN_CORE_FLOW_RIGHT)
+                                                  : (right_space ? MARKDOWN_CORE_FLOW_LEFT : MARKDOWN_CORE_FLOW_NONE);
         if (widths) {
             candidate->columns[i].relative.has_value = true;
             candidate->columns[i].relative.value =
@@ -1715,9 +1713,8 @@ static bool table_parse_grid(table_source *source, size_t start, table_candidate
     for (size_t c = 0; c + 1 < count; c++) {
         bool l = table_character(alignment, positions[c] + 1) == ':',
              r = table_character(alignment, positions[c + 1] - 1) == ':';
-        candidate->columns[c].alignment =
-            l ? (r ? MARKDOWN_CORE_TABLE_ALIGNMENT_CENTER : MARKDOWN_CORE_TABLE_ALIGNMENT_LEFT)
-              : (r ? MARKDOWN_CORE_TABLE_ALIGNMENT_RIGHT : MARKDOWN_CORE_TABLE_ALIGNMENT_NONE);
+        candidate->columns[c].flow = l ? (r ? MARKDOWN_CORE_FLOW_CENTER : MARKDOWN_CORE_FLOW_LEFT)
+                                       : (r ? MARKDOWN_CORE_FLOW_RIGHT : MARKDOWN_CORE_FLOW_NONE);
         candidate->columns[c].relative =
             (markdown_core_optional_double){true, (positions[c + 1] - positions[c] - 1) / total};
     }
@@ -1775,9 +1772,8 @@ static bool table_parse_pipe_header(table_source *source, size_t start, table_ca
     for (size_t i = 0; pipe_row_next(&header_cells, &geometry) && pipe_row_next(&marker_cells, &marker_geometry); i++) {
         const markdown_core_chunk *marker = &marker_geometry.content;
         bool l = marker->data[0] == ':', r = marker->data[marker->len - 1] == ':';
-        candidate->columns[i].alignment =
-            l ? (r ? MARKDOWN_CORE_TABLE_ALIGNMENT_CENTER : MARKDOWN_CORE_TABLE_ALIGNMENT_LEFT)
-              : (r ? MARKDOWN_CORE_TABLE_ALIGNMENT_RIGHT : MARKDOWN_CORE_TABLE_ALIGNMENT_NONE);
+        candidate->columns[i].flow = l ? (r ? MARKDOWN_CORE_FLOW_CENTER : MARKDOWN_CORE_FLOW_LEFT)
+                                       : (r ? MARKDOWN_CORE_FLOW_RIGHT : MARKDOWN_CORE_FLOW_NONE);
         const node_cell *cell = &geometry;
         int from = head->first + cell->start_offset, to = head->first + cell->end_offset + 1;
         if (!table_add_cell(source, candidate, start, start, table_column(head, from), table_column(head, to), from + 1,

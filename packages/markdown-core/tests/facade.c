@@ -567,13 +567,12 @@ static void check_table_model(void) {
     check(markdown_core_node_table_properties(table, &columns, &head, &content, &foot), "table properties");
     check(columns == 4 && head == 1 && content == 1 && foot == 0, "pipe table group partition");
     check(markdown_core_node_child_count(table) == head + content + foot, "table rows have one structural owner");
-    const markdown_core_table_alignment expected[] = {
-        MARKDOWN_CORE_TABLE_ALIGNMENT_LEFT, MARKDOWN_CORE_TABLE_ALIGNMENT_CENTER, MARKDOWN_CORE_TABLE_ALIGNMENT_RIGHT,
-        MARKDOWN_CORE_TABLE_ALIGNMENT_NONE};
+    const markdown_core_flow expected[] = {MARKDOWN_CORE_FLOW_LEFT, MARKDOWN_CORE_FLOW_CENTER, MARKDOWN_CORE_FLOW_RIGHT,
+                                           MARKDOWN_CORE_FLOW_NONE};
     for (size_t i = 0; i < columns; i++) {
         markdown_core_table_column column;
         check(markdown_core_node_table_column_at(table, i, &column), "column value");
-        check(column.alignment == expected[i] && !column.relative.has_value, "column authored facts");
+        check(column.flow == expected[i] && !column.relative.has_value, "column authored facts");
     }
     markdown_core_table_column column = {0};
     check(!markdown_core_node_table_column_at(table, columns, &column), "column upper bound");

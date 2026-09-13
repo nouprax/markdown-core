@@ -42,7 +42,8 @@ public sealed interface OrderedListDelimiter {
 
 public enum class Placement { EMBEDDED, STANDALONE }
 
-public enum class TableAlignment { NONE, LEFT, CENTER, RIGHT }
+/** Authored horizontal content alignment; [NONE] means no explicit alignment. */
+public enum class Flow { NONE, LEFT, CENTER, RIGHT }
 
 /** How a [CitationReferent.Bib] item is rendered. */
 public enum class BibMode { NORMAL, AUTHOR_IN_TEXT, SUPPRESS_AUTHOR }

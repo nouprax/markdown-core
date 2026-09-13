@@ -259,7 +259,7 @@ value carries `scope` only.
 | `Citation(referent, prefix: [Markup], suffix: [Markup], scope)`                     | `M4`; scoped and traversed, not `Markup`                      |
 | `Footnote(id, content: [Markup], scope)`                                            | `M4`; document-owned, scoped and traversed, not `Markup`      |
 | `OrderedListVariant`, `OrderedListDelimiter`                                          | `M5`; values beyond the inherited forms first by `P9a`, `P9b` |
-| `TableColumn(alignment: TableAlignment, relative: Double?)`                         | `M6`; `relative` first produced by `P11c`                     |
+| `TableColumn(flow: Flow, relative: Double?)`                         | `M6`; `relative` first produced by `P11c`                     |
 | `Metadata`, `MetadataValue`, `MetadataScalar`, `MetadataListItem` | `M7`; first produced by `O6`                                  |
 | `ReferenceForm`                                                                     | removed by `M2`                                               |
 | `DirectiveAttribute`                                                                | removed by `M7`                                               |
@@ -466,7 +466,7 @@ its behavior, with no separate publication step.
       Retire the reserved example list variant and item label. Definition
       ownership, copying and wire support land here; grammar remains in P9b.
 - [x] **M6 — One table model.** Emit `Table(columns, head, content, foot=[])`
-      with `TableColumn(alignment, relative=null)` from the existing pipe-table
+      with `TableColumn(flow, relative=null)` from the existing pipe-table
       path, remove `TableRow.isHeader`, add `TableCell.rowspan` and `colspan` as
       `1`, and keep `TableCell.content` as `[Markup]` so inherited inline cells
       stay inline and later table forms store blocks directly, with no

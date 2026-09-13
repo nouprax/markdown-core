@@ -14,7 +14,7 @@ with `P11b`, `P11c`, and `P11d`. All four table forms and captions are implement
 Table(caption: TableCaption?, columns: [TableColumn], head: [TableRow],
       content: [TableRow], foot: [TableRow])
 TableCaption(content: [Markup])
-TableColumn(alignment: none | left | center | right, relative: Double?)
+TableColumn(flow: none | left | center | right, relative: Double?)
 TableRow(cells: [TableCell])
 TableCell(rowspan: Int, colspan: Int, content: [Markup])
 ```
@@ -26,7 +26,7 @@ non-null, is a positive share derived from authored column widths as stated
 per syntax; `null` means no width was authored. `head`, `content`, and
 `foot` may be empty. Every span is at least one. Source syntax never selects
 a different kind, and no field records which syntax produced a table. In the
-dump, `columns` prints as `[alignment:relative,...]`, a non-null caption
+dump, `columns` prints as `[flow:relative,...]`, a non-null caption
 prints as a nested `TableCaption` line, and the three row groups print as
 `TableHead`, `TableBody`, and `TableFoot` group lines whose rows
 `Table.children` counts.

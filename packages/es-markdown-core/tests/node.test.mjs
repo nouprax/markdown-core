@@ -234,7 +234,7 @@ test("ast: typed fields are copied from the native result", () => {
     assert.equal(document.content[0].flavor, "ordered");
     assert.equal(document.content[0].start, 3);
     assert.deepEqual(
-        document.content[1].columns.map((column) => column.alignment),
+        document.content[1].columns.map((column) => column.flow),
         ["center"]
     );
 });
@@ -760,11 +760,11 @@ test("errors: malformed native values are rejected before they enter the AST", (
     const decoder = new NodeDecoder(new Uint8Array(64));
     assert.throws(() => decoder.placement(9), /invalid placement mode 9/u);
     assert.throws(() => decoder.listFlavor(9), /invalid list flavor 9/u);
-    assert.throws(() => decoder.tableAlignment(9), /invalid table alignment 9/u);
+    assert.throws(() => decoder.flow(9), /invalid table flow 9/u);
     assert.throws(() => decoder.nullableBoolean(9, "checked"), /invalid checked 9/u);
     assert.equal(decoder.placement(2), "standalone");
     assert.equal(decoder.listFlavor(2), "ordered");
-    assert.equal(decoder.tableAlignment(0), "none");
+    assert.equal(decoder.flow(0), "none");
     assert.equal(decoder.nullableBoolean(-1, "checked"), null);
 
     // Native parse failures keep their terminal category across the WASM
@@ -970,8 +970,8 @@ test("ast: table groups, column widths and spans survive the wire as owned facts
     assert.equal(value.content[0].cells[0].content[0].literal, "b");
     assert.equal(value.foot[0].cells[0].content[0].literal, "f");
     assert.deepEqual(value.columns, [
-        { alignment: "none", relative: 0.1 },
-        { alignment: "none", relative: null }
+        { flow: "none", relative: 0.1 },
+        { flow: "none", relative: null }
     ]);
     assert.ok(!("isHeader" in value.head[0]));
     const visited = [];

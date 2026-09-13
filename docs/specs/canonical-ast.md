@@ -205,8 +205,12 @@ BibMode = normal | authorInText | suppressAuthor
 ListFlavor = bullet | ordered
 OrderedListVariant = decimal | alpha(lowercased: Bool) | roman(lowercased: Bool) | default
 OrderedListDelimiter = period | parenthesis(closed: Bool) | default
-TableAlignment = none | left | center | right
+Flow = none | left | center | right
 ```
+
+`Flow` is a shared value for authored horizontal content alignment. `none`
+means no explicit alignment was authored. `TableColumn.flow` uses this
+value; its producing syntax determines which value is stored.
 
 ### CitationReferent, Citation, Footnote, and Specimen
 
@@ -322,7 +326,7 @@ unresolved reference is the inherited literal text with its brackets.
 ```text
 Table(caption: TableCaption?, columns: [TableColumn], head: [TableRow], content: [TableRow], foot: [TableRow], scope)
 TableCaption(content: [Markup], scope)
-TableColumn(alignment: TableAlignment, relative: Double?)
+TableColumn(flow: Flow, relative: Double?)
 TableRow(cells: [TableCell], scope)
 TableCell(rowspan: Int, colspan: Int, content: [Markup], scope)
 ```

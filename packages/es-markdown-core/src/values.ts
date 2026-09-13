@@ -45,7 +45,8 @@ export type CitationReferent =
     | { readonly kind: "bib"; readonly key: string; readonly mode: BibMode }
     | { readonly kind: "footnote"; readonly id: string }
     | { readonly kind: "specimen"; readonly id: string };
-export type TableAlignment = "none" | "left" | "center" | "right";
+/** Authored horizontal content alignment; "none" means no explicit alignment. */
+export type Flow = "none" | "left" | "center" | "right";
 
 export interface Record {
     readonly name: string;

@@ -16,7 +16,7 @@ extension APISuite {
                 .table(
                     .init(
                         caption: nil,
-                        columns: [TableColumn(alignment: .none, relative: width)],
+                        columns: [TableColumn(flow: .none, relative: width)],
                         head: [],
                         content: [],
                         foot: [],
@@ -91,7 +91,7 @@ private func groupedTable() throws -> Table {
             .init(
                 caption: nil,
                 columns: [
-                    TableColumn(alignment: .left, relative: 0.1), TableColumn(alignment: .none, relative: nil),
+                    TableColumn(flow: .left, relative: 0.1), TableColumn(flow: .none, relative: nil),
                 ],
                 head: [rows[0]],
                 content: [rows[1]],

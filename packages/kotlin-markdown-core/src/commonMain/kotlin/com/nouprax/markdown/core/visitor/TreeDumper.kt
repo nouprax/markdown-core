@@ -225,7 +225,7 @@ private class DumpVisitor(
         val columns =
             node.columns.joinToString(
                 ",",
-            ) { "${it.alignment.token()}:${it.relative?.let(::decimal) ?: "null"}" }
+            ) { "${it.flow.token()}:${it.relative?.let(::decimal) ?: "null"}" }
         state.line("Table", node, listOf("columns=[$columns]"), node.head.size + node.content.size + node.foot.size)
         state.nested(3 + if (node.caption == null) 0 else 1) {
             node.caption?.let(state::dump)
@@ -452,7 +452,7 @@ private fun OrderedListDelimiter.token(): String =
         OrderedListDelimiter.Default -> "default"
     }
 
-private fun TableAlignment.token(): String = name.lowercase()
+private fun Flow.token(): String = name.lowercase()
 
 private fun jsonString(value: String): String =
     buildString {

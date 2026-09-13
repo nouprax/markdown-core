@@ -256,15 +256,16 @@ typedef enum markdown_core_placement {
     MARKDOWN_CORE_PLACEMENT_STANDALONE = 2
 } markdown_core_placement;
 
-typedef enum markdown_core_table_alignment {
-    MARKDOWN_CORE_TABLE_ALIGNMENT_NONE = 0,
-    MARKDOWN_CORE_TABLE_ALIGNMENT_LEFT = 1,
-    MARKDOWN_CORE_TABLE_ALIGNMENT_CENTER = 2,
-    MARKDOWN_CORE_TABLE_ALIGNMENT_RIGHT = 3
-} markdown_core_table_alignment;
+/** Authored horizontal content alignment; NONE means no explicit alignment. */
+typedef enum markdown_core_flow {
+    MARKDOWN_CORE_FLOW_NONE = 0,
+    MARKDOWN_CORE_FLOW_LEFT = 1,
+    MARKDOWN_CORE_FLOW_CENTER = 2,
+    MARKDOWN_CORE_FLOW_RIGHT = 3
+} markdown_core_flow;
 
 typedef struct markdown_core_table_column {
-    markdown_core_table_alignment alignment;
+    markdown_core_flow flow;
     markdown_core_optional_double relative;
 } markdown_core_table_column;
 

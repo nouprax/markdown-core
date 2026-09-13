@@ -18,6 +18,10 @@ import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_DESTINATION_URL
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_ERROR_ALLOCATION_FAILED
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_ERROR_INTERNAL
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_ERROR_INVALID_ARGUMENT
+import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_FLOW_CENTER
+import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_FLOW_LEFT
+import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_FLOW_NONE
+import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_FLOW_RIGHT
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_CALLOUT
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_CITE
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_KIND_CODE
@@ -79,10 +83,6 @@ import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_PLACEMENT_STANDALON
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_REFERENT_BIB
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_REFERENT_FOOTNOTE
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_REFERENT_SPECIMEN
-import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_TABLE_ALIGNMENT_CENTER
-import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_TABLE_ALIGNMENT_LEFT
-import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_TABLE_ALIGNMENT_NONE
-import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_TABLE_ALIGNMENT_RIGHT
 import com.nouprax.markdown.core.internal.capi.markdown_core_attribute_value_anchor
 import com.nouprax.markdown.core.internal.capi.markdown_core_attribute_value_class_at
 import com.nouprax.markdown.core.internal.capi.markdown_core_attribute_value_class_count
@@ -896,15 +896,15 @@ private class NativeScratch(
                 require(
                     markdown_core_node_table_column_at(node, index.toULong(), tableColumn.ptr),
                 ) { "invalid table column" }
-                val alignment =
-                    when (tableColumn.alignment) {
-                        MARKDOWN_CORE_TABLE_ALIGNMENT_NONE -> TableAlignment.NONE
-                        MARKDOWN_CORE_TABLE_ALIGNMENT_LEFT -> TableAlignment.LEFT
-                        MARKDOWN_CORE_TABLE_ALIGNMENT_CENTER -> TableAlignment.CENTER
-                        MARKDOWN_CORE_TABLE_ALIGNMENT_RIGHT -> TableAlignment.RIGHT
-                        else -> error("unsupported native table alignment ${tableColumn.alignment}")
+                val flow =
+                    when (tableColumn.flow) {
+                        MARKDOWN_CORE_FLOW_NONE -> Flow.NONE
+                        MARKDOWN_CORE_FLOW_LEFT -> Flow.LEFT
+                        MARKDOWN_CORE_FLOW_CENTER -> Flow.CENTER
+                        MARKDOWN_CORE_FLOW_RIGHT -> Flow.RIGHT
+                        else -> error("unsupported native table flow ${tableColumn.flow}")
                     }
-                TableColumn(alignment, tableColumn.relative.value.takeIf { tableColumn.relative.has_value })
+                TableColumn(flow, tableColumn.relative.value.takeIf { tableColumn.relative.has_value })
             }
         val head = tableHead.value.checkedSize("table head count")
         val content = tableContent.value.checkedSize("table content count")

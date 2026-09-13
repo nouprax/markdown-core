@@ -6,6 +6,12 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
+- Rename `TableAlignment` to the shared `Flow` value across Swift, Kotlin and
+  ES, with `markdown_core_flow` and `MARKDOWN_CORE_FLOW_*` in C. Rename
+  `TableColumn.alignment` to `flow` across all bindings. Enum values and wire
+  numbers remain unchanged. Swift's `Dimensions` and `Flow` share
+  `Markup/Common.swift`.
+
 - Rename `PlacementMode` to `Placement` across Swift, Kotlin and ES, and the C
   typedef to `markdown_core_placement`. Formula's `mode` field and the enum
   values remain unchanged.

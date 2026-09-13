@@ -228,6 +228,16 @@ public final class com/nouprax/markdown/core/Emphasis : com/nouprax/markdown/cor
 	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 }
 
+public final class com/nouprax/markdown/core/Flow : java/lang/Enum {
+	public static final field CENTER Lcom/nouprax/markdown/core/Flow;
+	public static final field LEFT Lcom/nouprax/markdown/core/Flow;
+	public static final field NONE Lcom/nouprax/markdown/core/Flow;
+	public static final field RIGHT Lcom/nouprax/markdown/core/Flow;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/nouprax/markdown/core/Flow;
+	public static fun values ()[Lcom/nouprax/markdown/core/Flow;
+}
+
 public final class com/nouprax/markdown/core/Footnote {
 	public final fun getContent ()Ljava/util/List;
 	public final fun getId ()Ljava/lang/String;
@@ -673,16 +683,6 @@ public final class com/nouprax/markdown/core/Table : com/nouprax/markdown/core/M
 	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 }
 
-public final class com/nouprax/markdown/core/TableAlignment : java/lang/Enum {
-	public static final field CENTER Lcom/nouprax/markdown/core/TableAlignment;
-	public static final field LEFT Lcom/nouprax/markdown/core/TableAlignment;
-	public static final field NONE Lcom/nouprax/markdown/core/TableAlignment;
-	public static final field RIGHT Lcom/nouprax/markdown/core/TableAlignment;
-	public static fun getEntries ()Lkotlin/enums/EnumEntries;
-	public static fun valueOf (Ljava/lang/String;)Lcom/nouprax/markdown/core/TableAlignment;
-	public static fun values ()[Lcom/nouprax/markdown/core/TableAlignment;
-}
-
 public final class com/nouprax/markdown/core/TableCaption : com/nouprax/markdown/core/Markup {
 	public fun accept (Lcom/nouprax/markdown/core/Visitor;)Ljava/lang/Object;
 	public fun dump ()Ljava/lang/String;
@@ -704,7 +704,7 @@ public final class com/nouprax/markdown/core/TableCell : com/nouprax/markdown/co
 }
 
 public final class com/nouprax/markdown/core/TableColumn {
-	public final fun getAlignment ()Lcom/nouprax/markdown/core/TableAlignment;
+	public final fun getFlow ()Lcom/nouprax/markdown/core/Flow;
 	public final fun getRelative ()Ljava/lang/Double;
 }
 

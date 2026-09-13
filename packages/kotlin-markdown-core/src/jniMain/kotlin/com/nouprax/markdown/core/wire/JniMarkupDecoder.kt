@@ -575,10 +575,10 @@ private class JniTreeDecoder(
         require(columnCount > 0) { "invalid native table column count" }
         val columns =
             immutableList(columnCount) {
-                val alignment = tableAlignment(reader.byte().toInt() and 0xff)
+                val flow = flow(reader.byte().toInt() and 0xff)
                 val relative = if (reader.boolean()) Double.fromBits(reader.long()) else null
                 require(relative == null || (relative.isFinite() && relative > 0)) { "invalid table column width" }
-                TableColumn(alignment, relative)
+                TableColumn(flow, relative)
             }
         val head = reader.int()
         val content = reader.int()
@@ -653,12 +653,12 @@ private class JniTreeDecoder(
             else -> error("invalid native placement mode $rawValue")
         }
 
-    private fun tableAlignment(rawValue: Int): TableAlignment =
+    private fun flow(rawValue: Int): Flow =
         when (rawValue) {
-            0 -> TableAlignment.NONE
-            1 -> TableAlignment.LEFT
-            2 -> TableAlignment.CENTER
-            3 -> TableAlignment.RIGHT
-            else -> error("invalid native table alignment $rawValue")
+            0 -> Flow.NONE
+            1 -> Flow.LEFT
+            2 -> Flow.CENTER
+            3 -> Flow.RIGHT
+            else -> error("invalid native table flow $rawValue")
         }
 }

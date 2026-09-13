@@ -417,12 +417,12 @@ class BindingMappingTest {
         val table = assertIs<Table>(document.content[3])
         assertEquals(
             listOf(
-                TableAlignment.LEFT,
-                TableAlignment.CENTER,
-                TableAlignment.RIGHT,
-                TableAlignment.NONE,
+                Flow.LEFT,
+                Flow.CENTER,
+                Flow.RIGHT,
+                Flow.NONE,
             ),
-            table.columns.map { it.alignment },
+            table.columns.map { it.flow },
         )
 
         // The owning node keeps its label field separate from block content;

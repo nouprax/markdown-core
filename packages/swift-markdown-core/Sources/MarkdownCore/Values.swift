@@ -44,12 +44,12 @@ extension Placement {
     }
 }
 
-extension TableAlignment {
-    init(from alignment: markdown_core_table_alignment) {
-        switch alignment {
-        case MARKDOWN_CORE_TABLE_ALIGNMENT_LEFT: self = .left
-        case MARKDOWN_CORE_TABLE_ALIGNMENT_CENTER: self = .center
-        case MARKDOWN_CORE_TABLE_ALIGNMENT_RIGHT: self = .right
+extension Flow {
+    init(from flow: markdown_core_flow) {
+        switch flow {
+        case MARKDOWN_CORE_FLOW_LEFT: self = .left
+        case MARKDOWN_CORE_FLOW_CENTER: self = .center
+        case MARKDOWN_CORE_FLOW_RIGHT: self = .right
         default: self = .none
         }
     }

@@ -56,7 +56,7 @@ private typealias Comment = Testing.Comment
         #expect(task.items.first?.tasked == true)
         #expect(task.items.first?.completed == true)
         let table = try #require(document.content[2] as? Table)
-        #expect(table.columns.map(\.alignment) == [.center])
+        #expect(table.columns.map(\.flow) == [.center])
         #expect(table.head.count == 1)
         #expect(table.content.count == 1 && table.foot.isEmpty)
         #expect(table.head[0].cells.count == 1)

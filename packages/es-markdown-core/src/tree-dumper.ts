@@ -119,7 +119,7 @@ class DumpState {
         visitFormulaBlock: (node: FormulaBlock) =>
             this.line("FormulaBlock", node, [`literal=${jsonString(node.literal)}`]),
         visitTable: (node: Table) => {
-            const columns = node.columns.map((column) => `${column.alignment}:${column.relative ?? "null"}`).join(",");
+            const columns = node.columns.map((column) => `${column.flow}:${column.relative ?? "null"}`).join(",");
             this.line(
                 "Table",
                 node,

@@ -726,7 +726,7 @@ static void write_node(jni_payload_buffer *buffer, jni_payload_stack *stack, jni
                 buffer->failure = JNI_PAYLOAD_INTERNAL;
                 return;
             }
-            put_u8(buffer, (uint8_t)column.alignment);
+            put_u8(buffer, (uint8_t)column.flow);
             put_u8(buffer, column.relative.has_value ? 1 : 0);
             if (column.relative.has_value) {
                 int64_t bits;

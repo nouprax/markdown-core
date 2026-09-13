@@ -10,15 +10,7 @@ import type { Markup } from "../model/markup.js";
 import type { TableCell, TableRow } from "../model/table.js";
 import { ParseError, type ParseErrorCode } from "../parse-error.js";
 import { TreeDumper } from "../tree-dumper.js";
-import type {
-    BibMode,
-    CitationReferent,
-    Destination,
-    ListFlavor,
-    Placement,
-    Scope,
-    TableAlignment
-} from "../values.js";
+import type { BibMode, CitationReferent, Destination, ListFlavor, Placement, Scope, Flow } from "../values.js";
 import { kinds, type NativeKind } from "./kinds.js";
 
 /*
@@ -617,12 +609,12 @@ export class NodeDecoder {
         if (record.auxiliaryCount === 0) throw new Error("table has no columns");
         const columns = Array.from({ length: record.auxiliaryCount }, (_, index) => {
             const offset = this.layout.columnsOffset + (record.auxiliaryStart + index) * columnSize;
-            const alignment = this.tableAlignment(this.uint(offset));
+            const flow = this.flow(this.uint(offset));
             const present = this.uint(offset + 4);
             if (present > 1) throw new Error("invalid table column width presence");
             const value = this.view.getFloat64(offset + 8, true);
             if (present && (!Number.isFinite(value) || value <= 0)) throw new Error("invalid table column width");
-            return { alignment, relative: present ? value : null };
+            return { flow, relative: present ? value : null };
         });
         const rows = this.content(record);
         if (!rows.every((child): child is TableRow => child.kind === "tableRow")) {
@@ -1025,11 +1017,11 @@ export class NodeDecoder {
         throw new Error(`native result contains invalid list flavor ${value}`);
     }
 
-    private tableAlignment(value: number): TableAlignment {
-        const alignments: readonly TableAlignment[] = ["none", "left", "center", "right"];
-        const alignment = alignments[value];
-        if (alignment === undefined) throw new Error(`native result contains invalid table alignment ${value}`);
-        return alignment;
+    private flow(value: number): Flow {
+        const flows: readonly Flow[] = ["none", "left", "center", "right"];
+        const flow = flows[value];
+        if (flow === undefined) throw new Error(`native result contains invalid table flow ${value}`);
+        return flow;
     }
 
     private uint(offset: number): number {

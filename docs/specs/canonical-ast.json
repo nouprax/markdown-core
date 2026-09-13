@@ -11,7 +11,7 @@
         "Placement": ["embedded", "standalone"],
         "BibMode": ["normal", "authorInText", "suppressAuthor"],
         "ListFlavor": ["bullet", "ordered"],
-        "TableAlignment": ["none", "left", "center", "right"]
+        "Flow": ["none", "left", "center", "right"]
     },
     "kinds": [
         {
@@ -795,8 +795,8 @@
             "scoped": false,
             "fields": [
                 {
-                    "name": "alignment",
-                    "type": "TableAlignment",
+                    "name": "flow",
+                    "type": "Flow",
                     "optional": false
                 },
                 {
@@ -805,7 +805,7 @@
                     "optional": true
                 }
             ],
-            "dump": "alignment:relative within the compact columns array"
+            "dump": "flow:relative within the compact columns array"
         },
         "Record": {
             "scoped": false,

@@ -1060,7 +1060,7 @@ A transitional finding names the landing-plan item that resolves it.
 - **ON-1** `:66,75-77` — D/A — the two-hyphen rule (OI-3).
 - **ON-2** `:65` — T (`M6`) — "the existing typed model" names the pre-vNext
   shape. Rule: Obsidian pipe tables produce `Table(caption=null, columns,
-  head=[header row], content=[rows], foot=[])` with `TableColumn(alignment,
+  head=[header row], content=[rows], foot=[])` with `TableColumn(flow,
   relative=null)` and `TableCell(rowspan=1, colspan=1, content)` holding inline
   content.
 - **ON-3** `:83-86,102-104` — C — "overflow" has no bound and `Int` differs per

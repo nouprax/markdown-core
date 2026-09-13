@@ -2,7 +2,7 @@ package com.nouprax.markdown.core
 
 /** A logical column, with an authored width share when present. */
 public class TableColumn internal constructor(
-    public val alignment: TableAlignment,
+    public val flow: Flow,
     public val relative: Double?,
 )
 

@@ -986,13 +986,13 @@ static bool ensure_more(dump_buffer *buffer, size_t depth) {
     return true;
 }
 
-static const char *alignment_name(markdown_core_table_alignment alignment) {
-    switch (alignment) {
-    case MARKDOWN_CORE_TABLE_ALIGNMENT_LEFT:
+static const char *flow_name(markdown_core_flow flow) {
+    switch (flow) {
+    case MARKDOWN_CORE_FLOW_LEFT:
         return "left";
-    case MARKDOWN_CORE_TABLE_ALIGNMENT_CENTER:
+    case MARKDOWN_CORE_FLOW_CENTER:
         return "center";
-    case MARKDOWN_CORE_TABLE_ALIGNMENT_RIGHT:
+    case MARKDOWN_CORE_FLOW_RIGHT:
         return "right";
     default:
         return "none";
@@ -1223,7 +1223,7 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
             if (i) {
                 buffer_cstr(buffer, ",");
             }
-            buffer_cstr(buffer, alignment_name(column.alignment));
+            buffer_cstr(buffer, flow_name(column.flow));
             buffer_cstr(buffer, ":");
             if (column.relative.has_value) {
                 buffer_double(buffer, column.relative.value);

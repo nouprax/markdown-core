@@ -79,7 +79,7 @@ test("conformance: fields, nullability, and typed table nodes map to JavaScript"
     assert.equal(document.content[1].items[0].tasked, true);
     assert.equal(document.content[1].items[0].completed, true);
     assert.deepEqual(
-        document.content[2].columns.map((column) => column.alignment),
+        document.content[2].columns.map((column) => column.flow),
         ["center"]
     );
     assert.equal(document.content[2].head.length, 1);

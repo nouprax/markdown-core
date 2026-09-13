@@ -114,7 +114,7 @@ have no scope and are not Markup. An empty body still prints its group with
 zero children. The definition's `children` counts bodies only, while its
 `compact` flag records the authored term gap.
 
-A table prints its columns as compact `alignment:relative` values, for example
+A table prints its columns as compact `flow:relative` values, for example
 `columns=[left:0.25,none:null]`. A double uses the shortest decimal that
 round-trips, using ordinary decimal notation for values in `[1e-6, 1e21)`
 and scientific notation otherwise (lowercase `e`, explicit `+` for a positive

@@ -50,7 +50,7 @@ export type {
     Placement,
     Position,
     Scope,
-    TableAlignment
+    Flow
 } from "./values.js";
 export { visit } from "./visitor.js";
 export type { Visitor } from "./visitor.js";

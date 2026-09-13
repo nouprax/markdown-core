@@ -1,21 +1,9 @@
 import MarkdownCoreC
 
-/// One column's alignment, as its delimiter row spelled it.
-public enum TableAlignment: String, Sendable {
-    /// The delimiter row carried no colon for this column.
-    case none
-    /// `:---`
-    case left
-    /// `:---:`
-    case center
-    /// `---:`
-    case right
-}
-
 /// One logical column; no width is authored by a pipe table.
 public struct TableColumn: Sendable {
     /// Alignment of this logical column.
-    public let alignment: TableAlignment
+    public let flow: Flow
     /// Positive finite authored width share, or nil when no width was authored.
     public let relative: Double?
 }
@@ -67,7 +55,7 @@ extension Table.Fields {
             var column = markdown_core_table_column()
             precondition(markdown_core_node_table_column_at(node, index, &column))
             return TableColumn(
-                alignment: TableAlignment(from: column.alignment),
+                flow: Flow(from: column.flow),
                 relative: column.relative.has_value ? column.relative.value : nil
             )
         }

@@ -18,6 +18,19 @@ final enum class com.nouprax.markdown.core/BibMode : kotlin/Enum<com.nouprax.mar
     final fun values(): kotlin/Array<com.nouprax.markdown.core/BibMode> // com.nouprax.markdown.core/BibMode.values|values#static(){}[0]
 }
 
+final enum class com.nouprax.markdown.core/Flow : kotlin/Enum<com.nouprax.markdown.core/Flow> { // com.nouprax.markdown.core/Flow|null[0]
+    enum entry CENTER // com.nouprax.markdown.core/Flow.CENTER|null[0]
+    enum entry LEFT // com.nouprax.markdown.core/Flow.LEFT|null[0]
+    enum entry NONE // com.nouprax.markdown.core/Flow.NONE|null[0]
+    enum entry RIGHT // com.nouprax.markdown.core/Flow.RIGHT|null[0]
+
+    final val entries // com.nouprax.markdown.core/Flow.entries|#static{}entries[0]
+        final fun <get-entries>(): kotlin.enums/EnumEntries<com.nouprax.markdown.core/Flow> // com.nouprax.markdown.core/Flow.entries.<get-entries>|<get-entries>#static(){}[0]
+
+    final fun valueOf(kotlin/String): com.nouprax.markdown.core/Flow // com.nouprax.markdown.core/Flow.valueOf|valueOf#static(kotlin.String){}[0]
+    final fun values(): kotlin/Array<com.nouprax.markdown.core/Flow> // com.nouprax.markdown.core/Flow.values|values#static(){}[0]
+}
+
 final enum class com.nouprax.markdown.core/ListFlavor : kotlin/Enum<com.nouprax.markdown.core/ListFlavor> { // com.nouprax.markdown.core/ListFlavor|null[0]
     enum entry BULLET // com.nouprax.markdown.core/ListFlavor.BULLET|null[0]
     enum entry ORDERED // com.nouprax.markdown.core/ListFlavor.ORDERED|null[0]
@@ -50,19 +63,6 @@ final enum class com.nouprax.markdown.core/Placement : kotlin/Enum<com.nouprax.m
 
     final fun valueOf(kotlin/String): com.nouprax.markdown.core/Placement // com.nouprax.markdown.core/Placement.valueOf|valueOf#static(kotlin.String){}[0]
     final fun values(): kotlin/Array<com.nouprax.markdown.core/Placement> // com.nouprax.markdown.core/Placement.values|values#static(){}[0]
-}
-
-final enum class com.nouprax.markdown.core/TableAlignment : kotlin/Enum<com.nouprax.markdown.core/TableAlignment> { // com.nouprax.markdown.core/TableAlignment|null[0]
-    enum entry CENTER // com.nouprax.markdown.core/TableAlignment.CENTER|null[0]
-    enum entry LEFT // com.nouprax.markdown.core/TableAlignment.LEFT|null[0]
-    enum entry NONE // com.nouprax.markdown.core/TableAlignment.NONE|null[0]
-    enum entry RIGHT // com.nouprax.markdown.core/TableAlignment.RIGHT|null[0]
-
-    final val entries // com.nouprax.markdown.core/TableAlignment.entries|#static{}entries[0]
-        final fun <get-entries>(): kotlin.enums/EnumEntries<com.nouprax.markdown.core/TableAlignment> // com.nouprax.markdown.core/TableAlignment.entries.<get-entries>|<get-entries>#static(){}[0]
-
-    final fun valueOf(kotlin/String): com.nouprax.markdown.core/TableAlignment // com.nouprax.markdown.core/TableAlignment.valueOf|valueOf#static(kotlin.String){}[0]
-    final fun values(): kotlin/Array<com.nouprax.markdown.core/TableAlignment> // com.nouprax.markdown.core/TableAlignment.values|values#static(){}[0]
 }
 
 final enum class com.nouprax.markdown.core/WalkPhase : kotlin/Enum<com.nouprax.markdown.core/WalkPhase> { // com.nouprax.markdown.core/WalkPhase|null[0]
@@ -1056,8 +1056,8 @@ final class com.nouprax.markdown.core/TableCell : com.nouprax.markdown.core/Mark
 }
 
 final class com.nouprax.markdown.core/TableColumn { // com.nouprax.markdown.core/TableColumn|null[0]
-    final val alignment // com.nouprax.markdown.core/TableColumn.alignment|{}alignment[0]
-        final fun <get-alignment>(): com.nouprax.markdown.core/TableAlignment // com.nouprax.markdown.core/TableColumn.alignment.<get-alignment>|<get-alignment>(){}[0]
+    final val flow // com.nouprax.markdown.core/TableColumn.flow|{}flow[0]
+        final fun <get-flow>(): com.nouprax.markdown.core/Flow // com.nouprax.markdown.core/TableColumn.flow.<get-flow>|<get-flow>(){}[0]
     final val relative // com.nouprax.markdown.core/TableColumn.relative|{}relative[0]
         final fun <get-relative>(): kotlin/Double? // com.nouprax.markdown.core/TableColumn.relative.<get-relative>|<get-relative>(){}[0]
 }

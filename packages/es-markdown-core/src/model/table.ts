@@ -1,4 +1,4 @@
-import type { TableAlignment } from "../values.js";
+import type { Flow } from "../values.js";
 import type { MarkupBase } from "./base.js";
 import type { Markup } from "./markup.js";
 
@@ -26,6 +26,6 @@ export interface TableCell extends MarkupBase<"tableCell"> {
 }
 
 export interface TableColumn {
-    readonly alignment: TableAlignment;
+    readonly flow: Flow;
     readonly relative: number | null;
 }

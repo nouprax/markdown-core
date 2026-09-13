@@ -178,7 +178,7 @@ private struct DumpVisitor: MarkupVisitor {
     }
 
     mutating func visit(_ node: Table) {
-        let columns = node.columns.map { "\($0.alignment.rawValue):\($0.relative.map(decimal) ?? "null")" }.joined(
+        let columns = node.columns.map { "\($0.flow.rawValue):\($0.relative.map(decimal) ?? "null")" }.joined(
             separator: ","
         )
         let count = node.head.count + node.content.count + node.foot.count

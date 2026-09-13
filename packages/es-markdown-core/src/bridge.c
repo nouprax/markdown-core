@@ -1148,7 +1148,7 @@ static uint8_t *success_result(const es_build *build, es_build_failure *failure)
         if (column.relative.has_value) {
             memcpy(&bits, &column.relative.value, sizeof(bits));
         }
-        put_u32(output, offset, (uint32_t)column.alignment);
+        put_u32(output, offset, (uint32_t)column.flow);
         put_u32(output, offset + 4, column.relative.has_value ? 1 : 0);
         put_i64(output, offset + 8, bits);
     }
