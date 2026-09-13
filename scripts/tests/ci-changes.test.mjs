@@ -175,6 +175,36 @@ test("docs-only follow-ups reuse all three successful workflows", async () => {
     assert.match(result.reason, /actions\/runs\/3/);
 });
 
+test("consecutive docs-only pushes carry validation forward without retaining ancestor artifacts", async () => {
+    const { options, runs, records } = fixture();
+    let artifacts = new Map(runs.map((run, index) => [run.id, records[index]]));
+    options.github.rest.actions.listWorkflowRunsForRepo = async (query) => {
+        assert.equal(query.head_sha, options.context.payload.before);
+        return { data: { total_count: runs.length, workflow_runs: runs } };
+    };
+    options.evidence = async (_github, _repo, run) => artifacts.get(run.id) ?? null;
+
+    for (let push = 1; push <= 4; push += 1) {
+        assert.equal((await decide(options)).required, false, `documentation push ${push}`);
+
+        // The successful skipped workflows carry forward the same inputs.
+        // Only their fresh artifacts remain available; every ancestor expires.
+        for (const run of runs) {
+            run.id += workflows.length;
+            run.head_sha = options.current.head;
+            run.html_url = `https://github.com/nouprax/markdown-core/actions/runs/${run.id}`;
+        }
+        artifacts = new Map(runs.map((run) => [run.id, { ...options.current }]));
+        options.context.payload.before = options.current.head;
+        options.current.head = String(push).padStart(40, "0");
+        options.context.payload.pull_request.head.sha = options.current.head;
+    }
+
+    assert.equal((await decide(options)).required, false);
+    artifacts.clear();
+    assert.equal((await decide(options)).required, true, "losing the preceding evidence breaks continuity");
+});
+
 test("failures, cancellation, in-progress, skipped, and missing runs require full CI", async () => {
     for (const conclusion of ["failure", "cancelled", "skipped", "neutral", "timed_out", null]) {
         const { runs, options } = fixture();
