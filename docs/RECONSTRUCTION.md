@@ -296,7 +296,12 @@ archives and facade library, the diagnostics archive, the CLI and both Kotlin
 JNI payloads apply it, and every program the tree links against an engine
 archive (the runners, tests and benchmarks) links across units in the same
 configurations, since clang loads its LTO linker plugin only for a link that
-asks for it; the Swift package defines `NDEBUG` in its release
+asks for it. The objects are fat where the compiler can make them, native
+code beside the intermediate code, so an installed archive links under any
+toolchain (Kotlin/Native links the engine with its own clang) and `nm` still
+tells its constants from its variables; where it cannot, an archive is
+compiled per unit and only the shared library and the programs optimize
+across units; the Swift package defines `NDEBUG` in its release
 configuration and its product artifact is a release build; the Wasm build
 optimizes across all of its units with `-flto`. Sanitizer configurations keep
 assertions and stay per-unit. Trivial kind-to-descriptor lookups and buffer

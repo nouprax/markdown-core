@@ -42,19 +42,46 @@ endif()
 # every target defined in the directory that includes this module and below
 # it -- the runners, tests and benchmarks that link an engine archive -- in
 # the same optimized configurations the engine targets take it in.
+#
+# The archives are also installed, and a consumer of an installed archive is
+# any toolchain at all: one that links without LTO, or another compiler's
+# (Kotlin/Native links the engine with its own clang). An object that holds
+# only one compiler's intermediate code is unusable to every other, and even
+# `nm` cannot tell its constants from its variables. So the objects are fat
+# where the compiler can make them: native code next to the intermediate
+# code, the former for any linker, the latter for a link across units. Where
+# it cannot (Apple's clang), an archive is compiled per unit and only the
+# shared library and the programs, whose objects never leave the build,
+# optimize across units.
 if(MARKDOWN_CORE_IPO_AVAILABLE)
     set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE ON)
     set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELWITHDEBINFO ON)
     set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_MINSIZEREL ON)
+    include(CheckCCompilerFlag)
+    # Checked next to the LTO flag itself: the option means nothing without it.
+    string(REPLACE ";" " " CMAKE_REQUIRED_FLAGS "${CMAKE_C_COMPILE_OPTIONS_IPO}")
+    check_c_compiler_flag(-ffat-lto-objects MARKDOWN_CORE_HAVE_FAT_LTO_OBJECTS)
+    unset(CMAKE_REQUIRED_FLAGS)
+    if(MARKDOWN_CORE_HAVE_FAT_LTO_OBJECTS)
+        list(REMOVE_ITEM CMAKE_C_COMPILE_OPTIONS_IPO "-fno-fat-lto-objects")
+        list(APPEND CMAKE_C_COMPILE_OPTIONS_IPO "-ffat-lto-objects")
+        list(REMOVE_ITEM CMAKE_CXX_COMPILE_OPTIONS_IPO "-fno-fat-lto-objects")
+        list(APPEND CMAKE_CXX_COMPILE_OPTIONS_IPO "-ffat-lto-objects")
+    endif()
 endif()
 
 function(markdown_core_apply_build_flags target)
     set_target_properties(${target} PROPERTIES C_VISIBILITY_PRESET hidden VISIBILITY_INLINES_HIDDEN ON)
-    if(MARKDOWN_CORE_IPO_AVAILABLE)
-        set_target_properties(
-            ${target}
-            PROPERTIES INTERPROCEDURAL_OPTIMIZATION_RELEASE ON
-                       INTERPROCEDURAL_OPTIMIZATION_RELWITHDEBINFO ON
-                       INTERPROCEDURAL_OPTIMIZATION_MINSIZEREL ON)
+    get_target_property(type ${target} TYPE)
+    if(MARKDOWN_CORE_IPO_AVAILABLE AND (MARKDOWN_CORE_HAVE_FAT_LTO_OBJECTS OR NOT type STREQUAL "STATIC_LIBRARY"))
+        set(across_units ON)
+    else()
+        # Explicit: the directory seeds ON for every target below the module.
+        set(across_units OFF)
     endif()
+    set_target_properties(
+        ${target}
+        PROPERTIES INTERPROCEDURAL_OPTIMIZATION_RELEASE ${across_units}
+                   INTERPROCEDURAL_OPTIMIZATION_RELWITHDEBINFO ${across_units}
+                   INTERPROCEDURAL_OPTIMIZATION_MINSIZEREL ${across_units})
 endfunction()
