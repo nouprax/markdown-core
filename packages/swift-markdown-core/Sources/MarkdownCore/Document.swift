@@ -69,18 +69,18 @@ public struct Document: Markup {
     /// - Returns: the parsed document.
     /// - Throws: ``ParseError`` when there is no document to return at all.
     public static func parse(_ source: String) throws -> Document {
-        var nativeError: OpaquePointer?
+        var error: OpaquePointer?
         let bytes = Array(source.utf8)
-        let nativeDocument = bytes.withUnsafeBufferPointer { buffer in
-            markdown_core_document_parse(buffer.baseAddress, buffer.count, &nativeError)
+        let document = bytes.withUnsafeBufferPointer { buffer in
+            markdown_core_document_parse(buffer.baseAddress, buffer.count, &error)
         }
-        guard let nativeDocument else {
-            defer { markdown_core_error_free(nativeError) }
-            throw ParseError(from: nativeError)
+        guard let document else {
+            defer { markdown_core_error_free(error) }
+            throw ParseError(from: error)
         }
-        defer { markdown_core_document_free(nativeDocument) }
+        defer { markdown_core_document_free(document) }
 
-        guard let root = markdown_core_document_root(nativeDocument),
+        guard let root = markdown_core_document_root(document),
             markdown_core_node_get_kind(root) == MARKDOWN_CORE_KIND_DOCUMENT
         else {
             throw ParseError(code: .internal, message: "parser returned an invalid document tree")
