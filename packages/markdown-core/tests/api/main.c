@@ -4043,6 +4043,78 @@ static void table_row_geometry_reuse(test_batch_runner *runner) {
     }
 }
 
+/* Every category predicate answers ASCII inline from the ctype classes and
+ * enters a range table only above ASCII: an ASCII document performs no table
+ * search at all, whatever names, keys and attributes it holds. */
+static void unicode_predicate_paths(test_batch_runner *runner) {
+    bool ascii = true;
+    for (int32_t c = 0; c < 128; c++) {
+        bool alpha = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
+        bool digit = c >= '0' && c <= '9';
+        bool punct =
+            (c >= '!' && c <= '/') || (c >= ':' && c <= '@') || (c >= '[' && c <= '`') || (c >= '{' && c <= '~');
+        bool space = c == ' ' || c == '\t' || c == '\n' || c == '\f' || c == '\r';
+        ascii &= !!markdown_core_utf8proc_is_letter(c) == alpha;
+        ascii &= !!markdown_core_utf8proc_is_number(c) == digit;
+        ascii &= !!markdown_core_utf8proc_is_punctuation(c) == punct;
+        ascii &= !!markdown_core_utf8proc_is_punctuation_or_symbol(c) == punct;
+        ascii &= !!markdown_core_utf8proc_is_space(c) == space;
+        ascii &= !markdown_core_utf8proc_is_mark(c);
+    }
+    OK(runner, ascii, "every ASCII scalar answers from its ctype class");
+    static const struct {
+        int32_t scalar;
+        bool letter, number, punctuation, symbol, space, mark;
+    } scalars[] = {
+        {0xe9, true, false, false, false, false, false},    /* e acute */
+        {0x663, false, true, false, false, false, false},   /* Arabic-Indic three */
+        {0x2014, false, false, true, true, false, false},   /* em dash */
+        {0x20ac, false, false, false, true, false, false},  /* euro sign */
+        {0xa0, false, false, false, false, true, false},    /* no-break space */
+        {0x301, false, false, false, false, false, true},   /* combining acute */
+        {0x6587, true, false, false, false, false, false},  /* CJK letter */
+        {0x1f600, false, false, false, true, false, false}, /* emoji symbol */
+        {0x3000, false, false, false, false, true, false},  /* ideographic space */
+        {0x1d7ce, false, true, false, false, false, false}, /* mathematical digit */
+    };
+    for (size_t i = 0; i < sizeof(scalars) / sizeof(*scalars); i++) {
+        int32_t c = scalars[i].scalar;
+        OK(runner,
+           !!markdown_core_utf8proc_is_letter(c) == scalars[i].letter &&
+               !!markdown_core_utf8proc_is_number(c) == scalars[i].number &&
+               !!markdown_core_utf8proc_is_punctuation(c) == scalars[i].punctuation &&
+               !!markdown_core_utf8proc_is_punctuation_or_symbol(c) == scalars[i].symbol &&
+               !!markdown_core_utf8proc_is_space(c) == scalars[i].space &&
+               !!markdown_core_utf8proc_is_mark(c) == scalars[i].mark,
+           "scalar U+%04X has its Unicode categories", (unsigned)c);
+    }
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    static const char *const units[] = {"::: {.name key=value}\ntext [@key2024] tail {#id .c}\n:::\n\n",
+                                        "::: {.n\xc3\xa1me}\nt\xc3\xa9xt [@cl\xc3\xa9] {#\xc3\xaf"
+                                        "d}\n:::\n\n"};
+    for (size_t shape = 0; shape < 2; shape++) {
+        for (size_t count = 256; count <= 4096; count *= 4) {
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+            for (size_t i = 0; i < count; i++) {
+                markdown_core_strbuf_puts(&source, units[shape]);
+            }
+            markdown_core_unicode_range_work = 0;
+            markdown_core_node *root = markdown_core_parse_document((const char *)source.ptr, source.size);
+            OK(runner, root != NULL, "predicate shape parses: shape=%zu count=%zu", shape, count);
+            if (shape == 0) {
+                INT_EQ(runner, markdown_core_unicode_range_work, 0,
+                       "an ASCII document searches no range table: count=%zu", count);
+            } else {
+                OK(runner, markdown_core_unicode_range_work > 0 && markdown_core_unicode_range_work <= 64 * count,
+                   "only scalars above ASCII search a table: count=%zu searches=%zu", count,
+                   markdown_core_unicode_range_work);
+            }
+            markdown_core_node_free(root);
+            markdown_core_strbuf_free(&source);
+        }
+    }
+}
+
 static void key_index_consumer_work(test_batch_runner *runner) {
     enum { PREFIX = 160, LABEL = PREFIX + 16 };
     markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
@@ -6832,6 +6904,7 @@ int main(int argc, char **argv) {
     literal_run_growth(runner);
     bracket_owner_triage(runner);
     table_row_geometry_reuse(runner);
+    unicode_predicate_paths(runner);
     table_dash_suffixes(runner);
     nested_block_lookahead(runner);
     deep_inline_construction(runner);

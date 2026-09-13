@@ -175,6 +175,13 @@ padding. The generated functions own this boundary; there is no shared scanner
 wrapper, callback dispatch or forwarding macro. Table's cursor-based dash
 scanner additionally reports matched spans for its geometry pass.
 
+The Unicode category predicates (letter, number, mark, punctuation,
+punctuation-or-symbol, space) answer ASCII inline from the dialect's ctype
+classes and reach a generated Unicode 17 range table, by binary search, only
+for a scalar above ASCII; `scripts/generate-unicode-categories.mjs` emits every
+table from the pinned runtime, so no predicate is a hand-written comparison
+chain and an ASCII document searches no table at all.
+
 A pipe row is recognized once per line: the open table's matcher keeps the
 geometry it read, with the row's cells, on the parser, and the row opener
 that the block-start pass reaches on the same line reuses it. A header is the
