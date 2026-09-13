@@ -4,6 +4,7 @@
 #include "bracket_state.h"
 bufsize_t markdown_core_inline_reference_label_length(const unsigned char *data, bufsize_t length);
 int markdown_core_inline_link_label(markdown_core_inline_state *inline_state, markdown_core_chunk *raw_label);
+bool markdown_core_reference_definition_possible(const unsigned char *data, bufsize_t length);
 bool markdown_core_block_resolve_reference_link_definitions(markdown_core_parser *parser, markdown_core_node *b);
 typedef enum { LINK_UNMATCHED, LINK_SHORTCUT, LINK_EXPLICIT } markdown_core_link_match;
 typedef struct {

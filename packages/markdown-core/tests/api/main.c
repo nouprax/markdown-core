@@ -3215,7 +3215,7 @@ typedef struct {
     size_t attributes, anchors, definitions, definition_resources, whitespace, brackets, citations, list_markers,
         specimens;
     size_t key_index_branches, key_index_operations;
-    size_t block_dispatch;
+    size_t block_dispatch, reference_probes;
 } inline_work;
 static markdown_core_node *record_inline_work(const markdown_core_element *element, markdown_core_parser *parser,
                                               markdown_core_node *root) {
@@ -3237,6 +3237,7 @@ static markdown_core_node *record_inline_work(const markdown_core_element *eleme
     work->comment = parser->comment_scan_work;
     work->lookahead = parser->block_lookahead_work;
     work->block_dispatch = parser->block_dispatch_work;
+    work->reference_probes = parser->reference_probe_work;
     work->tables = parser->table_scan_work;
     work->table_frontier = parser->table_frontier_peak;
     work->table_workspace_growth = parser->table_workspace_growth;
@@ -3647,6 +3648,36 @@ static void block_start_dispatch_work(test_batch_runner *runner) {
             }
             markdown_core_strbuf_free(&source);
         }
+    }
+}
+
+/* A block front or a definition term is parsed as a reference definition
+ * only when a `]:` closes a label inside the label window; links, citations
+ * and spans that open a paragraph never build the reference parser. */
+static void reference_probe_precheck(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    static const struct {
+        const char *unit;
+        size_t probes_per_unit;
+    } shapes[] = {{"[a](/u) text\n\n", 0}, {"[@key] text\n\n", 0},       {"[x]{.c} text\n\n", 0},
+                  {"[r]: /u\n", 1},        {"[t]\n: definition\n\n", 0}, {"[a]: /u\n\n[a]\n\n", 1}};
+    for (size_t shape = 0; shape < sizeof(shapes) / sizeof(*shapes); shape++) {
+        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+        for (size_t i = 0; i < 512; i++) {
+            markdown_core_strbuf_puts(&source, shapes[shape].unit);
+        }
+        inline_work work = {0};
+        markdown_core_node *root = markdown_core_parse_document_with_mem((const char *)source.ptr, source.size, mem,
+                                                                         measure_inline_work, &work);
+        OK(runner, root != NULL, "reference precheck shape parses: shape=%zu", shape);
+        OK(runner,
+           work.reference_probes <= 512 * shapes[shape].probes_per_unit + (shapes[shape].probes_per_unit ? 2 : 0),
+           "the reference parser runs only for fronts that can be definitions: shape=%zu probes=%zu", shape,
+           work.reference_probes);
+        if (root) {
+            markdown_core_node_free(root);
+        }
+        markdown_core_strbuf_free(&source);
     }
 }
 
@@ -6425,6 +6456,7 @@ int main(int argc, char **argv) {
     key_index_failure(runner);
     key_index_consumer_work(runner);
     block_start_dispatch_work(runner);
+    reference_probe_precheck(runner);
     table_dash_suffixes(runner);
     nested_block_lookahead(runner);
     deep_inline_construction(runner);

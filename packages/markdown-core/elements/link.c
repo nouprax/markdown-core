@@ -1,4 +1,5 @@
 #include "link_scanners.h"
+#include <string.h>
 #include "text_scanners.h"
 #include "citation.h"
 #include "footnote.h"
@@ -13,15 +14,36 @@
 
 static bufsize_t markdown_core_inline_manual_scan_link_url(markdown_core_chunk *input, bufsize_t offset,
                                                            markdown_core_chunk *output);
+/* A definition's label closes with `]:` inside the label window that
+ * follows its `[`. A front without that pair cannot be a definition, so no
+ * inline state is built for it. The test is a necessary condition only; the
+ * reference parser still decides. */
+bool markdown_core_reference_definition_possible(const unsigned char *data, bufsize_t length) {
+    bufsize_t window = length < MAX_LINK_LABEL_LENGTH + 2 ? length : MAX_LINK_LABEL_LENGTH + 2;
+    const unsigned char *at = data + 1, *end = data + window;
+    while (at < end) {
+        const unsigned char *close = memchr(at, ']', (size_t)(end - at));
+        if (!close) {
+            return false;
+        }
+        if (close + 1 < data + length && close[1] == ':') {
+            return true;
+        }
+        at = close + 1;
+    }
+    return false;
+}
+
 bool markdown_core_block_resolve_reference_link_definitions(markdown_core_parser *parser, markdown_core_node *b) {
     bufsize_t pos;
     markdown_core_strbuf *node_content = b->content;
     markdown_core_chunk chunk = {node_content->ptr, node_content->size, 0};
     markdown_core_attribute_parser attributes = {.mem = parser->mem, .data = chunk.data, .length = chunk.len};
-    while (chunk.len && chunk.data[0] == '[') {
+    while (chunk.len && chunk.data[0] == '[' && markdown_core_reference_definition_possible(chunk.data, chunk.len)) {
         int line = b->start_line, column = b->start_column;
         markdown_core_parser_content_place(parser, b, (bufsize_t)(chunk.data - node_content->ptr), &line, &column);
         uint64_t source_key = ((uint64_t)(uint32_t)line << 32) | (uint32_t)column;
+        MARKDOWN_CORE_DIAGNOSTIC(parser->reference_probe_work++;)
         pos = markdown_core_parse_reference_inline(parser->mem, &chunk, parser->refmap, &attributes, source_key);
         if (!pos) {
             break;
