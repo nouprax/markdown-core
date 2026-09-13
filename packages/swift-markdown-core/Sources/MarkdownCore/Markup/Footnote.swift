@@ -9,13 +9,6 @@ import MarkdownCoreC
 /// through the ``MarkupWalkingVisitor`` case that takes a `Footnote`, after
 /// the document's content.
 public struct Footnote: Sendable {
-    /// The source range, from the opening bracket of the definition.
-    public var scope: Scope { fields.scope }
-    /// The normalized label without the caret.
-    public var id: String { fields.id }
-    /// The definition's block content.
-    public var content: MarkupCollection<any Markup> { $fields.collection(fields.content) }
-
     struct Fields: Sendable {
         let scope: Scope
         let id: String
@@ -23,6 +16,13 @@ public struct Footnote: Sendable {
     }
 
     @Stored var fields: Fields
+
+    /// The source range, from the opening bracket of the definition.
+    public var scope: Scope { fields.scope }
+    /// The normalized label without the caret.
+    public var id: String { fields.id }
+    /// The definition's block content.
+    public var content: MarkupCollection<any Markup> { $fields.collection(fields.content) }
 }
 
 extension Footnote.Fields {

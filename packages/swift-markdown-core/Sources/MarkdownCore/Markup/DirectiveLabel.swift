@@ -3,6 +3,15 @@ import MarkdownCoreC
 /// A directive's bracketed label. Its scope spans the brackets, so a label
 /// written empty is still a place in the source.
 public struct DirectiveLabel: Markup {
+    struct Fields: Sendable {
+        let scope: Scope
+        let anchor: String?
+        let attributes: Attributes
+        let content: [Int]
+    }
+
+    @Stored var fields: Fields
+
     /// Where it is, INCLUDING its brackets — which is what makes a label the
     /// source wrote empty still a place. See ``Scope``.
     public var scope: Scope { fields.scope }
@@ -15,15 +24,6 @@ public struct DirectiveLabel: Markup {
 
     /// Dispatches to the visitor's `DirectiveLabel` case.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
-
-    struct Fields: Sendable {
-        let scope: Scope
-        let anchor: String?
-        let attributes: Attributes
-        let content: [Int]
-    }
-
-    @Stored var fields: Fields
 }
 
 extension DirectiveLabel.Fields {

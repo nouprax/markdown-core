@@ -22,6 +22,19 @@ public struct TableColumn: Sendable {
 
 /// One table model for every table syntax. Rows belong to their named group.
 public struct Table: Markup {
+    struct Fields: Sendable {
+        let caption: Int?
+        let columns: [TableColumn]
+        let head: [Int]
+        let content: [Int]
+        let foot: [Int]
+        let scope: Scope
+        let anchor: String?
+        let attributes: Attributes
+    }
+
+    @Stored var fields: Fields
+
     /// The independently owned inline caption, visited before all rows.
     public var caption: TableCaption? { fields.caption.map { $fields.value(at: $0, as: TableCaption.self) } }
     /// The non-empty logical column grid.
@@ -41,19 +54,6 @@ public struct Table: Markup {
 
     /// Dispatches to this node kind's visitor callback.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
-
-    struct Fields: Sendable {
-        let caption: Int?
-        let columns: [TableColumn]
-        let head: [Int]
-        let content: [Int]
-        let foot: [Int]
-        let scope: Scope
-        let anchor: String?
-        let attributes: Attributes
-    }
-
-    @Stored var fields: Fields
 }
 
 extension Table.Fields {
@@ -88,6 +88,15 @@ extension Table.Fields {
 
 /// Cells whose upper-left coordinate starts in this row, in logical order.
 public struct TableRow: Markup {
+    struct Fields: Sendable {
+        let cells: [Int]
+        let scope: Scope
+        let anchor: String?
+        let attributes: Attributes
+    }
+
+    @Stored var fields: Fields
+
     /// Cells starting in this row, in logical column order.
     public var cells: MarkupCollection<TableCell> { $fields.collection(fields.cells) }
     /// Authored source extent. See ``Scope``.
@@ -99,15 +108,6 @@ public struct TableRow: Markup {
 
     /// Dispatches to this node kind's visitor callback.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
-
-    struct Fields: Sendable {
-        let cells: [Int]
-        let scope: Scope
-        let anchor: String?
-        let attributes: Attributes
-    }
-
-    @Stored var fields: Fields
 }
 
 extension TableRow.Fields {
@@ -123,6 +123,17 @@ extension TableRow.Fields {
 
 /// One cell; its spans are positive and cannot cross a row-group boundary.
 public struct TableCell: Markup {
+    struct Fields: Sendable {
+        let rowspan: Int
+        let colspan: Int
+        let content: [Int]
+        let scope: Scope
+        let anchor: String?
+        let attributes: Attributes
+    }
+
+    @Stored var fields: Fields
+
     /// Number of rows occupied within this row group.
     public var rowspan: Int { fields.rowspan }
     /// Number of logical columns occupied.
@@ -138,17 +149,6 @@ public struct TableCell: Markup {
 
     /// Dispatches to this node kind's visitor callback.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
-
-    struct Fields: Sendable {
-        let rowspan: Int
-        let colspan: Int
-        let content: [Int]
-        let scope: Scope
-        let anchor: String?
-        let attributes: Attributes
-    }
-
-    @Stored var fields: Fields
 }
 
 extension TableCell.Fields {
@@ -169,6 +169,15 @@ extension TableCell.Fields {
 
 /// A table's authored caption, with ordinary inline content.
 public struct TableCaption: Markup {
+    struct Fields: Sendable {
+        let content: [Int]
+        let scope: Scope
+        let anchor: String?
+        let attributes: Attributes
+    }
+
+    @Stored var fields: Fields
+
     /// Inline content after removing the caption marker.
     public var content: MarkupCollection<any Markup> { $fields.collection(fields.content) }
     /// Authored source extent, including the caption marker.
@@ -180,15 +189,6 @@ public struct TableCaption: Markup {
 
     /// Dispatches to this node kind's visitor callback.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
-
-    struct Fields: Sendable {
-        let content: [Int]
-        let scope: Scope
-        let anchor: String?
-        let attributes: Attributes
-    }
-
-    @Stored var fields: Fields
 }
 
 extension TableCaption.Fields {

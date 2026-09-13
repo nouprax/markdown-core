@@ -4,15 +4,6 @@ import MarkdownCoreC
 /// Definitions are ordered by source scope and visited after footnotes. The
 /// syntax first lands with P9b; display numbering is derived by consumers.
 public struct Specimen: Sendable {
-    /// The source range of the definition.
-    public var scope: Scope { fields.scope }
-    /// The authored label, or `nil` for an anonymous definition.
-    public var id: String? { fields.id }
-    /// An explicit counter reset, or `nil` when numbering continues.
-    public var start: Int64? { fields.start }
-    /// The parsed content of the definition.
-    public var content: MarkupCollection<any Markup> { $fields.collection(fields.content) }
-
     struct Fields: Sendable {
         let scope: Scope
         let id: String?
@@ -21,6 +12,15 @@ public struct Specimen: Sendable {
     }
 
     @Stored var fields: Fields
+
+    /// The source range of the definition.
+    public var scope: Scope { fields.scope }
+    /// The authored label, or `nil` for an anonymous definition.
+    public var id: String? { fields.id }
+    /// An explicit counter reset, or `nil` when numbering continues.
+    public var start: Int64? { fields.start }
+    /// The parsed content of the definition.
+    public var content: MarkupCollection<any Markup> { $fields.collection(fields.content) }
 }
 
 extension Specimen.Fields {

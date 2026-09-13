@@ -2,6 +2,17 @@ import MarkdownCoreC
 
 /// A definition-list association preserving its authored collections.
 public struct Definition: Markup {
+    struct Fields: Sendable {
+        let scope: Scope
+        let anchor: String?
+        let attributes: Attributes
+        let term: [Int]
+        let content: [[Int]]
+        let compact: Bool
+    }
+
+    @Stored var fields: Fields
+
     /// The authored source range, including the term and all bodies.
     public var scope: Scope { fields.scope }
     /// The explicit anchor, absent when none was attached.
@@ -19,17 +30,6 @@ public struct Definition: Markup {
 
     /// Dispatches to the visitor's `Definition` case.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
-
-    struct Fields: Sendable {
-        let scope: Scope
-        let anchor: String?
-        let attributes: Attributes
-        let term: [Int]
-        let content: [[Int]]
-        let compact: Bool
-    }
-
-    @Stored var fields: Fields
 }
 
 extension Definition.Fields {

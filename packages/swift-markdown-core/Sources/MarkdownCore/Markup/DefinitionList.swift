@@ -2,6 +2,15 @@ import MarkdownCoreC
 
 /// An ordered, nonempty list of term/body associations.
 public struct DefinitionList: Markup {
+    struct Fields: Sendable {
+        let scope: Scope
+        let anchor: String?
+        let attributes: Attributes
+        let definitions: [Int]
+    }
+
+    @Stored var fields: Fields
+
     /// The authored source range, including the term and all bodies.
     public var scope: Scope { fields.scope }
     /// The explicit anchor, absent when none was attached.
@@ -15,15 +24,6 @@ public struct DefinitionList: Markup {
 
     /// Dispatches to the visitor's `DefinitionList` case.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
-
-    struct Fields: Sendable {
-        let scope: Scope
-        let anchor: String?
-        let attributes: Attributes
-        let definitions: [Int]
-    }
-
-    @Stored var fields: Fields
 }
 
 extension DefinitionList.Fields {

@@ -5,6 +5,17 @@ import MarkdownCoreC
 /// Nameless containers use `::: {.class}` or `::: class` and have a nil name.
 /// All container forms share the same closing-fence and block-content rules.
 public struct DirectiveBlock: Markup {
+    struct Fields: Sendable {
+        let scope: Scope
+        let anchor: String?
+        let attributes: Attributes
+        let name: String?
+        let label: Int?
+        let content: [Int]
+    }
+
+    @Stored var fields: Fields
+
     /// Where it is, opening fence through closing fence. See ``Scope``.
     public var scope: Scope { fields.scope }
     /// The explicit anchor, absent when none was attached.
@@ -20,17 +31,6 @@ public struct DirectiveBlock: Markup {
 
     /// Dispatches to the visitor's `DirectiveBlock` case.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
-
-    struct Fields: Sendable {
-        let scope: Scope
-        let anchor: String?
-        let attributes: Attributes
-        let name: String?
-        let label: Int?
-        let content: [Int]
-    }
-
-    @Stored var fields: Fields
 }
 
 extension DirectiveBlock.Fields {

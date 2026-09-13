@@ -6,6 +6,18 @@ import MarkdownCoreC
 /// and `title` are `nil`. A valid opening `[!type]` line
 /// populates metadata; the type is stored as written.
 public struct Callout: Markup {
+    struct Fields: Sendable {
+        let scope: Scope
+        let anchor: String?
+        let attributes: Attributes
+        let variant: String?
+        let collapsed: Bool?
+        let title: [Int]?
+        let content: [Int]
+    }
+
+    @Stored var fields: Fields
+
     /// Where it is. See ``Scope`` — boundaries, not a byte range.
     public var scope: Scope { fields.scope }
     /// The explicit anchor, absent when none was attached.
@@ -28,18 +40,6 @@ public struct Callout: Markup {
 
     /// Dispatches to the visitor's `Callout` case.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
-
-    struct Fields: Sendable {
-        let scope: Scope
-        let anchor: String?
-        let attributes: Attributes
-        let variant: String?
-        let collapsed: Bool?
-        let title: [Int]?
-        let content: [Int]
-    }
-
-    @Stored var fields: Fields
 }
 
 extension Callout.Fields {

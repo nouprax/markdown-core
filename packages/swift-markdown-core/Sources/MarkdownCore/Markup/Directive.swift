@@ -6,6 +6,16 @@ import MarkdownCoreC
 /// directive is always embedded and a ``DirectiveBlock`` always standalone, so
 /// the value was implied by the kind.
 public struct Directive: Markup {
+    struct Fields: Sendable {
+        let scope: Scope
+        let anchor: String?
+        let attributes: Attributes
+        let name: String
+        let label: Int?
+    }
+
+    @Stored var fields: Fields
+
     /// Where it is, its leading colon included. See ``Scope``.
     public var scope: Scope { fields.scope }
     /// The explicit anchor, absent when none was attached.
@@ -19,16 +29,6 @@ public struct Directive: Markup {
 
     /// Dispatches to the visitor's `Directive` case.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
-
-    struct Fields: Sendable {
-        let scope: Scope
-        let anchor: String?
-        let attributes: Attributes
-        let name: String
-        let label: Int?
-    }
-
-    @Stored var fields: Fields
 }
 
 extension Directive.Fields {

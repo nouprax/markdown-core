@@ -17,6 +17,10 @@ or implement index checks. The wrapper adds no heap allocation or synchronizatio
 The index identifies an occurrence within a particular store; it is not a
 source coordinate, and querying by kind alone cannot distinguish two paragraphs.
 
+Each container or scoped type declares its nested `Fields` first, followed by
+`@Stored var fields: Fields`, then its public properties and methods. Native
+conversion initializers remain in `extension Type.Fields` blocks.
+
 Scalar properties read through `fields`; `$fields` exposes the owning store
 for relation queries. Node relations are `MarkupCollection<Element>` values
 carrying that store and a copy-on-write array of indices. Count,

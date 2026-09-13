@@ -28,6 +28,18 @@ public struct ParseError: Error, Sendable {
 
 /// The immutable semantic root returned by a parse.
 public struct Document: Markup {
+    struct Fields: Sendable {
+        let scope: Scope
+        let anchor: String?
+        let attributes: Attributes
+        let content: [Int]
+        let metadata: Metadata?
+        let footnotes: [Int]
+        let specimens: [Int]
+    }
+
+    @Stored var fields: Fields
+
     /// The whole document's boundaries. See ``Scope``.
     public var scope: Scope { fields.scope }
     /// The explicit anchor, absent when none was attached.
@@ -75,18 +87,6 @@ public struct Document: Markup {
         }
         return NativeTreeBuilder(root: root).document()
     }
-
-    struct Fields: Sendable {
-        let scope: Scope
-        let anchor: String?
-        let attributes: Attributes
-        let content: [Int]
-        let metadata: Metadata?
-        let footnotes: [Int]
-        let specimens: [Int]
-    }
-
-    @Stored var fields: Fields
 }
 
 /// Source-order indices recorded while copying one native value.

@@ -6,6 +6,17 @@ import MarkdownCoreC
 /// A reference occurrence is the link its definition names: it answers the
 /// definition's destination and title and keeps its own scope.
 public struct Link: Markup {
+    struct Fields: Sendable {
+        let scope: Scope
+        let anchor: String?
+        let attributes: Attributes
+        let content: [Int]
+        let dest: Destination
+        let title: String?
+    }
+
+    @Stored var fields: Fields
+
     /// Where it is, brackets and parentheses included. See ``Scope``.
     public var scope: Scope { fields.scope }
     /// The explicit anchor, absent when none was attached.
@@ -23,17 +34,6 @@ public struct Link: Markup {
 
     /// Dispatches to the visitor's `Link` case.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
-
-    struct Fields: Sendable {
-        let scope: Scope
-        let anchor: String?
-        let attributes: Attributes
-        let content: [Int]
-        let dest: Destination
-        let title: String?
-    }
-
-    @Stored var fields: Fields
 }
 
 extension Link.Fields {

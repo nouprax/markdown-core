@@ -30,6 +30,15 @@ public enum CitationReferent: Sendable, Hashable {
 /// ``MarkupWalkingVisitor`` case that takes a `Citation`, between the cite's
 /// entering and exiting.
 public struct Citation: Sendable {
+    struct Fields: Sendable {
+        let scope: Scope
+        let referent: CitationReferent
+        let prefix: [Int]
+        let suffix: [Int]
+    }
+
+    @Stored var fields: Fields
+
     /// Where it is. See ``Scope`` — boundaries, not a byte range.
     public var scope: Scope { fields.scope }
     /// What it names.
@@ -40,15 +49,6 @@ public struct Citation: Sendable {
     /// The inline content after the referent, owned by the citation; empty
     /// for an inherited call.
     public var suffix: MarkupCollection<any Markup> { $fields.collection(fields.suffix) }
-
-    struct Fields: Sendable {
-        let scope: Scope
-        let referent: CitationReferent
-        let prefix: [Int]
-        let suffix: [Int]
-    }
-
-    @Stored var fields: Fields
 }
 
 /// An inline citation: one or more ``Citation`` items in authored order.
@@ -58,6 +58,15 @@ public struct Citation: Sendable {
 /// items, lands with `P7`. Its items are scoped values, not content, so a
 /// cite is a leaf.
 public struct Cite: Markup {
+    struct Fields: Sendable {
+        let scope: Scope
+        let anchor: String?
+        let attributes: Attributes
+        let citations: [Int]
+    }
+
+    @Stored var fields: Fields
+
     /// Where it is. See ``Scope`` — boundaries, not a byte range.
     public var scope: Scope { fields.scope }
     /// The explicit anchor, absent when none was attached.
@@ -69,15 +78,6 @@ public struct Cite: Markup {
 
     /// Dispatches to the visitor's `Cite` case.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
-
-    struct Fields: Sendable {
-        let scope: Scope
-        let anchor: String?
-        let attributes: Attributes
-        let citations: [Int]
-    }
-
-    @Stored var fields: Fields
 }
 
 extension BibMode {

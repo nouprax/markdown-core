@@ -2,6 +2,15 @@ import MarkdownCoreC
 
 /// Superscript inline content delimited by `^`.
 public struct Superscript: Markup {
+    struct Fields: Sendable {
+        let scope: Scope
+        let anchor: String?
+        let attributes: Attributes
+        let content: [Int]
+    }
+
+    @Stored var fields: Fields
+
     /// Where it is. See ``Scope`` — boundaries, not a byte range.
     public var scope: Scope { fields.scope }
     /// The explicit anchor, absent when none was attached.
@@ -13,15 +22,6 @@ public struct Superscript: Markup {
 
     /// Dispatches to the visitor's `Superscript` case.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
-
-    struct Fields: Sendable {
-        let scope: Scope
-        let anchor: String?
-        let attributes: Attributes
-        let content: [Int]
-    }
-
-    @Stored var fields: Fields
 }
 
 extension Superscript.Fields {

@@ -8,6 +8,18 @@ import MarkdownCoreC
 /// Complete `W`, `WxH`, `alt|W` and `alt|WxH` labels supply positive 32-bit
 /// dimensions without leading zeros, on both direct and resolved images.
 public struct Media: Markup {
+    struct Fields: Sendable {
+        let scope: Scope
+        let anchor: String?
+        let attributes: Attributes
+        let content: [Int]
+        let dest: Destination
+        let title: String?
+        let dimensions: Dimensions?
+    }
+
+    @Stored var fields: Fields
+
     /// Where it is, `![` through the closing parenthesis. See ``Scope``.
     public var scope: Scope { fields.scope }
     /// The explicit anchor, absent when none was attached.
@@ -26,18 +38,6 @@ public struct Media: Markup {
 
     /// Dispatches to the visitor's `Media` case.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
-
-    struct Fields: Sendable {
-        let scope: Scope
-        let anchor: String?
-        let attributes: Attributes
-        let content: [Int]
-        let dest: Destination
-        let title: String?
-        let dimensions: Dimensions?
-    }
-
-    @Stored var fields: Fields
 }
 
 extension Media.Fields {

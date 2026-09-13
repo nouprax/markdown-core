@@ -5,6 +5,16 @@ import MarkdownCoreC
 /// Both spellings produce this one kind, and the node does not record which the
 /// author used: `# Title` and `Title` over `=====` are the same heading.
 public struct Heading: Markup {
+    struct Fields: Sendable {
+        let scope: Scope
+        let anchor: String?
+        let attributes: Attributes
+        let content: [Int]
+        let level: Int32
+    }
+
+    @Stored var fields: Fields
+
     /// Where it is. See ``Scope`` — boundaries, not a byte range.
     public var scope: Scope { fields.scope }
     /// The explicit anchor, absent when none was attached.
@@ -18,16 +28,6 @@ public struct Heading: Markup {
 
     /// Dispatches to the visitor's `Heading` case.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
-
-    struct Fields: Sendable {
-        let scope: Scope
-        let anchor: String?
-        let attributes: Attributes
-        let content: [Int]
-        let level: Int32
-    }
-
-    @Stored var fields: Fields
 }
 
 extension Heading.Fields {

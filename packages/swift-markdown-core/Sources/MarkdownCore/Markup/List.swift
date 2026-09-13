@@ -35,6 +35,20 @@ public enum OrderedListDelimiter: Equatable, Sendable {
 
 /// A bulleted or numbered list.
 public struct List: Markup {
+    struct Fields: Sendable {
+        let scope: Scope
+        let anchor: String?
+        let attributes: Attributes
+        let items: [Int]
+        let flavor: ListFlavor
+        let start: Int64?
+        let variant: OrderedListVariant?
+        let delimiter: OrderedListDelimiter?
+        let tight: Bool
+    }
+
+    @Stored var fields: Fields
+
     /// Where it is. See ``Scope`` — boundaries, not a byte range.
     public var scope: Scope { fields.scope }
     /// The explicit anchor, absent when none was attached.
@@ -59,20 +73,6 @@ public struct List: Markup {
 
     /// Dispatches to the visitor's `List` case.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
-
-    struct Fields: Sendable {
-        let scope: Scope
-        let anchor: String?
-        let attributes: Attributes
-        let items: [Int]
-        let flavor: ListFlavor
-        let start: Int64?
-        let variant: OrderedListVariant?
-        let delimiter: OrderedListDelimiter?
-        let tight: Bool
-    }
-
-    @Stored var fields: Fields
 }
 
 extension List.Fields {
@@ -117,6 +117,16 @@ extension List.Fields {
 
 /// One item of a ``List``.
 public struct ListItem: Markup {
+    struct Fields: Sendable {
+        let scope: Scope
+        let anchor: String?
+        let attributes: Attributes
+        let content: [Int]
+        let marker: String?
+    }
+
+    @Stored var fields: Fields
+
     /// Where it is. See ``Scope`` — boundaries, not a byte range.
     public var scope: Scope { fields.scope }
     /// The explicit anchor, absent when none was attached.
@@ -135,16 +145,6 @@ public struct ListItem: Markup {
 
     /// Dispatches to the visitor's `ListItem` case.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
-
-    struct Fields: Sendable {
-        let scope: Scope
-        let anchor: String?
-        let attributes: Attributes
-        let content: [Int]
-        let marker: String?
-    }
-
-    @Stored var fields: Fields
 }
 
 extension ListItem.Fields {

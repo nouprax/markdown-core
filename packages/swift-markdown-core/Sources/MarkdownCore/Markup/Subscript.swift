@@ -2,6 +2,15 @@ import MarkdownCoreC
 
 /// Subscript inline content delimited by `~`.
 public struct Subscript: Markup {
+    struct Fields: Sendable {
+        let scope: Scope
+        let anchor: String?
+        let attributes: Attributes
+        let content: [Int]
+    }
+
+    @Stored var fields: Fields
+
     /// Where it is. See ``Scope`` — boundaries, not a byte range.
     public var scope: Scope { fields.scope }
     /// The explicit anchor, absent when none was attached.
@@ -13,15 +22,6 @@ public struct Subscript: Markup {
 
     /// Dispatches to the visitor's `Subscript` case.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
-
-    struct Fields: Sendable {
-        let scope: Scope
-        let anchor: String?
-        let attributes: Attributes
-        let content: [Int]
-    }
-
-    @Stored var fields: Fields
 }
 
 extension Subscript.Fields {
