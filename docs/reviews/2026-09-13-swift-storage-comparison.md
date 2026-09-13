@@ -1,99 +1,128 @@
-# Swift ownership 与 swift-markdown 对照
+# Swift ownership compared with swift-markdown
 
-对照版本：swiftlang/swift-markdown `75e3df1d7b664ef3c96595de36c243b98599b3bc`
-（2026-09-08 的 main），swift-cmark `7898f1b3e4befeecee56cb4a3bc8eebd2cb63219`。
-本仓库实现为 `ccda8bd4`。实验在 macOS arm64，Swift 6.3.3，优化构建下执行。
+Comparison versions: swiftlang/swift-markdown
+`75e3df1d7b664ef3c96595de36c243b98599b3bc` (main as of 2026-09-08),
+swift-cmark `7898f1b3e4befeecee56cb4a3bc8eebd2cb63219`, and this repository at
+`ccda8bd4`. Experiments used optimized builds on macOS arm64 with Swift 6.3.3.
 
-## 定义与职责
+## Definitions and responsibilities
 
-swift-markdown 同样将公开节点包装与内部存储分开：
+swift-markdown also separates public node wrappers from internal storage:
 
 - [RawMarkupData](https://github.com/swiftlang/swift-markdown/blob/75e3df1d7b664ef3c96595de36c243b98599b3bc/Sources/Markdown/Base/RawMarkup.swift#L18)
-  用 enum 表达各种节点的 payload；`RawMarkup` 用 `ManagedBuffer` 持有 header
-  与尾部分配的子节点强引用。
+  uses an enum for node payloads. `RawMarkup` uses `ManagedBuffer` to hold a
+  header and strong child references in trailing storage.
 - [MarkupChildren](https://github.com/swiftlang/swift-markdown/blob/75e3df1d7b664ef3c96595de36c243b98599b3bc/Sources/Markdown/Base/MarkupChildren.swift#L16)
-  是公开惰性 `Sequence`。`makeMarkup` 也有完整的 kind → 公开类型 switch。
+  is a public lazy `Sequence`. `makeMarkup` also contains an exhaustive switch
+  from kind to public type.
 - [_MarkupData](https://github.com/swiftlang/swift-markdown/blob/75e3df1d7b664ef3c96595de36c243b98599b3bc/Sources/Markdown/Base/MarkupData.swift#L112)
-  还记录 parent 和 occurrence identity，服务父节点导航及持久化编辑。
-  根 identity 使用原子计数器；这是其编辑/身份模型的机制，不是迭代释放的必要条件。
+  additionally records the parent and occurrence identity for parent navigation
+  and persistent editing. Root identity uses an atomic counter as part of that
+  editing and identity model; iterative destruction does not require it.
 
-因此，collection view、payload enum 与公开类型包装的组合有合理用途。
-本仓库 `Fields` 保存实际字段；公开类型提供字段访问，它们没有同时保存两份
-独立、需要同步的字段值。内部整数索引的 kind 必须验证，公开字段仍有静态类型。
-前一次回复将这两类结构本身直接判为过度设计、将内部检查笼统归为公共类型保证
-变弱，说得过于绝对。
+Collection views, payload enums, and public type wrappers therefore have valid
+roles. In this repository, `Fields` stores the actual fields and public types
+provide access to them. They do not hold two independent copies that require
+synchronization. Internal integer indices require kind validation; public fields
+remain statically typed. Treating these structures alone as overengineering, or
+equating their internal checks with weaker public type guarantees, overstates
+the problem.
 
-`MarkupCollection` 使取得子关系、count 和下标访问保持 O(1)，不为每次读取
-分配子数组。`StoredMarkup` 让平坦数组能够存储异构 payload，同时禁止容器 view
-重新进入 record 并形成递归拥有关系。其名称与逐类型访问代码可以继续改善；
-这些可读性问题本身不足以推翻所有权模型。
+`MarkupCollection` keeps access to child relations, count, and subscripts at
+O(1), without allocating a child array on each read. `StoredMarkup` allows a flat
+array to hold heterogeneous payloads while preventing container views from
+reentering records and creating recursive ownership. Names and per-type access
+code can be improved; those readability concerns alone do not invalidate the
+ownership model.
 
-集合本身直接保存在所属节点的 `Fields` 中：普通关系为 `[Int]`，
-`Definition.content` 为 `[[Int]]`。后者通过 `MarkupGroups` 按需返回内层
-`MarkupCollection`，取得视图及下标访问均为 O(1)，没有逐组物化。已删除
-原先把 body 集合作为独立 record 的设计；分组不再进入存储枚举或构建队列。
+Collections are stored directly in their owning node's `Fields`: ordinary
+relations use `[Int]`, and `Definition.content` uses `[[Int]]`. `MarkupGroups`
+returns inner `MarkupCollection` views on demand. Obtaining views and accessing
+subscripts are both O(1), with no per-group materialization. The former design
+that stored body collections as separate records has been removed; groups no
+longer enter the storage enum or construction queue.
 
-## 字段查询与节点定位
+## Field queries and node identity
 
-`MarkupStore` 统一持有 records，负责类型化字段查询、节点投影和集合构造。
-29 个容器或 scoped value 都通过 `@Stored var fields: Fields` 声明所需字段；
-节点类型不再直接访问 records、匹配存储 enum 或重复编写错误检查。
-`Stored` 是普通的泛型 property wrapper，保存 store 和私有 index，
-没有 payload 副本、缓存、额外堆对象或宏依赖。`$fields` 提供关系查询所需的 store。
+`MarkupStore` owns the records and centralizes typed field queries, node
+projection, and collection construction. All 29 container or scoped value types
+declare their fields through `@Stored var fields: Fields`; node types no longer
+access records directly, match the storage enum, or repeat error checks.
+`Stored` is an ordinary generic property wrapper containing the store and a
+private index. It introduces no payload copy, cache, additional heap object, or
+macro dependency. `$fields` provides the store needed to query relations.
 
-index 的职责是定位一个 store 内的具体 occurrence。同一个 store 可以包含
-多个 Paragraph，不同 store 也可以在相同位置保存不同节点，因此类型本身
-不足以查询出正确字段。定位信息集中在引用实现中，业务节点不依赖数组下标。
+The index identifies a particular occurrence within a store. One store can
+contain multiple Paragraph nodes, and different stores can hold different nodes
+at the same position, so a type alone cannot identify the correct fields.
+Location details are centralized in the reference implementation; semantic node
+types do not depend on array indices.
 
-对比实验以 `72f14045` 的分散访问器为基线，在 arm64、Apple Swift 6.3.3 下
-使用相同优化 C 对象及 Swift `-O -whole-module-optimization` 构建：
+The comparison used the distributed accessors at `72f14045` as its baseline,
+with the same optimized C objects and Swift `-O -whole-module-optimization`
+builds on arm64 with Apple Swift 6.3.3:
 
-| 诊断项 | 原访问器 | 集中查询 |
+| Diagnostic | Original accessors | Centralized queries |
 | --- | ---: | ---: |
-| TableCaption / Paragraph / Document stride | 各 16 bytes | 各 16 bytes |
-| 4,000 个富文本段落，单次读取 | 2.917 ms | 2.848 ms |
-| 1,000 组 callout/directive/table，单次读取 | 0.340 ms | 0.338 ms |
-| 同一富文本输入，parse + release | 9.521 ms | 9.445 ms |
+| TableCaption / Paragraph / Document stride | 16 bytes each | 16 bytes each |
+| 4,000 rich-text paragraphs, one read pass | 2.917 ms | 2.848 ms |
+| 1,000 callout/directive/table groups, one read pass | 0.340 ms | 0.338 ms |
+| Same rich-text input, parse + release | 9.521 ms | 9.445 ms |
 
-读取实验访问顶层 block 的 scope 及 paragraph 的直接 inline 子节点，未遍历
-所有后代。两种程序顺序运行，每项为五个样本的中位数；这些差异不能作为稳定
-加速比，但未观察到集中查询引入读取退化。优化 LLVM IR 中，Paragraph 和
-TableCaption 的 scope getter 均没有动态 cast 或堆分配；节点投影中的分配
-调用点也与基线相同。类型化查询被特化为对应的 case 检查，没有擦除 Fields
-再装箱的中间步骤。
+The read experiment accessed the scope of top-level blocks and the direct
+inline children of paragraphs, rather than all descendants. The two programs
+ran sequentially; each result is the median of five samples. These differences
+do not establish a stable speedup, but no read regression from centralizing
+queries was observed. In optimized LLVM IR, the Paragraph and TableCaption
+scope getters contain neither dynamic casts nor heap allocations. Allocation
+call sites in node projection also match the baseline. Typed queries specialize
+to the corresponding case checks without an intermediate step that erases and
+reboxes `Fields`.
 
-此前将完整 Fields 直接存进节点的实验仍被排除：TableCaption 从 16 增至
-64 bytes，投影时新增一个 80-byte 堆对象。这个结论只适用于内联 payload，
-不能据此否定把查询职责集中进 store。当前实现保留小型引用并消除分散的访问器。
+The earlier experiment that stored complete Fields directly in each node
+remains rejected: TableCaption grew from 16 to 64 bytes, and projection added
+an 80-byte heap object. That finding applies to inline payload storage; it does
+not argue against centralizing queries in the store. The current implementation
+retains small references and removes the distributed accessors.
 
-## 上游的释放修复与剩余边界
+## Upstream destruction fix and remaining lifecycle boundary
 
-[PR #276](https://github.com/swiftlang/swift-markdown/pull/276) 于 2026-06-22 合并。
-当前 [RawMarkup.deinit](https://github.com/swiftlang/swift-markdown/blob/75e3df1d7b664ef3c96595de36c243b98599b3bc/Sources/Markdown/Base/RawMarkup.swift#L164)
-用工作栈保留 children，反初始化子引用，并在确认子节点唯一持有后继续拆除其
-children，再将 childCount 置零。这个算法已修复 RawMarkup 向下的递归释放。
+[PR #276](https://github.com/swiftlang/swift-markdown/pull/276) merged on
+2026-06-22. At the compared revision,
+[RawMarkup.deinit](https://github.com/swiftlang/swift-markdown/blob/75e3df1d7b664ef3c96595de36c243b98599b3bc/Sources/Markdown/Base/RawMarkup.swift#L164)
+retains children on a work stack, deinitializes child references, and continues
+dismantling a child's children after establishing unique ownership, then sets
+childCount to zero. This algorithm fixes downward recursive destruction of
+RawMarkup.
 
-使用真实上游库、公开 API 和独立进程实验：
+Experiments used the actual upstream library, public APIs, and separate
+processes:
 
-| 实验 | 30,000 层 | 65,536 层 |
+| Experiment | 30,000 levels | 65,536 levels |
 | --- | --- | --- |
-| 循环构造 `BlockQuote([node])`，正常释放根 | 成功 | 成功 |
-| `Document(parsing:)` 解析重复 `> `，正常释放根 | 成功 | 成功 |
-| 构造后逐层 `child(at: 0)`，保留最深 Text，再正常释放 | 成功 | SIGSEGV |
-| 同一最深 Text 实验，打印后 `_exit(0)` 跳过释放 | 未执行 | 成功 |
-| 每次下降立即 `detachedFromParent`，最后正常释放 | 未执行 | 成功 |
+| Repeatedly construct `BlockQuote([node])`, then release the root normally | Passed | Passed |
+| Parse repeated `> ` with `Document(parsing:)`, then release the root normally | Passed | Passed |
+| After construction, descend with `child(at: 0)`, retain the deepest Text, then release normally | Passed | SIGSEGV |
+| Same deepest-Text experiment, printing before `_exit(0)` skips destruction | Not run | Passed |
+| Apply `detachedFromParent` immediately at each descent, then release normally | Not run | Passed |
 
-失败程序已输出到达 65,537 层、literal 为 `leaf`、即将释放。主机 LLDB 显示
-栈反复经过 `destroyGenericBox` 与 `_swift_release_dealloc`，在压栈时触发
-`EXC_BAD_ACCESS`。结合 `_MarkupData.parent: Markup?` 强引用以及逐步 detach
-对照，证据指向公开节点的 parent existential 所有权链。RawMarkup 自身的迭代
-析构没有覆盖这条向上的链。具体崩溃深度受编译器、线程栈等条件影响。
+The failing program printed that it had reached level 65,537, that the literal
+was `leaf`, and that release was about to begin. Host LLDB showed repeated
+`destroyGenericBox` and `_swift_release_dealloc` frames, with `EXC_BAD_ACCESS`
+while pushing a stack frame. Together with the strong
+`_MarkupData.parent: Markup?` reference and the control that detached at every
+step, the evidence points to the ownership chain through public nodes' parent
+existentials. RawMarkup's iterative destructor does not cover that upward
+chain. The precise failure depth depends on the compiler, thread stack, and
+other execution conditions.
 
-本仓库用 65,536 层列表，逐层获取最深 Paragraph 并放弃 Document，经过
-131,073 次父子移动后，正常释放成功。原有根/独立容器释放回归也通过。
-这比较的是生命周期边界，不是两种输入的性能排名。
+In this repository, descending a 65,536-level list to the deepest Paragraph and
+discarding the Document completed 131,073 parent-to-child moves and then
+released normally. Existing root and independently retained container release
+regressions also passed. This compares lifecycle boundaries, not the performance
+ranking of the two input shapes.
 
-可复现实验骨架（上游公开 API）：
+Reproduction sketch using upstream public APIs:
 
 ```swift
 @inline(never) func build(_ depth: Int) -> any BlockMarkup {
@@ -115,23 +144,28 @@ exercise(65_536)
 print("released")
 ```
 
-## 替代方案评估与决定
+## Alternatives and decision
 
-| 方案 | 收益 | 代价或不满足的边界 |
+| Approach | Benefit | Cost or unmet lifecycle boundary |
 | --- | --- | --- |
-| 恢复递归 `[Markup]`，只在 Document 结束时清理 | 公开数组 API 简单 | 独立持有的子树晚于 Document 释放时，仍会递归 ARC 释放。 |
-| 平坦存储，但每次 getter 返回物化数组 | 保留数组类型 | 每次访问复制 O(k) 个子值并分配数组；缓存会引入额外状态和所有权问题。 |
-| 借鉴上游 ManagedBuffer，去掉本库不需要的 parent/编辑机制 | 可按子树保有内存，尾部分配可改善局部性 | 是可行替代，但仍需要 payload 与子关系 view；增加手动初始化/反初始化、唯一引用判定和析构工作栈。移植后还需证明具名关系与 Sendable 边界。 |
-| 当前不可变平坦 Swift 存储 | 无手动析构、跨 parse 状态或锁；类型经 Swift Sendable 检查；释放栈有界 | 容器子树或子关系会保留整个 Swift store，公开子关系类型变更为 collection view。 |
+| Restore recursive `[Markup]` and clean up only when Document ends | Simple public array API | Independently retained subtrees released after Document still trigger recursive ARC destruction. |
+| Keep flat storage but return a materialized array from every getter | Preserves the array type | Each access copies O(k) child values and allocates an array; caching adds state and ownership concerns. |
+| Adapt upstream ManagedBuffer without the parent/editing mechanisms this library does not need | Retains memory per subtree; trailing storage may improve locality | A viable alternative, but still requires payload and child-relation views. Adds manual initialization/deinitialization, unique-reference checks, and a destruction work stack. Named relations and Sendable boundaries would still need to be established after porting. |
+| Current immutable flat Swift storage | No manual destruction, cross-parse state, or locks; Swift checks Sendable conformance; bounded release stack | Container subtrees or child relations retain the entire Swift store, and public child relations become collection views. |
 
-目前没有证据表明替代方案同时更简单并满足全部约束，建议保留当前平坦存储。
-这不是因为上游也有类似类型，而是本库只读、无需 parent 导航或编辑的模型，
-可以用不可变整数边直接消除递归所有权。若后续真实编辑器使用方式表明
-“长期只保留小子树却保留整个文档”成为主要内存成本，应重新评估按子树拥有的
-存储；不应先为这种尚未测出的负载引入自定义析构。
+There is currently no evidence that an alternative is both simpler and meets
+all constraints, so the decision is to retain flat storage. The basis is this
+library's read-only model, which needs neither parent navigation nor editing:
+immutable integer edges directly eliminate recursive ownership. If real editor
+usage later shows that retaining a small subtree for a long time keeps enough
+otherwise-unused document memory alive to become a major cost, reconsider
+storage owned per subtree. Custom destruction is not justified by a workload
+that has not yet been measured.
 
-本轮没有修改生产实现。完整程序、构建日志、退出状态和调用栈保存在本地被忽略的
-`build/review/`：`upstream-release.swift`、`upstream-release-results.json`、
-`upstream-descendant-backtrace.log`、`upstream-detached-each-step.log` 和
-`our-descendant-release.log`。对照不涉及采用上游的 source range 转换；本库的
-cmark UTF-8 editor scope 契约保持原样。
+The upstream lifecycle comparison itself did not change production code. The
+complete programs, build logs, exit statuses, and backtraces were kept in the
+locally ignored `build/review/` directory: `upstream-release.swift`,
+`upstream-release-results.json`, `upstream-descendant-backtrace.log`,
+`upstream-detached-each-step.log`, and `our-descendant-release.log`. The comparison
+does not adopt upstream source-range conversions; this library's cmark UTF-8
+editor scope contract remains unchanged.

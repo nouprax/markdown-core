@@ -1,71 +1,83 @@
-# Map 与连续反斜杠性能设计
+# Map and consecutive-backslash performance design
 
-状态：待 review  
-日期：2026-07-14  
-范围：C parser core、directive attribute normalization、complexity gate
+Status: awaiting review
 
-## 结论
+Date: 2026-07-14
 
-本次性能修复包含两个相互独立、但由同一组端到端测试暴露的问题：
+Scope: C parser core, directive attribute normalization, complexity gate
 
-1. 将继承自 cmark-gfm 的 reference/footnote map 从首次查询时全量
-   `qsort`、随后 `bsearch`，迁移到共享的 byte-key open-addressing hash index；directive
-   attribute 去重复用同一 index。
-2. 当没有 extension 接管 `\\` 时，将连续的 escaped-backslash pairs 一次解码成一个 Text
-   node，避免先创建数千万个临时节点、再在 parser finish 阶段合并。
+## Decision
 
-两项修改都不改变可观察语义。map 保留 reference/footnote 的 first-definition-wins、directive
-的 first-position/last-value-wins；backslash 修改保留 CommonMark escape 结果、source scope 和
-extension dispatch 优先级。
+This performance fix addresses two independent problems exposed by the same
+end-to-end tests:
 
-## 背景与边界
+1. Replace the reference/footnote map inherited from cmark-gfm, which performs
+   a full `qsort` on first lookup and then `bsearch`, with a shared byte-key
+   open-addressing hash index. Directive attribute deduplication reuses it.
+2. When no extension handles `\\`, decode consecutive escaped-backslash pairs
+   into one Text node, avoiding tens of millions of temporary nodes that would
+   later be consolidated at parser finish.
 
-### Map 的来源和使用者
+Neither change alters observable semantics. Maps preserve first-definition-wins
+for references/footnotes and first-position/last-value-wins for directives.
+Backslash changes preserve CommonMark escape results, source scope, and
+extension-dispatch precedence.
 
-`markdown_core_map` 随 2026-07-11 baseline 从 cmark-gfm 继承，并非为了 directive 或
-formula 新建。改造前后的直接使用者都是：
+## Background and boundaries
 
-- reference definitions；
-- footnote definitions。
+### Map origins and consumers
 
-formula 不使用该 map。directive 也不采用 reference label normalization 或 expansion budget
-等 `markdown_core_map` 语义；它只复用本次从 map 中抽出的通用 `markdown_core_key_index`。
+`markdown_core_map` came from cmark-gfm in the 2026-07-11 baseline; it was not
+introduced for directives or formulas. Its direct consumers before and after
+the change are:
 
-因此这里有意分成两层：
+- reference definitions;
+- footnote definitions.
 
-- `markdown_core_key_index`：不拥有 key/value 的 byte-key 索引原语；
-- `markdown_core_map`：在索引之上保留 reference/footnote 的 label normalization、重复定义
-  规则与 expansion accounting。
+Formulas do not use it. Directives do not adopt `markdown_core_map` semantics
+such as reference-label normalization or expansion budgets; they reuse only the
+general `markdown_core_key_index` extracted in this change.
 
-这不是公共 C API。类型和函数声明位于 core-private `map.h`，不进入安装头文件或 platform
-binding。
+The two layers are intentional:
 
-### 非目标
+- `markdown_core_key_index`: a byte-key indexing primitive that owns neither
+  keys nor values;
+- `markdown_core_map`: reference/footnote label normalization, duplicate-definition
+  rules, and expansion accounting on top of the index.
 
-- 不提供通用容器库或任意类型 dictionary。
-- 不更改 reference label 的 Unicode case fold、首尾空白删除和内部空白折叠。
-- 不用 hash iteration order 定义输出顺序。
-- 不恢复 directive 的 HTML-style `#id`、`.class` 或 id/class 特殊合并语义。
-- 不更改 extension 对反斜杠特殊字符的优先处理权。
+This is not public C API. Types and functions are declared in core-private
+`map.h`, excluded from installed headers and platform bindings.
 
-## 1. 通用 byte-key index
+### Non-goals
 
-### 改造前
+- Provide a general container library or arbitrary-type dictionary.
+- Change reference-label Unicode case folding, edge-whitespace trimming, or
+  internal-whitespace folding.
+- Define output order through hash iteration order.
+- Restore directive HTML-style `#id`/`.class` shortcuts or special id/class
+  merging semantics.
+- Change extensions' priority in handling backslash special characters.
 
-继承实现将 definitions 保存在单向链表中。第一次 lookup 时：
+## 1. General byte-key index
 
-1. 为全部 entry 分配 pointer array；
-2. 按 normalized label 和 source age 执行 `qsort`；
-3. 原地压缩重复 label；
-4. 每次 lookup 使用 `bsearch`。
+### Before the change
 
-这使准备阶段为 O(n log n)。同样地，早期 directive attribute 去重会为全部属性建立 pointer
-array 并排序。在 4 KiB → 128 MiB 的 duplicate-attribute endpoint test 中，旧路径的归一化
-slowdown 实测为 4.442。
+The inherited implementation stores definitions in a singly linked list. On
+first lookup it:
 
-### 数据结构
+1. allocates a pointer array for every entry;
+2. runs `qsort` by normalized label and source age;
+3. compacts duplicate labels in place;
+4. uses `bsearch` for each lookup.
 
-`markdown_core_key_index` 是 power-of-two capacity 的开放寻址表：
+Preparation is therefore O(n log n). Earlier directive deduplication likewise
+built and sorted a pointer array for every attribute. The old path measured
+4.442 normalized slowdown in the 4 KiB → 128 MiB duplicate-attribute endpoint
+test.
+
+### Data structure
+
+`markdown_core_key_index` is an open-addressing table with power-of-two capacity:
 
 ```c
 typedef struct markdown_core_key_index_slot {
@@ -76,172 +88,203 @@ typedef struct markdown_core_key_index_slot {
 } markdown_core_key_index_slot;
 ```
 
-关键约束：
+Constraints:
 
-- 最小 capacity 为 16；
-- capacity 始终为 2 的幂，因此 bucket 选择和环绕可用 bit mask；
-- load factor 不超过 0.5；
-- linear probing 每次操作最多检查 64 个 slot；
-- 插入时探测耗尽先执行一次事务性翻倍再重试，仍失败才向调用方报告失败；
-- hash 为逐字节 64-bit FNV-1a，再执行 avalanche mixing；零 hash 被映射为 1；
-- key/value 均为 borrowed pointer，由调用方保证在 index 生命周期内有效；
-- key equality 同时比较 hash、长度和 bytes，不以 hash 相等代替内容相等。
+- Minimum capacity is 16.
+- Capacity is always a power of two, so bucket selection and wrapping use masks.
+- Load factor never exceeds 0.5.
+- Linear probing examines at most 64 slots per operation.
+- Probe exhaustion during insertion first triggers one transactional doubling
+  and retry; only another failure is reported to the caller.
+- Hashing uses byte-by-byte 64-bit FNV-1a followed by avalanche mixing; zero
+  hashes map to 1.
+- Keys and values are borrowed pointers whose validity for the index lifetime
+  is the caller's responsibility.
+- Equality compares hash, length, and bytes; equal hashes do not imply equal keys.
 
-目标不是提供针对 hostile input 的密码学 hash，而是让正常 lookup/insertion 为 expected O(1)，
-同时对不利 collision 设置明确的工作上界。
+The goal is expected O(1) ordinary lookup/insertion with an explicit work bound
+for adverse collisions, not cryptographic hashing for hostile inputs.
 
-### 扩容与失败原子性
+### Growth and failure atomicity
 
-插入使 load factor 超过 0.5 时，capacity 翻倍。扩容先分配新表并完整 rehash；只有全部 entry
-成功迁移后才替换旧表。因此 allocation、overflow 或 probe-limit 失败不会留下部分迁移的
-index。
+Insertion doubles capacity when load would exceed 0.5. Growth allocates a new
+table and fully rehashes before replacing the old table. Allocation, overflow,
+or probe-limit failures therefore never leave a partially migrated index.
 
-index API 以返回 0 报告初始化、插入或扩容失败。它不尝试吞掉错误后继续使用不完整表。
+Index APIs return 0 for initialization, insertion, or growth failure. They do
+not suppress errors and continue using an incomplete table.
 
-### Collision 与降级路径
+### Collisions and fallback
 
-64-probe limit 避免构造 collision 将 linear probing 直接退化成无界 O(n²)。probe 聚簇分两类，
-处理方式不同：
+The 64-probe limit prevents constructed collisions from degrading linear
+probing into unbounded O(n²). Two cluster types receive different treatment:
 
-- 拥挤导致的聚簇（诚实输入在低 load 下运气差）：插入在探测耗尽时先做一次事务性翻倍，
-  额外的 mask bit 会打散这类聚簇，插入随后成功；
-- 相同 hash 导致的聚簇（构造输入）：翻倍不改变落点，重试仍然失败，此时整个 index 被
-  释放，map 回退到继承的 pointer `qsort`/`bsearch` 路径。
+- Crowding with distinct hashes, such as unlucky ordinary input at low load:
+  insertion performs one transactional doubling after probe exhaustion. The
+  additional mask bit disperses these clusters and insertion can succeed.
+- Identical hashes from constructed input: doubling does not change placement,
+  so the retry still fails. The entire index is released and the map falls back
+  to inherited pointer `qsort`/`bsearch`.
 
-因此：
+Thus:
 
-- 正常输入：expected O(n) prepare，expected O(1) lookup；
-- probe/allocation fallback：O(n log n) prepare，O(log n) lookup；
-- 不存在“前半使用 hash、后半使用不完整 hash”的混合状态。
+- ordinary input: expected O(n) preparation and expected O(1) lookup;
+- probe/allocation fallback: O(n log n) preparation and O(log n) lookup;
+- no mixed state using a complete hash for some entries and an incomplete one
+  for the rest.
 
-保留 `qsort` 是有意的故障隔离，不是普通输入的数据路径。`blocks.c` 中另一个按 footnote
-source index 排序的 `qsort` 只决定最终输出顺序，与 map lookup/duplicate normalization 无关。
+Retaining `qsort` deliberately isolates failures; it is not the ordinary-input
+path. The other `qsort` in `blocks.c`, sorting footnotes by source index, controls
+final output order and is unrelated to lookup or duplicate normalization.
 
-分配失败在全引擎内是单一契约：**任何 `calloc`/`realloc` 失败（包括 `strbuf` 扩容与其
-2 GiB 上限）都优雅降级，引擎不 abort、无未定义行为，且损失永远被上报**。机制分三层：
+Allocation failure follows one engine-wide contract: **every `calloc`/`realloc`
+failure, including `strbuf` growth and its 2 GiB limit, degrades gracefully
+without abort or undefined behavior, and any loss is reported**. Three layers
+implement it:
 
-- `markdown_core_strbuf` 携带粘性 `oom` 位：扩容失败后旧内容保持有效、后续写入为
-  no-op，`detach` 以 NULL 报告损失（合法空串仍返回 owned ""，NULL 无歧义）。
-- parser 与 map 各携带粘性 `oom` 位，汇聚所有结构性损失：节点/块/delimiter 构造失败、
-  行缓冲污染、定义或 attribute 丢失、extension 打开/postprocess 中的分配失败。凡是
-  "分配失败会被误读成合法输入形态"的路径（list marker、table row、directive scan 等）
-  都区分两种失败并只对分配失败置位。
-- `markdown_core_parser_finish` 在任一 `oom` 位置位时释放语法树并返回 NULL——截断文档
-  不会伪装成功。唯一允许"注入失败仍成功"的路径是无损回退（map 的 pointer-sort 回退、
-  容量采样降级），此时输出与未注入时逐字节一致。
+- `markdown_core_strbuf` carries sticky `oom` state. Failed growth preserves
+  existing content, later writes become no-ops, and `detach` reports loss with
+  NULL. A valid empty string still returns owned "", so NULL is unambiguous.
+- Parser and map sticky `oom` bits aggregate structural loss: failed node/block/
+  delimiter construction, contaminated line buffers, lost definitions or
+  attributes, and allocations during extension opening/postprocessing. Paths
+  where allocation failure could be mistaken for valid input shapes, such as
+  list markers, table rows, and directive scans, distinguish the failures and
+  set the bit only for allocation failure.
+- `markdown_core_parser_finish` frees the syntax tree and returns NULL if any
+  `oom` bit is set; truncated documents cannot masquerade as success. Injected
+  failure may still succeed only through lossless fallback, such as map pointer
+  sorting or capacity-sampling fallback, producing output identical to the
+  uninjected control.
 
-公开 API 直接内建失败报告：`parser_new`/`map_new`/`iter_new` 返回 NULL；
-`markdown_core_consolidate_text_nodes`、`markdown_core_node_own` 与各 setter 返回
-int；`markdown_core_node_own` 在复制失败时清空 chunk 而不是留下借用指针。
+Public APIs report failures directly: `parser_new`/`map_new`/`iter_new` return
+NULL; `markdown_core_consolidate_text_nodes`, `markdown_core_node_own`, and
+setters return int. If copying fails, `markdown_core_node_own` clears the chunk
+rather than leaving a borrowed pointer.
 
-该契约由 fallback_runner 的 `oom_sweep` 回归把守：对覆盖全部特性的语料，逐一令第
-k 次分配失败（k 扫过全部分配点），断言解析要么返回 NULL、要么产出与对照完全一致的
-AST；套件同时在 ASan/UBSan 下运行。
+fallback_runner's `oom_sweep` protects the contract. It fails the kth allocation
+in turn across every allocation point of a corpus covering all features, then
+asserts that parsing returns either NULL or an AST identical to the control.
+The suite also runs under ASan/UBSan.
 
-### Reference 与 footnote 重复语义
+### Duplicate reference and footnote semantics
 
-definitions 链表为 newest-first，但 Markdown 语义要求同名 reference 的第一个 source
-definition 生效。建索引时从 newest 遍历到 oldest，并允许同 key replace；最后留在 slot
-中的正是 oldest，即 source 中最先出现的 definition。
+The definitions list is newest-first, but Markdown requires the first authored
+definition for a reference label to win. Index construction walks newest to
+oldest and permits replacement for equal keys. The final slot therefore holds
+the oldest definition, which appears first in source.
 
-map 仍在每次 lookup 后执行原有 expansion limit accounting；hash index 不绕过
-`max_ref_size` / `ref_size` 防护。
+The map still performs the original expansion-limit accounting after each
+lookup. Hash indexing does not bypass `max_ref_size` / `ref_size` protection.
 
-footnote 的 lookup 使用相同规则；需要按 source index 输出时显式收集并排序，不能依赖 hash
-slot order。
+Footnote lookup uses the same rule. Source-index output order requires explicit
+collection and sorting, never reliance on hash-slot order.
 
-建索引的初始容量复用 directive 的采样策略（见下节）：定义总数超过 1024 时先采样，
-duplicate-heavy 的定义链表按采样 unique 数起步、依赖摊还扩容，不再按每个 source
-occurrence 预分配 slot。
+Initial index capacity reuses directive sampling below. Above 1024 definitions,
+a sample determines the starting capacity. Duplicate-heavy lists start from the
+sample's unique count and grow amortized, rather than preallocating a slot for
+every source occurrence.
 
-## 2. Directive attribute 去重
+## 2. Directive attribute deduplication
 
-directive attributes 是普通 key/value metadata。`id` 和 `class` 与其他 key 相同；HTML-style
-`#id` 和 `.class` shortcut 被拒绝。
+Directive attributes are ordinary key/value metadata. `id` and `class` behave
+like other keys; HTML-style `#id` and `.class` shortcuts are rejected.
 
-重复 key 的契约为：
+The duplicate-key contract is:
 
-- 保留第一次出现的位置；
-- 使用最后一次出现的 value；
-- 最终 JSON 只包含一个 key。
+- preserve the first occurrence's position;
+- use the last occurrence's value;
+- emit only one key in final JSON.
 
-实现分两遍：第一遍将每个 key 的 first attribute 放入 index；第二遍再次按 source order
-扫描，将后续 value 交换到 first attribute，并将重复节点标记为 inactive。这既不依赖 hash
-iteration order，也不需要为输出重新排序。
+Implementation takes two passes. The first indexes the first attribute for each
+key. The second scans source order again, swaps later values into the first
+attribute, and marks duplicates inactive. Output neither depends on hash
+iteration order nor needs another sort.
 
-如果 index 初始化或插入失败，directive 回退到 pointer sort。fallback 仍显式把最后一个
-value 移到第一个 attribute，并关闭其余重复项，因此两条路径具有相同语义。
+If index initialization or insertion fails, directives fall back to pointer
+sorting. Fallback explicitly moves the last value to the first attribute and
+disables other duplicates, preserving identical semantics across both paths.
 
-### 初始容量采样
+### Initial-capacity sampling
 
-unique-heavy 输入希望按总 attribute count 预分配，duplicate-heavy 输入则不应按数百万个
-source occurrences 浪费空间。count 大于 1024 时先采样最多 1024 个 key：
+Inputs dominated by unique keys benefit from preallocating by total attribute
+count; duplicate-heavy inputs should not waste space on millions of source
+occurrences. When count exceeds 1024, sample at most 1024 keys:
 
-- 样本 unique ratio 大于 0.5：按总 count 初始化；
-- 否则：按样本 unique count 初始化，后续按需渐进扩容。
+- if the sample's unique ratio exceeds 0.5, initialize from total count;
+- otherwise, initialize from sample unique count and grow incrementally as needed.
 
-采样只影响初始 capacity，不影响最终 key 集合或重复语义。采样 index 自身失败时按总 count
-初始化，保证它只是优化提示而不是 correctness 前提。
+Sampling affects only initial capacity, not the final key set or duplicate
+semantics. If the sampling index fails, initialize from total count, keeping
+sampling an optimization hint rather than a correctness prerequisite.
 
-## 3. 连续反斜杠批处理
+## 3. Consecutive-backslash batching
 
-### 触发路径
+### Triggering path
 
-问题由 malformed/unclosed directive 输入暴露，例如：
+Malformed/unclosed directives expose the issue, for example:
 
 ```markdown
 :x{key="\\\\\\\\\\\\...
 ```
 
-directive scanner 因缺少 closing quote/brace 不接管该片段，输入按普通 CommonMark inline
-继续解析。对于连续 `\\`，原 `handle_backslash` 每次把一对 source bytes 解码为一个 literal
-backslash，并创建一个 Text node。parser finish 最终会合并相邻 Text node，所以输出正确，
-但大输入会在合并前持有与 pair 数量同阶的临时节点、allocation 和 linked-list 操作。
+Without a closing quote/brace, the directive scanner declines the fragment and
+ordinary CommonMark inline parsing continues. For consecutive `\\`, the old
+`handle_backslash` decodes one pair of source bytes to one literal backslash and
+creates one Text node per call. Parser finish merges adjacent Text nodes, so
+output is correct, but large inputs retain temporary nodes, allocations, and
+linked-list work proportional to the number of pairs before consolidation.
 
-128 MiB case 因而曾在远端得到 9.850 的 normalized slowdown，本机约耗时 2.49 秒。
+The 128 MiB case once measured 9.850 normalized slowdown remotely and took
+about 2.49 seconds locally.
 
-### 新路径
+### New path
 
-当且仅当以下条件全部满足时启用批处理：
+Batching runs only when all conditions hold:
 
-1. 当前字符为 `\\`；
-2. 下一个字符也是可 escape 的 `\\`；
-3. 没有 extension 注册并接管 `\\` special char；
-4. 连续 run 至少包含两对 backslash。
+1. the current character is `\\`;
+2. the next character is also an escapable `\\`;
+3. no registered extension handles the `\\` special character;
+4. the consecutive run contains at least two backslash pairs.
 
-实现一次扫描完整的 pair run，分配最终长度的一块 buffer，填入 `run_bytes / 2` 个 literal
-backslash，并创建一个 Text node。单 pair、奇数结尾、line ending、非 punctuation 和 allocation
-失败仍走原有逐项路径。
+The implementation scans the complete pair run once, allocates a buffer of the
+final size, fills it with `run_bytes / 2` literal backslashes, and creates one
+Text node. Single pairs, odd tails, line endings, non-punctuation, and allocation
+failure retain the original per-item path.
 
-### 语义等价性
+### Semantic equivalence
 
-对长度为 `2k` 的连续 backslash run，旧路径产生 k 个相邻 Text node，每个 literal 为一个
-backslash；parser finish 将它们合并为长度 k 的 Text node。新路径直接产生同一个最终节点。
+For a consecutive run of `2k` backslashes, the old path creates k adjacent Text
+nodes, each with one literal backslash. Parser finish merges them into one
+length-k Text node. The new path creates that final node directly.
 
-保持不变的边界包括：
+Preserved boundaries:
 
-- decoded literal bytes 相同；
-- node scope 仍覆盖整个 consumed source run；
-- 偶数 pair run 后的下一个字符仍由下一次 inline dispatch 处理；
-- 奇数 run 的最后一个 backslash 仍按其后字符决定 escape、hard break 或 literal；
-- extension hook 先于 core backslash handler，且注册 `\\` extension 时批处理明确禁用；
-- formula 的 delimiter/escape 规则未被本修改重新定义。
+- decoded literal bytes are identical;
+- node scope still covers the full consumed source run;
+- the character after an even pair run goes through the next inline dispatch;
+- the final backslash of an odd run still becomes an escape, hard break, or
+  literal according to the next character;
+- extension hooks run before the core handler, and registering a `\\` extension
+  explicitly disables batching;
+- formula delimiter/escape rules are not redefined.
 
-这项优化位于通用 inline core，是因为性能成本发生在 directive 回退后的普通 Markdown
-解析中；把它放进 directive scanner 会漏掉其他产生相同 backslash run 的输入。
+This optimization belongs in general inline core because the cost occurs in
+ordinary Markdown parsing after directive fallback. Putting it in the directive
+scanner would miss other inputs producing the same backslash run.
 
-## 4. 复杂度验证
+## 4. Complexity validation
 
-complexity runner 对每个 case 测量 4 KiB 与 128 MiB 两个 endpoint。输入跨度为 32768，判定
-值为：
+The complexity runner measures each case at 4 KiB and 128 MiB endpoints, a
+32768-fold input range. Its decision value is:
 
 ```text
 normalized slowdown = large_time / small_time / 32768
 ```
 
-当前覆盖八类输入：
+Eight input classes are covered:
 
-| 类别 | Case |
+| Category | Case |
 | --- | --- |
 | directive scanner | valid long quoted value |
 | directive/backslash | valid consecutive backslashes |
@@ -252,54 +295,62 @@ normalized slowdown = large_time / small_time / 32768
 | inherited map | many unique references |
 | inherited map | many duplicate references |
 
-最新本机 normalized slowdown 为 0.663–1.164。128 MiB unclosed-backslash 从约 2.49 秒降至
-0.189 秒，修复后为 0.979×。
+Latest local normalized slowdowns are 0.663–1.164. The 128 MiB
+unclosed-backslash case fell from about 2.49 seconds to 0.189 seconds, measuring
+0.979× after the fix.
 
-wall-clock threshold 为 4.0，而不是把 2.0 当作 n log n 的数学判别线。原因是 128 MiB
-解析会创建数百万个对象并跨越 4 KiB 样本没有覆盖的 allocator/cache regime；远端 macOS
-上 expected-linear unique-attribute hash path 曾测得 2.753–3.318。4.0 仍低于已测旧 sort
-路径的 4.442，并能拒绝旧 backslash 路径的 9.850。
+The wall-clock threshold is 4.0, rather than treating 2.0 as a mathematical
+discriminator for n log n. Parsing 128 MiB creates millions of objects and
+crosses allocator/cache regimes absent from a 4 KiB sample. Remote macOS
+measurements of the expected-linear unique-attribute hash path reached
+2.753–3.318. The 4.0 threshold remains below the measured old sort path's 4.442
+and rejects the old backslash path's 9.850.
 
-timing gate 负责捕获真实端到端退化，但不单独证明算法复杂度。结构性保证来自：
+The timing gate detects real end-to-end degradation but does not independently
+prove algorithmic complexity. Structural guarantees come from:
 
-- 0.5 load factor；
-- 64-probe hard limit，以及探测耗尽后的单次事务性扩容重试；
-- transactional growth；
-- fallback_runner 的确定性回退回归：注入 allocator 强制 pointer-sort 路径并与 hash 路径
-  逐项对拍（reference map 与 directive attributes 各一）、构造聚簇 key 验证探测耗尽触发
-  扩容而非失败、双路径分配失败时 lookup 返回未命中且事后可恢复；
-- fallback_runner 的 `oom_sweep`：对全特性语料扫过每一个分配点注入失败，断言
-  "NULL 或逐字节一致"，把优雅降级契约钉死为回归；
-- 50,000-entry legacy-hash collision 回归（针对继承的 32-bit hash 构造；在当前 64-bit
-  hash 下等价于随机 key 冒烟，不再作为 collision 行为的证明）；
-- unique/duplicate map endpoint tests；
-- CommonMark correctness、directive fixtures 和 sanitizer suites。
+- 0.5 load factor;
+- the hard 64-probe limit and one transactional growth retry on exhaustion;
+- transactional growth;
+- deterministic fallback_runner regressions: injected allocators force pointer
+  sorting for item-by-item comparisons against hashing, separately for reference
+  maps and directive attributes; constructed clusters verify exhaustion triggers
+  growth rather than immediate failure; allocation failure on both paths yields
+  a lookup miss and permits later recovery;
+- fallback_runner `oom_sweep`, injecting failure at every allocation point of
+  the full-feature corpus and asserting "NULL or byte-for-byte identical" to
+  protect graceful degradation;
+- a 50,000-entry legacy-hash collision regression constructed against the
+  inherited 32-bit hash. Under the current 64-bit hash this is equivalent to a
+  random-key smoke test, not evidence of collision handling;
+- unique/duplicate map endpoint tests;
+- CommonMark correctness, directive fixtures, and sanitizer suites.
 
 ## 5. Review checklist
 
-Reviewer 应重点确认：
+Reviewers should verify:
 
-- `markdown_core_key_index` 的 key/value lifetime 是否始终长于 index；
-- capacity arithmetic、翻倍和 allocation size 是否完整检查 overflow；
-- growth 失败是否保持旧 index 不变；
-- 探测耗尽是否恰好扩容一次后重试，仍失败才完整回退，且 fallback 与 hash path 重复语义
-  一致；
-- reference 的 first-definition-wins 是否因 newest-first 链表遍历方向得到保留；
-- directive 是否确实保持 first-position/last-value-wins；
-- 任意输出是否错误依赖 hash slot order；
-- backslash fast path 是否只在没有 extension owner 时进入；
-- odd/even runs、单 pair、allocation failure 与 source scope 是否保持旧行为；
-- performance gate 是否继续同时覆盖正常、重复、malformed 和 collision 输入。
+- keys/values outlive `markdown_core_key_index`;
+- capacity arithmetic, doubling, and allocation sizes fully check overflow;
+- failed growth leaves the old index unchanged;
+- probe exhaustion triggers exactly one growth and retry before complete
+  fallback, and fallback/hash duplicate semantics agree;
+- newest-first list traversal preserves reference first-definition-wins;
+- directives retain first-position/last-value-wins;
+- no output incorrectly depends on hash-slot order;
+- the backslash fast path runs only without an extension owner;
+- odd/even runs, single pairs, allocation failures, and source scopes preserve
+  prior behavior;
+- performance gates continue covering ordinary, duplicate, malformed, and
+  collision inputs.
 
-## 6. 相关实现与测试
+## 6. Related implementation and tests
 
-- `packages/markdown-core/core/map.c` / `map.h`：共享 index 与 inherited map adapter；
-- `packages/markdown-core/core/references.c`：reference entry ownership；
-- `packages/markdown-core/core/footnotes.c`、`blocks.c`：footnote lookup 与显式输出排序；
-- `packages/markdown-core/extensions/directive.c`：attribute normalization 与容量采样；
-- `packages/markdown-core/core/inlines.c`：连续 backslash pair fast path；
-- `packages/markdown-core/tests/runners/complexity_runner.c`：4 KiB → 128 MiB endpoint gate；
-- `packages/markdown-core/tests/runners/pathological_runner.c`：legacy-hash collision regression；
-- `packages/markdown-core/tests/runners/fallback_runner.c`：allocator 注入的 sorted-fallback
-  对拍、构造聚簇的扩容重试与 OOM 降级回归。
-
+- `packages/markdown-core/core/map.c` / `map.h`: shared index and inherited-map adapter;
+- `packages/markdown-core/core/references.c`: reference entry ownership;
+- `packages/markdown-core/core/footnotes.c`, `blocks.c`: footnote lookup and explicit output sorting;
+- `packages/markdown-core/extensions/directive.c`: attribute normalization and capacity sampling;
+- `packages/markdown-core/core/inlines.c`: consecutive-backslash pair fast path;
+- `packages/markdown-core/tests/runners/complexity_runner.c`: 4 KiB → 128 MiB endpoint gate;
+- `packages/markdown-core/tests/runners/pathological_runner.c`: legacy-hash collision regression;
+- `packages/markdown-core/tests/runners/fallback_runner.c`: allocator-injected sorted-fallback comparisons, constructed-cluster growth retries, and OOM fallback regressions.

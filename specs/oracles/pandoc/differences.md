@@ -1,72 +1,88 @@
-# Pandoc 差异用例逐项说明（原 34 项，现存 33 项）
+# Pandoc differences explained by case (originally 34, now 33)
 
-这里的 34 项是差异登记表中的 **34 个输入用例**，不是 34 个未实现的
-feature，也不是 34 个需要追加支持的 Pandoc extension。同一条规则可以
-产生多个用例。以下 Core 指 Markdown Core；Pandoc 指固定的 3.11 oracle，
-每例使用 corpus 指定的 `markdown_strict` 加选定扩展配置。
+The original 34 entries represent **34 input cases** in the difference registry,
+not 34 unimplemented features or 34 additional Pandoc extensions to support. One
+rule can produce several cases. Below, Core means Markdown Core and Pandoc means
+the pinned 3.11 oracle, using each case's corpus-defined `markdown_strict` reader
+with selected extensions.
 
-验收范围是用户要求的 feature 及现有规范；Pandoc 提供行为证据，不扩大
-功能范围。parser 保留语法与语义事实，编号、坐标展开和排版仍由 consumer
-完成。差异仍须逐项解释，不能因为登记过就掩盖功能缺失。
+Acceptance is bounded by the requested features and existing specifications.
+Pandoc provides behavioral evidence without expanding feature scope. The parser
+preserves syntactic and semantic facts; numbering, coordinate expansion, and
+layout remain consumer responsibilities. Every difference still needs an
+explanation: registration must not conceal missing functionality.
 
-原始输入和 reader 配置见 [corpus.json](corpus.json)，
-精确结果摘要和说明见 [deltas.json](deltas.json)。
-以下保留原始审计编号；第 21 项已修复并退出差异登记。历史 `projection` 标签不表示所有条目都只是
-AST 表示不同。
+See [corpus.json](corpus.json) for original inputs and reader configurations,
+and [deltas.json](deltas.json) for exact result digests and explanations.
+The original audit numbering is retained below. Item 21 has been fixed and
+removed from the registry. The historical `projection` label does not mean that
+every entry is merely an AST representation difference.
 
-2026-09-12 的 [O/I/P 来源审计](../../../docs/plans/2026-09-12-oip-oracle-drift-audit.md)
-发现的空上标、author-tail 引用分组和畸形组回退已按用户要求修复。
-第 1、10、20 项仅保留各自尚存的独立差异；第 21 项现在是无豁免的一致用例。
-第 7 项仍需区分 reader 配置与失败回退的差异。
+The empty superscript, author-tail citation grouping, and malformed-group
+fallback findings from the 2026-09-12
+[O/I/P source audit](../../../docs/plans/2026-09-12-oip-oracle-drift-audit.md)
+were fixed as requested. Items 1, 10, and 20 retain only their remaining
+independent differences; item 21 now agrees without a waiver. Item 7 still
+requires distinguishing reader configuration from failed-candidate fallback.
 
-| 编号 | 用例 ID／主题 | Core 与 Pandoc 的具体差异 |
+| Number | Case ID / topic | Specific Core and Pandoc difference |
 | --- | --- | --- |
-| 1 | `empty-superscript-and-subscript`：空上下标 | `^^` 已在两边生成空 Superscript。剩余差异仅是 `~~`：Core 的双波浪线用于删除线，未配对时为文本；此例 Pandoc reader 生成空 Subscript。 |
-| 2 | `pandoc-reference-attribute-merge`：引用属性合并 | Core 按“定义处、使用处”的顺序保留类名和属性记录，包括重复项；Pandoc 去重、覆盖并调整顺序。例如 `k=def ... k=occ` 在 Core 中都保留，Pandoc 只保留使用处的 `k=occ`。 |
-| 3 | `multiline-table`：多行表格列宽 | Core 保存源码列宽占总列宽的比例；Pandoc 把分隔部分计入宽度，再相对于默认页面宽度计算。差异是列宽数值，表格内容已经实现并一致。 |
-| 4 | `grid-table-block-cells`：块内容网格表的列宽 | 与第 3 项同属列宽语义差异。源码内部列宽为 15、15、20 时，Core 为 `0.3, 0.3, 0.4`，Pandoc 为 `16/72, 16/72, 21/72`。单元格中的段落、列表等块内容一致。 |
-| 5 | `grid-table-row-and-column-spans`：跨行跨列表的列宽 | 仍是相同的列宽差异；此例的跨行、跨列几何和单元格内容一致，不是缺少 rowspan/colspan。 |
-| 6 | `example-lists-and-reference`：例句定义和引用模型 | Core 在文档中按源码顺序保存 Specimen 定义，以准确的 ID 保存引用；Pandoc 输出带例句编号的 List，并把引用替换为编号文本。Core 将编号交给 consumer。 |
-| 7 | `p6-escaped-space`：上下标中的转义空格 | 对 `^a\ b^` 和 `~*c\ d*~`，Core 生成上下标并把其中的转义空格解码为 NBSP；此例 Pandoc reader 不生成上下标。Core 在候选失败或上下标外保留原来的反斜线与空白，不做全局替换。 |
-| 8 | `p6-whitespace-recovery`：Unicode 空白与上下标 | Core 把源码中的所有 Unicode White_Space 都视为上下标配对边界；Pandoc 接受含 U+2003 EM SPACE 的 `^a b^`，Core 保留为文本。此例前面的 ASCII 空格失败恢复，两边一致。 |
-| 9 | `p6-entity-space`：实体解码出的空白 | `~a&Tab;b~` 中，Core 保留解码出的 TAB，Pandoc 将其归一化为空格。实体解码出的空白不等同于源码中的原始空白分界。 |
-| 10 | `p6-pairing-and-tilde-runs`：空配对和连续波浪线 | `^^` 已一致。`^^^^` 在 Core 中保留两个有独立 scope 的空 Superscript，Pandoc 合并相邻同类节点。Core 将三个以上连续波浪线及未配对的双波浪线保留为文本；Pandoc 可生成空下标，并把 `~~~c~~~` 解析成下标 `c`。 |
-| 11 | `p6-opaque-tokens`：上下标内的代码跨度 | 对包含代码 `x y` 的外层上下标候选，Core 先识别完整代码跨度，其内部空格不打断外层上下标；Pandoc 不识别该外层上下标。独立代码内部的 `^`、`~` 在两边都保持代码文本。 |
-| 12 | `anchor-global-reservation`：后置标题显式 ID | Core 先预留全篇显式 ID，再生成自动 ID：前面的 `# x` 在后面存在 `{#x}` 时取得 `x-1`。Pandoc 先生成前面的 `x`，后面显式 ID 也为 `x`。 |
-| 13 | `anchor-permitted-scalars`：emoji 与锚点 | Core 按字符规则过滤，不把 emoji 转成名字；Pandoc 的 GFM 锚点算法把 😀 转成 `grinning`。本例锚点分别为 `a‿b--` 与 `a‿b--grinning`。 |
-| 14 | `anchor-simple-lowercase`：Unicode 小写转换 | Core 使用 Unicode 17 simple lowercase，将 `İ` 转为单个 `i`；Pandoc 的 full lowercase 转为 `i` 加 U+0307 组合点，锚点的字符序列不同。 |
-| 15 | `anchor-whitespace-scalars`：锚点中的 Unicode 空白 | Core 把 U+0085、U+2028 等 Unicode White_Space 转成连字符；Pandoc 在此例中删除这两个字符，因而分别得到 `a-b-c` 与 `abc`。 |
-| 16 | `anchor-inline-code-reservation`：代码的显式 ID 预留 | 与第 12 项同一条全局预留规则，显式 `{#x}` 这次附在行内代码上。Core 前面的标题取得 `x-1`；Pandoc 标题仍为 `x`。 |
-| 17 | `implicit-reference-adjacency`：引用方括号是否必须相邻 | Core 沿用 CommonMark 的相邻要求，将 `[Foo] [Foo][] [go][Foo]` 分别解析成三个标题链接；Pandoc 跨过空格合并前两个方括号组，并留下不同的文本和链接结构。 |
-| 18 | `p5-heading-span-reservation`：Span 的显式 ID 预留 | 与第 12 项同一规则，显式 ID 这次来自 `[owner]{#taken}`。Core 前面的 `# Taken` 为 `taken-1`，Pandoc 为 `taken`。 |
-| 19 | `p7-tail-and-nesting`：引用前后缀的边缘空白 | Core 去除 citation prefix/suffix 源码两端的空白；Pandoc 在嵌套方括号之前保留 suffix 的前导空格。嵌套内容仍逐项比较。 |
-| 20 | `p7-tail-later-author`：作者式引用尾部的另一个引用 | 对 `@a [@b [p. 7]]`，两边现在都将 `@b` 保留为外层 Cite 的 normal item。仅剩前后缀空白规则：Core 的 suffix 为 `[p. 7]`，Pandoc 保留前导空格。 |
-| 21 | `p7-malformed-group`：畸形 citation 组的回退 | **已修复并退出登记。** 外层组失败后继续普通行内解析，内部合法 key 成为 authorInText citation，合法 tail 也保留；原用例已与 Pandoc 一致。 |
-| 22 | `p7-heading-projection`：citation 参与标题锚点生成 | 对 `## [pre @a suffix; @b]`，Core 从存储的引用内容生成 `preasuffixb`；Pandoc 从保留分隔空格的原始显示文本生成 `pre-a-suffix-b`。 |
-| 23 | `p7-unicode-boundary`：下划线之后的引用起点 | `_@a` 在 Core 中不能开始 citation，因为起点前不能是下划线、Unicode 字母或数字；Pandoc 接受下划线之后的 citation。 |
-| 24 | `p9a-nested-start`：非 1 起始的嵌套列表候选 | 在父列表段落后，缩进的 `2. ordinary` 不能启动 Core 的嵌套列表，按 lazy continuation 留在原段落；Pandoc 将这行放到另一个 Plain 块。随后 `1. nested` 在两边都成为嵌套列表。 |
-| 25 | `p9b-resolution`：前向、重复、匿名例句与起始编号 | 与第 6 项同一模型差异，覆盖前向引用、显式起始编号 7、重复 label、匿名定义。Core 保留所有定义、源码 start 和引用 ID；Pandoc 把引用渲染成 `7` 等文本，并把定义放入例句 List。 |
-| 26 | `p9b-heading`：标题中的例句引用 | `## @label` 的 Core 标题内容仍是 specimen citation；Pandoc 标题内容已替换为文本 `1`。**本例两边的锚点都是 `label`**，差异是标题内容及定义模型，不是锚点值。 |
-| 27 | `p7-unresolved-reference-tail`：无法解析的链接引用尾部 | 对 `[@a][missing]`，Core 允许前面的完整 citation 组成立；Pandoc 保留第一组方括号为文本，并把其中的 `@a` 解析成 authorInText，引用模式和结构不同。 |
-| 28 | `p7-explicit-citation-shortcut`：citation 与引用定义的优先级 | 出现 `[@a]: /u` 时，Core 仍将该行注册为链接引用定义，但正文完整的 `[@a]` citation 优先于快捷链接；Pandoc 将定义形状的行也解析成 citation 加后续文本。 |
-| 29 | `p9a-start-always-authored`：未启用 startnum 的对照配置 | `h. eight` 在 Core 中始终保存 start=8；此例故意未启用 Pandoc 的 `startnum`，所以 Pandoc 保存 1。正常选定 feature 映射已经将 `fancy_lists` 与 `startnum` 一起启用；这不是缺少起始编号功能。 |
-| 30 | `p8-closer-width`：容器结束围栏的长度 | Core 要求结束冒号串至少与开始围栏一样长；Pandoc 接受任意不少于三个冒号。因此四冒号开始的容器遇到三个冒号时，两边结束位置不同。 |
-| 31 | `p8-explicit-anchor-reservation`：容器的显式 ID 预留 | 与第 12 项同一规则，后置显式 ID 这次属于 fenced div。Core 前面的 `# Reserved` 取得 `reserved-1`；Pandoc 仍为 `reserved`。 |
-| 32 | `p10-nested-and-lazy`：嵌套定义体的 compact 信息 | Core 单独保存 term 与 body 间源码空行所决定的 compact 布尔值；Pandoc 通过 Plain/Para 表达紧凑性。首个 body 为嵌套 DefinitionList 时，没有对应标志可供读取，比较值为 null；term 与 body 内容一致。 |
-| 33 | `p10-padding-and-tabs`：代码定义体的 compact 信息 | 与第 32 项同一 AST 信息差异，发生于首个 body 为 CodeBlock 的情况。差异不是 TAB 或代码内容解析错误，而是 Pandoc 不保留对应 compact 标志。 |
-| 34 | `p10-empty-bodies`：空定义体的 compact 信息 | 与第 32 项同一 AST 信息差异，发生于首个 body 为空的情况。空 body 及后续 body 都保留并比较；差异只有 Core 明确保留的 compact 信息。 |
+| 1 | `empty-superscript-and-subscript`: empty scripts | Both sides now produce an empty Superscript for `^^`. The only remaining difference is `~~`: Core reserves double tildes for strikethrough and retains an unmatched pair as text; this Pandoc reader produces an empty Subscript. |
+| 2 | `pandoc-reference-attribute-merge`: reference attribute merging | Core preserves classes and attribute records in definition-then-occurrence order, including duplicates. Pandoc deduplicates, overrides, and reorders them. For example, Core retains both declarations in `k=def ... k=occ`, while Pandoc retains only the occurrence's `k=occ`. |
+| 3 | `multiline-table`: multiline table column widths | Core stores each source column width as a proportion of the total column width. Pandoc includes separators in widths and divides by the default page width. The difference is numerical column width; table content is implemented and agrees. |
+| 4 | `grid-table-block-cells`: widths of grid tables containing blocks | The same width semantics as item 3. For source interior widths 15, 15, and 20, Core stores `0.3, 0.3, 0.4`, while Pandoc stores `16/72, 16/72, 21/72`. Paragraphs, lists, and other block content within cells agree. |
+| 5 | `grid-table-row-and-column-spans`: widths of tables with spans | The same width difference remains. Row/column-span geometry and cell content agree; rowspan/colspan support is not missing. |
+| 6 | `example-lists-and-reference`: specimen definitions and references | Core stores Specimen definitions in source order on the document and preserves exact reference IDs. Pandoc emits numbered example Lists and replaces references with number text. Core delegates numbering to consumers. |
+| 7 | `p6-escaped-space`: escaped spaces in scripts | For `^a\ b^` and `~*c\ d*~`, Core produces scripts and decodes their escaped spaces to NBSP; this Pandoc reader does not produce scripts. Core preserves the original backslash and whitespace outside scripts or when a candidate fails, without global replacement. |
+| 8 | `p6-whitespace-recovery`: Unicode whitespace in scripts | Core treats all raw Unicode White_Space as script-pairing boundaries. Pandoc accepts `^a b^` containing U+2003 EM SPACE; Core retains it as text. Both sides agree on recovery after the earlier ASCII-space failure in this case. |
+| 9 | `p6-entity-space`: entity-decoded whitespace | In `~a&Tab;b~`, Core preserves the decoded TAB, while Pandoc normalizes it to a space. Entity-decoded whitespace is distinct from a raw source whitespace boundary. |
+| 10 | `p6-pairing-and-tilde-runs`: empty pairs and tilde runs | `^^` now agrees. Core preserves `^^^^` as two empty Superscript nodes with independent scopes; Pandoc merges adjacent nodes of the same kind. Core retains runs of three or more tildes and unmatched double tildes as text. Pandoc can produce empty subscripts and parse `~~~c~~~` as subscript `c`. |
+| 11 | `p6-opaque-tokens`: code spans within scripts | For an outer script candidate containing code `x y`, Core recognizes the complete code span first, so its internal space does not interrupt the outer script. Pandoc does not recognize that outer script. Both preserve `^` and `~` inside standalone code as code text. |
+| 12 | `anchor-global-reservation`: later explicit heading IDs | Core reserves all explicit IDs before generating automatic IDs: an earlier `# x` gets `x-1` if a later `{#x}` exists. Pandoc generates `x` for the earlier heading and also uses `x` for the later explicit ID. |
+| 13 | `anchor-permitted-scalars`: emoji in anchors | Core filters by character rules without converting emoji to names. Pandoc's GFM anchor algorithm converts 😀 to `grinning`. The anchors in this case are `a‿b--` and `a‿b--grinning`, respectively. |
+| 14 | `anchor-simple-lowercase`: Unicode lowercase conversion | Core uses Unicode 17 simple lowercase, converting `İ` to a single `i`. Pandoc's full lowercase produces `i` followed by U+0307 COMBINING DOT ABOVE, yielding a different anchor character sequence. |
+| 15 | `anchor-whitespace-scalars`: Unicode whitespace in anchors | Core converts Unicode White_Space such as U+0085 and U+2028 to hyphens. Pandoc deletes those two characters in this case, yielding `a-b-c` and `abc`, respectively. |
+| 16 | `anchor-inline-code-reservation`: reserving explicit code IDs | The same global reservation rule as item 12, with explicit `{#x}` attached to inline code. Core gives the earlier heading `x-1`; Pandoc keeps `x`. |
+| 17 | `implicit-reference-adjacency`: adjacency of reference brackets | Core retains CommonMark's adjacency requirement and parses `[Foo] [Foo][] [go][Foo]` as three separate heading links. Pandoc crosses the space to combine the first two bracket groups, leaving different text and link structure. |
+| 18 | `p5-heading-span-reservation`: reserving explicit Span IDs | The same rule as item 12, with the explicit ID from `[owner]{#taken}`. Core gives the earlier `# Taken` the anchor `taken-1`; Pandoc uses `taken`. |
+| 19 | `p7-tail-and-nesting`: edge whitespace in citation affixes | Core trims source whitespace at both ends of citation prefixes/suffixes. Pandoc retains the suffix's leading space before nested brackets. Nested content is still compared individually. |
+| 20 | `p7-tail-later-author`: another citation in an author-style tail | For `@a [@b [p. 7]]`, both sides now retain `@b` as a normal item of the outer Cite. Only affix whitespace differs: Core's suffix is `[p. 7]`, while Pandoc retains a leading space. |
+| 21 | `p7-malformed-group`: malformed citation-group fallback | **Fixed and removed from the registry.** Ordinary inline parsing continues after the outer group fails; valid inner keys become authorInText citations and valid tails survive. The original case now agrees with Pandoc. |
+| 22 | `p7-heading-projection`: citations in heading anchors | For `## [pre @a suffix; @b]`, Core generates `preasuffixb` from stored citation content. Pandoc generates `pre-a-suffix-b` from the original display text, which retains separating spaces. |
+| 23 | `p7-unicode-boundary`: citation starts after underscores | `_@a` cannot start a Core citation because an underscore, Unicode letter, or digit cannot immediately precede the start. Pandoc accepts a citation after an underscore. |
+| 24 | `p9a-nested-start`: nested list candidates starting above 1 | After a parent-list paragraph, indented `2. ordinary` cannot start a nested Core list and remains a lazy continuation of the paragraph. Pandoc puts the line in another Plain block. The following `1. nested` starts a nested list on both sides. |
+| 25 | `p9b-resolution`: forward, duplicate, anonymous specimens and start numbers | The same model difference as item 6, covering forward references, explicit start number 7, duplicate labels, and anonymous definitions. Core preserves all definitions, authored start values, and reference IDs. Pandoc renders references as text such as `7` and puts definitions in an example List. |
+| 26 | `p9b-heading`: specimen references in headings | Core keeps a specimen citation as the content of `## @label`; Pandoc replaces the heading content with text `1`. **Both anchors are `label`.** The difference is heading content and the definition model, not the anchor value. |
+| 27 | `p7-unresolved-reference-tail`: unresolved link-reference tails | For `[@a][missing]`, Core accepts the preceding complete citation group. Pandoc retains the first pair of brackets as text and parses its `@a` as authorInText, producing different citation modes and structure. |
+| 28 | `p7-explicit-citation-shortcut`: citation/reference-definition precedence | Core still registers `[@a]: /u` as a link-reference definition, but a complete `[@a]` citation in content takes precedence over a shortcut link. Pandoc also parses the definition-shaped line as a citation followed by text. |
+| 29 | `p9a-start-always-authored`: control reader without startnum | Core always preserves start=8 for `h. eight`. This control deliberately omits Pandoc's `startnum`, so Pandoc stores 1. The normal selected-feature mapping enables `fancy_lists` and `startnum` together; start-number support is not missing. |
+| 30 | `p8-closer-width`: container closing-fence width | Core requires the closing colon run to be at least as long as the opening fence. Pandoc accepts any run of at least three colons. A container opened with four colons therefore ends at a different position when it encounters three colons. |
+| 31 | `p8-explicit-anchor-reservation`: reserving explicit container IDs | The same rule as item 12, with the later explicit ID on a fenced div. Core gives the earlier `# Reserved` the anchor `reserved-1`; Pandoc keeps `reserved`. |
+| 32 | `p10-nested-and-lazy`: compactness of nested definition bodies | Core stores a separate compact boolean determined by source blank lines between term and body. Pandoc represents compactness through Plain/Para. When the first body is a nested DefinitionList, no corresponding flag is available and the comparison value is null; term and body content agree. |
+| 33 | `p10-padding-and-tabs`: compactness of code definition bodies | The same AST-information difference as item 32, with a CodeBlock as the first body. This is not a TAB or code-content parsing error; Pandoc does not retain the corresponding compact flag. |
+| 34 | `p10-empty-bodies`: compactness of empty definition bodies | The same AST-information difference as item 32, with an empty first body. The empty body and subsequent bodies are preserved and compared. Only Core's explicitly retained compactness information differs. |
 
-最明显的重复关系是：
+The clearest repeated relationships are:
 
-- 3–5：同一列宽语义，在三种表格用例中出现。
-- 6、25、26：同一例句定义／引用模型，在普通、前向引用及标题中出现。
-- 12、16、18、31：同一全局显式 ID 预留规则，覆盖四种声明位置。
-- 32–34：同一 compact 信息差异，覆盖嵌套块、代码块和空 body。
+- 3–5: one column-width rule across three table cases.
+- 6, 25, 26: one specimen definition/reference model across ordinary content,
+  forward references, and headings.
+- 12, 16, 18, 31: one global explicit-ID reservation rule across four declaration
+  sites.
+- 32–34: one compactness-information difference across nested blocks, code
+  blocks, and empty bodies.
 
-这些记录分别由现有模块约束：[上下标](../../../docs/specs/dialect/superscript-and-subscript.md)、
-[属性](../../../docs/specs/dialect/attributes.md)、[表格](../../../docs/specs/dialect/tables.md)、
-[例句](../../../docs/specs/dialect/specimens.md)、[锚点](../../../docs/specs/dialect/anchors.md)、
-[链接](../../../docs/specs/dialect/links-and-images.md)、[文献引用](../../../docs/specs/dialect/citations.md)、
-[列表](../../../docs/specs/dialect/lists.md)、[容器](../../../docs/specs/dialect/directives.md)、
-[定义列表](../../../docs/specs/dialect/definition-lists.md)。是否存在实现缺口，应据对应模块
-的功能、边界和组合测试判断，不能用差异条目数量代替。
+These records are governed by the existing modules:
+[scripts](../../../docs/specs/dialect/superscript-and-subscript.md),
+[attributes](../../../docs/specs/dialect/attributes.md),
+[tables](../../../docs/specs/dialect/tables.md),
+[specimens](../../../docs/specs/dialect/specimens.md),
+[anchors](../../../docs/specs/dialect/anchors.md),
+[links](../../../docs/specs/dialect/links-and-images.md),
+[citations](../../../docs/specs/dialect/citations.md),
+[lists](../../../docs/specs/dialect/lists.md),
+[containers](../../../docs/specs/dialect/directives.md), and
+[definition lists](../../../docs/specs/dialect/definition-lists.md).
+Implementation gaps must be assessed against the corresponding module's
+features, boundaries, and composition tests, not inferred from the number of
+difference entries.

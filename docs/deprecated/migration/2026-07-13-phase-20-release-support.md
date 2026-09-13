@@ -1,142 +1,170 @@
 # Phase 20: release support and release CI
 
-状态：完成。仓库内版本合同、AGP 9.3 升级、四端 staging、Maven 聚合/签名审计、
-无 secret dry-run、正式发布 workflow、发布手册、受保护 GitHub release environment/tag
-ruleset、Maven secrets、PGP 外部配置、npm registry bootstrap/trusted publisher 与 JetBrains
-Gradle/KMP clean-import 均已落地；受保护 `v1.0.1` 在产物构建前 fail-closed 且未发布，
-协调版本 `1.0.2` 已通过 npm OIDC、Maven Central 和 GitHub Release 完成端到端发布。
+Status: complete. The repository version contract, AGP 9.3 upgrade, staging for
+all four products, Maven aggregation/signing audits, secret-free dry runs,
+production release workflow, release manual, protected GitHub release
+environment/tag ruleset, Maven secrets, external PGP configuration, npm registry
+bootstrap/trusted publisher, and JetBrains Gradle/KMP clean import are in place.
+Protected `v1.0.1` failed closed before artifact construction and published
+nothing. Coordinated version `1.0.2` completed end-to-end publication through npm
+OIDC, Maven Central, and GitHub Release.
 
 ## Boundary
 
-Phase 20 只负责从同一 release commit 构建、验证并协调发布 C、SwiftPM、Maven/KMP 和
-npm artifacts。它不重新定义 Phase 18 的共享 AST contract，也不改变 Phase 19 的
-required/non-blocking quality gate；最终 Git snapshot、物理 checkout 清理、开发环境
-onboarding 和跨阶段总复验属于 Phase 21。
+Phase 20 owns building, validating, and coordinating publication of C, SwiftPM,
+Maven/KMP, and npm artifacts from one release commit. It does not redefine
+Phase 18's shared AST contract or Phase 19's required/non-blocking quality gates.
+The final Git snapshot, physical checkout cleanup, development-environment
+onboarding, and cross-phase verification belong to Phase 21.
 
 ## Tasks
 
-- [x] 以 npm `1.0.0` bootstrap 建立新 release lineage；保留发布前失败的受保护 `v1.0.1`，
-  并准备首个四端协调 release `1.0.2`；确认新 repo 不包含旧 tags，且发布文档明确不承诺 C ABI compatibility。
-- [x] 对齐 C、SwiftPM、Maven 和 npm 版本，并拒绝任一 artifact version 漂移。
-- [x] 在 AGP 9.3 stable 发布后升级并重新验证 Gradle/Kotlin/Android compatibility matrix；cache-cold model、Android host/device tests、publication 与 consumer checks 必须在 `--warning-mode=fail` 下通过，不得以 preview 工具链首发。
-- [x] 验证 SwiftPM source URL、repo-derived identity `markdown-core` 和 product/module `MarkdownCore`。
-- [x] 从 `swift package archive-source` 解包到 repo 外目录，验证 root canonical contract、SwiftPM build-tool plugin、provider conformance 和只依赖 `MarkdownCore` product 的独立 consumer；source archive 必须保留测试合同，但 consumer build 不得执行测试插件或携带 derived fixture。
-- [x] Maven Central `com.nouprax` namespace 已通过 `nouprax.com` DNS TXT 完成所有权验证。
-- [x] 验证 Maven publication coordinate 为 `com.nouprax:kotlin-markdown-core:<version>`，并确保 KMP root、JVM、Android 和所有 Native target publications 在同一 Central bundle 中齐全；Linux/macOS host staging 与聚合已由远端 dry-run 验证。
-- [x] 验证 POM、Gradle Module Metadata、sources/javadoc artifacts、checksums、signatures、target-specific coordinates 与 native payload 完整一致；完整一次性 PGP 签名审计已由远端 dry-run 验证。
-- [x] 从 staged/local Maven repository 运行 KMP Gradle、JVM Gradle Module Metadata、repo-owned Maven Wrapper JVM Maven 与 Android AAR consumers。
-- [x] 在 Android Studio Quail 2 2026.1.2 或等价 IntelliJ IDEA 2026.1 执行一次 release
-  clean-import smoke test；除 sync 成功外，必须确认 KMP source sets 可见、根 Gradle
-  `allKotlinTests` task 可从 IDE 运行；shared `All Kotlin tests` 仅为该 task 的平台无关快捷
-  入口，不是 sample app；不重复要求两个使用同一 JetBrains Gradle/KMP importer 的 IDE。
-- [x] 创建有过期时间的 Maven Central Portal user token，并通过受保护 `release` GitHub environment 提供 `MAVEN_CENTRAL_USERNAME`/`MAVEN_CENTRAL_PASSWORD`。
-- [x] 创建带 passphrase 的 PGP signing key、发布 public key，并通过受保护 environment 提供 `MAVEN_SIGNING_KEY`/`MAVEN_SIGNING_PASSWORD`；key、双 keyserver 发布、environment secrets 和离线 private-key/revocation-certificate 备份已完成。
-- [x] 验证 npm organization `nouprax` 的 public scoped publish access，完成首次 bootstrap publish，将精确 release workflow/environment 绑定为 trusted publisher，并撤销 bootstrap CLI session/token。
-- [x] 为 npm publish job 配置最小 `id-token: write`/`contents: read`，在 workflow policy 中禁止传统 npm token，并在 registry 要求 2FA 且禁止 token；`1.0.2` 已由 GitHub Actions OIDC 发布并生成 SLSA provenance。
-- [x] 创建受保护 `release` environment，配置 required reviewer、tag/branch restrictions 和 Maven-only secrets；environment、tag-only policy、active ruleset、GitHub Release 最小权限与四个 Maven environment secrets 已完成。
-- [x] 添加完全不读取 release secrets 的 release dry-run，验证 artifact contents、versions、metadata、checksums、signatures 和 provenance inputs。
-- [x] 创建 `docs/releasing.md`，记录认证、secret names、轮换、撤销、trusted publishing、offline signing-key backup、泄漏响应、changelog、release notes 和发布前检查。
-- [x] 从 clean checkout 运行全量 build、correctness、共享 spec conformance、consumer、package/public-surface/security 和 release dry-run checks。
-- [x] 验证 C install、Maven、npm 与 Swift compiled public product 不包含 shared spec corpus、未预期 public headers/symbols、renderer、private extensions library、native handles 或 runtime implementation files；SwiftPM source archive 必须保留 repo-owned tests/specs，且外部 consumer 只构建 product targets。
+- [x] Establish the new release lineage with npm `1.0.0` bootstrap; retain protected `v1.0.1`, which failed before publication, and prepare the first coordinated four-product release, `1.0.2`. Confirm the new repository contains no old tags and release documentation makes no C ABI compatibility promise.
+- [x] Align C, SwiftPM, Maven, and npm versions and reject any artifact version drift.
+- [x] Upgrade after AGP 9.3 stable is released and revalidate the Gradle/Kotlin/Android compatibility matrix. Cold-cache model, Android host/device tests, publication, and consumer checks must pass with `--warning-mode=fail`; do not launch on a preview toolchain.
+- [x] Verify the SwiftPM source URL, repository-derived identity `markdown-core`, and product/module `MarkdownCore`.
+- [x] Extract `swift package archive-source` outside the repository and verify the root canonical contract, SwiftPM build-tool plugin, provider conformance, and an independent consumer depending only on `MarkdownCore`. Source archives must retain test contracts, but consumer builds must neither run test plugins nor include derived fixtures.
+- [x] Verify Maven Central `com.nouprax` namespace ownership through a `nouprax.com` DNS TXT record.
+- [x] Verify Maven coordinate `com.nouprax:kotlin-markdown-core:<version>` and include KMP root, JVM, Android, and every Native target publication in one Central bundle. Remote dry-run evidence covers Linux/macOS staging and aggregation.
+- [x] Verify consistency and completeness of POMs, Gradle Module Metadata, sources/javadoc artifacts, checksums, signatures, target-specific coordinates, and native payloads. Remote dry runs verify complete disposable PGP signing audits.
+- [x] Run KMP Gradle, JVM Gradle Module Metadata, repository-owned Maven Wrapper JVM Maven, and Android AAR consumers from staged/local Maven repositories.
+- [x] Perform a release clean-import smoke test in Android Studio Quail 2 2026.1.2 or equivalent IntelliJ IDEA 2026.1. Beyond successful sync, confirm visible KMP source sets and IDE execution of root Gradle `allKotlinTests`. Shared `All Kotlin tests` is a platform-independent shortcut for that task, not a sample app. Do not require duplicate checks in two IDEs using the same JetBrains Gradle/KMP importer.
+- [x] Create an expiring Maven Central Portal user token and provide `MAVEN_CENTRAL_USERNAME`/`MAVEN_CENTRAL_PASSWORD` through the protected `release` GitHub environment.
+- [x] Create a passphrase-protected PGP signing key, publish its public key, and provide `MAVEN_SIGNING_KEY`/`MAVEN_SIGNING_PASSWORD` through the protected environment. Complete key creation, publication to two keyservers, environment secrets, and offline private-key/revocation-certificate backups.
+- [x] Verify public scoped-publish access in npm organization `nouprax`, perform the initial bootstrap publish, bind the exact release workflow/environment as trusted publisher, and revoke the bootstrap CLI session/token.
+- [x] Give npm publish jobs minimal `id-token: write`/`contents: read` permissions. Prohibit traditional npm tokens in workflow policy and require registry 2FA with tokens disallowed. `1.0.2` is published by GitHub Actions OIDC with SLSA provenance.
+- [x] Create a protected `release` environment with required reviewer, tag/branch restrictions, and Maven-only secrets. Complete the environment, tag-only policy, active ruleset, minimal GitHub Release permissions, and four Maven environment secrets.
+- [x] Add release dry runs that read no release secrets and verify artifact contents, versions, metadata, checksums, signatures, and provenance inputs.
+- [x] Create `docs/releasing.md` covering authentication, secret names, rotation, revocation, trusted publishing, offline signing-key backup, exposure response, changelog, release notes, and pre-release checks.
+- [x] Run complete builds, correctness, shared-spec conformance, consumer, package/public-surface/security, and release dry-run checks from a clean checkout.
+- [x] Verify that C install, Maven, npm, and Swift compiled public products exclude shared spec corpora, unexpected public headers/symbols, renderers, private extensions libraries, native handles, and runtime implementation files. SwiftPM source archives must retain repository-owned tests/specs, while external consumers build only product targets.
 
 ## 2026-07-14 implementation evidence
 
-- `VERSION` 是 CMake、Gradle 与 npm 的单一版本合同；`release:check-version` 同时校验
-  SwiftPM identity/product、consumer 示例、tag namespace 和 `v<VERSION>`。
-- AGP 已升级到 9.3.0，Gradle 9.6.1；全新 `GRADLE_USER_HOME` 的 `projects`、Android
-  host correctness/conformance、publication 和 staged consumers 均在
-  `--warning-mode=fail` 下通过；CI run
-  [29387109813](https://github.com/nouprax/markdown-core/actions/runs/29387109813) 的 Android
-  managed-emulator correctness/conformance 也已通过。Android Studio Quail 1 2026.1.1 只支持
-  AGP 9.2，升级到支持 AGP 9.3 的 Quail 2 2026.1.2 后完成真实 Gradle sync；Kotlin MPP importer
-  请求的 Gradle distribution sources 与 dependency source artifacts 已纳入严格 dependency
-  verification。IDE 日志记录 `onSuccess(RESOLVE_PROJECT:2)`、`onImportFinished`，最终 sync
-  在 5.559 秒完成。随后从无 `.idea`/project cache 的 Android Studio Quail 2 clean import
-  验证 `commonMain`、`commonTest`、`jvmMain`、Android 与 Native source sets 及其 Kotlin source
-  roots 可见。根 Gradle `allKotlinTests` 聚合 JVM、Android host、当前主机 Native 的
-  correctness/conformance，以及 API 36 4 KB/16 KB managed-device 全量测试；shared
-  `.idea/runConfigurations/All_Kotlin_tests.xml` 只调用该 Gradle 入口，不创建 sample app。
-  Android Studio 从该 shared entry 实际执行 `allKotlinTests`：host 侧 42 tests passed，
-  两台 managed device 各 14 tests passed，最终 `BUILD SUCCESSFUL in 1m 39s`。这只是
-  developer aggregate；CI/release 仍分别执行具名 platform correctness/conformance gates。
-- C install/tarball、Swift source archive、npm tarball、Linux/macOS Maven staging、JNI
-  聚合、Central bundle、一次性 dry-run PGP 签名、checksum 和 staged consumer 均有独立脚本；
-  正式签名只在 host 聚合完成后进行，避免为旧字节保留 sidecar。
-- `.github/workflows/release-dry-run.yml` 无 environment、secret 或 write permission；
-  `.github/workflows/release.yml` 仅接受精确 release tag，并将 Maven secrets 限定在
-  `release` environment job，将 npm job 限定为 OIDC 权限。
-- GitHub environment `release`（id `18166863298`）已启用 `DongyuZhao` required reviewer；
-  deployment policy（id `54675963`）只接受 `v*.*.*` tag；`release tag protection`
-  ruleset（id `18962304`）active，并将 matching tag 的 create/update/delete bypass 限于
-  `DongyuZhao`。组织当前没有 reviewer team，因此暂时允许唯一 operator 自审，待增加第二
-  release owner 后切换为 team reviewer 并禁止 self-review。Actions 默认 token 权限为 read，
-  四个 Maven environment secrets 已配置且不保存占位 credential；GitHub 默认 admin bypass
-  当前仍为 enabled，增加独立 reviewer team 时一并关闭。
-- 本地已通过 `pnpm verify`、CI/repository/public-surface/package-content audits、C/npm/Swift
-  staging、macOS host Maven audit，以及 KMP、JVM Gradle、JVM Maven Wrapper、Android staged
-  consumers。
-- 2026-07-15 在清除 Gradle outputs、3 个 managed devices 与 clean-import 临时备份后，
-  IDE/KMP 修订的本地 CI regression audit 再次通过根 `pnpm verify`；其中 Gradle model、
-  CI policy、test topology、repository、public surface 与 package-content checks 全绿。
-  clean 后的 Android runtime `assembleRelease` 实际执行 arm64-v8a、armeabi-v7a、x86 与
-  x86_64 四个 CMake build，证明 `idea.sync.active` 分支不影响真实构建；最终
-  `allKotlinTests --dry-run --warning-mode=fail` 也完整解析成功，未触发远端 workflow。
-- `1.0.2` 修正 JVM bundled-native loader 的退出清理顺序，改用 JVM platform library-name
-  mapping，并对必须使用绝对路径的 JAR extraction 加入有理由的 scoped lint suppression；
-  JVM correctness/conformance、根 `pnpm verify` 与 host release dry-run 均通过。dry-run
-  生成并复验 C、Swift source、npm、Maven/KMP staged artifacts、一次性 PGP signatures、
-  staged consumers 与最终 SHA-256/SHA-512，未读取 release secrets 或触发远端 workflow。
-- 发布候选版本提升到 `1.0.1` 后，本地 host release dry-run 再次通过：C 与 Swift artifacts、
-  npm tarball、macOS Maven publications、一次性 PGP 签名/checksum audit，以及 KMP、JVM
-  Gradle、Android 和 Maven consumers 均使用 `1.0.1` 成功。对外 GitHub Release 固定读取
-  `docs/releases/1.0.1.md`，CI policy 拒绝自动生成 notes 和内部 phase/acceptance 记录。
-- 首次受保护 tag 验证在构建前 fail-closed，并暴露了历史 check-run/SHA 查询会把 release
-  错误耦合到 PR/main 执行时序。正式 workflow 现从不可变 tag 直接调用完整 reusable CI
-  build/test suite，不查询旧 checks、不依赖 CodeQL；普通 CI 只匹配 branches/PR，发布只由
-  `v*.*.*` tag 驱动，因此并行 review/merge 不会改变已选定的 release snapshot。该
-  `v1.0.1` attempt 未构建、上传或发布任何 artifact，tag 保持不可变，下一协调版本为 `1.0.2`。
-- draft PR [#2](https://github.com/nouprax/markdown-core/pull/2) 的 release dry-run
-  [run 29386638494](https://github.com/nouprax/markdown-core/actions/runs/29386638494) 在 commit
-  `757060ec02f6e48d810ee4be9dc01a3d0333ffa6` 上通过：Linux/macOS C artifacts、Swift source
-  archive/product consumer、npm tarball consumer、Linux/macOS Maven staging、跨 host 聚合、一次性
-  PGP 签名与审计、KMP/JVM Gradle/JVM Maven/Android staged consumers、可独立复验的 Central
-  bundle 和最终 fail-closed gate 全绿；dry-run 未读取 release environment 或 secrets。
-- 2026-07-15 通过 npm CLI web authentication 与 security-key 2FA 完成
-  [`@nouprax/es-markdown-core@1.0.0`](https://www.npmjs.com/package/@nouprax/es-markdown-core)
-  首次 public bootstrap publish；发布前 tarball consumer、`exports.types`、内容清单与
-  `npm publish --dry-run` 均通过。npm trusted publisher 已精确绑定
-  `nouprax/markdown-core`、`release.yml`、`release` environment，权限仅为 `npm publish`；
-  package publishing access 已切换为 require 2FA and disallow tokens。bootstrap CLI
-  session 随后通过 `npm logout` 撤销，`npm whoami` 返回 `ENEEDAUTH`。首次正式 OIDC
-  publication 的 provenance attestation 仍按 Acceptance 独立跟踪。退出登录后的公开
-  `npm view` 已复核 version `1.0.0`、repository metadata 与 registry shasum
-  `969853cf63edce7975ec185d73784d6c62e11d06`。
+- `VERSION` is the single CMake/Gradle/npm version contract.
+  `release:check-version` also checks SwiftPM identity/product, consumer
+  examples, tag namespace, and `v<VERSION>`.
+- AGP is upgraded to 9.3.0 and Gradle to 9.6.1. With a fresh
+  `GRADLE_USER_HOME`, `projects`, Android host correctness/conformance,
+  publication, and staged consumers pass with `--warning-mode=fail`. CI run
+  [29387109813](https://github.com/nouprax/markdown-core/actions/runs/29387109813)
+  also passes Android managed-emulator correctness/conformance. Android Studio
+  Quail 1 2026.1.1 supports only AGP 9.2; upgrading to AGP-9.3-compatible Quail 2
+  2026.1.2 enabled a real Gradle sync. Gradle distribution sources and dependency
+  source artifacts requested by the Kotlin MPP importer enter strict dependency
+  verification. IDE logs record `onSuccess(RESOLVE_PROJECT:2)` and
+  `onImportFinished`; final sync completes in 5.559 seconds. A subsequent
+  Quail 2 clean import without `.idea` or project cache verifies visible
+  `commonMain`, `commonTest`, `jvmMain`, Android, and Native source sets and their
+  Kotlin roots. Root Gradle `allKotlinTests` aggregates JVM, Android host, and
+  current-host Native correctness/conformance plus complete API 36 4 KB/16 KB
+  managed-device tests. Shared `.idea/runConfigurations/All_Kotlin_tests.xml`
+  invokes only that task, without creating a sample app. Android Studio actually
+  runs `allKotlinTests` through the shared entry: 42 host tests pass, each of two
+  managed devices passes 14 tests, and the run ends with
+  `BUILD SUCCESSFUL in 1m 39s`. This is a developer aggregate only; CI/release
+  still execute named platform correctness/conformance gates separately.
+- Independent scripts cover C install/tarballs, Swift source archives, npm
+  tarballs, Linux/macOS Maven staging, JNI aggregation, Central bundles,
+  disposable dry-run PGP signing, checksums, and staged consumers. Production
+  signing runs only after host aggregation, avoiding sidecars for obsolete bytes.
+- `.github/workflows/release-dry-run.yml` has no environment, secrets, or write
+  permission. `.github/workflows/release.yml` accepts only exact release tags,
+  confines Maven secrets to `release` environment jobs, and limits npm jobs to
+  OIDC permissions.
+- GitHub environment `release` (id `18166863298`) requires reviewer
+  `DongyuZhao`; deployment policy `54675963` accepts only `v*.*.*` tags.
+  Active `release tag protection` ruleset `18962304` restricts matching-tag
+  create/update/delete bypass to `DongyuZhao`. There is no reviewer team yet,
+  so the sole operator may temporarily self-review. Adding a second release
+  owner must switch to a team reviewer and prohibit self-review. Actions tokens
+  default to read permission. Four Maven environment secrets are configured
+  without placeholder credentials. GitHub's default admin bypass remains
+  enabled and should be disabled when an independent reviewer team is added.
+- Local `pnpm verify`, CI/repository/public-surface/package-content audits,
+  C/npm/Swift staging, macOS Maven audit, and KMP, JVM Gradle, JVM Maven Wrapper,
+  and Android staged consumers pass.
+- On 2026-07-15, after removing Gradle outputs, 3 managed devices, and temporary
+  clean-import backups, the IDE/KMP revision passes root `pnpm verify` again.
+  Gradle model, CI policy, test topology, repository, public surface, and package
+  contents checks all pass. A clean Android runtime `assembleRelease` actually
+  runs all four CMake builds for arm64-v8a, armeabi-v7a, x86, and x86_64,
+  demonstrating that `idea.sync.active` does not affect real builds. Final
+  `allKotlinTests --dry-run --warning-mode=fail` resolves completely without
+  triggering a remote workflow.
+- `1.0.2` fixes exit cleanup order in the JVM bundled-native loader, uses JVM
+  platform library-name mapping, and adds a justified scoped lint suppression
+  for JAR extraction that requires absolute paths. JVM correctness/conformance,
+  root `pnpm verify`, and host release dry-run pass. The dry run generates and
+  revalidates C, Swift source, npm, Maven/KMP staged artifacts, disposable PGP
+  signatures, staged consumers, and final SHA-256/SHA-512 values without reading
+  release secrets or triggering remote workflows.
+- After the release candidate advances to `1.0.1`, host release dry-run passes
+  again: C and Swift artifacts, npm tarball, macOS Maven publications,
+  disposable PGP signing/checksum audits, and KMP, JVM Gradle, Android, and
+  Maven consumers all use `1.0.1`. Public GitHub Release notes read exactly
+  `docs/releases/1.0.1.md`; CI policy rejects autogenerated notes and internal
+  phase/acceptance records.
+- The first protected-tag validation fails closed before building, exposing
+  coupling between historical check-run/SHA queries and PR/main execution
+  timing. The production workflow now invokes the complete reusable CI
+  build/test suite directly from the immutable tag, without querying old checks
+  or depending on CodeQL. Ordinary CI matches branches/PRs only, and releases
+  are driven solely by `v*.*.*` tags, so concurrent review/merge cannot change
+  the selected release snapshot. The `v1.0.1` attempt built, uploaded, and
+  published no artifacts; its tag remains immutable, and the next coordinated
+  version is `1.0.2`.
+- Draft PR [#2](https://github.com/nouprax/markdown-core/pull/2) release dry-run
+  [29386638494](https://github.com/nouprax/markdown-core/actions/runs/29386638494)
+  passes at commit `757060ec02f6e48d810ee4be9dc01a3d0333ffa6`: Linux/macOS C
+  artifacts, Swift source archive/product consumer, npm tarball consumer,
+  Linux/macOS Maven staging, cross-host aggregation, disposable PGP signing and
+  audit, KMP/JVM Gradle/JVM Maven/Android staged consumers, independently
+  verifiable Central bundle, and final fail-closed gate. The dry run reads
+  neither release environments nor secrets.
+- On 2026-07-15, npm CLI web authentication and security-key 2FA complete the
+  initial public bootstrap publish of
+  [`@nouprax/es-markdown-core@1.0.0`](https://www.npmjs.com/package/@nouprax/es-markdown-core).
+  Tarball consumer, `exports.types`, content inventory, and
+  `npm publish --dry-run` checks pass first. The trusted publisher is bound
+  exactly to `nouprax/markdown-core`, `release.yml`, and the `release`
+  environment, with only `npm publish` permission. Package publishing access
+  requires 2FA and disallows tokens. `npm logout` then revokes the bootstrap CLI
+  session, and `npm whoami` returns `ENEEDAUTH`. The first production OIDC
+  provenance attestation is tracked independently under Acceptance. Public
+  `npm view` after logout confirms version `1.0.0`, repository metadata, and
+  registry shasum `969853cf63edce7975ec185d73784d6c62e11d06`.
 - GitHub
-  [CI](https://github.com/nouprax/markdown-core/actions/workflows/ci.yml?query=branch%3Amain)、
-  [CodeQL](https://github.com/nouprax/markdown-core/actions/workflows/codeql.yml?query=branch%3Amain) 与
-  [release dry-run](https://github.com/nouprax/markdown-core/actions/workflows/release-dry-run.yml?query=branch%3Amain)
-  已分别证明 Phase 19 review gates、四端 build/conformance/consumer/package/security matrix，
-  以及 artifact staging、一次性 dry-run signing、checksums 和 provenance inputs。正式
-  release 不复用这些 run 的 SHA，而是在 tag snapshot 上重新执行 required build/test gate。
-- 受保护 `v1.0.2` 的正式
+  [CI](https://github.com/nouprax/markdown-core/actions/workflows/ci.yml?query=branch%3Amain),
+  [CodeQL](https://github.com/nouprax/markdown-core/actions/workflows/codeql.yml?query=branch%3Amain),
+  and [release dry-run](https://github.com/nouprax/markdown-core/actions/workflows/release-dry-run.yml?query=branch%3Amain)
+  establish Phase 19 review gates, the four-product
+  build/conformance/consumer/package/security matrix, artifact staging,
+  disposable dry-run signing, checksums, and provenance inputs. Production
+  release does not reuse these runs' SHAs; it reruns required build/test gates
+  on the tag snapshot.
+- Protected `v1.0.2`
   [release run 29444753606](https://github.com/nouprax/markdown-core/actions/runs/29444753606)
-  在 tag snapshot 上通过完整 quality gates、四端 artifact staging、Maven signing、staged
-  consumers 和最终 Central bundle 审计；最终 bundle 只包含 `com/nouprax/**`，10/10 Central
-  components 验证成功。发布恢复
+  passes complete quality gates, four-product artifact staging, Maven signing,
+  staged consumers, and final Central bundle audit on the tag snapshot. The
+  final bundle contains only `com/nouprax/**`, and all 10/10 Central components
+  validate. Recovery
   [run 29447029321](https://github.com/nouprax/markdown-core/actions/runs/29447029321)
-  只复用该 run 的已验证 artifacts，未重新运行 build/test matrix，并通过 trusted publisher
-  发布 [`@nouprax/es-markdown-core@1.0.2`](https://www.npmjs.com/package/@nouprax/es-markdown-core/v/1.0.2)
-  及其 SLSA provenance，随后创建带 checksums 和 artifact attestations 的
-  [GitHub Release v1.0.2](https://github.com/nouprax/markdown-core/releases/tag/v1.0.2)。Maven
-  deployment `7b529f7f-156a-481a-9245-367ebb97fba1` 已转为 `PUBLISHED`，公开
-  [`com.nouprax:kotlin-markdown-core:1.0.2`](https://repo1.maven.org/maven2/com/nouprax/kotlin-markdown-core/1.0.2/)；
-  污染的失败 deployment 已删除，临时恢复所需的 `main` environment policy 也已撤销，
-  `release` environment 恢复为只接受 `v*.*.*` tag。
+  reuses only that run's verified artifacts without rerunning the build/test
+  matrix, publishes
+  [`@nouprax/es-markdown-core@1.0.2`](https://www.npmjs.com/package/@nouprax/es-markdown-core/v/1.0.2)
+  with SLSA provenance through the trusted publisher, and then creates
+  [GitHub Release v1.0.2](https://github.com/nouprax/markdown-core/releases/tag/v1.0.2)
+  with checksums and artifact attestations. Maven deployment
+  `7b529f7f-156a-481a-9245-367ebb97fba1` reaches `PUBLISHED`, exposing
+  [`com.nouprax:kotlin-markdown-core:1.0.2`](https://repo1.maven.org/maven2/com/nouprax/kotlin-markdown-core/1.0.2/).
+  The contaminated failed deployment is deleted, the temporary recovery `main`
+  environment policy is revoked, and `release` again accepts only `v*.*.*` tags.
 
 ## Acceptance
 
-- [x] Phase 19 required gates 已绿色且 ruleset 已启用；release workflow 只接受受保护 tag/environment，并对同一 commit 生成四端协调版本。
-- [x] C、SwiftPM、Maven/KMP 和 npm staged artifacts 的内容、metadata、checksums、签名与 provenance inputs 全部可独立复验；所有声明的 consumers 从 staged artifacts 实际运行。
-- [x] npm 使用 OIDC trusted publishing，Maven 使用最小范围且有过期时间的 Portal token 与 PGP signing；不存在长期、未记录或未受保护的 publish credential。
-- [x] Release dry-run 不读取 secrets，正式 workflow 的权限按 job 最小化，GitHub Release 只发布经过同 commit 验证的 artifacts。
-- [x] 二进制与安装型发布内容不携带 root shared spec、test corpus、private implementation target、renderer 或任何未在 Phase 16 public-surface allowlist 中批准的文件或符号；SwiftPM source distribution 例外地保留测试合同源，并证明它不进入 consumer product graph。
+- [x] Phase 19 required gates pass and the ruleset is active. The release workflow accepts only protected tags/environments and generates coordinated versions for all four products from one commit.
+- [x] Contents, metadata, checksums, signatures, and provenance inputs of staged C, SwiftPM, Maven/KMP, and npm artifacts are independently verifiable. Every declared consumer actually runs from staged artifacts.
+- [x] npm uses OIDC trusted publishing; Maven uses a minimally scoped, expiring Portal token and PGP signing. There are no long-lived, undocumented, or unprotected publication credentials.
+- [x] Release dry runs read no secrets, production permissions are minimized per job, and GitHub Release publishes only artifacts verified at the same commit.
+- [x] Binary/install distributions exclude root shared specs, test corpora, private implementation targets, renderers, and files/symbols not approved by the Phase 16 public-surface allowlist. SwiftPM source distribution retains test-contract source as an exception and proves it stays outside consumer product graphs.

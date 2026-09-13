@@ -1,89 +1,102 @@
 # Phase 18: shared canonical AST conformance spec
 
-状态：实现与本地可用平台验收完成。远端 Linux x64 和 required-CI 绿色证据仍归
-Phase 19，不反向阻塞本阶段共享合同关闭。
+Status: implementation and acceptance on locally available platforms are
+complete. Remote Linux x64 and passing required-CI evidence remain Phase 19
+responsibilities and do not retroactively block closure of this shared contract.
 
 ## Boundary
 
-Phase 18 新增根级 `specs/canonical-ast/`，它只包含产品级 Markdown/`.ast` 合同数据、
-coverage manifest 和维护说明，不包含 runner。C package 继续独占 CommonMark、extensions、
-regression、pathological、fuzz 和 robustness 等 parser correctness corpus；共享 canonical
-AST spec 不进入普通 `test:<platform>` correctness discovery，也不建立新的 `spec:*` task。
+Phase 18 adds root `specs/canonical-ast/` containing only product-level
+Markdown/`.ast` contract data, a coverage manifest, and maintenance instructions,
+with no runner. The C package retains sole ownership of parser correctness
+corpora for CommonMark, extensions, regression, pathological, fuzz, and
+robustness. The shared canonical AST spec does not enter ordinary
+`test:<platform>` correctness discovery or introduce a `spec:*` task.
 
-各平台现有 `conformance:<platform>` 入口仍直接调用原生 runner。runner 通过公开
-`Document.parse`、公开 immutable AST、公开 Visitor/Walker 和公开 `TreeDumper` 生成文本，
-再与同一份 `.ast` byte-for-byte 比较。共享数据是 conformance oracle，不是生产
-serialization/transport format，也不得用于构造生产 AST。
+Existing `conformance:<platform>` entry points still call native runners
+directly. Runners produce text through public `Document.parse`, immutable AST,
+Visitor/Walker, and `TreeDumper` APIs, then compare the same `.ast` bytes exactly.
+Shared data is a conformance oracle, not a production serialization/transport
+format, and must not construct production ASTs.
 
 ## Tasks
 
-- [x] 将 `packages/markdown-core/tests/canonical-ast/` 的 Markdown/`.ast` pairs、README 和 coverage manifest 迁移到根级 `specs/canonical-ast/`，明确其唯一 owner 是跨产品公开 AST contract；C package 不再保留私有副本。
-- [x] 冻结 manifest schema 与 case discovery：每个 case 显式列出 Markdown input、expected dump、所需 parse options 和覆盖标签；路径、排序、UTF-8、LF 与 final newline 必须确定，runner 不得各自维护第二份 case 清单或 normalization。
-- [x] 使 corpus 覆盖全部 28 种 `Markup`、所有 behavior-bearing fields、enum/boolean/null states、scope coordinates、escaping、child order、empty/populated children 和 table/directive/footnote/formula 等结构；coverage audit 对缺失和未声明覆盖 fail closed。
-- [x] 将 C conformance target 改为读取共享 corpus，通过公开 C parse/document dump API 比较全部 cases；CommonMark/extension/regression correctness fixtures 仍留在 C package。
-- [x] 将 Swift conformance target 改为对全部共享 cases 调用公开 `Document.parse` 与 `Markup.dump()`/`TreeDumper.dump(_:)`，删除 package-local expected tree literals；macOS 与 iOS Simulator 必须消费同一物理 corpus。
-- [x] 将 Kotlin common conformance contract 接入全部共享 cases，删除 package-local expected tree literals；JVM、Android host、repo-managed Android emulator、macOS ARM64 与 Linux x64 原生 targets 必须消费同一物理 corpus。
-- [x] 将 TypeScript/ES Node conformance target 改为对全部共享 cases 调用公开 npm API 与 `TreeDumper`，删除 package-local expected tree literals；不得调用 C dump、读取另一 binding 输出或引入 JSON bridge。
-- [x] 为 simulator/emulator/native test bundles 配置从根级 spec source 生成的 derived resources；不提交 Swift/Kotlin/ES fixture 副本，不使用越界 symlink，不依赖开发机 current working directory，clean build 与 packaged test bundle 均可定位同一内容。
-- [x] 保留各 binding 自己的 focused API unit tests，用于 Visitor exhaustiveness、Walker event semantics、error/ownership/lifetime 等共享 dump 无法表达的行为；不得把 parser correctness corpus 复制进 binding package。
-- [x] 提供显式、人工审查导向的 golden maintenance 命令：rewrite 只能由公开 C canonical dump 生成候选 diff，不能在 test/CI 中自动接受结果；schema 或 dump grammar 变化必须在同一 change 更新规范、manifest、goldens、四端实现与验收。
-- [x] 更新 topology/public-surface/package audits：允许根级 `specs/` contract data，但禁止其中出现 runner；拒绝 package-local canonical corpus、未清单化 case、发布包携带 spec data、conformance target 缺席或通过空 discovery/skip 获得绿色。
-- [x] 更新 Phase 5/7/8/11–17、canonical AST/dump、test architecture 和 repo setup 文档，撤销“C 独占 goldens/binding 只能使用 package-local snapshot”的旧结论，并冻结 correctness、conformance、benchmark 三类入口仍互斥。
+- [x] Move Markdown/`.ast` pairs, README, and coverage manifest from `packages/markdown-core/tests/canonical-ast/` to root `specs/canonical-ast/`. Their sole owner is the cross-product public AST contract; C retains no private copy.
+- [x] Freeze manifest schema and case discovery: explicitly list each case's Markdown input, expected dump, required parse options, and coverage tags. Paths, order, UTF-8, LF, and final newline must be deterministic; runners must not maintain another case list or normalization.
+- [x] Cover all 28 `Markup` kinds, behavior-bearing fields, enum/boolean/null states, scope coordinates, escaping, child order, empty/populated children, and table/directive/footnote/formula structures. Coverage audit fails closed on missing or undeclared coverage.
+- [x] Make C conformance read every shared case through public C parse/document-dump APIs; keep CommonMark/extension/regression correctness fixtures in C.
+- [x] Make Swift conformance call public `Document.parse` and `Markup.dump()`/`TreeDumper.dump(_:)` for every shared case; remove package-local expected-tree literals. macOS and iOS Simulator must consume one physical corpus.
+- [x] Connect Kotlin common conformance to every shared case and remove package-local expected-tree literals. JVM, Android host, repository-managed Android emulator, macOS ARM64, and Linux x64 native targets must consume one physical corpus.
+- [x] Make TypeScript/ES Node conformance use public npm APIs and `TreeDumper` for every shared case; remove package-local expected-tree literals. Do not call C dump, read another binding's output, or add a JSON bridge.
+- [x] Generate derived resources for simulator/emulator/native test bundles from the root spec source. Do not commit Swift/Kotlin/ES fixture copies, use out-of-boundary symlinks, or depend on a developer's current working directory. Clean builds and packaged test bundles must locate the same content.
+- [x] Retain each binding's focused API unit tests for behavior shared dumps cannot express: Visitor exhaustiveness, Walker events, errors, ownership, and lifetime. Do not copy parser correctness corpora into binding packages.
+- [x] Provide explicit, manually reviewed golden maintenance: rewrite may generate candidate diffs only through the public C canonical dump and must not accept output automatically in tests/CI. Schema or dump-grammar changes must update specifications, manifest, goldens, all four implementations, and acceptance in one change.
+- [x] Update topology/public-surface/package audits to allow runner-free root `specs/` contract data. Reject package-local canonical corpora, unlisted cases, spec data in published packages, missing conformance targets, and success through empty discovery or skips.
+- [x] Update Phase 5/7/8/11–17, canonical AST/dump, test architecture, and repository setup documentation. Withdraw the old C-only-goldens/package-local-binding-snapshot rule and preserve mutually exclusive correctness/conformance/benchmark entry points.
 
 ## Acceptance
 
-- [x] 根级 `specs/canonical-ast/` 是唯一 canonical Markdown/`.ast` corpus；coverage manifest 完整覆盖 28 种 Markup 与冻结字段合同，仓库不存在平台副本或第二份 case list。
-- [x] C、Swift、Kotlin 和 ES 的现有原生 conformance targets 都枚举非空的同一 manifest，使用各自公开 parse/AST/Visitor/Walker/TreeDumper 路径，并对每个 case byte-for-byte 通过。
-- [x] Swift iOS Simulator 与 Kotlin Android emulator 的 test bundle 从同一 source 生成资源；clean CI 不依赖 repo cwd、本机 fixture、网络下载或手工复制。
-- [x] 普通 correctness targets 不发现共享 spec cases，benchmark 不读取它们；根 manifest 不提供 runner 或新的公共 task route。
-- [x] 任意 binding field mapping、Visitor dispatch、Walker hierarchy/order、scope/escaping 或 TreeDumper grammar 的故意破坏都会让对应 platform conformance target 失败。
-- [x] Format、lint、canonical coverage、test topology、public surface、package contents 与根级 `verify` 全部通过，且 spec data 不进入 C install、Swift public product、Maven 或 npm 二进制发布产物；SwiftPM source archive 保留测试合同源。
+- [x] Root `specs/canonical-ast/` is the sole canonical Markdown/`.ast` corpus. Its coverage manifest covers all 28 Markup kinds and frozen fields; no platform copy or second case list exists.
+- [x] Existing native conformance targets for C, Swift, Kotlin, and ES enumerate the same nonempty manifest, use their public parse/AST/Visitor/Walker/TreeDumper paths, and pass byte-for-byte comparisons for every case.
+- [x] Swift iOS Simulator and Kotlin Android emulator test bundles derive resources from the same source; clean CI needs no repository cwd, local fixtures, downloads, or manual copies.
+- [x] Ordinary correctness targets do not discover shared spec cases, and benchmarks do not read them. The root manifest supplies neither a runner nor a new public task route.
+- [x] Deliberately breaking any binding field mapping, Visitor dispatch, Walker hierarchy/order, scope/escaping, or TreeDumper grammar fails the corresponding platform conformance target.
+- [x] Format, lint, canonical coverage, test topology, public surface, package contents, and root `verify` pass. Spec data does not enter C install, Swift public product, Maven, or npm binary releases; SwiftPM source archives retain test-contract source.
 
 ## Implementation
 
-`specs/canonical-ast/manifest.json` 是唯一 discovery source。v1 schema 固定六个
-case 的 input、expected、11 个 parse options、manifest order、UTF-8、LF、final
-newline，以及 kind/state/order coverage tags。`check-canonical-ast-fixtures.mjs`
-从 AST contract 自动提取 28 kinds 和 47 个 behavior-bearing fields，并对缺失、
-未知、未清单文件、字段顺序和空 discovery fail closed。
+`specs/canonical-ast/manifest.json` is the sole discovery source. Schema v1 pins
+six cases' inputs, expected outputs, 11 parse options, manifest order, UTF-8,
+LF, final newline, and kind/state/order coverage tags.
+`check-canonical-ast-fixtures.mjs` derives 28 kinds and 47 behavior-bearing
+fields from the AST contract and fails closed on missing/unknown coverage,
+unlisted files, incorrect field order, and empty discovery.
 
-四端消费路径：
+Consumption on all four platforms:
 
-- CMake 在 configure 时解析 manifest 并把每个 case 和 option mask 传给
-  `facade_test`；公开 C parse/document dump 与 CLI dump 均逐字节比较。
-- SwiftPM `GenerateCanonicalASTResources` build-tool plugin 声明 root corpus 为
-  inputs，调用 package-owned Swift executable tool，在 plugin work directory 生成
-  单一 `canonical-ast-fixtures.json` resource；macOS 与 iOS Simulator 使用同一个
-  `Bundle.module` loader，manifest 不再以 `../../..` 声明 target 外 resource。
-- Gradle 的 cacheable `GenerateCanonicalAstFixtures` task class 直接解析 manifest，
-  生成 build-only `commonTest` Kotlin data；JVM、Android host/device 与
-  Kotlin/Native targets 编译同一 generated source。生成任务支持 configuration
-  cache，且 test compilation/ktlint 显式依赖它，不再跨工具调用 Node generator。
-- ES package 使用 npm/pnpm `preconformance` lifecycle 从 root manifest 生成
-  `build/generated/conformance/canonical-ast-fixtures.json`；Node test 只读取 package
-  build output，并通过公开 npm `Document.parse`/`TreeDumper` 逐 case 比较，不依赖
-  `cwd` 或跨 package 相对路径。
+- CMake parses the manifest at configure time and passes each case and option
+  mask to `facade_test`. Public C parse/document dump and CLI dump are compared
+  byte for byte.
+- The SwiftPM `GenerateCanonicalASTResources` build-tool plugin declares the
+  root corpus as inputs, invokes a package-owned Swift executable tool, and
+  generates one `canonical-ast-fixtures.json` resource in its work directory.
+  macOS and iOS Simulator share a `Bundle.module` loader. The manifest no longer
+  declares resources outside the target through `../../..`.
+- Gradle's cacheable `GenerateCanonicalAstFixtures` task class parses the
+  manifest directly and generates build-only `commonTest` Kotlin data. JVM,
+  Android host/device, and Kotlin/Native compile the same generated source.
+  Generation supports configuration cache, and test compilation/ktlint depend
+  on it explicitly, without calling a Node generator across tools.
+- The ES package uses npm/pnpm `preconformance` to generate
+  `build/generated/conformance/canonical-ast-fixtures.json` from the root
+  manifest. Node tests read only package build output and compare each case
+  through public npm `Document.parse`/`TreeDumper`, without depending on `cwd`
+  or relative paths across packages.
 
-`generate-canonical-ast-candidates.sh` 只通过公开 C CLI 将候选输出写入
-`build/canonical-ast-candidates/` 并打印 diff；它不会修改 accepted goldens，且对
-尚未支持的非默认 parse options fail closed。
+`generate-canonical-ast-candidates.sh` writes candidate output only through the
+public C CLI to `build/canonical-ast-candidates/` and prints diffs. It does not
+modify accepted goldens and fails closed on unsupported nondefault parse options.
 
 ## Defect closed during native verification
 
-Kotlin/macOS 初次复验发现 native executable 仍嵌入旧 `MKC1` bridge archive，而
-common decoder 已要求 `MKC2`。根因是 cinterop task 只 `dependsOn` native build，
-却未把 archive directory 声明为 input，导致增量构建复用旧 klib。现在 cinterop
-显式跟踪 archive；重建后 macOS ARM64 conformance 全绿，decoder 同时给出精确
-magic-byte 诊断，避免同类失败只显示泛化错误。
+Initial Kotlin/macOS verification found an old `MKC1` bridge archive embedded in
+the native executable while the common decoder required `MKC2`. The cinterop
+task only declared `dependsOn` the native build, without declaring the archive
+directory as an input, so incremental builds reused an old klib. cinterop now
+tracks the archive explicitly; after rebuilding, macOS ARM64 conformance
+passes. The decoder also reports precise magic-byte diagnostics instead of a
+generic error for this failure class.
 
 ## Verification evidence
 
-- manifest/architecture: canonical coverage、test topology、public surface、
-  package contents audits 全绿；npm/Maven/C install/Swift compiled public product 均
-  不携带 spec data，SwiftPM source archive 保留可复验的测试合同源。
-- C host、Swift macOS、Swift iOS Simulator、Kotlin JVM、Android host、macOS
-  ARM64、repo-managed Android API 36 4K/API 37 16K 和 ES Node conformance 全绿。
-- Android 两个 managed devices 各运行四个 `AstTest`；Swift build 日志确认
-  build-tool plugin 先生成、再把 derived JSON 纳入 test bundle。
-- Linux x64 的 task wiring 与 generated common-test input 已冻结；远端 Linux
-  required-CI 绿色结果按阶段边界归 Phase 19。
+- Manifest/architecture: canonical coverage, test topology, public surface, and
+  package contents audits pass. npm/Maven/C install/Swift compiled public
+  products exclude spec data; SwiftPM source archives retain reproducible
+  test-contract source.
+- C host, Swift macOS, Swift iOS Simulator, Kotlin JVM, Android host, macOS
+  ARM64, repository-managed Android API 36 4K/API 37 16K, and ES Node
+  conformance pass.
+- Each Android managed device runs four `AstTest` cases. Swift build logs show
+  the build-tool plugin generating JSON before it is included in test bundles.
+- Linux x64 task wiring and generated common-test input are frozen; passing
+  remote Linux required-CI evidence belongs to Phase 19 under the phase boundary.
