@@ -3216,7 +3216,7 @@ typedef struct {
         specimens;
     size_t key_index_branches, key_index_operations;
     size_t block_dispatch, reference_probes;
-    size_t completion, finishing, lifecycle;
+    size_t completion, finishing, lifecycle, text_run_extensions, code_block_moves;
 } inline_work;
 static markdown_core_node *record_inline_work(const markdown_core_element *element, markdown_core_parser *parser,
                                               markdown_core_node *root) {
@@ -3242,6 +3242,8 @@ static markdown_core_node *record_inline_work(const markdown_core_element *eleme
     work->completion = parser->completion_work;
     work->finishing = parser->finishing_work;
     work->lifecycle = parser->inline_lifecycle_work;
+    work->text_run_extensions = parser->text_run_extensions;
+    work->code_block_moves = parser->code_block_move_work;
     work->tables = parser->table_scan_work;
     work->table_frontier = parser->table_frontier_peak;
     work->table_workspace_growth = parser->table_workspace_growth;
@@ -3808,6 +3810,84 @@ static void inline_lifecycle_projection(test_batch_runner *runner) {
             }
             markdown_core_strbuf_free(&source);
         }
+    }
+}
+
+/* A candidate byte that produces no token splits nothing: the literal run
+ * around it grows in place, so a paragraph of failed candidates is one Text
+ * from the start, not a chain of runs that finishing merges. The node count
+ * completion sees is therefore independent of how many candidates the
+ * paragraph holds. A fenced code block reads its info string at the fence
+ * and never relocates its body to remove it. */
+static void literal_run_growth(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    /* Each unit holds a byte that passes its element's start predicate and
+     * then fails to match: an unclosed tag, an unknown entity, a scheme-less
+     * `://`, a backslash before a letter. */
+    static const char *const candidates[] = {"x <y ", "a &b ", "c ://d ", "i \\j "};
+    for (size_t shape = 0; shape < sizeof(candidates) / sizeof(*candidates); shape++) {
+        for (size_t units = 256; units <= 4096; units *= 4) {
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+            for (size_t i = 0; i < units; i++) {
+                markdown_core_strbuf_puts(&source, candidates[shape]);
+            }
+            markdown_core_strbuf_puts(&source, "\n");
+            inline_work work = {0};
+            markdown_core_node *root = markdown_core_parse_document_with_mem((const char *)source.ptr, source.size, mem,
+                                                                             measure_inline_work, &work);
+            OK(runner, root != NULL, "literal run shape parses: shape=%zu units=%zu", shape, units);
+            bufsize_t expected = source.size - 1;
+            while (expected > 0 && source.ptr[expected - 1] == ' ') {
+                expected--;
+            }
+            if (root) {
+                markdown_core_node *paragraph = root->first_child;
+                OK(runner,
+                   paragraph && paragraph->first_child && paragraph->first_child == paragraph->last_child &&
+                       paragraph->first_child->kind == MARKDOWN_CORE_NODE_TEXT &&
+                       paragraph->first_child->as.literal->len == expected,
+                   "failed candidates leave one literal run: shape=%zu units=%zu", shape, units);
+                OK(runner, work.completion <= 4,
+                   "the run was never split for a failed candidate: shape=%zu units=%zu nodes=%zu", shape, units,
+                   work.completion);
+                OK(runner, work.text_run_extensions >= units - 1,
+                   "each failed candidate grew the run in place: shape=%zu units=%zu grown=%zu", shape, units,
+                   work.text_run_extensions);
+                markdown_core_node_free(root);
+            }
+            markdown_core_strbuf_free(&source);
+        }
+    }
+    for (size_t lines = 256; lines <= 4096; lines *= 4) {
+        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+        markdown_core_strbuf_puts(&source, "``` js  {.wide #listing}\n");
+        for (size_t i = 0; i < lines; i++) {
+            markdown_core_strbuf_puts(&source, "let x = 1;\n");
+        }
+        markdown_core_strbuf_puts(&source, "```\n");
+        inline_work work = {0};
+        markdown_core_node *root = markdown_core_parse_document_with_mem((const char *)source.ptr, source.size, mem,
+                                                                         measure_inline_work, &work);
+        OK(runner, root != NULL, "fenced block parses: lines=%zu", lines);
+        if (root) {
+            markdown_core_node *code = root->first_child;
+            OK(runner, code && code->kind == MARKDOWN_CORE_NODE_CODE_BLOCK && code->as.code->info.has_value,
+               "the fence line yields the info string: lines=%zu", lines);
+            if (code && code->kind == MARKDOWN_CORE_NODE_CODE_BLOCK && code->as.code->info.has_value) {
+                STR_EQ(runner, (const char *)code->as.code->info.value.data, "js", "the info string is trimmed");
+                OK(runner,
+                   code->attributes && code->attributes->anchor.len == 7 &&
+                       !memcmp(code->attributes->anchor.data, "listing", 7) && code->attributes->class_count == 1,
+                   "fence attributes attach at the fence: lines=%zu", lines);
+                OK(runner,
+                   code->as.code->literal.len == (bufsize_t)(lines * 11) &&
+                       !memcmp(code->as.code->literal.data, "let x = 1;\n", 11),
+                   "the body starts on the line after the fence: lines=%zu", lines);
+            }
+            INT_EQ(runner, work.code_block_moves, 0, "closing the block relocates no body byte: lines=%zu", lines);
+            markdown_core_node_free(root);
+        }
+        markdown_core_strbuf_free(&source);
     }
 }
 
@@ -6586,6 +6666,7 @@ int main(int argc, char **argv) {
     reference_probe_precheck(runner);
     finishing_walk_work(runner);
     inline_lifecycle_projection(runner);
+    literal_run_growth(runner);
     table_dash_suffixes(runner);
     nested_block_lookahead(runner);
     deep_inline_construction(runner);

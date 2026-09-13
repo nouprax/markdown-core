@@ -662,7 +662,7 @@ markdown_core_node *markdown_core_inline_handle_close_bracket(markdown_core_pars
     bufsize_t initial_pos = inline_state->pos;
     bracket *opener = inline_state->last_bracket;
     if (!opener) {
-        return markdown_core_inline_state_make_source_text(inline_state, initial_pos - 1, initial_pos - 1);
+        return markdown_core_inline_state_make_literal_run(inline_state, initial_pos - 1, initial_pos - 1);
     }
     if (opener->kind == BRACKET_FOOTNOTE) {
         return markdown_core_inline_close_inline_footnote(parser, inline_state, opener);
@@ -707,7 +707,7 @@ no_match:
     markdown_core_inline_finish_citation_tokens(inline_state, &opener->citations);
     markdown_core_inline_pop_bracket(inline_state);
     inline_state->pos = initial_pos;
-    return markdown_core_inline_state_make_source_text(inline_state, initial_pos - 1, initial_pos - 1);
+    return markdown_core_inline_state_make_literal_run(inline_state, initial_pos - 1, initial_pos - 1);
 }
 
 static markdown_core_node *match_bracket(const markdown_core_element *self, markdown_core_parser *parser,

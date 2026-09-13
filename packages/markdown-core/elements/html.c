@@ -78,8 +78,8 @@ static markdown_core_node *handle_pointy_brace(markdown_core_inline_state *inlin
         return node;
     }
 
-    // if nothing matches, just return the opening <:
-    return markdown_core_inline_state_make_source_text(inline_state, inline_state->pos - 1, inline_state->pos - 1);
+    // if nothing matches, the opening < is literal text of its run:
+    return markdown_core_inline_state_make_literal_run(inline_state, inline_state->pos - 1, inline_state->pos - 1);
 }
 
 static markdown_core_node *match(const markdown_core_element *self, markdown_core_parser *parser,

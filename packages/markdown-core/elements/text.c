@@ -38,7 +38,7 @@ static markdown_core_node *handle_backslash(markdown_core_parser *parser, markdo
         if ((end == inline_state->input.len && !MARKDOWN_CORE_NODE_TYPE_INLINE_P(inline_state->owner->kind)) ||
             (end < inline_state->input.len &&
              markdown_core_is_line_end(markdown_core_inline_peek_at(inline_state, end)))) {
-            return markdown_core_inline_state_make_source_text(inline_state, start, start);
+            return markdown_core_inline_state_make_literal_run(inline_state, start, start);
         }
         advance(inline_state);
         markdown_core_node *escaped =
@@ -104,7 +104,7 @@ static markdown_core_node *handle_backslash(markdown_core_parser *parser, markdo
         }
         return hard;
     } else {
-        return markdown_core_inline_state_make_source_text(inline_state, inline_state->pos - 1, inline_state->pos - 1);
+        return markdown_core_inline_state_make_literal_run(inline_state, inline_state->pos - 1, inline_state->pos - 1);
     }
 }
 
@@ -119,7 +119,7 @@ static markdown_core_node *handle_entity(markdown_core_inline_state *inline_stat
 
     if (len == 0) {
         markdown_core_node *literal =
-            markdown_core_inline_state_make_source_text(inline_state, inline_state->pos - 1, inline_state->pos - 1);
+            markdown_core_inline_state_make_literal_run(inline_state, inline_state->pos - 1, inline_state->pos - 1);
         /* Not an entity: the `&` IS the literal, so it is content. */
         return literal;
     }
@@ -181,6 +181,13 @@ markdown_core_node *markdown_core_text_parse(markdown_core_parser *parser, markd
     // if we're at a newline, strip trailing spaces.
     if (markdown_core_is_line_end(markdown_core_inline_peek_char(inline_state))) {
         markdown_core_chunk_rtrim(&contents);
+    }
+
+    /* An untrimmed run is literal text of its surroundings and may continue
+     * the run before it, or be continued; a run trimmed at a line ending is
+     * a fresh node, as before. */
+    if (contents.len == endpos - startpos) {
+        return markdown_core_inline_state_make_literal_run(inline_state, startpos, endpos - 1);
     }
 
     markdown_core_node *new_inl = make_str(inline_state, startpos, endpos - 1, contents);

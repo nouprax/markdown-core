@@ -420,6 +420,11 @@ void markdown_core_block_add_line(markdown_core_node *node, markdown_core_chunk 
             markdown_core_strbuf_putc(node->content, ' ');
         }
     }
+    /* A line consumed to its end (a fence line whose info string was read
+     * at the fence) contributes no bytes and therefore no run. */
+    if (parser->offset >= ch->len) {
+        return;
+    }
     S_record_content_mark(parser, node, parser->offset + 1, ch->len - parser->offset);
     markdown_core_strbuf_put(node->content, ch->data + parser->offset, ch->len - parser->offset);
     if (node->content->oom) {
@@ -1187,16 +1192,31 @@ static void S_parse_source(markdown_core_parser *parser, const unsigned char *so
     const unsigned char *cursor = source + metadata_length;
     const unsigned char *end = source + length;
     static const uint8_t repl[] = {239, 191, 189};
+    /* The line ends at the first LF, CR or NUL, each found with a vector
+     * search. A source without any CR or NUL -- the common one -- is told so
+     * by one pass each up front and then pays one search per line; the
+     * others bound the CR and NUL searches by the LF found, so a byte is
+     * examined at most three times and never one at a time. */
+    const bool has_cr = memchr(cursor, '\r', (size_t)(end - cursor)) != NULL;
+    const bool has_nul = memchr(cursor, '\0', (size_t)(end - cursor)) != NULL;
 
     while (cursor < end && !parser->oom) {
         const unsigned char *eol;
         bufsize_t segment_length;
         bool line_complete;
 
-        for (eol = cursor; eol < end; ++eol) {
-            if (markdown_core_is_line_end(*eol) || *eol == '\0') {
-                break;
+        {
+            const unsigned char *limit = memchr(cursor, '\n', (size_t)(end - cursor));
+            limit = limit ? limit : end;
+            if (has_cr) {
+                const unsigned char *cr = memchr(cursor, '\r', (size_t)(limit - cursor));
+                limit = cr ? cr : limit;
             }
+            if (has_nul) {
+                const unsigned char *nul = memchr(cursor, '\0', (size_t)(limit - cursor));
+                limit = nul ? nul : limit;
+            }
+            eol = limit;
         }
         line_complete = eol == end || markdown_core_is_line_end(*eol);
         segment_length = (bufsize_t)(eol - cursor);

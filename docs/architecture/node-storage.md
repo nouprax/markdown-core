@@ -156,6 +156,15 @@ existing ownership graph, and semantic reference cycles never become object
 cycles. The whole-tree `postprocess_func` remains a tooling hook that no
 built-in element declares.
 
+Few runs reach that merge. A literal run is a borrowed slice of its block's
+content, and a candidate byte that produces no token is a byte of the run
+around it: when the last child is the literal run that ends where the next
+one starts, the scanner grows that node in place instead of splitting it, so
+only line endings and real tokens divide a paragraph's text. The block phase
+copies each source line once into its block's content buffer, finding line
+endings with vector searches, and a fenced code block reads its info string
+at the fence line, so closing the block never relocates its body.
+
 The bracket scanner tracks the most recent non-SP/TAB byte over disjoint
 consumed token ranges, so rejecting empty bodies never rescans nested bodies.
 Only `^[` terminates an ordinary text run; other carets incur the same

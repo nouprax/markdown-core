@@ -188,6 +188,10 @@ struct markdown_core_parser {
     size_t completion_work, finishing_work;
     /* Lifecycle hook calls made for inline roots: implementers only. */
     size_t inline_lifecycle_work;
+    /* Literal runs grown in place instead of split, and body bytes a
+     * fenced code block relocated at close (none: its info string is read
+     * at the fence). */
+    size_t text_run_extensions, code_block_move_work;
     size_t table_scan_work, table_frontier_peak;
     size_t table_workspace_growth, table_geometry_lines, table_separator_scans;
     /* Properties work: source ranges decoded once at their owning boundary. */

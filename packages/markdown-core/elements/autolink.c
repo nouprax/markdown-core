@@ -495,7 +495,7 @@ static markdown_core_node *address_match(markdown_core_parser *parser, markdown_
         return NULL;
     }
 
-    node = markdown_core_inline_state_make_source_text(inline_state, (int)offset, (int)offset);
+    node = markdown_core_inline_state_make_literal_run(inline_state, (int)offset, (int)offset);
     if (!node) {
         return NULL;
     }

@@ -850,7 +850,10 @@ append:
         }
     }
     if (new_inl != NULL) {
-        markdown_core_node_attach_owned(parent, new_inl, NULL);
+        /* A literal grown onto the owner's last run is attached already. */
+        if (!new_inl->parent) {
+            markdown_core_node_attach_owned(parent, new_inl, NULL);
+        }
         bool has_fields = false;
         if (markdown_core_node_may_own_inline_subtrees(new_inl)) {
             markdown_core_visit_inline_subtrees(new_inl, has_inline_field, &has_fields);
@@ -1040,6 +1043,31 @@ markdown_core_node *markdown_core_inline_state_make_source_text(markdown_core_in
     }
     node = markdown_core_inline_make_literal(inline_state, MARKDOWN_CORE_NODE_TEXT, from, to,
                                              markdown_core_chunk_dup(&inline_state->input, from, to - from + 1));
+    return node;
+}
+
+markdown_core_node *markdown_core_inline_state_make_literal_run(markdown_core_inline_state *inline_state, int from,
+                                                                int to) {
+    const unsigned char *data = inline_state->input.data;
+    markdown_core_node *last = inline_state->owner ? inline_state->owner->last_child : NULL;
+    if (from < 0 || to < from || to >= inline_state->input.len) {
+        return NULL;
+    }
+    /* The tree never holds a split that the finishing walk would only merge
+     * back: the run's source runs are the same contiguous range either way. */
+    if (last && last->kind == MARKDOWN_CORE_NODE_TEXT && (last->flags & MARKDOWN_CORE_NODE__LITERAL_RUN) &&
+        !last->attributes && !last->as.literal->alloc &&
+        last->as.literal->data + last->as.literal->len == data + from) {
+        int start = (int)(last->as.literal->data - data);
+        MARKDOWN_CORE_DIAGNOSTIC(inline_state->owner_parser->text_run_extensions++;)
+        last->as.literal->len += to - from + 1;
+        markdown_core_inline_state_place(inline_state, last, start, to);
+        return last;
+    }
+    markdown_core_node *node = markdown_core_inline_state_make_source_text(inline_state, from, to);
+    if (node) {
+        node->flags |= MARKDOWN_CORE_NODE__LITERAL_RUN;
+    }
     return node;
 }
 

@@ -223,10 +223,16 @@ enum markdown_core_node__internal_flags {
     // Deferred contextual escape token, decoded when inline ownership is final.
     MARKDOWN_CORE_NODE__ESCAPED_SPACE = (1 << 6),
 
+    // A Text that is a borrowed, untrimmed slice of its block's content and
+    // nothing else refers to: the literal run the scanner may grow in place
+    // when the next literal continues where it ends
+    // (markdown_core_inline_state_make_literal_run).
+    MARKDOWN_CORE_NODE__LITERAL_RUN = (1 << 7),
+
     // The first bit an element may claim. Element flags are compile-time
     // constants owned by the element that uses them; there is no runtime
     // registration and no allocator to run out of bits.
-    MARKDOWN_CORE_NODE__ELEMENT_FIRST = (1 << 7),
+    MARKDOWN_CORE_NODE__ELEMENT_FIRST = (1 << 8),
 };
 
 typedef uint16_t markdown_core_node_internal_flags;

@@ -109,7 +109,7 @@ markdown_core_node *markdown_core_inline_close_inline_footnote(markdown_core_par
         !markdown_core_node_can_contain_type(opener->inl_text->parent, MARKDOWN_CORE_NODE_CITE)) {
         inline_state->no_link_openers = opener->outer_no_link_openers;
         markdown_core_inline_pop_bracket(inline_state);
-        return markdown_core_inline_state_make_source_text(inline_state, inline_state->pos - 1, inline_state->pos - 1);
+        return markdown_core_inline_state_make_literal_run(inline_state, inline_state->pos - 1, inline_state->pos - 1);
     }
     cite = markdown_core_inline_make_footnote_cite(inline_state, opener, inline_state->pos);
     footnote = cite ? markdown_core_inline_make_simple(inline_state, MARKDOWN_CORE_NODE_FOOTNOTE) : NULL;

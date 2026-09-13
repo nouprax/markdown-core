@@ -105,7 +105,7 @@ static markdown_core_node *match(const markdown_core_element *self, markdown_cor
         }
         return text;
     }
-    return markdown_core_inline_state_make_source_text(inline_state, inline_state->pos - 1, inline_state->pos - 1);
+    return markdown_core_inline_state_make_literal_run(inline_state, inline_state->pos - 1, inline_state->pos - 1);
 }
 
 static bool can_start(markdown_core_inline_state *state, bufsize_t at) {

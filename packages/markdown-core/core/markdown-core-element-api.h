@@ -607,6 +607,14 @@ int markdown_core_inline_state_get_column(markdown_core_inline_state *inline_sta
  * Does not move the inline cursor. Decoded text uses an owned literal instead.
  */
 MARKDOWN_CORE_EXPORT
+/* `[from, to]` are bytes of the literal text around them: a candidate that
+ * produced no token, or a fallback an element hands back as plain text. When
+ * the owner's last child is the literal run ending at `from`, the bytes join
+ * that run and it is returned, already attached; otherwise a new run is made.
+ * Only for text nothing else will refer to -- never a delimiter, bracket or
+ * token text, and never one the caller marks afterwards. */
+markdown_core_node *markdown_core_inline_state_make_literal_run(markdown_core_inline_state *inline_state, int from,
+                                                                int to);
 markdown_core_node *markdown_core_inline_state_make_source_text(markdown_core_inline_state *inline_state, int from,
                                                                 int to);
 

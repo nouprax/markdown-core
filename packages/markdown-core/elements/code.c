@@ -123,7 +123,8 @@ static markdown_core_node *handle_backticks(markdown_core_inline_state *inline_s
          * the run, so the literal was placed one column right -- and
          * consolidation then carried that end onto the whole merged text run:
          * `hi`lo` reported Text 1:5..1:8 inside a seven-byte paragraph. */
-        return make_str(inline_state, inline_state->pos - openticks.len, inline_state->pos - 1, openticks);
+        return markdown_core_inline_state_make_literal_run(inline_state, inline_state->pos - openticks.len,
+                                                           inline_state->pos - 1);
     } else {
         markdown_core_strbuf buf = MARKDOWN_CORE_BUF_INIT(inline_state->mem);
 
