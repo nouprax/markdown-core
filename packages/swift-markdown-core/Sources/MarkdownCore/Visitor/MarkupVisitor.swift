@@ -69,154 +69,149 @@ extension Markup {
     /// An explicit stack keeps call-stack depth independent of document depth.
     /// Only a visitor without a result can be used for automatic traversal.
     public func walk<V: MarkupVisitor>(with visitor: inout V) where V.Result == Void {
-        var walker = MarkupWalker(actions: [WalkAction(node: self, phase: .entering)])
+        var walker = MarkupWalker(actions: [(node: self, phase: .entering)])
         while let action = walker.actions.popLast() {
             action.node.accept(&visitor, phase: action.phase)
             guard action.phase == .entering else { continue }
-            walker.actions.append(WalkAction(node: action.node, phase: .exiting))
+            walker.actions.append((node: action.node, phase: .exiting))
             action.node.accept(&walker)
         }
     }
 }
 
-private struct WalkAction {
-    let node: any Markup
-    let phase: MarkupVisitPhase
-}
-
 // The walker visits each kind to schedule its child fields in traversal order.
 // Adding a kind requires specifying its traversal here.
 private struct MarkupWalker: MarkupVisitor {
-    var actions: [WalkAction]
+    var actions: [(node: any Markup, phase: MarkupVisitPhase)]
 
     mutating func visit(_ node: Document, phase: MarkupVisitPhase) {
-        for child in node.specimens.reversed() { actions.append(WalkAction(node: child, phase: .entering)) }
-        for child in node.footnotes.reversed() { actions.append(WalkAction(node: child, phase: .entering)) }
-        for child in node.content.reversed() { actions.append(WalkAction(node: child, phase: .entering)) }
-        if let child = node.metadata { actions.append(WalkAction(node: child, phase: .entering)) }
+        for child in node.specimens.reversed() { actions.append((node: child, phase: .entering)) }
+        for child in node.footnotes.reversed() { actions.append((node: child, phase: .entering)) }
+        for child in node.content.reversed() { actions.append((node: child, phase: .entering)) }
+        if let child = node.metadata { actions.append((node: child, phase: .entering)) }
     }
 
     mutating func visit(_ node: Callout, phase: MarkupVisitPhase) {
-        for child in node.content.reversed() { actions.append(WalkAction(node: child, phase: .entering)) }
+        for child in node.content.reversed() { actions.append((node: child, phase: .entering)) }
         if let nodes = node.title {
-            for child in nodes.reversed() { actions.append(WalkAction(node: child, phase: .entering)) }
+            for child in nodes.reversed() { actions.append((node: child, phase: .entering)) }
         }
     }
 
     mutating func visit(_ node: Paragraph, phase: MarkupVisitPhase) {
-        for child in node.content.reversed() { actions.append(WalkAction(node: child, phase: .entering)) }
+        for child in node.content.reversed() { actions.append((node: child, phase: .entering)) }
     }
 
     mutating func visit(_ node: Heading, phase: MarkupVisitPhase) {
-        for child in node.content.reversed() { actions.append(WalkAction(node: child, phase: .entering)) }
+        for child in node.content.reversed() { actions.append((node: child, phase: .entering)) }
     }
 
     mutating func visit(_ node: List, phase: MarkupVisitPhase) {
-        for child in node.items.reversed() { actions.append(WalkAction(node: child, phase: .entering)) }
+        for child in node.items.reversed() { actions.append((node: child, phase: .entering)) }
     }
 
     mutating func visit(_ node: ListItem, phase: MarkupVisitPhase) {
-        for child in node.content.reversed() { actions.append(WalkAction(node: child, phase: .entering)) }
+        for child in node.content.reversed() { actions.append((node: child, phase: .entering)) }
     }
 
     mutating func visit(_ node: Table, phase: MarkupVisitPhase) {
-        for child in node.foot.reversed() { actions.append(WalkAction(node: child, phase: .entering)) }
-        for child in node.content.reversed() { actions.append(WalkAction(node: child, phase: .entering)) }
-        for child in node.head.reversed() { actions.append(WalkAction(node: child, phase: .entering)) }
-        if let child = node.caption { actions.append(WalkAction(node: child, phase: .entering)) }
+        for child in node.foot.reversed() { actions.append((node: child, phase: .entering)) }
+        for child in node.content.reversed() { actions.append((node: child, phase: .entering)) }
+        for child in node.head.reversed() { actions.append((node: child, phase: .entering)) }
+        if let child = node.caption { actions.append((node: child, phase: .entering)) }
     }
 
     mutating func visit(_ node: TableCaption, phase: MarkupVisitPhase) {
-        for child in node.content.reversed() { actions.append(WalkAction(node: child, phase: .entering)) }
+        for child in node.content.reversed() { actions.append((node: child, phase: .entering)) }
     }
 
     mutating func visit(_ node: TableRow, phase: MarkupVisitPhase) {
-        for child in node.cells.reversed() { actions.append(WalkAction(node: child, phase: .entering)) }
+        for child in node.cells.reversed() { actions.append((node: child, phase: .entering)) }
     }
 
     mutating func visit(_ node: TableCell, phase: MarkupVisitPhase) {
-        for child in node.content.reversed() { actions.append(WalkAction(node: child, phase: .entering)) }
+        for child in node.content.reversed() { actions.append((node: child, phase: .entering)) }
     }
 
     mutating func visit(_ node: DirectiveBlock, phase: MarkupVisitPhase) {
-        for child in node.content.reversed() { actions.append(WalkAction(node: child, phase: .entering)) }
-        if let child = node.label { actions.append(WalkAction(node: child, phase: .entering)) }
+        for child in node.content.reversed() { actions.append((node: child, phase: .entering)) }
+        if let child = node.label { actions.append((node: child, phase: .entering)) }
     }
 
     mutating func visit(_ node: DirectiveLabel, phase: MarkupVisitPhase) {
-        for child in node.content.reversed() { actions.append(WalkAction(node: child, phase: .entering)) }
+        for child in node.content.reversed() { actions.append((node: child, phase: .entering)) }
     }
 
     mutating func visit(_ node: Emphasis, phase: MarkupVisitPhase) {
-        for child in node.content.reversed() { actions.append(WalkAction(node: child, phase: .entering)) }
+        for child in node.content.reversed() { actions.append((node: child, phase: .entering)) }
     }
 
     mutating func visit(_ node: Strong, phase: MarkupVisitPhase) {
-        for child in node.content.reversed() { actions.append(WalkAction(node: child, phase: .entering)) }
+        for child in node.content.reversed() { actions.append((node: child, phase: .entering)) }
     }
 
     mutating func visit(_ node: Strikethrough, phase: MarkupVisitPhase) {
-        for child in node.content.reversed() { actions.append(WalkAction(node: child, phase: .entering)) }
+        for child in node.content.reversed() { actions.append((node: child, phase: .entering)) }
     }
 
     mutating func visit(_ node: Mark, phase: MarkupVisitPhase) {
-        for child in node.content.reversed() { actions.append(WalkAction(node: child, phase: .entering)) }
+        for child in node.content.reversed() { actions.append((node: child, phase: .entering)) }
     }
 
     mutating func visit(_ node: Insertion, phase: MarkupVisitPhase) {
-        for child in node.content.reversed() { actions.append(WalkAction(node: child, phase: .entering)) }
+        for child in node.content.reversed() { actions.append((node: child, phase: .entering)) }
     }
 
     mutating func visit(_ node: Span, phase: MarkupVisitPhase) {
-        for child in node.content.reversed() { actions.append(WalkAction(node: child, phase: .entering)) }
+        for child in node.content.reversed() { actions.append((node: child, phase: .entering)) }
     }
 
     mutating func visit(_ node: Superscript, phase: MarkupVisitPhase) {
-        for child in node.content.reversed() { actions.append(WalkAction(node: child, phase: .entering)) }
+        for child in node.content.reversed() { actions.append((node: child, phase: .entering)) }
     }
 
     mutating func visit(_ node: Subscript, phase: MarkupVisitPhase) {
-        for child in node.content.reversed() { actions.append(WalkAction(node: child, phase: .entering)) }
+        for child in node.content.reversed() { actions.append((node: child, phase: .entering)) }
     }
 
     mutating func visit(_ node: Link, phase: MarkupVisitPhase) {
-        for child in node.content.reversed() { actions.append(WalkAction(node: child, phase: .entering)) }
+        for child in node.content.reversed() { actions.append((node: child, phase: .entering)) }
     }
 
     mutating func visit(_ node: Embedded, phase: MarkupVisitPhase) {
-        for child in node.content.reversed() { actions.append(WalkAction(node: child, phase: .entering)) }
+        for child in node.content.reversed() { actions.append((node: child, phase: .entering)) }
     }
 
     mutating func visit(_ node: Directive, phase: MarkupVisitPhase) {
-        if let child = node.label { actions.append(WalkAction(node: child, phase: .entering)) }
+        if let child = node.label { actions.append((node: child, phase: .entering)) }
     }
 
     mutating func visit(_ node: Cite, phase: MarkupVisitPhase) {
-        for child in node.citations.reversed() { actions.append(WalkAction(node: child, phase: .entering)) }
+        for child in node.citations.reversed() { actions.append((node: child, phase: .entering)) }
     }
 
     mutating func visit(_ node: DefinitionList, phase: MarkupVisitPhase) {
-        for child in node.definitions.reversed() { actions.append(WalkAction(node: child, phase: .entering)) }
+        for child in node.definitions.reversed() { actions.append((node: child, phase: .entering)) }
     }
 
     mutating func visit(_ node: Definition, phase: MarkupVisitPhase) {
         for body in node.content.reversed() {
-            for child in body.reversed() { actions.append(WalkAction(node: child, phase: .entering)) }
+            for child in body.reversed() { actions.append((node: child, phase: .entering)) }
         }
-        for child in node.term.reversed() { actions.append(WalkAction(node: child, phase: .entering)) }
+        for child in node.term.reversed() { actions.append((node: child, phase: .entering)) }
     }
 
     mutating func visit(_ node: Citation, phase: MarkupVisitPhase) {
-        for child in node.suffix.reversed() { actions.append(WalkAction(node: child, phase: .entering)) }
-        for child in node.prefix.reversed() { actions.append(WalkAction(node: child, phase: .entering)) }
+        for child in node.suffix.reversed() { actions.append((node: child, phase: .entering)) }
+        for child in node.prefix.reversed() { actions.append((node: child, phase: .entering)) }
     }
 
     mutating func visit(_ node: Footnote, phase: MarkupVisitPhase) {
-        for child in node.content.reversed() { actions.append(WalkAction(node: child, phase: .entering)) }
+        for child in node.content.reversed() { actions.append((node: child, phase: .entering)) }
     }
 
     mutating func visit(_ node: Specimen, phase: MarkupVisitPhase) {
-        for child in node.content.reversed() { actions.append(WalkAction(node: child, phase: .entering)) }
+        for child in node.content.reversed() { actions.append((node: child, phase: .entering)) }
     }
 
     mutating func visit(_ node: ThematicBreak, phase: MarkupVisitPhase) {}
