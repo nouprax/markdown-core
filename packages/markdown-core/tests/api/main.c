@@ -6287,6 +6287,38 @@ static const char *dump_line_of(const char *dump, const char *kind) {
  * its own start: a document of paragraphs or list items runs no block
  * lookahead at all, and what the lookahead used to decide is decided the
  * same way from the line that settles it. */
+/* A finishing hook answers the node now in the position, which may be of
+ * another kind: the core formula element turns a `$$x$$` paragraph into a
+ * formula block. A hook after it that names formula blocks is offered that
+ * block, as it would be offered any other. */
+static size_t formula_blocks_finished_after_conversion;
+static markdown_core_node *count_finished_formula_blocks(const markdown_core_element *element,
+                                                         markdown_core_parser *parser, markdown_core_node *node,
+                                                         int claim_depth) {
+    (void)element;
+    (void)parser;
+    (void)claim_depth;
+    formula_blocks_finished_after_conversion += node->kind == MARKDOWN_CORE_NODE_FORMULA_BLOCK;
+    return node;
+}
+static const markdown_core_node_type FORMULA_BLOCK_KINDS[] = {MARKDOWN_CORE_NODE_FORMULA_BLOCK,
+                                                             MARKDOWN_CORE_NODE_NONE};
+static const markdown_core_element FORMULA_BLOCK_FINISH_PROBE = {.name = "formula-block-finish-probe",
+                                                                 .finish_node = count_finished_formula_blocks,
+                                                                 .finish_node_kinds = FORMULA_BLOCK_KINDS};
+static void finishers_see_the_node_a_hook_put_in_place(test_batch_runner *runner) {
+    static const markdown_core_element *const probes[] = {&FORMULA_BLOCK_FINISH_PROBE};
+    static const char source[] = "$$x$$\n\ntext\n";
+    formula_blocks_finished_after_conversion = 0;
+    markdown_core_node *root = parse_with_probes(source, sizeof(source) - 1, probes, 1);
+    OK(runner, root != NULL, "a parse with a typed finisher completes");
+    OK(runner, root && root->first_child && root->first_child->kind == MARKDOWN_CORE_NODE_FORMULA_BLOCK,
+       "the formula element made a formula block of the paragraph");
+    INT_EQ(runner, (int)formula_blocks_finished_after_conversion, 1,
+           "a hook naming formula blocks is offered the block a hook before it made");
+    markdown_core_node_free(root);
+}
+
 static void terms_and_headers_from_the_line_below(test_batch_runner *runner) {
     static const struct {
         const char *source, *kind, *expect;
@@ -7743,6 +7775,7 @@ int main(int argc, char **argv) {
     deep_dump_prefixes(runner);
     ascii_runs_project_like_scalars(runner);
     terms_and_headers_from_the_line_below(runner);
+    finishers_see_the_node_a_hook_put_in_place(runner);
 
     test_print_summary(runner);
     retval = test_ok(runner) ? 0 : 1;

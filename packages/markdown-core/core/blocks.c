@@ -2570,6 +2570,9 @@ static markdown_core_node *S_finish_node(markdown_core_parser *parser, markdown_
             return NULL;
         }
     }
+    /* A hook answers the node now in the position, which may be of another
+     * kind than the one it was offered; the hooks after it are chosen by
+     * that node's kind, as they would see it. */
     uint64_t bit = S_kind_bit((markdown_core_node_type)node->kind);
     for (const finisher *hook = walk->finishers, *end = hook + walk->count; hook != end && node; hook++) {
         if (!(hook->kinds & bit)) {
@@ -2577,9 +2580,15 @@ static markdown_core_node *S_finish_node(markdown_core_parser *parser, markdown_
         }
         const markdown_core_element *element = hook->element;
         MARKDOWN_CORE_DIAGNOSTIC(parser->finisher_work++;)
-        node = element->finish_node(element, parser, node, claim_depth);
+        markdown_core_node *finished = element->finish_node(element, parser, node, claim_depth);
         if (parser->oom) {
             return NULL;
+        }
+        if (finished != node) {
+            node = finished;
+            if (node) {
+                bit = S_kind_bit((markdown_core_node_type)node->kind);
+            }
         }
     }
     return node;
