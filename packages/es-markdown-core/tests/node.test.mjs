@@ -1450,6 +1450,24 @@ test("api: owned scoped elements are Markup with finite walks and preserved iden
     }
 });
 
+test("robustness: deep dumps carry the segment of every open level", () => {
+    // "    " for the list (the document's last child), "│   " for the first
+    // item (its sibling follows), "    " for every level of the chain, then
+    // the corner of the leaf text -- at a depth where deriving the lead-in
+    // per line would dominate the dump.
+    const depth = 2_000;
+    const lines = Document.parse(`${"- ".repeat(depth)}leaf\n- tail\n`)
+        .dump()
+        .trimEnd()
+        .split("\n");
+    assert.equal(lines.length, depth * 2 + 6);
+    const leaf = lines[depth * 2 + 2];
+    assert.ok(leaf.includes('literal="leaf"'));
+    assert.equal(leaf.slice(0, (depth * 2 + 2) * 4 + 5), `    │   ${"    ".repeat(depth * 2 - 1)}└── Text `);
+    assert.ok(lines[depth * 2 + 3].startsWith("    └── ListItem "));
+    assert.ok(lines.at(-1).startsWith("            └── Text ") && lines.at(-1).includes('literal="tail"'));
+});
+
 test("robustness: deep dumps run with a bounded JavaScript call stack", () => {
     const module = new URL("../dist/index.js", import.meta.url).href;
     const script = `

@@ -1271,6 +1271,67 @@ static size_t total_nodes(markdown_core_node *node) {
     return n;
 }
 
+/* The file-tree lead-in of a dump line is the segments of every open level
+ * above it: a level whose node has a following sibling keeps a vertical bar
+ * down the whole subtree below it, and the last node of a level closes with
+ * a corner. A deep chain under an item that has a sibling shows every kind of
+ * segment at once, at a depth where deriving the lead-in per line would
+ * dominate the dump. */
+static void deep_dump_prefixes(test_batch_runner *runner) {
+    enum { DEPTH = 2000 };
+    static const char tail[] = "leaf\n- tail\n";
+    size_t length = (size_t)DEPTH * 2 + sizeof(tail) - 1;
+    char *markdown = (char *)malloc(length + 1);
+    markdown_core_document *document;
+    uint8_t *dump = NULL;
+    size_t dump_length = 0, lines = 0, i;
+    const char *leaf, *start, *cursor, *last;
+    bool prefix_ok;
+    if (!markdown) {
+        OK(runner, 0, "deep dump input allocates");
+        return;
+    }
+    for (i = 0; i < DEPTH; i++) {
+        markdown[i * 2] = '-';
+        markdown[i * 2 + 1] = ' ';
+    }
+    memcpy(markdown + (size_t)DEPTH * 2, tail, sizeof(tail));
+    document = markdown_core_document_parse((const uint8_t *)markdown, length, NULL);
+    OK(runner, document && markdown_core_document_dump(document, &dump, &dump_length, NULL), "deep dump succeeds");
+    if (dump) {
+        for (i = 0; i < dump_length; i++) {
+            lines += dump[i] == '\n';
+        }
+        OK(runner, lines == (size_t)DEPTH * 2 + 6, "deep dump has one line per node");
+        leaf = strstr((const char *)dump, "literal=\"leaf\"");
+        start = leaf;
+        while (start && start > (const char *)dump && start[-1] != '\n') {
+            start--;
+        }
+        /* "    " for the list (the document's last child), "│   " for the
+         * first item (its sibling follows), "    " for every level of the
+         * chain, then the corner of the leaf text. */
+        prefix_ok = start && memcmp(start, "    │   ", 10) == 0;
+        cursor = start ? start + 10 : NULL;
+        for (i = 0; prefix_ok && i < (size_t)DEPTH * 2 - 1; i++, cursor += 4) {
+            prefix_ok = memcmp(cursor, "    ", 4) == 0;
+        }
+        OK(runner, prefix_ok && memcmp(cursor, "└── Text ", 11) == 0,
+           "every open level above the leaf contributes its own segment");
+        OK(runner, start && strstr(start, "\n    └── ListItem ") != NULL,
+           "the sibling item follows the chain at the list's level");
+        last = (const char *)dump + dump_length - 1;
+        while (last > (const char *)dump && last[-1] != '\n') {
+            last--;
+        }
+        OK(runner, strncmp(last, "            └── Text ", 25) == 0 && strstr(last, "literal=\"tail\"") != NULL,
+           "the sibling's leaf closes the dump under an unbarred lead-in");
+        markdown_core_dump_free(dump);
+    }
+    markdown_core_document_free(document);
+    free(markdown);
+}
+
 static void iterator_contract_is_total(test_batch_runner *runner) {
     static const char md[] = "---\n"
                              "\n"
@@ -7360,6 +7421,7 @@ int main(int argc, char **argv) {
     inline_dispatch_ownership(runner);
     no_node_is_its_own_ancestor(runner);
     iterator_contract_is_total(runner);
+    deep_dump_prefixes(runner);
 
     test_print_summary(runner);
     retval = test_ok(runner) ? 0 : 1;

@@ -30,8 +30,17 @@ typedef struct dump_buffer {
     size_t size;
     size_t capacity;
     bool failed;
+    /* The file-tree connectors of every open nesting level. `more[depth]` says
+     * whether the node drawn at `depth` has a following sibling: it decides
+     * that node's own connector and the segment every line below it carries
+     * for that level. `prefix` holds those segments as bytes, one per level
+     * above the current line, and `prefix_end[depth]` is where the segments
+     * above `depth` end -- so a line copies its lead-in once instead of
+     * deriving it level by level. */
     bool *more;
-    size_t more_capacity;
+    uint8_t *prefix;
+    size_t *prefix_end;
+    size_t level_capacity;
 } dump_buffer;
 
 static void clear_error(markdown_core_error **error) {
@@ -971,24 +980,60 @@ static void buffer_optional_string(dump_buffer *buffer, markdown_core_optional_s
     }
 }
 
-static bool ensure_more(dump_buffer *buffer, size_t depth) {
+#define DUMP_SEGMENT_MAX 6 /* the bytes of "│   " */
+
+static bool ensure_level(dump_buffer *buffer, size_t depth) {
     bool *more;
+    uint8_t *prefix;
+    size_t *prefix_end;
     size_t capacity;
-    if (depth < buffer->more_capacity) {
+    if (depth < buffer->level_capacity) {
         return true;
     }
-    capacity = buffer->more_capacity ? buffer->more_capacity : 16;
+    capacity = buffer->level_capacity ? buffer->level_capacity : 16;
     while (capacity <= depth) {
         capacity *= 2;
     }
     more = (bool *)realloc(buffer->more, capacity * sizeof(*more));
-    if (!more) {
+    if (more) {
+        buffer->more = more;
+    }
+    prefix = (uint8_t *)realloc(buffer->prefix, capacity * DUMP_SEGMENT_MAX);
+    if (prefix) {
+        buffer->prefix = prefix;
+    }
+    prefix_end = (size_t *)realloc(buffer->prefix_end, capacity * sizeof(*prefix_end));
+    if (prefix_end) {
+        buffer->prefix_end = prefix_end;
+    }
+    if (!more || !prefix || !prefix_end) {
         buffer->failed = true;
         return false;
     }
-    buffer->more = more;
-    buffer->more_capacity = capacity;
+    if (!buffer->level_capacity) {
+        buffer->prefix_end[0] = 0;
+    }
+    buffer->level_capacity = capacity;
     return true;
+}
+
+/* Extends the segments to cover `depth`: the lines nested below the node at
+ * `depth` lead with the segments above it plus the one its own connector
+ * decides. Called once the node's `more` flag is set and before anything
+ * is drawn below it. */
+static void extend_prefix(dump_buffer *buffer, size_t depth) {
+    size_t base;
+    if (!depth) {
+        return;
+    }
+    base = buffer->prefix_end[depth - 1];
+    if (buffer->more[depth - 1]) {
+        memcpy(buffer->prefix + base, "│   ", 6);
+        buffer->prefix_end[depth] = base + 6;
+    } else {
+        memcpy(buffer->prefix + base, "    ", 4);
+        buffer->prefix_end[depth] = base + 4;
+    }
 }
 
 static const char *flow_name(markdown_core_flow flow) {
@@ -1351,15 +1396,13 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
 
 static void dump_node(dump_buffer *buffer, const markdown_core_node *node, size_t depth);
 
-/* The file-tree connectors that lead a line at `depth`. */
+/* The file-tree connectors that lead a line at `depth`: the segments of the
+ * levels above, copied once, then the connector its own level decides. */
 static void dump_prefix(dump_buffer *buffer, size_t depth) {
-    size_t i;
     if (!depth) {
         return;
     }
-    for (i = 0; i + 1 < depth; i++) {
-        buffer_cstr(buffer, buffer->more[i] ? "│   " : "    ");
-    }
+    buffer_bytes(buffer, buffer->prefix, buffer->prefix_end[depth - 1]);
     buffer_cstr(buffer, buffer->more[depth - 1] ? "├── " : "└── ");
 }
 
@@ -1367,10 +1410,11 @@ static void dump_prefix(dump_buffer *buffer, size_t depth) {
  * caller states their total so connectors remain a formatting concern rather
  * than redefining either relation as the other. */
 static void dump_nested_node(dump_buffer *buffer, const markdown_core_node *node, size_t depth, bool has_next) {
-    if (!ensure_more(buffer, depth)) {
+    if (!ensure_level(buffer, depth)) {
         return;
     }
     buffer->more[depth] = has_next;
+    extend_prefix(buffer, depth);
     dump_node(buffer, node, depth + 1);
 }
 
@@ -1399,10 +1443,11 @@ static void dump_directive_nodes(dump_buffer *buffer, const markdown_core_node *
  * with no scope and no fields, at the owner's nesting depth, and the list's
  * nodes one level below it. */
 static void dump_group_line(dump_buffer *buffer, const char *name, size_t count, size_t depth, bool has_next) {
-    if (!ensure_more(buffer, depth)) {
+    if (!ensure_level(buffer, depth)) {
         return;
     }
     buffer->more[depth] = has_next;
+    extend_prefix(buffer, depth);
     dump_prefix(buffer, depth + 1);
     buffer_cstr(buffer, name);
     buffer_cstr(buffer, " children=");
@@ -1739,6 +1784,8 @@ bool markdown_core_document_dump(const markdown_core_document *document, uint8_t
     *length = 0;
     dump_node(&buffer, document->root, 0);
     free(buffer.more);
+    free(buffer.prefix);
+    free(buffer.prefix_end);
     if (buffer.failed) {
         free(buffer.data);
         set_error(error, &ERROR_DUMP_ALLOCATION);

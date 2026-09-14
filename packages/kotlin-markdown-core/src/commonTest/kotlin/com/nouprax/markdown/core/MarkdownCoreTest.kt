@@ -33,6 +33,30 @@ class ApiTest {
     }
 
     @Test
+    fun deepDumpsCarryTheSegmentOfEveryOpenLevel() {
+        // "    " for the list (the document's last child), "│   " for the first
+        // item (its sibling follows), "    " for every level of the chain, then
+        // the corner of the leaf text -- at a depth where deriving the lead-in
+        // per line would dominate the dump.
+        val depth = 2_000
+        val lines =
+            Document
+                .parse("- ".repeat(depth) + "leaf\n- tail\n")
+                .dump()
+                .trimEnd('\n')
+                .lines()
+        assertEquals(depth * 2 + 6, lines.size)
+        val leaf = lines[depth * 2 + 2]
+        assertTrue(leaf.contains("literal=\"leaf\""))
+        assertEquals(
+            "    │   " + "    ".repeat(depth * 2 - 1) + "└── Text ",
+            leaf.substring(0, (depth * 2 + 2) * 4 + 5),
+        )
+        assertTrue(lines[depth * 2 + 3].startsWith("    └── ListItem "))
+        assertTrue(lines.last().startsWith("            └── Text ") && lines.last().contains("literal=\"tail\""))
+    }
+
+    @Test
     fun deepDumpsConsumeWalkerCallbacks() {
         val depth = 512
         val lines =

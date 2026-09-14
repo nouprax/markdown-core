@@ -331,4 +331,22 @@ import Testing
         #expect(walkingVisitor.entered > 20_000)
         for _ in 0..<2_000 { #expect(try Document.parse("# Copy\n\n- [x] item\n").content.count == 2) }
     }
+
+    @Test("deep dumps carry the segment of every open level")
+    func deepDumpSegments() throws {
+        // "    " for the list (the document's last child), "│   " for the first
+        // item (its sibling follows), "    " for every level of the chain, then
+        // the corner of the leaf text -- at a depth where deriving the lead-in
+        // per line would dominate the dump.
+        let depth = 2_000
+        let dump = try Document.parse(String(repeating: "- ", count: depth) + "leaf\n- tail\n").dump()
+        let lines = dump.split(separator: "\n", omittingEmptySubsequences: false).dropLast()
+        #expect(lines.count == depth * 2 + 6)
+        let leaf = lines[depth * 2 + 2]
+        #expect(leaf.contains("literal=\"leaf\""))
+        #expect(leaf.hasPrefix("    │   " + String(repeating: "    ", count: depth * 2 - 1) + "└── Text "))
+        #expect(lines[depth * 2 + 3].hasPrefix("    └── ListItem "))
+        let last = lines.last ?? ""
+        #expect(last.hasPrefix("            └── Text ") && last.contains("literal=\"tail\""))
+    }
 }

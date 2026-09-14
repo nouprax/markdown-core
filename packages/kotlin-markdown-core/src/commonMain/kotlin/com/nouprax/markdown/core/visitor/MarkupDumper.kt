@@ -19,15 +19,25 @@ private class State {
     )
 
     private val frames = mutableListOf<Frame>()
-    private val remainingNodes = mutableListOf<Int>()
-    private val lines = mutableListOf<String>()
+
+    // The nodes still to draw at every open nesting level, as a stack of ints.
+    private var remainingNodes = IntArray(16)
+    private var depth = 0
+
+    // The connector segments of every open nesting level, and where the
+    // segments above each depth end: a line copies its lead-in once and
+    // extends the segments by the one its own connector decides, instead of
+    // deriving every level again per line.
+    private val prefix = StringBuilder()
+    private var prefixEnds = IntArray(17)
+    private val output = StringBuilder()
     private val visitor = DumpVisitor(this)
 
     fun dump(node: Markup) {
         node.walk(visitor)
     }
 
-    fun result(): String = lines.joinToString(separator = "\n", postfix = "\n")
+    fun result(): String = output.toString()
 
     fun container(
         kind: String,
@@ -52,7 +62,7 @@ private class State {
             children,
         )
         frames += Frame(groups)
-        remainingNodes += groups.sumOf { (name, count) -> if (name == null) count else 1 }
+        push(groups.sumOf { (name, count) -> if (name == null) count else 1 })
     }
 
     /** Formats a node line from its common and kind-specific fields. */
@@ -67,17 +77,34 @@ private class State {
     }
 
     private fun emit(text: String) {
-        if (remainingNodes.isEmpty()) {
-            lines += text
+        if (depth == 0) {
+            output.append(text).append('\n')
             return
         }
 
-        val parent = remainingNodes.lastIndex
-        val prefix = remainingNodes.dropLast(1).joinToString("") { if (it > 0) "│   " else "    " }
-        val connector = if (remainingNodes[parent] == 1) "└── " else "├── "
-        lines += prefix + connector + text
-        remainingNodes[parent] -= 1
+        val parent = depth - 1
+        val remaining = remainingNodes[parent] - 1
+        remainingNodes[parent] = remaining
+        val above = prefixEnds[parent]
+        output
+            .append(prefix, 0, above)
+            .append(if (remaining == 0) "└── " else "├── ")
+            .append(text)
+            .append('\n')
+        prefix.setLength(above)
+        prefix.append(if (remaining > 0) "│   " else "    ")
+        prefixEnds[depth] = prefix.length
     }
+
+    private fun push(count: Int) {
+        if (depth == remainingNodes.size) {
+            remainingNodes = remainingNodes.copyOf(depth * 2)
+            prefixEnds = prefixEnds.copyOf(depth * 2 + 1)
+        }
+        remainingNodes[depth++] = count
+    }
+
+    private fun pop(): Int = remainingNodes[--depth]
 
     fun start() {
         if (frames.isEmpty()) return
@@ -89,21 +116,21 @@ private class State {
     fun end() {
         advance()
         check(frames.removeAt(frames.lastIndex).remaining == 0)
-        check(remainingNodes.removeAt(remainingNodes.lastIndex) == 0)
+        check(pop() == 0)
     }
 
     private fun advance() {
         val frame = frames.last()
         while (frame.remaining == 0 && frame.index < frame.groups.size) {
             if (frame.index >= 0 && frame.groups[frame.index].first != null) {
-                check(remainingNodes.removeAt(remainingNodes.lastIndex) == 0)
+                check(pop() == 0)
             }
             frame.index += 1
             if (frame.index == frame.groups.size) return
             val (name, count) = frame.groups[frame.index]
             if (name != null) {
                 emit("$name children=$count")
-                remainingNodes += count
+                push(count)
             }
             frame.remaining = count
         }
@@ -930,7 +957,7 @@ private fun metadataValue(value: MetadataValue): String =
 private fun identifier(value: String): String {
     val plain =
         value.isNotEmpty() &&
-            value.all { it.code in 33..126 && it.code !in listOf(34, 92, 123, 125, 91, 93, 40, 41, 61) }
+            value.all { it.code in 33..126 && it !in "\"\\{}[]()=" }
     return if (plain) value else escaped(value)
 }
 
