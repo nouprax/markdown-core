@@ -29,6 +29,10 @@ markdown_core_mem *markdown_core_arena_mem(const markdown_core_arena *arena);
 /* Storage that lives as long as the arena, not zeroed: the caller writes
  * every byte it asked for. */
 void *markdown_core_arena_alloc(markdown_core_arena *arena, size_t size);
+/* The same, for bytes that need no alignment -- copied text. Short strings
+ * pack against each other inside a slab rather than each taking an alignment
+ * granule. Record storage is unaffected: the two never share a cursor. */
+void *markdown_core_arena_text(markdown_core_arena *arena, size_t size);
 /* Grow the arena's latest allocation in place: `storage`, the `size` bytes
  * served last, becomes `needed` bytes when its block has the room. Returns
  * false, changing nothing, when `storage` is not the latest allocation or

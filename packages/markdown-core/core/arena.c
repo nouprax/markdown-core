@@ -9,6 +9,7 @@
 #define ARENA_GRANULE 16
 #define ARENA_CLASSES 64
 #define ARENA_FIRST_BLOCK 4096
+#define ARENA_TEXT_SLAB 256
 #define ARENA_LARGEST_BLOCK (256u << 10)
 
 typedef struct arena_block {
@@ -25,6 +26,8 @@ struct markdown_core_arena {
     markdown_core_mem *mem;
     arena_block *current;
     size_t next_capacity;
+    /* The slab the next unaligned text ask is cut from, and its end. */
+    unsigned char *text_at, *text_end;
     free_record *pools[ARENA_CLASSES];
 };
 
@@ -116,6 +119,28 @@ void *markdown_core_arena_alloc(markdown_core_arena *arena, size_t size) {
     }
     void *record = block_data(block) + block->used;
     block->used += size;
+    return record;
+}
+
+/* Storage for bytes, which need no alignment: the copied text of a value, a
+ * name, a destination. A slab of records serves many of them, so a document's
+ * short strings cost their length rather than a granule each, and the record
+ * path above is untouched -- a parse that copies no text pays nothing. */
+void *markdown_core_arena_text(markdown_core_arena *arena, size_t size) {
+    if (!size) {
+        size = 1;
+    }
+    if ((size_t)(arena->text_end - arena->text_at) < size) {
+        size_t slab = size > ARENA_TEXT_SLAB ? size : ARENA_TEXT_SLAB;
+        unsigned char *fresh = markdown_core_arena_alloc(arena, slab);
+        if (!fresh) {
+            return NULL;
+        }
+        arena->text_at = fresh;
+        arena->text_end = fresh + round_up(slab);
+    }
+    unsigned char *record = arena->text_at;
+    arena->text_at += size;
     return record;
 }
 

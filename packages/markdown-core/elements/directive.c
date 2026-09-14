@@ -142,14 +142,30 @@ static int scan_label(const unsigned char *data, bufsize_t len, bufsize_t pos, b
     return 0;
 }
 
-static int set_chunk_bytes(markdown_core_mem *mem, markdown_core_chunk *chunk, const unsigned char *data,
-                           bufsize_t len) {
+/* The transient line buffer is never kept: these bytes are copied. A parse
+ * transaction's arena holds the copy and the chunk borrows it, so a
+ * directive costs no allocation for its name; without one the chunk owns
+ * the allocator's bytes, as a node built outside a parse needs. */
+static int set_chunk_bytes(markdown_core_mem *mem, markdown_core_arena *arena, markdown_core_chunk *chunk,
+                           const unsigned char *data, bufsize_t len) {
     markdown_core_chunk_free(mem, chunk);
+    if (arena) {
+        unsigned char *bytes = markdown_core_arena_text(arena, (size_t)len + 1);
+        if (!bytes) {
+            chunk->data = NULL;
+            chunk->len = 0;
+            chunk->alloc = 0;
+            return 0;
+        }
+        memcpy(bytes, data, (size_t)len);
+        bytes[len] = '\0';
+        *chunk = (markdown_core_chunk){bytes, len, 0};
+        return 1;
+    }
     chunk->data = (unsigned char *)data;
     chunk->len = len;
     chunk->alloc = 0;
     if (!markdown_core_chunk_to_cstr(mem, chunk)) {
-        /* Never keep borrowing the transient line buffer. */
         chunk->data = NULL;
         chunk->len = 0;
         return 0;
@@ -231,7 +247,8 @@ static void directive_opaque_free(const markdown_core_element *element, markdown
  * strings or records. The parser owns and accounts for recognition work. */
 static int scan_directive_attributes(markdown_core_parser *parser, unsigned char *data, bufsize_t len, bufsize_t *pos,
                                      parsed_directive *parsed) {
-    parsed->attributes = (markdown_core_attribute_parser){.mem = parser->mem, .data = data, .length = len};
+    parsed->attributes =
+        (markdown_core_attribute_parser){.mem = parser->mem, .store = parser->arena, .data = data, .length = len};
     bufsize_t end = markdown_core_attributes_end(&parsed->attributes, *pos);
     parser->oom |= parsed->attributes.oom;
     if (!end) {
@@ -324,7 +341,8 @@ static int apply_parsed_directive(const markdown_core_element *element, markdown
         return 0;
     }
 
-    if (parsed->name_len && !set_chunk_bytes(mem, &directive->name, data + parsed->name_start, parsed->name_len)) {
+    if (parsed->name_len &&
+        !set_chunk_bytes(mem, parser->arena, &directive->name, data + parsed->name_start, parsed->name_len)) {
         return 0;
     }
     if (parsed->attributes_len) {
@@ -342,12 +360,17 @@ static int apply_parsed_directive(const markdown_core_element *element, markdown
             markdown_core_attributes_free(mem, attributes);
             *attributes = value;
         } else {
-            attributes->classes = mem->calloc(1, sizeof(markdown_core_chunk));
+            /* The shorthand's one class, like every parsed value, comes from
+             * the transaction's arena when there is one. */
+            attributes->classes = parser->arena ? markdown_core_arena_alloc(parser->arena, sizeof(markdown_core_chunk))
+                                                : mem->calloc(1, sizeof(markdown_core_chunk));
             if (!attributes->classes) {
                 return 0;
             }
+            *attributes->classes = (markdown_core_chunk){0};
+            attributes->borrowed = parser->arena != NULL;
             attributes->class_count = attributes->class_capacity = 1;
-            if (!set_chunk_bytes(mem, attributes->classes, source, parsed->attributes_len)) {
+            if (!set_chunk_bytes(mem, parser->arena, attributes->classes, source, parsed->attributes_len)) {
                 return 0;
             }
         }

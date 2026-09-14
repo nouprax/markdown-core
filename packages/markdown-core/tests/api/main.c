@@ -1668,6 +1668,65 @@ static void strbuf_borrowed_storage(test_batch_runner *runner) {
 
 static size_t count_kind(markdown_core_node *root, markdown_core_node_type kind);
 
+/* The bytes of every attribute value, and the vectors that hold them, come
+ * from the transaction's arena: attaching `{#id .class k=v}` to a node costs
+ * the same allocations as leaving it off, whatever else the shape costs. */
+static void attributes_allocate_nothing_per_attribute(test_batch_runner *runner) {
+    markdown_core_mem mem = {borrow_calloc, borrow_realloc, free};
+    static const struct {
+        const char *plain, *attributed;
+    } shapes[] = {
+        {"# h\n\n", "# h {#a-1 .c k=v}\n\n"},
+        {":d[label]\n\n", ":d[label]{#a-2 .c .d k=v}\n\n"},
+        {"para\n\n", "para{#a-3}\n\n"},
+        {"`code`\n\n", "`code`{.c}\n\n"},
+        {"[a](/u)\n\n", "[a](/u){#a-4 .c k=v}\n\n"},
+        {"term\n: def\n\n", "term\n: def{#a-5 .c}\n\n"},
+    };
+    for (size_t shape = 0; shape < sizeof(shapes) / sizeof(*shapes); shape++) {
+        size_t cost[2] = {0, 0};
+        for (size_t attributed = 0; attributed < 2; attributed++) {
+            const char *unit = attributed ? shapes[shape].attributed : shapes[shape].plain;
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(markdown_core_get_default_mem_allocator());
+            for (size_t i = 0; i < 4096; i++) {
+                markdown_core_strbuf_puts(&source, unit);
+            }
+            borrow_allocations = 0;
+            markdown_core_node *root =
+                markdown_core_parse_document_with_mem((const char *)source.ptr, source.size, &mem, NULL, NULL);
+            OK(runner, root != NULL, "the shape parses: shape=%zu attributed=%zu", shape, attributed);
+            cost[attributed] = borrow_allocations;
+            markdown_core_node_free(root);
+            markdown_core_strbuf_free(&source);
+        }
+        OK(runner, cost[1] <= cost[0] + 64,
+           "4096 attributed nodes cost the arena's bytes and the fixed few, not one allocation per value: "
+           "shape=%zu plain=%zu attributed=%zu",
+           shape, cost[0], cost[1]);
+    }
+    /* The values themselves are unchanged by where their bytes live. */
+    static const char *const text = "# Heading {#the-id .one .two key=value}\n";
+    markdown_core_node *root = markdown_core_parse_document(text, strlen(text));
+    markdown_core_node *heading = root ? root->first_child : NULL;
+    markdown_core_optional_string anchor = markdown_core_node_anchor(heading);
+    OK(runner,
+       heading != NULL && anchor.has_value && anchor.value.length == 6 && memcmp(anchor.value.data, "the-id", 6) == 0,
+       "the anchor reads back as its own bytes");
+    markdown_core_string one = {0}, two = {0}, name = {0}, value = {0};
+    OK(runner,
+       markdown_core_node_attribute_class_count(heading) == 2 &&
+           markdown_core_node_attribute_class_at(heading, 0, &one) && one.length == 3 &&
+           memcmp(one.data, "one", 3) == 0 && markdown_core_node_attribute_class_at(heading, 1, &two) &&
+           two.length == 3 && memcmp(two.data, "two", 3) == 0,
+       "every class reads back");
+    OK(runner,
+       markdown_core_node_attribute_record_count(heading) == 1 &&
+           markdown_core_node_attribute_record_at(heading, 0, &name, &value) && name.length == 3 &&
+           memcmp(name.data, "key", 3) == 0 && value.length == 5 && memcmp(value.data, "value", 5) == 0,
+       "the record reads back");
+    markdown_core_node_free(root);
+}
+
 /* A link's resource and the destination and title it cleans are arena
  * storage, like the nodes: a parse of many links, autolinks or references
  * allocates only the arena's blocks and the fixed few. */
@@ -6197,7 +6256,9 @@ static void attribute_sparse_memory(test_batch_runner *runner) {
                 for (int repeat = 0; repeat < 1024; repeat++) {
                     markdown_core_attributes_end(&parser, (bufsize_t)at);
                 }
-                INT_EQ(runner, parser.work - work, valid ? 2048 : 1024,
+                /* A memoized query costs its own step plus the scan that finds
+                 * the fact: constant per query, never the extent. */
+                INT_EQ(runner, parser.work - work, valid ? 3072 : 1024,
                        "repeated success and failure query facts without rescanning");
                 INT_EQ(runner, properties_requested_bytes, requested, "memoized queries allocate nothing");
                 markdown_core_attribute_parser_free(&parser);
@@ -6228,7 +6289,7 @@ static void attribute_sparse_memory(test_batch_runner *runner) {
             OK(runner, parser.work <= 20 * (size_t)source.size,
                "both lexical overlap and long shared grammar tails have linear work");
             OK(runner,
-               parser.facts.size <= count + 1 && properties_peak_bytes <= 192 * (count + 1) &&
+               parser.fact_count <= count + 1 && properties_peak_bytes <= 192 * (count + 1) &&
                    properties_requested_bytes <= 288 * (count + 1),
                "only candidate and join facts allocate, with bounded peak and cumulative growth");
             markdown_core_attribute_parser_free(&parser);
@@ -6259,11 +6320,11 @@ static void attribute_dense_tail_memory(test_batch_runner *runner) {
                "a dense tail scan is linear: letters=%d count=%zu work=%zu", letters, count, parser.work);
             if (letters) {
                 OK(runner,
-                   parser.facts.size <= count + 1 && properties_peak_bytes <= 192 * (count + 1) &&
+                   parser.fact_count <= count + 1 && properties_peak_bytes <= 192 * (count + 1) &&
                        properties_requested_bytes <= 288 * (count + 1),
                    "each refused member records at most one fact and one bounded record");
             } else {
-                OK(runner, parser.facts.size <= 1 && properties_peak_bytes <= 256 && properties_requested_bytes <= 256,
+                OK(runner, parser.fact_count <= 1 && properties_peak_bytes <= 256 && properties_requested_bytes <= 256,
                    "braces no member can follow allocate nothing: count=%zu peak=%zu", count, properties_peak_bytes);
             }
             markdown_core_attribute_parser_free(&parser);
@@ -6372,6 +6433,18 @@ static void arena_recycling(test_batch_runner *runner) {
     OK(runner, large != NULL && markdown_core_arena_take(arena, 4096) != large,
        "records above the pooled sizes are arena storage and are not handed out twice");
     OK(runner, markdown_core_arena_take(arena, (1u << 20) + 1) != NULL, "a request beyond a block gets its own");
+    /* Text packs byte by byte where a record would take a whole granule, and
+     * a record taken afterwards is still aligned and its own storage. */
+    unsigned char *first = markdown_core_arena_text(arena, 3);
+    unsigned char *second = markdown_core_arena_text(arena, 5);
+    OK(runner, first != NULL && second == first + 3, "text asks pack against each other");
+    unsigned char *aligned = markdown_core_arena_alloc(arena, 16);
+    unsigned char *third = markdown_core_arena_text(arena, 4);
+    OK(runner,
+       aligned != NULL && (uintptr_t)aligned % sizeof(void *) == 0 && third == second + 5 &&
+           (aligned + 16 <= first || aligned >= third + 4),
+       "a record takes aligned storage of its own while the text slab goes on");
+    OK(runner, markdown_core_arena_text(arena, 0) != NULL, "an empty text ask still names storage");
     markdown_core_arena_free(arena);
     INT_EQ(runner, properties_live_bytes, 0, "the arena releases every block, oversized ones included");
     payload_allocations = payload_fail_at = payload_live = 0;
@@ -8257,6 +8330,7 @@ int main(int argc, char **argv) {
     strbuf_borrowed_storage(runner);
     block_content_allocates_nothing_per_block(runner);
     links_allocate_nothing_per_link(runner);
+    attributes_allocate_nothing_per_attribute(runner);
     release_frees_only_allocations(runner);
     strbuf_failure_is_a_transaction(runner);
     stray_delimiter(runner);
