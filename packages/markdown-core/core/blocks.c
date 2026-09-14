@@ -342,10 +342,40 @@ static void S_record_content_mark(markdown_core_parser *parser, markdown_core_no
     markdown_core_parser_append_source_marks(parser, node, parser->line_number, column, length, node->content->size);
 }
 
+/* A block's content lives in the transaction's arena: its first line
+ * reserves the bytes it brings, and each later line extends that reservation
+ * in place, which the arena can do while the block is its latest allocation
+ * -- true between the lines of one block, since nothing else is created
+ * there. Only a reservation the arena cannot extend moves to the allocator,
+ * by the buffer's ordinary growth, and a node outside a transaction keeps an
+ * allocator buffer. A failed reservation costs nothing either: the buffer
+ * grows as it always did. */
+static void S_reserve_content(markdown_core_parser *parser, markdown_core_node *node, bufsize_t add) {
+    markdown_core_strbuf *content = node->content;
+    if (!node->arena_owned || !parser->arena || add <= 0 || content->oom ||
+        add > (bufsize_t)(INT32_MAX / 2) - content->size || content->asize - content->size > add) {
+        return;
+    }
+    size_t needed = (size_t)content->size + (size_t)add + 1;
+    if (content->asize == 0) {
+        unsigned char *storage = markdown_core_arena_alloc(parser->arena, needed);
+        if (storage) {
+            markdown_core_strbuf_borrow(content, storage, (bufsize_t)needed);
+        }
+    } else if (content->borrowed &&
+               markdown_core_arena_extend(parser->arena, content->ptr, (size_t)content->asize, needed)) {
+        content->asize = (bufsize_t)needed;
+    }
+}
+
 void markdown_core_block_add_line(markdown_core_node *node, markdown_core_chunk *ch, markdown_core_parser *parser) {
     int chars_to_tab;
     int i;
     assert(node->flags & MARKDOWN_CORE_NODE__OPEN);
+    if (parser->offset < ch->len) {
+        bufsize_t tab = parser->partially_consumed_tab ? TAB_STOP - (parser->column % TAB_STOP) : 0;
+        S_reserve_content(parser, node, ch->len - parser->offset + tab);
+    }
     /* Indentation stripped ahead of the content belongs to the CONTAINER that
      * stripped it, not to the block being written into -- the same rule the
      * block openers follow, and for the same reason: a block begins at its own

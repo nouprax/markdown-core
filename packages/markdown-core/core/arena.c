@@ -119,6 +119,20 @@ void *markdown_core_arena_alloc(markdown_core_arena *arena, size_t size) {
     return record;
 }
 
+bool markdown_core_arena_extend(markdown_core_arena *arena, const void *storage, size_t size, size_t needed) {
+    arena_block *block = arena->current;
+    if (!block || needed < size || needed > SIZE_MAX - ARENA_GRANULE) {
+        return false;
+    }
+    size_t held = round_up(size ? size : 1), wanted = round_up(needed);
+    if ((const unsigned char *)storage + held != block_data(block) + block->used ||
+        wanted - held > block->capacity - block->used) {
+        return false;
+    }
+    block->used += wanted - held;
+    return true;
+}
+
 static size_t pool_class(size_t size) { return (round_up(size ? size : 1) / ARENA_GRANULE) - 1; }
 
 void *markdown_core_arena_take(markdown_core_arena *arena, size_t size) {

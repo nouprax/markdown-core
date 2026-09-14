@@ -192,7 +192,15 @@ one starts, the scanner grows that node in place instead of splitting it, so
 only line endings and real tokens divide a paragraph's text. The block phase
 copies each source line once into its block's content buffer, finding line
 endings with vector searches, and a fenced code block reads its info string
-at the fence line, so closing the block never relocates its body.
+at the fence line, so closing the block never relocates its body. The
+buffer's storage is the transaction's arena's: the first line reserves what
+it brings and each later line extends the reservation in place, which the
+arena does while the block is its latest allocation, as it is between the
+lines of one block; a reservation the arena cannot extend moves to the
+allocator by the buffer's ordinary growth. So a block costs no allocation of
+its own and nothing to release: the literal runs that borrow its bytes, the
+buffer and the node go with the arena. A literal an element takes out of a
+content buffer (a code block's) is copied into storage of its own.
 
 The bracket scanner tracks the most recent non-SP/TAB byte over disjoint
 consumed token ranges, so rejecting empty bodies never rescans nested bodies.

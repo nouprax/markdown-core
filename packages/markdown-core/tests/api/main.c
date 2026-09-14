@@ -1622,6 +1622,72 @@ static void *strbuf_test_realloc(void *pointer, size_t size) {
 static void strbuf_test_free(void *pointer) { free(pointer); }
 static markdown_core_mem strbuf_test_mem = {strbuf_test_calloc, strbuf_test_realloc, strbuf_test_free};
 
+/* Storage a buffer borrows is never freed or reallocated by it: growth and
+ * detachment copy the bytes out to storage of the buffer's own, and until
+ * then the buffer allocates nothing. */
+static size_t borrow_allocations;
+static void *borrow_calloc(size_t count, size_t size) {
+    borrow_allocations++;
+    return calloc(count, size);
+}
+static void *borrow_realloc(void *pointer, size_t size) {
+    borrow_allocations += pointer == NULL;
+    return realloc(pointer, size);
+}
+static void strbuf_borrowed_storage(test_batch_runner *runner) {
+    markdown_core_mem mem = {borrow_calloc, borrow_realloc, free};
+    unsigned char storage[16];
+    memset(storage, 'x', sizeof(storage));
+    markdown_core_strbuf buf = MARKDOWN_CORE_BUF_INIT(&mem);
+    borrow_allocations = 0;
+    markdown_core_strbuf_borrow(&buf, storage, (bufsize_t)sizeof(storage));
+    markdown_core_strbuf_puts(&buf, "twelve bytes");
+    OK(runner, buf.ptr == storage && buf.size == 12 && buf.borrowed && storage[12] == '\0' && borrow_allocations == 0,
+       "writes within the borrowed capacity allocate nothing and stay in place");
+    markdown_core_strbuf_puts(&buf, " and more");
+    OK(runner,
+       buf.ptr != storage && !buf.borrowed && borrow_allocations == 1 && buf.size == 21 &&
+           strcmp((const char *)buf.ptr, "twelve bytes and more") == 0 && memcmp(storage, "twelve bytes", 12) == 0,
+       "growth copies the bytes out to the buffer's own storage and leaves the borrowed bytes be");
+    markdown_core_strbuf_free(&buf);
+    markdown_core_strbuf_borrow(&buf, storage, (bufsize_t)sizeof(storage));
+    markdown_core_strbuf_puts(&buf, "kept");
+    borrow_allocations = 0;
+    unsigned char *taken = markdown_core_strbuf_detach(&buf);
+    OK(runner,
+       taken && taken != storage && strcmp((const char *)taken, "kept") == 0 && borrow_allocations == 1 &&
+           buf.asize == 0 && !buf.borrowed,
+       "detaching a borrowed buffer hands out a copy the caller owns");
+    free(taken);
+    markdown_core_strbuf_borrow(&buf, storage, (bufsize_t)sizeof(storage));
+    markdown_core_strbuf_puts(&buf, "dropped");
+    markdown_core_strbuf_free(&buf);
+    OK(runner, buf.asize == 0 && !buf.borrowed && memcmp(storage, "dropped", 7) == 0,
+       "freeing a borrowed buffer releases nothing");
+}
+
+/* The content of the blocks of a document is arena storage: a parse of
+ * many short blocks allocates only the arena's blocks and the fixed few. */
+static void block_content_allocates_nothing_per_block(test_batch_runner *runner) {
+    markdown_core_mem mem = {borrow_calloc, borrow_realloc, free};
+    static const char *const units[] = {"- item\n", "# heading\n\n", "one line\n\n", "two\nlines\n\n"};
+    for (size_t shape = 0; shape < sizeof(units) / sizeof(*units); shape++) {
+        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(markdown_core_get_default_mem_allocator());
+        for (size_t i = 0; i < 4096; i++) {
+            markdown_core_strbuf_puts(&source, units[shape]);
+        }
+        borrow_allocations = 0;
+        markdown_core_node *root =
+            markdown_core_parse_document_with_mem((const char *)source.ptr, source.size, &mem, NULL, NULL);
+        OK(runner, root != NULL, "the block shape parses: shape=%zu", shape);
+        OK(runner, borrow_allocations <= 64,
+           "4096 blocks cost the arena's blocks and the fixed few, not one allocation each: shape=%zu allocations=%zu",
+           shape, borrow_allocations);
+        markdown_core_node_free(root);
+        markdown_core_strbuf_free(&source);
+    }
+}
+
 static void strbuf_failure_is_a_transaction(test_batch_runner *runner) {
     markdown_core_strbuf buf;
 
@@ -7647,6 +7713,8 @@ int main(int argc, char **argv) {
     table_mapped_ownership(runner);
     table_nested_inputs(runner);
     strbuf_overflow(runner);
+    strbuf_borrowed_storage(runner);
+    block_content_allocates_nothing_per_block(runner);
     strbuf_failure_is_a_transaction(runner);
     stray_delimiter(runner);
     inline_predicate_arbitration(runner);
