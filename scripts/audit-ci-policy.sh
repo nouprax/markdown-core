@@ -162,10 +162,14 @@ grep -Fq 'register<JavaExec>("jvmBenchmark")' packages/kotlin-markdown-core/buil
     echo "the Kotlin benchmark lane is not an opt-in task" >&2
     exit 1
 }
-grep -Fq 'name: "MarkdownCoreBenchmarks"' Package.swift || {
-    echo "the Swift benchmark lane is not a target of the development manifest" >&2
+grep -Fq 'name: "MarkdownCoreBenchmarks"' packages/swift-markdown-core/Benchmarks/Package.swift || {
+    echo "the Swift benchmark lane is not a package of its own" >&2
     exit 1
 }
+if grep -Fq 'MarkdownCoreBenchmarks' Package.swift; then
+    echo "the Swift development manifest carries the benchmark lane, so the test build would stage it" >&2
+    exit 1
+fi
 if grep -Eq 'benchmark:(es|kotlin|swift)|jvmBenchmark|MarkdownCoreBenchmarks|scripts/benchmark\.mjs' \
     "$ci" "$pr_benchmark" "$pr_benchmark_comment" .github/workflows/release.yml .github/workflows/release-dry-run.yml; then
     echo "a binding timing lane is run by a workflow; the lanes are opt-in" >&2

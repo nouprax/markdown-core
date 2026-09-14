@@ -212,18 +212,19 @@ Neither lane decides anything; a changed count is a line to read in a diff.
 
 Each binding has a timing lane of its own, opt-in and informational like the
 C lanes: `pnpm benchmark:es`, `pnpm benchmark:kotlin` (the `jvmBenchmark`
-Gradle task) and `pnpm benchmark:swift` (`swift run -c release
-MarkdownCoreBenchmarks`) time the public parse -- source string in, value tree
-out -- and a walk of the tree with an empty visitor, on the same bytes the C
-timing lane reads: the `binding_baseline` generator and the tracked samples
-repeated with a blank line between copies, each case named with the SHA-256 of
-its input, so a binding's number stands beside the engine's for the same
-document. They report the minimum and the median of every repeat, throughput
-and time per node, and write the same JSON shape as `bench_runner --json`
-with `--json`. No workflow runs them and no test suite reaches them
-(`scripts/audit-ci-policy.sh`); the Kotlin/Native and Swift test binaries are
-release builds so that a number taken from a test run describes the library a
-consumer links.
+Gradle task) and `pnpm benchmark:swift` (the `MarkdownCoreBenchmarks` package
+beside the Swift tests, a release `swift run`; the development manifest does
+not carry it, so no test build stages it) time the public parse -- source
+string in, value tree out -- and a walk of the tree with an empty visitor, on
+the same bytes the C timing lane reads: the `binding_baseline` generator and
+the tracked samples repeated with a blank line between copies, each case named
+with the SHA-256 of its input, so a binding's number stands beside the
+engine's for the same document. They report the minimum and the median of every
+repeat, throughput and time per node, and write the same JSON shape as
+`bench_runner --json` with `--json`. No workflow runs them and no test suite
+reaches them (`scripts/audit-ci-policy.sh`); the Kotlin/Native and Swift test
+binaries are release builds so that a number taken from a test run describes
+the library a consumer links.
 
 The separate PR benchmark measures a versioned parser workload and library
 size against the exact base SHA. The untrusted PR producer builds only the
