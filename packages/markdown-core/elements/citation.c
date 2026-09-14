@@ -784,7 +784,9 @@ static void finish_inline(markdown_core_inline_state *inline_state) {
 }
 static void dispose_inline(markdown_core_inline_state *inline_state) {
     markdown_core_inline_free_citation_tokens(inline_state, &inline_state->citations);
-    inline_state->mem->free(inline_state->citation_braces.entries);
+    if (inline_state->citation_braces.entries) {
+        inline_state->mem->free(inline_state->citation_braces.entries);
+    }
     inline_state->citation_braces = (citation_brace_index){0};
 }
 

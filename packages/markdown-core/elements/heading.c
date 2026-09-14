@@ -95,8 +95,8 @@ void markdown_core_block_dispose_headings(markdown_core_parser *parser, markdown
     for (size_t i = 0; i < headings->count; i++) {
         markdown_core_dispose_heading(&headings->values[i]);
     }
-    parser->mem->free(headings->values);
-    parser->mem->free(headings->projection_stack);
+    markdown_core_mem_release(parser->mem, headings->values);
+    markdown_core_mem_release(parser->mem, headings->projection_stack);
     *headings = (markdown_core_heading_collection){0};
 }
 

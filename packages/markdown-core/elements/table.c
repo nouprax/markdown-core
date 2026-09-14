@@ -809,15 +809,15 @@ static bool table_source_get(table_source *source, size_t index) {
 static void table_source_free(table_source *source) {
     markdown_core_parser_lookahead_end(&source->lookahead);
     for (size_t i = 0; i < source->count; i++) {
-        source->parser->mem->free(source->lines[i].bytes);
-        source->parser->mem->free(source->lines[i].dashes);
+        markdown_core_mem_release(source->parser->mem, source->lines[i].bytes);
+        markdown_core_mem_release(source->parser->mem, source->lines[i].dashes);
     }
 }
 
 static void table_candidate_free(markdown_core_parser *parser, table_candidate *candidate) {
-    parser->mem->free(candidate->columns);
-    parser->mem->free(candidate->rows);
-    parser->mem->free(candidate->cells);
+    markdown_core_mem_release(parser->mem, candidate->columns);
+    markdown_core_mem_release(parser->mem, candidate->rows);
+    markdown_core_mem_release(parser->mem, candidate->cells);
     *candidate = (table_candidate){0};
 }
 
@@ -2366,14 +2366,14 @@ static markdown_core_node *try_interrupting_block(markdown_core_parser *parser, 
 }
 
 static void dispose_parser(markdown_core_parser *parser) {
-    parser->mem->free(parser->table_lines);
+    markdown_core_mem_release(parser->mem, parser->table_lines);
     parser->table_lines = NULL;
     if (parser->table_row) {
-        parser->mem->free(parser->table_row->cells);
+        markdown_core_mem_release(parser->mem, parser->table_row->cells);
         parser->mem->free(parser->table_row);
         parser->table_row = NULL;
     }
-    parser->mem->free(parser->table_scratch);
+    markdown_core_mem_release(parser->mem, parser->table_scratch);
     parser->table_scratch = NULL;
     parser->table_scratch_capacity = 0;
 }

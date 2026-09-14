@@ -46,7 +46,7 @@ static bool term_is_reference(markdown_core_parser *parser, markdown_core_chunk 
     MARKDOWN_CORE_DIAGNOSTIC(parser->definition_list_work += term.len;)
     markdown_core_attribute_parser attributes = {.mem = parser->mem, .data = term.data, .length = term.len};
     MARKDOWN_CORE_DIAGNOSTIC(parser->reference_probe_work++;)
-    bool reference = markdown_core_parse_reference_inline(parser->mem, &term, NULL, &attributes, 0) != 0;
+    bool reference = markdown_core_parse_reference_inline(parser->mem, NULL, NULL, &term, NULL, &attributes, 0) != 0;
     MARKDOWN_CORE_DIAGNOSTIC(parser->attribute_work += attributes.work;)
     parser->oom |= attributes.oom;
     markdown_core_attribute_parser_free(&attributes);

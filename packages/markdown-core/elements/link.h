@@ -28,6 +28,18 @@ bool markdown_core_link_commit(markdown_core_parser *parser, markdown_core_inlin
 extern const markdown_core_element MARKDOWN_CORE_ELEMENT_LINK;
 markdown_core_chunk markdown_core_clean_url(markdown_core_mem *mem, markdown_core_chunk *url, int *lost);
 markdown_core_optional_chunk markdown_core_clean_title(markdown_core_mem *mem, markdown_core_chunk *title, int *lost);
+/* The cleaners above, with the cleaned bytes copied into `arena` through
+ * `scratch` when both are given: the chunk then borrows arena storage the
+ * tree keeps, and the link allocates nothing of its own. Without them the
+ * bytes are the allocator's, as markdown_core_clean_url hands them out. */
+markdown_core_chunk markdown_core_clean_url_in(struct markdown_core_arena *arena, markdown_core_strbuf *scratch,
+                                               markdown_core_mem *mem, markdown_core_chunk *url, int *lost);
+markdown_core_optional_chunk markdown_core_clean_title_in(struct markdown_core_arena *arena,
+                                                          markdown_core_strbuf *scratch, markdown_core_mem *mem,
+                                                          markdown_core_chunk *title, int *lost);
+/* `buf`'s bytes copied into the arena, terminated: a chunk that borrows
+ * storage the tree keeps. NULL data reports an arena that could not grow. */
+markdown_core_chunk markdown_core_arena_copy_chunk(struct markdown_core_arena *arena, const markdown_core_strbuf *buf);
 
 /* Reads ONE link reference definition off the front of `input`, registers its
  * label and the resource it states in `refmap`, and returns the number of
@@ -35,7 +47,8 @@ markdown_core_optional_chunk markdown_core_clean_title(markdown_core_mem *mem, m
  * definition produces no node (M2): it is consumed, and every reference that
  * resolves to it is the `Link` or `Embedded` it names. A NULL refmap performs the
  * same recognition without registering or allocating a definition resource. */
-bufsize_t markdown_core_parse_reference_inline(markdown_core_mem *mem, markdown_core_chunk *input,
+bufsize_t markdown_core_parse_reference_inline(markdown_core_mem *mem, struct markdown_core_arena *arena,
+                                               markdown_core_strbuf *scratch, markdown_core_chunk *input,
                                                markdown_core_map *refmap, markdown_core_attribute_parser *attributes,
                                                uint64_t source_key);
 

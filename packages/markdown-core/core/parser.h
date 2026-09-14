@@ -226,6 +226,9 @@ struct markdown_core_parser {
     /* Scratch for a source line containing NUL bytes; curline holds the
      * normalized line currently being parsed. */
     markdown_core_strbuf line_scratch;
+    /* Scratch a link destination or title is cleaned into before its bytes
+     * are copied into the arena: one buffer per parser, not one per link. */
+    markdown_core_strbuf url_scratch;
     /* Options set by the user, see the Options section in markdown_core.h */
     /* Sticky allocation-failure flag: once any parse structure is lost, the
      * one-shot transaction reports the whole parse as failed (NULL) instead of
@@ -463,6 +466,14 @@ bool markdown_core_parser_has_block_start(markdown_core_parser *parser, markdown
  * parser. No nested parse transaction, document, registry or C recursion. */
 void markdown_core_parser_finalize_unmatched_blocks(markdown_core_parser *parser);
 bool markdown_core_parser_queue_block_input(markdown_core_parser *parser, markdown_core_node *owner);
+/* Release storage that may never have been allocated: the allocator is
+ * handed only what it handed out, never a null pointer for a field that
+ * stayed empty. */
+static MARKDOWN_CORE_INLINE void markdown_core_mem_release(markdown_core_mem *mem, void *pointer) {
+    if (pointer) {
+        mem->free(pointer);
+    }
+}
 /* The inline completion walk over one root: complete_inline and
  * observe_inline for every node of the root's tree and owned fields. */
 void markdown_core_block_complete_inline_root(markdown_core_parser *parser, markdown_core_node *root);

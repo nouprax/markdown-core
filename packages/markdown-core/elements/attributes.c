@@ -263,8 +263,12 @@ void markdown_core_attributes_free(markdown_core_mem *mem, markdown_core_attribu
         markdown_core_chunk_free(mem, &v->records[i].name);
         markdown_core_chunk_free(mem, &v->records[i].value);
     }
-    mem->free(v->classes);
-    mem->free(v->records);
+    if (v->classes) {
+        mem->free(v->classes);
+    }
+    if (v->records) {
+        mem->free(v->records);
+    }
     memset(v, 0, sizeof(*v));
 }
 

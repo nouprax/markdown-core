@@ -56,7 +56,7 @@ failed:
     parser->oom = true;
 done:
     markdown_core_parser_release_key_index(parser, &ids);
-    parser->mem->free(collection->values);
+    markdown_core_mem_release(parser->mem, collection->values);
     memset(collection, 0, sizeof(*collection));
 }
 

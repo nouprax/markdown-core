@@ -1666,6 +1666,64 @@ static void strbuf_borrowed_storage(test_batch_runner *runner) {
        "freeing a borrowed buffer releases nothing");
 }
 
+static size_t count_kind(markdown_core_node *root, markdown_core_node_type kind);
+
+/* A link's resource and the destination and title it cleans are arena
+ * storage, like the nodes: a parse of many links, autolinks or references
+ * allocates only the arena's blocks and the fixed few. */
+static void links_allocate_nothing_per_link(test_batch_runner *runner) {
+    markdown_core_mem mem = {borrow_calloc, borrow_realloc, free};
+    static const struct {
+        const char *unit, *tail;
+    } shapes[] = {
+        {"[a](/u \"t\") ", "\n"}, {"[a](/u&amp;v) ", "\n"},    {"<http://x.y/z> ", "\n"},       {"<a@b.co> ", "\n"},
+        {"www.x.y/z ", "\n"},     {"see http://x.y/z ", "\n"}, {"[r] ", "\n\n[r]: /u \"t\"\n"}, {"![a](/i) ", "\n"},
+    };
+    for (size_t shape = 0; shape < sizeof(shapes) / sizeof(*shapes); shape++) {
+        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(markdown_core_get_default_mem_allocator());
+        for (size_t i = 0; i < 4096; i++) {
+            markdown_core_strbuf_puts(&source, shapes[shape].unit);
+        }
+        markdown_core_strbuf_puts(&source, shapes[shape].tail);
+        borrow_allocations = 0;
+        markdown_core_node *root =
+            markdown_core_parse_document_with_mem((const char *)source.ptr, source.size, &mem, NULL, NULL);
+        OK(runner, root != NULL, "the link shape parses: shape=%zu", shape);
+        OK(runner,
+           root && count_kind(root, MARKDOWN_CORE_NODE_LINK) + count_kind(root, MARKDOWN_CORE_NODE_EMBEDDED) == 4096,
+           "every unit produced its link: shape=%zu", shape);
+        OK(runner, borrow_allocations <= 64,
+           "4096 links cost the arena's blocks and the fixed few, not one allocation each: shape=%zu allocations=%zu",
+           shape, borrow_allocations);
+        markdown_core_node_free(root);
+        markdown_core_strbuf_free(&source);
+    }
+}
+
+/* Releasing a tree frees what was allocated and nothing else: no release
+ * path hands the allocator a null pointer for a field that was never set. */
+static size_t null_frees;
+static void counting_free(void *pointer) {
+    null_frees += pointer == NULL;
+    free(pointer);
+}
+static void release_frees_only_allocations(test_batch_runner *runner) {
+    markdown_core_mem mem = {borrow_calloc, borrow_realloc, counting_free};
+    static const char *const sources[] = {
+        "# h {#i}\n\npara [a](/u) `c` *e* ^s^ ~b~\n\n- item\n\n> quote\n",
+        "text[^n] and [@k, p. 1] and :d[label]{.c}\n\n[^n]: note\n\n| a |\n|---|\n| b |\n",
+        "```c\ncode\n```\n\n<div>\nhtml\n</div>\n\nterm\n: def\n\n[r]: /u \"t\" {#x}\n\n[r] [R]\n",
+    };
+    for (size_t i = 0; i < sizeof(sources) / sizeof(*sources); i++) {
+        null_frees = 0;
+        markdown_core_node *root =
+            markdown_core_parse_document_with_mem(sources[i], strlen(sources[i]), &mem, NULL, NULL);
+        OK(runner, root != NULL, "the mixed document parses: source=%zu", i);
+        markdown_core_node_free(root);
+        INT_EQ(runner, null_frees, 0, "releasing the tree frees no null pointer: source=%zu", i);
+    }
+}
+
 /* The content of the blocks of a document is arena storage: a parse of
  * many short blocks allocates only the arena's blocks and the fixed few. */
 static void block_content_allocates_nothing_per_block(test_batch_runner *runner) {
@@ -7827,6 +7885,8 @@ int main(int argc, char **argv) {
     strbuf_overflow(runner);
     strbuf_borrowed_storage(runner);
     block_content_allocates_nothing_per_block(runner);
+    links_allocate_nothing_per_link(runner);
+    release_frees_only_allocations(runner);
     strbuf_failure_is_a_transaction(runner);
     stray_delimiter(runner);
     inline_predicate_arbitration(runner);

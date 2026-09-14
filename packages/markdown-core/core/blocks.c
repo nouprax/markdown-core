@@ -127,8 +127,8 @@ static void S_parser_dispose(markdown_core_parser *parser) {
     if (parser->document_structure) {
         parser->document_structure->dispose_document(parser);
     }
-    parser->mem->free(parser->block_inputs);
-    parser->mem->free(parser->input_line_offsets);
+    markdown_core_mem_release(parser->mem, parser->block_inputs);
+    markdown_core_mem_release(parser->mem, parser->input_line_offsets);
     if (parser->root) {
         /* The root owns the arena from its creation on. */
         parser->arena = NULL;
@@ -137,7 +137,7 @@ static void S_parser_dispose(markdown_core_parser *parser) {
 
     /* The content-to-source map outlives every block that indexes it and
      * nothing else does, so it is released here rather than with the node. */
-    parser->mem->free(parser->line_marks);
+    markdown_core_mem_release(parser->mem, parser->line_marks);
     parser->line_marks = NULL;
     parser->line_marks_size = 0;
     parser->line_marks_alloc = 0;
@@ -145,9 +145,9 @@ static void S_parser_dispose(markdown_core_parser *parser) {
     /* The block-start lookahead's chain and resume cache are parser state of
      * the same kind: indexed by open containers and source lines, owned by no
      * node, and dead with the parse. */
-    parser->mem->free(parser->lookahead_chain);
-    parser->mem->free(parser->lookahead_chain_flags);
-    parser->mem->free(parser->lookahead_entries);
+    markdown_core_mem_release(parser->mem, parser->lookahead_chain);
+    markdown_core_mem_release(parser->mem, parser->lookahead_chain_flags);
+    markdown_core_mem_release(parser->mem, parser->lookahead_entries);
     parser->lookahead_chain = NULL;
     parser->lookahead_chain_flags = NULL;
     parser->lookahead_chain_alloc = 0;
@@ -176,6 +176,7 @@ static markdown_core_parser *S_parser_new(markdown_core_mem *mem) {
     markdown_core_strbuf_init(parser->mem, &parser->paragraph_line_copy, 0);
     markdown_core_strbuf_init(parser->mem, &parser->line_scratch, 0);
     markdown_core_strbuf_init(parser->mem, &parser->lookahead_last_line, 0);
+    markdown_core_strbuf_init(parser->mem, &parser->url_scratch, 0);
 
     document = make_document(parser);
     parser->document_structure = markdown_core_structure_for_kind(MARKDOWN_CORE_NODE_DOCUMENT);
@@ -211,7 +212,8 @@ static void S_parser_free(markdown_core_parser *parser) {
     markdown_core_strbuf_free(&parser->paragraph_line_copy);
     markdown_core_strbuf_free(&parser->line_scratch);
     markdown_core_strbuf_free(&parser->lookahead_last_line);
-    mem->free(parser->completions);
+    markdown_core_strbuf_free(&parser->url_scratch);
+    markdown_core_mem_release(mem, parser->completions);
     mem->free(parser);
 }
 

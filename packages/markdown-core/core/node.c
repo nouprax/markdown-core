@@ -986,16 +986,24 @@ int markdown_core_node_set_fenced(markdown_core_node *node, int fenced, int leng
     }
 }
 
-markdown_core_resource *markdown_core_resource_new(markdown_core_mem *mem, markdown_core_chunk url,
-                                                   markdown_core_optional_chunk title) {
-    markdown_core_resource *resource = (markdown_core_resource *)mem->calloc(1, sizeof(*resource));
+markdown_core_resource *markdown_core_resource_create(markdown_core_arena *arena, markdown_core_mem *mem,
+                                                      markdown_core_chunk url, markdown_core_optional_chunk title) {
+    markdown_core_resource *resource =
+        arena ? (markdown_core_resource *)markdown_core_arena_take(arena, sizeof(*resource))
+              : (markdown_core_resource *)mem->calloc(1, sizeof(*resource));
     if (!resource) {
         return NULL;
     }
     resource->url = url;
     resource->title = title;
     resource->holders = 1;
+    resource->arena_owned = arena != NULL;
     return resource;
+}
+
+markdown_core_resource *markdown_core_resource_new(markdown_core_mem *mem, markdown_core_chunk url,
+                                                   markdown_core_optional_chunk title) {
+    return markdown_core_resource_create(NULL, mem, url, title);
 }
 
 void markdown_core_resource_retain(markdown_core_resource *resource) {
@@ -1015,7 +1023,9 @@ void markdown_core_resource_release(markdown_core_mem *mem, markdown_core_resour
     markdown_core_chunk_free(mem, &resource->url);
     markdown_core_optional_chunk_free(mem, &resource->title);
     markdown_core_attributes_free(mem, &resource->attributes);
-    mem->free(resource);
+    if (!resource->arena_owned) {
+        mem->free(resource);
+    }
 }
 
 int markdown_core_node_set_element(markdown_core_node *node, const markdown_core_element *element) {

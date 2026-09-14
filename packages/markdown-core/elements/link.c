@@ -44,7 +44,8 @@ bool markdown_core_block_resolve_reference_link_definitions(markdown_core_parser
         markdown_core_parser_content_place(parser, b, (bufsize_t)(chunk.data - node_content->ptr), &line, &column);
         uint64_t source_key = ((uint64_t)(uint32_t)line << 32) | (uint32_t)column;
         MARKDOWN_CORE_DIAGNOSTIC(parser->reference_probe_work++;)
-        pos = markdown_core_parse_reference_inline(parser->mem, &chunk, parser->refmap, &attributes, source_key);
+        pos = markdown_core_parse_reference_inline(parser->mem, parser->arena, &parser->url_scratch, &chunk,
+                                                   parser->refmap, &attributes, source_key);
         if (!pos) {
             break;
         }
@@ -89,8 +90,41 @@ bool markdown_core_block_resolve_reference_link_definitions(markdown_core_parser
     return !markdown_core_block_is_blank(b->content, 0);
 }
 
-markdown_core_chunk markdown_core_clean_url(markdown_core_mem *mem, markdown_core_chunk *url, int *lost) {
-    markdown_core_strbuf buf = MARKDOWN_CORE_BUF_INIT(mem);
+markdown_core_chunk markdown_core_arena_copy_chunk(markdown_core_arena *arena, const markdown_core_strbuf *buf) {
+    markdown_core_chunk copy = {NULL, 0, 0};
+    unsigned char *bytes = markdown_core_arena_alloc(arena, (size_t)buf->size + 1);
+    if (bytes) {
+        memcpy(bytes, buf->ptr, (size_t)buf->size);
+        bytes[buf->size] = '\0';
+        copy.data = bytes;
+        copy.len = buf->size;
+    }
+    return copy;
+}
+
+/* The cleaned bytes handed out: a copy in the arena when there is one to
+ * copy into, else the buffer's own storage detached. */
+static markdown_core_chunk S_cleaned_chunk(markdown_core_arena *arena, markdown_core_strbuf *buf, int *lost) {
+    if (buf->oom) {
+        if (lost) {
+            *lost = 1;
+        }
+        return markdown_core_chunk_buf_detach(buf);
+    }
+    if (arena) {
+        markdown_core_chunk copy = markdown_core_arena_copy_chunk(arena, buf);
+        if (!copy.data && lost) {
+            *lost = 1;
+        }
+        return copy;
+    }
+    return markdown_core_chunk_buf_detach(buf);
+}
+
+markdown_core_chunk markdown_core_clean_url_in(markdown_core_arena *arena, markdown_core_strbuf *scratch,
+                                               markdown_core_mem *mem, markdown_core_chunk *url, int *lost) {
+    markdown_core_strbuf own = MARKDOWN_CORE_BUF_INIT(mem);
+    markdown_core_strbuf *buf = arena && scratch ? scratch : &own;
 
     markdown_core_chunk_trim(url);
 
@@ -98,17 +132,22 @@ markdown_core_chunk markdown_core_clean_url(markdown_core_mem *mem, markdown_cor
         return markdown_core_chunk_literal("");
     }
 
-    houdini_unescape_html_f(&buf, url->data, url->len);
+    markdown_core_strbuf_clear(buf);
+    houdini_unescape_html_f(buf, url->data, url->len);
 
-    markdown_core_strbuf_unescape(&buf);
-    if (buf.oom && lost) {
-        *lost = 1;
-    }
-    return markdown_core_chunk_buf_detach(&buf);
+    markdown_core_strbuf_unescape(buf);
+    return S_cleaned_chunk(buf == scratch ? arena : NULL, buf, lost);
 }
 
-markdown_core_optional_chunk markdown_core_clean_title(markdown_core_mem *mem, markdown_core_chunk *title, int *lost) {
-    markdown_core_strbuf buf = MARKDOWN_CORE_BUF_INIT(mem);
+markdown_core_chunk markdown_core_clean_url(markdown_core_mem *mem, markdown_core_chunk *url, int *lost) {
+    return markdown_core_clean_url_in(NULL, NULL, mem, url, lost);
+}
+
+markdown_core_optional_chunk markdown_core_clean_title_in(markdown_core_arena *arena, markdown_core_strbuf *scratch,
+                                                          markdown_core_mem *mem, markdown_core_chunk *title,
+                                                          int *lost) {
+    markdown_core_strbuf own = MARKDOWN_CORE_BUF_INIT(mem);
+    markdown_core_strbuf *buf = arena && scratch ? scratch : &own;
     unsigned char first, last;
 
     if (title->len == 0) {
@@ -118,18 +157,20 @@ markdown_core_optional_chunk markdown_core_clean_title(markdown_core_mem *mem, m
     first = title->data[0];
     last = title->data[title->len - 1];
 
+    markdown_core_strbuf_clear(buf);
     // remove surrounding quotes if any:
     if ((first == '\'' && last == '\'') || (first == '(' && last == ')') || (first == '"' && last == '"')) {
-        houdini_unescape_html_f(&buf, title->data + 1, title->len - 2);
+        houdini_unescape_html_f(buf, title->data + 1, title->len - 2);
     } else {
-        houdini_unescape_html_f(&buf, title->data, title->len);
+        houdini_unescape_html_f(buf, title->data, title->len);
     }
 
-    markdown_core_strbuf_unescape(&buf);
-    if (buf.oom && lost) {
-        *lost = 1;
-    }
-    return markdown_core_optional_chunk_present(markdown_core_chunk_buf_detach(&buf));
+    markdown_core_strbuf_unescape(buf);
+    return markdown_core_optional_chunk_present(S_cleaned_chunk(buf == scratch ? arena : NULL, buf, lost));
+}
+
+markdown_core_optional_chunk markdown_core_clean_title(markdown_core_mem *mem, markdown_core_chunk *title, int *lost) {
+    return markdown_core_clean_title_in(NULL, NULL, mem, title, lost);
 }
 
 bufsize_t markdown_core_inline_reference_label_length(const unsigned char *data, bufsize_t length) {
@@ -274,7 +315,8 @@ static bool reference_tail(markdown_core_inline_state *inline_state, markdown_co
     return markdown_core_inline_skip_line_end(inline_state);
 }
 
-bufsize_t markdown_core_parse_reference_inline(markdown_core_mem *mem, markdown_core_chunk *input,
+bufsize_t markdown_core_parse_reference_inline(markdown_core_mem *mem, markdown_core_arena *arena,
+                                               markdown_core_strbuf *scratch, markdown_core_chunk *input,
                                                markdown_core_map *refmap, markdown_core_attribute_parser *attributes,
                                                uint64_t source_key) {
     markdown_core_inline_state inline_state;
@@ -353,9 +395,9 @@ bufsize_t markdown_core_parse_reference_inline(markdown_core_mem *mem, markdown_
     // destination and title are cleaned here, the way a direct link's are, so
     // a resolved occurrence and a direct one state the same values.
     {
-        markdown_core_chunk clean_url = markdown_core_clean_url(mem, &url, &lost);
-        markdown_core_optional_chunk clean_title = markdown_core_clean_title(mem, &title, &lost);
-        resource = lost ? NULL : markdown_core_resource_new(mem, clean_url, clean_title);
+        markdown_core_chunk clean_url = markdown_core_clean_url_in(arena, scratch, mem, &url, &lost);
+        markdown_core_optional_chunk clean_title = markdown_core_clean_title_in(arena, scratch, mem, &title, &lost);
+        resource = lost ? NULL : markdown_core_resource_create(arena, mem, clean_url, clean_title);
         if (!resource) {
             markdown_core_chunk_free(mem, &clean_url);
             markdown_core_optional_chunk_free(mem, &clean_title);
@@ -418,8 +460,11 @@ markdown_core_link_match markdown_core_link_recognize(markdown_core_inline_state
             title_chunk = markdown_core_chunk_dup(&inline_state->input, starttitle, endtitle - starttitle);
             {
                 int lost = 0;
-                url = markdown_core_clean_url(inline_state->mem, &url_chunk, &lost);
-                title = markdown_core_clean_title(inline_state->mem, &title_chunk, &lost);
+                markdown_core_strbuf *scratch =
+                    inline_state->owner_parser ? &inline_state->owner_parser->url_scratch : NULL;
+                url = markdown_core_clean_url_in(inline_state->arena, scratch, inline_state->mem, &url_chunk, &lost);
+                title =
+                    markdown_core_clean_title_in(inline_state->arena, scratch, inline_state->mem, &title_chunk, &lost);
                 if (lost) {
                     inline_state->oom = 1;
                 }
@@ -522,7 +567,7 @@ bool markdown_core_link_commit(markdown_core_parser *parser, markdown_core_inlin
             }
         }
     } else if (inl) {
-        inl->as.link->resource = markdown_core_resource_new(inline_state->mem, url, title);
+        inl->as.link->resource = markdown_core_resource_create(inline_state->arena, inline_state->mem, url, title);
         if (!inl->as.link->resource) {
             markdown_core_node_recycle(inline_state->arena, inl);
             inl = NULL;
