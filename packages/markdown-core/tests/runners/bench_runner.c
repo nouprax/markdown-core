@@ -239,14 +239,6 @@ static int measure_case(const bench_case *input, void *context) {
             return 1;
         }
     }
-    /* The tree is counted here, outside the fault window and outside every
-     * reported sample: the walk would otherwise charge its own first touch
-     * -- of the walker's code and of the tree it reads -- to the parse whose
-     * faults are reported, which with one repeat is the whole measurement. */
-    if (bench_parse_once(input->data, input->length, &warm, &nodes) != 0) {
-        fprintf(stderr, "%s: parse failed\n", input->name);
-        return 1;
-    }
     faults_before = minor_faults();
     for (i = 0; i < repeats; i++) {
         if (bench_parse_once(input->data, input->length, &samples[i], NULL) != 0) {
@@ -256,6 +248,17 @@ static int measure_case(const bench_case *input, void *context) {
     }
     faults_after = minor_faults();
     rss_after = peak_rss_kib();
+    /* The tree is counted by a parse of its own, after the window and after
+     * every reported sample. Inside a measured repeat the walk would charge
+     * its own first touch -- of the walker's code and of the tree it reads --
+     * to the parse whose faults are reported, which with one repeat is the
+     * whole measurement; before the repeats it would be a warmup the caller
+     * did not ask for, and `--warmup 0` could no longer measure a cold parse.
+     * The tree of one input is the same whichever parse counts it. */
+    if (bench_parse_once(input->data, input->length, &warm, &nodes) != 0) {
+        fprintf(stderr, "%s: parse failed\n", input->name);
+        return 1;
+    }
     order_statistics(samples, repeats, 0, &min_parse, &median_parse);
     order_statistics(samples, repeats, 1, &min_free, &median_free);
     if (options->reference) {
