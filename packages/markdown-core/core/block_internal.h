@@ -40,6 +40,10 @@ typedef struct markdown_core_block_start_context {
     markdown_core_chunk *input;
     int first, column, indent;
     bool paragraph, lazy, all_matched;
+    /* A query about a line the parser has not reached (a lookahead asking
+     * whether it starts a block): no grammar may read the parser's own line
+     * back as this line's predecessor, and nothing opens. */
+    bool speculative;
     size_t depth;
     bufsize_t thematic_kill;
 } block_start_context;

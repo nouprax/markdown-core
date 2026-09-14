@@ -86,6 +86,21 @@ typedef struct {
     bool available;
 } markdown_core_block_peek;
 
+/* The line that opened the paragraph opened last. A grammar that can only
+ * decide at its second line what its first line was -- a simple table's
+ * header, a definition's term -- reads that first line back from here when
+ * the second one arrives, instead of every paragraph looking ahead at its
+ * own start. The bytes are the source's own, or the parser's copy when the
+ * source line was rewritten (line_scratch); `after` is where the next raw
+ * line begins, as a lookahead would have reported it. */
+typedef struct {
+    struct markdown_core_node *node;
+    const unsigned char *data;
+    bufsize_t length;
+    int offset, first, first_column, indent, line;
+    const unsigned char *after;
+} markdown_core_paragraph_line;
+
 struct markdown_core_parser {
     struct markdown_core_mem *mem;
     /* The transaction's storage. Created with the parser, handed to the root
@@ -246,6 +261,12 @@ struct markdown_core_parser {
     int lookahead_entries_used;
     int lookahead_base_line;
     markdown_core_block_peek block_peek;
+    markdown_core_paragraph_line paragraph_line;
+    markdown_core_strbuf paragraph_line_copy;
+    /* The raw source bytes of the line being processed, through its
+     * terminator, or NULL for a line the parser rewrote. */
+    const unsigned char *line_source;
+    bufsize_t line_source_length;
     /* One active table query borrows this reusable line workspace. Per-line
      * geometry is released by the query; the allocation dies with the parser. */
     struct markdown_core_table_source_line *table_lines;
@@ -403,6 +424,14 @@ int markdown_core_parser_append_source_marks(markdown_core_parser *parser, markd
 const markdown_core_block_peek *markdown_core_parser_peek_block_line(markdown_core_parser *parser,
                                                                      struct markdown_core_node *parent,
                                                                      markdown_core_node_type child);
+/* Records the line that opened `paragraph` (markdown_core_paragraph_line). */
+void markdown_core_parser_note_paragraph_line(markdown_core_parser *parser, markdown_core_node *paragraph,
+                                              const markdown_core_chunk *input);
+/* The line that opened `paragraph`, while it is the paragraph opened last
+ * and still that one line: open on the line before the current one, or
+ * closed on the line it opened. NULL otherwise. */
+const markdown_core_paragraph_line *markdown_core_parser_paragraph_line(const markdown_core_parser *parser,
+                                                                        const markdown_core_node *paragraph);
 
 bool markdown_core_parser_lookahead_begin(markdown_core_parser *parser, struct markdown_core_node *parent_container,
                                           markdown_core_node_type child, markdown_core_block_lookahead *lookahead);

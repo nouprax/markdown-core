@@ -6091,6 +6091,98 @@ static void ascii_runs_project_like_scalars(test_batch_runner *runner) {
     markdown_core_strbuf_free(&out);
 }
 
+/* The canonical dump of `source`, or NULL; the caller frees it. */
+static char *facade_dump_of(const char *source) {
+    markdown_core_document *document = markdown_core_document_parse((const uint8_t *)source, strlen(source), NULL);
+    uint8_t *dump = NULL;
+    size_t length = 0;
+    if (!document) {
+        return NULL;
+    }
+    if (!markdown_core_document_dump(document, &dump, &length, NULL)) {
+        markdown_core_document_free(document);
+        return NULL;
+    }
+    char *copy = (char *)malloc(length + 1);
+    if (copy) {
+        memcpy(copy, dump, length + 1);
+    }
+    markdown_core_dump_free(dump);
+    markdown_core_document_free(document);
+    return copy;
+}
+
+/* The first dump line naming `kind` as a node, or NULL. */
+static const char *dump_line_of(const char *dump, const char *kind) {
+    const char *at = dump;
+    size_t length = strlen(kind);
+    while ((at = strstr(at, kind)) != NULL) {
+        if ((at == dump || at[-1] == ' ') && at[length] == ' ') {
+            return at;
+        }
+        at += length;
+    }
+    return NULL;
+}
+
+/* A definition's term and a simple table's header are recognized from the
+ * line below them -- the marker, the separator -- as a setext underline
+ * makes a heading of the paragraph above it. No paragraph looks ahead at
+ * its own start: a document of paragraphs or list items runs no block
+ * lookahead at all, and what the lookahead used to decide is decided the
+ * same way from the line that settles it. */
+static void terms_and_headers_from_the_line_below(test_batch_runner *runner) {
+    static const struct {
+        const char *source, *kind, *expect;
+    } cases[] = {
+        {"term\n: body\n", "Definition", "compact=true"},
+        {"term  \n: body\n", "Definition", "scope=1:1..2:6"},
+        {"term\n\n: body\n", "Definition", "compact=false"},
+        {"term\n\n\n: body\n", "DefinitionList", NULL},
+        {"[r]: /u\n: body\n", "DefinitionList", NULL},
+        {"~\n~\n", "DefinitionList", NULL},
+        {"- term\n  : body\n", "Definition", "scope=1:3..2:8"},
+        {"> term\n> : body\n", "Definition", "scope=1:3..2:8"},
+        {"term\n: body\n\nnext\n: more\n", "DefinitionList", "children=2"},
+        {"term\n: body\nnext\n: more\n", "Definition", "children=2"},
+        {"a b\n--- ---\n1 2\n", "Table", "scope=1:1..3:3"},
+        {"  a b\n--- ---\n1 2\n", "Table", "scope=1:1..3:3"},
+        {"text\na b\n--- ---\n1 2\n", "Table", NULL},
+        {"text\na b\n--- ---\n1 2\n", "ThematicBreak", "scope=3:1..3:7"},
+        {"> a b\n> --- ---\n> 1 2\n", "Table", "scope=1:3..3:5"},
+        {"- a b\n  --- ---\n  1 2\n", "Table", "scope=1:3..3:5"},
+        {"a b\n---\n", "Heading", "level=2"},
+    };
+    for (size_t i = 0; i < sizeof(cases) / sizeof(*cases); i++) {
+        char *dump = facade_dump_of(cases[i].source);
+        const char *line = dump ? dump_line_of(dump, cases[i].kind) : NULL;
+        if (cases[i].expect) {
+            OK(runner, line && strstr(line, cases[i].expect) && strchr(line, '\n') > strstr(line, cases[i].expect),
+               "%s from the line below: %s", cases[i].kind, cases[i].source);
+        } else {
+            OK(runner, dump && !line, "no %s: %s", cases[i].kind, cases[i].source);
+        }
+        free(dump);
+    }
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    static const char *const shapes[] = {"- item\n", "paragraph line\n\n", "# heading\n\ntext\n\n", "> quoted\n\n",
+                                         "1. ordered\n"};
+    for (size_t shape = 0; shape < sizeof(shapes) / sizeof(*shapes); shape++) {
+        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+        for (int i = 0; i < 64; i++) {
+            markdown_core_strbuf_puts(&source, shapes[shape]);
+        }
+        inline_work work = {0};
+        markdown_core_node *root =
+            markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
+        OK(runner, root != NULL && work.lookahead == 0 && work.definition_lists == 0,
+           "no block lookahead and no term probing at paragraph starts: %s (lookahead=%zu definitions=%zu)",
+           shapes[shape], work.lookahead, work.definition_lists);
+        markdown_core_node_free(root);
+        markdown_core_strbuf_free(&source);
+    }
+}
+
 static void heading_completion_invariants(test_batch_runner *runner) {
     static const struct {
         const char *source, *anchor;
@@ -7471,6 +7563,7 @@ int main(int argc, char **argv) {
     iterator_contract_is_total(runner);
     deep_dump_prefixes(runner);
     ascii_runs_project_like_scalars(runner);
+    terms_and_headers_from_the_line_below(runner);
 
     test_print_summary(runner);
     retval = test_ok(runner) ? 0 : 1;

@@ -46,6 +46,9 @@ markdown_core_node *markdown_core_paragraph_open_text(markdown_core_parser *pars
     container =
         markdown_core_parser_add_child(parser, container, MARKDOWN_CORE_NODE_PARAGRAPH, parser->first_nonspace + 1);
     if (container) {
+        /* The line as the block start saw it, for the grammars that decide
+         * at the next line what this one was. */
+        markdown_core_parser_note_paragraph_line(parser, container, input);
         markdown_core_block_advance_offset(parser, input, parser->first_nonspace - parser->offset, false);
     }
     return container;

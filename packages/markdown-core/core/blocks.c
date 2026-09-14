@@ -235,6 +235,7 @@ static markdown_core_parser *S_parser_new(markdown_core_mem *mem) {
         return NULL;
     }
     markdown_core_strbuf_init(parser->mem, &parser->curline, 256);
+    markdown_core_strbuf_init(parser->mem, &parser->paragraph_line_copy, 0);
     markdown_core_strbuf_init(parser->mem, &parser->line_scratch, 0);
     markdown_core_strbuf_init(parser->mem, &parser->lookahead_last_line, 0);
 
@@ -268,6 +269,7 @@ static void S_parser_free(markdown_core_parser *parser) {
     parser->arena = NULL;
     parser->mem->free(parser->element_allocation);
     markdown_core_strbuf_free(&parser->curline);
+    markdown_core_strbuf_free(&parser->paragraph_line_copy);
     markdown_core_strbuf_free(&parser->line_scratch);
     markdown_core_strbuf_free(&parser->lookahead_last_line);
     mem->free(parser);
@@ -1260,9 +1262,12 @@ static void S_parse_source(markdown_core_parser *parser, const unsigned char *so
                     return;
                 }
                 markdown_core_strbuf_put(&parser->line_scratch, cursor, segment_length);
+                parser->line_source = NULL;
                 S_process_line(parser, parser->line_scratch.ptr, parser->line_scratch.size);
                 markdown_core_strbuf_clear(&parser->line_scratch);
             } else {
+                parser->line_source = cursor;
+                parser->line_source_length = (bufsize_t)(next - cursor);
                 S_process_line(parser, cursor, segment_length);
             }
         } else {
@@ -1300,6 +1305,7 @@ static void S_parse_source(markdown_core_parser *parser, const unsigned char *so
     if (!parser->oom && parser->line_scratch.size > 0) {
         parser->lookahead_cursor = end;
         parser->lookahead_end = end;
+        parser->line_source = NULL;
         S_process_line(parser, parser->line_scratch.ptr, parser->line_scratch.size);
         markdown_core_strbuf_clear(&parser->line_scratch);
     }
@@ -1906,6 +1912,45 @@ const markdown_core_block_peek *markdown_core_parser_peek_block_line(markdown_co
     return peek;
 }
 
+void markdown_core_parser_note_paragraph_line(markdown_core_parser *parser, markdown_core_node *paragraph,
+                                              const markdown_core_chunk *input) {
+    const unsigned char *data = parser->line_source;
+    bufsize_t length = parser->line_source_length;
+    if (!data) {
+        /* A rewritten line has no source bytes of its own shape: keep the
+         * line the parser built, which is what this line's grammar read. */
+        markdown_core_strbuf_set(&parser->paragraph_line_copy, input->data, input->len);
+        if (parser->paragraph_line_copy.oom) {
+            parser->oom = true;
+            return;
+        }
+        data = parser->paragraph_line_copy.ptr;
+        length = input->len;
+    }
+    parser->paragraph_line = (markdown_core_paragraph_line){.node = paragraph,
+                                                            .data = data,
+                                                            .length = length,
+                                                            .offset = parser->offset,
+                                                            .first = parser->first_nonspace,
+                                                            .first_column = parser->first_nonspace_column,
+                                                            .indent = parser->indent,
+                                                            .line = parser->line_number,
+                                                            .after = parser->lookahead_cursor};
+}
+
+const markdown_core_paragraph_line *markdown_core_parser_paragraph_line(const markdown_core_parser *parser,
+                                                                        const markdown_core_node *paragraph) {
+    const markdown_core_paragraph_line *line = &parser->paragraph_line;
+    if (line->node != paragraph) {
+        return NULL;
+    }
+    bool open = (paragraph->flags & MARKDOWN_CORE_NODE__OPEN) != 0;
+    if (open ? paragraph->start_line != parser->line_number - 1 : paragraph->start_line != paragraph->end_line) {
+        return NULL;
+    }
+    return line;
+}
+
 static bool scan_element_start(markdown_core_parser *parser, block_start_context *context, block_start *start) {
     size_t count;
     const markdown_core_block_owner *owners = S_block_owners(parser, &count);
@@ -1944,6 +1989,7 @@ bool markdown_core_parser_has_block_start(markdown_core_parser *parser, markdown
                                    .paragraph = paragraph,
                                    .lazy = paragraph,
                                    .all_matched = true,
+                                   .speculative = true,
                                    .depth = 1};
     block_start start = scan_block_start(parser, &context);
     if (parser->oom) {
