@@ -1634,6 +1634,70 @@ static void *borrow_realloc(void *pointer, size_t size) {
     borrow_allocations += pointer == NULL;
     return realloc(pointer, size);
 }
+/* An append places the source's bytes and terminates them at every length,
+ * on both sides of the short-copy threshold and at every alignment of the
+ * buffer it lands in; and how the bytes move is not how much room they need,
+ * so a block-shaped build -- a few bytes per line into one buffer -- still
+ * grows exactly as often as it did. */
+static size_t strbuf_growths;
+static void *growth_calloc(size_t count, size_t size) {
+    strbuf_growths++;
+    return calloc(count, size);
+}
+static void *growth_realloc(void *pointer, size_t size) {
+    strbuf_growths++;
+    return realloc(pointer, size);
+}
+static void strbuf_short_appends(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    unsigned char pattern[96];
+    for (size_t i = 0; i < sizeof(pattern); i++) {
+        pattern[i] = (unsigned char)(1 + i % 251);
+    }
+    bool placed = true, terminated = true;
+    for (bufsize_t len = 0; len <= 48; len++) {
+        for (bufsize_t at = 0; at <= 24; at++) {
+            markdown_core_strbuf buf = MARKDOWN_CORE_BUF_INIT(mem);
+            markdown_core_strbuf_put(&buf, pattern, at);
+            markdown_core_strbuf_put(&buf, pattern + at, len);
+            placed = placed && buf.size == at + len && memcmp(buf.ptr, pattern, (size_t)(at + len)) == 0;
+            terminated = terminated && buf.ptr[buf.size] == '\0';
+            markdown_core_strbuf_free(&buf);
+        }
+    }
+    OK(runner, placed, "an append of any length places the source's bytes where the buffer ended");
+    OK(runner, terminated, "an append of any length terminates the buffer");
+    /* The same bytes, arrived at one step at a time, read back the same. */
+    markdown_core_strbuf stepped = MARKDOWN_CORE_BUF_INIT(mem);
+    markdown_core_strbuf whole = MARKDOWN_CORE_BUF_INIT(mem);
+    for (bufsize_t step = 1; step <= 20; step++) {
+        for (bufsize_t at = 0; at + step <= (bufsize_t)sizeof(pattern); at += step) {
+            markdown_core_strbuf_put(&stepped, pattern + at, step);
+        }
+    }
+    for (bufsize_t step = 1; step <= 20; step++) {
+        markdown_core_strbuf_put(&whole, pattern, (bufsize_t)(sizeof(pattern) / step) * step);
+    }
+    OK(runner, markdown_core_strbuf_cmp(&stepped, &whole) == 0,
+       "short steps and one long append build the same bytes: stepped=%d whole=%d", (int)stepped.size, (int)whole.size);
+    markdown_core_strbuf_free(&stepped);
+    markdown_core_strbuf_free(&whole);
+    /* An indented code block's shape: 2,600 lines of a few net bytes each,
+     * appended into one buffer. Growth oversizes by half, so the ladder from
+     * the first append to 15,600 bytes is seventeen steps -- the short path
+     * chooses how bytes move, never how much room they need. */
+    markdown_core_mem counted = {growth_calloc, growth_realloc, free};
+    markdown_core_strbuf lines = MARKDOWN_CORE_BUF_INIT(&counted);
+    strbuf_growths = 0;
+    for (size_t i = 0; i < 2600; i++) {
+        markdown_core_strbuf_put(&lines, (const unsigned char *)"line.\n", 6);
+    }
+    INT_EQ(runner, (int)strbuf_growths, 17, "a few bytes per line grows the buffer on the same ladder");
+    OK(runner, lines.size == 15600 && lines.ptr[15600] == '\0' && memcmp(lines.ptr, "line.\nline.\n", 12) == 0,
+       "every line's bytes are in the buffer");
+    markdown_core_strbuf_free(&lines);
+}
+
 static void strbuf_borrowed_storage(test_batch_runner *runner) {
     markdown_core_mem mem = {borrow_calloc, borrow_realloc, free};
     unsigned char storage[16];
@@ -8332,6 +8396,7 @@ int main(int argc, char **argv) {
     links_allocate_nothing_per_link(runner);
     attributes_allocate_nothing_per_attribute(runner);
     release_frees_only_allocations(runner);
+    strbuf_short_appends(runner);
     strbuf_failure_is_a_transaction(runner);
     stray_delimiter(runner);
     inline_predicate_arbitration(runner);
