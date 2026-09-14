@@ -21,6 +21,7 @@
 #include "node.h"
 #include "buffer.h"
 #include "parser.h"
+#include "block_internal.h"
 #include "element.h"
 #include "inline_internal.h"
 #include "text.h"
@@ -1634,6 +1635,156 @@ static void *borrow_realloc(void *pointer, size_t size) {
     borrow_allocations += pointer == NULL;
     return realloc(pointer, size);
 }
+/* An append places the source's bytes and terminates them at every length,
+ * on both sides of the short-copy threshold and at every alignment of the
+ * buffer it lands in; and how the bytes move is not how much room they need,
+ * so a block-shaped build -- a few bytes per line into one buffer -- still
+ * grows exactly as often as it did. */
+static size_t strbuf_growths;
+static void *growth_calloc(size_t count, size_t size) {
+    strbuf_growths++;
+    return calloc(count, size);
+}
+static void *growth_realloc(void *pointer, size_t size) {
+    strbuf_growths++;
+    return realloc(pointer, size);
+}
+/* The four fields a line's leading whitespace produces, against the rule
+ * that produced them one column at a time: a run of spaces advances the byte
+ * cursor and the column together, and a tab lands on the stop above whatever
+ * column the run before it reached. Every prefix shape is checked from every
+ * starting column of a tab stop, since the stop the first tab lands on
+ * depends on where the container prefix left the cursor. */
+static void first_nonspace_crosses_runs_like_columns(test_batch_runner *runner) {
+    static const char *const prefixes[] = {
+        "",
+        " ",
+        "  ",
+        "   ",
+        "    ",
+        "     ",
+        "\t",
+        "\t\t",
+        "\t\t\t",
+        " \t",
+        "\t ",
+        "  \t",
+        "\t  ",
+        " \t ",
+        " \t\t ",
+        "   \t   ",
+        "    \t",
+        "\t    ",
+        "     \t  ",
+        " \t \t \t ",
+        "\t\t    \t",
+        "               ",
+        "\t\t\t\t\t\t\t\t",
+        "                                        ",
+    };
+    static const char *const tails[] = {"x", "", "\n", "\r\n", " x", "\tx", "*", "\xc3\xa9"};
+    bool same = true;
+    for (size_t p = 0; p < sizeof(prefixes) / sizeof(*prefixes); p++) {
+        for (size_t t = 0; t < sizeof(tails) / sizeof(*tails); t++) {
+            char line[80];
+            snprintf(line, sizeof(line), "%s%s", prefixes[p], tails[t]);
+            for (bufsize_t column = 0; column < 8 && same; column++) {
+                markdown_core_chunk input = {(unsigned char *)line, (bufsize_t)strlen(line), 0};
+                markdown_core_parser parser = {0};
+                parser.offset = 0;
+                parser.column = column;
+                parser.first_nonspace = 0;
+                markdown_core_block_find_first_nonspace(&parser, &input);
+                /* The rule this replaced, byte by byte. */
+                bufsize_t at = 0, walked = column;
+                int to_tab = TAB_STOP - (int)(column % TAB_STOP);
+                for (char c = line[at]; c == ' ' || c == '\t'; c = line[at]) {
+                    at++;
+                    if (c == ' ') {
+                        walked += 1;
+                        to_tab = to_tab - 1 == 0 ? TAB_STOP : to_tab - 1;
+                    } else {
+                        walked += (bufsize_t)to_tab;
+                        to_tab = TAB_STOP;
+                    }
+                }
+                same = parser.first_nonspace == at && parser.first_nonspace_column == walked &&
+                       parser.indent == (int)(walked - column) && parser.blank == markdown_core_is_line_end(line[at]);
+                if (!same) {
+                    OK(runner, false, "prefix=%zu tail=%zu column=%d: first=%d column=%d indent=%d blank=%d", p, t,
+                       (int)column, (int)parser.first_nonspace, (int)parser.first_nonspace_column, parser.indent,
+                       (int)parser.blank);
+                }
+            }
+        }
+    }
+    OK(runner, same, "every whitespace prefix crosses to the same cursor, column, indent and blankness");
+    /* A cursor already past the run is left where it is: the scan runs once
+     * per line, not once per container that looks at it. */
+    char held[] = "    text";
+    markdown_core_chunk input = {(unsigned char *)held, 8, 0};
+    markdown_core_parser parser = {0};
+    parser.offset = 0;
+    parser.column = 0;
+    parser.first_nonspace = 0;
+    markdown_core_block_find_first_nonspace(&parser, &input);
+    parser.first_nonspace = 6;
+    parser.first_nonspace_column = 6;
+    markdown_core_block_find_first_nonspace(&parser, &input);
+    OK(runner, parser.first_nonspace == 6 && parser.first_nonspace_column == 6 && parser.indent == 6,
+       "a cursor already past the run is not rescanned");
+}
+
+static void strbuf_short_appends(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    unsigned char pattern[96];
+    for (size_t i = 0; i < sizeof(pattern); i++) {
+        pattern[i] = (unsigned char)(1 + i % 251);
+    }
+    bool placed = true, terminated = true;
+    for (bufsize_t len = 0; len <= 48; len++) {
+        for (bufsize_t at = 0; at <= 24; at++) {
+            markdown_core_strbuf buf = MARKDOWN_CORE_BUF_INIT(mem);
+            markdown_core_strbuf_put(&buf, pattern, at);
+            markdown_core_strbuf_put(&buf, pattern + at, len);
+            placed = placed && buf.size == at + len && memcmp(buf.ptr, pattern, (size_t)(at + len)) == 0;
+            terminated = terminated && buf.ptr[buf.size] == '\0';
+            markdown_core_strbuf_free(&buf);
+        }
+    }
+    OK(runner, placed, "an append of any length places the source's bytes where the buffer ended");
+    OK(runner, terminated, "an append of any length terminates the buffer");
+    /* The same bytes, arrived at one step at a time, read back the same. */
+    markdown_core_strbuf stepped = MARKDOWN_CORE_BUF_INIT(mem);
+    markdown_core_strbuf whole = MARKDOWN_CORE_BUF_INIT(mem);
+    for (bufsize_t step = 1; step <= 20; step++) {
+        for (bufsize_t at = 0; at + step <= (bufsize_t)sizeof(pattern); at += step) {
+            markdown_core_strbuf_put(&stepped, pattern + at, step);
+        }
+    }
+    for (bufsize_t step = 1; step <= 20; step++) {
+        markdown_core_strbuf_put(&whole, pattern, (bufsize_t)(sizeof(pattern) / step) * step);
+    }
+    OK(runner, markdown_core_strbuf_cmp(&stepped, &whole) == 0,
+       "short steps and one long append build the same bytes: stepped=%d whole=%d", (int)stepped.size, (int)whole.size);
+    markdown_core_strbuf_free(&stepped);
+    markdown_core_strbuf_free(&whole);
+    /* An indented code block's shape: 2,600 lines of a few net bytes each,
+     * appended into one buffer. Growth oversizes by half, so the ladder from
+     * the first append to 15,600 bytes is seventeen steps -- the short path
+     * chooses how bytes move, never how much room they need. */
+    markdown_core_mem counted = {growth_calloc, growth_realloc, free};
+    markdown_core_strbuf lines = MARKDOWN_CORE_BUF_INIT(&counted);
+    strbuf_growths = 0;
+    for (size_t i = 0; i < 2600; i++) {
+        markdown_core_strbuf_put(&lines, (const unsigned char *)"line.\n", 6);
+    }
+    INT_EQ(runner, (int)strbuf_growths, 17, "a few bytes per line grows the buffer on the same ladder");
+    OK(runner, lines.size == 15600 && lines.ptr[15600] == '\0' && memcmp(lines.ptr, "line.\nline.\n", 12) == 0,
+       "every line's bytes are in the buffer");
+    markdown_core_strbuf_free(&lines);
+}
+
 static void strbuf_borrowed_storage(test_batch_runner *runner) {
     markdown_core_mem mem = {borrow_calloc, borrow_realloc, free};
     unsigned char storage[16];
@@ -1667,6 +1818,70 @@ static void strbuf_borrowed_storage(test_batch_runner *runner) {
 }
 
 static size_t count_kind(markdown_core_node *root, markdown_core_node_type kind);
+
+/* The bytes of every attribute value, and the vectors that hold them, come
+ * from the transaction's arena. Two statements follow, and the test makes
+ * both: a node's values cost no allocation at all, so six of them on a node
+ * cost what one does; and what an attributed node still costs over a plain
+ * one is its attribute parser's own recognition memo, one vector, never a
+ * count that grows with the values. */
+static void attributes_allocate_nothing_per_attribute(test_batch_runner *runner) {
+    markdown_core_mem mem = {borrow_calloc, borrow_realloc, free};
+    static const struct {
+        const char *plain, *one, *many;
+    } shapes[] = {
+        {"# h\n\n", "# h {#a-1}\n\n", "# h {#a-1 .c .d .e k=v j=w}\n\n"},
+        {":d[label]\n\n", ":d[label]{#a-2}\n\n", ":d[label]{#a-2 .c .d .e k=v j=w}\n\n"},
+        {"para\n\n", "para{#a-3}\n\n", "para{#a-3 .c .d .e k=v j=w}\n\n"},
+        {"`code`\n\n", "`code`{#a-4}\n\n", "`code`{#a-4 .c .d .e k=v j=w}\n\n"},
+        {"[a](/u)\n\n", "[a](/u){#a-5}\n\n", "[a](/u){#a-5 .c .d .e k=v j=w}\n\n"},
+        {"term\n: def\n\n", "term\n: def{#a-6}\n\n", "term\n: def{#a-6 .c .d .e k=v j=w}\n\n"},
+    };
+    enum { NODES = 4096 };
+    for (size_t shape = 0; shape < sizeof(shapes) / sizeof(*shapes); shape++) {
+        size_t cost[3] = {0, 0, 0};
+        for (size_t form = 0; form < 3; form++) {
+            const char *unit = form == 0 ? shapes[shape].plain : form == 1 ? shapes[shape].one : shapes[shape].many;
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(markdown_core_get_default_mem_allocator());
+            for (size_t i = 0; i < NODES; i++) {
+                markdown_core_strbuf_puts(&source, unit);
+            }
+            borrow_allocations = 0;
+            markdown_core_node *root =
+                markdown_core_parse_document_with_mem((const char *)source.ptr, source.size, &mem, NULL, NULL);
+            OK(runner, root != NULL, "the shape parses: shape=%zu form=%zu", shape, form);
+            cost[form] = borrow_allocations;
+            markdown_core_node_free(root);
+            markdown_core_strbuf_free(&source);
+        }
+        OK(runner, cost[2] <= cost[1] + 64, "six values on a node cost what one does: shape=%zu one=%zu six=%zu", shape,
+           cost[1], cost[2]);
+        OK(runner, cost[1] <= cost[0] + NODES + 64,
+           "an attributed node costs its parser's memo and nothing per value: shape=%zu plain=%zu attributed=%zu",
+           shape, cost[0], cost[1]);
+    }
+    /* The values themselves are unchanged by where their bytes live. */
+    static const char *const text = "# Heading {#the-id .one .two key=value}\n";
+    markdown_core_node *root = markdown_core_parse_document(text, strlen(text));
+    markdown_core_node *heading = root ? root->first_child : NULL;
+    markdown_core_optional_string anchor = markdown_core_node_anchor(heading);
+    OK(runner,
+       heading != NULL && anchor.has_value && anchor.value.length == 6 && memcmp(anchor.value.data, "the-id", 6) == 0,
+       "the anchor reads back as its own bytes");
+    markdown_core_string one = {0}, two = {0}, name = {0}, value = {0};
+    OK(runner,
+       markdown_core_node_attribute_class_count(heading) == 2 &&
+           markdown_core_node_attribute_class_at(heading, 0, &one) && one.length == 3 &&
+           memcmp(one.data, "one", 3) == 0 && markdown_core_node_attribute_class_at(heading, 1, &two) &&
+           two.length == 3 && memcmp(two.data, "two", 3) == 0,
+       "every class reads back");
+    OK(runner,
+       markdown_core_node_attribute_record_count(heading) == 1 &&
+           markdown_core_node_attribute_record_at(heading, 0, &name, &value) && name.length == 3 &&
+           memcmp(name.data, "key", 3) == 0 && value.length == 5 && memcmp(value.data, "value", 5) == 0,
+       "the record reads back");
+    markdown_core_node_free(root);
+}
 
 /* A link's resource and the destination and title it cleans are arena
  * storage, like the nodes: a parse of many links, autolinks or references
@@ -6228,7 +6443,7 @@ static void attribute_sparse_memory(test_batch_runner *runner) {
             OK(runner, parser.work <= 20 * (size_t)source.size,
                "both lexical overlap and long shared grammar tails have linear work");
             OK(runner,
-               parser.facts.size <= count + 1 && properties_peak_bytes <= 192 * (count + 1) &&
+               parser.fact_count <= count + 1 && properties_peak_bytes <= 192 * (count + 1) &&
                    properties_requested_bytes <= 288 * (count + 1),
                "only candidate and join facts allocate, with bounded peak and cumulative growth");
             markdown_core_attribute_parser_free(&parser);
@@ -6241,6 +6456,66 @@ static void attribute_sparse_memory(test_batch_runner *runner) {
 /* A tail scan asks every unescaped `{` of a line. A brace that no member can
  * follow is refused by its next byte alone, so `{{{...` allocates nothing;
  * a candidate a letter follows records one fact and a bounded record. */
+/* `id` is single-valued: a container may write it many times and the grammar
+ * keeps the last spelling, in the `id=` form and the `#` shorthand alike. A
+ * class or a record is the other case -- the grammar keeps every occurrence.
+ * The document's storage must follow that difference: writing the anchor two
+ * hundred times per heading costs one anchor per heading, because each write
+ * hands the copy it supersedes back to the pool the next one takes from,
+ * while writing two hundred classes costs two hundred. Without it every
+ * superseded spelling would sit in the document arena until the root was
+ * released.
+ *
+ * Each anchor spelling is measured against the accumulating spelling of its
+ * own length rather than a constant, so everything the two share -- the
+ * member count, the recognition facts, the input the headings carry -- is on
+ * both sides of the comparison and only the kept values differ. What each
+ * pair reports is how much the document grew when the members per heading
+ * went from one to two hundred. */
+static void anchor_storage_is_one_spelling(test_batch_runner *runner) {
+    markdown_core_mem mem = {properties_calloc, properties_realloc, properties_free};
+    enum { HEADINGS = 300, KINDS = 2, STEPS = 2 };
+    static const struct {
+        const char *single, *accumulating;
+    } pairs[] = {{"#value-%04zu", ".value-%04zu"}, {"id=value-%04zu", "ck=value-%04zu"}};
+    static const size_t counts[STEPS] = {1, 200};
+    for (size_t pair = 0; pair < sizeof(pairs) / sizeof(*pairs); pair++) {
+        size_t grew[KINDS] = {0, 0};
+        for (size_t kind = 0; kind < KINDS; kind++) {
+            const char *form = kind ? pairs[pair].accumulating : pairs[pair].single;
+            size_t retained[STEPS] = {0, 0};
+            for (size_t step = 0; step < STEPS; step++) {
+                markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(markdown_core_get_default_mem_allocator());
+                for (size_t heading = 0; heading < HEADINGS; heading++) {
+                    markdown_core_strbuf_puts(&source, "# T {");
+                    for (size_t i = 0; i < counts[step]; i++) {
+                        char one[32];
+                        snprintf(one, sizeof one, form, i);
+                        if (i) {
+                            markdown_core_strbuf_putc(&source, ' ');
+                        }
+                        markdown_core_strbuf_puts(&source, one);
+                    }
+                    markdown_core_strbuf_puts(&source, "}\n\n");
+                }
+                properties_live_bytes = 0;
+                markdown_core_node *root =
+                    markdown_core_parse_document_with_mem((const char *)source.ptr, source.size, &mem, NULL, NULL);
+                OK(runner, root != NULL, "the shape parses: pair=%zu kind=%zu count=%zu", pair, kind, counts[step]);
+                retained[step] = properties_live_bytes;
+                markdown_core_node_free(root);
+                INT_EQ(runner, properties_live_bytes, 0, "the document releases every allocation");
+                markdown_core_strbuf_free(&source);
+            }
+            grew[kind] = retained[1] - retained[0];
+        }
+        OK(runner, 5 * grew[0] <= 2 * grew[1],
+           "a repeated anchor costs one value where a repeated class costs all of them: pair=%zu anchor=%zu "
+           "accumulating=%zu",
+           pair, grew[0], grew[1]);
+    }
+}
+
 static void attribute_dense_tail_memory(test_batch_runner *runner) {
     markdown_core_mem mem = {properties_calloc, properties_realloc, properties_free};
     for (size_t count = 1024; count <= 65536; count *= 4) {
@@ -6259,11 +6534,11 @@ static void attribute_dense_tail_memory(test_batch_runner *runner) {
                "a dense tail scan is linear: letters=%d count=%zu work=%zu", letters, count, parser.work);
             if (letters) {
                 OK(runner,
-                   parser.facts.size <= count + 1 && properties_peak_bytes <= 192 * (count + 1) &&
+                   parser.fact_count <= count + 1 && properties_peak_bytes <= 192 * (count + 1) &&
                        properties_requested_bytes <= 288 * (count + 1),
                    "each refused member records at most one fact and one bounded record");
             } else {
-                OK(runner, parser.facts.size <= 1 && properties_peak_bytes <= 256 && properties_requested_bytes <= 256,
+                OK(runner, parser.fact_count <= 1 && properties_peak_bytes <= 256 && properties_requested_bytes <= 256,
                    "braces no member can follow allocate nothing: count=%zu peak=%zu", count, properties_peak_bytes);
             }
             markdown_core_attribute_parser_free(&parser);
@@ -6367,11 +6642,59 @@ static void arena_recycling(test_batch_runner *runner) {
         distinct &= other != records[j];
     }
     OK(runner, distinct, "a different size class never receives another class's records");
-    void *large = markdown_core_arena_take(arena, 4096);
-    markdown_core_arena_recycle(arena, large, 4096);
-    OK(runner, large != NULL && markdown_core_arena_take(arena, 4096) != large,
-       "records above the pooled sizes are arena storage and are not handed out twice");
+    /* Above the exact classes a record is pooled when its size is a power of
+     * two -- what a doubling vector asks for, so the storage each growth
+     * supersedes comes back -- and is not when it is any other size. */
+    void *doubled = markdown_core_arena_take(arena, 4096);
+    markdown_core_arena_recycle(arena, doubled, 4096);
+    OK(runner, doubled != NULL && markdown_core_arena_take(arena, 4096) == doubled,
+       "an oversized record whose size is a power of two is handed out again");
+    void *odd = markdown_core_arena_take(arena, 4096 + 16);
+    markdown_core_arena_recycle(arena, odd, 4096 + 16);
+    OK(runner, odd != NULL && markdown_core_arena_take(arena, 4096 + 16) == odd,
+       "an oversized record of any other size is served at the next power and handed out again");
+    /* The contract is total: whatever a caller asks for, what it got back it
+     * can give back. A size between two powers is served by the larger, so
+     * asking for either reaches the same class. */
+    void *between = markdown_core_arena_take(arena, 4096 + 1);
+    markdown_core_arena_recycle(arena, between, 4096 + 1);
+    OK(runner, between != NULL && markdown_core_arena_take(arena, 8192) == between,
+       "a size between two powers is served, and recycled, by the larger");
+    void *wide = markdown_core_arena_take(arena, 8192);
+    markdown_core_arena_recycle(arena, wide, 8192);
+    OK(runner, wide != NULL && markdown_core_arena_take(arena, 4096) != wide,
+       "a power-of-two class never receives another power's records");
     OK(runner, markdown_core_arena_take(arena, (1u << 20) + 1) != NULL, "a request beyond a block gets its own");
+    /* A size no storage could have is refused rather than rounded: carrying
+     * the granule round-up past the end of a size_t would wrap to zero and
+     * index the pools below their first class, and doubling past the largest
+     * representable power of two would never reach the size. Both report the
+     * allocation failure markdown_core_arena_alloc reports for the same size,
+     * and recycling such a size touches nothing -- no record was ever served
+     * at it. */
+    OK(runner,
+       markdown_core_arena_take(arena, SIZE_MAX) == NULL && markdown_core_arena_take(arena, SIZE_MAX - 1) == NULL &&
+           markdown_core_arena_alloc(arena, SIZE_MAX) == NULL,
+       "a size that would wrap the granule round-up is refused");
+    OK(runner, markdown_core_arena_take(arena, (SIZE_MAX >> 1) + 2) == NULL,
+       "a size above the largest representable power of two is refused");
+    void *live = markdown_core_arena_take(arena, 32);
+    markdown_core_arena_recycle(arena, live, SIZE_MAX);
+    markdown_core_arena_recycle(arena, live, (SIZE_MAX >> 1) + 2);
+    OK(runner, live != NULL && markdown_core_arena_take(arena, 32) != live,
+       "recycling a size no record was served at pools nothing");
+    /* Text packs byte by byte where a record would take a whole granule, and
+     * a record taken afterwards is still aligned and its own storage. */
+    unsigned char *first = markdown_core_arena_text(arena, 3);
+    unsigned char *second = markdown_core_arena_text(arena, 5);
+    OK(runner, first != NULL && second == first + 3, "text asks pack against each other");
+    unsigned char *aligned = markdown_core_arena_alloc(arena, 16);
+    unsigned char *third = markdown_core_arena_text(arena, 4);
+    OK(runner,
+       aligned != NULL && (uintptr_t)aligned % sizeof(void *) == 0 && third == second + 5 &&
+           (aligned + 16 <= first || aligned >= third + 4),
+       "a record takes aligned storage of its own while the text slab goes on");
+    OK(runner, markdown_core_arena_text(arena, 0) != NULL, "an empty text ask still names storage");
     markdown_core_arena_free(arena);
     INT_EQ(runner, properties_live_bytes, 0, "the arena releases every block, oversized ones included");
     payload_allocations = payload_fail_at = payload_live = 0;
@@ -6725,6 +7048,115 @@ static void terms_and_headers_from_the_line_below(test_batch_runner *runner) {
  * collection sorts itself by the keys the entries recorded and the anchors
  * follow the source. Every other document registers its headings in source
  * order and is prepared without a sort. */
+/* The shared source-entry ordering: what it produces must be what eight
+ * stable byte passes produce, and what it costs must follow the keys. The
+ * key function counts its own calls, which is how many passes ran. */
+static size_t order_key_calls;
+static uint64_t counting_order_key(const void *entry) {
+    order_key_calls++;
+    uint64_t value;
+    memcpy(&value, entry, sizeof(value));
+    return value;
+}
+typedef struct {
+    uint64_t key;
+    size_t original;
+} order_entry;
+static uint64_t order_entry_key(const void *entry) {
+    order_key_calls++;
+    return ((const order_entry *)entry)->key;
+}
+/* A stable reference: every pair in the result is ordered by key, and equal
+ * keys keep the order they were given in. */
+static bool order_is_stable_sort(const order_entry *values, size_t count) {
+    for (size_t i = 1; i < count; i++) {
+        if (values[i - 1].key > values[i].key) {
+            return false;
+        }
+        if (values[i - 1].key == values[i].key && values[i - 1].original > values[i].original) {
+            return false;
+        }
+    }
+    return true;
+}
+static void source_entry_ordering(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    /* A deterministic spread, reduced to a few distinct values so equal keys
+     * are common and stability is actually exercised. */
+    enum { LARGE = 4096 };
+    order_entry *values = malloc(LARGE * sizeof(*values));
+    uint64_t state = 0x9e3779b97f4a7c15u;
+    for (size_t shape = 0; shape < 4; shape++) {
+        for (size_t count = 2; count <= LARGE; count *= 4) {
+            for (size_t i = 0; i < count; i++) {
+                state = state * 6364136223846793005u + 1442695040888963407u;
+                uint64_t spread = state >> 33;
+                values[i].key = shape == 0   ? ((uint64_t)(spread % 97) << 32) | (spread % 31)
+                                : shape == 1 ? spread
+                                : shape == 2 ? 0x1234u
+                                             : (uint64_t)(count - i) << 32;
+                values[i].original = i;
+            }
+            order_key_calls = 0;
+            OK(runner, markdown_core_order_source_entries(mem, values, count, sizeof(*values), order_entry_key) == 1,
+               "ordering succeeds: shape=%zu count=%zu", shape, count);
+            OK(runner, order_is_stable_sort(values, count), "ordering is stable and sorted: shape=%zu count=%zu", shape,
+               count);
+            /* One read of every key to plan, then two per entry for each
+             * byte position that differs. Eight positions differing is the
+             * fixed schedule this replaced, so 17 reads per entry is its
+             * cost and nothing may exceed it, whatever the count. */
+            OK(runner, order_key_calls <= 17 * count,
+               "ordering reads keys for the bytes that differ, not all eight: shape=%zu count=%zu reads=%zu", shape,
+               count, order_key_calls);
+            /* Shape 0 is a grid region's key: two coordinates, so only two
+             * byte positions differ and only two passes may run -- five reads
+             * per entry, at every count. */
+            if (shape == 0) {
+                OK(runner, order_key_calls <= 5 * count,
+                   "a two-coordinate key takes two passes, not eight: count=%zu reads=%zu", count, order_key_calls);
+            }
+        }
+    }
+    /* Already ordered: nothing is read twice and nothing moves. */
+    for (size_t i = 0; i < LARGE; i++) {
+        values[i].key = (uint64_t)i << 32;
+        values[i].original = i;
+    }
+    order_key_calls = 0;
+    OK(runner, markdown_core_order_source_entries(mem, values, LARGE, sizeof(*values), order_entry_key) == 1,
+       "ordered entries succeed");
+    INT_EQ(runner, order_key_calls, LARGE, "ordered entries are read once and moved not at all");
+    bool intact = true;
+    for (size_t i = 0; i < LARGE; i++) {
+        intact = intact && values[i].original == i;
+    }
+    OK(runner, intact, "ordered entries keep their places");
+    /* Boundaries: nothing to do, and one entry. */
+    order_key_calls = 0;
+    OK(runner,
+       markdown_core_order_source_entries(mem, values, 0, sizeof(*values), order_entry_key) == 1 &&
+           markdown_core_order_source_entries(mem, values, 1, sizeof(*values), order_entry_key) == 1 &&
+           order_key_calls == 0,
+       "an empty or single-entry ordering reads nothing");
+    free(values);
+    /* A bare 64-bit key, the widest spread, through the byte passes. */
+    enum { WIDE = 512 };
+    uint64_t *keys = malloc(WIDE * sizeof(*keys));
+    for (size_t i = 0; i < WIDE; i++) {
+        state = state * 6364136223846793005u + 1442695040888963407u;
+        keys[i] = state;
+    }
+    OK(runner, markdown_core_order_source_entries(mem, keys, WIDE, sizeof(*keys), counting_order_key) == 1,
+       "a full-width key orders");
+    bool ascending = true;
+    for (size_t i = 1; i < WIDE; i++) {
+        ascending = ascending && keys[i - 1] <= keys[i];
+    }
+    OK(runner, ascending, "a full-width key orders ascending");
+    free(keys);
+}
+
 static void heading_registration_order(test_batch_runner *runner) {
     static const struct {
         const char *source;
@@ -6826,6 +7258,44 @@ static void heading_completion_invariants(test_batch_runner *runner) {
         INT_EQ(runner, work.anchors, anchor_work, "anchor work is independent of unrelated AST size");
         markdown_core_node_free(root);
         markdown_core_strbuf_free(&source);
+    }
+}
+
+/* What the anchor registry costs per heading, on the two shapes that stress
+ * it: N headings that all want the same name, so every one of them is
+ * uniqued, and N headings that each want a different one. Both stay
+ * proportional to the headings and to the length of the names they take --
+ * the base name's ordinal counter means a duplicate is uniqued in one
+ * attempt, not by trying every taken suffix. */
+static void anchor_work_is_bounded_per_heading(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    for (size_t count = 256; count <= 4096; count *= 4) {
+        size_t digits = 1;
+        for (size_t n = count; n >= 10; n /= 10) {
+            digits++;
+        }
+        for (int distinct = 0; distinct < 2; distinct++) {
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+            for (size_t i = 0; i < count; i++) {
+                char line[64];
+                if (distinct) {
+                    snprintf(line, sizeof(line), "# Heading %zu\n\n", i);
+                } else {
+                    snprintf(line, sizeof(line), "# Heading\n\n");
+                }
+                markdown_core_strbuf_puts(&source, line);
+            }
+            inline_work work = {0};
+            markdown_core_node *root =
+                markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
+            OK(runner, root != NULL, "the heading shape parses: count=%zu distinct=%d", count, distinct);
+            OK(runner, work.anchors <= count * (24 + 2 * digits),
+               "anchor work stays proportional to the headings and the names they take: count=%zu distinct=%d "
+               "work=%zu",
+               count, distinct, work.anchors);
+            markdown_core_node_free(root);
+            markdown_core_strbuf_free(&source);
+        }
     }
 }
 
@@ -8040,12 +8510,15 @@ int main(int argc, char **argv) {
     reference_definition_lifetime(runner);
     attribute_sparse_memory(runner);
     attribute_dense_tail_memory(runner);
+    anchor_storage_is_one_spelling(runner);
     parse_transaction_storage(runner);
     arena_recycling(runner);
     attribute_linear_work(runner);
     attribute_attachment_linear_work(runner);
     heading_completion_invariants(runner);
     heading_registration_order(runner);
+    source_entry_ordering(runner);
+    anchor_work_is_bounded_per_heading(runner);
     heading_registry_invariants(runner);
     heading_reference_resource_lifetime(runner);
     heading_label_length_boundary(runner);
@@ -8147,7 +8620,10 @@ int main(int argc, char **argv) {
     strbuf_borrowed_storage(runner);
     block_content_allocates_nothing_per_block(runner);
     links_allocate_nothing_per_link(runner);
+    attributes_allocate_nothing_per_attribute(runner);
     release_frees_only_allocations(runner);
+    first_nonspace_crosses_runs_like_columns(runner);
+    strbuf_short_appends(runner);
     strbuf_failure_is_a_transaction(runner);
     stray_delimiter(runner);
     inline_predicate_arbitration(runner);

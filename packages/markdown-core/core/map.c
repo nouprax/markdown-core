@@ -1,3 +1,6 @@
+#include <stdint.h>
+#include <string.h>
+
 #include "map.h"
 #include "arena.h"
 #include "utf8.h"
@@ -19,21 +22,28 @@ static size_t leaf_ref(size_t position) { return ((position + 1) << 1) | 1; }
 static size_t branch_ref(size_t position) { return (position + 1) << 1; }
 static size_t ref_position(size_t ref) { return (ref >> 1) - 1; }
 
+/* The bit a branch tests, read without branching on either the key's length
+ * or the presence bit: a byte the key has reads as its value above a set
+ * presence bit, and a byte past its end reads as nothing at all. Mask 256
+ * therefore selects presence and every smaller mask selects a value bit,
+ * which is what the two tests this replaced said in two branches. */
 static unsigned key_direction(const unsigned char *key, bufsize_t length, bufsize_t byte, uint16_t mask) {
-    return byte < length && (mask == 256 || (key[byte] & mask) != 0);
+    unsigned bits = byte < length ? (unsigned)key[byte] | 0x100u : 0u;
+    return (bits & mask) != 0;
 }
 
 static size_t find_leaf(markdown_core_key_index *index, const unsigned char *key, bufsize_t length) {
     size_t ref = index->root;
     MARKDOWN_CORE_DIAGNOSTIC(index->operations++;)
     while (ref && !(ref & 1)) {
-        const markdown_core_key_index_node *node = &index->nodes[ref_position(ref)];
+        size_t position = ref_position(ref);
+        const markdown_core_key_index_node *node = &index->nodes[position];
         MARKDOWN_CORE_DIAGNOSTIC(index->branch_visits++;)
         /* All keys below this branch share the preceding bytes. A shorter
          * query cannot occur here; use its resident leaf for the final check
          * (and for the insertion split) without walking an unrelated suffix. */
         if (node->byte > length || (node->byte == length && node->mask < 256)) {
-            return leaf_ref(ref_position(ref));
+            return leaf_ref(position);
         }
         ref = node->children[key_direction(key, length, node->byte, node->mask)];
     }
@@ -90,6 +100,18 @@ markdown_core_key_index_slot *markdown_core_key_index_entry(markdown_core_key_in
     if (ref) {
         markdown_core_key_index_slot *found = &index->nodes[ref_position(ref)].slot;
         bufsize_t limit = (key_len < found->key_len ? key_len : found->key_len);
+        /* Both keys hold at least `limit` bytes, so whole words of the shared
+         * prefix are compared as words; the loop after this one settles the
+         * word that differs and the bytes below one. */
+        while (limit - byte >= (bufsize_t)sizeof(uint64_t)) {
+            uint64_t left, right;
+            memcpy(&left, key + byte, sizeof(left));
+            memcpy(&right, found->key + byte, sizeof(right));
+            if (left != right) {
+                break;
+            }
+            byte += (bufsize_t)sizeof(uint64_t);
+        }
         while (byte < limit && key[byte] == found->key[byte]) {
             byte++;
         }
@@ -181,22 +203,23 @@ int normalize_map_label_into(markdown_core_strbuf *normalized, markdown_core_chu
     /* An ASCII label folds, trims and collapses its whitespace in one pass
      * over its bytes into room reserved once: only a capital letter changes
      * and only the ASCII whitespace bytes collapse, so no byte needs
-     * decoding to know what becomes of it. A byte above ASCII sends the
-     * label through the scalar-aware passes. */
-    bufsize_t ascii = 0;
-    while (ascii < ref->len && ref->data[ascii] < 0x80) {
-        ascii++;
+     * decoding to know what becomes of it. That pass is also what finds the
+     * first byte above ASCII, which abandons what it wrote and sends the
+     * whole label through the scalar-aware passes -- a label is read once
+     * either way, where the ASCII test used to be a pass of its own. */
+    markdown_core_strbuf__grow_by(normalized, ref->len);
+    if (normalized->oom) {
+        return 0;
     }
-    if (ascii == ref->len) {
-        markdown_core_strbuf__grow_by(normalized, ref->len);
-        if (normalized->oom) {
-            return 0;
-        }
+    {
         unsigned char *out = normalized->ptr;
-        bufsize_t written = 0;
+        bufsize_t written = 0, at = 0;
         bool pending_space = false;
-        for (bufsize_t at = 0; at < ref->len; at++) {
+        for (; at < ref->len; at++) {
             unsigned char byte = ref->data[at];
+            if (byte >= 0x80) {
+                break;
+            }
             if (markdown_core_isspace((char)byte)) {
                 pending_space = written > 0;
                 continue;
@@ -207,10 +230,13 @@ int normalize_map_label_into(markdown_core_strbuf *normalized, markdown_core_chu
             }
             out[written++] = (unsigned char)(byte >= 'A' && byte <= 'Z' ? byte + ('a' - 'A') : byte);
         }
-        normalized->size = written;
-        out[written] = '\0';
-        return written > 0;
+        if (at == ref->len) {
+            normalized->size = written;
+            out[written] = '\0';
+            return written > 0;
+        }
     }
+    markdown_core_strbuf_clear(normalized);
     markdown_core_utf8proc_case_fold(normalized, ref->data, ref->len);
     markdown_core_strbuf_trim(normalized);
     markdown_core_strbuf_normalize_whitespace(normalized);

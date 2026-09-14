@@ -137,6 +137,11 @@ static MARKDOWN_CORE_INLINE void markdown_core_strbuf_putc(markdown_core_strbuf 
     buf->ptr[buf->size] = '\0';
 }
 
+/* An append writes past the buffer's size, so its source and target never
+ * overlap whatever their lengths: this is a copy, not a move, and saying so
+ * is what lets the C library take its copy path rather than the one that
+ * first has to establish the two do not overlap. One algorithm at every
+ * length -- the length decides nothing here. */
 static MARKDOWN_CORE_INLINE void markdown_core_strbuf_put(markdown_core_strbuf *buf, const unsigned char *data,
                                                           bufsize_t len) {
     if (len <= 0) {
@@ -146,7 +151,7 @@ static MARKDOWN_CORE_INLINE void markdown_core_strbuf_put(markdown_core_strbuf *
     if (buf->oom) {
         return;
     }
-    memmove(buf->ptr + buf->size, data, len);
+    memcpy(buf->ptr + buf->size, data, len);
     buf->size += len;
     buf->ptr[buf->size] = '\0';
 }

@@ -4,11 +4,15 @@
 #include "arena.h"
 
 /* Every record is aligned for any scalar, which is also the size granule of
- * the recycling pools: a record of `size` bytes belongs to class
- * ceil(size / GRANULE) - 1. Larger records are never recycled. */
-#define ARENA_GRANULE 16
-#define ARENA_CLASSES 64
+ * the recycling pools; `pool_class` below assigns a record of `size` bytes to
+ * its class. */
+#define ARENA_GRANULE MARKDOWN_CORE_ARENA_GRANULE
+#define ARENA_EXACT_CLASSES MARKDOWN_CORE_ARENA_CLASSES
+/* One class per power of two above the exact ones; a size_t has no more. */
+#define ARENA_WIDE_CLASSES (sizeof(size_t) * 8)
+#define ARENA_CLASSES (ARENA_EXACT_CLASSES + ARENA_WIDE_CLASSES)
 #define ARENA_FIRST_BLOCK 4096
+#define ARENA_TEXT_SLAB 256
 #define ARENA_LARGEST_BLOCK (256u << 10)
 
 typedef struct arena_block {
@@ -25,6 +29,11 @@ struct markdown_core_arena {
     markdown_core_mem *mem;
     arena_block *current;
     size_t next_capacity;
+    /* The slab the next unaligned text ask is cut from, and what is left of
+     * it. A count rather than an end pointer: an arena that has served no
+     * text yet has no slab, and there is no pointer to compare against. */
+    unsigned char *text_at;
+    size_t text_left;
     free_record *pools[ARENA_CLASSES];
 };
 
@@ -119,6 +128,29 @@ void *markdown_core_arena_alloc(markdown_core_arena *arena, size_t size) {
     return record;
 }
 
+/* Storage for bytes, which need no alignment: the copied text of a value, a
+ * name, a destination. A slab of records serves many of them, so a document's
+ * short strings cost their length rather than a granule each, and the record
+ * path above is untouched -- a parse that copies no text pays nothing. */
+void *markdown_core_arena_text(markdown_core_arena *arena, size_t size) {
+    if (!size) {
+        size = 1;
+    }
+    if (arena->text_left < size) {
+        size_t slab = size > ARENA_TEXT_SLAB ? size : ARENA_TEXT_SLAB;
+        unsigned char *fresh = markdown_core_arena_alloc(arena, slab);
+        if (!fresh) {
+            return NULL;
+        }
+        arena->text_at = fresh;
+        arena->text_left = round_up(slab);
+    }
+    unsigned char *record = arena->text_at;
+    arena->text_at += size;
+    arena->text_left -= size;
+    return record;
+}
+
 bool markdown_core_arena_extend(markdown_core_arena *arena, const void *storage, size_t size, size_t needed) {
     arena_block *block = arena->current;
     if (!block || needed < size || needed > SIZE_MAX - ARENA_GRANULE) {
@@ -133,28 +165,80 @@ bool markdown_core_arena_extend(markdown_core_arena *arena, const void *storage,
     return true;
 }
 
-static size_t pool_class(size_t size) { return (round_up(size ? size : 1) / ARENA_GRANULE) - 1; }
+/* The size a record is served at: the smallest size the pools have a class
+ * for. Every size up to the granule ceiling has a class of its own; above it
+ * the powers of two do, which is the shape a record that grows by doubling
+ * asks for, and a larger ask of any other size is served by the next power.
+ *
+ * Rounding here rather than leaving such a size unpooled is what makes the
+ * contract total: every record this arena hands out can be handed back,
+ * whatever its size, so a caller that means to replace its storage never has
+ * to know which sizes the pools happen to accept -- and a size that drifts
+ * past the ceiling cannot silently stop being recycled. Only a record above
+ * the ceiling pays the round-up, and only to the next power of two.
+ *
+ * Zero means no pool can serve the size: one that would carry the granule
+ * round-up past the end of a size_t, or one above the largest representable
+ * power of two. Neither can name storage that exists, so a take reports the
+ * allocation failure markdown_core_arena_alloc reports for the same size,
+ * and a recycle -- which could only have been handed such a size by a record
+ * that was never served -- does nothing. */
+static size_t pool_size(size_t size) {
+    if (size > SIZE_MAX - ARENA_GRANULE) {
+        return 0;
+    }
+    size_t want = round_up(size ? size : 1);
+    size_t power = (size_t)MARKDOWN_CORE_ARENA_RECYCLED_MAX;
+    while (power < want) {
+        if (power > SIZE_MAX / 2) {
+            return 0;
+        }
+        power <<= 1;
+    }
+    return want <= (size_t)MARKDOWN_CORE_ARENA_RECYCLED_MAX ? want : power;
+}
+
+/* A class holds records of exactly one size, so a take can only ever receive
+ * a record as large as it asked for. `size` is a pool size: every caller
+ * passes it through pool_size first, so every size reaching here has a class.
+ */
+static size_t pool_class(size_t size) {
+    size_t units = size / ARENA_GRANULE;
+    if (units <= ARENA_EXACT_CLASSES) {
+        return units - 1;
+    }
+    size_t wide = 0;
+    while (((size_t)1 << wide) != units) {
+        wide++;
+    }
+    return ARENA_EXACT_CLASSES + wide;
+}
 
 void *markdown_core_arena_take(markdown_core_arena *arena, size_t size) {
-    size_t class = pool_class(size);
-    if (class < ARENA_CLASSES && arena->pools[class]) {
+    size_t served = pool_size(size);
+    if (!served) {
+        return NULL;
+    }
+    size_t class = pool_class(served);
+    if (arena->pools[class]) {
         free_record *record = arena->pools[class];
         arena->pools[class] = record->next;
-        memset(record, 0, (class + 1) * ARENA_GRANULE);
+        memset(record, 0, served);
         return record;
     }
-    void *record = markdown_core_arena_alloc(arena, size);
+    void *record = markdown_core_arena_alloc(arena, served);
     if (record) {
-        memset(record, 0, round_up(size ? size : 1));
+        memset(record, 0, served);
     }
     return record;
 }
 
 void markdown_core_arena_recycle(markdown_core_arena *arena, void *record, size_t size) {
-    size_t class = pool_class(size);
-    if (!record || class >= ARENA_CLASSES) {
+    size_t served = pool_size(size);
+    if (!record || !served) {
         return;
     }
+    size_t class = pool_class(served);
     free_record *entry = record;
     entry->next = arena->pools[class];
     arena->pools[class] = entry;

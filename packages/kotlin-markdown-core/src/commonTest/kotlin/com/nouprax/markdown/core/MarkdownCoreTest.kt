@@ -38,7 +38,14 @@ class ApiTest {
         // item (its sibling follows), "    " for every level of the chain, then
         // the corner of the leaf text -- at a depth where deriving the lead-in
         // per line would dominate the dump.
-        val depth = 2_000
+        //
+        // Every line carries the lead-in of every open level, so the dump is
+        // QUADRATIC in the depth: 2.2 MB here, and 32.5 MB at 2,000, which a
+        // host that decodes it into its own string type multiplies again. The
+        // depth is what makes the lead-in worth deriving once rather than per
+        // line; it is not what the assertions below check, and they hold at
+        // any depth. So it stays as deep as that purpose needs and no deeper.
+        val depth = 512
         val lines =
             Document
                 .parse("- ".repeat(depth) + "leaf\n- tail\n")

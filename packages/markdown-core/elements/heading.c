@@ -402,8 +402,10 @@ void markdown_core_heading_begin_inlines(markdown_core_parser *parser, markdown_
                                          markdown_core_node *parent) {
     if (parent->kind == MARKDOWN_CORE_NODE_HEADING) {
         bufsize_t line = inline_state->input.len;
-        inline_state->attributes = (markdown_core_attribute_parser){
-            .mem = parser->mem, .data = inline_state->input.data, .length = inline_state->input.len};
+        inline_state->attributes = (markdown_core_attribute_parser){.mem = parser->mem,
+                                                                    .store = parser->arena,
+                                                                    .data = inline_state->input.data,
+                                                                    .length = inline_state->input.len};
         inline_state->heading_attributes_start = -1;
         /* Only a heading whose content ends in `}` can carry a tail; no other
          * heading is walked back to its last line or offered to the scanner. */

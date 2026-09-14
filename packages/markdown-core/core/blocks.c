@@ -1537,31 +1537,33 @@ static void S_parse_source(markdown_core_parser *parser, const unsigned char *so
 // parser->first_nonspace, parser->first_nonspace_column,
 // parser->indent, and parser->blank. Does not advance parser->offset.
 void markdown_core_block_find_first_nonspace(markdown_core_parser *parser, markdown_core_chunk *input) {
-    char c;
-    int chars_to_tab = TAB_STOP - (parser->column % TAB_STOP);
-
     if (parser->first_nonspace <= parser->offset) {
-        parser->first_nonspace = parser->offset;
-        parser->first_nonspace_column = parser->column;
-        while ((c = peek_at(input, parser->first_nonspace))) {
-            if (c == ' ') {
-                parser->first_nonspace += 1;
-                parser->first_nonspace_column += 1;
-                chars_to_tab = chars_to_tab - 1;
-                if (chars_to_tab == 0) {
-                    chars_to_tab = TAB_STOP;
-                }
-            } else if (c == '\t') {
-                parser->first_nonspace += 1;
-                parser->first_nonspace_column += chars_to_tab;
-                chars_to_tab = TAB_STOP;
-            } else {
+        bufsize_t at = parser->offset;
+        bufsize_t column = parser->column;
+        /* A run of spaces is as long in columns as it is in bytes, so the
+         * whole of an ordinary indent is crossed by finding where it ends --
+         * the line's terminator stops the run like any other byte. Only a tab
+         * needs a column of its own, and that is the tab stop above the column
+         * the run before it reached: the running `chars_to_tab` this loop used
+         * to carry was always `TAB_STOP - column % TAB_STOP`, for spaces (one
+         * column each) as much as for tabs (which land on a stop). */
+        for (;;) {
+            bufsize_t run = at;
+            while (peek_at(input, at) == ' ') {
+                at++;
+            }
+            column += at - run;
+            if (peek_at(input, at) != '\t') {
                 break;
             }
+            at++;
+            column += TAB_STOP - (column % TAB_STOP);
         }
+        parser->first_nonspace = at;
+        parser->first_nonspace_column = column;
     }
 
-    parser->indent = parser->first_nonspace_column - parser->column;
+    parser->indent = (int)(parser->first_nonspace_column - parser->column);
     parser->blank = markdown_core_is_line_end(peek_at(input, parser->first_nonspace));
 }
 
@@ -2593,24 +2595,47 @@ uint64_t markdown_core_source_key(const void *entry) {
     return ((uint64_t)(uint32_t)node->start_line << 32) | (uint32_t)node->start_column;
 }
 
-/* Eight stable byte passes order the two nonnegative 32-bit coordinates.
- * This bound holds for every source shape on every libc; there is no
- * comparison-sort worst case or input-size-dependent alternate path. */
+/* Stable ordering by a 64-bit source key, in as few byte passes as the keys
+ * need. One read of every key first answers two questions about the keys
+ * themselves, neither of them about how many there are: whether the entries
+ * are ordered already (the case for keys produced in source order, and
+ * nothing is moved then), and which byte positions differ between keys (a
+ * position where every key agrees is an identity pass for a stable sort, so
+ * it is skipped -- a key built from two grid coordinates leaves six of the
+ * eight constant). What remains is the same least-significant-byte-first
+ * radix sort over the bytes that differ, and its result is what all eight
+ * passes would produce. */
 int markdown_core_order_source_entries(markdown_core_mem *mem, void *entries, size_t count, size_t stride,
                                        uint64_t (*key)(const void *)) {
-    if (!count) {
+    if (count < 2) {
         return 1;
     }
     if (count > SIZE_MAX / stride) {
         return 0;
     }
-    unsigned char *scratch = mem->calloc(count, stride);
+    unsigned char *values = entries;
+    uint64_t differ = 0, previous = key(values);
+    bool ordered = true;
+    for (size_t i = 1; i < count; i++) {
+        uint64_t current = key(values + i * stride);
+        differ |= previous ^ current;
+        ordered = ordered && previous <= current;
+        previous = current;
+    }
+    if (ordered) {
+        return 1;
+    }
+    unsigned char *scratch = mem->realloc(NULL, count * stride);
     unsigned char *source = entries;
     unsigned char *target = scratch;
     if (!scratch) {
         return 0;
     }
     for (unsigned shift = 0; shift < 64; shift += 8) {
+        if (!((differ >> shift) & 255)) {
+            /* Every key agrees on this byte: the pass would move nothing. */
+            continue;
+        }
         size_t offsets[256] = {0};
         size_t offset = 0;
         for (size_t i = 0; i < count; i++) {
@@ -2629,7 +2654,10 @@ int markdown_core_order_source_entries(markdown_core_mem *mem, void *entries, si
         source = target;
         target = swap;
     }
-    assert(source == entries);
+    /* An odd number of passes leaves the order in the scratch. */
+    if (source != entries) {
+        memcpy(entries, source, count * stride);
+    }
     mem->free(scratch);
     return 1;
 }
