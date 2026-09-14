@@ -107,6 +107,12 @@ let package = Package(
             name: "CanonicalASTResourceGenerator",
             path: "packages/swift-markdown-core/Tools/CanonicalASTResourceGenerator"
         ),
+        // The opt-in timing lane; never a product, a test, or a CI step.
+        .executableTarget(
+            name: "MarkdownCoreBenchmarks",
+            dependencies: ["MarkdownCore"],
+            path: "packages/swift-markdown-core/Benchmarks/MarkdownCoreBenchmarks"
+        ),
         .plugin(
             name: "GenerateCanonicalASTResources",
             capability: .buildTool(),

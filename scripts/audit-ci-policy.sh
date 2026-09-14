@@ -139,21 +139,46 @@ if grep -Eq 'workflows: \[CI\]|run\.name === "CI"|successful main CI' \
     echo "PR benchmark still depends on the normal main CI pipeline" >&2
     exit 1
 fi
-for retired in \
+# THE BINDING TIMING LANES ARE OPT-IN AND INFORMATIONAL. Each binding times
+# its public parse on the C lane's workloads from one entry a person runs on
+# purpose (`pnpm benchmark:es|kotlin|swift`); no CI workflow runs one, no
+# test suite contains one, and the Swift release manifest never ships one.
+for lane in \
     packages/es-markdown-core/scripts/benchmark.mjs \
     packages/kotlin-markdown-core/src/jvmBenchmark/kotlin/com/nouprax/markdown/core/benchmark/Benchmark.kt \
     packages/swift-markdown-core/Benchmarks/MarkdownCoreBenchmarks/main.swift; do
-    if [ -e "$retired" ]; then
-        echo "retired binding wall-clock diagnostic still exists: $retired" >&2
+    if [ ! -e "$lane" ]; then
+        echo "binding timing lane is missing: $lane" >&2
         exit 1
     fi
 done
-if grep -Eq 'MarkdownCoreBenchmarks|kotlinBenchmark|jvmBenchmark|scripts/benchmark\.mjs|benchmark:(swift|kotlin|es)' \
-    Package.swift \
-    package.json \
-    packages/kotlin-markdown-core/build.gradle.kts \
-    packages/es-markdown-core/package.json; then
-    echo "a retired binding wall-clock diagnostic is still routed by a package graph" >&2
+for entry in 'benchmark:es' 'benchmark:kotlin' 'benchmark:swift'; do
+    grep -Fq "\"$entry\"" package.json || {
+        echo "package.json does not route the $entry lane" >&2
+        exit 1
+    }
+done
+grep -Fq 'register<JavaExec>("jvmBenchmark")' packages/kotlin-markdown-core/build.gradle.kts || {
+    echo "the Kotlin benchmark lane is not an opt-in task" >&2
+    exit 1
+}
+grep -Fq 'name: "MarkdownCoreBenchmarks"' Package.swift || {
+    echo "the Swift benchmark lane is not a target of the development manifest" >&2
+    exit 1
+}
+if grep -Eq 'benchmark:(es|kotlin|swift)|jvmBenchmark|MarkdownCoreBenchmarks|scripts/benchmark\.mjs' \
+    "$ci" "$pr_benchmark" "$pr_benchmark_comment" .github/workflows/release.yml .github/workflows/release-dry-run.yml; then
+    echo "a binding timing lane is run by a workflow; the lanes are opt-in" >&2
+    exit 1
+fi
+if grep -Eq 'jvmBenchmark' packages/kotlin-markdown-core/build.gradle.kts | grep -q 'dependsOn(.*jvmBenchmark'; then
+    echo "a Kotlin test or check task depends on the benchmark lane" >&2
+    exit 1
+fi
+if grep -RqE 'benchmark\.mjs|Benchmark\.kt|MarkdownCoreBenchmarks' \
+    packages/es-markdown-core/scripts/run-tests.mjs packages/es-markdown-core/scripts/run-conformance.mjs \
+    packages/swift-markdown-core/Tests; then
+    echo "a binding test suite reaches into a timing lane" >&2
     exit 1
 fi
 if grep -R -nE 'START_TIMING|END_TIMING|TIMING[[:space:]]*[<>]=?|takes less than [0-9]+ms' \

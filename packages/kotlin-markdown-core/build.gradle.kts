@@ -565,6 +565,34 @@ tasks.named<ProcessResources>("jvmProcessResources") {
 
 val jvmTarget = kotlin.targets.getByName("jvm") as KotlinJvmTarget
 val jvmMainCompilation = jvmTarget.compilations.getByName("main")
+
+// The JVM timing lane (`src/jvmBenchmark`): a compilation beside the tests
+// that runs the public parse on the C lane's workloads. Opt-in through the
+// `jvmBenchmark` task, informational, never a test or CI gate.
+val jvmBenchmarkCompilation =
+    jvmTarget.compilations.create("benchmark") {
+        associateWith(jvmMainCompilation)
+    }
+tasks.register<JavaExec>("jvmBenchmark") {
+    group = "benchmark"
+    description = "Times the JVM parse and walk on the benchmark workloads (opt-in, informational)."
+    dependsOn(jvmBenchmarkCompilation.compileTaskProvider, "jvmProcessResources")
+    classpath =
+        files(
+            jvmBenchmarkCompilation.output.allOutputs,
+            jvmMainCompilation.output.allOutputs,
+            jvmBenchmarkCompilation.runtimeDependencyFiles,
+        )
+    mainClass.set("com.nouprax.markdown.core.benchmark.BenchmarkKt")
+    workingDir = repositoryRoot.asFile
+    jvmArgs("--enable-native-access=ALL-UNNAMED")
+    args(
+        providers
+            .gradleProperty("benchmarkArgs")
+            .map { it.split(" ").filter(String::isNotEmpty) }
+            .getOrElse(emptyList()),
+    )
+}
 tasks.withType<Test>().configureEach {
     jvmArgs("--enable-native-access=ALL-UNNAMED")
 }
