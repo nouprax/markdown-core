@@ -6651,8 +6651,15 @@ static void arena_recycling(test_batch_runner *runner) {
        "an oversized record whose size is a power of two is handed out again");
     void *odd = markdown_core_arena_take(arena, 4096 + 16);
     markdown_core_arena_recycle(arena, odd, 4096 + 16);
-    OK(runner, odd != NULL && markdown_core_arena_take(arena, 4096 + 16) != odd,
-       "an oversized record of any other size has no class and stays arena storage");
+    OK(runner, odd != NULL && markdown_core_arena_take(arena, 4096 + 16) == odd,
+       "an oversized record of any other size is served at the next power and handed out again");
+    /* The contract is total: whatever a caller asks for, what it got back it
+     * can give back. A size between two powers is served by the larger, so
+     * asking for either reaches the same class. */
+    void *between = markdown_core_arena_take(arena, 4096 + 1);
+    markdown_core_arena_recycle(arena, between, 4096 + 1);
+    OK(runner, between != NULL && markdown_core_arena_take(arena, 8192) == between,
+       "a size between two powers is served, and recycled, by the larger");
     void *wide = markdown_core_arena_take(arena, 8192);
     markdown_core_arena_recycle(arena, wide, 8192);
     OK(runner, wide != NULL && markdown_core_arena_take(arena, 4096) != wide,

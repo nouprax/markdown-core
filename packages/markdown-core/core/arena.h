@@ -38,12 +38,14 @@ void *markdown_core_arena_text(markdown_core_arena *arena, size_t size);
  * false, changing nothing, when `storage` is not the latest allocation or
  * the block is full; the caller then allocates elsewhere. */
 bool markdown_core_arena_extend(markdown_core_arena *arena, const void *storage, size_t size, size_t needed);
-/* Recycled records are pooled by size class. Every record this size or
- * smaller has a class of its own and is always taken back; above it only the
- * powers of two do, which is the shape a record that grows by doubling asks
- * for. A caller whose record is neither -- a fixed size of its own choosing
- * above this -- keeps it within this bound, and should say so where the size
- * is chosen rather than discover it at run time. */
+/* Recycled records are pooled by size class, and every record has a class:
+ * every size this large or smaller has one of its own, and a larger record is
+ * served at the next power of two. So a record the arena handed out can
+ * always be handed back, whatever its size, and a caller that replaces its
+ * storage does not have to know which sizes the pools accept. A record above
+ * this bound pays the round-up to the next power of two, which is why a
+ * record of a fixed size of its own choosing is still worth keeping within
+ * it. */
 #define MARKDOWN_CORE_ARENA_GRANULE 16
 #define MARKDOWN_CORE_ARENA_CLASSES 64
 #define MARKDOWN_CORE_ARENA_RECYCLED_MAX ((size_t)MARKDOWN_CORE_ARENA_GRANULE * MARKDOWN_CORE_ARENA_CLASSES)
