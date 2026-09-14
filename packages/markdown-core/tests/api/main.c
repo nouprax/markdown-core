@@ -7162,6 +7162,44 @@ static void heading_completion_invariants(test_batch_runner *runner) {
     }
 }
 
+/* What the anchor registry costs per heading, on the two shapes that stress
+ * it: N headings that all want the same name, so every one of them is
+ * uniqued, and N headings that each want a different one. Both stay
+ * proportional to the headings and to the length of the names they take --
+ * the base name's ordinal counter means a duplicate is uniqued in one
+ * attempt, not by trying every taken suffix. */
+static void anchor_work_is_bounded_per_heading(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    for (size_t count = 256; count <= 4096; count *= 4) {
+        size_t digits = 1;
+        for (size_t n = count; n >= 10; n /= 10) {
+            digits++;
+        }
+        for (int distinct = 0; distinct < 2; distinct++) {
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+            for (size_t i = 0; i < count; i++) {
+                char line[64];
+                if (distinct) {
+                    snprintf(line, sizeof(line), "# Heading %zu\n\n", i);
+                } else {
+                    snprintf(line, sizeof(line), "# Heading\n\n");
+                }
+                markdown_core_strbuf_puts(&source, line);
+            }
+            inline_work work = {0};
+            markdown_core_node *root =
+                markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
+            OK(runner, root != NULL, "the heading shape parses: count=%zu distinct=%d", count, distinct);
+            OK(runner, work.anchors <= count * (24 + 2 * digits),
+               "anchor work stays proportional to the headings and the names they take: count=%zu distinct=%d "
+               "work=%zu",
+               count, distinct, work.anchors);
+            markdown_core_node_free(root);
+            markdown_core_strbuf_free(&source);
+        }
+    }
+}
+
 static void heading_registry_invariants(test_batch_runner *runner) {
     markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
     for (size_t count = 128; count <= 8192; count *= 2) {
@@ -8380,6 +8418,7 @@ int main(int argc, char **argv) {
     heading_completion_invariants(runner);
     heading_registration_order(runner);
     source_entry_ordering(runner);
+    anchor_work_is_bounded_per_heading(runner);
     heading_registry_invariants(runner);
     heading_reference_resource_lifetime(runner);
     heading_label_length_boundary(runner);
